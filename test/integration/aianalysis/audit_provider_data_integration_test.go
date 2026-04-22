@@ -74,18 +74,15 @@ import (
 // ========================================
 var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("integration", "audit", "hybrid", "soc2"), func() {
 	var (
-		ctx            context.Context
-		namespace      string
-		datastorageURL string
-		dsClient       *ogenclient.Client
+		ctx       context.Context
+		namespace string
+		dsClient  *ogenclient.Client
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		namespace = "default"
 
-		// Data Storage URL for audit event queries
-		datastorageURL = "http://127.0.0.1:18095" // AIAnalysis integration test DS port (DD-TEST-001)
 		datastorageHealthURL := "http://127.0.0.1:28095" // Issue #753: dedicated health probe port
 
 		By("Verifying DataStorage connectivity before test")
