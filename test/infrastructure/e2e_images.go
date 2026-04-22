@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -200,7 +201,9 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 	_, _ = fmt.Fprintf(writer, "🔨 Building E2E image: %s\n", fullImageName)
 
 	// Build image with optional coverage instrumentation
-	buildArgs := []string{"build", "-t", localImageName, "--no-cache"}
+	buildArgs := []string{"build", "-t", localImageName, "--no-cache",
+		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
+	}
 
 	// Mount host Go module cache to avoid GCS download failures in Podman VM
 	if volumeArgs := goModCacheVolumeArgs(); len(volumeArgs) > 0 {

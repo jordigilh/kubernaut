@@ -54,6 +54,18 @@ func NewServiceAccountTransport(token string) *ServiceAccountTransport {
 	}
 }
 
+// NewServiceAccountTransportWithBase creates a ServiceAccountTransport with a custom
+// base RoundTripper. Use this to layer token injection on top of a TLS-aware transport.
+//
+// Issue #753: Required for inter-service TLS where the base transport must trust
+// the private CA.
+func NewServiceAccountTransportWithBase(token string, base http.RoundTripper) *ServiceAccountTransport {
+	return &ServiceAccountTransport{
+		base:  base,
+		token: token,
+	}
+}
+
 // RoundTrip implements http.RoundTripper interface.
 // It clones the request and adds Authorization header with Bearer token.
 //

@@ -253,6 +253,7 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	_, _ = fmt.Fprintf(writer, "   🔨 Building DataStorage image locally (tag: %s)...\n", imageTag)
 	buildCmd := exec.CommandContext(ctx, "podman", "build",
 		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
+		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
 		"-t", imageName,
 		"--force-rm=false", // Disable auto-cleanup to avoid podman cleanup errors
 		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),

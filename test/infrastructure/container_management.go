@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -312,9 +313,11 @@ func extractServiceNameFromImage(imageName string) string {
 
 // buildContainerImage builds a container image using podman build
 func buildContainerImage(cfg GenericContainerConfig, writer io.Writer) error {
-	args := []string{"build", "-t", cfg.Image, "--force-rm=false"}
+	args := []string{"build", "-t", cfg.Image, "--force-rm=false",
+		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
+	}
 
-	// Add build args
+	// Add build args (caller-supplied args override the default GOARCH if needed)
 	for key, value := range cfg.BuildArgs {
 		args = append(args, "--build-arg", fmt.Sprintf("%s=%s", key, value))
 	}

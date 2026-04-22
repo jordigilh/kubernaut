@@ -77,7 +77,8 @@ var (
 
 	// Shared service URLs (NodePort - no port-forwarding needed)
 	// These are set in SynchronizedBeforeSuite and available to all tests
-	dataStorageURL string // http://localhost:28090 (NodePort 30081 mapped via Kind extraPortMappings per DD-TEST-001)
+	dataStorageURL string // https://localhost:28090 (NodePort 30081 mapped via Kind extraPortMappings per DD-TEST-001) - Issue #753: HTTPS
+	healthURL      string // http://localhost:28092 (NodePort 30281 mapped via Kind extraPortMappings) - Issue #753: plain HTTP health
 	metricsURL     string // http://localhost:28091 (NodePort 30181 mapped via Kind extraPortMappings per DD-TEST-001 v3.1)
 	postgresURL    string // localhost:25433 (NodePort 30432 mapped via Kind extraPortMappings per DD-TEST-001)
 
@@ -178,11 +179,12 @@ var _ = SynchronizedBeforeSuite(
 		err = infrastructure.SetupDataStorageInfrastructureParallel(ctx, clusterName, kubeconfigPath, sharedNamespace, dataStorageImage, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Wait for Data Storage HTTP endpoint to be responsive via NodePort
-		logger.Info("⏳ Waiting for Data Storage NodePort to be responsive...")
-		tempClient := &http.Client{Timeout: 10 * time.Second}
+		// Issue #753: Wait for Data Storage health endpoint via dedicated health port (plain HTTP)
+		// Health server on :8081 (NodePort 30281 → host 28092) — no TLS needed
+		logger.Info("⏳ Waiting for Data Storage health endpoint to be responsive...")
+		healthClient := &http.Client{Timeout: 10 * time.Second}
 		Eventually(func() error {
-			resp, err := tempClient.Get("http://localhost:28090/health") // Per DD-TEST-001 (NodePort 30081 → host 28090)
+			resp, err := healthClient.Get("http://localhost:28092/readyz") // Issue #753: health port (NodePort 30281 → host 28092)
 			if err != nil {
 				return err
 			}
@@ -191,13 +193,14 @@ var _ = SynchronizedBeforeSuite(
 				return fmt.Errorf("health check returned status %d", resp.StatusCode)
 			}
 			return nil
-		}, 120*time.Second, 2*time.Second).Should(Succeed(), "Data Storage NodePort did not become responsive")
-		logger.Info("✅ Data Storage API is ready via NodePort (localhost:28090)")
+		}, 120*time.Second, 2*time.Second).Should(Succeed(), "Data Storage health endpoint did not become responsive")
+		logger.Info("✅ Data Storage health is ready via NodePort (localhost:28092)")
 
 		// Wait for dedicated metrics server to be responsive (Issue #283: separate port 9090)
 		logger.Info("⏳ Waiting for Data Storage metrics endpoint to be responsive...")
+		metricsClient := &http.Client{Timeout: 10 * time.Second}
 		Eventually(func() error {
-			resp, err := tempClient.Get("http://localhost:28091/metrics") // Per DD-TEST-001 v3.1 (NodePort 30181 → host 28091)
+			resp, err := metricsClient.Get("http://localhost:28091/metrics") // Per DD-TEST-001 v3.1 (NodePort 30181 → host 28091)
 			if err != nil {
 				return err
 			}
@@ -233,14 +236,17 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
 		logger.Info("✅ E2E ServiceAccount created with DataStorage access", "name", e2eSAName)
 
-		logger.Info("📋 DD-API-001 + DD-AUTH-014: Creating shared authenticated clients for E2E tests...")
-		saTransport := testauth.NewServiceAccountTransport(e2eToken)
+		// Issue #753: Create TLS-aware transport for HTTPS API calls
+		logger.Info("📋 DD-API-001 + DD-AUTH-014 + Issue #753: Creating TLS-aware authenticated clients...")
+		tlsTransport, err := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create TLS-aware transport")
+		saTransport := testauth.NewServiceAccountTransportWithBase(e2eToken, tlsTransport)
 		httpClient := &http.Client{
-			Timeout:   20 * time.Second, // DD-AUTH-014: 20s timeout for 12 parallel processes with SAR middleware (API server tuned, see kind-datastorage-config.yaml)
+			Timeout:   20 * time.Second,
 			Transport: saTransport,
 		}
 		DSClient, err = dsgen.NewClient(
-			"http://localhost:28090",
+			"https://localhost:28090",
 			dsgen.WithClient(httpClient),
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
@@ -253,8 +259,8 @@ var _ = SynchronizedBeforeSuite(
 			Timeout:   10 * time.Second,
 			Transport: saTransport,
 		}
-		logger.Info("✅ Shared authenticated clients created (DD-AUTH-014)",
-			"baseURL", "http://localhost:28090",
+		logger.Info("✅ Shared authenticated clients created (DD-AUTH-014 + Issue #753 TLS)",
+			"baseURL", "https://localhost:28090",
 			"pattern", "Use DSClient for spec-compliant APIs, AuthHTTPClient for non-spec responses (409, etc)")
 
 		// Note: Certificate warm-up is SKIPPED in suite setup
@@ -269,7 +275,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("Cluster Setup Complete - Broadcasting to all processes")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster configuration", "cluster", clusterName, "kubeconfig", kubeconfigPath)
-		logger.Info("Service URLs (per DD-TEST-001)", "dataStorage", "http://localhost:28090", "metrics", "http://localhost:28091", "postgresql", "localhost:25433")
+		logger.Info("Service URLs (per DD-TEST-001 + Issue #753)", "dataStorage", "https://localhost:28090", "health", "http://localhost:28092", "metrics", "http://localhost:28091", "postgresql", "localhost:25433")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Return kubeconfig path and ServiceAccount token to all processes
@@ -307,7 +313,9 @@ var _ = SynchronizedBeforeSuite(
 		processID := GinkgoParallelProcess()
 
 		// Try NodePort first (works with Docker) - Per DD-TEST-001 lines 106-127
-		dataStorageURL = "http://localhost:28090"
+		// Issue #753: API port is now HTTPS, health port is plain HTTP
+		dataStorageURL = "https://localhost:28090"
+		healthURL = "http://localhost:28092"
 		metricsURL = "http://localhost:28091"
 		postgresURL = "postgresql://slm_user:test_password@localhost:25433/action_history?sslmode=disable"
 
@@ -333,10 +341,11 @@ var _ = SynchronizedBeforeSuite(
 
 			// Start port-forward for PostgreSQL (background process)
 			// Use process-specific ports to avoid conflicts in parallel execution
-			// Per DD-TEST-001: Base ports 25433 (PostgreSQL), 28090 (DataStorage), 28091 (Metrics)
+			// Per DD-TEST-001: Base ports 25433 (PostgreSQL), 28090 (DataStorage), 28091 (Metrics), 28092 (Health)
 			pgLocalPort := 25433 + (processID * 100)
 			dsLocalPort := 28090 + (processID * 100)
 			metricsLocalPort := 28091 + (processID * 100)
+			healthLocalPort := 28092 + (processID * 100)
 
 			// PostgreSQL port-forward
 			go func() {
@@ -350,7 +359,7 @@ var _ = SynchronizedBeforeSuite(
 				}
 			}()
 
-			// DataStorage API port-forward
+			// DataStorage API port-forward (Issue #753: HTTPS on port 8080)
 			go func() {
 				cmd := exec.Command("kubectl", "port-forward",
 					"--kubeconfig", kubeconfigPath,
@@ -374,6 +383,18 @@ var _ = SynchronizedBeforeSuite(
 				}
 			}()
 
+			// DataStorage Health port-forward (Issue #753: dedicated health server on port 8081)
+			go func() {
+				cmd := exec.Command("kubectl", "port-forward",
+					"--kubeconfig", kubeconfigPath,
+					"-n", "datastorage-e2e",
+					"svc/data-storage-service",
+					fmt.Sprintf("%d:8081", healthLocalPort))
+				if err := cmd.Run(); err != nil {
+					logger.Error(err, "DataStorage health port-forward failed", "process", processID)
+				}
+			}()
+
 			// Per TESTING_GUIDELINES.md: Use Eventually() to verify port-forward is ready
 			Eventually(func() bool {
 				conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", dsLocalPort), 500*time.Millisecond)
@@ -385,7 +406,9 @@ var _ = SynchronizedBeforeSuite(
 			}, 30*time.Second, 1*time.Second).Should(BeTrue(), "Port-forward should be established")
 
 			// Update URLs to use process-specific ports
-			dataStorageURL = fmt.Sprintf("http://localhost:%d", dsLocalPort)
+			// Issue #753: API port is now HTTPS
+			dataStorageURL = fmt.Sprintf("https://localhost:%d", dsLocalPort)
+			healthURL = fmt.Sprintf("http://localhost:%d", healthLocalPort)
 			metricsURL = fmt.Sprintf("http://localhost:%d", metricsLocalPort)
 			postgresURL = fmt.Sprintf("postgresql://slm_user:test_password@localhost:%d/action_history?sslmode=disable", pgLocalPort)
 
@@ -401,6 +424,7 @@ var _ = SynchronizedBeforeSuite(
 
 			logger.Info("✅ Port-forward established", "process", processID,
 				"dataStorageURL", dataStorageURL,
+				"healthURL", healthURL,
 				"metricsURL", metricsURL,
 				"postgresURL", postgresURL,
 				"testDB", testDB != nil)
@@ -409,15 +433,18 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("🔌 URLs configured",
 			"process", processID,
 			"dataStorageURL", dataStorageURL,
+			"healthURL", healthURL,
 			"metricsURL", metricsURL,
 			"postgresURL", postgresURL,
 			"method", map[bool]string{true: "NodePort", false: "port-forward"}[nodePortWorks])
 
-		// DD-API-001 + DD-AUTH-014: Initialize shared authenticated OpenAPI client for this process
-		logger.Info("📋 DD-API-001 + DD-AUTH-014: Creating shared authenticated OpenAPI client for process", "process", processID)
-		saTransport := testauth.NewServiceAccountTransport(e2eToken)
+		// DD-API-001 + DD-AUTH-014 + Issue #753: Initialize TLS-aware authenticated OpenAPI client
+		logger.Info("📋 DD-API-001 + DD-AUTH-014 + Issue #753: Creating TLS-aware authenticated client for process", "process", processID)
+		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport")
+		saTransport := testauth.NewServiceAccountTransportWithBase(e2eToken, tlsTransport)
 		httpClient := &http.Client{
-			Timeout:   20 * time.Second, // DD-AUTH-014: 20s timeout for 12 parallel processes with SAR middleware
+			Timeout:   20 * time.Second,
 			Transport: saTransport,
 		}
 		DSClient, err = dsgen.NewClient(
@@ -432,7 +459,7 @@ var _ = SynchronizedBeforeSuite(
 			Transport: saTransport,
 		}
 
-		logger.Info("✅ Shared authenticated clients created (DD-AUTH-014)",
+		logger.Info("✅ Shared authenticated clients created (DD-AUTH-014 + Issue #753 TLS)",
 			"process", processID,
 			"baseURL", dataStorageURL,
 			"pattern", "Use DSClient for spec-compliant APIs, AuthHTTPClient for non-spec responses (409, etc)")

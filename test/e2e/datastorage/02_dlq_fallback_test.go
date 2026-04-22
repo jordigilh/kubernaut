@@ -90,11 +90,11 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 		serviceURL = dataStorageURL
 		testLogger.Info("Using shared deployment", "namespace", testNamespace, "url", serviceURL)
 
-		// Wait for Data Storage Service to be responsive using raw HTTP (health endpoint returns text/plain)
+		// Wait for Data Storage Service to be responsive (Issue #753: health on dedicated port)
 		testLogger.Info("⏳ Waiting for Data Storage Service...")
 		httpClient := &http.Client{Timeout: 2 * time.Second}
 		Eventually(func() error {
-			resp, err := httpClient.Get(serviceURL + "/health")
+			resp, err := httpClient.Get(healthURL + "/readyz")
 			if err != nil {
 				return err
 			}

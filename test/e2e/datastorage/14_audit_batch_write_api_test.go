@@ -57,10 +57,10 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 		// CRITICAL: Use public schema for audit_events table queries
 		// HTTP API writes to public schema, test queries must target same schema
 
-		// Ensure service is ready before each test (health endpoint returns text/plain, use raw HTTP)
+		// Ensure service is ready before each test (Issue #753: health on dedicated port)
 		httpClient := &http.Client{Timeout: 2 * time.Second}
 		Eventually(func() int {
-			resp, err := httpClient.Get(dataStorageURL + "/health")
+			resp, err := httpClient.Get(healthURL + "/readyz")
 			if err != nil || resp == nil {
 				return 0
 			}
