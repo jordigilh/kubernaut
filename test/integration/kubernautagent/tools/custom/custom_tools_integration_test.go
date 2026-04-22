@@ -24,9 +24,19 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
+
+func itToolCtx() context.Context {
+	return katypes.WithSignalContext(context.Background(), katypes.SignalContext{
+		Severity:     "critical",
+		ResourceKind: "Deployment",
+		Environment:  "production",
+		Priority:     "P0",
+	})
+}
 
 var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 
@@ -46,7 +56,7 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 
 	Describe("IT-KA-433-033: list_available_actions queries real DataStorage API", func() {
 		It("should return action types from the real DataStorage", func() {
-			result, err := reg.Execute(context.Background(), "list_available_actions",
+			result, err := reg.Execute(itToolCtx(), "list_available_actions",
 				json.RawMessage(`{}`))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeEmpty())
@@ -56,7 +66,7 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 
 	Describe("IT-KA-433-034: list_workflows searches real DataStorage with criteria", func() {
 		It("should return seeded workflows from real DataStorage", func() {
-			result, err := reg.Execute(context.Background(), "list_workflows",
+			result, err := reg.Execute(itToolCtx(), "list_workflows",
 				json.RawMessage(`{"action_type":"IncreaseMemory"}`))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeEmpty())
@@ -72,7 +82,7 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 			Expect(ok).To(BeTrue(), "oom-recovery-v1:production must be seeded")
 			Expect(wfUUID).NotTo(BeEmpty())
 
-			result, err := reg.Execute(context.Background(), "get_workflow",
+			result, err := reg.Execute(itToolCtx(), "get_workflow",
 				json.RawMessage(fmt.Sprintf(`{"workflow_id":"%s"}`, wfUUID)))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(ContainSubstring("oom-recovery"))
@@ -105,7 +115,7 @@ var _ = Describe("Cursor-Based Pagination over Real DataStorage — #688", func(
 			args1 := json.RawMessage(fmt.Sprintf(
 				`{"action_type":"IncreaseMemoryLimits","page":"next","cursor":"%s"}`, cursor1))
 
-			result1, err := reg.Execute(context.Background(), "list_workflows", args1)
+			result1, err := reg.Execute(itToolCtx(), "list_workflows", args1)
 			Expect(err).NotTo(HaveOccurred())
 
 			var page1 map[string]json.RawMessage
@@ -128,7 +138,7 @@ var _ = Describe("Cursor-Based Pagination over Real DataStorage — #688", func(
 			args2 := json.RawMessage(fmt.Sprintf(
 				`{"action_type":"IncreaseMemoryLimits","page":"next","cursor":"%s"}`, nextCursor))
 
-			result2, err := reg.Execute(context.Background(), "list_workflows", args2)
+			result2, err := reg.Execute(itToolCtx(), "list_workflows", args2)
 			Expect(err).NotTo(HaveOccurred())
 
 			var page2 map[string]json.RawMessage
@@ -151,7 +161,7 @@ var _ = Describe("Cursor-Based Pagination over Real DataStorage — #688", func(
 			args3 := json.RawMessage(fmt.Sprintf(
 				`{"action_type":"IncreaseMemoryLimits","page":"previous","cursor":"%s"}`, prevCursor))
 
-			result3, err := reg.Execute(context.Background(), "list_workflows", args3)
+			result3, err := reg.Execute(itToolCtx(), "list_workflows", args3)
 			Expect(err).NotTo(HaveOccurred())
 
 			var page3 map[string]json.RawMessage
@@ -177,7 +187,7 @@ var _ = Describe("Cursor-Based Pagination over Real DataStorage — #688", func(
 	Describe("IT-KA-688-402: list_workflows without cursor returns all matching workflows", func() {
 		It("should return all matching workflows with pagination stripped (single page)", func() {
 			By("Calling without page/cursor — DS uses default limit=10, all 2 workflows fit in one page")
-			result, err := reg.Execute(context.Background(), "list_workflows",
+			result, err := reg.Execute(itToolCtx(), "list_workflows",
 				json.RawMessage(`{"action_type":"IncreaseMemoryLimits"}`))
 			Expect(err).NotTo(HaveOccurred())
 
