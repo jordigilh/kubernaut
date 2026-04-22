@@ -836,9 +836,9 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 
 	// BR-SP-090: Verify audit events are written to DataStorage
 	It("BR-SP-090: should write audit events to DataStorage when signal is processed", func() {
-		By("Verifying DataStorage is accessible on NodePort 30081")
+		By("Verifying DataStorage is accessible on health NodePort 30281")
 		Eventually(func() bool {
-			resp, err := http.Get("http://localhost:30081/health")
+			resp, err := http.Get("http://localhost:30281/readyz")
 			if err != nil {
 				GinkgoWriter.Printf("  ⚠️  DataStorage health check failed: %v\n", err)
 				return false
