@@ -122,13 +122,12 @@ var _ = Describe("Health Endpoints E2E", Label("e2e", "health"), func() {
 		})
 
 		It("should verify Data Storage is reachable", func() {
-			// Data Storage health endpoint (NodePort 30081 -> host port 8091)
-			// Note: Using 8091 to avoid conflicts (8081=AIAnalysis container, 8085=gvproxy)
-			// Use Eventually to wait for service to be ready
+			// Data Storage health endpoint (NodePort 30281 -> host port 30281)
+			// Issue #753: DS health now served on dedicated port 8081 (/readyz)
 			var resp *http.Response
 			var err error
 			Eventually(func() error {
-				resp, err = httpClient.Get("http://localhost:8091/health")
+				resp, err = httpClient.Get("http://localhost:30281/readyz")
 				return err
 			}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
 			defer func() {

@@ -149,14 +149,19 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 		// MANDATORY: Verify Data Storage is running
 		// Per TESTING_GUIDELINES.md: Tests MUST FAIL if infrastructure unavailable
-		healthResp, err := http.Get(dataStorageURL + "/health")
+		// Issue #753: Health probes moved to dedicated port 8081
+		dsHealthURL := os.Getenv("TEST_DATA_STORAGE_HEALTH_URL")
+		if dsHealthURL == "" {
+			dsHealthURL = "http://127.0.0.1:28091"
+		}
+		healthResp, err := http.Get(dsHealthURL + "/readyz")
 		if err != nil {
 			Fail(fmt.Sprintf(
 				"REQUIRED: Data Storage not available at %s\n"+
 					"  Per DD-AUDIT-003: Gateway MUST have audit capability\n"+
 					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n\n"+
 					"  Start with: podman-compose -f test/infrastructure/podman-compose.test.yml up -d\n\n"+
-					"  Error: %v", dataStorageURL, err))
+					"  Error: %v", dsHealthURL, err))
 		}
 		defer func() { _ = healthResp.Body.Close() }()
 		if healthResp.StatusCode != http.StatusOK {
@@ -165,7 +170,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 					"  Status: %d\n"+
 					"  Expected: 200 OK\n\n"+
 					"  Check Data Storage logs: podman-compose logs datastorage",
-				dataStorageURL, healthResp.StatusCode))
+				dsHealthURL, healthResp.StatusCode))
 		}
 
 		// Setup test namespace

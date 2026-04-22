@@ -14,11 +14,12 @@
 FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
 
 # Auto-detect target architecture from --platform flag
-# Podman/Docker automatically set TARGETARCH when --platform is specified
+# Podman/Docker automatically set TARGETARCH when --platform is specified.
+# When TARGETARCH is empty (no --platform), GOARCH is left unset so Go
+# compiles for the native architecture of the builder container.
 ARG TARGETARCH
 ARG GOOS=linux
-# Use TARGETARCH if set (multi-arch build), otherwise detect from runtime
-ARG GOARCH=${TARGETARCH:-amd64}
+ARG GOARCH=${TARGETARCH}
 # Support coverage profiling for E2E tests (E2E_COVERAGE_COLLECTION.md)
 ARG GOFLAGS=""
 ARG APP_VERSION=v1.2.0

@@ -69,7 +69,7 @@ func waitForDataStorageReady(ctx context.Context, namespace, kubeconfigPath stri
 					_, _ = fmt.Fprintf(writer, "  ⏳ Verifying DataStorage HTTP endpoint...\n")
 					httpDeadline := time.Now().Add(2 * time.Minute)
 					for time.Now().Before(httpDeadline) {
-						resp, err := http.Get("http://localhost:8089/health/ready")
+						resp, err := http.Get("http://localhost:28089/readyz")
 						if err == nil && resp.StatusCode == http.StatusOK {
 							_ = resp.Body.Close()
 							_, _ = fmt.Fprintf(writer, "  ✅ DataStorage HTTP endpoint ready\n")

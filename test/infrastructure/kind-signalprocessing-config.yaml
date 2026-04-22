@@ -37,6 +37,9 @@ nodes:
   - containerPort: 30081  # DataStorage NodePort (per DD-TEST-001)
     hostPort: 30081       # Port on host machine (localhost:30081)
     protocol: TCP
+  - containerPort: 30281  # Data Storage health NodePort (Issue #753)
+    hostPort: 30281       # Port on host machine
+    protocol: TCP
   # BR-SP-090: PostgreSQL NodePort for migration testing
   - containerPort: 30432  # PostgreSQL NodePort
     hostPort: 30432       # Port on host machine (localhost:30432)

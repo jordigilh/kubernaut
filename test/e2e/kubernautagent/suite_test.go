@@ -107,9 +107,11 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("⏳ Waiting for Kind NodePort mapping to stabilize...")
 		time.Sleep(5 * time.Second)
 
+		// Issue #753: Health probes moved to dedicated port 8081 (NodePort 30281 → host 28089)
+		dataStorageHealthURL := "http://localhost:28089"
 		logger.Info("⏳ Waiting for Data Storage service to be ready...")
 		Eventually(func() error {
-			resp, err := http.Get(dataStorageURL + "/health/ready")
+			resp, err := http.Get(dataStorageHealthURL + "/readyz")
 			if err != nil {
 				return err
 			}

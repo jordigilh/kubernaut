@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -313,14 +314,18 @@ func deployDataStorageWithConfig(clusterName, kubeconfigPath string, output io.W
 
 	// Build Data Storage image
 	_, _ = fmt.Fprintln(output, "    Building Data Storage image...")
-	buildCmd := exec.Command("podman", "build", "-t", "kubernaut-datastorage:latest",
+	buildCmd := exec.Command("podman", "build",
+		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
+		"-t", "kubernaut-datastorage:latest",
 		"-f", "docker/data-storage.Dockerfile", ".")
 	buildCmd.Dir = projectRoot
 	buildCmd.Stdout = output
 	buildCmd.Stderr = output
 	if err := buildCmd.Run(); err != nil {
 		// Try docker as fallback
-		buildCmd = exec.Command("docker", "build", "-t", "kubernaut-datastorage:latest",
+		buildCmd = exec.Command("docker", "build",
+			"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
+			"-t", "kubernaut-datastorage:latest",
 			"-f", "docker/data-storage.Dockerfile", ".")
 		buildCmd.Dir = projectRoot
 		buildCmd.Stdout = output
@@ -460,14 +465,14 @@ spec:
           readOnly: true
         readinessProbe:
           httpGet:
-            path: /health
-            port: 8080
+            path: /readyz
+            port: 8081
           initialDelaySeconds: 5
           periodSeconds: 5
         livenessProbe:
           httpGet:
-            path: /health
-            port: 8080
+            path: /healthz
+            port: 8081
           initialDelaySeconds: 30
           periodSeconds: 10
       volumes:

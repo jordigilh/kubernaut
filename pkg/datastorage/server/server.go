@@ -455,10 +455,8 @@ func (s *Server) Handler() http.Handler {
 		s.logger.Info("OpenAPI validation middleware enabled")
 	}
 
-	// Health check endpoints (DD-007: Graceful shutdown support)
-	r.Get("/health", s.handleHealth)
-	r.Get("/health/ready", s.handleReadiness)
-	r.Get("/health/live", s.handleLiveness)
+	// Issue #753: Health endpoints moved to dedicated :8081 server.
+	// See health.NewHealthServer in cmd/datastorage/main.go.
 
 	// BR-STORAGE-019: Prometheus metrics endpoint moved to dedicated server (Issue #283)
 	// Metrics are now served on a separate port (default :9090) for standardization.
@@ -615,7 +613,7 @@ func (s *Server) Start() error {
 	}
 
 	if s.httpServer.TLSConfig != nil {
-		s.logger.Info("TLS enabled, starting HTTPS server")
+		s.logger.Info("Server TLS configured", "tls.enabled", true, "tls.certDir", s.tlsCertDir)
 		return s.httpServer.ListenAndServeTLS("", "")
 	}
 	return s.httpServer.ListenAndServe()

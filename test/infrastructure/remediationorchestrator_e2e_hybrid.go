@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	. "github.com/onsi/gomega"
@@ -416,6 +417,7 @@ func BuildROImageWithCoverage(writer io.Writer) error {
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
 	cmd := exec.Command("podman", "build",
 		"--no-cache", // Force fresh build to include latest code changes
+		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
 		"--build-arg", "GOFLAGS=-cover",
 		"-t", "localhost/remediationorchestrator-controller:e2e-coverage",
 		"-f", dockerfilePath,

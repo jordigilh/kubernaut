@@ -164,14 +164,19 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 		// ✅ MANDATORY: Verify Data Storage is running
 		// Per TESTING_GUIDELINES.md: Tests MUST FAIL if infrastructure unavailable (NO Skip())
-		healthResp, err := http.Get(dataStorageURL + "/health")
+		// Issue #753: Health probes moved to dedicated port 8081
+		dsHealthURL := os.Getenv("TEST_DATA_STORAGE_HEALTH_URL")
+		if dsHealthURL == "" {
+			dsHealthURL = "http://127.0.0.1:28091"
+		}
+		healthResp, err := http.Get(dsHealthURL + "/readyz")
 		if err != nil {
 			Fail(fmt.Sprintf(
 				"REQUIRED: Data Storage not available at %s\n"+
 					"  Per DD-AUDIT-003: Gateway MUST have audit capability\n"+
 					"  Per BR-AUDIT-005: RR reconstruction requires audit trail\n\n"+
 					"  Start infrastructure: make test-integration-gateway\n\n"+
-					"  Error: %v", dataStorageURL, err))
+					"  Error: %v", dsHealthURL, err))
 		}
 		defer func() { _ = healthResp.Body.Close() }()
 		if healthResp.StatusCode != http.StatusOK {

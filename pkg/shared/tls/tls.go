@@ -108,25 +108,23 @@ func LoadCACert(caFile string) (*x509.CertPool, error) {
 }
 
 // Singleton CAReloader for process-wide client TLS.
-// Initialized lazily by DefaultBaseTransport via sync.Once.
+// Issue #753: Replaced sync.Once with mutex-guarded lazy init that retries
+// on error -- prevents permanent failure if CA file isn't yet mounted.
 var (
-	caReloaderOnce     sync.Once
 	caReloaderInstance *CAReloader
-	caReloaderErr      error
-
-	// mu protects singleton reset (testing only)
-	singletonMu sync.Mutex
+	singletonMu       sync.Mutex
 )
 
 // DefaultBaseTransport returns an http.RoundTripper pre-configured with the CA
 // certificate at $TLS_CA_FILE (if set). When TLS_CA_FILE points to a valid CA
-// file, a process-level CAReloader is initialized (once) and returned as the
+// file, a process-level CAReloader is initialized and returned as the
 // RoundTripper — this enables hot-reload when the CA file is rotated.
 //
 // When TLS_CA_FILE is unset or empty, returns a plain http.Transport.
 //
-// Issue #756: Changed return type from *http.Transport to http.RoundTripper to
-// accommodate CAReloader which implements RoundTripper with hot-reload.
+// Issue #753: Uses retry-capable lazy init instead of sync.Once. If the CA
+// file is not yet available (e.g., Secret not mounted), subsequent calls will
+// retry instead of failing permanently.
 func DefaultBaseTransport() (http.RoundTripper, error) {
 	caFile := os.Getenv("TLS_CA_FILE")
 	if caFile == "" {
@@ -140,13 +138,16 @@ func DefaultBaseTransport() (http.RoundTripper, error) {
 	singletonMu.Lock()
 	defer singletonMu.Unlock()
 
-	caReloaderOnce.Do(func() {
-		caReloaderInstance, caReloaderErr = NewCAReloaderFromFile(caFile)
-	})
-	if caReloaderErr != nil {
-		return nil, caReloaderErr
+	if caReloaderInstance != nil {
+		return caReloaderInstance, nil
 	}
-	return caReloaderInstance, nil
+
+	instance, err := NewCAReloaderFromFile(caFile)
+	if err != nil {
+		return nil, err
+	}
+	caReloaderInstance = instance
+	return instance, nil
 }
 
 // ResetDefaultTransportForTesting resets the singleton CAReloader so that
@@ -154,9 +155,7 @@ func DefaultBaseTransport() (http.RoundTripper, error) {
 func ResetDefaultTransportForTesting() {
 	singletonMu.Lock()
 	defer singletonMu.Unlock()
-	caReloaderOnce = sync.Once{}
 	caReloaderInstance = nil
-	caReloaderErr = nil
 }
 
 // StartCAFileWatcher initializes the CA reloader singleton and starts a

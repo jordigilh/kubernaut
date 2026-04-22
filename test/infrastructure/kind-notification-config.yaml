@@ -16,6 +16,9 @@ nodes:
   - containerPort: 30090  # Data Storage NodePort for audit E2E tests
     hostPort: 30090       # Port on host machine (localhost:30090)
     protocol: TCP
+  - containerPort: 30281  # Data Storage health NodePort (Issue #753)
+    hostPort: 30281       # Port on host machine (localhost:30281)
+    protocol: TCP
   # Mount host directory for E2E file delivery validation
   # This allows tests to directly read files written by FileService
   # Note: hostPath is set dynamically by CreateNotificationCluster:

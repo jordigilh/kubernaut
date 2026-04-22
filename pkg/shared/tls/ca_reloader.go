@@ -118,12 +118,10 @@ func (r *CAReloader) CurrentTransport() *http.Transport {
 }
 
 // buildCertPool creates an x509.CertPool from PEM-encoded certificate data.
-// Appends to system cert pool so both system-trusted and custom CAs are honored.
+// Issue #753: Uses a file-only pool (no system roots) to enforce private PKI
+// isolation -- prevents public CAs from verifying internal service certs.
 func buildCertPool(pemData []byte) (*x509.CertPool, error) {
-	pool, err := x509.SystemCertPool()
-	if err != nil {
-		pool = x509.NewCertPool()
-	}
+	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(pemData) {
 		return nil, fmt.Errorf("no valid PEM certificates found in CA data (%d bytes)", len(pemData))
 	}

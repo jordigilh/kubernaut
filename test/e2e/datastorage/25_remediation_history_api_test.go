@@ -59,10 +59,10 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 		targetResource = fmt.Sprintf("default/Deployment/e2e-nginx-%s", testID)
 		currentSpecHash = "sha256:e2e_current_" + testID
 
-		// Verify DS service is ready
+		// Verify DS service is ready (Issue #753: health on dedicated port)
 		httpClient := &http.Client{Timeout: 2 * time.Second}
 		Eventually(func() int {
-			resp, err := httpClient.Get(serviceURL + "/health")
+			resp, err := httpClient.Get(healthURL + "/readyz")
 			if err != nil || resp == nil {
 				return 0
 			}

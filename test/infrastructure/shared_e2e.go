@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -336,6 +337,7 @@ func BuildKubernautAgentImage(ctx context.Context, serviceName string, writer io
 	_, _ = fmt.Fprintf(writer, "   🔨 Building Kubernaut Agent image (tag: %s)...\n", imageTag)
 	buildCmd := exec.CommandContext(ctx, "podman", "build",
 		"--no-cache",
+		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
 		"-t", localImageName,
 		"--force-rm=false",
 		"-f", filepath.Join(projectRoot, "docker", "kubernautagent.Dockerfile"),

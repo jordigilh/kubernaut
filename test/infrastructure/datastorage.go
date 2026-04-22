@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -518,6 +519,12 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintf(writer, "🔐 Deploying DataStorage service RBAC for auth middleware (DD-AUTH-014)...\n")
 	if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy service RBAC: %w", err)
+	}
+
+	// Issue #753: Generate inter-service TLS certificates (must exist before DS deployment)
+	_, _ = fmt.Fprintln(writer, "🔐 Issue #753: Generating inter-service TLS certificates...")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -1162,8 +1169,11 @@ data:
       port: 8080
       host: "0.0.0.0"
       metricsPort: 9090
+      healthPort: 8081
       readTimeout: 30s
       writeTimeout: 30s
+      tls:
+        certDir: /etc/tls
     database:
       host: postgresql.%[1]s.svc.cluster.local
       port: 5432
@@ -1245,10 +1255,13 @@ metadata:
   name: data-storage-service
   labels:
     app: datastorage
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
 spec:
   type: NodePort
   ports:
-  - name: http
+  - name: https
     port: 8080
     targetPort: 8080
     nodePort: %[2]d
@@ -1257,6 +1270,11 @@ spec:
     port: 9090
     targetPort: 9090
     nodePort: 30181
+    protocol: TCP
+  - name: health
+    port: 8081
+    targetPort: 8081
+    nodePort: 30281
     protocol: TCP
   selector:
     app: datastorage
@@ -1289,10 +1307,12 @@ spec:
         image: %[4]s
         imagePullPolicy: %[5]s
         ports:
-        - name: http
+        - name: https
           containerPort: 8080
         - name: metrics
           containerPort: 9090
+        - name: health
+          containerPort: 8081
         env:
         - name: CONFIG_PATH
           value: /etc/datastorage/config.yaml
@@ -1304,6 +1324,9 @@ spec:
           readOnly: true
         - name: secrets
           mountPath: /etc/datastorage/secrets
+          readOnly: true
+        - name: tls-certs
+          mountPath: /etc/tls
           readOnly: true%[7]s
         resources:
           requests:
@@ -1314,16 +1337,16 @@ spec:
             cpu: 500m
         readinessProbe:
           httpGet:
-            path: /health
-            port: 8080
+            path: /readyz
+            port: 8081
           initialDelaySeconds: 30
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
         livenessProbe:
           httpGet:
-            path: /health
-            port: 8080
+            path: /healthz
+            port: 8081
           initialDelaySeconds: 45
           periodSeconds: 15
           timeoutSeconds: 10
@@ -1332,6 +1355,10 @@ spec:
       - name: config
         configMap:
           name: datastorage-config
+      - name: tls-certs
+        secret:
+          secretName: datastorage-tls
+          optional: true
       - name: secrets
         projected:
           sources:
@@ -1459,6 +1486,7 @@ func buildDataStorageImage(writer io.Writer) error {
 	buildArgs := []string{
 		"build",
 		"--no-cache",                                                 // Force fresh build to include latest code changes
+		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),      // Native arch — avoid cross-compile penalty
 		"-t", "localhost/kubernaut-datastorage:e2e-test-datastorage", // DD-TEST-001: service-specific tag
 		"-f", "docker/data-storage.Dockerfile",
 	}
@@ -1549,6 +1577,7 @@ type DataStorageInfrastructure struct {
 	ServiceContainer  string
 	ConfigDir         string
 	ServiceURL        string
+	HealthURL         string // Issue #753: dedicated health probe URL
 	DB                *sql.DB
 	RedisClient       *redis.Client
 }
@@ -1558,6 +1587,7 @@ type DataStorageConfig struct {
 	PostgresPort string // Default: "5433"
 	RedisPort    string // Default: "6380"
 	ServicePort  string // Default: "8085"
+	HealthPort   string // Default: "18085" (Issue #753)
 	DBName       string // Default: "action_history"
 	DBUser       string // Default: "slm_user"
 	DBPassword   string // Default: "test_password"
@@ -1569,6 +1599,7 @@ func DefaultDataStorageConfig() *DataStorageConfig {
 		PostgresPort: "5433",
 		RedisPort:    "6380",
 		ServicePort:  "8085",
+		HealthPort:   "18085",
 		DBName:       "action_history",
 		DBUser:       "slm_user",
 		DBPassword:   "test_password",
@@ -1587,6 +1618,7 @@ func StartDataStorageInfrastructure(cfg *DataStorageConfig, writer io.Writer) (*
 		RedisContainer:    "datastorage-redis-test",
 		ServiceContainer:  "datastorage-service-test",
 		ServiceURL:        fmt.Sprintf("http://localhost:%s", cfg.ServicePort),
+		HealthURL:         fmt.Sprintf("http://localhost:%s", cfg.HealthPort),
 	}
 
 	_, _ = fmt.Fprintln(writer, "🔧 Setting up Data Storage Service infrastructure (ADR-016: Podman)")
@@ -1897,11 +1929,10 @@ func buildDataStorageService(writer io.Writer) error {
 	// Cleanup any existing image
 	_ = exec.Command("podman", "rmi", "-f", "data-storage:test").Run()
 
-	// Build image for ARM64 (local testing on Apple Silicon)
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
 	buildCmd := exec.Command("podman", "build",
 		"--no-cache", // Force fresh build to include latest code changes
-		"--build-arg", "GOARCH=arm64",
+		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
 		"-t", "data-storage:test",
 		"-f", "docker/data-storage.Dockerfile",
 		".")
@@ -1935,6 +1966,7 @@ func startDataStorageService(infra *DataStorageInfrastructure, cfg *DataStorageC
 	startCmd := exec.Command("podman", "run", "-d",
 		"--name", infra.ServiceContainer,
 		"-p", fmt.Sprintf("%s:8080", cfg.ServicePort),
+		"-p", fmt.Sprintf("%s:8081", cfg.HealthPort),
 		"-v", configMount,
 		"-v", secretsMount,
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
@@ -1956,7 +1988,7 @@ func waitForServiceReady(infra *DataStorageInfrastructure, writer io.Writer) err
 	var lastError error
 
 	Eventually(func() int {
-		resp, err := http.Get(infra.ServiceURL + "/health")
+		resp, err := http.Get(infra.HealthURL + "/readyz")
 		if err != nil {
 			lastError = err
 			lastStatusCode = 0
@@ -2060,7 +2092,8 @@ func buildDataStorageImageWithTag(imageTag string, writer io.Writer) (string, er
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
 	buildArgs := []string{
 		"build",
-		"--no-cache",   // Force fresh build to include latest code changes
+		"--no-cache",                                            // Force fresh build to include latest code changes
+		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH), // Native arch — avoid cross-compile penalty
 		"-t", imageTag, // Use dynamic tag for parallel isolation
 		"-f", "docker/data-storage.Dockerfile",
 	}

@@ -61,10 +61,10 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 		// Use shared DataStorage deployment
 		serviceURL = dataStorageURL
 
-		// Ensure service is ready before each test (health endpoint returns text/plain, use raw HTTP)
+		// Ensure service is ready before each test (Issue #753: health on dedicated port)
 		httpClient := &http.Client{Timeout: 2 * time.Second}
 		Eventually(func() int {
-			resp, err := httpClient.Get(serviceURL + "/health")
+			resp, err := httpClient.Get(healthURL + "/readyz")
 			if err != nil || resp == nil {
 				return 0
 			}
