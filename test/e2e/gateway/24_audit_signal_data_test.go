@@ -128,7 +128,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "http://127.0.0.1:18091" // Fallback for manual testing - Use 127.0.0.1 for CI/CD IPv4 compatibility
+			dataStorageURL = "https://127.0.0.1:18091" // Issue #785: HTTPS (Kind hostPort maps to NodePort 30081)
 		}
 
 		// DD-AUTH-014: Create E2E ServiceAccount with DataStorage access permissions

@@ -94,7 +94,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		// Setup OpenAPI audit client for Data Storage with authentication
 		// Per SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: MUST use OpenAPI client for audit tests
 		// DD-AUTH-014: Client must use ServiceAccount token for middleware authentication
-		dataStorageURL := "http://127.0.0.1:18091" // Kind hostPort maps to NodePort 30081 - Use 127.0.0.1 for CI/CD IPv4 compatibility
+		dataStorageURL := "https://127.0.0.1:18091" // Issue #785: HTTPS (Kind hostPort maps to NodePort 30081)
 		saTransport := testauth.NewServiceAccountTransport(e2eToken)
 		httpClient = &http.Client{
 			Timeout:   20 * time.Second,
@@ -161,7 +161,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		})
 
 		// Use the package-level gatewayURL variable (set in gateway_e2e_suite_test.go)
-		// gatewayURL = "http://127.0.0.1:8080" (extraPortMapping hostPort - Use 127.0.0.1 for CI/CD IPv4 compatibility)
+		// gatewayURL = "https://127.0.0.1:8080" (Issue #785: HTTPS via extraPortMapping hostPort)
 		// BR-SCOPE-002: Retry to handle scope checker informer cache propagation delay.
 		// New test namespaces may not be visible in the Gateway's informer cache immediately,
 		// resulting in HTTP 200 (scope rejection) until the cache syncs.
