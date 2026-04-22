@@ -161,7 +161,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		})
 
 		// Use the package-level gatewayURL variable (set in gateway_e2e_suite_test.go)
-		// gatewayURL = "https://127.0.0.1:8080" (Issue #785: HTTPS via extraPortMapping hostPort)
+		// gatewayURL = "http://127.0.0.1:8080" (extraPortMapping hostPort maps to NodePort 30080)
 		// BR-SCOPE-002: Retry to handle scope checker informer cache propagation delay.
 		// New test namespaces may not be visible in the Gateway's informer cache immediately,
 		// resulting in HTTP 200 (scope rejection) until the cache syncs.

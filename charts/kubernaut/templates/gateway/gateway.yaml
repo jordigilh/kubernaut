@@ -18,8 +18,6 @@ data:
       writeTimeout: {{ .Values.gateway.config.server.writeTimeout | default "30s" }}
       idleTimeout: 120s
       k8sRequestTimeout: {{ .Values.gateway.config.server.k8sRequestTimeout | default "15s" }}
-      tls:
-        certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
     middleware:
       trustedProxyCIDRs:
       {{- range .Values.gateway.config.middleware.trustedProxyCIDRs }}
@@ -171,9 +169,6 @@ spec:
             - name: config
               mountPath: /etc/gateway
               readOnly: true
-            - name: tls-certs
-              mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
-              readOnly: true
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
@@ -199,10 +194,6 @@ spec:
         - name: config
           configMap:
             name: gateway-config
-        - name: tls-certs
-          secret:
-            secretName: gateway-tls
-            optional: true
         - name: tls-ca
           configMap:
             name: inter-service-ca

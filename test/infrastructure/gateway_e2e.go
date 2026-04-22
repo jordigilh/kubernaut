@@ -380,7 +380,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Gateway E2E infrastructure ready (HYBRID PARALLEL MODE)!")
-	_, _ = fmt.Fprintf(writer, "  • Gateway: https://localhost:%d (TLS)\n", GatewayE2EHostPort)
+	_, _ = fmt.Fprintf(writer, "  • Gateway: http://localhost:%d\n", GatewayE2EHostPort)
 	_, _ = fmt.Fprintf(writer, "  • Gateway Health: http://localhost:%d (plain HTTP)\n", GatewayE2EHealthPort)
 	_, _ = fmt.Fprintf(writer, "  • Gateway Metrics: http://localhost:%d/metrics (plain HTTP)\n", GatewayE2EMetricsPort)
 	_, _ = fmt.Fprintf(writer, "  • DataStorage: https://localhost:%d (TLS, NodePort %d)\n", DataStorageE2EHostPort, GatewayDataStoragePort)
@@ -654,8 +654,6 @@ data:
       readTimeout: 30s
       writeTimeout: 30s
       idleTimeout: 120s
-      tls:
-        certDir: /etc/tls
     datastorage:
       url: "https://data-storage-service.kubernaut-system.svc.cluster.local:8080"
       timeout: 10s
@@ -730,9 +728,6 @@ spec:
             - name: config
               mountPath: /etc/gateway
               readOnly: true
-            - name: tls-certs
-              mountPath: /etc/tls
-              readOnly: true
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true%s
@@ -770,10 +765,6 @@ spec:
         - name: config
           configMap:
             name: gateway-config
-        - name: tls-certs
-          secret:
-            secretName: gateway-tls
-            optional: true
         - name: tls-ca
           configMap:
             name: inter-service-ca%s

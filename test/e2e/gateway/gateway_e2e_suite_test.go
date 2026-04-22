@@ -213,7 +213,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 
 		// Set cluster configuration (shared across all processes)
 		clusterName = "gateway-e2e"
-		gatewayURL = "https://127.0.0.1:8080"        // Issue #785: HTTPS (Kind extraPortMapping hostPort maps to NodePort 30080)
+		gatewayURL = "http://127.0.0.1:8080"         // Gateway serves plain HTTP (TLS opt-in via config)
 		gatewayHealthURL = "http://127.0.0.1:28080"  // Issue #753: dedicated health port (maps to NodePort 30180)
 		gatewayMetricsURL = "http://127.0.0.1:9090"  // Issue #753: dedicated metrics port (maps to NodePort 30090)
 		gatewayNamespace = "kubernaut-system"
