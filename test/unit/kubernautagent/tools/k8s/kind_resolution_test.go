@@ -533,21 +533,26 @@ var _ = Describe("Kubernaut Agent K8s Kind Resolution — #433 Phase 2", func() 
 			var parsed map[string]interface{}
 			Expect(json.Unmarshal(schema, &parsed)).To(Succeed())
 			required, ok := parsed["required"].([]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "required" in kubernetes_count schema to be a []interface{}`)
 			Expect(required).To(ContainElement("kind"))
 			Expect(required).To(ContainElement("jq_expr"))
 		})
 	})
 
-	Describe("UT-KA-433-600: kubectl_logs_all_containers_grep is registered", func() {
-		It("should be a registered tool that accepts pattern parameter", func() {
+	Describe("UT-KA-433-600: kubectl_logs_all_containers_grep is registered and executes without error", func() {
+		It("should be registered, accept pattern parameter, and execute without error", func() {
 			tool := findToolByName(reg, "kubectl_logs_all_containers_grep")
-			Expect(tool).NotTo(BeNil(), "tool must be registered")
-			Expect(tool.Description()).NotTo(BeEmpty())
+			Expect(tool).NotTo(BeNil(), "tool must be registered in the registry")
+			Expect(tool.Description()).NotTo(BeEmpty(),
+				"tool description must be non-empty for LLM tool discovery")
+
+			schema := tool.Parameters()
+			Expect(schema).NotTo(BeNil(), "tool must expose a JSON schema")
 
 			_, err := reg.Execute(context.Background(), "kubectl_logs_all_containers_grep",
 				json.RawMessage(`{"name":"api-pod","namespace":"default","pattern":"error"}`))
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(),
+				"kubectl_logs_all_containers_grep should execute without error against fake K8s client")
 		})
 	})
 
