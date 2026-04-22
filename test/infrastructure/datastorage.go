@@ -1576,6 +1576,7 @@ type DataStorageInfrastructure struct {
 	ServiceContainer  string
 	ConfigDir         string
 	ServiceURL        string
+	HealthURL         string // Issue #753: dedicated health probe URL
 	DB                *sql.DB
 	RedisClient       *redis.Client
 }
@@ -1585,6 +1586,7 @@ type DataStorageConfig struct {
 	PostgresPort string // Default: "5433"
 	RedisPort    string // Default: "6380"
 	ServicePort  string // Default: "8085"
+	HealthPort   string // Default: "18085" (Issue #753)
 	DBName       string // Default: "action_history"
 	DBUser       string // Default: "slm_user"
 	DBPassword   string // Default: "test_password"
@@ -1596,6 +1598,7 @@ func DefaultDataStorageConfig() *DataStorageConfig {
 		PostgresPort: "5433",
 		RedisPort:    "6380",
 		ServicePort:  "8085",
+		HealthPort:   "18085",
 		DBName:       "action_history",
 		DBUser:       "slm_user",
 		DBPassword:   "test_password",
@@ -1614,6 +1617,7 @@ func StartDataStorageInfrastructure(cfg *DataStorageConfig, writer io.Writer) (*
 		RedisContainer:    "datastorage-redis-test",
 		ServiceContainer:  "datastorage-service-test",
 		ServiceURL:        fmt.Sprintf("http://localhost:%s", cfg.ServicePort),
+		HealthURL:         fmt.Sprintf("http://localhost:%s", cfg.HealthPort),
 	}
 
 	_, _ = fmt.Fprintln(writer, "🔧 Setting up Data Storage Service infrastructure (ADR-016: Podman)")
@@ -1961,6 +1965,7 @@ func startDataStorageService(infra *DataStorageInfrastructure, cfg *DataStorageC
 	startCmd := exec.Command("podman", "run", "-d",
 		"--name", infra.ServiceContainer,
 		"-p", fmt.Sprintf("%s:8080", cfg.ServicePort),
+		"-p", fmt.Sprintf("%s:8081", cfg.HealthPort),
 		"-v", configMount,
 		"-v", secretsMount,
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
@@ -1982,7 +1987,7 @@ func waitForServiceReady(infra *DataStorageInfrastructure, writer io.Writer) err
 	var lastError error
 
 	Eventually(func() int {
-		resp, err := http.Get(infra.ServiceURL + "/health")
+		resp, err := http.Get(infra.HealthURL + "/readyz")
 		if err != nil {
 			lastError = err
 			lastStatusCode = 0

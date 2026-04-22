@@ -465,14 +465,14 @@ spec:
           readOnly: true
         readinessProbe:
           httpGet:
-            path: /health
-            port: 8080
+            path: /readyz
+            port: 8081
           initialDelaySeconds: 5
           periodSeconds: 5
         livenessProbe:
           httpGet:
-            path: /health
-            port: 8080
+            path: /healthz
+            port: 8081
           initialDelaySeconds: 30
           periodSeconds: 10
       volumes:

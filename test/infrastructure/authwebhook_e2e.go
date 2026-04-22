@@ -1142,15 +1142,15 @@ spec:
             cpu: 500m
         readinessProbe:
           httpGet:
-            path: /health/ready
-            port: 8080
+            path: /readyz
+            port: 8081
           initialDelaySeconds: 5
           periodSeconds: 5
           timeoutSeconds: 3
         livenessProbe:
           httpGet:
-            path: /health/live
-            port: 8080
+            path: /healthz
+            port: 8081
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5

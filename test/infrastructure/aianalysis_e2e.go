@@ -252,11 +252,12 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// Wait for DataStorage to be ready (use port-forward)
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DataStorage to be ready...")
 	dataStorageURL := fmt.Sprintf("http://localhost:%d", 38080)
+	dataStorageHealthURL := fmt.Sprintf("http://localhost:%d", 38081)
 
-	// Start port-forward to DataStorage
+	// Start port-forward to DataStorage API and health ports
 	// Service name is "data-storage-service" per DD-AUTH-011 (matches production)
 	portForwardCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"-n", namespace, "port-forward", "svc/data-storage-service", "38080:8080")
+		"-n", namespace, "port-forward", "svc/data-storage-service", "38080:8080", "38081:8081")
 	if err := portForwardCmd.Start(); err != nil {
 		return fmt.Errorf("failed to start DataStorage port-forward: %w", err)
 	}
@@ -271,7 +272,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	ready := false
 	for i := 0; i < 30; i++ { // 30 seconds max
 		time.Sleep(1 * time.Second)
-		resp, err := http.Get(fmt.Sprintf("%s/health", dataStorageURL))
+		resp, err := http.Get(fmt.Sprintf("%s/readyz", dataStorageHealthURL))
 		if err == nil && resp.StatusCode == 200 {
 			_ = resp.Body.Close() // Explicitly ignore - health check cleanup
 			ready = true

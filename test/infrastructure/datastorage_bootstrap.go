@@ -294,9 +294,10 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 // - *DSBootstrapInfra: Infrastructure references for cleanup
 // - error: Any errors during infrastructure startup
 func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfra, error) {
-	// Default HealthPort to DataStoragePort+1000 if not explicitly set
+	// Default HealthPort to DataStoragePort+10000 if not explicitly set.
+	// Offset 10000 avoids collision with MetricsPort (which is typically DataStoragePort+1000).
 	if cfg.HealthPort == 0 {
-		cfg.HealthPort = cfg.DataStoragePort + 1000
+		cfg.HealthPort = cfg.DataStoragePort + 10000
 	}
 
 	// Build infrastructure references
