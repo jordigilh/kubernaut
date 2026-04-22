@@ -139,6 +139,7 @@ type Config struct {
 	Pipeline      Pipeline
 	ModelName     string
 	ScopeResolver ScopeResolver
+	Swappable     *llm.SwappableClient
 }
 
 // Investigator orchestrates the two-invocation architecture:
@@ -157,6 +158,7 @@ type Investigator struct {
 	pipeline      Pipeline
 	modelName     string
 	scopeResolver ScopeResolver
+	swappable     *llm.SwappableClient
 }
 
 // New creates an Investigator from the given configuration.
@@ -180,6 +182,7 @@ func New(cfg Config) *Investigator {
 		pipeline:      pipeline,
 		modelName:     cfg.ModelName,
 		scopeResolver: cfg.ScopeResolver,
+		swappable:     cfg.Swappable,
 	}
 }
 
@@ -188,6 +191,16 @@ func New(cfg Config) *Investigator {
 // so that DataStorage queries by remediation_id return the full investigation trail.
 func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
 	inv.pipeline.AnomalyDetector.Reset()
+
+	// #783: Pin client and model name for the duration of this investigation.
+	// Subsequent hot-reload swaps do not affect an in-flight investigation.
+	client := inv.client
+	modelName := inv.modelName
+	if inv.swappable != nil {
+		pinned := inv.swappable.Snapshot()
+		client = llm.NewInstrumentedClient(pinned)
+		modelName = inv.swappable.ModelName()
+	}
 
 	correlationID := signal.RemediationID
 	enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
@@ -198,7 +211,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	promptEnrichment := toPromptEnrichment(enrichData)
 	tokens := &TokenAccumulator{}
 
-	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, tokens, correlationID)
+	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, tokens, correlationID, client, modelName)
 	if err != nil {
 		return nil, fmt.Errorf("RCA invocation: %w", err)
 	}
@@ -263,7 +276,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	p1Ctx := buildPhase1Context(rcaResult)
 
-	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, tokens, correlationID)
+	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, tokens, correlationID, client, modelName)
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
 	}
@@ -330,7 +343,7 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 	return result
 }
 
-func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string) (*katypes.InvestigationResult, error) {
+func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (*katypes.InvestigationResult, error) {
 	systemPrompt, err := inv.builder.RenderInvestigation(signalToPrompt(signal), enrichData)
 	if err != nil {
 		return nil, fmt.Errorf("rendering investigation prompt: %w", err)
@@ -341,7 +354,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		{Role: "user", Content: fmt.Sprintf("Investigate: %s %s in %s — %s", signal.Severity, signal.Name, signal.Namespace, signal.Message)},
 	}
 
-	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, tokens, correlationID)
+	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, tokens, correlationID, client, modelName)
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +398,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	return result, nil
 }
 
-func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string) (*katypes.InvestigationResult, error) {
+func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (*katypes.InvestigationResult, error) {
 	// Attach signal context so workflow discovery tools (list_available_actions,
 	// list_workflows) can extract severity/component/environment/priority from
 	// ctx instead of using hardcoded values. Fix for #779.
@@ -406,7 +419,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		{Role: "user", Content: fmt.Sprintf("RCA findings: %s\n\nSelect the appropriate remediation workflow.", rcaSummary)},
 	}
 
-	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID)
+	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID, client, modelName)
 	if err != nil {
 		return nil, err
 	}
@@ -443,7 +456,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 				slog.String("correlation_id", correlationID))
 			content = r.Content
 		} else {
-			retryResult := inv.retryWorkflowSubmit(ctx, r.Content, messages, rcaSummary, tokens, correlationID)
+			retryResult := inv.retryWorkflowSubmit(ctx, r.Content, messages, rcaSummary, tokens, correlationID, client, modelName)
 			if retryResult != nil {
 				return retryResult, nil
 			}
@@ -460,8 +473,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
-		// Try parse-level retry for malformed JSON too
-		retryResult := inv.retryWorkflowSubmit(ctx, content, messages, rcaSummary, tokens, correlationID)
+		retryResult := inv.retryWorkflowSubmit(ctx, content, messages, rcaSummary, tokens, correlationID, client, modelName)
 		if retryResult != nil {
 			return retryResult, nil
 		}
@@ -500,7 +512,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			messages = append(messages, llm.Message{Role: "assistant", Content: content})
 			messages = append(messages, llm.Message{Role: "user", Content: correctionMsg})
 
-			corrLoopRes, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID)
+			corrLoopRes, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID, client, modelName)
 			if corrErr != nil {
 				return nil, corrErr
 			}
@@ -550,7 +562,7 @@ const maxParseRetries = 2
 // Each retry sends a correction message with examples of both submit tools,
 // with only the two submit tools available (prevents re-investigation).
 // Returns non-nil *InvestigationResult on success or nil when retries exhaust.
-func (inv *Investigator) retryWorkflowSubmit(ctx context.Context, lastContent string, history []llm.Message, rcaSummary string, tokens *TokenAccumulator, correlationID string) *katypes.InvestigationResult {
+func (inv *Investigator) retryWorkflowSubmit(ctx context.Context, lastContent string, history []llm.Message, rcaSummary string, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) *katypes.InvestigationResult {
 	submitOnlyTools := []llm.ToolDefinition{
 		{
 			Name:        SubmitResultWithWorkflowToolName,
@@ -593,13 +605,14 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 		retryEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
 		retryEvent.EventAction = audit.ActionLLMRequest
 		retryEvent.EventOutcome = audit.OutcomeSuccess
+		retryEvent.Data["model"] = modelName
 		retryEvent.Data["retry_attempt"] = attempt + 1
 		retryEvent.Data["retry_max"] = maxParseRetries
 		retryEvent.Data["phase"] = string(katypes.PhaseWorkflowDiscovery)
 		retryEvent.Data["retry_reason"] = "parse_level_correction"
 		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.logger)
 
-		resp, err := inv.client.Chat(ctx, llm.ChatRequest{
+		resp, err := client.Chat(ctx, llm.ChatRequest{
 			Messages: retryMessages,
 			Tools:    submitOnlyTools,
 			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.InvestigationResultSchema()},
@@ -678,7 +691,7 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 // execution routed through the registry. correlationID is propagated to
 // all audit events per BR-AUDIT-005 (remediation_id as query key).
 // Returns a sealed LoopResult; callers dispatch via type switch (#760 v2).
-func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator, correlationID string) (LoopResult, error) {
+func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (LoopResult, error) {
 	toolDefs := inv.toolDefinitionsForPhase(phase)
 	loopStart := time.Now()
 
@@ -686,13 +699,13 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		reqEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
 		reqEvent.EventAction = audit.ActionLLMRequest
 		reqEvent.EventOutcome = audit.OutcomeSuccess
-		reqEvent.Data["model"] = inv.modelName
+		reqEvent.Data["model"] = modelName
 		reqEvent.Data["prompt_length"] = totalPromptLength(messages)
 		reqEvent.Data["prompt_preview"] = lastUserMessage(messages, 500)
 		reqEvent.Data["toolsets_enabled"] = toolNames(toolDefs)
 		audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.logger)
 
-		resp, err := inv.client.Chat(ctx, llm.ChatRequest{
+		resp, err := client.Chat(ctx, llm.ChatRequest{
 			Messages: messages,
 			Tools:    toolDefs,
 			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase)},

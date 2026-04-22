@@ -294,4 +294,8 @@ func safeWithGoogleAuth(ctx context.Context, location, project string) (opt opti
 	return opt, nil
 }
 
+// Close is a no-op for the Anthropic SDK client which has no closeable
+// resources. Satisfies llm.Client.
+func (c *Client) Close() error { return nil }
+
 var _ llm.Client = (*Client)(nil)

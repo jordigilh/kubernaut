@@ -37,6 +37,8 @@ func (s *stubClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatRespons
 	return s.resp, s.err
 }
 
+func (s *stubClient) Close() error { return nil }
+
 var _ = Describe("InstrumentedClient — TP-433-PARITY (#433)", func() {
 
 	Describe("UT-KA-433-LM-001: InstrumentedClient delegates to inner client", func() {

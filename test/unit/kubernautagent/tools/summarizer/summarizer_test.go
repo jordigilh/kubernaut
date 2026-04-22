@@ -25,6 +25,8 @@ func (f *fakeLLM) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse
 	}, nil
 }
 
+func (f *fakeLLM) Close() error { return nil }
+
 type stubTool struct {
 	name   string
 	output string

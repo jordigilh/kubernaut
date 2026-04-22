@@ -24,8 +24,13 @@ import (
 // Client abstracts the LLM provider behind a Kubernaut-owned interface.
 // Business logic never imports the underlying framework (LangChainGo, Eino, etc.).
 // Authority: DD-HAPI-019 — Framework Isolation Pattern
+//
+// Close releases resources held by the client (gRPC connections, HTTP idle
+// pools). Callers must call Close when the client is no longer needed.
+// Implementations where no cleanup is required should return nil.
 type Client interface {
 	Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
+	Close() error
 }
 
 // ChatRequest contains the messages and tool definitions for an LLM call.

@@ -44,9 +44,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
-	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
+
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
@@ -143,18 +141,15 @@ func main() {
 
 	slogger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
 
-	var llmClient llm.Client
-	switch cfg.LLM.Provider {
-	case "vertex_ai":
-		llmClient, err = vertexanthropic.New(context.Background(),
-			cfg.LLM.Model, []byte(cfg.LLM.APIKey),
-			cfg.LLM.VertexProject, cfg.LLM.VertexLocation)
-	default:
-		llmClient, err = langchaingo.New(cfg.LLM.Provider, cfg.LLM.Endpoint, cfg.LLM.Model, cfg.LLM.APIKey,
-			buildLLMProviderOptions(cfg)...)
-	}
+	llmClient, err := buildLLMClientFromConfig(context.Background(), cfg)
 	if err != nil {
 		slogger.Error("failed to create LLM client", "provider", cfg.LLM.Provider, "error", err)
+		os.Exit(1)
+	}
+
+	swappable, err := llm.NewSwappableClient(llmClient, cfg.LLM.Model)
+	if err != nil {
+		slogger.Error("failed to create swappable LLM client", "error", err)
 		os.Exit(1)
 	}
 
@@ -178,9 +173,9 @@ func main() {
 	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, slogger)
 	sanitizer := buildSanitizationPipeline(cfg, slogger)
 	anomalyDetector := buildAnomalyDetector(cfg, slogger)
-	sum := buildSummarizer(llmClient, cfg, slogger)
+	sum := buildSummarizer(swappable, cfg, slogger)
 
-	instrumentedLLM := llm.NewInstrumentedClient(llmClient)
+	instrumentedLLM := llm.NewInstrumentedClient(swappable)
 
 	var catalogFetcher investigator.CatalogFetcher
 	if ds != nil {
@@ -201,6 +196,7 @@ func main() {
 		PhaseTools:    phaseTools,
 		Registry:      reg,
 		ModelName:     cfg.LLM.Model,
+		Swappable:     swappable,
 		ScopeResolver: investigator.NewMapperScopeResolver(k8sInfra.mapper),
 		Pipeline: investigator.Pipeline{
 			Sanitizer:         sanitizer,
@@ -225,7 +221,7 @@ func main() {
 	r := chi.NewRouter()
 
 	// Issue #753: /config remains on API port; health, readiness and metrics move to dedicated ports
-	r.Get("/config", configHandler(cfg))
+	r.Get("/config", configHandler(cfg, swappable))
 
 	r.Route("/api/v1", func(r chi.Router) {
 		authMw := newAuthMiddleware(cfg, logrLogger)
@@ -293,6 +289,24 @@ func main() {
 			os.Exit(1)
 		}
 		defer certWatcher.Stop()
+	}
+
+	// Issue #783: Wire FileWatcher for SDK config hot-reload
+	sdkCallback := sdkReloadCallback(configPath, func() *kaconfig.Config { return cfg }, swappable, slogger)
+	sdkWatcher, sdkWatchErr := hotreload.NewFileWatcher(
+		sdkConfigPath,
+		sdkCallback,
+		logr.FromSlogHandler(slogger.Handler()).WithName("sdk-config-reloader"),
+	)
+	if sdkWatchErr != nil {
+		slogger.Warn("SDK config file watcher not started (file may not exist yet)", "error", sdkWatchErr)
+	} else {
+		if err := sdkWatcher.Start(ctx); err != nil {
+			slogger.Warn("SDK config file watcher failed to start", "error", err)
+		} else {
+			defer sdkWatcher.Stop()
+			slogger.Info("SDK config hot-reload enabled (#783)", "path", sdkConfigPath)
+		}
 	}
 
 	// Issue #756: Start CA file watcher for client-side TLS hot-reload
@@ -367,12 +381,16 @@ func readyHandler(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
-func configHandler(cfg *kaconfig.Config) http.HandlerFunc {
+func configHandler(cfg *kaconfig.Config, swappable *llm.SwappableClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
+		model := cfg.LLM.Model
+		if swappable != nil {
+			model = swappable.ModelName()
+		}
 		sanitized := map[string]interface{}{
 			"service":     "kubernaut-agent",
 			"version":     "v1.3",
-			"llm_model":   cfg.LLM.Model,
+			"llm_model":   model,
 			"session_ttl": cfg.Session.TTL.String(),
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -531,63 +549,6 @@ func buildSanitizationPipeline(cfg *kaconfig.Config, logger *slog.Logger) *sanit
 	return sanitization.NewPipeline(stages...)
 }
 
-// buildLLMProviderOptions returns provider-specific LangChainGo options based on config.
-func buildLLMProviderOptions(cfg *kaconfig.Config) []langchaingo.Option {
-	var opts []langchaingo.Option
-	if cfg.LLM.AzureAPIVersion != "" {
-		opts = append(opts, langchaingo.WithAzureAPIVersion(cfg.LLM.AzureAPIVersion))
-	}
-	if cfg.LLM.VertexProject != "" {
-		opts = append(opts, langchaingo.WithVertexProject(cfg.LLM.VertexProject))
-	}
-	if cfg.LLM.VertexLocation != "" {
-		opts = append(opts, langchaingo.WithVertexLocation(cfg.LLM.VertexLocation))
-	}
-	if cfg.LLM.BedrockRegion != "" {
-		opts = append(opts, langchaingo.WithBedrockRegion(cfg.LLM.BedrockRegion))
-	}
-
-	if rt := buildTransportChain(cfg); rt != nil {
-		opts = append(opts, langchaingo.WithHTTPClient(&http.Client{Transport: rt}))
-	}
-	return opts
-}
-
-// buildTransportChain composes the HTTP transport stack for the LLM client.
-// Layers are applied inside-out: the innermost transport (DefaultTransport)
-// handles the actual HTTP call, and outer layers intercept/decorate.
-//
-// GCP providers (vertex, vertex_ai) handle their own auth internally —
-// credentials are passed via the adapter constructor, not through the shared
-// transport chain. This avoids coupling GCP auth with generic transport layers.
-//
-// Chain: StructuredOutputTransport? → AuthHeadersTransport? → OAuth2Transport? → http.DefaultTransport
-//
-// Returns nil when no custom transports are needed (caller uses provider defaults).
-func buildTransportChain(cfg *kaconfig.Config) http.RoundTripper {
-	var base http.RoundTripper = http.DefaultTransport
-	needsCustom := false
-
-	if cfg.LLM.OAuth2.Enabled {
-		base = llmtransport.NewOAuth2ClientCredentialsTransport(cfg.LLM.OAuth2, base)
-		needsCustom = true
-	}
-
-	if len(cfg.LLM.CustomHeaders) > 0 {
-		base = llmtransport.NewAuthHeadersTransport(cfg.LLM.CustomHeaders, base)
-		needsCustom = true
-	}
-
-	if cfg.LLM.StructuredOutput {
-		base = llmtransport.NewStructuredOutputTransport(nil, base)
-		needsCustom = true
-	}
-
-	if !needsCustom {
-		return nil
-	}
-	return base
-}
 
 
 // buildAuditStore creates a BufferedDSAuditStore (DD-AUDIT-002 aligned) when audit
