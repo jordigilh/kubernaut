@@ -386,6 +386,11 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 }
 
 func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string) (*katypes.InvestigationResult, error) {
+	// Attach signal context so workflow discovery tools (list_available_actions,
+	// list_workflows) can extract severity/component/environment/priority from
+	// ctx instead of using hardcoded values. Fix for #779.
+	ctx = katypes.WithSignalContext(ctx, signal)
+
 	systemPrompt, err := inv.builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
 		Signal:     signalToPrompt(signal),
 		RCASummary: rcaSummary,
@@ -1116,6 +1121,9 @@ func detectedLabelsToPromptMap(dl *enrichment.DetectedLabels) map[string]string 
 	}
 	if dl.ResourceQuotaConstrained {
 		m["resourceQuotaConstrained"] = "true"
+	}
+	if len(dl.FailedDetections) > 0 {
+		m["failedDetections"] = strings.Join(dl.FailedDetections, ",")
 	}
 	return m
 }
