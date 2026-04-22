@@ -78,9 +78,11 @@ type DataStorageConfig struct {
 }
 
 type ServerConfig struct {
-	Address string              `yaml:"address"`
-	Port    int                 `yaml:"port"`
-	TLS     sharedtls.TLSConfig `yaml:"tls,omitempty"`
+	Address     string              `yaml:"address"`
+	Port        int                 `yaml:"port"`
+	HealthAddr  string              `yaml:"health_addr"`  // Issue #753: Dedicated health probe port (default ":8081")
+	MetricsAddr string              `yaml:"metrics_addr"` // Issue #753: Dedicated metrics port (default ":9090")
+	TLS         sharedtls.TLSConfig `yaml:"tls,omitempty"`
 }
 
 type SessionConfig struct {
@@ -271,7 +273,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		LLM:          LLMConfig{Provider: "openai"},
 		DataStorage:  DataStorageConfig{SATokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"},
-		Server:       ServerConfig{Address: "0.0.0.0", Port: 8080},
+		Server:       ServerConfig{Address: "0.0.0.0", Port: 8080, HealthAddr: ":8081", MetricsAddr: ":9090"},
 		Session:      SessionConfig{TTL: 30 * time.Minute},
 		Investigator: InvestigatorConfig{MaxTurns: 15},
 		Audit:        AuditConfig{Enabled: true},

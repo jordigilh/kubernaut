@@ -121,6 +121,11 @@ data:
   config.yaml: |
     logging:
       level: "INFO"
+    server:
+      address: "0.0.0.0"
+      port: 8080
+      health_addr: ":8081"
+      metrics_addr: ":9090"
     data_storage:
       url: "{{ include "kubernaut.datastorage.url" . }}"
 {{- if include "kubernaut.agent.tlsEnabled" . }}
@@ -223,7 +228,7 @@ spec:
         app: kubernaut-agent
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
+        prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: kubernaut-agent-sa
@@ -239,7 +244,12 @@ spec:
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.kubernautAgent | nindent 12 }}
           ports:
-            - containerPort: 8080
+            - name: http
+              containerPort: 8080
+            - name: health
+              containerPort: 8081
+            - name: metrics
+              containerPort: 9090
 {{- if or .Values.kubernautAgent.llm.oauth2.enabled (include "kubernaut.interServiceTLS.enabled" .) }}
           env:
 {{- if .Values.kubernautAgent.llm.oauth2.enabled }}
@@ -286,16 +296,16 @@ spec:
             {{- end }}
           livenessProbe:
             httpGet:
-              path: /health
-              port: 8080
+              path: /healthz
+              port: 8081
             initialDelaySeconds: 15
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /ready
-              port: 8080
+              path: /readyz
+              port: 8081
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
@@ -338,8 +348,15 @@ metadata:
 spec:
   type: {{ .Values.kubernautAgent.service.type }}
   ports:
-    - port: 8080
+    - name: http
+      port: 8080
       targetPort: 8080
+    - name: health
+      port: 8081
+      targetPort: 8081
+    - name: metrics
+      port: 9090
+      targetPort: 9090
   selector:
     app: kubernaut-agent
 {{- if and .Values.kubernautAgent.prometheus.enabled .Values.kubernautAgent.prometheus.ocpMonitoringRbac }}

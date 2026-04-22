@@ -55,7 +55,7 @@ var _ = Describe("Observability E2E Tests", func() {
 			// BUSINESS OUTCOME: Operators can scrape Gateway metrics into Prometheus
 			// BUSINESS SCENARIO: Prometheus scrapes /metrics endpoint every 15 seconds
 
-			metricsURL := gatewayURL + "/metrics"
+			metricsURL := gatewayMetricsURL + "/metrics"
 			resp, err := http.Get(metricsURL)
 
 			Expect(err).ToNot(HaveOccurred(), "Metrics endpoint should be accessible")
@@ -79,7 +79,7 @@ var _ = Describe("Observability E2E Tests", func() {
 			// Verify histogram metrics appear after requests
 			// The /metrics request itself should trigger HTTP duration metric
 			Eventually(func() bool {
-				metrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
+				metrics, err := GetPrometheusMetrics(gatewayMetricsURL + "/metrics")
 				if err != nil {
 					return false
 				}
@@ -105,7 +105,7 @@ var _ = Describe("Observability E2E Tests", func() {
 			// BUSINESS SCENARIO: Operator creates Prometheus alert: rate(gateway_signals_received_total[1m]) > 100
 
 			// Get initial metric value
-			initialMetrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
+			initialMetrics, err := GetPrometheusMetrics(gatewayMetricsURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			initialCount := GetMetricSum(initialMetrics, "gateway_signals_received_total")
 
@@ -127,7 +127,7 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Wait for metrics to update using Eventually
 			Eventually(func() float64 {
-				metrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
+				metrics, err := GetPrometheusMetrics(gatewayMetricsURL + "/metrics")
 				if err != nil {
 					return 0
 				}
@@ -192,7 +192,7 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Wait for metrics to update using Eventually
 			Eventually(func() float64 {
-				metrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
+				metrics, err := GetPrometheusMetrics(gatewayMetricsURL + "/metrics")
 				if err != nil {
 					return 0
 				}
@@ -217,7 +217,7 @@ var _ = Describe("Observability E2E Tests", func() {
 			// BUSINESS SCENARIO: SLO requires 99.9% CRD creation success rate
 
 			// Get initial metric value
-			initialMetrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
+			initialMetrics, err := GetPrometheusMetrics(gatewayMetricsURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			initialCount := GetMetricSum(initialMetrics, "gateway_crds_created_total")
 
@@ -240,7 +240,7 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Wait for metrics to update using Eventually
 			Eventually(func() float64 {
-				metrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
+				metrics, err := GetPrometheusMetrics(gatewayMetricsURL + "/metrics")
 				if err != nil {
 					return 0
 				}
@@ -293,7 +293,7 @@ var _ = Describe("Observability E2E Tests", func() {
 			var metrics PrometheusMetrics
 			Eventually(func() bool {
 				var err error
-				metrics, err = GetPrometheusMetrics(gatewayURL + "/metrics")
+				metrics, err = GetPrometheusMetrics(gatewayMetricsURL + "/metrics")
 				if err != nil {
 					return false
 				}
@@ -364,7 +364,7 @@ var _ = Describe("Observability E2E Tests", func() {
 			var metrics PrometheusMetrics
 			Eventually(func() bool {
 				var err error
-				metrics, err = GetPrometheusMetrics(gatewayURL + "/metrics")
+				metrics, err = GetPrometheusMetrics(gatewayMetricsURL + "/metrics")
 				if err != nil {
 					GinkgoWriter.Printf("⚠️ Metrics endpoint error: %v\n", err)
 					return false
@@ -401,7 +401,7 @@ var _ = Describe("Observability E2E Tests", func() {
 			}
 
 			// Step 4: Verify histogram structure
-			metrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
+			metrics, err := GetPrometheusMetrics(gatewayMetricsURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred(), "Should fetch metrics after latency tests")
 
 			// Histograms expose _count, _sum, and _bucket metrics
@@ -437,7 +437,7 @@ var _ = Describe("Observability E2E Tests", func() {
 				"Signal webhook should create CRD")
 
 			// Also query health endpoint
-			healthResp, err := http.Get(gatewayURL + "/health")
+			healthResp, err := http.Get(gatewayHealthURL + "/healthz")
 			Expect(err).ToNot(HaveOccurred(), "Health endpoint should be accessible")
 			Expect(healthResp.StatusCode).To(Equal(http.StatusOK), "Health endpoint should return 200")
 
@@ -445,7 +445,7 @@ var _ = Describe("Observability E2E Tests", func() {
 			var metrics PrometheusMetrics
 			Eventually(func() bool {
 				var err error
-				metrics, err = GetPrometheusMetrics(gatewayURL + "/metrics")
+				metrics, err = GetPrometheusMetrics(gatewayMetricsURL + "/metrics")
 				if err != nil {
 					return false
 				}
@@ -494,16 +494,15 @@ var _ = Describe("Observability E2E Tests", func() {
 	// BR-110: Health Endpoints
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-	Context("BR-110: Health Endpoints", func() {
-		It("should return healthy status from /health liveness endpoint", func() {
+	Context("BR-110: Health Endpoints (Issue #753: dedicated port)", func() {
+		It("should return healthy status from /healthz liveness endpoint", func() {
 			// BUSINESS OUTCOME: Kubernetes can detect unhealthy Gateway pods
-			// BUSINESS SCENARIO: Kubernetes liveness probe checks /health every 10 seconds
+			// Issue #753: Health probes on dedicated port 8081
 
-			resp, err := http.Get(gatewayURL + "/health")
+			resp, err := http.Get(gatewayHealthURL + "/healthz")
 			Expect(err).ToNot(HaveOccurred(), "Health endpoint should be accessible")
 			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Health endpoint should return 200 OK")
 
-			// Parse response body
 			var healthResp map[string]interface{}
 			err = json.NewDecoder(resp.Body).Decode(&healthResp)
 			_ = resp.Body.Close()
@@ -511,48 +510,22 @@ var _ = Describe("Observability E2E Tests", func() {
 			Expect(err).ToNot(HaveOccurred(), "Health response should be valid JSON")
 			Expect(healthResp["status"]).To(Equal("healthy"), "Status should be 'healthy'")
 			Expect(healthResp["timestamp"]).ToNot(BeNil(), "Timestamp should be present")
-
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Kubernetes can detect Gateway liveness
-			// ✅ Unhealthy pods are restarted automatically
-			// ✅ Health check responds quickly (<100ms)
 		})
 
-		It("should return ready status from /ready readiness endpoint", func() {
+		It("should return ready status from /readyz readiness endpoint", func() {
 			// BUSINESS OUTCOME: Kubernetes can detect when Gateway is ready to serve traffic
-			// BUSINESS SCENARIO: Kubernetes readiness probe checks /ready before routing traffic
+			// Issue #753: Readiness probes on dedicated port 8081
 
-			resp, err := http.Get(gatewayURL + "/ready")
+			resp, err := http.Get(gatewayHealthURL + "/readyz")
 			Expect(err).ToNot(HaveOccurred(), "Readiness endpoint should be accessible")
 			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Readiness endpoint should return 200 OK when ready")
 
-			// Parse response body
 			var readyResp map[string]interface{}
 			err = json.NewDecoder(resp.Body).Decode(&readyResp)
 			_ = resp.Body.Close()
 
 			Expect(err).ToNot(HaveOccurred(), "Readiness response should be valid JSON")
 			Expect(readyResp["status"]).To(Equal("ready"), "Status should be 'ready'")
-
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Kubernetes can detect Gateway readiness
-			// ✅ Traffic only routed to ready pods
-			// ✅ Zero downtime during deployments
-		})
-
-		It("should support /healthz as Kubernetes-style liveness alias", func() {
-			// BUSINESS OUTCOME: Gateway follows Kubernetes health check conventions
-			// BUSINESS SCENARIO: Kubernetes uses /healthz for liveness probe
-
-			resp, err := http.Get(gatewayURL + "/healthz")
-			Expect(err).ToNot(HaveOccurred(), "Healthz endpoint should be accessible")
-			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Healthz endpoint should return 200 OK")
-
-			_ = resp.Body.Close()
-
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Gateway follows Kubernetes conventions
-			// ✅ Standard health check patterns supported
 			// ✅ Compatible with Kubernetes best practices
 		})
 	})

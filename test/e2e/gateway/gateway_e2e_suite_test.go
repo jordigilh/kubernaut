@@ -60,8 +60,10 @@ var (
 	// Cluster configuration (shared across all tests)
 	clusterName      string
 	kubeconfigPath   string
-	gatewayURL       string // Gateway URL for E2E tests (NodePort or port-forward)
-	gatewayNamespace string // Namespace where Gateway is deployed
+	gatewayURL        string // Gateway API URL for E2E tests (NodePort or port-forward)
+	gatewayHealthURL  string // Gateway health URL (Issue #753: dedicated :8081 port)
+	gatewayMetricsURL string // Gateway metrics URL (Issue #753: dedicated :9090 port)
+	gatewayNamespace  string // Namespace where Gateway is deployed
 
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
@@ -121,23 +123,22 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 		err = infrastructure.SetupGatewayInfrastructureParallel(tempCtx, tempClusterName, tempKubeconfigPath, GinkgoWriter, tempCoverageMode)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Wait for Gateway HTTP endpoint to be ready
-		tempLogger.Info("Waiting for Gateway HTTP endpoint to be ready...")
-		tempURL := "http://127.0.0.1:8080" // Kind extraPortMapping hostPort (maps to NodePort 30080) - Use 127.0.0.1 for CI/CD IPv4 compatibility
+		// Issue #753: Wait for Gateway health endpoint (dedicated port 8081)
+		tempLogger.Info("Waiting for Gateway health endpoint to be ready...")
+		tempHealthURL := "http://127.0.0.1:28080" // Issue #753: dedicated health port (maps to NodePort 30180)
 		httpClient := &http.Client{Timeout: 5 * time.Second}
 
-		// Use Eventually() instead of manual loop (per TESTING_GUIDELINES.md)
 		Eventually(func() int {
-			resp, err := httpClient.Get(tempURL + "/health")
+			resp, err := httpClient.Get(tempHealthURL + "/readyz")
 			if err != nil {
 				return 0
 			}
 			defer func() { _ = resp.Body.Close() }()
 			return resp.StatusCode
 		}, 60*time.Second, 2*time.Second).Should(Equal(http.StatusOK),
-			"Gateway HTTP endpoint should be ready within 60 seconds")
+			"Gateway health endpoint should be ready within 60 seconds")
 
-		tempLogger.Info("✅ Gateway HTTP endpoint ready")
+		tempLogger.Info("✅ Gateway health endpoint ready")
 
 		tempLogger.Info("✅ Cluster created successfully")
 		tempLogger.Info(fmt.Sprintf("  • Kubeconfig: %s", tempKubeconfigPath))
@@ -205,7 +206,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 
 		// Set cluster configuration (shared across all processes)
 		clusterName = "gateway-e2e"
-		gatewayURL = "http://127.0.0.1:8080" // Kind extraPortMapping hostPort (maps to NodePort 30080) - Use 127.0.0.1 for CI/CD IPv4 compatibility
+		gatewayURL = "http://127.0.0.1:8080"         // Kind extraPortMapping hostPort (maps to NodePort 30080)
+		gatewayHealthURL = "http://127.0.0.1:28080"  // Issue #753: dedicated health port (maps to NodePort 30180)
+		gatewayMetricsURL = "http://127.0.0.1:9090"  // Issue #753: dedicated metrics port (maps to NodePort 30090)
 		gatewayNamespace = "kubernaut-system"
 
 		// BR-GATEWAY-036/037: Create suite-level authorized SA for all E2E webhook requests.
@@ -230,7 +233,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info(fmt.Sprintf("  • Cluster: %s", clusterName))
 		logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
-		logger.Info(fmt.Sprintf("  • Gateway URL: %s", gatewayURL))
+		logger.Info(fmt.Sprintf("  • Gateway API URL: %s", gatewayURL))
+		logger.Info(fmt.Sprintf("  • Gateway Health URL: %s", gatewayHealthURL))
+		logger.Info(fmt.Sprintf("  • Gateway Metrics URL: %s", gatewayMetricsURL))
 		logger.Info(fmt.Sprintf("  • Gateway Namespace: %s", gatewayNamespace))
 		logger.Info("  • K8s Client: Suite-level (1 per process)")
 		logger.Info("  • Auth Token: Suite-level (e2e-gateway-suite-sa)")

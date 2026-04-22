@@ -227,7 +227,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 			testLogger.Info("Step 1: Record initial metrics baseline")
-			metricsResp, err := httpClient.Get(gatewayURL + "/metrics")
+			metricsResp, err := httpClient.Get(gatewayMetricsURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred(), "Metrics endpoint should be accessible")
 			defer func() { _ = metricsResp.Body.Close() }()
 
@@ -268,7 +268,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 			// Use Eventually() to poll for metrics instead of sleep (per TESTING_GUIDELINES.md)
 			var updatedMetricsStr string
 			Eventually(func() bool {
-				metricsResp, err := httpClient.Get(gatewayURL + "/metrics")
+				metricsResp, err := httpClient.Get(gatewayMetricsURL + "/metrics")
 				if err != nil {
 					return false
 				}

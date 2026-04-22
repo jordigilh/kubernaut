@@ -580,8 +580,9 @@ run_verify_001() {
 
 run_verify_002() {
   assert_port_forward_responds \
-    "kubernaut-agent" 8080 "/health" \
-    "ST-CHART-VERIFY-002: Kubernaut Agent health endpoint"
+    "kubernaut-agent" 8081 "/healthz" \
+    "ST-CHART-VERIFY-002: Kubernaut Agent health endpoint" \
+    "$NAMESPACE" 8081
 }
 
 run_verify_003() {

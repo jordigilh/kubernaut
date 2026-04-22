@@ -349,8 +349,9 @@ func main() {
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.Handler())
 	metricsServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Server.MetricsPort),
-		Handler: metricsMux,
+		Addr:              fmt.Sprintf(":%d", cfg.Server.MetricsPort),
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	metricsErrors := make(chan error, 1)

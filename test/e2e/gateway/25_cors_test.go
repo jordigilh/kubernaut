@@ -73,18 +73,14 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 			corsOpts := kubecors.FromEnvironment()
 			router.Use(kubecors.Handler(corsOpts))
 
-			// Add test endpoints mimicking Gateway
-			router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"status":"healthy"}`))
-			})
-			router.Get("/ready", func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"status":"ready"}`))
-			})
+			// Issue #753: Health/readiness moved to dedicated port; only API routes have CORS
 			router.Post("/api/v1/signals/prometheus", func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusCreated)
 				_, _ = w.Write([]byte(`{"status":"created"}`))
+			})
+			router.Get("/api/v1/signals", func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"adapters":["prometheus"]}`))
 			})
 
 			testServer = httptest.NewServer(router)
@@ -108,8 +104,7 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 				Expect(allowOrigin).ToNot(BeEmpty(),
 					"All endpoints should include CORS headers for cross-origin access")
 			},
-			Entry("health endpoint supports CORS", "GET", "/health", http.StatusOK),
-			Entry("readiness endpoint supports CORS", "GET", "/ready", http.StatusOK),
+			Entry("API signals endpoint supports CORS", "GET", "/api/v1/signals", http.StatusOK),
 		)
 
 		It("should handle preflight for webhook endpoint", func() {

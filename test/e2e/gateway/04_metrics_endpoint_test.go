@@ -100,7 +100,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		// Step 1: Verify /metrics endpoint is accessible
 		testLogger.Info("Step 1: Verify /metrics endpoint is accessible")
 
-		resp, err := httpClient.Get(gatewayURL + "/metrics")
+		resp, err := httpClient.Get(gatewayMetricsURL + "/metrics")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(http.StatusOK), "/metrics should return 200 OK")
 
@@ -176,7 +176,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		// Wait for metrics to update using Eventually
 		var metricsOutput2 string
 		Eventually(func() bool {
-			resp2, err := httpClient.Get(gatewayURL + "/metrics")
+			resp2, err := httpClient.Get(gatewayMetricsURL + "/metrics")
 			if err != nil {
 				return false
 			}
@@ -225,7 +225,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 
 		// Check metrics after invalid request
 		Eventually(func() bool {
-			resp3, err := httpClient.Get(gatewayURL + "/metrics")
+			resp3, err := httpClient.Get(gatewayMetricsURL + "/metrics")
 			if err != nil {
 				return false
 			}

@@ -42,8 +42,14 @@ nodes:
     hostPort: 8184        # Port on host machine (localhost:8184/healthz)
     protocol: TCP
   # Dependency service ports (for E2E health checks)
-  - containerPort: 30088  # HolmesGPT-API NodePort
-    hostPort: 8088        # Port on host machine (localhost:8088/health)
+  - containerPort: 30188  # Kubernaut Agent Health NodePort (Issue #753)
+    hostPort: 28088       # Port on host machine (localhost:28088/healthz)
+    protocol: TCP
+  - containerPort: 30988  # Kubernaut Agent Metrics NodePort (Issue #753)
+    hostPort: 9088        # Port on host machine (localhost:9088/metrics)
+    protocol: TCP
+  - containerPort: 30088  # Kubernaut Agent API NodePort
+    hostPort: 8088        # Port on host machine (localhost:8088)
     protocol: TCP
   - containerPort: 30081  # Data Storage NodePort
     hostPort: 8091        # Port on host machine (localhost:8091/health)
