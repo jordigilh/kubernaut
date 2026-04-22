@@ -257,6 +257,12 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
+	// Issue #785: Inter-service TLS (Secrets + CA ConfigMap before DataStorage deployment)
+	_, _ = fmt.Fprintln(writer, "  🔐 Generating inter-service TLS certificates (Issue #785)...")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services
 	// ═══════════════════════════════════════════════════════════════════════
@@ -353,7 +359,7 @@ data:
       stabilizationWindow: 30s
       validityWindow: 120s
     datastorage:
-      url: http://data-storage-service:8080
+      url: https://data-storage-service:8080
       timeout: 10s
       buffer:
         bufferSize: 100
@@ -461,9 +467,14 @@ spec:
           mountPath: /etc/effectivenessmonitor
         - name: coverdata
           mountPath: /coverdata
+        - name: tls-ca
+          mountPath: /etc/tls-ca
+          readOnly: true
         env:
         - name: GOCOVERDIR
           value: /coverdata
+        - name: TLS_CA_FILE
+          value: /etc/tls-ca/ca.crt
         resources:
           requests:
             memory: "64Mi"
@@ -479,6 +490,9 @@ spec:
         hostPath:
           path: /coverdata
           type: DirectoryOrCreate
+      - name: tls-ca
+        configMap:
+          name: inter-service-ca
 `, namespace, imageName, pullPolicy)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")

@@ -257,6 +257,13 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			return builtImages, nil, fmt.Errorf("failed to create RoleBinding for %s: %w", sa, err)
 		}
 	}
+
+	// Issue #785: Inter-service TLS (Secrets/ConfigMap) before DataStorage and dependent controllers.
+	_, _ = fmt.Fprintln(writer, "\n🔐 Issue #785: Generating inter-service TLS certificates...")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return builtImages, nil, fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 5 complete (%s)\n", time.Since(phase5Start).Round(time.Second))
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -556,7 +563,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Total setup time: %s\n", totalDuration)
 	_, _ = fmt.Fprintf(writer, "  🌐 Gateway:     http://localhost:30080\n")
-	_, _ = fmt.Fprintf(writer, "  🗄️  DataStorage: http://localhost:30081\n")
+	_, _ = fmt.Fprintf(writer, "  🗄️  DataStorage: https://localhost:30081\n")
 	_, _ = fmt.Fprintf(writer, "  📦 Namespace:   %s\n", namespace)
 	_, _ = fmt.Fprintf(writer, "  🔑 Kubeconfig:  %s\n", kubeconfigPath)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

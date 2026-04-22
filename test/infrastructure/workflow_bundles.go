@@ -88,7 +88,8 @@ var RegisteredWorkflowUUIDs = make(map[string]string)
 // Also populates RegisteredWorkflowUUIDs for tests that need DS UUIDs (DD-WE-006).
 func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken string, output io.Writer) (map[string]string, error) {
 	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
-	if err := SeedActionTypesViaAPIWithURL(dataStorageURL, saToken, 30*time.Second, output); err != nil {
+	// Issue #785: TLS-aware seeding to DataStorage API (inter-service CA).
+	if err := SeedActionTypesViaAPIWithTLS(dataStorageURL, saToken, kubeconfigPath, 30*time.Second, output); err != nil {
 		return nil, fmt.Errorf("failed to seed action types: %w", err)
 	}
 

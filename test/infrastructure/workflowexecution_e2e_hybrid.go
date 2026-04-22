@@ -339,6 +339,12 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		return fmt.Errorf("failed to create DataStorage client RoleBinding: %w", err)
 	}
 
+	// Issue #785: Inter-service TLS (must exist before DataStorage pod starts)
+	_, _ = fmt.Fprintf(writer, "🔐 Generating inter-service TLS certificates (Issue #785)...\n")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, WorkflowExecutionNamespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	// Step 3: Create ServiceAccount + RBAC for WorkflowExecution controller audit writes (DD-AUTH-014)
 	// Per RCA (Jan 30, 2026): WE controller needs SA for DataStorage audit emission
 	// Pattern: Follow RemediationOrchestrator E2E infrastructure
@@ -545,7 +551,7 @@ subjects:
 	// POST-DEPLOYMENT PARALLEL: Workflow seeding + AWX config run concurrently.
 	// Workflow registration only needs DataStorage; AWX config only needs AWX.
 	// ═══════════════════════════════════════════════════════════════════════
-	dataStorageURL := "http://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
+	dataStorageURL := "https://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
 
 	type postDeployResult struct {
 		name string
@@ -621,7 +627,7 @@ subjects:
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "  🚀 Strategy: Hybrid parallel (build parallel → cluster → load)")
 	_, _ = fmt.Fprintln(writer, "  📊 Coverage: Enabled (GOCOVERDIR=/coverdata)")
-	_, _ = fmt.Fprintln(writer, "  🎯 DataStorage URL: http://localhost:8092")
+	_, _ = fmt.Fprintln(writer, "  🎯 DataStorage URL: https://localhost:8092")
 	_, _ = fmt.Fprintf(writer, "  🤖 AWX API: http://%s.kubernaut-system:%d\n", AWXServiceName, AWXServicePort)
 	_, _ = fmt.Fprintln(writer, "  📦 Namespace: kubernaut-system")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Total time: ~5-6 minutes (per DD-TEST-002)")
@@ -1288,7 +1294,7 @@ data:
       namespace: %[2]s
       cooldownPeriod: 1m
     datastorage:
-      url: "http://data-storage-service.%[1]s:8080"
+      url: "https://data-storage-service.%[1]s:8080"
       timeout: 10s
       buffer:
         bufferSize: 10000
@@ -1327,10 +1333,15 @@ spec:
         - containerPort: 8081
           name: health
         env:%[6]s
+        - name: TLS_CA_FILE
+          value: /etc/tls-ca/ca.crt
         volumeMounts:
         - name: config
           mountPath: /etc/config
           readOnly: true%[7]s
+        - name: tls-ca
+          mountPath: /etc/tls-ca
+          readOnly: true
         livenessProbe:
           httpGet:
             path: /healthz
@@ -1353,7 +1364,11 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: workflowexecution-config%[8]s
+          name: workflowexecution-config
+      - name: tls-ca
+        configMap:
+          name: inter-service-ca
+%[8]s
 ---
 apiVersion: v1
 kind: Service

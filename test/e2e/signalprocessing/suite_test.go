@@ -42,6 +42,7 @@ package signalprocessing
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,6 +153,11 @@ var _ = SynchronizedBeforeSuite(
 		if len(parts) > 2 {
 			e2eAuthToken = parts[2] // DD-AUTH-014: Store token for authenticated DataStorage access
 		}
+
+		// Issue #785: Configure http.DefaultTransport to trust the inter-service CA.
+		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport (Issue #785)")
+		http.DefaultTransport = tlsTransport
 
 		ctx, cancel = context.WithCancel(context.Background())
 

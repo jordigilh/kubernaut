@@ -2251,7 +2251,7 @@ func expectCompletedSPStatusAssertions(ctx context.Context, k8sClient client.Cli
 func queryAuditEvents(correlationID string) ([]dsgen.AuditEvent, error) {
 	// DataStorage is accessible via NodePort 30081 in Kind cluster
 	// We use the host port mapping: localhost:30081 → NodePort 30081
-	dataStorageURL := "http://localhost:30081"
+	dataStorageURL := "https://localhost:30081"
 
 	// DD-AUTH-014: Create authenticated OpenAPI client with ServiceAccount token
 	// DataStorage middleware requires Bearer token for TokenReview + SAR authorization

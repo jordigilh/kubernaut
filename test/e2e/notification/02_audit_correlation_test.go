@@ -32,6 +32,7 @@ import (
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	notifaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
@@ -93,16 +94,17 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		correlationID = "remediation-" + time.Now().Format("20060102-150405")
 
 		// Use real Data Storage URL from Kind cluster
-		dataStorageURL = fmt.Sprintf("http://localhost:%d", dataStorageNodePort)
+		dataStorageURL = fmt.Sprintf("https://localhost:%d", dataStorageNodePort)
 
 		// ✅ DD-API-001 + DD-AUTH-014: Create authenticated OpenAPI client (MANDATORY)
 		// Per DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
-		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+		tlsBase, err := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "TLS transport for DataStorage")
+		saTransport := testauth.NewServiceAccountTransportWithBase(e2eAuthToken, tlsBase)
 		httpClient := &http.Client{
 			Timeout:   20 * time.Second,
 			Transport: saTransport,
 		}
-		var err error
 		dsClient, err = ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
 		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage OpenAPI client")
 

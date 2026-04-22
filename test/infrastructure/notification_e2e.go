@@ -225,6 +225,11 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		_, _ = fmt.Fprintf(writer, "   ℹ️  default namespace already exists\n")
 	}
 
+	// Issue #785: inter-service CA must exist before controller mounts tls-ca.
+	if _, err := GenerateInterServiceTLS(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	// Deploy mock-slack before controller so DNS resolves when controller starts processing
 	_, _ = fmt.Fprintf(writer, "📨 Deploying mock-slack (webhook sink with success/fail endpoints)...\n")
 	if err := deployNotificationMockSlack(ctx, namespace, kubeconfigPath, writer); err != nil {
@@ -641,7 +646,7 @@ data:
       slack:
         timeout: 10s
     datastorage:
-      url: "http://data-storage-service.%s.svc.cluster.local:8080"
+      url: "https://data-storage-service.%s.svc.cluster.local:8080"
       timeout: 10s
       buffer:
         bufferSize: 10000
@@ -805,6 +810,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: TLS_CA_FILE
+          value: "/etc/tls-ca/ca.crt"
         - name: SLACK_WEBHOOK_URL
           value: "%s"%s
         args:
@@ -847,6 +854,9 @@ spec:
           readOnly: true
         - name: notification-output
           mountPath: /tmp/notifications%s
+        - name: tls-ca
+          mountPath: /etc/tls-ca
+          readOnly: true
       volumes:
       - name: config
         configMap:
@@ -854,6 +864,9 @@ spec:
       - name: slack-credentials
         secret:
           secretName: slack-credentials
+      - name: tls-ca
+        configMap:
+          name: inter-service-ca
       - name: notification-output
         emptyDir: {}%s
       terminationGracePeriodSeconds: 10%s

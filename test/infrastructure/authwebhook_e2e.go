@@ -253,6 +253,12 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 		return "", "", fmt.Errorf("failed to create AuthWebhook DataStorage client RoleBinding: %w", err)
 	}
 
+	// Issue #785: Inter-service TLS must exist before DataStorage serves HTTPS.
+	_, _ = fmt.Fprintln(writer, "\n🔐 Issue #785: Generating inter-service TLS certificates...")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return "", "", fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 5: Deploy services (Sequential - depends on migrations)
 	// ═══════════════════════════════════════════════════════════════════════
@@ -429,6 +435,8 @@ spec:
           value: "debug"
         - name: GOCOVERDIR
           value: "/coverdata"
+        - name: TLS_CA_FILE
+          value: "/etc/tls-ca/ca.crt"
         volumeMounts:
         - name: webhook-certs
           mountPath: /tmp/k8s-webhook-server/serving-certs
@@ -438,6 +446,9 @@ spec:
           readOnly: true
         - name: coverdata
           mountPath: /coverdata
+        - name: tls-ca
+          mountPath: /etc/tls-ca
+          readOnly: true
         resources:
           requests:
             memory: 128Mi
@@ -474,6 +485,9 @@ spec:
         hostPath:
           path: /coverdata
           type: DirectoryOrCreate
+      - name: tls-ca
+        configMap:
+          name: inter-service-ca
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
@@ -630,7 +644,7 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 
 	// STEP 3: Apply AuthWebhook manifest (all resources including webhook configs)
 	_, _ = fmt.Fprintln(writer, "🚀 Applying AuthWebhook deployment...")
-	dsURL := fmt.Sprintf("http://datastorage.%s.svc.cluster.local:8080", namespace)
+	dsURL := fmt.Sprintf("https://data-storage-service.%s.svc.cluster.local:8080", namespace)
 	manifest := authWebhookManifest(namespace, imageTag, dsURL)
 	cmd = exec.Command("kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
@@ -999,8 +1013,11 @@ data:
       port: 8080
       host: "0.0.0.0"
       metricsPort: 9090
+      healthPort: 8081
       readTimeout: 30s
       writeTimeout: 30s
+      tls:
+        certDir: /etc/tls
     database:
       host: postgresql.%[1]s.svc.cluster.local
       port: 5432
@@ -1079,13 +1096,13 @@ subjects:
 apiVersion: v1
 kind: Service
 metadata:
-  name: datastorage
+  name: data-storage-service
   labels:
     app: datastorage
 spec:
   type: NodePort
   ports:
-  - name: http
+  - name: https
     port: 8080
     targetPort: 8080
     nodePort: %[2]s
@@ -1133,6 +1150,9 @@ spec:
           readOnly: true
         - name: coverdata
           mountPath: /coverdata
+        - name: tls-certs
+          mountPath: /etc/tls
+          readOnly: true
         resources:
           requests:
             memory: 256Mi
@@ -1158,6 +1178,10 @@ spec:
       - name: config
         configMap:
           name: datastorage-config
+      - name: tls-certs
+        secret:
+          secretName: datastorage-tls
+          optional: true
       - name: secrets
         projected:
           sources:

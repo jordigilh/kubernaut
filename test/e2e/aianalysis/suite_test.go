@@ -198,6 +198,11 @@ var _ = SynchronizedBeforeSuite(
 		err := os.Setenv("KUBECONFIG", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
+		// Issue #785: Configure http.DefaultTransport to trust the inter-service CA.
+		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport (Issue #785)")
+		http.DefaultTransport = tlsTransport
+
 		// Register AIAnalysis scheme
 		err = aianalysisv1alpha1.AddToScheme(scheme.Scheme)
 		Expect(err).ToNot(HaveOccurred())
@@ -238,10 +243,12 @@ var _ = SynchronizedBeforeSuite(
 		// Per DD-API-001: Direct HTTP to DataStorage is FORBIDDEN
 		// Per DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
 		// All queries MUST use generated OpenAPI client for type safety
-		dataStorageURL := "http://localhost:8091" // DataStorage NodePort 30081
+		dataStorageURL := "https://localhost:8091" // DataStorage NodePort 30081 (Issue #785: HTTPS)
 
-		// Create authenticated HTTP client with ServiceAccount token
-		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+		// Create authenticated HTTP client with ServiceAccount token + inter-service CA trust
+		tlsBase, tlsErr2 := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsErr2).ToNot(HaveOccurred(), "Failed to create TLS transport for DataStorage client")
+		saTransport := testauth.NewServiceAccountTransportWithBase(e2eAuthToken, tlsBase)
 		httpClient := &http.Client{
 			Timeout:   20 * time.Second,
 			Transport: saTransport,

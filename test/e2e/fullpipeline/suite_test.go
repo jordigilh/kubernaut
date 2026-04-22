@@ -188,6 +188,11 @@ var _ = SynchronizedBeforeSuite(
 		err := os.Setenv("KUBECONFIG", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
+		// Issue #785: Configure http.DefaultTransport to trust the inter-service CA.
+		tlsTransport, tlsTErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsTErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport (Issue #785)")
+		http.DefaultTransport = tlsTransport
+
 		By("Registering ALL CRD schemes")
 		Expect(remediationv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(signalprocessingv1.AddToScheme(scheme.Scheme)).To(Succeed())
@@ -206,9 +211,11 @@ var _ = SynchronizedBeforeSuite(
 		apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Setting up authenticated DataStorage client (DD-TEST-001: port 30081)")
-		dataStorageURL := "http://localhost:30081"
-		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+		By("Setting up authenticated DataStorage client (DD-TEST-001: port 30081, Issue #785: HTTPS)")
+		dataStorageURL := "https://localhost:30081"
+		tlsBase, tlsCErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsCErr).ToNot(HaveOccurred(), "TLS transport for DataStorage client")
+		saTransport := testauth.NewServiceAccountTransportWithBase(e2eAuthToken, tlsBase)
 		httpClient := &http.Client{
 			Timeout:   20 * time.Second,
 			Transport: saTransport,
