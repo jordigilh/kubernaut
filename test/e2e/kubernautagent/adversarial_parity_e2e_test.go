@@ -187,7 +187,7 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).NotTo(HaveOccurred())
 
-			resp, err := http.Get(kaURL + "/metrics")
+			resp, err := http.Get(kaMetricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -205,7 +205,7 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).NotTo(HaveOccurred())
 
-			resp, err := http.Get(kaURL + "/metrics")
+			resp, err := http.Get(kaMetricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 

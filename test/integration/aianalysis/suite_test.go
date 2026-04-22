@@ -546,6 +546,8 @@ logging:
   level: "debug"
 server:
   port: 18120
+  health_addr: ":18121"
+  metrics_addr: ":18122"
 audit:
   flush_interval_seconds: 0.1
   buffer_size: 10000
@@ -571,7 +573,7 @@ auth:
 			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
 		},
 		HealthCheck: &infrastructure.HealthCheckConfig{
-			URL:     "http://127.0.0.1:18120/health",
+			URL:     "http://127.0.0.1:18121/healthz",
 			Timeout: 120 * time.Second,
 		},
 	}
@@ -581,7 +583,7 @@ auth:
 		GinkgoWriter.Printf("   🌐 KA using host network (Linux CI)\n")
 	} else {
 		kaContainerConfig.Network = "aianalysis_test_network"
-		kaContainerConfig.Ports = map[int]int{8080: 18120}
+		kaContainerConfig.Ports = map[int]int{18120: 18120, 18121: 18121}
 		kaContainerConfig.ExtraHosts = []string{
 			"host.containers.internal:host-gateway",
 		}

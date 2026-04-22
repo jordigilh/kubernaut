@@ -103,13 +103,12 @@ var _ = Describe("Health Endpoints E2E", Label("e2e", "health"), func() {
 	})
 
 	Context("Dependency health checks", func() {
-		It("should verify HolmesGPT-API is reachable", func() {
-			// HolmesGPT-API health endpoint (NodePort 30088 -> host port 8088)
-			// Use Eventually to wait for service to be ready
+		It("should verify Kubernaut Agent is reachable", func() {
+			// Issue #753: KA health on dedicated port 8081 (NodePort 30188 → host 28088)
 			var resp *http.Response
 			var err error
 			Eventually(func() error {
-				resp, err = httpClient.Get("http://localhost:8088/health")
+				resp, err = httpClient.Get("http://localhost:28088/healthz")
 				return err
 			}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
 			defer func() {
