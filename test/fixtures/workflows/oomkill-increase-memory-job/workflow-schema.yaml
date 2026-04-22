@@ -17,7 +17,7 @@ spec:
   labels:
     severity: [critical, high]
     environment: [production, staging, test]
-    component: "*"
+    component: ["*"]
     priority: "*"
   
   execution:

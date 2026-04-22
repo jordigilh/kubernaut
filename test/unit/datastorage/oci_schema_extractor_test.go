@@ -96,7 +96,7 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
 			Expect(labels["severity"]).To(Equal([]interface{}{"critical"}))
 			Expect(labels["environment"]).To(Equal([]interface{}{"production"}))
-			Expect(labels).To(HaveKeyWithValue("component", "pod"))
+			Expect(labels["component"]).To(Equal([]interface{}{"pod"}))
 			Expect(labels).To(HaveKeyWithValue("priority", "P1"))
 		})
 
@@ -513,7 +513,7 @@ spec:
   labels:
     severity: [critical]
     environment: [production]
-    component: pod
+    component: [pod]
     priority: P1
   parameters:
     - name: PARAM
@@ -547,7 +547,7 @@ spec:
   labels:
     severity: [critical]
     environment: [production]
-    component: pod
+    component: [pod]
     priority: P1
   execution:
     engine: tekton

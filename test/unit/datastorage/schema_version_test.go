@@ -68,7 +68,7 @@ spec:
   labels:
     severity: [critical]
     environment: [production]
-    component: pod
+    component: [pod]
     priority: P0
   execution:
     engine: tekton
