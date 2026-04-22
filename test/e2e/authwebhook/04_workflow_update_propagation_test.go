@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/types"
+	k8sretry "k8s.io/client-go/util/retry"
 
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	auditclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -76,12 +77,15 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 		Expect(initialWorkflowID).ToNot(BeEmpty(), "Initial workflowId should be set")
 
 		By("Updating CRD: bump version to 1.1.0 and change description")
-		current := &rwv1alpha1.RemediationWorkflow{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, current)).To(Succeed())
-		current.Spec.Version = "1.1.0"
-		current.Spec.Description.WhenNotToUse = "Updated for version bump test"
-		Expect(k8sClient.Update(ctx, current)).To(Succeed(),
-			"Version bump UPDATE should be Allowed by webhook")
+		Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			current := &rwv1alpha1.RemediationWorkflow{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, current); err != nil {
+				return err
+			}
+			current.Spec.Version = "1.1.0"
+			current.Spec.Description.WhenNotToUse = "Updated for version bump test"
+			return k8sClient.Update(ctx, current)
+		})).To(Succeed(), "Version bump UPDATE should be Allowed by webhook")
 
 		By("Waiting for new workflowId (content hash changes -> new deterministic UUID)")
 		var newWorkflowID string
@@ -148,11 +152,14 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 			"Initial workflowId should be a UUID (36 chars)")
 
 		By("Updating CRD: change description WITHOUT bumping version")
-		current := &rwv1alpha1.RemediationWorkflow{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, current)).To(Succeed())
-		current.Spec.Description.WhenNotToUse = "Changed content without version bump"
-
-		err := k8sClient.Update(ctx, current)
+		err := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			current := &rwv1alpha1.RemediationWorkflow{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, current); err != nil {
+				return err
+			}
+			current.Spec.Description.WhenNotToUse = "Changed content without version bump"
+			return k8sClient.Update(ctx, current)
+		})
 		Expect(err).To(HaveOccurred(),
 			"Same-version content change should be DENIED by webhook")
 		Expect(err.Error()).To(ContainSubstring("denied"),
@@ -185,10 +192,13 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 			"Initial workflowId should be a UUID (36 chars)")
 
 		By("Re-applying the CRD with identical spec (no changes)")
-		current := &rwv1alpha1.RemediationWorkflow{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, current)).To(Succeed())
-		Expect(k8sClient.Update(ctx, current)).To(Succeed(),
-			"Idempotent re-apply should be Allowed")
+		Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			current := &rwv1alpha1.RemediationWorkflow{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, current); err != nil {
+				return err
+			}
+			return k8sClient.Update(ctx, current)
+		})).To(Succeed(), "Idempotent re-apply should be Allowed")
 
 		By("Verifying workflowId is unchanged (no supersession)")
 		Consistently(func() string {
