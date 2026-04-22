@@ -535,7 +535,10 @@ func (r *Repository) List(ctx context.Context, filters *models.WorkflowSearchFil
 		if filters.Component != "" {
 			// DD-WORKFLOW-016 v2.1: Case-insensitive + wildcard "*"
 			// Issue #790: component is now a JSONB array (like severity/environment).
-			builder.WhereRaw(fmt.Sprintf("(labels->'component' ? $%d OR labels->'component' ? '*')", builder.CurrentArgIndex()), filters.Component)
+			// Must use LOWER() matching to align with discovery path (discovery.go).
+			builder.WhereRaw(fmt.Sprintf(
+				"(EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'component') elem WHERE LOWER(elem) = LOWER($%d)) OR labels->'component' ? '*')",
+				builder.CurrentArgIndex()), filters.Component)
 		}
 		// DD-WORKFLOW-001 v2.5: environment is JSONB array, use ? operator; supports "*" wildcard per OpenAPI spec
 		if filters.Environment != "" {
