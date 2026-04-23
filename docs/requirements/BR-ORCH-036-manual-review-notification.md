@@ -18,6 +18,7 @@ RemediationOrchestrator MUST create NotificationRequest CRDs when:
 1. **WorkflowExecution** enters a state requiring operator intervention (exhausted retries, execution failures) → `type=manual-review`
 2. **AIAnalysis** fails to produce a valid workflow recommendation (`WorkflowResolutionFailed`) → `type=manual-review`
 3. **(v3.0) AIAnalysis** fails with unrecoverable infrastructure errors (APIError, Timeout, MaxRetriesExceeded) → `type=manual-review` (escalation)
+4. **(v5.1, Issue #803) RoutingEngine** blocks an RR due to `IneffectiveChain` → `type=manual-review`, `reviewSource=RoutingEngine`
 
 **Principle (v3.0)**: Any failure without automatic recovery in the remediation pipeline MUST be notified as an escalation. No failure should silently transition to Failed without operator notification.
 
