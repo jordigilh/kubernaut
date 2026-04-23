@@ -48,7 +48,7 @@ import (
 // notifications for other block reasons.
 // ════════════════════════════════════════════════════════════════════════════
 
-var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", func() {
+var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label("BR-ORCH-036"), func() {
 
 	// ════════════════════════════════════════════════════════════════════════
 	// UT-RO-803-003: handleBlocked with IneffectiveChain creates ManualReview NR
