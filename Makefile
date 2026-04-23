@@ -1021,7 +1021,7 @@ cross-build-%: ## Cross-compile a Go service binary for target arch (no containe
 	@mkdir -p bin
 	@CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -mod=mod \
 	    -ldflags "-s -w -X github.com/jordigilh/kubernaut/internal/version.Version=$(APP_VERSION) -X github.com/jordigilh/kubernaut/internal/version.GitCommit=$(GIT_COMMIT) -X github.com/jordigilh/kubernaut/internal/version.BuildDate=$(BUILD_DATE)" \
-	    -o bin/$(BINARY_NAME_$*)-$(IMAGE_ARCH) ./cmd/$*/main.go
+	    -o bin/$(BINARY_NAME_$*)-$(IMAGE_ARCH) ./cmd/$*/
 
 .PHONY: cross-build-all
 cross-build-all: ## Cross-compile all Go services for target arch
