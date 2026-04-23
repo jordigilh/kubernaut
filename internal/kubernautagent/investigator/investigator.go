@@ -376,7 +376,13 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
-		inv.logger.Warn("RCA parse failed, treating as summary",
+		if retried := inv.retryRCASubmit(ctx, content, messages, tokens, correlationID, client, modelName); retried != nil {
+			result = retried
+			parseErr = nil
+		}
+	}
+	if parseErr != nil {
+		inv.logger.Warn("RCA parse failed after retry, treating as summary",
 			slog.String("error", parseErr.Error()),
 			slog.String("correlation_id", correlationID))
 		return &katypes.InvestigationResult{
@@ -396,6 +402,96 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	}
 
 	return result, nil
+}
+
+const maxRCAParseRetries = 1
+
+// retryRCASubmit performs a single correction attempt when the RCA parse fails
+// (e.g. double-serialized JSON that wasn't caught by the unwrap heuristic, or
+// garbage fields). Mirrors retryWorkflowSubmit but scoped to the RCA phase.
+func (inv *Investigator) retryRCASubmit(ctx context.Context, lastContent string, history []llm.Message, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) *katypes.InvestigationResult {
+	submitOnlyTools := []llm.ToolDefinition{
+		{
+			Name:        SubmitResultToolName,
+			Description: "Submit root cause analysis result.",
+			Parameters:  parser.RCAResultSchema(),
+		},
+	}
+
+	correctionMsg := `Your response could not be parsed. You MUST call submit_result with a JSON object like:
+{"root_cause_analysis":{"summary":"...","severity":"critical","signal_name":"SignalName","contributing_factors":["factor1"],"remediation_target":{"kind":"Deployment","name":"resource","namespace":"ns"}},"confidence":0.9}
+
+CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap it in quotes.`
+
+	retryMessages := make([]llm.Message, len(history))
+	copy(retryMessages, history)
+	retryMessages = append(retryMessages,
+		llm.Message{Role: "assistant", Content: lastContent},
+	)
+
+	for attempt := 0; attempt < maxRCAParseRetries; attempt++ {
+		inv.logger.Info("parse-level retry for RCA submit",
+			slog.Int("attempt", attempt+1),
+			slog.Int("max", maxRCAParseRetries),
+			slog.String("correlation_id", correlationID))
+
+		retryMessages = append(retryMessages,
+			llm.Message{Role: "user", Content: correctionMsg},
+		)
+
+		retryEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+		retryEvent.EventAction = audit.ActionLLMRequest
+		retryEvent.EventOutcome = audit.OutcomeSuccess
+		retryEvent.Data["model"] = modelName
+		retryEvent.Data["retry_attempt"] = attempt + 1
+		retryEvent.Data["retry_max"] = maxRCAParseRetries
+		retryEvent.Data["phase"] = string(katypes.PhaseRCA)
+		retryEvent.Data["retry_reason"] = "rca_parse_correction"
+		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.logger)
+
+		resp, err := client.Chat(ctx, llm.ChatRequest{
+			Messages: retryMessages,
+			Tools:    submitOnlyTools,
+			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
+		})
+		if err != nil {
+			inv.logger.Warn("RCA retry LLM call failed",
+				slog.String("error", err.Error()),
+				slog.String("correlation_id", correlationID))
+			continue
+		}
+		if tokens != nil {
+			tokens.Add(resp.Usage)
+		}
+
+		for _, tc := range resp.ToolCalls {
+			if tc.Name == SubmitResultToolName {
+				result, parseErr := inv.resultParser.Parse(tc.Arguments)
+				if parseErr != nil {
+					inv.logger.Warn("RCA retry parse still failed",
+						slog.String("error", parseErr.Error()),
+						slog.String("correlation_id", correlationID))
+					retryMessages = append(retryMessages, resp.Message)
+					continue
+				}
+				inv.logger.Info("RCA retry succeeded",
+					slog.String("correlation_id", correlationID))
+				return result
+			}
+		}
+
+		if resp.Message.Content != "" {
+			result, parseErr := inv.resultParser.Parse(resp.Message.Content)
+			if parseErr == nil {
+				inv.logger.Info("RCA retry succeeded from message content",
+					slog.String("correlation_id", correlationID))
+				return result
+			}
+		}
+
+		retryMessages = append(retryMessages, resp.Message)
+	}
+	return nil
 }
 
 func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (*katypes.InvestigationResult, error) {
