@@ -2106,6 +2106,34 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 		return ctrl.Result{}, nil
 	}
 
+	// GAP-4 / #808: Create escalation NR for terminal failures (BR-ORCH-036).
+	// Guard: skip if caller already created a ManualReview or Escalation NR.
+	manualReviewNR := fmt.Sprintf("nr-manual-review-%s", rr.Name)
+	escalationNR := fmt.Sprintf("nr-escalation-%s", rr.Name)
+	if !hasNotificationRef(rr, manualReviewNR) && !hasNotificationRef(rr, escalationNR) {
+		escCtx := &creator.EscalationContext{
+			FailurePhase:  string(failurePhase),
+			FailureReason: failureReason,
+		}
+		notifName, notifErr := r.notificationCreator.CreateEscalationNotification(ctx, rr, escCtx)
+		if notifErr != nil {
+			logger.Error(notifErr, "Failed to create escalation notification (non-critical)")
+		} else {
+			logger.Info("Created escalation notification for terminal failure", "notification", notifName)
+			ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
+			if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+				return nil
+			}); refErr != nil {
+				logger.Error(refErr, "Failed to persist escalation NR ref (non-critical)", "notification", notifName)
+			}
+			if r.Recorder != nil {
+				r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+					fmt.Sprintf("Escalation notification created: %s", notifName))
+			}
+		}
+	}
+
 	// Capture old phase for metrics and audit
 	oldPhaseBeforeTransition := rr.Status.OverallPhase
 	startTime := rr.CreationTimestamp.Time

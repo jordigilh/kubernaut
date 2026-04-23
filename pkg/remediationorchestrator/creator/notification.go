@@ -645,6 +645,107 @@ type ManualReviewContext struct {
 	PreviousExecution string
 }
 
+// EscalationContext provides context for escalation notifications.
+// Used by terminal failure transitions (transitionToFailed, transitionToFailedTerminal).
+type EscalationContext struct {
+	FailurePhase  string
+	FailureReason string
+	BlockReason   string
+	Message       string
+}
+
+// CreateEscalationNotification creates an Escalation NotificationRequest for terminal failures.
+// This is triggered by transitionToFailed and transitionToFailedTerminal when no ManualReview
+// NR was already created by the calling handler.
+// Reference: BR-ORCH-036 (notification gap remediation), BR-ORCH-031 (cascade deletion)
+func (c *NotificationCreator) CreateEscalationNotification(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	escCtx *EscalationContext,
+) (string, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"namespace", rr.Namespace,
+		"failurePhase", escCtx.FailurePhase,
+	)
+
+	name := fmt.Sprintf("nr-escalation-%s", rr.Name)
+
+	existing := &notificationv1.NotificationRequest{}
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
+	if err == nil {
+		logger.Info("Escalation notification already exists, reusing", "name", name)
+		return name, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		logger.Error(err, "Failed to check existing escalation NotificationRequest")
+		return "", fmt.Errorf("failed to check existing escalation NotificationRequest: %w", err)
+	}
+
+	subject := fmt.Sprintf("🚨 Remediation Failed: %s (phase: %s)", rr.Spec.SignalName, escCtx.FailurePhase)
+	body := c.buildEscalationBody(rr, escCtx)
+
+	nr := &notificationv1.NotificationRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: rr.Namespace,
+		},
+		Spec: notificationv1.NotificationRequestSpec{
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
+			Type:     notificationv1.NotificationTypeEscalation,
+			Priority: notificationv1.NotificationPriorityHigh,
+			Severity: rr.Spec.Severity,
+			Subject:  subject,
+			Body:     body,
+		},
+	}
+
+	if rr.UID == "" {
+		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
+	}
+
+	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
+		logger.Error(err, "Failed to set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Escalation NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
+		logger.Error(err, "Failed to create escalation NotificationRequest")
+		return "", fmt.Errorf("failed to create escalation NotificationRequest: %w", err)
+	}
+
+	logger.Info("Created escalation NotificationRequest", "name", name)
+	return name, nil
+}
+
+func (c *NotificationCreator) buildEscalationBody(rr *remediationv1.RemediationRequest, escCtx *EscalationContext) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Remediation for signal '%s' has failed.\n\n", rr.Spec.SignalName))
+	b.WriteString(fmt.Sprintf("**Failure Phase:** %s\n", escCtx.FailurePhase))
+	if escCtx.FailureReason != "" {
+		b.WriteString(fmt.Sprintf("**Reason:** %s\n", escCtx.FailureReason))
+	}
+	if escCtx.BlockReason != "" {
+		b.WriteString(fmt.Sprintf("**Block Reason:** %s\n", escCtx.BlockReason))
+	}
+	if escCtx.Message != "" {
+		b.WriteString(fmt.Sprintf("**Details:** %s\n", escCtx.Message))
+	}
+	b.WriteString(fmt.Sprintf("\n**Target:** %s/%s/%s\n", rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Name))
+	return b.String()
+}
+
 // CreateManualReviewNotification creates a NotificationRequest for manual review (BR-ORCH-036).
 // This is triggered by:
 // - AIAnalysis WorkflowResolutionFailed (SubReasons: WorkflowNotFound, ImageMismatch, etc.)
