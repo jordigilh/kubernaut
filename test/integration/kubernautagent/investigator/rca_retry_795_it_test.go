@@ -238,4 +238,65 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 				"IT-KA-795-R03: workflow must be selected after successful retry")
 		})
 	})
+
+	Describe("IT-KA-800-TR-01: Truncation detection triggers retry with escalated MaxTokens", func() {
+		It("should detect FinishReason 'length' and retry instead of returning truncated text", func() {
+			capturingDS := &paramCapturingDS{}
+			reg := registry.New()
+			for _, t := range custom.NewAllTools(capturingDS) {
+				reg.Register(t)
+			}
+
+			mockClient := &mockLLMClient{
+				responses: []llm.ChatResponse{
+					// RCA phase: truncated text response (FinishReason = "length")
+					{
+						Message:      llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to`},
+						FinishReason: llm.FinishReasonLength,
+					},
+					// RCA retry: successful submit_result after truncation recovery
+					{
+						Message:   llm.Message{Role: "assistant", Content: ""},
+						ToolCalls: []llm.ToolCall{{ID: "tc_rca2", Name: "submit_result", Arguments: `{"root_cause_analysis":{"summary":"OOMKilled due to memory leak","remediation_target":{"kind":"Deployment","name":"api","namespace":"production"}},"confidence":0.9}`}},
+					},
+					// Workflow phase
+					{
+						Message:   llm.Message{Role: "assistant", Content: ""},
+						ToolCalls: []llm.ToolCall{{ID: "tc_wf1", Name: "list_available_actions", Arguments: `{}`}},
+					},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.85}`),
+				},
+			}
+
+			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{
+				{Kind: "Deployment", Name: "api", Namespace: "production"},
+			}}
+			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "OOMKilled", Namespace: "production", Severity: "critical",
+				Message: "Pod api-pod OOMKilled", ResourceKind: "Pod", ResourceName: "api-pod",
+				Environment: "production", Priority: "P0",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RCASummary).To(ContainSubstring("OOMKilled"))
+
+			// Truncation recovery must have caused at least one extra LLM call
+			Expect(len(mockClient.calls)).To(BeNumerically(">=", 4),
+				"IT-KA-800-TR-01: truncation detection must cause a retry (>= 4 calls)")
+
+			// Second call should have increased MaxTokens
+			secondCall := mockClient.calls[1]
+			Expect(secondCall.Options.MaxTokens).To(BeNumerically(">", 0),
+				"IT-KA-800-TR-01: retry after truncation must escalate MaxTokens")
+		})
+	})
 })
