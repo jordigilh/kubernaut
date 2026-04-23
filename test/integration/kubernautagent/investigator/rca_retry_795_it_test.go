@@ -173,4 +173,69 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 				"IT-KA-795-R02: retry correction message must contain parse failure feedback")
 		})
 	})
+
+	Describe("IT-KA-795-R03: Trailing brace + no-summary triggers retry, retry succeeds with proper JSON", func() {
+		It("should recover when first response is double-serialized with trailing brace and no summary", func() {
+			capturingDS := &paramCapturingDS{}
+			reg := registry.New()
+			for _, t := range custom.NewAllTools(capturingDS) {
+				reg.Register(t)
+			}
+
+			mockClient := &mockLLMClient{
+				responses: []llm.ChatResponse{
+					// RCA phase: double-serialized RCA with trailing brace, NO summary
+					{
+						Message:   llm.Message{Role: "assistant", Content: ""},
+						ToolCalls: []llm.ToolCall{{ID: "tc_rca1", Name: "submit_result", Arguments: `{"rootCauseAnalysis":"{\"severity\":\"medium\",\"remediation_target\":{\"kind\":\"Deployment\",\"name\":\"web-frontend\",\"namespace\":\"demo-gitops\"}}}","confidence":0.98}`}},
+					},
+					// RCA retry: LLM now submits correct JSON with summary
+					{
+						Message:   llm.Message{Role: "assistant", Content: ""},
+						ToolCalls: []llm.ToolCall{{ID: "tc_rca2", Name: "submit_result", Arguments: `{"root_cause_analysis":{"summary":"CrashLoopBackOff caused by invalid ConfigMap directive","severity":"critical","remediation_target":{"kind":"Deployment","name":"web-frontend","namespace":"demo-gitops"}},"confidence":0.95}`}},
+					},
+					// Workflow phase: list_available_actions then submit
+					{
+						Message:   llm.Message{Role: "assistant", Content: ""},
+						ToolCalls: []llm.ToolCall{{ID: "tc_wf1", Name: "list_available_actions", Arguments: `{}`}},
+					},
+					wfToolResp(`{"workflow_id":"git-revert-v2","confidence":0.9}`),
+				},
+			}
+
+			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{
+				{Kind: "ReplicaSet", Name: "web-frontend-rs", Namespace: "demo-gitops"},
+				{Kind: "Deployment", Name: "web-frontend", Namespace: "demo-gitops"},
+			}}
+			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "KubePodCrashLooping", Namespace: "demo-gitops", Severity: "critical",
+				Message: "Pod web-frontend-c8dc85956-jn2b8 CrashLoopBackOff", ResourceKind: "Pod",
+				ResourceName: "web-frontend-c8dc85956-jn2b8",
+				Environment: "staging", Priority: "P1",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// With retry: RCA phase consumes 2 (initial fails Fix D + retry), workflow consumes 2 = 4 total
+			Expect(len(mockClient.calls)).To(BeNumerically(">=", 4),
+				"IT-KA-795-R03: trailing-brace no-summary must trigger retry (expect >= 4 LLM calls)")
+
+			// The retry must have sent a correction message
+			Expect(allMessageContent(mockClient.calls[1].Messages)).To(ContainSubstring("could not be parsed"),
+				"IT-KA-795-R03: retry correction message must be sent after Fix D rejection")
+
+			// The final result should have the workflow from the retry path
+			Expect(result).NotTo(BeNil())
+			Expect(result.WorkflowID).To(Equal("git-revert-v2"),
+				"IT-KA-795-R03: workflow must be selected after successful retry")
+		})
+	})
 })

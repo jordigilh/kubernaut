@@ -19,6 +19,7 @@ package parser
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
@@ -257,8 +258,14 @@ func unwrapDoubleSerializedJSON(rawJSON string) string {
 		if len(s) == 0 || s[0] != '{' {
 			continue
 		}
-		if json.Valid([]byte(s)) {
-			raw[key] = json.RawMessage(s)
+		if t := extractBalancedJSON(s); t != "" && json.Valid([]byte(t)) {
+			if len(t) != len(s) {
+				slog.Debug("unwrapDoubleSerializedJSON: stripped trailing content",
+					slog.String("key", key),
+					slog.Int("original_len", len(s)),
+					slog.Int("extracted_len", len(t)))
+			}
+			raw[key] = json.RawMessage(t)
 			changed = true
 		}
 	}
@@ -357,6 +364,14 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 	// as a minimum to reject truly garbage JSON (e.g., {"foo": "bar"}).
 	hasContent := result.RCASummary != "" || result.WorkflowID != "" || resp.Confidence > 0
 	if !hasContent {
+		return nil, &ErrNoRecognizedFields{}
+	}
+
+	// #795 Fix D: Confidence alone without summary or workflow is a partial parse
+	// caused by json.Unmarshal silently skipping type-mismatched fields or the inner
+	// RCA object missing the required "summary" field. Reject so the investigator's
+	// retryRCASubmit can request the missing data. See #795 preflight audit.
+	if resp.Confidence > 0 && result.RCASummary == "" && result.WorkflowID == "" {
 		return nil, &ErrNoRecognizedFields{}
 	}
 
