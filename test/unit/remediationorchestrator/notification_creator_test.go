@@ -1928,6 +1928,83 @@ var _ = Describe("NotificationCreator", func() {
 		})
 	})
 
+	Describe("CreateEscalationNotification (#808)", func() {
+		It("UT-RO-808-ESC-001: should create Escalation NR with correct type and priority", func() {
+			ctx := context.Background()
+			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-esc-001", "default")
+			escCtx := &creator.EscalationContext{
+				FailurePhase:  "WorkflowExecution",
+				FailureReason: "Pipeline timed out",
+			}
+
+			name, err := nc.CreateEscalationNotification(ctx, rr, escCtx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(name).To(Equal("nr-escalation-test-rr-esc-001"))
+
+			nr := &notificationv1.NotificationRequest{}
+			err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeEscalation))
+			Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityHigh))
+		})
+
+		It("UT-RO-808-ESC-002: should be idempotent (no duplicate NR on second call)", func() {
+			ctx := context.Background()
+			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-esc-002", "default")
+			escCtx := &creator.EscalationContext{
+				FailurePhase:  "SignalProcessing",
+				FailureReason: "SP failed",
+			}
+
+			name1, err := nc.CreateEscalationNotification(ctx, rr, escCtx)
+			Expect(err).ToNot(HaveOccurred())
+
+			name2, err := nc.CreateEscalationNotification(ctx, rr, escCtx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(name2).To(Equal(name1))
+
+			nrList := &notificationv1.NotificationRequestList{}
+			err = cl.List(ctx, nrList)
+			Expect(err).ToNot(HaveOccurred())
+			escalationCount := 0
+			for _, nr := range nrList.Items {
+				if nr.Name == "nr-escalation-test-rr-esc-002" {
+					escalationCount++
+				}
+			}
+			Expect(escalationCount).To(Equal(1))
+		})
+
+		It("UT-RO-808-ESC-003: should include block reason in body when provided", func() {
+			ctx := context.Background()
+			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-esc-003", "default")
+			escCtx := &creator.EscalationContext{
+				FailurePhase:  "Blocked",
+				FailureReason: "Cooldown expired",
+				BlockReason:   "ConsecutiveFailures",
+				Message:       "Cooldown expired after blocking period",
+			}
+
+			name, err := nc.CreateEscalationNotification(ctx, rr, escCtx)
+			Expect(err).ToNot(HaveOccurred())
+
+			nr := &notificationv1.NotificationRequest{}
+			err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nr.Spec.Body).To(ContainSubstring("ConsecutiveFailures"))
+			Expect(nr.Spec.Body).To(ContainSubstring("Cooldown expired"))
+		})
+	})
+
 	Describe("AlreadyExists handling (#805)", func() {
 		It("UT-RO-805-AE-001: should return name without error when concurrent Create hits AlreadyExists", func() {
 			ctx := context.Background()
