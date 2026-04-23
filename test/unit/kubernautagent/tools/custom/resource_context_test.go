@@ -131,7 +131,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			historyObj, ok := resp["remediation_history"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "remediation_history should be an object")
 			tier1, ok := historyObj["tier1"].([]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected key "tier1" in remediation_history to be a []interface{}`)
 			Expect(tier1).To(HaveLen(1))
 		})
 
@@ -167,7 +167,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			Expect(schema["type"]).To(Equal("object"))
 
 			required, ok := schema["required"].([]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "required" in get_namespaced_resource_context schema to be a []interface{}`)
 			Expect(required).To(ContainElement("kind"))
 			Expect(required).To(ContainElement("name"))
 			Expect(required).To(ContainElement("namespace"))
@@ -213,9 +213,9 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			Expect(json.Unmarshal([]byte(result), &resp)).To(Succeed())
 
 			historyObj, ok := resp["remediation_history"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected key "remediation_history" in response to be a map[string]interface{}`)
 			tier1, ok := historyObj["tier1"].([]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected key "tier1" in remediation_history to be a []interface{}`)
 			Expect(tier1).To(HaveLen(1))
 		})
 	})
@@ -237,7 +237,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			Expect(schema["type"]).To(Equal("object"))
 
 			required, ok := schema["required"].([]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "required" in get_cluster_resource_context schema to be a []interface{}`)
 			Expect(required).To(ContainElement("kind"))
 			Expect(required).To(ContainElement("name"))
 			Expect(required).NotTo(ContainElement("namespace"))

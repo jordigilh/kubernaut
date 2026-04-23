@@ -103,14 +103,13 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
 			Expect(rec.Header().Get("Content-Type")).To(Equal("application/problem+json"))
 		})
 
-		It("UT-RH-HANDLER-003: should return 400 when targetNamespace is missing", func() {
+		It("UT-RH-HANDLER-003: should return 200 when targetNamespace is absent (cluster-scoped resources)", func() {
 			req := httptest.NewRequest("GET",
 				"/api/v1/remediation-history/context?targetKind=Deployment&targetName=nginx&currentSpecHash=sha256:abc",
 				nil)
 			handler.HandleGetRemediationHistoryContext(rec, req)
 
-			Expect(rec.Code).To(Equal(http.StatusBadRequest))
-			Expect(rec.Header().Get("Content-Type")).To(Equal("application/problem+json"))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 
 		It("UT-RH-HANDLER-004: should return 400 when currentSpecHash is missing", func() {
@@ -209,7 +208,7 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
 						{
 							EventData: map[string]interface{}{
 								"event_type": "effectiveness.assessment.completed",
-								"reason":     "full",
+								"reason":     "Full",
 							},
 						},
 					},

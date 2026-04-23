@@ -134,6 +134,12 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
+	// Issue #785: Generate inter-service TLS before deploying services
+	_, _ = fmt.Fprintln(writer, "  🔐 Generating inter-service TLS certificates (Issue #785)...")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	type deployResult struct {
 		name string
 		err  error
@@ -265,8 +271,8 @@ spec:
 		return fmt.Errorf("failed to get SA token: %w", err)
 	}
 
-	dsURL := "http://localhost:8089"
-	seedClient, err := createAuthenticatedDataStorageClient(dsURL, saToken)
+	dsURL := "https://localhost:8089"
+	seedClient, err := createTLSAuthenticatedDataStorageClient(dsURL, saToken, kubeconfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to create DS client: %w", err)
 	}
@@ -704,6 +710,9 @@ rules:
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates", "clusterissuers", "certificaterequests"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -756,8 +765,11 @@ data:
       model: "mock-model"
       endpoint: "http://mock-llm:8080"
       api_key: "mock-api-key-for-e2e"
+    server:
+      tls:
+        certDir: /etc/tls
     data_storage:
-      url: "http://data-storage-service:8080"
+      url: "https://data-storage-service:8080"
     logging:
       level: "debug"
     audit:
@@ -806,11 +818,18 @@ spec:
         image: %s
         imagePullPolicy: %s
         ports:
-        - containerPort: 8080
+        - name: http
+          containerPort: 8080
+        - name: health
+          containerPort: 8081
+        - name: metrics
+          containerPort: 9090
         args:
         - "-config"
         - "/etc/kubernautagent/config.yaml"
         env:
+        - name: TLS_CA_FILE
+          value: /etc/tls-ca/ca.crt
         - name: LLM_ENDPOINT
           value: "http://mock-llm:8080"
         - name: LLM_MODEL
@@ -818,29 +837,42 @@ spec:
         - name: LLM_PROVIDER
           value: "openai"
         - name: DATA_STORAGE_URL
-          value: "http://data-storage-service:8080"
+          value: "https://data-storage-service:8080"
         %s
         volumeMounts:
         - name: config
           mountPath: /etc/kubernautagent
           readOnly: true
+        - name: tls-certs
+          mountPath: /etc/tls
+          readOnly: true
+        - name: tls-ca
+          mountPath: /etc/tls-ca
+          readOnly: true
         %s
         readinessProbe:
           httpGet:
-            path: /ready
-            port: 8080
+            path: /readyz
+            port: 8081
           initialDelaySeconds: 3
           periodSeconds: 5
         livenessProbe:
           httpGet:
-            path: /health
-            port: 8080
+            path: /healthz
+            port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
       volumes:
       - name: config
         configMap:
           name: kubernaut-agent-config
+      - name: tls-certs
+        secret:
+          secretName: kubernautagent-tls
+          optional: true
+      - name: tls-ca
+        configMap:
+          name: inter-service-ca
       %s
 ---
 apiVersion: v1
@@ -851,9 +883,18 @@ metadata:
 spec:
   type: NodePort
   ports:
-  - port: 8080
+  - name: http
+    port: 8080
     targetPort: 8080
     nodePort: 30088
+  - name: health
+    port: 8081
+    targetPort: 8081
+    nodePort: 30188
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    nodePort: 30988
   selector:
     app: kubernaut-agent
 `, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)

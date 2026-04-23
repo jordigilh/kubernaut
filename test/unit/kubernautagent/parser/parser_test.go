@@ -738,4 +738,376 @@ false
 			})
 		})
 	})
+
+	// ========================================
+	// ISSUE #746: NO-MATCHING-WORKFLOW MISCLASSIFICATION FIX
+	// Parser must correctly classify LLM responses where no workflow matches
+	// as no_matching_workflows instead of llm_parsing_error. Achieves behavioral
+	// parity with HAPI v1.2.1 fallback chain (BR-HAPI-197.2).
+	// ========================================
+	Describe("KA Parser — No-Matching-Workflow Misclassification (#746)", func() {
+
+		Describe("UT-KA-746-001: camelCase rootCauseAnalysis extracted by parseLLMFormat", func() {
+			It("should extract RCA fields from camelCase rootCauseAnalysis", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"rootCauseAnalysis": {
+						"summary": "ResourceQuota memory limit exceeded",
+						"severity": "medium",
+						"contributing_factors": ["quota ceiling", "pod request size"]
+					},
+					"selected_workflow": {
+						"workflow_id": "patch-quota",
+						"confidence": 0.85
+					},
+					"confidence": 0.85
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(Equal("ResourceQuota memory limit exceeded"),
+					"#746: camelCase rootCauseAnalysis.summary must be extracted")
+				Expect(result.Severity).To(Equal("medium"),
+					"#746: camelCase rootCauseAnalysis.severity must be extracted")
+				Expect(result.ContributingFactors).To(ConsistOf("quota ceiling", "pod request size"),
+					"#746: camelCase rootCauseAnalysis.contributing_factors must be extracted")
+			})
+		})
+
+		Describe("UT-KA-746-002: camelCase RCA + snake_case workflow both extracted", func() {
+			It("should extract both camelCase RCA and snake_case workflow", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"rootCauseAnalysis": {
+						"summary": "CrashLoopBackOff due to missing ConfigMap",
+						"severity": "high",
+						"remediationTarget": {
+							"kind": "Deployment",
+							"name": "web-app",
+							"namespace": "production"
+						}
+					},
+					"selected_workflow": {
+						"workflow_id": "rollback-deployment",
+						"confidence": 0.90,
+						"rationale": "Previous revision was stable"
+					},
+					"confidence": 0.90
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(Equal("CrashLoopBackOff due to missing ConfigMap"),
+					"#746: camelCase RCA summary extracted")
+				Expect(result.WorkflowID).To(Equal("rollback-deployment"),
+					"#746: snake_case selected_workflow.workflow_id extracted alongside camelCase RCA")
+				Expect(result.RemediationTarget.Kind).To(Equal("Deployment"),
+					"#746: camelCase remediationTarget extracted from camelCase RCA")
+			})
+		})
+
+		Describe("UT-KA-746-003: No workflow + confidence > 0 derives no_matching_workflows", func() {
+			It("should set HumanReviewNeeded and no_matching_workflows when no workflow selected", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"root_cause_analysis": {
+						"summary": "ResourceQuota memory limit fully consumed"
+					},
+					"confidence": 0.95
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.HumanReviewNeeded).To(BeTrue(),
+					"#746: No workflow selected must trigger HumanReviewNeeded (BR-HAPI-197.2)")
+				Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
+					"#746: Parser must derive no_matching_workflows when no workflow selected (HAPI parity)")
+			})
+		})
+
+		Describe("UT-KA-746-004: Truly unrecognizable JSON still rejected", func() {
+			It("should return error for JSON with no recognized fields", func() {
+				p := parser.NewResultParser()
+				content := `{"foo": "bar", "baz": 42}`
+				result, err := p.Parse(content)
+				Expect(err).To(HaveOccurred(),
+					"#746: Unrecognizable JSON must still be rejected (defense-in-depth)")
+				Expect(result).To(BeNil())
+				Expect(err.Error()).To(ContainSubstring("no recognized fields"))
+			})
+		})
+
+		Describe("UT-KA-746-005: investigation_outcome=inconclusive + RCA + no workflow -> no_matching_workflows", func() {
+			It("should derive no_matching_workflows from inconclusive outcome with RCA and no workflow", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"root_cause_analysis": {
+						"summary": "Disk pressure detected but no automated remediation available"
+					},
+					"confidence": 0.88,
+					"investigation_outcome": "inconclusive"
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.HumanReviewNeeded).To(BeTrue(),
+					"#746: inconclusive + no workflow must trigger HumanReviewNeeded")
+				Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
+					"#746: inconclusive + RCA summary + no workflow must derive no_matching_workflows")
+			})
+		})
+
+		Describe("UT-KA-746-006: Workflow selected -> no false HR escalation", func() {
+			It("should not set HumanReviewNeeded when a workflow is selected", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"root_cause_analysis": {
+						"summary": "OOMKilled due to memory pressure"
+					},
+					"selected_workflow": {
+						"workflow_id": "oom-increase-memory",
+						"confidence": 0.92
+					},
+					"confidence": 0.92
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.HumanReviewNeeded).To(BeFalse(),
+					"#746: Workflow selected must NOT trigger HumanReviewNeeded (no regression)")
+				Expect(result.WorkflowID).To(Equal("oom-increase-memory"))
+			})
+		})
+
+		Describe("UT-KA-746-007: problem_resolved outcome -> no HR escalation", func() {
+			It("should not set HumanReviewNeeded for problem_resolved outcome", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"root_cause_analysis": {
+						"summary": "Network partition self-healed"
+					},
+					"confidence": 0.90,
+					"investigation_outcome": "problem_resolved",
+					"actionable": false
+				}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).NotTo(BeNil())
+				Expect(result.HumanReviewNeeded).To(BeFalse(),
+					"#746: problem_resolved must NOT trigger HumanReviewNeeded (no regression)")
+				Expect(result.Warnings).To(ContainElement(ContainSubstring("Problem self-resolved")))
+			})
+		})
+
+		Describe("UT-KA-746-008: Golden transcript — exact #746 audit JSON (no summary)", func() {
+			// Updated for #795 Fix D: the prompt template requires root_cause_analysis.summary
+			// to always be present. A response with confidence but no summary and no workflow
+			// is incomplete and must return an error so the investigator's retryRCASubmit
+			// can request the missing field. See #795 preflight audit for justification.
+			It("should return parse error for no-summary RCA (triggers retry in investigator)", func() {
+				p := parser.NewResultParser()
+				content := `{
+					"needsHumanReview": true,
+					"confidence": 0.98,
+					"analysis": "The namespace-quota ResourceQuota memory limit (512Mi) is fully consumed by 2 running api-server pods (2x256Mi). The deployment requests 3 replicas but only 2 fit within the quota ceiling.",
+					"rootCauseAnalysis": {
+						"severity": "medium",
+						"remediationTarget": {
+							"kind": "Deployment",
+							"name": "api-server",
+							"namespace": "demo-quota"
+						},
+						"contributingFactors": [
+							"ResourceQuota sets a hard limit of 512Mi",
+							"Each pod requests/limits 256Mi — only 2 fit",
+							"3x256Mi=768Mi exceeds 512Mi ceiling",
+							"No remediation history — first-time mismatch",
+							"Failure is purely quota enforcement"
+						]
+					}
+				}`
+				_, err := p.Parse(content)
+				Expect(err).To(HaveOccurred(),
+					"#746/#795: confidence-only with no RCA summary and no workflow must return error to trigger retry")
+			})
+		})
+	})
+
+	Describe("UT-KA-795: Parser handles double-serialized RCA JSON", func() {
+		var p *parser.ResultParser
+		BeforeEach(func() {
+			p = parser.NewResultParser()
+		})
+
+		Describe("UT-KA-795-P01: root_cause_analysis as escaped JSON string with remediation_target", func() {
+			It("should unwrap the double-serialized string and extract remediation_target", func() {
+				content := `{"root_cause_analysis":"{\"summary\": \"CrashLoopBackOff caused by invalid directive\", \"severity\": \"critical\", \"signal_name\": \"KubePodCrashLooping\", \"contributing_factors\": [\"ConfigMap contains invalid_directive\"], \"remediation_target\": {\"kind\": \"Deployment\", \"name\": \"web-frontend\", \"namespace\": \"demo-gitops\"}}","confidence":0.98}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-795-P01: double-serialized root_cause_analysis must not cause parse failure")
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(ContainSubstring("CrashLoopBackOff"),
+					"UT-KA-795-P01: RCA summary must be extracted from unwrapped string")
+				Expect(result.RemediationTarget).To(Equal(katypes.RemediationTarget{
+					Kind: "Deployment", Name: "web-frontend", Namespace: "demo-gitops",
+				}), "UT-KA-795-P01: remediation_target must be extracted from unwrapped string")
+			})
+		})
+
+		Describe("UT-KA-795-P02: rootCauseAnalysis (camelCase) as escaped JSON string", func() {
+			It("should unwrap the camelCase double-serialized string", func() {
+				content := `{"rootCauseAnalysis":"{\"summary\": \"Node disk pressure\", \"remediation_target\": {\"kind\": \"Node\", \"name\": \"worker-1\", \"namespace\": \"\"}}","confidence":0.85}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-795-P02: camelCase double-serialized RCA must not cause parse failure")
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(ContainSubstring("disk pressure"))
+				Expect(result.RemediationTarget.Kind).To(Equal("Node"))
+			})
+		})
+
+		Describe("UT-KA-795-P03: root_cause_analysis string that is NOT valid JSON", func() {
+			It("should not false-positive unwrap a plain text string value", func() {
+				content := `{"root_cause_analysis":"This is just a plain text summary, not JSON","confidence":0.7}`
+				_, err := p.Parse(content)
+				Expect(err).To(HaveOccurred(),
+					"UT-KA-795-P03: plain text string in root_cause_analysis must still fail (no false-positive unwrap)")
+			})
+		})
+
+		Describe("UT-KA-795-P04: trailing brace in double-serialized root_cause_analysis", func() {
+			It("should unwrap via balanced extraction despite the trailing brace", func() {
+				content := `{"root_cause_analysis":"{\"summary\":\"CrashLoopBackOff caused by invalid directive\",\"severity\":\"critical\",\"remediation_target\":{\"kind\":\"Deployment\",\"name\":\"web-frontend\",\"namespace\":\"demo-gitops\"}}}","confidence":0.98}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-795-P04: trailing brace must be stripped by balanced extraction")
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(ContainSubstring("CrashLoopBackOff"),
+					"UT-KA-795-P04: summary must be extracted from unwrapped string")
+				Expect(result.RemediationTarget).To(Equal(katypes.RemediationTarget{
+					Kind: "Deployment", Name: "web-frontend", Namespace: "demo-gitops",
+				}), "UT-KA-795-P04: remediation_target must survive trailing-brace recovery")
+			})
+		})
+
+		Describe("UT-KA-795-P05: confidence > 0 with no-summary inner object after unwrap returns error", func() {
+			It("should return parse error when unwrapped RCA has no summary field", func() {
+				content := `{"rootCauseAnalysis":"{\"severity\":\"medium\",\"remediation_target\":{\"kind\":\"Deployment\",\"name\":\"web-frontend\",\"namespace\":\"demo-gitops\"}}}","confidence":0.98}`
+				_, err := p.Parse(content)
+				Expect(err).To(HaveOccurred(),
+					"UT-KA-795-P05: confidence-only with no RCA summary after unwrap must return error to trigger retry")
+			})
+		})
+
+		Describe("UT-KA-795-P06: valid RCA object with summary and confidence succeeds", func() {
+			It("should parse successfully when RCA has summary field (non-regression)", func() {
+				content := `{"root_cause_analysis":{"summary":"OOMKilled due to memory leak","severity":"critical","remediation_target":{"kind":"Deployment","name":"api","namespace":"production"}},"confidence":0.92}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-795-P06: valid RCA with summary must not be rejected by Fix D guard")
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(ContainSubstring("OOMKilled"))
+				Expect(result.Confidence).To(BeNumerically("~", 0.92, 0.01))
+			})
+		})
+
+		Describe("UT-KA-795-P07: triple-serialized JSON is rejected at s[0] guard", func() {
+			It("should not attempt to unwrap a triple-serialized string", func() {
+				content := `{"root_cause_analysis":"\"{\\\"summary\\\": \\\"triple\\\"}\"","confidence":0.8}`
+				_, err := p.Parse(content)
+				Expect(err).To(HaveOccurred(),
+					"UT-KA-795-P07: triple-serialized string starts with '\"' not '{', must not be unwrapped")
+			})
+		})
+
+		Describe("UT-KA-795-P08: trailing brace with summary succeeds without retry (Fix C primary value)", func() {
+			It("should unwrap and parse successfully on first attempt when summary is present", func() {
+				content := `{"root_cause_analysis":"{\"summary\":\"ResourceQuota exceeded\",\"severity\":\"medium\",\"remediation_target\":{\"kind\":\"Deployment\",\"name\":\"api-server\",\"namespace\":\"demo-quota\"}}}","confidence":0.95}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-795-P08: trailing brace with valid summary must succeed on first parse (no retry needed)")
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(ContainSubstring("ResourceQuota exceeded"))
+				Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
+				Expect(result.RemediationTarget.Name).To(Equal("api-server"))
+				Expect(result.Confidence).To(BeNumerically("~", 0.95, 0.01))
+			})
+		})
+
+		Describe("UT-KA-795-P09: selected_workflow trailing brace is unwrapped", func() {
+			It("should unwrap a double-serialized selected_workflow with trailing brace", func() {
+				content := `{"root_cause_analysis":{"summary":"OOM due to memory leak","remediation_target":{"kind":"Deployment","name":"api","namespace":"prod"}},"selected_workflow":"{\"workflow_id\":\"oom-increase-memory\",\"confidence\":0.9}}","confidence":0.9}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-795-P09: double-serialized selected_workflow with trailing brace must be unwrapped")
+				Expect(result).NotTo(BeNil())
+				Expect(result.WorkflowID).To(Equal("oom-increase-memory"),
+					"UT-KA-795-P09: workflow_id must be extracted from unwrapped selected_workflow")
+			})
+		})
+	})
+
+	Describe("LLM Resilience Hardening: Array/Type/Truncation defenses", func() {
+
+		Describe("UT-KA-800-ARR-01: Single-element array wrapping is unwrapped", func() {
+			It("should extract the object from a single-element array", func() {
+				p := parser.NewResultParser()
+				content := `[{"rca_summary":"OOMKilled due to memory leak","workflow_id":"oom-increase-memory","confidence":0.9}]`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-800-ARR-01: single-element array must be unwrapped to extract the inner object")
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(ContainSubstring("OOMKilled"))
+				Expect(result.WorkflowID).To(Equal("oom-increase-memory"))
+			})
+		})
+
+		Describe("UT-KA-800-ARR-02: Multi-element array is not unwrapped", func() {
+			It("should return error for a multi-element array (ambiguous)", func() {
+				p := parser.NewResultParser()
+				content := `[{"rca_summary":"cause A"},{"rca_summary":"cause B"}]`
+				_, err := p.Parse(content)
+				Expect(err).To(HaveOccurred(),
+					"UT-KA-800-ARR-02: multi-element array must not be unwrapped (ambiguous)")
+			})
+		})
+
+		Describe("UT-KA-800-TC-01: String-typed confidence is coerced to float", func() {
+			It("should parse confidence when LLM returns it as a quoted string", func() {
+				p := parser.NewResultParser()
+				content := `{"root_cause_analysis":{"summary":"OOM","remediation_target":{"kind":"Deployment","name":"api","namespace":"prod"}},"selected_workflow":{"workflow_id":"oom-fix","confidence":"0.92","rationale":"increase memory"},"confidence":"0.92"}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-800-TC-01: string confidence '0.92' must be coerced to float64")
+				Expect(result).NotTo(BeNil())
+				Expect(result.Confidence).To(BeNumerically("~", 0.92, 0.001))
+			})
+		})
+
+		Describe("UT-KA-800-TC-02: String-typed actionable boolean is coerced", func() {
+			It("should parse actionable when LLM returns it as a quoted string", func() {
+				p := parser.NewResultParser()
+				content := `{"root_cause_analysis":{"summary":"resolved itself","remediation_target":{"kind":"Deployment","name":"api","namespace":"prod"}},"confidence":0.85,"actionable":"false","investigation_outcome":"problem_resolved"}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-800-TC-02: string actionable 'false' must be coerced to bool")
+				Expect(result).NotTo(BeNil())
+				Expect(result.IsActionable).NotTo(BeNil())
+				Expect(*result.IsActionable).To(BeFalse())
+			})
+		})
+
+		Describe("UT-KA-800-TC-03: Non-numeric string confidence is rejected", func() {
+			It("should not crash on garbage string confidence", func() {
+				p := parser.NewResultParser()
+				content := `{"rca_summary":"OOM","workflow_id":"oom-fix","confidence":"high"}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-800-TC-03: garbage confidence must not crash parser")
+				Expect(result).NotTo(BeNil())
+				Expect(result.Confidence).To(BeNumerically("==", 0),
+					"UT-KA-800-TC-03: non-numeric confidence should default to 0")
+			})
+		})
+	})
 })

@@ -214,7 +214,7 @@ var _ = Describe("EA Conditions Infrastructure (DD-CRD-002)", func() {
 	// UT-EM-COND-011: AssessmentReasonSpecDrift constant exists
 	// ========================================
 	It("UT-EM-COND-011: should define AssessmentReasonSpecDrift in EA types", func() {
-		Expect(eav1.AssessmentReasonSpecDrift).To(Equal("spec_drift"))
+		Expect(eav1.AssessmentReasonSpecDrift).To(Equal("SpecDrift"))
 	})
 
 	// ========================================

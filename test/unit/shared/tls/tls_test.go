@@ -20,6 +20,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -91,16 +92,19 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 			generateSelfSignedCert(certPath, keyPath)
 
 			server := &http.Server{Addr: ":0"}
-			isTLS, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+			isTLS, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(isTLS).To(BeTrue(), "should detect TLS certs and configure TLS")
-			Expect(server.TLSConfig.Certificates).To(HaveLen(1), "TLS config should contain exactly one certificate")
+
+			cert, certErr := server.TLSConfig.GetCertificate(&tls.ClientHelloInfo{})
+			Expect(certErr).ToNot(HaveOccurred())
+			Expect(cert.Certificate).To(HaveLen(1), "TLS cert chain should contain exactly one certificate")
 		})
 
 		// UT-TLS-493-002: ConditionalTLS starts HTTP when cert files don't exist
 		It("UT-TLS-493-002: should start HTTP when cert files don't exist", func() {
 			server := &http.Server{Addr: ":0"}
-			isTLS, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+			isTLS, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(isTLS).To(BeFalse(), "no certs, should remain plain HTTP")
 			Expect(server.TLSConfig).To(BeNil(), "TLSConfig must remain nil when no certs exist")
@@ -112,7 +116,7 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 			Expect(os.WriteFile(keyPath, []byte("not-a-key"), 0600)).To(Succeed())
 
 			server := &http.Server{Addr: ":0"}
-			_, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+			_, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
 			Expect(err).To(HaveOccurred())
 		})
 	})
@@ -145,6 +149,41 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(transport.TLSClientConfig.RootCAs.Subjects()).ToNot(BeEmpty(),
 				"transport CA pool should contain the loaded CA certificate")
+		})
+	})
+
+	Describe("DefaultBaseTransport (#753)", func() {
+
+		AfterEach(func() {
+			sharedtls.ResetDefaultTransportForTesting()
+			os.Unsetenv("TLS_CA_FILE")
+		})
+
+		// UT-TLS-753-002: DefaultBaseTransport retries after initial failure
+		// BR-SECURITY-753: Transient CA file unavailability must not cause permanent failure
+		It("UT-TLS-753-002: should retry after initial CA file failure", func() {
+			os.Setenv("TLS_CA_FILE", "/nonexistent/ca.crt")
+
+			_, err := sharedtls.DefaultBaseTransport()
+			Expect(err).To(HaveOccurred(), "first call must fail when CA file is missing")
+
+			generateSelfSignedCert(certPath, keyPath)
+			os.Setenv("TLS_CA_FILE", certPath)
+
+			rt, err := sharedtls.DefaultBaseTransport()
+			Expect(err).ToNot(HaveOccurred(), "second call must succeed after CA file becomes available")
+			_, isCAReloader := rt.(*sharedtls.CAReloader)
+			Expect(isCAReloader).To(BeTrue(), "must return *CAReloader when TLS_CA_FILE is valid")
+		})
+
+		// UT-TLS-753-003: DefaultBaseTransport returns plain transport when TLS_CA_FILE unset
+		It("UT-TLS-753-003: should return plain transport when TLS_CA_FILE is unset", func() {
+			os.Unsetenv("TLS_CA_FILE")
+
+			rt, err := sharedtls.DefaultBaseTransport()
+			Expect(err).ToNot(HaveOccurred())
+			_, isPlain := rt.(*http.Transport)
+			Expect(isPlain).To(BeTrue(), "must return plain *http.Transport when no CA file")
 		})
 	})
 

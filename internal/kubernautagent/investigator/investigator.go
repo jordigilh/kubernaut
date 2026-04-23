@@ -21,7 +21,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
@@ -41,6 +45,60 @@ const maxSelfCorrectionAttempts = 3
 // call arguments are returned as content without executing any real tool.
 const SubmitResultToolName = "submit_result"
 
+// SubmitResultWithWorkflowToolName is the sentinel for the workflow-selected
+// path during PhaseWorkflowDiscovery (#760 v2).
+const SubmitResultWithWorkflowToolName = "submit_result_with_workflow"
+
+// SubmitResultNoWorkflowToolName is the sentinel for the no-workflow path
+// during PhaseWorkflowDiscovery (#760 v2).
+const SubmitResultNoWorkflowToolName = "submit_result_no_workflow"
+
+// LoopResult is a sealed interface representing the outcome of runLLMLoop.
+// Callers dispatch on the concrete type via a type switch.
+type LoopResult interface {
+	loopResult()
+}
+
+// SubmitResult is returned when the LLM calls the generic submit_result tool (RCA phase).
+type SubmitResult struct{ Content string }
+
+func (*SubmitResult) loopResult() {}
+
+// SubmitWithWorkflowResult is returned when the LLM calls submit_result_with_workflow.
+type SubmitWithWorkflowResult struct{ Content string }
+
+func (*SubmitWithWorkflowResult) loopResult() {}
+
+// SubmitNoWorkflowResult is returned when the LLM calls submit_result_no_workflow.
+type SubmitNoWorkflowResult struct{ Content string }
+
+func (*SubmitNoWorkflowResult) loopResult() {}
+
+// TextResult is returned when the LLM responds with plain text (no tool call).
+type TextResult struct{ Content string }
+
+func (*TextResult) loopResult() {}
+
+// ExhaustedResult is returned when the loop exhausts maxTurns or tool budget.
+// Reason distinguishes the two cases for observability (#770).
+type ExhaustedResult struct{ Reason string }
+
+func (*ExhaustedResult) loopResult() {}
+
+// sentinelResult maps a sentinel tool call to its LoopResult type.
+func sentinelResult(tc llm.ToolCall) LoopResult {
+	switch tc.Name {
+	case SubmitResultToolName:
+		return &SubmitResult{Content: tc.Arguments}
+	case SubmitResultWithWorkflowToolName:
+		return &SubmitWithWorkflowResult{Content: tc.Arguments}
+	case SubmitResultNoWorkflowToolName:
+		return &SubmitNoWorkflowResult{Content: tc.Arguments}
+	default:
+		return nil
+	}
+}
+
 // CatalogFetcher retrieves a fresh workflow validator from the catalog.
 // Implementations query DataStorage at request time so KA always sees the
 // current catalog without boot-time prefetch or caching (see #665).
@@ -52,63 +110,79 @@ type CatalogFetcher interface {
 // Investigator applies inside executeTool and runWorkflowSelection.
 // All fields may be nil; nil fields are skipped.
 type Pipeline struct {
-	Sanitizer       *sanitization.Pipeline
-	AnomalyDetector *AnomalyDetector
-	CatalogFetcher  CatalogFetcher
-	Summarizer      *summarizer.Summarizer
+	Sanitizer         *sanitization.Pipeline
+	AnomalyDetector   *AnomalyDetector
+	CatalogFetcher    CatalogFetcher
+	Summarizer        *summarizer.Summarizer
+	MaxToolOutputSize int
 }
 
 // Config holds all dependencies for constructing an Investigator.
 // Using a struct instead of positional parameters makes the constructor
 // stable and self-documenting. Optional fields (Registry, Pipeline)
 // default to their zero values when omitted.
+// ScopeResolver determines whether a Kubernetes kind is cluster-scoped (#763).
+type ScopeResolver interface {
+	IsClusterScoped(kind string) (bool, error)
+}
+
 type Config struct {
-	Client       llm.Client
-	Builder      *prompt.Builder
-	ResultParser *parser.ResultParser
-	Enricher     *enrichment.Enricher
-	AuditStore   audit.AuditStore
-	Logger       *slog.Logger
-	MaxTurns     int
-	PhaseTools   katypes.PhaseToolMap
-	Registry     registry.ToolRegistry
-	Pipeline     Pipeline
-	ModelName    string
+	Client        llm.Client
+	Builder       *prompt.Builder
+	ResultParser  *parser.ResultParser
+	Enricher      *enrichment.Enricher
+	AuditStore    audit.AuditStore
+	Logger        *slog.Logger
+	MaxTurns      int
+	PhaseTools    katypes.PhaseToolMap
+	Registry      registry.ToolRegistry
+	Pipeline      Pipeline
+	ModelName     string
+	ScopeResolver ScopeResolver
+	Swappable     *llm.SwappableClient
 }
 
 // Investigator orchestrates the two-invocation architecture:
 // Invocation 1 (RCA): system prompt + tool calls -> RCA summary
 // Invocation 2 (Workflow Selection): new session with RCA context -> workflow choice
 type Investigator struct {
-	client       llm.Client
-	builder      *prompt.Builder
-	resultParser *parser.ResultParser
-	enricher     *enrichment.Enricher
-	auditStore   audit.AuditStore
-	logger       *slog.Logger
-	maxTurns     int
-	phaseTools   katypes.PhaseToolMap
-	registry     registry.ToolRegistry
-	pipeline     Pipeline
-	modelName    string
+	client        llm.Client
+	builder       *prompt.Builder
+	resultParser  *parser.ResultParser
+	enricher      *enrichment.Enricher
+	auditStore    audit.AuditStore
+	logger        *slog.Logger
+	maxTurns      int
+	phaseTools    katypes.PhaseToolMap
+	registry      registry.ToolRegistry
+	pipeline      Pipeline
+	modelName     string
+	scopeResolver ScopeResolver
+	swappable     *llm.SwappableClient
 }
 
 // New creates an Investigator from the given configuration.
 // Config.Registry may be nil (tool execution will be skipped).
 // Config.Pipeline fields default to nil (their features are skipped).
 func New(cfg Config) *Investigator {
+	pipeline := cfg.Pipeline
+	if pipeline.AnomalyDetector == nil {
+		pipeline.AnomalyDetector = NewAnomalyDetector(DefaultAnomalyConfig(), nil)
+	}
 	return &Investigator{
-		client:       cfg.Client,
-		builder:      cfg.Builder,
-		resultParser: cfg.ResultParser,
-		enricher:     cfg.Enricher,
-		auditStore:   cfg.AuditStore,
-		logger:       cfg.Logger,
-		maxTurns:     cfg.MaxTurns,
-		phaseTools:   cfg.PhaseTools,
-		registry:     cfg.Registry,
-		pipeline:     cfg.Pipeline,
-		modelName:    cfg.ModelName,
+		client:        cfg.Client,
+		builder:       cfg.Builder,
+		resultParser:  cfg.ResultParser,
+		enricher:      cfg.Enricher,
+		auditStore:    cfg.AuditStore,
+		logger:        cfg.Logger,
+		maxTurns:      cfg.MaxTurns,
+		phaseTools:    cfg.PhaseTools,
+		registry:      cfg.Registry,
+		pipeline:      pipeline,
+		modelName:     cfg.ModelName,
+		scopeResolver: cfg.ScopeResolver,
+		swappable:     cfg.Swappable,
 	}
 }
 
@@ -116,13 +190,28 @@ func New(cfg Config) *Investigator {
 // Per BR-AUDIT-005, all audit events use signal.RemediationID as correlation ID
 // so that DataStorage queries by remediation_id return the full investigation trail.
 func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	inv.pipeline.AnomalyDetector.Reset()
+
+	// #783: Pin client and model name for the duration of this investigation.
+	// Subsequent hot-reload swaps do not affect an in-flight investigation.
+	client := inv.client
+	modelName := inv.modelName
+	if inv.swappable != nil {
+		pinned := inv.swappable.Snapshot()
+		client = llm.NewInstrumentedClient(pinned)
+		modelName = inv.swappable.ModelName()
+	}
+
 	correlationID := signal.RemediationID
+	enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
+
 	signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
-	enrichData := inv.resolveEnrichment(ctx, signalKind, signalName, signalNS, signal.IncidentID)
+	signalNS = inv.normalizeNamespace(signalKind, signalNS)
+	enrichData := inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.IncidentID)
 	promptEnrichment := toPromptEnrichment(enrichData)
 	tokens := &TokenAccumulator{}
 
-	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, tokens, correlationID)
+	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, tokens, correlationID, client, modelName)
 	if err != nil {
 		return nil, fmt.Errorf("RCA invocation: %w", err)
 	}
@@ -140,12 +229,13 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	// H3-fix: retain pre-RCA enrichment if re-enrichment fails.
 	workflowSignal := signal
 	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
+	postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
 	if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
 		inv.logger.Info("re-enriching with RCA remediation target",
 			"signal", signalKind+"/"+signalName,
 			"rca_target", postRCAKind+"/"+postRCAName,
 		)
-		reEnriched := inv.resolveEnrichment(ctx, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
+		reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
 
 		// BR-HAPI-261 AC#7 / #704: check HardFail BEFORE label merge
 		// to prevent the merge from silently dropping the failure signal.
@@ -182,13 +272,11 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		workflowSignal.Namespace = postRCANS
 	}
 
-	if inv.pipeline.AnomalyDetector != nil {
-		inv.pipeline.AnomalyDetector.Reset()
-	}
+	inv.pipeline.AnomalyDetector.Reset()
 
 	p1Ctx := buildPhase1Context(rcaResult)
 
-	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, tokens, correlationID)
+	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, tokens, correlationID, client, modelName)
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
 	}
@@ -258,7 +346,7 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 	return result
 }
 
-func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string) (*katypes.InvestigationResult, error) {
+func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (*katypes.InvestigationResult, error) {
 	systemPrompt, err := inv.builder.RenderInvestigation(signalToPrompt(signal), enrichData)
 	if err != nil {
 		return nil, fmt.Errorf("rendering investigation prompt: %w", err)
@@ -269,21 +357,37 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		{Role: "user", Content: fmt.Sprintf("Investigate: %s %s in %s — %s", signal.Severity, signal.Name, signal.Namespace, signal.Message)},
 	}
 
-	content, exhausted, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, tokens, correlationID)
+	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, tokens, correlationID, client, modelName)
 	if err != nil {
 		return nil, err
 	}
-	if exhausted {
+
+	var content string
+	switch r := loopRes.(type) {
+	case *ExhaustedResult:
 		return &katypes.InvestigationResult{
 			HumanReviewNeeded: true,
-			Reason:            fmt.Sprintf("max turns (%d) exhausted during RCA", inv.maxTurns),
+			Reason:            fmt.Sprintf("%s during RCA (maxTurns=%d)", r.Reason, inv.maxTurns),
 		}, nil
+	case *SubmitResult:
+		content = r.Content
+	case *TextResult:
+		content = r.Content
+	default:
+		content = ""
 	}
 
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
-		inv.logger.Warn("RCA parse failed, treating as summary",
-			slog.String("error", parseErr.Error()))
+		if retried := inv.retryRCASubmit(ctx, content, messages, tokens, correlationID, client, modelName); retried != nil {
+			result = retried
+			parseErr = nil
+		}
+	}
+	if parseErr != nil {
+		inv.logger.Warn("RCA parse failed after retry, treating as summary",
+			slog.String("error", parseErr.Error()),
+			slog.String("correlation_id", correlationID))
 		return &katypes.InvestigationResult{
 			RCASummary: content,
 		}, nil
@@ -294,7 +398,8 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	// Aligned with HAPI v1.2.1 where needs_human_review is parser-driven in Phase 3.
 	if result.HumanReviewNeeded {
 		inv.logger.Info("clearing HumanReviewNeeded set during RCA (parser-driven in Phase 3 only)",
-			slog.String("reason", result.HumanReviewReason))
+			slog.String("reason", result.HumanReviewReason),
+			slog.String("correlation_id", correlationID))
 		result.HumanReviewNeeded = false
 		result.HumanReviewReason = ""
 	}
@@ -302,7 +407,102 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	return result, nil
 }
 
-func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string) (*katypes.InvestigationResult, error) {
+const maxRCAParseRetries = 1
+
+// retryRCASubmit performs a single correction attempt when the RCA parse fails
+// (e.g. double-serialized JSON that wasn't caught by the unwrap heuristic, or
+// garbage fields). Mirrors retryWorkflowSubmit but scoped to the RCA phase.
+func (inv *Investigator) retryRCASubmit(ctx context.Context, lastContent string, history []llm.Message, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) *katypes.InvestigationResult {
+	submitOnlyTools := []llm.ToolDefinition{
+		{
+			Name:        SubmitResultToolName,
+			Description: "Submit root cause analysis result.",
+			Parameters:  parser.RCAResultSchema(),
+		},
+	}
+
+	correctionMsg := `Your response could not be parsed. You MUST call submit_result with a JSON object like:
+{"root_cause_analysis":{"summary":"...","severity":"critical","signal_name":"SignalName","contributing_factors":["factor1"],"remediation_target":{"kind":"Deployment","name":"resource","namespace":"ns"}},"confidence":0.9}
+
+CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap it in quotes.`
+
+	retryMessages := make([]llm.Message, len(history))
+	copy(retryMessages, history)
+	retryMessages = append(retryMessages,
+		llm.Message{Role: "assistant", Content: lastContent},
+	)
+
+	for attempt := 0; attempt < maxRCAParseRetries; attempt++ {
+		inv.logger.Info("parse-level retry for RCA submit",
+			slog.Int("attempt", attempt+1),
+			slog.Int("max", maxRCAParseRetries),
+			slog.String("correlation_id", correlationID))
+
+		retryMessages = append(retryMessages,
+			llm.Message{Role: "user", Content: correctionMsg},
+		)
+
+		retryEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+		retryEvent.EventAction = audit.ActionLLMRequest
+		retryEvent.EventOutcome = audit.OutcomeSuccess
+		retryEvent.Data["model"] = modelName
+		retryEvent.Data["retry_attempt"] = attempt + 1
+		retryEvent.Data["retry_max"] = maxRCAParseRetries
+		retryEvent.Data["phase"] = string(katypes.PhaseRCA)
+		retryEvent.Data["retry_reason"] = "rca_parse_correction"
+		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.logger)
+
+		resp, err := client.Chat(ctx, llm.ChatRequest{
+			Messages: retryMessages,
+			Tools:    submitOnlyTools,
+			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
+		})
+		if err != nil {
+			inv.logger.Warn("RCA retry LLM call failed",
+				slog.String("error", err.Error()),
+				slog.String("correlation_id", correlationID))
+			continue
+		}
+		if tokens != nil {
+			tokens.Add(resp.Usage)
+		}
+
+		for _, tc := range resp.ToolCalls {
+			if tc.Name == SubmitResultToolName {
+				result, parseErr := inv.resultParser.Parse(tc.Arguments)
+				if parseErr != nil {
+					inv.logger.Warn("RCA retry parse still failed",
+						slog.String("error", parseErr.Error()),
+						slog.String("correlation_id", correlationID))
+					retryMessages = append(retryMessages, resp.Message)
+					continue
+				}
+				inv.logger.Info("RCA retry succeeded",
+					slog.String("correlation_id", correlationID))
+				return result
+			}
+		}
+
+		if resp.Message.Content != "" {
+			result, parseErr := inv.resultParser.Parse(resp.Message.Content)
+			if parseErr == nil {
+				inv.logger.Info("RCA retry succeeded from message content",
+					slog.String("correlation_id", correlationID))
+				return result
+			}
+		}
+
+		retryMessages = append(retryMessages, resp.Message)
+	}
+	return nil
+}
+
+func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (*katypes.InvestigationResult, error) {
+	// Attach signal context so workflow discovery tools (list_available_actions,
+	// list_workflows) can extract severity/component/environment/priority from
+	// ctx instead of using hardcoded values. Fix for #779.
+	ctx = katypes.WithSignalContext(ctx, signal)
+
 	systemPrompt, err := inv.builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
 		Signal:     signalToPrompt(signal),
 		RCASummary: rcaSummary,
@@ -318,26 +518,72 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		{Role: "user", Content: fmt.Sprintf("RCA findings: %s\n\nSelect the appropriate remediation workflow.", rcaSummary)},
 	}
 
-	content, exhausted, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID)
+	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID, client, modelName)
 	if err != nil {
 		return nil, err
 	}
-	if exhausted {
+
+	var content string
+	switch r := loopRes.(type) {
+	case *ExhaustedResult:
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
-			Reason:            fmt.Sprintf("max turns (%d) exhausted during workflow selection", inv.maxTurns),
+			Reason:            fmt.Sprintf("%s during workflow selection (maxTurns=%d)", r.Reason, inv.maxTurns),
 		}, nil
+	case *SubmitNoWorkflowResult:
+		inv.logger.Info("submit_result_no_workflow sentinel: classifying as no_matching_workflows",
+			slog.String("correlation_id", correlationID))
+		return &katypes.InvestigationResult{
+			RCASummary:        rcaSummary,
+			HumanReviewNeeded: true,
+			HumanReviewReason: "no_matching_workflows",
+			Reason:            "LLM explicitly declined workflow selection via submit_result_no_workflow",
+		}, nil
+	case *SubmitWithWorkflowResult:
+		content = r.Content
+	case *SubmitResult:
+		content = r.Content
+	case *TextResult:
+		// #760 v2: LLM returned text instead of a tool call. Try parsing
+		// first — the text may contain a valid investigation result (e.g.
+		// problem_resolved or predictive_no_action where no workflow is
+		// expected). Only fall through to parse-level retry when the
+		// content cannot be parsed at all.
+		if _, textErr := inv.resultParser.Parse(r.Content); textErr == nil {
+			inv.logger.Info("workflow selection: parsed text response directly (no tool call)",
+				slog.String("correlation_id", correlationID))
+			content = r.Content
+		} else {
+			retryResult := inv.retryWorkflowSubmit(ctx, r.Content, messages, rcaSummary, tokens, correlationID, client, modelName)
+			if retryResult != nil {
+				return retryResult, nil
+			}
+			inv.logger.Warn("workflow selection: all retries exhausted, classifying as no_matching_workflows",
+				slog.String("correlation_id", correlationID))
+			return &katypes.InvestigationResult{
+				RCASummary:        rcaSummary,
+				HumanReviewNeeded: true,
+				HumanReviewReason: "no_matching_workflows",
+				Reason:            "workflow selection: LLM did not use submit tool after retries",
+			}, nil
+		}
 	}
 
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
-		inv.logger.Warn("workflow selection parse failed",
-			slog.String("error", parseErr.Error()))
+		retryResult := inv.retryWorkflowSubmit(ctx, content, messages, rcaSummary, tokens, correlationID, client, modelName)
+		if retryResult != nil {
+			return retryResult, nil
+		}
+		inv.logger.Warn("workflow selection parse failed after retries, classifying as no_matching_workflows",
+			slog.String("error", parseErr.Error()),
+			slog.String("correlation_id", correlationID))
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
-			Reason:            "failed to parse workflow selection response",
+			HumanReviewReason: "no_matching_workflows",
+			Reason:            fmt.Sprintf("workflow selection: LLM did not produce parseable result: %s", parseErr),
 		}, nil
 	}
 
@@ -365,17 +611,30 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			messages = append(messages, llm.Message{Role: "assistant", Content: content})
 			messages = append(messages, llm.Message{Role: "user", Content: correctionMsg})
 
-			correctedContent, corrExhausted, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID)
+			corrLoopRes, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID, client, modelName)
 			if corrErr != nil {
 				return nil, corrErr
 			}
-			if corrExhausted {
+			switch cr := corrLoopRes.(type) {
+			case *ExhaustedResult:
 				r.HumanReviewNeeded = true
-				r.Reason = "self-correction exhausted LLM turns"
+				r.Reason = fmt.Sprintf("self-correction: %s", cr.Reason)
 				return r, nil
+			case *SubmitNoWorkflowResult:
+				return &katypes.InvestigationResult{
+					RCASummary:        rcaSummary,
+					HumanReviewNeeded: true,
+					HumanReviewReason: "no_matching_workflows",
+					Reason:            "LLM declined workflow during self-correction via submit_result_no_workflow",
+				}, nil
+			case *SubmitWithWorkflowResult:
+				content = cr.Content
+			case *SubmitResult:
+				content = cr.Content
+			case *TextResult:
+				content = cr.Content
 			}
-			content = correctedContent
-			return inv.resultParser.Parse(correctedContent)
+			return inv.resultParser.Parse(content)
 		}
 
 		corrected, corrErr := validator.SelfCorrect(result, maxSelfCorrectionAttempts, correctionFn)
@@ -393,6 +652,111 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	}
 
 	return result, nil
+}
+
+const maxParseRetries = 2
+
+// retryWorkflowSubmit performs up to maxParseRetries correction attempts when
+// the LLM returns text or unparseable JSON instead of calling a submit tool.
+// Each retry sends a correction message with examples of both submit tools,
+// with only the two submit tools available (prevents re-investigation).
+// Returns non-nil *InvestigationResult on success or nil when retries exhaust.
+func (inv *Investigator) retryWorkflowSubmit(ctx context.Context, lastContent string, history []llm.Message, rcaSummary string, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) *katypes.InvestigationResult {
+	submitOnlyTools := []llm.ToolDefinition{
+		{
+			Name:        SubmitResultWithWorkflowToolName,
+			Description: "Submit investigation result WITH a selected workflow.",
+			Parameters:  parser.WithWorkflowResultSchema(),
+		},
+		{
+			Name:        SubmitResultNoWorkflowToolName,
+			Description: "Submit investigation result when NO matching workflow exists.",
+			Parameters:  parser.NoWorkflowResultSchema(),
+		},
+	}
+
+	correctionTemplate := `Your response could not be parsed. You MUST call one of these tools:
+
+1. If a workflow matches: call submit_result_with_workflow with JSON like:
+   {"root_cause_analysis":{"summary":"..."},"selected_workflow":{"workflow_id":"...","confidence":0.9},"confidence":0.9}
+
+2. If NO workflow matches: call submit_result_no_workflow with JSON like:
+   {"root_cause_analysis":{"summary":"..."},"reasoning":"explanation why no workflow applies"}
+
+Do NOT respond with plain text. You MUST call one of the above tools.`
+
+	retryMessages := make([]llm.Message, len(history))
+	copy(retryMessages, history)
+	retryMessages = append(retryMessages,
+		llm.Message{Role: "assistant", Content: lastContent},
+	)
+
+	for attempt := 0; attempt < maxParseRetries; attempt++ {
+		inv.logger.Info("parse-level retry for workflow submit",
+			slog.Int("attempt", attempt+1),
+			slog.Int("max", maxParseRetries),
+			slog.String("correlation_id", correlationID))
+
+		retryMessages = append(retryMessages,
+			llm.Message{Role: "user", Content: correctionTemplate},
+		)
+
+		retryEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+		retryEvent.EventAction = audit.ActionLLMRequest
+		retryEvent.EventOutcome = audit.OutcomeSuccess
+		retryEvent.Data["model"] = modelName
+		retryEvent.Data["retry_attempt"] = attempt + 1
+		retryEvent.Data["retry_max"] = maxParseRetries
+		retryEvent.Data["phase"] = string(katypes.PhaseWorkflowDiscovery)
+		retryEvent.Data["retry_reason"] = "parse_level_correction"
+		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.logger)
+
+		resp, err := client.Chat(ctx, llm.ChatRequest{
+			Messages: retryMessages,
+			Tools:    submitOnlyTools,
+			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.InvestigationResultSchema()},
+		})
+		if err != nil {
+			inv.logger.Warn("retry LLM call failed",
+				slog.String("error", err.Error()),
+				slog.String("correlation_id", correlationID))
+			continue
+		}
+		if tokens != nil {
+			tokens.Add(resp.Usage)
+		}
+
+		if len(resp.ToolCalls) > 0 {
+			for _, tc := range resp.ToolCalls {
+				switch tc.Name {
+				case SubmitResultNoWorkflowToolName:
+					inv.logger.Info("retry succeeded: submit_result_no_workflow",
+					slog.String("correlation_id", correlationID))
+					return &katypes.InvestigationResult{
+						RCASummary:        rcaSummary,
+						HumanReviewNeeded: true,
+						HumanReviewReason: "no_matching_workflows",
+						Reason:            "LLM used submit_result_no_workflow after retry",
+					}
+				case SubmitResultWithWorkflowToolName:
+					inv.logger.Info("retry succeeded: submit_result_with_workflow",
+					slog.String("correlation_id", correlationID))
+					result, parseErr := inv.resultParser.Parse(tc.Arguments)
+					if parseErr != nil {
+						inv.logger.Warn("retry submit_result_with_workflow parse failed",
+							slog.String("error", parseErr.Error()),
+							slog.String("correlation_id", correlationID))
+						retryMessages = append(retryMessages, resp.Message)
+						continue
+					}
+					return result
+				}
+			}
+		}
+
+		retryMessages = append(retryMessages, resp.Message)
+	}
+	return nil
 }
 
 // enrichFromCatalog backfills execution metadata from the workflow catalog
@@ -425,25 +789,28 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 // runLLMLoop executes the multi-turn LLM conversation loop with tool
 // execution routed through the registry. correlationID is propagated to
 // all audit events per BR-AUDIT-005 (remediation_id as query key).
-func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator, correlationID string) (string, bool, error) {
+// Returns a sealed LoopResult; callers dispatch via type switch (#760 v2).
+func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (LoopResult, error) {
 	toolDefs := inv.toolDefinitionsForPhase(phase)
 	loopStart := time.Now()
+	truncationRetried := false
+	maxTokens := 0
 
 	for turn := 0; turn < inv.maxTurns; turn++ {
 		reqEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
 		reqEvent.EventAction = audit.ActionLLMRequest
 		reqEvent.EventOutcome = audit.OutcomeSuccess
-		reqEvent.Data["model"] = inv.modelName
+		reqEvent.Data["model"] = modelName
 		reqEvent.Data["prompt_length"] = totalPromptLength(messages)
 		reqEvent.Data["prompt_preview"] = lastUserMessage(messages, 500)
 		reqEvent.Data["toolsets_enabled"] = toolNames(toolDefs)
 		reqEvent.Data["messages"] = messagesToAuditFormat(messages)
 		audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.logger)
 
-		resp, err := inv.client.Chat(ctx, llm.ChatRequest{
+		resp, err := client.Chat(ctx, llm.ChatRequest{
 			Messages: messages,
 			Tools:    toolDefs,
-			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase)},
+			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase), MaxTokens: maxTokens},
 		})
 		if err != nil {
 			failEvent := audit.NewEvent(audit.EventTypeResponseFailed, correlationID)
@@ -453,7 +820,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			failEvent.Data["phase"] = string(phase)
 			failEvent.Data["duration_seconds"] = time.Since(loopStart).Seconds()
 			audit.StoreBestEffort(ctx, inv.auditStore, failEvent, inv.logger)
-			return "", false, fmt.Errorf("%s LLM call turn %d: %w", phase, turn, err)
+			return nil, fmt.Errorf("%s LLM call turn %d: %w", phase, turn, err)
 		}
 
 		if tokens != nil {
@@ -472,13 +839,17 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		respEvent.Data["analysis_full"] = resp.Message.Content
 		respEvent.Data["analysis_content"] = resp.Message.Content
 		respEvent.Data["tool_call_count"] = len(resp.ToolCalls)
+		respEvent.Data["finish_reason"] = resp.FinishReason
 		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.logger)
 
 		if len(resp.ToolCalls) > 0 {
 			for _, tc := range resp.ToolCalls {
-				if tc.Name == SubmitResultToolName {
-					inv.logger.Info("submit_result sentinel detected", slog.String("phase", string(phase)))
-					return tc.Arguments, false, nil
+				if sr := sentinelResult(tc); sr != nil {
+					inv.logger.Info("sentinel detected",
+						slog.String("tool", tc.Name),
+						slog.String("phase", string(phase)),
+						slog.String("correlation_id", correlationID))
+					return sr, nil
 				}
 			}
 
@@ -503,16 +874,54 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 					ToolName:   tc.Name,
 				})
 			}
-			if inv.pipeline.AnomalyDetector != nil && inv.pipeline.AnomalyDetector.TotalExceeded() {
-				return "", true, nil
-			}
+		if inv.pipeline.AnomalyDetector.TotalExceeded() {
+			return &ExhaustedResult{Reason: "tool budget exhausted"}, nil
+		}
 			continue
 		}
 
-		return resp.Message.Content, false, nil
+		if resp.FinishReason == llm.FinishReasonLength && !truncationRetried {
+			truncationRetried = true
+			maxTokens = escalateMaxTokens(resp.Usage.CompletionTokens)
+			inv.logger.Warn("LLM response truncated, retrying with escalated MaxTokens",
+				slog.String("phase", string(phase)),
+				slog.Int("escalated_max_tokens", maxTokens),
+				slog.String("correlation_id", correlationID))
+
+			truncEvent := audit.NewEvent(audit.EventTypeLLMResponse, correlationID)
+			truncEvent.EventAction = "truncation_detected"
+			truncEvent.EventOutcome = audit.OutcomeFailure
+			truncEvent.Data["finish_reason"] = resp.FinishReason
+			truncEvent.Data["escalated_max_tokens"] = maxTokens
+			truncEvent.Data["truncated_content_length"] = len(resp.Message.Content)
+			audit.StoreBestEffort(ctx, inv.auditStore, truncEvent, inv.logger)
+
+			messages = append(messages, resp.Message)
+			messages = append(messages, llm.Message{
+				Role:    "user",
+				Content: "Your previous response was truncated (output token limit reached). Please provide your complete response. Use the submit_result tool to deliver your structured result.",
+			})
+			continue
+		}
+
+		return &TextResult{Content: resp.Message.Content}, nil
 	}
 
-	return "", true, nil
+	return &ExhaustedResult{Reason: "max turns exhausted"}, nil
+}
+
+// escalateMaxTokens computes a higher MaxTokens value for truncation recovery.
+// If the truncated response used N completion tokens, we request 2x. Falls back
+// to a default of 8192 if the usage data is unavailable.
+func escalateMaxTokens(completionTokens int) int {
+	if completionTokens > 0 {
+		escalated := completionTokens * 2
+		if escalated > 16384 {
+			return 16384
+		}
+		return escalated
+	}
+	return 8192
 }
 
 func totalPromptLength(messages []llm.Message) int {
@@ -569,7 +978,7 @@ func (inv *Investigator) toolDefinitionsForPhase(phase katypes.Phase) []llm.Tool
 	var defs []llm.ToolDefinition
 	if inv.registry != nil {
 		phaseTools := inv.registry.ToolsForPhase(phase, inv.phaseTools)
-		defs = make([]llm.ToolDefinition, 0, len(phaseTools)+1)
+		defs = make([]llm.ToolDefinition, 0, len(phaseTools)+2)
 		for _, t := range phaseTools {
 			defs = append(defs, llm.ToolDefinition{
 				Name:        t.Name(),
@@ -579,11 +988,26 @@ func (inv *Investigator) toolDefinitionsForPhase(phase katypes.Phase) []llm.Tool
 		}
 	}
 
-	defs = append(defs, llm.ToolDefinition{
-		Name:        SubmitResultToolName,
-		Description: "Submit the final investigation result as structured JSON. Call this tool when your analysis is complete.",
-		Parameters:  submitResultSchemaForPhase(phase),
-	})
+	if phase == katypes.PhaseWorkflowDiscovery {
+		defs = append(defs,
+			llm.ToolDefinition{
+				Name:        SubmitResultWithWorkflowToolName,
+				Description: "Submit investigation result WITH a selected workflow. Call this when you have identified a matching workflow.",
+				Parameters:  parser.WithWorkflowResultSchema(),
+			},
+			llm.ToolDefinition{
+				Name:        SubmitResultNoWorkflowToolName,
+				Description: "Submit investigation result when NO matching workflow exists. Call this when none of the available workflows can remediate the incident.",
+				Parameters:  parser.NoWorkflowResultSchema(),
+			},
+		)
+	} else {
+		defs = append(defs, llm.ToolDefinition{
+			Name:        SubmitResultToolName,
+			Description: "Submit the final investigation result as structured JSON. Call this tool when your analysis is complete.",
+			Parameters:  submitResultSchemaForPhase(phase),
+		})
+	}
 	return defs
 }
 
@@ -602,14 +1026,12 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 		return toolErrorJSON("no registry configured for tool " + name)
 	}
 
-	if inv.pipeline.AnomalyDetector != nil {
-		if ar := inv.pipeline.AnomalyDetector.CheckToolCall(name, args); !ar.Allowed {
-			inv.logger.Warn("anomaly detector rejected tool call",
-				slog.String("tool", name),
-				slog.String("reason", ar.Reason),
-			)
-			return toolErrorJSON(ar.Reason)
-		}
+	if ar := inv.pipeline.AnomalyDetector.CheckToolCall(name, args); !ar.Allowed {
+		inv.logger.Warn("anomaly detector rejected tool call",
+			slog.String("tool", name),
+			slog.String("reason", ar.Reason),
+		)
+		return toolErrorJSON(ar.Reason)
 	}
 
 	result, err := inv.registry.Execute(ctx, name, args)
@@ -618,10 +1040,8 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 			slog.String("tool", name),
 			slog.String("error", err.Error()),
 		)
-		if inv.pipeline.AnomalyDetector != nil {
-			if ar := inv.pipeline.AnomalyDetector.RecordFailure(name, args); !ar.Allowed {
-				return toolErrorJSON(ar.Reason)
-			}
+		if ar := inv.pipeline.AnomalyDetector.RecordFailure(name, args); !ar.Allowed {
+			return toolErrorJSON(ar.Reason)
 		}
 		return toolErrorJSON(err.Error())
 	}
@@ -648,6 +1068,10 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 		} else {
 			result = summarized
 		}
+	}
+
+	if inv.pipeline.MaxToolOutputSize > 0 {
+		result = summarizer.TruncateToolOutput(result, name, inv.pipeline.MaxToolOutputSize)
 	}
 
 	return result
@@ -806,30 +1230,41 @@ func mergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 	if result.InvestigationOutcome == "" && p1.InvestigationOutcome != "" {
 		result.InvestigationOutcome = p1.InvestigationOutcome
 		parser.ApplyInvestigationOutcome(result, p1.InvestigationOutcome)
+		// #301 defense-in-depth: Phase 1 problem_resolved overrides
+		// contradictory HumanReviewNeeded set by Phase 3 (e.g. the
+		// SubmitNoWorkflowResult branch hardcodes HumanReviewNeeded=true,
+		// but that should not apply when the investigation is resolved).
+		if p1.InvestigationOutcome == "problem_resolved" && result.HumanReviewNeeded {
+			result.HumanReviewNeeded = false
+			result.HumanReviewReason = ""
+		}
 	}
 }
 
 func signalToPrompt(s katypes.SignalContext) prompt.SignalData {
 	return prompt.SignalData{
-		Name:              s.Name,
-		Namespace:         s.Namespace,
-		Severity:          s.Severity,
-		Message:           s.Message,
-		ResourceKind:      s.ResourceKind,
-		ResourceName:      s.ResourceName,
-		ClusterName:       s.ClusterName,
-		Environment:       s.Environment,
-		Priority:          s.Priority,
-		RiskTolerance:     s.RiskTolerance,
-		SignalSource:      s.SignalSource,
-		BusinessCategory:  s.BusinessCategory,
-		Description:       s.Description,
-		SignalMode:        s.SignalMode,
-		FiringTime:        s.FiringTime,
-		ReceivedTime:      s.ReceivedTime,
-		IsDuplicate:       s.IsDuplicate,
-		OccurrenceCount:   s.OccurrenceCount,
-		SignalAnnotations: s.SignalAnnotations,
+		Name:                       s.Name,
+		Namespace:                  s.Namespace,
+		Severity:                   s.Severity,
+		Message:                    s.Message,
+		ResourceKind:               s.ResourceKind,
+		ResourceName:               s.ResourceName,
+		ClusterName:                s.ClusterName,
+		Environment:                s.Environment,
+		Priority:                   s.Priority,
+		RiskTolerance:              s.RiskTolerance,
+		SignalSource:               s.SignalSource,
+		BusinessCategory:           s.BusinessCategory,
+		Description:                s.Description,
+		SignalMode:                 s.SignalMode,
+		FiringTime:                 s.FiringTime,
+		ReceivedTime:               s.ReceivedTime,
+		IsDuplicate:                s.IsDuplicate,
+		OccurrenceCount:            s.OccurrenceCount,
+		DeduplicationWindowMinutes: s.DeduplicationWindowMinutes,
+		FirstSeen:                  s.FirstSeen,
+		LastSeen:                   s.LastSeen,
+		SignalAnnotations:          s.SignalAnnotations,
 	}
 }
 
@@ -849,6 +1284,10 @@ func toPromptEnrichment(data *enrichment.EnrichmentResult) *prompt.EnrichmentDat
 
 	if data.DetectedLabels != nil {
 		pe.DetectedLabels = detectedLabelsToPromptMap(data.DetectedLabels)
+	}
+
+	if len(data.QuotaDetails) > 0 {
+		pe.QuotaDetails = data.QuotaDetails
 	}
 
 	pe.HistoryResult = data.RemediationHistory
@@ -883,6 +1322,9 @@ func detectedLabelsToPromptMap(dl *enrichment.DetectedLabels) map[string]string 
 	}
 	if dl.ResourceQuotaConstrained {
 		m["resourceQuotaConstrained"] = "true"
+	}
+	if len(dl.FailedDetections) > 0 {
+		m["failedDetections"] = strings.Join(dl.FailedDetections, ",")
 	}
 	return m
 }
@@ -937,15 +1379,11 @@ func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 		root := enrichData.OwnerChain[len(enrichData.OwnerChain)-1]
 		rootKind = root.Kind
 		rootName = root.Name
-		if root.Namespace != "" {
-			rootNS = root.Namespace
-		}
+		rootNS = root.Namespace
 	} else if enrichData != nil && enrichData.ResourceKind != "" {
 		rootKind = enrichData.ResourceKind
 		rootName = enrichData.ResourceName
-		if enrichData.ResourceNamespace != "" {
-			rootNS = enrichData.ResourceNamespace
-		}
+		rootNS = enrichData.ResourceNamespace
 	}
 
 	llmKind := result.RemediationTarget.Kind
@@ -984,4 +1422,69 @@ func allLabelDetectionsFailed(labels *enrichment.DetectedLabels) bool {
 		return false
 	}
 	return len(labels.FailedDetections) >= len(enrichment.AllDetectionCategories)
+}
+
+// EnrichmentCacheKey returns the dedup cache key for a (kind, name, namespace) tuple (#764).
+func EnrichmentCacheKey(kind, name, namespace string) string {
+	return kind + "/" + name + "/" + namespace
+}
+
+// resolveEnrichmentCached wraps resolveEnrichment with a per-call cache (#764).
+// If the same (kind, name, namespace) was already enriched in this investigation,
+// returns the cached result without making another API call.
+func (inv *Investigator) resolveEnrichmentCached(ctx context.Context, cache map[string]*enrichment.EnrichmentResult, kind, name, namespace, incidentID string) *enrichment.EnrichmentResult {
+	key := EnrichmentCacheKey(kind, name, namespace)
+	if cached, ok := cache[key]; ok {
+		inv.logger.Info("enrichment cache hit, reusing cached result",
+			"kind", kind, "name", name, "namespace", namespace)
+		return cached
+	}
+	result := inv.resolveEnrichment(ctx, kind, name, namespace, incidentID)
+	cache[key] = result
+	return result
+}
+
+// normalizeNamespace forces namespace="" for cluster-scoped resources (#763).
+// If no ScopeResolver is configured, returns the namespace unchanged.
+func (inv *Investigator) normalizeNamespace(kind, namespace string) string {
+	if inv.scopeResolver == nil {
+		return namespace
+	}
+	isCluster, err := inv.scopeResolver.IsClusterScoped(kind)
+	if err != nil {
+		inv.logger.Warn("ScopeResolver error, preserving namespace",
+			"kind", kind, "error", err)
+		return namespace
+	}
+	if isCluster {
+		return ""
+	}
+	return namespace
+}
+
+// mapperScopeResolver implements ScopeResolver using a RESTMapper.
+type mapperScopeResolver struct {
+	mapper meta.RESTMapper
+}
+
+// NewMapperScopeResolver creates a ScopeResolver backed by a RESTMapper.
+func NewMapperScopeResolver(mapper meta.RESTMapper) ScopeResolver {
+	return &mapperScopeResolver{mapper: mapper}
+}
+
+func (r *mapperScopeResolver) IsClusterScoped(kind string) (bool, error) {
+	plural := strings.ToLower(kind) + "s"
+	gvr, err := r.mapper.ResourceFor(schema.GroupVersionResource{Resource: plural})
+	if err != nil {
+		return false, err
+	}
+	gvk, err := r.mapper.KindFor(gvr)
+	if err != nil {
+		return false, err
+	}
+	mapping, err := r.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return false, err
+	}
+	return mapping.Scope.Name() != meta.RESTScopeNameNamespace, nil
 }

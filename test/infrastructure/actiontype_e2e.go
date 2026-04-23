@@ -109,6 +109,28 @@ func SeedActionTypesViaAPIWithURL(dsURL, token string, timeout time.Duration, wr
 	return SeedActionTypesViaAPI(client, writer)
 }
 
+// SeedActionTypesViaAPIWithTLS is a TLS-aware convenience wrapper that creates a
+// temporary authenticated ogen client with inter-service CA trust and delegates
+// to SeedActionTypesViaAPI.
+// Use in E2E tests where DataStorage serves HTTPS with a private CA.
+//
+// Issue #785: E2E HTTPS migration requires TLS-aware seeding.
+func SeedActionTypesViaAPIWithTLS(dsURL, token, kubeconfigPath string, timeout time.Duration, writer io.Writer) error {
+	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to create TLS-aware transport for action type seeding: %w", err)
+	}
+	httpClient := &http.Client{
+		Transport: testauth.NewServiceAccountTransportWithBase(token, tlsTransport),
+		Timeout:   timeout,
+	}
+	client, err := ogenclient.NewClient(dsURL, ogenclient.WithClient(httpClient))
+	if err != nil {
+		return fmt.Errorf("failed to create ogen client for action type seeding: %w", err)
+	}
+	return SeedActionTypesViaAPI(client, writer)
+}
+
 // SeedE2EActionTypes creates the ActionType CRs required by E2E test workflows.
 // Must be called AFTER CRDs are installed and the AuthWebhook is deployed, but
 // BEFORE SeedWorkflowsInDataStorage — the AW webhook registers each AT in the DB,

@@ -129,7 +129,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 			Expect(err).NotTo(HaveOccurred())
 
 			errResp, ok := resp.(*agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON)
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), "expected type assertion to *IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON to succeed")
 			Expect(errResp.Instance).To(Equal("/api/v1/incident/analyze"))
 		})
 	})
@@ -221,7 +221,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 			Expect(err).NotTo(HaveOccurred())
 
 			incResp, ok := resp.(*agentclient.IncidentResponse)
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), "expected type assertion to *IncidentResponse to succeed (HumanReviewReason from field)")
 			Expect(incResp.NeedsHumanReview.Value).To(BeTrue())
 			hrReason, hasReason := incResp.HumanReviewReason.Get()
 			Expect(hasReason).To(BeTrue())
@@ -256,7 +256,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 			Expect(err).NotTo(HaveOccurred())
 
 			incResp, ok := resp.(*agentclient.IncidentResponse)
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), "expected type assertion to *IncidentResponse to succeed (legacy Reason field)")
 			hrReason, hasReason := incResp.HumanReviewReason.Get()
 			Expect(hasReason).To(BeTrue())
 			Expect(hrReason).To(Equal(agentclient.HumanReviewReasonRcaIncomplete))
@@ -290,7 +290,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 			Expect(err).NotTo(HaveOccurred())
 
 			incResp, ok := resp.(*agentclient.IncidentResponse)
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), "expected type assertion to *IncidentResponse to succeed (execution_bundle)")
 
 			sw, hasSW := incResp.SelectedWorkflow.Get()
 			Expect(hasSW).To(BeTrue())
@@ -435,6 +435,64 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 		})
 	})
 
+	Describe("UT-KA-743: MapIncidentRequestToSignal dedup timing fields (#743)", func() {
+		It("UT-KA-743-005: maps deduplication_window_minutes, first_seen, last_seen from request", func() {
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "dedup-timing-test",
+				SignalName:        "HighMemoryUsage",
+				Severity:          agentclient.SeverityMedium,
+				ResourceNamespace: "production",
+				ResourceKind:      "Deployment",
+				ResourceName:      "api-server",
+				ErrorMessage:      "Memory above 90%",
+				Environment:       "production",
+				Priority:          "medium",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "test",
+				ClusterName:       "test-cluster",
+				SignalSource:      "prometheus",
+			}
+			req.IsDuplicate.SetTo(true)
+			req.OccurrenceCount.SetTo(3)
+			req.DeduplicationWindowMinutes.SetTo(60)
+			req.FirstSeen.SetTo("2026-04-01T10:00:00Z")
+			req.LastSeen.SetTo("2026-04-01T11:00:00Z")
+
+			signal := server.MapIncidentRequestToSignal(req)
+			Expect(signal.DeduplicationWindowMinutes).NotTo(BeNil(),
+				"DeduplicationWindowMinutes must be populated from request")
+			Expect(*signal.DeduplicationWindowMinutes).To(Equal(60))
+			Expect(signal.FirstSeen).To(Equal("2026-04-01T10:00:00Z"))
+			Expect(signal.LastSeen).To(Equal("2026-04-01T11:00:00Z"))
+		})
+
+		It("UT-KA-743-006: leaves dedup timing fields empty when not set in request", func() {
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "dedup-empty-test",
+				SignalName:        "OOMKilled",
+				Severity:          agentclient.SeverityHigh,
+				ResourceNamespace: "prod",
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod",
+				ErrorMessage:      "OOM",
+				Environment:       "production",
+				Priority:          "high",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "test",
+				ClusterName:       "test-cluster",
+				SignalSource:      "kubernetes",
+			}
+
+			signal := server.MapIncidentRequestToSignal(req)
+			Expect(signal.DeduplicationWindowMinutes).To(BeNil(),
+				"DeduplicationWindowMinutes must be nil when not set")
+			Expect(signal.FirstSeen).To(BeEmpty(),
+				"FirstSeen must be empty when not set")
+			Expect(signal.LastSeen).To(BeEmpty(),
+				"LastSeen must be empty when not set")
+		})
+	})
+
 	Describe("AUDIT-H2: alternative_workflows mapped in response", func() {
 		It("should include alternative_workflows in IncidentResponse when present", func() {
 			result := &katypes.InvestigationResult{
@@ -465,7 +523,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 			Expect(err).NotTo(HaveOccurred())
 
 			incResp, ok := resp.(*agentclient.IncidentResponse)
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), "expected type assertion to *IncidentResponse to succeed (alternative_workflows mapping)")
 			Expect(incResp.AlternativeWorkflows).To(HaveLen(2),
 				"H2: alternative_workflows must be mapped to response")
 		})

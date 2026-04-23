@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
@@ -191,11 +192,11 @@ func BuildEffectivenessResponse(correlationID string, events []*EffectivenessEve
 
 		case "effectiveness.assessment.completed":
 			if reason, ok := eventData["reason"].(string); ok {
-				// DD-EM-002 v1.1: spec_drift is terminal and takes priority over
+				// DD-EM-002 v1.1: SpecDrift is terminal and takes priority over
 				// all other reasons. When multiple completed events exist (e.g.,
-				// "full" followed by "spec_drift" after EA re-assessment), spec_drift
+				// "Full" followed by "SpecDrift" after EA re-assessment), SpecDrift
 				// must not be overwritten by an earlier reason that sorts later.
-				if resp.AssessmentStatus != "spec_drift" {
+				if resp.AssessmentStatus != eav1.AssessmentReasonSpecDrift {
 					resp.AssessmentStatus = reason
 				}
 			}
@@ -205,7 +206,7 @@ func BuildEffectivenessResponse(correlationID string, events []*EffectivenessEve
 	// DD-EM-002 v1.1: Spec drift means remediation was unsuccessful.
 	// Short-circuit to score 0.0 — component scores are unreliable because
 	// the target resource spec was modified (likely by another remediation).
-	if resp.AssessmentStatus == "spec_drift" {
+	if resp.AssessmentStatus == eav1.AssessmentReasonSpecDrift {
 		score := 0.0
 		resp.Score = &score
 		return resp

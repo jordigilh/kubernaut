@@ -1022,11 +1022,65 @@ func (r *Reconciler) handleBlocked(
 		}
 	}
 
-	// Issue #214: Log escalation intent for IneffectiveChain blocks.
-	// NotificationRequest creation is handled by the notification controller watching for ManualReviewRequired.
+	// Issue #803: Create ManualReview NotificationRequest for IneffectiveChain blocks (BR-ORCH-036).
+	// Previously, this relied on a non-existent "notification controller watching for ManualReviewRequired".
 	if remediationv1.BlockReason(blocked.Reason) == remediationv1.BlockReasonIneffectiveChain {
 		logger.Info("Ineffective chain detected - escalating to manual review",
 			"remediationRequest", rr.Name)
+
+		nrName := fmt.Sprintf("nr-manual-review-%s", rr.Name)
+		if !hasNotificationRef(rr, nrName) {
+			reviewCtx := &creator.ManualReviewContext{
+				Source:  notificationv1.ReviewSourceRoutingEngine,
+				Reason:  "IneffectiveChain",
+				Message: blocked.Message,
+			}
+			notifName, notifErr := r.notificationCreator.CreateManualReviewNotification(ctx, rr, reviewCtx)
+			if notifErr != nil {
+				logger.Error(notifErr, "Failed to create manual review notification for IneffectiveChain block")
+			} else {
+				logger.Info("Created manual review notification for IneffectiveChain block", "notification", notifName)
+				ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
+				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+					return nil
+				}); refErr != nil {
+					logger.Error(refErr, "Failed to persist IneffectiveChain NR ref (non-critical)", "notification", notifName)
+				}
+				if r.Recorder != nil {
+					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+						fmt.Sprintf("Manual review notification created: %s", notifName))
+				}
+			}
+		}
+	}
+
+	// GAP-6 / #810: Create block notification for non-IneffectiveChain block reasons (BR-ORCH-036, BR-ORCH-042.5).
+	if remediationv1.BlockReason(blocked.Reason) != remediationv1.BlockReasonIneffectiveChain {
+		blockNRName := fmt.Sprintf("nr-block-%s-%s", strings.ToLower(blocked.Reason), rr.Name)
+		if !hasNotificationRef(rr, blockNRName) {
+			blockCtx := &creator.BlockNotificationContext{
+				BlockReason:  blocked.Reason,
+				BlockMessage: blocked.Message,
+			}
+			notifName, notifErr := r.notificationCreator.CreateBlockNotification(ctx, rr, blockCtx)
+			if notifErr != nil {
+				logger.Error(notifErr, "Failed to create block notification (non-critical)", "blockReason", blocked.Reason)
+			} else {
+				logger.Info("Created block notification", "notification", notifName, "blockReason", blocked.Reason)
+				ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
+				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+					return nil
+				}); refErr != nil {
+					logger.Error(refErr, "Failed to persist block NR ref (non-critical)", "notification", notifName)
+				}
+				if r.Recorder != nil {
+					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+						fmt.Sprintf("Block notification created: %s", notifName))
+				}
+			}
+		}
 	}
 
 	// Update RR status to Blocked phase (REFACTOR-RO-001: using retry helper)
@@ -1328,6 +1382,34 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 		return ctrl.Result{}, nil
 	}
 
+	// GAP-4 / #808: Create escalation NR for terminal failures (BR-ORCH-036).
+	// Guard: skip if caller already created a ManualReview or Escalation NR.
+	manualReviewNR := fmt.Sprintf("nr-manual-review-%s", rr.Name)
+	escalationNR := fmt.Sprintf("nr-escalation-%s", rr.Name)
+	if !hasNotificationRef(rr, manualReviewNR) && !hasNotificationRef(rr, escalationNR) {
+		escCtx := &creator.EscalationContext{
+			FailurePhase:  string(failurePhase),
+			FailureReason: failureReason,
+		}
+		notifName, notifErr := r.notificationCreator.CreateEscalationNotification(ctx, rr, escCtx)
+		if notifErr != nil {
+			logger.Error(notifErr, "Failed to create escalation notification (non-critical)")
+		} else {
+			logger.Info("Created escalation notification for terminal failure", "notification", notifName)
+			ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
+			if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+				return nil
+			}); refErr != nil {
+				logger.Error(refErr, "Failed to persist escalation NR ref (non-critical)", "notification", notifName)
+			}
+			if r.Recorder != nil {
+				r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+					fmt.Sprintf("Escalation notification created: %s", notifName))
+			}
+		}
+	}
+
 	// Capture old phase for metrics and audit
 	oldPhaseBeforeTransition := rr.Status.OverallPhase
 	startTime := rr.CreationTimestamp.Time
@@ -1500,10 +1582,13 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 
 	// Create notification (non-blocking - timeout transition is primary goal)
 	if err := r.client.Create(ctx, nr); err != nil {
-		logger.Error(err, "Failed to create timeout notification",
-			"notificationName", notificationName)
-		// Don't return error - timeout transition succeeded, notification is best-effort
-		return ctrl.Result{}, nil
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Timeout notification already exists (concurrent create), continuing", "notificationName", notificationName)
+		} else {
+			logger.Error(err, "Failed to create timeout notification",
+				"notificationName", notificationName)
+			return ctrl.Result{}, nil
+		}
 	}
 
 	logger.Info("Created timeout notification",
@@ -2753,10 +2838,15 @@ func (r *Reconciler) createPhaseTimeoutNotification(ctx context.Context, rr *rem
 
 	// Create notification (non-blocking)
 	if err := r.client.Create(ctx, nr); err != nil {
-		logger.Error(err, "Failed to create phase timeout notification",
-			"notificationName", notificationName,
-			"phase", phase)
-		return
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Phase timeout notification already exists (concurrent create), continuing",
+				"notificationName", notificationName, "phase", phase)
+		} else {
+			logger.Error(err, "Failed to create phase timeout notification",
+				"notificationName", notificationName,
+				"phase", phase)
+			return
+		}
 	}
 
 	logger.Info("Created phase timeout notification",
@@ -2912,14 +3002,14 @@ func formatRemediationTargetString(ai *aianalysisv1.AIAnalysis) string {
 	return ar.Kind + "/" + ar.Name
 }
 
-// CapturePreRemediationHash fetches the target resource via an uncached reader,
-// extracts its .spec, and computes the canonical SHA-256 hash (DD-EM-002).
+// CapturePreRemediationHash fetches the target resource via an uncached reader
+// and computes the canonical resource fingerprint (DD-EM-002 v2.0, #765).
 //
 // Returns (hash, degradedReason, err) where:
 //   - ("sha256:...", "", nil) on success
-//   - ("", "", nil) when legitimately no hash: NotFound, no .spec, unknown GVK
+//   - ("", "", nil) when legitimately no hash: NotFound, unknown GVK
 //   - ("", "reason", nil) when degraded: Forbidden, transient API errors (Issue #545 defense-in-depth)
-//   - ("", "", err) on hard errors: NestedMap or CanonicalSpecHash failures
+//   - ("", "", err) on hard errors: fingerprint computation failures
 //
 // This is exported for testability from the test package.
 func CapturePreRemediationHash(
@@ -2932,7 +3022,6 @@ func CapturePreRemediationHash(
 ) (string, string, error) {
 	logger := log.FromContext(ctx)
 
-	// Resolve Kind to GVK via REST mapper
 	gvk, err := k8sutil.ResolveGVKForKind(restMapper, targetKind)
 	if err != nil {
 		logger.V(1).Info("Cannot resolve GVK for kind, skipping pre-remediation hash",
@@ -2940,7 +3029,6 @@ func CapturePreRemediationHash(
 		return "", "", nil
 	}
 
-	// Fetch the resource using unstructured client
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(gvk)
 	key := client.ObjectKey{Name: targetName, Namespace: targetNamespace}
@@ -2950,43 +3038,29 @@ func CapturePreRemediationHash(
 				"kind", targetKind, "name", targetName, "namespace", targetNamespace)
 			return "", "", nil
 		}
-		// Issue #545: Soft-fail on access errors (Forbidden, transient API errors).
-		// The EA will be degraded but the remediation pipeline continues.
 		reason := fmt.Sprintf("failed to fetch target resource %s/%s: %v", targetKind, targetName, err)
 		logger.Info("Pre-remediation hash capture degraded (soft-fail)",
 			"kind", targetKind, "name", targetName, "namespace", targetNamespace, "reason", reason)
 		return "", reason, nil
 	}
 
-	// Extract .spec from unstructured
-	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
+	fingerprint, err := canonicalhash.CanonicalResourceFingerprint(obj.Object)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to extract .spec from %s/%s: %w", targetKind, targetName, err)
-	}
-	if !found || spec == nil {
-		logger.V(1).Info("Target resource has no .spec, skipping pre-remediation hash",
-			"kind", targetKind, "name", targetName)
-		return "", "", nil
+		return "", "", fmt.Errorf("failed to compute resource fingerprint for %s/%s: %w", targetKind, targetName, err)
 	}
 
-	// Compute canonical spec hash
-	specHash, err := canonicalhash.CanonicalSpecHash(spec)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to compute canonical hash for %s/%s: %w", targetKind, targetName, err)
-	}
-
-	// Resolve ConfigMap references and compute composite hash (#396, BR-EM-004)
+	spec, _, _ := unstructured.NestedMap(obj.Object, "spec")
 	configMapHashes := resolveConfigMapHashes(ctx, reader, spec, targetKind, targetNamespace)
 
-	compositeHash, err := canonicalhash.CompositeSpecHash(specHash, configMapHashes)
+	compositeHash, err := canonicalhash.CompositeResourceFingerprint(fingerprint, configMapHashes)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to compute composite hash for %s/%s: %w", targetKind, targetName, err)
+		return "", "", fmt.Errorf("failed to compute composite fingerprint for %s/%s: %w", targetKind, targetName, err)
 	}
 
 	if len(configMapHashes) > 0 {
-		logger.V(1).Info("Pre-remediation composite hash computed",
+		logger.V(1).Info("Pre-remediation composite fingerprint computed",
 			"kind", targetKind, "name", targetName,
-			"specHash", specHash, "configMapCount", len(configMapHashes),
+			"fingerprint", fingerprint, "configMapCount", len(configMapHashes),
 			"compositeHash", compositeHash)
 	}
 

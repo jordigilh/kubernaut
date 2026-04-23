@@ -40,11 +40,11 @@ var _ k8s.ResourceResolver = (*nopResolver)(nil)
 var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 
 	Describe("UT-KA-433-029: Baseline K8s tools satisfy Tool interface", func() {
-		It("should create 19 baseline tools implementing the Tool interface", func() {
+		It("should create 20 baseline tools implementing the Tool interface", func() {
 			client := fake.NewSimpleClientset()
 			allTools := k8s.NewAllTools(client, &nopResolver{})
 			Expect(allTools).NotTo(BeNil(), "NewAllTools should not return nil")
-			Expect(allTools).To(HaveLen(19), "should create exactly 19 baseline K8s tools")
+			Expect(allTools).To(HaveLen(20), "should create exactly 20 baseline K8s tools")
 
 			for _, t := range allTools {
 				Expect(t.Name()).NotTo(BeEmpty(), "tool Name() should not be empty")
@@ -92,7 +92,7 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 			}
 
 			all := reg.All()
-			Expect(all).To(HaveLen(19), "registry should contain 19 tools")
+			Expect(all).To(HaveLen(20), "registry should contain 20 tools")
 
 			for _, expected := range k8s.AllToolNames {
 				tool, err := reg.Get(expected)
@@ -135,10 +135,10 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 	})
 
 	Describe("UT-KA-433-630: Full tool registry count matches production wiring", func() {
-		It("should register exactly 36 tools matching main.go wiring", func() {
+		It("should register exactly 37 tools matching main.go wiring", func() {
 			expectedTotal := len(k8s.AllToolNames) + len(k8s.MetricsToolNames) + 8 + 5 + 1 + 1
-			Expect(expectedTotal).To(Equal(36),
-				"K8s baseline (19) + K8s metrics (2) + Prometheus (8) + Custom (5) + TodoWrite (1) + FetchPodLogs (1)")
+			Expect(expectedTotal).To(Equal(37),
+				"K8s baseline (20) + K8s metrics (2) + Prometheus (8) + Custom (5) + TodoWrite (1) + FetchPodLogs (1)")
 		})
 	})
 })

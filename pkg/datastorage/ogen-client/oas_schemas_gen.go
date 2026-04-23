@@ -2860,6 +2860,7 @@ const (
 	AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.create"
 	AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.delete"
 	AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.denied"
+	AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.update"
 	AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData                 AuditEventEventDataType = "effectiveness.alert.assessed"
 	AuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData            AuditEventEventDataType = "effectiveness.alert_decay.detected"
 	AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData           AuditEventEventDataType = "effectiveness.assessment.completed"
@@ -3078,7 +3079,7 @@ func (s AuditEventEventData) IsRemediationRequestWebhookAuditPayload() bool {
 // IsRemediationWorkflowWebhookAuditPayload reports whether AuditEventEventData is RemediationWorkflowWebhookAuditPayload.
 func (s AuditEventEventData) IsRemediationWorkflowWebhookAuditPayload() bool {
 	switch s.Type {
-	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
+	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData:
 		return true
 	default:
 		return false
@@ -4090,6 +4091,13 @@ func NewAuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData(
 	return s
 }
 
+// NewAuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData returns new AuditEventEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData, v)
+	return s
+}
+
 // SetEffectivenessAssessmentAuditPayload sets AuditEventEventData to EffectivenessAssessmentAuditPayload.
 // panics if `t` is not associated with EffectivenessAssessmentAuditPayload
 func (s *AuditEventEventData) SetEffectivenessAssessmentAuditPayload(t AuditEventEventDataType, v EffectivenessAssessmentAuditPayload) {
@@ -4827,6 +4835,7 @@ const (
 	AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.create"
 	AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.delete"
 	AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.denied"
+	AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.update"
 	AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData                 AuditEventRequestEventDataType = "effectiveness.alert.assessed"
 	AuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData            AuditEventRequestEventDataType = "effectiveness.alert_decay.detected"
 	AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData           AuditEventRequestEventDataType = "effectiveness.assessment.completed"
@@ -5045,7 +5054,7 @@ func (s AuditEventRequestEventData) IsRemediationRequestWebhookAuditPayload() bo
 // IsRemediationWorkflowWebhookAuditPayload reports whether AuditEventRequestEventData is RemediationWorkflowWebhookAuditPayload.
 func (s AuditEventRequestEventData) IsRemediationWorkflowWebhookAuditPayload() bool {
 	switch s.Type {
-	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
+	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -6054,6 +6063,13 @@ func NewAuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventReq
 func NewAuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData, v)
 	return s
 }
 
@@ -8591,13 +8607,13 @@ type EffectivenessScoreResponse struct {
 	// Current assessment status:
 	// - no_data: No component events found
 	// - in_progress: Some component events present but assessment not completed
-	// - full: All components assessed successfully
-	// - partial: Some components assessed, others unavailable
-	// - spec_drift: Target resource spec changed during assessment (score unreliable, forced to 0.0)
-	// - expired: Assessment timed out before completing
-	// - no_execution: No workflow execution found for this correlation ID
-	// - metrics_timed_out: Prometheus metrics collection timed out
-	// - EffectivenessAssessed: Legacy value (equivalent to "full").
+	// - Full: All components assessed successfully
+	// - Partial: Some components assessed, others unavailable
+	// - SpecDrift: Target resource spec changed during assessment (score unreliable, forced to 0.0)
+	// - Expired: Assessment timed out before completing
+	// - NoExecution: No workflow execution found for this correlation ID
+	// - MetricsTimedOut: Prometheus metrics collection timed out
+	// - EffectivenessAssessed: Legacy value (equivalent to "Full").
 	AssessmentStatus EffectivenessScoreResponseAssessmentStatus `json:"assessment_status"`
 	// Timestamp when this score was computed.
 	ComputedAt time.Time `json:"computed_at"`
@@ -8668,24 +8684,24 @@ func (*EffectivenessScoreResponse) getEffectivenessScoreRes() {}
 // Current assessment status:
 // - no_data: No component events found
 // - in_progress: Some component events present but assessment not completed
-// - full: All components assessed successfully
-// - partial: Some components assessed, others unavailable
-// - spec_drift: Target resource spec changed during assessment (score unreliable, forced to 0.0)
-// - expired: Assessment timed out before completing
-// - no_execution: No workflow execution found for this correlation ID
-// - metrics_timed_out: Prometheus metrics collection timed out
-// - EffectivenessAssessed: Legacy value (equivalent to "full").
+// - Full: All components assessed successfully
+// - Partial: Some components assessed, others unavailable
+// - SpecDrift: Target resource spec changed during assessment (score unreliable, forced to 0.0)
+// - Expired: Assessment timed out before completing
+// - NoExecution: No workflow execution found for this correlation ID
+// - MetricsTimedOut: Prometheus metrics collection timed out
+// - EffectivenessAssessed: Legacy value (equivalent to "Full").
 type EffectivenessScoreResponseAssessmentStatus string
 
 const (
 	EffectivenessScoreResponseAssessmentStatusNoData                EffectivenessScoreResponseAssessmentStatus = "no_data"
 	EffectivenessScoreResponseAssessmentStatusInProgress            EffectivenessScoreResponseAssessmentStatus = "in_progress"
-	EffectivenessScoreResponseAssessmentStatusFull                  EffectivenessScoreResponseAssessmentStatus = "full"
-	EffectivenessScoreResponseAssessmentStatusPartial               EffectivenessScoreResponseAssessmentStatus = "partial"
-	EffectivenessScoreResponseAssessmentStatusSpecDrift             EffectivenessScoreResponseAssessmentStatus = "spec_drift"
-	EffectivenessScoreResponseAssessmentStatusExpired               EffectivenessScoreResponseAssessmentStatus = "expired"
-	EffectivenessScoreResponseAssessmentStatusNoExecution           EffectivenessScoreResponseAssessmentStatus = "no_execution"
-	EffectivenessScoreResponseAssessmentStatusMetricsTimedOut       EffectivenessScoreResponseAssessmentStatus = "metrics_timed_out"
+	EffectivenessScoreResponseAssessmentStatusFull                  EffectivenessScoreResponseAssessmentStatus = "Full"
+	EffectivenessScoreResponseAssessmentStatusPartial               EffectivenessScoreResponseAssessmentStatus = "Partial"
+	EffectivenessScoreResponseAssessmentStatusSpecDrift             EffectivenessScoreResponseAssessmentStatus = "SpecDrift"
+	EffectivenessScoreResponseAssessmentStatusExpired               EffectivenessScoreResponseAssessmentStatus = "Expired"
+	EffectivenessScoreResponseAssessmentStatusNoExecution           EffectivenessScoreResponseAssessmentStatus = "NoExecution"
+	EffectivenessScoreResponseAssessmentStatusMetricsTimedOut       EffectivenessScoreResponseAssessmentStatus = "MetricsTimedOut"
 	EffectivenessScoreResponseAssessmentStatusEffectivenessAssessed EffectivenessScoreResponseAssessmentStatus = "EffectivenessAssessed"
 )
 
@@ -10926,8 +10942,9 @@ type LivenessCheckOK struct{}
 type MandatoryLabels struct {
 	// Severity level(s) this workflow is designed for. Always an array. Use '*' to match any severity.
 	Severity []MandatoryLabelsSeverityItem `json:"severity"`
-	// Kubernetes resource type this workflow targets (e.g., pod, deployment, node).
-	Component string `json:"component"`
+	// Kubernetes resource type(s) this workflow targets (e.g., pod, deployment, node). Issue #790: now
+	// an array like severity/environment.
+	Component []string `json:"component"`
 	// Target environments (workflow can declare multiple, '*' matches all).
 	Environment []MandatoryLabelsEnvironmentItem `json:"environment"`
 	// Business priority level (P0, P1, P2, P3, * for any).
@@ -10940,7 +10957,7 @@ func (s *MandatoryLabels) GetSeverity() []MandatoryLabelsSeverityItem {
 }
 
 // GetComponent returns the value of Component.
-func (s *MandatoryLabels) GetComponent() string {
+func (s *MandatoryLabels) GetComponent() []string {
 	return s.Component
 }
 
@@ -10960,7 +10977,7 @@ func (s *MandatoryLabels) SetSeverity(val []MandatoryLabelsSeverityItem) {
 }
 
 // SetComponent sets the value of Component.
-func (s *MandatoryLabels) SetComponent(val string) {
+func (s *MandatoryLabels) SetComponent(val []string) {
 	s.Component = val
 }
 
@@ -17827,7 +17844,7 @@ type RemediationHistoryEntry struct {
 	// When the remediation was completed.
 	CompletedAt time.Time `json:"completedAt"`
 	// Reason/status of the effectiveness assessment. Null if assessment
-	// not yet completed. When "spec_drift", the effectiveness score is
+	// not yet completed. When "SpecDrift", the effectiveness score is
 	// unreliable (hard-overridden to 0.0) because the target resource
 	// spec was modified during the assessment window (DD-EM-002 v1.1).
 	AssessmentReason OptNilRemediationHistoryEntryAssessmentReason `json:"assessmentReason"`
@@ -17996,18 +18013,18 @@ func (s *RemediationHistoryEntry) SetAssessedAt(val OptDateTime) {
 }
 
 // Reason/status of the effectiveness assessment. Null if assessment
-// not yet completed. When "spec_drift", the effectiveness score is
+// not yet completed. When "SpecDrift", the effectiveness score is
 // unreliable (hard-overridden to 0.0) because the target resource
 // spec was modified during the assessment window (DD-EM-002 v1.1).
 type RemediationHistoryEntryAssessmentReason string
 
 const (
-	RemediationHistoryEntryAssessmentReasonFull            RemediationHistoryEntryAssessmentReason = "full"
-	RemediationHistoryEntryAssessmentReasonPartial         RemediationHistoryEntryAssessmentReason = "partial"
-	RemediationHistoryEntryAssessmentReasonSpecDrift       RemediationHistoryEntryAssessmentReason = "spec_drift"
-	RemediationHistoryEntryAssessmentReasonExpired         RemediationHistoryEntryAssessmentReason = "expired"
-	RemediationHistoryEntryAssessmentReasonNoExecution     RemediationHistoryEntryAssessmentReason = "no_execution"
-	RemediationHistoryEntryAssessmentReasonMetricsTimedOut RemediationHistoryEntryAssessmentReason = "metrics_timed_out"
+	RemediationHistoryEntryAssessmentReasonFull            RemediationHistoryEntryAssessmentReason = "Full"
+	RemediationHistoryEntryAssessmentReasonPartial         RemediationHistoryEntryAssessmentReason = "Partial"
+	RemediationHistoryEntryAssessmentReasonSpecDrift       RemediationHistoryEntryAssessmentReason = "SpecDrift"
+	RemediationHistoryEntryAssessmentReasonExpired         RemediationHistoryEntryAssessmentReason = "Expired"
+	RemediationHistoryEntryAssessmentReasonNoExecution     RemediationHistoryEntryAssessmentReason = "NoExecution"
+	RemediationHistoryEntryAssessmentReasonMetricsTimedOut RemediationHistoryEntryAssessmentReason = "MetricsTimedOut"
 )
 
 // AllValues returns all RemediationHistoryEntryAssessmentReason values.
@@ -18139,7 +18156,7 @@ type RemediationHistorySummary struct {
 	// Result of three-way hash comparison against currentSpecHash.
 	HashMatch OptRemediationHistorySummaryHashMatch `json:"hashMatch"`
 	// Reason/status of the effectiveness assessment (same enum as
-	// RemediationHistoryEntry). When "spec_drift", effectiveness score
+	// RemediationHistoryEntry). When "SpecDrift", effectiveness score
 	// is unreliable (DD-EM-002 v1.1).
 	AssessmentReason OptNilRemediationHistorySummaryAssessmentReason `json:"assessmentReason"`
 	// When the remediation was completed.
@@ -18237,17 +18254,17 @@ func (s *RemediationHistorySummary) SetCompletedAt(val time.Time) {
 }
 
 // Reason/status of the effectiveness assessment (same enum as
-// RemediationHistoryEntry). When "spec_drift", effectiveness score
+// RemediationHistoryEntry). When "SpecDrift", effectiveness score
 // is unreliable (DD-EM-002 v1.1).
 type RemediationHistorySummaryAssessmentReason string
 
 const (
-	RemediationHistorySummaryAssessmentReasonFull            RemediationHistorySummaryAssessmentReason = "full"
-	RemediationHistorySummaryAssessmentReasonPartial         RemediationHistorySummaryAssessmentReason = "partial"
-	RemediationHistorySummaryAssessmentReasonSpecDrift       RemediationHistorySummaryAssessmentReason = "spec_drift"
-	RemediationHistorySummaryAssessmentReasonExpired         RemediationHistorySummaryAssessmentReason = "expired"
-	RemediationHistorySummaryAssessmentReasonNoExecution     RemediationHistorySummaryAssessmentReason = "no_execution"
-	RemediationHistorySummaryAssessmentReasonMetricsTimedOut RemediationHistorySummaryAssessmentReason = "metrics_timed_out"
+	RemediationHistorySummaryAssessmentReasonFull            RemediationHistorySummaryAssessmentReason = "Full"
+	RemediationHistorySummaryAssessmentReasonPartial         RemediationHistorySummaryAssessmentReason = "Partial"
+	RemediationHistorySummaryAssessmentReasonSpecDrift       RemediationHistorySummaryAssessmentReason = "SpecDrift"
+	RemediationHistorySummaryAssessmentReasonExpired         RemediationHistorySummaryAssessmentReason = "Expired"
+	RemediationHistorySummaryAssessmentReasonNoExecution     RemediationHistorySummaryAssessmentReason = "NoExecution"
+	RemediationHistorySummaryAssessmentReasonMetricsTimedOut RemediationHistorySummaryAssessmentReason = "MetricsTimedOut"
 )
 
 // AllValues returns all RemediationHistorySummaryAssessmentReason values.
@@ -20050,7 +20067,7 @@ func (s *RemediationWorkflowStatus) UnmarshalText(data []byte) error {
 }
 
 // Audit payload for RemediationWorkflow CRD admission events (ADR-058).
-// Emitted by the authwebhook when a RemediationWorkflow CRD is created, deleted, or denied.
+// Emitted by the authwebhook when a RemediationWorkflow CRD is created, updated, deleted, or denied.
 // Ref: #/components/schemas/RemediationWorkflowWebhookAuditPayload
 type RemediationWorkflowWebhookAuditPayload struct {
 	// Event type for discriminator (matches parent event_type).
@@ -20132,6 +20149,7 @@ type RemediationWorkflowWebhookAuditPayloadAction string
 
 const (
 	RemediationWorkflowWebhookAuditPayloadActionCreate RemediationWorkflowWebhookAuditPayloadAction = "create"
+	RemediationWorkflowWebhookAuditPayloadActionUpdate RemediationWorkflowWebhookAuditPayloadAction = "update"
 	RemediationWorkflowWebhookAuditPayloadActionDelete RemediationWorkflowWebhookAuditPayloadAction = "delete"
 	RemediationWorkflowWebhookAuditPayloadActionDenied RemediationWorkflowWebhookAuditPayloadAction = "denied"
 )
@@ -20140,6 +20158,7 @@ const (
 func (RemediationWorkflowWebhookAuditPayloadAction) AllValues() []RemediationWorkflowWebhookAuditPayloadAction {
 	return []RemediationWorkflowWebhookAuditPayloadAction{
 		RemediationWorkflowWebhookAuditPayloadActionCreate,
+		RemediationWorkflowWebhookAuditPayloadActionUpdate,
 		RemediationWorkflowWebhookAuditPayloadActionDelete,
 		RemediationWorkflowWebhookAuditPayloadActionDenied,
 	}
@@ -20149,6 +20168,8 @@ func (RemediationWorkflowWebhookAuditPayloadAction) AllValues() []RemediationWor
 func (s RemediationWorkflowWebhookAuditPayloadAction) MarshalText() ([]byte, error) {
 	switch s {
 	case RemediationWorkflowWebhookAuditPayloadActionCreate:
+		return []byte(s), nil
+	case RemediationWorkflowWebhookAuditPayloadActionUpdate:
 		return []byte(s), nil
 	case RemediationWorkflowWebhookAuditPayloadActionDelete:
 		return []byte(s), nil
@@ -20164,6 +20185,9 @@ func (s *RemediationWorkflowWebhookAuditPayloadAction) UnmarshalText(data []byte
 	switch RemediationWorkflowWebhookAuditPayloadAction(data) {
 	case RemediationWorkflowWebhookAuditPayloadActionCreate:
 		*s = RemediationWorkflowWebhookAuditPayloadActionCreate
+		return nil
+	case RemediationWorkflowWebhookAuditPayloadActionUpdate:
+		*s = RemediationWorkflowWebhookAuditPayloadActionUpdate
 		return nil
 	case RemediationWorkflowWebhookAuditPayloadActionDelete:
 		*s = RemediationWorkflowWebhookAuditPayloadActionDelete
@@ -20181,6 +20205,7 @@ type RemediationWorkflowWebhookAuditPayloadEventType string
 
 const (
 	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.create"
+	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.update"
 	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.delete"
 	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.denied"
 )
@@ -20189,6 +20214,7 @@ const (
 func (RemediationWorkflowWebhookAuditPayloadEventType) AllValues() []RemediationWorkflowWebhookAuditPayloadEventType {
 	return []RemediationWorkflowWebhookAuditPayloadEventType{
 		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate,
+		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate,
 		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete,
 		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied,
 	}
@@ -20198,6 +20224,8 @@ func (RemediationWorkflowWebhookAuditPayloadEventType) AllValues() []Remediation
 func (s RemediationWorkflowWebhookAuditPayloadEventType) MarshalText() ([]byte, error) {
 	switch s {
 	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate:
+		return []byte(s), nil
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate:
 		return []byte(s), nil
 	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete:
 		return []byte(s), nil
@@ -20213,6 +20241,9 @@ func (s *RemediationWorkflowWebhookAuditPayloadEventType) UnmarshalText(data []b
 	switch RemediationWorkflowWebhookAuditPayloadEventType(data) {
 	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate:
 		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate
+		return nil
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate:
+		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate
 		return nil
 	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete:
 		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete

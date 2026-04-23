@@ -59,7 +59,9 @@ var (
 	kubeconfigPath string
 
 	// Same port mapping as KA (DD-TEST-001 v2.9)
-	kaURL          string // http://localhost:8088
+	kaURL          string // http://localhost:8088  (API port)
+	kaHealthURL    string // http://localhost:28088 (Issue #753: dedicated health port)
+	kaMetricsURL   string // http://localhost:9088  (Issue #753: dedicated metrics port)
 	dataStorageURL string // http://localhost:8089
 
 	sharedNamespace string = "kubernaut-agent-e2e"
@@ -101,15 +103,24 @@ var _ = SynchronizedBeforeSuite(
 		err = infrastructure.SetupKubernautAgentInfrastructure(ctx, clusterName, kubeconfigPath, sharedNamespace, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 
-		kaURL = "http://localhost:8088"
-		dataStorageURL = "http://localhost:8089"
+		kaURL = "https://localhost:8088"
+		kaHealthURL = "http://localhost:28088"
+		kaMetricsURL = "http://localhost:9088"
+		dataStorageURL = "https://localhost:8089"
+
+		// Issue #785: Configure http.DefaultTransport to trust the inter-service CA.
+		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport (Issue #785)")
+		http.DefaultTransport = tlsTransport
 
 		logger.Info("⏳ Waiting for Kind NodePort mapping to stabilize...")
 		time.Sleep(5 * time.Second)
 
+		// Issue #753: Health probes moved to dedicated port 8081 (NodePort 30281 → host 28089)
+		dataStorageHealthURL := "http://localhost:28089"
 		logger.Info("⏳ Waiting for Data Storage service to be ready...")
 		Eventually(func() error {
-			resp, err := http.Get(dataStorageURL + "/health/ready")
+			resp, err := http.Get(dataStorageHealthURL + "/readyz")
 			if err != nil {
 				return err
 			}
@@ -120,9 +131,10 @@ var _ = SynchronizedBeforeSuite(
 			return nil
 		}, 90*time.Second, 2*time.Second).Should(Succeed(), "Data Storage health check should succeed")
 
+		// Issue #753: KA health probes on dedicated port 8081 (NodePort 30188 → host 28088)
 		logger.Info("⏳ Waiting for Kubernaut Agent service to be ready...")
 		Eventually(func() error {
-			resp, err := http.Get(kaURL + "/health")
+			resp, err := http.Get(kaHealthURL + "/readyz")
 			if err != nil {
 				return err
 			}
@@ -169,8 +181,15 @@ var _ = SynchronizedBeforeSuite(
 		ctx, cancel = context.WithCancel(context.Background())
 		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 
-		kaURL = "http://localhost:8088"
-		dataStorageURL = "http://localhost:8089"
+		kaURL = "https://localhost:8088"
+		kaHealthURL = "http://localhost:28088"
+		kaMetricsURL = "http://localhost:9088"
+		dataStorageURL = "https://localhost:8089"
+
+		// Issue #785: Configure http.DefaultTransport to trust the inter-service CA.
+		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport (Issue #785)")
+		http.DefaultTransport = tlsTransport
 
 		cwd, err := os.Getwd()
 		Expect(err).ToNot(HaveOccurred())

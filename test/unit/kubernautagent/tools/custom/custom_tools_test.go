@@ -27,9 +27,21 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/custom"
 )
+
+// toolCtx returns a context with a representative SignalContext attached.
+// Required since #779: workflow discovery tools extract signal fields from ctx.
+func toolCtx() context.Context {
+	return katypes.WithSignalContext(context.Background(), katypes.SignalContext{
+		Severity:     "critical",
+		ResourceKind: "Deployment",
+		Environment:  "production",
+		Priority:     "P0",
+	})
+}
 
 // fakeWorkflowDS captures the params passed to each DS method and returns
 // canned responses. Satisfies custom.WorkflowDiscoveryClient.
@@ -360,7 +372,7 @@ var _ = Describe("Kubernaut Agent Custom Tool Schemas — #433", func() {
 			Expect(parsed["type"]).To(Equal("object"))
 
 			required, ok := parsed["required"].([]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "required" in list_workflows schema to be a []interface{}`)
 			Expect(required).To(ContainElement("action_type"))
 		})
 
@@ -371,7 +383,7 @@ var _ = Describe("Kubernaut Agent Custom Tool Schemas — #433", func() {
 			Expect(json.Unmarshal(schema, &parsed)).To(Succeed())
 
 			props, ok := parsed["properties"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "properties" in list_workflows schema to be a map[string]interface{}`)
 			Expect(props).NotTo(HaveKey("offset"))
 			Expect(props).NotTo(HaveKey("limit"))
 		})
@@ -387,7 +399,7 @@ var _ = Describe("Kubernaut Agent Custom Tool Schemas — #433", func() {
 			Expect(parsed["type"]).To(Equal("object"))
 
 			required, ok := parsed["required"].([]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "required" in get_workflow schema to be a []interface{}`)
 			Expect(required).To(ContainElement("workflow_id"))
 		})
 	})
@@ -408,7 +420,7 @@ var _ = Describe("Kubernaut Agent Custom Tool Schemas — #433", func() {
 			Expect(json.Unmarshal(schema, &parsed)).To(Succeed())
 
 			props, ok := parsed["properties"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "properties" in list_workflows schema to be a map[string]interface{}`)
 
 			pageProp, ok := props["page"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "page property must exist in list_workflows schema")
@@ -440,7 +452,7 @@ var _ = Describe("Kubernaut Agent Custom Tool Schemas — #433", func() {
 			Expect(json.Unmarshal(schema, &parsed)).To(Succeed())
 
 			props, ok := parsed["properties"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "properties" in list_available_actions schema to be a map[string]interface{}`)
 
 			pageProp, ok := props["page"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "page property must exist in list_available_actions schema")
@@ -521,7 +533,7 @@ var _ = Describe("UT-KA-688: Execute wiring with cursor pagination", func() {
 			allTools := custom.NewAllTools(fake)
 			var listWorkflows = allTools[1]
 
-			result, err := listWorkflows.Execute(context.Background(),
+			result, err := listWorkflows.Execute(toolCtx(),
 				json.RawMessage(`{"action_type":"ScaleReplicas"}`))
 			Expect(err).NotTo(HaveOccurred())
 
@@ -548,7 +560,7 @@ var _ = Describe("UT-KA-688: Execute wiring with cursor pagination", func() {
 			var listWorkflows = allTools[1]
 
 			args := fmt.Sprintf(`{"action_type":"ScaleReplicas","page":"next","cursor":"%s"}`, cursor)
-			result, err := listWorkflows.Execute(context.Background(), json.RawMessage(args))
+			result, err := listWorkflows.Execute(toolCtx(), json.RawMessage(args))
 			Expect(err).NotTo(HaveOccurred())
 
 			gotOffset, ok := fake.listWorkflowsParams.Offset.Get()
@@ -577,7 +589,7 @@ var _ = Describe("UT-KA-688: Execute wiring with cursor pagination", func() {
 			allTools := custom.NewAllTools(fake)
 			var listActions = allTools[0]
 
-			result, err := listActions.Execute(context.Background(),
+			result, err := listActions.Execute(toolCtx(),
 				json.RawMessage(`{}`))
 			Expect(err).NotTo(HaveOccurred())
 
@@ -602,7 +614,7 @@ var _ = Describe("UT-KA-688: Execute wiring with cursor pagination", func() {
 			var listActions = allTools[0]
 
 			args := fmt.Sprintf(`{"page":"next","cursor":"%s"}`, cursor)
-			result, err := listActions.Execute(context.Background(), json.RawMessage(args))
+			result, err := listActions.Execute(toolCtx(), json.RawMessage(args))
 			Expect(err).NotTo(HaveOccurred())
 
 			gotOffset, ok := fake.listActionsParams.Offset.Get()
@@ -624,7 +636,7 @@ var _ = Describe("UT-KA-688: Execute wiring with cursor pagination", func() {
 			allTools := custom.NewAllTools(fake)
 			var listWorkflows = allTools[1]
 
-			result, err := listWorkflows.Execute(context.Background(),
+			result, err := listWorkflows.Execute(toolCtx(),
 				json.RawMessage(`{"action_type":"ScaleReplicas","page":"next","cursor":"garbage"}`))
 			Expect(err).NotTo(HaveOccurred())
 

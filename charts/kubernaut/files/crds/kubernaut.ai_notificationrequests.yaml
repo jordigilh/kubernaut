@@ -359,6 +359,7 @@ spec:
                 enum:
                 - AIAnalysis
                 - WorkflowExecution
+                - RoutingEngine
                 type: string
               severity:
                 description: |-

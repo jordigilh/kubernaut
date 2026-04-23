@@ -285,10 +285,15 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 
 	if filters.Component != "" {
 		// DD-WORKFLOW-016 v2.1: Case-insensitive component matching.
+		// Issue #790: component is now a JSONB array (like severity/environment).
+		// Guard with jsonb_typeof to handle legacy scalar values that would crash
+		// jsonb_array_elements_text (ERROR: cannot extract elements from a scalar).
 		// Kubernetes resource Kind is PascalCase (e.g., "Deployment"),
 		// but OCI workflow labels store lowercase (e.g., "deployment").
-		conditions = append(conditions, fmt.Sprintf(
-			"(LOWER(labels->>'component') = LOWER($%d) OR labels->>'component' = '*')", argIdx))
+		conditions = append(conditions, fmt.Sprintf(`(CASE WHEN jsonb_typeof(labels->'component') = 'array'
+			THEN EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'component') elem WHERE LOWER(elem) = LOWER($%d)) OR labels->'component' ? '*'
+			ELSE LOWER(labels->>'component') = LOWER($%d) OR labels->>'component' = '*'
+		END)`, argIdx, argIdx))
 		args = append(args, filters.Component)
 		argIdx++
 	}

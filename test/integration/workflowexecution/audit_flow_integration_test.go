@@ -60,6 +60,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 	// Port 18097 per DD-TEST-001 v1.9 (unique port, parallel with KA)
 	// Use 127.0.0.1 instead of localhost to force IPv4 (DD-TEST-001 v1.2)
 	dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationDataStoragePort)
+	dataStorageHealthURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationHealthPort)
 
 	var dsClient *ogenclient.Client
 
@@ -68,7 +69,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 		// Per TESTING_GUIDELINES.md: test skipping is ABSOLUTELY FORBIDDEN - tests MUST fail
 		// Per DD-AUDIT-003: WorkflowExecution REQUIRES audit capability
 		httpClient := &http.Client{Timeout: 5 * time.Second}
-		resp, err := httpClient.Get(dataStorageURL + "/health")
+		resp, err := httpClient.Get(dataStorageHealthURL + "/readyz")
 		if err != nil || resp.StatusCode != http.StatusOK {
 			Fail(fmt.Sprintf(
 				"REQUIRED: Data Storage not available at %s\n"+

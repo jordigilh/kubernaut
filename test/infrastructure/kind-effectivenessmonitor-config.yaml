@@ -44,6 +44,9 @@ nodes:
   - containerPort: 30081
     hostPort: 8091        # DD-TEST-001: EM → DataStorage dependency
     protocol: TCP
+  - containerPort: 30281  # Data Storage health NodePort (Issue #753)
+    hostPort: 30281       # Port on host machine
+    protocol: TCP
   # EM API Port
   - containerPort: 30089
     hostPort: 8089        # DD-TEST-001: EM controller

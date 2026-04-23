@@ -162,8 +162,11 @@ spec:
                   for discovery
                 properties:
                   component:
-                    description: Component is the Kubernetes resource type
-                    type: string
+                    description: Component is the Kubernetes resource type(s)
+                    items:
+                      type: string
+                    minItems: 1
+                    type: array
                   environment:
                     description: Environment is the target environment(s)
                     items:

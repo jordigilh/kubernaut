@@ -194,7 +194,7 @@ var _ = Describe("Partial Scope Grace (UT-EM-254-006, #254)", func() {
 		Expect(fetched.Status.Phase).To(Equal(eav1.PhaseCompleted),
 			"Phase must be Completed after grace expires")
 		Expect(fetched.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonPartial),
-			"AssessmentReason must be 'partial'")
+			"AssessmentReason must be 'Partial'")
 		Expect(fetched.Status.CompletedAt).NotTo(BeNil(),
 			"CompletedAt must be set")
 	})

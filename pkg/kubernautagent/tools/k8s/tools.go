@@ -34,6 +34,7 @@ import (
 var AllToolNames = []string{
 	"kubectl_describe",
 	"kubectl_get_by_name",
+	"kubectl_get_by_name_in_cluster",
 	"kubectl_get_by_kind_in_namespace",
 	"kubectl_get_by_kind_in_cluster",
 	"kubectl_find_resource",
@@ -60,6 +61,7 @@ func NewAllTools(client kubernetes.Interface, resolver ResourceResolver) []tools
 	result := []tools.Tool{
 		newDescribe(resolver),
 		newGetByName(resolver),
+		newGetByNameInCluster(resolver),
 		newGetByKindInNamespace(resolver),
 		newGetByKindInCluster(resolver),
 		newFindResource(resolver),
@@ -80,6 +82,16 @@ func NewAllTools(client kubernetes.Interface, resolver ResourceResolver) []tools
 	return result
 }
 
+const (
+	// DefaultLogTailLines is the default number of log lines to tail when the
+	// LLM omits both tailLines and limitBytes. Prevents unbounded log fetches.
+	DefaultLogTailLines int64 = 500
+
+	// DefaultEventLimit caps the number of events returned by kubectl_events
+	// to prevent oversized output from high-churn resources.
+	DefaultEventLimit = 200
+)
+
 type resourceArgs struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
@@ -96,13 +108,14 @@ type logArgs struct {
 }
 
 var (
-	objParams         = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"name":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","name","namespace"]}`)
-	listParams        = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","namespace"]}`)
-	clusterListParams = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"}},"required":["kind"]}`)
-	findParams        = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"keyword":{"type":"string","description":"Substring to match in resource name, namespace, or labels"}},"required":["kind","keyword"]}`)
-	nsOnlyParams      = json.RawMessage(`{"type":"object","properties":{"namespace":{"type":"string"}},"required":["namespace"]}`)
-	noParams          = json.RawMessage(`{"type":"object","properties":{}}`)
-	logParams         = json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"namespace":{"type":"string"},"container":{"type":"string"},"tailLines":{"type":"integer"},"limitBytes":{"type":"integer"},"pattern":{"type":"string"}},"required":["name","namespace"]}`)
+	objParams             = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"name":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","name","namespace"]}`)
+	clusterObjParams      = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind"},"name":{"type":"string","description":"Exact resource name to find across all namespaces"}},"required":["kind","name"]}`)
+	listParams            = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","namespace"]}`)
+	clusterListParams     = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"}},"required":["kind"]}`)
+	findParams            = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"keyword":{"type":"string","description":"Substring to match in resource name, namespace, or labels"}},"required":["kind","keyword"]}`)
+	nsOnlyParams          = json.RawMessage(`{"type":"object","properties":{"namespace":{"type":"string"}},"required":["namespace"]}`)
+	noParams              = json.RawMessage(`{"type":"object","properties":{}}`)
+	logParams             = json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"namespace":{"type":"string"},"container":{"type":"string"},"tailLines":{"type":"integer"},"limitBytes":{"type":"integer"},"pattern":{"type":"string"}},"required":["name","namespace"]}`)
 )
 
 // resourceTool is a shared base for tools that fetch K8s resources.
@@ -172,6 +185,62 @@ func newGetByKindInCluster(resolver ResourceResolver) *resourceTool {
 	}
 }
 
+// --- get by name in cluster tool (#752) ---
+
+type getByNameInClusterTool struct {
+	resolver ResourceResolver
+}
+
+func newGetByNameInCluster(resolver ResourceResolver) *getByNameInClusterTool {
+	return &getByNameInClusterTool{resolver: resolver}
+}
+
+func (t *getByNameInClusterTool) Name() string               { return "kubectl_get_by_name_in_cluster" }
+func (t *getByNameInClusterTool) Description() string {
+	return "Get a single Kubernetes resource by exact name across all namespaces (avoids listing all resources of a kind)"
+}
+func (t *getByNameInClusterTool) Parameters() json.RawMessage { return clusterObjParams }
+
+func (t *getByNameInClusterTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+	var a struct {
+		Kind string `json:"kind"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", fmt.Errorf("parsing args: %w", err)
+	}
+
+	resources, err := t.resolver.List(ctx, a.Kind, "")
+	if err != nil {
+		return "", err
+	}
+
+	data, _ := json.Marshal(resources)
+
+	var listObj struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(data, &listObj); err != nil || listObj.Items == nil {
+		return "", fmt.Errorf("resource %q named %q not found in cluster", a.Kind, a.Name)
+	}
+
+	for _, item := range listObj.Items {
+		var meta struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+		}
+		if err := json.Unmarshal(item, &meta); err != nil {
+			continue
+		}
+		if meta.Metadata.Name == a.Name {
+			return string(item), nil
+		}
+	}
+
+	return "", fmt.Errorf("resource %q named %q not found in cluster", a.Kind, a.Name)
+}
+
 // --- find resource tool ---
 
 type findResourceTool struct {
@@ -195,15 +264,17 @@ func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (s
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
+	a.Keyword = strings.TrimSpace(a.Keyword)
+	if a.Keyword == "" {
+		return "", fmt.Errorf("keyword must not be empty; use kubectl_get_by_kind_in_cluster to list all resources of a kind")
+	}
+
 	resources, err := t.resolver.List(ctx, a.Kind, "")
 	if err != nil {
 		return "", err
 	}
 
 	data, _ := json.Marshal(resources)
-	if a.Keyword == "" {
-		return string(data), nil
-	}
 
 	var listObj struct {
 		Items []json.RawMessage `json:"items"`
@@ -345,20 +416,46 @@ func (t *memoryRequestsTool) Execute(ctx context.Context, args json.RawMessage) 
 	return sb.String(), nil
 }
 
-func newEvents(c kubernetes.Interface) *resourceTool {
-	return &resourceTool{
-		toolName: "kubectl_events",
-		desc:     "Get events for a Kubernetes resource", params: objParams,
-		fetchFunc: func(ctx context.Context, a resourceArgs) (interface{}, error) {
-			events, err := c.CoreV1().Events(a.Namespace).List(ctx, metav1.ListOptions{
-				FieldSelector: fmt.Sprintf("involvedObject.name=%s", a.Name),
-			})
-			if err != nil {
-				return nil, fmt.Errorf("listing events: %w", err)
-			}
-			return events.Items, nil
-		},
+type eventsTool struct {
+	client kubernetes.Interface
+}
+
+func newEvents(c kubernetes.Interface) *eventsTool {
+	return &eventsTool{client: c}
+}
+
+func (t *eventsTool) Name() string               { return "kubectl_events" }
+func (t *eventsTool) Description() string         { return "Get events for a Kubernetes resource" }
+func (t *eventsTool) Parameters() json.RawMessage { return objParams }
+
+func (t *eventsTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+	var a resourceArgs
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", fmt.Errorf("parsing args: %w", err)
 	}
+
+	events, err := t.client.CoreV1().Events(a.Namespace).List(ctx, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("involvedObject.name=%s", a.Name),
+	})
+	if err != nil {
+		return "", fmt.Errorf("listing events: %w", err)
+	}
+
+	items := events.Items
+	truncated := len(items) > DefaultEventLimit
+	if truncated {
+		items = items[:DefaultEventLimit]
+	}
+
+	data, err := json.Marshal(items)
+	if err != nil {
+		return "", fmt.Errorf("marshaling events: %w", err)
+	}
+
+	if truncated {
+		return string(data) + fmt.Sprintf("\n... [TRUNCATED] Showing %d of %d events. Use kubectl_describe or narrow your query for more detail.", DefaultEventLimit, len(events.Items)), nil
+	}
+	return string(data), nil
 }
 
 // --- log tools ---
@@ -405,6 +502,11 @@ func (t *logTool) Execute(ctx context.Context, args json.RawMessage) (string, er
 	var a logArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", fmt.Errorf("parsing args: %w", err)
+	}
+
+	if a.TailLines == nil && a.LimitBytes == nil {
+		defaultTail := DefaultLogTailLines
+		a.TailLines = &defaultTail
 	}
 
 	opts := &corev1.PodLogOptions{

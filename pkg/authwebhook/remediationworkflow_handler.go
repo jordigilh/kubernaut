@@ -30,6 +30,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -127,9 +128,34 @@ func (h *RemediationWorkflowHandler) Handle(ctx context.Context, req admission.R
 
 // handleCreate processes CREATE operations: registers the CRD with DS.
 func (h *RemediationWorkflowHandler) handleCreate(ctx context.Context, req admission.Request) admission.Response {
-	logger := ctrl.Log.WithName("rw-webhook").WithValues("operation", "CREATE", "name", req.Name, "namespace", req.Namespace)
+	return h.registerWorkflow(ctx, req, "CREATE", EventTypeRWAdmittedCreate)
+}
 
-	// Unmarshal the CRD from the admission request
+// handleUpdate processes UPDATE operations: re-registers the CRD with DS.
+// Issue #371: When a CRD's spec changes (e.g., version bump, added dependencies),
+// DS content integrity logic determines the correct action: idempotent return
+// (same hash), reject (same version + different hash), supersede (cross-version), or create new.
+// Issue #773: Hardened to CREATE-level strictness — all error paths return Denied
+// with denied audit event (SOC2 CC8.1 compliance).
+func (h *RemediationWorkflowHandler) handleUpdate(ctx context.Context, req admission.Request) admission.Response {
+	// During CRD deletion, K8s sends UPDATE admission requests for metadata
+	// changes (e.g., finalizer removal by the catalog-cleanup controller).
+	// Registering here would undo the DisableWorkflow performed by handleDelete
+	// (DS sees "disabled + same hash → re-enable"). Skip to preserve the disable.
+	rw := &rwv1alpha1.RemediationWorkflow{}
+	if err := json.Unmarshal(req.Object.Raw, rw); err == nil && rw.DeletionTimestamp != nil {
+		return admission.Allowed("update during deletion — skipped (DELETE handles DS lifecycle)")
+	}
+	return h.registerWorkflow(ctx, req, "UPDATE", EventTypeRWAdmittedUpdate)
+}
+
+// registerWorkflow is the shared implementation for CREATE and UPDATE operations.
+// Both operations follow the same flow: unmarshal → authenticate → marshal clean
+// content → register with DS → emit audit → async status update.
+// All error paths return admission.Denied and emit denied audit events (SOC2 CC8.1).
+func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req admission.Request, operation, auditEventType string) admission.Response {
+	logger := ctrl.Log.WithName("rw-webhook").WithValues("operation", operation, "name", req.Name, "namespace", req.Namespace)
+
 	rw := &rwv1alpha1.RemediationWorkflow{}
 	if err := json.Unmarshal(req.Object.Raw, rw); err != nil {
 		logger.Error(err, "Failed to unmarshal RemediationWorkflow")
@@ -156,7 +182,6 @@ func (h *RemediationWorkflowHandler) handleCreate(ctx context.Context, req admis
 		return admission.Denied(fmt.Sprintf("failed to marshal CRD content: %v", err))
 	}
 
-	// Call DS to register the workflow
 	result, err := h.dsClient.CreateWorkflowInline(ctx, string(content), "crd", authCtx.Username)
 	if err != nil {
 		logger.Error(err, "DS CreateWorkflowInline failed")
@@ -170,8 +195,7 @@ func (h *RemediationWorkflowHandler) handleCreate(ctx context.Context, req admis
 		"previously_existed", result.PreviouslyExisted,
 	)
 
-	// Emit successful CREATE audit event
-	h.emitAdmitAudit(ctx, req, EventTypeRWAdmittedCreate, result.WorkflowID, rw.Name)
+	h.emitAdmitAudit(ctx, req, auditEventType, result.WorkflowID, rw.Name)
 
 	// ADR-058: Update CRD .status asynchronously after admission to avoid blocking
 	// the API server. The status subresource is used so this doesn't conflict with
@@ -179,52 +203,6 @@ func (h *RemediationWorkflowHandler) handleCreate(ctx context.Context, req admis
 	go h.updateCRDStatus(req.Namespace, req.Name, authCtx.Username, result)
 
 	// Phase 3c: best-effort cross-update of ActionType CRD status.activeWorkflowCount
-	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace)
-
-	return admission.Allowed("workflow registered in catalog")
-}
-
-// handleUpdate processes UPDATE operations: re-registers the CRD with DS.
-// Issue #371: When a CRD's spec changes (e.g., version bump, added dependencies),
-// DS content integrity logic determines the correct action: idempotent return
-// (same hash), supersede old entry (different hash/version), or create new.
-func (h *RemediationWorkflowHandler) handleUpdate(ctx context.Context, req admission.Request) admission.Response {
-	logger := ctrl.Log.WithName("rw-webhook").WithValues("operation", "UPDATE", "name", req.Name, "namespace", req.Namespace)
-
-	rw := &rwv1alpha1.RemediationWorkflow{}
-	if err := json.Unmarshal(req.Object.Raw, rw); err != nil {
-		logger.Error(err, "Failed to unmarshal RemediationWorkflow")
-		return admission.Allowed("update allowed (unmarshal failed, best-effort)")
-	}
-
-	authCtx, err := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
-	if err != nil {
-		logger.Error(err, "Authentication failed")
-		return admission.Allowed("update allowed (auth failed, best-effort)")
-	}
-
-	content, err := marshalCleanCRDContent(rw)
-	if err != nil {
-		logger.Error(err, "Failed to marshal CRD content for DS")
-		return admission.Allowed("update allowed (marshal failed, best-effort)")
-	}
-
-	result, err := h.dsClient.CreateWorkflowInline(ctx, string(content), "crd", authCtx.Username)
-	if err != nil {
-		logger.Error(err, "DS CreateWorkflowInline failed on UPDATE (best-effort — allowing UPDATE)")
-		return admission.Allowed("update allowed (DS registration failed, best-effort)")
-	}
-
-	logger.Info("Workflow re-registered in DS via UPDATE",
-		"workflow_id", result.WorkflowID,
-		"workflow_name", result.WorkflowName,
-		"previously_existed", result.PreviouslyExisted,
-	)
-
-	// Reuse CREATE audit event type since DS operation is identical
-	h.emitAdmitAudit(ctx, req, EventTypeRWAdmittedCreate, result.WorkflowID, rw.Name)
-
-	go h.updateCRDStatus(req.Namespace, req.Name, authCtx.Username, result)
 	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace)
 
 	return admission.Allowed("workflow registered in catalog")
@@ -286,6 +264,12 @@ func (h *RemediationWorkflowHandler) handleDelete(ctx context.Context, req admis
 // updateCRDStatus writes the DS registration result into the CRD's .status subresource.
 // Runs asynchronously after admission completes so it doesn't block the API server response.
 // Uses a fresh context with a timeout since the admission context is cancelled after response.
+//
+// Uses RetryOnConflict to handle the race between this goroutine and the API server
+// committing the spec change. On the UPDATE path, a plain GET succeeds immediately
+// (CRD already exists) but returns a stale resourceVersion; the subsequent Status().Update
+// gets a 409 Conflict once the API server commits the new resourceVersion. The retry
+// loop re-GETs the CRD (fresh resourceVersion) and retries the status write.
 func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registeredBy string, result *WorkflowRegistrationResult) {
 	logger := ctrl.Log.WithName("rw-webhook").WithValues("operation", "status-update", "name", name, "namespace", namespace)
 
@@ -297,21 +281,25 @@ func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registered
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	rw := &rwv1alpha1.RemediationWorkflow{}
-	if err := RetryGetCRD(ctx, h.k8sClient, types.NamespacedName{Namespace: namespace, Name: name}, rw, 5); err != nil {
-		logger.Error(err, "Failed to fetch CRD for status update after retries")
-		return
-	}
+	key := types.NamespacedName{Namespace: namespace, Name: name}
 
-	now := metav1.Now()
-	rw.Status.WorkflowID = result.WorkflowID
-	rw.Status.CatalogStatus = sharedtypes.CatalogStatus(result.Status)
-	rw.Status.RegisteredBy = registeredBy
-	rw.Status.RegisteredAt = &now
-	rw.Status.PreviouslyExisted = result.PreviouslyExisted
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		rw := &rwv1alpha1.RemediationWorkflow{}
+		if err := h.k8sClient.Get(ctx, key, rw); err != nil {
+			return err
+		}
 
-	if err := h.k8sClient.Status().Update(ctx, rw); err != nil {
-		logger.Error(err, "Failed to update CRD status",
+		now := metav1.Now()
+		rw.Status.WorkflowID = result.WorkflowID
+		rw.Status.CatalogStatus = sharedtypes.CatalogStatus(result.Status)
+		rw.Status.RegisteredBy = registeredBy
+		rw.Status.RegisteredAt = &now
+		rw.Status.PreviouslyExisted = result.PreviouslyExisted
+
+		return h.k8sClient.Status().Update(ctx, rw)
+	})
+	if err != nil {
+		logger.Error(err, "Failed to update CRD status after retries",
 			"workflow_id", result.WorkflowID,
 		)
 		return

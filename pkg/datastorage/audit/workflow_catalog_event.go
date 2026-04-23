@@ -80,7 +80,7 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogencl
 	if len(workflow.Labels.Severity) > 0 {
 		labelsMap["severity"] = workflow.Labels.Severity
 	}
-	if workflow.Labels.Component != "" {
+	if len(workflow.Labels.Component) > 0 {
 		labelsMap["component"] = workflow.Labels.Component
 	}
 	// DD-WORKFLOW-001 v2.5: Environment is []string

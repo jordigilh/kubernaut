@@ -139,21 +139,21 @@ jobs:
           podman push "${IMAGE}"
 
   # ========================================
-  # STAGE 1b: BUILD & PUSH arm64 IMAGES
-  # 12 parallel jobs: one per service, arm64 only.
-  # Runs in parallel with Stage 1a. Does NOT block smoke tests.
+  # STAGE 1b: BUILD & PUSH arm64 IMAGES (Go services)
+  # 10 parallel jobs: one per Go service, arm64 via host-native cross-compile.
+  # No QEMU needed — CGO_ENABLED=0 GOARCH=arm64 runs natively on amd64.
+  # Runtime images use FROM scratch with pre-built binary.
   #
   # Strategy:
-  #   - Go services: CGO_ENABLED=0 cross-compile via GOARCH (native speed)
-  #     inside ubi10/go-toolset pulled for target platform (QEMU for arm64)
-  #   - Python/Bash: Full QEMU emulation for arm64 (slower, acceptable for releases)
+  #   - Host cross-compile: go build with GOARCH=arm64 (native speed, ~25s)
+  #   - Runtime image: scratch + certs from amd64 ubi-minimal (no QEMU, ~5s)
   # ========================================
 
   build-arm64:
     name: "${{ matrix.service }} (arm64)"
     needs: prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -168,6 +168,81 @@ jobs:
           - datastorage
           - effectivenessmonitor
           - kubernautagent
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Generate code
+        run: |
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make generate
+
+      - name: Cross-compile binary (native, no QEMU)
+        env:
+          IMAGE_ARCH: arm64
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+        run: |
+          echo "Cross-compiling ${{ matrix.service }} for arm64 (native)..."
+          START=$(date +%s)
+          make cross-build-${{ matrix.service }}
+          END=$(date +%s)
+          echo "Binary built in $(($END - $START))s"
+          ls -lh bin/*-arm64
+
+      - name: Login to Quay.io
+        run: |
+          podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
+
+      - name: Build runtime image (no QEMU)
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_ARCH: arm64
+          CONTAINER_TOOL: podman
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+        run: |
+          echo "Building runtime image ${{ matrix.service }} (arm64, no QEMU)..."
+          START=$(date +%s)
+          make image-runtime-${{ matrix.service }}
+          END=$(date +%s)
+          echo "Image built in $(($END - $START))s"
+
+      - name: Push image
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+        run: |
+          IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${IMAGE_TAG}-arm64"
+          echo "Pushing ${IMAGE}..."
+          podman push "${IMAGE}"
+
+  # ========================================
+  # STAGE 1c: BUILD & PUSH arm64 IMAGES (non-Go services)
+  # must-gather (Bash) and db-migrate (downloads goose binary) still need QEMU
+  # for package installation in their respective base images.
+  # ========================================
+
+  build-arm64-qemu:
+    name: "${{ matrix.service }} (arm64, QEMU)"
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
           - must-gather
           - db-migrate
     steps:
@@ -213,8 +288,30 @@ jobs:
           GIT_COMMIT: ${{ github.sha }}
           BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
         run: |
-          echo "Building ${{ matrix.service }} for arm64..."
+          echo "::group::arm64 QEMU build for ${{ matrix.service }}"
+          echo "Building ${{ matrix.service }} for arm64 (QEMU emulated)..."
+          echo "Start: $(date -u '+%H:%M:%S UTC')"
+
+          # Background heartbeat: prints elapsed time every 60s
+          (
+            LOOP_START=$SECONDS
+            while true; do
+              sleep 60
+              ELAPSED=$(( (SECONDS - LOOP_START) / 60 ))
+              BUILD_PID=$(pgrep -f "podman build" || echo "none")
+              QEMU_PROCS=$(pgrep -c qemu-aarch64 2>/dev/null || echo "0")
+              echo "[heartbeat +${ELAPSED}m] podman_pid=${BUILD_PID} qemu_procs=${QEMU_PROCS}"
+            done
+          ) &
+          HEARTBEAT_PID=$!
+
           make image-build-${{ matrix.service }}
+          BUILD_EXIT=$?
+
+          kill $HEARTBEAT_PID 2>/dev/null || true
+          echo "Finished: $(date -u '+%H:%M:%S UTC') (exit: $BUILD_EXIT)"
+          echo "::endgroup::"
+          exit $BUILD_EXIT
 
       - name: Push image
         env:
@@ -340,14 +437,14 @@ jobs:
 
   # ========================================
   # STAGE 3: MULTI-ARCH MANIFESTS
-  # After both arch builds complete, create manifest lists so a single
-  # tag (e.g., 1.0.0) resolves to the correct arch automatically.
-  # Also tags every image as :latest for GA releases.
+  # After both arch builds AND helm smoke tests complete, create manifest
+  # lists so a single tag (e.g., 1.0.0) resolves to the correct arch
+  # automatically. Also tags every image as :latest for GA releases.
   # ========================================
 
   create-manifests:
     name: Create Multi-Arch Manifests
-    needs: [prepare, build-amd64, build-arm64]
+    needs: [prepare, build-amd64, build-arm64, build-arm64-qemu, helm-smoke-test]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -388,6 +485,7 @@ jobs:
 
   # ========================================
   # STAGE 4: HELM CHART PUBLISH
+  # Gated on all image builds AND helm smoke tests (Issue #569).
   # Packages the Helm chart with the release version and pushes
   # to the OCI registry at oci://quay.io/kubernaut-ai/charts
   #
@@ -397,7 +495,7 @@ jobs:
 
   helm-publish:
     name: Publish Helm Chart
-    needs: [prepare, build-amd64, build-arm64]
+    needs: [prepare, build-amd64, build-arm64, build-arm64-qemu, helm-smoke-test]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

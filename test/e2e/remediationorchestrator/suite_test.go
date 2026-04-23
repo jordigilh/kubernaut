@@ -184,6 +184,11 @@ var _ = SynchronizedBeforeSuite(
 		err := os.Setenv("KUBECONFIG", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
+		// Issue #785: Configure http.DefaultTransport to trust the inter-service CA.
+		tlsTransport, tlsRErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsRErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport (Issue #785)")
+		http.DefaultTransport = tlsTransport
+
 		By("Registering ALL CRD schemes for RO orchestration")
 		err = remediationv1.AddToScheme(scheme.Scheme)
 		Expect(err).NotTo(HaveOccurred())
@@ -213,8 +218,10 @@ var _ = SynchronizedBeforeSuite(
 		By("Setting up authenticated DataStorage audit client for Gap #8 webhook tests")
 		// Per DD-TEST-001: RO E2E uses port 8081 for DataStorage host port allocation
 		// Per DD-AUTH-014: Use ServiceAccount token for authentication
-		dataStorageURL := "http://localhost:8090" // DD-TEST-001: RO → DataStorage dependency port
-		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+		dataStorageURL := "https://localhost:8090" // DD-TEST-001: RO → DataStorage (Issue #785: HTTPS)
+		tlsBase, tlsAErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsAErr).ToNot(HaveOccurred(), "TLS transport for DataStorage audit client")
+		saTransport := testauth.NewServiceAccountTransportWithBase(e2eAuthToken, tlsBase)
 		httpClient := &http.Client{
 			Timeout:   20 * time.Second,
 			Transport: saTransport,

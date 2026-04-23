@@ -57,8 +57,7 @@ var _ = Describe("Audit Event Builder (BR-AUDIT-006)", func() {
 			Expect(event.CorrelationID).To(Equal("rr-test-001"))
 			Expect(event.AssessmentName).To(Equal("ea-test-001"))
 			Expect(event.Namespace).To(Equal("default"))
-			Expect(event.Score).ToNot(BeNil())
-			Expect(*event.Score).To(Equal(1.0))
+			Expect(event.Score).To(HaveValue(Equal(1.0)))
 			Expect(event.TotalReplicas).To(Equal(int32(3)))
 			Expect(event.ReadyReplicas).To(Equal(int32(3)))
 			Expect(event.RestartsSinceRemediation).To(Equal(int32(0)))
@@ -89,8 +88,7 @@ var _ = Describe("Audit Event Builder (BR-AUDIT-006)", func() {
 			Expect(event.CorrelationID).To(Equal("rr-test-001"))
 			Expect(event.PostRemediationSpecHash).To(Equal("sha256:aaa111"))
 			Expect(event.PreRemediationSpecHash).To(Equal("sha256:aaa111"))
-			Expect(event.Match).ToNot(BeNil())
-			Expect(*event.Match).To(BeTrue())
+			Expect(event.Match).To(HaveValue(BeTrue()))
 		})
 
 		It("should build hash audit event with match=false when hashes differ", func() {
@@ -136,8 +134,7 @@ var _ = Describe("Audit Event Builder (BR-AUDIT-006)", func() {
 
 			event := builder.BuildAlertEvent(data, &score, "HighLatency", true)
 
-			Expect(event.Score).ToNot(BeNil())
-			Expect(*event.Score).To(Equal(1.0))
+			Expect(event.Score).To(HaveValue(Equal(1.0)))
 			Expect(event.SignalName).To(Equal("HighLatency"))
 			Expect(event.AlertResolved).To(BeTrue())
 		})
@@ -242,9 +239,9 @@ var _ = Describe("Audit Event Builder (BR-AUDIT-006)", func() {
 				{Component: types.ComponentAlert, Assessed: true, Score: &alertScore},
 			}
 
-			event := builder.BuildCompletedEvent(data, components, "full", "Assessment completed successfully")
+			event := builder.BuildCompletedEvent(data, components, "Full", "Assessment completed successfully")
 
-			Expect(event.Reason).To(Equal("full"))
+			Expect(event.Reason).To(Equal("Full"))
 			Expect(event.Message).To(Equal("Assessment completed successfully"))
 			Expect(event.Components).To(HaveLen(2))
 		})
@@ -257,18 +254,18 @@ var _ = Describe("Audit Event Builder (BR-AUDIT-006)", func() {
 				{Component: types.ComponentMetrics, Assessed: false, Score: nil},
 			}
 
-			event := builder.BuildCompletedEvent(data, components, "partial", "Metrics timed out")
+			event := builder.BuildCompletedEvent(data, components, "Partial", "Metrics timed out")
 
-			Expect(event.Reason).To(Equal("partial"))
+			Expect(event.Reason).To(Equal("Partial"))
 			Expect(event.Components).To(HaveLen(2))
 		})
 
 		It("should build completed audit event for expired assessment", func() {
 			data := baseEventData()
 
-			event := builder.BuildCompletedEvent(data, nil, "expired", "Validity window expired")
+			event := builder.BuildCompletedEvent(data, nil, "Expired", "Validity window expired")
 
-			Expect(event.Reason).To(Equal("expired"))
+			Expect(event.Reason).To(Equal("Expired"))
 			Expect(event.Components).To(BeNil())
 		})
 	})

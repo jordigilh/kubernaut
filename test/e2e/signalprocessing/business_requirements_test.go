@@ -836,9 +836,9 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 
 	// BR-SP-090: Verify audit events are written to DataStorage
 	It("BR-SP-090: should write audit events to DataStorage when signal is processed", func() {
-		By("Verifying DataStorage is accessible on NodePort 30081")
+		By("Verifying DataStorage is accessible on health NodePort 30281")
 		Eventually(func() bool {
-			resp, err := http.Get("http://localhost:30081/health")
+			resp, err := http.Get("http://localhost:30281/readyz")
 			if err != nil {
 				GinkgoWriter.Printf("  ⚠️  DataStorage health check failed: %v\n", err)
 				return false
@@ -2251,7 +2251,7 @@ func expectCompletedSPStatusAssertions(ctx context.Context, k8sClient client.Cli
 func queryAuditEvents(correlationID string) ([]dsgen.AuditEvent, error) {
 	// DataStorage is accessible via NodePort 30081 in Kind cluster
 	// We use the host port mapping: localhost:30081 → NodePort 30081
-	dataStorageURL := "http://localhost:30081"
+	dataStorageURL := "https://localhost:30081"
 
 	// DD-AUTH-014: Create authenticated OpenAPI client with ServiceAccount token
 	// DataStorage middleware requires Bearer token for TokenReview + SAR authorization

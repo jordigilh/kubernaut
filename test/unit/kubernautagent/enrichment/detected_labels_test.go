@@ -75,7 +75,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 				{Kind: "Deployment", Name: "web-deploy", Namespace: "production"},
 			}
 
-			labels, err := detector.DetectLabels(ctx, "Pod", "web-deploy-pod-xyz", "production", ownerChain)
+			labels, _, err := detector.DetectLabels(ctx, "Pod", "web-deploy-pod-xyz", "production", ownerChain)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(labels).NotTo(BeNil())
 			Expect(labels.GitOpsManaged).To(BeTrue(), "should detect ArgoCD GitOps management")
@@ -115,7 +115,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 				{Kind: "Deployment", Name: "web-deploy", Namespace: "production"},
 			}
 
-			labels, err := detector.DetectLabels(ctx, "Deployment", "web-deploy", "production", ownerChain)
+			labels, _, err := detector.DetectLabels(ctx, "Deployment", "web-deploy", "production", ownerChain)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(labels).NotTo(BeNil())
 			Expect(labels.HPAEnabled).To(BeTrue(), "should detect HPA targeting the workload")
@@ -162,7 +162,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 				{Kind: "Deployment", Name: "web-deploy", Namespace: "production"},
 			}
 
-			labels, err := detector.DetectLabels(ctx, "Deployment", "web-deploy", "production", ownerChain)
+			labels, _, err := detector.DetectLabels(ctx, "Deployment", "web-deploy", "production", ownerChain)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(labels).NotTo(BeNil())
 			Expect(labels.PDBProtected).To(BeTrue(), "should detect PDB protection")
@@ -192,7 +192,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 				{Kind: "Deployment", Name: "web-deploy", Namespace: "production"},
 			}
 
-			labels, err := detector.DetectLabels(ctx, "Deployment", "web-deploy", "production", ownerChain)
+			labels, _, err := detector.DetectLabels(ctx, "Deployment", "web-deploy", "production", ownerChain)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(labels).NotTo(BeNil())
 			Expect(labels.HelmManaged).To(BeTrue(), "should detect Helm management")
@@ -268,7 +268,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 				{Kind: "Deployment", Name: "web-deploy", Namespace: "production"},
 			}
 
-			labels, err := detector.DetectLabels(ctx, "Deployment", "web-deploy", "production", ownerChain)
+			labels, _, err := detector.DetectLabels(ctx, "Deployment", "web-deploy", "production", ownerChain)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(labels).NotTo(BeNil())
 			Expect(labels.GitOpsManaged).To(BeTrue(), "GitOps should be detected")
@@ -303,16 +303,22 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 				{Kind: "Deployment", Name: "plain-deploy", Namespace: "default"},
 			}
 
-			labels, err := detector.DetectLabels(ctx, "Deployment", "plain-deploy", "default", ownerChain)
+			labels, _, err := detector.DetectLabels(ctx, "Deployment", "plain-deploy", "default", ownerChain)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(labels).NotTo(BeNil())
 			Expect(labels.GitOpsManaged).To(BeFalse())
+			Expect(labels.GitOpsTool).To(BeEmpty(),
+				"GitOpsTool should be empty when GitOps is not detected")
 			Expect(labels.HPAEnabled).To(BeFalse())
 			Expect(labels.PDBProtected).To(BeFalse())
 			Expect(labels.HelmManaged).To(BeFalse())
 			Expect(labels.Stateful).To(BeFalse())
 			Expect(labels.NetworkIsolated).To(BeFalse())
+			Expect(labels.ServiceMesh).To(BeEmpty(),
+				"ServiceMesh should be empty when no mesh is detected")
 			Expect(labels.ResourceQuotaConstrained).To(BeFalse())
+			Expect(labels.FailedDetections).To(BeEmpty(),
+				"FailedDetections should be empty when all detections succeed")
 		})
 	})
 })

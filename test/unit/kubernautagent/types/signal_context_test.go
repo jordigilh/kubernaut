@@ -75,7 +75,7 @@ var _ = Describe("Signal Context Propagation — #433 Phase 1A", func() {
 
 			ctx := katypes.WithSignalContext(context.Background(), signal)
 			retrieved, ok := katypes.SignalContextFromContext(ctx)
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), "SignalContext must be present in context")
 			Expect(retrieved).To(Equal(signal))
 		})
 	})

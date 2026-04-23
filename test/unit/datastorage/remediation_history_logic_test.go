@@ -110,7 +110,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 			{
 				EventData: map[string]interface{}{
 					"event_type": "effectiveness.assessment.completed",
-					"reason":     "full",
+					"reason":     "Full",
 				},
 			},
 		}
@@ -416,7 +416,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 				{
 					EventData: map[string]interface{}{
 						"event_type": "effectiveness.assessment.completed",
-						"reason":     "spec_drift",
+						"reason":     "SpecDrift",
 					},
 				},
 			}
@@ -439,7 +439,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 
 				// assessmentReason must be propagated
 				Expect(entry.AssessmentReason.Set).To(BeTrue())
-				Expect(string(entry.AssessmentReason.Value)).To(Equal("spec_drift"))
+				Expect(string(entry.AssessmentReason.Value)).To(Equal("SpecDrift"))
 
 				// score is 0.0 (spec_drift short-circuit in BuildEffectivenessResponse)
 				Expect(entry.EffectivenessScore.Set).To(BeTrue())
@@ -461,7 +461,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 
 				// assessmentReason must be "full"
 				Expect(entry.AssessmentReason.Set).To(BeTrue())
-				Expect(string(entry.AssessmentReason.Value)).To(Equal("full"))
+				Expect(string(entry.AssessmentReason.Value)).To(Equal("Full"))
 
 				// score is normal (not 0.0)
 				Expect(entry.EffectivenessScore.Set).To(BeTrue())
@@ -498,7 +498,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 				s := summaries[0]
 
 				Expect(s.AssessmentReason.Set).To(BeTrue())
-				Expect(string(s.AssessmentReason.Value)).To(Equal("spec_drift"))
+				Expect(string(s.AssessmentReason.Value)).To(Equal("SpecDrift"))
 
 				// score is 0.0
 				Expect(s.EffectivenessScore.Set).To(BeTrue())
@@ -519,7 +519,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 				s := summaries[0]
 
 				Expect(s.AssessmentReason.Set).To(BeTrue())
-				Expect(string(s.AssessmentReason.Value)).To(Equal("full"))
+				Expect(string(s.AssessmentReason.Value)).To(Equal("Full"))
 			})
 		})
 	})

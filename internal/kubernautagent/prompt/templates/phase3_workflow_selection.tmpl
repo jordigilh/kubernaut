@@ -106,9 +106,9 @@ Set `selected_workflow` to None, include `actionable: false`.
 
 ## Expected Response Format
 
-**CRITICAL**: When your workflow selection is complete, call the `submit_result` tool with a JSON object containing your findings. Do NOT write the JSON as text — use the `submit_result` tool call.
+**CRITICAL**: You MUST call one of the two submit tools below. Do NOT write JSON as text.
 
-**submit_result argument schema**:
+### Option 1: Workflow Found — call `submit_result_with_workflow`
 ```json
 {
   "root_cause_analysis": {
@@ -139,12 +139,30 @@ Set `selected_workflow` to None, include `actionable: false`.
 }
 ```
 
+### Option 2: No Matching Workflow — call `submit_result_no_workflow`
+```json
+{
+  "root_cause_analysis": {
+    "summary": "Brief summary from Phase 1 RCA",
+    "severity": "critical|high|medium|low|info|unknown",
+    "signal_name": "SignalName",
+    "contributing_factors": ["factor1", "factor2"],
+    "remediation_target": {
+      "kind": "Deployment",
+      "name": "resource-name",
+      "namespace": "namespace"
+    }
+  },
+  "reasoning": "Explanation of why no workflow matches this incident"
+}
+```
+
 **Rules**:
-- Call `submit_result` with the JSON object as the tool argument
+- Call `submit_result_with_workflow` when a workflow is selected
+- Call `submit_result_no_workflow` when no workflow matches (self-resolved, inconclusive, not actionable, or no automated remediation)
 - Select ONE workflow per incident as `selected_workflow`
 - Include up to 2-3 `alternative_workflows` (for audit/context only)
 - All fields in root_cause_analysis.summary and selected_workflow are required when actionable
 - Top-level severity must match root_cause_analysis.severity
 - Top-level confidence must match selected_workflow.confidence
 - parameters should only contain workflow-specific values (kind/name/namespace are injected by the system)
-- For non-actionable outcomes, omit selected_workflow and set actionable to false

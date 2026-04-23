@@ -533,21 +533,26 @@ var _ = Describe("Kubernaut Agent K8s Kind Resolution — #433 Phase 2", func() 
 			var parsed map[string]interface{}
 			Expect(json.Unmarshal(schema, &parsed)).To(Succeed())
 			required, ok := parsed["required"].([]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "required" in kubernetes_count schema to be a []interface{}`)
 			Expect(required).To(ContainElement("kind"))
 			Expect(required).To(ContainElement("jq_expr"))
 		})
 	})
 
-	Describe("UT-KA-433-600: kubectl_logs_all_containers_grep is registered", func() {
-		It("should be a registered tool that accepts pattern parameter", func() {
+	Describe("UT-KA-433-600: kubectl_logs_all_containers_grep is registered and executes without error", func() {
+		It("should be registered, accept pattern parameter, and execute without error", func() {
 			tool := findToolByName(reg, "kubectl_logs_all_containers_grep")
-			Expect(tool).NotTo(BeNil(), "tool must be registered")
-			Expect(tool.Description()).NotTo(BeEmpty())
+			Expect(tool).NotTo(BeNil(), "tool must be registered in the registry")
+			Expect(tool.Description()).NotTo(BeEmpty(),
+				"tool description must be non-empty for LLM tool discovery")
+
+			schema := tool.Parameters()
+			Expect(schema).NotTo(BeNil(), "tool must expose a JSON schema")
 
 			_, err := reg.Execute(context.Background(), "kubectl_logs_all_containers_grep",
 				json.RawMessage(`{"name":"api-pod","namespace":"default","pattern":"error"}`))
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(),
+				"kubectl_logs_all_containers_grep should execute without error against fake K8s client")
 		})
 	})
 
@@ -668,6 +673,58 @@ var _ = Describe("Kubernaut Agent K8s Kind Resolution — #433 Phase 2", func() 
 				json.RawMessage(`{"kind":"Job","keyword":"zzz-nonexistent-zzz"}`))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal("[]"))
+		})
+	})
+
+	// --- #752: kubectl_get_by_name_in_cluster tool ---
+
+	Describe("UT-KA-752-007: kubectl_get_by_name_in_cluster returns single matching resource", func() {
+		It("should return a single Pod by name across all namespaces", func() {
+			tool := findToolByName(reg, "kubectl_get_by_name_in_cluster")
+			Expect(tool).NotTo(BeNil(), "kubectl_get_by_name_in_cluster must be registered")
+
+			result, err := tool.Execute(context.Background(),
+				json.RawMessage(`{"kind":"Pod","name":"api-pod"}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("api-pod"),
+				"should return the matching Pod")
+		})
+	})
+
+	Describe("UT-KA-752-008: kubectl_get_by_name_in_cluster returns not-found for nonexistent resource", func() {
+		It("should return an error or empty result when resource does not exist", func() {
+			tool := findToolByName(reg, "kubectl_get_by_name_in_cluster")
+			Expect(tool).NotTo(BeNil(), "kubectl_get_by_name_in_cluster must be registered")
+
+			result, err := tool.Execute(context.Background(),
+				json.RawMessage(`{"kind":"Pod","name":"nonexistent-pod-xyz"}`))
+			if err != nil {
+				Expect(err.Error()).To(ContainSubstring("not found"),
+					"error should indicate resource not found")
+			} else {
+				Expect(result).To(ContainSubstring("not found"),
+					"result should indicate resource not found")
+			}
+		})
+	})
+
+	Describe("UT-KA-752-009: kubectl_get_by_name_in_cluster registered in AllToolNames", func() {
+		It("should be included in AllToolNames", func() {
+			found := false
+			for _, name := range k8s.AllToolNames {
+				if name == "kubectl_get_by_name_in_cluster" {
+					found = true
+					break
+				}
+			}
+			Expect(found).To(BeTrue(),
+				"kubectl_get_by_name_in_cluster must be in AllToolNames")
+		})
+
+		It("should be discoverable via the registry", func() {
+			tool := findToolByName(reg, "kubectl_get_by_name_in_cluster")
+			Expect(tool).NotTo(BeNil(),
+				"tool must be registered in the registry")
 		})
 	})
 })

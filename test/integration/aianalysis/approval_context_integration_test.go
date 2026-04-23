@@ -225,26 +225,30 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 			// KA will set human_review_reason based on MockLLM scenario
 			result := createAndReconcileAIAnalysis(tc.signalType, "high")
 
-			// ASSERT: Per BR-AI-050, low confidence (<0.7) and no workflow scenarios transition to Failed
-			// Only high confidence scenarios reach Completed phase
-			if tc.expectedConfidence < 0.7 || tc.expectedConfidence == 0.0 {
-				// Low confidence / no workflow: Terminal failure
+			// #768: no_matching_workflows is now Phase=Completed (successful investigation)
+			// Other low-confidence failures remain Phase=Failed
+			if tc.expectedReason == "no_matching_workflows" {
+				// #768: Completed with AnalysisCompleted/NoMatchingWorkflows
+				Expect(result.Status.Phase).To(Equal("Completed"),
+					fmt.Sprintf("no_matching_workflows transitions to Completed for %s (#768)", tc.scenario))
+				Expect(result.Status.Reason).To(Equal(aianalysisv1.AIAnalysisReason("AnalysisCompleted")),
+					"Reason should be AnalysisCompleted (#768)")
+				Expect(result.Status.SubReason).To(Equal("NoMatchingWorkflows"))
+				Expect(result.Status.NeedsHumanReview).To(BeTrue())
+			} else if tc.expectedConfidence < 0.7 || tc.expectedConfidence == 0.0 {
+				// Low confidence / other failure: Terminal failure
 				Expect(result.Status.Phase).To(Equal("Failed"),
-					fmt.Sprintf("Low confidence/no workflow transitions to Failed for %s", tc.scenario))
+					fmt.Sprintf("Low confidence transitions to Failed for %s", tc.scenario))
 
 				Expect(result.Status.NeedsHumanReview).To(Equal(tc.expectedApproval),
 					fmt.Sprintf("NeedsHumanReview should be %v for %s", tc.expectedApproval, tc.scenario))
 
-				// Per reconciliation-phases.md v2.1: Reason = umbrella, SubReason = specific
 				Expect(result.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed),
 					"Reason should be umbrella category per BR-HAPI-197")
 
-				// Map expectedReason (from test case) to SubReason enum
-				// per mapEnumToSubReason in response_processor.go:859-873
 				expectedSubReason := map[string]string{
-					"no_matching_workflows": "NoMatchingWorkflows",
-					"llm_parsing_error":     "LLMParsingError",
-					"low_confidence":        "LowConfidence",
+					"llm_parsing_error": "LLMParsingError",
+					"low_confidence":    "LowConfidence",
 				}[tc.expectedReason]
 
 				Expect(result.Status.SubReason).To(Equal(expectedSubReason),
@@ -317,20 +321,23 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 			// KA returns MockLLM confidence, Rego policy evaluates for approval
 			result := createAndReconcileAIAnalysis(tc.signalType, "high")
 
-			// ASSERT: Per BR-AI-050, confidence <0.7 transitions to Failed phase
-			if tc.expectedConfidence < 0.7 {
-				// Low confidence / no workflow: Terminal failure (BR-AI-050 + Issue #28/#29)
+			// #768: no_matching_workflows (zero confidence + no workflow) is now Completed
+			if tc.scenario == "zero_confidence_require_approval" {
+				// #768: Completed + NeedsHumanReview
+				Expect(result.Status.Phase).To(Equal("Completed"),
+					fmt.Sprintf("no_matching_workflows transitions to Completed for %s (#768)", tc.scenario))
+				Expect(result.Status.NeedsHumanReview).To(BeTrue())
+			} else if tc.expectedConfidence < 0.7 {
+				// Low confidence (not no_matching_workflows): Terminal failure
 				Expect(result.Status.Phase).To(Equal("Failed"),
 					fmt.Sprintf("Low confidence (<0.7) transitions to Failed for %s", tc.scenario))
 
-				// Confidence score stored in SelectedWorkflow (if workflow was selected)
 				if result.Status.SelectedWorkflow != nil {
 					Expect(result.Status.SelectedWorkflow.Confidence).To(
 						BeNumerically("~", tc.expectedConfidence, 0.05),
 						fmt.Sprintf("Confidence should match MockLLM %s scenario", tc.scenario))
 				}
 
-				// NeedsHumanReview set for low confidence failures
 				Expect(result.Status.NeedsHumanReview).To(Equal(tc.expectedApproval),
 					fmt.Sprintf("NeedsHumanReview should be %v for %s", tc.expectedApproval, tc.scenario))
 

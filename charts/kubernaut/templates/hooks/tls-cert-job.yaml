@@ -54,107 +54,136 @@ spec:
               set -e
               NAMESPACE="{{ .Release.Namespace }}"
               SERVICE="authwebhook"
+              TMPDIR=$(mktemp -d)
 
-              RENEW=false
+              # ── Section 1: AuthWebhook TLS ──────────────────────────────
+              # Issue #753 C-1: decoupled from inter-service section below.
+              AUTHWEBHOOK_REGEN=false
               if kubectl get secret authwebhook-tls -n "$NAMESPACE" >/dev/null 2>&1; then
                 echo "authwebhook-tls secret already exists, checking expiry..."
                 CERT_PEM=$(kubectl get secret authwebhook-tls -n "$NAMESPACE" -o jsonpath='{.data.tls\.crt}' | base64 -d)
-                if printf '%s' "$CERT_PEM" | openssl x509 -checkend $((30*86400)) -noout 2>/dev/null; then
-                  echo "  Certificate is valid for at least 30 more days."
-                  CA_KEY=$(kubectl get secret authwebhook-tls -n "$NAMESPACE" -o jsonpath='{.data.ca\.crt}')
-                  if [ -n "$CA_KEY" ]; then
-                    echo "  ca.crt key present in Secret. Nothing to do."
-                    exit 0
-                  fi
-                  echo "WARNING: ca.crt key missing from Secret. Forcing regeneration..."
-                  RENEW=true
-                  kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
+                HAS_CA=$(kubectl get secret authwebhook-tls -n "$NAMESPACE" -o jsonpath='{.data.ca\.crt}')
+                HAS_CA_KEY=$(kubectl get secret authwebhook-tls -n "$NAMESPACE" -o jsonpath='{.data.ca\.key}')
+                if printf '%s' "$CERT_PEM" | openssl x509 -checkend $((30*86400)) -noout 2>/dev/null \
+                   && [ -n "$HAS_CA" ] && [ -n "$HAS_CA_KEY" ]; then
+                  echo "  Certificate valid >=30 days, ca.crt + ca.key present. Skipping authwebhook regen."
                 else
-                  echo "  Certificate expires within 30 days (or is already expired). Regenerating..."
-                  RENEW=true
+                  echo "  Regeneration required (expiry/missing ca.crt/ca.key)."
+                  AUTHWEBHOOK_REGEN=true
                   kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
                 fi
+              else
+                AUTHWEBHOOK_REGEN=true
               fi
 
-              TMPDIR=$(mktemp -d)
+              if [ "$AUTHWEBHOOK_REGEN" = "true" ]; then
+                echo "==> Generating TLS certificates for AuthWebhook (ECDSA P-256)"
+                openssl ecparam -genkey -name prime256v1 -noout -out "$TMPDIR/ca.key" 2>/dev/null
+                openssl req -new -x509 -days 365 -key "$TMPDIR/ca.key" \
+                  -out "$TMPDIR/ca.crt" -subj "/CN=authwebhook-ca" 2>/dev/null
 
-              echo "==> Generating TLS certificates for AuthWebhook"
-              openssl genrsa -out "$TMPDIR/ca.key" 2048 2>/dev/null
-              openssl req -new -x509 -days 365 -key "$TMPDIR/ca.key" \
-                -out "$TMPDIR/ca.crt" -subj "/CN=authwebhook-ca" 2>/dev/null
-
-              openssl genrsa -out "$TMPDIR/tls.key" 2048 2>/dev/null
-              openssl req -new -key "$TMPDIR/tls.key" \
-                -out "$TMPDIR/tls.csr" \
-                -subj "/CN=${SERVICE}.${NAMESPACE}.svc" \
-                -addext "subjectAltName=DNS:${SERVICE},DNS:${SERVICE}.${NAMESPACE},DNS:${SERVICE}.${NAMESPACE}.svc,DNS:${SERVICE}.${NAMESPACE}.svc.cluster.local" \
-                2>/dev/null
-
-              echo "subjectAltName=DNS:${SERVICE},DNS:${SERVICE}.${NAMESPACE},DNS:${SERVICE}.${NAMESPACE}.svc,DNS:${SERVICE}.${NAMESPACE}.svc.cluster.local" > "$TMPDIR/san.cnf"
-
-              openssl x509 -req -in "$TMPDIR/tls.csr" \
-                -CA "$TMPDIR/ca.crt" -CAkey "$TMPDIR/ca.key" -CAcreateserial \
-                -out "$TMPDIR/tls.crt" -days 365 \
-                -extfile "$TMPDIR/san.cnf" \
-                2>/dev/null
-
-              echo "  Storing TLS secret (with embedded CA)..."
-              kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
-              kubectl create secret tls authwebhook-tls \
-                --cert="$TMPDIR/tls.crt" \
-                --key="$TMPDIR/tls.key" \
-                -n "$NAMESPACE"
-
-              CA_B64=$(base64 < "$TMPDIR/ca.crt" | tr -d '\n')
-              kubectl patch secret authwebhook-tls -n "$NAMESPACE" \
-                -p "{\"data\":{\"ca.crt\":\"$CA_B64\"}}"
-
-              echo "  Verifying ca.crt key in Secret..."
-              kubectl get secret authwebhook-tls -n "$NAMESPACE" \
-                -o jsonpath='{.data.ca\.crt}' | base64 -d | head -1
-
-              {{- if include "kubernaut.interServiceTLS.enabled" . }}
-              # Issue #678: Generate TLS certificates for Gateway and DataStorage inter-service TLS.
-              # Reuses the same CA generated above for authwebhook.
-              for SVC_NAME in gateway-service data-storage-service; do
-                SECRET_NAME="${SVC_NAME%-service}-tls"
-                [ "$SVC_NAME" = "data-storage-service" ] && SECRET_NAME="datastorage-tls"
-
-                echo "==> Generating TLS certificate for $SVC_NAME ($SECRET_NAME)..."
-                openssl genrsa -out "$TMPDIR/svc-tls.key" 2048 2>/dev/null
-                openssl req -new -key "$TMPDIR/svc-tls.key" \
-                  -out "$TMPDIR/svc-tls.csr" \
-                  -subj "/CN=${SVC_NAME}.${NAMESPACE}.svc" \
-                  -addext "subjectAltName=DNS:${SVC_NAME},DNS:${SVC_NAME}.${NAMESPACE},DNS:${SVC_NAME}.${NAMESPACE}.svc,DNS:${SVC_NAME}.${NAMESPACE}.svc.cluster.local" \
+                openssl ecparam -genkey -name prime256v1 -noout -out "$TMPDIR/tls.key" 2>/dev/null
+                openssl req -new -key "$TMPDIR/tls.key" \
+                  -out "$TMPDIR/tls.csr" \
+                  -subj "/CN=${SERVICE}.${NAMESPACE}.svc" \
+                  -addext "subjectAltName=DNS:${SERVICE},DNS:${SERVICE}.${NAMESPACE},DNS:${SERVICE}.${NAMESPACE}.svc,DNS:${SERVICE}.${NAMESPACE}.svc.cluster.local" \
                   2>/dev/null
 
-                echo "subjectAltName=DNS:${SVC_NAME},DNS:${SVC_NAME}.${NAMESPACE},DNS:${SVC_NAME}.${NAMESPACE}.svc,DNS:${SVC_NAME}.${NAMESPACE}.svc.cluster.local" > "$TMPDIR/svc-san.cnf"
+                echo "subjectAltName=DNS:${SERVICE},DNS:${SERVICE}.${NAMESPACE},DNS:${SERVICE}.${NAMESPACE}.svc,DNS:${SERVICE}.${NAMESPACE}.svc.cluster.local" > "$TMPDIR/san.cnf"
 
-                openssl x509 -req -in "$TMPDIR/svc-tls.csr" \
+                openssl x509 -req -in "$TMPDIR/tls.csr" \
                   -CA "$TMPDIR/ca.crt" -CAkey "$TMPDIR/ca.key" -CAcreateserial \
-                  -out "$TMPDIR/svc-tls.crt" -days 365 \
-                  -extfile "$TMPDIR/svc-san.cnf" \
+                  -out "$TMPDIR/tls.crt" -days 365 \
+                  -extfile "$TMPDIR/san.cnf" \
                   2>/dev/null
 
-                kubectl delete secret "$SECRET_NAME" -n "$NAMESPACE" --ignore-not-found
-                kubectl create secret tls "$SECRET_NAME" \
-                  --cert="$TMPDIR/svc-tls.crt" \
-                  --key="$TMPDIR/svc-tls.key" \
+                echo "  Storing TLS secret (with embedded CA + CA key)..."
+                kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
+                kubectl create secret tls authwebhook-tls \
+                  --cert="$TMPDIR/tls.crt" \
+                  --key="$TMPDIR/tls.key" \
                   -n "$NAMESPACE"
-                echo "  Created $SECRET_NAME"
-                rm -f "$TMPDIR/svc-tls.key" "$TMPDIR/svc-tls.csr" "$TMPDIR/svc-tls.crt" "$TMPDIR/svc-san.cnf"
-              done
 
-              # Create/update inter-service-ca ConfigMap with the shared CA cert
-              echo "==> Creating inter-service-ca ConfigMap..."
-              kubectl create configmap inter-service-ca \
-                --from-file=ca.crt="$TMPDIR/ca.crt" \
-                -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-              echo "  inter-service-ca ConfigMap ready"
-              {{- end }}
+                CA_B64=$(base64 < "$TMPDIR/ca.crt" | tr -d '\n')
+                CA_KEY_B64=$(base64 < "$TMPDIR/ca.key" | tr -d '\n')
+                kubectl patch secret authwebhook-tls -n "$NAMESPACE" \
+                  -p "{\"data\":{\"ca.crt\":\"$CA_B64\",\"ca.key\":\"$CA_KEY_B64\"}}"
+
+                echo "  Verifying ca.crt key in Secret..."
+                kubectl get secret authwebhook-tls -n "$NAMESPACE" \
+                  -o jsonpath='{.data.ca\.crt}' | base64 -d | head -1
+              fi
+              # ── Section 2: Inter-service TLS (independent of Section 1) ─
+              # Issue #753 C-1: checks each inter-service secret independently.
+              # Reuses CA from authwebhook-tls (extracted or freshly generated).
+              INTERSERVICE_REGEN=false
+              for CHECK_SECRET in gateway-tls datastorage-tls kubernautagent-tls; do
+                if ! kubectl get secret "$CHECK_SECRET" -n "$NAMESPACE" >/dev/null 2>&1; then
+                  echo "  $CHECK_SECRET missing — inter-service regen required."
+                  INTERSERVICE_REGEN=true
+                  break
+                fi
+                CHECK_PEM=$(kubectl get secret "$CHECK_SECRET" -n "$NAMESPACE" -o jsonpath='{.data.tls\.crt}' | base64 -d)
+                if ! printf '%s' "$CHECK_PEM" | openssl x509 -checkend $((30*86400)) -noout 2>/dev/null; then
+                  echo "  $CHECK_SECRET expires within 30 days — inter-service regen required."
+                  INTERSERVICE_REGEN=true
+                  break
+                fi
+              done
+              if ! kubectl get configmap inter-service-ca -n "$NAMESPACE" >/dev/null 2>&1; then
+                echo "  inter-service-ca ConfigMap missing — inter-service regen required."
+                INTERSERVICE_REGEN=true
+              fi
+
+              if [ "$INTERSERVICE_REGEN" = "true" ]; then
+                # Extract CA from authwebhook-tls (always present after Section 1)
+                if [ ! -f "$TMPDIR/ca.key" ]; then
+                  echo "  Extracting CA key pair from authwebhook-tls secret..."
+                  kubectl get secret authwebhook-tls -n "$NAMESPACE" -o jsonpath='{.data.ca\.key}' | base64 -d > "$TMPDIR/ca.key"
+                  kubectl get secret authwebhook-tls -n "$NAMESPACE" -o jsonpath='{.data.ca\.crt}' | base64 -d > "$TMPDIR/ca.crt"
+                fi
+
+                for SVC_NAME in gateway-service data-storage-service kubernaut-agent; do
+                  SECRET_NAME="${SVC_NAME%-service}-tls"
+                  [ "$SVC_NAME" = "data-storage-service" ] && SECRET_NAME="datastorage-tls"
+                  [ "$SVC_NAME" = "kubernaut-agent" ] && SECRET_NAME="kubernautagent-tls"
+
+                  echo "==> Generating TLS certificate for $SVC_NAME ($SECRET_NAME) [ECDSA P-256]..."
+                  openssl ecparam -genkey -name prime256v1 -noout -out "$TMPDIR/svc-tls.key" 2>/dev/null
+                  openssl req -new -key "$TMPDIR/svc-tls.key" \
+                    -out "$TMPDIR/svc-tls.csr" \
+                    -subj "/CN=${SVC_NAME}.${NAMESPACE}.svc" \
+                    -addext "subjectAltName=DNS:${SVC_NAME},DNS:${SVC_NAME}.${NAMESPACE},DNS:${SVC_NAME}.${NAMESPACE}.svc,DNS:${SVC_NAME}.${NAMESPACE}.svc.cluster.local" \
+                    2>/dev/null
+
+                  echo "subjectAltName=DNS:${SVC_NAME},DNS:${SVC_NAME}.${NAMESPACE},DNS:${SVC_NAME}.${NAMESPACE}.svc,DNS:${SVC_NAME}.${NAMESPACE}.svc.cluster.local" > "$TMPDIR/svc-san.cnf"
+
+                  openssl x509 -req -in "$TMPDIR/svc-tls.csr" \
+                    -CA "$TMPDIR/ca.crt" -CAkey "$TMPDIR/ca.key" -CAcreateserial \
+                    -out "$TMPDIR/svc-tls.crt" -days 365 \
+                    -extfile "$TMPDIR/svc-san.cnf" \
+                    2>/dev/null
+
+                  kubectl delete secret "$SECRET_NAME" -n "$NAMESPACE" --ignore-not-found
+                  kubectl create secret tls "$SECRET_NAME" \
+                    --cert="$TMPDIR/svc-tls.crt" \
+                    --key="$TMPDIR/svc-tls.key" \
+                    -n "$NAMESPACE"
+                  echo "  Created $SECRET_NAME"
+                  rm -f "$TMPDIR/svc-tls.key" "$TMPDIR/svc-tls.csr" "$TMPDIR/svc-tls.crt" "$TMPDIR/svc-san.cnf"
+                done
+
+                echo "==> Creating inter-service-ca ConfigMap..."
+                kubectl create configmap inter-service-ca \
+                  --from-file=ca.crt="$TMPDIR/ca.crt" \
+                  -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+                echo "  inter-service-ca ConfigMap ready"
+              else
+                echo "==> All inter-service TLS secrets valid. Nothing to do."
+              fi
 
               rm -rf "$TMPDIR"
-              echo "==> TLS certificates generated and CA embedded in Secret"
+              echo "==> TLS certificate generation complete"
 ---
 # Job 2: Patch webhook configurations with caBundle (post-install/post-upgrade).
 # Runs AFTER chart resources so the webhook configurations exist when we patch them.
@@ -251,6 +280,56 @@ metadata:
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
 ---
+# Issue #753 C-2: Namespace-scoped Role for secrets/configmaps (least privilege).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-hook-ns-role
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade,post-install,post-upgrade,post-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-hook-ns-rolebinding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade,post-install,post-upgrade,post-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kubernaut.fullname" . }}-hook-ns-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kubernaut.fullname" . }}-hook-sa
+    namespace: {{ .Release.Namespace }}
+---
+# Cluster-scoped permissions: admission webhooks + CRDs (inherently cluster-scoped).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -262,24 +341,10 @@ metadata:
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
 rules:
-  - apiGroups: [""]
-    resources: ["secrets", "configmaps"]
-    verbs: ["get", "create", "update", "patch", "delete"]
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
     verbs: ["get", "patch", "delete"]
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list"]
-  - apiGroups: ["apps"]
-    resources: ["deployments"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["batch"]
-    resources: ["jobs"]
-    verbs: ["get", "list"]
   # #521: CRD upgrade hook needs SSA permissions on CRDs.
-  # Consolidated into the shared hook ClusterRole to avoid proliferating
-  # ClusterRoles/Bindings — all hooks share one SA and are short-lived.
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
     verbs: ["get", "list", "create", "update", "patch"]
@@ -404,10 +469,9 @@ spec:
               NAMESPACE="{{ .Release.Namespace }}"
               echo "==> Cleaning up hook-created TLS resources..."
               kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
-              {{- if include "kubernaut.interServiceTLS.enabled" . }}
               kubectl delete secret gateway-tls -n "$NAMESPACE" --ignore-not-found
               kubectl delete secret datastorage-tls -n "$NAMESPACE" --ignore-not-found
+              kubectl delete secret kubernautagent-tls -n "$NAMESPACE" --ignore-not-found
               kubectl delete configmap inter-service-ca -n "$NAMESPACE" --ignore-not-found
-              {{- end }}
               echo "==> Cleanup complete"
 {{- end }}

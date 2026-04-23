@@ -168,10 +168,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            {{- if include "kubernaut.interServiceTLS.enabled" . }}
             - name: TLS_CA_FILE
               value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
-            {{- end }}
           args:
             - "-config"
             - "$(CONFIG_PATH)"
@@ -210,11 +208,9 @@ spec:
               readOnly: true
             - name: notification-output
               mountPath: /tmp/notifications
-            {{- if include "kubernaut.interServiceTLS.enabled" . }}
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
-            {{- end }}
           resources:
             {{- toYaml .Values.notification.resources | nindent 12 }}
       volumes:
@@ -248,12 +244,10 @@ spec:
           {{- end }}
         - name: notification-output
           emptyDir: {}
-        {{- if include "kubernaut.interServiceTLS.enabled" . }}
         - name: tls-ca
           configMap:
             name: inter-service-ca
             optional: true
-        {{- end }}
       terminationGracePeriodSeconds: 10
 ---
 apiVersion: v1

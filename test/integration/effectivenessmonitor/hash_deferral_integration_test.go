@@ -110,7 +110,7 @@ var _ = Describe("Hash Compute Deferral Integration (DD-EM-004, BR-EM-010)", fun
 		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue(),
 			"Alert component must still be assessed after deferred hash")
 		Expect(fetchedEA.Status.AssessmentReason).To(
-			BeElementOf("full", "partial", "metrics_timed_out"),
+			BeElementOf("Full", "Partial", "MetricsTimedOut"),
 			"Assessment must complete with a definitive reason despite hash deferral")
 
 		GinkgoWriter.Printf("Assessment completed: hash=%s, reason=%s\n",
@@ -150,7 +150,7 @@ var _ = Describe("Hash Compute Deferral Integration (DD-EM-004, BR-EM-010)", fun
 			"Hash must use canonical sha256: format")
 		Expect(fetchedEA.Status.Components.PostRemediationSpecHash).To(HaveLen(71))
 		Expect(fetchedEA.Status.AssessmentReason).To(
-			BeElementOf("full", "partial", "metrics_timed_out"),
+			BeElementOf("Full", "Partial", "MetricsTimedOut"),
 			"Assessment must complete normally for sync targets")
 	})
 
@@ -210,7 +210,7 @@ var _ = Describe("Hash Compute Deferral Integration (DD-EM-004, BR-EM-010)", fun
 		Expect(fetchedEA.Status.Components.AlertAssessed).To(BeTrue(),
 			"All components must be assessed when deferral window already elapsed")
 		Expect(fetchedEA.Status.AssessmentReason).To(
-			BeElementOf("full", "partial", "metrics_timed_out"),
+			BeElementOf("Full", "Partial", "MetricsTimedOut"),
 			"Assessment must complete with a definitive reason")
 	})
 })

@@ -24,6 +24,9 @@ import (
 	"sync"
 )
 
+// Deprecated: Use github.com/jordigilh/kubernaut/pkg/shared/tls.CAReloader instead.
+// This type is retained for backward compatibility with existing EM tests.
+//
 // CAReloader is an http.RoundTripper that supports hot-reloading of
 // the TLS CA certificate pool. When the OCP service-ca operator
 // updates the mounted ConfigMap, the FileWatcher calls ReloadCallback
@@ -34,6 +37,8 @@ import (
 // Issue #484: Resolves the race where EM starts before the service-ca
 // ConfigMap is populated by allowing the cert pool to be replaced at
 // runtime without restarting the pod.
+//
+// Issue #756: Superseded by pkg/shared/tls.CAReloader.
 //
 // Thread safety: all public methods are safe for concurrent use.
 type CAReloader struct {

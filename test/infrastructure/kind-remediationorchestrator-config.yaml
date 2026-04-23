@@ -32,6 +32,9 @@ nodes:
   - containerPort: 30081  # DataStorage NodePort in cluster
     hostPort: 8090        # DD-TEST-001: RO → DataStorage dependency (8089=KA, 8091=AIAnalysis, 8092=WE)
     protocol: TCP
+  - containerPort: 30281  # Data Storage health NodePort (Issue #753)
+    hostPort: 30281       # Port on host machine
+    protocol: TCP
   # API Port (if needed in future)
   - containerPort: 30083
     hostPort: 8083

@@ -6,7 +6,7 @@
 **Target Version**: V1.0
 **Status**: Active
 **Date**: March 4, 2026
-**Version**: 1.0
+**Version**: 1.1
 
 **Authority**: This is the authoritative specification for the RemediationWorkflow CRD lifecycle, including CRD format, AuthWebhook behavior, DS integration, and status subresource semantics.
 
@@ -24,6 +24,16 @@
 ---
 
 ## Changelog
+
+### Version 1.1 (2026-04-21) — Issue #773
+
+- UPDATE operations now intercepted by AuthWebhook (not passthrough)
+- UPDATE re-registers CRD with DS, following same strict error-handling as CREATE
+- Added `remediationworkflow.admitted.update` audit event type (SOC2 CC8.1)
+- Version-locked content immutability: same version + different content → 409 Conflict
+- Cross-version supersession: version bump → old workflow disabled, new created
+- Idempotent re-apply: same version + same content → 200 OK (no DB writes)
+- Updated acceptance criteria (3–6) for UPDATE behavior
 
 ### Version 1.0 (2026-03-04)
 
@@ -132,9 +142,21 @@ my-wf      RestartPod       tekton   1.0.0     active   5m
 
 **Best-effort DELETE**: DELETE is ALWAYS allowed regardless of DS response. This prevents GitOps drift where a CRD cannot be removed because DS is unreachable.
 
-### UPDATE: Passthrough
+### UPDATE: Re-Registration with Content Integrity
 
-UPDATE operations pass through without DS interaction. Per DD-WORKFLOW-012, workflow specs are immutable -- the only mutable fields are Kubernetes metadata (labels, annotations). Spec changes require creating a new version.
+UPDATE operations are intercepted by the AuthWebhook and re-registered with DS, following the same strict error-handling semantics as CREATE (Issue #773):
+
+1. Operator updates `RemediationWorkflow` CR (e.g., version bump, idempotent re-apply)
+2. K8s API server sends `AdmissionReview` (UPDATE) to AuthWebhook
+3. AW extracts authenticated user, marshals clean CRD content, calls DS `POST /api/v1/workflows`
+4. DS content integrity logic determines the outcome:
+   - **Same version + same content hash**: Idempotent (200 OK, no DB writes)
+   - **Same version + different content hash**: Rejected (409 Conflict, `content-integrity-violation`)
+   - **Different version**: Cross-version supersession (old workflow disabled, new created)
+5. On success: AW emits `remediationworkflow.admitted.update` audit event, returns `Allowed`
+6. On failure: AW emits `remediationworkflow.admitted.denied` audit event, returns `Denied`
+
+**Version-locked content immutability**: Once a workflow version is active, its content cannot be changed via UPDATE. Operators must bump the version to register new content. This enforces reproducibility and prevents silent spec drift.
 
 ---
 
@@ -145,8 +167,9 @@ Per DD-WEBHOOK-003 and ADR-034:
 | Event Type | Category | Action | Outcome | Trigger |
 |------------|----------|--------|---------|---------|
 | `remediationworkflow.admitted.create` | `webhook` | `admitted` | `success` | CREATE allowed after DS registration |
+| `remediationworkflow.admitted.update` | `webhook` | `admitted` | `success` | UPDATE allowed after DS re-registration (Issue #773) |
 | `remediationworkflow.admitted.delete` | `webhook` | `admitted` | `success` | DELETE allowed (with or without DS disable) |
-| `remediationworkflow.admitted.denied` | `webhook` | `denied` | `failure` | CREATE denied (auth failure, DS error, unmarshal error) |
+| `remediationworkflow.admitted.denied` | `webhook` | `denied` | `failure` | CREATE or UPDATE denied (auth failure, DS error, unmarshal error, content integrity violation) |
 
 All events include: authenticated user, resource name/ID, correlation ID (admission UID), namespace.
 
@@ -184,7 +207,7 @@ Operators creating/deleting `RemediationWorkflow` CRDs need standard Kubernetes 
 - `spec.actionType`: Required
 - `spec.labels.severity`: MinItems=1
 - `spec.labels.environment`: MinItems=1
-- `spec.labels.component`: Required
+- `spec.labels.component`: MinItems=1 (Issue #790: now an array like severity/environment)
 - `spec.labels.priority`: Required
 - `spec.parameters`: MinItems=1
 - `spec.execution.engine`: Enum `tekton|job|ansible`
@@ -218,12 +241,16 @@ The AuthWebhook bridges these stores: CRD CREATE triggers DS catalog insert; CRD
 
 1. `RemediationWorkflow` CRD can be created via `kubectl apply` in `kubernaut-system` namespace
 2. CREATE triggers DS registration; CRD is rejected if DS registration fails
-3. DELETE triggers DS disable (best-effort); CRD deletion always succeeds
-4. `.status` reflects DS registration state (workflowId, catalogStatus, registeredBy, registeredAt)
-5. Audit events emitted for CREATE (admitted/denied) and DELETE (admitted)
-6. Authenticated user captured from Kubernetes admission context (SOC2 CC8.1)
-7. RBAC enforced via standard Kubernetes mechanisms
-8. Existing workflows can be re-enabled by re-applying a previously deleted CRD (`.status.previouslyExisted: true`)
+3. UPDATE triggers DS re-registration with content integrity enforcement (Issue #773)
+4. UPDATE with same version + different content is rejected (409 content-integrity-violation)
+5. UPDATE with version bump triggers cross-version supersession (new workflow ID)
+6. Idempotent re-apply (same version + same content) succeeds without DB writes
+7. DELETE triggers DS disable (best-effort); CRD deletion always succeeds
+8. `.status` reflects DS registration state (workflowId, catalogStatus, registeredBy, registeredAt)
+9. Audit events emitted for CREATE (admitted/denied), UPDATE (admitted/denied), and DELETE (admitted)
+10. Authenticated user captured from Kubernetes admission context (SOC2 CC8.1)
+11. RBAC enforced via standard Kubernetes mechanisms
+12. Existing workflows can be re-enabled by re-applying a previously deleted CRD (`.status.previouslyExisted: true`)
 
 ---
 
@@ -238,4 +265,4 @@ The AuthWebhook bridges these stores: CRD CREATE triggers DS catalog insert; CRD
 ---
 
 **Document Status**: Active
-**Version**: 1.0
+**Version**: 1.1

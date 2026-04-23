@@ -55,6 +55,8 @@ func (e *errorLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatRes
 	return llm.ChatResponse{}, e.err
 }
 
+func (e *errorLLMClient) Close() error { return nil }
+
 var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 	var (
@@ -109,7 +111,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 		It("should include model name and prompt_preview in llm.request events for both phases", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
@@ -126,10 +128,10 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			first := reqEvents[0]
 			Expect(first.Data["model"]).To(Equal("claude-sonnet-4-20250514"))
 			preview, ok := first.Data["prompt_preview"].(string)
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), "expected type assertion to string for prompt_preview in llm.request event data to succeed")
 			Expect(preview).To(ContainSubstring(signal.Name), "prompt_preview should embed signal name")
 			promptLen, ok := first.Data["prompt_length"].(int)
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), "expected type assertion to int for prompt_length in llm.request event data to succeed")
 			Expect(promptLen).To(BeNumerically(">=", len(preview)), "prompt_length should be at least as long as the preview")
 		})
 	})
@@ -142,7 +144,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 					Message: llm.Message{Role: "assistant", Content: expectedContent},
 					Usage:   llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
 				},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-recovery","confidence":0.9}`}},
+				wfToolResp(`{"workflow_id":"oom-recovery","confidence":0.9}`),
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
@@ -177,7 +179,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 					},
 				},
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-recovery","confidence":0.9}`}},
+				wfToolResp(`{"workflow_id":"oom-recovery","confidence":0.9}`),
 			}
 
 			inv := investigator.New(investigator.Config{
@@ -207,10 +209,11 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 					Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled"}`},
 					Usage:   llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
 				},
-				{
-					Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-recovery","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}}`},
-					Usage:   llm.TokenUsage{PromptTokens: 200, CompletionTokens: 100, TotalTokens: 300},
-				},
+				func() llm.ChatResponse {
+					r := wfToolResp(`{"workflow_id":"oom-recovery","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}}`)
+					r.Usage = llm.TokenUsage{PromptTokens: 200, CompletionTokens: 100, TotalTokens: 300}
+					return r
+				}(),
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
@@ -279,7 +282,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 				rawID, ok := e.Data["event_id"]
 				Expect(ok).To(BeTrue(), "event_id missing on %s event", e.EventType)
 				idStr, ok := rawID.(string)
-				Expect(ok).To(BeTrue())
+				Expect(ok).To(BeTrue(), "expected type assertion to string for event_id in audit event data to succeed")
 				_, parseErr := uuid.Parse(idStr)
 				Expect(parseErr).NotTo(HaveOccurred(), "invalid UUID on %s event: %s", e.EventType, idStr)
 			}
@@ -290,7 +293,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 		It("should set EventAction and EventOutcome on llm.request and llm.response events", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"test"}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.8}`}},
+				wfToolResp(`{"workflow_id":"restart","confidence":0.8}`),
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
@@ -383,10 +386,10 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 					"rca_summary": "OOM due to worker memory leak",
 					"remediation_target": {"kind": "Deployment", "name": "worker", "namespace": "production"}
 				}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{
+				wfToolResp(`{
 					"workflow_id": "oom-recovery",
 					"confidence": 0.9
-				}`}},
+				}`),
 			}
 
 			labelSignal := katypes.SignalContext{
@@ -430,7 +433,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			failedRaw, hasFailed := result.DetectedLabels["failedDetections"]
 			if hasFailed {
 				failedSlice, ok := failedRaw.([]string)
-				Expect(ok).To(BeTrue())
+				Expect(ok).To(BeTrue(), "expected type assertion to []string for failedDetections in DetectedLabels to succeed")
 				Expect(failedSlice).NotTo(HaveLen(len(enrichment.AllDetectionCategories)),
 					"should NOT have all categories failed — signal-target labels were preserved")
 			}
@@ -453,8 +456,8 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"pod crashed"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"unknown-workflow","confidence":0.8}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+					wfToolResp(`{"workflow_id":"unknown-workflow","confidence":0.8}`),
+					wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 				},
 			}
 
@@ -462,7 +465,10 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools,
-				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: validator}},
+				Pipeline: investigator.Pipeline{
+					CatalogFetcher:  &staticCatalogFetcher{validator: validator},
+					AnomalyDetector: investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil),
+				},
 			})
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -503,9 +509,9 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"pod crashed"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"bad-1","confidence":0.8}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"bad-2","confidence":0.7}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"bad-3","confidence":0.6}`}},
+					wfToolResp(`{"workflow_id":"bad-1","confidence":0.8}`),
+					wfToolResp(`{"workflow_id":"bad-2","confidence":0.7}`),
+					wfToolResp(`{"workflow_id":"bad-3","confidence":0.6}`),
 				},
 			}
 
@@ -513,7 +519,10 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools,
-				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: validator}},
+				Pipeline: investigator.Pipeline{
+					CatalogFetcher:  &staticCatalogFetcher{validator: validator},
+					AnomalyDetector: investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil),
+				},
 			})
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{

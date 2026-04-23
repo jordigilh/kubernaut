@@ -22,6 +22,7 @@ import (
 	"strings"
 	"text/template"
 
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 )
 
@@ -128,7 +129,7 @@ func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult,
 
 	hasSpecDrift := false
 	for _, e := range allEntries {
-		if e.AssessmentReason == "spec_drift" {
+		if e.AssessmentReason == eav1.AssessmentReasonSpecDrift {
 			hasSpecDrift = true
 			break
 		}
@@ -171,7 +172,7 @@ func FormatTier1Entry(entry enrichment.Tier1Entry, causalChains map[string]strin
 		fmt.Sprintf("  Workflow: %s | Outcome: %s | Signal: %s", workflow, outcome, signal),
 	}
 
-	if entry.AssessmentReason == "spec_drift" {
+	if entry.AssessmentReason == eav1.AssessmentReasonSpecDrift {
 		if causalChains != nil {
 			if followupUID, ok := causalChains[entry.RemediationUID]; ok {
 				lines = append(lines, fmt.Sprintf(
@@ -231,7 +232,7 @@ func FormatTier2Summary(entry enrichment.Tier2Summary) string {
 	outcome := withDefault(entry.Outcome, "unknown")
 
 	var scoreText string
-	if entry.AssessmentReason == "spec_drift" {
+	if entry.AssessmentReason == eav1.AssessmentReasonSpecDrift {
 		scoreText = "INCONCLUSIVE (spec drift)"
 	} else if entry.EffectivenessScore != nil {
 		level := EffectivenessLevel(entry.EffectivenessScore)
@@ -312,7 +313,7 @@ func FormatMetricDeltas(md *enrichment.MetricDeltas) string {
 func DetectDecliningEffectiveness(chain []enrichment.Tier1Entry) []string {
 	actionScores := make(map[string][]float64)
 	for _, e := range chain {
-		if e.AssessmentReason == "spec_drift" {
+		if e.AssessmentReason == eav1.AssessmentReasonSpecDrift {
 			continue
 		}
 		if e.ActionType != "" && e.EffectivenessScore != nil {
@@ -348,7 +349,7 @@ func DetectCompletedButRecurring(entries []HistoryEntry, threshold int) []Recurr
 	counts := make(map[key]int)
 
 	for _, e := range entries {
-		if e.AssessmentReason == "spec_drift" {
+		if e.AssessmentReason == eav1.AssessmentReasonSpecDrift {
 			continue
 		}
 		if !completedOutcomes[e.Outcome] {
@@ -379,7 +380,7 @@ func AllZeroEffectiveness(entries []HistoryEntry, actionType, signalType string)
 
 	matched := false
 	for _, e := range entries {
-		if e.AssessmentReason == "spec_drift" {
+		if e.AssessmentReason == eav1.AssessmentReasonSpecDrift {
 			continue
 		}
 		if !completedOutcomes[e.Outcome] {
@@ -412,7 +413,7 @@ func DetectSpecDriftCausalChains(chain []enrichment.Tier1Entry) map[string]strin
 
 	causalMap := make(map[string]string)
 	for _, e := range chain {
-		if e.AssessmentReason != "spec_drift" {
+		if e.AssessmentReason != eav1.AssessmentReasonSpecDrift {
 			continue
 		}
 		if e.RemediationUID == "" || e.PostRemediationSpecHash == "" {

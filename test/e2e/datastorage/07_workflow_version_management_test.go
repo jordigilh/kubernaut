@@ -20,6 +20,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -99,8 +100,15 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		// Wait for service to be ready using typed OpenAPI client
 		testLogger.Info("⏳ Waiting for Data Storage Service to be ready...")
 		Eventually(func() error {
-			_, err := DSClient.ReadinessCheck(ctx)
-			return err
+			resp, err := http.Get(healthURL + "/readyz")
+			if err != nil {
+				return err
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != 200 {
+				return fmt.Errorf("readyz returned %d", resp.StatusCode)
+			}
+			return nil
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		testLogger.Info("✅ Data Storage Service is ready")
 

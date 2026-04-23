@@ -232,6 +232,7 @@ func (c *Client) mapResponse(msg *anthropic.Message) llm.ChatResponse {
 			CompletionTokens: int(msg.Usage.OutputTokens),
 			TotalTokens:      int(msg.Usage.InputTokens + msg.Usage.OutputTokens),
 		},
+		FinishReason: normalizeAnthropicStopReason(string(msg.StopReason)),
 	}
 
 	var textParts []string
@@ -252,6 +253,24 @@ func (c *Client) mapResponse(msg *anthropic.Message) llm.ChatResponse {
 	resp.Message.ToolCalls = resp.ToolCalls
 
 	return resp
+}
+
+// normalizeAnthropicStopReason maps Anthropic's stop_reason values to our
+// canonical FinishReason constants.
+func normalizeAnthropicStopReason(raw string) string {
+	switch raw {
+	case "end_turn", "stop_sequence":
+		return llm.FinishReasonStop
+	case "max_tokens":
+		return llm.FinishReasonLength
+	case "tool_use":
+		return llm.FinishReasonToolCalls
+	default:
+		if raw != "" {
+			return raw
+		}
+		return llm.FinishReasonStop
+	}
 }
 
 // allowedCredentialTypes lists the GCP credential types that Kubernaut accepts.
@@ -293,5 +312,9 @@ func safeWithGoogleAuth(ctx context.Context, location, project string) (opt opti
 		"https://www.googleapis.com/auth/cloud-platform")
 	return opt, nil
 }
+
+// Close is a no-op for the Anthropic SDK client which has no closeable
+// resources. Satisfies llm.Client.
+func (c *Client) Close() error { return nil }
 
 var _ llm.Client = (*Client)(nil)

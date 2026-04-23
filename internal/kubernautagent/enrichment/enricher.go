@@ -50,6 +50,14 @@ type DetectedLabels struct {
 	ResourceQuotaConstrained bool     `json:"resourceQuotaConstrained"`
 }
 
+// QuotaResourceUsage holds the hard limit and current usage for a single
+// resource key inside a ResourceQuota. Matches HAPI v1.2.1's
+// _summarize_quotas output (DD-HAPI-018 Detection 8).
+type QuotaResourceUsage struct {
+	Hard string `json:"hard"`
+	Used string `json:"used"`
+}
+
 // K8sClient abstracts Kubernetes API access for enrichment.
 type K8sClient interface {
 	GetOwnerChain(ctx context.Context, kind, name, namespace string) ([]OwnerChainEntry, error)
@@ -147,8 +155,8 @@ type EnrichmentResult struct {
 	// investigator uses this to trigger rca_incomplete (BR-HAPI-261
 	// AC#7, #704). Only set when RetryConfig has MaxRetries > 0.
 	HardFail           bool                      `json:"-"`
-	DetectedLabels     *DetectedLabels           `json:"detected_labels,omitempty"`
-	QuotaDetails       map[string]string         `json:"quota_details,omitempty"`
+	DetectedLabels     *DetectedLabels              `json:"detected_labels,omitempty"`
+	QuotaDetails       map[string]QuotaResourceUsage `json:"quota_details,omitempty"`
 	RemediationHistory *RemediationHistoryResult `json:"remediation_history,omitempty"`
 }
 
@@ -286,7 +294,7 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 	}
 
 	if e.labelDetector != nil {
-		labels, labelErr := e.labelDetector.DetectLabels(ctx, kind, name, namespace, result.OwnerChain)
+		labels, quotaDetails, labelErr := e.labelDetector.DetectLabels(ctx, kind, name, namespace, result.OwnerChain)
 		if labelErr != nil {
 			e.logger.Warn("enrichment: label detection failed",
 				slog.String("resource", namespace+"/"+kind+"/"+name),
@@ -295,6 +303,9 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 		}
 		if labels != nil {
 			result.DetectedLabels = labels
+		}
+		if len(quotaDetails) > 0 {
+			result.QuotaDetails = quotaDetails
 		}
 	}
 

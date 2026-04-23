@@ -382,7 +382,7 @@ var _ = Describe("Test 37: BR-SCOPE-002 Gateway Scope Filtering (E2E)", Ordered,
 
 		By("2. Verify metric is visible on /metrics endpoint")
 		Eventually(func() bool {
-			metricsResp, err := httpClient.Get(gatewayURL + "/metrics")
+			metricsResp, err := httpClient.Get(gatewayMetricsURL + "/metrics")
 			if err != nil {
 				return false
 			}

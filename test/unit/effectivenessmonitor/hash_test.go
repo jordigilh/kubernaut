@@ -33,7 +33,7 @@ import (
 //   - ComputeResult.Hash is canonical "sha256:<hex>" format
 //   - ComputeResult.PreHash stores the pre-remediation hash
 //   - ComputeResult.Match is *bool: true/false/nil
-//   - Deterministic output using pkg/shared/hash.CanonicalSpecHash
+//   - Deterministic output using pkg/shared/hash.CanonicalResourceFingerprint
 // ========================================
 var _ = Describe("Spec Hash Computer (DD-EM-002)", func() {
 
@@ -224,7 +224,7 @@ var _ = Describe("Spec Hash Computer (DD-EM-002)", func() {
 			Expect(result.PreHash).To(BeEmpty())
 		})
 
-		It("UT-EM-SH-009: should be consistent with pkg/shared/hash.CanonicalSpecHash", func() {
+		It("UT-EM-SH-009: should be consistent with pkg/shared/hash.CanonicalResourceFingerprint", func() {
 			spec := map[string]interface{}{
 				"replicas": float64(2),
 				"selector": map[string]interface{}{
@@ -234,7 +234,7 @@ var _ = Describe("Spec Hash Computer (DD-EM-002)", func() {
 
 			result := computer.Compute(hash.SpecHashInput{Spec: spec})
 
-			// The hash from the EM Computer should use CanonicalSpecHash internally
+			// The hash from the EM Computer should use CanonicalResourceFingerprint internally
 			// and produce the sha256: prefixed format
 			Expect(result.Hash).To(HavePrefix("sha256:"))
 			Expect(result.Hash).To(HaveLen(71))

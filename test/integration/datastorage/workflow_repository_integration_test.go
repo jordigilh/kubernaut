@@ -114,7 +114,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
 				labels := models.MandatoryLabels{
 					Severity:    []string{"critical"},
-					Component:   "kube-apiserver",
+					Component:   []string{"kube-apiserver"},
 					Priority:    "P0",
 					Environment: []string{"production"},
 				}
@@ -220,7 +220,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
 				labels := models.MandatoryLabels{
 					Severity:    []string{"low"},
-					Component:   "test",
+					Component:   []string{"test"},
 					Priority:    "P3",
 					Environment: []string{"test"},
 				}
@@ -287,7 +287,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			// V1.0: Use structured MandatoryLabels
 			labels := models.MandatoryLabels{
 				Severity:    []string{"low"},
-				Component:   "test",
+				Component:   []string{"test"},
 				Priority:    "P3",
 				Environment: []string{"test"},
 			}
@@ -335,7 +335,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 			// CRITICAL: Verify structured labels deserialized correctly (Issue #274: signalName removed)
 			Expect(retrievedWorkflow.Labels.Severity).To(Equal([]string{"low"}))
-			Expect(retrievedWorkflow.Labels.Component).To(Equal("test"))
+			Expect(retrievedWorkflow.Labels.Component).To(Equal([]string{"test"}))
 			Expect(retrievedWorkflow.Labels.Priority).To(Equal("P3"))
 			// DD-WORKFLOW-001 v2.5: Environment is now []string
 			Expect(retrievedWorkflow.Labels.Environment).To(Equal([]string{"test"}))
@@ -377,7 +377,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
 				labels := models.MandatoryLabels{
 					Severity:    []string{"low"},
-					Component:   "test",
+					Component:   []string{"test"},
 					Priority:    "P3",
 					Environment: []string{"test"},
 				}
@@ -515,7 +515,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
 			labels := models.MandatoryLabels{
 				Severity:    []string{"low"},
-				Component:   "test",
+				Component:   []string{"test"},
 				Priority:    "P3",
 				Environment: []string{"test"},
 			}
@@ -597,7 +597,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				},
 				Content:         content,
 				ContentHash:     hash,
-				Labels:          models.MandatoryLabels{Severity: severity, Component: component, Environment: environment, Priority: priority},
+				Labels:          models.MandatoryLabels{Severity: severity, Component: []string{component}, Environment: environment, Priority: priority},
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Status:          "Active",
 				IsLatestVersion: true,
@@ -613,19 +613,14 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				createWorkflowWithLabels("sev-wc", []string{"*"}, "pod", []string{"production"}, "P1")
 
 				workflows, totalCount, err := workflowRepo.List(ctx, &models.WorkflowSearchFilters{
-					Severity: "high",
+					WorkflowName: fmt.Sprintf("wf-repo-%s-sev-wc", testID),
+					Severity:     "high",
 				}, 100, 0)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(totalCount).To(BeNumerically(">=", 1), "IT-DS-522-010: severity wildcard must match specific query value")
-				found := false
-				for _, wf := range workflows {
-					if wf.WorkflowName == fmt.Sprintf("wf-repo-%s-sev-wc", testID) {
-						found = true
-						break
-					}
-				}
-				Expect(found).To(BeTrue(), "IT-DS-522-010: wildcard-severity workflow must appear in results")
+				Expect(totalCount).To(Equal(1), "IT-DS-522-010: severity wildcard must match specific query value")
+				Expect(workflows).To(HaveLen(1))
+				Expect(workflows[0].WorkflowName).To(Equal(fmt.Sprintf("wf-repo-%s-sev-wc", testID)))
 			})
 		})
 
@@ -634,19 +629,14 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				createWorkflowWithLabels("comp-wc", []string{"critical"}, "*", []string{"production"}, "P1")
 
 				workflows, totalCount, err := workflowRepo.List(ctx, &models.WorkflowSearchFilters{
-					Component: "Node",
+					WorkflowName: fmt.Sprintf("wf-repo-%s-comp-wc", testID),
+					Component:    "Node",
 				}, 100, 0)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(totalCount).To(BeNumerically(">=", 1), "IT-DS-522-011: component wildcard must match specific query value")
-				found := false
-				for _, wf := range workflows {
-					if wf.WorkflowName == fmt.Sprintf("wf-repo-%s-comp-wc", testID) {
-						found = true
-						break
-					}
-				}
-				Expect(found).To(BeTrue(), "IT-DS-522-011: wildcard-component workflow must appear in results")
+				Expect(totalCount).To(Equal(1), "IT-DS-522-011: component wildcard must match specific query value")
+				Expect(workflows).To(HaveLen(1))
+				Expect(workflows[0].WorkflowName).To(Equal(fmt.Sprintf("wf-repo-%s-comp-wc", testID)))
 			})
 		})
 
@@ -655,19 +645,14 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				createWorkflowWithLabels("pri-wc", []string{"critical"}, "pod", []string{"production"}, "*")
 
 				workflows, totalCount, err := workflowRepo.List(ctx, &models.WorkflowSearchFilters{
-					Priority: "P3",
+					WorkflowName: fmt.Sprintf("wf-repo-%s-pri-wc", testID),
+					Priority:     "P3",
 				}, 100, 0)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(totalCount).To(BeNumerically(">=", 1), "IT-DS-522-012: priority wildcard must match specific query value")
-				found := false
-				for _, wf := range workflows {
-					if wf.WorkflowName == fmt.Sprintf("wf-repo-%s-pri-wc", testID) {
-						found = true
-						break
-					}
-				}
-				Expect(found).To(BeTrue(), "IT-DS-522-012: wildcard-priority workflow must appear in results")
+				Expect(totalCount).To(Equal(1), "IT-DS-522-012: priority wildcard must match specific query value")
+				Expect(workflows).To(HaveLen(1))
+				Expect(workflows[0].WorkflowName).To(Equal(fmt.Sprintf("wf-repo-%s-pri-wc", testID)))
 			})
 		})
 
@@ -676,22 +661,17 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				createWorkflowWithLabels("all-wc", []string{"critical", "high"}, "*", []string{"*"}, "*")
 
 				workflows, totalCount, err := workflowRepo.List(ctx, &models.WorkflowSearchFilters{
-					Severity:    "high",
-					Component:   "Node",
-					Environment: "unknown",
-					Priority:    "P3",
+					WorkflowName: fmt.Sprintf("wf-repo-%s-all-wc", testID),
+					Severity:     "high",
+					Component:    "Node",
+					Environment:  "unknown",
+					Priority:     "P3",
 				}, 100, 0)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(totalCount).To(BeNumerically(">=", 1), "IT-DS-522-013: all-wildcard workflow must match any specific query values")
-				found := false
-				for _, wf := range workflows {
-					if wf.WorkflowName == fmt.Sprintf("wf-repo-%s-all-wc", testID) {
-						found = true
-						break
-					}
-				}
-				Expect(found).To(BeTrue(), "IT-DS-522-013: all-wildcard workflow must appear in results")
+				Expect(totalCount).To(Equal(1), "IT-DS-522-013: all-wildcard workflow must match any specific query values")
+				Expect(workflows).To(HaveLen(1))
+				Expect(workflows[0].WorkflowName).To(Equal(fmt.Sprintf("wf-repo-%s-all-wc", testID)))
 			})
 		})
 
@@ -700,18 +680,13 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				createWorkflowWithLabels("comp-ci", []string{"critical"}, "deployment", []string{"production"}, "P1")
 
 				workflows, _, err := workflowRepo.List(ctx, &models.WorkflowSearchFilters{
-					Component: "Deployment",
+					WorkflowName: fmt.Sprintf("wf-repo-%s-comp-ci", testID),
+					Component:    "Deployment",
 				}, 100, 0)
 
 				Expect(err).ToNot(HaveOccurred())
-				found := false
-				for _, wf := range workflows {
-					if wf.WorkflowName == fmt.Sprintf("wf-repo-%s-comp-ci", testID) {
-						found = true
-						break
-					}
-				}
-				Expect(found).To(BeTrue(), "IT-DS-522-014: case-insensitive component match must work in catalog list")
+				Expect(workflows).To(HaveLen(1), "IT-DS-522-014: case-insensitive component match must work in catalog list")
+				Expect(workflows[0].WorkflowName).To(Equal(fmt.Sprintf("wf-repo-%s-comp-ci", testID)))
 			})
 		})
 	})

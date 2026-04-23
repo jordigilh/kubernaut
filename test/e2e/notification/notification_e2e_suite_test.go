@@ -218,6 +218,11 @@ var _ = SynchronizedBeforeSuite(
 			e2eAuthToken = parts[1] // DD-AUTH-014: Store token for authenticated DataStorage access
 		}
 
+		// Issue #785: Configure http.DefaultTransport to trust the inter-service CA.
+		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport (Issue #785)")
+		http.DefaultTransport = tlsTransport
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
 			"process", GinkgoParallelProcess())
 		logger.Info("Notification E2E Process Setup",

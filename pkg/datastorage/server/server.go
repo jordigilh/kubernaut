@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"time"
 
@@ -47,6 +48,7 @@ import (
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"      // Issue #756: FileWatcher for cert rotation
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #493/#678: Conditional TLS
 )
 
@@ -61,6 +63,11 @@ type Server struct {
 	db         *sql.DB
 	logger     logr.Logger
 	httpServer *http.Server
+
+	// Issue #756: TLS cert hot-reload support
+	certReloader *sharedtls.CertReloader      // nil when TLS disabled
+	certWatcher  *hotreload.FileWatcher        // nil when TLS disabled
+	tlsCertDir   string                        // cert dir for FileWatcher path
 
 	// DD-007: Graceful shutdown coordination flag
 	// Thread-safe flag for readiness probe coordination during shutdown
@@ -395,12 +402,14 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	srv.httpServer.Handler = srv.Handler()
 
 	if serverCfg.TLS.Enabled() {
-		isTLS, tlsErr := sharedtls.ConfigureConditionalTLS(srv.httpServer, serverCfg.TLS.CertDir)
+		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(srv.httpServer, serverCfg.TLS.CertDir)
 		if tlsErr != nil {
 			_ = db.Close()
 			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
 		}
 		if isTLS {
+			srv.certReloader = reloader
+			srv.tlsCertDir = serverCfg.TLS.CertDir
 			logger.Info("TLS configured for DataStorage server", "certDir", serverCfg.TLS.CertDir)
 		}
 	}
@@ -446,10 +455,8 @@ func (s *Server) Handler() http.Handler {
 		s.logger.Info("OpenAPI validation middleware enabled")
 	}
 
-	// Health check endpoints (DD-007: Graceful shutdown support)
-	r.Get("/health", s.handleHealth)
-	r.Get("/health/ready", s.handleReadiness)
-	r.Get("/health/live", s.handleLiveness)
+	// Issue #753: Health endpoints moved to dedicated :8081 server.
+	// See health.NewHealthServer in cmd/datastorage/main.go.
 
 	// BR-STORAGE-019: Prometheus metrics endpoint moved to dedicated server (Issue #283)
 	// Metrics are now served on a separate port (default :9090) for standardization.
@@ -589,8 +596,24 @@ func (s *Server) Start() error {
 	// Issue #667/M4: Use a server-scoped context instead of context.Background()
 	s.dlqRetryWorker.Start(context.Background())
 
+	// Issue #756: Start cert file watcher for hot-reload before accepting connections
+	if s.certReloader != nil {
+		watcher, err := hotreload.NewFileWatcher(
+			filepath.Join(s.tlsCertDir, "tls.crt"),
+			s.certReloader.ReloadCallback,
+			s.logger.WithName("cert-reloader"),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create cert file watcher: %w", err)
+		}
+		if err := watcher.Start(context.Background()); err != nil {
+			return fmt.Errorf("failed to start cert file watcher: %w", err)
+		}
+		s.certWatcher = watcher
+	}
+
 	if s.httpServer.TLSConfig != nil {
-		s.logger.Info("TLS enabled, starting HTTPS server")
+		s.logger.Info("Server TLS configured", "tls.enabled", true, "tls.certDir", s.tlsCertDir)
 		return s.httpServer.ListenAndServeTLS("", "")
 	}
 	return s.httpServer.ListenAndServe()
@@ -613,6 +636,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// STEP 3: Drain in-flight HTTP connections
 	if err := s.shutdownStep3DrainConnections(ctx); err != nil {
 		return err
+	}
+
+	// Issue #756: Stop cert file watcher after HTTP server is down
+	if s.certWatcher != nil {
+		s.certWatcher.Stop()
 	}
 
 	// STEP 3.5: Stop DLQ retry worker before draining (DD-009 V1.0)

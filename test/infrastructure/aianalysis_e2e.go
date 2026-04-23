@@ -222,6 +222,12 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ DataStorage RBAC deployed\n")
 
+	// Issue #785: Inter-service TLS (Secrets + ConfigMap) must exist before DataStorage starts HTTPS.
+	_, _ = fmt.Fprintln(writer, "🔐 Issue #785: Generating inter-service TLS certificates...")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 7a: Deploy DataStorage infrastructure FIRST (required for workflow seeding)
 	// ═══════════════════════════════════════════════════════════════════════
@@ -251,12 +257,13 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	// Wait for DataStorage to be ready (use port-forward)
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DataStorage to be ready...")
-	dataStorageURL := fmt.Sprintf("http://localhost:%d", 38080)
+	dataStorageURL := fmt.Sprintf("https://localhost:%d", 38080)
+	dataStorageHealthURL := fmt.Sprintf("http://localhost:%d", 38081)
 
-	// Start port-forward to DataStorage
+	// Start port-forward to DataStorage API and health ports
 	// Service name is "data-storage-service" per DD-AUTH-011 (matches production)
 	portForwardCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"-n", namespace, "port-forward", "svc/data-storage-service", "38080:8080")
+		"-n", namespace, "port-forward", "svc/data-storage-service", "38080:8080", "38081:8081")
 	if err := portForwardCmd.Start(); err != nil {
 		return fmt.Errorf("failed to start DataStorage port-forward: %w", err)
 	}
@@ -271,7 +278,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	ready := false
 	for i := 0; i < 30; i++ { // 30 seconds max
 		time.Sleep(1 * time.Second)
-		resp, err := http.Get(fmt.Sprintf("%s/health", dataStorageURL))
+		resp, err := http.Get(fmt.Sprintf("%s/readyz", dataStorageHealthURL))
 		if err == nil && resp.StatusCode == 200 {
 			_ = resp.Body.Close() // Explicitly ignore - health check cleanup
 			ready = true
@@ -297,11 +304,15 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		return fmt.Errorf("failed to get ServiceAccount token: %w", err)
 	}
 
-	// Create authenticated OpenAPI client for DataStorage
+	// Create authenticated OpenAPI client for DataStorage (Issue #785: TLS to DS API on port-forward)
+	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to create TLS-aware transport for workflow seeding: %w", err)
+	}
 	seedClient, err := ogenclient.NewClient(
 		dataStorageURL,
 		ogenclient.WithClient(&http.Client{
-			Transport: testauth.NewServiceAccountTransport(saToken),
+			Transport: testauth.NewServiceAccountTransportWithBase(saToken, tlsTransport),
 			Timeout:   30 * time.Second,
 		}),
 	)
@@ -355,24 +366,24 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// Image names don't include the workflow version suffix (e.g., oomkill-increase-memory, not oomkill-increase-memory-v1)
 	const aaWorkflowRegistry = "quay.io/kubernaut-cicd/test-workflows"
 	testWorkflows := []TestWorkflow{
-		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", Severity: "critical", Component: "deployment", Environment: "staging", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/oomkill-increase-memory:v1.0.0", SchemaParameters: oomkillParams},
-		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", Severity: "critical", Component: "deployment", Environment: "production", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/oomkill-increase-memory:v1.0.0", SchemaParameters: oomkillParams},
-		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", Severity: "critical", Component: "deployment", Environment: "test", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/oomkill-increase-memory:v1.0.0", SchemaParameters: oomkillParams},
-		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Configuration Fix", Description: "Fix missing configuration causing CrashLoopBackOff", Severity: "high", Component: "deployment", Environment: "staging", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/crashloop-config-fix:v1.0.0", SchemaParameters: crashloopParams},
-		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Configuration Fix", Description: "Fix missing configuration causing CrashLoopBackOff", Severity: "high", Component: "deployment", Environment: "production", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/crashloop-config-fix:v1.0.0", SchemaParameters: crashloopParams},
-		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Configuration Fix", Description: "Fix missing configuration causing CrashLoopBackOff", Severity: "high", Component: "deployment", Environment: "test", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/crashloop-config-fix:v1.0.0", SchemaParameters: crashloopParams},
-		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Drain node and reboot to resolve NodeNotReady", Severity: "critical", Component: "node", Environment: "staging", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/node-drain-reboot:v1.0.0", SchemaParameters: nodeDrainParams},
-		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Drain node and reboot to resolve NodeNotReady", Severity: "critical", Component: "node", Environment: "production", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/node-drain-reboot:v1.0.0", SchemaParameters: nodeDrainParams},
-		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Drain node and reboot to resolve NodeNotReady", Severity: "critical", Component: "node", Environment: "test", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/node-drain-reboot:v1.0.0", SchemaParameters: nodeDrainParams},
-		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", Severity: "critical", Component: "deployment", Environment: "staging", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/memory-optimize:v1.0.0", SchemaParameters: memOptimizeParams},
-		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", Severity: "critical", Component: "deployment", Environment: "production", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/memory-optimize:v1.0.0", SchemaParameters: memOptimizeParams},
-		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", Severity: "critical", Component: "deployment", Environment: "test", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/memory-optimize:v1.0.0", SchemaParameters: memOptimizeParams},
-		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", Severity: "medium", Component: "deployment", Environment: "staging", Priority: "P2", SchemaImage: aaWorkflowRegistry + "/generic-restart:v1.0.0", SchemaParameters: genericRestartParams},
-		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", Severity: "medium", Component: "deployment", Environment: "production", Priority: "P2", SchemaImage: aaWorkflowRegistry + "/generic-restart:v1.0.0", SchemaParameters: genericRestartParams},
-		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", Severity: "medium", Component: "deployment", Environment: "test", Priority: "P2", SchemaImage: aaWorkflowRegistry + "/generic-restart:v1.0.0", SchemaParameters: genericRestartParams},
-		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: "pod", Environment: "staging", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
-		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: "pod", Environment: "production", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
-		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: "pod", Environment: "test", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
+		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", Severity: "critical", Component: []string{"deployment"}, Environment: "staging", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/oomkill-increase-memory:v1.0.0", SchemaParameters: oomkillParams},
+		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", Severity: "critical", Component: []string{"deployment"}, Environment: "production", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/oomkill-increase-memory:v1.0.0", SchemaParameters: oomkillParams},
+		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery - Increase Memory Limits", Description: "Increase memory limits for pods hitting OOMKill", Severity: "critical", Component: []string{"deployment"}, Environment: "test", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/oomkill-increase-memory:v1.0.0", SchemaParameters: oomkillParams},
+		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Configuration Fix", Description: "Fix missing configuration causing CrashLoopBackOff", Severity: "high", Component: []string{"deployment"}, Environment: "staging", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/crashloop-config-fix:v1.0.0", SchemaParameters: crashloopParams},
+		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Configuration Fix", Description: "Fix missing configuration causing CrashLoopBackOff", Severity: "high", Component: []string{"deployment"}, Environment: "production", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/crashloop-config-fix:v1.0.0", SchemaParameters: crashloopParams},
+		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Configuration Fix", Description: "Fix missing configuration causing CrashLoopBackOff", Severity: "high", Component: []string{"deployment"}, Environment: "test", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/crashloop-config-fix:v1.0.0", SchemaParameters: crashloopParams},
+		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Drain node and reboot to resolve NodeNotReady", Severity: "critical", Component: []string{"node"}, Environment: "staging", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/node-drain-reboot:v1.0.0", SchemaParameters: nodeDrainParams},
+		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Drain node and reboot to resolve NodeNotReady", Severity: "critical", Component: []string{"node"}, Environment: "production", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/node-drain-reboot:v1.0.0", SchemaParameters: nodeDrainParams},
+		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Drain node and reboot to resolve NodeNotReady", Severity: "critical", Component: []string{"node"}, Environment: "test", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/node-drain-reboot:v1.0.0", SchemaParameters: nodeDrainParams},
+		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", Severity: "critical", Component: []string{"deployment"}, Environment: "staging", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/memory-optimize:v1.0.0", SchemaParameters: memOptimizeParams},
+		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", Severity: "critical", Component: []string{"deployment"}, Environment: "production", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/memory-optimize:v1.0.0", SchemaParameters: memOptimizeParams},
+		{WorkflowID: "memory-optimize-v1", Name: "Memory Optimization - Alternative Approach", Description: "Optimize memory usage after failed scaling attempt", Severity: "critical", Component: []string{"deployment"}, Environment: "test", Priority: "P0", SchemaImage: aaWorkflowRegistry + "/memory-optimize:v1.0.0", SchemaParameters: memOptimizeParams},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", Severity: "medium", Component: []string{"deployment"}, Environment: "staging", Priority: "P2", SchemaImage: aaWorkflowRegistry + "/generic-restart:v1.0.0", SchemaParameters: genericRestartParams},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", Severity: "medium", Component: []string{"deployment"}, Environment: "production", Priority: "P2", SchemaImage: aaWorkflowRegistry + "/generic-restart:v1.0.0", SchemaParameters: genericRestartParams},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", Severity: "medium", Component: []string{"deployment"}, Environment: "test", Priority: "P2", SchemaImage: aaWorkflowRegistry + "/generic-restart:v1.0.0", SchemaParameters: genericRestartParams},
+		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: []string{"pod"}, Environment: "staging", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
+		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: []string{"pod"}, Environment: "production", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
+		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: []string{"pod"}, Environment: "test", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
 	}
 
 	workflowUUIDs, err := SeedWorkflowsInDataStorage(seedClient, testWorkflows, "AIAnalysis E2E (via infrastructure)", writer)
@@ -552,11 +563,11 @@ data:
       leaderElection: false
       leaderElectionId: "aianalysis.kubernaut.ai"
     agent:
-      url: "http://kubernaut-agent:8080"
+      url: "https://kubernaut-agent:8080"
       timeout: "60s"
       sessionPollInterval: "2s"
     datastorage:
-      url: "http://data-storage-service:8080"
+      url: "https://data-storage-service:8080"
       timeout: "10s"
       buffer:
         bufferSize: 20000
@@ -681,6 +692,8 @@ spec:
         env:
         - name: CONFIG_PATH
           value: /etc/aianalysis/config.yaml
+        - name: TLS_CA_FILE
+          value: /etc/tls-ca/ca.crt
         # DD-TEST-007: GOCOVERDIR for E2E binary coverage (added dynamically below)
         %s
         args:
@@ -693,6 +706,9 @@ spec:
         - name: rego-policies
           mountPath: /etc/aianalysis/policies
           readOnly: true
+        - name: tls-ca
+          mountPath: /etc/tls-ca
+          readOnly: true
         # DD-TEST-007: Coverage data mount (added dynamically below)
         %s
       volumes:
@@ -702,6 +718,9 @@ spec:
       - name: rego-policies
         configMap:
           name: aianalysis-policies
+      - name: tls-ca
+        configMap:
+          name: inter-service-ca
       # DD-TEST-007: Coverage data volume (added dynamically below)
       %s
 ---

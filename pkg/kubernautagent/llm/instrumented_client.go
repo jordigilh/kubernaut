@@ -79,3 +79,8 @@ func (ic *InstrumentedClient) Chat(ctx context.Context, req ChatRequest) (ChatRe
 
 	return resp, nil
 }
+
+// Close delegates to the inner client's Close method.
+func (ic *InstrumentedClient) Close() error {
+	return ic.inner.Close()
+}

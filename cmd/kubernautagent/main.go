@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -43,9 +44,10 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
-	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
+	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
+
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
@@ -143,18 +145,15 @@ func main() {
 
 	slogger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
 
-	var llmClient llm.Client
-	switch cfg.LLM.Provider {
-	case "vertex_ai":
-		llmClient, err = vertexanthropic.New(context.Background(),
-			cfg.LLM.Model, []byte(cfg.LLM.APIKey),
-			cfg.LLM.VertexProject, cfg.LLM.VertexLocation)
-	default:
-		llmClient, err = langchaingo.New(cfg.LLM.Provider, cfg.LLM.Endpoint, cfg.LLM.Model, cfg.LLM.APIKey,
-			buildLLMProviderOptions(cfg)...)
-	}
+	llmClient, err := buildLLMClientFromConfig(context.Background(), cfg)
 	if err != nil {
 		slogger.Error("failed to create LLM client", "provider", cfg.LLM.Provider, "error", err)
+		os.Exit(1)
+	}
+
+	swappable, err := llm.NewSwappableClient(llmClient, cfg.LLM.Model)
+	if err != nil {
+		slogger.Error("failed to create swappable LLM client", "error", err)
 		os.Exit(1)
 	}
 
@@ -168,7 +167,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	resultParser := parser.NewResultParser()
+	resultParser := parser.NewResultParser(logrLogger.WithName("parser"))
 	phaseTools := investigator.DefaultPhaseToolMap()
 
 	k8sInfra := initK8sInfra(slogger)
@@ -178,9 +177,9 @@ func main() {
 	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, slogger)
 	sanitizer := buildSanitizationPipeline(cfg, slogger)
 	anomalyDetector := buildAnomalyDetector(cfg, slogger)
-	sum := buildSummarizer(llmClient, cfg, slogger)
+	sum := buildSummarizer(swappable, cfg, slogger)
 
-	instrumentedLLM := llm.NewInstrumentedClient(llmClient)
+	instrumentedLLM := llm.NewInstrumentedClient(swappable)
 
 	var catalogFetcher investigator.CatalogFetcher
 	if ds != nil {
@@ -201,9 +200,11 @@ func main() {
 			slogger.Info("shadow agent shares investigation LLM client")
 		} else {
 			alignLLMCfg := cfg.AlignmentCheck.EffectiveLLM(cfg.LLM)
+			alignCfgMerge := *cfg
+			alignCfgMerge.LLM = alignLLMCfg
 			raw, alignErr := langchaingo.New(
 				alignLLMCfg.Provider, alignLLMCfg.Endpoint, alignLLMCfg.Model, alignLLMCfg.APIKey,
-				buildLLMProviderOptionsFromConfig(alignLLMCfg)...)
+				buildLLMProviderOpts(&alignCfgMerge)...)
 			if alignErr != nil {
 				slogger.Error("alignment check LLM client failed (fail-closed): alignment is enabled but shadow client unavailable", "error", alignErr)
 				os.Exit(1)
@@ -224,22 +225,30 @@ func main() {
 		}
 	}
 
+	var scopeResolver investigator.ScopeResolver
+	if k8sInfra != nil {
+		scopeResolver = investigator.NewMapperScopeResolver(k8sInfra.mapper)
+	}
+
 	inv := investigator.New(investigator.Config{
-		Client:       effectiveLLM,
-		Builder:      promptBuilder,
-		ResultParser: resultParser,
-		Enricher:     enricher,
-		AuditStore:   auditStore,
-		Logger:       slogger,
-		MaxTurns:     cfg.Investigator.MaxTurns,
-		PhaseTools:   phaseTools,
-		Registry:     effectiveReg,
-		ModelName:    cfg.LLM.Model,
+		Client:        effectiveLLM,
+		Builder:       promptBuilder,
+		ResultParser:  resultParser,
+		Enricher:      enricher,
+		AuditStore:    auditStore,
+		Logger:        slogger,
+		MaxTurns:      cfg.Investigator.MaxTurns,
+		PhaseTools:    phaseTools,
+		Registry:      effectiveReg,
+		ModelName:     cfg.LLM.Model,
+		Swappable:     swappable,
+		ScopeResolver: scopeResolver,
 		Pipeline: investigator.Pipeline{
-			Sanitizer:       sanitizer,
-			AnomalyDetector: anomalyDetector,
-			CatalogFetcher:  catalogFetcher,
-			Summarizer:      sum,
+			Sanitizer:         sanitizer,
+			AnomalyDetector:   anomalyDetector,
+			CatalogFetcher:    catalogFetcher,
+			Summarizer:        sum,
+			MaxToolOutputSize: cfg.Summarizer.MaxToolOutputSize,
 		},
 	})
 
@@ -268,9 +277,11 @@ func main() {
 	var convHandler *conversation.Handler
 	if cfg.Conversation.Enabled {
 		convLLMCfg := cfg.Conversation.EffectiveLLM(cfg.LLM)
+		convCfgMerge := *cfg
+		convCfgMerge.LLM = convLLMCfg
 		convLLMClient, convErr := langchaingo.New(
 			convLLMCfg.Provider, convLLMCfg.Endpoint, convLLMCfg.Model, convLLMCfg.APIKey,
-			buildLLMProviderOptionsFromConfig(convLLMCfg)...)
+			buildLLMProviderOpts(&convCfgMerge)...)
 		if convErr != nil {
 			slogger.Warn("conversation LLM client failed, disabled", "error", convErr)
 		} else {
@@ -304,10 +315,8 @@ func main() {
 
 	r := chi.NewRouter()
 
-	r.Get("/health", healthHandler)
-	r.Get("/ready", readyHandler)
-	r.Get("/config", configHandler(cfg))
-	r.Handle("/metrics", promhttp.Handler())
+	// Issue #753: /config remains on API port; health, readiness and metrics move to dedicated ports
+	r.Get("/config", configHandler(cfg, swappable))
 
 	r.Route("/api/v1", func(r chi.Router) {
 		authMw := newAuthMiddleware(k8sInfra, logrLogger)
@@ -340,21 +349,94 @@ func main() {
 	}
 
 	// Issue #493: Conditional TLS for the HTTP server
+	// Issue #756: CertReloader enables hot-reload of server certificates
+	var certReloader *sharedtls.CertReloader
 	if cfg.Server.TLS.Enabled() {
-		isTLS, tlsErr := sharedtls.ConfigureConditionalTLS(httpServer, cfg.Server.TLS.CertDir)
+		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(httpServer, cfg.Server.TLS.CertDir)
 		if tlsErr != nil {
 			slogger.Error("Failed to configure TLS", "error", tlsErr)
 			os.Exit(1)
 		}
 		if isTLS {
+			certReloader = reloader
 			slogger.Info("TLS configured for HTTP server", "certDir", cfg.Server.TLS.CertDir)
 		}
+	}
+
+	// Issue #753: Dedicated health and metrics servers (plain HTTP, never TLS)
+	healthServer := sharedhealth.NewHealthServer(cfg.Server.HealthAddr, healthHandler, readyHandler)
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.Handler())
+	metricsServer := &http.Server{
+		Addr:              cfg.Server.MetricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Issue #756: Wire FileWatcher for server cert hot-reload
+	if certReloader != nil {
+		certWatcher, watchErr := hotreload.NewFileWatcher(
+			filepath.Join(cfg.Server.TLS.CertDir, "tls.crt"),
+			certReloader.ReloadCallback,
+			logr.FromSlogHandler(slogger.Handler()).WithName("cert-reloader"),
+		)
+		if watchErr != nil {
+			slogger.Error("Failed to create cert file watcher", "error", watchErr)
+			os.Exit(1)
+		}
+		if err := certWatcher.Start(ctx); err != nil {
+			slogger.Error("Failed to start cert file watcher", "error", err)
+			os.Exit(1)
+		}
+		defer certWatcher.Stop()
+	}
+
+	// Issue #783: Wire FileWatcher for SDK config hot-reload
+	sdkCallback := sdkReloadCallback(configPath, func() *kaconfig.Config { return cfg }, swappable, slogger)
+	sdkWatcher, sdkWatchErr := hotreload.NewFileWatcher(
+		sdkConfigPath,
+		sdkCallback,
+		logr.FromSlogHandler(slogger.Handler()).WithName("sdk-config-reloader"),
+	)
+	if sdkWatchErr != nil {
+		slogger.Warn("SDK config file watcher not started (file may not exist yet)", "error", sdkWatchErr)
+	} else {
+		if err := sdkWatcher.Start(ctx); err != nil {
+			slogger.Warn("SDK config file watcher failed to start", "error", err)
+		} else {
+			defer sdkWatcher.Stop()
+			slogger.Info("SDK config hot-reload enabled (#783)", "path", sdkConfigPath)
+		}
+	}
+
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logr.FromSlogHandler(slogger.Handler()))
+	if caWatchErr != nil {
+		slogger.Error("Failed to start CA file watcher", "error", caWatchErr)
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		defer caWatcher.Stop()
+	}
+
 	store.StartCleanupLoop(ctx, cfg.Session.TTL/2)
+
+	// Issue #753: Start dedicated health and metrics servers
+	go func() {
+		slogger.Info("health server listening", "addr", cfg.Server.HealthAddr)
+		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slogger.Error("health server error", "error", err)
+		}
+	}()
+	go func() {
+		slogger.Info("metrics server listening", "addr", cfg.Server.MetricsAddr)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slogger.Error("metrics server error", "error", err)
+		}
+	}()
 
 	go func() {
 		slogger.Info("HTTP server listening", "addr", addr)
@@ -376,7 +458,13 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if shutdownErr := httpServer.Shutdown(shutdownCtx); shutdownErr != nil {
-		fmt.Fprintf(os.Stderr, "shutdown error: %v\n", shutdownErr)
+		fmt.Fprintf(os.Stderr, "API server shutdown error: %v\n", shutdownErr)
+	}
+	if shutdownErr := healthServer.Shutdown(shutdownCtx); shutdownErr != nil {
+		fmt.Fprintf(os.Stderr, "health server shutdown error: %v\n", shutdownErr)
+	}
+	if shutdownErr := metricsServer.Shutdown(shutdownCtx); shutdownErr != nil {
+		fmt.Fprintf(os.Stderr, "metrics server shutdown error: %v\n", shutdownErr)
 	}
 
 	slogger.Info("flushing audit store...")
@@ -385,20 +473,27 @@ func main() {
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status":    "healthy",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 func readyHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
-func configHandler(cfg *kaconfig.Config) http.HandlerFunc {
+func configHandler(cfg *kaconfig.Config, swappable *llm.SwappableClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
+		model := cfg.LLM.Model
+		if swappable != nil {
+			model = swappable.ModelName()
+		}
 		sanitized := map[string]interface{}{
 			"service":     "kubernaut-agent",
 			"version":     "v1.3",
-			"llm_model":   cfg.LLM.Model,
+			"llm_model":   model,
 			"session_ttl": cfg.Session.TTL.String(),
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -557,71 +652,6 @@ func buildSanitizationPipeline(cfg *kaconfig.Config, logger *slog.Logger) *sanit
 	return sanitization.NewPipeline(stages...)
 }
 
-// buildLLMProviderOptionsFromConfig returns provider-specific LangChainGo options
-// from a standalone LLMConfig. Used by both the investigator and conversation paths.
-func buildLLMProviderOptionsFromConfig(llmCfg kaconfig.LLMConfig) []langchaingo.Option {
-	var opts []langchaingo.Option
-	if llmCfg.AzureAPIVersion != "" {
-		opts = append(opts, langchaingo.WithAzureAPIVersion(llmCfg.AzureAPIVersion))
-	}
-	if llmCfg.VertexProject != "" {
-		opts = append(opts, langchaingo.WithVertexProject(llmCfg.VertexProject))
-	}
-	if llmCfg.VertexLocation != "" {
-		opts = append(opts, langchaingo.WithVertexLocation(llmCfg.VertexLocation))
-	}
-	if llmCfg.BedrockRegion != "" {
-		opts = append(opts, langchaingo.WithBedrockRegion(llmCfg.BedrockRegion))
-	}
-	return opts
-}
-
-// buildLLMProviderOptions returns provider-specific LangChainGo options based on config.
-func buildLLMProviderOptions(cfg *kaconfig.Config) []langchaingo.Option {
-	opts := buildLLMProviderOptionsFromConfig(cfg.LLM)
-	if rt := buildTransportChain(cfg); rt != nil {
-		opts = append(opts, langchaingo.WithHTTPClient(&http.Client{Transport: rt}))
-	}
-	return opts
-}
-
-// buildTransportChain composes the HTTP transport stack for the LLM client.
-// Layers are applied inside-out: the innermost transport (DefaultTransport)
-// handles the actual HTTP call, and outer layers intercept/decorate.
-//
-// GCP providers (vertex, vertex_ai) handle their own auth internally —
-// credentials are passed via the adapter constructor, not through the shared
-// transport chain. This avoids coupling GCP auth with generic transport layers.
-//
-// Chain: StructuredOutputTransport? → AuthHeadersTransport? → OAuth2Transport? → http.DefaultTransport
-//
-// Returns nil when no custom transports are needed (caller uses provider defaults).
-func buildTransportChain(cfg *kaconfig.Config) http.RoundTripper {
-	var base http.RoundTripper = http.DefaultTransport
-	needsCustom := false
-
-	if cfg.LLM.OAuth2.Enabled {
-		base = llmtransport.NewOAuth2ClientCredentialsTransport(cfg.LLM.OAuth2, base)
-		needsCustom = true
-	}
-
-	if len(cfg.LLM.CustomHeaders) > 0 {
-		base = llmtransport.NewAuthHeadersTransport(cfg.LLM.CustomHeaders, base)
-		needsCustom = true
-	}
-
-	if cfg.LLM.StructuredOutput {
-		base = llmtransport.NewStructuredOutputTransport(nil, base)
-		needsCustom = true
-	}
-
-	if !needsCustom {
-		return nil
-	}
-	return base
-}
-
-
 // buildAuditStore creates a BufferedDSAuditStore (DD-AUDIT-002 aligned) when audit
 // is enabled and DS is available, falling back to NopAuditStore otherwise.
 // Uses the same OpenAPIClientAdapter + BufferedAuditStore stack as every other
@@ -687,10 +717,18 @@ func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Lo
 }
 
 // buildSummarizer creates a tool output summarizer when the threshold is positive.
+// When MaxToolOutputSize is configured, it enables pre-truncation to prevent
+// the summarizer's own LLM call from exceeding context window limits (#752).
 func buildSummarizer(llmClient llm.Client, cfg *kaconfig.Config, logger *slog.Logger) *summarizer.Summarizer {
 	if cfg.Summarizer.Threshold <= 0 {
 		logger.Info("summarizer disabled (threshold <= 0)")
 		return nil
+	}
+	if cfg.Summarizer.MaxToolOutputSize > 0 {
+		logger.Info("summarizer enabled with pre-truncation",
+			"threshold", cfg.Summarizer.Threshold,
+			"max_tool_output_size", cfg.Summarizer.MaxToolOutputSize)
+		return summarizer.NewWithMaxInput(llmClient, cfg.Summarizer.Threshold, cfg.Summarizer.MaxToolOutputSize)
 	}
 	logger.Info("summarizer enabled", "threshold", cfg.Summarizer.Threshold)
 	return summarizer.New(llmClient, cfg.Summarizer.Threshold)
@@ -702,11 +740,13 @@ func buildAnomalyDetector(cfg *kaconfig.Config, logger *slog.Logger) *investigat
 		MaxToolCallsPerTool: cfg.Anomaly.MaxToolCallsPerTool,
 		MaxTotalToolCalls:   cfg.Anomaly.MaxTotalToolCalls,
 		MaxRepeatedFailures: cfg.Anomaly.MaxRepeatedFailures,
+		ExemptPrefixes:      cfg.Anomaly.ExemptPrefixes,
 	}
 	logger.Info("anomaly detector enabled",
 		"maxToolCallsPerTool", ac.MaxToolCallsPerTool,
 		"maxTotalToolCalls", ac.MaxTotalToolCalls,
 		"maxRepeatedFailures", ac.MaxRepeatedFailures,
+		"exemptPrefixes", ac.ExemptPrefixes,
 	)
 	return investigator.NewAnomalyDetector(ac, nil)
 }

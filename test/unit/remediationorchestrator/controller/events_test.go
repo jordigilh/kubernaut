@@ -649,6 +649,7 @@ type MockBlockCondition struct {
 	Reason       string
 	Message      string
 	RequeueAfter time.Duration
+	BlockedUntil *time.Time
 }
 
 // MockBlockingRoutingEngine returns a configured blocking condition
@@ -663,6 +664,7 @@ func (m *MockBlockingRoutingEngine) CheckPreAnalysisConditions(ctx context.Conte
 			Reason:       m.BlockCondition.Reason,
 			Message:      m.BlockCondition.Message,
 			RequeueAfter: m.BlockCondition.RequeueAfter,
+			BlockedUntil: m.BlockCondition.BlockedUntil,
 		}, nil
 	}
 	return nil, nil
@@ -675,6 +677,7 @@ func (m *MockBlockingRoutingEngine) CheckPostAnalysisConditions(ctx context.Cont
 			Reason:       m.BlockCondition.Reason,
 			Message:      m.BlockCondition.Message,
 			RequeueAfter: m.BlockCondition.RequeueAfter,
+			BlockedUntil: m.BlockCondition.BlockedUntil,
 		}, nil
 	}
 	return nil, nil

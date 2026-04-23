@@ -154,7 +154,7 @@ spec:
   labels:
     severity: [critical]
     environment: [production]
-    component: pod
+    component: [pod]
     priority: P1
   execution:
     engine: job

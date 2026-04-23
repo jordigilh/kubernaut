@@ -1130,7 +1130,7 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
+	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData:
 		if err := s.RemediationWorkflowWebhookAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -1484,7 +1484,7 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
+	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData:
 		if err := s.RemediationWorkflowWebhookAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -2460,17 +2460,17 @@ func (s EffectivenessScoreResponseAssessmentStatus) Validate() error {
 		return nil
 	case "in_progress":
 		return nil
-	case "full":
+	case "Full":
 		return nil
-	case "partial":
+	case "Partial":
 		return nil
-	case "spec_drift":
+	case "SpecDrift":
 		return nil
-	case "expired":
+	case "Expired":
 		return nil
-	case "no_execution":
+	case "NoExecution":
 		return nil
-	case "metrics_timed_out":
+	case "MetricsTimedOut":
 		return nil
 	case "EffectivenessAssessed":
 		return nil
@@ -3359,6 +3359,25 @@ func (s *MandatoryLabels) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "severity",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if s.Component == nil {
+			return errors.New("nil is invalid value")
+		}
+		if err := (validate.Array{
+			MinLength:    1,
+			MinLengthSet: true,
+			MaxLength:    0,
+			MaxLengthSet: false,
+		}).ValidateLength(len(s.Component)); err != nil {
+			return errors.Wrap(err, "array")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "component",
 			Error: err,
 		})
 	}
@@ -4573,17 +4592,17 @@ func (s *RemediationHistoryEntry) Validate() error {
 
 func (s RemediationHistoryEntryAssessmentReason) Validate() error {
 	switch s {
-	case "full":
+	case "Full":
 		return nil
-	case "partial":
+	case "Partial":
 		return nil
-	case "spec_drift":
+	case "SpecDrift":
 		return nil
-	case "expired":
+	case "Expired":
 		return nil
-	case "no_execution":
+	case "NoExecution":
 		return nil
-	case "metrics_timed_out":
+	case "MetricsTimedOut":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -4681,17 +4700,17 @@ func (s *RemediationHistorySummary) Validate() error {
 
 func (s RemediationHistorySummaryAssessmentReason) Validate() error {
 	switch s {
-	case "full":
+	case "Full":
 		return nil
-	case "partial":
+	case "Partial":
 		return nil
-	case "spec_drift":
+	case "SpecDrift":
 		return nil
-	case "expired":
+	case "Expired":
 		return nil
-	case "no_execution":
+	case "NoExecution":
 		return nil
-	case "metrics_timed_out":
+	case "MetricsTimedOut":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -5777,6 +5796,8 @@ func (s RemediationWorkflowWebhookAuditPayloadAction) Validate() error {
 	switch s {
 	case "create":
 		return nil
+	case "update":
+		return nil
 	case "delete":
 		return nil
 	case "denied":
@@ -5789,6 +5810,8 @@ func (s RemediationWorkflowWebhookAuditPayloadAction) Validate() error {
 func (s RemediationWorkflowWebhookAuditPayloadEventType) Validate() error {
 	switch s {
 	case "remediationworkflow.admitted.create":
+		return nil
+	case "remediationworkflow.admitted.update":
 		return nil
 	case "remediationworkflow.admitted.delete":
 		return nil

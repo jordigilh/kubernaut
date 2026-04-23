@@ -332,14 +332,14 @@ var _ = Describe("Issue #453 Phase B: Metadata Decomposition", func() {
 				Verification: &notificationv1.VerificationContext{
 					Assessed: true,
 					Outcome:  "inconclusive",
-					Reason:   "spec_drift",
+					Reason:   "SpecDrift",
 					Summary:  "Verification inconclusive: the resource spec was modified by an external entity after remediation.",
 				},
 			}
 			result := ctx.FlattenToMap()
 			Expect(result).To(HaveKeyWithValue("verificationAssessed", "true"))
 			Expect(result).To(HaveKeyWithValue("verificationOutcome", "inconclusive"))
-			Expect(result).To(HaveKeyWithValue("verificationReason", "spec_drift"))
+			Expect(result).To(HaveKeyWithValue("verificationReason", "SpecDrift"))
 		})
 	})
 

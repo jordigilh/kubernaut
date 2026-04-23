@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -209,6 +210,12 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintf(output, "\n💾 PHASE 3: Deploying Data Storage + migrations...\n")
 
+	// Issue #785: Inter-service CA + leaf Secrets before DataStorage pod starts
+	_, _ = fmt.Fprintf(output, "  🔐 Generating inter-service TLS certificates (Issue #785)...\n")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, WorkflowExecutionNamespace, output); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	// Deploy Data Storage (PostgreSQL/Redis already ready from Phase 2)
 	_, _ = fmt.Fprintf(output, "  💾 Deploying Data Storage service...\n")
 	if err := deployDataStorageWithConfig(clusterName, kubeconfigPath, output); err != nil {
@@ -275,7 +282,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 		_, _ = fmt.Fprintf(output, "   ✅ Secret e2e-dep-secret ready in %s\n", ExecutionNamespace)
 	}
 
-	dataStorageURL := "http://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
+	dataStorageURL := "https://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
 	if _, err = BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, output); err != nil {
 		return fmt.Errorf("failed to build and register test workflows: %w", err)
 	}
@@ -313,14 +320,18 @@ func deployDataStorageWithConfig(clusterName, kubeconfigPath string, output io.W
 
 	// Build Data Storage image
 	_, _ = fmt.Fprintln(output, "    Building Data Storage image...")
-	buildCmd := exec.Command("podman", "build", "-t", "kubernaut-datastorage:latest",
+	buildCmd := exec.Command("podman", "build",
+		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
+		"-t", "kubernaut-datastorage:latest",
 		"-f", "docker/data-storage.Dockerfile", ".")
 	buildCmd.Dir = projectRoot
 	buildCmd.Stdout = output
 	buildCmd.Stderr = output
 	if err := buildCmd.Run(); err != nil {
 		// Try docker as fallback
-		buildCmd = exec.Command("docker", "build", "-t", "kubernaut-datastorage:latest",
+		buildCmd = exec.Command("docker", "build",
+			"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
+			"-t", "kubernaut-datastorage:latest",
 			"-f", "docker/data-storage.Dockerfile", ".")
 		buildCmd.Dir = projectRoot
 		buildCmd.Stdout = output
@@ -355,10 +366,13 @@ data:
     server:
       port: 8080
       metricsPort: 9090
+      healthPort: 8081
       readTimeout: 30s
       writeTimeout: 30s
       idleTimeout: 120s
       gracefulShutdownTimeout: 30s
+      tls:
+        certDir: /etc/tls
     database:
       host: postgresql
       port: 5432
@@ -458,16 +472,19 @@ spec:
         - name: secrets
           mountPath: /etc/datastorage/secrets
           readOnly: true
+        - name: tls-certs
+          mountPath: /etc/tls
+          readOnly: true
         readinessProbe:
           httpGet:
-            path: /health
-            port: 8080
+            path: /readyz
+            port: 8081
           initialDelaySeconds: 5
           periodSeconds: 5
         livenessProbe:
           httpGet:
-            path: /health
-            port: 8080
+            path: /healthz
+            port: 8081
           initialDelaySeconds: 30
           periodSeconds: 10
       volumes:
@@ -487,6 +504,10 @@ spec:
               items:
               - key: redis-secrets.yaml
                 path: redis-secrets.yaml
+      - name: tls-certs
+        secret:
+          secretName: datastorage-tls
+          optional: true
 ---
 apiVersion: v1
 kind: Service

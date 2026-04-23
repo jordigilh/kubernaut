@@ -35,7 +35,8 @@ var resourceContextTools = []string{
 func DefaultPhaseToolMap() katypes.PhaseToolMap {
 	todo := investigation.ToolName
 
-	rca := make([]string, 0, len(k8s.AllToolNames)+len(k8s.MetricsToolNames)+1+len(prometheus.AllToolNames)+len(resourceContextTools)+1)
+	rcaCap := len(k8s.AllToolNames) + len(k8s.MetricsToolNames) + 1 + len(prometheus.AllToolNames) + len(resourceContextTools) + 1
+	rca := make([]string, 0, rcaCap)
 	rca = append(rca, k8s.AllToolNames...)
 	rca = append(rca, k8s.MetricsToolNames...)
 	rca = append(rca, logs.ToolName)

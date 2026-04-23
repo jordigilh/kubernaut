@@ -128,7 +128,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "http://127.0.0.1:18091" // Fallback for manual testing - Use 127.0.0.1 for CI/CD IPv4 compatibility
+			dataStorageURL = "https://127.0.0.1:18091" // Issue #785: HTTPS (Kind hostPort maps to NodePort 30081)
 		}
 
 		// DD-AUTH-014: Create E2E ServiceAccount with DataStorage access permissions
@@ -162,16 +162,32 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 		dsClient, err = ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
 		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage OpenAPI client")
 
-		// ✅ MANDATORY: Verify Data Storage is running
+		// ✅ MANDATORY: Verify Data Storage is running (with retry for Kind NodePort stability)
 		// Per TESTING_GUIDELINES.md: Tests MUST FAIL if infrastructure unavailable (NO Skip())
-		healthResp, err := http.Get(dataStorageURL + "/health")
-		if err != nil {
+		// Issue #753: Health probes moved to dedicated port 8081
+		dsHealthURL := os.Getenv("TEST_DATA_STORAGE_HEALTH_URL")
+		if dsHealthURL == "" {
+			dsHealthURL = "http://127.0.0.1:28091"
+		}
+		var healthResp *http.Response
+		var healthErr error
+		for attempt := 1; attempt <= 15; attempt++ {
+			healthResp, healthErr = http.Get(dsHealthURL + "/readyz")
+			if healthErr == nil && healthResp.StatusCode == http.StatusOK {
+				break
+			}
+			if healthResp != nil {
+				_ = healthResp.Body.Close()
+			}
+			time.Sleep(2 * time.Second)
+		}
+		if healthErr != nil {
 			Fail(fmt.Sprintf(
-				"REQUIRED: Data Storage not available at %s\n"+
+				"REQUIRED: Data Storage not available at %s after retries\n"+
 					"  Per DD-AUDIT-003: Gateway MUST have audit capability\n"+
 					"  Per BR-AUDIT-005: RR reconstruction requires audit trail\n\n"+
 					"  Start infrastructure: make test-integration-gateway\n\n"+
-					"  Error: %v", dataStorageURL, err))
+					"  Error: %v", dsHealthURL, healthErr))
 		}
 		defer func() { _ = healthResp.Body.Close() }()
 		if healthResp.StatusCode != http.StatusOK {

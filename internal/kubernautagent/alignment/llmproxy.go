@@ -55,3 +55,11 @@ func (p *LLMProxy) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatRespo
 
 	return resp, nil
 }
+
+// Close releases resources held by the inner client.
+func (p *LLMProxy) Close() error {
+	if p == nil || p.inner == nil {
+		return nil
+	}
+	return p.inner.Close()
+}

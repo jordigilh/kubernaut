@@ -24,8 +24,13 @@ import (
 // Client abstracts the LLM provider behind a Kubernaut-owned interface.
 // Business logic never imports the underlying framework (LangChainGo, Eino, etc.).
 // Authority: DD-HAPI-019 — Framework Isolation Pattern
+//
+// Close releases resources held by the client (gRPC connections, HTTP idle
+// pools). Callers must call Close when the client is no longer needed.
+// Implementations where no cleanup is required should return nil.
 type Client interface {
 	Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
+	Close() error
 }
 
 // ChatRequest contains the messages and tool definitions for an LLM call.
@@ -35,11 +40,20 @@ type ChatRequest struct {
 	Options  ChatOptions      `json:"options,omitempty"`
 }
 
+// FinishReason constants normalized across all LLM providers. Adapters must
+// map provider-specific stop reasons to one of these values.
+const (
+	FinishReasonStop      = "stop"
+	FinishReasonLength    = "length"
+	FinishReasonToolCalls = "tool_calls"
+)
+
 // ChatResponse contains the LLM's reply and any tool call requests.
 type ChatResponse struct {
-	Message   Message    `json:"message"`
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
-	Usage     TokenUsage `json:"usage,omitempty"`
+	Message      Message    `json:"message"`
+	ToolCalls    []ToolCall `json:"tool_calls,omitempty"`
+	Usage        TokenUsage `json:"usage,omitempty"`
+	FinishReason string     `json:"finish_reason,omitempty"`
 }
 
 // Message represents a single conversation message.

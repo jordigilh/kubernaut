@@ -146,8 +146,12 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 		// 4. Create HTTP clients with different authentication levels
 		logger.Info("📋 DD-AUTH-010: Creating authenticated HTTP clients...")
 
+		// Issue #753: SAR clients must use TLS-aware transport for inter-service HTTPS
+		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport for SAR clients")
+
 		// Authorized client (has "create" permission)
-		authorizedTransport := testauth.NewServiceAccountTransport(authorizedToken)
+		authorizedTransport := testauth.NewServiceAccountTransportWithBase(authorizedToken, tlsTransport)
 		authorizedHTTP := &http.Client{
 			Timeout:   10 * time.Second,
 			Transport: authorizedTransport,
@@ -156,7 +160,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 		Expect(err).ToNot(HaveOccurred(), "Failed to create authorized client")
 
 		// Unauthorized client (no permissions)
-		unauthorizedTransport := testauth.NewServiceAccountTransport(unauthorizedToken)
+		unauthorizedTransport := testauth.NewServiceAccountTransportWithBase(unauthorizedToken, tlsTransport)
 		unauthorizedHTTP := &http.Client{
 			Timeout:   10 * time.Second,
 			Transport: unauthorizedTransport,
@@ -165,7 +169,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 		Expect(err).ToNot(HaveOccurred(), "Failed to create unauthorized client")
 
 		// Read-only client (has "get" but not "create")
-		readOnlyTransport := testauth.NewServiceAccountTransport(readOnlyToken)
+		readOnlyTransport := testauth.NewServiceAccountTransportWithBase(readOnlyToken, tlsTransport)
 		readOnlyHTTP := &http.Client{
 			Timeout:   10 * time.Second,
 			Transport: readOnlyTransport,

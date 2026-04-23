@@ -79,10 +79,10 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 					},
 					"confidence": 0.85
 				}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{
+				wfToolResp(`{
 					"selected_workflow": {"workflow_id": "oom-increase-memory", "confidence": 0.9},
 					"confidence": 0.9
-				}`}},
+				}`),
 			}
 
 			inv := investigator.New(investigator.Config{
@@ -116,10 +116,10 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 					"investigation_outcome": "inconclusive",
 					"confidence": 0.4
 				}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{
+				wfToolResp(`{
 					"selected_workflow": {"workflow_id": "generic-restart", "confidence": 0.6},
 					"confidence": 0.6
-				}`}},
+				}`),
 			}
 
 			inv := investigator.New(investigator.Config{
@@ -148,12 +148,12 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 					"investigation_outcome": "inconclusive",
 					"confidence": 0.4
 				}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{
+				wfToolResp(`{
 					"selected_workflow": {"workflow_id": "oom-increase-memory", "confidence": 0.95},
 					"investigation_outcome": "actionable",
 					"actionable": true,
 					"confidence": 0.95
-				}`}},
+				}`),
 			}
 
 			inv := investigator.New(investigator.Config{

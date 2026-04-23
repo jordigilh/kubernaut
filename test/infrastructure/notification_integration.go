@@ -61,6 +61,9 @@ const (
 	// Changed from 18110 (ad-hoc "+20") to 18096 (DD-TEST-001 sequential) on Dec 22, 2025
 	NTIntegrationDataStoragePort = 18096
 
+	// Issue #753: Dedicated health probe port (DataStoragePort + 10000)
+	NTIntegrationHealthPort = 28096
+
 	// DataStorage Metrics port for Notification integration tests
 	// Changed from 19110 (ad-hoc "+20") to 19096 (DD-TEST-001 metrics pattern) on Dec 22, 2025
 	NTIntegrationMetricsPort = 19096
@@ -261,7 +264,7 @@ echo "Migrations complete!"`)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://127.0.0.1:%d/health", NTIntegrationDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d/readyz", NTIntegrationHealthPort),
 		30*time.Second,
 		writer,
 	); err != nil {
@@ -334,6 +337,7 @@ func startNotificationDataStorage(imageTag string, writer io.Writer) error {
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", NTIntegrationDataStorageContainer,
 		"-p", fmt.Sprintf("%d:8080", NTIntegrationDataStoragePort),
+		"-p", fmt.Sprintf("%d:8081", NTIntegrationHealthPort),
 		"-p", fmt.Sprintf("%d:9090", NTIntegrationMetricsPort),
 		"-v", configMount,
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",

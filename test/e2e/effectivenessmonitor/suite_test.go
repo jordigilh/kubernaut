@@ -154,6 +154,11 @@ var _ = SynchronizedBeforeSuite(
 			e2eAuthToken = parts[1]
 		}
 
+		// Issue #785: Configure http.DefaultTransport to trust the inter-service CA.
+		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport (Issue #785)")
+		http.DefaultTransport = tlsTransport
+
 		ctx, cancel = context.WithCancel(context.TODO())
 
 		GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -184,7 +189,7 @@ var _ = SynchronizedBeforeSuite(
 
 		By("Setting up authenticated DataStorage audit client")
 		// DD-TEST-001: EM E2E uses host port 8091 for DataStorage
-		dataStorageURL := fmt.Sprintf("http://localhost:%d", infrastructure.DataStorageEMHostPort())
+		dataStorageURL := fmt.Sprintf("https://localhost:%d", infrastructure.DataStorageEMHostPort())
 		saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
 		httpClient := &http.Client{
 			Timeout:   20 * time.Second,

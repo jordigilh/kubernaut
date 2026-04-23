@@ -52,7 +52,7 @@ func depsTestCRD() *models.WorkflowSchemaCRD {
 	crd.Spec.Labels = models.WorkflowSchemaLabels{
 		Severity:    []string{"critical", "high"},
 		Environment: []string{"*"},
-		Component:   "certificate",
+		Component:   []string{"certificate"},
 		Priority:    "*",
 	}
 	crd.Spec.Dependencies = &models.WorkflowDependencies{

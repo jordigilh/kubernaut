@@ -1192,5 +1192,89 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(val).To(Equal(float64(1)), "NoActionNeededTotal should be incremented with reason=manual_review")
 			})
 		})
+
+		// =====================================================
+		// Issue #768: Completed+NeedsHumanReview routing
+		// When AA sets Phase=Completed (not Failed) for no_matching_workflows,
+		// the RO handler must still route to handleManualReviewCompleted.
+		// =====================================================
+		Context("Issue #768: Completed+NeedsHumanReview routing to ManualReviewCompleted", func() {
+			It("UT-RO-768-001: should route Phase=Completed+NeedsHumanReview+nil SelectedWorkflow to ManualReviewCompleted", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Completed"
+				ai.Status.Reason = "AnalysisCompleted"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.Message = "No matching workflows found"
+				ai.Status.SelectedWorkflow = nil
+
+				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
+					"#768: RR must be PhaseCompleted")
+				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"),
+					"#768: RR Outcome must be ManualReviewRequired")
+				Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
+			})
+
+			It("UT-RO-768-002: should create ManualReview notification for Completed+NeedsHumanReview", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Completed"
+				ai.Status.Reason = "AnalysisCompleted"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.Message = "No matching workflows found"
+				ai.Status.SelectedWorkflow = nil
+				ai.Status.RootCause = "ResourceQuota exhausted"
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				nrList := &notificationv1.NotificationRequestList{}
+				err = client.List(ctx, nrList)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nrList.Items).To(HaveLen(1))
+				Expect(nrList.Items[0].Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
+			})
+
+			It("UT-RO-768-003: should NOT fall through to WFE creation path for Completed+NeedsHumanReview", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Completed"
+				ai.Status.Reason = "AnalysisCompleted"
+				ai.Status.NeedsHumanReview = true
+				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.SelectedWorkflow = nil
+
+				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.Outcome).ToNot(BeEmpty(),
+					"#768: RR Outcome must be set — handler must NOT fall through to no-op WFE path")
+				Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
+			})
+		})
 	})
 })

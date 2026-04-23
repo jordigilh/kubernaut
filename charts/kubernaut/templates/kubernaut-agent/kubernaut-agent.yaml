@@ -70,6 +70,10 @@ rules:
   - apiGroups: ["networking.istio.io"]
     resources: ["virtualservices", "destinationrules", "gateways", "serviceentries"]
     verbs: ["get", "list", "watch"]
+  # ── Metrics API (#770) ────────────────────────────────────────────────────
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
   # ── Prometheus Operator ──────────────────────────────────────────────────
   - apiGroups: ["monitoring.coreos.com"]
     resources: ["prometheusrules", "servicemonitors", "podmonitors", "probes"]
@@ -123,6 +127,13 @@ data:
   config.yaml: |
     logging:
       level: "INFO"
+    server:
+      address: "0.0.0.0"
+      port: 8080
+      health_addr: ":8081"
+      metrics_addr: ":9090"
+      tls:
+        certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
     data_storage:
       url: "{{ include "kubernaut.datastorage.url" . }}"
 {{- if include "kubernaut.agent.tlsEnabled" . }}
@@ -130,7 +141,7 @@ data:
       ca_file: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
 {{- end }}
     audit:
-      flush_interval_seconds: 0.1
+      flush_interval_seconds: 1.0
       buffer_size: 10000
       batch_size: 50
 {{- if .Values.kubernautAgent.alignmentCheck.enabled }}
@@ -243,7 +254,7 @@ spec:
         app: kubernaut-agent
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
+        prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: kubernaut-agent-sa
@@ -259,8 +270,12 @@ spec:
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.kubernautAgent | nindent 12 }}
           ports:
-            - containerPort: 8080
-{{- if or .Values.kubernautAgent.llm.oauth2.enabled (include "kubernaut.interServiceTLS.enabled" .) }}
+            - name: http
+              containerPort: 8080
+            - name: health
+              containerPort: 8081
+            - name: metrics
+              containerPort: 9090
           env:
 {{- if .Values.kubernautAgent.llm.oauth2.enabled }}
             - name: OAUTH2_CLIENT_ID
@@ -274,11 +289,8 @@ spec:
                   name: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
                   key: client-secret
 {{- end }}
-{{- if include "kubernaut.interServiceTLS.enabled" . }}
             - name: TLS_CA_FILE
               value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
-{{- end }}
-{{- end }}
           args:
             - "-config"
             - "/etc/kubernaut-agent/config.yaml"
@@ -299,23 +311,24 @@ spec:
             - name: tmp
               mountPath: /tmp
             {{- end }}
-            {{- if include "kubernaut.interServiceTLS.enabled" . }}
+            - name: tls-certs
+              mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
+              readOnly: true
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
-            {{- end }}
           livenessProbe:
             httpGet:
-              path: /health
-              port: 8080
+              path: /healthz
+              port: 8081
             initialDelaySeconds: 15
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /ready
-              port: 8080
+              path: /readyz
+              port: 8081
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
@@ -340,12 +353,14 @@ spec:
           emptyDir:
             sizeLimit: 1Mi
         {{- end }}
-        {{- if include "kubernaut.interServiceTLS.enabled" . }}
+        - name: tls-certs
+          secret:
+            secretName: kubernautagent-tls
+            optional: true
         - name: tls-ca
           configMap:
             name: inter-service-ca
             optional: true
-        {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -358,8 +373,15 @@ metadata:
 spec:
   type: {{ .Values.kubernautAgent.service.type }}
   ports:
-    - port: 8080
+    - name: http
+      port: 8080
       targetPort: 8080
+    - name: health
+      port: 8081
+      targetPort: 8081
+    - name: metrics
+      port: 9090
+      targetPort: 9090
   selector:
     app: kubernaut-agent
 {{- if include "kubernaut.monitoring.ocpRbac" . }}

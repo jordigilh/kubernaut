@@ -7435,7 +7435,7 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
+	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData:
 		switch s.Type {
 		case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData:
 			e.FieldStart("event_type")
@@ -7446,6 +7446,9 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("remediationworkflow.admitted.denied")
+		case AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("remediationworkflow.admitted.update")
 		}
 		{
 			s := s.RemediationWorkflowWebhookAuditPayload
@@ -8095,6 +8098,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "remediationworkflow.admitted.denied":
 					s.Type = AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData
 					found = true
+				case "remediationworkflow.admitted.update":
+					s.Type = AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData
+					found = true
 				case "effectiveness.alert.assessed":
 					s.Type = AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData
 					found = true
@@ -8287,7 +8293,7 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		if err := s.RemediationRequestWebhookAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
+	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData:
 		if err := s.RemediationWorkflowWebhookAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -10509,7 +10515,7 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
+	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData:
 		switch s.Type {
 		case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData:
 			e.FieldStart("event_type")
@@ -10520,6 +10526,9 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("remediationworkflow.admitted.denied")
+		case AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("remediationworkflow.admitted.update")
 		}
 		{
 			s := s.RemediationWorkflowWebhookAuditPayload
@@ -11169,6 +11178,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "remediationworkflow.admitted.denied":
 					s.Type = AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData
 					found = true
+				case "remediationworkflow.admitted.update":
+					s.Type = AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData
+					found = true
 				case "effectiveness.alert.assessed":
 					s.Type = AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData
 					found = true
@@ -11361,7 +11373,7 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		if err := s.RemediationRequestWebhookAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
+	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData:
 		if err := s.RemediationWorkflowWebhookAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -20176,7 +20188,11 @@ func (s *MandatoryLabels) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("component")
-		e.Str(s.Component)
+		e.ArrStart()
+		for _, elem := range s.Component {
+			e.Str(elem)
+		}
+		e.ArrEnd()
 	}
 	{
 		e.FieldStart("environment")
@@ -20229,9 +20245,17 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 		case "component":
 			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				v, err := d.Str()
-				s.Component = string(v)
-				if err != nil {
+				s.Component = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Component = append(s.Component, elem)
+					return nil
+				}); err != nil {
 					return err
 				}
 				return nil
@@ -31676,6 +31700,8 @@ func (s *RemediationWorkflowWebhookAuditPayloadAction) Decode(d *jx.Decoder) err
 	switch RemediationWorkflowWebhookAuditPayloadAction(v) {
 	case RemediationWorkflowWebhookAuditPayloadActionCreate:
 		*s = RemediationWorkflowWebhookAuditPayloadActionCreate
+	case RemediationWorkflowWebhookAuditPayloadActionUpdate:
+		*s = RemediationWorkflowWebhookAuditPayloadActionUpdate
 	case RemediationWorkflowWebhookAuditPayloadActionDelete:
 		*s = RemediationWorkflowWebhookAuditPayloadActionDelete
 	case RemediationWorkflowWebhookAuditPayloadActionDenied:
@@ -31718,6 +31744,8 @@ func (s *RemediationWorkflowWebhookAuditPayloadEventType) Decode(d *jx.Decoder) 
 	switch RemediationWorkflowWebhookAuditPayloadEventType(v) {
 	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate:
 		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate:
+		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedUpdate
 	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete:
 		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete
 	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied:

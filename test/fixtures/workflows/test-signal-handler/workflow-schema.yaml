@@ -17,7 +17,7 @@ spec:
   labels:
     severity: [low]
     environment: [test]
-    component: pod
+    component: [pod]
     priority: P3
   
   execution:

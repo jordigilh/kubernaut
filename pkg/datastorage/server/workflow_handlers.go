@@ -166,6 +166,16 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	if h.workflowIntegrityRepo != nil {
 		result, integrityErr := h.handleDuplicateWorkflow(r.Context(), workflow)
 		if integrityErr != nil {
+			var cie *contentIntegrityError
+			if errors.As(integrityErr, &cie) {
+				h.logger.Info("Content integrity violation: same version with different content",
+					"workflow_name", cie.WorkflowName,
+					"version", cie.Version,
+				)
+				response.WriteRFC7807Error(w, http.StatusConflict, "content-integrity-violation",
+					"Content Changed Without Version Bump", cie.Error(), h.logger)
+				return
+			}
 			h.logger.Error(integrityErr, "Content integrity check failed",
 				"workflow_name", workflow.WorkflowName,
 				"version", workflow.Version,
@@ -253,6 +263,31 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// contentIntegrityError is returned when an active workflow with the same
+// (name, version) already exists but has a different content hash. The caller
+// must bump the version to register new content. This enforces version-locked
+// content immutability per Issue #773.
+type contentIntegrityError struct {
+	WorkflowName string
+	Version      string
+	OldHash      string
+	NewHash      string
+}
+
+func (e *contentIntegrityError) Error() string {
+	oldPrefix, newPrefix := e.OldHash, e.NewHash
+	if len(oldPrefix) > 12 {
+		oldPrefix = oldPrefix[:12]
+	}
+	if len(newPrefix) > 12 {
+		newPrefix = newPrefix[:12]
+	}
+	return fmt.Sprintf(
+		"active workflow %q version %q already has different content (hash %s→%s); bump the version to register new content",
+		e.WorkflowName, e.Version, oldPrefix, newPrefix,
+	)
+}
+
 // duplicateResult holds the outcome of content integrity checking.
 type duplicateResult struct {
 	workflow   *models.RemediationWorkflow
@@ -265,9 +300,10 @@ type duplicateResult struct {
 //
 // Decision tree:
 //   active  + same hash    → 200 (idempotent, no DB writes)
-//   active  + diff hash    → supersede old → create new → 201
+//   active  + diff hash    → 409 contentIntegrityError (must bump version — Issue #773)
 //   disabled + same hash   → re-enable → 200
 //   disabled + diff hash   → create new → 201
+//   cross-version (any)    → supersede old → create new → 201
 //   none                   → create new → 201
 //
 // Concurrency safety: All Create calls handle PostgreSQL 23505 (unique constraint
@@ -297,21 +333,12 @@ func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.
 			return &duplicateResult{workflow: active, statusCode: http.StatusOK}, nil
 		}
 
-		reason := fmt.Sprintf("superseded: content hash changed from %s to %s", active.ContentHash, incomingHash)
-		if err := repo.SupersedeAndCreate(ctx, active.WorkflowID, active.Version, reason, workflow); err != nil {
-			if result, handled := h.retryOnUniqueViolation(ctx, err, workflow, incomingHash); handled {
-				return result, nil
-			}
-			return nil, fmt.Errorf("supersede and create after hash change: %w", err)
+		return nil, &contentIntegrityError{
+			WorkflowName: active.WorkflowName,
+			Version:      active.Version,
+			OldHash:      active.ContentHash,
+			NewHash:      incomingHash,
 		}
-
-		h.logger.Info("Workflow superseded due to content hash change",
-			"old_workflow_id", active.WorkflowID,
-			"workflow_name", active.WorkflowName,
-			"old_hash", active.ContentHash,
-			"new_hash", incomingHash,
-		)
-		return &duplicateResult{workflow: workflow, statusCode: http.StatusCreated}, nil
 	}
 
 	disabled, err := repo.GetLatestDisabledByNameAndVersion(ctx, workflow.WorkflowName, workflow.Version)

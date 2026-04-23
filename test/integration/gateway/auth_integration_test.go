@@ -35,6 +35,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	gwpkg "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
@@ -43,7 +44,8 @@ import (
 var _ = Describe("Gateway Authentication & Authorization (BR-GATEWAY-036, BR-GATEWAY-037)", Ordered, func() {
 
 	var (
-		testServer       *httptest.Server
+		testServer        *httptest.Server
+		gatewayServer     *gwpkg.Server
 		authTestNamespace string
 	)
 
@@ -69,7 +71,8 @@ var _ = Describe("Gateway Authentication & Authorization (BR-GATEWAY-036, BR-GAT
 		opts.Authenticator = authenticator
 		opts.Authorizer = authorizer
 
-		gatewayServer, err := StartTestGatewayWithOptions(ctx, testK8sClient, dataStorageURL, opts)
+		var err error
+		gatewayServer, err = StartTestGatewayWithOptions(ctx, testK8sClient, dataStorageURL, opts)
 		Expect(err).ToNot(HaveOccurred(), "Gateway server must start successfully")
 
 		testServer = httptest.NewServer(gatewayServer.Handler())
@@ -124,18 +127,24 @@ var _ = Describe("Gateway Authentication & Authorization (BR-GATEWAY-036, BR-GAT
 				"IT-GW-036-002: Authorized webhook must return 201 Created")
 		})
 
-		It("IT-GW-036-003: Health, readiness, and metrics endpoints bypass auth", func() {
-			endpoints := []string{"/health", "/healthz", "/ready", "/metrics"}
+		It("IT-GW-036-003: Health and readiness endpoints bypass auth (dedicated server)", func() {
+			// Issue #753: health/readiness now on a dedicated server without auth middleware.
+			// Verify the exported handlers respond 200 without authentication.
+			healthMux := http.NewServeMux()
+			healthMux.HandleFunc("/healthz", gatewayServer.LivenessHandler())
+			healthMux.HandleFunc("/readyz", gatewayServer.ReadinessHandler())
+			healthTestServer := httptest.NewServer(healthMux)
+			defer healthTestServer.Close()
 
-			for _, endpoint := range endpoints {
-				resp, err := http.Get(testServer.URL + endpoint)
+			for _, endpoint := range []string{"/healthz", "/readyz"} {
+				resp, err := http.Get(healthTestServer.URL + endpoint)
 				Expect(err).ToNot(HaveOccurred(),
 					fmt.Sprintf("IT-GW-036-003: GET %s should not error", endpoint))
-				defer func() { _ = resp.Body.Close() }()
-				_, _ = io.ReadAll(resp.Body)
+				body, _ := io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusOK),
-					fmt.Sprintf("IT-GW-036-003: %s must return 200 without authentication", endpoint))
+					fmt.Sprintf("IT-GW-036-003: %s must return 200 without authentication (body: %s)", endpoint, string(body)))
 			}
 		})
 	})

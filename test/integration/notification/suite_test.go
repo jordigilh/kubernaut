@@ -377,13 +377,17 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	if dataStorageURL == "" {
 		dataStorageURL = "http://127.0.0.1:18096" // NT integration port (IPv4 explicit for CI, DD-TEST-001 v1.1)
 	}
+	// Issue #753: Health probes moved to dedicated port (DataStoragePort + 1000)
+	dataStorageHealthURL := os.Getenv("DATA_STORAGE_HEALTH_URL")
+	if dataStorageHealthURL == "" {
+		dataStorageHealthURL = "http://127.0.0.1:28096"
+	}
 
 	// Verify Data Storage is healthy (infrastructure should have started it)
 	// DS TEAM PATTERN: Use Eventually() with 30s timeout for health check
 	// Rationale: Cold start on macOS Podman can take 15-20s (per DS team testing)
 	Eventually(func() int {
-		// Use 127.0.0.1 instead of localhost (DS team recommendation)
-		resp, err := http.Get(dataStorageURL + "/health")
+		resp, err := http.Get(dataStorageHealthURL + "/readyz")
 		if err != nil {
 			GinkgoWriter.Printf("  DataStorage health check failed: %v\n", err)
 			return 0
@@ -393,7 +397,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	}, "30s", "1s").Should(Equal(http.StatusOK),
 		"❌ DataStorage failed to become healthy after infrastructure startup at %s\n"+
 			"Per DD-AUDIT-003: Audit infrastructure is MANDATORY\n"+
-			"Per DD-TEST-002: Infrastructure should be started programmatically by Go code", dataStorageURL)
+			"Per DD-TEST-002: Infrastructure should be started programmatically by Go code", dataStorageHealthURL)
 
 	// DD-AUTH-014: Parse token from Phase 1 and create authenticated clients
 	token := string(data)

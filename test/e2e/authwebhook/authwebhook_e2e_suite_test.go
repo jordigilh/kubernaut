@@ -81,7 +81,7 @@ var (
 
 	// Shared service URLs (NodePort - no port-forwarding needed)
 	// These are set in SynchronizedBeforeSuite and available to all tests
-	dataStorageURL string // http://localhost:28099 (NodePort 30099 mapped via Kind extraPortMappings per DD-TEST-001)
+	dataStorageURL string // https://localhost:28099 (DS API TLS, Issue #785)
 	postgresURL    string // localhost:25442 (NodePort 30442 mapped via Kind extraPortMappings per DD-TEST-001)
 
 	// Audit client for validating webhook audit events
@@ -191,7 +191,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("🏷️  Seeding action types via DataStorage API (DD-WORKFLOW-016)...")
 		seedToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, e2eSAName, kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to get seed SA token")
-		Expect(infrastructure.SeedActionTypesViaAPIWithURL("http://localhost:28099", seedToken, 30*time.Second, GinkgoWriter)).
+		Expect(infrastructure.SeedActionTypesViaAPIWithTLS("https://localhost:28099", seedToken, kubeconfigPath, 30*time.Second, GinkgoWriter)).
 			To(Succeed(), "Failed to seed action types via DS API")
 		logger.Info("✅ Action types seeded")
 
@@ -211,7 +211,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("Cluster Setup Complete - Broadcasting to all processes")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster configuration", "cluster", clusterName, "kubeconfig", kubeconfigPath)
-		logger.Info("Service URLs (per DD-TEST-001)", "dataStorage", "http://localhost:28099", "postgresql", "localhost:25442", "webhook", "https://localhost:30099")
+		logger.Info("Service URLs (per DD-TEST-001)", "dataStorage", "https://localhost:28099", "postgresql", "localhost:25442", "webhook", "https://localhost:30099")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Return kubeconfig path to all processes
@@ -232,8 +232,13 @@ var _ = SynchronizedBeforeSuite(
 		kubeconfigPath = string(data)
 		clusterName = "authwebhook-e2e"
 
+		// Issue #785: Configure http.DefaultTransport to trust the inter-service CA.
+		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(tlsErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport (Issue #785)")
+		http.DefaultTransport = tlsTransport
+
 		// Set shared URLs - Per DD-TEST-001: AuthWebhook E2E uses ports 25442, 26386, 28099, 30099
-		dataStorageURL = "http://localhost:28099"
+		dataStorageURL = "https://localhost:28099"
 		postgresURL = "postgresql://slm_user:test_password@localhost:25442/action_history?sslmode=disable"
 
 		processID := GinkgoParallelProcess()
@@ -378,7 +383,7 @@ var _ = SynchronizedAfterSuite(
 			logger.Info("   kubectl --kubeconfig=" + kubeconfigPath + " get events -n " + sharedNamespace + " --sort-by='.lastTimestamp'")
 			logger.Info("")
 			logger.Info("   # Access Data Storage from host:")
-			logger.Info("   curl http://localhost:28099/health/ready")
+			logger.Info("   curl https://localhost:28099/  # DataStorage API (TLS); health: separate port per Kind mapping")
 			logger.Info("")
 			logger.Info("   # Delete cluster when done debugging:")
 			logger.Info("   kind delete cluster --name " + clusterName)

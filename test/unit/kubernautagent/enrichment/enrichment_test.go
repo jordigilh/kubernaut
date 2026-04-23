@@ -146,9 +146,9 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 					GitOpsTool:    "argocd",
 					PDBProtected:  true,
 				},
-				QuotaDetails: map[string]string{
-					"cpu_hard":    "4",
-					"memory_hard": "8Gi",
+				QuotaDetails: map[string]enrichment.QuotaResourceUsage{
+					"cpu":    {Hard: "4", Used: "2"},
+					"memory": {Hard: "8Gi", Used: "4Gi"},
 				},
 				RemediationHistory: &enrichment.RemediationHistoryResult{
 					Tier1: []enrichment.Tier1Entry{
@@ -168,8 +168,11 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 			Expect(restored.DetectedLabels).NotTo(BeNil())
 			Expect(restored.DetectedLabels.GitOpsManaged).To(BeTrue())
 			Expect(restored.DetectedLabels.GitOpsTool).To(Equal("argocd"))
-			Expect(restored.QuotaDetails).To(HaveKeyWithValue("cpu_hard", "4"))
-			Expect(restored.QuotaDetails).To(HaveKeyWithValue("memory_hard", "8Gi"))
+			Expect(restored.QuotaDetails).To(HaveKey("cpu"))
+			Expect(restored.QuotaDetails["cpu"].Hard).To(Equal("4"))
+			Expect(restored.QuotaDetails["cpu"].Used).To(Equal("2"))
+			Expect(restored.QuotaDetails).To(HaveKey("memory"))
+			Expect(restored.QuotaDetails["memory"].Hard).To(Equal("8Gi"))
 			Expect(restored.RemediationHistory).NotTo(BeNil())
 			Expect(restored.RemediationHistory.Tier1).To(HaveLen(1))
 		})

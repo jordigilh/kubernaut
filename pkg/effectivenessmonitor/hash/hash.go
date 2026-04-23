@@ -22,7 +22,7 @@ limitations under the License.
 // - BR-EM-004: Spec hash comparison to detect configuration drift
 //
 // Hash Algorithm (DD-EM-002):
-//   - Uses pkg/shared/hash.CanonicalSpecHash for cross-service consistency
+//   - Uses pkg/shared/hash.CanonicalResourceFingerprint for cross-service consistency
 //   - Both the RO (pre-remediation) and EM (post-remediation) use the same algorithm
 //   - Deterministic, map-order independent, slice-order independent
 //   - Returns "sha256:<lowercase-hex>" format
@@ -58,11 +58,14 @@ type ComputeResult struct {
 	Component types.ComponentResult
 }
 
-// SpecHashInput contains the data needed to compute a spec hash.
+// SpecHashInput contains the data needed to compute a resource fingerprint.
 type SpecHashInput struct {
-	// Spec is the target resource's .spec as an unstructured map.
-	// Obtained from the K8s API via unstructured client.
+	// Spec is the target resource's full obj.Object (for CanonicalResourceFingerprint).
+	// When FunctionalState is non-nil, it takes precedence over Spec.
 	Spec map[string]interface{}
+	// FunctionalState is the full K8s object (obj.Object) for CanonicalResourceFingerprint (#765).
+	// When set, the Computer uses CanonicalResourceFingerprint on the full object.
+	FunctionalState map[string]interface{}
 	// PreHash is the pre-remediation spec hash from the DS audit trail.
 	// Format: "sha256:<hex>". Empty string if not available.
 	// When provided, the Computer will compare pre and post hashes.
@@ -70,8 +73,8 @@ type SpecHashInput struct {
 	// ConfigMapHashes is a map of ConfigMap name -> content hash ("sha256:<hex>").
 	// Pre-computed by the caller using pkg/shared/hash.ConfigMapDataHash.
 	// When non-empty, the Computer produces a composite hash that incorporates
-	// both the spec hash and the ConfigMap content hashes (#396, BR-EM-004).
-	// When nil or empty, the Computer falls back to spec-only hash.
+	// both the fingerprint and the ConfigMap content hashes (#396, BR-EM-004).
+	// When nil or empty, the Computer falls back to fingerprint-only hash.
 	ConfigMapHashes map[string]string
 }
 
@@ -91,37 +94,45 @@ func NewComputer() Computer {
 	return &computer{}
 }
 
-// Compute calculates the canonical SHA-256 hash of the given spec map using
-// the DD-EM-002 canonical hash algorithm (pkg/shared/hash.CanonicalSpecHash).
+// Compute calculates the canonical resource fingerprint using the DD-EM-002 v2.0 algorithm (#765).
+//
+// If FunctionalState is provided, uses CanonicalResourceFingerprint on the full object.
+// Otherwise falls back to hashing Spec directly for backward compatibility.
 //
 // If PreHash is provided in the input, it compares the two hashes and sets
 // the Match field in the result.
 func (c *computer) Compute(input SpecHashInput) ComputeResult {
-	spec := input.Spec
-	if spec == nil {
-		spec = map[string]interface{}{}
-	}
+	var fingerprint string
+	var err error
 
-	specHash, err := canonicalhash.CanonicalSpecHash(spec)
+	if input.FunctionalState != nil {
+		fingerprint, err = canonicalhash.CanonicalResourceFingerprint(input.FunctionalState)
+	} else {
+		spec := input.Spec
+		if spec == nil {
+			spec = map[string]interface{}{}
+		}
+		fingerprint, err = canonicalhash.CanonicalResourceFingerprint(spec)
+	}
 	if err != nil {
 		return ComputeResult{
 			Component: types.ComponentResult{
 				Component: types.ComponentHash,
 				Assessed:  false,
 				Error:     fmt.Errorf("canonical hash computation failed: %w", err),
-				Details:   "failed to compute canonical spec hash: " + err.Error(),
+				Details:   "failed to compute resource fingerprint: " + err.Error(),
 			},
 		}
 	}
 
-	postHash, err := canonicalhash.CompositeSpecHash(specHash, input.ConfigMapHashes)
+	postHash, err := canonicalhash.CompositeResourceFingerprint(fingerprint, input.ConfigMapHashes)
 	if err != nil {
 		return ComputeResult{
 			Component: types.ComponentResult{
 				Component: types.ComponentHash,
 				Assessed:  false,
 				Error:     fmt.Errorf("composite hash computation failed: %w", err),
-				Details:   "failed to compute composite spec hash: " + err.Error(),
+				Details:   "failed to compute composite fingerprint: " + err.Error(),
 			},
 		}
 	}

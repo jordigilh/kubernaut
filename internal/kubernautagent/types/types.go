@@ -145,4 +145,8 @@ type SignalContext struct {
 	// #462: Alert-author annotations and signal labels from IncidentRequest
 	SignalAnnotations map[string]string `json:"signal_annotations,omitempty"`
 	SignalLabels      map[string]string `json:"signal_labels,omitempty"`
+
+	DeduplicationWindowMinutes *int   `json:"deduplication_window_minutes,omitempty"`
+	FirstSeen                  string `json:"first_seen,omitempty"`
+	LastSeen                   string `json:"last_seen,omitempty"`
 }

@@ -540,4 +540,70 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 			Expect(err).To(HaveOccurred())
 		})
 	})
+
+	Describe("LLM Resilience P1: FinishReason propagation", func() {
+		It("UT-KA-800-FR-01: should propagate FinishReason 'stop' from OpenAI", func() {
+			content := "Analysis complete"
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				resp := openaitypes.ChatCompletionResponse{
+					ID:      "chatcmpl-fr01",
+					Object:  openaitypes.ObjectChatCompletion,
+					Created: openaitypes.FixedCreatedTime,
+					Model:   "mock-model",
+					Choices: []openaitypes.Choice{
+						{
+							Index:        0,
+							Message:      openaitypes.Message{Role: "assistant", Content: &content},
+							FinishReason: "stop",
+						},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			}))
+			defer server.Close()
+
+			adapter, err := langchaingo.New("openai", server.URL, "mock-model", "sk-test")
+			Expect(err).NotTo(HaveOccurred())
+
+			resp, err := adapter.Chat(context.Background(), llm.ChatRequest{
+				Messages: []llm.Message{{Role: "user", Content: "test"}},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.FinishReason).To(Equal(llm.FinishReasonStop),
+				"UT-KA-800-FR-01: FinishReason must be propagated as 'stop'")
+		})
+
+		It("UT-KA-800-FR-02: should propagate FinishReason 'length' (truncation) from OpenAI", func() {
+			content := `{"rca_summary":"trunca`
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				resp := openaitypes.ChatCompletionResponse{
+					ID:      "chatcmpl-fr02",
+					Object:  openaitypes.ObjectChatCompletion,
+					Created: openaitypes.FixedCreatedTime,
+					Model:   "mock-model",
+					Choices: []openaitypes.Choice{
+						{
+							Index:        0,
+							Message:      openaitypes.Message{Role: "assistant", Content: &content},
+							FinishReason: "length",
+						},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			}))
+			defer server.Close()
+
+			adapter, err := langchaingo.New("openai", server.URL, "mock-model", "sk-test")
+			Expect(err).NotTo(HaveOccurred())
+
+			resp, err := adapter.Chat(context.Background(), llm.ChatRequest{
+				Messages: []llm.Message{{Role: "user", Content: "test"}},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.FinishReason).To(Equal(llm.FinishReasonLength),
+				"UT-KA-800-FR-02: FinishReason must be propagated as 'length' for truncation")
+		})
+	})
 })

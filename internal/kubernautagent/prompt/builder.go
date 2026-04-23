@@ -49,15 +49,19 @@ type SignalData struct {
 	SignalMode       string
 	FiringTime       string
 	ReceivedTime     string
-	IsDuplicate      *bool
-	OccurrenceCount  *int
-	SignalAnnotations map[string]string
+	IsDuplicate                *bool
+	OccurrenceCount            *int
+	DeduplicationWindowMinutes *int
+	FirstSeen                  string
+	LastSeen                   string
+	SignalAnnotations          map[string]string
 }
 
 // EnrichmentData contains enrichment context injected into the prompt.
 type EnrichmentData struct {
 	OwnerChain      []string
 	DetectedLabels  map[string]string
+	QuotaDetails    map[string]enrichment.QuotaResourceUsage
 	HistoryResult   *enrichment.RemediationHistoryResult
 	HistoryRendered string
 }
@@ -83,6 +87,7 @@ type investigationTemplateData struct {
 	SignalMode                  string
 	OwnerChain                  string
 	DetectedLabels              string
+	QuotaDetails                map[string]enrichment.QuotaResourceUsage
 	IsDuplicate                 bool
 	OccurrenceCount             int
 	DeduplicationWindowMinutes  int
@@ -219,10 +224,17 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentD
 		SignalMode:          withDefault(sanitized.SignalMode, "reactive"),
 		Priority:            sanitized.Priority,
 		BusinessCategory:    sanitized.BusinessCategory,
-		RiskTolerance:       sanitized.RiskTolerance,
-		IsDuplicate:         sanitized.IsDuplicate != nil && *sanitized.IsDuplicate,
-		OccurrenceCount:     derefIntOr(sanitized.OccurrenceCount, 0),
-		SignalAnnotations:   sanitized.SignalAnnotations,
+		RiskTolerance:              sanitized.RiskTolerance,
+		IsDuplicate:                sanitized.IsDuplicate != nil && *sanitized.IsDuplicate,
+		OccurrenceCount:            derefIntOr(sanitized.OccurrenceCount, 0),
+		DeduplicationWindowMinutes: derefIntOr(sanitized.DeduplicationWindowMinutes, 0),
+		FirstSeen:                  sanitized.FirstSeen,
+		LastSeen:                   sanitized.LastSeen,
+		SignalAnnotations:          sanitized.SignalAnnotations,
+	}
+
+	if isPDBSignal(sanitized.ResourceKind) {
+		data.PDBSignalGuidance = "active"
 	}
 
 	if enrichData != nil {
@@ -231,6 +243,9 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentD
 		}
 		if len(enrichData.DetectedLabels) > 0 {
 			data.DetectedLabels = sortedLabelString(enrichData.DetectedLabels)
+		}
+		if len(enrichData.QuotaDetails) > 0 {
+			data.QuotaDetails = enrichData.QuotaDetails
 		}
 	}
 
@@ -263,7 +278,7 @@ func (b *Builder) RenderWorkflowSelection(in WorkflowSelectionInput) (string, er
 		ClusterName:         withDefault(sanitized.ClusterName, "default"),
 		SignalMode:          withDefault(sanitized.SignalMode, "reactive"),
 		PriorityDescription: withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
-		Environment:         withDefault(sanitized.Environment, "default"),
+		Environment:         withDefault(sanitized.Environment, sanitized.Namespace),
 		RiskDescription:     withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
 		RCASummary:            sanitizeField(in.RCASummary),
 		StructuredOutput:      b.structuredOutput,
@@ -367,27 +382,34 @@ func derefIntOr(p *int, fallback int) int {
 	return fallback
 }
 
+func isPDBSignal(resourceKind string) bool {
+	return resourceKind == "PodDisruptionBudget"
+}
+
 func sanitizeSignal(signal SignalData) SignalData {
 	return SignalData{
-		Name:              sanitizeField(signal.Name),
-		Namespace:         sanitizeField(signal.Namespace),
-		Severity:          sanitizeField(signal.Severity),
-		Message:           sanitizeField(signal.Message),
-		ResourceKind:      sanitizeField(signal.ResourceKind),
-		ResourceName:      sanitizeField(signal.ResourceName),
-		ClusterName:       sanitizeField(signal.ClusterName),
-		Environment:       sanitizeField(signal.Environment),
-		Priority:          sanitizeField(signal.Priority),
-		RiskTolerance:     sanitizeField(signal.RiskTolerance),
-		SignalSource:      sanitizeField(signal.SignalSource),
-		BusinessCategory:  sanitizeField(signal.BusinessCategory),
-		Description:       sanitizeField(signal.Description),
-		SignalMode:        sanitizeField(signal.SignalMode),
-		FiringTime:        sanitizeField(signal.FiringTime),
-		ReceivedTime:      sanitizeField(signal.ReceivedTime),
-		IsDuplicate:       signal.IsDuplicate,
-		OccurrenceCount:   signal.OccurrenceCount,
-		SignalAnnotations: sanitizeMapValues(signal.SignalAnnotations),
+		Name:                       sanitizeField(signal.Name),
+		Namespace:                  sanitizeField(signal.Namespace),
+		Severity:                   sanitizeField(signal.Severity),
+		Message:                    sanitizeField(signal.Message),
+		ResourceKind:               sanitizeField(signal.ResourceKind),
+		ResourceName:               sanitizeField(signal.ResourceName),
+		ClusterName:                sanitizeField(signal.ClusterName),
+		Environment:                sanitizeField(signal.Environment),
+		Priority:                   sanitizeField(signal.Priority),
+		RiskTolerance:              sanitizeField(signal.RiskTolerance),
+		SignalSource:               sanitizeField(signal.SignalSource),
+		BusinessCategory:           sanitizeField(signal.BusinessCategory),
+		Description:                sanitizeField(signal.Description),
+		SignalMode:                 sanitizeField(signal.SignalMode),
+		FiringTime:                 sanitizeField(signal.FiringTime),
+		ReceivedTime:               sanitizeField(signal.ReceivedTime),
+		IsDuplicate:                signal.IsDuplicate,
+		OccurrenceCount:            signal.OccurrenceCount,
+		DeduplicationWindowMinutes: signal.DeduplicationWindowMinutes,
+		FirstSeen:                  sanitizeField(signal.FirstSeen),
+		LastSeen:                   sanitizeField(signal.LastSeen),
+		SignalAnnotations:          sanitizeMapValues(signal.SignalAnnotations),
 	}
 }
 

@@ -17,7 +17,7 @@ spec:
   labels:
     severity: [low, medium, high]
     environment: [production, staging, test]
-    component: pod
+    component: [pod]
     priority: P2
   
   execution:

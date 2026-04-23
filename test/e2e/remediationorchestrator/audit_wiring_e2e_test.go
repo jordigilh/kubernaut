@@ -51,13 +51,14 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 	const (
-		dataStorageURL = "http://localhost:8090" // DD-TEST-001: RO → DataStorage dependency port
+		dataStorageURL = "https://localhost:8090" // Issue #785: DataStorage API (HTTPS)
 		e2eTimeout     = 120 * time.Second       // Same as suite timeout
 		e2eInterval    = 500 * time.Millisecond
 	)
@@ -77,12 +78,13 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			// ✅ DD-API-001 + DD-AUTH-014: Use authenticated OpenAPI client (MANDATORY)
 			// Per DD-API-001: Direct HTTP usage is FORBIDDEN - bypasses type safety
 			// Per DD-AUTH-014: All DataStorage requests require ServiceAccount Bearer tokens
-			saTransport := testauth.NewServiceAccountTransport(e2eAuthToken)
+			tlsBase, err := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+			Expect(err).ToNot(HaveOccurred(), "TLS transport for DataStorage")
+			saTransport := testauth.NewServiceAccountTransportWithBase(e2eAuthToken, tlsBase)
 			httpClient := &http.Client{
 				Timeout:   20 * time.Second,
 				Transport: saTransport,
 			}
-			var err error
 			dsClient, err = dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
 			Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage OpenAPI client")
 

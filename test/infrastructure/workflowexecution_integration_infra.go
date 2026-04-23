@@ -66,6 +66,9 @@ const (
 	// Changed from 18100 (conflicted with EffectivenessMonitor) to 18097 (DD-TEST-001 sequential) on Dec 22, 2025
 	WEIntegrationDataStoragePort = 18097
 
+	// Issue #753: Dedicated health probe port (unique, avoids MetricsPort collision)
+	WEIntegrationHealthPort = 28097
+
 	// DataStorage Metrics port for WorkflowExecution integration tests
 	// Changed from 19100 (ad-hoc "+10") to 19097 (DD-TEST-001 metrics pattern) on Dec 22, 2025
 	WEIntegrationMetricsPort = 19097
@@ -203,7 +206,7 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 	// CRITICAL: Wait for DataStorage HTTP endpoint to be ready (using shared utility)
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://127.0.0.1:%d/health", WEIntegrationDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d/readyz", WEIntegrationHealthPort),
 		30*time.Second,
 		writer,
 	); err != nil {
@@ -310,6 +313,7 @@ func startWEDataStorage(projectRoot string, writer io.Writer) error {
 		"-d",
 		"--name", WEIntegrationDataStorageContainer,
 		"-p", fmt.Sprintf("%d:8080", WEIntegrationDataStoragePort),
+		"-p", fmt.Sprintf("%d:8081", WEIntegrationHealthPort),
 		"-p", fmt.Sprintf("%d:9090", WEIntegrationMetricsPort),
 		"-v", fmt.Sprintf("%s:/etc/datastorage:ro", configDir),
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",

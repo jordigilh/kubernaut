@@ -80,9 +80,11 @@ type DataStorageConfig struct {
 }
 
 type ServerConfig struct {
-	Address string              `yaml:"address"`
-	Port    int                 `yaml:"port"`
-	TLS     sharedtls.TLSConfig `yaml:"tls,omitempty"`
+	Address     string              `yaml:"address"`
+	Port        int                 `yaml:"port"`
+	HealthAddr  string              `yaml:"health_addr"`  // Issue #753: Dedicated health probe port (default ":8081")
+	MetricsAddr string              `yaml:"metrics_addr"` // Issue #753: Dedicated metrics port (default ":9090")
+	TLS         sharedtls.TLSConfig `yaml:"tls,omitempty"`
 }
 
 type SessionConfig struct {
@@ -126,8 +128,13 @@ type SanitizationConfig struct {
 	CredentialScrubEnabled    bool `yaml:"credential_scrub_enabled"`
 }
 
+// DefaultMaxToolOutputSize is the default hard character limit for tool output
+// before it enters the LLM context window. ~25K tokens for most models.
+const DefaultMaxToolOutputSize = 100000
+
 type SummarizerConfig struct {
-	Threshold int `yaml:"threshold"`
+	Threshold         int `yaml:"threshold"`
+	MaxToolOutputSize int `yaml:"max_tool_output_size"`
 }
 
 // EnrichmentConfig controls retry behavior for K8s owner chain resolution
@@ -139,9 +146,10 @@ type EnrichmentConfig struct {
 }
 
 type AnomalyConfig struct {
-	MaxToolCallsPerTool int `yaml:"max_tool_calls_per_tool"`
-	MaxTotalToolCalls   int `yaml:"max_total_tool_calls"`
-	MaxRepeatedFailures int `yaml:"max_repeated_failures"`
+	MaxToolCallsPerTool int      `yaml:"max_tool_calls_per_tool"`
+	MaxTotalToolCalls   int      `yaml:"max_total_tool_calls"`
+	MaxRepeatedFailures int      `yaml:"max_repeated_failures"`
+	ExemptPrefixes      []string `yaml:"exempt_prefixes"`
 }
 
 // ConversationConfig holds settings for the conversational RAR API (#592).
@@ -360,7 +368,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		LLM:          LLMConfig{Provider: "openai"},
 		DataStorage:  DataStorageConfig{SATokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"},
-		Server:       ServerConfig{Address: "0.0.0.0", Port: 8080},
+		Server:       ServerConfig{Address: "0.0.0.0", Port: 8080, HealthAddr: ":8081", MetricsAddr: ":9090"},
 		Session:      SessionConfig{TTL: 30 * time.Minute},
 		Investigator: InvestigatorConfig{MaxTurns: 15},
 		Audit:        AuditConfig{Enabled: true},
@@ -368,6 +376,7 @@ func DefaultConfig() *Config {
 			MaxToolCallsPerTool: 5,
 			MaxTotalToolCalls:   30,
 			MaxRepeatedFailures: 3,
+			ExemptPrefixes:      []string{"todo_"},
 		},
 		Conversation: ConversationConfig{
 			Session:      ConversationSessionConfig{TTL: 30 * time.Minute, MaxTurns: 30},
@@ -379,7 +388,8 @@ func DefaultConfig() *Config {
 			CredentialScrubEnabled:   true,
 		},
 		Summarizer: SummarizerConfig{
-			Threshold: 8000,
+			Threshold:         8000,
+			MaxToolOutputSize: DefaultMaxToolOutputSize,
 		},
 		AlignmentCheck: AlignmentCheckConfig{
 			Enabled:       false,

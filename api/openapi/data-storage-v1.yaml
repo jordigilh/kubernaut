@@ -1969,25 +1969,25 @@ components:
           enum:
             - no_data
             - in_progress
-            - full
-            - partial
-            - spec_drift
-            - expired
-            - no_execution
-            - metrics_timed_out
+            - Full
+            - Partial
+            - SpecDrift
+            - Expired
+            - NoExecution
+            - MetricsTimedOut
             - EffectivenessAssessed
           description: |
             Current assessment status:
             - no_data: No component events found
             - in_progress: Some component events present but assessment not completed
-            - full: All components assessed successfully
-            - partial: Some components assessed, others unavailable
-            - spec_drift: Target resource spec changed during assessment (score unreliable, forced to 0.0)
-            - expired: Assessment timed out before completing
-            - no_execution: No workflow execution found for this correlation ID
-            - metrics_timed_out: Prometheus metrics collection timed out
-            - EffectivenessAssessed: Legacy value (equivalent to "full")
-          example: "full"
+            - Full: All components assessed successfully
+            - Partial: Some components assessed, others unavailable
+            - SpecDrift: Target resource spec changed during assessment (score unreliable, forced to 0.0)
+            - Expired: Assessment timed out before completing
+            - NoExecution: No workflow execution found for this correlation ID
+            - MetricsTimedOut: Prometheus metrics collection timed out
+            - EffectivenessAssessed: Legacy value (equivalent to "Full")
+          example: "Full"
         computed_at:
           type: string
           format: date-time
@@ -2515,6 +2515,7 @@ components:
               'webhook.remediationapprovalrequest.decided': '#/components/schemas/RemediationApprovalAuditPayload'
               'webhook.remediationrequest.timeout_modified': '#/components/schemas/RemediationRequestWebhookAuditPayload'
               'remediationworkflow.admitted.create': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
+              'remediationworkflow.admitted.update': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
               'remediationworkflow.admitted.delete': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
               'remediationworkflow.admitted.denied': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
               'workflow.catalog.actions_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
@@ -2889,9 +2890,12 @@ components:
           description: "Severity level(s) this workflow is designed for. Always an array. Use '*' to match any severity."
           example: [critical]
         component:
-          type: string
-          description: "Kubernetes resource type this workflow targets (e.g., pod, deployment, node)"
-          example: "pod"
+          type: array
+          items:
+            type: string
+          minItems: 1
+          description: "Kubernetes resource type(s) this workflow targets (e.g., pod, deployment, node). Issue #790: now an array like severity/environment."
+          example: [pod]
         environment:
           type: array
           items:
@@ -4281,12 +4285,13 @@ components:
       required: [event_type, workflow_name, action]
       description: |
         Audit payload for RemediationWorkflow CRD admission events (ADR-058).
-        Emitted by the authwebhook when a RemediationWorkflow CRD is created, deleted, or denied.
+        Emitted by the authwebhook when a RemediationWorkflow CRD is created, updated, deleted, or denied.
       properties:
         event_type:
           type: string
           enum:
             - 'remediationworkflow.admitted.create'
+            - 'remediationworkflow.admitted.update'
             - 'remediationworkflow.admitted.delete'
             - 'remediationworkflow.admitted.denied'
           description: Event type for discriminator (matches parent event_type)
@@ -4296,7 +4301,7 @@ components:
           example: "crashloop-rollback-v1"
         action:
           type: string
-          enum: [create, delete, denied]
+          enum: [create, update, delete, denied]
           description: Admission action performed
           example: "create"
         workflow_id:
@@ -5685,18 +5690,18 @@ components:
           type: string
           nullable: true
           enum:
-            - full
-            - partial
-            - spec_drift
-            - expired
-            - no_execution
-            - metrics_timed_out
+            - Full
+            - Partial
+            - SpecDrift
+            - Expired
+            - NoExecution
+            - MetricsTimedOut
           description: |
             Reason/status of the effectiveness assessment. Null if assessment
-            not yet completed. When "spec_drift", the effectiveness score is
+            not yet completed. When "SpecDrift", the effectiveness score is
             unreliable (hard-overridden to 0.0) because the target resource
             spec was modified during the assessment window (DD-EM-002 v1.1).
-          example: "full"
+          example: "Full"
         assessedAt:
           type: string
           format: date-time
@@ -5754,17 +5759,17 @@ components:
           type: string
           nullable: true
           enum:
-            - full
-            - partial
-            - spec_drift
-            - expired
-            - no_execution
-            - metrics_timed_out
+            - Full
+            - Partial
+            - SpecDrift
+            - Expired
+            - NoExecution
+            - MetricsTimedOut
           description: |
             Reason/status of the effectiveness assessment (same enum as
-            RemediationHistoryEntry). When "spec_drift", effectiveness score
+            RemediationHistoryEntry). When "SpecDrift", effectiveness score
             is unreliable (DD-EM-002 v1.1).
-          example: "full"
+          example: "Full"
         completedAt:
           type: string
           format: date-time

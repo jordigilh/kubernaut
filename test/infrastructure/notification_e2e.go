@@ -225,6 +225,11 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		_, _ = fmt.Fprintf(writer, "   ℹ️  default namespace already exists\n")
 	}
 
+	// Issue #785: inter-service CA must exist before controller mounts tls-ca.
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	// Deploy mock-webhook before controller so DNS resolves when controller starts processing
 	_, _ = fmt.Fprintf(writer, "📨 Deploying mock-webhook (webhook sink with per-channel success/fail endpoints)...\n")
 	if err := deployNotificationMockWebhook(ctx, namespace, kubeconfigPath, writer); err != nil {
@@ -363,7 +368,7 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 
 	// Verify DataStorage health endpoint is responding
 	// NodePort 30090 is exposed by kind-notification-config.yaml for E2E tests
-	dataStorageHealthURL := "http://127.0.0.1:30090/health"
+	dataStorageHealthURL := "http://127.0.0.1:30281/readyz"
 	_, _ = fmt.Fprintf(writer, "   🔍 Checking DataStorage health endpoint: %s\n", dataStorageHealthURL)
 	if err := WaitForHTTPHealth(dataStorageHealthURL, 60*time.Second, writer); err != nil {
 		return fmt.Errorf("DataStorage health check failed: %w", err)
@@ -568,6 +573,8 @@ func notificationControllerManifest(namespace, imageName string, enableCoverage 
         runAsGroup: 0`
 	}
 
+	slackWebhookURL := "http://mock-webhook:8080/webhook"
+
 	return fmt.Sprintf(`---
 apiVersion: v1
 kind: ServiceAccount
@@ -635,7 +642,7 @@ data:
       slack:
         timeout: 10s
     datastorage:
-      url: "http://data-storage-service.%s.svc.cluster.local:8080"
+      url: "https://data-storage-service.%s.svc.cluster.local:8080"
       timeout: 10s
       buffer:
         bufferSize: 10000
@@ -830,7 +837,12 @@ spec:
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:
-              fieldPath: metadata.namespace%s
+              fieldPath: metadata.namespace
+%s
+        - name: TLS_CA_FILE
+          value: "/etc/tls-ca/ca.crt"
+        - name: SLACK_WEBHOOK_URL
+          value: "%s"
         args:
         - "-config"
         - "$(CONFIG_PATH)"
@@ -874,6 +886,9 @@ spec:
           readOnly: true
         - name: notification-output
           mountPath: /tmp/notifications%s
+        - name: tls-ca
+          mountPath: /etc/tls-ca
+          readOnly: true
       volumes:
       - name: config
         configMap:
@@ -884,10 +899,13 @@ spec:
       - name: delivery-credentials
         secret:
           secretName: delivery-credentials
+      - name: tls-ca
+        configMap:
+          name: inter-service-ca
       - name: notification-output
         emptyDir: {}%s
       terminationGracePeriodSeconds: 10%s
-`, namespace, namespace, imageName, pullPolicy, namespace, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML, coverageSecurityContextYAML)
+`, namespace, namespace, imageName, pullPolicy, namespace, coverageEnvYAML, slackWebhookURL, coverageVolumeMountYAML, coverageVolumeYAML, coverageSecurityContextYAML)
 }
 
 // DeployNotificationDataStorageServices deploys DataStorage with OAuth2-Proxy for Notification E2E.

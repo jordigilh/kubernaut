@@ -106,7 +106,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			Expect(t1.HashMatch).To(Equal("preRemediation"))
 			Expect(t1.PreRemediationSpecHash).To(Equal("sha256:aaa"))
 			Expect(t1.PostRemediationSpecHash).To(Equal("sha256:bbb"))
-			Expect(t1.AssessmentReason).To(Equal("full"))
+			Expect(t1.AssessmentReason).To(Equal("Full"))
 			Expect(t1.HealthChecks).NotTo(BeNil())
 			Expect(*t1.HealthChecks.PodRunning).To(BeTrue())
 			Expect(*t1.HealthChecks.ReadinessPass).To(BeTrue())
@@ -186,7 +186,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 		})
 	})
 
-	Describe("UT-KA-433W-004: DS adapter sends correct endpoint and query params via ogen client", func() {
+	Describe("UT-KA-433W-004b: DS adapter sends correct endpoint and query params via ogen client", func() {
 		It("should send targetKind, targetName, targetNamespace, currentSpecHash to the correct endpoint", func() {
 			var capturedURL string
 			var capturedParams map[string]string
@@ -233,18 +233,17 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 		})
 	})
 
-	Describe("UT-KA-433W-013: DS adapter returns empty results on BadRequest (e.g. empty specHash)", func() {
-		It("should return empty result (not error) when DS responds with 400", func() {
+	Describe("UT-KA-433W-013: DS adapter returns error on BadRequest (#762)", func() {
+		It("should return error when DS responds with 400 (not silently swallow)", func() {
 			client := &stubDSClient{
 				response: &ogenclient.GetRemediationHistoryContextBadRequest{},
 			}
 
 			adapter := enrichment.NewDSAdapter(client)
 			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			Expect(result.Tier1).To(BeNil())
-			Expect(result.Tier2).To(BeNil())
+			Expect(err).To(HaveOccurred(), "#762: 400 responses must surface as errors")
+			Expect(err.Error()).To(ContainSubstring("bad request"))
+			Expect(result).To(BeNil())
 		})
 	})
 

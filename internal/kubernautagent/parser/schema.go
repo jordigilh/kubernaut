@@ -37,6 +37,49 @@ func RCAResultSchema() json.RawMessage {
 	return json.RawMessage(rcaResultSchemaJSON)
 }
 
+// WithWorkflowResultSchema returns the JSON Schema for the submit_result_with_workflow
+// tool (#760 v2). Used when the LLM selects a workflow during the workflow discovery phase.
+// Reuses the investigationResultSchemaJSON which already includes selected_workflow.
+func WithWorkflowResultSchema() json.RawMessage {
+	return json.RawMessage(investigationResultSchemaJSON)
+}
+
+// NoWorkflowResultSchema returns the JSON Schema for the submit_result_no_workflow
+// tool (#760 v2). Used when the LLM determines no matching workflow exists.
+// Excludes selected_workflow and alternative_workflows; includes reasoning.
+func NoWorkflowResultSchema() json.RawMessage {
+	return json.RawMessage(noWorkflowResultSchemaJSON)
+}
+
+const noWorkflowResultSchemaJSON = `{
+  "type": "object",
+  "properties": {
+    "root_cause_analysis": {
+      "type": "object",
+      "properties": {
+        "summary": { "type": "string" },
+        "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
+        "signal_name": { "type": "string" },
+        "contributing_factors": { "type": "array", "items": { "type": "string" } },
+        "remediation_target": {
+          "type": "object",
+          "properties": {
+            "kind": { "type": "string" },
+            "name": { "type": "string" },
+            "namespace": { "type": "string" }
+          }
+        }
+      },
+      "required": ["summary"]
+    },
+    "reasoning": { "type": "string", "description": "Explanation of why no workflow matches the incident" },
+    "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data", "inconclusive"] }
+  },
+  "required": ["root_cause_analysis"]
+}`
+
 const rcaResultSchemaJSON = `{
   "type": "object",
   "properties": {

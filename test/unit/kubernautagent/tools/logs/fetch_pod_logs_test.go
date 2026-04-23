@@ -73,7 +73,7 @@ var _ = Describe("Kubernaut Agent fetch_pod_logs — #433 Phase 3", func() {
 			var parsed map[string]interface{}
 			Expect(json.Unmarshal(schema, &parsed)).To(Succeed())
 			required, ok := parsed["required"].([]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "required" in fetch_pod_logs schema to be a []interface{}`)
 			Expect(required).To(ContainElement("pod_name"))
 			Expect(required).To(ContainElement("namespace"))
 		})

@@ -78,12 +78,7 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 			"targetName query parameter is required", h.logger)
 		return
 	}
-	if targetNamespace == "" {
-		response.WriteRFC7807Error(w, http.StatusBadRequest,
-			"missing-parameter", "Missing Required Parameter",
-			"targetNamespace query parameter is required", h.logger)
-		return
-	}
+	// targetNamespace may be empty for cluster-scoped resources (#762)
 	if currentSpecHash == "" {
 		response.WriteRFC7807Error(w, http.StatusBadRequest,
 			"missing-parameter", "Missing Required Parameter",
@@ -123,8 +118,13 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Build target resource string: "{namespace}/{kind}/{name}"
-	targetResource := fmt.Sprintf("%s/%s/%s", targetNamespace, targetKind, targetName)
+	// Build target resource string: "{namespace}/{kind}/{name}" or "{kind}/{name}" for cluster-scoped (#762)
+	var targetResource string
+	if targetNamespace != "" {
+		targetResource = fmt.Sprintf("%s/%s/%s", targetNamespace, targetKind, targetName)
+	} else {
+		targetResource = fmt.Sprintf("%s/%s", targetKind, targetName)
+	}
 	now := time.Now()
 	ctx := r.Context()
 

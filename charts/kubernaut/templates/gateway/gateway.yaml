@@ -11,15 +11,13 @@ data:
   config.yaml: |
     server:
       listenAddr: ":8080"
+      healthAddr: ":8081"
+      metricsAddr: ":9090"
       maxConcurrentRequests: {{ .Values.gateway.config.server.maxConcurrentRequests | default 100 }}
       readTimeout: {{ .Values.gateway.config.server.readTimeout | default "30s" }}
       writeTimeout: {{ .Values.gateway.config.server.writeTimeout | default "30s" }}
       idleTimeout: 120s
       k8sRequestTimeout: {{ .Values.gateway.config.server.k8sRequestTimeout | default "15s" }}
-      {{- if include "kubernaut.interServiceTLS.enabled" . }}
-      tls:
-        certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
-      {{- end }}
     middleware:
       trustedProxyCIDRs:
       {{- range .Values.gateway.config.middleware.trustedProxyCIDRs }}
@@ -124,7 +122,7 @@ spec:
         app: gateway
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
+        prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: gateway
@@ -145,6 +143,12 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
           env:
             - name: POD_NAME
               valueFrom:
@@ -159,34 +163,27 @@ spec:
             # Set to "none" to trigger FromEnvironment() to use an explicit deny-all value.
             - name: CORS_ALLOWED_ORIGINS
               value: {{ .Values.gateway.config.cors.allowedOrigins | default "https://no-browser-clients.invalid" | quote }}
-            {{- if include "kubernaut.interServiceTLS.enabled" . }}
             - name: TLS_CA_FILE
               value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
-            {{- end }}
           volumeMounts:
             - name: config
               mountPath: /etc/gateway
               readOnly: true
-            {{- if include "kubernaut.interServiceTLS.enabled" . }}
-            - name: tls-certs
-              mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
-              readOnly: true
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
-            {{- end }}
           livenessProbe:
             httpGet:
-              path: /health
-              port: 8080
+              path: /healthz
+              port: 8081
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /ready
-              port: 8080
+              path: /readyz
+              port: 8081
             initialDelaySeconds: 30
             periodSeconds: 5
             timeoutSeconds: 5
@@ -197,16 +194,10 @@ spec:
         - name: config
           configMap:
             name: gateway-config
-        {{- if include "kubernaut.interServiceTLS.enabled" . }}
-        - name: tls-certs
-          secret:
-            secretName: gateway-tls
-            optional: true
         - name: tls-ca
           configMap:
             name: inter-service-ca
             optional: true
-        {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -216,10 +207,8 @@ metadata:
   labels:
     app: gateway
     {{- include "kubernaut.labels" . | nindent 4 }}
-  {{- if include "kubernaut.interServiceTLS.enabled" . }}
   annotations:
     service.beta.openshift.io/serving-cert-secret-name: gateway-tls
-  {{- end }}
 spec:
   type: {{ .Values.gateway.service.type }}
   selector:
@@ -229,3 +218,11 @@ spec:
       protocol: TCP
       port: 8080
       targetPort: 8080
+    - name: health
+      protocol: TCP
+      port: 8081
+      targetPort: 8081
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090

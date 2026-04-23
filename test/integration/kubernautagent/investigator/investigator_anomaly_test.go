@@ -83,7 +83,7 @@ var _ = Describe("Kubernaut Agent Anomaly Detector Wiring — TP-433-WIR Phase 4
 						ToolCalls: toolCalls,
 					},
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"done"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.7}`}},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 				},
 			}
 
@@ -129,7 +129,7 @@ var _ = Describe("Kubernaut Agent Anomaly Detector Wiring — TP-433-WIR Phase 4
 						ToolCalls: toolCalls,
 					},
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"failed"}`}},
-					{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"restart","confidence":0.5}`}},
+					wfToolResp(`{"workflow_id":"restart","confidence":0.5}`),
 				},
 			}
 

@@ -32,7 +32,7 @@ data:
       leaderElection: false
       leaderElectionId: "aianalysis.kubernaut.ai"
     agent:
-      url: "http://kubernaut-agent:8080"
+      url: "https://kubernaut-agent:8080"
       timeout: "180s"
       sessionPollInterval: "15s"
     datastorage:
@@ -176,10 +176,8 @@ spec:
           env:
             - name: CONFIG_PATH
               value: /etc/aianalysis/config.yaml
-            {{- if include "kubernaut.interServiceTLS.enabled" . }}
             - name: TLS_CA_FILE
               value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
-            {{- end }}
           args:
             - "-config"
             - "$(CONFIG_PATH)"
@@ -210,11 +208,9 @@ spec:
             - name: rego-policies
               mountPath: /etc/aianalysis/policies
               readOnly: true
-            {{- if include "kubernaut.interServiceTLS.enabled" . }}
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
-            {{- end }}
           resources:
             {{- toYaml .Values.aianalysis.resources | nindent 12 }}
       volumes:
@@ -224,12 +220,10 @@ spec:
         - name: rego-policies
           configMap:
             name: {{ .Values.aianalysis.policies.existingConfigMap | default "aianalysis-policies" }}
-        {{- if include "kubernaut.interServiceTLS.enabled" . }}
         - name: tls-ca
           configMap:
             name: inter-service-ca
             optional: true
-        {{- end }}
 ---
 apiVersion: v1
 kind: Service

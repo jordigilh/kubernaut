@@ -81,12 +81,13 @@ const (
 	NotificationPhaseFailed        NotificationPhase = "Failed"
 )
 
-// +kubebuilder:validation:Enum=AIAnalysis;WorkflowExecution
+// +kubebuilder:validation:Enum=AIAnalysis;WorkflowExecution;RoutingEngine
 type ReviewSourceType string
 
 const (
 	ReviewSourceAIAnalysis        ReviewSourceType = "AIAnalysis"
 	ReviewSourceWorkflowExecution ReviewSourceType = "WorkflowExecution"
+	ReviewSourceRoutingEngine     ReviewSourceType = "RoutingEngine"
 )
 
 // +kubebuilder:validation:Enum=success;failed;timeout;invalid

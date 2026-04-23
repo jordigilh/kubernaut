@@ -15,7 +15,7 @@ FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
 
 ARG TARGETARCH
 ARG GOOS=linux
-ARG GOARCH=${TARGETARCH:-amd64}
+ARG GOARCH=${TARGETARCH}
 ARG GOFLAGS=""
 ARG APP_VERSION=v1.2.0
 ARG GIT_COMMIT=unknown

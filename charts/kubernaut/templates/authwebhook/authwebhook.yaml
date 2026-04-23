@@ -186,12 +186,17 @@ spec:
           env:
             - name: LOG_LEVEL
               value: "debug"
+            - name: TLS_CA_FILE
+              value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
           volumeMounts:
             - name: webhook-certs
               mountPath: /tmp/k8s-webhook-server/serving-certs
               readOnly: true
             - name: config
               mountPath: /etc/authwebhook
+              readOnly: true
+            - name: tls-ca
+              mountPath: /etc/tls-ca
               readOnly: true
           resources:
             {{- toYaml .Values.authwebhook.resources | nindent 12 }}
@@ -220,3 +225,7 @@ spec:
         - name: config
           configMap:
             name: authwebhook-config
+        - name: tls-ca
+          configMap:
+            name: inter-service-ca
+            optional: true

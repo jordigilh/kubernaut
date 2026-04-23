@@ -126,7 +126,7 @@ var _ = Describe("DataStorage issue #668 UT coverage", func() {
 			Expect(scanned.Scan(nil)).To(Succeed())
 			Expect(scanned).To(BeEmpty())
 
-			Expect(models.NewMandatoryLabels([]string{"high"}, "pod", []string{"prod"}, "P1").Component).To(Equal("pod"))
+			Expect(models.NewMandatoryLabels([]string{"high"}, []string{"pod"}, []string{"prod"}, "P1").Component).To(Equal([]string{"pod"}))
 			dl := models.NewDetectedLabels()
 			Expect(dl.FailedDetections).To(BeEmpty())
 			Expect(dl.IsEmpty()).To(BeTrue())
@@ -164,14 +164,14 @@ var _ = Describe("DataStorage issue #668 UT coverage", func() {
 
 		It("BR-WORKFLOW-004 MandatoryLabels and DetectedLabels Value and Scan round-trip JSONB", func() {
 			ml := models.MandatoryLabels{
-				Severity: []string{"high"}, Component: "pod",
+				Severity: []string{"high"}, Component: []string{"pod"},
 				Environment: []string{"prod"}, Priority: "P1",
 			}
 			raw, err := ml.Value()
 			Expect(err).ToNot(HaveOccurred())
 			var ml2 models.MandatoryLabels
 			Expect(ml2.Scan(raw)).To(Succeed())
-			Expect(ml2.Component).To(Equal("pod"))
+			Expect(ml2.Component).To(Equal([]string{"pod"}))
 
 			dl := &models.DetectedLabels{GitOpsManaged: true, GitOpsTool: "argocd"}
 			dv, err := dl.Value()
@@ -208,7 +208,7 @@ var _ = Describe("DataStorage issue #668 UT coverage", func() {
 				Status:          "Active",
 				ExecutionEngine: models.ExecutionEngineJob,
 				Labels: *models.NewMandatoryLabels(
-					[]string{"high"}, "pod", []string{"prod"}, "P1",
+					[]string{"high"}, []string{"pod"}, []string{"prod"}, "P1",
 				),
 			}
 			ev, err := audit.NewWorkflowCreatedAuditEvent(wf)

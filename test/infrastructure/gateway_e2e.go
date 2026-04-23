@@ -45,7 +45,8 @@ import (
 // Gateway E2E service ports (DD-TEST-001 port allocation strategy)
 const (
 	GatewayE2EHostPort     = 8080  // Gateway API (NodePort 30080 → host port 8080)
-	GatewayE2EMetricsPort  = 9080  // Gateway metrics
+	GatewayE2EHealthPort   = 28080 // Gateway health (NodePort 30180 → host port 28080) -- Issue #753
+	GatewayE2EMetricsPort  = 9090  // Gateway metrics (NodePort 30090 → host port 9090)
 	GatewayDataStoragePort = 30081 // Data Storage NodePort (from shared deployDataStorage)
 	DataStorageE2EHostPort = 18091 // Data Storage host port (NodePort 30081 → host port 18091)
 
@@ -314,6 +315,13 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		return fmt.Errorf("failed to create Gateway DataStorage access RoleBinding: %w", err)
 	}
 
+	// 4c3. Issue #785: Generate inter-service TLS certificates (ECDSA P-256)
+	// Must be BEFORE service deployments so Secrets/ConfigMap exist when pods start.
+	_, _ = fmt.Fprintf(writer, "🔐 Generating inter-service TLS certificates (Issue #785)...\n")
+	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
 	// 4d. Deploy DataStorage with middleware-based auth (DD-AUTH-014)
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with middleware-based auth...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImageName, writer); err != nil {
@@ -343,8 +351,8 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	if err != nil {
 		return fmt.Errorf("failed to get seed SA token for action type seeding: %w", err)
 	}
-	if err := SeedActionTypesViaAPIWithURL(
-		fmt.Sprintf("http://localhost:%d", DataStorageE2EHostPort), seedToken, 30*time.Second, writer,
+	if err := SeedActionTypesViaAPIWithTLS(
+		fmt.Sprintf("https://localhost:%d", DataStorageE2EHostPort), seedToken, kubeconfigPath, 30*time.Second, writer,
 	); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
@@ -373,8 +381,9 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Gateway E2E infrastructure ready (HYBRID PARALLEL MODE)!")
 	_, _ = fmt.Fprintf(writer, "  • Gateway: http://localhost:%d\n", GatewayE2EHostPort)
-	_, _ = fmt.Fprintf(writer, "  • Gateway Metrics: http://localhost:%d/metrics\n", GatewayE2EMetricsPort)
-	_, _ = fmt.Fprintf(writer, "  • DataStorage: http://localhost:%d (NodePort %d)\n", DataStorageE2EHostPort, GatewayDataStoragePort)
+	_, _ = fmt.Fprintf(writer, "  • Gateway Health: http://localhost:%d (plain HTTP)\n", GatewayE2EHealthPort)
+	_, _ = fmt.Fprintf(writer, "  • Gateway Metrics: http://localhost:%d/metrics (plain HTTP)\n", GatewayE2EMetricsPort)
+	_, _ = fmt.Fprintf(writer, "  • DataStorage: https://localhost:%d (TLS, NodePort %d)\n", DataStorageE2EHostPort, GatewayDataStoragePort)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return nil
@@ -646,7 +655,7 @@ data:
       writeTimeout: 30s
       idleTimeout: 120s
     datastorage:
-      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      url: "https://data-storage-service.kubernaut-system.svc.cluster.local:8080"
       timeout: 10s
       buffer:
         bufferSize: 10000
@@ -693,6 +702,8 @@ spec:
           args:
             - "--config=/etc/gateway/config.yaml"
           env:%s
+            - name: TLS_CA_FILE
+              value: /etc/tls-ca/ca.crt
             - name: KUBERNAUT_CONTROLLER_NAMESPACE
               value: kubernaut-system
             - name: POD_NAME
@@ -707,29 +718,38 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
           volumeMounts:
             - name: config
               mountPath: /etc/gateway
+              readOnly: true
+            - name: tls-ca
+              mountPath: /etc/tls-ca
               readOnly: true%s
           startupProbe:
             httpGet:
-              path: /health
-              port: 8080
+              path: /healthz
+              port: 8081
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 30
           livenessProbe:
             httpGet:
-              path: /health
-              port: 8080
+              path: /healthz
+              port: 8081
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /ready
-              port: 8080
+              path: /readyz
+              port: 8081
             initialDelaySeconds: 30
             periodSeconds: 5
             timeoutSeconds: 5
@@ -744,7 +764,10 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: gateway-config%s
+            name: gateway-config
+        - name: tls-ca
+          configMap:
+            name: inter-service-ca%s
 ---
 apiVersion: v1
 kind: Service
@@ -763,6 +786,16 @@ spec:
       port: 8080
       targetPort: 8080
       nodePort: 30080
+    - name: health
+      protocol: TCP
+      port: 8081
+      targetPort: 8081
+      nodePort: 30180
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+      nodePort: 30090
 `, coverageSecurityContextYAML, imageName, pullPolicy, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
 }
 
@@ -954,12 +987,10 @@ func DeployGatewayCoverageManifest(kubeconfigPath string, gatewayImageName strin
 	return waitForGatewayHealth(kubeconfigPath, writer, 90*time.Second)
 }
 
-// waitForGatewayHealth waits for the Gateway service to become healthy
-// This is a helper wrapper around WaitForHTTPHealth specifically for Gateway E2E tests
+// waitForGatewayHealth waits for the Gateway service to become healthy.
+// Issue #753: Uses dedicated health port (8081) instead of the API port (8080).
 func waitForGatewayHealth(kubeconfigPath string, writer io.Writer, timeout time.Duration) error {
-	// Gateway health endpoint is available via NodePort on the Kind cluster
-	// Using localhost as the cluster is accessible from the test machine
-	healthURL := fmt.Sprintf("http://localhost:%d/health", GatewayE2EHostPort)
+	healthURL := fmt.Sprintf("http://localhost:%d/readyz", GatewayE2EHealthPort)
 	return WaitForHTTPHealth(healthURL, timeout, writer)
 }
 

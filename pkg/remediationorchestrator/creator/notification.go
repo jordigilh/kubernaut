@@ -224,6 +224,10 @@ func (c *NotificationCreator) CreateApprovalNotification(
 
 	// Create the CRD
 	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Approval NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
 		logger.Error(err, "Failed to create approval NotificationRequest")
 		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
 	}
@@ -408,6 +412,10 @@ func (c *NotificationCreator) CreateCompletionNotification(
 
 	// Create the CRD
 	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Completion NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
 		logger.Error(err, "Failed to create completion NotificationRequest")
 		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
 	}
@@ -546,6 +554,10 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 
 	// Create the CRD
 	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Bulk NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
 		logger.Error(err, "Failed to create bulk NotificationRequest")
 		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
 	}
@@ -633,6 +645,216 @@ type ManualReviewContext struct {
 	PreviousExecution string
 }
 
+// EscalationContext provides context for escalation notifications.
+// Used by terminal failure transitions (transitionToFailed, transitionToFailedTerminal).
+type EscalationContext struct {
+	FailurePhase  string
+	FailureReason string
+	BlockReason   string
+	Message       string
+}
+
+// BlockNotificationContext provides context for block-reason notifications.
+// Used by handleBlocked to create NRs for non-IneffectiveChain block reasons.
+// Reference: BR-ORCH-036 GAP-6 (#810), BR-ORCH-042.5
+type BlockNotificationContext struct {
+	BlockReason  string
+	BlockMessage string
+}
+
+// CreateEscalationNotification creates an Escalation NotificationRequest for terminal failures.
+// This is triggered by transitionToFailed and transitionToFailedTerminal when no ManualReview
+// NR was already created by the calling handler.
+// Reference: BR-ORCH-036 (notification gap remediation), BR-ORCH-031 (cascade deletion)
+func (c *NotificationCreator) CreateEscalationNotification(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	escCtx *EscalationContext,
+) (string, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"namespace", rr.Namespace,
+		"failurePhase", escCtx.FailurePhase,
+	)
+
+	name := fmt.Sprintf("nr-escalation-%s", rr.Name)
+
+	existing := &notificationv1.NotificationRequest{}
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
+	if err == nil {
+		logger.Info("Escalation notification already exists, reusing", "name", name)
+		return name, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		logger.Error(err, "Failed to check existing escalation NotificationRequest")
+		return "", fmt.Errorf("failed to check existing escalation NotificationRequest: %w", err)
+	}
+
+	subject := fmt.Sprintf("🚨 Remediation Failed: %s (phase: %s)", rr.Spec.SignalName, escCtx.FailurePhase)
+	body := c.buildEscalationBody(rr, escCtx)
+
+	nr := &notificationv1.NotificationRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: rr.Namespace,
+		},
+		Spec: notificationv1.NotificationRequestSpec{
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
+			Type:     notificationv1.NotificationTypeEscalation,
+			Priority: notificationv1.NotificationPriorityHigh,
+			Severity: rr.Spec.Severity,
+			Subject:  subject,
+			Body:     body,
+		},
+	}
+
+	if rr.UID == "" {
+		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
+	}
+
+	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
+		logger.Error(err, "Failed to set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Escalation NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
+		logger.Error(err, "Failed to create escalation NotificationRequest")
+		return "", fmt.Errorf("failed to create escalation NotificationRequest: %w", err)
+	}
+
+	logger.Info("Created escalation NotificationRequest", "name", name)
+	return name, nil
+}
+
+// CreateBlockNotification creates a NotificationRequest when an RR enters the Blocked phase.
+// Escalation NRs (High priority) for persistent blocks: ConsecutiveFailures, UnmanagedResource.
+// StatusUpdate NRs (Low priority) for transient blocks: DuplicateInProgress, ResourceBusy,
+// RecentlyRemediated, ExponentialBackoff.
+// Reference: BR-ORCH-036 GAP-6 (#810), BR-ORCH-042.5
+func (c *NotificationCreator) CreateBlockNotification(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	blockCtx *BlockNotificationContext,
+) (string, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"namespace", rr.Namespace,
+		"blockReason", blockCtx.BlockReason,
+	)
+
+	name := fmt.Sprintf("nr-block-%s-%s", strings.ToLower(blockCtx.BlockReason), rr.Name)
+
+	existing := &notificationv1.NotificationRequest{}
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
+	if err == nil {
+		logger.Info("Block notification already exists, reusing", "name", name)
+		return name, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		logger.Error(err, "Failed to check existing block NotificationRequest")
+		return "", fmt.Errorf("failed to check existing block NotificationRequest: %w", err)
+	}
+
+	nrType, priority := c.mapBlockReasonToTypeAndPriority(blockCtx.BlockReason)
+	subject := fmt.Sprintf("Remediation Blocked: %s (%s)", rr.Spec.SignalName, blockCtx.BlockReason)
+	body := c.buildBlockNotificationBody(rr, blockCtx)
+
+	nr := &notificationv1.NotificationRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: rr.Namespace,
+		},
+		Spec: notificationv1.NotificationRequestSpec{
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
+			Type:     nrType,
+			Priority: priority,
+			Severity: rr.Spec.Severity,
+			Subject:  subject,
+			Body:     body,
+		},
+	}
+
+	if rr.UID == "" {
+		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
+	}
+
+	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
+		logger.Error(err, "Failed to set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Block NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
+		logger.Error(err, "Failed to create block NotificationRequest")
+		return "", fmt.Errorf("failed to create block NotificationRequest: %w", err)
+	}
+
+	logger.Info("Created block NotificationRequest", "name", name, "type", nrType, "priority", priority)
+	return name, nil
+}
+
+// mapBlockReasonToTypeAndPriority determines NR type and priority based on block reason.
+// Persistent blocks needing operator investigation → Escalation, High.
+// Transient/auto-clearing blocks → StatusUpdate, Low.
+func (c *NotificationCreator) mapBlockReasonToTypeAndPriority(reason string) (notificationv1.NotificationType, notificationv1.NotificationPriority) {
+	switch remediationv1.BlockReason(reason) {
+	case remediationv1.BlockReasonConsecutiveFailures, remediationv1.BlockReasonUnmanagedResource:
+		return notificationv1.NotificationTypeEscalation, notificationv1.NotificationPriorityHigh
+	default:
+		return notificationv1.NotificationTypeStatusUpdate, notificationv1.NotificationPriorityLow
+	}
+}
+
+func (c *NotificationCreator) buildBlockNotificationBody(rr *remediationv1.RemediationRequest, blockCtx *BlockNotificationContext) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Remediation for signal '%s' has been blocked.\n\n", rr.Spec.SignalName))
+	b.WriteString(fmt.Sprintf("**Block Reason:** %s\n", blockCtx.BlockReason))
+	if blockCtx.BlockMessage != "" {
+		b.WriteString(fmt.Sprintf("**Details:** %s\n", blockCtx.BlockMessage))
+	}
+	b.WriteString(fmt.Sprintf("\n**Target:** %s/%s/%s\n",
+		rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Name))
+	return b.String()
+}
+
+func (c *NotificationCreator) buildEscalationBody(rr *remediationv1.RemediationRequest, escCtx *EscalationContext) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Remediation for signal '%s' has failed.\n\n", rr.Spec.SignalName))
+	b.WriteString(fmt.Sprintf("**Failure Phase:** %s\n", escCtx.FailurePhase))
+	if escCtx.FailureReason != "" {
+		b.WriteString(fmt.Sprintf("**Reason:** %s\n", escCtx.FailureReason))
+	}
+	if escCtx.BlockReason != "" {
+		b.WriteString(fmt.Sprintf("**Block Reason:** %s\n", escCtx.BlockReason))
+	}
+	if escCtx.Message != "" {
+		b.WriteString(fmt.Sprintf("**Details:** %s\n", escCtx.Message))
+	}
+	b.WriteString(fmt.Sprintf("\n**Target:** %s/%s/%s\n", rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Name))
+	return b.String()
+}
+
 // CreateManualReviewNotification creates a NotificationRequest for manual review (BR-ORCH-036).
 // This is triggered by:
 // - AIAnalysis WorkflowResolutionFailed (SubReasons: WorkflowNotFound, ImageMismatch, etc.)
@@ -713,6 +935,10 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 
 	// Create the CRD
 	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Manual review NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
 		logger.Error(err, "Failed to create manual review NotificationRequest")
 		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
 	}
@@ -734,8 +960,11 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 // - BR-ORCH-036 v3.0: AI infrastructure failures (MaxRetriesExceeded, TransientError, PermanentError) → high
 func (c *NotificationCreator) mapManualReviewPriority(ctx *ManualReviewContext) notificationv1.NotificationPriority {
 	if ctx.Source == notificationv1.ReviewSourceWorkflowExecution {
-		// All WE failures are critical (cluster state may be unknown)
 		return notificationv1.NotificationPriorityCritical
+	}
+
+	if ctx.Source == notificationv1.ReviewSourceRoutingEngine {
+		return notificationv1.NotificationPriorityHigh
 	}
 
 	// AIAnalysis failures - map by SubReason
@@ -932,6 +1161,10 @@ func (c *NotificationCreator) CreateSelfResolvedNotification(
 	}
 
 	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Self-resolved NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
 		logger.Error(err, "Failed to create self-resolved NotificationRequest")
 		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
 	}

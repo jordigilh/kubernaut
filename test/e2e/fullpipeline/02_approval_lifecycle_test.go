@@ -430,7 +430,30 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		Expect(apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, weObj)).To(Succeed())
 		allFailures = append(allFailures, crdvalidators.ValidateWEStatus(weObj)...)
 
-		// NT: validate both approval and completion notifications
+		// NT: wait for all pipeline notifications to reach terminal phase before validation.
+		// The completion NR may still be in "Sending" if the delivery loop hasn't finished.
+		Eventually(func() bool {
+			nrList := &notificationv1.NotificationRequestList{}
+			if err := apiReader.List(ctx, nrList, client.InNamespace(namespace)); err != nil {
+				return false
+			}
+			for i := range nrList.Items {
+				nr := &nrList.Items[i]
+				if nr.Spec.RemediationRequestRef != nil &&
+					nr.Spec.RemediationRequestRef.Name == remediationRequest.Name {
+					switch nr.Status.Phase {
+					case notificationv1.NotificationPhaseSent,
+						notificationv1.NotificationPhasePartiallySent,
+						notificationv1.NotificationPhaseFailed:
+					default:
+						return false
+					}
+				}
+			}
+			return true
+		}, 2*time.Minute, interval).Should(BeTrue(),
+			"All NotificationRequests should reach terminal phase (Sent, PartiallySent, or Failed)")
+
 		nrList := &notificationv1.NotificationRequestList{}
 		Expect(apiReader.List(ctx, nrList, client.InNamespace(namespace))).To(Succeed())
 		for i := range nrList.Items {

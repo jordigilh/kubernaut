@@ -21,9 +21,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
+	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
@@ -104,6 +106,17 @@ func RegisterAll(reg *registry.Registry, dsOgenClient WorkflowDiscoveryClient, d
 	reg.Register(NewClusterResourceContextTool(dsClient, k8sClient))
 }
 
+// signalFromContext extracts the SignalContext from ctx. Workflow discovery
+// tools require this to filter the DS catalog by the active incident's
+// severity, component, environment, and priority (#779).
+func signalFromContext(ctx context.Context, toolName string) (katypes.SignalContext, error) {
+	signal, ok := katypes.SignalContextFromContext(ctx)
+	if !ok {
+		return katypes.SignalContext{}, fmt.Errorf("%s: signal context required but not found in context", toolName)
+	}
+	return signal, nil
+}
+
 // --- list_available_actions ---
 
 type listActionsTool struct{ ds WorkflowDiscoveryClient }
@@ -113,6 +126,11 @@ func (t *listActionsTool) Description() string         { return "List available 
 func (t *listActionsTool) Parameters() json.RawMessage { return listAvailableActionsSchema }
 
 func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+	signal, err := signalFromContext(ctx, "listing action types")
+	if err != nil {
+		return "", err
+	}
+
 	var a struct {
 		Page   string `json:"page"`
 		Cursor string `json:"cursor"`
@@ -120,10 +138,10 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 	_ = json.Unmarshal(args, &a)
 
 	params := ogenclient.ListAvailableActionsParams{
-		Severity:    "critical",
-		Component:   "deployment",
-		Environment: "production",
-		Priority:    "P0",
+		Severity:    ogenclient.ListAvailableActionsSeverity(signal.Severity),
+		Component:   strings.ToLower(signal.ResourceKind),
+		Environment: signal.Environment,
+		Priority:    ogenclient.ListAvailableActionsPriority(signal.Priority),
 	}
 	if a.Page != "" && a.Cursor != "" {
 		offset, limit := DecodeCursor(a.Cursor)
@@ -149,6 +167,11 @@ func (t *listWorkflowsTool) Description() string         { return "Search for wo
 func (t *listWorkflowsTool) Parameters() json.RawMessage { return listWorkflowsSchemaJSON }
 
 func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+	signal, err := signalFromContext(ctx, "listing workflows")
+	if err != nil {
+		return "", err
+	}
+
 	var a struct {
 		ActionType string `json:"action_type"`
 		Page       string `json:"page"`
@@ -160,10 +183,10 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 
 	params := ogenclient.ListWorkflowsByActionTypeParams{
 		ActionType:  a.ActionType,
-		Severity:    "critical",
-		Component:   "deployment",
-		Environment: "production",
-		Priority:    "P0",
+		Severity:    ogenclient.ListWorkflowsByActionTypeSeverity(signal.Severity),
+		Component:   strings.ToLower(signal.ResourceKind),
+		Environment: signal.Environment,
+		Priority:    ogenclient.ListWorkflowsByActionTypePriority(signal.Priority),
 	}
 	if a.Page != "" && a.Cursor != "" {
 		offset, limit := DecodeCursor(a.Cursor)

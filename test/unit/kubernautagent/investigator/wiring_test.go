@@ -54,6 +54,8 @@ func (s *stubLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResp
 	}, nil
 }
 
+func (s *stubLLMClient) Close() error { return nil }
+
 var _ = Describe("TP-433-ADV P1: Critical Wiring — GAP-006/GAP-007", func() {
 
 	Describe("UT-KA-433-WIR-001: InstrumentedClient satisfies llm.Client interface (GAP-006)", func() {
@@ -72,7 +74,7 @@ var _ = Describe("TP-433-ADV P1: Critical Wiring — GAP-006/GAP-007", func() {
 	})
 
 	Describe("UT-KA-433-WIR-002: Investigator.Config accepts InstrumentedClient (GAP-006)", func() {
-		It("should construct an investigator with instrumented LLM client", func() {
+		It("should construct a non-nil investigator with instrumented LLM client", func() {
 			base := &stubLLMClient{}
 			instrumented := llm.NewInstrumentedClient(base)
 
@@ -81,7 +83,8 @@ var _ = Describe("TP-433-ADV P1: Critical Wiring — GAP-006/GAP-007", func() {
 				Logger: slog.Default(),
 			}
 			inv := investigator.New(cfg)
-			Expect(inv).NotTo(BeNil())
+			Expect(inv).NotTo(BeNil(),
+				"Investigator.New must accept InstrumentedClient as llm.Client; delegation behavior is verified by IT-KA-433-TM-002")
 		})
 	})
 

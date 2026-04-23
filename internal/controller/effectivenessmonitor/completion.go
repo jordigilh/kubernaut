@@ -63,7 +63,7 @@ func (r *Reconciler) failAssessment(ctx context.Context, ea *eav1.EffectivenessA
 	now := metav1.Now()
 	ea.Status.Phase = eav1.PhaseFailed
 	ea.Status.CompletedAt = &now
-	ea.Status.AssessmentReason = "unrecoverable"
+	ea.Status.AssessmentReason = eav1.AssessmentReasonUnrecoverable
 	ea.Status.Message = fmt.Sprintf("Assessment failed: %s", reason)
 
 	conditions.SetCondition(ea, conditions.ConditionAssessmentComplete, metav1.ConditionFalse, "ValidationFailed", ea.Status.Message)

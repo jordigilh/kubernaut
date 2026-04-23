@@ -234,7 +234,7 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 				Equal(fetchedEA.Status.Components.PostRemediationSpecHash),
 				"DD-EM-003: current hash should match post-remediation hash (no drift)")
 		}
-		Expect(fetchedEA.Status.AssessmentReason).NotTo(Equal("spec_drift"),
+		Expect(fetchedEA.Status.AssessmentReason).NotTo(Equal("SpecDrift"),
 			"DD-EM-003: no spec drift should be detected when RemediationTarget is stable")
 	})
 

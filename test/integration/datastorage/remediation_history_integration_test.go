@@ -231,7 +231,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 				fmt.Sprintf("corr-em-3-%s", testID),
 			}
 			for i, cid := range cids {
-				insertEMEvents(cid, "full", 0.85, "sha256:pre"+fmt.Sprintf("%d", i), "sha256:post"+fmt.Sprintf("%d", i), now.Add(time.Duration(-3+i)*time.Hour))
+				insertEMEvents(cid, "Full", 0.85, "sha256:pre"+fmt.Sprintf("%d", i), "sha256:post"+fmt.Sprintf("%d", i), now.Add(time.Duration(-3+i)*time.Hour))
 			}
 
 			// Act
@@ -278,7 +278,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			// and available to the correlation engine after passing through the adapter.
 			now := time.Now().UTC()
 			cid := fmt.Sprintf("corr-adapter-%s", testID)
-			insertEMEvents(cid, "full", 0.85, "sha256:pre_a", "sha256:post_a", now.Add(-1*time.Hour))
+			insertEMEvents(cid, "Full", 0.85, "sha256:pre_a", "sha256:post_a", now.Add(-1*time.Hour))
 
 			adapter := server.NewRemediationHistoryRepoAdapter(rhRepo)
 
@@ -361,7 +361,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			now := time.Now().UTC()
 			cid := fmt.Sprintf("corr-full-%s", testID)
 			insertROEvent(cid, targetResource, currentSpecHash, "ScaleUp", now.Add(-2*time.Hour))
-			insertEMEvents(cid, "full", 0.85, currentSpecHash, "sha256:post_full_"+testID, now.Add(-2*time.Hour))
+			insertEMEvents(cid, "Full", 0.85, currentSpecHash, "sha256:post_full_"+testID, now.Add(-2*time.Hour))
 
 			// Act: direct business logic pipeline (no HTTP)
 			entries, _ := queryAndCorrelate(targetResource, currentSpecHash, now.Add(-24*time.Hour))
@@ -370,7 +370,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			Expect(entries).To(HaveLen(1), "Should have 1 Tier 1 entry")
 			entry := entries[0]
 			Expect(entry.AssessmentReason.Set).To(BeTrue(), "assessmentReason must be set")
-			Expect(string(entry.AssessmentReason.Value)).To(Equal("full"))
+			Expect(string(entry.AssessmentReason.Value)).To(Equal("Full"))
 			Expect(entry.EffectivenessScore.Set).To(BeTrue(), "effectivenessScore must be set")
 			Expect(entry.EffectivenessScore.Value).To(BeNumerically(">", 0.0),
 				"Full assessment should have a positive weighted score")
@@ -382,7 +382,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			now := time.Now().UTC()
 			cid := fmt.Sprintf("corr-drift-%s", testID)
 			insertROEvent(cid, targetResource, currentSpecHash, "ScaleUp", now.Add(-2*time.Hour))
-			insertEMEvents(cid, "spec_drift", 0.0, currentSpecHash, "sha256:post_drift_"+testID, now.Add(-2*time.Hour))
+			insertEMEvents(cid, "SpecDrift", 0.0, currentSpecHash, "sha256:post_drift_"+testID, now.Add(-2*time.Hour))
 
 			// Act
 			entries, _ := queryAndCorrelate(targetResource, currentSpecHash, now.Add(-24*time.Hour))
@@ -391,7 +391,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			Expect(entries).To(HaveLen(1))
 			entry := entries[0]
 			Expect(entry.AssessmentReason.Set).To(BeTrue())
-			Expect(string(entry.AssessmentReason.Value)).To(Equal("spec_drift"))
+			Expect(string(entry.AssessmentReason.Value)).To(Equal("SpecDrift"))
 			Expect(entry.EffectivenessScore.Set).To(BeTrue())
 			Expect(entry.EffectivenessScore.Value).To(BeNumerically("==", 0.0),
 				"spec_drift assessment should have score 0.0 (unreliable, not failure)")
@@ -403,7 +403,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			regressionHash := currentSpecHash // Same hash means config reverted
 			cid := fmt.Sprintf("corr-regr-%s", testID)
 			insertROEvent(cid, targetResource, regressionHash, "ScaleUp", now.Add(-2*time.Hour))
-			insertEMEvents(cid, "full", 0.7, regressionHash, "sha256:post_regr_"+testID, now.Add(-2*time.Hour))
+			insertEMEvents(cid, "Full", 0.7, regressionHash, "sha256:post_regr_"+testID, now.Add(-2*time.Hour))
 
 			// Act
 			entries, regressionDetected := queryAndCorrelate(targetResource, currentSpecHash, now.Add(-24*time.Hour))
@@ -432,7 +432,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			insertAuditEvent("effectiveness.hash.computed", "effectiveness", cid,
 				map[string]interface{}{"pre_remediation_spec_hash": "sha256:pre", "post_remediation_spec_hash": "sha256:post"}, ts)
 			insertAuditEvent("effectiveness.assessment.completed", "effectiveness", cid,
-				map[string]interface{}{"reason": "spec_drift"}, ts)
+				map[string]interface{}{"reason": "SpecDrift"}, ts)
 
 			// Query 10 times and verify event ordering is identical every time
 			var referenceOrder []string

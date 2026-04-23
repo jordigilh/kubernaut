@@ -80,17 +80,17 @@ var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e"
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("")
 
-		// Step 1: Make cross-origin request to health endpoint
-		testLogger.Info("Step 1: Making cross-origin request to /health endpoint")
+		// Step 1: Make cross-origin request to API endpoint
+		// Issue #753: Health is on a dedicated port without CORS; verify CORS on API router
+		testLogger.Info("Step 1: Making cross-origin request to /api/v1/signals/prometheus endpoint")
 
-		req, err := http.NewRequest("GET", gatewayURL+"/health", nil)
+		req, err := http.NewRequest("GET", gatewayURL+"/api/v1/signals/prometheus", nil)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Simulate browser cross-origin request
 		req.Header.Set("Origin", "https://test-dashboard.kubernaut.io")
 
 		testLogger.Info("Request details",
-			"url", gatewayURL+"/health",
+			"url", gatewayURL+"/api/v1/signals/prometheus",
 			"origin", "https://test-dashboard.kubernaut.io")
 
 		resp, err := httpClient.Do(req)
@@ -167,13 +167,13 @@ var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e"
 		testLogger.Info("")
 	})
 
-	It("should include CORS headers on readiness endpoint", func() {
+	It("should not include CORS headers on dedicated health endpoint", func() {
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		testLogger.Info("Test 18.3: Verify CORS on readiness endpoint")
+		testLogger.Info("Test 18.3: Verify health endpoint has no CORS (Issue #753)")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("")
 
-		req, err := http.NewRequest("GET", gatewayURL+"/ready", nil)
+		req, err := http.NewRequest("GET", gatewayHealthURL+"/readyz", nil)
 		Expect(err).ToNot(HaveOccurred())
 
 		req.Header.Set("Origin", "https://monitoring.kubernaut.io")
@@ -182,28 +182,12 @@ var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e"
 		Expect(err).ToNot(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 
-		// Use Eventually() to handle Gateway startup timing (may return 503 initially)
-		var allowOrigin string
-		Eventually(func() int {
-			var err error
-			resp, err = httpClient.Do(req)
-			if err != nil {
-				return 0
-			}
-			defer func() { _ = resp.Body.Close() }()
-			allowOrigin = resp.Header.Get("Access-Control-Allow-Origin")
-			return resp.StatusCode
-		}, 30*time.Second, 2*time.Second).Should(Equal(http.StatusOK), "Gateway /ready endpoint should be available")
+		allowOrigin := resp.Header.Get("Access-Control-Allow-Origin")
 
-		testLogger.Info("Readiness endpoint CORS",
-			"status", resp.StatusCode,
-			"Access-Control-Allow-Origin", allowOrigin)
+		Expect(allowOrigin).To(BeEmpty(),
+			"Issue #753: Health endpoint on dedicated port should NOT have CORS headers")
 
-		// Readiness should return OK with CORS headers
-		Expect(allowOrigin).ToNot(BeEmpty(),
-			"Readiness endpoint must include CORS headers for monitoring dashboards")
-
-		testLogger.Info("✅ Readiness endpoint includes CORS headers")
+		testLogger.Info("✅ Health endpoint correctly has no CORS headers (Issue #753)")
 		testLogger.Info("")
 	})
 })

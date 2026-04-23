@@ -238,6 +238,30 @@ llm:
 		})
 	})
 
+	Describe("UT-KA-752-010: MaxToolOutputSize parsed from YAML configuration", func() {
+		It("should parse max_tool_output_size from summarizer config", func() {
+			yaml := []byte(`
+llm:
+  endpoint: "http://localhost:11434/v1"
+  model: "llama3"
+summarizer:
+  threshold: 8000
+  max_tool_output_size: 50000
+`)
+			cfg, err := config.Load(yaml)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Summarizer.MaxToolOutputSize).To(Equal(50000))
+		})
+	})
+
+	Describe("UT-KA-752-011: MaxToolOutputSize default applied when absent", func() {
+		It("should default MaxToolOutputSize to DefaultMaxToolOutputSize when not specified", func() {
+			cfg := config.DefaultConfig()
+			Expect(cfg.Summarizer.MaxToolOutputSize).To(Equal(config.DefaultMaxToolOutputSize),
+				"default MaxToolOutputSize should match DefaultMaxToolOutputSize constant")
+		})
+	})
+
 	Describe("UT-KA-433W-011: DefaultConfig applies anomaly thresholds", func() {
 		It("should set MaxToolCallsPerTool=5, MaxTotalToolCalls=30, MaxRepeatedFailures=3", func() {
 			cfg := config.DefaultConfig()

@@ -39,6 +39,7 @@ import (
 	"sort"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,9 +48,11 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/config"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/events"
 )
 
 // ========================================
@@ -160,6 +163,34 @@ func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remedia
 	failureReason := ""
 	if failureErr != nil {
 		failureReason = failureErr.Error()
+	}
+
+	// GAP-5 / #809: Create escalation NR for cooldown-expired terminal failures (BR-ORCH-036).
+	escalationNR := fmt.Sprintf("nr-escalation-%s", rr.Name)
+	if !hasNotificationRef(rr, escalationNR) {
+		escCtx := &creator.EscalationContext{
+			FailurePhase:  string(failurePhase),
+			FailureReason: failureReason,
+			BlockReason:   string(rr.Status.BlockReason),
+			Message:       "Cooldown expired after blocking period",
+		}
+		notifName, notifErr := r.notificationCreator.CreateEscalationNotification(ctx, rr, escCtx)
+		if notifErr != nil {
+			logger.Error(notifErr, "Failed to create escalation notification for terminal failure (non-critical)")
+		} else {
+			logger.Info("Created escalation notification for terminal failure", "notification", notifName)
+			ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
+			if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+				return nil
+			}); refErr != nil {
+				logger.Error(refErr, "Failed to persist escalation NR ref (non-critical)", "notification", notifName)
+			}
+			if r.Recorder != nil {
+				r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+					fmt.Sprintf("Escalation notification created: %s", notifName))
+			}
+		}
 	}
 
 	// REFACTOR-RO-001: Using retry helper

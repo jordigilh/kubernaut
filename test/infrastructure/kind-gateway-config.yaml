@@ -2,7 +2,8 @@
 # Reference: DD-TEST-001 Port Allocation Strategy
 #
 # Port Allocation (from DD-TEST-001):
-#   Gateway Host Port: 8080 (maps to NodePort 30080)
+#   Gateway API Host Port: 8080 (maps to NodePort 30080)
+#   Gateway Health Host Port: 28080 (maps to NodePort 30180) -- Issue #753
 #   Gateway Metrics Host Port: 9090 (maps to NodePort 30090)
 #   Data Storage Host Port: 18091 (maps to NodePort 30081)
 #
@@ -29,6 +30,9 @@ nodes:
   - containerPort: 30080  # Gateway NodePort in cluster
     hostPort: 8080        # Port on host machine (localhost:8080)
     protocol: TCP
+  - containerPort: 30180  # Gateway Health NodePort (Issue #753)
+    hostPort: 28080       # Port on host machine (localhost:28080)
+    protocol: TCP
   - containerPort: 30090  # Gateway Metrics NodePort
     hostPort: 9090        # Port on host machine (localhost:9090/metrics)
     protocol: TCP
@@ -36,6 +40,9 @@ nodes:
   - containerPort: 30081  # Data Storage NodePort in cluster
     hostPort: 18091       # Port on host machine (localhost:18091)
     protocol: TCP         # Note: 18091 avoids conflicts with Gateway metrics (9090)
+  - containerPort: 30281  # Data Storage health NodePort (Issue #753)
+    hostPort: 28091       # Port on host machine (localhost:28091)
+    protocol: TCP
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration

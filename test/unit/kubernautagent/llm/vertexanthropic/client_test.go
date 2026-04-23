@@ -316,7 +316,7 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 			Expect(resp.Message.Content).To(ContainSubstring("5 restarts"))
 
 			messages, ok := receivedBody["messages"].([]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "messages" in request body to be a []interface{}`)
 			Expect(len(messages)).To(BeNumerically(">=", 3))
 		})
 
@@ -354,7 +354,7 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			messages, ok := receivedBody["messages"].([]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "messages" in request body to be a []interface{}`)
 
 			By("expecting: user, assistant(tool_use x3), user(tool_result x3) = 3 messages")
 			Expect(messages).To(HaveLen(3))

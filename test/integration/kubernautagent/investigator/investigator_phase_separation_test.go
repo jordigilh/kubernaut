@@ -72,7 +72,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 		It("should send submit_result tool definition with RCA-only schema to LLM during RCA phase", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded","confidence":0.9}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -96,7 +96,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 			err = json.Unmarshal(submitResultDef.Parameters, &schema)
 			Expect(err).NotTo(HaveOccurred())
 			props, ok := schema["properties"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "properties" in RCA submit_result schema to be a map[string]interface{}`)
 
 			Expect(props).NotTo(HaveKey("selected_workflow"),
 				"RCA submit_result schema must NOT include selected_workflow")
@@ -111,11 +111,11 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 		})
 	})
 
-	Describe("UT-KA-700-008: Workflow phase submit_result uses InvestigationResultSchema", func() {
-		It("should send submit_result tool definition with full schema to LLM during workflow phase", func() {
+	Describe("UT-KA-700-008: Workflow phase submit_result_with_workflow uses InvestigationResultSchema", func() {
+		It("should send submit_result_with_workflow tool definition with full schema to LLM during workflow phase", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded","confidence":0.9}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -124,29 +124,29 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mockClient.calls).To(HaveLen(2))
 
-			By("checking workflow phase submit_result schema includes workflow fields")
+			By("checking workflow phase submit_result_with_workflow schema includes workflow fields")
 			wdToolDefs := mockClient.calls[1].Tools
 			var submitResultDef *llm.ToolDefinition
 			for i := range wdToolDefs {
-				if wdToolDefs[i].Name == "submit_result" {
+				if wdToolDefs[i].Name == "submit_result_with_workflow" {
 					submitResultDef = &wdToolDefs[i]
 					break
 				}
 			}
-			Expect(submitResultDef).NotTo(BeNil(), "workflow phase must include submit_result tool")
+			Expect(submitResultDef).NotTo(BeNil(), "workflow phase must include submit_result_with_workflow tool")
 
 			var schema map[string]interface{}
 			err = json.Unmarshal(submitResultDef.Parameters, &schema)
 			Expect(err).NotTo(HaveOccurred())
 			props, ok := schema["properties"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
+			Expect(ok).To(BeTrue(), `expected "properties" in workflow submit_result_with_workflow schema to be a map[string]interface{}`)
 
 			Expect(props).To(HaveKey("selected_workflow"),
-				"workflow submit_result schema must include selected_workflow")
+				"workflow submit_result_with_workflow schema must include selected_workflow")
 			Expect(props).To(HaveKey("alternative_workflows"),
-				"workflow submit_result schema must include alternative_workflows")
+				"workflow submit_result_with_workflow schema must include alternative_workflows")
 			Expect(props).To(HaveKey("root_cause_analysis"),
-				"workflow submit_result schema must include root_cause_analysis")
+				"workflow submit_result_with_workflow schema must include root_cause_analysis")
 		})
 	})
 
@@ -154,7 +154,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 		It("should NOT honor needs_human_review from LLM during RCA — proceeds to workflow selection", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","needs_human_review":true,"human_review_reason":"complexity","confidence":0.8}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.85}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.85}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -198,7 +198,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 		It("should produce result with both RCASummary and WorkflowID", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"OOMKilled due to memory limit exceeded on api-server"},"confidence":0.92}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"selected_workflow":{"workflow_id":"oom-increase-memory","confidence":0.95},"confidence":0.95}`}},
+				wfToolResp(`{"selected_workflow":{"workflow_id":"oom-increase-memory","confidence":0.95},"confidence":0.95}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -222,7 +222,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 					Message:   llm.Message{Role: "assistant", Content: "Found the issue"},
 					ToolCalls: []llm.ToolCall{{ID: "tc_submit", Name: "submit_result", Arguments: rcaSubmitArgs}},
 				},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.85}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.85}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -244,7 +244,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 		It("should proceed to workflow selection even when RCA returns investigation_outcome:inconclusive", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Inconclusive — multiple potential causes","investigation_outcome":"inconclusive","confidence":0.4}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"generic-restart","confidence":0.6}`}},
+				wfToolResp(`{"workflow_id":"generic-restart","confidence":0.6}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -265,7 +265,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 		It("should propagate OutputSchema in ChatRequest.Options for RCA phase", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
-				{Message: llm.Message{Role: "assistant", Content: `{"workflow_id":"oom-increase-memory","confidence":0.9}`}},
+				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{

@@ -212,13 +212,14 @@ spec:
                 description: AssessmentReason describes why the assessment completed
                   with this outcome.
                 enum:
-                - full
-                - partial
-                - no_execution
-                - metrics_timed_out
-                - expired
-                - spec_drift
-                - alert_decay_timeout
+                - Full
+                - Partial
+                - NoExecution
+                - MetricsTimedOut
+                - Expired
+                - SpecDrift
+                - AlertDecayTimeout
+                - Unrecoverable
                 type: string
               completedAt:
                 description: CompletedAt is the timestamp when the assessment finished.

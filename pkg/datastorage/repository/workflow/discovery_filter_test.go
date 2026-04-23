@@ -183,18 +183,24 @@ func TestBuildContextFilterSQL_DetectedLabels_ServiceMesh(t *testing.T) {
 
 func TestBuildContextFilterSQL_Issue464_ComponentWildcard(t *testing.T) {
 	// UT-DS-464-001: When component filter is "Pod", the SQL must include
-	// a wildcard fallback so workflows with component='*' are matched.
+	// a jsonb_typeof guard (handles legacy scalar values) and wildcard fallback.
 	filters := &models.WorkflowDiscoveryFilters{
 		Component: "Pod",
 	}
 
 	sql, args := buildContextFilterSQL(filters)
 
-	if !strings.Contains(sql, "labels->>'component' = '*'") {
-		t.Errorf("UT-DS-464-001: expected component wildcard fallback (labels->>'component' = '*'), got: %s", sql)
+	if !strings.Contains(sql, "jsonb_typeof(labels->'component')") {
+		t.Errorf("UT-DS-464-001: expected jsonb_typeof guard for component, got: %s", sql)
 	}
-	if !strings.Contains(sql, "LOWER(labels->>'component')") {
-		t.Errorf("UT-DS-464-001: expected case-insensitive exact match, got: %s", sql)
+	if !strings.Contains(sql, "labels->'component' ? '*'") {
+		t.Errorf("UT-DS-464-001: expected component wildcard fallback (labels->'component' ? '*'), got: %s", sql)
+	}
+	if !strings.Contains(sql, "jsonb_array_elements_text(labels->'component')") {
+		t.Errorf("UT-DS-464-001: expected array-based component matching in THEN branch, got: %s", sql)
+	}
+	if !strings.Contains(sql, "labels->>'component'") {
+		t.Errorf("UT-DS-464-001: expected scalar fallback in ELSE branch, got: %s", sql)
 	}
 	if len(args) != 1 || args[0] != "Pod" {
 		t.Errorf("UT-DS-464-001: expected args=[Pod], got: %v", args)
@@ -277,8 +283,8 @@ func TestBuildContextFilterSQL_Issue464_AllMandatoryWildcards(t *testing.T) {
 	if !strings.Contains(sql, "labels->'severity' ? '*'") {
 		t.Errorf("UT-DS-464-006: missing severity wildcard fallback, got: %s", sql)
 	}
-	// Component wildcard
-	if !strings.Contains(sql, "labels->>'component' = '*'") {
+	// Component wildcard (Issue #790: now array-based)
+	if !strings.Contains(sql, "labels->'component' ? '*'") {
 		t.Errorf("UT-DS-464-006: missing component wildcard fallback, got: %s", sql)
 	}
 	// Environment wildcard
@@ -396,13 +402,22 @@ func TestBuildContextFilterSQL_Issue595_CombinedCaseInsensitive(t *testing.T) {
 	if !strings.Contains(sql, "jsonb_array_elements_text(labels->'environment')") {
 		t.Errorf("UT-DS-595-004: expected case-insensitive environment pattern, got: %s", sql)
 	}
-	if !strings.Contains(sql, "LOWER(labels->>'component')") {
-		t.Errorf("UT-DS-595-004: expected case-insensitive component (existing LOWER), got: %s", sql)
+	if !strings.Contains(sql, "jsonb_typeof(labels->'component')") {
+		t.Errorf("UT-DS-595-004: expected jsonb_typeof guard for component, got: %s", sql)
 	}
-	thenIdx := strings.Index(sql, "THEN")
-	elseIdx := strings.Index(sql, "ELSE")
-	if thenIdx != -1 && elseIdx != -1 {
-		arrayBranch := sql[thenIdx:elseIdx]
+	if !strings.Contains(sql, "jsonb_array_elements_text(labels->'component')") {
+		t.Errorf("UT-DS-595-004: expected array-based component matching in THEN branch, got: %s", sql)
+	}
+	// Find the priority-specific CASE block (second jsonb_typeof in the SQL)
+	priorityTypeofIdx := strings.Index(sql, "jsonb_typeof(labels->'priority')")
+	if priorityTypeofIdx == -1 {
+		t.Fatalf("UT-DS-595-004: expected jsonb_typeof guard for priority, got: %s", sql)
+	}
+	prioritySQL := sql[priorityTypeofIdx:]
+	priorityThenIdx := strings.Index(prioritySQL, "THEN")
+	priorityElseIdx := strings.Index(prioritySQL, "ELSE")
+	if priorityThenIdx != -1 && priorityElseIdx != -1 {
+		arrayBranch := prioritySQL[priorityThenIdx:priorityElseIdx]
 		if !strings.Contains(arrayBranch, "jsonb_array_elements_text(labels->'priority')") {
 			t.Errorf("UT-DS-595-004: priority array branch must use jsonb_array_elements_text, got: %s", arrayBranch)
 		}

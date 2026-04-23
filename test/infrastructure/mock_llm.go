@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -129,6 +130,7 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	// Build with --no-cache to ensure fresh code (addresses recurring cache issues)
 	buildCmd := exec.CommandContext(ctx, "podman", "build",
 		"--no-cache",
+		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
 		"-t", baseImageName,
 		"-f", fmt.Sprintf("%s/test/services/mock-llm/go.Dockerfile", projectRoot),
 		projectRoot,
