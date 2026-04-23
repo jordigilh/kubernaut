@@ -232,6 +232,47 @@ type llmWorkflow struct {
 	ExecutionEngine string                 `json:"execution_engine,omitempty"`
 }
 
+// unwrapDoubleSerializedJSON detects when an LLM has double-serialized a
+// structured field (e.g. root_cause_analysis: "{\"summary\":...}" instead of
+// root_cause_analysis: {"summary":...}) and returns corrected JSON. This
+// defends against LLMs that json.Marshal their tool call arguments before
+// embedding them (Issue #795).
+func unwrapDoubleSerializedJSON(rawJSON string) string {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
+		return rawJSON
+	}
+
+	changed := false
+	for _, key := range []string{"root_cause_analysis", "rootCauseAnalysis", "selected_workflow"} {
+		val, ok := raw[key]
+		if !ok {
+			continue
+		}
+		var s string
+		if json.Unmarshal(val, &s) != nil {
+			continue
+		}
+		s = strings.TrimSpace(s)
+		if len(s) == 0 || s[0] != '{' {
+			continue
+		}
+		if json.Valid([]byte(s)) {
+			raw[key] = json.RawMessage(s)
+			changed = true
+		}
+	}
+
+	if !changed {
+		return rawJSON
+	}
+	fixed, err := json.Marshal(raw)
+	if err != nil {
+		return rawJSON
+	}
+	return string(fixed)
+}
+
 // flatLLMFields captures top-level fields that may appear alongside the flat
 // InvestigationResult format (rca_summary, workflow_id, confidence, etc.).
 type flatLLMFields struct {
@@ -243,8 +284,10 @@ type flatLLMFields struct {
 // parseLLMFormat parses the nested LLM response format and converts
 // it to a flat InvestigationResult.
 func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
+	fixed := unwrapDoubleSerializedJSON(jsonStr)
+
 	var resp llmResponse
-	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil {
+	if err := json.Unmarshal([]byte(fixed), &resp); err != nil {
 		return nil, fmt.Errorf("parsing LLM JSON response: %w", err)
 	}
 

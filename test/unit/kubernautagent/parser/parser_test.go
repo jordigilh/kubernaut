@@ -935,4 +935,47 @@ false
 			})
 		})
 	})
+
+	Describe("UT-KA-795: Parser handles double-serialized RCA JSON", func() {
+		var p *parser.ResultParser
+		BeforeEach(func() {
+			p = parser.NewResultParser()
+		})
+
+		Describe("UT-KA-795-P01: root_cause_analysis as escaped JSON string with remediation_target", func() {
+			It("should unwrap the double-serialized string and extract remediation_target", func() {
+				content := `{"root_cause_analysis":"{\"summary\": \"CrashLoopBackOff caused by invalid directive\", \"severity\": \"critical\", \"signal_name\": \"KubePodCrashLooping\", \"contributing_factors\": [\"ConfigMap contains invalid_directive\"], \"remediation_target\": {\"kind\": \"Deployment\", \"name\": \"web-frontend\", \"namespace\": \"demo-gitops\"}}","confidence":0.98}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-795-P01: double-serialized root_cause_analysis must not cause parse failure")
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(ContainSubstring("CrashLoopBackOff"),
+					"UT-KA-795-P01: RCA summary must be extracted from unwrapped string")
+				Expect(result.RemediationTarget).To(Equal(katypes.RemediationTarget{
+					Kind: "Deployment", Name: "web-frontend", Namespace: "demo-gitops",
+				}), "UT-KA-795-P01: remediation_target must be extracted from unwrapped string")
+			})
+		})
+
+		Describe("UT-KA-795-P02: rootCauseAnalysis (camelCase) as escaped JSON string", func() {
+			It("should unwrap the camelCase double-serialized string", func() {
+				content := `{"rootCauseAnalysis":"{\"summary\": \"Node disk pressure\", \"remediation_target\": {\"kind\": \"Node\", \"name\": \"worker-1\", \"namespace\": \"\"}}","confidence":0.85}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-795-P02: camelCase double-serialized RCA must not cause parse failure")
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(ContainSubstring("disk pressure"))
+				Expect(result.RemediationTarget.Kind).To(Equal("Node"))
+			})
+		})
+
+		Describe("UT-KA-795-P03: root_cause_analysis string that is NOT valid JSON", func() {
+			It("should not false-positive unwrap a plain text string value", func() {
+				content := `{"root_cause_analysis":"This is just a plain text summary, not JSON","confidence":0.7}`
+				_, err := p.Parse(content)
+				Expect(err).To(HaveOccurred(),
+					"UT-KA-795-P03: plain text string in root_cause_analysis must still fail (no false-positive unwrap)")
+			})
+		})
+	})
 })
