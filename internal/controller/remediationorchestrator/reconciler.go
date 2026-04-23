@@ -1685,6 +1685,34 @@ func (r *Reconciler) handleBlocked(
 		}
 	}
 
+	// GAP-6 / #810: Create block notification for non-IneffectiveChain block reasons (BR-ORCH-036, BR-ORCH-042.5).
+	if remediationv1.BlockReason(blocked.Reason) != remediationv1.BlockReasonIneffectiveChain {
+		blockNRName := fmt.Sprintf("nr-block-%s-%s", strings.ToLower(blocked.Reason), rr.Name)
+		if !hasNotificationRef(rr, blockNRName) {
+			blockCtx := &creator.BlockNotificationContext{
+				BlockReason:  blocked.Reason,
+				BlockMessage: blocked.Message,
+			}
+			notifName, notifErr := r.notificationCreator.CreateBlockNotification(ctx, rr, blockCtx)
+			if notifErr != nil {
+				logger.Error(notifErr, "Failed to create block notification (non-critical)", "blockReason", blocked.Reason)
+			} else {
+				logger.Info("Created block notification", "notification", notifName, "blockReason", blocked.Reason)
+				ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
+				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+					return nil
+				}); refErr != nil {
+					logger.Error(refErr, "Failed to persist block NR ref (non-critical)", "notification", notifName)
+				}
+				if r.Recorder != nil {
+					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+						fmt.Sprintf("Block notification created: %s", notifName))
+				}
+			}
+		}
+	}
+
 	// Update RR status to Blocked phase (REFACTOR-RO-001: using retry helper)
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseBlocked
