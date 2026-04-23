@@ -224,6 +224,10 @@ func (c *NotificationCreator) CreateApprovalNotification(
 
 	// Create the CRD
 	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Approval NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
 		logger.Error(err, "Failed to create approval NotificationRequest")
 		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
 	}
@@ -408,6 +412,10 @@ func (c *NotificationCreator) CreateCompletionNotification(
 
 	// Create the CRD
 	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Completion NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
 		logger.Error(err, "Failed to create completion NotificationRequest")
 		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
 	}
@@ -546,6 +554,10 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 
 	// Create the CRD
 	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Bulk NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
 		logger.Error(err, "Failed to create bulk NotificationRequest")
 		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
 	}
@@ -713,6 +725,10 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 
 	// Create the CRD
 	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Manual review NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
 		logger.Error(err, "Failed to create manual review NotificationRequest")
 		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
 	}
@@ -734,8 +750,11 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 // - BR-ORCH-036 v3.0: AI infrastructure failures (MaxRetriesExceeded, TransientError, PermanentError) → high
 func (c *NotificationCreator) mapManualReviewPriority(ctx *ManualReviewContext) notificationv1.NotificationPriority {
 	if ctx.Source == notificationv1.ReviewSourceWorkflowExecution {
-		// All WE failures are critical (cluster state may be unknown)
 		return notificationv1.NotificationPriorityCritical
+	}
+
+	if ctx.Source == notificationv1.ReviewSourceRoutingEngine {
+		return notificationv1.NotificationPriorityHigh
 	}
 
 	// AIAnalysis failures - map by SubReason
@@ -932,6 +951,10 @@ func (c *NotificationCreator) CreateSelfResolvedNotification(
 	}
 
 	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Self-resolved NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
 		logger.Error(err, "Failed to create self-resolved NotificationRequest")
 		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
 	}
