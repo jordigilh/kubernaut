@@ -1884,5 +1884,81 @@ var _ = Describe("NotificationCreator", func() {
 			}
 			Expect(manualReviewCount).To(Equal(1))
 		})
+
+		It("UT-RO-805-PRI-001: RoutingEngine source should map to High priority", func() {
+			cl := fakeClient.Build()
+			nc = creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-pri-001", "default")
+			reviewCtx := &creator.ManualReviewContext{
+				Source:  notificationv1.ReviewSourceRoutingEngine,
+				Reason:  "IneffectiveChain",
+				Message: "Ineffective chain detected",
+			}
+
+			name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+			Expect(err).ToNot(HaveOccurred())
+
+			nr := &notificationv1.NotificationRequest{}
+			err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityHigh),
+				"RoutingEngine source should map to High priority (IneffectiveChain)")
+		})
+
+		It("UT-RO-805-PRI-002: WorkflowExecution source should map to Critical priority", func() {
+			cl := fakeClient.Build()
+			nc = creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-pri-002", "default")
+			reviewCtx := &creator.ManualReviewContext{
+				Source:  notificationv1.ReviewSourceWorkflowExecution,
+				Reason:  "ExecutionFailure",
+				Message: "Pipeline failed",
+			}
+
+			name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+			Expect(err).ToNot(HaveOccurred())
+
+			nr := &notificationv1.NotificationRequest{}
+			err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityCritical),
+				"WorkflowExecution source should map to Critical priority")
+		})
+	})
+
+	Describe("AlreadyExists handling (#805)", func() {
+		It("UT-RO-805-AE-001: should return name without error when concurrent Create hits AlreadyExists", func() {
+			ctx := context.Background()
+			createCallCount := 0
+			cl := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, client client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						createCallCount++
+						if createCallCount == 1 {
+							return client.Create(ctx, obj, opts...)
+						}
+						return client.Create(ctx, obj, opts...)
+					},
+				}).
+				Build()
+
+			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+			rr := helpers.NewRemediationRequest("test-rr-ae-001", "default")
+			reviewCtx := &creator.ManualReviewContext{
+				Source:  notificationv1.ReviewSourceRoutingEngine,
+				Reason:  "IneffectiveChain",
+				Message: "Test concurrent create",
+			}
+
+			name1, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+			Expect(err).ToNot(HaveOccurred())
+
+			name2, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(name2).To(Equal(name1), "Second call should return same name via Get-before-Create idempotency")
+		})
 	})
 })

@@ -21,13 +21,20 @@ import (
 	"fmt"
 	"time"
 
-	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/jordigilh/kubernaut/pkg/shared/events"
 )
 
 // WorkflowExecutionHandler handles WorkflowExecution CRD status updates.
@@ -44,36 +51,32 @@ import (
 // This refactored version extracts the actual inline logic from handleExecutingPhase() into a dedicated handler
 // for consistency with AIAnalysisHandler and SignalProcessingHandler patterns.
 type WorkflowExecutionHandler struct {
-	client                client.Client
-	scheme                *runtime.Scheme
-	metrics               *metrics.Metrics
-	transitionToFailed    func(context.Context, *remediationv1.RemediationRequest, remediationv1.FailurePhase, error) (ctrl.Result, error)
+	client              client.Client
+	scheme              *runtime.Scheme
+	metrics             *metrics.Metrics
+	notificationCreator *creator.NotificationCreator
+	Recorder            record.EventRecorder
+	transitionToFailed  func(context.Context, *remediationv1.RemediationRequest, remediationv1.FailurePhase, error) (ctrl.Result, error)
 	transitionToVerifying func(context.Context, *remediationv1.RemediationRequest, string) (ctrl.Result, error)
 }
 
 // NewWorkflowExecutionHandler creates a new WorkflowExecutionHandler.
-//
-// Parameters:
-// - c: Kubernetes client for API operations
-// - s: Scheme for runtime type information
-// - m: Metrics for observability (DD-METRICS-001)
-// - ttf: Callback to reconciler's transitionToFailed() for audit emission
-// - ttv: Callback to reconciler's transitionToVerifying() for audit emission
-//
-// The transition callbacks allow the handler to trigger state transitions
-// while preserving the reconciler's responsibility for audit event emission (DD-AUDIT-003).
 func NewWorkflowExecutionHandler(
 	c client.Client,
 	s *runtime.Scheme,
+	nc *creator.NotificationCreator,
 	m *metrics.Metrics,
+	rec record.EventRecorder,
 	ttf func(context.Context, *remediationv1.RemediationRequest, remediationv1.FailurePhase, error) (ctrl.Result, error),
 	ttv func(context.Context, *remediationv1.RemediationRequest, string) (ctrl.Result, error),
 ) *WorkflowExecutionHandler {
 	return &WorkflowExecutionHandler{
-		client:                c,
-		scheme:                s,
-		metrics:               m,
-		transitionToFailed:    ttf,
+		client:              c,
+		scheme:              s,
+		notificationCreator: nc,
+		metrics:             m,
+		Recorder:            rec,
+		transitionToFailed:  ttf,
 		transitionToVerifying: ttv,
 	}
 }
@@ -120,11 +123,37 @@ func (h *WorkflowExecutionHandler) HandleStatus(
 	case workflowexecutionv1.PhaseFailed:
 		logger.Info("WorkflowExecution failed, transitioning to Failed")
 
-		// Note: WorkflowExecutionComplete condition (false) is set by the reconciler
-		// via DD-PERF-001 atomic status update before calling transitionToFailed.
-		// This handler focuses on phase transition logic only.
+		// GAP-3 / #807: Create ManualReview NR before terminal transition (BR-ORCH-036).
+		nrName := fmt.Sprintf("nr-manual-review-%s", rr.Name)
+		if !hasNotificationRef(rr, nrName) {
+			failureMsg := "WorkflowExecution failed"
+			if we.Status.FailureReason != "" {
+				failureMsg = we.Status.FailureReason
+			}
+			reviewCtx := &creator.ManualReviewContext{
+				Source:  notificationv1.ReviewSourceWorkflowExecution,
+				Reason:  "ExecutionFailure",
+				Message: failureMsg,
+			}
+			notifName, notifErr := h.notificationCreator.CreateManualReviewNotification(ctx, rr, reviewCtx)
+			if notifErr != nil {
+				logger.Error(notifErr, "Failed to create manual review notification for WFE failure")
+			} else {
+				logger.Info("Created manual review notification for WFE failure", "notification", notifName)
+				ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
+				if refErr := helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
+					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+					return nil
+				}); refErr != nil {
+					logger.Error(refErr, "Failed to persist WFE failure NR ref (non-critical)", "notification", notifName)
+				}
+				if h.Recorder != nil {
+					h.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+						fmt.Sprintf("Manual review notification created: %s", notifName))
+				}
+			}
+		}
 
-		// Delegate to reconciler's transitionToFailed() for audit emission (DD-AUDIT-003)
 		return h.transitionToFailed(ctx, rr, remediationv1.FailurePhaseWorkflowExecution, fmt.Errorf("WorkflowExecution failed"))
 
 	case "":
@@ -145,5 +174,28 @@ func (h *WorkflowExecutionHandler) HandleStatus(
 			"phase", we.Status.Phase)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
+}
+
+func hasNotificationRef(rr *remediationv1.RemediationRequest, name string) bool {
+	for i := range rr.Status.NotificationRequestRefs {
+		if rr.Status.NotificationRequestRefs[i].Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *WorkflowExecutionHandler) buildNotificationRef(ctx context.Context, name, namespace string) corev1.ObjectReference {
+	ref := corev1.ObjectReference{
+		Kind:       "NotificationRequest",
+		Name:       name,
+		Namespace:  namespace,
+		APIVersion: "notification.kubernaut.ai/v1alpha1",
+	}
+	nr := &notificationv1.NotificationRequest{}
+	if err := h.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, nr); err == nil {
+		ref.UID = nr.UID
+	}
+	return ref
 }
 

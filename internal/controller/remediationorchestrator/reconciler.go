@@ -273,7 +273,7 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	r.aiAnalysisHandler = handler.NewAIAnalysisHandler(c, s, nc, m, r.transitionToFailed, noActionDelay)
 
 	// WorkflowExecutionHandler: delegates verifying and failure transitions
-	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, m, r.transitionToFailed, r.transitionToVerifying)
+	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, nc, m, recorder, r.transitionToFailed, r.transitionToVerifying)
 
 	return r
 }
@@ -981,6 +981,13 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			}
 
 			return transitionResult, transitionErr
+		}
+
+		// Issue #550 / #805: NeedsHumanReview with no selected workflow → manual review path.
+		// The AIAnalysis handler already has handleManualReviewCompleted which creates the NR.
+		if ai.Status.NeedsHumanReview && ai.Status.SelectedWorkflow == nil {
+			logger.Info("AIAnalysis: NeedsHumanReview with no workflow - delegating to handler")
+			return r.aiAnalysisHandler.HandleAIAnalysisStatus(ctx, rr, ai)
 		}
 
 		// Normal completion - check routing conditions before creating WorkflowExecution
@@ -2268,10 +2275,13 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 
 	// Create notification (non-blocking - timeout transition is primary goal)
 	if err := r.client.Create(ctx, nr); err != nil {
-		logger.Error(err, "Failed to create timeout notification",
-			"notificationName", notificationName)
-		// Don't return error - timeout transition succeeded, notification is best-effort
-		return ctrl.Result{}, nil
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Timeout notification already exists (concurrent create), continuing", "notificationName", notificationName)
+		} else {
+			logger.Error(err, "Failed to create timeout notification",
+				"notificationName", notificationName)
+			return ctrl.Result{}, nil
+		}
 	}
 
 	logger.Info("Created timeout notification",
@@ -3483,10 +3493,15 @@ func (r *Reconciler) createPhaseTimeoutNotification(ctx context.Context, rr *rem
 
 	// Create notification (non-blocking)
 	if err := r.client.Create(ctx, nr); err != nil {
-		logger.Error(err, "Failed to create phase timeout notification",
-			"notificationName", notificationName,
-			"phase", phase)
-		return
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Phase timeout notification already exists (concurrent create), continuing",
+				"notificationName", notificationName, "phase", phase)
+		} else {
+			logger.Error(err, "Failed to create phase timeout notification",
+				"notificationName", notificationName,
+				"phase", phase)
+			return
+		}
 	}
 
 	logger.Info("Created phase timeout notification",
