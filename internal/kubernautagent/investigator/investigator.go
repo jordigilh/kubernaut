@@ -790,6 +790,8 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (LoopResult, error) {
 	toolDefs := inv.toolDefinitionsForPhase(phase)
 	loopStart := time.Now()
+	truncationRetried := false
+	maxTokens := 0
 
 	for turn := 0; turn < inv.maxTurns; turn++ {
 		reqEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
@@ -804,7 +806,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		resp, err := client.Chat(ctx, llm.ChatRequest{
 			Messages: messages,
 			Tools:    toolDefs,
-			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase)},
+			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase), MaxTokens: maxTokens},
 		})
 		if err != nil {
 			failEvent := audit.NewEvent(audit.EventTypeResponseFailed, correlationID)
@@ -832,6 +834,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		respEvent.Data["analysis_preview"] = truncatePreview(resp.Message.Content, 500)
 		respEvent.Data["analysis_full"] = resp.Message.Content
 		respEvent.Data["tool_call_count"] = len(resp.ToolCalls)
+		respEvent.Data["finish_reason"] = resp.FinishReason
 		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.logger)
 
 		if len(resp.ToolCalls) > 0 {
@@ -872,10 +875,48 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			continue
 		}
 
+		if resp.FinishReason == llm.FinishReasonLength && !truncationRetried {
+			truncationRetried = true
+			maxTokens = escalateMaxTokens(resp.Usage.CompletionTokens)
+			inv.logger.Warn("LLM response truncated, retrying with escalated MaxTokens",
+				slog.String("phase", string(phase)),
+				slog.Int("escalated_max_tokens", maxTokens),
+				slog.String("correlation_id", correlationID))
+
+			truncEvent := audit.NewEvent(audit.EventTypeLLMResponse, correlationID)
+			truncEvent.EventAction = "truncation_detected"
+			truncEvent.EventOutcome = audit.OutcomeFailure
+			truncEvent.Data["finish_reason"] = resp.FinishReason
+			truncEvent.Data["escalated_max_tokens"] = maxTokens
+			truncEvent.Data["truncated_content_length"] = len(resp.Message.Content)
+			audit.StoreBestEffort(ctx, inv.auditStore, truncEvent, inv.logger)
+
+			messages = append(messages, resp.Message)
+			messages = append(messages, llm.Message{
+				Role:    "user",
+				Content: "Your previous response was truncated (output token limit reached). Please provide your complete response. Use the submit_result tool to deliver your structured result.",
+			})
+			continue
+		}
+
 		return &TextResult{Content: resp.Message.Content}, nil
 	}
 
 	return &ExhaustedResult{Reason: "max turns exhausted"}, nil
+}
+
+// escalateMaxTokens computes a higher MaxTokens value for truncation recovery.
+// If the truncated response used N completion tokens, we request 2x. Falls back
+// to a default of 8192 if the usage data is unavailable.
+func escalateMaxTokens(completionTokens int) int {
+	if completionTokens > 0 {
+		escalated := completionTokens * 2
+		if escalated > 16384 {
+			return 16384
+		}
+		return escalated
+	}
+	return 8192
 }
 
 func totalPromptLength(messages []llm.Message) int {

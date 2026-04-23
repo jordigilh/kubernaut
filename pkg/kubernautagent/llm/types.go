@@ -40,11 +40,20 @@ type ChatRequest struct {
 	Options  ChatOptions      `json:"options,omitempty"`
 }
 
+// FinishReason constants normalized across all LLM providers. Adapters must
+// map provider-specific stop reasons to one of these values.
+const (
+	FinishReasonStop      = "stop"
+	FinishReasonLength    = "length"
+	FinishReasonToolCalls = "tool_calls"
+)
+
 // ChatResponse contains the LLM's reply and any tool call requests.
 type ChatResponse struct {
-	Message   Message    `json:"message"`
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
-	Usage     TokenUsage `json:"usage,omitempty"`
+	Message      Message    `json:"message"`
+	ToolCalls    []ToolCall `json:"tool_calls,omitempty"`
+	Usage        TokenUsage `json:"usage,omitempty"`
+	FinishReason string     `json:"finish_reason,omitempty"`
 }
 
 // Message represents a single conversation message.

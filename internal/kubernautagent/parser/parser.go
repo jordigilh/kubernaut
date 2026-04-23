@@ -19,18 +19,28 @@ package parser
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
+	"strconv"
 	"strings"
+
+	"github.com/go-logr/logr"
 
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 )
 
 // ResultParser extracts and validates InvestigationResult from LLM JSON output.
-type ResultParser struct{}
+type ResultParser struct {
+	logger logr.Logger
+}
 
-// NewResultParser creates a new result parser.
-func NewResultParser() *ResultParser {
-	return &ResultParser{}
+// NewResultParser creates a new result parser. An optional logr.Logger enables
+// debug-level diagnostics per DD-005 v2.0. If omitted, a discarding logger is
+// used so callers are not forced to supply one.
+func NewResultParser(logger ...logr.Logger) *ResultParser {
+	l := logr.Discard()
+	if len(logger) > 0 {
+		l = logger[0]
+	}
+	return &ResultParser{logger: l}
 }
 
 // Parse extracts InvestigationResult from raw LLM content.
@@ -46,28 +56,29 @@ func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, erro
 
 	jsonStr := extractJSON(content)
 	if jsonStr != "" {
+		coerced := coerceKnownFields(jsonStr)
 		var result katypes.InvestigationResult
-		if err := json.Unmarshal([]byte(jsonStr), &result); err == nil && (result.RCASummary != "" || result.WorkflowID != "") {
+		if err := json.Unmarshal([]byte(coerced), &result); err == nil && (result.RCASummary != "" || result.WorkflowID != "") {
 			// BR-HAPI-200: Clear any HR fields populated by json.Unmarshal via
 			// the "human_review_reason" tag match. HR is parser-derived only.
 			result.HumanReviewNeeded = false
 			result.HumanReviewReason = ""
 			var flat flatLLMFields
-			_ = json.Unmarshal([]byte(jsonStr), &flat)
+			_ = json.Unmarshal([]byte(coerced), &flat)
 			applyFlatFields(&result, flat)
-			mergeNestedRemediationTarget(&result, jsonStr)
-			mergeNestedInvestigationAnalysis(&result, jsonStr)
+			mergeNestedRemediationTarget(&result, coerced)
+			mergeNestedInvestigationAnalysis(&result, coerced)
 			applyOutcomeRouting(&result)
 			return &result, nil
 		}
 
-		if parsed, err := parseLLMFormat(jsonStr); err == nil {
+		if parsed, err := parseLLMFormat(jsonStr, p.logger); err == nil {
 			applyOutcomeRouting(parsed)
 			return parsed, nil
 		}
 	}
 
-	if parsed, err := parseSectionHeaders(content); err == nil {
+	if parsed, err := parseSectionHeaders(content, p.logger); err == nil {
 		applyOutcomeRouting(parsed)
 		return parsed, nil
 	}
@@ -105,7 +116,28 @@ func extractJSON(content string) string {
 	if len(trimmed) > 0 && trimmed[0] == '{' {
 		return trimmed
 	}
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		return unwrapSingleElementArray(trimmed)
+	}
 	return extractBalancedJSON(content)
+}
+
+// unwrapSingleElementArray handles LLMs that wrap their response in a JSON
+// array (e.g. `[{"rca_summary":...}]`). Single-element arrays are unwrapped
+// to the inner object; multi-element arrays are rejected as ambiguous.
+func unwrapSingleElementArray(s string) string {
+	var arr []json.RawMessage
+	if err := json.Unmarshal([]byte(s), &arr); err != nil {
+		return ""
+	}
+	if len(arr) != 1 {
+		return ""
+	}
+	elem := strings.TrimSpace(string(arr[0]))
+	if len(elem) > 0 && elem[0] == '{' {
+		return elem
+	}
+	return ""
 }
 
 // extractBalancedJSON finds the first complete JSON object in content
@@ -238,7 +270,7 @@ type llmWorkflow struct {
 // root_cause_analysis: {"summary":...}) and returns corrected JSON. This
 // defends against LLMs that json.Marshal their tool call arguments before
 // embedding them (Issue #795).
-func unwrapDoubleSerializedJSON(rawJSON string) string {
+func unwrapDoubleSerializedJSON(rawJSON string, logger logr.Logger) string {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
 		return rawJSON
@@ -260,13 +292,91 @@ func unwrapDoubleSerializedJSON(rawJSON string) string {
 		}
 		if t := extractBalancedJSON(s); t != "" && json.Valid([]byte(t)) {
 			if len(t) != len(s) {
-				slog.Debug("unwrapDoubleSerializedJSON: stripped trailing content",
-					slog.String("key", key),
-					slog.Int("original_len", len(s)),
-					slog.Int("extracted_len", len(t)))
+				logger.V(1).Info("unwrapDoubleSerializedJSON: stripped trailing content",
+					"key", key,
+					"original_len", len(s),
+					"extracted_len", len(t))
 			}
 			raw[key] = json.RawMessage(t)
 			changed = true
+		}
+	}
+
+	if !changed {
+		return rawJSON
+	}
+	fixed, err := json.Marshal(raw)
+	if err != nil {
+		return rawJSON
+	}
+	return string(fixed)
+}
+
+// coerceKnownFields fixes type drift from LLMs that return numeric or boolean
+// fields as quoted strings (e.g. "confidence":"0.92" or "actionable":"false").
+// It operates on raw JSON bytes, unquoting known fields before typed unmarshal.
+func coerceKnownFields(rawJSON string) string {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
+		return rawJSON
+	}
+
+	changed := false
+	for _, key := range []string{"confidence"} {
+		val, ok := raw[key]
+		if !ok {
+			continue
+		}
+		var s string
+		if json.Unmarshal(val, &s) != nil {
+			continue
+		}
+		s = strings.TrimSpace(s)
+		if _, err := strconv.ParseFloat(s, 64); err == nil {
+			raw[key] = json.RawMessage(s)
+		} else {
+			delete(raw, key)
+		}
+		changed = true
+	}
+	for _, key := range []string{"actionable"} {
+		val, ok := raw[key]
+		if !ok {
+			continue
+		}
+		var s string
+		if json.Unmarshal(val, &s) != nil {
+			continue
+		}
+		s = strings.TrimSpace(s)
+		if s == "true" || s == "false" {
+			raw[key] = json.RawMessage(s)
+		} else {
+			delete(raw, key)
+		}
+		changed = true
+	}
+
+	if nested, ok := raw["selected_workflow"]; ok {
+		var wf map[string]json.RawMessage
+		if json.Unmarshal(nested, &wf) == nil {
+			wfChanged := false
+			if confVal, ok := wf["confidence"]; ok {
+				var s string
+				if json.Unmarshal(confVal, &s) == nil {
+					s = strings.TrimSpace(s)
+					if _, err := strconv.ParseFloat(s, 64); err == nil {
+						wf["confidence"] = json.RawMessage(s)
+						wfChanged = true
+					}
+				}
+			}
+			if wfChanged {
+				if fixed, err := json.Marshal(wf); err == nil {
+					raw["selected_workflow"] = json.RawMessage(fixed)
+					changed = true
+				}
+			}
 		}
 	}
 
@@ -290,8 +400,9 @@ type flatLLMFields struct {
 
 // parseLLMFormat parses the nested LLM response format and converts
 // it to a flat InvestigationResult.
-func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
-	fixed := unwrapDoubleSerializedJSON(jsonStr)
+func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationResult, error) {
+	fixed := unwrapDoubleSerializedJSON(jsonStr, logger)
+	fixed = coerceKnownFields(fixed)
 
 	var resp llmResponse
 	if err := json.Unmarshal([]byte(fixed), &resp); err != nil {
@@ -393,7 +504,7 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 //
 // This function extracts each section's content, assembles an llmResponse,
 // and maps it to InvestigationResult via parseLLMFormat.
-func parseSectionHeaders(content string) (*katypes.InvestigationResult, error) {
+func parseSectionHeaders(content string, logger logr.Logger) (*katypes.InvestigationResult, error) {
 	sections := extractSections(content)
 	if len(sections) == 0 {
 		return nil, fmt.Errorf("no section headers found")
@@ -440,7 +551,7 @@ func parseSectionHeaders(content string) (*katypes.InvestigationResult, error) {
 		return nil, fmt.Errorf("assembling section headers: %w", err)
 	}
 
-	return parseLLMFormat(string(compositeJSON))
+	return parseLLMFormat(string(compositeJSON), logger)
 }
 
 // extractSections splits content on lines matching "# <header_name>" and returns
