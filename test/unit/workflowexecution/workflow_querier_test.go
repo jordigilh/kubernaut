@@ -465,7 +465,7 @@ func buildTestSchema(deps *models.WorkflowDependencies) string {
 // configurable dependencies and parameters.
 func buildTestSchemaWithParams(deps *models.WorkflowDependencies, params []models.WorkflowParameter) string {
 	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", "job")
-	crd.Spec.Labels.Component = "deployment"
+	crd.Spec.Labels.Component = []string{"deployment"}
 	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	crd.Spec.Parameters = params
 	crd.Spec.Dependencies = deps
@@ -476,7 +476,7 @@ func buildTestSchemaWithParams(deps *models.WorkflowDependencies, params []model
 // engineConfig section for the specified engine.
 func buildTestSchemaWithEngineConfig(engine string, engineConfig map[string]interface{}) string {
 	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", engine)
-	crd.Spec.Labels.Component = "deployment"
+	crd.Spec.Labels.Component = []string{"deployment"}
 	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	crd.Spec.Execution.EngineConfig = engineConfig
 	crd.Spec.Parameters = []models.WorkflowParameter{

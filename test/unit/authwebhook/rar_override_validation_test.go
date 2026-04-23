@@ -136,7 +136,7 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 				Labels: remediationworkflowv1.RemediationWorkflowLabels{
 					Severity:    []string{"critical"},
 					Environment: []string{"production"},
-					Component:   "Node",
+					Component:   []string{"Node"},
 					Priority:    "P1",
 				},
 				Execution: remediationworkflowv1.RemediationWorkflowExecution{

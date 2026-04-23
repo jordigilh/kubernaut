@@ -77,12 +77,16 @@ func (m *mockLLMClient) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatRe
 	return llm.ChatResponse{}, nil
 }
 
+func (m *mockLLMClient) Close() error { return nil }
+
 func (m *mockLLMClient) chatCalls() int { return m.call }
 
 // slowMockLLMClient adds a delay before responding, used to test timeout behavior.
 type slowMockLLMClient struct {
 	delay time.Duration
 }
+
+func (m *slowMockLLMClient) Close() error { return nil }
 
 func (m *slowMockLLMClient) Chat(ctx context.Context, _ llm.ChatRequest) (llm.ChatResponse, error) {
 	select {
