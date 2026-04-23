@@ -19,19 +19,28 @@ package parser
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
+
+	"github.com/go-logr/logr"
 
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 )
 
 // ResultParser extracts and validates InvestigationResult from LLM JSON output.
-type ResultParser struct{}
+type ResultParser struct {
+	logger logr.Logger
+}
 
-// NewResultParser creates a new result parser.
-func NewResultParser() *ResultParser {
-	return &ResultParser{}
+// NewResultParser creates a new result parser. An optional logr.Logger enables
+// debug-level diagnostics per DD-005 v2.0. If omitted, a discarding logger is
+// used so callers are not forced to supply one.
+func NewResultParser(logger ...logr.Logger) *ResultParser {
+	l := logr.Discard()
+	if len(logger) > 0 {
+		l = logger[0]
+	}
+	return &ResultParser{logger: l}
 }
 
 // Parse extracts InvestigationResult from raw LLM content.
@@ -63,13 +72,13 @@ func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, erro
 			return &result, nil
 		}
 
-		if parsed, err := parseLLMFormat(jsonStr); err == nil {
+		if parsed, err := parseLLMFormat(jsonStr, p.logger); err == nil {
 			applyOutcomeRouting(parsed)
 			return parsed, nil
 		}
 	}
 
-	if parsed, err := parseSectionHeaders(content); err == nil {
+	if parsed, err := parseSectionHeaders(content, p.logger); err == nil {
 		applyOutcomeRouting(parsed)
 		return parsed, nil
 	}
@@ -261,7 +270,7 @@ type llmWorkflow struct {
 // root_cause_analysis: {"summary":...}) and returns corrected JSON. This
 // defends against LLMs that json.Marshal their tool call arguments before
 // embedding them (Issue #795).
-func unwrapDoubleSerializedJSON(rawJSON string) string {
+func unwrapDoubleSerializedJSON(rawJSON string, logger logr.Logger) string {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
 		return rawJSON
@@ -283,10 +292,10 @@ func unwrapDoubleSerializedJSON(rawJSON string) string {
 		}
 		if t := extractBalancedJSON(s); t != "" && json.Valid([]byte(t)) {
 			if len(t) != len(s) {
-				slog.Debug("unwrapDoubleSerializedJSON: stripped trailing content",
-					slog.String("key", key),
-					slog.Int("original_len", len(s)),
-					slog.Int("extracted_len", len(t)))
+				logger.V(1).Info("unwrapDoubleSerializedJSON: stripped trailing content",
+					"key", key,
+					"original_len", len(s),
+					"extracted_len", len(t))
 			}
 			raw[key] = json.RawMessage(t)
 			changed = true
@@ -391,8 +400,8 @@ type flatLLMFields struct {
 
 // parseLLMFormat parses the nested LLM response format and converts
 // it to a flat InvestigationResult.
-func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
-	fixed := unwrapDoubleSerializedJSON(jsonStr)
+func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationResult, error) {
+	fixed := unwrapDoubleSerializedJSON(jsonStr, logger)
 	fixed = coerceKnownFields(fixed)
 
 	var resp llmResponse
@@ -495,7 +504,7 @@ func parseLLMFormat(jsonStr string) (*katypes.InvestigationResult, error) {
 //
 // This function extracts each section's content, assembles an llmResponse,
 // and maps it to InvestigationResult via parseLLMFormat.
-func parseSectionHeaders(content string) (*katypes.InvestigationResult, error) {
+func parseSectionHeaders(content string, logger logr.Logger) (*katypes.InvestigationResult, error) {
 	sections := extractSections(content)
 	if len(sections) == 0 {
 		return nil, fmt.Errorf("no section headers found")
@@ -542,7 +551,7 @@ func parseSectionHeaders(content string) (*katypes.InvestigationResult, error) {
 		return nil, fmt.Errorf("assembling section headers: %w", err)
 	}
 
-	return parseLLMFormat(string(compositeJSON))
+	return parseLLMFormat(string(compositeJSON), logger)
 }
 
 // extractSections splits content on lines matching "# <header_name>" and returns

@@ -163,7 +163,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	resultParser := parser.NewResultParser()
+	resultParser := parser.NewResultParser(logrLogger.WithName("parser"))
 	phaseTools := investigator.DefaultPhaseToolMap()
 
 	k8sInfra := initK8sInfra(slogger)
