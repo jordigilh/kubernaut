@@ -899,8 +899,12 @@ false
 			})
 		})
 
-		Describe("UT-KA-746-008: Golden transcript — exact #746 audit JSON", func() {
-			It("should classify exact #746 audit response as no_matching_workflows", func() {
+		Describe("UT-KA-746-008: Golden transcript — exact #746 audit JSON (no summary)", func() {
+			// Updated for #795 Fix D: the prompt template requires root_cause_analysis.summary
+			// to always be present. A response with confidence but no summary and no workflow
+			// is incomplete and must return an error so the investigator's retryRCASubmit
+			// can request the missing field. See #795 preflight audit for justification.
+			It("should return parse error for no-summary RCA (triggers retry in investigator)", func() {
 				p := parser.NewResultParser()
 				content := `{
 					"needsHumanReview": true,
@@ -922,16 +926,9 @@ false
 						]
 					}
 				}`
-				result, err := p.Parse(content)
-				Expect(err).NotTo(HaveOccurred(),
-					"#746: Golden transcript must parse successfully, not return llm_parsing_error")
-				Expect(result).NotTo(BeNil())
-				Expect(result.Confidence).To(BeNumerically("~", 0.98, 0.01),
-					"#746: confidence must be preserved from LLM response")
-				Expect(result.HumanReviewNeeded).To(BeTrue(),
-					"#746: No workflow selected must trigger HumanReviewNeeded")
-				Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
-					"#746: Must be classified as no_matching_workflows, not llm_parsing_error")
+				_, err := p.Parse(content)
+				Expect(err).To(HaveOccurred(),
+					"#746/#795: confidence-only with no RCA summary and no workflow must return error to trigger retry")
 			})
 		})
 	})
@@ -975,6 +972,77 @@ false
 				_, err := p.Parse(content)
 				Expect(err).To(HaveOccurred(),
 					"UT-KA-795-P03: plain text string in root_cause_analysis must still fail (no false-positive unwrap)")
+			})
+		})
+
+		Describe("UT-KA-795-P04: trailing brace in double-serialized root_cause_analysis", func() {
+			It("should unwrap via balanced extraction despite the trailing brace", func() {
+				content := `{"root_cause_analysis":"{\"summary\":\"CrashLoopBackOff caused by invalid directive\",\"severity\":\"critical\",\"remediation_target\":{\"kind\":\"Deployment\",\"name\":\"web-frontend\",\"namespace\":\"demo-gitops\"}}}","confidence":0.98}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-795-P04: trailing brace must be stripped by balanced extraction")
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(ContainSubstring("CrashLoopBackOff"),
+					"UT-KA-795-P04: summary must be extracted from unwrapped string")
+				Expect(result.RemediationTarget).To(Equal(katypes.RemediationTarget{
+					Kind: "Deployment", Name: "web-frontend", Namespace: "demo-gitops",
+				}), "UT-KA-795-P04: remediation_target must survive trailing-brace recovery")
+			})
+		})
+
+		Describe("UT-KA-795-P05: confidence > 0 with no-summary inner object after unwrap returns error", func() {
+			It("should return parse error when unwrapped RCA has no summary field", func() {
+				content := `{"rootCauseAnalysis":"{\"severity\":\"medium\",\"remediation_target\":{\"kind\":\"Deployment\",\"name\":\"web-frontend\",\"namespace\":\"demo-gitops\"}}}","confidence":0.98}`
+				_, err := p.Parse(content)
+				Expect(err).To(HaveOccurred(),
+					"UT-KA-795-P05: confidence-only with no RCA summary after unwrap must return error to trigger retry")
+			})
+		})
+
+		Describe("UT-KA-795-P06: valid RCA object with summary and confidence succeeds", func() {
+			It("should parse successfully when RCA has summary field (non-regression)", func() {
+				content := `{"root_cause_analysis":{"summary":"OOMKilled due to memory leak","severity":"critical","remediation_target":{"kind":"Deployment","name":"api","namespace":"production"}},"confidence":0.92}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-795-P06: valid RCA with summary must not be rejected by Fix D guard")
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(ContainSubstring("OOMKilled"))
+				Expect(result.Confidence).To(BeNumerically("~", 0.92, 0.01))
+			})
+		})
+
+		Describe("UT-KA-795-P07: triple-serialized JSON is rejected at s[0] guard", func() {
+			It("should not attempt to unwrap a triple-serialized string", func() {
+				content := `{"root_cause_analysis":"\"{\\\"summary\\\": \\\"triple\\\"}\"","confidence":0.8}`
+				_, err := p.Parse(content)
+				Expect(err).To(HaveOccurred(),
+					"UT-KA-795-P07: triple-serialized string starts with '\"' not '{', must not be unwrapped")
+			})
+		})
+
+		Describe("UT-KA-795-P08: trailing brace with summary succeeds without retry (Fix C primary value)", func() {
+			It("should unwrap and parse successfully on first attempt when summary is present", func() {
+				content := `{"root_cause_analysis":"{\"summary\":\"ResourceQuota exceeded\",\"severity\":\"medium\",\"remediation_target\":{\"kind\":\"Deployment\",\"name\":\"api-server\",\"namespace\":\"demo-quota\"}}}","confidence":0.95}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-795-P08: trailing brace with valid summary must succeed on first parse (no retry needed)")
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(ContainSubstring("ResourceQuota exceeded"))
+				Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
+				Expect(result.RemediationTarget.Name).To(Equal("api-server"))
+				Expect(result.Confidence).To(BeNumerically("~", 0.95, 0.01))
+			})
+		})
+
+		Describe("UT-KA-795-P09: selected_workflow trailing brace is unwrapped", func() {
+			It("should unwrap a double-serialized selected_workflow with trailing brace", func() {
+				content := `{"root_cause_analysis":{"summary":"OOM due to memory leak","remediation_target":{"kind":"Deployment","name":"api","namespace":"prod"}},"selected_workflow":"{\"workflow_id\":\"oom-increase-memory\",\"confidence\":0.9}}","confidence":0.9}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-795-P09: double-serialized selected_workflow with trailing brace must be unwrapped")
+				Expect(result).NotTo(BeNil())
+				Expect(result.WorkflowID).To(Equal("oom-increase-memory"),
+					"UT-KA-795-P09: workflow_id must be extracted from unwrapped selected_workflow")
 			})
 		})
 	})
