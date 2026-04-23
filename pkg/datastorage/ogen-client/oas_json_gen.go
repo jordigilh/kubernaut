@@ -69,19 +69,33 @@ func (s *AIAgentEnrichmentCompletedPayload) encodeFields(e *jx.Encoder) {
 		e.FieldStart("remediation_history_fetched")
 		e.Bool(s.RemediationHistoryFetched)
 	}
+	{
+		if s.PromotionTrigger.Set {
+			e.FieldStart("promotion_trigger")
+			s.PromotionTrigger.Encode(e)
+		}
+	}
+	{
+		if s.SignalKind.Set {
+			e.FieldStart("signal_kind")
+			s.SignalKind.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfAIAgentEnrichmentCompletedPayload = [10]string{
-	0: "event_type",
-	1: "event_id",
-	2: "incident_id",
-	3: "root_owner_kind",
-	4: "root_owner_name",
-	5: "root_owner_namespace",
-	6: "owner_chain_length",
-	7: "detected_labels_summary",
-	8: "failed_detections",
-	9: "remediation_history_fetched",
+var jsonFieldsNameOfAIAgentEnrichmentCompletedPayload = [12]string{
+	0:  "event_type",
+	1:  "event_id",
+	2:  "incident_id",
+	3:  "root_owner_kind",
+	4:  "root_owner_name",
+	5:  "root_owner_namespace",
+	6:  "owner_chain_length",
+	7:  "detected_labels_summary",
+	8:  "failed_detections",
+	9:  "remediation_history_fetched",
+	10: "promotion_trigger",
+	11: "signal_kind",
 }
 
 // Decode decodes AIAgentEnrichmentCompletedPayload from json.
@@ -204,6 +218,26 @@ func (s *AIAgentEnrichmentCompletedPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"remediation_history_fetched\"")
+			}
+		case "promotion_trigger":
+			if err := func() error {
+				s.PromotionTrigger.Reset()
+				if err := s.PromotionTrigger.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"promotion_trigger\"")
+			}
+		case "signal_kind":
+			if err := func() error {
+				s.SignalKind.Reset()
+				if err := s.SignalKind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"signal_kind\"")
 			}
 		default:
 			return d.Skip()
@@ -7128,6 +7162,18 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.FieldStart("remediation_history_fetched")
 				e.Bool(s.RemediationHistoryFetched)
 			}
+			{
+				if s.PromotionTrigger.Set {
+					e.FieldStart("promotion_trigger")
+					s.PromotionTrigger.Encode(e)
+				}
+			}
+			{
+				if s.SignalKind.Set {
+					e.FieldStart("signal_kind")
+					s.SignalKind.Encode(e)
+				}
+			}
 		}
 	case AIAgentEnrichmentFailedPayloadAuditEventEventData:
 		e.FieldStart("event_type")
@@ -10166,6 +10212,18 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("remediation_history_fetched")
 				e.Bool(s.RemediationHistoryFetched)
+			}
+			{
+				if s.PromotionTrigger.Set {
+					e.FieldStart("promotion_trigger")
+					s.PromotionTrigger.Encode(e)
+				}
+			}
+			{
+				if s.SignalKind.Set {
+					e.FieldStart("signal_kind")
+					s.SignalKind.Encode(e)
+				}
 			}
 		}
 	case AIAgentEnrichmentFailedPayloadAuditEventRequestEventData:

@@ -5211,6 +5211,16 @@ components:
           type: boolean
           description: Whether remediation history was successfully fetched from DataStorage
           example: true
+        promotion_trigger:
+          type: string
+          nullable: true
+          description: If set, indicates this event was emitted due to owner chain promotion for workflow discovery (Issue #795). Value is the trigger reason (e.g., "owner_chain_root").
+          example: "owner_chain_root"
+        signal_kind:
+          type: string
+          nullable: true
+          description: Original signal resource kind before owner chain promotion (only set when promotion_trigger is present)
+          example: "Pod"
 
     AIAgentEnrichmentFailedPayload:
       type: object

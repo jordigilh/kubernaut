@@ -37,6 +37,11 @@ type AIAgentEnrichmentCompletedPayload struct {
 	FailedDetections OptNilStringArray `json:"failed_detections"`
 	// Whether remediation history was successfully fetched from DataStorage.
 	RemediationHistoryFetched bool `json:"remediation_history_fetched"`
+	// If set, indicates this event was emitted due to owner chain promotion for workflow discovery (Issue.
+	PromotionTrigger OptNilString `json:"promotion_trigger"`
+	// Original signal resource kind before owner chain promotion (only set when promotion_trigger is
+	// present).
+	SignalKind OptNilString `json:"signal_kind"`
 }
 
 // GetEventType returns the value of EventType.
@@ -89,6 +94,16 @@ func (s *AIAgentEnrichmentCompletedPayload) GetRemediationHistoryFetched() bool 
 	return s.RemediationHistoryFetched
 }
 
+// GetPromotionTrigger returns the value of PromotionTrigger.
+func (s *AIAgentEnrichmentCompletedPayload) GetPromotionTrigger() OptNilString {
+	return s.PromotionTrigger
+}
+
+// GetSignalKind returns the value of SignalKind.
+func (s *AIAgentEnrichmentCompletedPayload) GetSignalKind() OptNilString {
+	return s.SignalKind
+}
+
 // SetEventType sets the value of EventType.
 func (s *AIAgentEnrichmentCompletedPayload) SetEventType(val AIAgentEnrichmentCompletedPayloadEventType) {
 	s.EventType = val
@@ -137,6 +152,16 @@ func (s *AIAgentEnrichmentCompletedPayload) SetFailedDetections(val OptNilString
 // SetRemediationHistoryFetched sets the value of RemediationHistoryFetched.
 func (s *AIAgentEnrichmentCompletedPayload) SetRemediationHistoryFetched(val bool) {
 	s.RemediationHistoryFetched = val
+}
+
+// SetPromotionTrigger sets the value of PromotionTrigger.
+func (s *AIAgentEnrichmentCompletedPayload) SetPromotionTrigger(val OptNilString) {
+	s.PromotionTrigger = val
+}
+
+// SetSignalKind sets the value of SignalKind.
+func (s *AIAgentEnrichmentCompletedPayload) SetSignalKind(val OptNilString) {
+	s.SignalKind = val
 }
 
 // Infrastructure labels detected by LabelDetector (null when detector unavailable).
