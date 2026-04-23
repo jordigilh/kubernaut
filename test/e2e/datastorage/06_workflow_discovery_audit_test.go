@@ -72,7 +72,7 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 		// ACT: Call step 1 with remediation_id
 		_, err := DSClient.ListAvailableActions(testCtx, dsgen.ListAvailableActionsParams{
 			Severity:      dsgen.ListAvailableActionsSeverityCritical,
-			Component:     []string{"pod"},
+			Component:     "pod",
 			Environment:   "production",
 			Priority:      dsgen.ListAvailableActionsPriorityP0,
 			RemediationID: dsgen.NewOptString(remediationID),
@@ -110,7 +110,7 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 		_, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
 			ActionType:    "ScaleReplicas",
 			Severity:      dsgen.ListWorkflowsByActionTypeSeverityCritical,
-			Component:     []string{"pod"},
+			Component:     "pod",
 			Environment:   "production",
 			Priority:      dsgen.ListWorkflowsByActionTypePriorityP0,
 			RemediationID: dsgen.NewOptString(remediationID),

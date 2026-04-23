@@ -156,7 +156,7 @@ var _ = Describe("E2E-DS-481: ServiceAccountName REST API Persistence (#481)", L
 			discResp, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
 				ActionType:  "RestartPod",
 				Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
-				Component:   []string{"pod"},
+				Component:   "pod",
 				Environment: "production",
 				Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
 				Limit:       dsgen.NewOptInt(100),
