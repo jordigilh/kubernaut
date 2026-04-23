@@ -344,6 +344,7 @@ var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: "The pod is OOMKilled due to memory limits being too low."}},
+					{Message: llm.Message{Role: "assistant", Content: "still text, retry also fails"}},
 					{
 						Message: llm.Message{Role: "assistant", Content: ""},
 						ToolCalls: []llm.ToolCall{
