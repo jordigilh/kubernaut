@@ -1046,4 +1046,68 @@ false
 			})
 		})
 	})
+
+	Describe("LLM Resilience Hardening: Array/Type/Truncation defenses", func() {
+
+		Describe("UT-KA-800-ARR-01: Single-element array wrapping is unwrapped", func() {
+			It("should extract the object from a single-element array", func() {
+				p := parser.NewResultParser()
+				content := `[{"rca_summary":"OOMKilled due to memory leak","workflow_id":"oom-increase-memory","confidence":0.9}]`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-800-ARR-01: single-element array must be unwrapped to extract the inner object")
+				Expect(result).NotTo(BeNil())
+				Expect(result.RCASummary).To(ContainSubstring("OOMKilled"))
+				Expect(result.WorkflowID).To(Equal("oom-increase-memory"))
+			})
+		})
+
+		Describe("UT-KA-800-ARR-02: Multi-element array is not unwrapped", func() {
+			It("should return error for a multi-element array (ambiguous)", func() {
+				p := parser.NewResultParser()
+				content := `[{"rca_summary":"cause A"},{"rca_summary":"cause B"}]`
+				_, err := p.Parse(content)
+				Expect(err).To(HaveOccurred(),
+					"UT-KA-800-ARR-02: multi-element array must not be unwrapped (ambiguous)")
+			})
+		})
+
+		Describe("UT-KA-800-TC-01: String-typed confidence is coerced to float", func() {
+			It("should parse confidence when LLM returns it as a quoted string", func() {
+				p := parser.NewResultParser()
+				content := `{"root_cause_analysis":{"summary":"OOM","remediation_target":{"kind":"Deployment","name":"api","namespace":"prod"}},"selected_workflow":{"workflow_id":"oom-fix","confidence":"0.92","rationale":"increase memory"},"confidence":"0.92"}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-800-TC-01: string confidence '0.92' must be coerced to float64")
+				Expect(result).NotTo(BeNil())
+				Expect(result.Confidence).To(BeNumerically("~", 0.92, 0.001))
+			})
+		})
+
+		Describe("UT-KA-800-TC-02: String-typed actionable boolean is coerced", func() {
+			It("should parse actionable when LLM returns it as a quoted string", func() {
+				p := parser.NewResultParser()
+				content := `{"root_cause_analysis":{"summary":"resolved itself","remediation_target":{"kind":"Deployment","name":"api","namespace":"prod"}},"confidence":0.85,"actionable":"false","investigation_outcome":"problem_resolved"}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-800-TC-02: string actionable 'false' must be coerced to bool")
+				Expect(result).NotTo(BeNil())
+				Expect(result.IsActionable).NotTo(BeNil())
+				Expect(*result.IsActionable).To(BeFalse())
+			})
+		})
+
+		Describe("UT-KA-800-TC-03: Non-numeric string confidence is rejected", func() {
+			It("should not crash on garbage string confidence", func() {
+				p := parser.NewResultParser()
+				content := `{"rca_summary":"OOM","workflow_id":"oom-fix","confidence":"high"}`
+				result, err := p.Parse(content)
+				Expect(err).NotTo(HaveOccurred(),
+					"UT-KA-800-TC-03: garbage confidence must not crash parser")
+				Expect(result).NotTo(BeNil())
+				Expect(result.Confidence).To(BeNumerically("==", 0),
+					"UT-KA-800-TC-03: non-numeric confidence should default to 0")
+			})
+		})
+	})
 })
