@@ -41,6 +41,8 @@ type capturingLLMClient struct {
 	callIdx   int
 }
 
+func (c *capturingLLMClient) Close() error { return nil }
+
 func (c *capturingLLMClient) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
 	c.calls = append(c.calls, req)
 	if c.err != nil {

@@ -71,6 +71,8 @@ func newScriptedLLM(responses ...llm.ChatResponse) *scriptedLLMClient {
 	return &scriptedLLMClient{responses: responses}
 }
 
+func (s *scriptedLLMClient) Close() error { return nil }
+
 func (s *scriptedLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
