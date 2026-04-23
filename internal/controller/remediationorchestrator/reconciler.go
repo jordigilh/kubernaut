@@ -280,7 +280,7 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	// Issue #666: Register phase handlers in the registry
 	r.phaseRegistry.MustRegister(NewPendingHandler(c, routingEngine, r.spCreator, statusManager, m))
 	r.phaseRegistry.MustRegister(NewProcessingHandler(c, r.aiAnalysisCreator, statusManager, m))
-	r.phaseRegistry.MustRegister(NewExecutingHandler(c, apiReader, r.statusAggregator, statusManager, m))
+	r.phaseRegistry.MustRegister(NewExecutingHandler(c, apiReader, r.statusAggregator, statusManager, m, nc, recorder))
 	r.phaseRegistry.MustRegister(NewBlockedHandler(m, BlockedCallbacks{
 		RecheckResourceBusyBlock:      r.recheckResourceBusyBlock,
 		RecheckDuplicateBlock:         r.recheckDuplicateBlock,

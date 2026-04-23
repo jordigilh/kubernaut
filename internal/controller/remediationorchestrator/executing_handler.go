@@ -21,18 +21,24 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/aggregator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/config"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/status"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
+	"github.com/jordigilh/kubernaut/pkg/shared/events"
 )
 
 const executingRequeueInterval = 10 * time.Second
@@ -47,11 +53,13 @@ const executingRequeueInterval = 10 * time.Second
 //
 // Reference: Issue #666 (RO Phase Handler Registry refactoring)
 type ExecutingHandler struct {
-	client        client.Client
-	apiReader     client.Reader
-	aggregator    *aggregator.StatusAggregator
-	statusManager *status.Manager
-	metrics       *metrics.Metrics
+	client              client.Client
+	apiReader           client.Reader
+	aggregator          *aggregator.StatusAggregator
+	statusManager       *status.Manager
+	metrics             *metrics.Metrics
+	notificationCreator *creator.NotificationCreator
+	recorder            record.EventRecorder
 }
 
 // NewExecutingHandler creates a new ExecutingHandler with all required dependencies.
@@ -61,13 +69,17 @@ func NewExecutingHandler(
 	agg *aggregator.StatusAggregator,
 	sm *status.Manager,
 	m *metrics.Metrics,
+	nc *creator.NotificationCreator,
+	recorder record.EventRecorder,
 ) *ExecutingHandler {
 	return &ExecutingHandler{
-		client:        c,
-		apiReader:     apiReader,
-		aggregator:    agg,
-		statusManager: sm,
-		metrics:       m,
+		client:              c,
+		apiReader:           apiReader,
+		aggregator:          agg,
+		statusManager:       sm,
+		metrics:             m,
+		notificationCreator: nc,
+		recorder:            recorder,
 	}
 }
 
@@ -150,6 +162,11 @@ func (h *ExecutingHandler) handleWEStatus(ctx context.Context, rr *remediationv1
 			return phase.Requeue(executingRequeueInterval, "WFE deduplicated, waiting for original"), nil
 		}
 
+		// #807 / BR-ORCH-036 GAP-3: Create ManualReview NR before transitioning to Failed.
+		// This must be persisted before phase.Fail so transitionToFailed's guard sees the ref
+		// and skips creating a duplicate Escalation NR (#808 double-NR guard).
+		h.createWFEFailureManualReviewNR(ctx, rr, we)
+
 		logger.Info("WorkflowExecution failed, transitioning to Failed")
 		return phase.Fail(remediationv1.FailurePhaseWorkflowExecution,
 			fmt.Errorf("WorkflowExecution failed"),
@@ -207,6 +224,65 @@ func (h *ExecutingHandler) handleDedupResultPropagation(ctx context.Context, rr 
 			"phase", originalWFE.Status.Phase)
 		return phase.Requeue(executingRequeueInterval, "original WFE in progress"), nil
 	}
+}
+
+// createWFEFailureManualReviewNR creates a ManualReview NotificationRequest when a
+// WorkflowExecution fails, and persists the ref on the RR status. This ensures
+// transitionToFailed's double-NR guard (#808) sees the ref and skips Escalation NR.
+// Non-blocking: errors are logged but do not prevent the phase.Fail transition.
+func (h *ExecutingHandler) createWFEFailureManualReviewNR(ctx context.Context, rr *remediationv1.RemediationRequest, we *workflowexecutionv1.WorkflowExecution) {
+	if h.notificationCreator == nil {
+		return
+	}
+
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name, "workflowExecution", we.Name)
+
+	failureMessage := "WorkflowExecution failed"
+	if we.Status.FailureReason != "" {
+		failureMessage = we.Status.FailureReason
+	}
+
+	reviewCtx := &creator.ManualReviewContext{
+		Source:  notificationv1.ReviewSourceWorkflowExecution,
+		Reason:  "ExecutionFailure",
+		Message: failureMessage,
+	}
+
+	notifName, err := h.notificationCreator.CreateManualReviewNotification(ctx, rr, reviewCtx)
+	if err != nil {
+		logger.Error(err, "Failed to create ManualReview NR for WFE failure (non-critical)")
+		return
+	}
+
+	ref := corev1.ObjectReference{
+		Kind:       "NotificationRequest",
+		Name:       notifName,
+		Namespace:  rr.Namespace,
+		APIVersion: "notification.kubernaut.ai/v1alpha1",
+	}
+	nr := &notificationv1.NotificationRequest{}
+	if getErr := h.client.Get(ctx, client.ObjectKey{Name: notifName, Namespace: rr.Namespace}, nr); getErr == nil {
+		ref.UID = nr.UID
+	}
+
+	if refErr := helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
+		for _, existing := range rr.Status.NotificationRequestRefs {
+			if existing.Name == ref.Name && existing.Namespace == ref.Namespace {
+				return nil
+			}
+		}
+		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		return nil
+	}); refErr != nil {
+		logger.Error(refErr, "Failed to persist ManualReview NR ref (non-critical)", "notification", notifName)
+	}
+
+	if h.recorder != nil {
+		h.recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+			fmt.Sprintf("ManualReview notification created for WFE failure: %s", notifName))
+	}
+
+	logger.Info("Created ManualReview NR for WFE failure", "notification", notifName)
 }
 
 // setWorkflowConditions sets the WorkflowExecutionComplete condition (best-effort).

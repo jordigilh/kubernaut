@@ -156,6 +156,16 @@ func (h *AnalyzingHandler) handleCompleted(ctx context.Context, rr *remediationv
 		return resultToIntent(result, "workflowNotNeeded"), nil
 	}
 
+	// #805 / BR-ORCH-036: NeedsHumanReview with no workflow → ManualReview NR
+	if ai.Status.NeedsHumanReview && ai.Status.SelectedWorkflow == nil {
+		logger.Info("AIAnalysis completed with NeedsHumanReview (no workflow) - delegating to handler")
+		result, err := h.callbacks.HandleAIAnalysisStatus(ctx, rr, ai)
+		if err != nil {
+			return phase.TransitionIntent{}, err
+		}
+		return resultToIntent(result, "needsHumanReview"), nil
+	}
+
 	if ai.Status.ApprovalRequired {
 		return h.handleApprovalRequired(ctx, rr, ai)
 	}

@@ -62,6 +62,7 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 			aggregator.NewStatusAggregator(c),
 			status.NewManager(c, apiReader),
 			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			nil, nil,
 		)
 	}
 
