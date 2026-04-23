@@ -1588,12 +1588,13 @@ _Appears in:_
 - [NotificationRequestSpec](#notificationrequestspec)
 
 _Validation:_
-- Enum: [AIAnalysis WorkflowExecution]
+- Enum: [AIAnalysis WorkflowExecution RoutingEngine]
 
 | Value| Description|
 | ---| ---|
 | `AIAnalysis`||
 | `WorkflowExecution`||
+| `RoutingEngine`||
 
 
 ### RootCauseAnalysis

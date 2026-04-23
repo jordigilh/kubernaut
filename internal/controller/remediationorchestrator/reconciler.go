@@ -1645,11 +1645,37 @@ func (r *Reconciler) handleBlocked(
 		}
 	}
 
-	// Issue #214: Log escalation intent for IneffectiveChain blocks.
-	// NotificationRequest creation is handled by the notification controller watching for ManualReviewRequired.
+	// Issue #803: Create ManualReview NotificationRequest for IneffectiveChain blocks (BR-ORCH-036).
+	// Previously, this relied on a non-existent "notification controller watching for ManualReviewRequired".
 	if remediationv1.BlockReason(blocked.Reason) == remediationv1.BlockReasonIneffectiveChain {
 		logger.Info("Ineffective chain detected - escalating to manual review",
 			"remediationRequest", rr.Name)
+
+		nrName := fmt.Sprintf("nr-manual-review-%s", rr.Name)
+		if !hasNotificationRef(rr, nrName) {
+			reviewCtx := &creator.ManualReviewContext{
+				Source:  notificationv1.ReviewSourceRoutingEngine,
+				Reason:  "IneffectiveChain",
+				Message: blocked.Message,
+			}
+			notifName, notifErr := r.notificationCreator.CreateManualReviewNotification(ctx, rr, reviewCtx)
+			if notifErr != nil {
+				logger.Error(notifErr, "Failed to create manual review notification for IneffectiveChain block")
+			} else {
+				logger.Info("Created manual review notification for IneffectiveChain block", "notification", notifName)
+				ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
+				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+					return nil
+				}); refErr != nil {
+					logger.Error(refErr, "Failed to persist IneffectiveChain NR ref (non-critical)", "notification", notifName)
+				}
+				if r.Recorder != nil {
+					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+						fmt.Sprintf("Manual review notification created: %s", notifName))
+				}
+			}
+		}
 	}
 
 	// Update RR status to Blocked phase (REFACTOR-RO-001: using retry helper)
