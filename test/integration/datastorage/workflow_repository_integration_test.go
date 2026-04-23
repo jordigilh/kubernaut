@@ -630,7 +630,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				workflows, totalCount, err := workflowRepo.List(ctx, &models.WorkflowSearchFilters{
 					WorkflowName: fmt.Sprintf("wf-repo-%s-comp-wc", testID),
-					Component:    "Node",
+					Component:    []string{"Node"},
 				}, 100, 0)
 
 				Expect(err).ToNot(HaveOccurred())
@@ -663,7 +663,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				workflows, totalCount, err := workflowRepo.List(ctx, &models.WorkflowSearchFilters{
 					WorkflowName: fmt.Sprintf("wf-repo-%s-all-wc", testID),
 					Severity:     "high",
-					Component:    "Node",
+					Component:    []string{"Node"},
 					Environment:  "unknown",
 					Priority:     "P3",
 				}, 100, 0)
@@ -681,7 +681,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				workflows, _, err := workflowRepo.List(ctx, &models.WorkflowSearchFilters{
 					WorkflowName: fmt.Sprintf("wf-repo-%s-comp-ci", testID),
-					Component:    "Deployment",
+					Component:    []string{"Deployment"},
 				}, 100, 0)
 
 				Expect(err).ToNot(HaveOccurred())

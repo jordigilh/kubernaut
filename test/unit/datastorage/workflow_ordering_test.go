@@ -108,7 +108,7 @@ var _ = Describe("Workflow Catalog Deterministic Ordering (#213)", func() {
 
 			filters := &models.WorkflowDiscoveryFilters{
 				Severity:  "critical",
-				Component: "Deployment",
+				Component: []string{"Deployment"},
 				DetectedLabels: &models.DetectedLabels{
 					GitOpsManaged: true,
 					GitOpsTool:    "argocd",

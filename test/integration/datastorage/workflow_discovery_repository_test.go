@@ -206,7 +206,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 				// Act: Filter for ScaleReplicas + severity=critical
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   []string{"pod"},
 					Environment: "production",
 					Priority:    "P0",
 				}
@@ -233,7 +233,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 				// Act
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   []string{"pod"},
 					Environment: "production",
 					Priority:    "P0",
 				}
@@ -260,7 +260,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 				// Act
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   []string{"pod"},
 					Environment: "production",
 					Priority:    "P0",
 				}
@@ -287,7 +287,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 				// Act
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   []string{"pod"},
 					Environment: "production",
 					Priority:    "P0",
 				}
@@ -311,7 +311,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 				// Act: Query with mismatching context (severity=high, environment=staging)
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "high",
-					Component:   "deployment",
+					Component:   []string{"deployment"},
 					Environment: "staging",
 					Priority:    "P1",
 				}
@@ -385,7 +385,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "Pod",
+					Component:   []string{"Pod"},
 					Environment: "production",
 					Priority:    "P1",
 				}
@@ -434,7 +434,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "Pod",
+					Component:   []string{"Pod"},
 					Environment: "production",
 					Priority:    "P1",
 				}
@@ -459,7 +459,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "Pod",
+					Component:   []string{"Pod"},
 					Environment: "production",
 					Priority:    "P1",
 				}
@@ -483,7 +483,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "Pod",
+					Component:   []string{"Pod"},
 					Environment: "staging",
 					Priority:    "P1",
 				}
@@ -508,7 +508,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   []string{"pod"},
 					Environment: "production",
 					Priority:    "P0",
 				}
@@ -539,7 +539,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "high",
-					Component:   "Node",
+					Component:   []string{"Node"},
 					Environment: "unknown",
 					Priority:    "P3",
 				}
@@ -560,7 +560,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "high",
-					Component:   "Node",
+					Component:   []string{"Node"},
 					Environment: "unknown",
 					Priority:    "P3",
 				}
@@ -579,7 +579,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "high",
-					Component:   "Node",
+					Component:   []string{"Node"},
 					Environment: "unknown",
 					Priority:    "P3",
 				}

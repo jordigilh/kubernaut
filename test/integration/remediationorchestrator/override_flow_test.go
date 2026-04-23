@@ -111,7 +111,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 				Labels: remediationworkflowv1.RemediationWorkflowLabels{
 					Severity:    []string{"critical"},
 					Environment: []string{"production"},
-					Component:   "Node",
+					Component:   []string{"Node"},
 					Priority:    "P1",
 				},
 				Execution: remediationworkflowv1.RemediationWorkflowExecution{
