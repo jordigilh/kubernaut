@@ -45,7 +45,7 @@ var _ = Describe("Workflow Discovery Audit Events (GAP-WF-6)", func() {
 		It("should set DurationMs in actions_listed audit event", func() {
 			filters := &models.WorkflowDiscoveryFilters{
 				Severity:    "critical",
-				Component:   []string{"pod"},
+				Component:   "pod",
 				Environment: "production",
 				Priority:    "P0",
 			}
@@ -59,7 +59,7 @@ var _ = Describe("Workflow Discovery Audit Events (GAP-WF-6)", func() {
 		It("should set DurationMs in workflows_listed audit event", func() {
 			filters := &models.WorkflowDiscoveryFilters{
 				Severity:    "high",
-				Component:   []string{"deployment"},
+				Component:   "deployment",
 				Environment: "staging",
 				Priority:    "P1",
 			}
@@ -73,7 +73,7 @@ var _ = Describe("Workflow Discovery Audit Events (GAP-WF-6)", func() {
 		It("should set DurationMs in workflow_retrieved audit event", func() {
 			filters := &models.WorkflowDiscoveryFilters{
 				Severity:    "critical",
-				Component:   []string{"pod"},
+				Component:   "pod",
 				Environment: "production",
 				Priority:    "P0",
 			}
@@ -87,7 +87,7 @@ var _ = Describe("Workflow Discovery Audit Events (GAP-WF-6)", func() {
 		It("should set DurationMs in selection_validated audit event", func() {
 			filters := &models.WorkflowDiscoveryFilters{
 				Severity:    "critical",
-				Component:   []string{"pod"},
+				Component:   "pod",
 				Environment: "production",
 				Priority:    "P0",
 			}

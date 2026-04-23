@@ -192,7 +192,7 @@ var _ = Describe("Workflow Discovery Handler Unit Tests", func() {
 			It("should detect when context filters are present", func() {
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   []string{"pod"},
+					Component:   "pod",
 					Environment: "production",
 					Priority:    "P0",
 				}

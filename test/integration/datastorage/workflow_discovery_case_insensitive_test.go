@@ -106,7 +106,7 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   []string{"pod"},
+					Component:   "pod",
 					Environment: "Production",
 					Priority:    "P0",
 				}
@@ -132,7 +132,7 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "Critical",
-					Component:   []string{"pod"},
+					Component:   "pod",
 					Environment: "production",
 					Priority:    "P0",
 				}
@@ -166,7 +166,7 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   []string{"pod"},
+					Component:   "pod",
 					Environment: "production",
 					Priority:    "p0",
 				}
@@ -191,7 +191,7 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "Critical",
-					Component:   []string{"Deployment"},
+					Component:   "Deployment",
 					Environment: "Production",
 					Priority:    "P0",
 				}
@@ -222,7 +222,7 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "Critical",
-					Component:   []string{"pod"},
+					Component:   "pod",
 					Environment: "Production",
 					Priority:    "P0",
 				}
@@ -247,7 +247,7 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   []string{"pod"},
+					Component:   "pod",
 					Environment: "Production",
 					Priority:    "P0",
 				}
