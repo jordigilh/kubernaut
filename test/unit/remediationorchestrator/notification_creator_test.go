@@ -1815,4 +1815,74 @@ var _ = Describe("NotificationCreator", func() {
 			})
 		})
 	})
+
+	// =====================================================
+	// Issue #803: RoutingEngine Source Tests
+	// =====================================================
+	Describe("Issue #803: ReviewSourceRoutingEngine", func() {
+		var (
+			fakeClient *fake.ClientBuilder
+			nc         *creator.NotificationCreator
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme)
+			ctx = context.Background()
+		})
+
+		// UT-RO-803-001: CreateManualReviewNotification accepts ReviewSourceRoutingEngine
+		It("UT-RO-803-001: should create NR with ReviewSource=RoutingEngine for IneffectiveChain blocks", func() {
+			cl := fakeClient.Build()
+			nc = creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-803-001", "default")
+			reviewCtx := &creator.ManualReviewContext{
+				Source:  notificationv1.ReviewSourceRoutingEngine,
+				Reason:  "IneffectiveChain",
+				Message: "3 consecutive ineffective remediations detected (Layer1 hash chain). Escalating to manual review.",
+			}
+
+			name, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(name).To(Equal("nr-manual-review-test-rr-803-001"))
+
+			nr := &notificationv1.NotificationRequest{}
+			err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nr.Spec.ReviewSource).To(Equal(notificationv1.ReviewSourceRoutingEngine))
+			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
+		})
+
+		// UT-RO-803-002: Idempotent creation with RoutingEngine source
+		It("UT-RO-803-002: should be idempotent with RoutingEngine source (no duplicate NR)", func() {
+			cl := fakeClient.Build()
+			nc = creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-803-002", "default")
+			reviewCtx := &creator.ManualReviewContext{
+				Source:  notificationv1.ReviewSourceRoutingEngine,
+				Reason:  "IneffectiveChain",
+				Message: "Escalating to manual review",
+			}
+
+			name1, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+			Expect(err).ToNot(HaveOccurred())
+
+			name2, err := nc.CreateManualReviewNotification(ctx, rr, reviewCtx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(name2).To(Equal(name1))
+
+			nrList := &notificationv1.NotificationRequestList{}
+			err = cl.List(ctx, nrList)
+			Expect(err).ToNot(HaveOccurred())
+			manualReviewCount := 0
+			for _, nr := range nrList.Items {
+				if strings.HasPrefix(nr.Name, "nr-manual-review-") {
+					manualReviewCount++
+				}
+			}
+			Expect(manualReviewCount).To(Equal(1))
+		})
+	})
 })
