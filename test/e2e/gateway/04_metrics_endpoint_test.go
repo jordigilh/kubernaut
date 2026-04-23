@@ -116,18 +116,31 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		testLogger.Info("")
 		testLogger.Info("Step 2: Verify key metrics are present")
 
-		// Check for expected Prometheus metrics
-		expectedMetrics := []string{
-			"gateway_", // Gateway-specific metrics prefix
-			"go_",      // Go runtime metrics
-			"process_", // Process metrics
-		}
-
-		for _, metric := range expectedMetrics {
+		// Go runtime and process metrics are registered eagerly — assert immediately.
+		for _, metric := range []string{"go_", "process_"} {
 			Expect(metricsOutput).To(ContainSubstring(metric),
 				fmt.Sprintf("Metrics should contain %s prefix", metric))
 			testLogger.Info(fmt.Sprintf("  ✅ Found %s metrics", metric))
 		}
+
+		// Gateway-specific metrics may only appear after the first request is
+		// processed or after lazy Prometheus collectors finish registration.
+		// Poll with Eventually to avoid a race against metric initialisation.
+		Eventually(func() string {
+			r, err := httpClient.Get(gatewayMetricsURL + "/metrics")
+			if err != nil {
+				return ""
+			}
+			b, err := io.ReadAll(r.Body)
+			_ = r.Body.Close()
+			if err != nil {
+				return ""
+			}
+			return string(b)
+		}, 30*time.Second, 1*time.Second).Should(
+			ContainSubstring("gateway_"),
+			"Metrics should contain gateway_ prefix (may require first request to register)")
+		testLogger.Info("  ✅ Found gateway_ metrics")
 
 		// Step 3: Send an alert and verify metrics update
 		testLogger.Info("")
