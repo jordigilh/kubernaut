@@ -2005,6 +2005,104 @@ var _ = Describe("NotificationCreator", func() {
 		})
 	})
 
+	Describe("CreateBlockNotification (#810)", func() {
+		It("UT-RO-810-BN-001: should create Escalation NR for ConsecutiveFailures block reason", func() {
+			ctx := context.Background()
+			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-bn-001", "default")
+			blockCtx := &creator.BlockNotificationContext{
+				BlockReason:  "ConsecutiveFailures",
+				BlockMessage: "3 consecutive failures detected",
+			}
+
+			name, err := nc.CreateBlockNotification(ctx, rr, blockCtx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(name).To(Equal("nr-block-consecutivefailures-test-rr-bn-001"))
+
+			nr := &notificationv1.NotificationRequest{}
+			err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeEscalation))
+			Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityHigh))
+			Expect(nr.Spec.Body).To(ContainSubstring("ConsecutiveFailures"))
+		})
+
+		It("UT-RO-810-BN-002: should create StatusUpdate NR for DuplicateInProgress block reason", func() {
+			ctx := context.Background()
+			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-bn-002", "default")
+			blockCtx := &creator.BlockNotificationContext{
+				BlockReason:  "DuplicateInProgress",
+				BlockMessage: "Duplicate RR already being processed",
+			}
+
+			name, err := nc.CreateBlockNotification(ctx, rr, blockCtx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(name).To(Equal("nr-block-duplicateinprogress-test-rr-bn-002"))
+
+			nr := &notificationv1.NotificationRequest{}
+			err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeStatusUpdate))
+			Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityLow))
+		})
+
+		It("UT-RO-810-BN-003: should be idempotent (no duplicate NR on second call)", func() {
+			ctx := context.Background()
+			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-bn-003", "default")
+			blockCtx := &creator.BlockNotificationContext{
+				BlockReason:  "ResourceBusy",
+				BlockMessage: "Another WFE running",
+			}
+
+			name1, err := nc.CreateBlockNotification(ctx, rr, blockCtx)
+			Expect(err).ToNot(HaveOccurred())
+
+			name2, err := nc.CreateBlockNotification(ctx, rr, blockCtx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(name2).To(Equal(name1))
+
+			nrList := &notificationv1.NotificationRequestList{}
+			err = cl.List(ctx, nrList)
+			Expect(err).ToNot(HaveOccurred())
+			count := 0
+			for _, nr := range nrList.Items {
+				if nr.Name == "nr-block-resourcebusy-test-rr-bn-003" {
+					count++
+				}
+			}
+			Expect(count).To(Equal(1))
+		})
+
+		It("UT-RO-810-BN-004: should include block message in body", func() {
+			ctx := context.Background()
+			cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-bn-004", "default")
+			blockCtx := &creator.BlockNotificationContext{
+				BlockReason:  "UnmanagedResource",
+				BlockMessage: "Resource lacks kubernaut.ai/managed=true label",
+			}
+
+			name, err := nc.CreateBlockNotification(ctx, rr, blockCtx)
+			Expect(err).ToNot(HaveOccurred())
+
+			nr := &notificationv1.NotificationRequest{}
+			err = cl.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nr.Spec.Body).To(ContainSubstring("kubernaut.ai/managed=true"))
+			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeEscalation))
+		})
+	})
+
 	Describe("AlreadyExists handling (#805)", func() {
 		It("UT-RO-805-AE-001: should return name without error when concurrent Create hits AlreadyExists", func() {
 			ctx := context.Background()
