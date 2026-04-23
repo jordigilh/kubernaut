@@ -45,7 +45,7 @@ var _ = Describe("Workflow Discovery Audit Events (GAP-WF-6)", func() {
 		It("should set DurationMs in actions_listed audit event", func() {
 			filters := &models.WorkflowDiscoveryFilters{
 				Severity:    "critical",
-				Component:   "pod",
+				Component:   []string{"pod"},
 				Environment: "production",
 				Priority:    "P0",
 			}
@@ -53,14 +53,13 @@ var _ = Describe("Workflow Discovery Audit Events (GAP-WF-6)", func() {
 
 			event, err := dsaudit.NewActionsListedAuditEvent(filters, 5, durationMs)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event).ToNot(BeNil())
 			assertDurationMsInPayload(event, durationMs)
 		})
 
 		It("should set DurationMs in workflows_listed audit event", func() {
 			filters := &models.WorkflowDiscoveryFilters{
 				Severity:    "high",
-				Component:   "deployment",
+				Component:   []string{"deployment"},
 				Environment: "staging",
 				Priority:    "P1",
 			}
@@ -68,14 +67,13 @@ var _ = Describe("Workflow Discovery Audit Events (GAP-WF-6)", func() {
 
 			event, err := dsaudit.NewWorkflowsListedAuditEvent("ScaleReplicas", filters, 3, durationMs)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event).ToNot(BeNil())
 			assertDurationMsInPayload(event, durationMs)
 		})
 
 		It("should set DurationMs in workflow_retrieved audit event", func() {
 			filters := &models.WorkflowDiscoveryFilters{
 				Severity:    "critical",
-				Component:   "pod",
+				Component:   []string{"pod"},
 				Environment: "production",
 				Priority:    "P0",
 			}
@@ -83,14 +81,13 @@ var _ = Describe("Workflow Discovery Audit Events (GAP-WF-6)", func() {
 
 			event, err := dsaudit.NewWorkflowRetrievedAuditEvent("wf-uuid-123", filters, durationMs)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event).ToNot(BeNil())
 			assertDurationMsInPayload(event, durationMs)
 		})
 
 		It("should set DurationMs in selection_validated audit event", func() {
 			filters := &models.WorkflowDiscoveryFilters{
 				Severity:    "critical",
-				Component:   "pod",
+				Component:   []string{"pod"},
 				Environment: "production",
 				Priority:    "P0",
 			}
@@ -98,7 +95,6 @@ var _ = Describe("Workflow Discovery Audit Events (GAP-WF-6)", func() {
 
 			event, err := dsaudit.NewSelectionValidatedAuditEvent("wf-uuid-456", filters, true, durationMs)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event).ToNot(BeNil())
 			assertDurationMsInPayload(event, durationMs)
 		})
 	})
