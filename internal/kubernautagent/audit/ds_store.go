@@ -81,6 +81,12 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		if ns := dataString(event.Data, "root_owner_namespace"); ns != "" {
 			payload.RootOwnerNamespace.SetTo(ns)
 		}
+		if pt := dataString(event.Data, "promotion_trigger"); pt != "" {
+			payload.PromotionTrigger.SetTo(pt)
+		}
+		if sk := dataString(event.Data, "signal_kind"); sk != "" {
+			payload.SignalKind.SetTo(sk)
+		}
 		return ogenclient.NewAIAgentEnrichmentCompletedPayloadAuditEventRequestEventData(payload), true
 
 	case EventTypeEnrichmentFailed:

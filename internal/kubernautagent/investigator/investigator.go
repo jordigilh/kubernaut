@@ -228,9 +228,11 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	// GAP-001 / ADR-056: Re-enrich using RCA-identified remediation target if different.
 	// H3-fix: retain pre-RCA enrichment if re-enrichment fails.
 	workflowSignal := signal
+	reEnrichmentRan := false
 	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
 	postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
 	if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
+		reEnrichmentRan = true
 		inv.logger.Info("re-enriching with RCA remediation target",
 			"signal", signalKind+"/"+signalName,
 			"rca_target", postRCAKind+"/"+postRCAName,
@@ -270,6 +272,38 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		workflowSignal.ResourceKind = postRCAKind
 		workflowSignal.ResourceName = postRCAName
 		workflowSignal.Namespace = postRCANS
+	}
+
+	// BR-KA-795 (extends BR-HAPI-261): Promote owner chain root to workflowSignal
+	// when re-enrichment did NOT run (RCA parse failure or same-kind target).
+	// Mirrors HAPI v1.2.1 _effective_component() behaviour.
+	if !reEnrichmentRan && enrichData != nil && len(enrichData.OwnerChain) > 0 {
+		root := enrichData.OwnerChain[len(enrichData.OwnerChain)-1]
+		if root.Kind != "" && root.Kind != workflowSignal.ResourceKind {
+			promotedNS := inv.normalizeNamespace(root.Kind, root.Namespace)
+			inv.logger.Info("promoting owner chain root to workflow signal (Issue #795)",
+				"original_kind", workflowSignal.ResourceKind,
+				"promoted_kind", root.Kind,
+				"promoted_name", root.Name,
+				"promoted_namespace", promotedNS,
+			)
+			workflowSignal.ResourceKind = root.Kind
+			workflowSignal.ResourceName = root.Name
+			workflowSignal.Namespace = promotedNS
+
+			event := audit.NewEvent(audit.EventTypeEnrichmentCompleted, correlationID)
+			event.EventAction = "enriched"
+			event.EventOutcome = "success"
+			event.Data["incident_id"] = signal.IncidentID
+			event.Data["root_owner_kind"] = root.Kind
+			event.Data["root_owner_name"] = root.Name
+			event.Data["root_owner_namespace"] = promotedNS
+			event.Data["owner_chain_length"] = len(enrichData.OwnerChain)
+			event.Data["remediation_history_fetched"] = false
+			event.Data["promotion_trigger"] = "owner_chain_root"
+			event.Data["signal_kind"] = signal.ResourceKind
+			audit.StoreBestEffort(ctx, inv.auditStore, event, inv.logger)
+		}
 	}
 
 	inv.pipeline.AnomalyDetector.Reset()
