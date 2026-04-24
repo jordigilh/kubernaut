@@ -18,6 +18,7 @@ package tls
 
 import (
 	"crypto/tls"
+	"fmt"
 	"sync"
 )
 
@@ -99,11 +100,13 @@ func OldProfile() *SecurityProfile {
 		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 	)
+	curves := make([]tls.CurveID, len(defaultCurves))
+	copy(curves, defaultCurves)
 	return &SecurityProfile{
 		Type:             ProfileOld,
 		MinTLSVersion:    tls.VersionTLS10,
 		CipherSuites:     ciphers,
-		CurvePreferences: defaultCurves,
+		CurvePreferences: curves,
 	}
 }
 
@@ -112,21 +115,25 @@ func OldProfile() *SecurityProfile {
 func IntermediateProfile() *SecurityProfile {
 	ciphers := make([]uint16, len(intermediateCiphers))
 	copy(ciphers, intermediateCiphers)
+	curves := make([]tls.CurveID, len(defaultCurves))
+	copy(curves, defaultCurves)
 	return &SecurityProfile{
 		Type:             ProfileIntermediate,
 		MinTLSVersion:    tls.VersionTLS12,
 		CipherSuites:     ciphers,
-		CurvePreferences: defaultCurves,
+		CurvePreferences: curves,
 	}
 }
 
 // ModernProfile returns the "Modern" TLS security profile (TLS 1.3 only).
 // Go auto-selects TLS 1.3 cipher suites, so CipherSuites is left empty.
 func ModernProfile() *SecurityProfile {
+	curves := make([]tls.CurveID, len(defaultCurves))
+	copy(curves, defaultCurves)
 	return &SecurityProfile{
 		Type:             ProfileModern,
 		MinTLSVersion:    tls.VersionTLS13,
-		CurvePreferences: defaultCurves,
+		CurvePreferences: curves,
 	}
 }
 
@@ -178,11 +185,15 @@ func ResetDefaultSecurityProfileForTesting() {
 // SetDefaultSecurityProfileFromConfig resolves a profile type name from the
 // service YAML configuration and stores it as the process-wide default.
 // Empty string is a no-op (vanilla K8s / Kind where the field is omitted).
-func SetDefaultSecurityProfileFromConfig(profileType string) {
+// Returns an error if profileType is non-empty but unrecognized.
+func SetDefaultSecurityProfileFromConfig(profileType string) error {
 	if profileType == "" {
-		return
+		return nil
 	}
-	if p := ProfileForType(ProfileType(profileType)); p != nil {
-		SetDefaultSecurityProfile(p)
+	p := ProfileForType(ProfileType(profileType))
+	if p == nil {
+		return fmt.Errorf("unrecognized TLS security profile %q, falling back to default TLS 1.2", profileType)
 	}
+	SetDefaultSecurityProfile(p)
+	return nil
 }

@@ -217,7 +217,7 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 		})
 
 		It("UT-TLS-748-061: empty config string is a no-op (no profile stored)", func() {
-			sharedtls.SetDefaultSecurityProfileFromConfig("")
+			Expect(sharedtls.SetDefaultSecurityProfileFromConfig("")).To(Succeed())
 
 			generateSelfSignedCert(certPath, keyPath)
 			server := &http.Server{Addr: ":0"}
@@ -238,7 +238,7 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 	Describe("SetDefaultSecurityProfileFromConfig resolves YAML value to active profile", func() {
 
 		It("UT-TLS-748-070: 'Intermediate' config value produces TLS 1.2 AEAD on server", func() {
-			sharedtls.SetDefaultSecurityProfileFromConfig("Intermediate")
+			Expect(sharedtls.SetDefaultSecurityProfileFromConfig("Intermediate")).To(Succeed())
 
 			generateSelfSignedCert(certPath, keyPath)
 			server := &http.Server{Addr: ":0"}
@@ -251,7 +251,7 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 		})
 
 		It("UT-TLS-748-071: 'Modern' config value produces TLS 1.3 on server", func() {
-			sharedtls.SetDefaultSecurityProfileFromConfig("Modern")
+			Expect(sharedtls.SetDefaultSecurityProfileFromConfig("Modern")).To(Succeed())
 
 			generateSelfSignedCert(certPath, keyPath)
 			server := &http.Server{Addr: ":0"}
@@ -271,13 +271,15 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 
 	Describe("Invalid profile names degrade gracefully to TLS 1.2 default", func() {
 
-		It("UT-TLS-748-080: unknown profile name preserves TLS 1.2 default", func() {
-			sharedtls.SetDefaultSecurityProfileFromConfig("InvalidProfile")
+		It("UT-TLS-748-080: unknown profile name returns error and preserves TLS 1.2 default", func() {
+			err := sharedtls.SetDefaultSecurityProfileFromConfig("InvalidProfile")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("InvalidProfile"))
 
 			generateSelfSignedCert(certPath, keyPath)
 			server := &http.Server{Addr: ":0"}
-			isTLS, _, err := sharedtls.ConfigureConditionalTLS(server, certDir)
-			Expect(err).ToNot(HaveOccurred())
+			isTLS, _, tlsErr := sharedtls.ConfigureConditionalTLS(server, certDir)
+			Expect(tlsErr).ToNot(HaveOccurred())
 			Expect(isTLS).To(BeTrue())
 
 			Expect(server.TLSConfig.MinVersion).To(Equal(uint16(tls.VersionTLS12)),
@@ -394,6 +396,35 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 
 		It("UT-TLS-748-022: returns nil for unrecognized type", func() {
 			Expect(sharedtls.ProfileForType("UnknownProfile")).To(BeNil())
+		})
+	})
+
+	// ──────────────────────────────────────────────────────────────
+	// Mutation safety — profile constructors return independent copies
+	// ──────────────────────────────────────────────────────────────
+
+	Describe("Profile constructors return independent copies", func() {
+
+		It("UT-TLS-748-100: mutating one Intermediate profile does not affect another", func() {
+			p1 := sharedtls.IntermediateProfile()
+			p2 := sharedtls.IntermediateProfile()
+
+			p1.CurvePreferences[0] = tls.CurveP521
+			p1.CipherSuites[0] = 0xFFFF
+
+			Expect(p2.CurvePreferences[0]).To(Equal(tls.X25519),
+				"second profile must be unaffected by mutation of first")
+			Expect(p2.CipherSuites[0]).To(Equal(uint16(tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256)),
+				"second profile ciphers must be unaffected by mutation of first")
+		})
+
+		It("UT-TLS-748-101: mutating Old profile curves does not affect Modern profile", func() {
+			old := sharedtls.OldProfile()
+			old.CurvePreferences[0] = tls.CurveP521
+
+			modern := sharedtls.ModernProfile()
+			Expect(modern.CurvePreferences[0]).To(Equal(tls.X25519),
+				"Modern curves must be independent of Old profile mutation")
 		})
 	})
 })
