@@ -16,27 +16,34 @@ limitations under the License.
 
 package session
 
+import "encoding/json"
+
 // InvestigationEvent represents a discrete event emitted during an
 // investigation session. Event types are runtime-agnostic to provide a
 // stable SSE contract across runtime migrations (LangChainGo -> Goose ACP).
 //
 // Goose ACP mapping (future):
 //   - EventTypeReasoningDelta -> acp.StreamEvent with kind="reasoning"
-//   - EventTypeToolCall       -> acp.StreamEvent with kind="tool_use"
+//   - EventTypeToolCallStart  -> acp.StreamEvent with kind="tool_use"
 //   - EventTypeToolResult     -> acp.StreamEvent with kind="tool_result"
 //   - EventTypeError          -> acp.StreamEvent with kind="error"
 //   - EventTypeComplete       -> acp.StreamEvent with kind="end"
+//   - EventTypeCancelled      -> acp.StreamEvent with kind="cancelled"
 type InvestigationEvent struct {
-	Type    string      `json:"type"`
-	Payload interface{} `json:"payload,omitempty"`
+	Type  string          `json:"type"`
+	Turn  int             `json:"turn"`
+	Phase string          `json:"phase,omitempty"`
+	Data  json.RawMessage `json:"data,omitempty"`
 }
 
 // Event type constants for investigation lifecycle events.
 // These are wire-format values sent over SSE to observers.
 const (
 	EventTypeReasoningDelta = "reasoning_delta"
+	EventTypeToolCallStart  = "tool_call_start"
 	EventTypeToolCall       = "tool_call"
 	EventTypeToolResult     = "tool_result"
 	EventTypeError          = "error"
 	EventTypeComplete       = "complete"
+	EventTypeCancelled      = "cancelled"
 )

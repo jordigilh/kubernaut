@@ -71,10 +71,13 @@ func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, me
 
 	bgCtx, cancelFn := context.WithCancel(context.Background())
 
+	eventCh := make(chan InvestigationEvent, eventChannelBuffer)
+	bgCtx = WithEventSink(bgCtx, eventCh)
+
 	m.store.mu.Lock()
 	sess := m.store.sessions[id]
 	sess.cancel = cancelFn
-	sess.eventChan = make(chan InvestigationEvent, eventChannelBuffer)
+	sess.eventChan = eventCh
 	m.store.mu.Unlock()
 
 	_ = m.store.Update(id, StatusRunning, nil, nil)
