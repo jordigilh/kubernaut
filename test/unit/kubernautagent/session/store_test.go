@@ -268,4 +268,26 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 			Expect(eventChanField.IsNil()).To(BeTrue(), "eventChan must be nil on cloned session")
 		})
 	})
+
+	Describe("UT-KA-823-008: SetResult attaches result without status change (RR-2)", func() {
+		It("should set the result on a cancelled session without changing status", func() {
+			store := session.NewStore(30 * time.Minute)
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.Update(id, session.StatusCancelled, nil, nil)).To(Succeed())
+
+			partialResult := map[string]string{"rca_summary": "partial"}
+			store.SetResult(id, partialResult)
+
+			sess, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Status).To(Equal(session.StatusCancelled), "status must remain cancelled")
+			Expect(sess.Result).To(Equal(partialResult), "result must be attached")
+		})
+
+		It("should be a no-op for non-existent session", func() {
+			store := session.NewStore(30 * time.Minute)
+			Expect(func() { store.SetResult("nonexistent", "data") }).NotTo(Panic())
+		})
+	})
 })
