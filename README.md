@@ -74,7 +74,7 @@ Kubernaut evolves from an automated remediation engine into an extensible intell
 - **Kubernaut Console** — Web-based operator dashboard with chat UI, live remediation streaming, and workflow selection ([#713](https://github.com/jordigilh/kubernaut/issues/713))
 
 <p align="center">
-  <img src="docs/architecture/diagrams/kubernaut-interactive-console-mockup.png" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
+  <img src="docs/architecture/diagrams/kubernaut-console-animated.gif" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
 </p>
 
 ### Future
