@@ -959,6 +959,7 @@ In v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433), Kubern
 | `aiagent.session.completed` | `session_completed` | `success` |
 | `aiagent.session.failed` | `session_failed` | `failure` |
 | `aiagent.investigation.cancelled` | `investigation_cancelled` | `failure` |
+| `aiagent.session.observed` | `session_observed` | `success` |
 
 **Granularity**: `aiagent.llm.tool_call` is emitted **once per tool call**. `aiagent.workflow.validation_attempt` is emitted per validation attempt and includes `workflow_id` and `is_final_attempt` where applicable.
 

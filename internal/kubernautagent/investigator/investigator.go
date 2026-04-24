@@ -32,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
@@ -1001,6 +1002,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 
 	for turn := 0; turn < inv.maxTurns; turn++ {
 		if ctx.Err() != nil {
+			emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
 			return &CancelledResult{
 				Messages: messages,
 				Turn:     turn,
@@ -1026,6 +1028,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		})
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
 				return &CancelledResult{
 					Messages: messages,
 					Turn:     turn,
@@ -1062,6 +1065,11 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		respEvent.Data["finish_reason"] = resp.FinishReason
 		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.logger)
 
+		emitToSink(ctx, session.EventTypeReasoningDelta, turn, string(phase), map[string]interface{}{
+			"content_preview": truncatePreview(resp.Message.Content, 200),
+			"tool_call_count": len(resp.ToolCalls),
+		})
+
 		if len(resp.ToolCalls) > 0 {
 			for _, tc := range resp.ToolCalls {
 				if sr := sentinelResult(tc); sr != nil {
@@ -1075,7 +1083,18 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 
 			messages = append(messages, resp.Message)
 			for i, tc := range resp.ToolCalls {
+				emitToSink(ctx, session.EventTypeToolCallStart, turn, string(phase), map[string]interface{}{
+					"tool_name": tc.Name,
+					"tool_index": i,
+				})
+
 				toolResult := inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
+
+				emitToSink(ctx, session.EventTypeToolResult, turn, string(phase), map[string]interface{}{
+					"tool_name":      tc.Name,
+					"tool_index":     i,
+					"result_preview": truncatePreview(toolResult, 200),
+				})
 
 				tcEvent := audit.NewEvent(audit.EventTypeLLMToolCall, correlationID)
 				tcEvent.EventAction = audit.ActionToolExecution
@@ -1295,6 +1314,31 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 	}
 
 	return result
+}
+
+// emitToSink sends an InvestigationEvent to the context-carried event sink
+// using non-blocking send semantics. If the sink is nil (no subscriber) or
+// the channel buffer is full, the event is silently dropped. This ensures
+// the investigation loop is never blocked by a slow SSE consumer.
+func emitToSink(ctx context.Context, eventType string, turn int, phase string, data map[string]interface{}) {
+	sink := session.EventSinkFromContext(ctx)
+	if sink == nil {
+		return
+	}
+	var raw json.RawMessage
+	if data != nil {
+		raw, _ = json.Marshal(data)
+	}
+	event := session.InvestigationEvent{
+		Type:  eventType,
+		Turn:  turn,
+		Phase: phase,
+		Data:  raw,
+	}
+	select {
+	case sink <- event:
+	default:
+	}
 }
 
 // emitCancellationAudit emits an investigation-level cancellation event

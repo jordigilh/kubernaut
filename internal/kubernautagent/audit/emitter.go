@@ -52,6 +52,11 @@ const (
 	// point of cancellation. This enables SOC2 CC8.1 audit reconstruction
 	// of partial investigation progress.
 	EventTypeInvestigationCancelled = "aiagent.investigation.cancelled"
+
+	// EventTypeSessionObserved is emitted when an operator subscribes to an
+	// active investigation's SSE stream (BR-SESSION-005). Records who is
+	// observing which investigation for SOC2 CC8.1 audit trail.
+	EventTypeSessionObserved = "aiagent.session.observed"
 )
 
 const (
@@ -70,6 +75,7 @@ const (
 	ActionSessionFailed    = "session_failed"
 
 	ActionInvestigationCancelled = "investigation_cancelled"
+	ActionSessionObserved       = "session_observed"
 )
 
 const (
@@ -96,6 +102,7 @@ var AllEventTypes = []string{
 	EventTypeSessionCompleted,
 	EventTypeSessionFailed,
 	EventTypeInvestigationCancelled,
+	EventTypeSessionObserved,
 }
 
 // AuditEvent represents an audit event to be stored.
