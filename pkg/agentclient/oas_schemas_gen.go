@@ -3,6 +3,8 @@
 package agentclient
 
 import (
+	"io"
+
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
 )
@@ -129,6 +131,48 @@ func (s *BusinessClassification) SetCriticality(val OptNilString) {
 func (s *BusinessClassification) SetSlaRequirement(val OptNilString) {
 	s.SlaRequirement = val
 }
+
+type CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict HTTPError
+
+func (*CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict) cancelSessionAPIV1IncidentSessionSessionIDCancelPostRes() {
+}
+
+type CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound HTTPError
+
+func (*CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound) cancelSessionAPIV1IncidentSessionSessionIDCancelPostRes() {
+}
+
+// Response after cancelling an investigation session.
+// Business Requirement: BR-SESSION-003 (Session cancellability).
+// Ref: #/components/schemas/CancelSessionResponse
+type CancelSessionResponse struct {
+	// Session identifier.
+	SessionID string `json:"session_id"`
+	// Session status after cancellation (always 'cancelled').
+	Status string `json:"status"`
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *CancelSessionResponse) GetSessionID() string {
+	return s.SessionID
+}
+
+// GetStatus returns the value of Status.
+func (s *CancelSessionResponse) GetStatus() string {
+	return s.Status
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *CancelSessionResponse) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// SetStatus sets the value of Status.
+func (s *CancelSessionResponse) SetStatus(val string) {
+	s.Status = val
+}
+
+func (*CancelSessionResponse) cancelSessionAPIV1IncidentSessionSessionIDCancelPostRes() {}
 
 // Enrichment results from SignalProcessing.
 // Contains Kubernetes context, custom labels, and business classification
@@ -285,6 +329,7 @@ func (s *HTTPError) SetRequestID(val OptNilString) {
 }
 
 func (*HTTPError) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {}
+func (*HTTPError) sessionStreamAPIV1IncidentSessionSessionIDStreamGetRes()           {}
 
 // Ref: #/components/schemas/HTTPValidationError
 type HTTPValidationError struct {
@@ -2267,6 +2312,160 @@ func (o OptNilString) Or(d string) string {
 		return v
 	}
 	return d
+}
+
+// NewOptSessionSnapshotMetadata returns new OptSessionSnapshotMetadata with value set to v.
+func NewOptSessionSnapshotMetadata(v SessionSnapshotMetadata) OptSessionSnapshotMetadata {
+	return OptSessionSnapshotMetadata{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSessionSnapshotMetadata is optional SessionSnapshotMetadata.
+type OptSessionSnapshotMetadata struct {
+	Value SessionSnapshotMetadata
+	Set   bool
+}
+
+// IsSet returns true if OptSessionSnapshotMetadata was set.
+func (o OptSessionSnapshotMetadata) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSessionSnapshotMetadata) Reset() {
+	var v SessionSnapshotMetadata
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSessionSnapshotMetadata) SetTo(v SessionSnapshotMetadata) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSessionSnapshotMetadata) Get() (v SessionSnapshotMetadata, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSessionSnapshotMetadata) Or(d SessionSnapshotMetadata) SessionSnapshotMetadata {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// Point-in-time snapshot of session state.
+// Business Requirement: BR-SESSION-002 (Session lifecycle visibility)
+// PR3 extends with messages, turn, phase, tokens from CancelledResult.
+// Ref: #/components/schemas/SessionSnapshot
+type SessionSnapshot struct {
+	// Session identifier.
+	SessionID string `json:"session_id"`
+	// Session status (cancelled, completed, or failed).
+	Status string `json:"status"`
+	// Request-level metadata (incident_id, remediation_id).
+	Metadata OptSessionSnapshotMetadata `json:"metadata"`
+	// ISO 8601 timestamp of session creation.
+	CreatedAt string `json:"created_at"`
+	// Error message for failed sessions, null otherwise.
+	Error OptNilString `json:"error"`
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *SessionSnapshot) GetSessionID() string {
+	return s.SessionID
+}
+
+// GetStatus returns the value of Status.
+func (s *SessionSnapshot) GetStatus() string {
+	return s.Status
+}
+
+// GetMetadata returns the value of Metadata.
+func (s *SessionSnapshot) GetMetadata() OptSessionSnapshotMetadata {
+	return s.Metadata
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *SessionSnapshot) GetCreatedAt() string {
+	return s.CreatedAt
+}
+
+// GetError returns the value of Error.
+func (s *SessionSnapshot) GetError() OptNilString {
+	return s.Error
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *SessionSnapshot) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// SetStatus sets the value of Status.
+func (s *SessionSnapshot) SetStatus(val string) {
+	s.Status = val
+}
+
+// SetMetadata sets the value of Metadata.
+func (s *SessionSnapshot) SetMetadata(val OptSessionSnapshotMetadata) {
+	s.Metadata = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *SessionSnapshot) SetCreatedAt(val string) {
+	s.CreatedAt = val
+}
+
+// SetError sets the value of Error.
+func (s *SessionSnapshot) SetError(val OptNilString) {
+	s.Error = val
+}
+
+func (*SessionSnapshot) sessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes() {}
+
+type SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetConflict HTTPError
+
+func (*SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetConflict) sessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes() {
+}
+
+type SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound HTTPError
+
+func (*SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound) sessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes() {
+}
+
+// Request-level metadata (incident_id, remediation_id).
+type SessionSnapshotMetadata map[string]string
+
+func (s *SessionSnapshotMetadata) init() SessionSnapshotMetadata {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+type SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+func (*SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK) sessionStreamAPIV1IncidentSessionSessionIDStreamGetRes() {
 }
 
 // Canonical severity levels for Kubernaut.
