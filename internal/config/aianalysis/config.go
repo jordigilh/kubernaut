@@ -45,6 +45,10 @@ type Config struct {
 
 	// Rego policy evaluation configuration (BR-AI-012)
 	Rego RegoConfig `yaml:"rego"`
+
+	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
+	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
+	TLSProfile string `yaml:"tlsProfile,omitempty"`
 }
 
 // AgentConfig defines Kubernaut Agent connectivity and session behavior.

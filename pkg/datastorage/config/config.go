@@ -51,6 +51,10 @@ type Config struct {
 	Logging  LoggingConfig  `yaml:"logging"`
 	Database DatabaseConfig `yaml:"database"`
 	Redis    RedisConfig    `yaml:"redis"`
+
+	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
+	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
+	TLSProfile string `yaml:"tlsProfile,omitempty"`
 }
 
 // ServerConfig contains HTTP server configuration

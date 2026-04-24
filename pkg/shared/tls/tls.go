@@ -87,6 +87,7 @@ func ConfigureConditionalTLS(server *http.Server, certDir string) (bool, *CertRe
 		GetCertificate: reloader.GetCertificate,
 		MinVersion:     tls.VersionTLS12,
 	}
+	ApplyProfile(server.TLSConfig, getDefaultSecurityProfile())
 
 	return true, reloader, nil
 }
@@ -199,10 +200,10 @@ func NewTLSTransport(caFile string) (*http.Transport, error) {
 		return nil, err
 	}
 
-	return &http.Transport{
-		TLSClientConfig: &tls.Config{
-			RootCAs:    pool,
-			MinVersion: tls.VersionTLS12,
-		},
-	}, nil
+	tlsCfg := &tls.Config{
+		RootCAs:    pool,
+		MinVersion: tls.VersionTLS12,
+	}
+	ApplyProfile(tlsCfg, getDefaultSecurityProfile())
+	return &http.Transport{TLSClientConfig: tlsCfg}, nil
 }

@@ -2,8 +2,8 @@ apiVersion: v2
 name: kubernaut
 description: Kubernaut - Autonomous Kubernetes Remediation Platform
 type: application
-version: 1.2.0
-appVersion: "1.2.0"
+version: 1.4.0
+appVersion: "1.4.0"
 home: https://github.com/jordigilh/kubernaut
 sources:
   - https://github.com/jordigilh/kubernaut

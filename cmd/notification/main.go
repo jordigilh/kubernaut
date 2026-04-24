@@ -508,6 +508,13 @@ func main() {
 		defer routingWatcher.Stop()
 	}
 
+	// Issue #748: Load OCP TLS security profile from config before any TLS setup
+	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
+		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
+	} else if cfg.TLSProfile != "" {
+		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
+	}
+
 	// Issue #756: Start CA file watcher for client-side TLS hot-reload
 	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
 	if caWatchErr != nil {

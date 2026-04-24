@@ -128,6 +128,13 @@ func main() {
 	serverCtx, serverCancel := context.WithCancel(context.Background())
 	defer serverCancel()
 
+	// Issue #748: Load OCP TLS security profile from config before any TLS setup
+	if err := sharedtls.SetDefaultSecurityProfileFromConfig(serverCfg.TLSProfile); err != nil {
+		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
+	} else if serverCfg.TLSProfile != "" {
+		logger.Info("TLS security profile active", "profile", serverCfg.TLSProfile)
+	}
+
 	// Issue #756: Start CA file watcher for client-side TLS hot-reload
 	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(serverCtx, logger)
 	if caWatchErr != nil {

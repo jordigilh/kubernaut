@@ -129,11 +129,13 @@ func buildCertPool(pemData []byte) (*x509.CertPool, error) {
 }
 
 // buildCATransport creates an http.Transport configured with the given CA pool.
+// Issue #748: Applies the process-wide SecurityProfile when set (OCP deployments).
 func buildCATransport(pool *x509.CertPool) *http.Transport {
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.TLSClientConfig = &tls.Config{
 		RootCAs:    pool,
 		MinVersion: tls.VersionTLS12,
 	}
+	ApplyProfile(t.TLSClientConfig, getDefaultSecurityProfile())
 	return t
 }

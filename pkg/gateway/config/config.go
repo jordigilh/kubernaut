@@ -46,6 +46,10 @@ type ServerConfig struct {
 
 	// Business logic configuration
 	Processing ProcessingSettings `yaml:"processing"`
+
+	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
+	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
+	TLSProfile string `yaml:"tlsProfile,omitempty"`
 }
 
 // ServerSettings contains HTTP server configuration.
