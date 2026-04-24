@@ -475,6 +475,155 @@
         }
       }
     },
+    "/api/v1/incident/session/{session_id}/cancel": {
+      "post": {
+        "tags": [
+          "Session Control"
+        ],
+        "summary": "Cancel Investigation Session",
+        "description": "Cancel a running investigation session.\n\nBusiness Requirement: BR-SESSION-003 (Session cancellability)\nDesign Decision: DD-004 (RFC 7807 Problem Details)\n\nReturns 200 with cancelled session state.\nReturns 404 if session not found.\nReturns 409 if session already in terminal state.",
+        "operationId": "cancel_session_api_v1_incident_session__session_id__cancel_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session cancelled successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelSessionResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Session already in terminal state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/incident/session/{session_id}/snapshot": {
+      "get": {
+        "tags": [
+          "Session Control"
+        ],
+        "summary": "Session Snapshot",
+        "description": "Retrieve point-in-time snapshot of session state.\n\nBusiness Requirement: BR-SESSION-002 (Session lifecycle visibility)\n\nReturns 200 with session state for terminal sessions (cancelled, completed, failed).\nReturns 409 if session is still in progress.\nReturns 404 if session not found.\n\nPR3 extends the response with CancelledResult fields (messages, turn, phase, tokens).",
+        "operationId": "session_snapshot_api_v1_incident_session__session_id__snapshot_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Session still in progress",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/incident/session/{session_id}/stream": {
+      "get": {
+        "tags": [
+          "Session Control"
+        ],
+        "summary": "Stream Investigation Events",
+        "description": "Subscribe to live investigation events via Server-Sent Events (SSE).\n\nBusiness Requirement: BR-SESSION-007 (Investigation event observability)\n\nPR2: Returns 501 Not Implemented (stub).\nPR4: Full SSE implementation with turn-level and token-level events.\n\nSSE format: id: {seq}\\nevent: {type}\\ndata: {json}\\n\\n",
+        "operationId": "session_stream_api_v1_incident_session__session_id__stream_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -578,6 +727,27 @@
         ],
         "title": "AlternativeWorkflow",
         "description": "Alternative workflow recommendation for operator context.\n\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nIMPORTANT: Alternatives are for CONTEXT, not EXECUTION.\nPer APPROVAL_REJECTION_BEHAVIOR_DETAILED.md:\n- \u2705 Purpose: Help operator make an informed decision\n- \u2705 Content: Pros/cons of alternative approaches\n- \u274c NOT: A fallback queue for automatic execution\n\nOnly `selected_workflow` is executed. Alternatives provide:\n- Audit trail of what options were considered\n- Context for operator approval decisions\n- Transparency into AI reasoning"
+      },
+      "CancelSessionResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id",
+            "description": "Session identifier"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Session status after cancellation (always 'cancelled')"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "status"
+        ],
+        "title": "CancelSessionResponse",
+        "description": "Response after cancelling an investigation session.\n\nBusiness Requirement: BR-SESSION-003 (Session cancellability)"
       },
       "BusinessClassification": {
         "properties": {
@@ -1127,6 +1297,53 @@
         ],
         "title": "IncidentResponse",
         "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\nDesign Decision: ADR-055 (LLM-Driven Context Enrichment)\n\nFields added per AIAnalysis team requests:\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY\n- needs_human_review: AI could not produce reliable result (Dec 6, 2025)\n\nADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input."
+      },
+      "SessionSnapshot": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id",
+            "description": "Session identifier"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Session status (cancelled, completed, or failed)"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Metadata",
+            "description": "Request-level metadata (incident_id, remediation_id)"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "ISO 8601 timestamp of session creation"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Error message for failed sessions, null otherwise"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "status",
+          "created_at"
+        ],
+        "title": "SessionSnapshot",
+        "description": "Point-in-time snapshot of session state.\n\nBusiness Requirement: BR-SESSION-002 (Session lifecycle visibility)\n\nPR3 extends with messages, turn, phase, tokens from CancelledResult."
       },
       "Severity": {
         "type": "string",

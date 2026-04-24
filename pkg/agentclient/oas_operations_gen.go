@@ -6,10 +6,13 @@ package agentclient
 type OperationName = string
 
 const (
+	CancelSessionAPIV1IncidentSessionSessionIDCancelPostOperation                OperationName = "CancelSessionAPIV1IncidentSessionSessionIDCancelPost"
 	GetConfigConfigGetOperation                                                  OperationName = "GetConfigConfigGet"
 	HealthCheckHealthGetOperation                                                OperationName = "HealthCheckHealthGet"
 	IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostOperation                     OperationName = "IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost"
 	IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetOperation OperationName = "IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet"
 	IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOperation       OperationName = "IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet"
 	ReadinessCheckReadyGetOperation                                              OperationName = "ReadinessCheckReadyGet"
+	SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetOperation             OperationName = "SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet"
+	SessionStreamAPIV1IncidentSessionSessionIDStreamGetOperation                 OperationName = "SessionStreamAPIV1IncidentSessionSessionIDStreamGet"
 )

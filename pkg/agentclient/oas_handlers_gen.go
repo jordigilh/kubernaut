@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
-	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -34,6 +34,154 @@ func (c *codeRecorder) Unwrap() http.ResponseWriter {
 	return c.ResponseWriter
 }
 
+// handleCancelSessionAPIV1IncidentSessionSessionIDCancelPostRequest handles cancel_session_api_v1_incident_session__session_id__cancel_post operation.
+//
+// Cancel a running investigation session.
+// Business Requirement: BR-SESSION-003 (Session cancellability)
+// Design Decision: DD-004 (RFC 7807 Problem Details)
+// Returns 200 with cancelled session state.
+// Returns 404 if session not found.
+// Returns 409 if session already in terminal state.
+//
+// POST /api/v1/incident/session/{session_id}/cancel
+func (s *Server) handleCancelSessionAPIV1IncidentSessionSessionIDCancelPostRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("cancel_session_api_v1_incident_session__session_id__cancel_post"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.HTTPRouteKey.String("/api/v1/incident/session/{session_id}/cancel"),
+	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), CancelSessionAPIV1IncidentSessionSessionIDCancelPostOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: CancelSessionAPIV1IncidentSessionSessionIDCancelPostOperation,
+			ID:   "cancel_session_api_v1_incident_session__session_id__cancel_post",
+		}
+	)
+	params, err := decodeCancelSessionAPIV1IncidentSessionSessionIDCancelPostParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    CancelSessionAPIV1IncidentSessionSessionIDCancelPostOperation,
+			OperationSummary: "Cancel Investigation Session",
+			OperationID:      "cancel_session_api_v1_incident_session__session_id__cancel_post",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "session_id",
+					In:   "path",
+				}: params.SessionID,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams
+			Response = CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackCancelSessionAPIV1IncidentSessionSessionIDCancelPostParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.CancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.CancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeCancelSessionAPIV1IncidentSessionSessionIDCancelPostResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
 // handleGetConfigConfigGetRequest handles get_config_config_get operation.
 //
 // Get service configuration (sanitized)
@@ -48,6 +196,8 @@ func (s *Server) handleGetConfigConfigGetRequest(args [0]string, argsEscaped boo
 		semconv.HTTPRequestMethodKey.String("GET"),
 		semconv.HTTPRouteKey.String("/config"),
 	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
 	ctx, span := s.cfg.Tracer.Start(r.Context(), GetConfigConfigGetOperation,
@@ -171,6 +321,8 @@ func (s *Server) handleHealthCheckHealthGetRequest(args [0]string, argsEscaped b
 		semconv.HTTPRequestMethodKey.String("GET"),
 		semconv.HTTPRouteKey.String("/health"),
 	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
 	ctx, span := s.cfg.Tracer.Start(r.Context(), HealthCheckHealthGetOperation,
@@ -299,6 +451,8 @@ func (s *Server) handleIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRequest(ar
 		semconv.HTTPRequestMethodKey.String("POST"),
 		semconv.HTTPRouteKey.String("/api/v1/incident/analyze"),
 	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
 	ctx, span := s.cfg.Tracer.Start(r.Context(), IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostOperation,
@@ -440,6 +594,8 @@ func (s *Server) handleIncidentSessionResultEndpointAPIV1IncidentSessionSessionI
 		semconv.HTTPRequestMethodKey.String("GET"),
 		semconv.HTTPRouteKey.String("/api/v1/incident/session/{session_id}/result"),
 	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
 	ctx, span := s.cfg.Tracer.Start(r.Context(), IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetOperation,
@@ -581,6 +737,8 @@ func (s *Server) handleIncidentSessionStatusEndpointAPIV1IncidentSessionSessionI
 		semconv.HTTPRequestMethodKey.String("GET"),
 		semconv.HTTPRouteKey.String("/api/v1/incident/session/{session_id}"),
 	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
 	ctx, span := s.cfg.Tracer.Start(r.Context(), IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOperation,
@@ -727,6 +885,8 @@ func (s *Server) handleReadinessCheckReadyGetRequest(args [0]string, argsEscaped
 		semconv.HTTPRequestMethodKey.String("GET"),
 		semconv.HTTPRouteKey.String("/ready"),
 	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
 	ctx, span := s.cfg.Tracer.Start(r.Context(), ReadinessCheckReadyGetOperation,
@@ -828,6 +988,301 @@ func (s *Server) handleReadinessCheckReadyGetRequest(args [0]string, argsEscaped
 	}
 
 	if err := encodeReadinessCheckReadyGetResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
+// handleSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRequest handles session_snapshot_api_v1_incident_session__session_id__snapshot_get operation.
+//
+// Retrieve point-in-time snapshot of session state.
+// Business Requirement: BR-SESSION-002 (Session lifecycle visibility)
+// Returns 200 with session state for terminal sessions (cancelled, completed, failed).
+// Returns 409 if session is still in progress.
+// Returns 404 if session not found.
+// PR3 extends the response with CancelledResult fields (messages, turn, phase, tokens).
+//
+// GET /api/v1/incident/session/{session_id}/snapshot
+func (s *Server) handleSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("session_snapshot_api_v1_incident_session__session_id__snapshot_get"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/api/v1/incident/session/{session_id}/snapshot"),
+	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetOperation,
+			ID:   "session_snapshot_api_v1_incident_session__session_id__snapshot_get",
+		}
+	)
+	params, err := decodeSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetOperation,
+			OperationSummary: "Session Snapshot",
+			OperationID:      "session_snapshot_api_v1_incident_session__session_id__snapshot_get",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "session_id",
+					In:   "path",
+				}: params.SessionID,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams
+			Response = SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
+// handleSessionStreamAPIV1IncidentSessionSessionIDStreamGetRequest handles session_stream_api_v1_incident_session__session_id__stream_get operation.
+//
+// Subscribe to live investigation events via Server-Sent Events (SSE).
+// Business Requirement: BR-SESSION-007 (Investigation event observability)
+// PR2: Returns 501 Not Implemented (stub).
+// PR4: Full SSE implementation with turn-level and token-level events.
+// SSE format: id: {seq}\nevent: {type}\ndata: {json}\n\n.
+//
+// GET /api/v1/incident/session/{session_id}/stream
+func (s *Server) handleSessionStreamAPIV1IncidentSessionSessionIDStreamGetRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("session_stream_api_v1_incident_session__session_id__stream_get"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/api/v1/incident/session/{session_id}/stream"),
+	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), SessionStreamAPIV1IncidentSessionSessionIDStreamGetOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: SessionStreamAPIV1IncidentSessionSessionIDStreamGetOperation,
+			ID:   "session_stream_api_v1_incident_session__session_id__stream_get",
+		}
+	)
+	params, err := decodeSessionStreamAPIV1IncidentSessionSessionIDStreamGetParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    SessionStreamAPIV1IncidentSessionSessionIDStreamGetOperation,
+			OperationSummary: "Stream Investigation Events",
+			OperationID:      "session_stream_api_v1_incident_session__session_id__stream_get",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "session_id",
+					In:   "path",
+				}: params.SessionID,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams
+			Response = SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackSessionStreamAPIV1IncidentSessionSessionIDStreamGetParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.SessionStreamAPIV1IncidentSessionSessionIDStreamGet(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.SessionStreamAPIV1IncidentSessionSessionIDStreamGet(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeSessionStreamAPIV1IncidentSessionSessionIDStreamGetResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
