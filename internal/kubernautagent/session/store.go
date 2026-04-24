@@ -116,9 +116,9 @@ func (s *Session) clone() *Session {
 	return &cp
 }
 
-// isTerminal reports whether the given status represents a final state
-// that cannot be changed.
-func isTerminal(st Status) bool {
+// IsTerminal reports whether the given status represents a final state
+// that cannot be changed (completed, failed, or cancelled).
+func IsTerminal(st Status) bool {
 	return st == StatusCompleted || st == StatusFailed || st == StatusCancelled
 }
 
@@ -140,7 +140,7 @@ func (s *Store) Update(id string, status Status, result interface{}, err error) 
 	if !ok {
 		return ErrSessionNotFound
 	}
-	if isTerminal(sess.Status) {
+	if IsTerminal(sess.Status) {
 		return ErrSessionTerminal
 	}
 	sess.Status = status
