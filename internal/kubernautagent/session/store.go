@@ -149,6 +149,17 @@ func (s *Store) Update(id string, status Status, result interface{}, err error) 
 	return nil
 }
 
+// SetResult attaches a result to an existing session without changing its
+// status. Used to persist partial investigation state on cancelled sessions
+// where Store.Update would reject the status transition (BR-SESSION-002).
+func (s *Store) SetResult(id string, result interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess, ok := s.sessions[id]; ok {
+		sess.Result = result
+	}
+}
+
 // StartCleanupLoop runs Cleanup periodically until the context is cancelled.
 func (s *Store) StartCleanupLoop(ctx context.Context, interval time.Duration) {
 	go func() {

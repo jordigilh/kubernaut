@@ -94,6 +94,9 @@ func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, me
 					slog.String("session_id", id),
 					slog.String("attempted_status", string(StatusFailed)),
 					slog.String("reason", updateErr.Error()))
+				if bgCtx.Err() != nil {
+					m.storePartialResult(id, nil)
+				}
 			} else {
 				m.emitSessionEvent(context.Background(), audit.EventTypeSessionFailed, audit.ActionSessionFailed, audit.OutcomeFailure, id, correlationID, fnErr)
 			}
@@ -104,6 +107,9 @@ func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, me
 				slog.String("session_id", id),
 				slog.String("attempted_status", string(StatusCompleted)),
 				slog.String("reason", updateErr.Error()))
+			if bgCtx.Err() != nil {
+				m.storePartialResult(id, result)
+			}
 		} else {
 			m.emitSessionEvent(context.Background(), audit.EventTypeSessionCompleted, audit.ActionSessionCompleted, audit.OutcomeSuccess, id, correlationID, nil)
 		}
@@ -179,6 +185,14 @@ func (m *Manager) closeEventChan(id string) {
 // GetSession retrieves the current state of an investigation session.
 func (m *Manager) GetSession(id string) (*Session, error) {
 	return m.store.Get(id)
+}
+
+// storePartialResult attaches a result to a session that is already in a
+// terminal state (e.g. StatusCancelled). Delegates to Store.SetResult which
+// does not change the session status — only the Result field. This preserves
+// partial investigation state for snapshot retrieval (BR-SESSION-002).
+func (m *Manager) storePartialResult(id string, result interface{}) {
+	m.store.SetResult(id, result)
 }
 
 // emitSessionEvent builds and stores an audit event for a session lifecycle

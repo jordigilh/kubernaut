@@ -127,6 +127,27 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 		)
 	})
 
+	Describe("UT-KA-823-A04: Investigation cancellation event registered and well-formed", func() {
+		It("should include investigation.cancelled in AllEventTypes", func() {
+			Expect(audit.AllEventTypes).To(ContainElement(audit.EventTypeInvestigationCancelled))
+		})
+
+		It("should have correct event type prefix", func() {
+			Expect(audit.EventTypeInvestigationCancelled).To(HavePrefix("aiagent."))
+		})
+
+		It("should produce a well-formed event with NewEvent", func() {
+			event := audit.NewEvent(audit.EventTypeInvestigationCancelled, "rr-cancel-test")
+			Expect(event.EventType).To(Equal("aiagent.investigation.cancelled"))
+			Expect(event.EventCategory).To(Equal(audit.EventCategory))
+			Expect(event.CorrelationID).To(Equal("rr-cancel-test"))
+		})
+
+		It("should have a non-empty action constant", func() {
+			Expect(audit.ActionInvestigationCancelled).NotTo(BeEmpty())
+		})
+	})
+
 	Describe("UT-KA-433-013: Audit best-effort helper does not propagate errors", func() {
 		It("should not panic or return error when StoreAudit fails", func() {
 			store := &mockAuditStore{err: errors.New("audit store unavailable")}
