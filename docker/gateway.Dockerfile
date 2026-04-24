@@ -17,7 +17,7 @@ ARG TARGETARCH
 ARG GOOS=linux
 ARG GOARCH=${TARGETARCH}
 ARG GOFLAGS=""
-ARG APP_VERSION=v1.2.0
+ARG APP_VERSION=v1.4.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
@@ -62,7 +62,7 @@ USER 65534
 EXPOSE 8080 9090 8081
 ENTRYPOINT ["/gateway"]
 
-ARG APP_VERSION=v1.2.0
+ARG APP_VERSION=v1.4.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
@@ -98,7 +98,7 @@ USER 1001
 EXPOSE 8080 9090 8081
 ENTRYPOINT ["/usr/local/bin/gateway"]
 
-ARG APP_VERSION=v1.2.0
+ARG APP_VERSION=v1.4.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
