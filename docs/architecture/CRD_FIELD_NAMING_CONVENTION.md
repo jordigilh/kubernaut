@@ -592,7 +592,7 @@ type WorkflowExecutionStatus struct {
     // Step statuses
     StepStatuses []WorkflowStepStatus `json:"stepStatuses,omitempty"`
 
-    // Child CRD reference
+    // KubernetesExecutionRef (DEPRECATED - ADR-025): legacy field name; new designs use Tekton TaskRun references
     KubernetesExecutionRef string `json:"kubernetesExecutionRef,omitempty"`
 
     // Conditions

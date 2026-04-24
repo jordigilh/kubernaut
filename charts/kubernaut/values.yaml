@@ -198,6 +198,8 @@ remediationorchestrator:
       proactiveAlertDelay: "5m"
     notifications:
       notifySelfResolved: false
+    retention:
+      period: "24h"  # Issue #265: CRD retention TTL before automatic cleanup
 
 # -- WorkflowExecution controller
 workflowexecution:
@@ -267,18 +269,7 @@ effectivenessmonitor:
   config:
     assessment:
       stabilizationWindow: "30s"
-      # Issue #625: Must exceed the longest Prometheus alert `for` duration
-      # to avoid premature "anomaly persists" on metrics component.
-      # Cert scenarios use `for: 3m` (180s); GitOps adds ~120s recovery.
-      validityWindow: "300s"
-  external:
-    # To enable monitoring integration, install kube-prometheus-stack and set both to true.
-    prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
-    prometheusEnabled: false
-    alertManagerUrl: "http://kube-prometheus-stack-alertmanager.monitoring.svc:9093"
-    alertManagerEnabled: false
-    # tlsCaFile: ""  # Path to PEM CA bundle for HTTPS (OCP: /etc/ssl/em/service-ca.crt)
-    # ocpMonitoringRbac: false  # OCP: cluster-monitoring-view CRB + alertmanagers/api ClusterRole (Issue #576)
+      validityWindow: "120s"
   # initImage: "registry.access.redhat.com/ubi10/ubi-minimal:latest"  # Init container image for wait-for-service-ca (Issue #484)
   resources:
     requests:
@@ -288,7 +279,7 @@ effectivenessmonitor:
       memory: 256Mi
       cpu: 500m
 
-# -- Kubernaut Agent (LLM integration service)
+# -- Kubernaut Agent (Go LLM investigation service)
 kubernautAgent:
   replicas: 1
   pdb:
@@ -308,8 +299,7 @@ kubernautAgent:
     # K8s Secret reference for LLM API credentials (not part of SDK ConfigMap).
     credentialsSecretName: llm-credentials
     # -- Quickstart: set provider + model to auto-generate a minimal SDK config.
-    # Supported providers for quickstart: openai, anthropic (any provider needing only an API key env var).
-    # For Vertex AI, Azure, or advanced setups (toolsets, MCP), use sdkConfigContent or existingSdkConfigMap.
+    # Supported providers: openai, anthropic, bedrock, mistral, vertex, local.
     provider: ""   # e.g., "openai", "anthropic"
     model: ""      # e.g., "gpt-4o", "claude-sonnet-4-20250514"
     # -- Enable structured JSON output via provider-native schema enforcement.
@@ -335,25 +325,33 @@ kubernautAgent:
   # this ConfigMap at /etc/kubernaut-agent/sdk/ instead.
   # Takes priority over sdkConfigContent and llm.provider/model.
   existingSdkConfigMap: ""
-  # -- Prometheus integration for LLM investigation context.
-  # When enabled with llm.provider/model (quickstart), auto-configures the
-  # prometheus/metrics toolset in the SDK config.
-  # When using sdkConfigContent or existingSdkConfigMap, you must manually add
-  # the prometheus/metrics toolset to your SDK config (see NOTES.txt after install).
-  # On OCP, also injects the service-serving CA and monitoring RBAC.
-  prometheus:
+  # -- Conversational API (#592): interactive follow-up on investigation results.
+  conversations:
     enabled: false
-    url: ""
-    ocpMonitoringRbac: false
-    # -- TLS CA trust for HTTPS connections to Prometheus/Thanos.
-    # On OCP with ocpMonitoringRbac=true, TLS is implied and the chart
-    # auto-creates a ConfigMap with the service-serving CA (no config needed).
-    # On vanilla K8s, set tls.enabled=true and tls.caConfigMapName to a
-    # ConfigMap you manage that contains the CA PEM certificate.
-    tls:
-      enabled: false
-      caConfigMapName: ""          # your ConfigMap name (leave empty on OCP)
-      caConfigMapKey: "service-ca.crt"  # key inside the ConfigMap holding the PEM
+    port: 8444
+    session:
+      ttl: 30m
+      maxTurns: 30
+    rateLimit:
+      perUserPerMinute: 10
+      perSession: 30
+    # Optional separate LLM config for conversations (cheaper model).
+    # If omitted, reuses the investigation LLM config.
+    # llm:
+    #   provider: "openai"
+    #   model: "gpt-4o-mini"
+  # -- Shadow agent alignment check (#601): parallel audit for prompt injection detection.
+  alignmentCheck:
+    enabled: false
+    timeout: "10s"
+    maxStepTokens: 500
+    # Optional separate LLM config for alignment evaluation.
+    # If omitted, reuses the investigation LLM client.
+    llm: {}
+    #   provider: "openai"
+    #   model: "gpt-4o-mini"
+    #   endpoint: ""
+    #   apiKey: ""
 
 # -- AuthWebhook admission controller
 authwebhook:
@@ -431,3 +429,62 @@ hooks:
     # Shared kubectl image for all hook Jobs (TLS cert gen, CRD upgrade).
     # Both hooks need kubectl — a single pinned image avoids duplication.
     image: docker.io/bitnami/kubectl:latest@sha256:6e2cdb22d6ab7264ea198c717f555e30536b54029d26c8781b9f25f78951b564
+
+# -- Unified monitoring configuration (Issue #463).
+# Single source of truth for Prometheus/AlertManager endpoints.
+# Propagated to both EffectivenessMonitor and Kubernaut Agent.
+monitoring:
+  prometheus:
+    enabled: false
+    url: ""
+    tlsCaFile: ""
+  alertManager:
+    enabled: false
+    url: ""
+    tlsCaFile: ""
+
+# -- NetworkPolicies: default-deny with explicit allow rules (Issue #285)
+networkPolicies:
+  enabled: true
+  apiServerCIDR: ""
+  monitoring:
+    namespace: ""
+    prometheusPort: 9090
+    alertManagerPort: 9093
+  externalWebhooks:
+    cidr: "0.0.0.0/0"
+    port: 443
+  externalRegistry:
+    cidr: "0.0.0.0/0"
+    port: 443
+  gateway:
+    enabled: true
+    ingressNamespaces: []
+  datastorage:
+    enabled: true
+  aianalysis:
+    enabled: true
+  kubernautAgent:
+    enabled: true
+    # conversationIngress overrides the default source selector for conversation API traffic.
+    # If empty, defaults to gateway-service pods.
+    # conversationIngress:
+    #   - podSelector:
+    #       matchLabels:
+    #         app: ocp-console-plugin
+  signalprocessing:
+    enabled: true
+  remediationorchestrator:
+    enabled: true
+  workflowexecution:
+    enabled: true
+  notification:
+    enabled: true
+  effectivenessmonitor:
+    enabled: true
+  authwebhook:
+    enabled: true
+  postgresql:
+    enabled: true
+  valkey:
+    enabled: true

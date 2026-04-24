@@ -135,7 +135,7 @@ type Config struct {
 	Logger        *slog.Logger
 	MaxTurns      int
 	PhaseTools    katypes.PhaseToolMap
-	Registry      *registry.Registry
+	Registry      registry.ToolRegistry
 	Pipeline      Pipeline
 	ModelName     string
 	ScopeResolver ScopeResolver
@@ -154,7 +154,7 @@ type Investigator struct {
 	logger        *slog.Logger
 	maxTurns      int
 	phaseTools    katypes.PhaseToolMap
-	registry      *registry.Registry
+	registry      registry.ToolRegistry
 	pipeline      Pipeline
 	modelName     string
 	scopeResolver ScopeResolver
@@ -283,6 +283,9 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	if workflowResult.RCASummary == "" {
 		workflowResult.RCASummary = rcaResult.RCASummary
+	}
+	if workflowResult.SignalName == "" && rcaResult.SignalName != "" {
+		workflowResult.SignalName = rcaResult.SignalName
 	}
 
 	mergePhase1Fallbacks(workflowResult, p1Ctx)
@@ -801,6 +804,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		reqEvent.Data["prompt_length"] = totalPromptLength(messages)
 		reqEvent.Data["prompt_preview"] = lastUserMessage(messages, 500)
 		reqEvent.Data["toolsets_enabled"] = toolNames(toolDefs)
+		reqEvent.Data["messages"] = messagesToAuditFormat(messages)
 		audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.logger)
 
 		resp, err := client.Chat(ctx, llm.ChatRequest{
@@ -833,6 +837,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		respEvent.Data["analysis_length"] = len(resp.Message.Content)
 		respEvent.Data["analysis_preview"] = truncatePreview(resp.Message.Content, 500)
 		respEvent.Data["analysis_full"] = resp.Message.Content
+		respEvent.Data["analysis_content"] = resp.Message.Content
 		respEvent.Data["tool_call_count"] = len(resp.ToolCalls)
 		respEvent.Data["finish_reason"] = resp.FinishReason
 		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.logger)
@@ -941,6 +946,24 @@ func truncatePreview(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen]
+}
+
+func messagesToAuditFormat(messages []llm.Message) []map[string]interface{} {
+	out := make([]map[string]interface{}, len(messages))
+	for i, m := range messages {
+		entry := map[string]interface{}{
+			"role":    m.Role,
+			"content": m.Content,
+		}
+		if m.ToolCallID != "" {
+			entry["tool_call_id"] = m.ToolCallID
+		}
+		if m.ToolName != "" {
+			entry["name"] = m.ToolName
+		}
+		out[i] = entry
+	}
+	return out
 }
 
 func toolNames(defs []llm.ToolDefinition) []string {
@@ -1080,6 +1103,12 @@ func resultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	if r.ExecutionBundle != "" {
 		m["execution_bundle"] = r.ExecutionBundle
 	}
+	if r.ExecutionBundleDigest != "" {
+		m["execution_bundle_digest"] = r.ExecutionBundleDigest
+	}
+	if r.ExecutionEngine != "" {
+		m["execution_engine"] = r.ExecutionEngine
+	}
 	if len(r.ContributingFactors) > 0 {
 		m["contributing_factors"] = r.ContributingFactors
 	}
@@ -1087,6 +1116,21 @@ func resultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 		m["human_review_reason"] = r.HumanReviewReason
 	} else if r.Reason != "" {
 		m["human_review_reason"] = r.Reason
+	}
+	if r.Reason != "" {
+		m["reason"] = r.Reason
+	}
+	if r.IsActionable != nil {
+		m["is_actionable"] = *r.IsActionable
+	}
+	if r.SignalName != "" {
+		m["signal_name"] = r.SignalName
+	}
+	if r.DetectedLabels != nil {
+		m["detected_labels"] = r.DetectedLabels
+	}
+	if len(r.ValidationAttemptsHistory) > 0 {
+		m["validation_attempts_history"] = r.ValidationAttemptsHistory
 	}
 	if len(r.Warnings) > 0 {
 		m["warnings"] = r.Warnings
@@ -1104,9 +1148,15 @@ func resultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	if len(r.AlternativeWorkflows) > 0 {
 		alts := make([]map[string]interface{}, len(r.AlternativeWorkflows))
 		for i, alt := range r.AlternativeWorkflows {
-			a := map[string]interface{}{"workflow_id": alt.WorkflowID}
+			a := map[string]interface{}{
+				"workflow_id": alt.WorkflowID,
+				"confidence":  alt.Confidence,
+			}
 			if alt.Rationale != "" {
 				a["rationale"] = alt.Rationale
+			}
+			if alt.ExecutionBundle != "" {
+				a["execution_bundle"] = alt.ExecutionBundle
 			}
 			alts[i] = a
 		}
@@ -1193,27 +1243,28 @@ func mergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 
 func signalToPrompt(s katypes.SignalContext) prompt.SignalData {
 	return prompt.SignalData{
-		Name:             s.Name,
-		Namespace:        s.Namespace,
-		Severity:         s.Severity,
-		Message:          s.Message,
-		ResourceKind:     s.ResourceKind,
-		ResourceName:     s.ResourceName,
-		ClusterName:      s.ClusterName,
-		Environment:      s.Environment,
-		Priority:         s.Priority,
-		RiskTolerance:    s.RiskTolerance,
-		SignalSource:     s.SignalSource,
-		BusinessCategory: s.BusinessCategory,
-		Description:      s.Description,
-		SignalMode:       s.SignalMode,
-		FiringTime:       s.FiringTime,
-		ReceivedTime:     s.ReceivedTime,
+		Name:                       s.Name,
+		Namespace:                  s.Namespace,
+		Severity:                   s.Severity,
+		Message:                    s.Message,
+		ResourceKind:               s.ResourceKind,
+		ResourceName:               s.ResourceName,
+		ClusterName:                s.ClusterName,
+		Environment:                s.Environment,
+		Priority:                   s.Priority,
+		RiskTolerance:              s.RiskTolerance,
+		SignalSource:               s.SignalSource,
+		BusinessCategory:           s.BusinessCategory,
+		Description:                s.Description,
+		SignalMode:                 s.SignalMode,
+		FiringTime:                 s.FiringTime,
+		ReceivedTime:               s.ReceivedTime,
 		IsDuplicate:                s.IsDuplicate,
 		OccurrenceCount:            s.OccurrenceCount,
 		DeduplicationWindowMinutes: s.DeduplicationWindowMinutes,
 		FirstSeen:                  s.FirstSeen,
 		LastSeen:                   s.LastSeen,
+		SignalAnnotations:          s.SignalAnnotations,
 	}
 }
 

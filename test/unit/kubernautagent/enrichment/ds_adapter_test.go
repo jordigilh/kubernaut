@@ -214,7 +214,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 					},
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				Expect(json.NewEncoder(w).Encode(resp)).To(Succeed())
 			}))
 			defer server.Close()
 

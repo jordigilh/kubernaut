@@ -1938,3 +1938,159 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 		})
 	})
 })
+
+// ========================================
+// #243: Ansible Executor Parameter Filtering
+// ========================================
+
+var _ = Describe("Ansible Executor Parameter Filtering (#243)", func() {
+	var (
+		ansibleExec *executor.AnsibleExecutor
+		awxClient   *mockAWXClient
+		fakeClient  client.Client
+		ctx         context.Context
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		awxClient = &mockAWXClient{}
+	})
+
+	It("UT-WE-243-040: should strip undeclared params from AWX extra_vars when DeclaredParameterNames is set", func() {
+		var capturedExtraVars map[string]interface{}
+		awxClient.launchWithCredsFn = func(_ context.Context, _ int, extraVars map[string]interface{}, _ []int) (int, error) {
+			capturedExtraVars = extraVars
+			return 42, nil
+		}
+
+		engineConfig, _ := json.Marshal(map[string]interface{}{
+			"playbookPath":    "playbooks/restart.yml",
+			"jobTemplateName": "restart-pod",
+		})
+
+		wfe := newAnsibleWFE("we-filter-test", "default", engineConfig, map[string]string{
+			"NAMESPACE":    "default",
+			"REPLICAS":     "3",
+			"HALLUCINATED": "should-be-stripped",
+		})
+
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(wfe).Build()
+
+		ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
+		ansibleExec.InClusterCredentialsFn = func() (*executor.InClusterCredentials, error) {
+			return &executor.InClusterCredentials{Host: "https://localhost:6443", Token: "test-token", CACert: "test-ca"}, nil
+		}
+
+		opts := executor.CreateOptions{
+			DeclaredParameterNames: map[string]bool{
+				"NAMESPACE": true,
+				"REPLICAS":  true,
+			},
+		}
+
+		_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(capturedExtraVars).To(HaveKeyWithValue("NAMESPACE", "default"))
+		Expect(capturedExtraVars).To(HaveKey("REPLICAS"))
+		Expect(capturedExtraVars["REPLICAS"]).To(BeEquivalentTo(3),
+			"REPLICAS value should be preserved (BuildExtraVars coerces numeric strings)")
+		Expect(capturedExtraVars).NotTo(HaveKey("HALLUCINATED"),
+			"Undeclared param HALLUCINATED should be stripped from AWX extra_vars")
+	})
+
+	It("UT-WE-243-041: should pass all params through when DeclaredParameterNames is nil (no schema, backward compat)", func() {
+		var capturedExtraVars map[string]interface{}
+		awxClient.launchWithCredsFn = func(_ context.Context, _ int, extraVars map[string]interface{}, _ []int) (int, error) {
+			capturedExtraVars = extraVars
+			return 42, nil
+		}
+
+		engineConfig, _ := json.Marshal(map[string]interface{}{
+			"playbookPath":    "playbooks/restart.yml",
+			"jobTemplateName": "restart-pod",
+		})
+
+		wfe := newAnsibleWFE("we-compat-test", "default", engineConfig, map[string]string{
+			"NAMESPACE": "default",
+			"CUSTOM":    "user-value",
+		})
+
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(wfe).Build()
+
+		ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
+		ansibleExec.InClusterCredentialsFn = func() (*executor.InClusterCredentials, error) {
+			return &executor.InClusterCredentials{Host: "https://localhost:6443", Token: "test-token", CACert: "test-ca"}, nil
+		}
+
+		opts := executor.CreateOptions{
+			DeclaredParameterNames: nil,
+		}
+
+		_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(capturedExtraVars).To(HaveKeyWithValue("NAMESPACE", "default"))
+		Expect(capturedExtraVars).To(HaveKeyWithValue("CUSTOM", "user-value"),
+			"All params should pass through when no schema exists (backward compat)")
+	})
+
+	It("UT-WE-243-042: system params WFE_NAME/WFE_NAMESPACE/RR_NAME/RR_NAMESPACE must overwrite user-supplied values after filtering (F7)", func() {
+		var capturedExtraVars map[string]interface{}
+		awxClient.launchWithCredsFn = func(_ context.Context, _ int, extraVars map[string]interface{}, _ []int) (int, error) {
+			capturedExtraVars = extraVars
+			return 42, nil
+		}
+
+		engineConfig, _ := json.Marshal(map[string]interface{}{
+			"playbookPath":    "playbooks/restart.yml",
+			"jobTemplateName": "restart-pod",
+		})
+
+		wfe := newAnsibleWFE("real-wfe-name", "prod-ns", engineConfig, map[string]string{
+			"NAMESPACE":     "default",
+			"WFE_NAME":      "spoofed-wfe",
+			"WFE_NAMESPACE": "spoofed-ns",
+			"RR_NAME":       "spoofed-rr",
+			"RR_NAMESPACE":  "spoofed-rr-ns",
+		})
+
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(wfe).Build()
+
+		ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, nil, 1, ctrl.Log.WithName("test"))
+		ansibleExec.InClusterCredentialsFn = func() (*executor.InClusterCredentials, error) {
+			return &executor.InClusterCredentials{Host: "https://localhost:6443", Token: "test-token", CACert: "test-ca"}, nil
+		}
+
+		opts := executor.CreateOptions{
+			DeclaredParameterNames: map[string]bool{
+				"NAMESPACE":     true,
+				"WFE_NAME":      true,
+				"WFE_NAMESPACE": true,
+				"RR_NAME":       true,
+				"RR_NAMESPACE":  true,
+			},
+		}
+
+		_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(capturedExtraVars).To(HaveKeyWithValue("WFE_NAME", "real-wfe-name"),
+			"System-injected WFE_NAME must overwrite user-supplied spoofed value")
+		Expect(capturedExtraVars).To(HaveKeyWithValue("WFE_NAMESPACE", "prod-ns"),
+			"System-injected WFE_NAMESPACE must overwrite user-supplied spoofed value")
+		Expect(capturedExtraVars).To(HaveKeyWithValue("RR_NAME", "rr-real-wfe-name"),
+			"System-injected RR_NAME must overwrite user-supplied spoofed value")
+		Expect(capturedExtraVars).To(HaveKeyWithValue("RR_NAMESPACE", "prod-ns"),
+			"System-injected RR_NAMESPACE must overwrite user-supplied spoofed value")
+	})
+})

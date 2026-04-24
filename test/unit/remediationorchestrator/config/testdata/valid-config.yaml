@@ -24,3 +24,6 @@ datastorage:
 
 effectivenessAssessment:
   stabilizationWindow: 5m
+
+retention:
+  period: 24h

@@ -423,6 +423,12 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		allResults <- waveResult{"MockLLM", err}
 	}()
 
+	// A2b: Mock LLM Shadow (alignment evaluation — KA config references mock-llm-shadow:8080)
+	go func() {
+		err := deployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], writer)
+		allResults <- waveResult{"MockLLMShadow", err}
+	}()
+
 	// A3: Prometheus + AlertManager (EM depends on these)
 	go func() {
 		defer close(promAMReady)
@@ -507,9 +513,9 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}()
 
 	// ── Collect all results ──
-	// Wave A: KA-RBAC + MockLLM + Prom+AM(1) + 5 controllers + Gateway = 9
+	// Wave A: KA-RBAC + MockLLM + MockLLMShadow + Prom+AM(1) + 5 controllers + Gateway = 10
 	// Wave B: KubernautAgent + EM + event-exporter = 3
-	expectedResults := 12
+	expectedResults := 13
 	var deployErrors []error
 	for i := 0; i < expectedResults; i++ {
 		r := <-allResults
@@ -874,9 +880,9 @@ spec:
 }
 
 // deployMockSlack deploys a minimal HTTP service that accepts POST requests and
-// returns 200 OK. The notification controller registers the plain "slack" channel
-// at startup when SLACK_WEBHOOK_URL is set (Issue #118 Gap 11), pointing it at
-// this mock service. Without it, Slack delivery fails with connection errors.
+// returns 200 OK. Per-receiver Slack delivery services resolve webhook URLs from
+// credentialRef files (#244). The mock-slack service acts as the webhook target
+// for E2E tests. Without it, Slack delivery fails with connection errors.
 func deployMockSlack(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  📨 Deploying mock-slack (webhook sink)...")
 

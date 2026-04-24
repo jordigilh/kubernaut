@@ -2092,6 +2092,7 @@ components:
             - email
             - slack
             - pagerduty
+            - teams
             - webhook
           description: |
             Notification delivery channel.
@@ -2462,6 +2463,7 @@ components:
             - $ref: '#/components/schemas/LLMRequestPayload'
             - $ref: '#/components/schemas/LLMResponsePayload'
             - $ref: '#/components/schemas/LLMToolCallPayload'
+            - $ref: '#/components/schemas/ConversationTurnPayload'
             - $ref: '#/components/schemas/WorkflowValidationPayload'
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
@@ -2541,6 +2543,7 @@ components:
               'aiagent.llm.request': '#/components/schemas/LLMRequestPayload'
               'aiagent.llm.response': '#/components/schemas/LLMResponsePayload'
               'aiagent.llm.tool_call': '#/components/schemas/LLMToolCallPayload'
+              'aiagent.conversation.turn': '#/components/schemas/ConversationTurnPayload'
               'aiagent.workflow.validation_attempt': '#/components/schemas/WorkflowValidationPayload'
               'effectiveness.health.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.hash.computed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
@@ -4022,7 +4025,7 @@ components:
         # Failure Fields (conditional)
         failure_reason:
           type: string
-          enum: [OOMKilled, DeadlineExceeded, Forbidden, ImagePullBackOff, ConfigurationError, ResourceExhausted, TaskFailed, Unknown]
+          enum: [OOMKilled, DeadlineExceeded, Forbidden, ImagePullBackOff, ConfigurationError, ResourceExhausted, TaskFailed, UnsupportedEngine, Deduplicated, Unknown]
           description: Categorized failure reason
         failure_message:
           type: string
@@ -6142,6 +6145,35 @@ components:
             type: string
         requested_by:
           type: string
+
+    ConversationTurnPayload:
+      type: object
+      required: [event_type, event_id, session_id, user_id, question]
+      description: Conversation turn event payload (aiagent.conversation.turn)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.conversation.turn']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Conversation session identifier
+        user_id:
+          type: string
+          description: Authenticated user who sent the message
+        question:
+          type: string
+          description: User's question or message
+        answer:
+          type: string
+          description: Agent's response
+        turn_number:
+          type: integer
+          minimum: 0
+          description: Sequential turn number within the session
 
     ActionTypeWebhookAuditPayload:
       type: object

@@ -32,19 +32,25 @@ gateway:
 
 effectivenessmonitor:
   initImage: "registry.access.redhat.com/ubi10/ubi-minimal:latest"
-  external:
-    prometheusUrl: "https://prometheus-k8s.openshift-monitoring.svc:9091"
-    prometheusEnabled: true
-    alertManagerUrl: "https://alertmanager-main.openshift-monitoring.svc:9094"
-    alertManagerEnabled: true
-    tlsCaFile: "/etc/ssl/em/service-ca.crt"
-    ocpMonitoringRbac: true
 
-kubernautAgent:
+# Unified monitoring config — OCP auto-detection fills Thanos/AM URLs
+# when urls are left empty, so explicit URLs here are only for documentation.
+monitoring:
   prometheus:
     enabled: true
-    url: "https://prometheus-k8s.openshift-monitoring.svc:9091"
-    ocpMonitoringRbac: true
+  alertManager:
+    enabled: true
+
+networkPolicies:
+  monitoring:
+    prometheusPort: 9091
+    alertManagerPort: 9094
+
+# Issue #678: Enable inter-service TLS on OCP.
+# The service-ca operator provisions certs via Service annotations.
+tls:
+  interService:
+    enabled: true
 
 # Issue #678: Enable inter-service TLS on OCP.
 # The service-ca operator provisions certs via Service annotations.

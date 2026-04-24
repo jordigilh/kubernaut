@@ -53,7 +53,6 @@ var _ = Describe("Workflow Discovery Audit Events (GAP-WF-6)", func() {
 
 			event, err := dsaudit.NewActionsListedAuditEvent(filters, 5, durationMs)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event).ToNot(BeNil())
 			assertDurationMsInPayload(event, durationMs)
 		})
 
@@ -68,7 +67,6 @@ var _ = Describe("Workflow Discovery Audit Events (GAP-WF-6)", func() {
 
 			event, err := dsaudit.NewWorkflowsListedAuditEvent("ScaleReplicas", filters, 3, durationMs)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event).ToNot(BeNil())
 			assertDurationMsInPayload(event, durationMs)
 		})
 
@@ -83,7 +81,6 @@ var _ = Describe("Workflow Discovery Audit Events (GAP-WF-6)", func() {
 
 			event, err := dsaudit.NewWorkflowRetrievedAuditEvent("wf-uuid-123", filters, durationMs)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event).ToNot(BeNil())
 			assertDurationMsInPayload(event, durationMs)
 		})
 
@@ -98,7 +95,6 @@ var _ = Describe("Workflow Discovery Audit Events (GAP-WF-6)", func() {
 
 			event, err := dsaudit.NewSelectionValidatedAuditEvent("wf-uuid-456", filters, true, durationMs)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event).ToNot(BeNil())
 			assertDurationMsInPayload(event, durationMs)
 		})
 	})

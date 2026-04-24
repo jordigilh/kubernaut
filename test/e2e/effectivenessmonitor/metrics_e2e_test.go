@@ -51,14 +51,12 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 	// ========================================================================
 	It("E2E-EM-MC-001: should produce metrics score > 0 when improvement is detected", func() {
 		By("Injecting gauge series into Prometheus (memory improvement)")
-		// The EM queries both CPU (with rate()) and memory (raw sum()).
-		// Injecting memory gauge data with a clear before→after drop ensures a
-		// positive score regardless of rate() semantics on OTLP gauge data.
+		// The EM queries memory as sum(container_memory_working_set_bytes{namespace="..."})
+		// which is a raw gauge comparison (no rate()). Injecting gauge data with a
+		// clear before→after drop ensures a positive score without fighting
+		// rate()[5m] window semantics that require 5+ minutes of counter data.
 		//
-		// Memory query: sum(container_memory_working_set_bytes{namespace="..."})
-		// LowerIsBetter=true → lower PostValue = improvement.
-		//
-		// We inject 5 points: high memory early, dropping to low memory later.
+		// LowerIsBetter=true for memory → lower PostValue = improvement.
 		// Samples[0] (early) ≈ 500MB, Samples[len-1] (late) ≈ 200MB → score > 0.
 		now := time.Now()
 		labels := map[string]string{

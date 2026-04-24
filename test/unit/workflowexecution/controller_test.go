@@ -337,7 +337,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseRunning))
 		})
 
-		It("should mark Failed when PipelineRun belongs to another WFE (execution race)", func() {
+		It("should mark Failed/Deduplicated when PipelineRun belongs to another WFE (Issue #190)", func() {
 			prName := weexecutor.ExecutionResourceName(targetResource)
 			existingPR := &tektonv1.PipelineRun{
 				ObjectMeta: metav1.ObjectMeta{
@@ -358,7 +358,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				WithStatusSubresource(wfe).
 				Build()
 
-			// Initialize managers (required for HandleAlreadyExists)
 			statusManager := status.NewManager(client)
 			auditStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 			auditManager := audit.NewManager(auditStore, logr.Discard())
@@ -373,18 +372,18 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				AuditManager:       auditManager,
 			}
 
-			// AlreadyExists error
 			alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
 			result, err := reconciler.HandleAlreadyExists(ctx, wfe, prName, alreadyExistsErr)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero())
 
-			// Verify WFE status updated to Failed
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 			err = client.Get(ctx, types.NamespacedName{Name: "test-wfe", Namespace: "default"}, updated)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
-			Expect(updated.Status.FailureDetails).To(And(Not(BeNil()), HaveField("Message", ContainSubstring("Race condition"))))
+			Expect(updated.Status.FailureDetails).To(Not(BeZero()), "FailureDetails must be set for dedup classification")
+			Expect(updated.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonDeduplicated))
+			Expect(updated.Status.DeduplicatedBy).To(Equal("other-wfe"))
 		})
 	})
 
@@ -396,6 +395,194 @@ var _ = Describe("WorkflowExecution Controller", func() {
 	// V1.0: MarkSkipped tests removed - routing moved to RO (DD-RO-002)
 	// WFE no longer has skip logic; RO blocks creation before WFE exists
 	// ========================================
+
+	// ========================================
+	// Day 4: BuildPipelineRun() Tests (via TektonExecutor)
+	// ========================================
+
+	Describe("BuildPipelineRun", func() {
+		var (
+			wfe        *workflowexecutionv1alpha1.WorkflowExecution
+			reconciler *workflowexecution.WorkflowExecutionReconciler
+		)
+
+		BeforeEach(func() {
+			wfe = &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-wfe",
+					Namespace: "payment",
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: "payment/deployment/payment-api",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "restart-deployment",
+						Version:        "1.0.0",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-deployment:v1.0.0",
+					},
+					Parameters: map[string]string{
+						"NAMESPACE":       "payment",
+						"DEPLOYMENT_NAME": "payment-api",
+					},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			reconciler = &workflowexecution.WorkflowExecutionReconciler{
+				Client:             fakeClient,
+				Scheme:             scheme,
+				Recorder:           recorder,
+				ExecutionNamespace: "kubernaut-workflows",
+				CooldownPeriod:     5 * time.Minute,
+			}
+		})
+
+		It("should create PipelineRun with deterministic name", func() {
+			pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
+
+			// Name should be deterministic based on targetResource
+			expectedName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
+			Expect(pr.Name).To(Equal(expectedName))
+		})
+
+		It("should create PipelineRun in execution namespace", func() {
+			pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
+
+			// DD-WE-002: PipelineRuns always in kubernaut-workflows
+			Expect(pr.Namespace).To(Equal("kubernaut-workflows"))
+		})
+
+		It("should set cross-namespace tracking labels", func() {
+			pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
+
+			Expect(pr.Labels).To(HaveKeyWithValue("kubernaut.ai/workflow-execution", "test-wfe"))
+			Expect(pr.Labels).To(HaveKeyWithValue("kubernaut.ai/source-namespace", "payment"))
+			Expect(pr.Labels).To(HaveKeyWithValue("kubernaut.ai/workflow-id", "restart-deployment"))
+			// Label value is sanitized (slashes replaced with __)
+			// Original value stored in annotation
+			Expect(pr.Labels).To(HaveKeyWithValue("kubernaut.ai/target-resource", "payment__deployment__payment-api"))
+			// Verify annotation contains original value
+			Expect(pr.Annotations).To(HaveKeyWithValue("kubernaut.ai/target-resource", "payment/deployment/payment-api"))
+		})
+
+		It("should use bundle resolver with correct params", func() {
+			pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
+
+			Expect(pr.Spec.PipelineRef).To(Not(BeNil()))
+			Expect(string(pr.Spec.PipelineRef.Resolver)).To(Equal("bundles"))
+
+			// Check bundle param
+			var bundleParam, nameParam, kindParam *tektonv1.Param
+			for i := range pr.Spec.PipelineRef.Params {
+				p := &pr.Spec.PipelineRef.Params[i]
+				switch p.Name {
+				case "bundle":
+					bundleParam = p
+				case "name":
+					nameParam = p
+				case "kind":
+					kindParam = p
+				}
+			}
+
+			Expect(bundleParam).To(And(Not(BeNil()), HaveField("Value.StringVal", Equal("ghcr.io/kubernaut/workflows/restart-deployment:v1.0.0"))))
+			Expect(nameParam).To(And(Not(BeNil()), HaveField("Value.StringVal", Equal("workflow"))))
+			Expect(kindParam).To(And(Not(BeNil()), HaveField("Value.StringVal", Equal("pipeline"))))
+		})
+
+		It("should pass workflow parameters to PipelineRun", func() {
+			pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
+
+			// Check params are passed
+			paramMap := make(map[string]string)
+			for _, p := range pr.Spec.Params {
+				paramMap[p.Name] = p.Value.StringVal
+			}
+
+			Expect(paramMap).To(HaveKeyWithValue("NAMESPACE", "payment"))
+			Expect(paramMap).To(HaveKeyWithValue("DEPLOYMENT_NAME", "payment-api"))
+		})
+
+		It("should leave SA empty when WFE has no ExecutionConfig (DD-WE-005 v2.0)", func() {
+			pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
+
+			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty(),
+				"DD-WE-005: SA from WFE spec, empty when not set")
+		})
+
+		It("should handle empty parameters", func() {
+			wfe.Spec.Parameters = nil
+			pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
+
+			// Even with empty spec parameters, TARGET_RESOURCE is always added
+			Expect(pr.Spec.Params).To(HaveLen(1))
+			Expect(pr.Spec.Params[0].Name).To(Equal("TARGET_RESOURCE"))
+			Expect(pr.Spec.Params[0].Value.StringVal).To(Equal(wfe.Spec.TargetResource))
+		})
+
+		// DD-WE-005 v2.0 / Issue #501: SA resolved into Status at runtime
+		It("should use SA from WFE Status.ServiceAccountName", func() {
+			wfe.Status.ServiceAccountName = "custom-sa"
+
+			pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
+
+			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(Equal("custom-sa"))
+		})
+
+		It("should use empty SA when WFE spec has no ExecutionConfig (DD-WE-005 v2.0)", func() {
+			reconcilerNoSA := &workflowexecution.WorkflowExecutionReconciler{
+				Client:             fake.NewClientBuilder().WithScheme(scheme).Build(),
+				Scheme:             scheme,
+				ExecutionNamespace: "kubernaut-workflows",
+			}
+
+			pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconcilerNoSA.ExecutionNamespace, weexecutor.CreateOptions{})
+
+			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty(),
+				"DD-WE-005: No SA in WFE spec -> K8s assigns namespace default")
+		})
+	})
+
+	// ========================================
+	// Day 4: ConvertParameters() Tests
+	// ========================================
+
+	Describe("ConvertParameters", func() {
+		It("should convert map to Tekton params", func() {
+			params := map[string]string{
+				"KEY1": "value1",
+				"KEY2": "value2",
+			}
+
+			tektonParams := weexecutor.ConvertParameters(params)
+
+			Expect(tektonParams).To(HaveLen(2))
+
+			paramMap := make(map[string]string)
+			for _, p := range tektonParams {
+				paramMap[p.Name] = p.Value.StringVal
+			}
+
+			Expect(paramMap).To(HaveKeyWithValue("KEY1", "value1"))
+			Expect(paramMap).To(HaveKeyWithValue("KEY2", "value2"))
+		})
+
+		It("should return empty slice for nil params", func() {
+			tektonParams := weexecutor.ConvertParameters(nil)
+			Expect(tektonParams).To(BeEmpty())
+		})
+
+		It("should return empty slice for empty map", func() {
+			tektonParams := weexecutor.ConvertParameters(map[string]string{})
+			Expect(tektonParams).To(BeEmpty())
+		})
+
+		It("should set param type to string", func() {
+			params := map[string]string{"KEY": "value"}
+			tektonParams := weexecutor.ConvertParameters(params)
+
+			Expect(tektonParams[0].Value.Type).To(Equal(tektonv1.ParamTypeString))
+		})
+	})
 
 	// ========================================
 	// Day 4: FindWFEForOwnedResource() Tests
@@ -4916,6 +5103,424 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Then: Should succeed (operation is just for logging)
 				Expect(err).ToNot(HaveOccurred())
+			})
+		})
+	})
+
+	// ========================================
+	// P3: sanitizeLabelValue - Edge Cases (Unit Test Plan v1.0.0)
+	// Target: 75.0% → 85%+ coverage
+	// Note: Testing indirectly through BuildPipelineRun (sanitizeLabelValue is private)
+	// ========================================
+
+	Describe("P3: Label Sanitization via BuildPipelineRun - Edge Cases", func() {
+		var (
+			fakeClient client.Client
+			reconciler *workflowexecution.WorkflowExecutionReconciler
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				Build()
+
+			reconciler = &workflowexecution.WorkflowExecutionReconciler{
+				Client:             fakeClient,
+				Scheme:             scheme,
+				ExecutionNamespace: "kubernaut-workflows",
+			}
+		})
+
+		Context("CTRL-LABEL-01: Forward slash replacement in target-resource label", func() {
+			It("should replace forward slashes with double underscores in PipelineRun labels", func() {
+				// Given: WFE with target resource containing slashes
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-label-slash",
+						Namespace: "default",
+					},
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+							WorkflowID:     "test-workflow",
+							Version:        "v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
+						},
+						TargetResource: "namespace/deployment/app-name",
+					},
+				}
+
+				// When: BuildPipelineRun is called
+				pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
+
+				// Then: Label should have slashes replaced
+				Expect(pr.Labels["kubernaut.ai/target-resource"]).To(Equal("namespace__deployment__app-name"))
+			})
+
+			It("should handle multiple consecutive slashes", func() {
+				// Given: WFE with multiple slashes
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-multiple-slash",
+						Namespace: "default",
+					},
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+							WorkflowID:     "test-workflow",
+							Version:        "v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
+						},
+						TargetResource: "path//to///resource",
+					},
+				}
+
+				// When: BuildPipelineRun is called
+				pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
+
+				// Then: Each slash should be replaced
+				Expect(pr.Labels["kubernaut.ai/target-resource"]).To(Equal("path____to______resource"))
+			})
+		})
+
+		Context("CTRL-LABEL-02: Truncation at 63 characters", func() {
+			It("should truncate label value at exactly 63 characters", func() {
+				// Given: WFE with very long target resource (>63 chars after sanitization)
+				longResource := strings.Repeat("a", 64)
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-truncate",
+						Namespace: "default",
+					},
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+							WorkflowID:     "test-workflow",
+							Version:        "v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
+						},
+						TargetResource: longResource,
+					},
+				}
+
+				// When: BuildPipelineRun is called
+				pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
+
+				// Then: Label should be truncated to 63 characters
+				labelValue := pr.Labels["kubernaut.ai/target-resource"]
+				Expect(len(labelValue)).To(Equal(63))
+				Expect(labelValue).To(Equal(strings.Repeat("a", 63)))
+			})
+
+			It("should not truncate values under 63 characters", func() {
+				// Given: WFE with target resource exactly 63 chars
+				resource63 := strings.Repeat("b", 63)
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-no-truncate",
+						Namespace: "default",
+					},
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+							WorkflowID:     "test-workflow",
+							Version:        "v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
+						},
+						TargetResource: resource63,
+					},
+				}
+
+				// When: BuildPipelineRun is called
+				pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
+
+				// Then: Label should remain unchanged
+				labelValue := pr.Labels["kubernaut.ai/target-resource"]
+				Expect(len(labelValue)).To(Equal(63))
+				Expect(labelValue).To(Equal(resource63))
+			})
+		})
+
+		Context("CTRL-LABEL-03: Edge case combinations", func() {
+			It("should handle target resource with only slashes", func() {
+				// Given: WFE with target resource of only slashes
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-only-slashes",
+						Namespace: "default",
+					},
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+							WorkflowID:     "test-workflow",
+							Version:        "v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
+						},
+						TargetResource: "///",
+					},
+				}
+
+				// When: BuildPipelineRun is called
+				pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
+
+				// Then: Label should be all underscores
+				Expect(pr.Labels["kubernaut.ai/target-resource"]).To(Equal("______"))
+			})
+		})
+	})
+
+	// ========================================
+	// Issue #190: Deduplication Collision Classification
+	// ========================================
+
+	Describe("Issue #190: Deduplication Collision Classification", func() {
+		var (
+			fakeClient client.Client
+			reconciler *workflowexecution.WorkflowExecutionReconciler
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithStatusSubresource(&workflowexecutionv1alpha1.WorkflowExecution{}).
+				Build()
+
+			statusManager := status.NewManager(fakeClient)
+			auditStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
+			auditManager := audit.NewManager(auditStore, logr.Discard())
+
+			reconciler = &workflowexecution.WorkflowExecutionReconciler{
+				Client:             fakeClient,
+				Scheme:             scheme,
+				Recorder:           recorder,
+				ExecutionNamespace: "kubernaut-workflows",
+				AuditStore:         auditStore,
+				StatusManager:      statusManager,
+				AuditManager:       auditManager,
+			}
+		})
+
+		Context("MarkFailedAsDeduplicated (M5: AtomicStatusUpdate)", func() {
+
+			It("UT-WE-190-001: should set FailureReasonDeduplicated and DeduplicatedBy atomically", func() {
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "dedup-wfe-001",
+						Namespace: "default",
+						UID:       types.UID("dedup-wfe-001-uid"),
+					},
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						WorkflowRef:    workflowexecutionv1alpha1.WorkflowRef{WorkflowID: "test-workflow", Version: "v1"},
+						TargetResource: "default/deployment/my-app",
+					},
+				}
+				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+
+				err := reconciler.MarkFailedAsDeduplicated(ctx, wfe, "original-wfe")
+				Expect(err).ToNot(HaveOccurred())
+
+				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+				Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dedup-wfe-001", Namespace: "default"}, updated)).To(Succeed())
+
+				Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+				Expect(updated.Status.FailureDetails).To(Not(BeZero()), "FailureDetails must be set for dedup classification")
+				Expect(updated.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonDeduplicated))
+				Expect(updated.Status.FailureDetails.WasExecutionFailure).To(BeFalse())
+				Expect(updated.Status.DeduplicatedBy).To(Equal("original-wfe"))
+			})
+
+			It("UT-WE-190-003: should fall back to Unknown when label is missing (empty originalWFE)", func() {
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "dedup-wfe-003",
+						Namespace: "default",
+						UID:       types.UID("dedup-wfe-003-uid"),
+					},
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						WorkflowRef:    workflowexecutionv1alpha1.WorkflowRef{WorkflowID: "test-workflow", Version: "v1"},
+						TargetResource: "default/deployment/my-app",
+					},
+				}
+				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+
+				err := reconciler.MarkFailedWithReason(ctx, wfe, "Unknown",
+					"Execution resource already exists (target resource locked)")
+				Expect(err).ToNot(HaveOccurred())
+
+				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+				Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dedup-wfe-003", Namespace: "default"}, updated)).To(Succeed())
+
+				Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+				Expect(updated.Status.FailureDetails).To(Not(BeZero()), "FailureDetails must be set for Unknown fallback")
+				Expect(updated.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonUnknown))
+				Expect(updated.Status.DeduplicatedBy).To(BeEmpty())
+			})
+
+			It("UT-WE-190-008: DeduplicatedBy matches exact original WFE name", func() {
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "dedup-wfe-008",
+						Namespace: "default",
+						UID:       types.UID("dedup-wfe-008-uid"),
+					},
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						WorkflowRef:    workflowexecutionv1alpha1.WorkflowRef{WorkflowID: "test-workflow", Version: "v1"},
+						TargetResource: "default/deployment/my-app",
+					},
+				}
+				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+
+				originalName := "ns-my-app-wfe-abc123"
+				err := reconciler.MarkFailedAsDeduplicated(ctx, wfe, originalName)
+				Expect(err).ToNot(HaveOccurred())
+
+				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+				Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dedup-wfe-008", Namespace: "default"}, updated)).To(Succeed())
+
+				Expect(updated.Status.DeduplicatedBy).To(Equal(originalName),
+					"DeduplicatedBy must match the exact name from Job/PR label")
+			})
+		})
+
+		Context("HandleAlreadyExists — Tekton path", func() {
+
+			It("UT-WE-190-005: should set Deduplicated when PipelineRun from another WFE", func() {
+				targetResource := "default/deployment/my-app"
+				prName := weexecutor.ExecutionResourceName(targetResource)
+
+				existingPR := &tektonv1.PipelineRun{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      prName,
+						Namespace: "kubernaut-workflows",
+						Labels: map[string]string{
+							"kubernaut.ai/workflow-execution": "other-wfe",
+							"kubernaut.ai/source-namespace":   "default",
+						},
+					},
+				}
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-wfe-005", Namespace: "default"},
+					Spec:       workflowexecutionv1alpha1.WorkflowExecutionSpec{TargetResource: targetResource},
+				}
+				c := fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(wfe, existingPR).
+					WithStatusSubresource(wfe).
+					Build()
+
+				sm := status.NewManager(c)
+				as := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
+				am := audit.NewManager(as, logr.Discard())
+
+				r := &workflowexecution.WorkflowExecutionReconciler{
+					Client: c, Scheme: scheme, Recorder: recorder,
+					ExecutionNamespace: "kubernaut-workflows",
+					AuditStore: as, StatusManager: sm, AuditManager: am,
+				}
+
+				alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
+
+				result, err := r.HandleAlreadyExists(ctx, wfe, prName, alreadyExistsErr)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+				Expect(c.Get(ctx, types.NamespacedName{Name: "test-wfe-005", Namespace: "default"}, updated)).To(Succeed())
+
+				Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+				Expect(updated.Status.FailureDetails).To(Not(BeZero()), "FailureDetails must be set for Tekton dedup")
+				Expect(updated.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonDeduplicated),
+					"Tekton collision from another WFE must set FailureReasonDeduplicated")
+				Expect(updated.Status.DeduplicatedBy).To(Equal("other-wfe"),
+					"DeduplicatedBy must reference the original WFE from the PipelineRun label")
+			})
+
+			It("UT-WE-190-006: should continue with Running when PipelineRun is ours (regression guard)", func() {
+				targetResource := "default/deployment/my-app"
+				prName := weexecutor.ExecutionResourceName(targetResource)
+
+				existingPR := &tektonv1.PipelineRun{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      prName,
+						Namespace: "kubernaut-workflows",
+						Labels: map[string]string{
+							"kubernaut.ai/workflow-execution": "test-wfe-006",
+							"kubernaut.ai/source-namespace":   "default",
+						},
+					},
+				}
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-wfe-006", Namespace: "default"},
+					Spec:       workflowexecutionv1alpha1.WorkflowExecutionSpec{TargetResource: targetResource},
+				}
+				c := fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(wfe, existingPR).
+					WithStatusSubresource(wfe).
+					Build()
+
+				sm := status.NewManager(c)
+				as := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
+				am := audit.NewManager(as, logr.Discard())
+
+				r := &workflowexecution.WorkflowExecutionReconciler{
+					Client: c, Scheme: scheme, Recorder: recorder,
+					ExecutionNamespace: "kubernaut-workflows",
+					AuditStore: as, StatusManager: sm, AuditManager: am,
+				}
+
+				alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
+
+				result, err := r.HandleAlreadyExists(ctx, wfe, prName, alreadyExistsErr)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(10 * time.Second))
+
+				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+				Expect(c.Get(ctx, types.NamespacedName{Name: "test-wfe-006", Namespace: "default"}, updated)).To(Succeed())
+				Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseRunning),
+					"Own PipelineRun must transition to Running, not Deduplicated")
+				Expect(updated.Status.DeduplicatedBy).To(BeEmpty())
+			})
+
+			It("UT-WE-190-007: should fall back to Unknown when PipelineRun label missing", func() {
+				targetResource := "default/deployment/my-app"
+				prName := weexecutor.ExecutionResourceName(targetResource)
+
+				existingPR := &tektonv1.PipelineRun{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      prName,
+						Namespace: "kubernaut-workflows",
+						Labels: map[string]string{
+							"kubernaut.ai/source-namespace": "default",
+						},
+					},
+				}
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-wfe-007", Namespace: "default"},
+					Spec:       workflowexecutionv1alpha1.WorkflowExecutionSpec{TargetResource: targetResource},
+				}
+				c := fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(wfe, existingPR).
+					WithStatusSubresource(wfe).
+					Build()
+
+				sm := status.NewManager(c)
+				as := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
+				am := audit.NewManager(as, logr.Discard())
+
+				r := &workflowexecution.WorkflowExecutionReconciler{
+					Client: c, Scheme: scheme, Recorder: recorder,
+					ExecutionNamespace: "kubernaut-workflows",
+					AuditStore: as, StatusManager: sm, AuditManager: am,
+				}
+
+				alreadyExistsErr := apierrors.NewAlreadyExists(tektonv1.Resource("pipelineruns"), prName)
+
+				result, err := r.HandleAlreadyExists(ctx, wfe, prName, alreadyExistsErr)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
+				Expect(c.Get(ctx, types.NamespacedName{Name: "test-wfe-007", Namespace: "default"}, updated)).To(Succeed())
+
+				Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+				Expect(updated.Status.FailureDetails).To(Not(BeZero()), "FailureDetails must be set for Unknown fallback")
+				Expect(updated.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonUnknown),
+					"Missing WFE label must fall back to Unknown")
+				Expect(updated.Status.DeduplicatedBy).To(BeEmpty())
 			})
 		})
 	})

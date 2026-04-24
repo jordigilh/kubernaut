@@ -44,7 +44,7 @@
 || ID | Title | Scope | Status | Date | Impact |
 ||---|-------|-------|--------|------|--------|
 || DD-001 | [Recovery Context Enrichment](./DD-001-recovery-context-enrichment.md) | RemediationProcessing / AIAnalysis | ✅ Approved | 2024-10-08 | Temporal consistency, fresh context for AI recovery |
-|| DD-002 | [Per-Step Validation Framework](./DD-002-per-step-validation-framework.md) | WorkflowExecution / KubernetesExecutor | ✅ Approved | 2025-10-14 | 15-20% effectiveness improvement, cascade failure prevention |
+|| DD-002 | [Per-Step Validation Framework](./DD-002-per-step-validation-framework.md) | WorkflowExecution / ~~KubernetesExecutor~~ (DEPRECATED - ADR-025) | ✅ Approved | 2025-10-14 | 15-20% effectiveness improvement, cascade failure prevention |
 || DD-003 | [Forced Recommendation Manual Override](./DD-003-forced-recommendation-manual-override.md) | RemediationOrchestrator | ✅ Approved for V2 | 2025-10-20 | Operator autonomy, complete audit trail (V2 feature) |
 || DD-004 | [RFC 7807 Error Response Standard](./DD-004-RFC7807-ERROR-RESPONSES.md) | All HTTP Services | ✅ Approved | 2025-10-30 | Consistent error handling across all services |
 || DD-005 | [Observability Standards](./DD-005-OBSERVABILITY-STANDARDS.md) | All Services | ✅ Approved | 2025-10-31 | Metrics, logging, tracing standards |

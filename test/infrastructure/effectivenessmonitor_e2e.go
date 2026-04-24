@@ -377,6 +377,7 @@ data:
       alertManagerUrl: http://alertmanager-svc:9093
       alertManagerEnabled: true
       connectionTimeout: 10s
+      prometheusLookback: 2m
 ---
 apiVersion: v1
 kind: ServiceAccount

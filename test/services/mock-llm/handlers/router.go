@@ -20,6 +20,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/fault"
 	mockmetrics "github.com/jordigilh/kubernaut/test/services/mock-llm/metrics"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
@@ -50,13 +51,20 @@ func NewFullRouter(
 
 // NewFullRouterWithMetrics creates the HTTP mux with all Mock LLM endpoints,
 // including verification, fault injection, header recording, and Prometheus metrics.
+// When overrides is non-nil and overrides.Mode == "shadow", a minimal router
+// is returned that only serves health and shadow alignment evaluation endpoints.
 func NewFullRouterWithMetrics(
 	registry *scenarios.Registry,
 	forceText bool,
 	recordHeaders string,
 	faultInjector *fault.Injector,
 	m *mockmetrics.Metrics,
+	overrides ...*config.Overrides,
 ) http.Handler {
+	if len(overrides) > 0 && overrides[0] != nil && overrides[0].Mode == "shadow" {
+		return newShadowRouter(m)
+	}
+
 	mux := http.NewServeMux()
 
 	t := tracker.New()
@@ -110,6 +118,26 @@ func NewFullRouterWithMetrics(
 	mux.HandleFunc("/api/test/fault/reset", fh.handleResetFault)
 
 	// Prometheus metrics endpoint (BR-MOCK-080)
+	if m != nil {
+		mux.Handle("/metrics", promhttp.HandlerFor(m.Registry(), promhttp.HandlerOpts{}))
+	}
+
+	return strictRouter(mux)
+}
+
+// newShadowRouter creates a minimal router for shadow alignment evaluation mode.
+// Only health and OpenAI chat completion endpoints are registered; the chat
+// endpoint uses the shadow handler that returns JSON alignment verdicts.
+func newShadowRouter(m *mockmetrics.Metrics) http.Handler {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "mode": "shadow"})
+	})
+
+	mux.HandleFunc("/v1/chat/completions", handleShadowOpenAI)
+	mux.HandleFunc("/chat/completions", handleShadowOpenAI)
+
 	if m != nil {
 		mux.Handle("/metrics", promhttp.HandlerFor(m.Registry(), promhttp.HandlerOpts{}))
 	}

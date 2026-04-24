@@ -1,6 +1,6 @@
 # ADR-EM-001: Effectiveness Monitor Service Integration
 
-**Status**: PROPOSED
+**Status**: ACCEPTED
 **Date**: 2026-02-09
 **Decision Makers**: Architecture Team
 **Confidence**: 90%
@@ -1212,5 +1212,4 @@ Before approving this ADR for TDD implementation:
 
 ---
 
-**Status**: PROPOSED (v1.4) -- Pending architecture review before TDD implementation
-**Next**: Upon approval, proceed with TDD implementation per [Issue #82](https://github.com/jordigilh/kubernaut/issues/82)
+**Status**: ACCEPTED — Fully implemented in v1.3 (EM controller, EA CRD, RO integration, audit pipeline)

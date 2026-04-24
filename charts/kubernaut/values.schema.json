@@ -494,6 +494,18 @@
                   "description": "Emit status-update notification when signal self-resolves (BR-ORCH-037 AC-037-08)"
                 }
               }
+            },
+            "retention": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "CRD retention TTL configuration (Issue #265)",
+              "properties": {
+                "period": {
+                  "type": "string",
+                  "default": "24h",
+                  "description": "Duration before terminal RemediationRequests are cleaned up"
+                }
+              }
             }
           }
         },
@@ -627,22 +639,9 @@
               "additionalProperties": false,
               "properties": {
                 "stabilizationWindow": { "type": "string", "default": "30s", "description": "Time to wait after remediation before assessing effectiveness" },
-                "validityWindow": { "type": "string", "default": "300s", "description": "Time window for assessment validity (must exceed alert for duration)" }
+                "validityWindow": { "type": "string", "default": "120s", "description": "Time window for assessment validity" }
               }
             }
-          }
-        },
-        "external": {
-          "type": "object",
-          "description": "External monitoring service URLs",
-          "additionalProperties": false,
-          "properties": {
-            "prometheusUrl": { "type": "string" },
-            "prometheusEnabled": { "type": "boolean" },
-            "alertManagerUrl": { "type": "string" },
-            "alertManagerEnabled": { "type": "boolean" },
-            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS connections to Prometheus/AlertManager" },
-            "ocpMonitoringRbac": { "type": "boolean", "default": false, "description": "Create ClusterRoleBinding for cluster-monitoring-view and (when alertManagerEnabled) a ClusterRole granting monitoring.coreos.com/alertmanagers/api access for OCP kube-rbac-proxy" }
           }
         },
         "resources": { "$ref": "#/definitions/resources" },
@@ -657,7 +656,7 @@
     },
     "kubernautAgent": {
       "type": "object",
-      "description": "Kubernaut Agent (LLM integration service)",
+      "description": "Kubernaut Agent (Go LLM investigation service)",
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
@@ -694,33 +693,42 @@
           "default": "",
           "description": "Use a pre-existing ConfigMap for SDK config instead of chart-generated. When set, kubernaut-agent-sdk-config is not created. Takes priority over sdkConfigContent."
         },
-        "prometheus": {
-          "type": "object",
-          "description": "Prometheus integration for LLM investigation context",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": false, "description": "Enable the prometheus/metrics toolset in the SDK config" },
-            "url": { "type": "string", "default": "", "description": "Prometheus API base URL for PromQL queries during investigations" },
-            "ocpMonitoringRbac": { "type": "boolean", "default": false, "description": "Create ClusterRoleBinding for OCP monitoring access and set IS_OPENSHIFT env. Implies TLS CA trust via auto-created service-CA ConfigMap." },
-            "tls": {
-              "type": "object",
-              "description": "TLS CA trust for HTTPS connections to Prometheus. On OCP with ocpMonitoringRbac, TLS is implied and auto-configured.",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": { "type": "boolean", "default": false, "description": "Enable TLS CA trust (set true for vanilla K8s with HTTPS Prometheus)" },
-                "caConfigMapName": { "type": "string", "default": "", "description": "ConfigMap containing the CA PEM certificate. Leave empty on OCP (auto-created)." },
-                "caConfigMapKey": { "type": "string", "default": "service-ca.crt", "description": "Key inside the ConfigMap holding the CA PEM." }
-              }
-            }
-          }
-        },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "tolerations": { "$ref": "#/definitions/tolerations" },
+        "conversations": {
+          "type": "object",
+          "description": "Conversational API (#592) configuration.",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false }
+          }
+        },
+        "alignmentCheck": {
+          "type": "object",
+          "description": "Shadow agent alignment check (#601): parallel audit for prompt injection detection.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "Enable the shadow alignment agent." },
+            "timeout": { "type": "string", "default": "10s", "description": "Per-step evaluation timeout." },
+            "maxStepTokens": { "type": "integer", "default": 500, "description": "Max evaluator response tokens per step." },
+            "llm": {
+              "type": "object",
+              "description": "Optional separate LLM config for alignment evaluation. Omit to reuse investigation LLM.",
+              "additionalProperties": false,
+              "properties": {
+                "provider": { "type": "string", "default": "" },
+                "model": { "type": "string", "default": "" },
+                "endpoint": { "type": "string", "default": "" },
+                "apiKey": { "type": "string", "default": "" }
+              }
+            }
+          }
+        }
       }
     },
     "authwebhook": {
@@ -856,6 +864,206 @@
         },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
         "tolerations": { "$ref": "#/definitions/tolerations" }
+      }
+    },
+    "monitoring": {
+      "type": "object",
+      "description": "Unified monitoring configuration for Prometheus/AlertManager (Issue #463)",
+      "additionalProperties": false,
+      "properties": {
+        "prometheus": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "Enable Prometheus integration for both EM and KA" },
+            "url": { "type": "string", "default": "", "description": "Prometheus API base URL. On OCP, auto-detected when empty." },
+            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS. On OCP, auto-detected when empty." }
+          }
+        },
+        "alertManager": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "Enable AlertManager integration for EM" },
+            "url": { "type": "string", "default": "", "description": "AlertManager API base URL. On OCP, auto-detected when empty." },
+            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS. On OCP, auto-detected when empty." }
+          }
+        }
+      }
+    },
+    "networkPolicies": {
+      "type": "object",
+      "description": "NetworkPolicy configuration for all Kubernaut services (Issue #285)",
+      "additionalProperties": false,
+      "definitions": {
+        "serviceToggle": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        }
+      },
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable default-deny NetworkPolicies for all services"
+        },
+        "apiServerCIDR": {
+          "type": "string",
+          "default": "",
+          "description": "K8s API server CIDR (e.g., 10.96.0.1/32)"
+        },
+        "monitoring": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "default": "",
+              "description": "Namespace where Prometheus scrapes from"
+            },
+            "prometheusPort": {
+              "type": "integer",
+              "default": 9090,
+              "description": "Prometheus port (9090 vanilla, 9091 OCP)"
+            },
+            "alertManagerPort": {
+              "type": "integer",
+              "default": 9093,
+              "description": "AlertManager port (9093 vanilla, 9094 OCP)"
+            }
+          }
+        },
+        "externalWebhooks": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cidr": {
+              "type": "string",
+              "default": "0.0.0.0/0",
+              "description": "CIDR for external webhook endpoints (Slack, PagerDuty, Teams)"
+            },
+            "port": {
+              "type": "integer",
+              "default": 443,
+              "description": "Port for external webhook endpoints"
+            }
+          }
+        },
+        "externalRegistry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cidr": {
+              "type": "string",
+              "default": "0.0.0.0/0",
+              "description": "CIDR for OCI container registry egress (datastorage bundle validation)"
+            },
+            "port": {
+              "type": "integer",
+              "default": 443,
+              "description": "Port for OCI container registry"
+            }
+          }
+        },
+        "gateway": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "ingressNamespaces": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": [],
+              "description": "Namespaces allowed to send ingress to Gateway (e.g., monitoring for AlertManager)"
+            }
+          }
+        },
+        "datastorage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "aianalysis": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "kubernautAgent": {
+          "type": "object",
+          "description": "NetworkPolicy toggle for Kubernaut Agent",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "conversationIngress": {
+              "type": "array",
+              "description": "Custom source selectors for conversation API traffic. Defaults to gateway-service pods.",
+              "items": { "type": "object" }
+            }
+          }
+        },
+        "signalprocessing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "remediationorchestrator": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "workflowexecution": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "notification": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "effectivenessmonitor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "authwebhook": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "postgresql": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "valkey": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        }
       }
     }
   }

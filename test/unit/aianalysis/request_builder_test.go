@@ -157,4 +157,32 @@ var _ = Describe("RequestBuilder", func() {
 		})
 	})
 
+	Describe("#462: SignalAnnotations forwarding to HAPI IncidentRequest", func() {
+		It("UT-AA-462-001: should populate signal_annotations when present on AIAnalysis", func() {
+			analysis := helpers.NewAIAnalysis("ai-annot-test", "default")
+			analysis.Spec.AnalysisRequest.SignalContext.SignalAnnotations = map[string]string{
+				"description": "Pod OOMKilled in production",
+				"summary":     "Memory limit exceeded",
+			}
+
+			req := builder.BuildIncidentRequest(analysis)
+
+			annotations, ok := req.SignalAnnotations.Get()
+			Expect(ok).To(BeTrue(), "signal_annotations should be set when annotations present")
+			Expect(annotations).To(Equal(agentclient.IncidentRequestSignalAnnotations{
+				"description": "Pod OOMKilled in production",
+				"summary":     "Memory limit exceeded",
+			}))
+		})
+
+		It("UT-AA-462-002: should not set signal_annotations when absent from AIAnalysis", func() {
+			analysis := helpers.NewAIAnalysis("ai-no-annot", "default")
+
+			req := builder.BuildIncidentRequest(analysis)
+
+			Expect(req.SignalAnnotations.IsSet()).To(BeFalse(),
+				"signal_annotations must not be set when annotations are nil")
+		})
+	})
+
 })

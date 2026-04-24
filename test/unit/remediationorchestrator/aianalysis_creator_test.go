@@ -600,4 +600,47 @@ var _ = Describe("AIAnalysisCreator", func() {
 			Expect(bc.SLARequirement).To(BeEmpty())
 		})
 	})
+
+	Describe("#462: SignalAnnotations forwarding from RR to AIAnalysis", func() {
+		It("UT-RO-462-001: should propagate SignalAnnotations from RR to AIAnalysis CRD", func() {
+			completedSP := helpers.NewCompletedSignalProcessing("sp-annot-test", "default")
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+				WithStatusSubresource(completedSP).Build()
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("annot-test", "default")
+			rr.Spec.SignalAnnotations = map[string]string{
+				"description": "Pod OOMKilled in production",
+				"summary":     "Memory limit exceeded for api-server",
+				"runbook_url": "https://runbooks.example.com/oom",
+			}
+
+			name, err := aiCreator.Create(ctx, rr, completedSP)
+
+			Expect(err).ToNot(HaveOccurred())
+			createdAI := &aianalysisv1.AIAnalysis{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalAnnotations).To(Equal(map[string]string{
+				"description": "Pod OOMKilled in production",
+				"summary":     "Memory limit exceeded for api-server",
+				"runbook_url": "https://runbooks.example.com/oom",
+			}))
+		})
+
+		It("UT-RO-462-002: should produce nil SignalAnnotations when RR has none", func() {
+			completedSP := helpers.NewCompletedSignalProcessing("sp-no-annot", "default")
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+				WithStatusSubresource(completedSP).Build()
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("no-annot", "default")
+
+			name, err := aiCreator.Create(ctx, rr, completedSP)
+
+			Expect(err).ToNot(HaveOccurred())
+			createdAI := &aianalysisv1.AIAnalysis{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalAnnotations).To(BeNil())
+		})
+	})
 })

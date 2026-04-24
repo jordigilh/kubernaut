@@ -100,6 +100,11 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 		req.SignalMode.SetTo(agentclient.SignalMode(spec.SignalMode))
 	}
 
+	// #462: Forward signal annotations for alert-author context in KA prompt
+	if len(spec.SignalAnnotations) > 0 {
+		req.SignalAnnotations.SetTo(agentclient.IncidentRequestSignalAnnotations(spec.SignalAnnotations))
+	}
+
 	return req
 }
 

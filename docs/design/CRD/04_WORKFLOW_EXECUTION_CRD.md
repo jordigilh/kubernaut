@@ -1240,7 +1240,7 @@ func (r *WorkflowExecutionController) Reconcile(ctx context.Context, req ctrl.Re
 - **Requirements**: [Workflow Engine & Orchestration Requirements](../requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md)
 - **Parent CRD**: [AlertRemediation CRD](01_ALERT_REMEDIATION_CRD.md)
 - **Input CRD**: [AIAnalysis CRD](03_AI_ANALYSIS_CRD.md)
-- **Next CRD**: [KubernetesExecution CRD](05_KUBERNETES_EXECUTION_CRD.md) (DEPRECATED - ADR-025)
+- **Next CRD**: ~~KubernetesExecution CRD~~ (removed - ADR-025)
 
 ---
 

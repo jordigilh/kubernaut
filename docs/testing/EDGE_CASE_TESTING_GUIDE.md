@@ -627,46 +627,6 @@ It("should detect circular dependencies in workflow", func() {
 
 ---
 
-### Kubernetes Executor Edge Cases
-
-**Common Scenarios**:
-- Job timeout exactly at deadline
-- Pod eviction (node pressure)
-- RBAC permission denied
-- Rego policy compilation error
-- Non-standard exit codes (SIGKILL, SIGTERM)
-
-**Example**:
-```go
-It("should handle RBAC permission denied gracefully", func() {
-    // Create ServiceAccount without required permissions
-    sa := createServiceAccount("insufficient-sa", []string{}) // No permissions
-
-    ke := createKubernetesExecution("rbac-test")
-    ke.Spec.ServiceAccountName = "insufficient-sa"
-    Expect(k8sClient.Create(ctx, ke)).To(Succeed())
-
-    // Wait for failure
-    timing.EventuallyWithRetry(func() error {
-        updated := &kubernetesexecutionv1alpha1.KubernetesExecution{}
-        if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(ke), updated); err != nil {
-            return err
-        }
-        if updated.Status.Phase != "Failed" {
-            return fmt.Errorf("expected Failed, got %s", updated.Status.Phase)
-        }
-        return nil
-    }, 5, 1*time.Second).Should(Succeed())
-
-    // Verify specific error
-    updated := &kubernetesexecutionv1alpha1.KubernetesExecution{}
-    Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(ke), updated)).To(Succeed())
-    Expect(updated.Status.Reason).To(ContainSubstring("permission denied"))
-})
-```
-
----
-
 ## 7. Coverage Validation
 
 ### Automated Coverage Check
@@ -676,7 +636,6 @@ Use the edge case coverage validator:
 ```bash
 ./test/scripts/validate_edge_case_coverage.sh remediationprocessor
 ./test/scripts/validate_edge_case_coverage.sh workflowexecution
-./test/scripts/validate_edge_case_coverage.sh kubernetesexecutor
 ```
 
 **Output**:

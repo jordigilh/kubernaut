@@ -377,6 +377,62 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 			Expect(signal.OccurrenceCount).NotTo(BeNil())
 			Expect(*signal.OccurrenceCount).To(Equal(5))
 		})
+
+		It("UT-KA-462-001: should populate SignalAnnotations when present", func() {
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "h1-annot-test",
+				SignalName:        "OOMKilled",
+				Severity:          agentclient.SeverityHigh,
+				ResourceNamespace: "prod",
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod",
+				ErrorMessage:      "OOM",
+				Environment:       "production",
+				Priority:          "high",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "test",
+				ClusterName:       "test-cluster",
+				SignalSource:      "kubernetes",
+			}
+			req.SignalAnnotations.SetTo(agentclient.IncidentRequestSignalAnnotations{
+				"description": "Pod OOMKilled in production",
+				"summary":     "Memory limit exceeded",
+			})
+
+			signal := server.MapIncidentRequestToSignal(req)
+			Expect(signal.SignalAnnotations).To(Equal(map[string]string{
+				"description": "Pod OOMKilled in production",
+				"summary":     "Memory limit exceeded",
+			}))
+		})
+
+		It("UT-KA-462-001b: should populate SignalLabels when present (pre-existing gap fix)", func() {
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "h1-labels-test",
+				SignalName:        "OOMKilled",
+				Severity:          agentclient.SeverityHigh,
+				ResourceNamespace: "prod",
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod",
+				ErrorMessage:      "OOM",
+				Environment:       "production",
+				Priority:          "high",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "test",
+				ClusterName:       "test-cluster",
+				SignalSource:      "kubernetes",
+			}
+			req.SignalLabels.SetTo(agentclient.IncidentRequestSignalLabels{
+				"alertname": "OOMKilled",
+				"severity":  "critical",
+			})
+
+			signal := server.MapIncidentRequestToSignal(req)
+			Expect(signal.SignalLabels).To(Equal(map[string]string{
+				"alertname": "OOMKilled",
+				"severity":  "critical",
+			}))
+		})
 	})
 
 	Describe("UT-KA-743: MapIncidentRequestToSignal dedup timing fields (#743)", func() {

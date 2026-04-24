@@ -416,17 +416,6 @@ spec:
         description: "Workflow Execution has been down for more than 2 minutes. Automated remediation workflows are unavailable."
         runbook_url: https://docs.kubernaut.io/runbooks/workflow-execution/service-down
 
-    # Kubernetes Executor (DEPRECATED - ADR-025)
-    - alert: KubernetesExecutorDown
-      expr: up{job="kubernetes-executor"} == 0
-      for: 2m
-      labels:
-        severity: warning
-        service: kubernetes-executor
-      annotations:
-        summary: "Kubernetes Executor is down"
-        description: "Kubernetes Executor has been down for more than 2 minutes. Remediation actions cannot be executed."
-        runbook_url: https://docs.kubernaut.io/runbooks/kubernetes-executor/service-down
 ```
 
 ---
@@ -789,74 +778,6 @@ spec:
         summary: "Workflow steps are timing out"
         description: "{{ $value }} workflow steps per second are timing out at step {{ $labels.step_name }}."
         runbook_url: https://docs.kubernaut.io/runbooks/workflow-execution/step-timeout
-```
-
----
-
-### Kubernetes Executor Alerts (DEPRECATED - ADR-025)
-
-```yaml
-apiVersion: monitoring.coreos.com/v1
-kind: PrometheusRule
-metadata:
-  name: kubernetes-executor-alerts
-  namespace: kubernaut-system
-  labels:
-    app: kubernetes-executor
-    prometheus: kubernaut
-spec:
-  groups:
-  - name: kubernetes-executor
-    interval: 30s
-    rules:
-
-    # High action failure rate
-    - alert: KubernetesExecutorHighActionFailureRate
-      expr: rate(kubernetes_executor_action_failed_total[5m]) / rate(kubernetes_executor_action_started_total[5m]) > 0.1
-      for: 10m
-      labels:
-        severity: warning
-        service: kubernetes-executor
-      annotations:
-        summary: "Kubernetes Executor has high action failure rate"
-        description: "{{ $value | humanizePercentage }} of Kubernetes actions are failing for action type {{ $labels.action_type }}."
-        runbook_url: https://docs.kubernaut.io/runbooks/kubernetes-executor/high-action-failure-rate
-
-    # Safety validation failures
-    - alert: KubernetesExecutorSafetyValidationFailures
-      expr: rate(kubernetes_executor_safety_validation_failed_total[5m]) > 5
-      for: 5m
-      labels:
-        severity: warning
-        service: kubernetes-executor
-      annotations:
-        summary: "Safety validation is blocking actions"
-        description: "{{ $value }} actions per second are being blocked by safety validation for reason {{ $labels.reason }}."
-        runbook_url: https://docs.kubernaut.io/runbooks/kubernetes-executor/safety-validation-failures
-
-    # RBAC permission errors
-    - alert: KubernetesExecutorRBACErrors
-      expr: rate(kubernetes_executor_rbac_errors_total[5m]) > 1
-      for: 5m
-      labels:
-        severity: critical
-        service: kubernetes-executor
-      annotations:
-        summary: "Kubernetes Executor has RBAC permission errors"
-        description: "{{ $value }} RBAC errors per second for action {{ $labels.action_type }}. Review ServiceAccount permissions."
-        runbook_url: https://docs.kubernaut.io/runbooks/kubernetes-executor/rbac-errors
-
-    # Dry-run validation failures
-    - alert: KubernetesExecutorDryRunValidationFailures
-      expr: rate(kubernetes_executor_dryrun_validation_failed_total[5m]) > 5
-      for: 5m
-      labels:
-        severity: info
-        service: kubernetes-executor
-      annotations:
-        summary: "Dry-run validations are failing"
-        description: "{{ $value }} dry-run validations per second are failing. Review Kubernetes API schemas."
-        runbook_url: https://docs.kubernaut.io/runbooks/kubernetes-executor/dryrun-validation-failures
 ```
 
 ---

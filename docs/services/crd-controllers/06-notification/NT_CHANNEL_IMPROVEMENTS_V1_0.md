@@ -1,26 +1,29 @@
-# Notification Service (NT) - Channel Improvements Plan for V1.0
+# Notification Service (NT) - Channel Improvements Plan
 
 **Date**: December 22, 2025
-**Status**: 📋 **READY FOR REVIEW**
-**Priority**: P1 (V1.0 Production Readiness)
+**Last Updated**: March 4, 2026
+**Version**: v2.0
+**Status**: ✅ **ACTIVE** - Reflects v1.4 channel reality
+**Priority**: P1 (Production Readiness)
 **Target**: Production-grade notification channels with reliability and observability
 
 ---
 
 ## 🎯 Objective
 
-Improve existing notification channels (Console, Slack, File) and evaluate new channels (Email, Teams, PagerDuty, SMS, Webhook) for V1.0 production readiness.
+Track and improve notification delivery channels across releases.
 
-**Current Channels**: 3 (Console ✅, Slack ⚠️, File ✅)
-**Target Channels for V1.0**: 3-4 (Console ✅, Slack ✅, File ✅, +1 optional)
+**Implemented Channels (v1.4)**: 6 (Console ✅, Slack ✅, File ✅, Log ✅, PagerDuty ✅, Teams ✅)
+**Planned Channels (v1.6+)**: Email, Webhook, ServiceNow (#61), Jira (#53)
 
 ---
 
-## 📊 Current Channel Status
+## 📊 Channel Status (as of v1.4)
 
 ### ✅ **Console Delivery** (PRODUCTION-READY)
 **File**: `pkg/notification/delivery/console.go`
 **Status**: ✅ PRODUCTION-READY
+**Registration**: Static — `cmd/notification/main.go`
 **LOC**: ~80 lines
 
 **Features**:
@@ -33,9 +36,10 @@ Improve existing notification channels (Console, Slack, File) and evaluate new c
 
 ---
 
-### ⚠️ **Slack Delivery** (NEEDS IMPROVEMENTS)
+### ✅ **Slack Delivery** (PRODUCTION-READY)
 **File**: `pkg/notification/delivery/slack.go`
-**Status**: ⚠️ NEEDS IMPROVEMENTS
+**Status**: ✅ PRODUCTION-READY
+**Registration**: Dynamic — `internal/controller/notification/routing_handler.go` (per-receiver)
 **LOC**: ~280 lines
 
 **Current Features**:
@@ -74,16 +78,50 @@ Improve existing notification channels (Console, Slack, File) and evaluate new c
 
 ---
 
-### ✅ **File Delivery** (E2E TESTING ONLY)
+### ✅ **File Delivery** (PRODUCTION-READY)
 **File**: `pkg/notification/delivery/file.go`
-**Status**: ✅ E2E TESTING ONLY (Not for Production)
+**Status**: ✅ PRODUCTION-READY
+**Registration**: Static — `cmd/notification/main.go`
 **LOC**: ~200 lines
 
-**Purpose**: E2E test validation (file-based message inspection)
-**Usage**: Enabled via `E2E_FILE_OUTPUT` environment variable
-**Production**: ❌ NOT USED (intended for E2E tests only)
+**Purpose**: File-based delivery for audit trails and compliance.
 
-**No Improvements Needed**: File delivery is well-tested and serves its E2E purpose.
+---
+
+### ✅ **Log Delivery** (PRODUCTION-READY)
+**File**: `pkg/notification/delivery/log.go`
+**Status**: ✅ PRODUCTION-READY
+**Registration**: Static — `cmd/notification/main.go`
+**LOC**: ~200 lines
+
+**Purpose**: Structured JSON logs to stdout for observability pipelines.
+
+---
+
+### ✅ **PagerDuty Delivery** (PRODUCTION-READY)
+**File**: `pkg/notification/delivery/pagerduty.go`, `pagerduty_payload.go`
+**Status**: ✅ PRODUCTION-READY (implemented in #60)
+**Registration**: Dynamic — `internal/controller/notification/routing_handler.go` (per-receiver)
+**LOC**: ~300 lines
+
+**Features**:
+- ✅ PagerDuty Events API V2 (`https://events.pagerduty.com/v2/enqueue`)
+- ✅ Routing key from credential config
+- ✅ Severity mapping from notification priority
+- ✅ Circuit breaker support via `routing_handler.go`
+
+---
+
+### ✅ **Teams Delivery** (PRODUCTION-READY)
+**File**: `pkg/notification/delivery/teams.go`, `teams_cards.go`
+**Status**: ✅ PRODUCTION-READY (implemented in #593)
+**Registration**: Dynamic — `internal/controller/notification/routing_handler.go` (per-receiver)
+**LOC**: ~400 lines
+
+**Features**:
+- ✅ Power Automate Workflows incoming webhooks
+- ✅ Adaptive Card formatting
+- ✅ Circuit breaker support via `routing_handler.go`
 
 ---
 
@@ -333,16 +371,22 @@ func NewSlackDeliveryService(webhookURL string) *SlackDeliveryService {
 
 ---
 
-### **Priority 2: New Channel Evaluation for V1.0** (P1 - HIGH)
+### **Priority 2: Channel Evaluation Status**
 
-#### **Evaluation Criteria**:
-| Channel | Business Priority | V1.0 Readiness | Implementation Effort | Recommendation |
+#### **Status Matrix (Updated v1.4)**:
+| Channel | Business Priority | Status | Milestone | Notes |
 |---|---|---|---|---|
-| **Email** | P0 (Critical) | ⚠️ Medium | 2-3 days | ✅ **ADD TO V1.0** |
-| **PagerDuty** | P0 (Critical) | ✅ High | 1-2 days | ✅ **ADD TO V1.0** (Optional) |
-| **Teams** | P1 (High) | ⚠️ Medium | 2-3 days | ⏸️ **DEFER TO V1.1** |
-| **SMS (Twilio)** | P2 (Medium) | ⚠️ Low | 3-4 days | ⏸️ **DEFER TO V2.0** |
-| **Webhook** | P2 (Medium) | ✅ High | 1 day | ⏸️ **DEFER TO V1.1** |
+| **Console** | P0 (Core) | ✅ Implemented | Pre-v1.0 | Static registration |
+| **Slack** | P0 (Core) | ✅ Implemented | Pre-v1.0 | Dynamic per-receiver |
+| **File** | P0 (Core) | ✅ Implemented | Pre-v1.0 | Static registration |
+| **Log** | P0 (Core) | ✅ Implemented | Pre-v1.0 | Static registration |
+| **PagerDuty** | P0 (Critical) | ✅ Implemented | v1.3 (#60) | Dynamic per-receiver, circuit breaker |
+| **Teams** | P1 (High) | ✅ Implemented | v1.3 (#593) | Dynamic per-receiver, Adaptive Cards |
+| **Email** | P1 (High) | ⏸️ Planned | TBD | SMTP integration |
+| **Webhook** | P2 (Medium) | ⏸️ Planned | TBD | Generic HTTP POST |
+| **ServiceNow** | P1 (High) | ⏸️ Planned | v1.6 (#61) | ITSM integration |
+| **Jira** | P1 (High) | ⏸️ Planned | v1.6 (#53) | ITSM integration |
+| **SMS (Twilio)** | P3 (Low) | ⏸️ Deferred | TBD | Low ROI |
 
 ---
 
@@ -381,61 +425,30 @@ func NewSlackDeliveryService(webhookURL string) *SlackDeliveryService {
 
 ---
 
-#### **Channel 2: PagerDuty Integration** (P0 - CRITICAL, OPTIONAL FOR V1.0)
+#### **Channel 2: PagerDuty Integration** — ✅ IMPLEMENTED (v1.3, #60)
 
-**Business Justification**:
-- **Use Case**: On-call escalation, incident management
-- **Priority**: P0 (Critical) - PagerDuty is de facto standard for SRE teams
-- **Precedent**: Critical alerts (skip-reason: ExhaustedRetries) should page on-call
+**Files**: `pkg/notification/delivery/pagerduty.go`, `pagerduty_payload.go`
+**Wired in**: `internal/controller/notification/routing_handler.go` (dynamic per-receiver)
 
-**Implementation Complexity**: LOW (1-2 days)
-
-**Key Features**:
-1. **PagerDuty Events API V2**:
-   - Integration key from environment variable or ConfigMap
-   - Event action: `trigger` (create incident)
-   - Severity: Map notification priority to PagerDuty severity (critical, error, warning, info)
-
-2. **Incident Details**:
-   - Summary: NotificationRequest.Subject
-   - Details: NotificationRequest.Body
-   - Custom fields: correlation_id, remediation_id, source
-
-3. **Error Handling**:
-   - Transient errors: PagerDuty API failures, timeouts (retryable)
-   - Permanent errors: Invalid integration key (non-retryable)
-
-4. **Rate Limiting**:
-   - PagerDuty rate limit: ~120 requests/minute
-   - Token bucket rate limiter (2 requests/second, burst 10)
-
-**Estimated LOC**: ~200 lines (pagerduty.go)
-
-**Recommendation**: ✅ **ADD TO V1.0 (OPTIONAL)** (PagerDuty integration is low-effort, high-value)
+**Implemented Features**:
+1. **PagerDuty Events API V2** — `https://events.pagerduty.com/v2/enqueue`
+2. **Routing key from credential config** (resolved per-receiver)
+3. **Severity mapping** from notification priority
+4. **Circuit breaker** integration via `routing_handler.go`
+5. **Payload builder** with structured incident details (`pagerduty_payload.go`)
 
 ---
 
-#### **Channel 3: Microsoft Teams** (P1 - HIGH, DEFER TO V1.1)
+#### **Channel 3: Microsoft Teams** — ✅ IMPLEMENTED (v1.3, #593)
 
-**Business Justification**:
-- **Use Case**: Microsoft-centric organizations (similar to Slack)
-- **Priority**: P1 (High) - Important but not blocking for V1.0
+**Files**: `pkg/notification/delivery/teams.go`, `teams_cards.go`
+**Wired in**: `internal/controller/notification/routing_handler.go` (dynamic per-receiver)
 
-**Implementation Complexity**: MEDIUM (2-3 days)
-
-**Key Features**:
-1. **Teams Incoming Webhook**:
-   - Adaptive Card format (similar to Slack Block Kit)
-   - Priority-based color coding
-   - Markdown formatting
-
-2. **Rate Limiting**:
-   - Teams rate limit: ~4-5 requests/second
-   - Token bucket rate limiter
-
-**Estimated LOC**: ~280 lines (teams.go + adaptive_cards.go)
-
-**Recommendation**: ⏸️ **DEFER TO V1.1** (Not blocking for V1.0, add if customer demand)
+**Implemented Features**:
+1. **Power Automate Workflows incoming webhooks**
+2. **Adaptive Card formatting** (`teams_cards.go`)
+3. **Circuit breaker** integration via `routing_handler.go`
+4. **Configurable timeout** (default 10s)
 
 ---
 
@@ -481,32 +494,34 @@ func NewSlackDeliveryService(webhookURL string) *SlackDeliveryService {
 
 ---
 
-## 📋 Recommended Channel Roadmap
+## 📋 Channel Roadmap (Updated v1.4)
 
-### **V1.0 (Immediate) - December 2025**:
-- ✅ **Console**: Production-ready (no changes)
-- ✅ **Slack**: Reliability improvements (rate limiting, 429 retry, observability)
-- ✅ **File**: E2E testing only (no changes)
-- ✅ **Email**: NEW - SMTP delivery for formal notifications
-- ✅ **PagerDuty**: NEW (OPTIONAL) - On-call escalation
+### **Pre-v1.0 (Delivered)**:
+- ✅ **Console**: Static registration, production-ready
+- ✅ **Slack**: Dynamic per-receiver registration, Block Kit formatting
+- ✅ **File**: Static registration, file-based delivery for audit trails
+- ✅ **Log**: Static registration, structured JSON to stdout
 
-**V1.0 Channel Count**: 4-5 channels
+### **v1.3 (Delivered — #60, #593)**:
+- ✅ **PagerDuty**: Dynamic per-receiver, Events API V2, circuit breaker
+- ✅ **Teams**: Dynamic per-receiver, Adaptive Cards, circuit breaker
 
----
-
-### **V1.1 (Post-V1.0) - Q1 2026**:
-- ✅ **Teams**: Adaptive Card integration for Microsoft-centric orgs
-- ✅ **Webhook**: Generic HTTP POST for custom integrations
-
-**V1.1 Channel Count**: 6-7 channels
+**v1.4 Channel Count**: 6 channels
 
 ---
 
-### **V2.0 (Future) - Q2 2026**:
-- ✅ **SMS (Twilio)**: Critical on-call alerts
-- ✅ **Additional Channels**: Based on customer feedback
+### **v1.6 (Planned — ITSM Integration)**:
+- ⏸️ **ServiceNow** (#61): Incident records via REST API, CMDB linkage
+- ⏸️ **Jira** (#53): Ticket creation with RCA summaries
 
-**V2.0 Channel Count**: 7-8+ channels
+**v1.6 Channel Count**: 8 channels (projected)
+
+---
+
+### **Future (TBD)**:
+- ⏸️ **Email**: SMTP integration for formal notifications
+- ⏸️ **Webhook**: Generic HTTP POST for custom integrations
+- ⏸️ **SMS (Twilio)**: Low priority, deferred pending customer demand
 
 ---
 
@@ -524,64 +539,63 @@ func NewSlackDeliveryService(webhookURL string) *SlackDeliveryService {
 
 ---
 
-### **V1.0 New Channels** (OPTIONAL):
-| Channel | Priority | Time | Recommendation |
+### **Channel Implementation Status**:
+| Channel | Priority | Status | Milestone |
 |---|---|---|---|
-| Email | P0 | 2-3 days | ✅ **RECOMMENDED** |
-| PagerDuty | P0 | 1-2 days | ✅ **OPTIONAL** |
-| Teams | P1 | 2-3 days | ⏸️ **DEFER** |
-| SMS | P2 | 3-4 days | ⏸️ **DEFER** |
-| Webhook | P2 | 1 day | ⏸️ **DEFER** |
+| Console | P0 | ✅ Delivered | Pre-v1.0 |
+| Slack | P0 | ✅ Delivered | Pre-v1.0 |
+| File | P0 | ✅ Delivered | Pre-v1.0 |
+| Log | P0 | ✅ Delivered | Pre-v1.0 |
+| PagerDuty | P0 | ✅ Delivered | v1.3 (#60) |
+| Teams | P1 | ✅ Delivered | v1.3 (#593) |
+| ServiceNow | P1 | ⏸️ Planned | v1.6 (#61) |
+| Jira | P1 | ⏸️ Planned | v1.6 (#53) |
+| Email | P1 | ⏸️ Planned | TBD |
+| Webhook | P2 | ⏸️ Planned | TBD |
+| SMS | P3 | ⏸️ Deferred | TBD |
 
 ---
 
-## ✅ Success Criteria for V1.0
+## ✅ Success Criteria (v1.4)
 
-### **Slack Improvements** (MANDATORY):
+### **Delivered Channels**:
+- [x] Console: Production-ready, static registration
+- [x] Slack: Dynamic per-receiver, Block Kit formatting, circuit breaker
+- [x] File: Static registration, file-based audit delivery
+- [x] Log: Static registration, structured JSON to stdout
+- [x] PagerDuty: Events API V2, dynamic per-receiver, circuit breaker (#60)
+- [x] Teams: Adaptive Cards, dynamic per-receiver, circuit breaker (#593)
+- [x] DB migration constraint matches implemented channels (migration 006)
+
+### **Remaining Improvements** (Slack Reliability):
 - [ ] Rate limiting prevents 429 errors under burst traffic
 - [ ] 429 errors are retryable (not permanent failures)
 - [ ] Slack-specific metrics exposed (success rate, latency, rate limit hits)
 - [ ] HTTP connection pooling reduces latency
-- [ ] Lint warnings resolved
-
-**Estimated Time**: ~7 hours (1 day)
-
-### **Email Channel** (RECOMMENDED):
-- [ ] SMTP integration with TLS support
-- [ ] HTML email templates with priority badges
-- [ ] Email-specific metrics (success rate, delivery latency)
-- [ ] Rate limiting (10 emails/second)
-
-**Estimated Time**: 2-3 days
-
-### **PagerDuty Channel** (OPTIONAL):
-- [ ] PagerDuty Events API V2 integration
-- [ ] Incident creation with severity mapping
-- [ ] PagerDuty-specific metrics
-
-**Estimated Time**: 1-2 days
 
 ---
 
 ## 🎯 Recommendation
 
-### **Minimum for V1.0 Production Readiness**:
-1. **Slack Improvements** (~7 hours) - MANDATORY
-   - Rate limiting, 429 retry, observability
+### **v1.4 Focus**: Slack Reliability Improvements
+- Rate limiting, 429 retry, observability (~7 hours)
 
-### **Recommended for V1.0**:
-2. **Email Channel** (2-3 days) - HIGHLY RECOMMENDED
-   - Critical for enterprise deployments and compliance
-
-### **Optional for V1.0**:
-3. **PagerDuty Channel** (1-2 days) - OPTIONAL
-   - Low-effort, high-value for SRE teams
-
-**Total Time Estimate**: 3-6 days (Slack + Email + PagerDuty)
+### **v1.6 Focus**: ITSM Integration
+- ServiceNow delivery channel (#61)
+- Jira delivery channel (#53)
+- Aligns with multi-cluster federation scope (#54)
 
 ---
 
-**Status**: 📋 **READY FOR REVIEW**
-**Next Steps**: Review with team, prioritize improvements, estimate capacity
+**Status**: ✅ **ACTIVE**
 **Owner**: NT Team
+
+---
+
+## 📜 Changelog
+
+| Version | Date | Changes |
+|---|---|---|
+| v1.0 | December 22, 2025 | Initial plan. Channels: Console, Slack, File. PagerDuty and Teams evaluated as future. |
+| v2.0 | March 4, 2026 | Updated to reflect v1.4 reality: PagerDuty (#60) and Teams (#593) are now implemented and wired into production via `routing_handler.go`. Added Log as implemented channel. Updated roadmap with v1.6 ITSM targets (#53, #61). Corrected DB migration 006 CHECK constraint to match all 6 implemented channels. |
 

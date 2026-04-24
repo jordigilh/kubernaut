@@ -104,12 +104,16 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	scenarioName := cfg.ScenarioName
 	h.recordScenarioMetric(scenarioName, result.Method)
 
+	effectiveForceText := h.forceText
+	if cfg.ForceText != nil {
+		effectiveForceText = *cfg.ForceText
+	}
 	hasSplit := conversation.HasSubmitWithWorkflowTool(req.Tools)
 	resolved := isResolvedOutcome(cfg)
 	log.Printf("[mock-llm] scenario=%s outcome=%s workflowID=%q forceText=%v tools=%d hasSplitTool=%v isResolved=%v",
-		scenarioName, cfg.InvestigationOutcome, cfg.WorkflowID, h.forceText, len(req.Tools), hasSplit, resolved)
+		scenarioName, cfg.InvestigationOutcome, cfg.WorkflowID, effectiveForceText, len(req.Tools), hasSplit, resolved)
 
-	if h.forceText || len(req.Tools) == 0 {
+	if effectiveForceText || len(req.Tools) == 0 {
 		if hasSplit && !resolved {
 			toolName := openai.ToolSubmitResultWithWorkflow
 			if cfg.WorkflowID == "" {
@@ -120,6 +124,13 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		} else {
 			writeJSON(w, http.StatusOK, response.BuildForceTextResponse(model, cfg, req.Tools))
 		}
+		h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
+		return
+	}
+
+	if cfg.ToolCallName != "" && !hasToolResults(req.Messages) {
+		h.trackToolCall(cfg.ToolCallName)
+		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, cfg.ToolCallName, cfg))
 		h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
 		return
 	}
@@ -161,6 +172,15 @@ func (h *handler) trackToolCall(name string) {
 	if h.tracker != nil {
 		h.tracker.RecordToolCall(name, "")
 	}
+}
+
+func hasToolResults(messages []openai.Message) bool {
+	for _, m := range messages {
+		if m.Role == "tool" {
+			return true
+		}
+	}
+	return false
 }
 
 func buildDetectionContext(ctx *conversation.Context) *scenarios.DetectionContext {

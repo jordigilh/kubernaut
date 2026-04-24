@@ -604,6 +604,8 @@ func (c *DataStorageClient) WriteWorkflowAudit(ctx context.Context, req *Workflo
 
 **Purpose**: Writes Kubernetes action execution audit trail
 
+> **ADR-025**: The Kubernetes Executor service and CRD were removed; execution is performed via Tekton TaskRun orchestrated by WorkflowExecution. The sample below describes the **historical** audit-write pattern only, not a live integration.
+
 **Integration Pattern**: HTTP POST
 **Authentication**: Bearer Token (kubernetes-executor-sa)
 **Endpoint**: `POST /api/v1/audit/remediation`

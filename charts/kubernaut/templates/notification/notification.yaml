@@ -50,9 +50,6 @@ subjects:
     name: notification-controller
     namespace: {{ .Release.Namespace }}
 ---
-# Role: namespace-local access to secrets and configmaps only (#207, #229)
-{{ include "kubernaut.nsRoleForSecrets" (dict "name" "notification-controller" "serviceAccount" "notification-controller" "Release" .Release "labels" (include "kubernaut.labels" .)) }}
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -165,6 +162,8 @@ spec:
           env:
             - name: CONFIG_PATH
               value: "/etc/notification/config.yaml"
+            - name: ROUTING_CONFIG_PATH
+              value: "/etc/notification-routing/routing.yaml"
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
@@ -201,6 +200,9 @@ spec:
             - name: config
               mountPath: /etc/notification
               readOnly: true
+            - name: routing-config
+              mountPath: /etc/notification-routing
+              readOnly: true
             - name: credentials
               mountPath: /etc/notification/credentials
               readOnly: true
@@ -215,6 +217,9 @@ spec:
         - name: config
           configMap:
             name: notification-controller-config
+        - name: routing-config
+          configMap:
+            name: notification-routing-config
         - name: credentials
           {{- if .Values.notification.credentials }}
           projected:

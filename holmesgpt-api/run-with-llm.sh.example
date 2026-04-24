@@ -1,0 +1,75 @@
+#!/bin/bash
+# Example: Running HolmesGPT API with Real LLM Provider
+# Copy this file to run-with-llm.sh and customize with your credentials
+# WARNING: Never commit run-with-llm.sh - it contains secrets!
+
+set -e
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🤖 Running HolmesGPT API with Real LLM Provider"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# STEP 1: Configure your LLM provider below
+# Uncomment and fill in ONE of the provider options
+
+# Option 1: Cloud Provider with Project ID
+# export LLM_PROVIDER="your-provider"           # e.g., "provider-name"
+# export LLM_MODEL="your-model"                 # e.g., "model-name@version"
+# export LLM_PROJECT_ID="your-project-id"       # Your cloud project ID
+# export LLM_REGION="your-region"               # e.g., "us-east5"
+# CREDS_MOUNT="-v ~/.config/your-provider/credentials.json:/tmp/creds.json:ro -e CREDENTIALS_FILE=/tmp/creds.json"
+
+# Option 2: API Key-based Provider
+# export LLM_PROVIDER="your-provider"           # e.g., "anthropic", "openai", etc.
+# export LLM_MODEL="your-model"                 # Provider-specific model
+# export LLM_API_KEY="your-api-key"             # API key
+# export LLM_ENDPOINT="https://api.provider.com/v1/endpoint"
+# CREDS_MOUNT=""
+
+# STEP 2: Check configuration
+if [ -z "$LLM_PROVIDER" ] || [ -z "$LLM_MODEL" ]; then
+    echo "❌ Error: LLM_PROVIDER and LLM_MODEL must be set"
+    echo ""
+    echo "📝 Instructions:"
+    echo "1. Copy this file: cp run-with-llm.sh.example run-with-llm.sh"
+    echo "2. Edit run-with-llm.sh and uncomment ONE provider option"
+    echo "3. Run: ./run-with-llm.sh"
+    echo ""
+    exit 1
+fi
+
+# STEP 3: Build environment variables
+ENV_VARS="-e DEV_MODE=true -e AUTH_ENABLED=false -e LLM_PROVIDER=$LLM_PROVIDER -e LLM_MODEL=$LLM_MODEL"
+
+if [ -n "$LLM_PROJECT_ID" ]; then
+    ENV_VARS="$ENV_VARS -e LLM_PROJECT_ID=$LLM_PROJECT_ID"
+fi
+
+if [ -n "$LLM_REGION" ]; then
+    ENV_VARS="$ENV_VARS -e LLM_REGION=$LLM_REGION"
+fi
+
+if [ -n "$LLM_API_KEY" ]; then
+    ENV_VARS="$ENV_VARS -e LLM_API_KEY=$LLM_API_KEY"
+fi
+
+if [ -n "$LLM_ENDPOINT" ]; then
+    ENV_VARS="$ENV_VARS -e LLM_ENDPOINT=$LLM_ENDPOINT"
+fi
+
+# STEP 4: Run the service
+echo "✅ Configuration:"
+echo "   Provider: $LLM_PROVIDER"
+echo "   Model: $LLM_MODEL"
+echo "   Port: 8080"
+echo ""
+echo "📡 Endpoints:"
+echo "   Health: http://localhost:8080/health"
+echo "   Docs: http://localhost:8080/docs"
+echo ""
+
+podman run --rm -p 8080:8080 \
+    $CREDS_MOUNT \
+    $ENV_VARS \
+    kubernaut-holmesgpt-api:latest
+

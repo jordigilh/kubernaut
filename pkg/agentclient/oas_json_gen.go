@@ -2059,6 +2059,12 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SignalAnnotations.Set {
+			e.FieldStart("signal_annotations")
+			s.SignalAnnotations.Encode(e)
+		}
+	}
+	{
 		if s.EnrichmentResults.Set {
 			e.FieldStart("enrichment_results")
 			s.EnrichmentResults.Encode(e)
@@ -2072,7 +2078,7 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfIncidentRequest = [25]string{
+var jsonFieldsNameOfIncidentRequest = [26]string{
 	0:  "incident_id",
 	1:  "remediation_id",
 	2:  "signal_name",
@@ -2096,8 +2102,9 @@ var jsonFieldsNameOfIncidentRequest = [25]string{
 	20: "first_seen",
 	21: "last_seen",
 	22: "signal_labels",
-	23: "enrichment_results",
-	24: "signal_mode",
+	23: "signal_annotations",
+	24: "enrichment_results",
+	25: "signal_mode",
 }
 
 // Decode decodes IncidentRequest from json.
@@ -2366,6 +2373,16 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"signal_labels\"")
 			}
+		case "signal_annotations":
+			if err := func() error {
+				s.SignalAnnotations.Reset()
+				if err := s.SignalAnnotations.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"signal_annotations\"")
+			}
 		case "enrichment_results":
 			if err := func() error {
 				s.EnrichmentResults.Reset()
@@ -2441,6 +2458,62 @@ func (s *IncidentRequest) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *IncidentRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s IncidentRequestSignalAnnotations) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s IncidentRequestSignalAnnotations) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes IncidentRequestSignalAnnotations from json.
+func (s *IncidentRequestSignalAnnotations) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentRequestSignalAnnotations to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode IncidentRequestSignalAnnotations")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s IncidentRequestSignalAnnotations) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentRequestSignalAnnotations) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -3457,6 +3530,56 @@ func (s OptNilHumanReviewReason) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptNilHumanReviewReason) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentRequestSignalAnnotations as json.
+func (o OptNilIncidentRequestSignalAnnotations) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes IncidentRequestSignalAnnotations from json.
+func (o *OptNilIncidentRequestSignalAnnotations) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilIncidentRequestSignalAnnotations to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v IncidentRequestSignalAnnotations
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	o.Value = make(IncidentRequestSignalAnnotations)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilIncidentRequestSignalAnnotations) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilIncidentRequestSignalAnnotations) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

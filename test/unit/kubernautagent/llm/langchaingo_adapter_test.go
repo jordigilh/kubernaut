@@ -77,12 +77,12 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 			Expect(credPath).To(BeAnExistingFile(), "GCP mock credentials fixture must exist")
 
 			origCreds := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-			os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credPath)
+			Expect(os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credPath)).To(Succeed())
 			DeferCleanup(func() {
 				if origCreds == "" {
-					os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
+					Expect(os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")).To(Succeed())
 				} else {
-					os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", origCreds)
+					Expect(os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", origCreds)).To(Succeed())
 				}
 			})
 
@@ -169,7 +169,7 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 					},
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				Expect(json.NewEncoder(w).Encode(resp)).To(Succeed())
 			}))
 
 			var err error
@@ -258,7 +258,7 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 					},
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				Expect(json.NewEncoder(w).Encode(resp)).To(Succeed())
 			}))
 
 			var err error
@@ -314,10 +314,8 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 		BeforeEach(func() {
 			content := "I found the issue."
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				receivedBody, _ = json.Marshal(r) // capture is overwritten
-				// Read the actual request body
 				var reqBody json.RawMessage
-				json.NewDecoder(r.Body).Decode(&reqBody)
+				Expect(json.NewDecoder(r.Body).Decode(&reqBody)).To(Succeed())
 				receivedBody = reqBody
 
 				resp := openaitypes.ChatCompletionResponse{
@@ -338,7 +336,7 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 					Usage: openaitypes.Usage{PromptTokens: 200, CompletionTokens: 30, TotalTokens: 230},
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				Expect(json.NewEncoder(w).Encode(resp)).To(Succeed())
 			}))
 
 			var err error
@@ -405,7 +403,7 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 					},
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				Expect(json.NewEncoder(w).Encode(resp)).To(Succeed())
 			}))
 
 			var err error
@@ -467,7 +465,7 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 					},
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				Expect(json.NewEncoder(w).Encode(resp)).To(Succeed())
 			}))
 
 			var err error
@@ -496,15 +494,15 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 
 	Describe("Chat() error handling", func() {
 		It("should return an error when the LLM returns HTTP 500", func() {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(openaitypes.ErrorResponse{
+				Expect(json.NewEncoder(w).Encode(openaitypes.ErrorResponse{
 					Error: openaitypes.ErrorDetail{
 						Message: "internal server error",
 						Type:    "server_error",
 						Code:    "internal_error",
 					},
-				})
+				})).To(Succeed())
 			}))
 			defer server.Close()
 
@@ -522,9 +520,10 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 		})
 
 		It("should return an error when the LLM returns malformed JSON", func() {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`{invalid json`))
+				_, err := w.Write([]byte(`{invalid json`))
+				Expect(err).NotTo(HaveOccurred())
 			}))
 			defer server.Close()
 

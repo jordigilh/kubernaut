@@ -187,6 +187,8 @@ func (c *AIAnalysisCreator) buildSignalContext(
 		},
 		// EnrichmentResults from SignalProcessing status (BR-ORCH-025)
 		EnrichmentResults: c.buildEnrichmentResults(sp),
+		// #462: Forward alert-author annotations for LLM investigation context
+		SignalAnnotations: rr.Spec.SignalAnnotations,
 	}
 }
 

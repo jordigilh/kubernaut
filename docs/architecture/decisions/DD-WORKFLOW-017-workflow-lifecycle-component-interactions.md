@@ -16,7 +16,7 @@
 
 ### Version 1.2 (2026-03-04) -- CURRENT
 
-- **Phase 3 (Execution)**: Updated for Issue #518 -- `executionEngine` removed from WFE spec. WE controller resolves engine at runtime from DS catalog via `WorkflowQuerier.GetWorkflowExecutionEngine` and persists in `wfe.Status.ExecutionEngine` (immutable once set). RO no longer sets engine on WFE; notification path reads engine from WFE status. No silent "tekton" default -- WFE fails explicitly if DS has no engine.
+- **Phase 3 (Execution)**: Updated for Issue #518 -- `executionEngine` removed from WFE spec. WE controller resolves engine at runtime from DS catalog via `WorkflowQuerier.GetWorkflowSchemaMetadata` (F6: consolidated single DS call) and persists in `wfe.Status.ExecutionEngine` (immutable once set). RO no longer sets engine on WFE; notification path reads engine from WFE status. No silent "tekton" default -- WFE fails explicitly if DS has no engine.
 
 ### Version 1.1 (2026-03-04)
 
@@ -412,7 +412,7 @@ The WE controller resolves execution context at runtime and persists it in statu
 |-------|--------|-------------|
 | `executionEngine` | Resolved from DS workflow catalog by WE controller | `"tekton"`, `"job"`, or `"ansible"` (Issue #518) |
 
-**Note**: `executionEngine` is **not** on the WFE spec. The WE controller resolves it from the DS workflow catalog at runtime using `WorkflowQuerier.GetWorkflowExecutionEngine(workflowId)` and persists it in `wfe.Status.ExecutionEngine` (immutable once set). If the catalog entry has no engine defined, the WFE fails explicitly with `ConfigurationError` -- there is no silent default. WE uses the `ExecutorRegistry` (Strategy pattern) to select the correct executor based on the resolved engine.
+**Note**: `executionEngine` is **not** on the WFE spec. The WE controller resolves it from the DS workflow catalog at runtime using `WorkflowQuerier.GetWorkflowSchemaMetadata(workflowId)` (F6: all catalog artifacts in a single DS call) and persists it in `wfe.Status.ExecutionEngine` (immutable once set). If the catalog entry has no engine defined, the WFE fails explicitly with `ConfigurationError` -- there is no silent default. WE uses the `ExecutorRegistry` (Strategy pattern) to select the correct executor based on the resolved engine.
 
 ### Audit Traces
 

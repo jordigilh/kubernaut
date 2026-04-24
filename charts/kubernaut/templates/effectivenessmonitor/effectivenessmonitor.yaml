@@ -1,3 +1,4 @@
+{{- include "kubernaut.monitoring.validate" . -}}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -26,19 +27,17 @@ data:
       leaderElection: false
       leaderElectionId: "effectivenessmonitor.kubernaut.ai"
     external:
-      prometheusUrl: {{ .Values.effectivenessmonitor.external.prometheusUrl | default "http://kube-prometheus-stack-prometheus.monitoring.svc:9090" }}
-      prometheusEnabled: {{ if hasKey .Values.effectivenessmonitor.external "prometheusEnabled" }}{{ .Values.effectivenessmonitor.external.prometheusEnabled }}{{ else }}true{{ end }}
-      alertManagerUrl: {{ .Values.effectivenessmonitor.external.alertManagerUrl | default "http://kube-prometheus-stack-alertmanager.monitoring.svc:9093" }}
-      alertManagerEnabled: {{ if hasKey .Values.effectivenessmonitor.external "alertManagerEnabled" }}{{ .Values.effectivenessmonitor.external.alertManagerEnabled }}{{ else }}true{{ end }}
+      prometheusUrl: {{ include "kubernaut.monitoring.prometheus.url" . | default "" | quote }}
+      prometheusEnabled: {{ if include "kubernaut.monitoring.prometheus.enabled" . }}true{{ else }}false{{ end }}
+      alertManagerUrl: {{ include "kubernaut.monitoring.alertManager.url" . | default "" | quote }}
+      alertManagerEnabled: {{ if include "kubernaut.monitoring.alertManager.enabled" . }}true{{ else }}false{{ end }}
       connectionTimeout: 10s
-      {{- if .Values.effectivenessmonitor.external.tlsCaFile }}
-      tlsCaFile: {{ .Values.effectivenessmonitor.external.tlsCaFile }}
+      {{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
+      tlsCaFile: /etc/ssl/em/service-ca.crt
       {{- end }}
-{{- if .Values.effectivenessmonitor.external.tlsCaFile }}
+{{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
 ---
-# Issue #452: OCP service-serving CA injection.
-# On OCP, the service CA operator populates this ConfigMap with the
-# service-serving signer CA under the key "service-ca.crt".
+# Issue #452/#463: OCP service-serving CA injection.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -167,7 +166,7 @@ spec:
         {{- include "kubernaut.podSecurityContext" .Values.effectivenessmonitor | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.effectivenessmonitor | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.effectivenessmonitor "global" .Values.global) | nindent 6 }}
-      {{- if .Values.effectivenessmonitor.external.tlsCaFile }}
+      {{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
       initContainers:
         - name: wait-for-service-ca
           image: {{ .Values.effectivenessmonitor.initImage | default "registry.access.redhat.com/ubi10/ubi-minimal:latest" }}
@@ -230,7 +229,7 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/effectivenessmonitor
-            {{- if .Values.effectivenessmonitor.external.tlsCaFile }}
+            {{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
             - name: service-ca
               mountPath: /etc/ssl/em
               readOnly: true
@@ -244,7 +243,7 @@ spec:
         - name: config
           configMap:
             name: effectivenessmonitor-config
-        {{- if .Values.effectivenessmonitor.external.tlsCaFile }}
+        {{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
         - name: service-ca
           configMap:
             name: effectivenessmonitor-service-ca
@@ -253,7 +252,7 @@ spec:
           configMap:
             name: inter-service-ca
             optional: true
-{{- if .Values.effectivenessmonitor.external.ocpMonitoringRbac }}
+{{- if include "kubernaut.monitoring.ocpRbac" . }}
 ---
 # Issue #452: OCP monitoring RBAC — Prometheus metrics.
 # Grants the EM service account read access to cluster monitoring on OCP.
@@ -271,14 +270,9 @@ subjects:
   - kind: ServiceAccount
     name: effectivenessmonitor-controller
     namespace: {{ .Release.Namespace }}
-{{- if .Values.effectivenessmonitor.external.alertManagerEnabled }}
+{{- if include "kubernaut.monitoring.alertManager.enabled" . }}
 ---
-# Issue #576: OCP AlertManager API access via kube-rbac-proxy.
-# On OCP, AlertManager sits behind kube-rbac-proxy which performs
-# SubjectAccessReview on resource-level permissions — nonResourceURLs
-# are not evaluated by the proxy. This ClusterRole grants the
-# resource-level permission that kube-rbac-proxy checks.
-# On Kind/vanilla K8s (ocpMonitoringRbac=false), this block is not rendered.
+# Issue #576/#463: OCP AlertManager API access via kube-rbac-proxy.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

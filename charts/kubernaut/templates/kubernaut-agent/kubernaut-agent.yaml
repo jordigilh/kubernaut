@@ -78,6 +78,12 @@ rules:
   - apiGroups: ["monitoring.coreos.com"]
     resources: ["prometheusrules", "servicemonitors", "podmonitors", "probes"]
     verbs: ["get", "list", "watch"]
+  # ── Kubernaut CRDs (conversation lifecycle polling) ─────────────────────
+  - apiGroups: ["kubernaut.ai"]
+    resources:
+      - remediationapprovalrequests
+      - remediationworkflows
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -138,7 +144,33 @@ data:
       flush_interval_seconds: 1.0
       buffer_size: 10000
       batch_size: 50
-{{- if and .Values.kubernautAgent.prometheus.ocpMonitoringRbac (not (and .Values.kubernautAgent.prometheus.tls .Values.kubernautAgent.prometheus.tls.caConfigMapName)) }}
+{{- if .Values.kubernautAgent.alignmentCheck.enabled }}
+    alignmentCheck:
+      enabled: true
+      timeout: {{ .Values.kubernautAgent.alignmentCheck.timeout | default "10s" }}
+      maxStepTokens: {{ .Values.kubernautAgent.alignmentCheck.maxStepTokens | default 500 }}
+{{- with .Values.kubernautAgent.alignmentCheck.llm }}
+      llm:
+{{- if .provider }}
+        provider: {{ .provider }}
+{{- end }}
+{{- if .model }}
+        model: {{ .model }}
+{{- end }}
+{{- if .endpoint }}
+        endpoint: {{ .endpoint }}
+{{- end }}
+{{- if .apiKey }}
+        api_key: {{ .apiKey }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if include "kubernaut.monitoring.prometheus.enabled" . }}
+    tools:
+      prometheus:
+        url: {{ include "kubernaut.monitoring.prometheus.url" . | quote }}
+{{- end }}
+{{- if include "kubernaut.agent.tlsEnabled" . }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -196,15 +228,7 @@ data:
 {{- end }}
 {{- end }}
 {{- end }}
-{{- if and .Values.kubernautAgent.prometheus.enabled .Values.kubernautAgent.prometheus.url }}
-    toolsets:
-      prometheus/metrics:
-        enabled: true
-        config:
-          prometheus_url: {{ .Values.kubernautAgent.prometheus.url | quote }}
-{{- else }}
     toolsets: {}
-{{- end }}
     mcp_servers: {}
 {{- else }}
 {{- fail "LLM configuration required. Choose one:\n  1) --set kubernautAgent.llm.provider=openai --set kubernautAgent.llm.model=gpt-4o  (quickstart)\n  2) --set-file kubernautAgent.sdkConfigContent=sdk-config.yaml  (full config)\n  3) --set kubernautAgent.existingSdkConfigMap=my-configmap  (pre-existing)" }}
@@ -360,7 +384,7 @@ spec:
       targetPort: 9090
   selector:
     app: kubernaut-agent
-{{- if and .Values.kubernautAgent.prometheus.enabled .Values.kubernautAgent.prometheus.ocpMonitoringRbac }}
+{{- if include "kubernaut.monitoring.ocpRbac" . }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

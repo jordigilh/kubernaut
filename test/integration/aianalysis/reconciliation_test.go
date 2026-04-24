@@ -205,4 +205,117 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 	// BR-AI-022 is about confidence thresholds (80% auto-approval), which is
 	// tested in the Rego policy evaluation tests.
 	// Status conditions for phase observability may be added in V2.0 if needed.
+
+	Context("#462: SignalAnnotations end-to-end through reconciliation", func() {
+		It("IT-AA-462-001: should persist SignalAnnotations on AIAnalysis and complete normally", func() {
+			rrName := helpers.UniqueTestName("annot-rr")
+			analysis := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      helpers.UniqueTestName("annot-e2e"),
+					Namespace: testNamespace,
+				},
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      rrName,
+						Namespace: testNamespace,
+					},
+					RemediationID: rrName,
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
+							Fingerprint:      "test-fp-462-001",
+							Severity:         "high",
+							SignalName:       "OOMKilled",
+							Environment:      "production",
+							BusinessPriority: "P1",
+							TargetResource: aianalysisv1.TargetResource{
+								Kind:      "Pod",
+								Name:      "api-server-pod",
+								Namespace: testNamespace,
+							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
+							SignalAnnotations: map[string]string{
+								"description": "Pod OOMKilled in production",
+								"summary":     "Memory limit exceeded for api-server",
+								"runbook_url": "https://runbooks.example.com/oom",
+							},
+						},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
+					},
+				},
+			}
+
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
+
+			By("Creating AIAnalysis with SignalAnnotations")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+
+			By("Verifying SignalAnnotations persisted on CRD spec")
+			fetched := &aianalysisv1.AIAnalysis{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), fetched)).To(Succeed())
+			Expect(fetched.Spec.AnalysisRequest.SignalContext.SignalAnnotations).To(Equal(map[string]string{
+				"description": "Pod OOMKilled in production",
+				"summary":     "Memory limit exceeded for api-server",
+				"runbook_url": "https://runbooks.example.com/oom",
+			}))
+
+			By("Waiting for Completed phase (annotations must not break reconciliation)")
+			Eventually(func() string {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+				return string(analysis.Status.Phase)
+			}, timeout, interval).Should(Equal("Completed"))
+		})
+
+		It("IT-AA-462-002: should complete normally without SignalAnnotations (backward compat)", func() {
+			rrName := helpers.UniqueTestName("no-annot-rr")
+			analysis := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      helpers.UniqueTestName("no-annot-e2e"),
+					Namespace: testNamespace,
+				},
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      rrName,
+						Namespace: testNamespace,
+					},
+					RemediationID: rrName,
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
+							Fingerprint:      "test-fp-462-002",
+							Severity:         "medium",
+							SignalName:       "CrashLoopBackOff",
+							Environment:      "staging",
+							BusinessPriority: "P2",
+							TargetResource: aianalysisv1.TargetResource{
+								Kind:      "Pod",
+								Name:      "test-pod",
+								Namespace: testNamespace,
+							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
+						},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation, aianalysisv1.AnalysisTypeRootCause, aianalysisv1.AnalysisTypeWorkflowSelection},
+					},
+				},
+			}
+
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
+
+			By("Creating AIAnalysis without SignalAnnotations")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+
+			By("Verifying SignalAnnotations is nil")
+			fetched := &aianalysisv1.AIAnalysis{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), fetched)).To(Succeed())
+			Expect(fetched.Spec.AnalysisRequest.SignalContext.SignalAnnotations).To(BeNil())
+
+			By("Waiting for Completed phase (backward compatibility)")
+			Eventually(func() string {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+				return string(analysis.Status.Phase)
+			}, timeout, interval).Should(Equal("Completed"))
+		})
+	})
 })

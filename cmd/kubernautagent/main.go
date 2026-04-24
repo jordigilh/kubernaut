@@ -43,14 +43,18 @@ import (
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
 
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
+	alignprompt "github.com/jordigilh/kubernaut/internal/kubernautagent/alignment/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/conversation"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
@@ -185,8 +189,49 @@ func main() {
 		slogger.Info("workflow catalog fetcher disabled (no DataStorage — dev mode)")
 	}
 
+	var effectiveLLM llm.Client = instrumentedLLM
+	var effectiveReg registry.ToolRegistry = reg
+	var alignEvaluator *alignment.Evaluator
+
+	if cfg.AlignmentCheck.Enabled {
+		var shadowClient llm.Client
+		if cfg.AlignmentCheck.LLM == nil {
+			shadowClient = instrumentedLLM
+			slogger.Info("shadow agent shares investigation LLM client")
+		} else {
+			alignLLMCfg := cfg.AlignmentCheck.EffectiveLLM(cfg.LLM)
+			alignCfgMerge := *cfg
+			alignCfgMerge.LLM = alignLLMCfg
+			raw, alignErr := langchaingo.New(
+				alignLLMCfg.Provider, alignLLMCfg.Endpoint, alignLLMCfg.Model, alignLLMCfg.APIKey,
+				buildLLMProviderOpts(&alignCfgMerge)...)
+			if alignErr != nil {
+				slogger.Error("alignment check LLM client failed (fail-closed): alignment is enabled but shadow client unavailable", "error", alignErr)
+				os.Exit(1)
+			} else {
+				shadowClient = llm.NewInstrumentedClient(raw)
+				slogger.Info("shadow agent using dedicated LLM client", "model", alignLLMCfg.Model)
+			}
+		}
+		if shadowClient != nil {
+			alignEvaluator = alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
+				Timeout:       cfg.AlignmentCheck.Timeout,
+				MaxStepTokens: cfg.AlignmentCheck.MaxStepTokens,
+				MaxRetries:    1,
+			}, alignprompt.SystemPrompt())
+			effectiveLLM = alignment.NewLLMProxy(instrumentedLLM)
+			effectiveReg = alignment.NewToolProxy(reg)
+			slogger.Info("shadow agent alignment check enabled")
+		}
+	}
+
+	var scopeResolver investigator.ScopeResolver
+	if k8sInfra != nil {
+		scopeResolver = investigator.NewMapperScopeResolver(k8sInfra.mapper)
+	}
+
 	inv := investigator.New(investigator.Config{
-		Client:        instrumentedLLM,
+		Client:        effectiveLLM,
 		Builder:       promptBuilder,
 		ResultParser:  resultParser,
 		Enricher:      enricher,
@@ -194,10 +239,10 @@ func main() {
 		Logger:        slogger,
 		MaxTurns:      cfg.Investigator.MaxTurns,
 		PhaseTools:    phaseTools,
-		Registry:      reg,
+		Registry:      effectiveReg,
 		ModelName:     cfg.LLM.Model,
 		Swappable:     swappable,
-		ScopeResolver: investigator.NewMapperScopeResolver(k8sInfra.mapper),
+		ScopeResolver: scopeResolver,
 		Pipeline: investigator.Pipeline{
 			Sanitizer:         sanitizer,
 			AnomalyDetector:   anomalyDetector,
@@ -207,15 +252,65 @@ func main() {
 		},
 	})
 
+	var investigationRunner kaserver.InvestigationRunner = inv
+	if alignEvaluator != nil {
+		investigationRunner = alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			Inner:          inv,
+			Evaluator:      alignEvaluator,
+			VerdictTimeout: 30 * time.Second,
+			AuditStore:     auditStore,
+			Logger:         slogger,
+		})
+	}
+
 	store := session.NewStore(cfg.Session.TTL)
 	mgr := session.NewManager(store, slogger)
 
-	handler := kaserver.NewHandler(mgr, inv, slogger)
+	handler := kaserver.NewHandler(mgr, investigationRunner, slogger)
 
 	ogenSrv, err := agentclient.NewServer(handler)
 	if err != nil {
 		slogger.Error("failed to create ogen server", "error", err)
 		os.Exit(1)
+	}
+
+	var convHandler *conversation.Handler
+	if cfg.Conversation.Enabled {
+		convLLMCfg := cfg.Conversation.EffectiveLLM(cfg.LLM)
+		convCfgMerge := *cfg
+		convCfgMerge.LLM = convLLMCfg
+		convLLMClient, convErr := langchaingo.New(
+			convLLMCfg.Provider, convLLMCfg.Endpoint, convLLMCfg.Model, convLLMCfg.APIKey,
+			buildLLMProviderOpts(&convCfgMerge)...)
+		if convErr != nil {
+			slogger.Warn("conversation LLM client failed, disabled", "error", convErr)
+		} else {
+			convAuthn, convAuthz := buildConversationAuth(k8sInfra, slogger)
+			if convAuthn != nil && convAuthz != nil {
+				var rarReader conversation.RARReader
+			if k8sInfra != nil {
+				rarReader = conversation.NewDynamicRARReader(k8sInfra.dynClient, slogger)
+			}
+			convHandler = conversation.NewHandler(conversation.HandlerDeps{
+					Authenticator: convAuthn,
+					Authorizer:    convAuthz,
+					AuditStore:    auditStore,
+					Config:        cfg.Conversation,
+					Logger:        slogger,
+					PromptBuilder: promptBuilder,
+					RARReader:     rarReader,
+				}).WithLLMClient(conversation.LLMAdapterDeps{
+					Client:             llm.NewInstrumentedClient(convLLMClient),
+					ToolRegistry:       effectiveReg,
+					AuditStore:         auditStore,
+					Logger:             slogger,
+					MaxToolTurns:       cfg.Conversation.MaxToolTurns,
+					ModelName:          convLLMCfg.Model,
+					AlignmentEvaluator: alignEvaluator,
+				})
+				slogger.Info("conversation API enabled", "model", convLLMCfg.Model)
+			}
+		}
 	}
 
 	r := chi.NewRouter()
@@ -224,7 +319,7 @@ func main() {
 	r.Get("/config", configHandler(cfg, swappable))
 
 	r.Route("/api/v1", func(r chi.Router) {
-		authMw := newAuthMiddleware(cfg, logrLogger)
+		authMw := newAuthMiddleware(k8sInfra, logrLogger)
 		if authMw != nil {
 			r.Use(authMw.Handler)
 			slogger.Info("auth middleware enabled (DD-AUTH-014)",
@@ -234,6 +329,14 @@ func main() {
 			)
 		} else {
 			slogger.Info("auth middleware DISABLED (no in-cluster K8s config)")
+		}
+
+		if convHandler != nil {
+			r.Route("/conversations", func(r chi.Router) {
+				r.Post("/sessions", convHandler.HandleCreateSession)
+				r.Post("/sessions/{sessionID}/messages", convHandler.HandlePostMessage)
+			})
+			slogger.Info("conversation routes registered under /api/v1/conversations")
 		}
 
 		r.Handle("/*", ogenSrv)
@@ -549,8 +652,6 @@ func buildSanitizationPipeline(cfg *kaconfig.Config, logger *slog.Logger) *sanit
 	return sanitization.NewPipeline(stages...)
 }
 
-
-
 // buildAuditStore creates a BufferedDSAuditStore (DD-AUDIT-002 aligned) when audit
 // is enabled and DS is available, falling back to NopAuditStore otherwise.
 // Uses the same OpenAPIClientAdapter + BufferedAuditStore stack as every other
@@ -780,22 +881,15 @@ func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validato
 	return validator, nil
 }
 
-// newAuthMiddleware creates the DD-AUTH-014 auth middleware using in-cluster K8s config.
-func newAuthMiddleware(_ *kaconfig.Config, logger logr.Logger) *auth.Middleware {
-	kubeConfig, err := ctrl.GetConfig()
-	if err != nil {
-		logger.Info("K8s config not available, auth middleware disabled", "error", err)
+// newAuthMiddleware creates the DD-AUTH-014 auth middleware using the shared k8sInfra clientset.
+func newAuthMiddleware(infra *k8sInfra, logger logr.Logger) *auth.Middleware {
+	if infra == nil || infra.clientset == nil {
+		logger.Info("K8s infrastructure not available, auth middleware disabled")
 		return nil
 	}
 
-	k8sClientset, err := kubernetes.NewForConfig(kubeConfig)
-	if err != nil {
-		logger.Error(err, "failed to create K8s clientset for auth")
-		return nil
-	}
-
-	authenticator := auth.NewK8sAuthenticator(k8sClientset)
-	authorizer := auth.NewK8sAuthorizer(k8sClientset)
+	authenticator := auth.NewK8sAuthenticator(infra.clientset)
+	authorizer := auth.NewK8sAuthorizer(infra.clientset)
 
 	namespace := detectNamespace()
 
@@ -805,4 +899,13 @@ func newAuthMiddleware(_ *kaconfig.Config, logger logr.Logger) *auth.Middleware 
 		ResourceName: "kubernaut-agent",
 		Verb:         "create",
 	}, logger)
+}
+
+// buildConversationAuth creates authenticator/authorizer for the conversation API using shared k8sInfra.
+func buildConversationAuth(infra *k8sInfra, logger *slog.Logger) (auth.Authenticator, auth.Authorizer) {
+	if infra == nil || infra.clientset == nil {
+		logger.Warn("K8s infrastructure unavailable for conversation auth")
+		return nil, nil
+	}
+	return auth.NewK8sAuthenticator(infra.clientset), auth.NewK8sAuthorizer(infra.clientset)
 }

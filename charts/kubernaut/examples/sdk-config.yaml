@@ -24,7 +24,7 @@ llm:
   temperature: 0.7
 
 # -- Toolsets (optional)
-# See: https://holmesgpt.dev/data-sources/builtin-toolsets/
+# See: https://docs.kubernaut.ai/agent/toolsets/
 toolsets: {}
   # prometheus/metrics:
   #   enabled: true

@@ -1076,11 +1076,8 @@ replicas_match(current, desired) if {
 - **Business Requirements**: [STEP_VALIDATION_BUSINESS_REQUIREMENTS.md](../../requirements/STEP_VALIDATION_BUSINESS_REQUIREMENTS.md)
 - **CRD Schema Documentation**:
   - [WorkflowExecution CRD Schema](03-workflowexecution/crd-schema.md)
-  - [KubernetesExecution (DEPRECATED - ADR-025) CRD Schema](04-kubernetesexecutor/crd-schema.md)
 - **Reconciliation Flow Documentation**:
   - [WorkflowExecution Reconciliation Phases](03-workflowexecution/reconciliation-phases.md)
-  - [KubernetesExecutor (DEPRECATED - ADR-025) Reconciliation Phases](04-kubernetesexecutor/reconciliation-phases.md)
-- **Rego Policy Integration**: [REGO_POLICY_INTEGRATION.md](04-kubernetesexecutor/implementation/REGO_POLICY_INTEGRATION.md)
 - **APDC Methodology**: [.cursor/rules/00-core-development-methodology.mdc](../../../.cursor/rules/00-core-development-methodology.mdc)
 
 ---

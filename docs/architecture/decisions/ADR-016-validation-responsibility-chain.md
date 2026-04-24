@@ -10,6 +10,7 @@
 - [ADR-001: CRD Microservices Architecture](./ADR-001-crd-microservices-architecture.md)
 - [Owner Reference Architecture](./005-owner-reference-architecture.md)
 - [APPROVED_MICROSERVICES_ARCHITECTURE.md](../APPROVED_MICROSERVICES_ARCHITECTURE.md)
+- [ADR-023: Tekton from V1](./ADR-023-tekton-from-v1.md), [ADR-025: KubernetesExecutor elimination](./ADR-025-kubernetesexecutor-service-elimination.md)
 
 ---
 
@@ -26,6 +27,8 @@ These questions highlighted the need for a clear **Validation Responsibility Cha
 - Redundant validation across services
 - Unclear separation of concerns
 - Performance overhead from duplicate queries
+
+**Execution model (2025+)**: Per ADR-023/025, workflow steps run via **Tekton PipelineRun / TaskRun** (and action containers), not a `KubernetesExecution` CRD. The validation chain below is updated to match that model.
 
 ---
 
@@ -60,7 +63,7 @@ We adopt a **layered validation responsibility model** where:
 
 ### **Principle 2: Step-Level Validation with Expected Outcomes**
 
-**Decision**: Each KubernetesExecution step validates its own expected outcome. WorkflowExecution Controller relies on step status.
+**Decision**: Each workflow step validates its own expected outcome (in the **execution** layer: Tekton TaskRun / action container). WorkflowExecution Controller relies on step status derived from TaskRun / PipelineRun conditions.
 
 **Rationale**:
 - Validation logic belongs at the execution layer, not orchestration layer
@@ -68,7 +71,7 @@ We adopt a **layered validation responsibility model** where:
   - Scale deployment → verify replica count matches target
   - Delete pod → verify pod no longer exists
   - Patch configmap → verify new values are present
-- KubernetesExecution Controller has the context to validate outcomes correctly
+- Action containers and Tekton steps have the context to validate outcomes correctly
 - WorkflowExecution Controller orchestrates flow, doesn't duplicate validation
 
 **Impact**:
@@ -85,7 +88,7 @@ We adopt a **layered validation responsibility model** where:
 - Context API's role is to serve historical intelligence for AI decision-making
 - Validation requires real-time cluster state, not historical data
 - Mixing data provision with validation would blur architectural boundaries
-- Validation responsibility belongs to execution layer (KubernetesExecution)
+- Validation responsibility belongs to execution layer (Tekton TaskRun / action execution)
 
 **Impact**:
 - ✅ Clear Context API boundaries: data provider only
@@ -129,11 +132,11 @@ We adopt a **layered validation responsibility model** where:
 - ❌ Does NOT query Context API for historical data
 - ❌ Does NOT query Kubernetes for cluster state
 
-**Output**: Executable workflow plan with KubernetesExecution CRDs
+**Output**: Executable workflow plan (PipelineRun / Task graph)
 
 ---
 
-### **Phase 3: Step Execution (KubernetesExecution Controller)**
+### **Phase 3: Step Execution (Tekton TaskRun / action container)**
 
 **Responsibility**: Execute action and validate expected outcome
 
@@ -146,7 +149,7 @@ We adopt a **layered validation responsibility model** where:
   - **Delete pod**: Verify pod no longer exists
   - **Patch configmap**: Verify new values present
   - **Restart pods**: Verify new pods running and healthy
-- ✅ Update CRD status with validation result
+- ✅ Surface results via TaskRun / PipelineRun status (and WorkflowExecution step status)
 - ✅ Store execution result in Data Storage
 
 **Output**: Step status (completed/failed) with validation result
@@ -157,10 +160,10 @@ We adopt a **layered validation responsibility model** where:
 
 **Responsibility**: Monitor workflow progress and completion
 
-**Data Authority**: KubernetesExecution step status (authoritative)
+**Data Authority**: Tekton TaskRun / PipelineRun status and aggregated WorkflowExecution step status (authoritative)
 
 **Validation**:
-- ✅ Watch KubernetesExecution CRD status updates
+- ✅ Watch TaskRun / PipelineRun status updates
 - ✅ Rely on step validation results (no duplicate validation)
 - ✅ Determine workflow completion based on step status
 - ✅ Trigger rollback if any step fails
@@ -179,7 +182,7 @@ Each layer trusts the data/status from the previous layer:
 
 ```
 AI Investigation → [Recommendations] → Workflow Planning
-Workflow Planning → [Step CRDs] → Step Execution
+Workflow Planning → [PipelineRun / TaskRuns] → Step Execution
 Step Execution → [Step Status] → Workflow Completion
 ```
 
@@ -192,7 +195,7 @@ Step Execution → [Step Status] → Workflow Completion
 | AI Investigation | Context API (historical data) |
 | Workflow Planning | AI recommendations |
 | Step Execution | Kubernetes cluster state |
-| Workflow Completion | Step status |
+| Workflow Completion | Step status (from Tekton / WorkflowExecution) |
 
 **Each phase has exactly one authoritative data source.**
 
@@ -226,7 +229,7 @@ Step Execution → [Step Status] → Workflow Completion
 - **Mitigation**: Comprehensive testing at each layer
 - **Mitigation**: End-to-end testing validates entire chain
 
-⚠️ **Dependency on Status Updates**: Workflow relies on step CRD status updates
+⚠️ **Dependency on Status Updates**: Workflow relies on TaskRun / step status updates
 - **Mitigation**: Watch-based coordination ensures real-time status propagation
 - **Mitigation**: Timeout mechanisms detect stuck steps
 
@@ -240,7 +243,7 @@ Step Execution → [Step Status] → Workflow Completion
 - ✅ Parse AI recommendations as authoritative input
 - ✅ Build dependency graph from recommendations
 - ✅ Validate safety constraints (Rego policies)
-- ✅ Watch KubernetesExecution CRD status
+- ✅ Watch Tekton TaskRun / PipelineRun status (and map to workflow step status)
 - ✅ Rely on step status for completion decisions
 
 **DO NOT**:
@@ -249,13 +252,12 @@ Step Execution → [Step Status] → Workflow Completion
 - ❌ Revalidate AI recommendations
 - ❌ Duplicate step-level validation logic
 
-### **For KubernetesExecution Controller**
+### **For Tekton / action execution**
 
 **DO**:
 - ✅ Execute action on Kubernetes
 - ✅ Validate expected outcome after execution
-- ✅ Update CRD status with validation result
-- ✅ Include validation details in status (e.g., "verified 3 replicas")
+- ✅ Report validation details in logs and TaskRun results
 - ✅ Store complete execution result in Data Storage
 
 **DO NOT**:
@@ -305,7 +307,7 @@ workflow := buildWorkflowFromAIRecommendations(aiAnalysis.Recommendations)
 // effectiveness := contextAPI.GetActionEffectiveness("scale_deployment")
 ```
 
-**Step Execution** (KubernetesExecution Controller):
+**Step Execution** (TaskRun / action container):
 ```go
 // ✅ Correct: Execute and validate expected outcome
 k8s.ScaleDeployment("payment-api", "production", 5)
@@ -316,15 +318,14 @@ if deployment.Status.Replicas != 5 {
     return fmt.Errorf("validation failed: expected 5 replicas, got %d", deployment.Status.Replicas)
 }
 
-// Update status with validation result
-stepCRD.Status.Phase = "Completed"
-stepCRD.Status.ValidationResult = "verified 5 replicas running"
+// Record result for workflow layer
+stepResult.ValidationResult = "verified 5 replicas running"
 ```
 
 **Workflow Completion** (WorkflowExecution Controller):
 ```go
 // ✅ Correct: Rely on step status
-if stepCRD.Status.Phase == "Completed" {
+if stepStatus.Phase == "Completed" {
     // Continue to next step
 }
 
@@ -335,7 +336,7 @@ if stepCRD.Status.Phase == "Completed" {
 
 ### **Example 2: Restart Pod Workflow**
 
-**Step Execution** (KubernetesExecution Controller):
+**Step Execution** (TaskRun / action container):
 ```go
 // Execute: Delete pod
 k8s.DeletePod(podName, namespace)
@@ -346,9 +347,7 @@ if newPod.Status.Phase != "Running" {
     return fmt.Errorf("validation failed: new pod not running")
 }
 
-// Update status
-stepCRD.Status.Phase = "Completed"
-stepCRD.Status.ValidationResult = fmt.Sprintf("verified new pod %s running", newPod.Name)
+stepResult.ValidationResult = fmt.Sprintf("verified new pod %s running", newPod.Name)
 ```
 
 ---
@@ -359,7 +358,7 @@ stepCRD.Status.ValidationResult = fmt.Sprintf("verified new pod %s running", new
 
 **Unit Tests**:
 - WorkflowExecution: Verify no Context API calls during planning
-- KubernetesExecution: Verify expected outcome validation logic
+- Action / TaskRun helpers: Verify expected outcome validation logic
 - Each layer: Verify trusts previous layer's data/status
 
 **Integration Tests**:
@@ -380,7 +379,7 @@ stepCRD.Status.ValidationResult = fmt.Sprintf("verified new pod %s running", new
 
 **Logging**:
 - WorkflowExecution: Log AI recommendations usage (not Context API queries)
-- KubernetesExecution: Log expected outcome validation results
+- TaskRun / action logs: Log expected outcome validation results
 - Validation chain: Trace responsibility at each phase
 
 ---
@@ -390,7 +389,7 @@ stepCRD.Status.ValidationResult = fmt.Sprintf("verified new pod %s running", new
 - [Workflow Execution Sequence Diagram](../APPROVED_MICROSERVICES_ARCHITECTURE.md#workflow-execution-sequence-detailed) (lines 385-507)
 - [Verification Report](../../analysis/WORKFLOW_EXECUTION_DIAGRAM_CONSISTENCY_VERIFICATION.md)
 - [WorkflowExecution Service Spec](../../services/crd-controllers/03-workflowexecution/overview.md)
-- [KubernetesExecution Service Spec](../../services/crd-controllers/04-kubernetesexecutor/overview.md)
+- [Tekton Execution Architecture](../TEKTON_EXECUTION_ARCHITECTURE.md)
 - [Context API Service Spec](../../services/stateless/context-api/overview.md)
 
 ---
@@ -408,6 +407,7 @@ stepCRD.Status.ValidationResult = fmt.Sprintf("verified new pod %s running", new
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 1.0 | 2025-10-08 | Initial decision | Architecture Team |
+| 1.1 | 2026-04-09 | Aligned execution/validation roles with Tekton TaskRun (ADR-023/025); removed eliminated KubernetesExecution service references | Architecture Team |
 
 ---
 

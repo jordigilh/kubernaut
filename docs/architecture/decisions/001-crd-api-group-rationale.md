@@ -55,7 +55,6 @@ All Kubernaut CRDs use `kubernaut.io/v1`:
 | **RemediationProcessing** | `kubernaut.io/v1` | `remediationprocessings.kubernaut.io` | RemediationProcessor |
 | **AIAnalysis** | `kubernaut.io/v1` | `aianalysis.kubernaut.io` | AIAnalysis |
 | **WorkflowExecution** | `kubernaut.io/v1` | `workflowexecutions.kubernaut.io` | WorkflowExecution |
-| **KubernetesExecution** | `kubernaut.io/v1` | `kubernetesexecutions.kubernaut.io` | KubernetesExecutor |
 
 ---
 
@@ -97,7 +96,7 @@ When V2 features are added (multi-cloud, multi-cluster):
 
 ### **Alternative 2: `alerts.kubernaut.io`**
 ❌ **Rejected**
-- **Too specific**: Not all CRDs are alert-related (WorkflowExecution, KubernetesExecution are action-focused)
+- **Too specific**: Not all CRDs are alert-related (WorkflowExecution is action-focused)
 - **Limiting**: Doesn't reflect remediation orchestration scope
 - **Redundant**: `kubernaut.io` is sufficient, no need for subdomain
 

@@ -47,9 +47,9 @@ type NotificationAudit struct {
 	// Maps to: notification_audit.recipient (VARCHAR(255) NOT NULL)
 	Recipient string `json:"recipient" db:"recipient" validate:"required,max=255"`
 
-	// Channel is the communication channel (e.g., "email", "slack", "pagerduty", "sms")
+	// Channel is the communication channel (e.g., "email", "slack", "pagerduty", "teams", "sms")
 	// Maps to: notification_audit.channel (VARCHAR(50) NOT NULL)
-	Channel string `json:"channel" db:"channel" validate:"required,oneof=email slack pagerduty sms"`
+	Channel string `json:"channel" db:"channel" validate:"required,oneof=email slack pagerduty teams sms"`
 
 	// MessageSummary is a short summary of the notification content
 	// Maps to: notification_audit.message_summary (TEXT NOT NULL)

@@ -107,39 +107,51 @@ func (a *MockAuthenticator) ValidateToken(ctx context.Context, token string) (st
 //	// Returns: false, nil
 type MockAuthorizer struct {
 	// AllowedUsers maps user identities to authorization decisions.
-	// Key: user identity (e.g., "system:serviceaccount:namespace:sa-name")
-	// Value: true if allowed, false if denied
-	//
-	// If a user is not in the map, access is denied by default (secure default).
 	AllowedUsers map[string]bool
 
 	// PerResourceDecisions allows fine-grained control for tests that need
 	// different authorization results based on the resource being accessed.
-	// Key: "namespace/resource/resourceName/verb" (e.g., "kubernaut-system/services/data-storage-service/create")
-	// Value: map of user -> allowed
-	//
-	// If set, PerResourceDecisions takes precedence over AllowedUsers.
+	// Key: "namespace/resource/resourceName/verb"
+	// If set, takes precedence over AllowedUsers.
 	PerResourceDecisions map[string]map[string]bool
 
+	// PerGroupResourceDecisions allows fine-grained control for group-specific
+	// authorization (e.g., CRDs in the "kubernaut.ai" API group).
+	// Key: "apiGroup/namespace/resource/resourceName/verb"
+	// If set, takes precedence over PerResourceDecisions and AllowedUsers.
+	PerGroupResourceDecisions map[string]map[string]bool
+
 	// ErrorToReturn allows tests to simulate SAR API failures.
-	// If set, CheckAccess will return this error instead of checking AllowedUsers.
 	ErrorToReturn error
 
-	// CallCount tracks how many times CheckAccess was called.
-	// Useful for verifying caching behavior.
+	// CallCount tracks how many times CheckAccess/CheckAccessWithGroup was called.
 	CallCount int
 }
 
 // CheckAccess implements the Authorizer interface for testing.
+// Delegates to CheckAccessWithGroup with an empty API group.
 func (a *MockAuthorizer) CheckAccess(ctx context.Context, user, namespace, resource, resourceName, verb string) (bool, error) {
+	return a.CheckAccessWithGroup(ctx, user, namespace, "", resource, resourceName, verb)
+}
+
+// CheckAccessWithGroup implements the Authorizer interface for testing with API group support.
+func (a *MockAuthorizer) CheckAccessWithGroup(ctx context.Context, user, namespace, apiGroup, resource, resourceName, verb string) (bool, error) {
 	a.CallCount++
 
-	// Simulate API failure if configured
 	if a.ErrorToReturn != nil {
 		return false, a.ErrorToReturn
 	}
 
-	// Check per-resource decisions first (more specific)
+	if a.PerGroupResourceDecisions != nil {
+		key := fmt.Sprintf("%s/%s/%s/%s/%s", apiGroup, namespace, resource, resourceName, verb)
+		if decisions, ok := a.PerGroupResourceDecisions[key]; ok {
+			allowed, exists := decisions[user]
+			if exists {
+				return allowed, nil
+			}
+		}
+	}
+
 	if a.PerResourceDecisions != nil {
 		key := fmt.Sprintf("%s/%s/%s/%s", namespace, resource, resourceName, verb)
 		if decisions, ok := a.PerResourceDecisions[key]; ok {
@@ -150,7 +162,6 @@ func (a *MockAuthorizer) CheckAccess(ctx context.Context, user, namespace, resou
 		}
 	}
 
-	// Fall back to AllowedUsers (simpler)
 	if a.AllowedUsers != nil {
 		allowed, exists := a.AllowedUsers[user]
 		if exists {
@@ -158,6 +169,5 @@ func (a *MockAuthorizer) CheckAccess(ctx context.Context, user, namespace, resou
 		}
 	}
 
-	// Default deny (secure default)
 	return false, nil
 }

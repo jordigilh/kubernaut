@@ -60,6 +60,16 @@ type MockScenarioConfig struct {
 	// response text instead of synthesizing from the other config fields.
 	// Used by golden transcript replay to produce full-fidelity responses.
 	ExactAnalysisText string
+
+	// ForceText overrides the global MOCK_LLM_FORCE_TEXT flag per-scenario.
+	// nil = use global default; ptr(false) = return tool calls; ptr(true) = return text.
+	ForceText *bool
+
+	// ToolCallName, when set, causes the handler to bypass the DAG engine
+	// and return a tool call with this name on the first request.
+	ToolCallName string
+	// ToolCallArgs provides the arguments for the custom tool call.
+	ToolCallArgs map[string]string
 }
 
 // BoolPtr is a helper for creating *bool literals in scenario configs.

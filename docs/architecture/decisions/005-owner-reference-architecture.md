@@ -21,20 +21,20 @@
                          │
                          │ (Creates & watches ALL service CRDs)
                          │
-        ┌────────────────┼────────────────┬────────────────┬────────────────┐
-        │                │                │                │                │
-        ▼                ▼                ▼                ▼                ▼
-  RemediationProcessing   AIAnalysis   WorkflowExecution  KubernetesExecution  AIApprovalRequest
-   (Sibling 1)      (Sibling 2)     (Sibling 3)        (Sibling 4)       (Optional)
-        │                │                │                │                │
-        │                │                │                │                │
-   📊 Enriches      🤖 Analyzes      🔄 Orchestrates   ⚙️  Executes      ✅ Approves
-    Alert Data      Root Cause        Steps             K8s Ops          Risky Actions
-        │                │                │                │                │
-        ▼                ▼                ▼                ▼                ▼
-   Updates status   Updates status   Updates status    Updates status   Updates status
-        │                │                │                │                │
-        └────────────────┴────────────────┴────────────────┴────────────────┘
+        ┌────────────────────┼────────────────────┬────────────────────┐
+        │                    │                    │                    │
+        ▼                    ▼                    ▼                    ▼
+  RemediationProcessing   AIAnalysis   WorkflowExecution      AIApprovalRequest
+   (Sibling 1)      (Sibling 2)     (Sibling 3)            (Optional)
+        │                │                │                    │
+        │                │                │                    │
+   📊 Enriches      🤖 Analyzes      🔄 Orchestrates          ✅ Approves
+    Alert Data      Root Cause   Steps (Tekton execution)   Risky Actions
+        │                │                │                    │
+        ▼                ▼                ▼                    ▼
+   Updates status   Updates status   Updates status        Updates status
+        │                │                │                    │
+        └────────────────┴────────────────┴────────────────────┘
                                         │
                                         ▼
                          RemediationRequest watches all statuses
@@ -53,7 +53,6 @@
 | **RemediationProcessing** | RemediationRequest | None | 2 | ✅ Deleted when RemediationRequest deleted |
 | **AIAnalysis** | RemediationRequest | None | 2 | ✅ Deleted when RemediationRequest deleted |
 | **WorkflowExecution** | RemediationRequest | None | 2 | ✅ Deleted when RemediationRequest deleted |
-| **KubernetesExecution** | RemediationRequest | None | 2 | ✅ Deleted when RemediationRequest deleted |
 | **AIApprovalRequest** | RemediationRequest | None | 2 | ✅ Deleted when RemediationRequest deleted |
 
 **Key Point**: All service CRDs are **siblings** at level 2. RemediationRequest is the **single orchestrator** that creates all service CRDs based on sequential workflow progression.
@@ -70,14 +69,14 @@
                     RemediationRequest (Central Orchestrator)
                             │
         ┌───────────────────┼───────────────────┬───────────────────┐
-        │ (owns)            │ (owns)            │ (owns)            │ (owns)
+        │ (owns)            │ (owns)            │ (owns)            │
         ▼                   ▼                   ▼                   ▼
-  RemediationProcessing      AIAnalysis      WorkflowExecution   KubernetesExecution
-        │                   │                   │                   │
-   status.phase=         status.phase=      status.phase=      status.phase=
-   "completed"          "completed"        "completed"        "completed"
-        │                   │                   │                   │
-        └───────────────────┴───────────────────┴───────────────────┘
+  RemediationProcessing      AIAnalysis      WorkflowExecution
+        │                   │                   │
+   status.phase=         status.phase=      status.phase=
+   "completed"          "completed"        "completed"
+        │                   │                   │
+        └───────────────────┴───────────────────┘
                             │
                             ▼
               RemediationRequest watches all statuses
@@ -88,7 +87,7 @@
 ```
 RemediationProcessing.status ──[data snapshot]──► RemediationRequest ──[creates]──► AIAnalysis.spec
 AIAnalysis.status ──[data snapshot]──► RemediationRequest ──[creates]──► WorkflowExecution.spec
-WorkflowExecution.status ──[data snapshot]──► RemediationRequest ──[creates]──► KubernetesExecution.spec
+WorkflowExecution.status ──[data snapshot]──► RemediationRequest ──[aggregates / completes flow]──► (no additional Kubernaut execution CRD; steps run via Tekton per ADR-023/025)
 ```
 
 ### **Why Centralized Orchestration?**
@@ -106,7 +105,7 @@ WorkflowExecution.status ──[data snapshot]──► RemediationRequest ─�
 3. **No Cross-Service Coupling**
    - RemediationProcessing doesn't know about AIAnalysis
    - AIAnalysis doesn't know about WorkflowExecution
-   - WorkflowExecution doesn't know about KubernetesExecution
+   - WorkflowExecution drives Tekton PipelineRun/TaskRuns; it does not create a separate Kubernaut execution CRD
    - Easy to add/remove/reorder services
 
 4. **Flat Sibling Hierarchy**
@@ -126,7 +125,6 @@ WorkflowExecution.status ──[data snapshot]──► RemediationRequest ─�
 ✅ RemediationRequest → RemediationProcessing → (none)
 ✅ RemediationRequest → AIAnalysis → (none)
 ✅ RemediationRequest → WorkflowExecution → (none)
-✅ RemediationRequest → KubernetesExecution → (none)
 ✅ RemediationRequest → AIApprovalRequest → (none)
 
 ❌ NO CIRCULAR REFERENCES DETECTED
@@ -137,8 +135,7 @@ WorkflowExecution.status ──[data snapshot]──► RemediationRequest ─�
 1. RemediationRequest → RemediationProcessing ✅ (terminates at level 2)
 2. RemediationRequest → AIAnalysis ✅ (terminates at level 2)
 3. RemediationRequest → WorkflowExecution ✅ (terminates at level 2)
-4. RemediationRequest → KubernetesExecution ✅ (terminates at level 2)
-5. RemediationRequest → AIApprovalRequest ✅ (terminates at level 2)
+4. RemediationRequest → AIApprovalRequest ✅ (terminates at level 2)
 
 **Maximum Depth**: **2 levels** (RemediationRequest → Any Service CRD)
 
@@ -269,39 +266,6 @@ func (r *RemediationRequestReconciler) createWorkflowExecution(
 }
 ```
 
-### **Example 4: RemediationRequest Creates KubernetesExecution** (After WorkflowExecution Completes)
-
-**File**: `05-remediation-orchestrator.md` (RemediationRequest Controller)
-
-```go
-func (r *RemediationRequestReconciler) createKubernetesExecution(
-    ctx context.Context,
-    remediation *remediationv1.RemediationRequest,
-    workflowExecution *workflowexecutionv1.WorkflowExecution,
-) error {
-    // RemediationRequest watches WorkflowExecution.status.phase
-    // When "completed", create KubernetesExecution with operations
-
-    kubernetesExecution := &kubernetesexecutionv1.KubernetesExecution{
-        ObjectMeta: metav1.ObjectMeta{
-            Name:      fmt.Sprintf("%s-execution", remediation.Name),
-            Namespace: remediation.Namespace,
-            OwnerReferences: []metav1.OwnerReference{
-                // RemediationRequest OWNS KubernetesExecution (NOT WorkflowExecution)
-                *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
-            },
-        },
-        Spec: kubernetesexecutionv1.KubernetesExecutionSpec{
-            // Data snapshot from WorkflowExecution.status
-            Operations: workflowExecution.Status.Operations,
-            // ...
-        },
-    }
-
-    return r.Create(ctx, kubernetesExecution)
-}
-```
-
 ---
 
 ## 🗑️ **CASCADE DELETION BEHAVIOR**
@@ -318,7 +282,6 @@ DELETE RemediationRequest (root)
     ├── ⚙️  Kubernetes deletes RemediationProcessing (sibling)
     ├── ⚙️  Kubernetes deletes AIAnalysis (sibling)
     ├── ⚙️  Kubernetes deletes WorkflowExecution (sibling)
-    ├── ⚙️  Kubernetes deletes KubernetesExecution (sibling)
     └── ⚙️  Kubernetes deletes AIApprovalRequest (sibling, optional)
 
 ✅ All resources cleaned up in parallel (all at same level)
@@ -437,7 +400,7 @@ metadata:
 ### **3. Workflow Execution (WorkflowExecution)**
 
 **Owner**: RemediationRequest
-**Creates**: Nothing (RemediationRequest creates next CRDs)
+**Creates**: Tekton `PipelineRun` / `TaskRun` resources for step execution (ADR-023/025; Tekton API objects, not Kubernaut sibling CRDs)
 **Purpose**: Orchestrate remediation workflow steps
 
 ```yaml
@@ -459,43 +422,14 @@ metadata:
 - Execute workflow steps (orchestration logic)
 - Track step completion and overall workflow progress
 - Update status.phase to "completed"
-- **RemediationRequest watches status** and creates KubernetesExecution when ready
+- **RemediationRequest watches status** and drives downstream lifecycle (including completion when the workflow finishes)
 
 ---
 
-### **4. Kubernetes Executor (KubernetesExecution)**
-
-**Owner**: RemediationRequest
-**Creates**: Nothing (leaf node)
-**Purpose**: Execute Kubernetes operations via Jobs
-
-```yaml
-apiVersion: kubernetesexecution.kubernaut.io/v1
-kind: KubernetesExecution
-metadata:
-  name: my-k8s-execution
-  namespace: kubernaut-system
-  ownerReferences:
-  - apiVersion: alertremediation.kubernaut.io/v1
-    kind: RemediationRequest
-    name: my-remediation
-    uid: "..."
-    controller: true
-    blockOwnerDeletion: true
-```
-
-**Responsibilities**:
-- Execute Kubernetes operations using native Jobs
-- Track execution progress and results
-- Update status.phase to "completed"
-- **RemediationRequest watches status** and marks overall remediation as complete
-
----
-
-### **5. Remediation Orchestrator (RemediationRequest)**
+### **4. Remediation Orchestrator (RemediationRequest)**
 
 **Owner**: None (root CRD)
-**Owns**: ALL service CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution, AIApprovalRequest)
+**Owns**: ALL service CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, AIApprovalRequest)
 **Purpose**: Central orchestration and lifecycle management
 
 ```yaml
@@ -511,8 +445,7 @@ metadata:
 1. RemediationProcessing (when RemediationRequest created)
 2. AIAnalysis (when RemediationProcessing completes)
 3. WorkflowExecution (when AIAnalysis completes)
-4. KubernetesExecution (when WorkflowExecution completes)
-5. AIApprovalRequest (when manual approval needed)
+4. AIApprovalRequest (when manual approval needed)
 
 **Watches**: All service CRD statuses for phase transitions
 
@@ -526,7 +459,6 @@ metadata:
 - [x] RemediationProcessing owned by RemediationRequest ✅
 - [x] AIAnalysis owned by RemediationRequest ✅
 - [x] WorkflowExecution owned by RemediationRequest ✅
-- [x] KubernetesExecution owned by RemediationRequest ✅
 - [x] AIApprovalRequest owned by RemediationRequest (optional) ✅
 - [x] NO circular dependencies detected ✅
 - [x] Maximum ownership depth: **2 levels** (flat hierarchy) ✅

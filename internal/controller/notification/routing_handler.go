@@ -31,13 +31,13 @@ limitations under the License.
 //
 // RESPONSIBILITIES:
 // - Channel resolution from routing rules (BR-NOT-065)
-// - ConfigMap watch and hot-reload (BR-NOT-067)
+// - FileWatcher-based routing hot-reload (BR-NOT-067, #244)
 // - Routing condition formatting (BR-NOT-069)
 // - Receiver-to-channel mapping
 //
 // BR REFERENCES:
 // - BR-NOT-065: Use routing rules to determine channels
-// - BR-NOT-067: Hot-reload routing configuration from ConfigMap
+// - BR-NOT-067: Hot-reload routing configuration via FileWatcher (#244)
 // - BR-NOT-069: Routing condition visibility
 // ========================================
 
@@ -48,12 +48,7 @@ import (
 	"fmt"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	kubernautnotif "github.com/jordigilh/kubernaut/pkg/notification"
@@ -166,111 +161,95 @@ func (r *NotificationRequestReconciler) receiverToChannels(receiver *routing.Rec
 }
 
 // ========================================
-// CONFIGMAP WATCH & HOT-RELOAD
+// FILE-BASED HOT-RELOAD (#244)
 // ========================================
 
-// handleConfigMapChange handles changes to the routing ConfigMap.
-// It reloads the routing configuration when the ConfigMap is created, updated, or deleted.
-func (r *NotificationRequestReconciler) handleConfigMapChange(ctx context.Context, obj client.Object) []reconcile.Request {
-	logger := log.FromContext(ctx)
-
-	// Verify this is the routing ConfigMap
-	if !routing.IsRoutingConfigMap(obj.GetName(), obj.GetNamespace()) {
-		return nil
+// collectSlackCredentialRefs returns all non-empty credentialRef values from Slack configs.
+func collectSlackCredentialRefs(config *routing.Config) []string {
+	var refs []string
+	for _, recv := range config.Receivers {
+		for _, sc := range recv.SlackConfigs {
+			if sc.CredentialRef != "" {
+				refs = append(refs, sc.CredentialRef)
+			}
+		}
 	}
-
-	logger.Info("Routing ConfigMap changed, reloading configuration",
-		"name", obj.GetName(),
-		"namespace", obj.GetNamespace(),
-	)
-
-	// Reload routing configuration
-	if err := r.loadRoutingConfigFromCluster(ctx); err != nil {
-		logger.Error(err, "Failed to reload routing configuration, keeping previous config")
-	}
-
-	// Return empty - we don't need to reconcile any specific NotificationRequest
-	// The new config will be used for future notifications
-	return nil
+	return refs
 }
 
-// loadRoutingConfigFromCluster loads routing configuration from the cluster ConfigMap.
-// BR-NOT-067: ConfigMap changes detected within 30 seconds
-func (r *NotificationRequestReconciler) loadRoutingConfigFromCluster(ctx context.Context) error {
-	logger := log.FromContext(ctx)
-
-	// Fetch the routing ConfigMap
-	configMap := &corev1.ConfigMap{}
-	key := types.NamespacedName{
-		Name:      routing.DefaultConfigMapName,
-		Namespace: routing.GetConfigMapNamespace(),
-	}
-
-	if err := r.Get(ctx, key, configMap); err != nil {
-		if errors.IsNotFound(err) {
-			logger.Info("Routing ConfigMap not found, using default configuration",
-				"name", key.Name,
-				"namespace", key.Namespace,
-			)
-			// Use default config (already set in NewRouter)
-			return nil
+// collectPagerDutyCredentialRefs returns all non-empty credentialRef values from PagerDuty configs.
+func collectPagerDutyCredentialRefs(config *routing.Config) []string {
+	var refs []string
+	for _, recv := range config.Receivers {
+		for _, pc := range recv.PagerDutyConfigs {
+			if pc.CredentialRef != "" {
+				refs = append(refs, pc.CredentialRef)
+			}
 		}
-		return fmt.Errorf("failed to get routing ConfigMap: %w", err)
 	}
+	return refs
+}
 
-	// Extract routing YAML from ConfigMap
-	yamlData, ok := routing.ExtractRoutingConfig(configMap.Data)
-	if !ok {
-		logger.Info("Routing ConfigMap found but missing routing.yaml key, using default configuration",
-			"name", key.Name,
-			"namespace", key.Namespace,
-		)
+// collectTeamsCredentialRefs returns all non-empty credentialRef values from Teams configs.
+func collectTeamsCredentialRefs(config *routing.Config) []string {
+	var refs []string
+	for _, recv := range config.Receivers {
+		for _, tc := range recv.TeamsConfigs {
+			if tc.CredentialRef != "" {
+				refs = append(refs, tc.CredentialRef)
+			}
+		}
+	}
+	return refs
+}
+
+// collectAllCredentialRefs aggregates credential refs from all credential-bound channels.
+func collectAllCredentialRefs(config *routing.Config) []string {
+	var refs []string
+	refs = append(refs, collectSlackCredentialRefs(config)...)
+	refs = append(refs, collectPagerDutyCredentialRefs(config)...)
+	refs = append(refs, collectTeamsCredentialRefs(config)...)
+	return refs
+}
+
+// ReloadRoutingFromContent reloads routing configuration from raw YAML content.
+// #244: Replaces loadRoutingConfigFromCluster for FileWatcher-based hot-reload.
+// BR-NOT-067: Routing table updated without restart.
+// BR-NOT-104: Per-receiver Slack delivery services rebuilt on reload.
+func (r *NotificationRequestReconciler) ReloadRoutingFromContent(content string) error {
+	r.deliveryKeysMu.Lock()
+	defer r.deliveryKeysMu.Unlock()
+
+	yamlData := []byte(content)
+	if len(yamlData) == 0 {
 		return nil
 	}
 
-	// Parse and validate structure first (before loading into router)
 	newConfig, err := routing.ParseConfig(yamlData)
 	if err != nil {
 		return fmt.Errorf("failed to parse routing configuration: %w", err)
 	}
 
-	// BR-NOT-104: Validate credential refs before accepting the new config
 	if err := newConfig.ValidateCredentialRefs(); err != nil {
-		logger.Error(err, "New routing config has empty credentialRef, keeping previous config")
 		return fmt.Errorf("credential validation failed, keeping previous config: %w", err)
 	}
 
-	// BR-NOT-104-003: Verify all credentialRefs resolve to actual files on disk
 	if r.CredentialResolver != nil {
-		var allRefs []string
-		for _, recv := range newConfig.Receivers {
-			for _, sc := range recv.SlackConfigs {
-				if sc.CredentialRef != "" {
-					allRefs = append(allRefs, sc.CredentialRef)
-				}
-			}
-		}
-		if len(allRefs) > 0 {
+		if allRefs := collectAllCredentialRefs(newConfig); len(allRefs) > 0 {
 			if err := r.CredentialResolver.ValidateRefs(allRefs); err != nil {
-				logger.Error(err, "Credential files missing for routing config, keeping previous config")
 				return fmt.Errorf("credential file validation failed, keeping previous config: %w", err)
 			}
 		}
 	}
 
-	// BR-NOT-067: Routing table updated without restart
 	if err := r.Router.LoadConfig(yamlData); err != nil {
 		return fmt.Errorf("failed to load routing configuration: %w", err)
 	}
 
-	// BR-NOT-104: Rebuild per-receiver Slack delivery services
+	ctx := context.Background()
 	r.rebuildSlackDeliveryServices(ctx, newConfig)
-
-	logger.Info("Routing configuration loaded successfully from ConfigMap",
-		"name", key.Name,
-		"namespace", key.Namespace,
-		"summary", r.Router.GetConfigSummary(),
-	)
+	r.rebuildPagerDutyDeliveryServices(ctx, newConfig)
+	r.rebuildTeamsDeliveryServices(ctx, newConfig)
 
 	return nil
 }
@@ -306,11 +285,11 @@ func (r *NotificationRequestReconciler) rebuildSlackDeliveryServices(ctx context
 			if len(receiver.SlackConfigs) > 1 {
 				channelKey = fmt.Sprintf("slack:%s:%d", receiver.Name, i)
 			}
-			slackService := delivery.NewSlackDeliveryService(webhookURL, r.SlackTimeout)
+			slackService := delivery.NewSlackDeliveryService(webhookURL, r.DeliveryTimeout)
 
 			if r.CircuitBreaker != nil {
-				cbSlack := delivery.NewCircuitBreakerSlackService(slackService, r.CircuitBreaker)
-				r.DeliveryOrchestrator.RegisterChannel(channelKey, cbSlack)
+				cbService := delivery.NewCircuitBreakerService(slackService, r.CircuitBreaker, "slack")
+				r.DeliveryOrchestrator.RegisterChannel(channelKey, cbService)
 			} else {
 				r.DeliveryOrchestrator.RegisterChannel(channelKey, slackService)
 			}
@@ -325,4 +304,107 @@ func (r *NotificationRequestReconciler) rebuildSlackDeliveryServices(ctx context
 	r.registeredSlackKeys = newKeys
 }
 
+// rebuildPagerDutyDeliveryServices registers per-receiver PagerDuty delivery
+// services based on the current routing configuration and credential resolver.
+// BR-NOT-104: Per-receiver delivery binding via receiver-qualified orchestrator keys.
+func (r *NotificationRequestReconciler) rebuildPagerDutyDeliveryServices(ctx context.Context, config *routing.Config) {
+	logger := log.FromContext(ctx)
 
+	if r.CredentialResolver == nil {
+		logger.Info("Credential resolver not available, skipping PagerDuty delivery registration")
+		return
+	}
+
+	for _, key := range r.registeredPagerDutyKeys {
+		r.DeliveryOrchestrator.UnregisterChannel(key)
+	}
+
+	var newKeys []string
+	for _, receiver := range config.Receivers {
+		for i, pc := range receiver.PagerDutyConfigs {
+			routingKey, err := r.CredentialResolver.Resolve(pc.CredentialRef)
+			if err != nil {
+				logger.Error(err, "Failed to resolve credential for PagerDuty receiver",
+					"receiver", receiver.Name,
+					"credentialRef", pc.CredentialRef)
+				continue
+			}
+
+			channelKey := fmt.Sprintf("pagerduty:%s", receiver.Name)
+			if len(receiver.PagerDutyConfigs) > 1 {
+				channelKey = fmt.Sprintf("pagerduty:%s:%d", receiver.Name, i)
+			}
+
+			endpointURL := delivery.PagerDutyEventsAPIURL
+			if pc.URL != "" {
+				endpointURL = pc.URL
+			}
+			var pdChannel delivery.Service = delivery.NewPagerDutyDeliveryService(
+				endpointURL,
+				routingKey,
+				r.DeliveryTimeout,
+			)
+			if r.CircuitBreaker != nil {
+				pdChannel = delivery.NewCircuitBreakerService(pdChannel, r.CircuitBreaker, "pagerduty")
+			}
+			r.DeliveryOrchestrator.RegisterChannel(channelKey, pdChannel)
+
+			newKeys = append(newKeys, channelKey)
+			logger.Info("Registered per-receiver PagerDuty delivery",
+				"channelKey", channelKey,
+				"receiver", receiver.Name,
+				"credentialRef", pc.CredentialRef)
+		}
+	}
+	r.registeredPagerDutyKeys = newKeys
+}
+
+// rebuildTeamsDeliveryServices registers per-receiver Microsoft Teams delivery
+// services based on the current routing configuration and credential resolver.
+// BR-NOT-104: Per-receiver delivery binding via receiver-qualified orchestrator keys.
+func (r *NotificationRequestReconciler) rebuildTeamsDeliveryServices(ctx context.Context, config *routing.Config) {
+	logger := log.FromContext(ctx)
+
+	if r.CredentialResolver == nil {
+		logger.Info("Credential resolver not available, skipping Teams delivery registration")
+		return
+	}
+
+	for _, key := range r.registeredTeamsKeys {
+		r.DeliveryOrchestrator.UnregisterChannel(key)
+	}
+
+	var newKeys []string
+	for _, receiver := range config.Receivers {
+		for i, tc := range receiver.TeamsConfigs {
+			webhookURL, err := r.CredentialResolver.Resolve(tc.CredentialRef)
+			if err != nil {
+				logger.Error(err, "Failed to resolve credential for Teams receiver",
+					"receiver", receiver.Name,
+					"credentialRef", tc.CredentialRef)
+				continue
+			}
+
+			channelKey := fmt.Sprintf("teams:%s", receiver.Name)
+			if len(receiver.TeamsConfigs) > 1 {
+				channelKey = fmt.Sprintf("teams:%s:%d", receiver.Name, i)
+			}
+
+			var teamsChannel delivery.Service = delivery.NewTeamsDeliveryService(
+				webhookURL,
+				r.DeliveryTimeout,
+			)
+			if r.CircuitBreaker != nil {
+				teamsChannel = delivery.NewCircuitBreakerService(teamsChannel, r.CircuitBreaker, "teams")
+			}
+			r.DeliveryOrchestrator.RegisterChannel(channelKey, teamsChannel)
+
+			newKeys = append(newKeys, channelKey)
+			logger.Info("Registered per-receiver Teams delivery",
+				"channelKey", channelKey,
+				"receiver", receiver.Name,
+				"credentialRef", tc.CredentialRef)
+		}
+	}
+	r.registeredTeamsKeys = newKeys
+}

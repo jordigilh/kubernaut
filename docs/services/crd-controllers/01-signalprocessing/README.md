@@ -291,8 +291,7 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 1. This service (01-signalprocessing/)
 2. AI Analysis (02-aianalysis/)
 3. Workflow Execution (03-workflowexecution/)
-4. Kubernetes Executor (04-kubernetesexecutor/)
-5. Remediation Orchestrator (05-remediationorchestrator/)
+4. Remediation Orchestrator (05-remediationorchestrator/)
 
 ---
 

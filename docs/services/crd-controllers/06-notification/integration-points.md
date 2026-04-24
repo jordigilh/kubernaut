@@ -126,7 +126,7 @@ func (r *WorkflowExecutionReconciler) HandleExecutionFailure(ctx context.Context
 
 ---
 
-### **4. Kubernetes Executor** (CRD Controller)
+### **4. Kubernetes Executor** (DEPRECATED - ADR-025) (CRD Controller)
 
 **Use Case**: Critical action execution failures or safety check violations
 **Related BRs**: BR-NOT-026, BR-NOT-033 (Comprehensive context, formatted for quick decision-making)

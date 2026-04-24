@@ -323,44 +323,130 @@ Usage: {{ include "kubernaut.podSecurityContext" .Values.gateway | nindent 6 }}
 {{- toYaml (merge $override $defaults) }}
 {{- end }}
 
+{{/* ===== Unified Monitoring Helpers (Issue #463) ===== */}}
+
 {{/*
-KA TLS CA mount directory (single source of truth).
-Used by both the volume mount and the config ca_file path so they cannot diverge.
+Whether the cluster is OCP (presence of route.openshift.io/v1 API).
+*/}}
+{{- define "kubernaut.monitoring.isOCP" -}}
+{{- if .Capabilities.APIVersions.Has "route.openshift.io/v1" -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Whether Prometheus integration is enabled.
+*/}}
+{{- define "kubernaut.monitoring.prometheus.enabled" -}}
+{{- if .Values.monitoring.prometheus.enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Resolved Prometheus URL. On OCP, defaults to Thanos querier when empty.
+*/}}
+{{- define "kubernaut.monitoring.prometheus.url" -}}
+{{- if .Values.monitoring.prometheus.url -}}
+{{- .Values.monitoring.prometheus.url -}}
+{{- else if include "kubernaut.monitoring.isOCP" . -}}
+https://prometheus-k8s.openshift-monitoring.svc:9091
+{{- end -}}
+{{- end -}}
+
+{{/*
+Whether AlertManager integration is enabled.
+*/}}
+{{- define "kubernaut.monitoring.alertManager.enabled" -}}
+{{- if .Values.monitoring.alertManager.enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Resolved AlertManager URL. On OCP, defaults to alertmanager-main when empty.
+*/}}
+{{- define "kubernaut.monitoring.alertManager.url" -}}
+{{- if .Values.monitoring.alertManager.url -}}
+{{- .Values.monitoring.alertManager.url -}}
+{{- else if include "kubernaut.monitoring.isOCP" . -}}
+https://alertmanager-main.openshift-monitoring.svc:9094
+{{- end -}}
+{{- end -}}
+
+{{/*
+Resolved Prometheus TLS CA file path. On OCP, defaults to service-serving CA.
+*/}}
+{{- define "kubernaut.monitoring.prometheus.tlsCaFile" -}}
+{{- if .Values.monitoring.prometheus.tlsCaFile -}}
+{{- .Values.monitoring.prometheus.tlsCaFile -}}
+{{- else if include "kubernaut.monitoring.isOCP" . -}}
+/etc/ssl/certs/service-ca.crt
+{{- end -}}
+{{- end -}}
+
+{{/*
+Resolved AlertManager TLS CA file path. On OCP, defaults to service-serving CA.
+*/}}
+{{- define "kubernaut.monitoring.alertManager.tlsCaFile" -}}
+{{- if .Values.monitoring.alertManager.tlsCaFile -}}
+{{- .Values.monitoring.alertManager.tlsCaFile -}}
+{{- else if include "kubernaut.monitoring.isOCP" . -}}
+/etc/ssl/certs/service-ca.crt
+{{- end -}}
+{{- end -}}
+
+{{/*
+Whether OCP monitoring RBAC should be created.
+True when monitoring is enabled and cluster is OCP.
+*/}}
+{{- define "kubernaut.monitoring.ocpRbac" -}}
+{{- if and (or (include "kubernaut.monitoring.prometheus.enabled" .) (include "kubernaut.monitoring.alertManager.enabled" .)) (include "kubernaut.monitoring.isOCP" .) -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Whether TLS CA trust is needed for monitoring connections.
+True when any monitoring TLS CA file is configured (explicitly or via OCP defaults).
+*/}}
+{{- define "kubernaut.monitoring.tlsEnabled" -}}
+{{- if or (include "kubernaut.monitoring.prometheus.tlsCaFile" .) (include "kubernaut.monitoring.alertManager.tlsCaFile" .) -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Fail-fast validation: reject prometheus.enabled without a resolvable URL.
+Invoked once from the EM template to catch misconfig at render time.
+*/}}
+{{- define "kubernaut.monitoring.validate" -}}
+{{- if and (include "kubernaut.monitoring.prometheus.enabled" .) (not (include "kubernaut.monitoring.prometheus.url" .)) -}}
+{{- fail "monitoring.prometheus.enabled=true but no URL resolvable. Set monitoring.prometheus.url or deploy on OCP for auto-detection." -}}
+{{- end -}}
+{{- if and (include "kubernaut.monitoring.alertManager.enabled" .) (not (include "kubernaut.monitoring.alertManager.url" .)) -}}
+{{- fail "monitoring.alertManager.enabled=true but no URL resolvable. Set monitoring.alertManager.url or deploy on OCP for auto-detection." -}}
+{{- end -}}
+{{- end -}}
+
+{{/* ===== Kubernaut Agent TLS Helpers (delegating to monitoring) ===== */}}
+
+{{/*
+Kubernaut Agent TLS CA mount directory (single source of truth).
 */}}
 {{- define "kubernaut.agent.tlsCaDir" -}}/etc/ssl/kubernaut-agent{{- end -}}
 
 {{/*
-Whether KA TLS CA trust is enabled.
-True when either explicit tls.enabled is set or OCP monitoring RBAC is requested
-(OCP Thanos/Prometheus always requires TLS).
+Whether Kubernaut Agent TLS CA trust is enabled.
+Delegates to unified monitoring TLS detection.
 */}}
 {{- define "kubernaut.agent.tlsEnabled" -}}
-{{- if or (and .Values.kubernautAgent.prometheus.tls .Values.kubernautAgent.prometheus.tls.enabled) .Values.kubernautAgent.prometheus.ocpMonitoringRbac -}}true{{- end -}}
+{{- include "kubernaut.monitoring.tlsEnabled" . -}}
 {{- end -}}
 
 {{/*
-Name of the ConfigMap containing the CA certificate for KA Prometheus TLS.
-Uses user-provided caConfigMapName if set, otherwise falls back to the
-chart-created OCP service-CA ConfigMap when ocpMonitoringRbac is enabled.
+Name of the ConfigMap containing the CA certificate for Kubernaut Agent.
+On OCP, uses chart-created service-CA ConfigMap with auto-injection annotation.
 */}}
 {{- define "kubernaut.agent.tlsCaConfigMapName" -}}
-{{- if and .Values.kubernautAgent.prometheus.tls .Values.kubernautAgent.prometheus.tls.caConfigMapName -}}
-{{- .Values.kubernautAgent.prometheus.tls.caConfigMapName -}}
-{{- else -}}
 kubernaut-agent-service-ca
-{{- end -}}
 {{- end -}}
 
 {{/*
 Key inside the CA ConfigMap that holds the PEM certificate.
-Defaults to "service-ca.crt" (OCP convention).
 */}}
 {{- define "kubernaut.agent.tlsCaKey" -}}
-{{- if and .Values.kubernautAgent.prometheus.tls .Values.kubernautAgent.prometheus.tls.caConfigMapKey -}}
-{{- .Values.kubernautAgent.prometheus.tls.caConfigMapKey -}}
-{{- else -}}
 service-ca.crt
-{{- end -}}
 {{- end -}}
 
 {{/*
@@ -372,4 +458,76 @@ Usage: {{ include "kubernaut.containerSecurityContext" .Values.gateway | nindent
 {{- $defaults := dict "allowPrivilegeEscalation" false "readOnlyRootFilesystem" true "capabilities" (dict "drop" (list "ALL")) -}}
 {{- $override := .containerSecurityContext | default dict -}}
 {{- toYaml (merge $override $defaults) }}
+{{- end }}
+
+{{/* ===== NetworkPolicy Helpers (Issue #285) ===== */}}
+
+{{/*
+DNS egress rule: allow UDP+TCP 53 to kube-system.
+Usage: {{ include "kubernaut.np.dnsEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.dnsEgress" -}}
+- ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+  to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+{{- end }}
+
+{{/*
+K8s API server egress rule: allow TCP 443 to configured CIDR.
+Usage: {{ include "kubernaut.np.apiServerEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.apiServerEgress" -}}
+{{- if .Values.networkPolicies.apiServerCIDR }}
+- ports:
+    - port: 443
+      protocol: TCP
+  to:
+    - ipBlock:
+        cidr: {{ .Values.networkPolicies.apiServerCIDR }}
+{{- end }}
+{{- end }}
+
+{{/*
+Common egress rules included in every NetworkPolicy: DNS + API server.
+Usage: {{ include "kubernaut.np.commonEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.commonEgress" -}}
+{{- include "kubernaut.np.dnsEgress" . }}
+{{- include "kubernaut.np.apiServerEgress" . }}
+{{- end }}
+
+{{/*
+DataStorage egress rule: allow TCP 8080 to datastorage pods.
+Usage: {{ include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.datastorageEgress" -}}
+- ports:
+    - port: 8080
+      protocol: TCP
+  to:
+    - podSelector:
+        matchLabels:
+          app: datastorage
+{{- end }}
+
+{{/*
+Metrics scraping ingress rule: allow Prometheus scrape from monitoring namespace.
+Usage: {{ include "kubernaut.np.metricsIngress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.metricsIngress" -}}
+{{- if .Values.networkPolicies.monitoring.namespace }}
+- ports:
+    - port: 9090
+      protocol: TCP
+  from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ .Values.networkPolicies.monitoring.namespace }}
+{{- end }}
 {{- end }}

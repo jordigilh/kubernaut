@@ -9,6 +9,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 )
 
 // Manager handles RemediationRequest status updates with atomic operations
@@ -109,7 +110,7 @@ func (m *Manager) UpdatePhase(
 		rr.Status.Message = message
 
 		// 3. Set completion timestamp for terminal phases
-		if isTerminalPhase(newPhase) {
+		if phase.IsTerminal(newPhase) {
 			now := metav1.Now()
 			rr.Status.CompletedAt = &now
 		}
@@ -123,9 +124,4 @@ func (m *Manager) UpdatePhase(
 	})
 }
 
-// isTerminalPhase checks if a phase is terminal (no further transitions allowed)
-// Terminal phases: Completed (success), Failed (permanent failure), Blocked (cooldown expired)
-func isTerminalPhase(phase remediationv1alpha1.RemediationPhase) bool {
-	return phase == "Completed" || phase == "Failed" || phase == "Blocked"
-}
 

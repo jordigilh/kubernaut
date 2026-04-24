@@ -109,7 +109,7 @@ AfterEach(func() {
 
 		// BUSINESS OUTCOME VERIFIED:
 		// ✅ Gateway doesn't crash on invalid input
-		// ✅ Clear error message enables debugging
+		// ✅ Generic error message doesn't leak internals (#673)
 		// ✅ Graceful degradation
 	})
 

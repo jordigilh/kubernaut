@@ -71,7 +71,6 @@ make test-executor-e2e
 # Environment Setup
 make bootstrap-remediation-dev
 make bootstrap-workflow-dev
-make bootstrap-executor-dev
 ```
 
 ---
@@ -81,7 +80,6 @@ make bootstrap-executor-dev
 ### Implementation Plans
 - Remediation: `docs/services/crd-controllers/02-signalprocessing/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 - Workflow: `docs/services/crd-controllers/03-workflowexecution/implementation/IMPLEMENTATION_PLAN_V1.0.md`
-- Executor: `docs/services/crd-controllers/04-kubernetesexecutor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 
 ### Summary Documents
 - **Overall Summary**: `docs/services/crd-controllers/CATEGORY1_FINAL_SUMMARY.md`

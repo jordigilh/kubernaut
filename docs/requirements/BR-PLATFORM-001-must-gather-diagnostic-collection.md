@@ -529,7 +529,7 @@ rules:
 - apiGroups: ["apps"]
   resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
   verbs: ["get", "list"]
-- apiGroups: ["kubernaut.ai", "kubernetesexecution.kubernaut.io"]
+- apiGroups: ["kubernaut.ai"]
   resources: ["*"]
   verbs: ["get", "list"]
 - apiGroups: ["apiextensions.k8s.io"]

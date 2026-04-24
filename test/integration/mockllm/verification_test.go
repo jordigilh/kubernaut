@@ -106,10 +106,11 @@ var _ = Describe("Verification API", func() {
 			Expect(resetResp.StatusCode).To(Equal(200))
 
 			// Verify empty
-			resp, _ := http.Get(server.URL + "/api/test/tool-calls")
+			resp, err := http.Get(server.URL + "/api/test/tool-calls")
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
 			var result map[string]interface{}
-			json.NewDecoder(resp.Body).Decode(&result)
-			resp.Body.Close()
+			Expect(json.NewDecoder(resp.Body).Decode(&result)).To(Succeed())
 			calls := result["tool_calls"].([]interface{})
 			Expect(calls).To(BeEmpty())
 		})

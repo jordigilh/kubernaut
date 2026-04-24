@@ -1,0 +1,13 @@
+# Local development and testing utilities
+debug_tool_visibility.py
+start-local-ollama.sh
+test-mcp-integration.sh
+test-ollama.sh
+
+# Local documentation (kept in main docs/)
+docs/LLM-PROVIDER-CONFIGURATION.md
+
+# Generated OpenAPI clients (regenerated on demand, like Go's `go generate`)
+# DD-HAPI-005: Auto-regenerate Python OpenAPI client to prevent version drift
+tests/clients/holmesgpt_api_client/
+

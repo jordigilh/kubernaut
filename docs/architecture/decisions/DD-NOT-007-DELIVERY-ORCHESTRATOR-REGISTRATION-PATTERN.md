@@ -13,8 +13,8 @@
 **MANDATE**: All delivery channels in the Notification service MUST use the registration pattern defined in this document.
 
 **Scope**: This standard applies to:
-- ✅ All existing delivery channels (Console, Slack, File, Log)
-- ✅ All future delivery channels (Email, PagerDuty, Teams, Webhook, etc.)
+- ✅ All existing delivery channels (Console, Slack, File, Log, PagerDuty, Teams)
+- ✅ All future delivery channels (Email, Webhook, ServiceNow, Jira, etc.)
 - ✅ Integration test setup
 - ✅ E2E test setup
 - ✅ Production deployment
@@ -107,10 +107,12 @@ type DeliveryService interface {
 ```
 
 **All channels implement this interface**:
-- ✅ `ConsoleService`
-- ✅ `SlackService`
-- ✅ `FileService`
-- ✅ `LogService`
+- ✅ `ConsoleDeliveryService`
+- ✅ `SlackDeliveryService`
+- ✅ `FileDeliveryService`
+- ✅ `LogDeliveryService`
+- ✅ `PagerDutyDeliveryService`
+- ✅ `TeamsDeliveryService`
 
 **This is the foundation for a registration pattern!**
 
@@ -246,15 +248,13 @@ deliveryOrchestrator := delivery.NewOrchestrator(
 	ctrl.Log.WithName("delivery-orchestrator"),
 )
 
-// Register channels based on configuration
+// Register static channels at startup
 deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), consoleService)
-deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
 deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), fileService)
 deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), logService)
 
-// Future channels: Just register them!
-// deliveryOrchestrator.RegisterChannel("email", emailService)
-// deliveryOrchestrator.RegisterChannel("pagerduty", pagerDutyService)
+// Dynamic channels registered via routing_handler.go on config load:
+//   Slack, PagerDuty, Teams — resolved per-receiver from routing config
 ```
 
 #### **4. Test Usage (Much Cleaner!)**
@@ -329,12 +329,13 @@ deliveryOrchestrator.RegisterChannel(
 type Channel string
 
 const (
-	ChannelConsole Channel = "console"
-	ChannelSlack   Channel = "slack"
-	ChannelFile    Channel = "file"
-	ChannelLog     Channel = "log"
-	// REQUIRED: Add new channel enum here
-	ChannelNewChannel Channel = "newchannel"  // Example
+	ChannelConsole   Channel = "console"
+	ChannelSlack     Channel = "slack"
+	ChannelFile      Channel = "file"
+	ChannelLog       Channel = "log"
+	ChannelPagerDuty Channel = "pagerduty"
+	ChannelTeams     Channel = "teams"
+	// REQUIRED: Add new channel enum here when adding channels
 )
 ```
 
@@ -961,13 +962,23 @@ orchestrator.RegisterChannel("console", consoleService)  // Add alongside old pa
 
 **Document Status**: ✅ **AUTHORITATIVE**
 **Created**: December 22, 2025
-**Last Updated**: December 22, 2025
+**Last Updated**: March 4, 2026
+**Version**: v1.1
 **Authority**: Notification Service Channel Architecture
 **Enforcement**: MANDATORY via pre-commit hooks + code review
 **Prepared by**: AI Assistant (NT Team)
 **Approved by**: User (jgil) - Architectural design review
 
 **Compliance**: ALL delivery channels MUST follow this pattern. No exceptions.
+
+---
+
+## 📜 **Changelog**
+
+| Version | Date | Changes |
+|---|---|---|
+| v1.0 | December 22, 2025 | Initial authoritative standard. Scope: Console, Slack, File, Log. |
+| v1.1 | March 4, 2026 | Added PagerDuty and Teams to existing channel list — both are now implemented in `pkg/notification/delivery/` and registered dynamically via `routing_handler.go` (#60, #593). Updated scope to reflect v1.4 channel reality. |
 
 ---
 

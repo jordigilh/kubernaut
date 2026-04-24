@@ -30,11 +30,14 @@ const (
 	EventTypeLLMRequest          = "aiagent.llm.request"
 	EventTypeLLMResponse         = "aiagent.llm.response"
 	EventTypeLLMToolCall         = "aiagent.llm.tool_call"
+	EventTypeConversationTurn    = "aiagent.conversation.turn"
 	EventTypeValidationAttempt   = "aiagent.workflow.validation_attempt"
 	EventTypeResponseComplete    = "aiagent.response.complete"
 	EventTypeResponseFailed      = "aiagent.response.failed"
 	EventTypeEnrichmentCompleted = "aiagent.enrichment.completed"
 	EventTypeEnrichmentFailed    = "aiagent.enrichment.failed"
+	EventTypeAlignmentStep       = "aiagent.alignment.step"
+	EventTypeAlignmentVerdict    = "aiagent.alignment.verdict"
 )
 
 const (
@@ -43,7 +46,9 @@ const (
 	ActionToolExecution  = "tool_execution"
 	ActionValidation     = "validation"
 	ActionResponseSent   = "response_sent"
-	ActionResponseFailed = "response_failed"
+	ActionResponseFailed    = "response_failed"
+	ActionAlignmentEvaluate = "alignment_evaluate"
+	ActionAlignmentVerdict  = "alignment_verdict"
 )
 
 const (
@@ -52,16 +57,19 @@ const (
 	OutcomePending = "pending"
 )
 
-// AllEventTypes lists all 8 Kubernaut Agent audit event types.
+// AllEventTypes lists all Kubernaut Agent audit event types.
 var AllEventTypes = []string{
 	EventTypeLLMRequest,
 	EventTypeLLMResponse,
 	EventTypeLLMToolCall,
+	EventTypeConversationTurn,
 	EventTypeValidationAttempt,
 	EventTypeResponseComplete,
 	EventTypeResponseFailed,
 	EventTypeEnrichmentCompleted,
 	EventTypeEnrichmentFailed,
+	EventTypeAlignmentStep,
+	EventTypeAlignmentVerdict,
 }
 
 // AuditEvent represents an audit event to be stored.
@@ -71,6 +79,7 @@ type AuditEvent struct {
 	EventAction   string
 	EventOutcome  string
 	CorrelationID string
+	ParentEventID *uuid.UUID
 	Data          map[string]interface{}
 }
 

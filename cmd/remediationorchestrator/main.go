@@ -68,7 +68,7 @@ func init() {
 	utilruntime.Must(workflowexecutionv1.AddToScheme(scheme))
 	utilruntime.Must(notificationv1.AddToScheme(scheme))
 	utilruntime.Must(eav1.AddToScheme(scheme))                  // ADR-EM-001: EA CRD scheme for EA creation on terminal phases
-	utilruntime.Must(remediationworkflowv1.AddToScheme(scheme)) // Issue #643: RW scheme for workflow name resolution
+	utilruntime.Must(remediationworkflowv1.AddToScheme(scheme)) // Issue #643, #594: RW scheme for workflow name resolution + operator override
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -346,6 +346,8 @@ func main() {
 		setupLog.Info("Distributed lock manager configured", "holderID", podName, "namespace", controllerNS)
 	}
 
+	// #265: Wire CRD retention period for TTL enforcement
+	roReconciler.SetRetentionPeriod(cfg.Retention.Period)
 	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)

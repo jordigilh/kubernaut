@@ -380,8 +380,8 @@ common_install_flags() {
   if [[ -n "$PULL_SECRET" ]]; then
     flags+=" --set global.imagePullSecrets[0].name=${PULL_SECRET}"
   fi
-  flags+=" --set effectivenessmonitor.external.prometheusEnabled=false"
-  flags+=" --set effectivenessmonitor.external.alertManagerEnabled=false"
+  flags+=" --set monitoring.prometheus.enabled=false"
+  flags+=" --set monitoring.alertManager.enabled=false"
   if [[ "$PLATFORM" == "kind" ]]; then
     flags+=" --set global.image.pullPolicy=IfNotPresent"
   fi
@@ -590,6 +590,43 @@ run_verify_003() {
     "data-storage-service" 8081 "/readyz" \
     "ST-CHART-VERIFY-003: DataStorage health endpoint" \
     "$NAMESPACE" 8081
+}
+
+run_verify_np() {
+  local desc_base="ST-CHART-VERIFY-NP"
+  local ns="${1:-$NAMESPACE}"
+  local np_installed
+  np_installed=$(kubectl get networkpolicies -n "$ns" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+
+  if [[ "$np_installed" -ge 10 ]]; then
+    tap_ok "${desc_base}-001: ${np_installed} NetworkPolicies deployed in cluster"
+  else
+    tap_not_ok "${desc_base}-001: NetworkPolicies deployed" \
+      "Expected >= 10, found ${np_installed}"
+    return 1
+  fi
+
+  # Spot-check: AuthWebhook ingress on port 9443 (F-2)
+  local aw_port
+  aw_port=$(kubectl get networkpolicy -n "$ns" -l app=authwebhook \
+    -o jsonpath='{.items[0].spec.ingress[0].ports[0].port}' 2>/dev/null || echo "")
+  if [[ "$aw_port" == "9443" ]]; then
+    tap_ok "${desc_base}-002: AuthWebhook ingress port is 9443 (pod port, not service port)"
+  else
+    tap_not_ok "${desc_base}-002: AuthWebhook ingress port" \
+      "Expected 9443, got ${aw_port}"
+  fi
+
+  # Spot-check: Notification dual-label selector (F-1)
+  local nt_labels
+  nt_labels=$(kubectl get networkpolicy -n "$ns" -l app=notification-controller \
+    -o jsonpath='{.items[0].spec.podSelector.matchLabels}' 2>/dev/null || echo "")
+  if echo "$nt_labels" | grep -q "controller-manager"; then
+    tap_ok "${desc_base}-003: Notification podSelector includes control-plane label (F-1)"
+  else
+    tap_not_ok "${desc_base}-003: Notification dual-label selector" \
+      "Missing control-plane: controller-manager in ${nt_labels}"
+  fi
 }
 
 run_tls_patch() {
@@ -1263,6 +1300,105 @@ SDKEOF
       "signalprocessing-policy ConfigMap still rendered when policies.existingConfigMap is set"
   fi
 
+  echo "# --- Template Tests: NetworkPolicy (Issue #285) ---"
+
+  # ST-NP-001: Default renders 12 NetworkPolicies (enabled by default)
+  # Count: 12 after removing orphaned holmesgpt-api NP in v1.4.
+  output=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set networkPolicies.apiServerCIDR=10.96.0.1/32 2>&1)
+  local np_count
+  np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
+  if [[ "$np_count" -eq 12 ]]; then
+    tap_ok "ST-NP-001: default renders 12 NetworkPolicies (enabled by default)"
+  else
+    tap_not_ok "ST-NP-001: default should render 12 NetworkPolicies" \
+      "Found ${np_count}"
+  fi
+
+  # ST-NP-002: Disabling renders zero policies
+  output=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set networkPolicies.enabled=false 2>&1)
+  np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
+  if [[ "$np_count" -eq 0 ]]; then
+    tap_ok "ST-NP-002: networkPolicies.enabled=false renders zero NetworkPolicies"
+  else
+    tap_not_ok "ST-NP-002: expected zero NetworkPolicies when disabled" \
+      "Found ${np_count}"
+  fi
+
+  # ST-NP-003: Every policy includes DNS egress (port 53)
+  local np_without_dns=0
+  while IFS= read -r policy_name; do
+    local policy_yaml
+    policy_yaml=$(echo "$output" | python3 -c "
+import sys, yaml
+docs = list(yaml.safe_load_all(sys.stdin))
+for d in docs:
+    if d and d.get('kind') == 'NetworkPolicy' and d.get('metadata',{}).get('name') == '$policy_name':
+        egress = d.get('spec',{}).get('egress',[])
+        has_dns = any(
+            any(p.get('port') == 53 for p in r.get('ports',[]))
+            for r in egress
+        )
+        if not has_dns:
+            print('MISSING')
+        break
+" 2>/dev/null <<< "$output")
+    if [[ "$policy_yaml" == "MISSING" ]]; then
+      np_without_dns=$((np_without_dns + 1))
+    fi
+  done < <(echo "$output" | grep -A1 "kind: NetworkPolicy" | grep "name:" | awk '{print $2}')
+  if [[ "$np_without_dns" -eq 0 ]]; then
+    tap_ok "ST-NP-003: all 12 NetworkPolicies include DNS egress (port 53)"
+  else
+    tap_not_ok "ST-NP-003: DNS egress in all policies" \
+      "${np_without_dns} policies missing DNS egress"
+  fi
+
+  # ST-NP-004: Per-service disable skips that policy
+  output=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set networkPolicies.enabled=true \
+    --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
+    --set networkPolicies.notification.enabled=false 2>&1)
+  if ! echo "$output" | grep -q "notification"; then
+    tap_ok "ST-NP-004: notification.enabled=false skips Notification NetworkPolicy"
+  else
+    tap_not_ok "ST-NP-004: per-service disable" \
+      "Notification NetworkPolicy still rendered when disabled"
+  fi
+
+  # ST-NP-005: PostgreSQL/Valkey conditional on their enabled flags (F-7)
+  # postgresql.host is required when postgresql.enabled=false (migration-job validation).
+  # Count: 10 = 12 total - PG - VK after removing holmesgpt-api NP.
+  output=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set networkPolicies.enabled=true \
+    --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
+    --set postgresql.enabled=false \
+    --set postgresql.host=external-pg.example.com \
+    --set valkey.enabled=false \
+    --set valkey.host=external-valkey.example.com 2>&1)
+  np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
+  if [[ "$np_count" -eq 10 ]]; then
+    tap_ok "ST-NP-005: postgresql/valkey disabled = 10 NetworkPolicies (no PG/VK)"
+  else
+    tap_not_ok "ST-NP-005: infra conditional rendering" \
+      "Expected 10 policies without PG/VK, got ${np_count}"
+  fi
+
+  # ST-NP-006: helm lint passes with NetworkPolicies enabled
+  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set networkPolicies.enabled=true \
+    --set networkPolicies.apiServerCIDR=10.96.0.1/32 >/dev/null 2>&1; then
+    tap_ok "ST-NP-006: helm lint passes with networkPolicies.enabled=true"
+  else
+    tap_not_ok "ST-NP-006: helm lint with NetworkPolicies" \
+      "helm lint failed"
+  fi
+
   echo "# --- Template Tests: GCP Conditional Fields ---"
 
   # GCP fields conditional: not rendered for non-vertex providers
@@ -1276,6 +1412,122 @@ SDKEOF
 
   # Note: Vertex AI / GCP-specific fields (gcpProjectId, gcpRegion) are configured
   # via sdkConfigContent or existingSdkConfigMap, not auto-generated quickstart config.
+
+  echo "# --- Template Tests: Unified Monitoring Config (Issue #463) ---"
+
+  # UT-MON-463-001: monitoring.prometheus.enabled+url configures both EM and KA
+  local mon_output
+  mon_output=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set monitoring.prometheus.enabled=true \
+    --set monitoring.prometheus.url=http://prom:9090 2>&1)
+  if grep -q 'prometheusUrl: "http://prom:9090"' <<< "$mon_output" && \
+     grep -q 'prometheusEnabled: true' <<< "$mon_output" && \
+     grep -A3 "tools:" <<< "$mon_output" | grep -q 'url: "http://prom:9090"'; then
+    tap_ok "UT-MON-463-001: monitoring.prometheus.enabled+url configures both EM and KA"
+  else
+    tap_not_ok "UT-MON-463-001: monitoring.prometheus.enabled+url configures both EM and KA" \
+      "EM or KA ConfigMap missing monitoring.prometheus.url"
+  fi
+
+  # UT-MON-463-002: EM ConfigMap reads monitoring.prometheus.url
+  if grep -q 'prometheusUrl: "http://prom:9090"' <<< "$mon_output"; then
+    tap_ok "UT-MON-463-002: EM ConfigMap prometheusUrl from monitoring.prometheus.url"
+  else
+    tap_not_ok "UT-MON-463-002: EM ConfigMap prometheusUrl" \
+      "EM ConfigMap does not contain prometheusUrl from monitoring.prometheus.url"
+  fi
+
+  # UT-MON-463-003: KA config.yaml has tools.prometheus.url (not SDK toolsets)
+  if grep -A3 "tools:" <<< "$mon_output" | grep -q 'url: "http://prom:9090"'; then
+    tap_ok "UT-MON-463-003: KA config.yaml tools.prometheus.url from monitoring"
+  else
+    tap_not_ok "UT-MON-463-003: KA config.yaml tools.prometheus.url" \
+      "KA config.yaml does not contain tools.prometheus.url"
+  fi
+
+  # UT-MON-463-004: monitoring.prometheus.enabled=false disables in both
+  local mon_off
+  mon_off=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set monitoring.prometheus.enabled=false 2>&1)
+  if grep -q 'prometheusEnabled: false' <<< "$mon_off" && \
+     ! grep -A3 "tools:" <<< "$mon_off" | grep -q 'url:'; then
+    tap_ok "UT-MON-463-004: monitoring.prometheus.enabled=false disables both EM and KA"
+  else
+    tap_not_ok "UT-MON-463-004: monitoring disabled" \
+      "Prometheus not fully disabled when monitoring.prometheus.enabled=false"
+  fi
+
+  # UT-MON-463-005: both Prometheus and AlertManager enabled
+  local mon_both
+  mon_both=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set monitoring.prometheus.enabled=true \
+    --set monitoring.prometheus.url=http://prom:9090 \
+    --set monitoring.alertManager.enabled=true \
+    --set monitoring.alertManager.url=http://am:9093 2>&1)
+  if grep -q 'prometheusUrl: "http://prom:9090"' <<< "$mon_both" && \
+     grep -q 'alertManagerUrl: "http://am:9093"' <<< "$mon_both" && \
+     grep -q 'alertManagerEnabled: true' <<< "$mon_both"; then
+    tap_ok "UT-MON-463-005: both Prometheus and AlertManager enabled"
+  else
+    tap_not_ok "UT-MON-463-005: both monitoring endpoints" \
+      "Missing one or both monitoring endpoints in ConfigMaps"
+  fi
+
+  # UT-MON-463-008: OCP auto-detection applies defaults
+  local mon_ocp
+  mon_ocp=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --api-versions route.openshift.io/v1 \
+    --set monitoring.prometheus.enabled=true \
+    --set monitoring.alertManager.enabled=true 2>&1)
+  if grep -q 'prometheusUrl: "https://prometheus-k8s.openshift-monitoring.svc:9091"' <<< "$mon_ocp" && \
+     grep -q 'alertManagerUrl: "https://alertmanager-main.openshift-monitoring.svc:9094"' <<< "$mon_ocp"; then
+    tap_ok "UT-MON-463-008: OCP auto-detection applies default URLs"
+  else
+    tap_not_ok "UT-MON-463-008: OCP auto-detection" \
+      "OCP-detected template does not contain expected OCP monitoring URLs"
+  fi
+
+  # UT-MON-463-009: TLS CA volume mounted on both EM and KA when tlsCaFile set
+  local mon_tls
+  mon_tls=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set monitoring.prometheus.enabled=true \
+    --set monitoring.prometheus.url=https://prom:9091 \
+    --set monitoring.prometheus.tlsCaFile=/etc/ssl/certs/service-ca.crt 2>&1)
+  if grep -q "service-ca" <<< "$mon_tls" && \
+     grep -q "/etc/ssl" <<< "$mon_tls"; then
+    tap_ok "UT-MON-463-009: TLS CA volume mounted when tlsCaFile set"
+  else
+    tap_not_ok "UT-MON-463-009: TLS CA volume" \
+      "service-ca volume or mount not found when tlsCaFile is set"
+  fi
+
+  # UT-MON-463-010: OCP RBAC created when monitoring enabled on OCP
+  local mon_rbac
+  mon_rbac=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --api-versions route.openshift.io/v1 \
+    --set monitoring.prometheus.enabled=true 2>&1)
+  if grep -q "cluster-monitoring-view" <<< "$mon_rbac"; then
+    tap_ok "UT-MON-463-010: OCP RBAC ClusterRoleBinding for cluster-monitoring-view"
+  else
+    tap_not_ok "UT-MON-463-010: OCP RBAC" \
+      "cluster-monitoring-view ClusterRoleBinding not found on OCP with monitoring enabled"
+  fi
+
+  # UT-MON-463-013: helm lint passes with monitoring block
+  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set monitoring.prometheus.enabled=true \
+    --set monitoring.prometheus.url=http://prom:9090 >/dev/null 2>&1; then
+    tap_ok "UT-MON-463-013: helm lint passes with monitoring block"
+  else
+    tap_not_ok "UT-MON-463-013: helm lint with monitoring" \
+      "helm lint failed with monitoring values"
+  fi
 }
 
 # ---------------------------------------------------------------------------

@@ -186,6 +186,45 @@ type WorkflowExecutionReconciler struct {
 	DependencyValidator dsvalidation.DependencyValidator
 }
 
+// resolveSchemaMetadata fetches all workflow catalog artifacts from DS in a
+// single call (F6: consolidation of 3 DS round-trips into 1).
+// Returns nil metadata (not an error) when no querier is configured or when
+// the DS call fails — graceful degradation preserves execution without
+// filtering, engine config, or dependency validation.
+// Returns a hard error only when dependency validation explicitly fails.
+func (r *WorkflowExecutionReconciler) resolveSchemaMetadata(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.SchemaMetadata, weexecutor.CreateOptions, error) {
+	opts := weexecutor.CreateOptions{}
+	if r.WorkflowQuerier == nil {
+		return nil, opts, nil
+	}
+
+	logger := log.FromContext(ctx)
+	meta, err := r.WorkflowQuerier.GetWorkflowSchemaMetadata(ctx, wfe.Spec.WorkflowRef.WorkflowID)
+	if err != nil {
+		logger.Error(err, "Failed to fetch workflow schema metadata from DS (non-fatal, continuing without filtering)",
+			"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+		if r.Metrics != nil {
+			r.Metrics.SchemaFetchFailures.Inc()
+		}
+		return nil, opts, nil
+	}
+	if meta == nil {
+		return nil, opts, nil
+	}
+
+	if meta.Dependencies != nil && r.DependencyValidator != nil {
+		if valErr := r.DependencyValidator.ValidateDependencies(ctx, r.ExecutionNamespace, meta.Dependencies); valErr != nil {
+			logger.Error(valErr, "Workflow dependency validation failed",
+				"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+			return meta, opts, valErr
+		}
+	}
+
+	opts.Dependencies = meta.Dependencies
+	opts.DeclaredParameterNames = meta.DeclaredParameterNames
+	return meta, opts, nil
+}
+
 // ========================================
 // RBAC Markers
 // ========================================
@@ -328,20 +367,53 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		fmt.Sprintf("Workflow spec validated: %s (target: %s)", wfe.Spec.WorkflowRef.WorkflowID, wfe.Spec.TargetResource))
 
 	// ========================================
-	// Step 1.2: Resolve all workflow catalog metadata from DS (Issue #650)
-	// Consolidates engine, bundle, SA, deps, engineConfig into single DS call.
+	// Step 1.2: Resolve all workflow catalog metadata from DS in a single call (F6)
+	// Engine (#518), engineConfig (DD-WORKFLOW-017), dependencies (DD-WE-006),
+	// and declared parameter names (#243) are fetched together.
 	// ========================================
-	catalogMeta, catalogErr := r.resolveWorkflowCatalog(ctx, wfe)
-	if catalogErr != nil {
-		logger.Error(catalogErr, "Workflow catalog resolution failed")
+	schemaMeta, createOpts, schemaErr := r.resolveSchemaMetadata(ctx, wfe)
+	if schemaErr != nil {
 		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
-			fmt.Sprintf("Workflow catalog resolution failed: %v", catalogErr))
-		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", catalogErr.Error()); markErr != nil {
+			fmt.Sprintf("Workflow dependency validation failed: %v", schemaErr))
+		markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", schemaErr.Error())
+		return ctrl.Result{}, markErr
+	}
+
+	// DD-WORKFLOW-017: Resolve engineConfig from schema before catalog (schema takes precedence).
+	if wfe.Spec.WorkflowRef.EngineConfig == nil && schemaMeta != nil && schemaMeta.EngineConfig != nil {
+		logger.Info("Resolved engineConfig from DS schema metadata",
+			"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+		wfe.Spec.WorkflowRef.EngineConfig = &apiextensionsv1.JSON{Raw: schemaMeta.EngineConfig}
+	}
+
+	// Step 1.3: Resolve execution bundle, SA, and engine from DS catalog (Issue #650).
+	// Called BEFORE setting engine from schema so the idempotency guard in
+	// resolveWorkflowCatalog doesn't skip the SA and bundle resolution that
+	// only the catalog provides.
+	if _, catalogErr := r.resolveWorkflowCatalog(ctx, wfe); catalogErr != nil {
+		logger.Error(catalogErr, "Failed to resolve workflow catalog from DS (non-fatal)")
+	}
+
+	// Resolve execution engine: prefer catalog (includes SA + bundle), schema fallback (Issue #518).
+	if wfe.Status.ExecutionEngine == "" && schemaMeta != nil && schemaMeta.Engine != "" {
+		wfe.Status.ExecutionEngine = schemaMeta.Engine
+	}
+	engine := wfe.Status.ExecutionEngine
+	if engine == "" {
+		engineErr := fmt.Errorf("no engine defined in remediation workflow %s", wfe.Spec.WorkflowRef.WorkflowID)
+		if schemaMeta != nil && schemaMeta.WorkflowName != "" {
+			engineErr = fmt.Errorf("no engine defined in remediation workflow %s - %s",
+				schemaMeta.WorkflowName, wfe.Spec.WorkflowRef.WorkflowID)
+		}
+		logger.Error(engineErr, "Execution engine resolution failed")
+		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
+			fmt.Sprintf("Workflow catalog resolution failed: %v", engineErr))
+		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", engineErr.Error()); markErr != nil {
 			return ctrl.Result{}, markErr
 		}
 		return ctrl.Result{}, nil
 	}
-	logger.Info("Resolved workflow catalog metadata", "engine", wfe.Status.ExecutionEngine, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+	logger.Info("Resolved execution engine from catalog", "engine", engine, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
 
 	// ========================================
 	// Step 1.5: Check if cooldown is active for target resource (BR-WE-009)
@@ -436,24 +508,8 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		"namespace", r.ExecutionNamespace,
 	)
 
-	// DD-WE-006 / Issue #650: Dependencies and engineConfig already resolved
-	// by catalogMeta above. Build CreateOptions from catalog metadata.
-	createOpts := weexecutor.CreateOptions{}
-	if catalogMeta != nil {
-		if catalogMeta.Dependencies != nil {
-			if r.DependencyValidator != nil {
-				if valErr := r.DependencyValidator.ValidateDependencies(ctx, r.ExecutionNamespace, catalogMeta.Dependencies); valErr != nil {
-					logger.Error(valErr, "Workflow dependency validation failed",
-						"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-					r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
-						fmt.Sprintf("Dependency validation failed: %v", valErr))
-					markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", valErr.Error())
-					return ctrl.Result{}, markErr
-				}
-			}
-			createOpts.Dependencies = catalogMeta.Dependencies
-		}
-	}
+	// DD-WE-006 / F6: Dependencies, parameter names, and dependency validation
+	// already resolved by resolveSchemaMetadata above (createOpts is populated).
 
 	createResult, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
 	if createErr != nil {
@@ -466,15 +522,17 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 			// If the existing Job is in a terminal state (Succeeded/Failed), clean it up
 			// and retry creation. If still running, the lock is valid -- fail the WFE.
 			if wfe.Status.ExecutionEngine == "job" {
-				retryResult, handled, requeueForGC := r.handleJobAlreadyExists(ctx, exec, wfe, resourceName, createOpts)
+				retryResult, handled, requeueForGC, originalWFE := r.handleJobAlreadyExists(ctx, exec, wfe, resourceName, createOpts)
 				if handled {
 					createResult = retryResult
 					createErr = nil
 				} else if requeueForGC {
-					// Issue #383: Background GC hasn't removed the stale Job yet.
-					// Requeue instead of permanently failing the WFE.
 					logger.Info("Requeuing for Job GC completion (Issue #383)", "resource", resourceName)
 					return ctrl.Result{RequeueAfter: 500 * time.Millisecond}, nil
+				} else if originalWFE != "" {
+					// Issue #190: Valid lock owned by another WFE — classify as Deduplicated.
+					markErr := r.MarkFailedAsDeduplicated(ctx, wfe, originalWFE)
+					return ctrl.Result{}, markErr
 				}
 			}
 			if createErr != nil {
@@ -1013,30 +1071,35 @@ func sanitizeLabelValue(s string) string {
 //
 // Returns:
 //
-//	(createResult, true, false) — Job cleaned up and recreation succeeded.
-//	(nil, false, true)          — Cleanup accepted but GC pending; caller should requeue.
-//	(nil, false, false)         — Lock is valid (Job still running) or unrecoverable error.
+//	(createResult, true, false, "") — Job cleaned up and recreation succeeded.
+//	(nil, false, true, "")          — Cleanup accepted but GC pending; caller should requeue.
+//	(nil, false, false, name)       — Lock is valid (Job still running); 4th value is original WFE name from label (Issue #190).
+//	(nil, false, false, "")         — Unrecoverable error or executor type mismatch.
 func (r *WorkflowExecutionReconciler) handleJobAlreadyExists(
 	ctx context.Context,
 	exec weexecutor.Executor,
 	wfe *workflowexecutionv1alpha1.WorkflowExecution,
 	resourceName string,
 	createOpts weexecutor.CreateOptions,
-) (*weexecutor.CreateResult, bool, bool) {
+) (*weexecutor.CreateResult, bool, bool, string) {
 	logger := log.FromContext(ctx)
 
 	jobExec, ok := exec.(*weexecutor.JobExecutor)
 	if !ok {
-		return nil, false, false
+		return nil, false, false, ""
 	}
 
 	completed, checkErr := jobExec.IsCompleted(ctx, wfe.Spec.TargetResource, r.ExecutionNamespace)
 	if checkErr != nil {
 		logger.V(1).Info("Could not check existing Job state (may have been deleted)", "error", checkErr)
-		return nil, false, false
+		return nil, false, false, ""
 	}
 	if !completed {
-		return nil, false, false
+		// Issue #190: Lock is valid (Job still running). Try to identify the
+		// original WFE from the Job's label so the caller can classify this
+		// as Deduplicated rather than Unknown.
+		originalWFE := r.getOriginalWFEFromJob(ctx, resourceName)
+		return nil, false, false, originalWFE
 	}
 
 	logger.Info("Stale completed Job detected, cleaning up before retry (Issue #374)",
@@ -1049,7 +1112,7 @@ func (r *WorkflowExecutionReconciler) handleJobAlreadyExists(
 	}
 	if cleanErr := jobExec.Cleanup(ctx, cleanupWFE, r.ExecutionNamespace); cleanErr != nil {
 		logger.Error(cleanErr, "Failed to clean up completed Job", "resource", resourceName)
-		return nil, false, false
+		return nil, false, false, ""
 	}
 
 	retryResult, retryErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
@@ -1057,15 +1120,32 @@ func (r *WorkflowExecutionReconciler) handleJobAlreadyExists(
 		if apierrors.IsAlreadyExists(retryErr) {
 			logger.Info("Job cleanup accepted but GC pending, will requeue (Issue #383)",
 				"resource", resourceName)
-			return nil, false, true
+			return nil, false, true, ""
 		}
 		logger.Error(retryErr, "Failed to create Job after stale cleanup", "resource", resourceName)
-		return nil, false, false
+		return nil, false, false, ""
 	}
 
 	logger.Info("Successfully recreated Job after stale cleanup (Issue #374)",
 		"resource", resourceName, "newJob", retryResult.ResourceName)
-	return retryResult, true, false
+	return retryResult, true, false, ""
+}
+
+// getOriginalWFEFromJob fetches the existing Job by resource name and reads the
+// kubernaut.ai/workflow-execution label. Returns empty string if the Job cannot
+// be found or the label is absent (Issue #190).
+func (r *WorkflowExecutionReconciler) getOriginalWFEFromJob(ctx context.Context, resourceName string) string {
+	var job batchv1.Job
+	if err := r.Get(ctx, client.ObjectKey{
+		Name:      resourceName,
+		Namespace: r.ExecutionNamespace,
+	}, &job); err != nil {
+		return ""
+	}
+	if job.Labels == nil {
+		return ""
+	}
+	return job.Labels["kubernaut.ai/workflow-execution"]
 }
 
 // ========================================
@@ -1117,15 +1197,22 @@ func (r *WorkflowExecutionReconciler) HandleAlreadyExists(ctx context.Context, w
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
-	logger.Error(err, "Race condition at execution time: PipelineRun created by another WFE",
+	// Issue #190: Another WFE created this PipelineRun — classify as Deduplicated
+	// when the original WFE can be identified from labels.
+	originalWFE := existingPR.Labels["kubernaut.ai/workflow-execution"]
+	logger.Info("Execution-time collision: PipelineRun created by another WFE",
 		"prName", resourceName,
-		"existingWFE", existingPR.Labels["kubernaut.ai/workflow-execution"],
+		"existingWFE", originalWFE,
 		"targetResource", wfe.Spec.TargetResource,
 	)
 
+	if originalWFE != "" {
+		markErr := r.MarkFailedAsDeduplicated(ctx, wfe, originalWFE)
+		return ctrl.Result{}, markErr
+	}
+
 	markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
-		fmt.Sprintf("Race condition: PipelineRun '%s' already exists for target resource (created by %s). This indicates RO routing may have failed.",
-			resourceName, existingPR.Labels["kubernaut.ai/workflow-execution"]))
+		fmt.Sprintf("PipelineRun '%s' already exists for target resource (owner label missing)", resourceName))
 	return ctrl.Result{}, markErr
 }
 
@@ -1465,21 +1552,15 @@ func (r *WorkflowExecutionReconciler) MarkFailedWithReason(ctx context.Context, 
 		"message", message,
 	)
 
-	// Calculate values for atomic update
 	now := metav1.Now()
-
-	// Create failure details for pre-execution failure
 	failureDetails := &workflowexecutionv1alpha1.FailureDetails{
 		Reason:              reason,
 		Message:             message,
 		FailedAt:            now,
-		WasExecutionFailure: false, // Pre-execution failure
+		WasExecutionFailure: false,
 	}
-
-	// Generate natural language summary
 	failureDetails.NaturalLanguageSummary = r.GenerateNaturalLanguageSummary(wfe, failureDetails)
 
-	// Determine condition values
 	conditionReason := weconditions.ReasonExecutionCreationFailed
 	switch reason {
 	case "QuotaExceeded":
@@ -1490,37 +1571,80 @@ func (r *WorkflowExecutionReconciler) MarkFailedWithReason(ctx context.Context, 
 		conditionReason = weconditions.ReasonImagePullFailed
 	}
 
-	// ========================================
-	// DD-PERF-001: ATOMIC STATUS UPDATE
-	// Consolidates phase transition + conditions into single API call
-	// BEFORE: 2 API calls (phase update + conditions update)
-	// AFTER: 1 atomic API call (50% reduction)
-	// ========================================
+	condMsg := fmt.Sprintf("Failed to create PipelineRun: %s", message)
+	if err := r.markFailedInternal(ctx, wfe, failureDetails, conditionReason, condMsg, &now, nil); err != nil {
+		return err
+	}
+
+	r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowFailed,
+		fmt.Sprintf("Pre-execution failure: %s - %s", reason, message))
+	r.emitPhaseTransition(wfe, "Pending", "Failed")
+
+	logger.Info("WorkflowExecution failed with reason (atomic status update)", "reason", reason)
+	return nil
+}
+
+// MarkFailedAsDeduplicated marks a WFE as failed due to an execution-time resource
+// collision with another WFE. Sets FailureDetails.Reason = Deduplicated and
+// DeduplicatedBy = originalWFE inside the AtomicStatusUpdate closure to satisfy
+// the M5 constraint (refetch-safe atomic writes). Issue #190.
+func (r *WorkflowExecutionReconciler) MarkFailedAsDeduplicated(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, originalWFE string) error {
+	logger := log.FromContext(ctx)
+	logger.Info("Marking WorkflowExecution as Failed (deduplicated)", "originalWFE", originalWFE)
+
+	now := metav1.Now()
+	failureDetails := &workflowexecutionv1alpha1.FailureDetails{
+		Reason:              workflowexecutionv1alpha1.FailureReasonDeduplicated,
+		Message:             fmt.Sprintf("Execution resource already exists, owned by WorkflowExecution %s", originalWFE),
+		FailedAt:            now,
+		WasExecutionFailure: false,
+	}
+	failureDetails.NaturalLanguageSummary = r.GenerateNaturalLanguageSummary(wfe, failureDetails)
+
+	condMsg := fmt.Sprintf("Execution resource collision (deduplicated by %s)", originalWFE)
+	extraUpdates := func() {
+		wfe.Status.DeduplicatedBy = originalWFE
+	}
+	if err := r.markFailedInternal(ctx, wfe, failureDetails, weconditions.ReasonExecutionCreationFailed, condMsg, &now, extraUpdates); err != nil {
+		return err
+	}
+
+	r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowFailed,
+		fmt.Sprintf("Deduplicated: execution resource collision with %s", originalWFE))
+	r.emitPhaseTransition(wfe, "Pending", "Failed")
+	return nil
+}
+
+// markFailedInternal is the shared core for MarkFailedWithReason and
+// MarkFailedAsDeduplicated. It performs the AtomicStatusUpdate with phase
+// transition, completion time, failure details, conditions, audit, and metrics.
+// The optional extraUpdates callback runs inside the atomic closure to set
+// method-specific fields (e.g., DeduplicatedBy for the M5 constraint).
+func (r *WorkflowExecutionReconciler) markFailedInternal(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	failureDetails *workflowexecutionv1alpha1.FailureDetails,
+	conditionReason, conditionMessage string,
+	now *metav1.Time,
+	extraUpdates func(),
+) error {
+	logger := log.FromContext(ctx)
+
 	if err := r.StatusManager.AtomicStatusUpdate(ctx, wfe, func() error {
-		// Set phase (P0: Phase State Machine)
 		if err := r.PhaseManager.TransitionTo(wfe, wephase.Failed); err != nil {
 			return fmt.Errorf("failed to transition to Failed: %w", err)
 		}
 
-		// Set completion time (no start time for pre-execution failures)
-		wfe.Status.CompletionTime = &now
-
-		// Set failure details
+		wfe.Status.CompletionTime = now
 		wfe.Status.FailureDetails = failureDetails
 
-		// BR-WE-006: Set ExecutionCreated condition to False for pre-execution failures
-		weconditions.SetExecutionCreated(wfe, false,
-			conditionReason,
-			fmt.Sprintf("Failed to create PipelineRun: %s", message))
+		if extraUpdates != nil {
+			extraUpdates()
+		}
 
-		// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+		weconditions.SetExecutionCreated(wfe, false, conditionReason, conditionMessage)
 		weconditions.SetReady(wfe, false, weconditions.ReasonNotReady, "Workflow execution failed")
 
-		// Issue #99: Deprecated backoff block removed (DD-RO-002 Phase 3)
-		// RO handles all routing/backoff decisions via RR.Status
-
-		// Day 8: Record audit event for workflow failure (BR-WE-005)
-		// Uses Audit Manager (P3: Audit Manager pattern)
 		if err := r.AuditManager.RecordWorkflowFailed(ctx, wfe); err != nil {
 			logger.V(1).Info("Failed to record workflow.failed audit event", "error", err)
 			weconditions.SetAuditRecorded(wfe, false,
@@ -1538,23 +1662,9 @@ func (r *WorkflowExecutionReconciler) MarkFailedWithReason(ctx context.Context, 
 		return err
 	}
 
-	// Day 7: Record metrics (BR-WE-008) - 0 duration for pre-execution failures
-	// DD-METRICS-001: Use injected metrics instead of global function
 	if r.Metrics != nil {
 		r.Metrics.RecordWorkflowFailure(0)
 	}
-
-	// V1.0: Consecutive failures gauge removed - RO handles routing (DD-RO-002)
-
-	// Emit event
-	r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowFailed,
-		fmt.Sprintf("Pre-execution failure: %s - %s", reason, message))
-
-	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Pending → Failed
-	r.emitPhaseTransition(wfe, "Pending", "Failed")
-
-	logger.Info("WorkflowExecution failed with reason (atomic status update)", "reason", reason)
-
 	return nil
 }
 
@@ -1581,8 +1691,6 @@ func (r *WorkflowExecutionReconciler) updateStatus(
 // Issue #518: Runtime Execution Engine Resolution
 // ========================================
 
-// resolveExecutionEngine ensures wfe.Status.ExecutionEngine is populated.
-// On the first call (Pending phase), it queries the DS catalog via WorkflowQuerier.
 // resolveWorkflowCatalog fetches all workflow metadata from the DS catalog in a
 // single GetWorkflowByID call (Issue #650). Consolidates resolveExecutionEngine,
 // resolveExecutionBundle, resolveDependencies, and GetWorkflowEngineConfig.
@@ -1643,37 +1751,50 @@ func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(ctx context.Context
 	return meta, nil
 }
 
-// On subsequent calls (Running/Terminal/Delete), it returns the already-persisted value.
-// Returns the engine string or an error if resolution fails.
-func (r *WorkflowExecutionReconciler) resolveExecutionEngine(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, error) {
+// resolveExecutionEngine returns the cached execution engine from the WFE status.
+// In non-Pending phases the engine was already resolved during Pending and persisted
+// to wfe.Status.ExecutionEngine. Returns an error only if the engine is missing,
+// which indicates a programming error (Pending handler should have set it).
+func (r *WorkflowExecutionReconciler) resolveExecutionEngine(_ context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, error) {
 	if wfe.Status.ExecutionEngine != "" {
 		return wfe.Status.ExecutionEngine, nil
 	}
+	return "", fmt.Errorf("execution engine not resolved for WFE %s/%s — expected to be set during Pending phase", wfe.Namespace, wfe.Name)
+}
 
-	if r.WorkflowQuerier == nil {
-		return "", fmt.Errorf("DataStorage workflow querier not available — cannot resolve execution engine for workflow %s", wfe.Spec.WorkflowRef.WorkflowID)
+// resolveExecutionBundle overrides wfe.Spec.WorkflowRef.ExecutionBundle with the
+// authoritative value from the DS catalog (defense-in-depth). Non-fatal: if the
+// querier is nil, the workflow ID is empty, or the catalog entry has no bundle,
+// the existing spec value is preserved.
+func (r *WorkflowExecutionReconciler) resolveExecutionBundle(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+	if r.WorkflowQuerier == nil || wfe.Spec.WorkflowRef.WorkflowID == "" {
+		return nil
 	}
 
-	workflowID := wfe.Spec.WorkflowRef.WorkflowID
-	if workflowID == "" {
-		return "", fmt.Errorf("workflowRef.workflowId is empty — cannot resolve execution engine")
-	}
+	logger := log.FromContext(ctx)
 
-	engine, workflowName, err := r.WorkflowQuerier.GetWorkflowExecutionEngine(ctx, workflowID)
+	meta, err := r.WorkflowQuerier.GetWorkflowSchemaMetadata(ctx, wfe.Spec.WorkflowRef.WorkflowID)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve execution engine from DS for workflow %s: %w", workflowID, err)
+		return fmt.Errorf("failed to resolve execution bundle from DS for workflow %s: %w", wfe.Spec.WorkflowRef.WorkflowID, err)
 	}
 
-	if engine == "" {
-		label := workflowID
-		if workflowName != "" {
-			label = fmt.Sprintf("%s - %s", workflowName, workflowID)
-		}
-		return "", fmt.Errorf("no engine defined in remediation workflow %s", label)
+	if meta.ExecutionBundle == "" {
+		return nil
 	}
 
-	wfe.Status.ExecutionEngine = engine
-	return engine, nil
+	if wfe.Spec.WorkflowRef.ExecutionBundle != meta.ExecutionBundle {
+		logger.Info("Overriding execution bundle from DS catalog",
+			"specBundle", wfe.Spec.WorkflowRef.ExecutionBundle,
+			"catalogBundle", meta.ExecutionBundle,
+			"workflowID", wfe.Spec.WorkflowRef.WorkflowID,
+		)
+	}
+	wfe.Spec.WorkflowRef.ExecutionBundle = meta.ExecutionBundle
+	if meta.ExecutionBundleDigest != "" {
+		wfe.Spec.WorkflowRef.ExecutionBundleDigest = meta.ExecutionBundleDigest
+	}
+
+	return nil
 }
 
 // ========================================

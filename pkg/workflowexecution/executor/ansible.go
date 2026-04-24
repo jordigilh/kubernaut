@@ -220,10 +220,15 @@ func (a *AnsibleExecutor) Create(
 		return nil, fmt.Errorf("resolve AWX job template: %w", err)
 	}
 
-	extraVars := BuildExtraVars(wfe.Spec.Parameters)
+	filterLogger := a.Logger.WithValues("wfe", wfe.Name, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+	filteredParams := FilterDeclaredParameters(wfe.Spec.Parameters, opts.DeclaredParameterNames, filterLogger)
+	extraVars := BuildExtraVars(filteredParams)
 	if extraVars == nil {
 		extraVars = make(map[string]interface{})
 	}
+	// System-injected extra_vars. These are set unconditionally AFTER parameter
+	// filtering, intentionally overwriting any user-supplied values with the same
+	// keys. This prevents spoofing of execution context metadata via schema params.
 	extraVars["WFE_NAME"] = wfe.Name
 	extraVars["WFE_NAMESPACE"] = wfe.Namespace
 	extraVars["RR_NAME"] = wfe.Spec.RemediationRequestRef.Name

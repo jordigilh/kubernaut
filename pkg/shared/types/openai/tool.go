@@ -51,6 +51,8 @@ const (
 	ToolGetResourceContext           = "get_resource_context"
 	ToolFetchKubernetesResourceYaml  = "fetchKubernetesResourceYaml"
 	ToolListNamespacedEvents         = "listNamespacedEvents"
+	ToolKubectlGetYAML               = "kubectl_get_yaml"
+	ToolKubectlGetByName             = "kubectl_get_by_name"
 	ToolSubmitResult                 = "submit_result"
 	ToolSubmitResultWithWorkflow     = "submit_result_with_workflow"
 	ToolSubmitResultNoWorkflow       = "submit_result_no_workflow"

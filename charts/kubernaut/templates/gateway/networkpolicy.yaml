@@ -1,0 +1,40 @@
+{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.gateway.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: gateway
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- range .Values.networkPolicies.gateway.ingressNamespaces }}
+    - ports:
+        - port: 8080
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+    {{- end }}
+    {{- if .Values.networkPolicies.monitoring.namespace }}
+    # Issue #673 H-1: Gateway serves metrics on 8080 (not 9090 like controller-runtime services)
+    - ports:
+        - port: 8080
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicies.monitoring.namespace }}
+    {{- end }}
+  egress:
+    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
+    {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+{{- end }}

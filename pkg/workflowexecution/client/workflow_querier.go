@@ -51,28 +51,51 @@ type WorkflowCatalogMetadata struct {
 // Issue #650: Consolidated into a single method to avoid redundant DS calls.
 type WorkflowQuerier interface {
 	GetWorkflowDependencies(ctx context.Context, workflowID string) (*models.WorkflowDependencies, error)
-	// GetWorkflowEngineConfig retrieves the engine_config for a workflow from the catalog.
-	// DD-WORKFLOW-017: Execution details (engine, engineConfig) come from the workflow catalog entry.
-	// Returns nil when the workflow has no engineConfig.
 	GetWorkflowEngineConfig(ctx context.Context, workflowID string) (json.RawMessage, error)
-	// GetWorkflowExecutionEngine retrieves the execution engine and workflow name
-	// from the DS catalog. Issue #518: the WE controller resolves the engine at
-	// runtime rather than reading it from the WFE spec.
 	GetWorkflowExecutionEngine(ctx context.Context, workflowID string) (engine string, workflowName string, err error)
-	// GetWorkflowExecutionBundle retrieves the execution bundle OCI reference and
-	// its digest from the DS catalog. Defense-in-depth: the WE controller resolves
-	// the bundle at runtime rather than blindly trusting the WFE spec value.
 	GetWorkflowExecutionBundle(ctx context.Context, workflowID string) (bundle string, digest string, err error)
-	// ResolveWorkflowCatalogMetadata fetches all workflow metadata (engine, bundle,
-	// SA, engineConfig, dependencies) from DS in a single GetWorkflowByID call.
-	// Issue #650: Replaces the 4 individual methods above.
 	ResolveWorkflowCatalogMetadata(ctx context.Context, workflowID string) (*WorkflowCatalogMetadata, error)
+	// GetWorkflowSchemaMetadata fetches the workflow from DS and returns all
+	// schema artifacts (engine, engineConfig, dependencies, declared parameters)
+	// from a single GetWorkflowByID call. F6: Consolidates 3 separate DS calls
+	// into one to reduce latency and DS load during reconciliation.
+	GetWorkflowSchemaMetadata(ctx context.Context, workflowID string) (*SchemaMetadata, error)
 }
 
 // WorkflowCatalogClient is a narrow interface satisfied by the ogen-generated
 // *ogenclient.Client. Defined here for testability (mock injection).
 type WorkflowCatalogClient interface {
 	GetWorkflowByID(ctx context.Context, params ogenclient.GetWorkflowByIDParams) (ogenclient.GetWorkflowByIDRes, error)
+}
+
+// SchemaMetadata bundles all workflow catalog artifacts needed by the WE
+// reconciler from a single DS GetWorkflowByID call. F6: Consolidates engine,
+// engineConfig, dependencies, and declared parameter names to eliminate
+// redundant DS round-trips during reconciliation.
+type SchemaMetadata struct {
+	// Engine is the execution engine from the DS catalog entry (e.g. "tekton", "job", "ansible").
+	// Issue #518: resolved at runtime, not from the WFE spec.
+	Engine string
+	// WorkflowName is the human-readable workflow name from the DS catalog entry.
+	WorkflowName string
+	// EngineConfig is the raw JSON engine-specific configuration extracted from
+	// the schema's execution.engineConfig section. nil when absent.
+	// DD-WORKFLOW-017: execution details come from the workflow catalog entry.
+	EngineConfig json.RawMessage
+	// Dependencies are the infrastructure resources (Secrets, ConfigMaps) declared
+	// in the workflow schema. DD-WE-006.
+	Dependencies *models.WorkflowDependencies
+	// DeclaredParameterNames is the set of parameter names declared in the
+	// workflow schema. #243: defense-in-depth parameter filtering.
+	//   nil   → no schema content, no filtering (backward compatible)
+	//   empty → schema exists but declares no params, strip all
+	DeclaredParameterNames map[string]bool
+	// ExecutionBundle is the OCI image reference for the workflow's execution bundle.
+	// Empty when the catalog entry does not specify a bundle.
+	ExecutionBundle string
+	// ExecutionBundleDigest is the sha256 digest of the execution bundle image.
+	// Empty when the catalog entry does not specify a digest.
+	ExecutionBundleDigest string
 }
 
 // OgenWorkflowQuerier implements WorkflowQuerier using the ogen-generated DS client.
@@ -256,6 +279,69 @@ func (q *OgenWorkflowQuerier) GetWorkflowExecutionBundle(ctx context.Context, wo
 		digest = wf.ExecutionBundleDigest.Value
 	}
 	return bundle, digest, nil
+}
+
+// GetWorkflowSchemaMetadata fetches the workflow from DS and returns all
+// schema artifacts from a single GetWorkflowByID call. F6: Consolidates
+// engine resolution (#518), engineConfig (DD-WORKFLOW-017), dependencies
+// (DD-WE-006), and parameter names (#243) into one round-trip.
+func (q *OgenWorkflowQuerier) GetWorkflowSchemaMetadata(ctx context.Context, workflowID string) (*SchemaMetadata, error) {
+	uid, err := uuid.Parse(workflowID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid workflow ID %q: %w", workflowID, err)
+	}
+
+	res, err := q.client.GetWorkflowByID(ctx, ogenclient.GetWorkflowByIDParams{
+		WorkflowID: uid,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("DS query failed for workflow %s: %w", workflowID, err)
+	}
+
+	wf, err := classifyGetWorkflowResponse(res, workflowID)
+	if err != nil {
+		return nil, err
+	}
+
+	var bundle, digest string
+	if wf.ExecutionBundle.IsSet() {
+		bundle = wf.ExecutionBundle.Value
+	}
+	if wf.ExecutionBundleDigest.IsSet() {
+		digest = wf.ExecutionBundleDigest.Value
+	}
+
+	meta := &SchemaMetadata{
+		Engine:                wf.ExecutionEngine,
+		WorkflowName:         wf.WorkflowName,
+		ExecutionBundle:      bundle,
+		ExecutionBundleDigest: digest,
+	}
+
+	if wf.Content == "" {
+		return meta, nil
+	}
+
+	parser := schema.NewParser()
+	parsed, err := parser.Parse(wf.Content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse workflow schema for %s: %w", workflowID, err)
+	}
+
+	meta.Dependencies = parser.ExtractDependencies(parsed)
+
+	if rawEC := parser.ExtractEngineConfig(parsed); rawEC != nil {
+		meta.EngineConfig = *rawEC
+	}
+
+	if len(parsed.Parameters) > 0 {
+		meta.DeclaredParameterNames = make(map[string]bool, len(parsed.Parameters))
+		for _, p := range parsed.Parameters {
+			meta.DeclaredParameterNames[p.Name] = true
+		}
+	}
+
+	return meta, nil
 }
 
 // ResolveWorkflowCatalogMetadata fetches all workflow metadata from DS in one

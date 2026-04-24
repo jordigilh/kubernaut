@@ -113,8 +113,11 @@ func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint s
 	for _, rr := range rrList.Items {
 		switch rr.Status.OverallPhase {
 		case phase.Failed:
-			// Failed RR - increment counter
-			// Note: BR-ORCH-042 specifically says "Failed RRs" - TimedOut not counted
+			// Issue #190: Skip inherited/deduplicated failures — they don't represent
+			// actual remediation attempts and should not count toward blocking.
+			if rr.Status.FailurePhase != nil && *rr.Status.FailurePhase == remediationv1.FailurePhaseDeduplicated {
+				continue
+			}
 			consecutiveFailures++
 
 		case phase.Completed:
@@ -147,58 +150,8 @@ func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint s
 	return consecutiveFailures
 }
 
-// handleBlockedPhase handles the Blocked phase.
-// Checks if cooldown has expired and transitions to terminal Failed if so.
-// Gateway sees Blocked as "active" so won't create new RRs until expiry.
-//
-// Reference: BR-ORCH-042.3
-func (r *Reconciler) handleBlockedPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-
-	// Blocks without auto-expiry: event-based blocks need periodic rechecks,
-	// manual blocks stay until explicitly cleared.
-	if rr.Status.BlockedUntil == nil {
-		switch remediationv1.BlockReason(rr.Status.BlockReason) {
-		case remediationv1.BlockReasonResourceBusy:
-			return r.recheckResourceBusyBlock(ctx, rr)
-		case remediationv1.BlockReasonDuplicateInProgress:
-			return r.recheckDuplicateBlock(ctx, rr)
-		default:
-			logger.V(1).Info("RR is manually blocked, no auto-expiry")
-			return ctrl.Result{}, nil
-		}
-	}
-
-	// Check if cooldown has expired
-	if time.Now().After(rr.Status.BlockedUntil.Time) {
-		// BR-SCOPE-010: UnmanagedResource blocks re-validate scope instead of failing.
-		// Bug #266: Previously all timed blocks went to Failed on expiry.
-		if remediationv1.BlockReason(rr.Status.BlockReason) == remediationv1.BlockReasonUnmanagedResource {
-			return r.handleUnmanagedResourceExpiry(ctx, rr)
-		}
-
-		logger.Info("Blocked cooldown expired, transitioning to terminal Failed")
-
-		// BR-ORCH-042: Record cooldown expiry (CurrentBlockedGauge decrement)
-		r.Metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
-
-		blockReason := "unknown"
-		if rr.Status.BlockReason != "" {
-			blockReason = string(rr.Status.BlockReason)
-		}
-
-		return r.transitionToFailedTerminal(ctx, rr, remediationv1.FailurePhaseBlocked,
-			fmt.Errorf("cooldown expired after blocking due to %s", blockReason))
-	}
-
-	// Still in cooldown - requeue at exact expiry time
-	requeueAfter := time.Until(rr.Status.BlockedUntil.Time)
-	logger.V(1).Info("Still blocked, requeueing at expiry",
-		"blockedUntil", rr.Status.BlockedUntil.Format(time.RFC3339),
-		"requeueAfter", requeueAfter,
-	)
-	return ctrl.Result{RequeueAfter: requeueAfter}, nil
-}
+// handleBlockedPhase is now handled by BlockedHandler via the phase registry.
+// See blocked_handler.go (Issue #666, TP-666-v1 §8.2).
 
 // transitionToFailedTerminal is the terminal Failed transition that skips blocking check.
 // Used when transitioning from Blocked after cooldown expiry.
@@ -369,9 +322,10 @@ func (r *Reconciler) recheckResourceBusyBlock(ctx context.Context, rr *remediati
 
 // recheckDuplicateBlock handles Blocked RRs with BlockReason=DuplicateInProgress.
 // Uses apiReader to check if the original RR has reached a terminal phase.
-// If cleared, resets the RR to Pending so the full pipeline can re-run.
+// Issue #614: Instead of clearing to Pending and re-running the pipeline, inherits
+// the original RR's outcome (Completed → InheritedCompleted, Failed/other → InheritedFailed).
 //
-// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
+// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics), Issue #614
 func (r *Reconciler) recheckDuplicateBlock(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
@@ -387,18 +341,40 @@ func (r *Reconciler) recheckDuplicateBlock(ctx context.Context, rr *remediationv
 	}, originalRR)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			logger.Info("Original RR no longer exists, clearing DuplicateInProgress block",
+			logger.Info("Original RR deleted, inheriting failure",
 				"duplicateOf", rr.Status.DuplicateOf)
-			return r.clearEventBasedBlock(ctx, rr, phase.Pending)
+			result, inheritErr := r.transitionToInheritedFailed(ctx, rr,
+				fmt.Errorf("original RemediationRequest %q deleted before completion", rr.Status.DuplicateOf),
+				rr.Status.DuplicateOf, "RemediationRequest")
+			if inheritErr == nil {
+				r.Metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
+			}
+			return result, inheritErr
 		}
 		logger.Error(err, "Failed to check original RR status")
 		return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
 	}
 
 	if IsTerminalPhase(originalRR.Status.OverallPhase) {
-		logger.Info("Original RR reached terminal phase, clearing DuplicateInProgress block",
-			"duplicateOf", originalRR.Name, "originalPhase", originalRR.Status.OverallPhase)
-		return r.clearEventBasedBlock(ctx, rr, phase.Pending)
+		var result ctrl.Result
+		var inheritErr error
+
+		switch originalRR.Status.OverallPhase {
+		case phase.Completed:
+			logger.Info("Original RR completed, inheriting outcome",
+				"duplicateOf", originalRR.Name)
+			result, inheritErr = r.transitionToInheritedCompleted(ctx, rr, rr.Status.DuplicateOf, "RemediationRequest")
+		default:
+			logger.Info("Original RR failed, inheriting failure",
+				"duplicateOf", originalRR.Name, "originalPhase", originalRR.Status.OverallPhase)
+			result, inheritErr = r.transitionToInheritedFailed(ctx, rr,
+				fmt.Errorf("original RemediationRequest %q reached %s", originalRR.Name, originalRR.Status.OverallPhase),
+				rr.Status.DuplicateOf, "RemediationRequest")
+		}
+		if inheritErr == nil {
+			r.Metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
+		}
+		return result, inheritErr
 	}
 
 	logger.V(1).Info("Original RR still active, requeueing",

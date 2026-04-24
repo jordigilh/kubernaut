@@ -230,17 +230,16 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
 	}
 
-	// Deploy mock-slack before controller so DNS resolves when controller starts processing
-	_, _ = fmt.Fprintf(writer, "📨 Deploying mock-slack (webhook sink with success/fail endpoints)...\n")
-	if err := deployNotificationMockSlack(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("mock-slack deployment failed: %w", err)
+	// Deploy mock-webhook before controller so DNS resolves when controller starts processing
+	_, _ = fmt.Fprintf(writer, "📨 Deploying mock-webhook (webhook sink with per-channel success/fail endpoints)...\n")
+	if err := deployNotificationMockWebhook(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("mock-webhook deployment failed: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "   ✅ mock-slack deployed (http://mock-slack:8080)\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ mock-webhook deployed (http://mock-webhook:8080)\n")
 
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Notification resources via inline YAML template...\n")
-	slackURL := resolveSlackWebhookURL(writer)
 	enableCoverage := os.Getenv("E2E_COVERAGE") == "true"
-	manifest := notificationControllerManifest(namespace, notificationImageName, slackURL, enableCoverage)
+	manifest := notificationControllerManifest(namespace, notificationImageName, enableCoverage)
 
 	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-n", namespace, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -441,18 +440,21 @@ func installNotificationCRD(kubeconfigPath string, writer io.Writer) error {
 	return nil
 }
 
-// deployNotificationMockSlack deploys a minimal HTTP service that accepts webhook POSTs.
-// Two endpoints enable per-receiver success/failure scenarios:
-//   - /webhook      → 200 OK (for success test paths)
-//   - /webhook/fail → 503    (for failure test paths, classified as RetryableError)
-//
-// Enhanced variant of fullpipeline's deployMockSlack with dual-endpoint support.
-func deployNotificationMockSlack(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+// deployNotificationMockWebhook deploys a minimal HTTP service that accepts webhook POSTs
+// for all delivery channels (Slack, PagerDuty, Teams).
+// Per-channel success/failure endpoints:
+//   - /webhook           → 200 OK   (Slack success)
+//   - /webhook/fail      → 503      (Slack failure, RetryableError)
+//   - /pagerduty         → 202 Accepted (PagerDuty success)
+//   - /pagerduty/fail    → 503      (PagerDuty failure)
+//   - /teams             → 200 OK   (Teams success)
+//   - /teams/fail        → 503      (Teams failure)
+func deployNotificationMockWebhook(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	manifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: mock-slack-config
+  name: mock-webhook-config
   namespace: %[1]s
 data:
   default.conf: |
@@ -466,25 +468,41 @@ data:
         return 503 'simulated failure';
         add_header Content-Type text/plain;
       }
+      location /pagerduty {
+        return 202 '{"status":"success","dedup_key":"mock"}';
+        add_header Content-Type application/json;
+      }
+      location /pagerduty/fail {
+        return 503 'simulated pagerduty failure';
+        add_header Content-Type text/plain;
+      }
+      location /teams {
+        return 200 'ok';
+        add_header Content-Type text/plain;
+      }
+      location /teams/fail {
+        return 503 'simulated teams failure';
+        add_header Content-Type text/plain;
+      }
     }
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mock-slack
+  name: mock-webhook
   namespace: %[1]s
   labels:
-    app: mock-slack
+    app: mock-webhook
     component: test-infrastructure
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: mock-slack
+      app: mock-webhook
   template:
     metadata:
       labels:
-        app: mock-slack
+        app: mock-webhook
         component: test-infrastructure
     spec:
       containers:
@@ -499,19 +517,19 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: mock-slack-config
+          name: mock-webhook-config
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: mock-slack
+  name: mock-webhook
   namespace: %[1]s
   labels:
-    app: mock-slack
+    app: mock-webhook
     component: test-infrastructure
 spec:
   selector:
-    app: mock-slack
+    app: mock-webhook
   ports:
   - port: 8080
     targetPort: 8080
@@ -524,33 +542,12 @@ spec:
 	return cmd.Run()
 }
 
-// resolveSlackWebhookURL resolves the Slack webhook URL from environment or config file.
-func resolveSlackWebhookURL(writer io.Writer) string {
-	slackURL := os.Getenv("SLACK_WEBHOOK_URL")
-	if slackURL != "" {
-		_, _ = fmt.Fprintf(writer, "   Slack webhook URL loaded from SLACK_WEBHOOK_URL env var\n")
-		return slackURL
-	}
-	homeDir, _ := os.UserHomeDir()
-	if homeDir != "" {
-		slackFilePath := filepath.Join(homeDir, ".kubernaut", "notification", "slack-webhook.url")
-		if data, readErr := os.ReadFile(slackFilePath); readErr == nil {
-			url := strings.TrimSpace(string(data))
-			if url != "" {
-				_, _ = fmt.Fprintf(writer, "   Slack webhook URL loaded from %s\n", slackFilePath)
-				return url
-			}
-		}
-	}
-	return "http://mock-slack:8080/webhook"
-}
-
 // notificationControllerManifest generates the full Notification controller multi-document
 // YAML manifest as an inline template. This consolidates what was previously 4 separate
 // static YAML files (RBAC, ConfigMap, Service, Deployment) into a single atomic apply.
 //
 // Standardization: same pattern as AA, SP, RO, EM, WE, KA, Gateway.
-func notificationControllerManifest(namespace, imageName, slackWebhookURL string, enableCoverage bool) string {
+func notificationControllerManifest(namespace, imageName string, enableCoverage bool) string {
 	pullPolicy := GetImagePullPolicy()
 
 	coverageEnvYAML := ""
@@ -575,6 +572,8 @@ func notificationControllerManifest(namespace, imageName, slackWebhookURL string
         runAsUser: 0
         runAsGroup: 0`
 	}
+
+	slackWebhookURL := "http://mock-webhook:8080/webhook"
 
 	return fmt.Sprintf(`---
 apiVersion: v1
@@ -603,9 +602,6 @@ rules:
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]
-- apiGroups: [""]
-  resources: ["configmaps", "secrets"]
-  verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -694,6 +690,18 @@ data:
         - receiver: fanout-file-log
           match:
             test-channel-set: e2e-fanout
+        - receiver: pagerduty-success
+          match:
+            test-channel-set: pagerduty-success
+        - receiver: pagerduty-failure
+          match:
+            test-channel-set: pagerduty-failure
+        - receiver: teams-success
+          match:
+            test-channel-set: teams-success
+        - receiver: teams-failure
+          match:
+            test-channel-set: teams-failure
     receivers:
       - name: default-console
         consoleConfigs:
@@ -744,14 +752,32 @@ data:
           - enabled: true
         logConfigs:
           - enabled: true
+      - name: pagerduty-success
+        pagerdutyConfigs:
+          - credentialRef: pagerduty-success
+            url: "http://mock-webhook:8080/pagerduty"
+      - name: pagerduty-failure
+        pagerdutyConfigs:
+          - credentialRef: pagerduty-failure
+            url: "http://mock-webhook:8080/pagerduty/fail"
+      - name: teams-success
+        teamsConfigs:
+          - credentialRef: teams-success
+      - name: teams-failure
+        teamsConfigs:
+          - credentialRef: teams-failure
 ---
 apiVersion: v1
 kind: Secret
 metadata:
-  name: slack-credentials
+  name: delivery-credentials
 stringData:
-  slack-success: "http://mock-slack:8080/webhook"
-  slack-failure: "http://mock-slack:8080/webhook/fail"
+  slack-success: "http://mock-webhook:8080/webhook"
+  slack-failure: "http://mock-webhook:8080/webhook/fail"
+  pagerduty-success: "e2e-test-routing-key-success"
+  pagerduty-failure: "e2e-test-routing-key-failure"
+  teams-success: "http://mock-webhook:8080/teams"
+  teams-failure: "http://mock-webhook:8080/teams/fail"
 ---
 apiVersion: v1
 kind: Service
@@ -804,16 +830,19 @@ spec:
         env:
         - name: CONFIG_PATH
           value: "/etc/notification/config.yaml"
+        - name: ROUTING_CONFIG_PATH
+          value: "/etc/notification-routing/routing.yaml"
         - name: KUBERNAUT_CONTROLLER_NAMESPACE
           value: "%s"
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+%s
         - name: TLS_CA_FILE
           value: "/etc/tls-ca/ca.crt"
         - name: SLACK_WEBHOOK_URL
-          value: "%s"%s
+          value: "%s"
         args:
         - "-config"
         - "$(CONFIG_PATH)"
@@ -849,7 +878,10 @@ spec:
         - name: config
           mountPath: /etc/notification
           readOnly: true
-        - name: slack-credentials
+        - name: routing-config
+          mountPath: /etc/notification-routing
+          readOnly: true
+        - name: delivery-credentials
           mountPath: /etc/notification/credentials
           readOnly: true
         - name: notification-output
@@ -861,16 +893,19 @@ spec:
       - name: config
         configMap:
           name: notification-controller-config
-      - name: slack-credentials
+      - name: routing-config
+        configMap:
+          name: notification-routing-config
+      - name: delivery-credentials
         secret:
-          secretName: slack-credentials
+          secretName: delivery-credentials
       - name: tls-ca
         configMap:
           name: inter-service-ca
       - name: notification-output
         emptyDir: {}%s
       terminationGracePeriodSeconds: 10%s
-`, namespace, namespace, imageName, pullPolicy, namespace, slackWebhookURL, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML, coverageSecurityContextYAML)
+`, namespace, namespace, imageName, pullPolicy, namespace, coverageEnvYAML, slackWebhookURL, coverageVolumeMountYAML, coverageVolumeYAML, coverageSecurityContextYAML)
 }
 
 // DeployNotificationDataStorageServices deploys DataStorage with OAuth2-Proxy for Notification E2E.

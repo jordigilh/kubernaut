@@ -58,7 +58,6 @@ var _ = Describe("Workflow Discovery Handler Unit Tests", func() {
 
 				// Assert
 				Expect(err).ToNot(HaveOccurred())
-				Expect(filters).ToNot(BeNil())
 				Expect(filters.Severity).To(Equal("critical"))
 				Expect(filters.Component).To(Equal("pod"))
 				Expect(filters.Environment).To(Equal("production"))

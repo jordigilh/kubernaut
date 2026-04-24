@@ -189,6 +189,11 @@ type SignalContextInput struct {
 	// GAP-C3-04 FIX: Uses shared types from pkg/shared/types/enrichment.go
 	// +kubebuilder:validation:Required
 	EnrichmentResults sharedtypes.EnrichmentResults `json:"enrichmentResults"`
+
+	// SignalAnnotations from the original alert (e.g., description, summary from AlertManager).
+	// Untrusted content — sanitized by KA prompt builder before reaching the LLM.
+	// +optional
+	SignalAnnotations map[string]string `json:"signalAnnotations,omitempty"`
 }
 
 // TargetResource identifies the Kubernetes resource being remediated
@@ -564,6 +569,10 @@ type SelectedWorkflow struct {
 	// +optional
 	EngineConfig *apiextensionsv1.JSON `json:"engineConfig,omitempty"`
 
+	// ServiceAccountName is the pre-existing ServiceAccount resolved from the
+	// DS workflow catalog (Issue #650). Propagated to the WFE for pod execution.
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 }
 
 // AlternativeWorkflow contains alternative workflows considered but not selected.

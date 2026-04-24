@@ -100,15 +100,20 @@ func NewK8sAuthorizer(client kubernetes.Interface) *K8sAuthorizer {
 }
 
 // CheckAccess checks if a user has permission using Kubernetes SubjectAccessReview API.
-//
-// This method:
-// 1. Creates a SubjectAccessReview request with the provided parameters
-// 2. Sends the request to the Kubernetes API server
-// 3. Returns true if the user is allowed, false if denied
+// Delegates to CheckAccessWithGroup with an empty API group (core resources).
 //
 // Authority: https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/subject-access-review-v1/
 func (a *K8sAuthorizer) CheckAccess(ctx context.Context, user, namespace, resource, resourceName, verb string) (bool, error) {
-	// Validate required parameters
+	return a.CheckAccessWithGroup(ctx, user, namespace, "", resource, resourceName, verb)
+}
+
+// CheckAccessWithGroup checks if a user has permission on a resource in a specific API group.
+//
+// Parameters:
+//   - apiGroup: Kubernetes API group (e.g., "kubernaut.ai" for CRDs, "" for core resources)
+//
+// Authority: https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/subject-access-review-v1/
+func (a *K8sAuthorizer) CheckAccessWithGroup(ctx context.Context, user, namespace, apiGroup, resource, resourceName, verb string) (bool, error) {
 	if user == "" {
 		return false, errors.New("user cannot be empty")
 	}
@@ -122,20 +127,19 @@ func (a *K8sAuthorizer) CheckAccess(ctx context.Context, user, namespace, resour
 		return false, errors.New("verb cannot be empty")
 	}
 
-	// Create SubjectAccessReview request
 	sar := &authorizationv1.SubjectAccessReview{
 		Spec: authorizationv1.SubjectAccessReviewSpec{
 			User: user,
 			ResourceAttributes: &authorizationv1.ResourceAttributes{
 				Namespace: namespace,
+				Group:     apiGroup,
 				Resource:  resource,
-				Name:      resourceName, // Optional: specific resource instance
+				Name:      resourceName,
 				Verb:      verb,
 			},
 		},
 	}
 
-	// Call Kubernetes SubjectAccessReview API
 	result, err := a.client.AuthorizationV1().SubjectAccessReviews().Create(
 		ctx,
 		sar,
@@ -145,7 +149,5 @@ func (a *K8sAuthorizer) CheckAccess(ctx context.Context, user, namespace, resour
 		return false, fmt.Errorf("authorization check failed: %w", err)
 	}
 
-	// Return authorization decision
-	// Note: Denial (Allowed=false) is not an error - it's a valid authorization decision
 	return result.Status.Allowed, nil
 }

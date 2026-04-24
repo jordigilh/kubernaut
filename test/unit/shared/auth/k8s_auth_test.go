@@ -131,6 +131,45 @@ var _ = Describe("K8sAuthorizer", func() {
 		ctx = context.Background()
 	})
 
+	Context("CheckAccessWithGroup — UT-AUTH-C1-001", func() {
+		It("should set ResourceAttributes.Group in the SAR request", func() {
+			var capturedGroup string
+			fakeClient.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				createAction := action.(k8stesting.CreateAction)
+				sar := createAction.GetObject().(*authorizationv1.SubjectAccessReview)
+				capturedGroup = sar.Spec.ResourceAttributes.Group
+				sar.Status = authorizationv1.SubjectAccessReviewStatus{Allowed: true}
+				return true, sar, nil
+			})
+
+			allowed, err := authorizer.CheckAccessWithGroup(ctx,
+				"user:operator", "production", "kubernaut.ai",
+				"remediationapprovalrequests", "oom-fix", "update")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(allowed).To(BeTrue())
+			Expect(capturedGroup).To(Equal("kubernaut.ai"),
+				"SAR request must include the API group in ResourceAttributes.Group")
+		})
+
+		It("should work with empty API group for core resources", func() {
+			var capturedGroup string
+			fakeClient.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				createAction := action.(k8stesting.CreateAction)
+				sar := createAction.GetObject().(*authorizationv1.SubjectAccessReview)
+				capturedGroup = sar.Spec.ResourceAttributes.Group
+				sar.Status = authorizationv1.SubjectAccessReviewStatus{Allowed: true}
+				return true, sar, nil
+			})
+
+			allowed, err := authorizer.CheckAccessWithGroup(ctx,
+				"user:operator", "default", "", "services", "my-svc", "get")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(allowed).To(BeTrue())
+			Expect(capturedGroup).To(BeEmpty(),
+				"core API group should be empty string")
+		})
+	})
+
 	Context("CheckAccess", func() {
 		It("should return error for empty user", func() {
 			allowed, err := authorizer.CheckAccess(ctx, "", "namespace", "services", "svc-name", "create")
@@ -366,6 +405,41 @@ var _ = Describe("MockAuthorizer (from mock_auth.go)", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(Equal("simulated SAR API error"))
 		Expect(allowed).To(BeFalse())
+	})
+
+	Context("CheckAccessWithGroup — UT-AUTH-C1-002/003", func() {
+		It("should use PerGroupResourceDecisions for group-specific authorization", func() {
+			authorizer.PerGroupResourceDecisions = map[string]map[string]bool{
+				"kubernaut.ai/production/remediationapprovalrequests/oom-fix/update": {
+					"system:serviceaccount:test:authorized-sa": true,
+				},
+			}
+
+			allowed, err := authorizer.CheckAccessWithGroup(ctx,
+				"system:serviceaccount:test:authorized-sa", "production",
+				"kubernaut.ai", "remediationapprovalrequests", "oom-fix", "update")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(allowed).To(BeTrue(),
+				"UT-AUTH-C1-002: PerGroupResourceDecisions must be checked for group-specific auth")
+		})
+
+		It("should fall through to AllowedUsers when no group-specific decision exists", func() {
+			allowed, err := authorizer.CheckAccessWithGroup(ctx,
+				"system:serviceaccount:test:authorized-sa", "production",
+				"kubernaut.ai", "remediationapprovalrequests", "oom-fix", "update")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(allowed).To(BeTrue(),
+				"UT-AUTH-C1-003: should fall through to AllowedUsers when no group decision exists")
+		})
+
+		It("should default deny for unknown user in group-specific check", func() {
+			allowed, err := authorizer.CheckAccessWithGroup(ctx,
+				"unknown-user", "production",
+				"kubernaut.ai", "remediationapprovalrequests", "oom-fix", "update")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(allowed).To(BeFalse(),
+				"unknown user should be denied (secure default)")
+		})
 	})
 
 	Context("with PerResourceDecisions", func() {

@@ -51,7 +51,7 @@ All common pattern files have this header:
 ```markdown
 <!-- COMMON-PATTERN: This file is duplicated across all CRD services -->
 <!-- LAST-UPDATED: 2025-01-15 -->
-<!-- SERVICES: 01-signalprocessing, 02-aianalysis, 03-workflowexecution, 04-kubernetesexecutor, 05-remediationorchestrator -->
+<!-- SERVICES: 01-signalprocessing, 02-aianalysis, 03-workflowexecution, 05-remediationorchestrator -->
 ```
 
 **Why the header?**
@@ -92,7 +92,7 @@ Copy the updated file to all other services:
 
 ```bash
 # Copy to all services
-for service in 02-aianalysis 03-workflowexecution 04-kubernetesexecutor 05-remediationorchestrator; do
+for service in 02-aianalysis 03-workflowexecution 05-remediationorchestrator; do
   cp 01-signalprocessing/testing-strategy.md ${service}/
   echo "Copied to ${service}/"
 done
@@ -124,7 +124,7 @@ Update the `LAST-UPDATED` date in ALL updated files:
 
 ```bash
 # Update all common pattern files with new date
-for service in 01-signalprocessing 02-aianalysis 03-workflowexecution 04-kubernetesexecutor 05-remediationorchestrator; do
+for service in 01-signalprocessing 02-aianalysis 03-workflowexecution 05-remediationorchestrator; do
   for file in testing-strategy security-configuration observability-logging metrics-slos; do
     if [ -f ${service}/${file}.md ]; then
       sed -i '' 's/LAST-UPDATED: [0-9-]*/LAST-UPDATED: 2025-01-15/' ${service}/${file}.md
@@ -237,7 +237,7 @@ cp 01-signalprocessing/crd-schema.md 06-newservice/crd-schema.md
 Add new service to common pattern headers in ALL existing services:
 
 ```bash
-for service in 01-signalprocessing 02-aianalysis 03-workflowexecution 04-kubernetesexecutor 05-remediationorchestrator; do
+for service in 01-signalprocessing 02-aianalysis 03-workflowexecution 05-remediationorchestrator; do
   for file in testing-strategy security-configuration observability-logging metrics-slos; do
     sed -i '' 's/05-remediationorchestrator -->/05-remediationorchestrator, 06-newservice -->/' ${service}/${file}.md
   done
@@ -307,9 +307,6 @@ Services MAY have additional unique files:
 
 - **02-aianalysis/**:
   - `ai-holmesgpt-approval.md` - HolmesGPT & Rego policies
-
-- **04-kubernetesexecutor/**:
-  - `predefined-actions.md` - Action catalog
 
 - **05-remediationorchestrator/**:
   - `data-handling-architecture.md` - Targeting Data Pattern
@@ -454,7 +451,7 @@ done
 vi 01-signalprocessing/testing-strategy.md
 
 # 2. Copy to others
-for s in 02-aianalysis 03-workflowexecution 04-kubernetesexecutor 05-remediationorchestrator; do
+for s in 02-aianalysis 03-workflowexecution 05-remediationorchestrator; do
   cp 01-signalprocessing/testing-strategy.md $s/
 done
 

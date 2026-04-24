@@ -137,10 +137,21 @@ var _ = Describe("RemediationOrchestrator Config - Unit Tests", Label("config", 
 			Expect(cfg.Validate()).To(Succeed(),
 				"Behavior: config with notifications override must pass validation")
 
-			// Verify omitted field defaults to false
 			defaultCfg := config.DefaultConfig()
 			Expect(defaultCfg.Notifications.NotifySelfResolved).To(BeFalse(),
 				"Accuracy: omitted notifications field defaults to false (safe zero-value)")
+		})
+
+		It("UT-RO-265-012: should apply YAML override for retention.period (#265)", func() {
+			path := filepath.Join("config", "testdata", "override-retention-period.yaml")
+			cfg, err := config.LoadFromFile(path)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(cfg.Retention.Period).To(Equal(48*time.Hour),
+				"Correctness: YAML tag retention.period must map to 48h")
+
+			Expect(cfg.Validate()).To(Succeed(),
+				"Behavior: overridden config must still pass validation")
 		})
 
 		It("should return defaults when path is empty", func() {
@@ -250,6 +261,28 @@ var _ = Describe("RemediationOrchestrator Config - Unit Tests", Label("config", 
 			cfg.Routing.NoActionRequiredDelayHours = 0
 			Expect(cfg.Validate()).To(Succeed(),
 				"Correctness: zero is an explicit opt-out (handler guard 'if > 0' skips setting NextAllowedExecution)")
+		})
+
+		// ========================================
+		// Issue #265: Retention period validation
+		// ========================================
+		It("UT-RO-265-011: should default retention.period to 24h (#265)", func() {
+			cfg := config.DefaultConfig()
+			Expect(cfg.Retention.Period).To(Equal(24*time.Hour),
+				"Correctness: DefaultConfig must provide 24h retention period for CRD TTL")
+			Expect(cfg.Validate()).To(Succeed(),
+				"Behavior: DefaultConfig with retention field must still validate")
+		})
+
+		It("UT-RO-265-013: should reject retention.period <= 0 (#265)", func() {
+			cfg := config.DefaultConfig()
+			cfg.Retention.Period = 0
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("retention.period")),
+				"Behavior: zero retention period must be rejected")
+
+			cfg.Retention.Period = -1 * time.Hour
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("retention.period")),
+				"Behavior: negative retention period must be rejected")
 		})
 
 		It("should reject config loaded from invalid YAML testdata", func() {

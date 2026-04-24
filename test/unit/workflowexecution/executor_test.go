@@ -1281,6 +1281,171 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 })
 
 // ========================================
+// #243: Parameter Filtering Tests (Defense-in-Depth)
+// Job and Tekton executors should strip undeclared params
+// ========================================
+
+var _ = Describe("Job Executor Parameter Filtering (#243)", func() {
+	var (
+		jobExec   *executor.JobExecutor
+		k8sClient client.Client
+		scheme    *runtime.Scheme
+		ctx       context.Context
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		Expect(batchv1.AddToScheme(scheme)).To(Succeed())
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+		jobExec = executor.NewJobExecutor(k8sClient)
+	})
+
+	It("UT-WE-243-010: should strip undeclared params from Job env vars when DeclaredParameterNames is set", func() {
+		wfe := newTestWFE("test-wfe-filter", "default", "default/deployment/filter-app",
+			"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+			map[string]string{
+				"NAMESPACE":    "default",
+				"REPLICAS":     "3",
+				"HALLUCINATED": "should-be-stripped",
+			})
+
+		opts := executor.CreateOptions{
+			DeclaredParameterNames: map[string]bool{
+				"NAMESPACE": true,
+				"REPLICAS":  true,
+			},
+		}
+
+		result, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		var job batchv1.Job
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
+
+		envVars := job.Spec.Template.Spec.Containers[0].Env
+		envMap := make(map[string]string)
+		for _, env := range envVars {
+			envMap[env.Name] = env.Value
+		}
+
+		Expect(envMap).To(HaveKeyWithValue("TARGET_RESOURCE", "default/deployment/filter-app"))
+		Expect(envMap).To(HaveKeyWithValue("NAMESPACE", "default"))
+		Expect(envMap).To(HaveKeyWithValue("REPLICAS", "3"))
+		Expect(envMap).NotTo(HaveKey("HALLUCINATED"), "Undeclared param HALLUCINATED should be stripped")
+	})
+
+	It("UT-WE-243-011: should pass all params through when DeclaredParameterNames is nil (no schema)", func() {
+		wfe := newTestWFE("test-wfe-noschema", "default", "default/deployment/noschema-app",
+			"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+			map[string]string{
+				"NAMESPACE": "default",
+				"CUSTOM":    "value",
+			})
+
+		opts := executor.CreateOptions{
+			DeclaredParameterNames: nil,
+		}
+
+		result, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		var job batchv1.Job
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
+
+		envVars := job.Spec.Template.Spec.Containers[0].Env
+		envMap := make(map[string]string)
+		for _, env := range envVars {
+			envMap[env.Name] = env.Value
+		}
+
+		Expect(envMap).To(HaveKeyWithValue("NAMESPACE", "default"))
+		Expect(envMap).To(HaveKeyWithValue("CUSTOM", "value"))
+	})
+})
+
+var _ = Describe("Tekton Executor Parameter Filtering (#243)", func() {
+	var (
+		tektonExec *executor.TektonExecutor
+		k8sClient  client.Client
+		scheme     *runtime.Scheme
+		ctx        context.Context
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		Expect(tektonv1.AddToScheme(scheme)).To(Succeed())
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+		tektonExec = executor.NewTektonExecutor(k8sClient)
+	})
+
+	It("UT-WE-243-020: should strip undeclared params from PipelineRun when DeclaredParameterNames is set", func() {
+		wfe := newTestWFE("test-wfe-tekton-filter", "default", "default/deployment/tekton-filter-app",
+			"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+			map[string]string{
+				"NAMESPACE":    "default",
+				"REPLICAS":     "3",
+				"HALLUCINATED": "should-be-stripped",
+			})
+
+		opts := executor.CreateOptions{
+			DeclaredParameterNames: map[string]bool{
+				"NAMESPACE": true,
+				"REPLICAS":  true,
+			},
+		}
+
+		result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		var pr tektonv1.PipelineRun
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
+
+		paramMap := make(map[string]string)
+		for _, p := range pr.Spec.Params {
+			paramMap[p.Name] = p.Value.StringVal
+		}
+
+		Expect(paramMap).To(HaveKeyWithValue("TARGET_RESOURCE", "default/deployment/tekton-filter-app"))
+		Expect(paramMap).To(HaveKeyWithValue("NAMESPACE", "default"))
+		Expect(paramMap).To(HaveKeyWithValue("REPLICAS", "3"))
+		Expect(paramMap).NotTo(HaveKey("HALLUCINATED"), "Undeclared param HALLUCINATED should be stripped")
+	})
+
+	It("UT-WE-243-021: should pass all params through when DeclaredParameterNames is nil (no schema)", func() {
+		wfe := newTestWFE("test-wfe-tekton-noschema", "default", "default/deployment/tekton-noschema",
+			"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+			map[string]string{
+				"NAMESPACE": "default",
+				"CUSTOM":    "value",
+			})
+
+		opts := executor.CreateOptions{
+			DeclaredParameterNames: nil,
+		}
+
+		result, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		var pr tektonv1.PipelineRun
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
+
+		paramMap := make(map[string]string)
+		for _, p := range pr.Spec.Params {
+			paramMap[p.Name] = p.Value.StringVal
+		}
+
+		Expect(paramMap).To(HaveKeyWithValue("NAMESPACE", "default"))
+		Expect(paramMap).To(HaveKeyWithValue("CUSTOM", "value"))
+	})
+})
+
+// ========================================
 // Test Helpers
 // ========================================
 

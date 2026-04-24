@@ -39,23 +39,12 @@ import "time"
 // REQUEUE TIMEOUTS
 // ========================================
 
-// RequeueResourceBusy is the delay before retrying after ResourceBusy skip.
+// RequeueResourceBusy is the general-purpose short requeue delay.
+// Used when waiting for an external condition (EA creation, approval, blocking WFE).
 // WHY 30 seconds?
-// - Short enough to retry quickly after resource becomes available
+// - Short enough to retry quickly after condition changes
 // - Long enough to avoid excessive reconciliation load
-// - Typical workflow duration is 1-2 minutes, so 30s is reasonable
-//
-// Reference: BR-ORCH-032 (ResourceBusy handling)
 const RequeueResourceBusy = 30 * time.Second
-
-// RequeueRecentlyRemediated is the delay before retrying after RecentlyRemediated skip.
-// WHY 1 minute?
-// - Per WE Team Response Q6: RO should NOT calculate backoff, let WE re-evaluate
-// - Fixed interval allows WE to determine if cooldown has expired
-// - Avoids complex backoff logic in RO
-//
-// Reference: BR-ORCH-032 (RecentlyRemediated handling), DD-WE-004 (exponential backoff)
-const RequeueRecentlyRemediated = 1 * time.Minute
 
 // RequeueGenericError is the default delay for transient errors.
 // WHY 5 seconds?
@@ -83,7 +72,7 @@ const RequeueFallback = 1 * time.Minute
 // USAGE EXAMPLES
 // ========================================
 //
-// Example 1: ResourceBusy skip handling
+// Example 1: Short requeue (waiting for external condition)
 //   return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
 //
 // Example 2: Generic error handling

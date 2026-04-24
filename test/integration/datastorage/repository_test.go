@@ -69,7 +69,7 @@ var _ = Describe("NotificationAudit Repository Integration", func() {
 			RemediationID:   fmt.Sprintf("rr-%s", testID),
 			NotificationID:  fmt.Sprintf("notif-%s", testID),
 			Recipient:       "test@example.com",
-			Channel:         "email",
+			Channel:         "slack",
 			MessageSummary:  "Test notification message",
 			Status:          "sent",
 			SentAt:          time.Now(),

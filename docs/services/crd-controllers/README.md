@@ -8,7 +8,7 @@
 
 ## 📋 Overview
 
-This directory contains comprehensive documentation for all **7 CRD controller services** in Kubernaut V1. Each service has its own self-contained directory with 13-15 focused documents following a consistent structure.
+This directory contains comprehensive documentation for all **6 CRD controller services** in Kubernaut V1. Each service has its own self-contained directory with 13-15 focused documents following a consistent structure.
 
 ---
 
@@ -21,7 +21,6 @@ This directory contains comprehensive documentation for all **7 CRD controller s
 | **Signal Processing** | [01-signalprocessing/](./01-signalprocessing/) | ✅ Active | Signal ingestion and initial processing |
 | **AI Analysis** | [02-aianalysis/](./02-aianalysis/) | ✅ Active | Root cause analysis and recommendations |
 | **Workflow Execution** | [03-workflowexecution/](./03-workflowexecution/) | ✅ Active | Workflow planning and orchestration |
-| **Kubernetes Executor** | [04-kubernetesexecutor/](./04-kubernetesexecutor/) | ✅ Active | Safe Kubernetes action execution |
 | **Remediation Orchestrator** | [05-remediationorchestrator/](./05-remediationorchestrator/) | ✅ Active | Multi-CRD lifecycle coordination |
 | **Notification** | [06-notification/](./06-notification/) | 🚧 In Development | Multi-channel notification delivery with CRD persistence |
 | **Effectiveness Monitor** | [07-effectivenessmonitor/](./07-effectivenessmonitor/) | ✅ Active (V1.0) | Post-remediation effectiveness assessment (health, alerts, metrics, spec drift) |
@@ -33,7 +32,6 @@ This directory contains comprehensive documentation for all **7 CRD controller s
 | Signal Processing | 87.3% | 61.4% | 58.2% | 85.4% |
 | AI Analysis | 80.0% | 73.6% | 53.8% | 87.6% |
 | Workflow Execution | 74.0% | 67.9% | 56.0% | 82.9% |
-| Kubernetes Executor | — | — | — | — |
 | Remediation Orchestrator | 79.9% | 59.8% | 49.1% | 82.1% |
 | Notification | 75.5% | 57.6% | 49.5% | 73.3% |
 | Effectiveness Monitor | 72.1% | 64.9% | 68.8% | 81.9% |
@@ -90,7 +88,7 @@ cat testing-strategy.md
 - **[Phase 3 Final Summary](./CATEGORY1_FINAL_SUMMARY.md)** - Complete achievement summary (97% avg confidence)
 - **[Implementation Quick Reference](./QUICK_REFERENCE_NEXT_STEPS.md)** - Next steps, make targets, timelines
 
-**Status**: ✅ All 3 Phase 3 services ready for implementation (Signal Processing, Workflow Execution, Kubernetes Executor)
+**Status**: ✅ Active CRD controller documentation maintained (Kubernetes Executor removed per ADR-025; execution via Tekton TaskRun / WorkflowExecution)
 
 ---
 
@@ -136,7 +134,7 @@ Meta-documentation and administrative records:
 
 ### **Analysis & Triage Reports**
 
-Analysis documents that assess all 7 CRD controllers collectively:
+Analysis documents that assess all CRD controllers collectively:
 
 - **[CRD Controllers Triage Report](../../analysis/CRD_CONTROLLERS_TRIAGE_REPORT.md)**
   Identifies inconsistencies, risks, pitfalls, and gaps across all controllers

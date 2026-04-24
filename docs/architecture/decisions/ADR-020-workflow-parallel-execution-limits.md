@@ -2,59 +2,59 @@
 
 **Status**: ✅ **APPROVED**
 **Date**: 2025-10-17
-**Updated**: 2025-10-17 (corrected for KubernetesExecution CRDs)
-**Related**: ADR-019 (HolmesGPT Retry Strategy), ADR-021 (Dependency Validation)
+**Updated**: 2026-04-09 (execution via Tekton TaskRun / PipelineRun per ADR-023/025; limits still apply to parallel work)
+**Related**: ADR-019 (HolmesGPT Retry Strategy), ADR-021 (Dependency Validation), ADR-023 (Tekton), ADR-025 (KubernetesExecutor elimination)
 **Confidence**: 90%
 
 ---
 
 ## Context & Problem
 
-Multi-step workflows support **parallel execution** for steps with no dependencies. Each step creates a **KubernetesExecution CRD** (which creates a Kubernetes Job):
+Multi-step workflows support **parallel execution** for steps with no dependencies. With **Tekton** ([ADR-023](./ADR-023-tekton-from-v1.md), [ADR-025](./ADR-025-kubernetesexecutor-service-elimination.md)), each ready step is represented by concurrent **TaskRuns** (or parallel tasks within a `PipelineRun`), which in turn schedule Kubernetes **Jobs** / Pods:
 
 ```yaml
 steps:
   - stepNumber: 1
     action: "collect_diagnostics"
-    dependencies: []  # Creates KubernetesExecution CRD immediately
+    dependencies: []  # TaskRun / pipeline task can start immediately
   - stepNumber: 2
     action: "backup_data"
-    dependencies: []  # Creates KubernetesExecution CRD in parallel
+    dependencies: []  # May run in parallel with other ready steps
   - stepNumber: 3
     action: "health_check"
-    dependencies: []  # Creates KubernetesExecution CRD in parallel
+    dependencies: []  # May run in parallel with other ready steps
 ```
 
 **Critical Questions**:
-1. **What if 50 steps all have no dependencies?** Create 50 KubernetesExecution CRDs simultaneously?
+1. **What if 50 steps all have no dependencies?** Start 50 TaskRuns (or equivalent) simultaneously?
 2. **What happens to Kubernetes API?** Rate limits exhausted?
 3. **What about operational complexity?** 50 parallel Jobs overwhelming cluster?
 
 **Impact Without Limits**:
-- **API rate limit exhaustion**: Kubernetes rejects CRD creation requests
+- **API rate limit exhaustion**: Kubernetes rejects create requests (CRDs, TaskRuns, Pods)
 - **Cluster resource exhaustion**: 50 simultaneous Jobs consume all resources
 - **Operational complexity**: Operators cannot track 50 parallel executions
 - **Debugging nightmare**: Identifying which of 50 Jobs failed
 
 **Key Architectural Clarification**:
-- ❌ **NOT goroutines**: Steps are **NOT** implemented as goroutines
-- ✅ **KubernetesExecution CRDs**: Each step creates a CRD → Kubernetes Job
-- ✅ **WorkflowExecution controller**: Watches KubernetesExecution status, creates next CRDs
+- ❌ **NOT unbounded goroutines**: Concurrency must be bounded in the controller
+- ✅ **Tekton TaskRun / PipelineRun**: Steps materialize as Tekton workloads → Kubernetes Jobs/Pods
+- ✅ **WorkflowExecution controller**: Reconciles workflow, respects parallelism caps when creating or admitting work
 
 ---
 
 ## Decision
 
-**APPROVED: Parallel CRD Creation Limit + Complexity-Based Approval**
+**APPROVED: Parallel execution limit + Complexity-Based Approval** (unchanged intent; implementation targets Tekton)
 
 **Strategy**:
-1. **Max parallel CRD creation**: **5 concurrent KubernetesExecution CRDs** per workflow (configurable)
+1. **Max parallel step execution**: **5 concurrent steps** per workflow (configurable), enforced when starting TaskRuns / pipeline tasks (not via a `KubernetesExecution` CRD)
 2. **Complexity approval threshold**: Workflows with **>10 total steps** require manual approval (configurable)
-3. **Queuing**: Steps wait for earlier parallel steps to complete before creating CRDs
+3. **Queuing**: Steps wait when the parallelism budget is full
 4. **Client-side rate limiter**: Max **20 QPS** for Kubernetes API calls (configurable)
 
 **Rationale**:
-- ✅ **Prevents resource exhaustion**: Bounded goroutine count
+- ✅ **Prevents resource exhaustion**: Bounded concurrent Tekton / API work
 - ✅ **Respects Kubernetes limits**: 20 QPS < 50 QPS default
 - ✅ **Configurable**: Adjust for different cluster sizes
 - ✅ **Standard pattern**: Widely used in Kubernetes controllers
@@ -73,7 +73,7 @@ metadata:
   name: kubernaut-workflowexecution-config
   namespace: kubernaut-system
 data:
-  max-parallel-steps: "5"       # Max concurrent KubernetesExecution CRDs per workflow
+  max-parallel-steps: "5"       # Max concurrent steps (TaskRuns / parallel tasks) per workflow
   complexity-approval-threshold: "10"  # Workflows >10 total steps require approval
   kubernetes-qps: "20"          # Max Kubernetes API QPS
   kubernetes-burst: "30"        # Burst capacity for K8s API
@@ -89,115 +89,19 @@ KUBERNETES_BURST=30
 
 ---
 
-### **Implementation: Parallel CRD Creation Tracker**
+### **Implementation: Parallel step tracker (Tekton)**
 
-**File**: `internal/controller/workflowexecution/parallel_executor.go`
+**File** (illustrative): `internal/controller/workflowexecution/parallel_executor.go`
 
-```go
-package workflowexecution
+The following pseudocode shows the **same policy** applied after ADR-025: bound concurrent work by counting **in-flight steps** (e.g. TaskRuns labeled for the workflow) instead of creating `KubernetesExecution` CRDs.
 
-import (
-    "context"
-    "fmt"
-
-    workflowv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-    kubernetesexecutionv1 "github.com/jordigilh/kubernaut/api/kubernetesexecution/v1alpha1"
-)
-
-type ParallelExecutor struct {
-    maxParallelSteps int
-    client           client.Client
-}
-
-func NewParallelExecutor(maxParallelSteps int, client client.Client) *ParallelExecutor {
-    return &ParallelExecutor{
-        maxParallelSteps: maxParallelSteps,
-        client:           client,
-    }
-}
-
-// CreateParallelSteps creates KubernetesExecution CRDs for steps with satisfied dependencies
-// Respects maxParallelSteps limit by only creating CRDs up to the limit
-func (p *ParallelExecutor) CreateParallelSteps(
-    ctx context.Context,
-    workflow *workflowv1.WorkflowExecution,
-    executableSteps []workflowv1.WorkflowStep,
-    activeSteps int,  // Currently executing KubernetesExecution CRDs
-) (int, error) {
-    log := ctrl.LoggerFrom(ctx)
-
-    // Calculate how many new steps we can create
-    availableSlots := p.maxParallelSteps - activeSteps
-    if availableSlots <= 0 {
-        log.Info("Parallel execution limit reached, waiting for completion",
-            "activeSteps", activeSteps,
-            "maxParallelSteps", p.maxParallelSteps)
-        return 0, nil
-    }
-
-    // Create CRDs up to available slots
-    stepsToCreate := len(executableSteps)
-    if stepsToCreate > availableSlots {
-        stepsToCreate = availableSlots
-    }
-
-    createdCount := 0
-    for i := 0; i < stepsToCreate; i++ {
-        step := executableSteps[i]
-
-        // Create KubernetesExecution CRD
-        kubeExec := &kubernetesexecutionv1.KubernetesExecution{
-            ObjectMeta: metav1.ObjectMeta{
-                Name:      fmt.Sprintf("%s-step-%d", workflow.Name, step.StepNumber),
-                Namespace: workflow.Namespace,
-                OwnerReferences: []metav1.OwnerReference{
-                    *metav1.NewControllerRef(workflow, workflowv1.GroupVersion.WithKind("WorkflowExecution")),
-                },
-            },
-            Spec: kubernetesexecutionv1.KubernetesExecutionSpec{
-                Action:     step.Action,
-                Parameters: step.Parameters,
-                StepNumber: step.StepNumber,
-            },
-        }
-
-        if err := p.client.Create(ctx, kubeExec); err != nil {
-            return createdCount, fmt.Errorf("failed to create KubernetesExecution for step %d: %w", step.StepNumber, err)
-        }
-
-        log.Info("Created KubernetesExecution CRD",
-            "stepNumber", step.StepNumber,
-            "action", step.Action,
-            "activeSteps", activeSteps+createdCount+1,
-            "maxParallelSteps", p.maxParallelSteps)
-
-        createdCount++
-    }
-
-    return createdCount, nil
-}
-
-// GetActiveStepCount returns count of currently executing KubernetesExecution CRDs
-func (p *ParallelExecutor) GetActiveStepCount(
-    ctx context.Context,
-    workflow *workflowv1.WorkflowExecution,
-) (int, error) {
-    kubeExecList := &kubernetesexecutionv1.KubernetesExecutionList{}
-    if err := p.client.List(ctx, kubeExecList, client.InNamespace(workflow.Namespace),
-        client.MatchingLabels{"workflow": workflow.Name}); err != nil {
-        return 0, err
-    }
-
-    activeCount := 0
-    for _, kubeExec := range kubeExecList.Items {
-        // Count as active if not completed or failed
-        if kubeExec.Status.Phase != "completed" && kubeExec.Status.Phase != "failed" {
-            activeCount++
-        }
-    }
-
-    return activeCount, nil
-}
+```
+ParallelExecutor (conceptual):
+  - maxParallelSteps: configurable cap (e.g. 5)
+  - activeSteps: count in-flight Tekton work for this workflow (TaskRuns / running pipeline tasks not terminal)
+  - availableSlots = max(0, maxParallelSteps - activeSteps)
+  - When reconciling: start at most availableSlots new steps from the dependency-ready queue
+  - Implementation detail: create/patch Tekton PipelineRun / TaskRun — see ../TEKTON_EXECUTION_ARCHITECTURE.md
 ```
 
 ---

@@ -201,7 +201,7 @@ env:
 | **AIAnalysis** | Controller-only status | Controller manages AI investigation results |
 | **RemediationRequest** | Controller-only status | RO controller manages routing logic |
 
-**Note**: **KubernetesExecution** was deprecated 2025-10-19 (ADR-025; never implemented, replaced by Tekton Pipelines). See [DEPRECATED.md](../../services/crd-controllers/04-kubernetesexecutor/DEPRECATED.md)
+**Note**: **KubernetesExecution** was deprecated 2025-10-19 (ADR-025; never implemented, replaced by Tekton Pipelines). Prior service documentation was removed with the service (documentation removed - ADR-025).
 
 ---
 
@@ -789,7 +789,7 @@ This DD is successfully implemented when:
 | **1.3** | **2026-03-04** | Added RemediationWorkflow as 4th webhook handler (ValidatingWebhookConfiguration for CREATE/DELETE). Workflow registration now uses CRD + AW bridge to DS (ADR-058, BR-WORKFLOW-006). Corrects v1.1 note: workflow operations now use CRD webhook, not HTTP middleware. Updated architecture diagram, file structure, matrix (3→4), team responsibility matrix, and timeline. |
 | 1.2 | 2026-01-06 | **ARCHITECTURE UPDATE**: Single consolidated webhook deployment (`kubernaut-auth-webhook`) with multiple handlers instead of 3 separate webhooks. Added consolidated architecture section with benefits (66% memory reduction, 3× faster deployments, guaranteed consistency). Updated team responsibility matrix for unified Webhook Team ownership. Updated implementation timeline to 5-6 days consolidated approach. Added comprehensive [implementation plan](../../development/SOC2/WEBHOOK_IMPLEMENTATION_PLAN.md) and [test plan](../../development/SOC2/WEBHOOK_TEST_PLAN.md) references. Updated all DD-AUTH-002 references to DD-AUTH-003 (sidecar pattern supersedes middleware). |
 | 1.1 | 2026-01-06 | Added NotificationRequest (DELETE attribution). Workflow CRUD uses externalized authorization via sidecar (DD-AUTH-003), not CRD webhook. |
-| 1.0.2 | 2025-12-20 | **CRITICAL**: Removed KubernetesExecution CRD (deprecated 2025-10-19, never implemented, replaced by Tekton Pipelines). Verified all CRDs against authoritative BR documents. Added deprecation note referencing [DEPRECATED.md](../../services/crd-controllers/04-kubernetesexecutor/DEPRECATED.md). Updated examples with actual CRDs: SignalProcessing, AIAnalysis, RemediationRequest, NotificationRequest. |
+| 1.0.2 | 2025-12-20 | **CRITICAL**: Removed KubernetesExecution CRD (deprecated 2025-10-19, never implemented, replaced by Tekton Pipelines). Verified all CRDs against authoritative BR documents. Added deprecation note (documentation removed - ADR-025). Updated examples with actual CRDs: SignalProcessing, AIAnalysis, RemediationRequest, NotificationRequest. |
 | 1.0.1 | 2025-12-20 | Fixed CRD names to match actual kubernaut CRDs: KubernetesExecution (not KubernetesExecutor), SignalProcessing, AIAnalysis, NotificationRequest (removed invented CRDs: WorkflowDefinition, AlertForwarder, DataStorage). |
 | 1.0 | 2025-12-20 | Initial DD: CRD webhook requirements matrix. Decision criteria for WHEN/WHY webhooks are needed. Team responsibility matrix. Implementation checklist. SOC2 compliance requirements. Must gather procedures. |
 

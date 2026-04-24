@@ -54,6 +54,7 @@ type SignalData struct {
 	DeduplicationWindowMinutes *int
 	FirstSeen                  string
 	LastSeen                   string
+	SignalAnnotations          map[string]string
 }
 
 // EnrichmentData contains enrichment context injected into the prompt.
@@ -97,6 +98,7 @@ type investigationTemplateData struct {
 	BusinessCategory            string
 	RiskTolerance               string
 	StructuredOutput            bool
+	SignalAnnotations           map[string]string
 }
 
 // workflowTemplateData maps to fields expected by phase3_workflow_selection.tmpl.
@@ -147,10 +149,20 @@ func WithStructuredOutput(enabled bool) BuilderOption {
 	return func(b *Builder) { b.structuredOutput = enabled }
 }
 
+// ConversationTemplateData holds fields for the conversation system prompt template.
+type ConversationTemplateData struct {
+	RARName              string
+	Namespace            string
+	AvailableTools       []string
+	InvestigationSummary string
+	AuditHistory         string
+}
+
 // Builder renders prompt templates with signal and enrichment data.
 type Builder struct {
 	investigationTmpl *template.Template
 	workflowTmpl      *template.Template
+	conversationTmpl  *template.Template
 	structuredOutput  bool
 }
 
@@ -164,14 +176,28 @@ func NewBuilder(opts ...BuilderOption) (*Builder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing workflow selection template: %w", err)
 	}
+	convTmpl, err := template.ParseFS(templateFS, "templates/conversation.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("parsing conversation template: %w", err)
+	}
 	b := &Builder{
 		investigationTmpl: invTmpl,
 		workflowTmpl:      wfTmpl,
+		conversationTmpl:  convTmpl,
 	}
 	for _, opt := range opts {
 		opt(b)
 	}
 	return b, nil
+}
+
+// RenderConversation renders the conversation system prompt using the conversation template.
+func (b *Builder) RenderConversation(data ConversationTemplateData) (string, error) {
+	var buf bytes.Buffer
+	if err := b.conversationTmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("rendering conversation template: %w", err)
+	}
+	return buf.String(), nil
 }
 
 // RenderInvestigation renders the Phase 1 investigation prompt.
@@ -198,12 +224,13 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentD
 		SignalMode:          withDefault(sanitized.SignalMode, "reactive"),
 		Priority:            sanitized.Priority,
 		BusinessCategory:    sanitized.BusinessCategory,
-		RiskTolerance:       sanitized.RiskTolerance,
+		RiskTolerance:              sanitized.RiskTolerance,
 		IsDuplicate:                sanitized.IsDuplicate != nil && *sanitized.IsDuplicate,
 		OccurrenceCount:            derefIntOr(sanitized.OccurrenceCount, 0),
 		DeduplicationWindowMinutes: derefIntOr(sanitized.DeduplicationWindowMinutes, 0),
 		FirstSeen:                  sanitized.FirstSeen,
 		LastSeen:                   sanitized.LastSeen,
+		SignalAnnotations:          sanitized.SignalAnnotations,
 	}
 
 	if isPDBSignal(sanitized.ResourceKind) {
@@ -361,28 +388,40 @@ func isPDBSignal(resourceKind string) bool {
 
 func sanitizeSignal(signal SignalData) SignalData {
 	return SignalData{
-		Name:             sanitizeField(signal.Name),
-		Namespace:        sanitizeField(signal.Namespace),
-		Severity:         sanitizeField(signal.Severity),
-		Message:          sanitizeField(signal.Message),
-		ResourceKind:     sanitizeField(signal.ResourceKind),
-		ResourceName:     sanitizeField(signal.ResourceName),
-		ClusterName:      sanitizeField(signal.ClusterName),
-		Environment:      sanitizeField(signal.Environment),
-		Priority:         sanitizeField(signal.Priority),
-		RiskTolerance:    sanitizeField(signal.RiskTolerance),
-		SignalSource:     sanitizeField(signal.SignalSource),
-		BusinessCategory: sanitizeField(signal.BusinessCategory),
-		Description:      sanitizeField(signal.Description),
-		SignalMode:       sanitizeField(signal.SignalMode),
-		FiringTime:       sanitizeField(signal.FiringTime),
-		ReceivedTime:     sanitizeField(signal.ReceivedTime),
+		Name:                       sanitizeField(signal.Name),
+		Namespace:                  sanitizeField(signal.Namespace),
+		Severity:                   sanitizeField(signal.Severity),
+		Message:                    sanitizeField(signal.Message),
+		ResourceKind:               sanitizeField(signal.ResourceKind),
+		ResourceName:               sanitizeField(signal.ResourceName),
+		ClusterName:                sanitizeField(signal.ClusterName),
+		Environment:                sanitizeField(signal.Environment),
+		Priority:                   sanitizeField(signal.Priority),
+		RiskTolerance:              sanitizeField(signal.RiskTolerance),
+		SignalSource:               sanitizeField(signal.SignalSource),
+		BusinessCategory:           sanitizeField(signal.BusinessCategory),
+		Description:                sanitizeField(signal.Description),
+		SignalMode:                 sanitizeField(signal.SignalMode),
+		FiringTime:                 sanitizeField(signal.FiringTime),
+		ReceivedTime:               sanitizeField(signal.ReceivedTime),
 		IsDuplicate:                signal.IsDuplicate,
 		OccurrenceCount:            signal.OccurrenceCount,
 		DeduplicationWindowMinutes: signal.DeduplicationWindowMinutes,
 		FirstSeen:                  sanitizeField(signal.FirstSeen),
 		LastSeen:                   sanitizeField(signal.LastSeen),
+		SignalAnnotations:          sanitizeMapValues(signal.SignalAnnotations),
 	}
+}
+
+func sanitizeMapValues(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[sanitizeField(k)] = sanitizeField(v)
+	}
+	return out
 }
 
 func sanitizeField(s string) string {

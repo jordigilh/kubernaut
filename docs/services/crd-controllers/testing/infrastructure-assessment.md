@@ -296,9 +296,8 @@ bootstrap-integration-env-workflowexecution:
 	@if ! kind get clusters | grep -q kubernaut-test; then \
 		$(MAKE) create-test-cluster; \
 	fi
-	@# Install all required CRDs (Workflow depends on KubernetesExecution) (DEPRECATED - ADR-025)
+	@# Install required CRDs
 	kubectl apply -f api/workflowexecution/v1alpha1/workflowexecution_crd.yaml
-	kubectl apply -f api/kubernetesexecution/v1alpha1/kubernetesexecution_crd.yaml  # DEPRECATED - ADR-025
 	@# Workflow Execution doesn't need external dependencies
 	@echo "✅ Integration environment ready"
 
@@ -307,52 +306,14 @@ cleanup-integration-env-workflowexecution:
 	@echo "✅ No external dependencies to cleanup"
 
 # ============================================
-# Kubernetes Executor Targets (DEPRECATED - ADR-025)
-# ============================================
-
-.PHONY: test-unit-kubernetesexecutor
-test-unit-kubernetesexecutor:
-	@echo "Running unit tests for Kubernetes Executor..."
-	go test -v -race -coverprofile=coverage-unit-executor.out \
-		./pkg/kubernetesexecution/... \
-		./test/unit/kubernetesexecution/...
-
-.PHONY: test-integration-kubernetesexecutor
-test-integration-kubernetesexecutor: bootstrap-integration-env-kubernetesexecutor
-	@echo "Running integration tests for Kubernetes Executor..."
-	go test -v -race -timeout 10m \
-		-tags=integration \
-		./test/integration/kubernetesexecution/...
-	$(MAKE) cleanup-integration-env-kubernetesexecutor
-
-.PHONY: bootstrap-integration-env-kubernetesexecutor
-bootstrap-integration-env-kubernetesexecutor:
-	@echo "Setting up integration test environment for Kubernetes Executor..."
-	@if ! kind get clusters | grep -q kubernaut-test; then \
-		$(MAKE) create-test-cluster; \
-	fi
-	@# Install CRDs
-	kubectl apply -f api/kubernetesexecution/v1alpha1/kubernetesexecution_crd.yaml  # DEPRECATED - ADR-025
-	@# Create test resources (deployments, pods, etc.)
-	kubectl apply -f test/integration/kubernetesexecution/fixtures/test-resources.yaml
-	@# Kubernetes Executor uses real K8s Jobs - no external dependencies
-	@echo "✅ Integration environment ready"
-
-.PHONY: cleanup-integration-env-kubernetesexecutor
-cleanup-integration-env-kubernetesexecutor:
-	@echo "Cleaning up test resources..."
-	@kubectl delete -f test/integration/kubernetesexecution/fixtures/test-resources.yaml || true
-	@echo "✅ Cleanup complete"
-
-# ============================================
 # Aggregate Targets
 # ============================================
 
 .PHONY: test-unit-all-phase3
-test-unit-all-phase3: test-unit-remediationprocessor test-unit-workflowexecution test-unit-kubernetesexecutor
+test-unit-all-phase3: test-unit-remediationprocessor test-unit-workflowexecution
 
 .PHONY: test-integration-all-phase3
-test-integration-all-phase3: test-integration-remediationprocessor test-integration-workflowexecution test-integration-kubernetesexecutor
+test-integration-all-phase3: test-integration-remediationprocessor test-integration-workflowexecution
 
 .PHONY: test-all-phase3
 test-all-phase3: test-unit-all-phase3 test-integration-all-phase3

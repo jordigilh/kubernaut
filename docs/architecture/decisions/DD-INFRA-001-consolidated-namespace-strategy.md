@@ -135,7 +135,6 @@ metadata:
 | **RemediationProcessor** | `kubernaut-system` | CRD controller |
 | **AIAnalysis** | `kubernaut-system` | CRD controller |
 | **WorkflowExecution** | `kubernaut-system` | CRD controller |
-| **KubernetesExecutor** | `kubernaut-system` | CRD controller |
 
 **Infrastructure Resources** (owned by Data Storage Service):
 | Resource | Namespace | Owner | Used By |

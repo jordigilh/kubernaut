@@ -138,11 +138,12 @@ func (v *NotificationAuditValidator) validateChannel(channel string, valErr *Val
 		"email":     true,
 		"slack":     true,
 		"pagerduty": true,
+		"teams":     true,
 		"sms":       true,
 	}
 
 	if !validChannels[strings.ToLower(channel)] {
-		valErr.AddFieldError("channel", fmt.Sprintf("channel must be one of: email, slack, pagerduty, sms (got '%s')", channel))
+		valErr.AddFieldError("channel", fmt.Sprintf("channel must be one of: email, slack, pagerduty, teams, sms (got '%s')", channel))
 	}
 }
 

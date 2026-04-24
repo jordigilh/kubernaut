@@ -1,0 +1,29 @@
+{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.authwebhook.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-authwebhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: authwebhook
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: authwebhook
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- if .Values.networkPolicies.apiServerCIDR }}
+    - ports:
+        - port: 9443
+          protocol: TCP
+      from:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicies.apiServerCIDR }}
+    {{- end }}
+  egress:
+    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
+    {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+{{- end }}

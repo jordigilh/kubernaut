@@ -98,4 +98,13 @@ type Authorizer interface {
 	//
 	// Note: Authorization denial (user lacks permissions) returns (false, nil), not an error.
 	CheckAccess(ctx context.Context, user, namespace, resource, resourceName, verb string) (bool, error)
+
+	// CheckAccessWithGroup verifies if the user has the required permissions for a
+	// resource in a specific API group (e.g., "kubernaut.ai" for CRDs).
+	//
+	// Parameters:
+	//   - apiGroup: Kubernetes API group (e.g., "kubernaut.ai", "" for core)
+	//
+	// All other parameters and behavior are identical to CheckAccess.
+	CheckAccessWithGroup(ctx context.Context, user, namespace, apiGroup, resource, resourceName, verb string) (bool, error)
 }

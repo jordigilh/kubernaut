@@ -746,7 +746,7 @@ _Appears in:_
 - [RemediationRequestStatus](#remediationrequeststatus)
 
 _Validation:_
-- Enum: [Configuration SignalProcessing AIAnalysis Approval WorkflowExecution Blocked]
+- Enum: [Configuration SignalProcessing AIAnalysis Approval WorkflowExecution Blocked Deduplicated]
 
 | Value| Description|
 | ---| ---|
@@ -756,6 +756,7 @@ _Validation:_
 | `Approval`||
 | `WorkflowExecution`||
 | `Blocked`||
+| `Deduplicated`| FailurePhaseDeduplicated indicates an RR that inherited a failure from a<br />deduplicated WorkflowExecution collision . Excluded from<br />consecutive failure counting per .|
 
 
 ### InvestigationSession
@@ -1188,6 +1189,7 @@ _Appears in:_
 | `decidedBy`| _string_| Who made the decision (username or "system" for timeout)|
 | `decidedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| When the decision was made|
 | `decisionMessage`| _string_| Optional message from the decision maker|
+| `workflowOverride`| _[WorkflowOverride](#workflowoverride)_| Operator workflow/parameter override (#594, ).<br />Only valid when Decision is Approved. Webhook validates the referenced RW.|
 | `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions represent the latest available observations<br />Standard condition types:<br />- "Approved" - Decision is Approved<br />- "Rejected" - Decision is Rejected<br />- "Expired" - Decision timed out|
 | `createdAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| Time when the approval request was created|
 | `timeRemaining`| _string_| Time remaining until expiration (human-readable, e.g., "5m30s")<br />Updated by controller periodically|
@@ -1318,6 +1320,7 @@ _Appears in:_
 | `duplicateOf`| _string_| DuplicateOf references the parent RemediationRequest that this is a duplicate of<br />V1.0: Set when OverallPhase = "Blocked" with BlockReason = "DuplicateInProgress"<br />Old behavior: Set when OverallPhase = "Skipped" due to resource lock deduplication|
 | `duplicateCount`| _integer_| DuplicateCount tracks the number of duplicate remediations that were skipped<br />because this RR's workflow was already executing (resource lock)<br />Only populated on parent RRs that have duplicates|
 | `duplicateRefs`| _string array_| DuplicateRefs lists the names of RemediationRequests that were skipped<br />because they targeted the same resource as this RR<br />Only populated on parent RRs that have duplicates|
+| `deduplicatedByWE`| _string_| DeduplicatedByWE stores the name of the original WorkflowExecution whose<br />outcome this RR is waiting to inherit . Set when the RR's own<br />WFE was marked Failed/Deduplicated. Used as a field index key for the<br />cross-WE watch to trigger reconciliation when the original WFE completes.<br />Immutable after initial assignment.|
 | `blockReason`| _[BlockReason](#blockreason)_| BlockReason indicates why this remediation is blocked (non-terminal)<br />Valid values:<br />- "ConsecutiveFailures": Max consecutive failures reached, in cooldown <br />- "ResourceBusy": Another workflow is using the target resource<br />- "RecentlyRemediated": Target recently remediated, cooldown active <br />- "ExponentialBackoff": Pre-execution failures, backoff window active <br />- "DuplicateInProgress": Duplicate of an active remediation<br />Only set when OverallPhase = "Blocked"|
 | `blockMessage`| _string_| BlockMessage provides human-readable details about why remediation is blocked<br />Examples:<br />- "Another workflow is running on target deployment/my-app: wfe-abc123"<br />- "Recently remediated. Cooldown: 3m15s remaining"<br />- "Backoff active. Next retry: 2025-12-15T10:30:00Z"<br />- "Duplicate of active remediation rr-original-abc123"<br />- "3 consecutive failures. Cooldown expires: 2025-12-15T11:00:00Z"<br />Only set when OverallPhase = "Blocked"|
 | `blockedUntil`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| BlockedUntil indicates when blocking expires (time-based blocks)<br />Set for: ConsecutiveFailures, RecentlyRemediated, ExponentialBackoff<br />Nil for: ResourceBusy, DuplicateInProgress (event-based, cleared when condition resolves)<br />After this time passes, RR will retry or transition to Failed (for ConsecutiveFailures)|
@@ -1635,6 +1638,7 @@ _Appears in:_
 | `rationale`| _string_| Rationale explaining why this workflow was selected|
 | `executionEngine`| _string_| ExecutionEngine specifies the backend engine for workflow execution.<br />Populated from HolmesGPT-API workflow recommendation.<br />When empty, defaults to "tekton" for backwards compatibility.|
 | `engineConfig`| _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_| EngineConfig holds engine-specific configuration .<br />For ansible: \{"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."\}.|
+| `serviceAccountName`| _string_| ServiceAccountName is the pre-existing ServiceAccount resolved from the<br />DS workflow catalog . Propagated to the WFE for pod execution.|
 
 
 ### SignalContextInput
@@ -1656,6 +1660,7 @@ _Appears in:_
 | `businessPriority`| _string_| Business priority<br />Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)|
 | `targetResource`| _[TargetResource](#targetresource)_| Target resource identification|
 | `enrichmentResults`| _EnrichmentResults_| Complete enrichment results from SignalProcessing|
+| `signalAnnotations`| _object (keys:string, values:string)_| SignalAnnotations from the original alert (e.g., description, summary from AlertManager).<br />Untrusted content — sanitized by KA prompt builder before reaching the LLM.|
 
 
 ### SignalData
@@ -1961,9 +1966,27 @@ _Appears in:_
 | `failureDetails`| _[FailureDetails](#failuredetails)_| FailureDetails contains structured failure information<br />Populated when Phase=Failed|
 | `blockClearance`| _[BlockClearanceDetails](#blockclearancedetails)_| BlockClearance tracks the clearing of PreviousExecutionFailed blocks<br />When set, allows new executions despite previous execution failure<br />Preserves audit trail of WHO cleared the block and WHY|
 | `ephemeralCredentialIDs`| _integer array_| EphemeralCredentialIDs stores AWX credential IDs created by the ansible<br />executor for cleanup after execution . Written via the status<br />subresource to avoid violating spec immutability .|
-| `executionEngine`| _string_| ExecutionEngine is the backend engine resolved from the DS workflow catalog<br />at runtime by the WE controller. Set once during Pending phase via<br />WorkflowQuerier.GetWorkflowExecutionEngine; immutable thereafter.<br />Values: "tekton", "job", "ansible".|
+| `executionEngine`| _string_| ExecutionEngine is the backend engine resolved from the DS workflow catalog<br />at runtime by the WE controller. Set once during Pending phase via<br />WorkflowQuerier.GetWorkflowSchemaMetadata; immutable thereafter.<br />Values: "tekton", "job", "ansible".|
 | `serviceAccountName`| _string_| ServiceAccountName is the pre-existing ServiceAccount resolved from the<br />DS workflow catalog at runtime by the WE controller .<br />Set once during Pending phase via ResolveWorkflowCatalogMetadata; immutable<br />thereafter. If empty, K8s assigns the namespace's default SA (Job/Tekton)<br />or the Ansible executor falls back to the controller's in-cluster credentials.|
+| `deduplicatedBy`| _string_| DeduplicatedBy stores the name of the original WorkflowExecution that owns<br />the conflicting execution resource. Set atomically inside AtomicStatusUpdate<br />when FailureDetails.Reason == Deduplicated (, M5 constraint).<br />Immutable after initial assignment.|
 | `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions provide detailed status information|
+
+
+### WorkflowOverride
+
+
+WorkflowOverride allows operators to override the AI-recommended workflow
+and/or parameters when approving a RemediationApprovalRequest .
+The RO resolves the final spec from either this override or the AIA default.
+
+_Appears in:_
+- [RemediationApprovalRequestStatus](#remediationapprovalrequeststatus)
+
+| Field| Type| Description|
+| ---| ---| ---|
+| `workflowName`| _string_| Name of a RemediationWorkflow CRD to use instead of the AI-recommended one.<br />If set, the webhook validates the RW exists and has CatalogStatus=Active.|
+| `parameters`| _object (keys:string, values:string)_| Override parameters for the workflow execution.<br />If non-nil (including empty map), replaces the AI-recommended parameters.<br />If nil, the AI-recommended parameters are preserved.|
+| `rationale`| _string_| Rationale for the override decision (audit trail).|
 
 
 ### WorkflowRef

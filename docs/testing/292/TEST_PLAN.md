@@ -83,7 +83,7 @@ Tests validate that the CRD format is correctly parsed, validated, and produces 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
 | `pkg/datastorage/server/workflow_handlers.go` | `buildWorkflowFromSchema` (uses parser output) | ~90 |
-| `pkg/workflowexecution/client/workflow_querier.go` | `GetWorkflowDependencies` (parses stored content) | ~30 |
+| `pkg/workflowexecution/client/workflow_querier.go` | `GetWorkflowSchemaMetadata` (parses stored content) | ~30 |
 
 ---
 
@@ -346,7 +346,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 **File**: `test/unit/workflowexecution/workflow_querier_test.go`
 
 **Given**: A mock DS client returning a `RemediationWorkflow` with CRD-format YAML in the `Content` field, including `spec.dependencies.secrets: [{name: "gitea-repo-creds"}]`
-**When**: `GetWorkflowDependencies()` is called with a valid workflow UUID
+**When**: `GetWorkflowSchemaMetadata()` is called with a valid workflow UUID
 **Then**: Dependencies are correctly extracted: 1 secret named `"gitea-repo-creds"`, empty configMaps
 
 **Acceptance Criteria**:

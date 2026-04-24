@@ -1,0 +1,60 @@
+#!/bin/bash
+#
+# Pre-commit hook for HAPI Service
+#
+# Business Requirement: BR-HAPI-260 (API Contract Validation)
+# Phase: Phase 4 - Automated Spec Validation
+#
+# This hook validates that OpenAPI spec matches Pydantic models before commit.
+# It prevents spec/code drift and catches missing fields early.
+#
+# Installation:
+#   ln -sf ../../.git-hooks/pre-commit .git/hooks/pre-commit
+#
+# To bypass (use sparingly):
+#   git commit --no-verify
+#
+
+set -e
+
+echo "🔍 HAPI Pre-Commit Validation"
+echo "=============================="
+
+# Change to holmesgpt-api directory
+cd "$(git rev-parse --show-toplevel)/holmesgpt-api" || exit 1
+
+# Check if Pydantic models were modified
+MODELS_CHANGED=$(git diff --cached --name-only | grep -E "src/models/.*\.py$" || true)
+
+if [ -n "$MODELS_CHANGED" ]; then
+    echo "📝 Pydantic models modified:"
+    echo "$MODELS_CHANGED" | sed 's/^/  - /'
+    echo ""
+    echo "🔍 Validating OpenAPI spec matches models..."
+
+    # Run validation script
+    if python3 scripts/validate-openapi-spec.py; then
+        echo "✅ OpenAPI spec validation passed"
+    else
+        echo ""
+        echo "❌ OpenAPI spec validation FAILED"
+        echo ""
+        echo "🔧 To fix:"
+        echo "  1. Regenerate spec: python3 scripts/generate-openapi-spec.py"
+        echo "  2. Stage the updated spec: git add api/openapi.json"
+        echo "  3. Commit again"
+        echo ""
+        echo "Or bypass (not recommended): git commit --no-verify"
+        exit 1
+    fi
+else
+    echo "ℹ️  No Pydantic models modified, skipping validation"
+fi
+
+echo ""
+echo "✅ Pre-commit validation passed"
+echo "=============================="
+
+exit 0
+
+
