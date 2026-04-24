@@ -44,7 +44,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
 		logger = slog.Default()
-		manager = session.NewManager(store, logger)
+		manager = session.NewManager(store, logger, nil)
 		handler = server.NewHandler(manager, nil, logger)
 	})
 

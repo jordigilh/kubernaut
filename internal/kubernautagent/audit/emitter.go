@@ -39,6 +39,11 @@ const (
 	EventTypeEnrichmentFailed    = "aiagent.enrichment.failed"
 	EventTypeAlignmentStep       = "aiagent.alignment.step"
 	EventTypeAlignmentVerdict    = "aiagent.alignment.verdict"
+
+	EventTypeSessionStarted   = "aiagent.session.started"
+	EventTypeSessionCancelled = "aiagent.session.cancelled"
+	EventTypeSessionCompleted = "aiagent.session.completed"
+	EventTypeSessionFailed    = "aiagent.session.failed"
 )
 
 const (
@@ -50,6 +55,11 @@ const (
 	ActionResponseFailed    = "response_failed"
 	ActionAlignmentEvaluate = "alignment_evaluate"
 	ActionAlignmentVerdict  = "alignment_verdict"
+
+	ActionSessionStarted   = "session_started"
+	ActionSessionCancelled = "session_cancelled"
+	ActionSessionCompleted = "session_completed"
+	ActionSessionFailed    = "session_failed"
 )
 
 const (
@@ -72,6 +82,10 @@ var AllEventTypes = []string{
 	EventTypeEnrichmentFailed,
 	EventTypeAlignmentStep,
 	EventTypeAlignmentVerdict,
+	EventTypeSessionStarted,
+	EventTypeSessionCancelled,
+	EventTypeSessionCompleted,
+	EventTypeSessionFailed,
 }
 
 // AuditEvent represents an audit event to be stored.

@@ -19,6 +19,8 @@ package session
 import (
 	"context"
 	"log/slog"
+
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 )
 
 // InvestigateFunc is the function signature for running an investigation.
@@ -27,13 +29,18 @@ type InvestigateFunc func(ctx context.Context) (interface{}, error)
 // Manager orchestrates investigation sessions, running each in a
 // background goroutine and tracking progress via the Store.
 type Manager struct {
-	store  *Store
-	logger *slog.Logger
+	store      *Store
+	logger     *slog.Logger
+	auditStore audit.AuditStore
 }
 
 // NewManager creates a session manager backed by the given store.
-func NewManager(store *Store, logger *slog.Logger) *Manager {
-	return &Manager{store: store, logger: logger}
+// If auditStore is nil, a NopAuditStore is used (no audit events emitted).
+func NewManager(store *Store, logger *slog.Logger, auditStore audit.AuditStore) *Manager {
+	if auditStore == nil {
+		auditStore = audit.NopAuditStore{}
+	}
+	return &Manager{store: store, logger: logger, auditStore: auditStore}
 }
 
 // eventChannelBuffer is the capacity of the per-session event channel.
@@ -49,7 +56,11 @@ const eventChannelBuffer = 64
 // The goroutine uses a cancellable child of context.Background() to ensure
 // the investigation outlives the originating HTTP request while remaining
 // cancellable via CancelInvestigation.
-func (m *Manager) StartInvestigation(_ context.Context, fn InvestigateFunc, metadata map[string]string) (string, error) {
+//
+// Audit: emits aiagent.session.started after the session transitions to
+// StatusRunning, and aiagent.session.completed or aiagent.session.failed
+// when the goroutine finishes. Audit errors are fire-and-forget (ADR-038).
+func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, metadata map[string]string) (string, error) {
 	id, err := m.store.Create()
 	if err != nil {
 		return "", err
@@ -68,6 +79,9 @@ func (m *Manager) StartInvestigation(_ context.Context, fn InvestigateFunc, meta
 
 	_ = m.store.Update(id, StatusRunning, nil, nil)
 
+	correlationID := metadata["remediation_id"]
+	m.emitSessionEvent(ctx, audit.EventTypeSessionStarted, audit.ActionSessionStarted, audit.OutcomeSuccess, id, correlationID, nil)
+
 	go func() {
 		defer m.closeEventChan(id)
 		result, fnErr := fn(bgCtx)
@@ -80,10 +94,19 @@ func (m *Manager) StartInvestigation(_ context.Context, fn InvestigateFunc, meta
 					slog.String("session_id", id),
 					slog.String("attempted_status", string(StatusFailed)),
 					slog.String("reason", updateErr.Error()))
+			} else {
+				m.emitSessionEvent(context.Background(), audit.EventTypeSessionFailed, audit.ActionSessionFailed, audit.OutcomeFailure, id, correlationID, fnErr)
 			}
 			return
 		}
-		_ = m.store.Update(id, StatusCompleted, result, nil)
+		if updateErr := m.store.Update(id, StatusCompleted, result, nil); updateErr != nil {
+			m.logger.Info("post-investigation status update rejected",
+				slog.String("session_id", id),
+				slog.String("attempted_status", string(StatusCompleted)),
+				slog.String("reason", updateErr.Error()))
+		} else {
+			m.emitSessionEvent(context.Background(), audit.EventTypeSessionCompleted, audit.ActionSessionCompleted, audit.OutcomeSuccess, id, correlationID, nil)
+		}
 	}()
 
 	return id, nil
@@ -93,21 +116,28 @@ func (m *Manager) StartInvestigation(_ context.Context, fn InvestigateFunc, meta
 // and transitioning its status to StatusCancelled. Returns ErrSessionNotFound
 // if the session does not exist, or ErrSessionTerminal if it has already
 // reached a terminal state.
+//
+// Audit: emits aiagent.session.cancelled after the status transition succeeds.
 func (m *Manager) CancelInvestigation(id string) error {
 	m.store.mu.Lock()
-	defer m.store.mu.Unlock()
 
 	sess, ok := m.store.sessions[id]
 	if !ok {
+		m.store.mu.Unlock()
 		return ErrSessionNotFound
 	}
 	if isTerminal(sess.Status) {
+		m.store.mu.Unlock()
 		return ErrSessionTerminal
 	}
 	if sess.cancel != nil {
 		sess.cancel()
 	}
 	sess.Status = StatusCancelled
+	correlationID := sess.Metadata["remediation_id"]
+	m.store.mu.Unlock()
+
+	m.emitSessionEvent(context.Background(), audit.EventTypeSessionCancelled, audit.ActionSessionCancelled, audit.OutcomeSuccess, id, correlationID, nil)
 	return nil
 }
 
@@ -149,4 +179,17 @@ func (m *Manager) closeEventChan(id string) {
 // GetSession retrieves the current state of an investigation session.
 func (m *Manager) GetSession(id string) (*Session, error) {
 	return m.store.Get(id)
+}
+
+// emitSessionEvent builds and stores an audit event for a session lifecycle
+// transition. Errors are fire-and-forget per ADR-038.
+func (m *Manager) emitSessionEvent(ctx context.Context, eventType, action, outcome, sessionID, correlationID string, fnErr error) {
+	event := audit.NewEvent(eventType, correlationID)
+	event.EventAction = action
+	event.EventOutcome = outcome
+	event.Data["session_id"] = sessionID
+	if fnErr != nil {
+		event.Data["error"] = fnErr.Error()
+	}
+	audit.StoreBestEffort(ctx, m.auditStore, event, m.logger)
 }

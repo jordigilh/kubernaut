@@ -264,7 +264,7 @@ func main() {
 	}
 
 	store := session.NewStore(cfg.Session.TTL)
-	mgr := session.NewManager(store, slogger)
+	mgr := session.NewManager(store, slogger, auditStore)
 
 	handler := kaserver.NewHandler(mgr, investigationRunner, slogger)
 
