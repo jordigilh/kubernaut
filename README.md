@@ -10,9 +10,15 @@
 
 Kubernaut closes the loop from Kubernetes alert to automated remediation. When something goes wrong in your cluster, Kubernaut detects the signal, sends it to an LLM-powered agent that investigates the root cause using native Go client-go bindings against the Kubernetes API, log, and Prometheus endpoints, selects a remediation workflow, and executes the fix — or escalates to a human with a full RCA when it can't.
 
-![CrashLoopBackOff demo — from alert to automated fix in under 5 minutes](https://raw.githubusercontent.com/jordigilh/kubernaut-demo-scenarios/main/scenarios/crashloop/crashloop-lite.gif)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/jordigilh/kubernaut-demo-scenarios/main/scenarios/crashloop/crashloop-lite.gif" alt="CrashLoopBackOff demo — from alert to automated fix in under 5 minutes" width="800"/>
+</p>
 
-**[Full Documentation](https://jordigilh.github.io/kubernaut-docs/)** · **[Demo Scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios)**
+<p align="center">
+  <a href="https://jordigilh.github.io/kubernaut-docs/"><strong>Full Documentation</strong></a> &nbsp;·&nbsp;
+  <a href="https://github.com/jordigilh/kubernaut-demo-scenarios"><strong>Demo Scenarios</strong></a> &nbsp;·&nbsp;
+  <a href="https://github.com/jordigilh/kubernaut/releases/tag/v1.3.0"><strong>Latest Release</strong></a>
+</p>
 
 ---
 
@@ -46,56 +52,40 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 ## Roadmap
 
-### v1.3 — Go Unification and Enterprise Distribution (current)
+### v1.4 — Operator Overrides and Platform Hardening (current)
 
-- **Kubernaut Agent (KA)** — Ground-up rewrite of the HolmesGPT-API (HAPI) service in Go, designed for security-first operation and agentic investigation flow with layered prompt-injection defenses; architecture enables shadow-agent audit in v1.4 ([#601](https://github.com/jordigilh/kubernaut/issues/601)) and multi-agent consensus investigation in v1.5 ([#648](https://github.com/jordigilh/kubernaut/issues/648)) ([#433](https://github.com/jordigilh/kubernaut/issues/433))
-- **Mock LLM Go rewrite** — DAG-based conversation engine with declarative YAML scenarios and fault injection for resilience testing
-- **Kubernaut Operator** — OLM-packaged operator for OperatorHub distribution on OpenShift
-- **Inter-pod TLS** — Encrypted communication between all internal services
-- **Audit event retention** — Automated deletion of expired audit events
-- **Label-based notification routing** — Route notifications to signal and RCA target resource owners
-
-Track progress on the [v1.3 milestone](https://github.com/jordigilh/kubernaut/milestone/4).
-
-### v1.4 — Agentic Integration and AI Safety (next)
-
-- **Kubernaut Console** — Web-based operator dashboard with chat UI, live remediation streaming, and workflow selection. Standalone React app (MVP) evolving into a Backstage plugin ([#713](https://github.com/jordigilh/kubernaut/issues/713))
-- **Natural language investigation** — Operators can trigger investigations by describing the problem in plain text; Kubernaut extracts a structured signal and runs the full remediation pipeline ([#714](https://github.com/jordigilh/kubernaut/issues/714))
-- **MCP interactive mode** — Human operators can investigate, enrich, and select remediation workflows through any MCP-compatible chat interface — IDE copilots, Slack bots, operational consoles, or custom UIs ([#703](https://github.com/jordigilh/kubernaut/issues/703))
-- **A2A protocol support** — External AI agents can delegate remediation to Kubernaut and track task lifecycle via the [Agent-to-Agent](https://a2aproject.github.io/A2A/latest/specification/) standard ([#705](https://github.com/jordigilh/kubernaut/issues/705))
-- **API Frontend service** — Unified external protocol layer hosting MCP and inbound A2A endpoints, with shared CRD watching for live remediation status streaming ([#708](https://github.com/jordigilh/kubernaut/issues/708))
-- **Investigation Prompt Bundles** — Customers inject their SOPs into the investigation pipeline via OCI-packaged prompts and skills, laying the groundwork for hook phases and customizable RCA flows while the current prompt-builder-driven path is validated ([#711](https://github.com/jordigilh/kubernaut/issues/711))
 - **Prompt injection guardrails** — Shadow agent with a dedicated scanning model to protect the agentic pipeline against prompt injection attacks ([#601](https://github.com/jordigilh/kubernaut/issues/601))
-- **Operator workflow/parameter override** — Allow operators to override workflow selection and parameters during RAR approval
-
-![Interactive console — from alert to fix in a conversational flow](docs/architecture/diagrams/kubernaut-interactive-console-mockup.png)
-
-See the [partner integration deck](docs/presentations/kubernaut-integration-partner-deck.md) for the full visual walkthrough.
+- **Operator workflow/parameter override** — Operators can override workflow selection and parameters during RAR approval, with authwebhook validation ([#594](https://github.com/jordigilh/kubernaut/issues/594))
+- **PagerDuty and Microsoft Teams** — New notification delivery channels alongside Slack and console ([#60](https://github.com/jordigilh/kubernaut/issues/60), [#593](https://github.com/jordigilh/kubernaut/issues/593))
+- **Unified monitoring config** — Single `monitoring:` Helm block replacing per-component Prometheus/AlertManager keys, with OCP auto-detection ([#463](https://github.com/jordigilh/kubernaut/issues/463))
+- **NetworkPolicies** — Default-deny network policies for all services based on the traffic matrix ([#285](https://github.com/jordigilh/kubernaut/issues/285))
 
 Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/milestone/5).
 
-### v1.5 — Multi-Agent Consensus RCA (planned)
+### v2.0 — Intelligent Operations Platform (next)
 
-- **Ensemble RCA investigation** — Two independent LLM agents (different model families) perform parallel root cause analysis; a consolidator validates agreement and cross-examines on divergence to improve diagnostic accuracy
+Kubernaut evolves from an automated remediation engine into an extensible intelligent operations platform. The core pipeline (SP classification, AA policy gates, audited execution) remains the safety architecture; the intelligence layer becomes externalized and pluggable. See [#818](https://github.com/jordigilh/kubernaut/issues/818) for the full vision.
 
-Track progress on the [v1.5 milestone](https://github.com/jordigilh/kubernaut/milestone/6). See [#648](https://github.com/jordigilh/kubernaut/issues/648) for the design discussion.
+- **MCP interactive mode** — Investigate, enrich, and select workflows through any MCP-compatible interface — IDE copilots, Slack bots, or custom UIs ([#703](https://github.com/jordigilh/kubernaut/issues/703))
+- **A2A protocol support** — External AI agents delegate remediation to Kubernaut and track task lifecycle via the [Agent-to-Agent](https://a2aproject.github.io/A2A/latest/specification/) standard ([#705](https://github.com/jordigilh/kubernaut/issues/705))
+- **API Frontend service** — Unified external protocol layer hosting MCP and inbound A2A endpoints, with shared CRD watching for live status streaming ([#708](https://github.com/jordigilh/kubernaut/issues/708))
+- **Investigation Prompt Bundles** — Operators inject SOPs into the investigation pipeline via OCI-packaged prompts and skills with five hook phases (pre-investigation, investigation, post-investigation, rca-resolution, workflow-selection) ([#711](https://github.com/jordigilh/kubernaut/issues/711))
+- **Natural language signal intake** — Trigger investigations by describing the problem in plain text; Kubernaut extracts a structured signal and runs the full pipeline ([#714](https://github.com/jordigilh/kubernaut/issues/714))
+- **Kubernaut Console** — Web-based operator dashboard with chat UI, live remediation streaming, and workflow selection ([#713](https://github.com/jordigilh/kubernaut/issues/713))
 
-### v1.6 — Multi-Cluster Federation (planned)
+<p align="center">
+  <img src="docs/architecture/diagrams/kubernaut-console-animated.gif" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
+</p>
 
-- **Fleet-wide remediation** — A2A-based multi-cluster architecture enabling centralized signal ingestion, cross-cluster RCA investigation, and federated workflow execution across Kubernetes fleets
+### Future
 
-Goose/ACP remains under architectural evaluation as a future runtime option and is not a near-term dependency for the v1.4-v1.6 roadmap.
-
-### v1.2 — Operational Resilience and Security Hardening ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.2.0))
-
-- **Per-workflow ServiceAccount** — Each remediation workflow runs under its own SA with least-privilege RBAC, replacing the shared default
-- **Short-lived token injection** — Ansible executor uses Kubernetes TokenRequest API with configurable TTL instead of long-lived secrets
-- **PVC-wipe resilience** — Deterministic workflow IDs and startup reconciliation recover the workflow catalog automatically after data loss
-- **Smarter effectiveness assessment** — Partial vs full assessment paths based on actual workflow completion, with configurable Prometheus lookback and concurrency
-- **CRD schema hardening** — Typed enums across all 9 CRDs with OpenAPI validation at admission time
-- **Hash-capture degradation visibility** — Explicit conditions and notification enrichment when spec hash capture fails
-
-See [CHANGELOG.md](CHANGELOG.md) for the complete list.
+- **Non-K8s workflow support** — `targetSystem` field enables execution against external systems (ServiceNow, Jira, cloud APIs) with EA evolution for unverifiable outcomes ([#739](https://github.com/jordigilh/kubernaut/issues/739))
+- **Multi-agent consensus RCA** — Ensemble investigation with independent LLM agents from different model families; a consolidator validates agreement and cross-examines on divergence ([#648](https://github.com/jordigilh/kubernaut/issues/648))
+- **Multi-cluster federation** — A2A-based fleet-wide remediation with centralized signal ingestion, cross-cluster RCA, and federated workflow execution
+- **Multi-adapter Gateway** — Signal intake from ServiceNow, OTEL, CloudWatch, Jira, and custom webhooks beyond AlertManager
+- **Goose runtime integration** — KA as a supervised harness for Goose-executed prompt bundles with MCP tool discovery
+- **EA domain-specific assessors** — Pluggable verification strategies per execution target (K8s, ServiceNow, cloud APIs)
+- **Skills marketplace** — OCI artifact registry for community and enterprise MCP tool packages
 
 ---
 
