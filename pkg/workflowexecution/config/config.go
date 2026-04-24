@@ -49,6 +49,10 @@ type Config struct {
 	Ansible     *AnsibleConfig               `yaml:"ansible,omitempty"`
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 	Controller  ControllerConfig             `yaml:"controller" validate:"required"`
+
+	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
+	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
+	TLSProfile string `yaml:"tlsProfile,omitempty"`
 }
 
 // AnsibleConfig holds AWX/AAP connectivity settings (BR-WE-015).

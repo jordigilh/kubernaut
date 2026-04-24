@@ -43,6 +43,10 @@ type Config struct {
 	Conversation   ConversationConfig   `yaml:"conversation"`
 	AlignmentCheck AlignmentCheckConfig `yaml:"alignmentCheck"`
 	Enrichment     EnrichmentConfig     `yaml:"enrichment"`
+
+	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
+	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
+	TLSProfile string `yaml:"tlsProfile,omitempty"`
 }
 
 type LLMConfig struct {

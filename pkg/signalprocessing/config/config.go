@@ -46,6 +46,10 @@ type Config struct {
 	Classifier  ClassifierConfig              `yaml:"classifier"`
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 	Controller  ControllerConfig              `yaml:"controller"`
+
+	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
+	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
+	TLSProfile string `yaml:"tlsProfile,omitempty"`
 }
 
 // EnrichmentConfig holds settings for K8s context enrichment.

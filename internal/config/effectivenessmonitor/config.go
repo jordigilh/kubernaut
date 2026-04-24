@@ -45,6 +45,10 @@ type Config struct {
 
 	// External service configuration
 	External ExternalConfig `yaml:"external"`
+
+	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
+	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
+	TLSProfile string `yaml:"tlsProfile,omitempty"`
 }
 
 // AssessmentConfig defines assessment behavior.

@@ -54,6 +54,10 @@ type Config struct {
 
 	// DataStorage connectivity (ADR-030: audit trail + workflow catalog)
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
+
+	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
+	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
+	TLSProfile string `yaml:"tlsProfile,omitempty"`
 }
 
 // ControllerSettings contains Kubernetes controller configuration.

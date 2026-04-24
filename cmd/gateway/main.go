@@ -128,6 +128,9 @@ func main() {
 	serverCtx, serverCancel := context.WithCancel(context.Background())
 	defer serverCancel()
 
+	// Issue #748: Load OCP TLS security profile from config before any TLS setup
+	sharedtls.SetDefaultSecurityProfileFromConfig(serverCfg.TLSProfile)
+
 	// Issue #756: Start CA file watcher for client-side TLS hot-reload
 	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(serverCtx, logger)
 	if caWatchErr != nil {

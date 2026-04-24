@@ -64,6 +64,10 @@ type Config struct {
 
 	// Retention configures CRD lifecycle cleanup (#265).
 	Retention RetentionConfig `yaml:"retention"`
+
+	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
+	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
+	TLSProfile string `yaml:"tlsProfile,omitempty"`
 }
 
 // RetentionConfig controls how long terminal RemediationRequest CRDs persist
