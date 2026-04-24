@@ -36,13 +36,19 @@ func NewManager(store *Store, logger *slog.Logger) *Manager {
 	return &Manager{store: store, logger: logger}
 }
 
+// eventChannelBuffer is the capacity of the per-session event channel.
+// 64 provides headroom for bursty LLM output (reasoning deltas + tool calls)
+// without blocking the investigation goroutine. Non-blocking send semantics
+// are deferred to PR 4 when events are actively written.
+const eventChannelBuffer = 64
+
 // StartInvestigation creates a new session and launches the investigation
 // function in a background goroutine. Returns the session ID immediately.
 // metadata is stored on the session for later retrieval (e.g., incident_id).
 //
-// The goroutine uses context.Background() to ensure the investigation outlives
-// the originating HTTP request. The incoming ctx is NOT propagated because the
-// request context is cancelled as soon as the 202 response is sent.
+// The goroutine uses a cancellable child of context.Background() to ensure
+// the investigation outlives the originating HTTP request while remaining
+// cancellable via CancelInvestigation.
 func (m *Manager) StartInvestigation(_ context.Context, fn InvestigateFunc, metadata map[string]string) (string, error) {
 	id, err := m.store.Create()
 	if err != nil {
@@ -51,20 +57,93 @@ func (m *Manager) StartInvestigation(_ context.Context, fn InvestigateFunc, meta
 	if metadata != nil {
 		m.store.SetMetadata(id, metadata)
 	}
+
+	bgCtx, cancelFn := context.WithCancel(context.Background())
+
+	m.store.mu.Lock()
+	sess := m.store.sessions[id]
+	sess.cancel = cancelFn
+	sess.eventChan = make(chan InvestigationEvent, eventChannelBuffer)
+	m.store.mu.Unlock()
+
 	_ = m.store.Update(id, StatusRunning, nil, nil)
 
 	go func() {
-		bgCtx := context.Background()
+		defer m.closeEventChan(id)
 		result, fnErr := fn(bgCtx)
 		if fnErr != nil {
-			m.logger.Error("investigation failed", slog.String("session_id", id), slog.String("error", fnErr.Error()))
-			_ = m.store.Update(id, StatusFailed, nil, fnErr)
+			m.logger.Error("investigation failed",
+				slog.String("session_id", id),
+				slog.String("error", fnErr.Error()))
+			if updateErr := m.store.Update(id, StatusFailed, nil, fnErr); updateErr != nil {
+				m.logger.Info("post-investigation status update rejected",
+					slog.String("session_id", id),
+					slog.String("attempted_status", string(StatusFailed)),
+					slog.String("reason", updateErr.Error()))
+			}
 			return
 		}
 		_ = m.store.Update(id, StatusCompleted, result, nil)
 	}()
 
 	return id, nil
+}
+
+// CancelInvestigation stops a running investigation by cancelling its context
+// and transitioning its status to StatusCancelled. Returns ErrSessionNotFound
+// if the session does not exist, or ErrSessionTerminal if it has already
+// reached a terminal state.
+func (m *Manager) CancelInvestigation(id string) error {
+	m.store.mu.Lock()
+	defer m.store.mu.Unlock()
+
+	sess, ok := m.store.sessions[id]
+	if !ok {
+		return ErrSessionNotFound
+	}
+	if isTerminal(sess.Status) {
+		return ErrSessionTerminal
+	}
+	if sess.cancel != nil {
+		sess.cancel()
+	}
+	sess.Status = StatusCancelled
+	return nil
+}
+
+// Subscribe returns a read-only channel that delivers investigation events
+// for the given session. The channel is closed when the investigation ends.
+// Returns ErrSessionNotFound if the session does not exist, or
+// ErrSessionTerminal if the investigation has already concluded.
+func (m *Manager) Subscribe(id string) (<-chan InvestigationEvent, error) {
+	m.store.mu.RLock()
+	defer m.store.mu.RUnlock()
+
+	sess, ok := m.store.sessions[id]
+	if !ok {
+		return nil, ErrSessionNotFound
+	}
+	if sess.eventChan == nil {
+		return nil, ErrSessionTerminal
+	}
+	return sess.eventChan, nil
+}
+
+// closeEventChan closes the event channel for a session and sets it to nil,
+// signaling to observers that the investigation has concluded. The nil-check
+// guard prevents double-close panics.
+func (m *Manager) closeEventChan(id string) {
+	m.store.mu.Lock()
+	defer m.store.mu.Unlock()
+
+	sess, ok := m.store.sessions[id]
+	if !ok {
+		return
+	}
+	if sess.eventChan != nil {
+		close(sess.eventChan)
+		sess.eventChan = nil
+	}
 }
 
 // GetSession retrieves the current state of an investigation session.
