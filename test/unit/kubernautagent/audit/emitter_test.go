@@ -65,14 +65,66 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 			Entry("aiagent.alignment.verdict", audit.EventTypeAlignmentVerdict),
 		)
 
-		It("should define exactly 11 event types", func() {
-			Expect(audit.AllEventTypes).To(HaveLen(11))
+		It("should define exactly 15 event types", func() {
+			Expect(audit.AllEventTypes).To(HaveLen(15))
 		})
 
 		It("should include aiagent.rca.complete in AllEventTypes", func() {
 			Expect(audit.AllEventTypes).To(ContainElement(audit.EventTypeRCAComplete))
 			Expect(audit.EventTypeRCAComplete).To(Equal("aiagent.rca.complete"))
 		})
+	})
+
+	Describe("UT-KA-823-A01: Session event types registered in AllEventTypes", func() {
+		It("should include all 4 session lifecycle event types", func() {
+			sessionTypes := []string{
+				audit.EventTypeSessionStarted,
+				audit.EventTypeSessionCancelled,
+				audit.EventTypeSessionCompleted,
+				audit.EventTypeSessionFailed,
+			}
+			for _, et := range sessionTypes {
+				Expect(audit.AllEventTypes).To(ContainElement(et),
+					"AllEventTypes should contain %s", et)
+			}
+		})
+
+		It("should have no duplicates in AllEventTypes", func() {
+			seen := make(map[string]bool)
+			for _, et := range audit.AllEventTypes {
+				Expect(seen[et]).To(BeFalse(), "duplicate event type: %s", et)
+				seen[et] = true
+			}
+		})
+	})
+
+	Describe("UT-KA-823-A02: Session action constants are non-empty", func() {
+		DescribeTable("should have non-empty action for each session lifecycle transition",
+			func(action string) {
+				Expect(action).NotTo(BeEmpty())
+			},
+			Entry("started", audit.ActionSessionStarted),
+			Entry("cancelled", audit.ActionSessionCancelled),
+			Entry("completed", audit.ActionSessionCompleted),
+			Entry("failed", audit.ActionSessionFailed),
+		)
+	})
+
+	Describe("UT-KA-823-A03: NewEvent produces correct fields for session events", func() {
+		DescribeTable("should create correct audit event for session event types",
+			func(eventType string) {
+				event := audit.NewEvent(eventType, "rr-audit-test")
+				Expect(event).NotTo(BeNil())
+				Expect(event.EventType).To(Equal(eventType))
+				Expect(event.EventCategory).To(Equal(audit.EventCategory))
+				Expect(event.CorrelationID).To(Equal("rr-audit-test"))
+				Expect(event.Data).To(HaveKey("event_id"))
+			},
+			Entry("session.started", audit.EventTypeSessionStarted),
+			Entry("session.cancelled", audit.EventTypeSessionCancelled),
+			Entry("session.completed", audit.EventTypeSessionCompleted),
+			Entry("session.failed", audit.EventTypeSessionFailed),
+		)
 	})
 
 	Describe("UT-KA-433-013: Audit best-effort helper does not propagate errors", func() {

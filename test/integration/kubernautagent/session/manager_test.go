@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 )
 
@@ -37,7 +38,7 @@ var _ = Describe("Kubernaut Agent Session Manager — #433", func() {
 
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
-		manager = session.NewManager(store, slog.Default())
+		manager = session.NewManager(store, slog.Default(), audit.NopAuditStore{})
 	})
 
 	Describe("IT-KA-433-001: Session manager starts background investigation", func() {
@@ -125,7 +126,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
-		manager = session.NewManager(store, slog.Default())
+		manager = session.NewManager(store, slog.Default(), audit.NopAuditStore{})
 	})
 
 	Describe("IT-KA-823-001: Cancelling an investigation stops the running LLM analysis", func() {

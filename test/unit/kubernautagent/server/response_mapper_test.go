@@ -43,7 +43,7 @@ var _ = Describe("Response Mapper — #433", func() {
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
 		logger = slog.Default()
-		manager = session.NewManager(store, logger)
+		manager = session.NewManager(store, logger, nil)
 		handler = server.NewHandler(manager, nil, logger)
 	})
 
