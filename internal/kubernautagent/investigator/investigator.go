@@ -19,6 +19,7 @@ package investigator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -84,6 +85,18 @@ func (*TextResult) loopResult() {}
 type ExhaustedResult struct{ Reason string }
 
 func (*ExhaustedResult) loopResult() {}
+
+// CancelledResult is returned when the loop detects context cancellation
+// (BR-SESSION-001). It carries accumulated state so callers can produce a
+// partial InvestigationResult for snapshot retrieval (BR-SESSION-002).
+type CancelledResult struct {
+	Messages []llm.Message
+	Turn     int
+	Phase    string
+	Tokens   *TokenAccumulator
+}
+
+func (*CancelledResult) loopResult() {}
 
 // sentinelResult maps a sentinel tool call to its LoopResult type.
 func sentinelResult(tc llm.ToolCall) LoopResult {
@@ -216,6 +229,11 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		return nil, fmt.Errorf("RCA invocation: %w", err)
 	}
 
+	if rcaResult.Cancelled {
+		inv.emitCancellationAudit(ctx, rcaResult, correlationID)
+		return rcaResult, nil
+	}
+
 	inv.emitRCAComplete(ctx, rcaResult, tokens, correlationID)
 
 	if rcaResult.HumanReviewNeeded {
@@ -281,6 +299,11 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, tokens, correlationID, client, modelName)
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
+	}
+
+	if workflowResult.Cancelled {
+		inv.emitCancellationAudit(ctx, workflowResult, correlationID)
+		return workflowResult, nil
 	}
 
 	if workflowResult.RCASummary == "" {
@@ -366,6 +389,12 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 
 	var content string
 	switch r := loopRes.(type) {
+	case *CancelledResult:
+		return &katypes.InvestigationResult{
+			Cancelled:       true,
+			CancelledPhase:  string(katypes.PhaseRCA),
+			CancelledAtTurn: r.Turn,
+		}, nil
 	case *ExhaustedResult:
 		return &katypes.InvestigationResult{
 			HumanReviewNeeded: true,
@@ -385,6 +414,12 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 			result = retried
 			parseErr = nil
 		}
+	}
+	if parseErr != nil && ctx.Err() != nil {
+		return &katypes.InvestigationResult{
+			Cancelled:      true,
+			CancelledPhase: string(katypes.PhaseRCA),
+		}, nil
 	}
 	if parseErr != nil {
 		inv.logger.Warn("RCA parse failed after retry, treating as summary",
@@ -441,6 +476,9 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 	)
 
 	for attempt := 0; attempt < maxRCAParseRetries; attempt++ {
+		if ctx.Err() != nil {
+			return nil
+		}
 		inv.logger.Info("parse-level retry for RCA submit",
 			slog.Int("attempt", attempt+1),
 			slog.Int("max", maxRCAParseRetries),
@@ -649,6 +687,13 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 
 	var content string
 	switch r := loopRes.(type) {
+	case *CancelledResult:
+		return &katypes.InvestigationResult{
+			RCASummary:      rcaSummary,
+			Cancelled:       true,
+			CancelledPhase:  string(katypes.PhaseWorkflowDiscovery),
+			CancelledAtTurn: r.Turn,
+		}, nil
 	case *ExhaustedResult:
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
@@ -683,6 +728,13 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			if retryResult != nil {
 				return retryResult, nil
 			}
+			if ctx.Err() != nil {
+				return &katypes.InvestigationResult{
+					RCASummary:     rcaSummary,
+					Cancelled:      true,
+					CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
+				}, nil
+			}
 			inv.logger.Warn("workflow selection: all retries exhausted, classifying as no_matching_workflows",
 				slog.String("correlation_id", correlationID))
 			return &katypes.InvestigationResult{
@@ -699,6 +751,13 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		retryResult := inv.retryWorkflowSubmit(ctx, content, messages, rcaSummary, tokens, correlationID, client, modelName)
 		if retryResult != nil {
 			return retryResult, nil
+		}
+		if ctx.Err() != nil {
+			return &katypes.InvestigationResult{
+				RCASummary:     rcaSummary,
+				Cancelled:      true,
+				CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
+			}, nil
 		}
 		inv.logger.Warn("workflow selection parse failed after retries, classifying as no_matching_workflows",
 			slog.String("error", parseErr.Error()),
@@ -740,6 +799,8 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 				return nil, corrErr
 			}
 			switch cr := corrLoopRes.(type) {
+			case *CancelledResult:
+				return nil, context.Canceled
 			case *ExhaustedResult:
 				r.HumanReviewNeeded = true
 				r.Reason = fmt.Sprintf("self-correction: %s", cr.Reason)
@@ -763,6 +824,13 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 
 		corrected, corrErr := validator.SelfCorrect(result, maxSelfCorrectionAttempts, correctionFn)
 		if corrErr != nil {
+			if errors.Is(corrErr, context.Canceled) || errors.Is(corrErr, context.DeadlineExceeded) {
+				return &katypes.InvestigationResult{
+					RCASummary:     rcaSummary,
+					Cancelled:      true,
+					CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
+				}, nil
+			}
 			return nil, fmt.Errorf("validation self-correction failed: %w", corrErr)
 		}
 		isValid := !corrected.HumanReviewNeeded
@@ -816,6 +884,9 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 	)
 
 	for attempt := 0; attempt < maxParseRetries; attempt++ {
+		if ctx.Err() != nil {
+			return nil
+		}
 		inv.logger.Info("parse-level retry for workflow submit",
 			slog.Int("attempt", attempt+1),
 			slog.Int("max", maxParseRetries),
@@ -914,6 +985,14 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 // execution routed through the registry. correlationID is propagated to
 // all audit events per BR-AUDIT-005 (remediation_id as query key).
 // Returns a sealed LoopResult; callers dispatch via type switch (#760 v2).
+//
+// Cancellation is cooperative and checked between turns: after each LLM
+// round-trip completes but before starting the next. If ctx is cancelled
+// during a tool execution or LLM call, cancellation is detected after that
+// call returns. This means long-running tool calls (e.g. kubectl exec,
+// Prometheus queries) delay cancellation response by their wall-clock
+// duration. Intra-tool cancellation requires tool-level ctx propagation,
+// tracked for a future PR (see RR-3 in TP-823-CANCELLED-RESULT.md).
 func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (LoopResult, error) {
 	toolDefs := inv.toolDefinitionsForPhase(phase)
 	loopStart := time.Now()
@@ -921,6 +1000,15 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 	maxTokens := 0
 
 	for turn := 0; turn < inv.maxTurns; turn++ {
+		if ctx.Err() != nil {
+			return &CancelledResult{
+				Messages: messages,
+				Turn:     turn,
+				Phase:    string(phase),
+				Tokens:   tokens,
+			}, nil
+		}
+
 		reqEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
 		reqEvent.EventAction = audit.ActionLLMRequest
 		reqEvent.EventOutcome = audit.OutcomeSuccess
@@ -937,6 +1025,14 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase), MaxTokens: maxTokens},
 		})
 		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return &CancelledResult{
+					Messages: messages,
+					Turn:     turn,
+					Phase:    string(phase),
+					Tokens:   tokens,
+				}, nil
+			}
 			failEvent := audit.NewEvent(audit.EventTypeResponseFailed, correlationID)
 			failEvent.EventAction = audit.ActionResponseFailed
 			failEvent.EventOutcome = audit.OutcomeFailure
@@ -1199,6 +1295,19 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 	}
 
 	return result
+}
+
+// emitCancellationAudit emits an investigation-level cancellation event
+// carrying the phase and turn at which cancellation was detected. The context
+// may already be cancelled so we use context.Background() for the audit store
+// call to avoid losing the event (fire-and-forget per ADR-038).
+func (inv *Investigator) emitCancellationAudit(ctx context.Context, result *katypes.InvestigationResult, correlationID string) {
+	event := audit.NewEvent(audit.EventTypeInvestigationCancelled, correlationID)
+	event.EventAction = audit.ActionInvestigationCancelled
+	event.EventOutcome = audit.OutcomeFailure
+	event.Data["cancelled_phase"] = result.CancelledPhase
+	event.Data["cancelled_at_turn"] = result.CancelledAtTurn
+	audit.StoreBestEffort(context.Background(), inv.auditStore, event, inv.logger)
 }
 
 func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {

@@ -84,6 +84,20 @@ type InvestigationResult struct {
 	// History of validation attempts during self-correction (DD-HAPI-002 v1.2).
 	// Populated by Validator.SelfCorrect when validation fails and retries occur.
 	ValidationAttemptsHistory []ValidationAttemptRecord `json:"validation_attempts_history,omitempty"`
+
+	// Cancelled indicates the investigation was aborted by operator action
+	// (BR-SESSION-001). When true, the result contains partial accumulated
+	// state up to the point of cancellation.
+	Cancelled bool `json:"cancelled,omitempty"`
+
+	// CancelledPhase records which investigation phase was active when
+	// cancellation occurred ("rca" or "workflow_discovery").
+	CancelledPhase string `json:"cancelled_phase,omitempty"`
+
+	// CancelledAtTurn records which LLM conversation turn was active when
+	// cancellation was detected. Together with CancelledPhase, this enables
+	// full audit reconstruction of investigation progress (SOC2 CC8.1).
+	CancelledAtTurn int `json:"cancelled_at_turn,omitempty"`
 }
 
 // ValidationAttemptRecord captures a single validation attempt during

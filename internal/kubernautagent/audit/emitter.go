@@ -44,6 +44,15 @@ const (
 	EventTypeSessionCancelled = "aiagent.session.cancelled"
 	EventTypeSessionCompleted = "aiagent.session.completed"
 	EventTypeSessionFailed    = "aiagent.session.failed"
+
+	// EventTypeInvestigationCancelled is emitted by the investigator when
+	// it detects context cancellation mid-investigation (BR-SESSION-001).
+	// Unlike EventTypeSessionCancelled (emitted by session.Manager at the
+	// session lifecycle level), this event carries investigation-internal
+	// state: the phase, turn number, and accumulated token usage at the
+	// point of cancellation. This enables SOC2 CC8.1 audit reconstruction
+	// of partial investigation progress.
+	EventTypeInvestigationCancelled = "aiagent.investigation.cancelled"
 )
 
 const (
@@ -60,6 +69,8 @@ const (
 	ActionSessionCancelled = "session_cancelled"
 	ActionSessionCompleted = "session_completed"
 	ActionSessionFailed    = "session_failed"
+
+	ActionInvestigationCancelled = "investigation_cancelled"
 )
 
 const (
@@ -86,6 +97,7 @@ var AllEventTypes = []string{
 	EventTypeSessionCancelled,
 	EventTypeSessionCompleted,
 	EventTypeSessionFailed,
+	EventTypeInvestigationCancelled,
 }
 
 // AuditEvent represents an audit event to be stored.
