@@ -1,0 +1,272 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="120 16 720 508" font-family="Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <linearGradient id="chatHeader" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0F766E"/>
+      <stop offset="100%" stop-color="#0D9488"/>
+    </linearGradient>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="108%">
+      <feDropShadow dx="0" dy="4" stdDeviation="10" flood-color="#1E293B" flood-opacity="0.12"/>
+    </filter>
+    <filter id="shadowSm" x="-2%" y="-4%" width="104%" height="112%">
+      <feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#1E293B" flood-opacity="0.08"/>
+    </filter>
+    <clipPath id="chatClip"><rect x="140" y="36" width="680" height="468" rx="16"/></clipPath>
+
+    <!--
+      Timeline (2x slower):
+      1.0s       Alert banner
+      2.8s       User 1 bubble bg
+      3.0-7.0s   User 1 types (4.0s)
+      7.4-10.4s  Typing indicator 1 (3.0s)
+      9.0s       Agent inv bg appears
+      9.4-11.2s  "Investigating..." types (1.8s)
+      11.4-13.0s "> Checked pod status..." types (1.6s)
+      13.2-14.6s "> Pulled logs..." types (1.4s)
+      14.8-16.4s "> Queried metrics..." types (1.6s)
+      16.8-18.6s "Root cause:..." types (1.8s)
+      19.4s      User 2 bubble bg
+      19.6-22.0s User 2 types (2.4s)
+      22.4-24.8s Typing indicator 2 (2.4s)
+      24.0-25.4s "I found 2 remediation options:" types (1.4s)
+      26.0s      Card 1 slides up
+      27.0s      Card 2 slides up
+      28.4-30.4s Typing indicator 3 (2.0s)
+      29.6s      Exec bg appears
+      30.0-31.0s "Executing rollback..." types (1.0s)
+      31.2-32.8s "> Pipeline OK..." types (1.6s)
+      33.2-34.6s "Done." types (1.4s)
+      35.0s      End
+    -->
+
+    <!-- Typewriter reveal clips for agent text -->
+    <clipPath id="t-inv-hd"><rect x="178" y="185" height="18" width="0">
+      <animate attributeName="width" from="0" to="300" begin="9.4s" dur="1.8s" fill="freeze" calcMode="linear"/>
+    </rect></clipPath>
+    <clipPath id="t-inv-1"><rect x="186" y="204" height="18" width="0">
+      <animate attributeName="width" from="0" to="370" begin="11.4s" dur="1.6s" fill="freeze" calcMode="linear"/>
+    </rect></clipPath>
+    <clipPath id="t-inv-2"><rect x="186" y="222" height="18" width="0">
+      <animate attributeName="width" from="0" to="280" begin="13.2s" dur="1.4s" fill="freeze" calcMode="linear"/>
+    </rect></clipPath>
+    <clipPath id="t-inv-3"><rect x="186" y="240" height="18" width="0">
+      <animate attributeName="width" from="0" to="380" begin="14.8s" dur="1.6s" fill="freeze" calcMode="linear"/>
+    </rect></clipPath>
+    <clipPath id="t-inv-rc"><rect x="186" y="256" height="18" width="0">
+      <animate attributeName="width" from="0" to="360" begin="16.8s" dur="1.8s" fill="freeze" calcMode="linear"/>
+    </rect></clipPath>
+    <clipPath id="t-opts"><rect x="178" y="328" height="18" width="0">
+      <animate attributeName="width" from="0" to="240" begin="24.0s" dur="1.4s" fill="freeze" calcMode="linear"/>
+    </rect></clipPath>
+    <clipPath id="t-exec-1"><rect x="178" y="436" height="18" width="0">
+      <animate attributeName="width" from="0" to="170" begin="30.0s" dur="1.0s" fill="freeze" calcMode="linear"/>
+    </rect></clipPath>
+    <clipPath id="t-exec-2"><rect x="186" y="452" height="18" width="0">
+      <animate attributeName="width" from="0" to="370" begin="31.2s" dur="1.6s" fill="freeze" calcMode="linear"/>
+    </rect></clipPath>
+    <clipPath id="t-exec-3"><rect x="178" y="464" height="18" width="0">
+      <animate attributeName="width" from="0" to="210" begin="33.2s" dur="1.4s" fill="freeze" calcMode="linear"/>
+    </rect></clipPath>
+
+    <!-- Typewriter reveal clips for user text -->
+    <clipPath id="t-user1"><rect x="394" y="145" height="18" width="0">
+      <animate attributeName="width" from="0" to="250" begin="3.0s" dur="4.0s" fill="freeze" calcMode="linear"/>
+    </rect></clipPath>
+    <clipPath id="t-user2"><rect x="554" y="295" height="18" width="0">
+      <animate attributeName="width" from="0" to="130" begin="19.6s" dur="2.4s" fill="freeze" calcMode="linear"/>
+    </rect></clipPath>
+  </defs>
+
+  <style>
+    .fade-in { opacity: 0; }
+    .slide-up { opacity: 0; transform: translateY(20px); }
+
+    /* Alert banner */
+    .a-alert  { animation: fadeIn 0.8s ease-out 1.0s forwards; }
+
+    /* User bubble backgrounds */
+    .a-user1-bg { opacity: 0; animation: fadeIn 0.3s ease-out 2.8s forwards; }
+    .a-user2-bg { opacity: 0; animation: fadeIn 0.3s ease-out 19.4s forwards; }
+
+    /* Agent investigation background */
+    .a-inv-bg { animation: fadeIn 0.5s ease-out 9.0s forwards; }
+
+    /* Workflow cards */
+    .a-card1  { animation: slideUp 0.8s ease-out 26.0s forwards; }
+    .a-card2  { animation: slideUp 0.8s ease-out 27.0s forwards; }
+
+    /* Execution result background */
+    .a-exec-bg { animation: fadeIn 0.5s ease-out 29.6s forwards; }
+
+    /* Typing indicator dots */
+    .dot1 { animation: dotPulse 1.2s ease-in-out infinite 0s; }
+    .dot2 { animation: dotPulse 1.2s ease-in-out infinite 0.2s; }
+    .dot3 { animation: dotPulse 1.2s ease-in-out infinite 0.4s; }
+
+    /* Typing indicator visibility: show after user finishes, hide when agent starts */
+    .typing-1 { opacity: 0; animation: typingShow 3.0s ease-out 7.4s forwards; }
+    .typing-2 { opacity: 0; animation: typingShow 2.4s ease-out 22.4s forwards; }
+    .typing-3 { opacity: 0; animation: typingShow 2.0s ease-out 28.4s forwards; }
+
+    /* Blinking cursor */
+    .cursor { opacity: 0; }
+    .c-inv-hd { animation: cursorLife 1.8s step-end 9.4s forwards; }
+    .c-inv-1  { animation: cursorLife 1.6s step-end 11.4s forwards; }
+    .c-inv-2  { animation: cursorLife 1.4s step-end 13.2s forwards; }
+    .c-inv-3  { animation: cursorLife 1.6s step-end 14.8s forwards; }
+    .c-inv-rc { animation: cursorLife 1.8s step-end 16.8s forwards; }
+    .c-opts   { animation: cursorLife 1.4s step-end 24.0s forwards; }
+    .c-exec-1 { animation: cursorLife 1.0s step-end 30.0s forwards; }
+    .c-exec-2 { animation: cursorLife 1.6s step-end 31.2s forwards; }
+    .c-exec-3 { animation: cursorLife 1.4s step-end 33.2s forwards; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes dotPulse {
+      0%, 60%, 100% { opacity: 0.3; }
+      30% { opacity: 1; }
+    }
+
+    @keyframes typingShow {
+      0%  { opacity: 1; }
+      85% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    @keyframes cursorLife {
+      0%   { opacity: 1; }
+      50%  { opacity: 0; }
+      100% { opacity: 0; }
+    }
+  </style>
+
+  <!-- Chat window frame -->
+  <g filter="url(#shadow)">
+    <rect x="140" y="36" width="680" height="468" rx="16" fill="white"/>
+  </g>
+  <g clip-path="url(#chatClip)">
+    <rect x="140" y="36" width="680" height="44" fill="url(#chatHeader)"/>
+    <circle cx="164" cy="58" r="6" fill="white" opacity="0.3"/>
+    <circle cx="182" cy="58" r="6" fill="white" opacity="0.3"/>
+    <circle cx="200" cy="58" r="6" fill="white" opacity="0.3"/>
+    <text x="480" y="63" text-anchor="middle" font-size="14" font-weight="600" fill="white">Kubernaut Console -- Incident Response</text>
+
+    <!-- Alert banner -->
+    <g class="fade-in a-alert">
+      <rect x="164" y="92" width="632" height="32" rx="6" fill="#FEF2F2"/>
+      <circle cx="182" cy="108" r="6" fill="#DC2626"/>
+      <text x="196" y="113" font-size="12" font-weight="600" fill="#991B1B">ALERT</text>
+      <text x="242" y="113" font-size="12" fill="#7F1D1D">pods crash-looping in namespace payments</text>
+    </g>
+
+    <!-- User message 1: bubble at 2.8s, text types 3.0-7.0s -->
+    <g class="a-user1-bg">
+      <rect x="380" y="136" width="420" height="32" rx="12" fill="#E0F2FE"/>
+      <text x="764" y="157" font-size="10" fill="#94A3B8" text-anchor="end">User</text>
+    </g>
+    <text x="396" y="157" font-size="12" fill="#0C4A6E" clip-path="url(#t-user1)">What's going on with payments?</text>
+
+    <!-- Typing indicator 1: shows 7.4s (after user finishes at 7.0s) -->
+    <g class="typing-1">
+      <rect x="164" y="178" width="60" height="24" rx="12" fill="#F0FDFA"/>
+      <circle cx="180" cy="190" r="3" fill="#0D9488" class="dot1"/>
+      <circle cx="192" cy="190" r="3" fill="#0D9488" class="dot2"/>
+      <circle cx="204" cy="190" r="3" fill="#0D9488" class="dot3"/>
+    </g>
+
+    <!-- Agent response: investigation background at 9.0s -->
+    <g class="fade-in a-inv-bg">
+      <rect x="164" y="178" width="440" height="96" rx="12" fill="#F0FDFA"/>
+    </g>
+
+    <!-- Agent text: typewriter reveal starting at 9.4s -->
+    <text x="180" y="197" font-size="12" font-weight="600" fill="#0F766E" clip-path="url(#t-inv-hd)">Investigating the payments namespace...</text>
+    <rect x="180" y="188" width="2" height="12" rx="1" fill="#0F766E" class="cursor c-inv-hd"/>
+
+    <text x="188" y="216" font-size="11" fill="#334155" clip-path="url(#t-inv-1)">&gt; Checked pod status: payments-api-7d4f -- 12 restarts</text>
+    <rect x="188" y="207" width="2" height="11" rx="1" fill="#334155" class="cursor c-inv-1"/>
+
+    <text x="188" y="234" font-size="11" fill="#334155" clip-path="url(#t-inv-2)">&gt; Pulled logs: OOMKilled at 512Mi limit</text>
+    <rect x="188" y="225" width="2" height="11" rx="1" fill="#334155" class="cursor c-inv-2"/>
+
+    <text x="188" y="252" font-size="11" fill="#334155" clip-path="url(#t-inv-3)">&gt; Queried metrics: memory trending up since 14:32 deploy</text>
+    <rect x="188" y="243" width="2" height="11" rx="1" fill="#334155" class="cursor c-inv-3"/>
+
+    <text x="188" y="268" font-size="11" font-weight="600" fill="#0F766E" clip-path="url(#t-inv-rc)">Root cause: memory leak from unbounded cache growth</text>
+    <rect x="188" y="259" width="2" height="11" rx="1" fill="#0F766E" class="cursor c-inv-rc"/>
+
+    <!-- User message 2: bubble at 19.4s, text types 19.6-22.0s -->
+    <g class="a-user2-bg">
+      <rect x="540" y="286" width="260" height="32" rx="12" fill="#E0F2FE"/>
+      <text x="764" y="307" font-size="10" fill="#94A3B8" text-anchor="end">User</text>
+    </g>
+    <text x="556" y="307" font-size="12" fill="#0C4A6E" clip-path="url(#t-user2)">Can you fix it?</text>
+
+    <!-- Typing indicator 2: shows 22.4s (after user finishes at 22.0s) -->
+    <g class="typing-2">
+      <rect x="164" y="328" width="60" height="24" rx="12" fill="#F0FDFA"/>
+      <circle cx="180" cy="340" r="3" fill="#0D9488" class="dot1"/>
+      <circle cx="192" cy="340" r="3" fill="#0D9488" class="dot2"/>
+      <circle cx="204" cy="340" r="3" fill="#0D9488" class="dot3"/>
+    </g>
+
+    <!-- Agent response: workflow options at 24.0s -->
+    <text x="180" y="340" font-size="12" font-weight="600" fill="#0F766E" clip-path="url(#t-opts)">I found 2 remediation options:</text>
+    <rect x="180" y="331" width="2" height="12" rx="1" fill="#0F766E" class="cursor c-opts"/>
+
+    <!-- Workflow card 1: Rollback at 26.0s -->
+    <g class="slide-up a-card1">
+      <g filter="url(#shadowSm)">
+        <rect x="172" y="352" width="220" height="64" rx="10" fill="white" stroke="#0D9488" stroke-width="2"/>
+      </g>
+      <circle cx="192" cy="374" r="10" fill="#0D9488" opacity="0.15"/>
+      <text x="192" y="378" text-anchor="middle" font-size="10" font-weight="700" fill="#0D9488">R</text>
+      <text x="212" y="374" font-size="13" font-weight="600" fill="#1E293B">Rollback deploy</text>
+      <text x="212" y="392" font-size="11" fill="#64748B">Revert to v2.3.1</text>
+      <rect x="212" y="400" width="80" height="12" rx="4" fill="#0D9488" opacity="0.15"/>
+      <text x="220" y="410" font-size="8" font-weight="600" fill="#0D9488">RECOMMENDED</text>
+    </g>
+
+    <!-- Workflow card 2: Scale memory at 27.0s -->
+    <g class="slide-up a-card2">
+      <g filter="url(#shadowSm)">
+        <rect x="408" y="352" width="220" height="64" rx="10" fill="white" stroke="#E2E8F0" stroke-width="1.5"/>
+      </g>
+      <circle cx="428" cy="374" r="10" fill="#D97706" opacity="0.15"/>
+      <text x="428" y="378" text-anchor="middle" font-size="10" font-weight="700" fill="#D97706">M</text>
+      <text x="448" y="374" font-size="13" font-weight="600" fill="#1E293B">Increase memory</text>
+      <text x="448" y="392" font-size="11" fill="#64748B">512Mi -&gt; 1Gi</text>
+    </g>
+
+    <!-- Typing indicator 3: shows 28.4s -->
+    <g class="typing-3">
+      <rect x="164" y="428" width="60" height="24" rx="12" fill="#F0FDF4"/>
+      <circle cx="180" cy="440" r="3" fill="#166534" class="dot1"/>
+      <circle cx="192" cy="440" r="3" fill="#166534" class="dot2"/>
+      <circle cx="204" cy="440" r="3" fill="#166534" class="dot3"/>
+    </g>
+
+    <!-- Execution result background at 29.6s -->
+    <g class="fade-in a-exec-bg">
+      <rect x="164" y="428" width="440" height="52" rx="12" fill="#F0FDF4"/>
+    </g>
+
+    <!-- Execution text: typewriter reveal starting at 30.0s -->
+    <text x="180" y="448" font-size="12" font-weight="600" fill="#166534" clip-path="url(#t-exec-1)">Executing rollback...</text>
+    <rect x="180" y="439" width="2" height="12" rx="1" fill="#166534" class="cursor c-exec-1"/>
+
+    <text x="188" y="464" font-size="11" fill="#334155" clip-path="url(#t-exec-2)">&gt; Pipeline OK  |  Health check OK  |  Alert resolved OK</text>
+    <rect x="188" y="455" width="2" height="11" rx="1" fill="#334155" class="cursor c-exec-2"/>
+
+    <text x="180" y="476" font-size="12" font-weight="700" fill="#166534" clip-path="url(#t-exec-3)">Done. Payments is healthy.</text>
+    <rect x="180" y="467" width="2" height="12" rx="1" fill="#166534" class="cursor c-exec-3"/>
+  </g>
+
+</svg>
