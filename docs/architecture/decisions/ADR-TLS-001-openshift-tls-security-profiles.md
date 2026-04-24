@@ -103,7 +103,7 @@ DHE cipher suites from the OpenShift profile specification are omitted because G
 
 ### Risks
 
-- If the operator sets an invalid profile name, `SetDefaultSecurityProfileFromConfig` silently ignores it (falls back to hardcoded TLS 1.2). This is intentional to avoid startup failures.
+- If the operator sets an invalid profile name, `SetDefaultSecurityProfileFromConfig` returns an error. Each service logs the error and falls back to the hardcoded TLS 1.2 default. The service does **not** crash on invalid profile names.
 
 ## References
 
