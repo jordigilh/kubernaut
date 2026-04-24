@@ -126,7 +126,7 @@ func (m *Manager) CancelInvestigation(id string) error {
 		m.store.mu.Unlock()
 		return ErrSessionNotFound
 	}
-	if isTerminal(sess.Status) {
+	if IsTerminal(sess.Status) {
 		m.store.mu.Unlock()
 		return ErrSessionTerminal
 	}

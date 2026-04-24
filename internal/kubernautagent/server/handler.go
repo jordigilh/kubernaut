@@ -208,6 +208,86 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 	return resp, nil
 }
 
+// CancelSessionAPIV1IncidentSessionSessionIDCancelPost implements POST /api/v1/incident/session/{session_id}/cancel.
+func (h *Handler) CancelSessionAPIV1IncidentSessionSessionIDCancelPost(
+	_ context.Context,
+	params agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams,
+) (agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, error) {
+	err := h.sessions.CancelInvestigation(params.SessionID)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return &agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound{
+				Type:     "https://kubernaut.ai/problems/not-found",
+				Title:    "Session Not Found",
+				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
+				Status:   404,
+				Instance: fmt.Sprintf("/api/v1/incident/session/%s/cancel", params.SessionID),
+			}, nil
+		}
+		if errors.Is(err, session.ErrSessionTerminal) {
+			return &agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict{
+				Type:     "https://kubernaut.ai/problems/session-already-terminal",
+				Title:    "Session Already Terminal",
+				Detail:   fmt.Sprintf("session %s is already in a terminal state", params.SessionID),
+				Status:   409,
+				Instance: fmt.Sprintf("/api/v1/incident/session/%s/cancel", params.SessionID),
+			}, nil
+		}
+		h.logger.Error("cancel session failed", "session_id", params.SessionID, "error", err)
+		return nil, fmt.Errorf("cancel session: %w", err)
+	}
+
+	return &agentclient.CancelSessionResponse{
+		SessionID: params.SessionID,
+		Status:    "cancelled",
+	}, nil
+}
+
+// SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet implements GET /api/v1/incident/session/{session_id}/snapshot.
+func (h *Handler) SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(
+	_ context.Context,
+	params agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams,
+) (agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, error) {
+	sess, err := h.sessions.GetSession(params.SessionID)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return &agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound{
+				Type:     "https://kubernaut.ai/problems/not-found",
+				Title:    "Session Not Found",
+				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
+				Status:   404,
+				Instance: fmt.Sprintf("/api/v1/incident/session/%s/snapshot", params.SessionID),
+			}, nil
+		}
+		h.logger.Error("snapshot lookup failed", "session_id", params.SessionID, "error", err)
+		return nil, fmt.Errorf("snapshot lookup: %w", err)
+	}
+
+	if !session.IsTerminal(sess.Status) {
+		return &agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetConflict{
+			Type:     "https://kubernaut.ai/problems/session-in-progress",
+			Title:    "Session In Progress",
+			Detail:   fmt.Sprintf("session %s is %s; use the stream endpoint for live updates", params.SessionID, mapSessionStatusToAPI(sess.Status)),
+			Status:   409,
+			Instance: fmt.Sprintf("/api/v1/incident/session/%s/snapshot", params.SessionID),
+		}, nil
+	}
+
+	snap := &agentclient.SessionSnapshot{
+		SessionID: sess.ID,
+		Status:    mapSessionStatusToAPI(sess.Status),
+		CreatedAt: sess.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if sess.Metadata != nil {
+		md := agentclient.SessionSnapshotMetadata(sess.Metadata)
+		snap.Metadata.SetTo(md)
+	}
+	if sess.Error != nil {
+		snap.Error.SetTo(sess.Error.Error())
+	}
+	return snap, nil
+}
+
 // MapIncidentRequestToSignal converts an OpenAPI IncidentRequest to an internal SignalContext.
 func MapIncidentRequestToSignal(req *agentclient.IncidentRequest) katypes.SignalContext {
 	sc := katypes.SignalContext{
@@ -272,6 +352,8 @@ func mapSessionStatusToAPI(s session.Status) string {
 		return "completed"
 	case session.StatusFailed:
 		return "failed"
+	case session.StatusCancelled:
+		return "cancelled"
 	default:
 		return "unknown"
 	}

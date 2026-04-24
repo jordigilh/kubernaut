@@ -3,6 +3,7 @@
 package agentclient
 
 import (
+	"io"
 	"net/http"
 
 	"github.com/go-faster/errors"
@@ -10,6 +11,52 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
+
+func encodeCancelSessionAPIV1IncidentSessionSessionIDCancelPostResponse(response CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *CancelSessionResponse:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(404)
+		span.SetStatus(codes.Error, http.StatusText(404))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(409)
+		span.SetStatus(codes.Error, http.StatusText(409))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
 
 func encodeGetConfigConfigGetResponse(response jx.Raw, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -312,4 +359,85 @@ func encodeReadinessCheckReadyGetResponse(response jx.Raw, w http.ResponseWriter
 	}
 
 	return nil
+}
+
+func encodeSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetResponse(response SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *SessionSnapshot:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(404)
+		span.SetStatus(codes.Error, http.StatusText(404))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetConflict:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(409)
+		span.SetStatus(codes.Error, http.StatusText(409))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeSessionStreamAPIV1IncidentSessionSessionIDStreamGetResponse(response SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK:
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		writer := w
+		if closer, ok := response.Data.(io.Closer); ok {
+			defer closer.Close()
+		}
+		if _, err := io.Copy(writer, response); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *HTTPError:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(404)
+		span.SetStatus(codes.Error, http.StatusText(404))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
 }
