@@ -105,7 +105,8 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 	)
 
 	metadata := map[string]string{
-		"incident_id": req.IncidentID,
+		"incident_id":    req.IncidentID,
+		"remediation_id": req.RemediationID,
 	}
 	sessionID, err := h.sessions.StartInvestigation(ctx, func(bgCtx context.Context) (interface{}, error) {
 		return h.investigator.Investigate(bgCtx, signal)

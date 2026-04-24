@@ -18,6 +18,7 @@ package session_test
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"time"
 
@@ -142,6 +143,129 @@ var _ = Describe("Kubernaut Agent Session Store — #433", func() {
 			}
 
 			wg.Wait()
+		})
+	})
+})
+
+var _ = Describe("Session Cancellation Infrastructure — #823", func() {
+
+	Describe("UT-KA-823-001: A completed investigation is immutable", func() {
+		It("should reject status changes on a completed investigation", func() {
+			store := session.NewStore(30 * time.Minute)
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
+			Expect(store.Update(id, session.StatusCompleted, "done", nil)).To(Succeed())
+
+			err = store.Update(id, session.StatusRunning, nil, nil)
+			Expect(err).To(MatchError(session.ErrSessionTerminal))
+
+			sess, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Status).To(Equal(session.StatusCompleted))
+		})
+	})
+
+	Describe("UT-KA-823-002: A cancelled investigation is immutable", func() {
+		It("should reject status changes on a cancelled investigation", func() {
+			store := session.NewStore(30 * time.Minute)
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
+			Expect(store.Update(id, session.StatusCancelled, nil, nil)).To(Succeed())
+
+			err = store.Update(id, session.StatusFailed, nil, nil)
+			Expect(err).To(MatchError(session.ErrSessionTerminal))
+
+			sess, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Status).To(Equal(session.StatusCancelled))
+		})
+	})
+
+	Describe("UT-KA-823-003: A failed investigation is immutable", func() {
+		It("should reject status changes on a failed investigation", func() {
+			store := session.NewStore(30 * time.Minute)
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
+			Expect(store.Update(id, session.StatusFailed, nil, nil)).To(Succeed())
+
+			err = store.Update(id, session.StatusCompleted, "late-result", nil)
+			Expect(err).To(MatchError(session.ErrSessionTerminal))
+
+			sess, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Status).To(Equal(session.StatusFailed))
+		})
+	})
+
+	Describe("UT-KA-823-004: An active investigation can be cancelled by an operator", func() {
+		It("should accept cancellation of a running investigation", func() {
+			store := session.NewStore(30 * time.Minute)
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
+
+			err = store.Update(id, session.StatusCancelled, nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			sess, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Status).To(Equal(session.StatusCancelled))
+		})
+	})
+
+	Describe("UT-KA-823-005: Querying a cancelled investigation reports the cancelled state", func() {
+		It("should return StatusCancelled for a cancelled investigation", func() {
+			store := session.NewStore(30 * time.Minute)
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
+			Expect(store.Update(id, session.StatusCancelled, nil, nil)).To(Succeed())
+
+			sess, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Status).To(Equal(session.StatusCancelled))
+		})
+	})
+
+	Describe("UT-KA-823-006: Active investigations are never removed by housekeeping", func() {
+		It("should skip running sessions during cleanup even if TTL expired", func() {
+			store := session.NewStore(1 * time.Millisecond)
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
+
+			time.Sleep(5 * time.Millisecond)
+
+			removed := store.Cleanup()
+			Expect(removed).To(Equal(0))
+
+			sess, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Status).To(Equal(session.StatusRunning))
+		})
+	})
+
+	Describe("UT-KA-823-007: Session metadata cannot interfere with active investigations", func() {
+		It("should not expose internal control fields in the returned session copy", func() {
+			store := session.NewStore(30 * time.Minute)
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
+
+			sess, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess).NotTo(BeNil())
+
+			v := reflect.ValueOf(*sess)
+			cancelField := v.FieldByName("cancel")
+			eventChanField := v.FieldByName("eventChan")
+			Expect(cancelField.IsValid()).To(BeTrue(), "cancel field must exist on Session struct")
+			Expect(eventChanField.IsValid()).To(BeTrue(), "eventChan field must exist on Session struct")
+			Expect(cancelField.IsNil()).To(BeTrue(), "cancel must be nil on cloned session")
+			Expect(eventChanField.IsNil()).To(BeTrue(), "eventChan must be nil on cloned session")
 		})
 	})
 })
