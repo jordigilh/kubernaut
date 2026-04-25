@@ -87,7 +87,7 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 // reconcileInvestigating handles AIAnalysis in Investigating phase.
 //
 // Business Requirements:
-//   - BR-AI-023: HolmesGPT-API integration
+//   - BR-AI-023: KA integration
 //   - BR-AI-017: Track phase timing
 func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	log := r.Log.WithValues("phase", "Investigating", "name", analysis.Name)

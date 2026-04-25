@@ -79,7 +79,7 @@ func defaultTimeout(cfg Config) time.Duration {
 // DD-HAPI-003: Uses generated client for compile-time type safety and contract compliance.
 // DD-AUTH-006: Uses ServiceAccount authentication by default (production/E2E).
 //
-// For integration tests with custom authentication, use NewHolmesGPTClientWithTransport.
+// For integration tests with custom authentication, use NewAgentClientWithTransport.
 func NewKubernautAgentClient(cfg Config) (*KubernautAgentClient, error) {
 	// Issue #750: Use DefaultBaseTransport so TLS_CA_FILE is honoured for
 	// inter-service HTTPS when tls.interService.enabled=true.

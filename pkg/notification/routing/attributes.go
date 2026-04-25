@@ -123,7 +123,7 @@ const (
 	SkipReasonRecentlyRemediated      = "RecentlyRemediated"
 )
 
-// InvestigationOutcomeValues are the HolmesGPT-API investigation outcome routing values.
+// InvestigationOutcomeValues are the KA investigation outcome routing values.
 // See: BR-HAPI-200 (Investigation Outcome Reporting)
 const (
 	InvestigationOutcomeResolved         = "resolved"

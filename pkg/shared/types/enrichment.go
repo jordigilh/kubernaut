@@ -16,8 +16,8 @@
 //
 // All services MUST use these type definitions:
 //   - SignalProcessing (populates at incident time via type aliases)
-//   - AIAnalysis (passes to HolmesGPT-API via type aliases)
-//   - HolmesGPT-API (uses for workflow filtering + LLM context)
+//   - AIAnalysis (passes to KA via type aliases)
+//   - KA (uses for workflow filtering + LLM context)
 //   - Data Storage (stores workflow metadata constraints)
 //
 // Issue #113: KubernetesContext restructured to lean, classification-focused schema.
@@ -51,7 +51,7 @@ type EnrichmentResults struct {
 
 	// Business classification from SP categorization phase
 	// BR-SP-002, BR-SP-080, BR-SP-081: Business unit, criticality, SLA
-	// Passed through to HolmesGPT-API for workflow filtering and Rego approval decisions
+	// Passed through to KA for workflow filtering and Rego approval decisions
 	BusinessClassification *BusinessClassification `json:"businessClassification,omitempty"`
 }
 
@@ -115,7 +115,7 @@ type OwnerChainEntry struct {
 
 // DetectedLabels contains auto-detected cluster characteristics.
 // SignalProcessing populates these automatically from K8s resources.
-// Used by HolmesGPT-API for:
+// Used by KA for:
 //   - Workflow filtering (deterministic SQL WHERE)
 //   - LLM context (natural language in prompt)
 //

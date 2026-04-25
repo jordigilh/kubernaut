@@ -702,7 +702,7 @@ func (h *Handler) HandleListWorkflows(w http.ResponseWriter, r *http.Request) {
 // - Emits workflow.catalog.workflow_retrieved audit event
 //
 // Cross-Service Integration:
-// - HolmesGPT-API: Uses for get_workflow tool (Step 3 of discovery protocol)
+// - KA: Uses for get_workflow tool (Step 3 of discovery protocol)
 // - AIAnalysis: May use for defense-in-depth validation
 func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) {
 	// Get workflow ID from URL path

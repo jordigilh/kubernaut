@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package handlers implements phase handlers for the AIAnalysis controller.
 //
-// P1.2 Refactoring: RequestBuilder extracts HolmesGPT-API request construction logic
+// P1.2 Refactoring: RequestBuilder extracts KA request construction logic
 // from InvestigatingHandler to improve maintainability and testability.
 package handlers
 
@@ -28,7 +28,7 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// RequestBuilder constructs HolmesGPT-API requests from AIAnalysis CRD specs.
+// RequestBuilder constructs KA requests from AIAnalysis CRD specs.
 // P1.2 Refactoring: Extracted from InvestigatingHandler for single responsibility.
 //
 // Responsibilities:
@@ -91,7 +91,7 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 		ClusterName:       getOrDefault(customLabels, "cluster_name", "default"),
 	}
 
-	// Map enrichment results for richer HolmesGPT-API context
+	// Map enrichment results for richer KA context
 	req.EnrichmentResults.SetTo(b.buildEnrichmentResults(enrichment))
 
 	// BR-AI-084: Pass signal mode to KA for prompt strategy switching (ADR-054)
@@ -131,7 +131,7 @@ func (b *RequestBuilder) buildEnrichmentResults(enrichment sharedtypes.Enrichmen
 	// Note: Full mapping of all KubernetesContext fields can be added as needed
 	if enrichment.KubernetesContext != nil {
 		// For now, pass through essential fields only
-		// HolmesGPT-API can handle the structured types or use default processing
+		// KA can handle the structured types or use default processing
 		// Future: Complete mapping of PodDetails, DeploymentDetails, NodeDetails, etc.
 		result.KubernetesContext.SetToNull() // Mark as present but empty for now
 	}

@@ -357,7 +357,7 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 			Namespace: analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Namespace,
 		},
 
-		// HolmesGPT-API response data
+		// KA response data
 		Warnings: analysis.Status.Warnings,
 	}
 
