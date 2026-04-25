@@ -25,6 +25,14 @@ func (f *fakeLLM) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse
 	}, nil
 }
 
+func (f *fakeLLM) StreamChat(ctx context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	resp, err := f.Chat(ctx, req)
+	if err == nil {
+		_ = cb(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
+	}
+	return resp, err
+}
+
 func (f *fakeLLM) Close() error { return nil }
 
 type stubTool struct {

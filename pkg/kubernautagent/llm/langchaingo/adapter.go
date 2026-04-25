@@ -342,6 +342,26 @@ func normalizeStopReason(raw string) string {
 // Close releases resources held by the adapter. For providers with gRPC
 // connections (e.g. vertex via genai.Client), it calls the model's Close
 // method. The optional closeFn is called to release HTTP idle connections
+// StreamChat uses LangChainGo's WithStreamingFunc to forward text deltas
+// to the callback incrementally. The final ChatResponse is built from the
+// complete ContentResponse return value.
+func (a *Adapter) StreamChat(ctx context.Context, req llm.ChatRequest, callback func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	if len(req.Options.OutputSchema) > 0 {
+		ctx = transport.WithOutputSchema(ctx, req.Options.OutputSchema)
+	}
+	msgs := toMessages(req.Messages)
+	opts := buildCallOptions(req)
+	opts = append(opts, llms.WithStreamingFunc(func(_ context.Context, chunk []byte) error {
+		return callback(llm.ChatStreamEvent{Delta: string(chunk)})
+	}))
+	resp, err := a.model.GenerateContent(ctx, msgs, opts...)
+	if err != nil {
+		return llm.ChatResponse{}, err
+	}
+	_ = callback(llm.ChatStreamEvent{Done: true})
+	return fromContentResponse(resp), nil
+}
+
 // from the custom transport chain.
 func (a *Adapter) Close() error {
 	var firstErr error

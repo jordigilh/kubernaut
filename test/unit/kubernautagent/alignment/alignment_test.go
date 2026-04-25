@@ -77,6 +77,14 @@ func (m *mockLLMClient) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatRe
 	return llm.ChatResponse{}, nil
 }
 
+func (m *mockLLMClient) StreamChat(ctx context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	resp, err := m.Chat(ctx, req)
+	if err == nil {
+		_ = cb(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
+	}
+	return resp, err
+}
+
 func (m *mockLLMClient) Close() error { return nil }
 
 func (m *mockLLMClient) chatCalls() int { return m.call }
@@ -87,6 +95,14 @@ type slowMockLLMClient struct {
 }
 
 func (m *slowMockLLMClient) Close() error { return nil }
+
+func (m *slowMockLLMClient) StreamChat(ctx context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	resp, err := m.Chat(ctx, req)
+	if err == nil {
+		_ = cb(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
+	}
+	return resp, err
+}
 
 func (m *slowMockLLMClient) Chat(ctx context.Context, _ llm.ChatRequest) (llm.ChatResponse, error) {
 	select {
