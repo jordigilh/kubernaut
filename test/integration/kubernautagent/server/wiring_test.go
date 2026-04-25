@@ -63,7 +63,10 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 				ch <- result{r, e}
 			}()
 
-			time.Sleep(200 * time.Millisecond)
+			Eventually(func() int {
+				return len(h.AuditStore.EventsOfType(audit.EventTypeSessionObserved))
+			}, 5*time.Second).Should(BeNumerically(">=", 1),
+				"subscriber must connect before investigation completes")
 			close(proceed)
 
 			res := <-ch
@@ -142,7 +145,10 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 				ch <- sseResult{string(data), readErr}
 			}()
 
-			time.Sleep(200 * time.Millisecond)
+			Eventually(func() int {
+				return len(h.AuditStore.EventsOfType(audit.EventTypeSessionObserved))
+			}, 5*time.Second).Should(BeNumerically(">=", 1),
+				"subscriber must connect before investigation completes")
 			close(proceed)
 
 			var res sseResult
@@ -305,7 +311,10 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 				ch <- sseResult{string(data), readErr}
 			}()
 
-			time.Sleep(200 * time.Millisecond)
+			Eventually(func() int {
+				return len(h.AuditStore.EventsOfType(audit.EventTypeSessionObserved))
+			}, 5*time.Second).Should(BeNumerically(">=", 1),
+				"subscriber must connect before investigation completes")
 			close(proceed)
 
 			var res sseResult
@@ -321,6 +330,72 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			Expect(res.err).NotTo(HaveOccurred())
 			Expect(res.body).To(ContainSubstring("event: complete"),
 				"SSE stream must contain EventTypeComplete when investigation finishes")
+		})
+	})
+
+	// ---------------------------------------------------------------
+	// IT-WIRE-07: Retry/error events flow through SSE to client
+	// ---------------------------------------------------------------
+	Describe("IT-WIRE-07: Error events flow through SSE to HTTP client", func() {
+		It("SSE body contains event: error when investigation emits an error event", func() {
+			h := newTestHarness()
+			defer h.Close()
+
+			proceed := make(chan struct{})
+			id := startInvestigationWithFunc(h, func(ctx context.Context) (interface{}, error) {
+				<-proceed
+				sink := session.EventSinkFromContext(ctx)
+				if sink != nil {
+					sink <- session.InvestigationEvent{
+						Type:  session.EventTypeError,
+						Turn:  1,
+						Phase: "rca",
+						Data:  []byte(`{"message":"LLM call failed, retrying"}`),
+					}
+				}
+				return &katypes.InvestigationResult{RCASummary: "recovered"}, nil
+			})
+			waitForStatus(h, id, session.StatusRunning)
+
+			type sseResult struct {
+				body string
+				err  error
+			}
+			ch := make(chan sseResult, 1)
+			go func() {
+				resp, err := http.Get(h.Server.URL + "/api/v1/incident/session/" + id + "/stream")
+				if err != nil {
+					ch <- sseResult{"", err}
+					return
+				}
+				defer resp.Body.Close()
+				data, readErr := io.ReadAll(resp.Body)
+				ch <- sseResult{string(data), readErr}
+			}()
+
+			Eventually(func() int {
+				return len(h.AuditStore.EventsOfType(audit.EventTypeSessionObserved))
+			}, 5*time.Second).Should(BeNumerically(">=", 1),
+				"subscriber must connect before investigation completes")
+			close(proceed)
+
+			var res sseResult
+			Eventually(func() bool {
+				select {
+				case res = <-ch:
+					return true
+				default:
+					return false
+				}
+			}, 10*time.Second).Should(BeTrue(), "SSE stream should complete")
+
+			Expect(res.err).NotTo(HaveOccurred())
+			Expect(res.body).To(ContainSubstring("event: error"),
+				"SSE stream must contain error events emitted by the investigation")
+			Expect(res.body).To(ContainSubstring("LLM call failed"),
+				"error event data must flow through to the SSE body")
+			Expect(res.body).To(ContainSubstring("event: complete"),
+				"stream must still terminate with complete event after error")
 		})
 	})
 })
