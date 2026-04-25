@@ -69,9 +69,9 @@
     <text id="-Forensic-Replay-of" xml:space="preserve" x="1129" y="255" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Forensic Replay of past remediations</text>
     <text id="Fleet-Operations" xml:space="preserve" x="1349" y="582" font-family="Helvetica Neue" font-size="17" font-weight="700" fill="#cc0000">Fleet Operations</text>
     <text id="From-one-cluster-to" xml:space="preserve" x="1349" y="605" font-family="Helvetica Neue" font-size="12.5" font-style="italic" fill="#333333">From one cluster to your entire fleet</text>
-    <text id="-Multi-Cluster-Federation" xml:space="preserve" x="1359" y="634" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Multi-Cluster Federation (ACM)</text>
-    <text id="-Cross-cluster-pattern-detection" xml:space="preserve" x="1359" y="652" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Cross-cluster pattern detection</text>
-    <text id="-Fleet-Remediation" xml:space="preserve" x="1359" y="670" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Fleet Remediation (ACM + MCP + AAP)</text>
+    <text id="-Fleet-Deployment" xml:space="preserve" x="1359" y="634" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Fleet Deployment (ACM Governance)</text>
+    <text id="-Fleet-Remediation" xml:space="preserve" x="1359" y="652" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Fleet Remediation (AAP job templates)</text>
+    <text id="-Centralized-Observability" xml:space="preserve" x="1359" y="670" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Centralized Observability (Thanos/ACM)</text>
     <text id="Operational-Expansion" xml:space="preserve" x="1579" y="167" font-family="Helvetica Neue" font-size="17" font-weight="700" fill="#cc0000">Operational Expansion</text>
     <text id="New-domains-same-intelligent" xml:space="preserve" x="1579" y="190" font-family="Helvetica Neue" font-size="12.5" font-style="italic" fill="#333333">New domains, same intelligent approach</text>
     <text id="-Cost-Optimization-" xml:space="preserve" x="1589" y="219" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Cost Optimization – AI-driven right-sizing</text>

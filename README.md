@@ -103,9 +103,9 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 
 *From one cluster to your entire fleet.*
 
-- **Multi-cluster federation** — ACM-driven fleet remediation with centralized signal correlation and federated workflow execution
-- **Cross-cluster pattern detection** — Identify correlated failures across clusters and trigger coordinated remediation
-- **Fleet Remediation** — ACM + MCP + AAP orchestration for cross-cluster remediation at fleet scale
+- **Fleet Deployment** — ACM-managed Kubernaut lifecycle across ManagedClusters — install, configure, and upgrade via Governance policies
+- **Fleet Remediation** — AAP job templates triggered by Kubernaut for cross-cluster remediation workflows
+- **Centralized Observability** — Aggregated remediation metrics and audit trails across the fleet via Thanos and ACM Observability
 
 ### Operational Expansion
 
