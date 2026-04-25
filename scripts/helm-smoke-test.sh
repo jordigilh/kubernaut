@@ -1303,7 +1303,7 @@ SDKEOF
   echo "# --- Template Tests: NetworkPolicy (Issue #285) ---"
 
   # ST-NP-001: Default renders 12 NetworkPolicies (enabled by default)
-  # Count: 12 after removing orphaned holmesgpt-api NP in v1.4.
+  # Count: 12 after removing orphaned legacy HAPI NP in v1.4.
   output=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 2>&1)
@@ -1372,7 +1372,7 @@ for d in docs:
 
   # ST-NP-005: PostgreSQL/Valkey conditional on their enabled flags (F-7)
   # postgresql.host is required when postgresql.enabled=false (migration-job validation).
-  # Count: 10 = 12 total - PG - VK after removing holmesgpt-api NP.
+  # Count: 10 = 12 total - PG - VK after removing legacy HAPI NP.
   output=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.enabled=true \
