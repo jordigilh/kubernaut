@@ -79,6 +79,7 @@ func noopAnalyzingCallbacks() prodcontroller.AnalyzingCallbacks {
 			}
 		},
 		PersistPreHash: func(_ context.Context, _ *remediationv1.RemediationRequest, _ string) error { return nil },
+		IsDryRun:       func() bool { return false },
 		WFECallbacks: prodcontroller.WFECreationCallbacks{
 			EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
 			CreateWFE:                func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) { return "wfe-test", nil },
@@ -523,6 +524,93 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(intent.Type).To(Equal(phase.TransitionNone))
 			Expect(intent.RequeueAfter).To(Equal(config.RequeueGenericError))
+		})
+	})
+
+	// ========================================
+	// #712, #736: Dry-run mode intercept
+	// ========================================
+	Describe("Dry-run mode intercept (#712, #736)", func() {
+
+		It("UT-RO-712-008: dry-run + direct execution path → CompleteWithoutVerification (no WFE)", func() {
+			ai := completedAI("ai-dryrun-direct", false, false)
+			rr := analyzingRR("anz-dryrun-direct", ai.Name)
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ai).Build()
+
+			wfeCreated := false
+			cbs := noopAnalyzingCallbacks()
+			cbs.IsDryRun = func() bool { return true }
+			cbs.WFECallbacks = prodcontroller.WFECreationCallbacks{
+				EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
+				CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
+					wfeCreated = true
+					return "wfe-should-not-exist", nil
+				},
+				ResolveWorkflowDisplay: func(_ context.Context, _ string) (string, string) { return "", "" },
+			}
+
+			h := newHandler(c, cbs)
+			intent, err := h.Handle(ctx, rr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(intent.Type).To(Equal(phase.TransitionCompletedWithoutVerification))
+			Expect(intent.Reason).To(ContainSubstring("dry-run"))
+			Expect(wfeCreated).To(BeFalse())
+		})
+
+		It("UT-RO-712-009: dry-run + approval path → CompleteWithoutVerification (no RAR)", func() {
+			ai := completedAI("ai-dryrun-approval", true, false)
+			rr := analyzingRR("anz-dryrun-approval", ai.Name)
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ai).Build()
+
+			rarCreated := false
+			cbs := noopAnalyzingCallbacks()
+			cbs.IsDryRun = func() bool { return true }
+			cbs.CreateApproval = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
+				rarCreated = true
+				return "rar-should-not-exist", nil
+			}
+
+			h := newHandler(c, cbs)
+			intent, err := h.Handle(ctx, rr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(intent.Type).To(Equal(phase.TransitionCompletedWithoutVerification))
+			Expect(intent.Reason).To(ContainSubstring("dry-run"))
+			Expect(rarCreated).To(BeFalse())
+		})
+
+		It("UT-RO-712-010: dry-run disabled → normal direct execution path (regression safety)", func() {
+			ai := completedAI("ai-nodryrun", false, false)
+			rr := analyzingRR("anz-nodryrun", ai.Name)
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ai).Build()
+
+			cbs := noopAnalyzingCallbacks()
+			cbs.IsDryRun = func() bool { return false }
+
+			h := newHandler(c, cbs)
+			intent, err := h.Handle(ctx, rr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(intent.Type).ToNot(Equal(phase.TransitionCompletedWithoutVerification))
+		})
+
+		It("UT-RO-712-011: WorkflowNotNeeded with dry-run → NoActionRequired, not DryRun", func() {
+			ai := completedAI("ai-wfnotneeded-dryrun", false, true)
+			rr := analyzingRR("anz-wfnotneeded-dryrun", ai.Name)
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ai).Build()
+
+			delegated := false
+			cbs := noopAnalyzingCallbacks()
+			cbs.IsDryRun = func() bool { return true }
+			cbs.IsWorkflowNotNeeded = func(_ *aianalysisv1.AIAnalysis) bool { return true }
+			cbs.HandleWorkflowNotNeeded = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+				delegated = true
+				return ctrl.Result{}, nil
+			}
+
+			h := newHandler(c, cbs)
+			intent, err := h.Handle(ctx, rr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(delegated).To(BeTrue())
+			Expect(intent.Type).ToNot(Equal(phase.TransitionCompletedWithoutVerification))
 		})
 	})
 })

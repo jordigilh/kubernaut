@@ -68,6 +68,7 @@ type AnalyzingCallbacks struct {
 	CapturePreRemediationHash      func(ctx context.Context, kind, name, namespace string) (hash string, degradedReason string, err error)
 	ResolveDualTargets             func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult
 	PersistPreHash                 func(ctx context.Context, rr *remediationv1.RemediationRequest, preHash string) error
+	IsDryRun                       func() bool // #712, #736: returns true when dry-run mode is enabled
 	WFECallbacks                   WFECreationCallbacks
 }
 
@@ -164,6 +165,12 @@ func (h *AnalyzingHandler) handleCompleted(ctx context.Context, rr *remediationv
 			return phase.TransitionIntent{}, err
 		}
 		return resultToIntent(result, "needsHumanReview"), nil
+	}
+
+	// #712, #736: Dry-run intercept — stop pipeline before creating WFE or RAR
+	if h.callbacks.IsDryRun() {
+		logger.Info("Dry-run mode: completing without execution or verification")
+		return phase.CompleteWithoutVerification("dry-run mode enabled"), nil
 	}
 
 	if ai.Status.ApprovalRequired {

@@ -103,6 +103,12 @@ var _ = Describe("Issue #666 - TransitionIntent (BR-ORCH-025)", func() {
 			Expect(intent.Reason).To(Equal("inherited failure"))
 		})
 
+		It("UT-TI-041: CompleteWithoutVerification sets TransitionCompletedWithoutVerification and reason (#712, #736)", func() {
+			intent := phase.CompleteWithoutVerification("dry-run mode enabled")
+			Expect(intent.Type).To(Equal(phase.TransitionCompletedWithoutVerification))
+			Expect(intent.Reason).To(Equal("dry-run mode enabled"))
+		})
+
 		It("UT-TI-026: RequeueNow sets TransitionNone with RequeueImmediately", func() {
 			intent := phase.RequeueNow("event-based block cleared")
 			Expect(intent.Type).To(Equal(phase.TransitionNone))
@@ -202,6 +208,19 @@ var _ = Describe("Issue #666 - TransitionIntent (BR-ORCH-025)", func() {
 			Expect(intent.RequeueImmediately).To(BeFalse())
 			Expect(intent.Outcome).To(BeEmpty())
 		})
+
+		It("UT-TI-043: CompleteWithoutVerification leaves target/failure/block/requeue/source/outcome fields zero (#712, #736)", func() {
+			intent := phase.CompleteWithoutVerification("dry-run")
+			Expect(intent.TargetPhase).To(BeEmpty())
+			Expect(intent.FailurePhase).To(BeEmpty())
+			Expect(intent.FailureErr).To(BeNil())
+			Expect(intent.Block).To(BeNil())
+			Expect(intent.RequeueAfter).To(BeZero())
+			Expect(intent.RequeueImmediately).To(BeFalse())
+			Expect(intent.Outcome).To(BeEmpty())
+			Expect(intent.SourceRef).To(BeEmpty())
+			Expect(intent.SourceKind).To(BeEmpty())
+		})
 	})
 
 	// ========================================
@@ -268,6 +287,11 @@ var _ = Describe("Issue #666 - TransitionIntent (BR-ORCH-025)", func() {
 
 		It("UT-TI-017: Verifying passes validation", func() {
 			intent := phase.Verify("success", "done")
+			Expect(intent.Validate()).To(Succeed())
+		})
+
+		It("UT-TI-042: CompleteWithoutVerification passes validation (#712, #736)", func() {
+			intent := phase.CompleteWithoutVerification("dry-run mode")
 			Expect(intent.Validate()).To(Succeed())
 		})
 
@@ -378,6 +402,8 @@ var _ = Describe("Issue #666 - TransitionIntent (BR-ORCH-025)", func() {
 			Entry("Verifying", phase.TransitionVerifying, "Verifying"),
 			Entry("InheritedCompleted", phase.TransitionInheritedCompleted, "InheritedCompleted"),
 			Entry("InheritedFailed", phase.TransitionInheritedFailed, "InheritedFailed"),
+			// UT-RO-712-003: #712, #736 — dry-run transitions appear in metrics/logs/audit
+			Entry("CompletedWithoutVerification", phase.TransitionCompletedWithoutVerification, "CompletedWithoutVerification"),
 		)
 	})
 })

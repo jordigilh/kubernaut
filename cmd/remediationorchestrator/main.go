@@ -230,6 +230,7 @@ func main() {
 		"analyzingTimeout", cfg.Timeouts.Analyzing,
 		"executingTimeout", cfg.Timeouts.Executing,
 		"dataStorageURL", cfg.DataStorage.URL,
+		"dryRun", cfg.DryRun,
 	)
 
 	// ========================================
@@ -348,6 +349,12 @@ func main() {
 
 	// #265: Wire CRD retention period for TTL enforcement
 	roReconciler.SetRetentionPeriod(cfg.Retention.Period)
+	// #712, #736: Wire dry-run mode configuration
+	if cfg.DryRun {
+		roReconciler.SetDryRun(cfg.DryRun, cfg.DryRunHoldPeriod)
+		setupLog.Info("Dry-run mode enabled: pipeline stops after AI analysis",
+			"holdPeriod", cfg.DryRunHoldPeriod)
+	}
 	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)

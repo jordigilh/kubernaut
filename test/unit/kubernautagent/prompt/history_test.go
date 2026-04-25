@@ -546,3 +546,20 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 })
 
 func intPtr(v int) *int { return &v }
+
+// ========================================
+// #712, #736: DryRun outcome exclusion from recurring detection
+// ========================================
+var _ = Describe("Dry-Run Outcome Exclusion (#712, #736)", func() {
+
+	It("UT-RO-712-012: DryRun outcomes excluded from recurring detection", func() {
+		entries := []prompt.HistoryEntry{
+			{ActionType: "patch", SignalType: "alert", Outcome: "DryRun"},
+			{ActionType: "patch", SignalType: "alert", Outcome: "DryRun"},
+			{ActionType: "patch", SignalType: "alert", Outcome: "DryRun"},
+		}
+		patterns := prompt.DetectCompletedButRecurring(entries, 2)
+		Expect(patterns).To(BeEmpty(),
+			"DryRun outcomes must NOT be counted as completed remediations for recurring detection")
+	})
+})
