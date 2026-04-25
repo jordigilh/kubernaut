@@ -30,28 +30,30 @@ import (
 
 var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
 
-	Describe("IT-KA-823-S04: Event sink wired in StartInvestigation context", func() {
-		It("investigation function receives event sink via context", func() {
+	Describe("IT-KA-823-S04: Lazy event sink activated by Subscribe", func() {
+		It("investigation function receives non-nil event sink after Subscribe", func() {
 			store := session.NewStore(30 * time.Minute)
 			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{})
 
+			subscribed := make(chan struct{})
 			sinkReceived := make(chan bool, 1)
 
 			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+				<-subscribed
 				sink := session.EventSinkFromContext(ctx)
-				if sink != nil {
-					sinkReceived <- true
-				} else {
-					sinkReceived <- false
-				}
+				sinkReceived <- (sink != nil)
 				return map[string]string{"rca_summary": "test"}, nil
 			}, map[string]string{"remediation_id": "rr-stream-test"})
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(id).NotTo(BeEmpty())
 
+			_, subErr := mgr.Subscribe(id)
+			Expect(subErr).NotTo(HaveOccurred())
+			close(subscribed)
+
 			Eventually(sinkReceived, 5*time.Second).Should(Receive(BeTrue()),
-				"investigation function must receive a non-nil event sink via context")
+				"investigation function must receive a non-nil event sink after Subscribe activates the lazy sink")
 		})
 	})
 
