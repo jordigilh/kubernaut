@@ -22,6 +22,7 @@ import (
 	"log/slog"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 // InvestigateFunc is the function signature for running an investigation.
@@ -54,6 +55,9 @@ const eventChannelBuffer = 64
 // StartInvestigation creates a new session and launches the investigation
 // function in a background goroutine. Returns the session ID immediately.
 // metadata is stored on the session for later retrieval (e.g., incident_id).
+// If the context carries an authenticated user (auth.UserContextKey), the
+// user identity is stored as "created_by" in session metadata for
+// object-level authorization checks.
 //
 // The goroutine uses a cancellable child of context.Background() to ensure
 // the investigation outlives the originating HTTP request while remaining
@@ -74,9 +78,13 @@ func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, me
 	if err != nil {
 		return "", err
 	}
-	if metadata != nil {
-		m.store.SetMetadata(id, metadata)
+	if metadata == nil {
+		metadata = make(map[string]string)
 	}
+	if user := auth.GetUserFromContext(ctx); user != "" {
+		metadata["created_by"] = user
+	}
+	m.store.SetMetadata(id, metadata)
 
 	bgCtx, cancelFn := context.WithCancel(context.Background())
 
@@ -168,11 +176,13 @@ func (m *Manager) CancelInvestigation(id string) error {
 // an event sink, preserving v1.4 Chat behavior. The channel is closed when
 // the investigation ends.
 //
+// The context carries the authenticated user identity (via auth.UserContextKey)
+// which is recorded in the aiagent.session.observed audit event for SOC2 CC8.1
+// operator attribution.
+//
 // Returns ErrSessionNotFound if the session does not exist, or
 // ErrSessionTerminal if the investigation has already concluded.
-//
-// Audit: emits aiagent.session.observed for SOC2 CC8.1 attribution.
-func (m *Manager) Subscribe(id string) (<-chan InvestigationEvent, error) {
+func (m *Manager) Subscribe(ctx context.Context, id string) (<-chan InvestigationEvent, error) {
 	m.store.mu.Lock()
 
 	sess, ok := m.store.sessions[id]
@@ -197,7 +207,14 @@ func (m *Manager) Subscribe(id string) (<-chan InvestigationEvent, error) {
 	correlationID := sess.Metadata["remediation_id"]
 	m.store.mu.Unlock()
 
-	m.emitSessionEvent(context.Background(), audit.EventTypeSessionObserved, audit.ActionSessionObserved, audit.OutcomeSuccess, id, correlationID, nil)
+	event := audit.NewEvent(audit.EventTypeSessionObserved, correlationID)
+	event.EventAction = audit.ActionSessionObserved
+	event.EventOutcome = audit.OutcomeSuccess
+	event.Data["session_id"] = id
+	if user := auth.GetUserFromContext(ctx); user != "" {
+		event.Data["observer_user"] = user
+	}
+	audit.StoreBestEffort(ctx, m.auditStore, event, m.logger)
 
 	return ch, nil
 }

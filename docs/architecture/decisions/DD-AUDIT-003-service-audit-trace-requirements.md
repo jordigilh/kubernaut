@@ -961,7 +961,7 @@ In v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433), Kubern
 | `aiagent.investigation.cancelled` | `investigation_cancelled` | `failure` |
 | `aiagent.session.observed` | `session_observed` | `success` |
 
-**Granularity**: `aiagent.llm.tool_call` is emitted **once per tool call**. `aiagent.workflow.validation_attempt` is emitted per validation attempt and includes `workflow_id` and `is_final_attempt` where applicable.
+**Granularity**: `aiagent.llm.tool_call` is emitted **once per tool call**. `aiagent.workflow.validation_attempt` is emitted per validation attempt and includes `workflow_id` and `is_final_attempt` where applicable. `aiagent.session.observed` includes `observer_user` (the authenticated identity of the subscribing user, extracted from `auth.UserContextKey` in the request context) for SOC2 CC8.1 operator attribution.
 
 **Reference**: [TP-433-AUDIT-SOC2](../../tests/433/TP-433-AUDIT-SOC2.md).
 
