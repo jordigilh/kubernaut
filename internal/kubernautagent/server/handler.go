@@ -147,6 +147,10 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 				Instance: endpoint,
 			}, nil
 		}
+		// Design: log+return-generic is intentional at handler boundaries (SOC2
+		// CC8.1). The logger captures the root cause for operators; the client
+		// receives a sanitized message with no internal details. This is NOT
+		// double handling (#52) — it is the boundary contract.
 		h.logger.Error("session lookup failed", "session_id", params.SessionID, "error", err)
 		return nil, errors.New("internal server error")
 	}
@@ -413,7 +417,10 @@ func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 
 	pr, pw := io.Pipe()
 	go func() {
-		defer pw.Close()
+		// CloseWithError(nil) behaves like Close but makes the intent explicit:
+		// the pipe writer is always closed when the goroutine exits, regardless
+		// of the exit path. The reader sees io.EOF. (#54 defer error handling)
+		defer func() { _ = pw.CloseWithError(nil) }()
 		defer func() {
 			if r := recover(); r != nil {
 				h.logger.Error("SSE writer panic recovered", "session_id", params.SessionID, "panic", r)
@@ -428,7 +435,12 @@ func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 				if !ok {
 					return
 				}
-				data, _ := json.Marshal(ev)
+				data, err := json.Marshal(ev)
+				if err != nil {
+					h.logger.Error("SSE event marshal failed, skipping frame",
+						"session_id", params.SessionID, "event_type", ev.Type, "error", err)
+					continue
+				}
 				frame := fmt.Sprintf("id: %d\nevent: %s\ndata: %s\n\n", seq, ev.Type, string(data))
 				if _, writeErr := pw.Write([]byte(frame)); writeErr != nil {
 					return

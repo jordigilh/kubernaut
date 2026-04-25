@@ -1357,7 +1357,13 @@ func emitToSink(ctx context.Context, eventType string, turn int, phase string, d
 	}
 	var raw json.RawMessage
 	if data != nil {
-		raw, _ = json.Marshal(data)
+		var err error
+		raw, err = json.Marshal(data)
+		if err != nil {
+			slog.Warn("emitToSink: marshal failed, dropping event",
+				"event_type", eventType, "error", err)
+			return
+		}
 	}
 	event := session.InvestigationEvent{
 		Type:  eventType,
