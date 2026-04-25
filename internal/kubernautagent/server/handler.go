@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"time"
@@ -340,6 +341,66 @@ func MapIncidentRequestToSignal(req *agentclient.IncidentRequest) katypes.Signal
 		sc.LastSeen = v
 	}
 	return sc
+}
+
+// SessionStreamAPIV1IncidentSessionSessionIDStreamGet implements
+// GET /api/v1/incident/session/{session_id}/stream.
+// Returns an SSE event stream via io.Pipe. The ogen encoder copies from the
+// pipe reader while a goroutine writes SSE-framed events from the session's
+// event channel into the pipe writer. The pipe is closed when the channel
+// closes (investigation ends) or the request context is cancelled (client
+// disconnect).
+func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
+	ctx context.Context,
+	params agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams,
+) (agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, error) {
+	ch, err := h.sessions.Subscribe(params.SessionID)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return &agentclient.HTTPError{
+				Type:     "https://kubernaut.ai/problems/not-found",
+				Title:    "Session Not Found",
+				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
+				Status:   404,
+				Instance: fmt.Sprintf("/api/v1/incident/session/%s/stream", params.SessionID),
+			}, nil
+		}
+		if errors.Is(err, session.ErrSessionTerminal) {
+			return &agentclient.HTTPError{
+				Type:     "https://kubernaut.ai/problems/session-terminal",
+				Title:    "Session Terminal",
+				Detail:   fmt.Sprintf("session %s has already concluded; use the snapshot endpoint", params.SessionID),
+				Status:   404,
+				Instance: fmt.Sprintf("/api/v1/incident/session/%s/stream", params.SessionID),
+			}, nil
+		}
+		h.logger.Error("subscribe failed", "session_id", params.SessionID, "error", err)
+		return nil, fmt.Errorf("subscribe: %w", err)
+	}
+
+	pr, pw := io.Pipe()
+	go func() {
+		defer pw.Close()
+		seq := 1
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ev, ok := <-ch:
+				if !ok {
+					return
+				}
+				data, _ := json.Marshal(ev)
+				frame := fmt.Sprintf("id: %d\nevent: %s\ndata: %s\n\n", seq, ev.Type, string(data))
+				if _, writeErr := pw.Write([]byte(frame)); writeErr != nil {
+					return
+				}
+				seq++
+			}
+		}
+	}()
+
+	return &agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK{Data: pr}, nil
 }
 
 func mapSessionStatusToAPI(s session.Status) string {

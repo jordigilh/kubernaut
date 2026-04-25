@@ -18,6 +18,7 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -45,8 +46,9 @@ func NewManager(store *Store, logger *slog.Logger, auditStore audit.AuditStore) 
 
 // eventChannelBuffer is the capacity of the per-session event channel.
 // 64 provides headroom for bursty LLM output (reasoning deltas + tool calls)
-// without blocking the investigation goroutine. Non-blocking send semantics
-// are deferred to PR 4 when events are actively written.
+// without blocking the investigation goroutine. The investigator uses
+// non-blocking send semantics (select/default) so a slow SSE consumer
+// cannot stall the investigation loop.
 const eventChannelBuffer = 64
 
 // StartInvestigation creates a new session and launches the investigation
@@ -56,6 +58,13 @@ const eventChannelBuffer = 64
 // The goroutine uses a cancellable child of context.Background() to ensure
 // the investigation outlives the originating HTTP request while remaining
 // cancellable via CancelInvestigation.
+//
+// A LazySink is placed on the context but starts with a nil channel.
+// EventSinkFromContext returns nil until Subscribe activates the sink,
+// ensuring autonomous investigations (no observer) use Chat (v1.4 parity).
+//
+// The goroutine includes recover() to catch panics in the investigation
+// function, transitioning the session to StatusFailed instead of crashing.
 //
 // Audit: emits aiagent.session.started after the session transitions to
 // StatusRunning, and aiagent.session.completed or aiagent.session.failed
@@ -71,13 +80,13 @@ func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, me
 
 	bgCtx, cancelFn := context.WithCancel(context.Background())
 
-	eventCh := make(chan InvestigationEvent, eventChannelBuffer)
-	bgCtx = WithEventSink(bgCtx, eventCh)
+	ls := &LazySink{}
+	bgCtx = WithLazySink(bgCtx, ls)
 
 	m.store.mu.Lock()
 	sess := m.store.sessions[id]
 	sess.cancel = cancelFn
-	sess.eventChan = eventCh
+	sess.lazySink = ls
 	m.store.mu.Unlock()
 
 	_ = m.store.Update(id, StatusRunning, nil, nil)
@@ -87,7 +96,10 @@ func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, me
 
 	go func() {
 		defer m.closeEventChan(id)
+		defer m.recoverPanic(id, correlationID)
+
 		result, fnErr := fn(bgCtx)
+		m.emitCompleteEvent(id)
 		if fnErr != nil {
 			m.logger.Error("investigation failed",
 				slog.String("session_id", id),
@@ -151,21 +163,43 @@ func (m *Manager) CancelInvestigation(id string) error {
 }
 
 // Subscribe returns a read-only channel that delivers investigation events
-// for the given session. The channel is closed when the investigation ends.
+// for the given session. The event sink is lazily created on the first
+// Subscribe call so that autonomous investigations (no observer) run without
+// an event sink, preserving v1.4 Chat behavior. The channel is closed when
+// the investigation ends.
+//
 // Returns ErrSessionNotFound if the session does not exist, or
 // ErrSessionTerminal if the investigation has already concluded.
+//
+// Audit: emits aiagent.session.observed for SOC2 CC8.1 attribution.
 func (m *Manager) Subscribe(id string) (<-chan InvestigationEvent, error) {
-	m.store.mu.RLock()
-	defer m.store.mu.RUnlock()
+	m.store.mu.Lock()
 
 	sess, ok := m.store.sessions[id]
 	if !ok {
+		m.store.mu.Unlock()
 		return nil, ErrSessionNotFound
 	}
-	if sess.eventChan == nil {
+	if IsTerminal(sess.Status) && sess.eventChan == nil {
+		m.store.mu.Unlock()
 		return nil, ErrSessionTerminal
 	}
-	return sess.eventChan, nil
+
+	if sess.eventChan == nil {
+		ch := make(chan InvestigationEvent, eventChannelBuffer)
+		sess.eventChan = ch
+		if sess.lazySink != nil {
+			sess.lazySink.Set(ch)
+		}
+	}
+
+	ch := sess.eventChan
+	correlationID := sess.Metadata["remediation_id"]
+	m.store.mu.Unlock()
+
+	m.emitSessionEvent(context.Background(), audit.EventTypeSessionObserved, audit.ActionSessionObserved, audit.OutcomeSuccess, id, correlationID, nil)
+
+	return ch, nil
 }
 
 // closeEventChan closes the event channel for a session and sets it to nil,
@@ -196,6 +230,44 @@ func (m *Manager) GetSession(id string) (*Session, error) {
 // partial investigation state for snapshot retrieval (BR-SESSION-002).
 func (m *Manager) storePartialResult(id string, result interface{}) {
 	m.store.SetResult(id, result)
+}
+
+// recoverPanic catches panics in the investigation goroutine, transitions the
+// session to StatusFailed, and logs with stack context. This prevents a
+// panicking LLM tool or parser from crashing the entire KA process.
+func (m *Manager) recoverPanic(id, correlationID string) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	m.logger.Error("investigation panic recovered",
+		slog.String("session_id", id),
+		slog.Any("panic", r),
+	)
+	_ = m.store.Update(id, StatusFailed, nil, fmt.Errorf("panic: %v", r))
+	m.emitSessionEvent(context.Background(), audit.EventTypeSessionFailed, audit.ActionSessionFailed, audit.OutcomeFailure, id, correlationID, fmt.Errorf("panic: %v", r))
+}
+
+// emitCompleteEvent sends an EventTypeComplete to the event sink (if active)
+// to signal the SSE consumer that the investigation has finished.
+func (m *Manager) emitCompleteEvent(id string) {
+	m.store.mu.RLock()
+	sess, ok := m.store.sessions[id]
+	m.store.mu.RUnlock()
+	if !ok {
+		return
+	}
+	if sess.lazySink == nil {
+		return
+	}
+	ch := sess.lazySink.Get()
+	if ch == nil {
+		return
+	}
+	select {
+	case ch <- InvestigationEvent{Type: EventTypeComplete}:
+	default:
+	}
 }
 
 // emitSessionEvent builds and stores an audit event for a session lifecycle

@@ -16,20 +16,56 @@ limitations under the License.
 
 package session
 
-import "context"
+import (
+	"context"
+	"sync"
+)
 
 type eventSinkKey struct{}
 
-// WithEventSink returns a derived context carrying the given event channel.
-// The investigator retrieves it via EventSinkFromContext to emit turn-level
-// events without importing the session package directly.
+// LazySink holds a channel reference that can be set after the context is
+// created. This allows Subscribe to attach the event sink lazily while the
+// investigation goroutine's context is already in flight.
+type LazySink struct {
+	mu sync.RWMutex
+	ch chan<- InvestigationEvent
+}
+
+// Set assigns the channel. Safe for concurrent use.
+func (ls *LazySink) Set(ch chan<- InvestigationEvent) {
+	ls.mu.Lock()
+	ls.ch = ch
+	ls.mu.Unlock()
+}
+
+// Get returns the channel, or nil if not yet set.
+func (ls *LazySink) Get() chan<- InvestigationEvent {
+	ls.mu.RLock()
+	defer ls.mu.RUnlock()
+	return ls.ch
+}
+
+// WithLazySink returns a derived context carrying a LazySink.
+// The investigator retrieves the current channel via EventSinkFromContext.
+func WithLazySink(ctx context.Context, ls *LazySink) context.Context {
+	return context.WithValue(ctx, eventSinkKey{}, ls)
+}
+
+// WithEventSink returns a derived context carrying a pre-set event channel.
+// Retained for backward compatibility with tests that set the sink eagerly.
 func WithEventSink(ctx context.Context, ch chan<- InvestigationEvent) context.Context {
-	return context.WithValue(ctx, eventSinkKey{}, ch)
+	ls := &LazySink{}
+	ls.Set(ch)
+	return context.WithValue(ctx, eventSinkKey{}, ls)
 }
 
 // EventSinkFromContext retrieves the event sink channel from ctx, or nil if
-// none was attached. Callers must nil-check before sending.
+// none was attached (or the lazy sink has not been activated yet).
+// Callers must nil-check before sending.
 func EventSinkFromContext(ctx context.Context) chan<- InvestigationEvent {
-	ch, _ := ctx.Value(eventSinkKey{}).(chan<- InvestigationEvent)
-	return ch
+	ls, ok := ctx.Value(eventSinkKey{}).(*LazySink)
+	if !ok || ls == nil {
+		return nil
+	}
+	return ls.Get()
 }

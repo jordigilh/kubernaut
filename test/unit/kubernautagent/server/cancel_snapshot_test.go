@@ -246,16 +246,18 @@ var _ = Describe("TP-823-OAS: Cancel, Snapshot, Stream Endpoints (#823 PR2)", fu
 		})
 	})
 
-	// --- Stream Stub ---
+	// --- Stream Endpoint ---
 
-	Describe("UT-KA-823-OAS-008: Stream endpoint returns 501 Not Implemented", func() {
-		It("should return ErrNotImplemented since SSE is deferred to PR4", func() {
+	Describe("UT-KA-823-OAS-008: Stream endpoint returns 404 for unknown session", func() {
+		It("should return HTTPError with status 404 for nonexistent session", func() {
 			params := agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams{
 				SessionID: "any-session",
 			}
-			_, err := handler.SessionStreamAPIV1IncidentSessionSessionIDStreamGet(context.Background(), params)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not implemented"))
+			resp, err := handler.SessionStreamAPIV1IncidentSessionSessionIDStreamGet(context.Background(), params)
+			Expect(err).NotTo(HaveOccurred())
+			httpErr, ok := resp.(*agentclient.HTTPError)
+			Expect(ok).To(BeTrue(), "response should be HTTPError for not-found session")
+			Expect(httpErr.Status).To(Equal(404))
 		})
 	})
 })
