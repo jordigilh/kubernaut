@@ -26,6 +26,10 @@ import (
 )
 
 // InvestigateFunc is the function signature for running an investigation.
+// The interface{} return is intentional: the session subsystem is type-agnostic
+// because the result is ultimately JSON-marshaled for the HTTP response. Using
+// generics here would propagate type parameters through Manager/Store/Session
+// with no safety benefit (#8 conscious decision).
 type InvestigateFunc func(ctx context.Context) (interface{}, error)
 
 // Manager orchestrates investigation sessions, running each in a
