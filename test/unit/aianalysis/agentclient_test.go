@@ -29,8 +29,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
-// BR-AI-006: HolmesGPT-API client integration
-var _ = Describe("HolmesGPTClient", func() {
+// BR-AI-006: KA client integration
+var _ = Describe("AgentClient", func() {
 	var (
 		mockServer *httptest.Server
 		hgClient   *agentclient.KubernautAgentClient

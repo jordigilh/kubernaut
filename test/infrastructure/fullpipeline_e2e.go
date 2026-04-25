@@ -52,7 +52,7 @@ import (
 //   7. AIAnalysis (CRD controller)
 //   8. WorkflowExecution (CRD controller, Job engine)
 //   9. Notification (CRD controller, file-based delivery)
-//  10. HolmesGPT API + Mock LLM (AI service)
+//  10. KA + Mock LLM (AI service)
 //  11. Prometheus (metric comparison for EM, ADR-EM-001)
 //  12. AlertManager (alert resolution for EM, ADR-EM-001)
 //  13. EffectivenessMonitor (CRD controller, watches EA CRDs)

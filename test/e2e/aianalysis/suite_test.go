@@ -24,14 +24,14 @@ limitations under the License.
 //
 // Test Strategy (per TESTING_GUIDELINES.md):
 // - E2E tests use KIND cluster with real services
-// - LLM is mocked in HolmesGPT-API (cost constraint)
+// - LLM is mocked in KA (cost constraint)
 // - Data Storage used for audit trails
 //
 // Port Allocation (per DD-TEST-001):
 // - AIAnalysis Health: http://localhost:8184
 // - AIAnalysis Metrics: http://localhost:9184
 // - Data Storage: http://localhost:8081 (DD-TEST-001: DataStorage host port)
-// - HolmesGPT-API: http://localhost:8088
+// - KA: http://localhost:8088
 package aianalysis
 
 import (
@@ -122,7 +122,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("Setting up KIND cluster with full dependency chain:")
 		logger.Info("  • PostgreSQL + Redis (Data Storage dependencies)")
 		logger.Info("  • Data Storage (audit trails)")
-		logger.Info("  • HolmesGPT-API (AI analysis with mock LLM)")
+		logger.Info("  • KA (AI analysis with mock LLM)")
 		logger.Info("  • AIAnalysis controller")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 

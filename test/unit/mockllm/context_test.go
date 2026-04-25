@@ -161,7 +161,7 @@ var _ = Describe("Conversation Context Extraction", func() {
 		})
 	})
 
-	Describe("UT-MOCK-014-005: ExtractRootOwner handles HolmesGPT-prefixed JSON", func() {
+	Describe("UT-MOCK-014-005: ExtractRootOwner handles LLM-prefixed JSON", func() {
 		It("should extract root_owner from tool result with prefix text before JSON", func() {
 			toolContent := `HolmesGPT analysis complete. {"root_owner": {"kind": "Deployment", "name": "my-app", "namespace": "production"}, "labels": {}}`
 			ctx := conversation.NewContext([]openai.Message{

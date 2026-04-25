@@ -253,7 +253,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 		actorID := "kubernaut-agent"
 		validators.ValidateAuditEvent(kaEvent, validators.ExpectedAuditEvent{
 			EventType:     string(ogenclient.AIAgentResponsePayloadAuditEventEventData),
-			EventCategory: ogenclient.AuditEventEventCategoryAiagent, // ADR-034 v1.6: HolmesGPT API uses "aiagent" category
+			EventCategory: ogenclient.AuditEventEventCategoryAiagent, // ADR-034 v1.6: KA uses "aiagent" category
 			EventAction:   "response_sent",
 			EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 			CorrelationID: correlationID,

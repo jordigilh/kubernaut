@@ -257,7 +257,7 @@ spec:
 	// PHASE 5: Seed workflows + deploy Mock LLM (same as AIAnalysis E2E Phase 4c/4d)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🌱 PHASE 5: Seeding workflows and deploying Mock LLM...")
-	if err := createHolmesGPTAPIE2EServiceAccount(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := createKAE2EServiceAccount(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create E2E service account: %w", err)
 	}
 
@@ -613,7 +613,7 @@ subjects:
 }
 
 // deployKubernautAgentServiceRBAC creates the ServiceAccount and RBAC for KA pods.
-// Mirrors the HolmesGPT/KA RBAC pattern (DD-AUTH-014) with KA-specific names.
+// Mirrors the KA RBAC pattern (DD-AUTH-014) with KA-specific names.
 func deployKubernautAgentServiceRBAC(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	rbacManifest := fmt.Sprintf(`---
 apiVersion: v1

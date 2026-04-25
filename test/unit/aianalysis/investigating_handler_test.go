@@ -118,7 +118,7 @@ func (s *auditClientSpy) getFailedEvents() []failedAnalysisEvent {
 
 // ========================================
 // InvestigatingHandler Unit Tests
-// BR-AI-007: HolmesGPT-API integration and error handling
+// BR-AI-007: KA integration and error handling
 // ========================================
 //
 // ERROR HANDLING BEHAVIOR (BR-AI-009, BR-AI-010):
@@ -158,13 +158,13 @@ func (s *auditClientSpy) getFailedEvents() []failedAnalysisEvent {
 var _ = Describe("InvestigatingHandler", func() {
 	var (
 		handler    *handlers.InvestigatingHandler
-		mockClient *mocks.MockHolmesGPTClient
+		mockClient *mocks.MockAgentClient
 		ctx        context.Context
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		mockClient = mocks.NewMockHolmesGPTClient()
+		mockClient = mocks.NewMockAgentClient()
 		// Create mock audit client (noop for unit tests) and metrics
 		mockAuditClient := &noopAuditClient{}
 		testMetrics := metrics.NewMetrics()
@@ -208,7 +208,7 @@ var _ = Describe("InvestigatingHandler", func() {
 	}
 
 	Describe("Handle", func() {
-		// BR-AI-007: Process HolmesGPT response
+		// BR-AI-007: Process KA response
 		// NOTE: To proceed to Analyzing phase, KA MUST return a SelectedWorkflow
 		// If no workflow is returned with high confidence, it triggers "Resolved" (BR-HAPI-200)
 		Context("with successful API response including workflow", func() {
@@ -383,13 +383,13 @@ var _ = Describe("InvestigatingHandler", func() {
 
 		// ========================================
 		// BR-HAPI-197: Human Review Required Handling
-		// When HolmesGPT-API returns needs_human_review=true, AIAnalysis MUST:
+		// When KA returns needs_human_review=true, AIAnalysis MUST:
 		// - NOT proceed to Analyzing phase
 		// - Fail with structured reason (WorkflowResolutionFailed + SubReason)
 		// - Preserve partial response for operator context
 		// ========================================
 
-		Context("when HolmesGPT-API returns needs_human_review=true", func() {
+		Context("when KA returns needs_human_review=true", func() {
 			// BR-HAPI-197: Preferred method - use human_review_reason enum
 			DescribeTable("should map human_review_reason enum to SubReason",
 				func(humanReviewReason string, expectedSubReason string) {

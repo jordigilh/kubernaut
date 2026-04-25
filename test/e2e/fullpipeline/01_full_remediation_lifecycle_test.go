@@ -389,7 +389,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"aianalysis.aiagent.call",       // pkg/aianalysis/audit: RecordAIAgentCall
 			"aianalysis.rego.evaluation",    // pkg/aianalysis/audit: RecordRegoEvaluation
 			"aianalysis.analysis.completed", // pkg/aianalysis/audit: RecordAnalysisComplete
-			// HolmesGPT API (event_category: "aiagent" per ADR-034 v1.2)
+			// KA (event_category: "aiagent" per ADR-034 v1.2)
 			string(ogenclient.LLMRequestPayloadAuditEventEventData),         // kubernaut-agent/src/audit/events.py: create_llm_request_event
 			string(ogenclient.LLMResponsePayloadAuditEventEventData),        // kubernaut-agent/src/audit/events.py: create_llm_response_event
 			string(ogenclient.WorkflowValidationPayloadAuditEventEventData), // kubernaut-agent/src/audit/events.py: create_validation_attempt_event

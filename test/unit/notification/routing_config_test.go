@@ -572,7 +572,7 @@ receivers:
 
 	// =============================================================================
 	// BR-HAPI-200: Investigation Outcome Routing Tests
-	// Purpose: Verify investigation-outcome based routing for HolmesGPT-API results
+	// Purpose: Verify investigation-outcome based routing for KA results
 	// Cross-Team: KA→NOT (2025-12-07)
 	// =============================================================================
 

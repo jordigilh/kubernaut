@@ -394,7 +394,7 @@ func extractKubernautServiceLogs(logsDir, serviceName string, writer io.Writer) 
 		{serviceName, fmt.Sprintf("*%s*/*.log", serviceName)},
 		{"datastorage", "*datastorage*/*.log"},
 		{"gateway", "*gateway*/*.log"},
-		{"kubernaut-agent", "*holmesgpt*/*.log"},
+		{"kubernaut-agent", "*kubernaut-agent*/*.log"},
 		{"aianalysis", "*aianalysis*/*.log"},
 		{"notification", "*notification*/*.log"},
 		{"signalprocessing", "*signalprocessing*/*.log"},

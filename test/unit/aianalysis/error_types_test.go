@@ -34,9 +34,9 @@ var _ = Describe("Error Classification for Retry Strategy", func() {
 	// ========================================
 	Describe("Transient Error Classification", func() {
 		It("should enable automatic retry for temporary failures without operator intervention", func() {
-			By("Simulating HolmesGPT-API temporary failure")
+			By("Simulating KA temporary failure")
 			wrappedErr := errors.New("connection timeout")
-			err := aianalysis.NewTransientError("HolmesGPT-API call failed", wrappedErr)
+			err := aianalysis.NewTransientError("KA call failed", wrappedErr)
 
 			By("Verifying error classification enables retry logic")
 			var transientErr *aianalysis.TransientError
@@ -44,7 +44,7 @@ var _ = Describe("Error Classification for Retry Strategy", func() {
 				"Transient classification triggers automatic retry with exponential backoff")
 
 			By("Verifying error message helps operators understand retry reason")
-			Expect(err.Error()).To(Equal("HolmesGPT-API call failed: connection timeout"),
+			Expect(err.Error()).To(Equal("KA call failed: connection timeout"),
 				"Detailed error message shows operators why system is retrying")
 		})
 
@@ -103,7 +103,7 @@ var _ = Describe("Error Classification for Retry Strategy", func() {
 
 			By("Verifying reason field guides specific operator action")
 			Expect(err.Reason).To(Equal("NotFound"),
-				"NotFound reason tells operator to check workflow registry, not HolmesGPT-API health")
+				"NotFound reason tells operator to check workflow registry, not KA health")
 
 			By("Verifying root cause enables precise troubleshooting")
 			Expect(errors.Unwrap(err)).NotTo(BeNil(),

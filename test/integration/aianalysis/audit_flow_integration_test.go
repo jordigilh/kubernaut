@@ -391,7 +391,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 		// - 1 Approval decision (auto-approval or manual review)
 		// - 1 Analysis completion
 		//
-		// Note: HolmesGPT-API events (llm_request, llm_response, llm_tool_call, workflow_validation_attempt)
+		// Note: KA events (llm_request, llm_response, llm_tool_call, workflow_validation_attempt)
 		//       are EXCLUDED from this test. KA integration tests validate those separately.
 		//       This test focuses ONLY on AIAnalysis controller audit behavior.
 		//
@@ -412,7 +412,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// ========================================
 			// TEST OBJECTIVE:
 			// Verify InvestigatingHandler automatically calls auditClient.RecordAIAgentCall()
-			// when it calls HolmesGPT-API during investigation phase
+			// when it calls KA during investigation phase
 			// ========================================
 			//
 			// RELIABILITY (DD-TESTING-001):

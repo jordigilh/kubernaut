@@ -1209,7 +1209,7 @@ func WriteEnvtestKubeconfigToFile(cfg *rest.Config, serviceName string) (string,
 //
 // Parameters:
 //   - cfg: envtest REST config
-//   - saName: ServiceAccount name (e.g., "holmesgpt-service")
+//   - saName: ServiceAccount name (e.g., "kubernaut-agent-service")
 //   - namespace: Namespace for ServiceAccount (typically "default")
 //   - writer: Output writer for logging
 //

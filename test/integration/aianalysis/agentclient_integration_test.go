@@ -29,7 +29,7 @@ import (
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
-// HolmesGPT-API Integration Tests
+// KA Integration Tests
 //
 // REFACTORED: Per 03-testing-strategy.mdc Mock Policy (Feb 2, 2026)
 // - Integration tests use REAL KA service (business logic, not external API)
@@ -49,11 +49,11 @@ import (
 //   - Redis (:16384)
 //   - DataStorage API (:18095)
 //   - Mock LLM Service (:18141) - Standalone Go service (mocks OpenAI)
-//   - HolmesGPT API (:18120) - Real business logic
+//   - KA (:18120) - Real business logic
 
 // SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
 // See audit_flow_integration_test.go for detailed rationale.
-var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"), func() {
+var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func() {
 	var (
 		testCtx    context.Context
 		cancelFunc context.CancelFunc
@@ -118,7 +118,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			})
 
 			Expect(err).NotTo(HaveOccurred())
-			// ADR-055: TargetInOwnerChain removed from HolmesGPT API response.
+			// ADR-055: TargetInOwnerChain removed from KA response.
 			// The LLM now populates remediationTarget directly via get_namespaced_resource_context / get_cluster_resource_context.
 		})
 
@@ -498,7 +498,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 		})
 
 		// BR-AI-009: Server failure handling (HTTP 500) covered in unit tests
-		// See: test/unit/aianalysis/holmesgpt_client_test.go (HTTP 500 client error handling)
+		// See: test/unit/aianalysis/agentclient_test.go (HTTP 500 client error handling)
 		// See: test/unit/aianalysis/investigating_handler_test.go:823 (HTTP 500 controller retry logic)
 		// Unit tests use httptest.Server to simulate server failures without infrastructure manipulation
 

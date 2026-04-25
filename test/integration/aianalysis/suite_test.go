@@ -19,7 +19,7 @@ limitations under the License.
 //
 // Business Requirements:
 // - BR-AI-001: AI Analysis CRD lifecycle management
-// - BR-AI-002: HolmesGPT-API integration
+// - BR-AI-002: KA integration
 // - BR-AI-003: Rego policy evaluation
 //
 // Test Strategy: Two integration test categories:
@@ -37,7 +37,7 @@ limitations under the License.
 // - Redis (port 16384): Caching layer
 // - Data Storage API (port 18095): Audit trail
 // - Mock LLM Service (port 18141): Standalone OpenAI-compatible mock (AIAnalysis-specific)
-// - HolmesGPT API (port 18120): AI analysis service (uses Mock LLM at 18141)
+// - KA (port 18120): AI analysis service (uses Mock LLM at 18141)
 //
 // Per-Process Setup (Phase 2, all processes):
 // - envtest: In-memory Kubernetes API server (per process)
@@ -176,7 +176,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	GinkgoWriter.Println("  • Redis (port 16384)")
 	GinkgoWriter.Println("  • Data Storage API (port 18095)")
 	GinkgoWriter.Println("  • Mock LLM Service (port 18141 - AIAnalysis-specific)")
-	GinkgoWriter.Println("  • HolmesGPT-API HTTP service (port 18120, uses Mock LLM)")
+	GinkgoWriter.Println("  • KA HTTP service (port 18120, uses Mock LLM)")
 	GinkgoWriter.Println("")
 	GinkgoWriter.Println("Phase 2 will create PER-PROCESS (all processes):")
 	GinkgoWriter.Println("  • envtest (in-memory K8s API server)")
