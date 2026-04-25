@@ -37,6 +37,14 @@ func (s *stubClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatRespons
 	return s.resp, s.err
 }
 
+func (s *stubClient) StreamChat(ctx context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	resp, err := s.Chat(ctx, req)
+	if err == nil {
+		_ = cb(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
+	}
+	return resp, err
+}
+
 func (s *stubClient) Close() error { return nil }
 
 var _ = Describe("InstrumentedClient — TP-433-PARITY (#433)", func() {

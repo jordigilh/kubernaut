@@ -46,6 +46,14 @@ func (r *recordingClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatRe
 	return llm.ChatResponse{Message: llm.Message{Content: r.id}}, nil
 }
 
+func (r *recordingClient) StreamChat(ctx context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	resp, err := r.Chat(ctx, req)
+	if err == nil {
+		_ = cb(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
+	}
+	return resp, err
+}
+
 func (r *recordingClient) Close() error {
 	if r.closeDelay > 0 {
 		time.Sleep(r.closeDelay)
