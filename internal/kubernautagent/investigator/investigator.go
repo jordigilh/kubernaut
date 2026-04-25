@@ -390,6 +390,12 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		}, nil
 	}
 
+	// Same-kind sentinel validation gate (Issue #847): when the LLM's
+	// remediation_target.kind matches the signal's resource_kind, the LLM may
+	// be targeting the symptom reporter instead of the actual root cause.
+	// Inject a single correction message and re-run. Max 1 retry.
+	result = inv.sameKindValidationGate(ctx, result, signal, messages, tokens, correlationID, client, modelName)
+
 	// Defense-in-depth: RCA phase must never abort the pipeline via
 	// needs_human_review. Only max-turns exhaustion (above) is a valid RCA abort.
 	// Aligned with HAPI v1.2.1 where needs_human_review is parser-driven in Phase 3.
@@ -492,6 +498,115 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 		retryMessages = append(retryMessages, resp.Message)
 	}
 	return nil
+}
+
+// sameKindValidationGate checks whether the LLM's remediation_target.kind
+// matches the signal's resource_kind. When they match, the LLM may be targeting
+// the symptom reporter (e.g., Node) rather than the actual root cause (e.g.,
+// Deployment). This gate injects one correction message requesting the LLM to
+// re-evaluate its target. If the retry also returns the same kind, the result
+// is accepted as-is (the LLM explicitly confirmed its choice).
+// Issue #847 / DD-HAPI-847, Layer 3: Programmatic Sentinel Validation Gate.
+func (inv *Investigator) sameKindValidationGate(
+	ctx context.Context,
+	result *katypes.InvestigationResult,
+	signal katypes.SignalContext,
+	history []llm.Message,
+	tokens *TokenAccumulator,
+	correlationID string,
+	client llm.Client,
+	modelName string,
+) *katypes.InvestigationResult {
+	if signal.ResourceKind == "" || result.RemediationTarget.Kind == "" {
+		return result
+	}
+	if !strings.EqualFold(result.RemediationTarget.Kind, signal.ResourceKind) {
+		return result
+	}
+
+	inv.logger.Info("same-kind validation gate triggered: remediation_target.kind matches signal resource_kind",
+		slog.String("target_kind", result.RemediationTarget.Kind),
+		slog.String("signal_resource_kind", signal.ResourceKind),
+		slog.String("correlation_id", correlationID))
+
+	gateEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+	gateEvent.EventAction = "same_kind_validation_gate"
+	gateEvent.EventOutcome = audit.OutcomeSuccess
+	gateEvent.Data["signal_resource_kind"] = signal.ResourceKind
+	gateEvent.Data["target_kind"] = result.RemediationTarget.Kind
+	gateEvent.Data["target_name"] = result.RemediationTarget.Name
+	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.logger)
+
+	correctionMsg := fmt.Sprintf(
+		`Your remediation_target.kind is "%s", which is the same resource kind as the input signal. `+
+			`Signals often propagate upward: workload-level issues manifest as conditions on parent resources `+
+			`(e.g., pod memory leaks cause node DiskPressure, deployment misconfigurations appear as node conditions). `+
+			`Please re-evaluate: is a child resource (Deployment, StatefulSet, DaemonSet, Pod) the actual root cause `+
+			`whose configuration should be modified? If after re-evaluation you are confident the %s itself is the `+
+			`correct remediation target, confirm by resubmitting with the same target and explain why in your `+
+			`due_diligence.target_accuracy field.`,
+		result.RemediationTarget.Kind,
+		result.RemediationTarget.Kind,
+	)
+
+	submitOnlyTools := []llm.ToolDefinition{
+		{
+			Name:        SubmitResultToolName,
+			Description: "Submit root cause analysis result.",
+			Parameters:  parser.RCAResultSchema(),
+		},
+	}
+
+	retryMessages := make([]llm.Message, len(history))
+	copy(retryMessages, history)
+	retryMessages = append(retryMessages,
+		llm.Message{Role: "user", Content: correctionMsg},
+	)
+
+	resp, err := client.Chat(ctx, llm.ChatRequest{
+		Messages: retryMessages,
+		Tools:    submitOnlyTools,
+		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
+	})
+	if err != nil {
+		inv.logger.Warn("same-kind validation gate retry failed, keeping original result",
+			slog.String("error", err.Error()),
+			slog.String("correlation_id", correlationID))
+		return result
+	}
+	if tokens != nil {
+		tokens.Add(resp.Usage)
+	}
+
+	var retryContent string
+	for _, tc := range resp.ToolCalls {
+		if tc.Name == SubmitResultToolName {
+			retryContent = tc.Arguments
+			break
+		}
+	}
+	if retryContent == "" && resp.Message.Content != "" {
+		retryContent = resp.Message.Content
+	}
+	if retryContent == "" {
+		inv.logger.Warn("same-kind validation gate: no content in retry response, keeping original",
+			slog.String("correlation_id", correlationID))
+		return result
+	}
+
+	retryResult, parseErr := inv.resultParser.Parse(retryContent)
+	if parseErr != nil {
+		inv.logger.Warn("same-kind validation gate: retry parse failed, keeping original",
+			slog.String("error", parseErr.Error()),
+			slog.String("correlation_id", correlationID))
+		return result
+	}
+
+	inv.logger.Info("same-kind validation gate: accepted retry result",
+		slog.String("original_target", result.RemediationTarget.Kind+"/"+result.RemediationTarget.Name),
+		slog.String("retry_target", retryResult.RemediationTarget.Kind+"/"+retryResult.RemediationTarget.Name),
+		slog.String("correlation_id", correlationID))
+	return retryResult
 }
 
 func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (*katypes.InvestigationResult, error) {
@@ -1111,6 +1226,21 @@ func resultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 			alts[i] = a
 		}
 		m["alternative_workflows"] = alts
+	}
+	if len(r.CausalChain) > 0 {
+		m["causal_chain"] = r.CausalChain
+	}
+	if r.DueDiligence != nil {
+		m["due_diligence"] = map[string]interface{}{
+			"causal_completeness":    r.DueDiligence.CausalCompleteness,
+			"target_accuracy":        r.DueDiligence.TargetAccuracy,
+			"evidence_sufficiency":   r.DueDiligence.EvidenceSufficiency,
+			"alternative_hypotheses": r.DueDiligence.AlternativeHypotheses,
+			"scope_completeness":     r.DueDiligence.ScopeCompleteness,
+			"proportionality":        r.DueDiligence.Proportionality,
+			"regression_awareness":   r.DueDiligence.RegressionAwareness,
+			"confidence_calibration": r.DueDiligence.ConfidenceCalibration,
+		}
 	}
 	return m
 }

@@ -355,6 +355,8 @@ func (s AIAnalysisAuditPayloadPhase) Validate() error {
 	switch s {
 	case "Pending":
 		return nil
+	case "Investigating":
+		return nil
 	case "Analyzing":
 		return nil
 	case "Completed":
@@ -4530,6 +4532,10 @@ func (s RemediationHistoryEntryAssessmentReason) Validate() error {
 		return nil
 	case "MetricsTimedOut":
 		return nil
+	case "AlertDecayTimeout":
+		return nil
+	case "Unrecoverable":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -4637,6 +4643,10 @@ func (s RemediationHistorySummaryAssessmentReason) Validate() error {
 	case "NoExecution":
 		return nil
 	case "MetricsTimedOut":
+		return nil
+	case "AlertDecayTimeout":
+		return nil
+	case "Unrecoverable":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -5671,6 +5681,10 @@ func (s RemediationWorkflowStatus) Validate() error {
 	switch s {
 	case "Active":
 		return nil
+	case "Invalid":
+		return nil
+	case "Pending":
+		return nil
 	case "Disabled":
 		return nil
 	case "Deprecated":
@@ -6401,6 +6415,8 @@ func (s WorkflowDiscoveryEntryExecutionEngine) Validate() error {
 		return nil
 	case "job":
 		return nil
+	case "ansible":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -6559,6 +6575,8 @@ func (s WorkflowExecutionAuditPayloadFailureReason) Validate() error {
 	case "ResourceExhausted":
 		return nil
 	case "TaskFailed":
+		return nil
+	case "UnsupportedEngine":
 		return nil
 	case "Unknown":
 		return nil
