@@ -1,0 +1,158 @@
+# CRD-to-OpenAPI enum correspondence mappings.
+#
+# Used by check-openapi-crd-enum-drift to detect values present in CRDs
+# (source of truth for K8s resources) but missing from the OpenAPI spec
+# (source of truth for the DataStorage REST API / ogen client).
+#
+# Fields:
+#   crd            - CRD YAML filename in config/crd/bases/
+#   crd_path       - dot-separated path to the enum field (spec.x.y or status.x.y)
+#   openapi_schema - schema name under components.schemas in data-storage-v1.yaml
+#   openapi_field  - property name within the schema
+#   subset_ok      - if true, CRD superset is a warning not a failure (intentional)
+#   note           - context for reviewers
+#
+# When adding a new CRD enum, add a mapping here or the pre-commit hook will
+# flag it as unmapped.
+
+mappings:
+  # ===========================================================================
+  # CRITICAL: Missing values cause ogen response validation rejection (#838)
+  # ===========================================================================
+
+  - crd: kubernaut.ai_remediationworkflows.yaml
+    crd_path: spec.execution.engine
+    openapi_schema: WorkflowDiscoveryEntry
+    openapi_field: executionEngine
+    note: "Issue #838 - must include ansible"
+
+  - crd: kubernaut.ai_remediationworkflows.yaml
+    crd_path: spec.execution.engine
+    openapi_schema: WorkflowSearchResult
+    openapi_field: executionEngine
+    note: "Reference: already aligned"
+
+  - crd: kubernaut.ai_aianalyses.yaml
+    crd_path: status.phase
+    openapi_schema: AIAnalysisAuditPayload
+    openapi_field: phase
+    note: "Audit gap #2 - must include Investigating"
+
+  - crd: kubernaut.ai_remediationworkflows.yaml
+    crd_path: status.catalogStatus
+    openapi_schema: RemediationWorkflow
+    openapi_field: status
+    note: "Audit gap #3 - CRD has Invalid, Pending not in OpenAPI"
+
+  - crd: kubernaut.ai_effectivenessassessments.yaml
+    crd_path: status.assessmentReason
+    openapi_schema: RemediationHistoryEntry
+    openapi_field: assessmentReason
+    note: "Audit gap #4 - missing AlertDecayTimeout, Unrecoverable"
+
+  - crd: kubernaut.ai_effectivenessassessments.yaml
+    crd_path: status.assessmentReason
+    openapi_schema: RemediationHistorySummary
+    openapi_field: assessmentReason
+    note: "Audit gap #4 - summary variant"
+
+  # ===========================================================================
+  # HIGH: Important alignment checks
+  # ===========================================================================
+
+  - crd: kubernaut.ai_aianalyses.yaml
+    crd_path: status.selectedWorkflow.executionEngine
+    openapi_schema: WorkflowDiscoveryEntry
+    openapi_field: executionEngine
+    note: "AI analysis stores selected engine; must match discovery values"
+
+  - crd: kubernaut.ai_workflowexecutions.yaml
+    crd_path: status.phase
+    openapi_schema: WorkflowExecutionAuditPayload
+    openapi_field: phase
+
+  - crd: kubernaut.ai_workflowexecutions.yaml
+    crd_path: status.failureDetails.reason
+    openapi_schema: WorkflowExecutionAuditPayload
+    openapi_field: failure_reason
+
+  - crd: kubernaut.ai_notificationrequests.yaml
+    crd_path: spec.type
+    openapi_schema: NotificationAuditPayload
+    openapi_field: notification_type
+
+  - crd: kubernaut.ai_notificationrequests.yaml
+    crd_path: spec.priority
+    openapi_schema: NotificationAuditPayload
+    openapi_field: priority
+
+  - crd: kubernaut.ai_signalprocessings.yaml
+    crd_path: status.phase
+    openapi_schema: SignalProcessingAuditPayload
+    openapi_field: phase
+
+  - crd: kubernaut.ai_signalprocessings.yaml
+    crd_path: status.severity
+    openapi_schema: SignalProcessingAuditPayload
+    openapi_field: severity
+
+  - crd: kubernaut.ai_signalprocessings.yaml
+    crd_path: status.signalMode
+    openapi_schema: SignalProcessingAuditPayload
+    openapi_field: signal_mode
+
+  - crd: kubernaut.ai_aianalyses.yaml
+    crd_path: status.humanReviewReason
+    openapi_schema: IncidentResponseData
+    openapi_field: humanReviewReason
+
+  - crd: kubernaut.ai_aianalyses.yaml
+    crd_path: status.postRCAContext.detectedLabels.failedDetections[]
+    openapi_schema: DetectedLabels
+    openapi_field: failedDetections[]
+
+  # ===========================================================================
+  # MEDIUM: Intentional subsets (subset_ok: true)
+  # ===========================================================================
+
+  - crd: kubernaut.ai_notificationrequests.yaml
+    crd_path: status.phase
+    openapi_schema: NotificationAuditPayload
+    openapi_field: final_status
+    subset_ok: true
+    note: "Intentional: audit omits Retrying, PartiallySent; adds Cancelled"
+
+  - crd: kubernaut.ai_remediationrequests.yaml
+    crd_path: status.overallPhase
+    openapi_schema: RemediationOrchestratorAuditPayload
+    openapi_field: failure_phase
+    subset_ok: true
+    note: "Intentional: audit only reports AIAnalysis, Approval, SP, WE as failure phases"
+
+  - crd: kubernaut.ai_signalprocessings.yaml
+    crd_path: status.environmentClassification.environment
+    openapi_schema: SignalProcessingAuditPayload
+    openapi_field: environment
+    subset_ok: true
+    note: "Intentional: audit uses lowercase, omits Test/Unknown"
+
+  - crd: kubernaut.ai_signalprocessings.yaml
+    crd_path: status.severity
+    openapi_schema: SignalProcessingAuditPayload
+    openapi_field: priority
+    subset_ok: true
+    note: "Different concepts: CRD severity vs OpenAPI derived priority"
+
+  - crd: kubernaut.ai_remediationworkflows.yaml
+    crd_path: status.catalogStatus
+    openapi_schema: WorkflowCatalogCreatedPayload
+    openapi_field: status
+    subset_ok: true
+    note: "Audit gap #5 - creation event only captures Active/Disabled/Archived"
+
+  - crd: kubernaut.ai_remediationapprovalrequests.yaml
+    crd_path: status.decision
+    openapi_schema: RemediationApprovalAuditPayload
+    openapi_field: decision
+    subset_ok: true
+    note: "Audit only reports Approved/Rejected, CRD also has empty and Expired"

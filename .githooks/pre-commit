@@ -199,6 +199,36 @@ if [ -n "$STAGED_TYPES" ]; then
 fi
 
 # ========================================
+# CHECK 6: CRD-to-OpenAPI Enum Drift Detection (Issue #838)
+# ========================================
+echo ""
+echo "🔍 Checking for CRD-to-OpenAPI enum drift..."
+
+STAGED_ENUM_SOURCES=$(git diff --cached --name-only --diff-filter=ACM | \
+    grep -E '(api/openapi/.*\.yaml|api/.*_types\.go)$' || true)
+
+if [ -n "$STAGED_ENUM_SOURCES" ]; then
+    # Regenerate CRDs from Go types to catch any uncommitted drift
+    if command -v make &>/dev/null && [ -f Makefile ]; then
+        make manifests >/dev/null 2>&1 || true
+    fi
+
+    # Compare CRD enums against OpenAPI spec
+    if command -v go &>/dev/null; then
+        if ! go run ./scripts/validation/check-openapi-crd-enum-drift/... . 2>/dev/null; then
+            echo "❌ VIOLATION: CRD-to-OpenAPI enum drift detected"
+            echo "   CRD enums contain values missing from the OpenAPI spec."
+            echo "   The ogen-generated client will reject these at runtime (Issue #838)."
+            echo ""
+            echo "   To fix: add missing values to api/openapi/data-storage-v1.yaml"
+            echo "   Then run: make generate-datastorage-client"
+            echo ""
+            VIOLATIONS=$((VIOLATIONS + 1))
+        fi
+    fi
+fi
+
+# ========================================
 # RESULT
 # ========================================
 echo ""
