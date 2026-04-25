@@ -19,6 +19,7 @@ package server
 import (
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -125,6 +126,11 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 
 func extractIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// XFF is comma-separated: "client, proxy1, proxy2". Use the
+		// leftmost (client) IP for per-client rate limiting.
+		if idx := strings.Index(xff, ","); idx != -1 {
+			xff = strings.TrimSpace(xff[:idx])
+		}
 		if ip, _, err := net.SplitHostPort(xff); err == nil {
 			return ip
 		}

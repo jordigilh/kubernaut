@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -249,7 +250,10 @@ func buildCallOptions(req llm.ChatRequest) []llms.CallOption {
 		for _, td := range req.Tools {
 			var params any
 			if len(td.Parameters) > 0 {
-				_ = json.Unmarshal(td.Parameters, &params)
+				if err := json.Unmarshal(td.Parameters, &params); err != nil {
+					slog.Warn("langchaingo: malformed tool parameter schema, using nil params",
+						slog.String("tool", td.Name), slog.String("error", err.Error()))
+				}
 			}
 			tools = append(tools, llms.Tool{
 				Type: "function",
@@ -339,9 +343,6 @@ func normalizeStopReason(raw string) string {
 	}
 }
 
-// Close releases resources held by the adapter. For providers with gRPC
-// connections (e.g. vertex via genai.Client), it calls the model's Close
-// method. The optional closeFn is called to release HTTP idle connections
 // StreamChat uses LangChainGo's WithStreamingFunc to forward text deltas
 // to the callback incrementally. The final ChatResponse is built from the
 // complete ContentResponse return value.
@@ -362,6 +363,9 @@ func (a *Adapter) StreamChat(ctx context.Context, req llm.ChatRequest, callback 
 	return fromContentResponse(resp), nil
 }
 
+// Close releases resources held by the adapter. For providers with gRPC
+// connections (e.g. vertex via genai.Client), it calls the model's Close
+// method. The optional closeFn is called to release HTTP idle connections
 // from the custom transport chain.
 func (a *Adapter) Close() error {
 	var firstErr error

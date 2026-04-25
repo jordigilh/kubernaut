@@ -33,6 +33,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -215,7 +216,10 @@ func parseInputSchema(raw json.RawMessage) anthropic.ToolInputSchemaParam {
 		Properties any      `json:"properties"`
 		Required   []string `json:"required"`
 	}
-	_ = json.Unmarshal(raw, &s)
+	if err := json.Unmarshal(raw, &s); err != nil {
+		slog.Warn("vertexanthropic: malformed tool parameter schema, using empty schema",
+			slog.String("error", err.Error()))
+	}
 	return anthropic.ToolInputSchemaParam{
 		Properties: s.Properties,
 		Required:   s.Required,
@@ -313,8 +317,6 @@ func safeWithGoogleAuth(ctx context.Context, location, project string) (opt opti
 	return opt, nil
 }
 
-// Close is a no-op for the Anthropic SDK client which has no closeable
-// resources. Satisfies llm.Client.
 // StreamChat uses the Anthropic SDK's Messages.NewStreaming to deliver text
 // deltas incrementally. The final ChatResponse is built from the accumulated
 // message, reusing the existing mapResponse path.
@@ -350,6 +352,8 @@ func extractTextDelta(event anthropic.MessageStreamEventUnion) (string, bool) {
 	return "", false
 }
 
+// Close is a no-op for the Anthropic SDK client which has no closeable
+// resources. Satisfies llm.Client.
 func (c *Client) Close() error { return nil }
 
 var _ llm.Client = (*Client)(nil)

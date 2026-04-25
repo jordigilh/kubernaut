@@ -111,6 +111,10 @@ func (sc *SwappableClient) ModelName() string {
 	return name
 }
 
+// closeWithTimeout closes c in a background goroutine, abandoning it after
+// timeout. This accepts a potential goroutine leak (#62) as a deliberate
+// trade-off: blocking Swap indefinitely on a hung Close would stall all
+// in-flight LLM calls waiting for the write lock.
 func closeWithTimeout(c Client, timeout time.Duration) {
 	done := make(chan struct{})
 	go func() {
