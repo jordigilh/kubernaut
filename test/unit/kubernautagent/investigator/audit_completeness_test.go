@@ -71,6 +71,14 @@ func newScriptedLLM(responses ...llm.ChatResponse) *scriptedLLMClient {
 	return &scriptedLLMClient{responses: responses}
 }
 
+func (s *scriptedLLMClient) StreamChat(ctx context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	resp, err := s.Chat(ctx, req)
+	if err == nil {
+		_ = cb(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
+	}
+	return resp, err
+}
+
 func (s *scriptedLLMClient) Close() error { return nil }
 
 func (s *scriptedLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResponse, error) {

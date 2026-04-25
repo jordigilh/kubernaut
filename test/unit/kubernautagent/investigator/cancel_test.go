@@ -46,6 +46,14 @@ type cancelAwareMockClient struct {
 
 func (m *cancelAwareMockClient) Close() error { return nil }
 
+func (m *cancelAwareMockClient) StreamChat(ctx context.Context, req llm.ChatRequest, callback func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	resp, err := m.Chat(ctx, req)
+	if err == nil {
+		_ = callback(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
+	}
+	return resp, err
+}
+
 func (m *cancelAwareMockClient) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
 	m.calls = append(m.calls, req)
 

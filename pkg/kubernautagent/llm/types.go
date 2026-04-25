@@ -30,7 +30,28 @@ import (
 // Implementations where no cleanup is required should return nil.
 type Client interface {
 	Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
+	StreamChat(ctx context.Context, req ChatRequest, callback func(ChatStreamEvent) error) (ChatResponse, error)
 	Close() error
+}
+
+// ChatStreamEvent represents a single streaming chunk from the LLM.
+// The callback receives these incrementally; the caller should forward
+// text deltas to the SSE event sink for real-time observer delivery.
+type ChatStreamEvent struct {
+	Delta         string           `json:"delta,omitempty"`
+	ToolCallDelta *PartialToolCall `json:"tool_call_delta,omitempty"`
+	Usage         *TokenUsage      `json:"usage,omitempty"`
+	Done          bool             `json:"done,omitempty"`
+}
+
+// PartialToolCall represents an incremental fragment of a tool call
+// received during streaming. The caller accumulates these to build
+// the final ToolCall.
+type PartialToolCall struct {
+	Index          int    `json:"index"`
+	ID             string `json:"id,omitempty"`
+	Name           string `json:"name,omitempty"`
+	ArgumentsDelta string `json:"arguments_delta,omitempty"`
 }
 
 // ChatRequest contains the messages and tool definitions for an LLM call.

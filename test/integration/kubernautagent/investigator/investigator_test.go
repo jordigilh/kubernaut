@@ -64,6 +64,14 @@ type mockLLMClient struct {
 	callIdx   int
 }
 
+func (m *mockLLMClient) StreamChat(ctx context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	resp, err := m.Chat(ctx, req)
+	if err == nil {
+		_ = cb(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
+	}
+	return resp, err
+}
+
 func (m *mockLLMClient) Close() error { return nil }
 
 func (m *mockLLMClient) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {

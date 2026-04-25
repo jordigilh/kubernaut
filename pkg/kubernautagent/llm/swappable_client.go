@@ -60,6 +60,15 @@ func (sc *SwappableClient) Chat(ctx context.Context, req ChatRequest) (ChatRespo
 	return c.Chat(ctx, req)
 }
 
+// StreamChat delegates to the inner client's StreamChat. The inner reference
+// is copied under RLock and released before the network call.
+func (sc *SwappableClient) StreamChat(ctx context.Context, req ChatRequest, callback func(ChatStreamEvent) error) (ChatResponse, error) {
+	sc.mu.RLock()
+	c := sc.inner
+	sc.mu.RUnlock()
+	return c.StreamChat(ctx, req, callback)
+}
+
 // Close closes the current inner client.
 func (sc *SwappableClient) Close() error {
 	sc.mu.RLock()
