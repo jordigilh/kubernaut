@@ -52,12 +52,6 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 ## Roadmap
 
-Each milestone builds on the previous: **control** → **external integration** → **multi-agent intelligence** → **fleet scale** → **domain expansion**. See [#818](https://github.com/jordigilh/kubernaut/issues/818) for the full vision.
-
-<p align="center">
-  <img src="docs/roadmap/kubernaut-roadmap.svg" alt="Kubernaut Roadmap" width="960"/>
-</p>
-
 ### v1.4 — Operator Overrides and Platform Hardening (current)
 
 - **Prompt injection guardrails** — Shadow agent with a dedicated scanning model to protect the agentic pipeline against prompt injection attacks ([#601](https://github.com/jordigilh/kubernaut/issues/601))
@@ -68,51 +62,13 @@ Each milestone builds on the previous: **control** → **external integration** 
 
 Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/milestone/5).
 
-### Live Investigation Control
-
-*See and steer your AI investigations in real time.*
-
-- **Real-time investigation streaming** — Sub-second token-level reasoning updates streamed to the operator
-- **Cancel and takeover** — Interrupt long-running investigations and take manual control
-- **Investigation snapshots** — Full AI context captured at any point for audit and replay
-
-### Agentic Integration
-
-*Your tools talk to Kubernaut natively.*
-
-- **MCP Server** — Investigate, enrich, and select workflows through any MCP-compatible interface — Claude, Cursor, Slack bots, or custom UIs ([#703](https://github.com/jordigilh/kubernaut/issues/703))
-- **A2A Protocol** — External AI agents delegate remediation to Kubernaut and track task lifecycle via the [Agent-to-Agent](https://a2aproject.github.io/A2A/latest/specification/) standard ([#705](https://github.com/jordigilh/kubernaut/issues/705))
-- **API Frontend service** — Unified external protocol layer hosting MCP and inbound A2A endpoints, with shared CRD watching for live status streaming ([#708](https://github.com/jordigilh/kubernaut/issues/708))
-- **Kubernaut Console** — Web-based operator dashboard with chat UI, live remediation streaming, and workflow selection ([#713](https://github.com/jordigilh/kubernaut/issues/713))
-- **Natural language signal intake** — Trigger investigations by describing the problem in plain text; Kubernaut extracts a structured signal and runs the full pipeline ([#714](https://github.com/jordigilh/kubernaut/issues/714))
+**[Full roadmap](docs/roadmap/ROADMAP.md)** — Live Investigation Control, Agentic Integration (MCP/A2A), Collective Intelligence, Fleet Operations (ACM/AAP), and Operational Expansion (cost, security, non-K8s).
 
 <p align="center">
   <img src="docs/architecture/diagrams/kubernaut-console-animated.gif" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
+  <br/>
+  <em>On the roadmap — Kubernaut Console: investigate, chat, and remediate from a single UI</em>
 </p>
-
-### Collective Intelligence
-
-*Multiple AI perspectives, one root cause.*
-
-- **Multi-agent consensus RCA** — Ensemble investigation with independent LLM agents from different model families; a consolidator validates agreement and cross-examines on divergence ([#648](https://github.com/jordigilh/kubernaut/issues/648))
-- **Investigation Prompt Bundles** — Operators inject SOPs into the investigation pipeline via OCI-packaged prompts and skills ([#711](https://github.com/jordigilh/kubernaut/issues/711))
-- **Forensic replay** — Re-run past remediations against historical cluster state for post-incident analysis
-
-### Fleet Operations
-
-*From one cluster to your entire fleet.*
-
-- **Multi-cluster federation** — A2A-based fleet-wide remediation with centralized signal ingestion, cross-cluster RCA, and federated workflow execution
-- **Cross-cluster pattern detection** — Identify correlated failures across clusters and trigger coordinated remediation
-- **Skills Marketplace** — OCI artifact registry for community and enterprise MCP tool packages
-
-### Operational Expansion
-
-*New domains, same intelligent approach.*
-
-- **Cost optimization** — AI-driven right-sizing recommendations and automated resource adjustments
-- **Threat remediation** — Automated security incident response integrated with the remediation pipeline
-- **Non-Kubernetes workflows** — `targetSystem` field enables execution against external systems (VMs, cloud APIs, IaC) with EA evolution for unverifiable outcomes ([#739](https://github.com/jordigilh/kubernaut/issues/739))
 
 ---
 
