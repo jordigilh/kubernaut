@@ -58,6 +58,11 @@ const (
 	// active investigation's SSE stream (BR-SESSION-005). Records who is
 	// observing which investigation for SOC2 CC8.1 audit trail.
 	EventTypeSessionObserved = "aiagent.session.observed"
+
+	// EventTypeSessionAccessDenied is emitted when an authenticated user
+	// attempts to access a session they do not own. Records the requesting
+	// user, target session, and endpoint for SOC2 CC8.1 failed-access audit.
+	EventTypeSessionAccessDenied = "aiagent.session.access_denied"
 )
 
 const (
@@ -77,6 +82,7 @@ const (
 
 	ActionInvestigationCancelled = "investigation_cancelled"
 	ActionSessionObserved       = "session_observed"
+	ActionSessionAccessDenied   = "session_access_denied"
 )
 
 const (
@@ -105,6 +111,7 @@ var AllEventTypes = []string{
 	EventTypeSessionFailed,
 	EventTypeInvestigationCancelled,
 	EventTypeSessionObserved,
+	EventTypeSessionAccessDenied,
 }
 
 // AuditEvent represents an audit event to be stored.

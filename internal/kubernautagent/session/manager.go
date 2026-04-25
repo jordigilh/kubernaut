@@ -207,14 +207,11 @@ func (m *Manager) Subscribe(ctx context.Context, id string) (<-chan Investigatio
 	correlationID := sess.Metadata["remediation_id"]
 	m.store.mu.Unlock()
 
-	event := audit.NewEvent(audit.EventTypeSessionObserved, correlationID)
-	event.EventAction = audit.ActionSessionObserved
-	event.EventOutcome = audit.OutcomeSuccess
-	event.Data["session_id"] = id
+	var extra []string
 	if user := auth.GetUserFromContext(ctx); user != "" {
-		event.Data["observer_user"] = user
+		extra = append(extra, "observer_user", user)
 	}
-	audit.StoreBestEffort(ctx, m.auditStore, event, m.logger)
+	m.emitSessionEvent(ctx, audit.EventTypeSessionObserved, audit.ActionSessionObserved, audit.OutcomeSuccess, id, correlationID, nil, extra...)
 
 	return ch, nil
 }
@@ -287,15 +284,31 @@ func (m *Manager) emitCompleteEvent(id string) {
 	}
 }
 
+// EmitAccessDenied records a failed session access attempt for SOC2 CC8.1
+// failed-access audit trail. Fire-and-forget per ADR-038.
+func (m *Manager) EmitAccessDenied(ctx context.Context, sessionID, endpoint, requestingUser string) {
+	event := audit.NewEvent(audit.EventTypeSessionAccessDenied, "")
+	event.EventAction = audit.ActionSessionAccessDenied
+	event.EventOutcome = audit.OutcomeFailure
+	event.Data["session_id"] = sessionID
+	event.Data["endpoint"] = endpoint
+	event.Data["requesting_user"] = requestingUser
+	audit.StoreBestEffort(ctx, m.auditStore, event, m.logger)
+}
+
 // emitSessionEvent builds and stores an audit event for a session lifecycle
-// transition. Errors are fire-and-forget per ADR-038.
-func (m *Manager) emitSessionEvent(ctx context.Context, eventType, action, outcome, sessionID, correlationID string, fnErr error) {
+// transition. Optional extraData key-value pairs are merged into the event
+// data. Errors are fire-and-forget per ADR-038.
+func (m *Manager) emitSessionEvent(ctx context.Context, eventType, action, outcome, sessionID, correlationID string, fnErr error, extraData ...string) {
 	event := audit.NewEvent(eventType, correlationID)
 	event.EventAction = action
 	event.EventOutcome = outcome
 	event.Data["session_id"] = sessionID
 	if fnErr != nil {
 		event.Data["error"] = fnErr.Error()
+	}
+	for i := 0; i+1 < len(extraData); i += 2 {
+		event.Data[extraData[i]] = extraData[i+1]
 	}
 	audit.StoreBestEffort(ctx, m.auditStore, event, m.logger)
 }

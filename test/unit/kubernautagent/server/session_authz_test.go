@@ -201,6 +201,46 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 		})
 	})
 
+	Describe("UT-KA-823-A10: Denied access emits audit event", func() {
+		It("emits aiagent.session.access_denied when non-owner attempts access", func() {
+			recorder := &syncAuditRecorder{}
+			authzStore := session.NewStore(30 * time.Minute)
+			authzMgr := session.NewManager(authzStore, slog.Default(), recorder)
+			authzH := server.NewHandler(authzMgr, nil, slog.Default())
+
+			proceed := make(chan struct{})
+			id, err := authzMgr.StartInvestigation(userCtx("user-a"), func(ctx context.Context) (interface{}, error) {
+				<-proceed
+				return nil, nil
+			}, map[string]string{"remediation_id": "rr-denied-audit"})
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() { close(proceed) })
+
+			resp, err := authzH.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
+				userCtx("user-b"),
+				agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams{SessionID: id},
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			httpErr, ok := resp.(*agentclient.HTTPError)
+			Expect(ok).To(BeTrue())
+			Expect(httpErr.Status).To(Equal(404))
+
+			Eventually(func() bool {
+				for _, evt := range recorder.Events() {
+					if evt.EventType == audit.EventTypeSessionAccessDenied {
+						user, _ := evt.Data["requesting_user"].(string)
+						sid, _ := evt.Data["session_id"].(string)
+						ep, _ := evt.Data["endpoint"].(string)
+						return user == "user-b" && sid == id && ep != ""
+					}
+				}
+				return false
+			}, 5*time.Second).Should(BeTrue(),
+				"access_denied audit event must include requesting_user, session_id, and endpoint")
+		})
+	})
+
 	Describe("UT-KA-823-A09: session.observed includes observer identity", func() {
 		It("audit event includes the subscribing user extracted from context", func() {
 			recorder := &syncAuditRecorder{}

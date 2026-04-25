@@ -960,9 +960,10 @@ In v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433), Kubern
 | `aiagent.session.failed` | `session_failed` | `failure` |
 | `aiagent.investigation.cancelled` | `investigation_cancelled` | `failure` |
 | `aiagent.session.observed` | `session_observed` | `success` |
+| `aiagent.session.access_denied` | `session_access_denied` | `failure` |
 | `aiagent.conversation.turn` | `conversation_turn` | `success` |
 
-**Granularity**: `aiagent.llm.tool_call` is emitted **once per tool call**. `aiagent.workflow.validation_attempt` is emitted per validation attempt and includes `workflow_id` and `is_final_attempt` where applicable. `aiagent.conversation.turn` is emitted once per user message in the conversational RAR API (see [DD-CONV-001](./DD-CONV-001-conversation-tool-call-architecture.md)). `aiagent.session.observed` includes `observer_user` (the authenticated identity of the subscribing user, extracted from `auth.UserContextKey` in the request context) for SOC2 CC8.1 operator attribution.
+**Granularity**: `aiagent.llm.tool_call` is emitted **once per tool call**. `aiagent.workflow.validation_attempt` is emitted per validation attempt and includes `workflow_id` and `is_final_attempt` where applicable. `aiagent.conversation.turn` is emitted once per user message in the conversational RAR API (see [DD-CONV-001](./DD-CONV-001-conversation-tool-call-architecture.md)). `aiagent.session.observed` includes `observer_user` (the authenticated identity of the subscribing user, extracted from `auth.UserContextKey` in the request context) for SOC2 CC8.1 operator attribution. `aiagent.session.access_denied` is emitted when an authenticated user attempts to access a session they do not own; includes `requesting_user`, `session_id`, and `endpoint` for SOC2 CC8.1 failed-access audit trail.
 
 **Reference**: [TP-433-AUDIT-SOC2](../../tests/433/TP-433-AUDIT-SOC2.md).
 
