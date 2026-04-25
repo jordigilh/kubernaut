@@ -70,7 +70,7 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 
 ### Live Investigation Control
 
-*See and steer your AI investigations in real time.*
+*See and steer your AI investigations in real time.* ([#822](https://github.com/jordigilh/kubernaut/issues/822))
 
 - **Real-time investigation streaming** — Sub-second token-level reasoning updates streamed to the operator
 - **Cancel and takeover** — Interrupt long-running investigations and take manual control
@@ -84,7 +84,6 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 - **A2A Protocol** — External AI agents delegate remediation to Kubernaut and track task lifecycle via the [Agent-to-Agent](https://a2aproject.github.io/A2A/latest/specification/) standard ([#705](https://github.com/jordigilh/kubernaut/issues/705))
 - **Kubernaut Console** — Web-based operator dashboard with chat UI, live remediation streaming, and workflow selection ([#713](https://github.com/jordigilh/kubernaut/issues/713))
 - **Natural language signal intake** — Trigger investigations by describing the problem in plain text; Kubernaut extracts a structured signal and runs the full pipeline ([#714](https://github.com/jordigilh/kubernaut/issues/714))
-- **Skills Marketplace** — OCI registry for agentic skill packages and Goose recipes
 
 <p align="center">
   <img src="docs/architecture/diagrams/kubernaut-console-animated.gif" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
@@ -96,7 +95,7 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 
 - **Multi-agent consensus RCA** — Ensemble investigation with independent LLM agents from different model families; a consolidator validates agreement and cross-examines on divergence ([#648](https://github.com/jordigilh/kubernaut/issues/648))
 - **Investigation Prompt Bundles** — Operators inject SOPs into the investigation pipeline via Goose recipes packaged as OCI artifacts ([#711](https://github.com/jordigilh/kubernaut/issues/711))
-- **Remediation history analysis** — LLM-driven review of past RCA and remediation chains to improve future investigation accuracy
+- **Remediation history analysis** — LLM-driven review of past RCA and remediation chains to improve future investigation accuracy ([#842](https://github.com/jordigilh/kubernaut/issues/842))
 
 ### Fleet Operations
 
