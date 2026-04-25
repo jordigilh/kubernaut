@@ -57,7 +57,7 @@ var _ = Describe("UT-AA-668-001: AnalyzingHandler WithConfidenceThreshold", func
 
 var _ = Describe("UT-AA-668-003: InvestigatingHandler WithSessionPollInterval", func() {
 	It("BR-AI-011: should configure custom session poll interval", func() {
-		mockClient := mocks.NewMockHolmesGPTClient()
+		mockClient := mocks.NewMockAgentClient()
 		m := metrics.NewMetrics()
 		log := ctrl.Log.WithName("test")
 
@@ -71,7 +71,7 @@ var _ = Describe("UT-AA-668-003: InvestigatingHandler WithSessionPollInterval", 
 	})
 
 	It("BR-AI-011: should use default poll interval when option not provided", func() {
-		mockClient := mocks.NewMockHolmesGPTClient()
+		mockClient := mocks.NewMockAgentClient()
 		m := metrics.NewMetrics()
 		log := ctrl.Log.WithName("test")
 

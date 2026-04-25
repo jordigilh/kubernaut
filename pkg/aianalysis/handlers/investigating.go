@@ -39,10 +39,10 @@ import (
 
 // P2.2 Refactoring: Constants moved to constants.go
 
-// P1.3 Refactoring: HolmesGPTClientInterface moved to interfaces.go
+// P1.3 Refactoring: AgentClientInterface moved to interfaces.go
 
 // InvestigatingHandler handles the Investigating phase
-// BR-AI-007: Call HolmesGPT-API and process response
+// BR-AI-007: Call KA and process response
 // BR-AI-009: Retry transient errors with exponential backoff
 // BR-AI-010: Fail immediately on permanent errors
 // BR-AA-HAPI-064: Async session-based submit/poll/result flow
@@ -51,7 +51,7 @@ import (
 // Refactoring P2.1: Uses ErrorClassifier for error classification and retry logic
 type InvestigatingHandler struct {
 	log                 logr.Logger
-	hgClient            HolmesGPTClientInterface
+	kaClient            AgentClientInterface
 	metrics             *metrics.Metrics     // DD-METRICS-001: Injected metrics
 	auditClient         AuditClientInterface // DD-AUDIT-003: Injected audit client
 	processor           *ResponseProcessor   // P1.1: Response processing logic
@@ -98,13 +98,13 @@ func WithSessionPollInterval(d time.Duration) InvestigatingHandlerOption {
 // Refactoring P1.2: Initializes RequestBuilder
 // Refactoring P2.1: Initializes ErrorClassifier with configurable backoff parameters
 // BR-AA-HAPI-064: Accepts functional options (e.g., WithSessionMode())
-func NewInvestigatingHandler(hgClient HolmesGPTClientInterface, log logr.Logger, m *metrics.Metrics, auditClient AuditClientInterface, opts ...InvestigatingHandlerOption) *InvestigatingHandler {
+func NewInvestigatingHandler(hgClient AgentClientInterface, log logr.Logger, m *metrics.Metrics, auditClient AuditClientInterface, opts ...InvestigatingHandlerOption) *InvestigatingHandler {
 	if m == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")
 	}
 	handlerLog := log.WithName("investigating-handler")
 	h := &InvestigatingHandler{
-		hgClient:            hgClient,
+		kaClient:            hgClient,
 		metrics:             m,
 		auditClient:         auditClient,
 		log:                 handlerLog,
@@ -120,7 +120,7 @@ func NewInvestigatingHandler(hgClient HolmesGPTClientInterface, log logr.Logger,
 }
 
 // Handle processes the Investigating phase
-// BR-AI-007: Call HolmesGPT-API and update status
+// BR-AI-007: Call KA and update status
 // BR-AA-HAPI-064: Async session-based flow when useSessionMode=true
 func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	h.log.Info("Processing Investigating phase",
@@ -144,11 +144,11 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 	startTime := time.Now()
 
 	req := h.builder.BuildIncidentRequest(analysis) // P1.2: Use request builder
-	incidentResp, err := h.hgClient.Investigate(ctx, req)
+	incidentResp, err := h.kaClient.Investigate(ctx, req)
 
 	investigationTime := time.Since(startTime).Milliseconds()
 
-	// DD-AUDIT-003: Record HolmesGPT API call for audit trail
+	// DD-AUDIT-003: Record KA API call for audit trail
 	statusCode := 200
 	if err != nil {
 		statusCode = 500 // Error case
@@ -169,7 +169,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 
 	// Process incident response - must check for nil (CRITICAL: prevents panic)
 	if incidentResp == nil {
-		return h.handleError(ctx, analysis, fmt.Errorf("received nil incident response from HolmesGPT-API"))
+		return h.handleError(ctx, analysis, fmt.Errorf("received nil incident response from KA"))
 	}
 	// P1.1: Delegate to processor, reset retry count after success
 	// DD-AUDIT-003: Phase transition audit recorded by controller AFTER AtomicStatusUpdate (phase_handlers.go)
@@ -180,7 +180,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 	return result, err
 }
 
-// buildRequest constructs the HolmesGPT-API request from AIAnalysis spec using generated types
+// buildRequest constructs the KA request from AIAnalysis spec using generated types
 // BR-AI-080: Updated with all required KA fields per NOTICE_AIANALYSIS_KA_CONTRACT_MISMATCH.md
 // Per crd-schema.md: Include enrichment data (owner chain, detected labels) for AI context
 // P1.2 Refactoring: Request building methods moved to request_builder.go
@@ -188,7 +188,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 // - getOrDefault (helper function in builder)
 // - strPtr (helper function in builder)
 
-// handleError processes errors from HolmesGPT-API
+// handleError processes errors from KA
 // BR-AI-009: Retry transient errors with exponential backoff
 // BR-AI-010: Fail immediately on permanent errors
 // Refactoring P2.1: Uses ErrorClassifier for error classification and retry logic
@@ -292,7 +292,7 @@ func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, 
 
 // ========================================
 // BR-HAPI-197: WORKFLOW RESOLUTION FAILURE HANDLING
-// When HolmesGPT-API returns needs_human_review=true, we MUST:
+// When KA returns needs_human_review=true, we MUST:
 // 1. NOT proceed to Analyzing phase
 // 2. Set structured failure reason (Reason + SubReason)
 // 3. Preserve partial response for operator context
@@ -355,7 +355,7 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 		"isRegeneration", isRegeneration,
 	)
 	req := h.builder.BuildIncidentRequest(analysis)
-	sessionID, err := h.hgClient.SubmitInvestigation(ctx, req)
+	sessionID, err := h.kaClient.SubmitInvestigation(ctx, req)
 
 	if err != nil {
 		return h.handleError(ctx, analysis, err)
@@ -419,7 +419,7 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 		"pollCount", session.PollCount,
 	)
 
-	status, err := h.hgClient.PollSession(ctx, session.ID)
+	status, err := h.kaClient.PollSession(ctx, session.ID)
 	if err != nil {
 		return h.handleSessionPollError(ctx, analysis, err)
 	}
@@ -483,7 +483,7 @@ func (h *InvestigatingHandler) handleSessionPollCompleted(ctx context.Context, a
 func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTime int64) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
 
-	resp, err := h.hgClient.GetSessionResult(ctx, session.ID)
+	resp, err := h.kaClient.GetSessionResult(ctx, session.ID)
 	if err != nil {
 		return h.handleSessionGetResultError(ctx, analysis, err)
 	}
@@ -496,7 +496,7 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 	h.auditClient.RecordAIAgentResult(ctx, analysis, investigationTime)
 
 	if resp == nil {
-		return h.handleError(ctx, analysis, fmt.Errorf("received nil incident response from HolmesGPT-API session %s", session.ID))
+		return h.handleError(ctx, analysis, fmt.Errorf("received nil incident response from KA session %s", session.ID))
 	}
 
 	// Delegate to ResponseProcessor (same as legacy flow)

@@ -62,10 +62,10 @@ func createKAKindCluster(clusterName, kubeconfigPath string, writer io.Writer) e
 	return CreateKindClusterWithConfig(opts, writer)
 }
 
-// createHolmesGPTAPIE2EServiceAccount creates the E2E ServiceAccount with
+// createKAE2EServiceAccount creates the E2E ServiceAccount with
 // RBAC for calling the agent API and accessing DataStorage.
 // Used by Kubernaut Agent and legacy AIAnalysis/KA E2E suites.
-func createHolmesGPTAPIE2EServiceAccount(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func createKAE2EServiceAccount(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	saName := "kubernaut-agent-e2e-sa"
 
 	if err := CreateServiceAccount(ctx, namespace, kubeconfigPath, saName, writer); err != nil {
