@@ -514,6 +514,11 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 			tokens.Add(resp.Usage)
 		}
 
+		emitToSink(ctx, session.EventTypeReasoningDelta, attempt+1, string(katypes.PhaseRCA), map[string]interface{}{
+			"content":       resp.Message.Content,
+			"retry_attempt": attempt + 1,
+		})
+
 		for _, tc := range resp.ToolCalls {
 			if tc.Name == SubmitResultToolName {
 				result, parseErr := inv.resultParser.Parse(tc.Arguments)
@@ -921,6 +926,11 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 		if tokens != nil {
 			tokens.Add(resp.Usage)
 		}
+
+		emitToSink(ctx, session.EventTypeReasoningDelta, attempt+1, string(katypes.PhaseWorkflowDiscovery), map[string]interface{}{
+			"content":       resp.Message.Content,
+			"retry_attempt": attempt + 1,
+		})
 
 		if len(resp.ToolCalls) > 0 {
 			for _, tc := range resp.ToolCalls {
@@ -1359,6 +1369,26 @@ func emitToSink(ctx context.Context, eventType string, turn int, phase string, d
 	case sink <- event:
 	default:
 	}
+}
+
+// chatOrStream calls StreamChat when an event sink is active (observer connected),
+// emitting token-level deltas for real-time streaming. Falls back to Chat when
+// no observer is watching (autonomous mode, v1.4 parity). This preserves the
+// non-streaming path for autonomous investigations while giving SSE subscribers
+// incremental text deltas.
+func chatOrStream(ctx context.Context, client llm.Client, req llm.ChatRequest, turn int, phase string) (llm.ChatResponse, error) {
+	sink := session.EventSinkFromContext(ctx)
+	if sink == nil {
+		return client.Chat(ctx, req)
+	}
+	return client.StreamChat(ctx, req, func(ev llm.ChatStreamEvent) error {
+		if ev.Delta != "" {
+			emitToSink(ctx, session.EventTypeTokenDelta, turn, phase, map[string]interface{}{
+				"token": ev.Delta,
+			})
+		}
+		return nil
+	})
 }
 
 // emitCancellationAudit emits an investigation-level cancellation event

@@ -18,6 +18,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -118,7 +119,7 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
 			Type:     "https://kubernaut.ai/problems/internal-error",
 			Title:    "Internal Server Error",
-			Detail:   "failed to start investigation: " + err.Error(),
+			Detail:   "failed to start investigation",
 			Status:   500,
 			Instance: "/api/v1/incident/analyze",
 		}, nil
@@ -147,7 +148,7 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 			}, nil
 		}
 		h.logger.Error("session lookup failed", "session_id", params.SessionID, "error", err)
-		return nil, fmt.Errorf("session lookup: %w", err)
+		return nil, errors.New("internal server error")
 	}
 
 	status := mapSessionStatusToAPI(sess.Status)
@@ -178,7 +179,7 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 			}, nil
 		}
 		h.logger.Error("session lookup failed", "session_id", params.SessionID, "error", err)
-		return nil, fmt.Errorf("session lookup: %w", err)
+		return nil, errors.New("internal server error")
 	}
 
 	if sess.Status != session.StatusCompleted {
@@ -228,7 +229,7 @@ func (h *Handler) CancelSessionAPIV1IncidentSessionSessionIDCancelPost(
 				Instance: endpoint,
 			}, nil
 		}
-		return nil, fmt.Errorf("session authz: %w", authzErr)
+		return nil, errors.New("internal server error")
 	}
 	err := h.sessions.CancelInvestigation(params.SessionID)
 	if err != nil {
@@ -251,7 +252,7 @@ func (h *Handler) CancelSessionAPIV1IncidentSessionSessionIDCancelPost(
 			}, nil
 		}
 		h.logger.Error("cancel session failed", "session_id", params.SessionID, "error", err)
-		return nil, fmt.Errorf("cancel session: %w", err)
+		return nil, errors.New("internal server error")
 	}
 
 	return &agentclient.CancelSessionResponse{
@@ -278,7 +279,7 @@ func (h *Handler) SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(
 			}, nil
 		}
 		h.logger.Error("snapshot lookup failed", "session_id", params.SessionID, "error", err)
-		return nil, fmt.Errorf("snapshot lookup: %w", err)
+		return nil, errors.New("internal server error")
 	}
 
 	if !session.IsTerminal(sess.Status) {
@@ -383,7 +384,7 @@ func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 			}, nil
 		}
 		h.logger.Error("stream authz failed", "session_id", params.SessionID, "error", authzErr)
-		return nil, fmt.Errorf("stream authz: %w", authzErr)
+		return nil, errors.New("internal server error")
 	}
 
 	ch, err := h.sessions.Subscribe(ctx, params.SessionID)
@@ -407,12 +408,17 @@ func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 			}, nil
 		}
 		h.logger.Error("subscribe failed", "session_id", params.SessionID, "error", err)
-		return nil, fmt.Errorf("subscribe: %w", err)
+		return nil, errors.New("internal server error")
 	}
 
 	pr, pw := io.Pipe()
 	go func() {
 		defer pw.Close()
+		defer func() {
+			if r := recover(); r != nil {
+				h.logger.Error("SSE writer panic recovered", "session_id", params.SessionID, "panic", r)
+			}
+		}()
 		seq := 1
 		for {
 			select {
@@ -453,12 +459,18 @@ func (h *Handler) getAuthorizedSession(ctx context.Context, sessionID, endpoint 
 	}
 
 	owner := sess.Metadata["created_by"]
-	if owner != "" && owner != requestUser {
+	if owner != "" && subtle.ConstantTimeCompare([]byte(owner), []byte(requestUser)) != 1 {
 		h.sessions.EmitAccessDenied(ctx, sessionID, endpoint, requestUser)
 		return nil, session.ErrSessionNotFound
 	}
 
 	return sess, nil
+}
+
+// TestGetAuthorizedSession exposes getAuthorizedSession for unit tests.
+// It is not used in production code paths.
+func (h *Handler) TestGetAuthorizedSession(ctx context.Context, sessionID, endpoint string) (*session.Session, error) {
+	return h.getAuthorizedSession(ctx, sessionID, endpoint)
 }
 
 func mapSessionStatusToAPI(s session.Status) string {

@@ -10,12 +10,6 @@ import (
 	"github.com/ogen-go/ogen/uri"
 )
 
-var (
-	rn8AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-)
-
 func (s *Server) cutPrefix(path string) (string, bool) {
 	prefix := s.cfg.Prefix
 	if prefix == "" {
@@ -93,12 +87,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						case "POST":
 							s.handleIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRequest([0]string{}, elemIsEscaped, w, r)
 						default:
-							s.notAllowed(w, r, notAllowedParams{
-								allowedMethods: "POST",
-								allowedHeaders: rn8AllowedHeaders,
-								acceptPost:     "application/json",
-								acceptPatch:    "",
-							})
+							s.notAllowed(w, r, "POST")
 						}
 
 						return
@@ -128,12 +117,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								args[0],
 							}, elemIsEscaped, w, r)
 						default:
-							s.notAllowed(w, r, notAllowedParams{
-								allowedMethods: "GET",
-								allowedHeaders: nil,
-								acceptPost:     "",
-								acceptPatch:    "",
-							})
+							s.notAllowed(w, r, "GET")
 						}
 
 						return
@@ -167,12 +151,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										args[0],
 									}, elemIsEscaped, w, r)
 								default:
-									s.notAllowed(w, r, notAllowedParams{
-										allowedMethods: "POST",
-										allowedHeaders: nil,
-										acceptPost:     "",
-										acceptPatch:    "",
-									})
+									s.notAllowed(w, r, "POST")
 								}
 
 								return
@@ -194,12 +173,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										args[0],
 									}, elemIsEscaped, w, r)
 								default:
-									s.notAllowed(w, r, notAllowedParams{
-										allowedMethods: "GET",
-										allowedHeaders: nil,
-										acceptPost:     "",
-										acceptPatch:    "",
-									})
+									s.notAllowed(w, r, "GET")
 								}
 
 								return
@@ -233,12 +207,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											args[0],
 										}, elemIsEscaped, w, r)
 									default:
-										s.notAllowed(w, r, notAllowedParams{
-											allowedMethods: "GET",
-											allowedHeaders: nil,
-											acceptPost:     "",
-											acceptPatch:    "",
-										})
+										s.notAllowed(w, r, "GET")
 									}
 
 									return
@@ -260,12 +229,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											args[0],
 										}, elemIsEscaped, w, r)
 									default:
-										s.notAllowed(w, r, notAllowedParams{
-											allowedMethods: "GET",
-											allowedHeaders: nil,
-											acceptPost:     "",
-											acceptPatch:    "",
-										})
+										s.notAllowed(w, r, "GET")
 									}
 
 									return
@@ -293,12 +257,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					case "GET":
 						s.handleGetConfigConfigGetRequest([0]string{}, elemIsEscaped, w, r)
 					default:
-						s.notAllowed(w, r, notAllowedParams{
-							allowedMethods: "GET",
-							allowedHeaders: nil,
-							acceptPost:     "",
-							acceptPatch:    "",
-						})
+						s.notAllowed(w, r, "GET")
 					}
 
 					return
@@ -318,12 +277,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					case "GET":
 						s.handleHealthCheckHealthGetRequest([0]string{}, elemIsEscaped, w, r)
 					default:
-						s.notAllowed(w, r, notAllowedParams{
-							allowedMethods: "GET",
-							allowedHeaders: nil,
-							acceptPost:     "",
-							acceptPatch:    "",
-						})
+						s.notAllowed(w, r, "GET")
 					}
 
 					return
@@ -343,12 +297,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					case "GET":
 						s.handleReadinessCheckReadyGetRequest([0]string{}, elemIsEscaped, w, r)
 					default:
-						s.notAllowed(w, r, notAllowedParams{
-							allowedMethods: "GET",
-							allowedHeaders: nil,
-							acceptPost:     "",
-							acceptPatch:    "",
-						})
+						s.notAllowed(w, r, "GET")
 					}
 
 					return

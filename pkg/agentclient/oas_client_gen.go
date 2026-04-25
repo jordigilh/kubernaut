@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
-	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -116,6 +116,10 @@ type Client struct {
 	serverURL *url.URL
 	baseClient
 }
+
+var _ Handler = struct {
+	*Client
+}{}
 
 // NewClient initializes new Client defined by OAS.
 func NewClient(serverURL string, opts ...ClientOption) (*Client, error) {
@@ -236,8 +240,7 @@ func (c *Client) sendCancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx co
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	body := resp.Body
-	defer body.Close()
+	defer resp.Body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeCancelSessionAPIV1IncidentSessionSessionIDCancelPostResponse(resp)
@@ -311,8 +314,7 @@ func (c *Client) sendGetConfigConfigGet(ctx context.Context) (res jx.Raw, err er
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	body := resp.Body
-	defer body.Close()
+	defer resp.Body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetConfigConfigGetResponse(resp)
@@ -386,8 +388,7 @@ func (c *Client) sendHealthCheckHealthGet(ctx context.Context) (res jx.Raw, err 
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	body := resp.Body
-	defer body.Close()
+	defer resp.Body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeHealthCheckHealthGetResponse(resp)
@@ -469,8 +470,7 @@ func (c *Client) sendIncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx context
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	body := resp.Body
-	defer body.Close()
+	defer resp.Body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp)
@@ -562,8 +562,7 @@ func (c *Client) sendIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDR
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	body := resp.Body
-	defer body.Close()
+	defer resp.Body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetResponse(resp)
@@ -654,8 +653,7 @@ func (c *Client) sendIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDG
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	body := resp.Body
-	defer body.Close()
+	defer resp.Body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse(resp)
@@ -733,8 +731,7 @@ func (c *Client) sendReadinessCheckReadyGet(ctx context.Context) (res jx.Raw, er
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	body := resp.Body
-	defer body.Close()
+	defer resp.Body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeReadinessCheckReadyGetResponse(resp)
@@ -831,8 +828,7 @@ func (c *Client) sendSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	body := resp.Body
-	defer body.Close()
+	defer resp.Body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetResponse(resp)
@@ -928,8 +924,7 @@ func (c *Client) sendSessionStreamAPIV1IncidentSessionSessionIDStreamGet(ctx con
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	body := resp.Body
-	defer body.Close()
+	defer resp.Body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeSessionStreamAPIV1IncidentSessionSessionIDStreamGetResponse(resp)
