@@ -64,6 +64,10 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 
 **[Full roadmap](docs/roadmap/ROADMAP.md)** — Live Investigation Control, Agentic Integration (MCP/A2A), Collective Intelligence, Fleet Operations (ACM/AAP), and Operational Expansion (cost, security, non-K8s).
 
+<p align="center">
+  <img src="docs/architecture/diagrams/kubernaut-console-animated.gif" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
+</p>
+
 ---
 
 ## Installation
