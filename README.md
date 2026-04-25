@@ -103,7 +103,7 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 
 *From one cluster to your entire fleet.*
 
-- **Multi-cluster federation** — A2A-based fleet-wide remediation with centralized signal ingestion, cross-cluster RCA, and federated workflow execution
+- **Multi-cluster federation** — ACM-driven fleet remediation with centralized signal correlation and federated workflow execution
 - **Cross-cluster pattern detection** — Identify correlated failures across clusters and trigger coordinated remediation
 - **Fleet Remediation** — ACM + MCP + AAP orchestration for cross-cluster remediation at fleet scale
 
