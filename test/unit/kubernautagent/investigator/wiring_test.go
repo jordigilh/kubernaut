@@ -54,6 +54,14 @@ func (s *stubLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResp
 	}, nil
 }
 
+func (s *stubLLMClient) StreamChat(ctx context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	resp, err := s.Chat(ctx, req)
+	if err == nil {
+		_ = cb(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
+	}
+	return resp, err
+}
+
 func (s *stubLLMClient) Close() error { return nil }
 
 var _ = Describe("TP-433-ADV P1: Critical Wiring — GAP-006/GAP-007", func() {
