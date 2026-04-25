@@ -67,7 +67,7 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 <p align="center">
   <img src="docs/architecture/diagrams/kubernaut-console-animated.gif" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
   <br/>
-  <em>Coming soon — Kubernaut Console: investigate, chat, and remediate from a single UI</em>
+  <em>On the roadmap — Kubernaut Console: investigate, chat, and remediate from a single UI</em>
 </p>
 
 ---
