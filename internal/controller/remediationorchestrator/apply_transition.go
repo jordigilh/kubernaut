@@ -91,6 +91,13 @@ func (r *Reconciler) ApplyTransition(ctx context.Context, rr *remediationv1.Reme
 		}
 		return res, nil
 
+	case phase.TransitionCompletedWithoutVerification:
+		res, err := r.transitionToCompletedWithoutVerification(ctx, rr, intent.Reason)
+		if err != nil {
+			return res, fmt.Errorf("applyTransition(%s): %w", intent.Type, err)
+		}
+		return res, nil
+
 	case phase.TransitionNone:
 		if intent.RequeueImmediately {
 			return ctrl.Result{Requeue: true}, nil

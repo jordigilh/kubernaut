@@ -296,5 +296,16 @@ var _ = Describe("RemediationOrchestrator Config - Unit Tests", Label("config", 
 				Expect(cfg.Validate()).To(HaveOccurred())
 			}
 		})
+
+		// ========================================
+		// #712, #736: Dry-run hold period validation
+		// ========================================
+		It("UT-RO-712-013: should reject dryRunHoldPeriod below 5m when dryRun is enabled (#712, #736)", func() {
+			cfg := config.DefaultConfig()
+			cfg.DryRun = true
+			cfg.DryRunHoldPeriod = 1 * time.Minute
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("dryRunHoldPeriod")),
+				"Behavior: hold period below 5m risks Gateway flooding via infinite dry-run loop")
+		})
 	})
 })

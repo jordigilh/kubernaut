@@ -65,6 +65,17 @@ type Config struct {
 	// Retention configures CRD lifecycle cleanup (#265).
 	Retention RetentionConfig `yaml:"retention"`
 
+	// DryRun enables dry-run mode: the pipeline stops after AI analysis without
+	// creating a WorkflowExecution or EffectivenessAssessment. The RR completes
+	// immediately with outcome "DryRun". Default: false. (#712, #736, #116)
+	DryRun bool `yaml:"dryRun,omitempty"`
+
+	// DryRunHoldPeriod is the duration to suppress new RR creation for the same
+	// signal fingerprint after a dry-run completion. Sets NextAllowedExecution on
+	// the terminal RR so the Gateway's ShouldDeduplicate blocks re-triggering.
+	// Default: 1h. Only effective when DryRun is true. (#712, #736, #116)
+	DryRunHoldPeriod time.Duration `yaml:"dryRunHoldPeriod,omitempty"`
+
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
@@ -277,6 +288,7 @@ func DefaultConfig() *Config {
 			IneffectiveTimeWindow:        4 * time.Hour,
 			NoActionRequiredDelayHours:   24, // Issue #314, #353: 24h suppression window
 		},
+		DryRunHoldPeriod: 1 * time.Hour, // #712, #736: Default GW suppression after dry-run completion
 	}
 }
 
@@ -408,6 +420,16 @@ func (c *Config) Validate() error {
 	// #265: Validate retention period
 	if c.Retention.Period <= 0 {
 		return fmt.Errorf("retention.period must be positive, got %v", c.Retention.Period)
+	}
+
+	// #712, #736: Validate dry-run hold period bounds when dry-run is enabled
+	if c.DryRun {
+		if c.DryRunHoldPeriod < 5*time.Minute {
+			return fmt.Errorf("dryRunHoldPeriod must be >= 5m when dryRun is enabled, got %v", c.DryRunHoldPeriod)
+		}
+		if c.DryRunHoldPeriod > 168*time.Hour {
+			return fmt.Errorf("dryRunHoldPeriod must be <= 168h (7d) when dryRun is enabled, got %v", c.DryRunHoldPeriod)
+		}
 	}
 
 	return nil

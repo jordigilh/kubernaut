@@ -648,14 +648,15 @@ type RemediationRequestStatus struct {
 
 	// Outcome indicates the remediation result when completed.
 	// Values:
-	// - "Remediated": Workflow executed successfully
+	// - "Remediated": Workflow executed successfully and EA verified effectiveness
 	// - "NoActionRequired": AIAnalysis determined no action needed (problem self-resolved)
 	// - "ManualReviewRequired": Requires operator intervention
 	// - "VerificationTimedOut": EA assessment did not complete within deadline (#280)
 	// - "Inconclusive": EA completed but alert still firing (alertScore=0) (#722)
+	// - "DryRun": Pipeline stopped after AI analysis; no WFE/EA created (dry-run mode) (#712, #736)
 	// Reference: BR-ORCH-037, BR-HAPI-200, BR-EM-012
 	// +optional
-	// +kubebuilder:validation:Enum=Remediated;NoActionRequired;ManualReviewRequired;VerificationTimedOut;Inconclusive
+	// +kubebuilder:validation:Enum=Remediated;NoActionRequired;ManualReviewRequired;VerificationTimedOut;Inconclusive;DryRun
 	Outcome string `json:"outcome,omitempty"`
 
 	// TimeoutPhase indicates which orchestration phase timed out.

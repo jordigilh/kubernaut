@@ -139,6 +139,13 @@ type Reconciler struct {
 	// Default: 24h. Configurable via SetRetentionPeriod or YAML config.
 	retentionPeriod time.Duration
 
+	// #712, #736: Dry-run mode — pipeline stops after AI analysis.
+	// No WFE or EA is created; RR completes with outcome "DryRun".
+	dryRun bool
+	// #712, #736: How long to suppress GW re-triggering after dry-run completion.
+	// Sets NextAllowedExecution on the terminal RR (same pattern as NoActionRequired).
+	dryRunHoldPeriod time.Duration
+
 	// ========================================
 	// STATUS MANAGER (DD-PERF-001)
 	// 📋 Design Decision: DD-PERF-001 | ✅ Atomic Status Updates Pattern
@@ -341,7 +348,8 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 				return nil
 			})
 		},
-		WFECallbacks: wfeCallbacks,
+		IsDryRun:      func() bool { return r.dryRun },
+		WFECallbacks:  wfeCallbacks,
 	}))
 	r.phaseRegistry.MustRegister(NewAwaitingApprovalHandler(c, m, AwaitingApprovalCallbacks{
 		RecordEvent: func(rr *remediationv1.RemediationRequest, eventType, reason, message string) {
@@ -468,6 +476,15 @@ func (r *Reconciler) SetDSClient(dsClient routing.RemediationHistoryQuerier) {
 	} else {
 		log.Log.Info("SetDSClient skipped: routing engine is not *routing.RoutingEngine (mock or custom implementation)")
 	}
+}
+
+// SetDryRun configures dry-run mode for the RO reconciler.
+// When enabled, the pipeline stops after AI analysis without creating WFE or EA.
+// holdPeriod controls how long the Gateway suppresses re-triggering for the same fingerprint.
+// #712, #736: Called from cmd/remediationorchestrator/main.go.
+func (r *Reconciler) SetDryRun(enabled bool, holdPeriod time.Duration) {
+	r.dryRun = enabled
+	r.dryRunHoldPeriod = holdPeriod
 }
 
 // ========================================
@@ -931,6 +948,66 @@ func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *rem
 
 	logger.Info("RR inherited Completed",
 		"inheritedFrom", sourceRef, "sourceKind", sourceKind, "outcome", "InheritedCompleted")
+	return ctrl.Result{}, nil
+}
+
+// transitionToCompletedWithoutVerification transitions the RR to Completed with outcome "DryRun".
+// Used when dry-run mode is enabled: the pipeline stops after AI analysis without creating WFE or EA.
+// Does NOT reset ConsecutiveFailureCount — dry-run did not prove remediation works.
+// Sets NextAllowedExecution to suppress Gateway re-triggering (only if later than existing value).
+// #712, #736: ADR-RO-001
+func (r *Reconciler) transitionToCompletedWithoutVerification(ctx context.Context, rr *remediationv1.RemediationRequest, reason string) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	// Idempotency guard: refetch from API server to avoid duplicate transitions
+	freshRR := &remediationv1.RemediationRequest{}
+	if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), freshRR); err == nil {
+		if freshRR.Status.OverallPhase == phase.Completed {
+			logger.V(1).Info("RR already Completed (idempotent no-op)")
+			return ctrl.Result{}, nil
+		}
+	}
+
+	oldPhase := rr.Status.OverallPhase
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+		now := metav1.Now()
+		rr.Status.OverallPhase = phase.Completed
+		rr.Status.Outcome = "DryRun"
+		rr.Status.CompletedAt = &now
+		rr.Status.ObservedGeneration = rr.Generation
+
+		// Set NextAllowedExecution for GW suppression, only if later than existing value
+		dryRunNAE := metav1.NewTime(now.Add(r.dryRunHoldPeriod))
+		if rr.Status.NextAllowedExecution == nil || dryRunNAE.After(rr.Status.NextAllowedExecution.Time) {
+			rr.Status.NextAllowedExecution = &dryRunNAE
+		}
+
+		remediationrequest.SetReady(rr, true, "DryRun",
+			fmt.Sprintf("Dry-run mode: pipeline stopped after AI analysis (%s)", reason), r.Metrics)
+		return nil
+	})
+	if err != nil {
+		logger.Error(err, "Failed to transition to CompletedWithoutVerification")
+		return ctrl.Result{}, fmt.Errorf("failed to transition to CompletedWithoutVerification: %w", err)
+	}
+
+	if oldPhase != phase.Completed {
+		if r.Metrics != nil {
+			r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhase), string(phase.Completed), rr.Namespace).Inc()
+			r.Metrics.NoActionNeededTotal.WithLabelValues("DryRun", rr.Namespace).Inc()
+		}
+		if r.Recorder != nil {
+			r.Recorder.Event(rr, corev1.EventTypeNormal, "DryRunCompleted",
+				fmt.Sprintf("Dry-run mode: completed without execution or verification (%s)", reason))
+		}
+		if rr.Status.StartTime != nil {
+			r.emitCompletionAudit(ctx, rr, "DryRun", time.Since(rr.Status.StartTime.Time).Milliseconds())
+		}
+	}
+
+	logger.Info("RR completed without verification (dry-run)",
+		"outcome", "DryRun", "reason", reason,
+		"nextAllowedExecution", rr.Status.NextAllowedExecution)
 	return ctrl.Result{}, nil
 }
 
