@@ -351,6 +351,10 @@ func main() {
 		Addr:              addr,
 		Handler:           r,
 		ReadHeaderTimeout: 30 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// WriteTimeout intentionally omitted: SSE streams are long-lived
+		// connections that would be killed by a finite WriteTimeout.
 	}
 
 	// Issue #493: Conditional TLS for the HTTP server
@@ -376,6 +380,9 @@ func main() {
 		Addr:              cfg.Server.MetricsAddr,
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       30 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
