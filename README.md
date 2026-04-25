@@ -82,7 +82,6 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 
 - **MCP Server** — Investigate, enrich, and select workflows through any MCP-compatible interface — Claude, Cursor, Slack bots, or custom UIs ([#703](https://github.com/jordigilh/kubernaut/issues/703))
 - **A2A Protocol** — External AI agents delegate remediation to Kubernaut and track task lifecycle via the [Agent-to-Agent](https://a2aproject.github.io/A2A/latest/specification/) standard ([#705](https://github.com/jordigilh/kubernaut/issues/705))
-- **API Frontend service** — Unified external protocol layer hosting MCP and inbound A2A endpoints, with shared CRD watching for live status streaming ([#708](https://github.com/jordigilh/kubernaut/issues/708))
 - **Kubernaut Console** — Web-based operator dashboard with chat UI, live remediation streaming, and workflow selection ([#713](https://github.com/jordigilh/kubernaut/issues/713))
 - **Natural language signal intake** — Trigger investigations by describing the problem in plain text; Kubernaut extracts a structured signal and runs the full pipeline ([#714](https://github.com/jordigilh/kubernaut/issues/714))
 - **Skills Marketplace** — OCI registry for agentic skill packages and Goose recipes
@@ -97,7 +96,7 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 
 - **Multi-agent consensus RCA** — Ensemble investigation with independent LLM agents from different model families; a consolidator validates agreement and cross-examines on divergence ([#648](https://github.com/jordigilh/kubernaut/issues/648))
 - **Investigation Prompt Bundles** — Operators inject SOPs into the investigation pipeline via Goose recipes packaged as OCI artifacts ([#711](https://github.com/jordigilh/kubernaut/issues/711))
-- **Forensic replay** — Re-run past remediations against historical cluster state for post-incident analysis
+- **Remediation history analysis** — LLM-driven review of past RCA and remediation chains to improve future investigation accuracy
 
 ### Fleet Operations
 
@@ -111,8 +110,8 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 
 *New domains, same intelligent approach.*
 
-- **Cost optimization** — AI-driven right-sizing recommendations and automated resource adjustments
-- **Threat remediation** — Automated security incident response integrated with the remediation pipeline
+- **Cost optimization** — LLM-driven FinOps investigation and resource remediation using signals from Kubecost, OpenCost, VPA, and billing APIs ([#555](https://github.com/jordigilh/kubernaut/issues/555))
+- **Threat remediation** — LLM-driven investigation and response for security and compliance signals from Falco, Trivy, OPA, and compliance scanners ([#554](https://github.com/jordigilh/kubernaut/issues/554))
 - **Non-Kubernetes workflows** — `targetSystem` field enables execution against external systems (VMs, cloud APIs, IaC) with EA evolution for unverifiable outcomes ([#739](https://github.com/jordigilh/kubernaut/issues/739))
 
 ---
