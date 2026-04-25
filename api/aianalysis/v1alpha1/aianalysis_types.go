@@ -29,7 +29,7 @@ import (
 
 // ========================================
 // AIAnalysisSpec - Design Decision: DD-CONTRACT-002
-// V1.0: HolmesGPT-API only (no LLM config fields)
+// V1.0: KA only (no LLM config fields)
 // ========================================
 
 // AIAnalysisSpec defines the desired state of AIAnalysis.
@@ -78,7 +78,7 @@ type AIAnalysisSpec struct {
 // AIAnalysisTimeoutConfig defines timeout settings for AIAnalysis phases
 // Per REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md - Option A approved
 type AIAnalysisTimeoutConfig struct {
-	// Timeout for Investigating phase (HolmesGPT-API call)
+	// Timeout for Investigating phase (KA call)
 	// Default: 60s if not specified
 	// +optional
 	InvestigatingTimeout metav1.Duration `json:"investigatingTimeout,omitempty"`
@@ -250,7 +250,7 @@ type ApprovalContext struct {
 	// ConfidenceLevel: "low" | "medium" | "high"
 	// +kubebuilder:validation:Enum=low;medium;high
 	ConfidenceLevel string `json:"confidenceLevel"`
-	// InvestigationSummary from HolmesGPT analysis
+	// InvestigationSummary from KA analysis
 	InvestigationSummary string `json:"investigationSummary"`
 	// EvidenceCollected that led to this conclusion
 	EvidenceCollected []string `json:"evidenceCollected,omitempty"`
@@ -298,7 +298,7 @@ type AlternativeApproach struct {
 const (
 	// PhasePending is the initial phase when AIAnalysis is first created
 	PhasePending = "Pending"
-	// PhaseInvestigating calls HolmesGPT-API for investigation
+	// PhaseInvestigating calls KA for investigation
 	PhaseInvestigating = "Investigating"
 	// PhaseAnalyzing evaluates Rego policies for approval determination
 	PhaseAnalyzing = "Analyzing"
@@ -325,7 +325,7 @@ type AIAnalysisStatus struct {
 	// +optional
 	Reason AIAnalysisReason `json:"reason,omitempty"`
 	// SubReason provides specific failure cause within the Reason category
-	// BR-HAPI-197: Maps to needs_human_review triggers from HolmesGPT-API
+	// BR-HAPI-197: Maps to needs_human_review triggers from KA
 	// BR-HAPI-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
 	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;NotActionable;MaxRetriesExceeded;SessionRegenerationExceeded;RcaIncomplete
 	// +optional
@@ -355,7 +355,7 @@ type AIAnalysisStatus struct {
 	// Alternative workflows considered but not selected.
 	// INFORMATIONAL ONLY - NOT for automatic execution.
 	// Helps operators make informed approval decisions and provides audit trail.
-	// Per HolmesGPT-API team: Alternatives are for CONTEXT, not EXECUTION.
+	// Per KA team: Alternatives are for CONTEXT, not EXECUTION.
 	// +optional
 	AlternativeWorkflows []AlternativeWorkflow `json:"alternativeWorkflows,omitempty"`
 
@@ -394,12 +394,12 @@ type AIAnalysisStatus struct {
 	// ========================================
 	// INVESTIGATION DETAILS
 	// ========================================
-	// HolmesGPT investigation ID for correlation
+	// KA investigation ID for correlation
 	// +kubebuilder:validation:MaxLength=253
 	InvestigationID string `json:"investigationId,omitempty"`
 	// NOTE: TokensUsed REMOVED (Dec 2025)
 	// Reason: LLM token tracking is HAPI's responsibility (they call the LLM)
-	// Observability: HAPI exposes holmesgpt_llm_token_usage_total Prometheus metric
+	// Observability: KA exposes kubernaut_agent_llm_token_usage_total Prometheus metric
 	// Correlation: Use InvestigationID to link AIAnalysis CRD to HAPI metrics
 	// Design Decision: DD-COST-001 - Cost observability is provider's responsibility
 	// Investigation duration in seconds
@@ -409,7 +409,7 @@ type AIAnalysisStatus struct {
 	// ========================================
 	// HAPI RESPONSE METADATA
 	// ========================================
-	// Non-fatal warnings from HolmesGPT-API (e.g., low confidence)
+	// Non-fatal warnings from KA (e.g., low confidence)
 	Warnings []string `json:"warnings,omitempty"`
 	// ValidationAttemptsHistory contains complete history of all HAPI validation attempts
 	// Per DD-HAPI-002 v1.4: HAPI retries up to 3 times with LLM self-correction
@@ -543,7 +543,7 @@ type SelectedWorkflow struct {
 	// Workflow version
 	// +kubebuilder:validation:Required
 	Version string `json:"version"`
-	// Execution bundle OCI reference (digest-pinned) - resolved by HolmesGPT-API
+	// Execution bundle OCI reference (digest-pinned) - resolved by KA
 	// +kubebuilder:validation:Required
 	ExecutionBundle string `json:"executionBundle"`
 	// Execution bundle digest for audit trail
@@ -557,7 +557,7 @@ type SelectedWorkflow struct {
 	// Rationale explaining why this workflow was selected
 	Rationale string `json:"rationale"`
 	// ExecutionEngine specifies the backend engine for workflow execution.
-	// Populated from HolmesGPT-API workflow recommendation.
+	// Populated from KA workflow recommendation.
 	// When empty, defaults to "tekton" for backwards compatibility.
 	// +kubebuilder:validation:Enum=tekton;job;ansible
 	// +optional
@@ -578,12 +578,12 @@ type SelectedWorkflow struct {
 // AlternativeWorkflow contains alternative workflows considered but not selected.
 // INFORMATIONAL ONLY - NOT for automatic execution.
 // Helps operators understand AI reasoning during approval decisions.
-// Per HolmesGPT-API team (Dec 5, 2025): Alternatives are for CONTEXT, not EXECUTION.
+// Per KA team (Dec 5, 2025): Alternatives are for CONTEXT, not EXECUTION.
 type AlternativeWorkflow struct {
 	// Workflow identifier (catalog lookup key)
 	// +kubebuilder:validation:Required
 	WorkflowID string `json:"workflowId"`
-	// Execution bundle OCI reference (digest-pinned) - resolved by HolmesGPT-API
+	// Execution bundle OCI reference (digest-pinned) - resolved by KA
 	ExecutionBundle string `json:"executionBundle,omitempty"`
 	// Confidence score (0.0-1.0) - shows why it wasn't selected
 	// +kubebuilder:validation:Minimum=0.0

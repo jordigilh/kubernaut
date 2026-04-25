@@ -82,22 +82,22 @@ _Appears in:_
 | `phase`| _string_| Phase tracking (no "Approving" or "Recommending" phase - simplified 4-phase flow)|
 | `message`| _string_||
 | `reason`| _[AIAnalysisReason](#aianalysisreason)_| Reason provides the umbrella failure or completion category.|
-| `subReason`| _string_| SubReason provides specific failure cause within the Reason category<br /> Maps to needs_human_review triggers from HolmesGPT-API<br /> Added InvestigationInconclusive, ProblemResolved for new investigation outcomes|
+| `subReason`| _string_| SubReason provides specific failure cause within the Reason category<br /> Maps to needs_human_review triggers from KA<br /> Added InvestigationInconclusive, ProblemResolved for new investigation outcomes|
 | `startedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| Timestamps|
 | `completedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_||
 | `rootCause`| _string_| Identified root cause|
 | `rootCauseAnalysis`| _[RootCauseAnalysis](#rootcauseanalysis)_| Root cause analysis details|
 | `selectedWorkflow`| _[SelectedWorkflow](#selectedworkflow)_| Selected workflow for execution (populated when phase=Completed)|
-| `alternativeWorkflows`| _[AlternativeWorkflow](#alternativeworkflow) array_| ALTERNATIVE WORKFLOWS <br />Alternative workflows considered but not selected.<br />INFORMATIONAL ONLY - NOT for automatic execution.<br />Helps operators make informed approval decisions and provides audit trail.<br />Per HolmesGPT-API team: Alternatives are for CONTEXT, not EXECUTION.|
+| `alternativeWorkflows`| _[AlternativeWorkflow](#alternativeworkflow) array_| ALTERNATIVE WORKFLOWS <br />Alternative workflows considered but not selected.<br />INFORMATIONAL ONLY - NOT for automatic execution.<br />Helps operators make informed approval decisions and provides audit trail.<br />Per KA team: Alternatives are for CONTEXT, not EXECUTION.|
 | `approvalRequired`| _boolean_| True if approval is required (confidence < 80% or policy requires)|
 | `approvalReason`| _string_| Reason why approval is required (when ApprovalRequired=true)|
 | `approvalContext`| _[ApprovalContext](#approvalcontext)_| Rich context for approval notification|
 | `needsHumanReview`| _boolean_| Set by HAPI when AI cannot produce reliable result<br />True if human review required (HAPI decision: RCA incomplete/unreliable)<br /> Triggers NotificationRequest creation in RO<br />BR-496 v2: Set when root_owner missing (rca_incomplete) or validation/confidence issues.|
 | `humanReviewReason`| _string_| Reason why human review needed (when NeedsHumanReview=true)<br /> Maps to HAPI's human_review_reason enum values|
 | `actionability`| _string_| #388: LLM's assessment of whether the alert warrants action.<br />Empty when not yet assessed (pre-investigation or error paths).<br />"Actionable" when the LLM determines the alert warrants action (default for all processed alerts).<br />"NotActionable" when the LLM determines the alert is benign (e.g., orphaned PVCs).|
-| `investigationId`| _string_| HolmesGPT investigation ID for correlation|
+| `investigationId`| _string_| KA investigation ID for correlation|
 | `investigationTime`| _integer_| Investigation duration in seconds|
-| `warnings`| _string array_| Non-fatal warnings from HolmesGPT-API (e.g., low confidence)|
+| `warnings`| _string array_| Non-fatal warnings from KA (e.g., low confidence)|
 | `validationAttemptsHistory`| _[ValidationAttempt](#validationattempt) array_| ValidationAttemptsHistory contains complete history of all HAPI validation attempts<br />Per HAPI retries up to 3 times with LLM self-correction<br />This field provides audit trail for operator notifications and debugging|
 | `degradedMode`| _boolean_| DegradedMode indicates if the analysis ran with degraded capabilities<br />(e.g., Rego policy evaluation failed, using safe defaults)|
 | `totalAnalysisTime`| _integer_| TotalAnalysisTime is the total duration of the analysis in seconds|
@@ -118,7 +118,7 @@ _Appears in:_
 
 | Field| Type| Description|
 | ---| ---| ---|
-| `investigatingTimeout`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| Timeout for Investigating phase (HolmesGPT-API call)<br />Default: 60s if not specified|
+| `investigatingTimeout`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| Timeout for Investigating phase (KA call)<br />Default: 60s if not specified|
 | `analyzingTimeout`| _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_| Timeout for Analyzing phase (Rego policy evaluation)<br />Default: 5s if not specified|
 
 
@@ -244,7 +244,7 @@ _Appears in:_
 | Field| Type| Description|
 | ---| ---| ---|
 | `workflowId`| _string_| Workflow identifier (catalog lookup key)|
-| `executionBundle`| _string_| Execution bundle OCI reference (digest-pinned) - resolved by HolmesGPT-API|
+| `executionBundle`| _string_| Execution bundle OCI reference (digest-pinned) - resolved by KA|
 | `confidence`| _float_| Confidence score (0.0-1.0) - shows why it wasn't selected|
 | `rationale`| _string_| Rationale explaining why this workflow was considered|
 
@@ -325,7 +325,7 @@ _Appears in:_
 | `reason`| _string_| Reason why approval is required|
 | `confidenceScore`| _float_| ConfidenceScore from AI analysis (0.0-1.0)|
 | `confidenceLevel`| _string_| ConfidenceLevel: "low" \| "medium" \| "high"|
-| `investigationSummary`| _string_| InvestigationSummary from HolmesGPT analysis|
+| `investigationSummary`| _string_| InvestigationSummary from KA analysis|
 | `evidenceCollected`| _string array_| EvidenceCollected that led to this conclusion|
 | `recommendedActions`| _[RecommendedAction](#recommendedaction) array_| RecommendedActions with rationale|
 | `alternativesConsidered`| _[AlternativeApproach](#alternativeapproach) array_| AlternativesConsidered with pros/cons|
@@ -1166,7 +1166,7 @@ _Appears in:_
 | `confidenceLevel`| _string_| Confidence level derived from score|
 | `reason`| _string_| Reason why approval is required|
 | `recommendedWorkflow`| _[RecommendedWorkflowSummary](#recommendedworkflowsummary)_| Recommended workflow from AI analysis|
-| `investigationSummary`| _string_| Investigation summary from HolmesGPT|
+| `investigationSummary`| _string_| Investigation summary from KA|
 | `evidenceCollected`| _string array_| Evidence collected during investigation|
 | `recommendedActions`| _[ApprovalRecommendedAction](#approvalrecommendedaction) array_| Recommended actions with rationale|
 | `alternativesConsidered`| _[ApprovalAlternative](#approvalalternative) array_| Alternative approaches considered|
@@ -1631,12 +1631,12 @@ _Appears in:_
 | `workflowId`| _string_| Workflow identifier (catalog lookup key)|
 | `actionType`| _string_| Action type from taxonomy (e.g., ScaleReplicas, RestartPod).<br />Propagated from HAPI three-step discovery protocol to RO audit events.|
 | `version`| _string_| Workflow version|
-| `executionBundle`| _string_| Execution bundle OCI reference (digest-pinned) - resolved by HolmesGPT-API|
+| `executionBundle`| _string_| Execution bundle OCI reference (digest-pinned) - resolved by KA|
 | `executionBundleDigest`| _string_| Execution bundle digest for audit trail|
 | `confidence`| _float_| Confidence score (0.0-1.0)|
 | `parameters`| _object (keys:string, values:string)_| Workflow parameters (UPPER_SNAKE_CASE keys)|
 | `rationale`| _string_| Rationale explaining why this workflow was selected|
-| `executionEngine`| _string_| ExecutionEngine specifies the backend engine for workflow execution.<br />Populated from HolmesGPT-API workflow recommendation.<br />When empty, defaults to "tekton" for backwards compatibility.|
+| `executionEngine`| _string_| ExecutionEngine specifies the backend engine for workflow execution.<br />Populated from KA workflow recommendation.<br />When empty, defaults to "tekton" for backwards compatibility.|
 | `engineConfig`| _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_| EngineConfig holds engine-specific configuration .<br />For ansible: \{"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."\}.|
 | `serviceAccountName`| _string_| ServiceAccountName is the pre-existing ServiceAccount resolved from the<br />DS workflow catalog . Propagated to the WFE for pod execution.|
 
