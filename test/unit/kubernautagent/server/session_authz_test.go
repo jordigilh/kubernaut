@@ -272,6 +272,37 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 				"session.observed audit event must include observer_user identity")
 		})
 	})
+
+	// ---------------------------------------------------------------
+	// UT-KA-823-A11: Constant-time comparison in authorization
+	// ---------------------------------------------------------------
+	Describe("UT-KA-823-A11: Authorization uses constant-time comparison", func() {
+		It("owner mismatch returns same error regardless of match length", func() {
+			proceed := make(chan struct{})
+			id, err := mgr.StartInvestigation(userCtx("correct-owner"), func(ctx context.Context) (interface{}, error) {
+				<-proceed
+				return nil, nil
+			}, map[string]string{"remediation_id": "rr-const-time"})
+			Expect(err).NotTo(HaveOccurred())
+			defer close(proceed)
+
+			Eventually(func() session.Status {
+				s, _ := mgr.GetSession(id)
+				if s == nil {
+					return session.StatusPending
+				}
+				return s.Status
+			}, 5*time.Second).Should(Equal(session.StatusRunning))
+
+			_, err1 := h.TestGetAuthorizedSession(userCtx("correct-owneX"), id, "/test")
+			_, err2 := h.TestGetAuthorizedSession(userCtx("totally-different-user"), id, "/test")
+
+			Expect(err1).To(MatchError(session.ErrSessionNotFound),
+				"partial match must return same error as complete mismatch")
+			Expect(err2).To(MatchError(session.ErrSessionNotFound),
+				"complete mismatch must return ErrSessionNotFound")
+		})
+	})
 })
 
 type syncAuditRecorder struct {
