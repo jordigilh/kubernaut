@@ -58,7 +58,7 @@ var _ = Describe("SSE Delivery Integration — #823 PR7", func() {
 			}, map[string]string{"remediation_id": "rr-sse-delivery"})
 			Expect(err).NotTo(HaveOccurred())
 
-			ch, subErr := mgr.Subscribe(id)
+			ch, subErr := mgr.Subscribe(context.Background(), id)
 			Expect(subErr).NotTo(HaveOccurred())
 			close(subscribed)
 
@@ -108,7 +108,7 @@ var _ = Describe("SSE Delivery Integration — #823 PR7", func() {
 			}, map[string]string{"remediation_id": "rr-disconnect"})
 			Expect(err).NotTo(HaveOccurred())
 
-			_, subErr := mgr.Subscribe(id)
+			_, subErr := mgr.Subscribe(context.Background(), id)
 			Expect(subErr).NotTo(HaveOccurred())
 			close(subscribed)
 

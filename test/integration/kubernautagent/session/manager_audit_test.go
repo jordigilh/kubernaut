@@ -213,7 +213,7 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 
 			// Wait for goroutine to finish
 			Eventually(func() bool {
-				_, subErr := mgr.Subscribe(id)
+				_, subErr := mgr.Subscribe(context.Background(), id)
 				return errors.Is(subErr, session.ErrSessionTerminal)
 			}, 2*time.Second, 10*time.Millisecond).Should(BeTrue())
 

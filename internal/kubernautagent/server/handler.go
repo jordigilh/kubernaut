@@ -32,6 +32,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 // InvestigationRunner abstracts the investigation entry point so that
@@ -130,10 +131,10 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 
 // IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet implements GET /api/v1/incident/session/{session_id}.
 func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
-	_ context.Context,
+	ctx context.Context,
 	params agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams,
 ) (agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, error) {
-	sess, err := h.sessions.GetSession(params.SessionID)
+	sess, err := h.getAuthorizedSession(ctx, params.SessionID)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return &agentclient.HTTPError{
@@ -160,10 +161,10 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 // IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet implements
 // GET /api/v1/incident/session/{session_id}/result.
 func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(
-	_ context.Context,
+	ctx context.Context,
 	params agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams,
 ) (agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes, error) {
-	sess, err := h.sessions.GetSession(params.SessionID)
+	sess, err := h.getAuthorizedSession(ctx, params.SessionID)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound{
@@ -211,9 +212,21 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 
 // CancelSessionAPIV1IncidentSessionSessionIDCancelPost implements POST /api/v1/incident/session/{session_id}/cancel.
 func (h *Handler) CancelSessionAPIV1IncidentSessionSessionIDCancelPost(
-	_ context.Context,
+	ctx context.Context,
 	params agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams,
 ) (agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, error) {
+	if _, authzErr := h.getAuthorizedSession(ctx, params.SessionID); authzErr != nil {
+		if errors.Is(authzErr, session.ErrSessionNotFound) {
+			return &agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound{
+				Type:     "https://kubernaut.ai/problems/not-found",
+				Title:    "Session Not Found",
+				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
+				Status:   404,
+				Instance: fmt.Sprintf("/api/v1/incident/session/%s/cancel", params.SessionID),
+			}, nil
+		}
+		return nil, fmt.Errorf("session authz: %w", authzErr)
+	}
 	err := h.sessions.CancelInvestigation(params.SessionID)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
@@ -246,10 +259,10 @@ func (h *Handler) CancelSessionAPIV1IncidentSessionSessionIDCancelPost(
 
 // SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet implements GET /api/v1/incident/session/{session_id}/snapshot.
 func (h *Handler) SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(
-	_ context.Context,
+	ctx context.Context,
 	params agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams,
 ) (agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, error) {
-	sess, err := h.sessions.GetSession(params.SessionID)
+	sess, err := h.getAuthorizedSession(ctx, params.SessionID)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return &agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound{
@@ -354,7 +367,21 @@ func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 	ctx context.Context,
 	params agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams,
 ) (agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, error) {
-	ch, err := h.sessions.Subscribe(params.SessionID)
+	if _, authzErr := h.getAuthorizedSession(ctx, params.SessionID); authzErr != nil {
+		if errors.Is(authzErr, session.ErrSessionNotFound) {
+			return &agentclient.HTTPError{
+				Type:     "https://kubernaut.ai/problems/not-found",
+				Title:    "Session Not Found",
+				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
+				Status:   404,
+				Instance: fmt.Sprintf("/api/v1/incident/session/%s/stream", params.SessionID),
+			}, nil
+		}
+		h.logger.Error("stream authz failed", "session_id", params.SessionID, "error", authzErr)
+		return nil, fmt.Errorf("stream authz: %w", authzErr)
+	}
+
+	ch, err := h.sessions.Subscribe(ctx, params.SessionID)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return &agentclient.HTTPError{
@@ -401,6 +428,29 @@ func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 	}()
 
 	return &agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK{Data: pr}, nil
+}
+
+// getAuthorizedSession retrieves a session and checks that the requesting user
+// is the session owner. Returns the session if authorized, or nil with
+// ErrSessionNotFound if the session doesn't exist or the user is not the owner.
+// When auth middleware is disabled (user is empty), ownership checks are skipped.
+func (h *Handler) getAuthorizedSession(ctx context.Context, sessionID string) (*session.Session, error) {
+	sess, err := h.sessions.GetSession(sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	requestUser := auth.GetUserFromContext(ctx)
+	if requestUser == "" {
+		return sess, nil
+	}
+
+	owner := sess.Metadata["created_by"]
+	if owner != "" && owner != requestUser {
+		return nil, session.ErrSessionNotFound
+	}
+
+	return sess, nil
 }
 
 func mapSessionStatusToAPI(s session.Status) string {

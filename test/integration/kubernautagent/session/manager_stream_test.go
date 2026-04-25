@@ -48,7 +48,7 @@ var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(id).NotTo(BeEmpty())
 
-			_, subErr := mgr.Subscribe(id)
+			_, subErr := mgr.Subscribe(context.Background(), id)
 			Expect(subErr).NotTo(HaveOccurred())
 			close(subscribed)
 
@@ -69,7 +69,7 @@ var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
 			}, map[string]string{"remediation_id": "rr-stream-close"})
 			Expect(err).NotTo(HaveOccurred())
 
-			ch, subErr := mgr.Subscribe(id)
+			ch, subErr := mgr.Subscribe(context.Background(), id)
 			Expect(subErr).NotTo(HaveOccurred())
 			Expect(ch).NotTo(BeNil())
 
@@ -105,7 +105,7 @@ var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
 			}, map[string]string{"remediation_id": "rr-flow-test"})
 			Expect(err).NotTo(HaveOccurred())
 
-			ch, subErr := mgr.Subscribe(id)
+			ch, subErr := mgr.Subscribe(context.Background(), id)
 			Expect(subErr).NotTo(HaveOccurred())
 
 			var events []session.InvestigationEvent

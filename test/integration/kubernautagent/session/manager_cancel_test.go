@@ -105,7 +105,7 @@ var _ = Describe("Kubernaut Agent Session Manager Cancellation — #823 PR3", fu
 
 			<-proceed
 
-			ch, subErr := manager.Subscribe(id)
+			ch, subErr := manager.Subscribe(context.Background(), id)
 			Expect(subErr).NotTo(HaveOccurred())
 			Expect(ch).NotTo(BeNil())
 

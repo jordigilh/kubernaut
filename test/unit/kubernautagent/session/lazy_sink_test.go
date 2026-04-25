@@ -82,7 +82,7 @@ var _ = Describe("Lazy Event Sink — #823 PR7", func() {
 			}, map[string]string{"remediation_id": "rr-complete-evt"})
 			Expect(err).NotTo(HaveOccurred())
 
-			ch, subErr := mgr.Subscribe(id)
+			ch, subErr := mgr.Subscribe(context.Background(), id)
 			Expect(subErr).NotTo(HaveOccurred())
 			Expect(ch).NotTo(BeNil())
 
@@ -121,7 +121,7 @@ var _ = Describe("Lazy Event Sink — #823 PR7", func() {
 			}, map[string]string{"remediation_id": "rr-observed"})
 			Expect(err).NotTo(HaveOccurred())
 
-			_, subErr := mgr.Subscribe(id)
+			_, subErr := mgr.Subscribe(context.Background(), id)
 			Expect(subErr).NotTo(HaveOccurred())
 
 			close(proceed)

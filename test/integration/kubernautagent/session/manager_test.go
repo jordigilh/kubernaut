@@ -249,7 +249,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 				return sess.Status
 			}, 1*time.Second, 10*time.Millisecond).Should(Equal(session.StatusRunning))
 
-			ch, err := manager.Subscribe(id)
+			ch, err := manager.Subscribe(context.Background(), id)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ch).NotTo(BeNil(), "event channel must be non-nil for a running investigation")
 
@@ -273,9 +273,9 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 				return sess.Status
 			}, 1*time.Second, 10*time.Millisecond).Should(Equal(session.StatusRunning))
 
-			ch1, err := manager.Subscribe(id)
+			ch1, err := manager.Subscribe(context.Background(), id)
 			Expect(err).NotTo(HaveOccurred())
-			ch2, err := manager.Subscribe(id)
+			ch2, err := manager.Subscribe(context.Background(), id)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(ch1).To(BeIdenticalTo(ch2),
@@ -303,7 +303,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 				return sess.Status
 			}, 1*time.Second, 10*time.Millisecond).Should(Equal(session.StatusRunning))
 
-			ch, err := manager.Subscribe(id)
+			ch, err := manager.Subscribe(context.Background(), id)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ch).NotTo(BeNil())
 
@@ -323,7 +323,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 
 	Describe("IT-KA-823-008: Subscribing to a nonexistent investigation returns a clear error", func() {
 		It("should return ErrSessionNotFound for unknown session ID", func() {
-			ch, err := manager.Subscribe("nonexistent-id")
+			ch, err := manager.Subscribe(context.Background(), "nonexistent-id")
 			Expect(err).To(MatchError(session.ErrSessionNotFound))
 			Expect(ch).To(BeNil())
 		})
@@ -344,7 +344,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 				return sess.Status
 			}, 2*time.Second, 10*time.Millisecond).Should(Equal(session.StatusCompleted))
 
-			ch, err := manager.Subscribe(id)
+			ch, err := manager.Subscribe(context.Background(), id)
 			Expect(err).To(MatchError(session.ErrSessionTerminal))
 			Expect(ch).To(BeNil())
 		})
