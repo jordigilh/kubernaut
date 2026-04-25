@@ -55,6 +55,12 @@ const (
 	// from an original resource (WFE or RR).
 	// Maps to reconciler.transitionToInheritedFailed(ctx, rr, failureErr, sourceRef, sourceKind).
 	TransitionInheritedFailed
+
+	// TransitionCompletedWithoutVerification indicates the RR should complete
+	// directly without entering Verifying/EA. Used in dry-run mode where the
+	// pipeline stops after AI analysis without creating WFE or EA. (#712, #736)
+	// Maps to reconciler.transitionToCompletedWithoutVerification(ctx, rr, reason).
+	TransitionCompletedWithoutVerification
 )
 
 var transitionTypeNames = map[TransitionType]string{
@@ -64,7 +70,8 @@ var transitionTypeNames = map[TransitionType]string{
 	TransitionBlocked:            "Blocked",
 	TransitionVerifying:          "Verifying",
 	TransitionInheritedCompleted: "InheritedCompleted",
-	TransitionInheritedFailed:    "InheritedFailed",
+	TransitionInheritedFailed:              "InheritedFailed",
+	TransitionCompletedWithoutVerification: "CompletedWithoutVerification",
 }
 
 // String returns a human-readable representation of the TransitionType.
@@ -183,6 +190,16 @@ func Verify(outcome, reason string) TransitionIntent {
 	}
 }
 
+// CompleteWithoutVerification creates a TransitionIntent for completing
+// the RR directly without entering the Verifying/EA phase.
+// Used in dry-run mode: pipeline stops after AI analysis. (#712, #736)
+func CompleteWithoutVerification(reason string) TransitionIntent {
+	return TransitionIntent{
+		Type:   TransitionCompletedWithoutVerification,
+		Reason: reason,
+	}
+}
+
 // InheritComplete creates a TransitionIntent for inheriting completion
 // from an original resource. sourceRef is the original resource name,
 // sourceKind is "WorkflowExecution" or "RemediationRequest".
@@ -225,6 +242,8 @@ func (t TransitionIntent) Validate() error {
 		}
 	case TransitionVerifying:
 		// Outcome is optional; no additional requirements
+	case TransitionCompletedWithoutVerification:
+		// Reason is optional; no additional requirements
 	case TransitionInheritedCompleted:
 		if t.SourceRef == "" || t.SourceKind == "" {
 			return fmt.Errorf("TransitionInheritedCompleted requires SourceRef and SourceKind to be set")

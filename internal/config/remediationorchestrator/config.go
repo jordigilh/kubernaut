@@ -65,6 +65,11 @@ type Config struct {
 	// Retention configures CRD lifecycle cleanup (#265).
 	Retention RetentionConfig `yaml:"retention"`
 
+	// DryRun enables dry-run mode: the pipeline stops after AI analysis without
+	// creating a WorkflowExecution or EffectivenessAssessment. The RR completes
+	// immediately with outcome "DryRun". Default: false. (#712, #736, #116)
+	DryRun bool `yaml:"dryRun,omitempty"`
+
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
