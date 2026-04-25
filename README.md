@@ -111,7 +111,7 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 *New domains, same intelligent approach.*
 
 - **Cost optimization** — LLM-driven FinOps investigation and resource remediation using signals from Red Hat Cost Management (Koku), Kubecost, OpenCost, and VPA ([#555](https://github.com/jordigilh/kubernaut/issues/555))
-- **Threat remediation** — LLM-driven investigation and response for security and compliance signals from Falco, Trivy, OPA, and compliance scanners ([#554](https://github.com/jordigilh/kubernaut/issues/554))
+- **Threat remediation** — LLM-driven investigation and response for security and compliance signals from Red Hat Advanced Cluster Security (RHACS), Falco, Trivy, and OPA ([#554](https://github.com/jordigilh/kubernaut/issues/554))
 - **Non-Kubernetes workflows** — `targetSystem` field enables execution against external systems (VMs, cloud APIs, IaC) with EA evolution for unverifiable outcomes ([#739](https://github.com/jordigilh/kubernaut/issues/739))
 
 ---
