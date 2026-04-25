@@ -134,7 +134,8 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 	ctx context.Context,
 	params agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams,
 ) (agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, error) {
-	sess, err := h.getAuthorizedSession(ctx, params.SessionID)
+	endpoint := fmt.Sprintf("/api/v1/incident/session/%s", params.SessionID)
+	sess, err := h.getAuthorizedSession(ctx, params.SessionID, endpoint)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return &agentclient.HTTPError{
@@ -142,7 +143,7 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 				Title:    "Session Not Found",
 				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
 				Status:   404,
-				Instance: fmt.Sprintf("/api/v1/incident/session/%s", params.SessionID),
+				Instance: endpoint,
 			}, nil
 		}
 		h.logger.Error("session lookup failed", "session_id", params.SessionID, "error", err)
@@ -164,7 +165,8 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 	ctx context.Context,
 	params agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams,
 ) (agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes, error) {
-	sess, err := h.getAuthorizedSession(ctx, params.SessionID)
+	endpoint := fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID)
+	sess, err := h.getAuthorizedSession(ctx, params.SessionID, endpoint)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound{
@@ -172,7 +174,7 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 				Title:    "Session Not Found",
 				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
 				Status:   404,
-				Instance: fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID),
+				Instance: endpoint,
 			}, nil
 		}
 		h.logger.Error("session lookup failed", "session_id", params.SessionID, "error", err)
@@ -215,14 +217,15 @@ func (h *Handler) CancelSessionAPIV1IncidentSessionSessionIDCancelPost(
 	ctx context.Context,
 	params agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams,
 ) (agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, error) {
-	if _, authzErr := h.getAuthorizedSession(ctx, params.SessionID); authzErr != nil {
+	endpoint := fmt.Sprintf("/api/v1/incident/session/%s/cancel", params.SessionID)
+	if _, authzErr := h.getAuthorizedSession(ctx, params.SessionID, endpoint); authzErr != nil {
 		if errors.Is(authzErr, session.ErrSessionNotFound) {
 			return &agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound{
 				Type:     "https://kubernaut.ai/problems/not-found",
 				Title:    "Session Not Found",
 				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
 				Status:   404,
-				Instance: fmt.Sprintf("/api/v1/incident/session/%s/cancel", params.SessionID),
+				Instance: endpoint,
 			}, nil
 		}
 		return nil, fmt.Errorf("session authz: %w", authzErr)
@@ -262,7 +265,8 @@ func (h *Handler) SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(
 	ctx context.Context,
 	params agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams,
 ) (agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, error) {
-	sess, err := h.getAuthorizedSession(ctx, params.SessionID)
+	endpoint := fmt.Sprintf("/api/v1/incident/session/%s/snapshot", params.SessionID)
+	sess, err := h.getAuthorizedSession(ctx, params.SessionID, endpoint)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return &agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound{
@@ -270,7 +274,7 @@ func (h *Handler) SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(
 				Title:    "Session Not Found",
 				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
 				Status:   404,
-				Instance: fmt.Sprintf("/api/v1/incident/session/%s/snapshot", params.SessionID),
+				Instance: endpoint,
 			}, nil
 		}
 		h.logger.Error("snapshot lookup failed", "session_id", params.SessionID, "error", err)
@@ -367,14 +371,15 @@ func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 	ctx context.Context,
 	params agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams,
 ) (agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, error) {
-	if _, authzErr := h.getAuthorizedSession(ctx, params.SessionID); authzErr != nil {
+	endpoint := fmt.Sprintf("/api/v1/incident/session/%s/stream", params.SessionID)
+	if _, authzErr := h.getAuthorizedSession(ctx, params.SessionID, endpoint); authzErr != nil {
 		if errors.Is(authzErr, session.ErrSessionNotFound) {
 			return &agentclient.HTTPError{
 				Type:     "https://kubernaut.ai/problems/not-found",
 				Title:    "Session Not Found",
 				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
 				Status:   404,
-				Instance: fmt.Sprintf("/api/v1/incident/session/%s/stream", params.SessionID),
+				Instance: endpoint,
 			}, nil
 		}
 		h.logger.Error("stream authz failed", "session_id", params.SessionID, "error", authzErr)
@@ -434,7 +439,9 @@ func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 // is the session owner. Returns the session if authorized, or nil with
 // ErrSessionNotFound if the session doesn't exist or the user is not the owner.
 // When auth middleware is disabled (user is empty), ownership checks are skipped.
-func (h *Handler) getAuthorizedSession(ctx context.Context, sessionID string) (*session.Session, error) {
+// Denied access attempts are recorded via aiagent.session.access_denied for
+// SOC2 CC8.1 failed-access audit trail.
+func (h *Handler) getAuthorizedSession(ctx context.Context, sessionID, endpoint string) (*session.Session, error) {
 	sess, err := h.sessions.GetSession(sessionID)
 	if err != nil {
 		return nil, err
@@ -447,6 +454,7 @@ func (h *Handler) getAuthorizedSession(ctx context.Context, sessionID string) (*
 
 	owner := sess.Metadata["created_by"]
 	if owner != "" && owner != requestUser {
+		h.sessions.EmitAccessDenied(ctx, sessionID, endpoint, requestUser)
 		return nil, session.ErrSessionNotFound
 	}
 
