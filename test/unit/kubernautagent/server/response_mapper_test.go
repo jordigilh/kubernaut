@@ -69,7 +69,7 @@ var _ = Describe("Response Mapper — #433", func() {
 			params := agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
 				SessionID: id,
 			}
-			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(nil, params)
+			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(context.Background(), params)
 			Expect(err).NotTo(HaveOccurred())
 
 			incidentResp, ok := resp.(*agentclient.IncidentResponse)
@@ -99,7 +99,7 @@ var _ = Describe("Response Mapper — #433", func() {
 			params := agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
 				SessionID: id,
 			}
-			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(nil, params)
+			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(context.Background(), params)
 			Expect(err).NotTo(HaveOccurred())
 
 			incidentResp, ok := resp.(*agentclient.IncidentResponse)
@@ -131,7 +131,7 @@ var _ = Describe("Response Mapper — #433", func() {
 			params := agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
 				SessionID: id,
 			}
-			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(nil, params)
+			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(context.Background(), params)
 			Expect(err).NotTo(HaveOccurred())
 
 			incidentResp, ok := resp.(*agentclient.IncidentResponse)
