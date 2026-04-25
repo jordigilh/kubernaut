@@ -40,6 +40,7 @@ type InvestigationEvent struct {
 // These are wire-format values sent over SSE to observers.
 const (
 	EventTypeReasoningDelta = "reasoning_delta"
+	EventTypeTokenDelta     = "token_delta"
 	EventTypeToolCallStart  = "tool_call_start"
 	EventTypeToolCall       = "tool_call"
 	EventTypeToolResult     = "tool_result"

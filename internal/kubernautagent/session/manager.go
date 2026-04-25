@@ -233,6 +233,29 @@ func (m *Manager) closeEventChan(id string) {
 	}
 }
 
+// Shutdown cancels all running investigations to allow a clean process exit.
+// It fires the context cancellation for each active session and transitions
+// them to StatusCancelled. This is intended to be called from a SIGTERM
+// handler so that in-flight LLM calls are aborted promptly.
+func (m *Manager) Shutdown() {
+	m.store.mu.Lock()
+	var running []string
+	for id, sess := range m.store.sessions {
+		if sess.Status == StatusRunning || sess.Status == StatusPending {
+			if sess.cancel != nil {
+				sess.cancel()
+			}
+			sess.Status = StatusCancelled
+			running = append(running, id)
+		}
+	}
+	m.store.mu.Unlock()
+
+	for _, id := range running {
+		m.logger.Info("shutdown: cancelled investigation", "session_id", id)
+	}
+}
+
 // GetSession retrieves the current state of an investigation session.
 func (m *Manager) GetSession(id string) (*Session, error) {
 	return m.store.Get(id)
