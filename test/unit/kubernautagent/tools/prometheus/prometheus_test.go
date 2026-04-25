@@ -3,6 +3,8 @@ package prometheus_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"time"
 
@@ -13,7 +15,60 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/prometheus"
 )
 
+type roundTripperFunc struct {
+	fn func(*http.Request) (*http.Response, error)
+}
+
+func (rt *roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return rt.fn(req)
+}
+
 var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
+
+	Describe("UT-KA-838-001: NewClient uses custom Transport when provided (OCP bearer auth)", func() {
+		It("should inject the custom transport into the underlying http.Client", func() {
+			var capturedHeaders http.Header
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedHeaders = r.Header.Clone()
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"scalar","result":[1,"42"]}}`))
+			}))
+			defer server.Close()
+
+			bearerTransport := &roundTripperFunc{fn: func(req *http.Request) (*http.Response, error) {
+				req = req.Clone(req.Context())
+				req.Header.Set("Authorization", "Bearer test-sa-token")
+				return http.DefaultTransport.RoundTrip(req)
+			}}
+
+			cfg := prometheus.ClientConfig{
+				URL:       server.URL,
+				Transport: bearerTransport,
+			}
+			client, err := prometheus.NewClient(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			allTools := prometheus.NewAllTools(client)
+			var queryTool tools.Tool
+			for _, t := range allTools {
+				if t.Name() == "execute_prometheus_instant_query" {
+					queryTool = t
+					break
+				}
+			}
+			Expect(queryTool).NotTo(BeNil())
+
+			_, _ = queryTool.Execute(context.Background(), json.RawMessage(`{"query":"up"}`))
+			Expect(capturedHeaders.Get("Authorization")).To(Equal("Bearer test-sa-token"))
+		})
+
+		It("should use default transport when Transport is nil", func() {
+			cfg := prometheus.ClientConfig{URL: "http://prometheus:9090"}
+			client, err := prometheus.NewClient(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client).NotTo(BeNil())
+		})
+	})
 
 	Describe("UT-KA-433-033: Prometheus client config parses URL, headers, timeout, size limit", func() {
 		It("should create a client from valid config with all fields set", func() {

@@ -38,6 +38,12 @@ type ClientConfig struct {
 	SizeLimit             int               `yaml:"size_limit"`
 	MetadataLimit         int               `yaml:"metadata_limit"`
 	MetadataTimeWindowHrs int               `yaml:"metadata_time_window_hrs"`
+
+	// Transport overrides the http.Client's RoundTripper. When set, it is used
+	// as the underlying transport for all Prometheus API requests. This enables
+	// SA bearer token injection on OCP (via auth.NewServiceAccountTransportWithBase)
+	// and custom TLS trust (via sharedtls). When nil, http.DefaultTransport is used.
+	Transport http.RoundTripper `yaml:"-"`
 }
 
 // DefaultClientConfig returns production defaults.
@@ -73,7 +79,8 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	return &Client{
 		config: cfg,
 		httpClient: &http.Client{
-			Timeout: cfg.Timeout,
+			Timeout:   cfg.Timeout,
+			Transport: cfg.Transport,
 		},
 	}, nil
 }
