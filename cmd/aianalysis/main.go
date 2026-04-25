@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package main is the entry point for the AIAnalysis controller.
-// This controller orchestrates AI-based incident analysis using HolmesGPT-API.
+// This controller orchestrates AI-based incident analysis using the Kubernaut Agent.
 //
 // Business Requirements: BR-AI-001 to BR-AI-083 (V1.0)
 // Architecture: DD-CONTRACT-002, DD-AIANALYSIS-001
@@ -253,7 +253,7 @@ func main() {
 		Log:                  controllerLog,
 		Metrics:              aianalysisMetrics,    // DD-METRICS-001: Injected metrics (P0)
 		StatusManager:        statusManager,        // DD-PERF-001: Atomic status updates
-		InvestigatingHandler: investigatingHandler, // BR-AI-007: HolmesGPT integration
+		InvestigatingHandler: investigatingHandler, // BR-AI-007: KA integration
 		AnalyzingHandler:     analyzingHandler,     // BR-AI-012: Rego policy evaluation
 		AuditClient:          auditClient,          // DD-AUDIT-003: P0 audit traces
 	}).SetupWithManager(mgr); err != nil {

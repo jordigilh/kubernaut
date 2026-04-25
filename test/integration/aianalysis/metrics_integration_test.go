@@ -151,11 +151,11 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			// 1. Capture baseline failure metrics before test
 			// DD-METRICS-001: FailuresTotal has 2 labels (reason, sub_reason)
 			baselineFailures := getCounterValue(reconciler.Metrics.FailuresTotal, "WorkflowResolutionFailed", "NoWorkflowResolved") +
-				getCounterValue(reconciler.Metrics.FailuresTotal, "APIError", "HolmesGPTAPICallFailed") +
+				getCounterValue(reconciler.Metrics.FailuresTotal, "APIError", "AgentAPICallFailed") +
 				getCounterValue(reconciler.Metrics.FailuresTotal, "NoWorkflowSelected", "InvestigationFailed")
 
 			// 2. Create AIAnalysis that will complete successfully
-			// Note: Mock HolmesGPT client returns success, so this tests the happy path
+			// Note: Mock KA client returns success, so this tests the happy path
 			testID := uuid.New().String()[:8]
 			rrName := fmt.Sprintf("test-rr-success-%s", testID)
 			aianalysis := &aianalysisv1.AIAnalysis{
@@ -202,7 +202,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			// 4. Verify failure metrics were NOT incremented
 			// Success path should not emit failure metrics
 			Consistently(func() float64 {
-				currentFailures := getCounterValue(reconciler.Metrics.FailuresTotal, "WorkflowResolutionFailed", "NoWorkflowResolved") + getCounterValue(reconciler.Metrics.FailuresTotal, "APIError", "HolmesGPTAPICallFailed") + getCounterValue(reconciler.Metrics.FailuresTotal, "NoWorkflowSelected", "InvestigationFailed")
+				currentFailures := getCounterValue(reconciler.Metrics.FailuresTotal, "WorkflowResolutionFailed", "NoWorkflowResolved") + getCounterValue(reconciler.Metrics.FailuresTotal, "APIError", "AgentAPICallFailed") + getCounterValue(reconciler.Metrics.FailuresTotal, "NoWorkflowSelected", "InvestigationFailed")
 				return currentFailures - baselineFailures
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal(float64(0)),
 				"Failure metrics should NOT be emitted when AIAnalysis completes successfully")

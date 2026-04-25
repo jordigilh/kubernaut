@@ -50,7 +50,7 @@ import (
 //   - Redis (:16384)
 //   - DataStorage API (:18095)
 //   - Mock LLM Service (:18141) - Provides deterministic test responses
-//   - HolmesGPT API (:18120) - Real business logic with Mock LLM backend
+//   - KA (:18120) - Real business logic with Mock LLM backend
 
 var _ = Describe("Approval Context Integration", Label("integration", "approval", "ka-aa"), func() {
 	var (

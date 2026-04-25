@@ -104,7 +104,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			Expect(analysis.Status.CompletedAt).NotTo(BeZero())
 			// Staging environment should auto-approve per Rego policy
 		Expect(analysis.Status.ApprovalRequired).To(BeFalse())
-		// Should have a selected workflow from HolmesGPT mock
+		// Should have a selected workflow from KA mock
 		Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
 		// DD-WORKFLOW-002 v3.0: Test assertions use actual UUIDs from DataStorage
 		// Mock LLM returns workflow for CrashLoopBackOff → crashloop-config-fix-v1 (production environment)
@@ -183,13 +183,13 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			}()
 
 			// This test verifies the retry mechanism works correctly
-			// The mock HolmesGPT-API can be configured to return transient errors
+			// The mock KA can be configured to return transient errors
 
 			By("Creating AIAnalysis")
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Verifying retry annotation exists after failure")
-			// This assertion depends on HolmesGPT-API behavior
+			// This assertion depends on KA behavior
 			// If mock is configured to fail first N times, verify retry count
 			Eventually(func() bool {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)

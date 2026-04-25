@@ -310,7 +310,7 @@ func WaitForRedisReady(containerName string, writer io.Writer) error {
 }
 
 // WaitForHTTPHealth waits for an HTTP health endpoint to return 200 OK
-// Generic health check suitable for any HTTP service (DataStorage, HolmesGPT-API, etc.)
+// Generic health check suitable for any HTTP service (DataStorage, KA, etc.)
 //
 // Pattern: DD-TEST-002 Health Check
 // - Configurable timeout (typically 30-60 seconds)

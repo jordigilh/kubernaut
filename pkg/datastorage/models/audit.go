@@ -50,7 +50,7 @@ type AIAnalysisAudit struct {
 	ID                   int64     `json:"id" db:"id"`
 	RemediationRequestID string    `json:"remediation_request_id" db:"remediation_request_id"`
 	AnalysisID           string    `json:"analysis_id" db:"analysis_id"`
-	Provider             string    `json:"provider" db:"provider"` // holmesgpt, openai, claude
+	Provider             string    `json:"provider" db:"provider"` // kubernaut-agent, openai, claude
 	Model                string    `json:"model" db:"model"`
 	ConfidenceScore      float64   `json:"confidence_score" db:"confidence_score"`
 	TokensUsed           int       `json:"tokens_used" db:"tokens_used"`

@@ -41,7 +41,7 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// ResponseProcessor handles processing of HolmesGPT-API responses
+// ResponseProcessor handles processing of KA responses
 // BR-AI-008: Capture all response fields including RCA, workflow, and alternatives
 // BR-HAPI-197: Check needs_human_review before proceeding
 // BR-HAPI-200: Handle problem_resolved outcomes
@@ -210,7 +210,7 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	analysis.Status.NeedsHumanReview = false
 
 	// Set InvestigationComplete condition
-	aianalysis.SetInvestigationComplete(analysis, true, "HolmesGPT-API investigation completed successfully")
+	aianalysis.SetInvestigationComplete(analysis, true, "KA investigation completed successfully")
 
 	// Transition to Analyzing phase
 	// Note: ObservedGeneration set by InvestigatingHandler before returning

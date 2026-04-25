@@ -30,10 +30,10 @@ import (
 
 // ========================================
 // HOLMESGPT-API CLIENT INTERFACE
-// BR-AI-007: HolmesGPT-API integration for investigation
+// BR-AI-007: KA integration for investigation
 // ========================================
 
-// HolmesGPTClientInterface defines the contract for calling HolmesGPT-API.
+// AgentClientInterface defines the contract for calling the Kubernaut Agent.
 // Uses generated OpenAPI types for type-safe KA contract compliance.
 //
 // Methods:
@@ -41,7 +41,7 @@ import (
 // - SubmitInvestigation: (Async) Submits investigation, returns session ID (BR-AA-HAPI-064.1)
 // - PollSession: (Async) Polls session status (BR-AA-HAPI-064.2)
 // - GetSessionResult: (Async) Retrieves incident investigation result (BR-AA-HAPI-064.3)
-type HolmesGPTClientInterface interface {
+type AgentClientInterface interface {
 	// Legacy synchronous methods (will be deprecated)
 	Investigate(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error)
 

@@ -26,11 +26,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
-// MockHolmesGPTClient is a mock implementation of HolmesGPTClientInterface for unit tests.
+// MockAgentClient is a mock implementation of AgentClientInterface for unit tests.
 // Now uses generated types from KA OpenAPI spec for type-safe testing.
 // BR-AI-006: Mock for API call testing
 // BR-AA-HAPI-064: Extended with async session methods
-type MockHolmesGPTClient struct {
+type MockAgentClient struct {
 	// InvestigateFunc allows tests to customize the Investigate behavior
 	InvestigateFunc func(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error)
 
@@ -87,9 +87,9 @@ type MockHolmesGPTClient struct {
 	mu sync.Mutex
 }
 
-// NewMockHolmesGPTClient creates a new mock HolmesGPT client with default success behavior.
-func NewMockHolmesGPTClient() *MockHolmesGPTClient {
-	return &MockHolmesGPTClient{
+// NewMockAgentClient creates a new mock agent client with default success behavior.
+func NewMockAgentClient() *MockAgentClient {
+	return &MockAgentClient{
 		Response: &agentclient.IncidentResponse{
 			IncidentID: "mock-incident-001",
 			Analysis:   "Mock analysis: No issues detected",
@@ -100,8 +100,8 @@ func NewMockHolmesGPTClient() *MockHolmesGPTClient {
 	}
 }
 
-// Investigate implements HolmesGPTClientInterface.
-func (m *MockHolmesGPTClient) Investigate(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error) {
+// Investigate implements AgentClientInterface.
+func (m *MockAgentClient) Investigate(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error) {
 	m.CallCount++
 	m.LastRequest = req
 
@@ -113,21 +113,21 @@ func (m *MockHolmesGPTClient) Investigate(ctx context.Context, req *agentclient.
 }
 
 // WithResponse configures the mock to return a specific response.
-func (m *MockHolmesGPTClient) WithResponse(resp *agentclient.IncidentResponse) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithResponse(resp *agentclient.IncidentResponse) *MockAgentClient {
 	m.Response = resp
 	m.Err = nil
 	return m
 }
 
 // WithError configures the mock to return an error.
-func (m *MockHolmesGPTClient) WithError(err error) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithError(err error) *MockAgentClient {
 	m.Response = nil
 	m.Err = err
 	return m
 }
 
 // WithSuccessResponse configures the mock to return a successful investigation response.
-func (m *MockHolmesGPTClient) WithSuccessResponse(analysis string, confidence float64, warnings []string) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithSuccessResponse(analysis string, confidence float64, warnings []string) *MockAgentClient {
 	m.Response = &agentclient.IncidentResponse{
 		IncidentID: "mock-incident-001",
 		Analysis:   analysis,
@@ -141,7 +141,7 @@ func (m *MockHolmesGPTClient) WithSuccessResponse(analysis string, confidence fl
 
 // WithFullResponse configures the mock to return a complete response including RCA and workflow.
 // ADR-055: targetInOwnerChain parameter removed - remediationTarget is now in RCA output.
-func (m *MockHolmesGPTClient) WithFullResponse(
+func (m *MockAgentClient) WithFullResponse(
 	analysis string,
 	confidence float64,
 	warnings []string,
@@ -152,7 +152,7 @@ func (m *MockHolmesGPTClient) WithFullResponse(
 	workflowConfidence float64,
 	workflowRationale string,
 	includeAlternatives bool,
-) *MockHolmesGPTClient {
+) *MockAgentClient {
 	// Build RCA as map[string]jx.Raw
 	rcaMap := make(map[string]jx.Raw)
 	if rcaSummary != "" {
@@ -211,8 +211,8 @@ func (m *MockHolmesGPTClient) WithFullResponse(
 // Async Session Methods (BR-AA-HAPI-064)
 // ========================================
 
-// SubmitInvestigation implements HolmesGPTClientInterface for async submit.
-func (m *MockHolmesGPTClient) SubmitInvestigation(ctx context.Context, req *agentclient.IncidentRequest) (string, error) {
+// SubmitInvestigation implements AgentClientInterface for async submit.
+func (m *MockAgentClient) SubmitInvestigation(ctx context.Context, req *agentclient.IncidentRequest) (string, error) {
 	m.mu.Lock()
 	m.SubmitCallCount++
 	m.LastRequest = req
@@ -233,8 +233,8 @@ func (m *MockHolmesGPTClient) SubmitInvestigation(ctx context.Context, req *agen
 	return sessionID, nil
 }
 
-// PollSession implements HolmesGPTClientInterface for session polling.
-func (m *MockHolmesGPTClient) PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
+// PollSession implements AgentClientInterface for session polling.
+func (m *MockAgentClient) PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
 	m.mu.Lock()
 	m.PollCallCount++
 	m.mu.Unlock()
@@ -254,8 +254,8 @@ func (m *MockHolmesGPTClient) PollSession(ctx context.Context, sessionID string)
 	return &agentclient.SessionStatus{Status: "completed"}, nil
 }
 
-// GetSessionResult implements HolmesGPTClientInterface for result retrieval.
-func (m *MockHolmesGPTClient) GetSessionResult(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error) {
+// GetSessionResult implements AgentClientInterface for result retrieval.
+func (m *MockAgentClient) GetSessionResult(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error) {
 	m.mu.Lock()
 	m.GetResultCallCount++
 	m.mu.Unlock()
@@ -276,40 +276,40 @@ func (m *MockHolmesGPTClient) GetSessionResult(ctx context.Context, sessionID st
 // ========================================
 
 // WithSessionSubmitResponse configures the mock to return a specific session ID on submit.
-func (m *MockHolmesGPTClient) WithSessionSubmitResponse(sessionID string) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithSessionSubmitResponse(sessionID string) *MockAgentClient {
 	m.DefaultSessionID = sessionID
 	m.SubmitErr = nil
 	return m
 }
 
 // WithSessionSubmitError configures the mock to return an error on submit.
-func (m *MockHolmesGPTClient) WithSessionSubmitError(err error) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithSessionSubmitError(err error) *MockAgentClient {
 	m.SubmitErr = err
 	return m
 }
 
 // WithSessionPollStatus configures the mock to return a specific session status on poll.
-func (m *MockHolmesGPTClient) WithSessionPollStatus(status string) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithSessionPollStatus(status string) *MockAgentClient {
 	m.DefaultSessionStatus = &agentclient.SessionStatus{Status: status}
 	m.PollErr = nil
 	return m
 }
 
 // WithSessionPollError configures the mock to return an error on poll (e.g., 404 for session lost).
-func (m *MockHolmesGPTClient) WithSessionPollError(err error) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithSessionPollError(err error) *MockAgentClient {
 	m.PollErr = err
 	return m
 }
 
 // WithSessionResultError configures the mock to return an error on result retrieval.
-func (m *MockHolmesGPTClient) WithSessionResultError(err error) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithSessionResultError(err error) *MockAgentClient {
 	m.GetResultErr = err
 	return m
 }
 
 // WithSessionPollSequence configures the mock to return different statuses on consecutive polls.
 // Useful for testing the poll flow: pending -> investigating -> completed.
-func (m *MockHolmesGPTClient) WithSessionPollSequence(statuses []string) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithSessionPollSequence(statuses []string) *MockAgentClient {
 	callIndex := 0
 	mu := &sync.Mutex{}
 	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
@@ -327,7 +327,7 @@ func (m *MockHolmesGPTClient) WithSessionPollSequence(statuses []string) *MockHo
 
 // WithSessionPollFailThenRecover configures the mock to return 404 for the first N polls,
 // then succeed on subsequent polls. Used for testing session regeneration (IT-AA-064-003).
-func (m *MockHolmesGPTClient) WithSessionPollFailThenRecover(failCount int, sessionLostErr error) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithSessionPollFailThenRecover(failCount int, sessionLostErr error) *MockAgentClient {
 	callIndex := 0
 	mu := &sync.Mutex{}
 	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
@@ -343,7 +343,7 @@ func (m *MockHolmesGPTClient) WithSessionPollFailThenRecover(failCount int, sess
 }
 
 // Reset resets the mock's state (call count and last request).
-func (m *MockHolmesGPTClient) Reset() {
+func (m *MockAgentClient) Reset() {
 	m.CallCount = 0
 	m.LastRequest = nil
 	m.SubmitCallCount = 0
@@ -352,7 +352,7 @@ func (m *MockHolmesGPTClient) Reset() {
 }
 
 // AssertCalled returns an error if Investigate was not called the expected number of times.
-func (m *MockHolmesGPTClient) AssertCalled(expectedCount int) error {
+func (m *MockAgentClient) AssertCalled(expectedCount int) error {
 	if m.CallCount != expectedCount {
 		return fmt.Errorf("expected Investigate to be called %d times, but was called %d times", expectedCount, m.CallCount)
 	}
@@ -360,7 +360,7 @@ func (m *MockHolmesGPTClient) AssertCalled(expectedCount int) error {
 }
 
 // AssertNotCalled returns an error if Investigate was called.
-func (m *MockHolmesGPTClient) AssertNotCalled() error {
+func (m *MockAgentClient) AssertNotCalled() error {
 	if m.CallCount > 0 {
 		return fmt.Errorf("expected Investigate to not be called, but was called %d times", m.CallCount)
 	}
@@ -372,7 +372,7 @@ func (m *MockHolmesGPTClient) AssertNotCalled() error {
 // ========================================
 
 // WithHumanReviewRequired configures the mock to return needs_human_review=true
-func (m *MockHolmesGPTClient) WithHumanReviewRequired(warnings []string) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithHumanReviewRequired(warnings []string) *MockAgentClient {
 	m.Response = &agentclient.IncidentResponse{
 		IncidentID: "mock-incident-001",
 		Analysis:   "Mock analysis: Human review required",
@@ -386,7 +386,7 @@ func (m *MockHolmesGPTClient) WithHumanReviewRequired(warnings []string) *MockHo
 }
 
 // WithHumanReviewReasonEnum configures the mock to return needs_human_review=true with reason enum.
-func (m *MockHolmesGPTClient) WithHumanReviewReasonEnum(reason string, warnings []string) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithHumanReviewReasonEnum(reason string, warnings []string) *MockAgentClient {
 	m.Response = &agentclient.IncidentResponse{
 		IncidentID: "mock-incident-001",
 		Analysis:   "Mock analysis: Human review required",
@@ -406,7 +406,7 @@ func (m *MockHolmesGPTClient) WithHumanReviewReasonEnum(reason string, warnings 
 
 // WithProblemResolved configures the mock to return a "problem resolved" response.
 // BR-HAPI-200 Outcome A: needs_human_review=false, selected_workflow=null, confidence >= 0.7
-func (m *MockHolmesGPTClient) WithProblemResolved(confidence float64, warnings []string, analysis string) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithProblemResolved(confidence float64, warnings []string, analysis string) *MockAgentClient {
 	m.Response = &agentclient.IncidentResponse{
 		IncidentID: "mock-incident-001",
 		Analysis:   analysis,
@@ -422,7 +422,7 @@ func (m *MockHolmesGPTClient) WithProblemResolved(confidence float64, warnings [
 
 // WithNotActionable configures the mock to return a "not actionable" response.
 // #388 Outcome D: actionable=false, needs_human_review=false, selected_workflow=null, confidence >= 0.7
-func (m *MockHolmesGPTClient) WithNotActionable(confidence float64, rcaSummary string, rcaSeverity string, contributingFactors []string) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithNotActionable(confidence float64, rcaSummary string, rcaSeverity string, contributingFactors []string) *MockAgentClient {
 	rcaMap := BuildMockRCA(rcaSummary, rcaSeverity, contributingFactors)
 	m.Response = &agentclient.IncidentResponse{
 		IncidentID:        "mock-incident-001",
@@ -439,7 +439,7 @@ func (m *MockHolmesGPTClient) WithNotActionable(confidence float64, rcaSummary s
 }
 
 // WithProblemResolvedAndRCA configures a "problem resolved" response with RCA context.
-func (m *MockHolmesGPTClient) WithProblemResolvedAndRCA(confidence float64, warnings []string, analysis string, rcaSummary string, rcaSeverity string) *MockHolmesGPTClient {
+func (m *MockAgentClient) WithProblemResolvedAndRCA(confidence float64, warnings []string, analysis string, rcaSummary string, rcaSeverity string) *MockAgentClient {
 	// Build RCA as map[string]jx.Raw
 	rcaMap := make(map[string]jx.Raw)
 	summaryBytes, _ := json.Marshal(rcaSummary)
@@ -466,13 +466,13 @@ func (m *MockHolmesGPTClient) WithProblemResolvedAndRCA(confidence float64, warn
 
 // WithHumanReviewRequiredWithPartialResponse configures the mock to return
 // needs_human_review=true with partial workflow/RCA data for operator context.
-func (m *MockHolmesGPTClient) WithHumanReviewRequiredWithPartialResponse(
+func (m *MockAgentClient) WithHumanReviewRequiredWithPartialResponse(
 	reason string,
 	warnings []string,
 	workflowID string,
 	containerImage string,
 	rcaSummary string,
-) *MockHolmesGPTClient {
+) *MockAgentClient {
 	// Build RCA
 	rcaMap := BuildMockRCA(rcaSummary, "medium", nil)
 
@@ -498,11 +498,11 @@ func (m *MockHolmesGPTClient) WithHumanReviewRequiredWithPartialResponse(
 
 // WithHumanReviewAndHistory configures a complete needs_human_review=true response
 // with reason enum and validation attempts history (DD-HAPI-002 v1.4 compliant).
-func (m *MockHolmesGPTClient) WithHumanReviewAndHistory(
+func (m *MockAgentClient) WithHumanReviewAndHistory(
 	reason string,
 	warnings []string,
 	validationAttempts []map[string]interface{},
-) *MockHolmesGPTClient {
+) *MockAgentClient {
 	// Convert validation attempts to client.ValidationAttempt structs
 	var history []agentclient.ValidationAttempt
 	for _, attempt := range validationAttempts {

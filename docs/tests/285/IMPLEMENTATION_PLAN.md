@@ -18,7 +18,7 @@ This plan implements default-deny NetworkPolicy Helm templates for all 12 Kubern
 | 1 | Gateway | `app: gateway` | `templates/gateway/` |
 | 2 | DataStorage | `app: datastorage` | `templates/datastorage/` |
 | 3 | AI Analysis | `app: aianalysis-controller` | `templates/aianalysis/` |
-| 4 | HolmesGPT API | `app: holmesgpt-api` | `templates/holmesgpt-api/` |
+| 4 | Kubernaut Agent | `app: kubernaut-agent` | `templates/kubernaut-agent/` |
 | 5 | Signal Processing | `app: signalprocessing-controller` | `templates/signalprocessing/` |
 | 6 | Remediation Orchestrator | `app: remediationorchestrator-controller` | `templates/remediationorchestrator/` |
 | 7 | Workflow Execution | `app: workflowexecution-controller` | `templates/workflowexecution/` |
@@ -62,7 +62,7 @@ Write failing tests for each service:
 | UT-NP-285-004 | Gateway | podSelector=`gateway`, ingress 8080, egress to DS 8080 |
 | UT-NP-285-005 | DataStorage | podSelector=`datastorage`, ingress 8080 from 8 consumers, egress PG 5432 + Valkey 6379 |
 | UT-NP-285-006 | AI Analysis | podSelector=`aianalysis-controller`, egress HAPI 8080 + DS 8080 |
-| UT-NP-285-007 | HolmesGPT | podSelector=`holmesgpt-api`, ingress 8080 from AA, egress LLM CIDR:443 + DS 8080 |
+| UT-NP-285-007 | Kubernaut Agent | podSelector=`kubernaut-agent`, ingress 8080 from AA, egress LLM CIDR:443 + DS 8080 |
 | UT-NP-285-008 | Signal Processing | podSelector=`signalprocessing-controller`, egress DS 8080 |
 | UT-NP-285-009 | Remediation Orchestrator | podSelector=`remediationorchestrator-controller`, egress DS 8080 |
 | UT-NP-285-010 | Workflow Execution | podSelector=`workflowexecution-controller`, egress DS 8080 |
@@ -152,7 +152,7 @@ Order of implementation (by dependency — DataStorage is hub):
 3. **Valkey** (UT-NP-285-015) — ingress from DS only
 4. **Gateway** (UT-NP-285-004) — ingress from external, egress to DS
 5. **AI Analysis** (UT-NP-285-006) — egress to HAPI + DS
-6. **HolmesGPT API** (UT-NP-285-007) — ingress from AA, egress to LLM + DS
+6. **Kubernaut Agent** (UT-NP-285-007) — ingress from AA, egress to LLM + DS
 7. **Signal Processing** (UT-NP-285-008) — egress to DS
 8. **Remediation Orchestrator** (UT-NP-285-009) — egress to DS
 9. **Workflow Execution** (UT-NP-285-010) — egress to DS

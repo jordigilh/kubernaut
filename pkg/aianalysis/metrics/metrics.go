@@ -204,7 +204,7 @@ func NewMetrics() *Metrics {
 		// even before first failure occurs (required for E2E metric existence tests)
 		// BR-HAPI-197: Failure tracking
 		registeredMetrics.FailuresTotal.WithLabelValues("NoWorkflowSelected", "InvestigationFailed").Add(0)
-		registeredMetrics.FailuresTotal.WithLabelValues("APIError", "HolmesGPTAPICallFailed").Add(0)
+		registeredMetrics.FailuresTotal.WithLabelValues("APIError", "AgentAPICallFailed").Add(0)
 		registeredMetrics.FailuresTotal.WithLabelValues("RegoEvaluationError", "PolicyEvaluationFailed").Add(0)
 		registeredMetrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoWorkflowResolved").Add(0)
 
@@ -278,7 +278,7 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 
 	// Initialize metrics for E2E tests
 	m.FailuresTotal.WithLabelValues("NoWorkflowSelected", "InvestigationFailed").Add(0)
-	m.FailuresTotal.WithLabelValues("APIError", "HolmesGPTAPICallFailed").Add(0)
+	m.FailuresTotal.WithLabelValues("APIError", "AgentAPICallFailed").Add(0)
 	m.FailuresTotal.WithLabelValues("RegoEvaluationError", "PolicyEvaluationFailed").Add(0)
 	m.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoWorkflowResolved").Add(0)
 

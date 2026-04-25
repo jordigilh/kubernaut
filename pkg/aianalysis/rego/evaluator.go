@@ -60,7 +60,7 @@ type PolicyInput struct {
 	// Business classification from SP categorization (BR-SP-002, BR-SP-080, BR-SP-081)
 	BusinessClassification map[string]string `json:"business_classification,omitempty"`
 
-	// HolmesGPT-API response data
+	// KA response data
 	Confidence float64  `json:"confidence"`
 	Warnings   []string `json:"warnings,omitempty"`
 
@@ -188,7 +188,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 		"custom_labels":   input.CustomLabels,
 		// Business classification (BR-SP-002)
 		"business_classification": input.BusinessClassification,
-		// HolmesGPT-API response data
+		// KA response data
 		"confidence": input.Confidence,
 		"warnings":   input.Warnings,
 		// ADR-055: Remediation target for granular per-kind policies

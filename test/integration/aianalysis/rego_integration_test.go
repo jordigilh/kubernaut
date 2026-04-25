@@ -251,7 +251,7 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 				// ADR-055: Affected resource (replaces target_in_owner_chain)
 				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "web-app", Namespace: "staging"},
 
-				// HolmesGPT-API response data
+				// KA response data
 				Confidence: 0.92,
 				Warnings:   []string{},
 

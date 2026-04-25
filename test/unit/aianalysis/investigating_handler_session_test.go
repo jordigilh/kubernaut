@@ -42,7 +42,7 @@ import (
 // Test Plan: docs/testing/BR-AA-HAPI-064/session_based_pull_test_plan_v1.0.md
 //
 // These tests validate the async submit/poll/result flow between
-// AA controller and HolmesGPT-API using session IDs.
+// AA controller and KA using session IDs.
 //
 // TDD Phase: RED - all tests expected to fail until GREEN phase implements
 // the handler logic for async session management.
@@ -108,7 +108,7 @@ func (s *sessionAuditSpy) RecordAIAgentSessionLost(ctx context.Context, analysis
 var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", func() {
 	var (
 		handler    *handlers.InvestigatingHandler
-		mockClient *mocks.MockHolmesGPTClient
+		mockClient *mocks.MockAgentClient
 		auditSpy   *sessionAuditSpy
 		recorder   *record.FakeRecorder
 		ctx        context.Context
@@ -152,7 +152,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		mockClient = mocks.NewMockHolmesGPTClient()
+		mockClient = mocks.NewMockAgentClient()
 		auditSpy = &sessionAuditSpy{}
 		recorder = record.NewFakeRecorder(20)
 		testMetrics := metrics.NewMetrics()

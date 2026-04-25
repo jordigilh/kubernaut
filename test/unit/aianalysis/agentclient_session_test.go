@@ -29,9 +29,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
-// BR-AA-HAPI-064: Session-based async pull communication unit tests for HolmesGPTClient.
+// BR-AA-HAPI-064: Session-based async pull communication unit tests for AgentClient.
 // These tests verify the HTTP-level behavior of the 5 session methods using httptest.NewServer.
-var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
+var _ = Describe("AgentClient Session Methods [BR-AA-HAPI-064]", func() {
 	var (
 		mockServer *httptest.Server
 		hgClient   *agentclient.KubernautAgentClient

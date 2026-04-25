@@ -15,14 +15,14 @@ limitations under the License.
 */
 
 // Package aianalysis implements the AIAnalysis CRD controller.
-// DD-CONTRACT-002: Self-contained CRD pattern with HolmesGPT-API integration.
+// DD-CONTRACT-002: Self-contained CRD pattern with KA integration.
 //
 // Phase Flow (per reconciliation-phases.md v2.0):
 // Pending → Investigating → Analyzing → Completed/Failed
 //
 // Phase Handlers:
 // - PendingHandler: Validates spec fields and transitions to Investigating
-// - InvestigatingHandler: Calls HolmesGPT-API for investigation (captures RCA + workflow)
+// - InvestigatingHandler: Calls KA for investigation (captures RCA + workflow)
 // - AnalyzingHandler: Evaluates Rego policies, populates ApprovalContext, transitions to Completed
 //
 // Note: Recommending phase removed in v1.8 - workflow data captured in Investigating phase.
@@ -69,7 +69,7 @@ const (
 	// Validation occurs before transitioning to Investigating.
 	PhasePending = "Pending"
 
-	// PhaseInvestigating calls HolmesGPT-API for investigation.
+	// PhaseInvestigating calls KA for investigation.
 	// Captures RCA, SelectedWorkflow, AlternativeWorkflows, Warnings.
 	PhaseInvestigating = "Investigating"
 

@@ -105,7 +105,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 	Context("UT-AA-095-01: AIAnalysisCreated event on Pending → Investigating", func() {
 		It("should emit AIAnalysisCreated Normal event when reconciling Pending phase", func() {
 			recorder := record.NewFakeRecorder(20)
-			mockHolmes := mocks.NewMockHolmesGPTClient()
+			mockHolmes := mocks.NewMockAgentClient()
 			mockRego := mocks.NewMockRegoEvaluator()
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
@@ -174,7 +174,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 	Context("UT-AA-095-02: InvestigationComplete event on Investigating → Analyzing", func() {
 		It("should emit InvestigationComplete Normal event on successful investigation", func() {
 			recorder := record.NewFakeRecorder(20)
-			mockHolmes := mocks.NewMockHolmesGPTClient().WithFullResponse(
+			mockHolmes := mocks.NewMockAgentClient().WithFullResponse(
 				"Root cause identified: CrashLoopBackOff due to OOM",
 				0.85, []string{},
 				"OOM Kill detected", "high",
@@ -249,7 +249,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 		It("should emit AnalysisCompleted Normal event on successful analysis", func() {
 			recorder := record.NewFakeRecorder(20)
 			mockRego := mocks.NewMockRegoEvaluator() // Default: auto-approve
-			mockHolmes := mocks.NewMockHolmesGPTClient()
+			mockHolmes := mocks.NewMockAgentClient()
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
 			testMetrics := metrics.NewMetrics()
@@ -321,8 +321,8 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 	Context("UT-AA-095-04: AnalysisFailed event on investigation failure", func() {
 		It("should emit AnalysisFailed Warning event when investigation fails permanently", func() {
 			recorder := record.NewFakeRecorder(20)
-			mockHolmes := mocks.NewMockHolmesGPTClient().
-				WithError(fmt.Errorf("permanent: HolmesGPT-API returned 500"))
+			mockHolmes := mocks.NewMockAgentClient().
+				WithError(fmt.Errorf("permanent: KA returned 500"))
 			mockRego := mocks.NewMockRegoEvaluator()
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
@@ -393,7 +393,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			mockRego := mocks.NewMockRegoEvaluator()
 			mockRego.Err = fmt.Errorf("rego evaluation failed: policy compilation error")
 			mockRego.Result = nil
-			mockHolmes := mocks.NewMockHolmesGPTClient()
+			mockHolmes := mocks.NewMockAgentClient()
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
 			testMetrics := metrics.NewMetrics()
@@ -470,7 +470,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				Reason:           "Confidence below threshold (0.85 < 0.90)",
 				Degraded:         false,
 			}
-			mockHolmes := mocks.NewMockHolmesGPTClient()
+			mockHolmes := mocks.NewMockAgentClient()
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
 			testMetrics := metrics.NewMetrics()
@@ -541,7 +541,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 	Context("UT-AA-095-07: HumanReviewRequired event", func() {
 		It("should emit HumanReviewRequired Warning event when KA flags human review", func() {
 			recorder := record.NewFakeRecorder(20)
-			mockHolmes := mocks.NewMockHolmesGPTClient().
+			mockHolmes := mocks.NewMockAgentClient().
 				WithHumanReviewRequired([]string{"Investigation inconclusive, needs human review"})
 			mockRego := mocks.NewMockRegoEvaluator()
 			mockAuditStore := NewMockAuditStore()
@@ -610,7 +610,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 	Context("UT-AA-095-08: PhaseTransition event (intermediate)", func() {
 		It("should emit PhaseTransition event with from/to phases on Pending → Investigating", func() {
 			recorder := record.NewFakeRecorder(20)
-			mockHolmes := mocks.NewMockHolmesGPTClient()
+			mockHolmes := mocks.NewMockAgentClient()
 			mockRego := mocks.NewMockRegoEvaluator()
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))

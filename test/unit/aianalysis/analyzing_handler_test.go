@@ -374,7 +374,7 @@ var _ = Describe("AnalyzingHandler", func() {
 		Context("when SelectedWorkflow is missing", func() {
 			It("should fail analysis with clear explanation for operator", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.SelectedWorkflow = nil // Simulate missing workflow from HolmesGPT-API
+				analysis.Status.SelectedWorkflow = nil // Simulate missing workflow from KA
 
 				_, err := handler.Handle(ctx, analysis)
 

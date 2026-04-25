@@ -34,7 +34,7 @@ type ExpectedAuditEvent struct {
 	EventAction   string
 
 	// Optional fields (validated only if non-empty/non-nil)
-	EventOutcome  *ogenclient.AuditEventEventOutcome // Optional: may vary (e.g., HolmesGPT errors)
+	EventOutcome  *ogenclient.AuditEventEventOutcome // Optional: may vary (e.g., KA errors)
 	CorrelationID string
 	Severity      *string // Pointer type per schema
 	ActorID       *string

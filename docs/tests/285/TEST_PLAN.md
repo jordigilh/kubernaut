@@ -176,7 +176,7 @@ Tests validate **business outcomes**:
 | `charts/kubernaut/templates/gateway/networkpolicy.yaml` | Gateway NetworkPolicy rendering | ~40 lines |
 | `charts/kubernaut/templates/datastorage/networkpolicy.yaml` | DataStorage NetworkPolicy rendering | ~50 lines |
 | `charts/kubernaut/templates/aianalysis/networkpolicy.yaml` | AI Analysis NetworkPolicy rendering | ~40 lines |
-| `charts/kubernaut/templates/holmesgpt-api/networkpolicy.yaml` | HolmesGPT API NetworkPolicy rendering | ~50 lines |
+| `charts/kubernaut/templates/kubernaut-agent/networkpolicy.yaml` | Kubernaut Agent NetworkPolicy rendering | ~50 lines |
 | `charts/kubernaut/templates/signalprocessing/networkpolicy.yaml` | Signal Processing NetworkPolicy rendering | ~35 lines |
 | `charts/kubernaut/templates/remediationorchestrator/networkpolicy.yaml` | Remediation Orchestrator NetworkPolicy rendering | ~40 lines |
 | `charts/kubernaut/templates/workflowexecution/networkpolicy.yaml` | Workflow Execution NetworkPolicy rendering | ~40 lines |
@@ -206,8 +206,8 @@ Tests validate **business outcomes**:
 | BR-GATEWAY-050 | K8s API server egress allowed (configurable CIDR) | P0 | Unit | UT-NP-285-003 | Pending |
 | BR-GATEWAY-050 | Gateway: ingress from AlertManager, egress to DataStorage | P0 | Unit | UT-NP-285-004 | Pending |
 | BR-GATEWAY-050 | DataStorage: ingress from consumers, egress to PostgreSQL/Valkey | P0 | Unit | UT-NP-285-005 | Pending |
-| BR-GATEWAY-050 | AI Analysis: egress to HolmesGPT + DataStorage | P0 | Unit | UT-NP-285-006 | Pending |
-| BR-GATEWAY-050 | HolmesGPT: ingress from AI Analysis, egress to LLM + DataStorage | P0 | Unit | UT-NP-285-007 | Pending |
+| BR-GATEWAY-050 | AI Analysis: egress to KA + DataStorage | P0 | Unit | UT-NP-285-006 | Pending |
+| BR-GATEWAY-050 | KA: ingress from AI Analysis, egress to LLM + DataStorage | P0 | Unit | UT-NP-285-007 | Pending |
 | BR-GATEWAY-050 | Signal Processing: egress to DataStorage | P0 | Unit | UT-NP-285-008 | Pending |
 | BR-GATEWAY-050 | Remediation Orchestrator: egress to DataStorage | P0 | Unit | UT-NP-285-009 | Pending |
 | BR-GATEWAY-050 | Workflow Execution: egress to DataStorage + K8s API (Jobs) | P0 | Unit | UT-NP-285-010 | Pending |
@@ -248,8 +248,8 @@ Format: `{TIER}-NP-285-{SEQUENCE}`
 | `UT-NP-285-003` | Every service policy includes K8s API server egress (configurable CIDR, port 443) | Pending |
 | `UT-NP-285-004` | Gateway: ingress on 8080 from AlertManager pods, egress to DataStorage on 8080 | Pending |
 | `UT-NP-285-005` | DataStorage: ingress on 8080 from GW/SP/AA/HAPI/RO/WE/NT/EM/AW pods, egress to PostgreSQL 5432 + Valkey 6379 | Pending |
-| `UT-NP-285-006` | AI Analysis: egress to HolmesGPT on 8080 + DataStorage on 8080 | Pending |
-| `UT-NP-285-007` | HolmesGPT: ingress on 8080 from AI Analysis, egress to LLM (configurable CIDR:443) + DataStorage 8080 | Pending |
+| `UT-NP-285-006` | AI Analysis: egress to KA on 8080 + DataStorage on 8080 | Pending |
+| `UT-NP-285-007` | KA: ingress on 8080 from AI Analysis, egress to LLM (configurable CIDR:443) + DataStorage 8080 | Pending |
 | `UT-NP-285-008` | Signal Processing: egress to DataStorage on 8080 only | Pending |
 | `UT-NP-285-009` | Remediation Orchestrator: egress to DataStorage on 8080 only | Pending |
 | `UT-NP-285-010` | Workflow Execution: egress to DataStorage on 8080 | Pending |

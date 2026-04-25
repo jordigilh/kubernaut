@@ -23,7 +23,7 @@ limitations under the License.
 // # Design Decisions
 //
 // DD-WORKFLOW-001 v1.8: OwnerChainEntry schema requires Namespace, Kind, Name ONLY.
-// Do NOT include APIVersion or UID - not used by HolmesGPT-API validation.
+// Do NOT include APIVersion or UID - not used by KA validation.
 //
 // # Algorithm
 //

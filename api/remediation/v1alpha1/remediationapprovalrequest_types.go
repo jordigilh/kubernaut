@@ -97,7 +97,7 @@ type RemediationApprovalRequestSpec struct {
 	// +kubebuilder:validation:Required
 	RecommendedWorkflow RecommendedWorkflowSummary `json:"recommendedWorkflow"`
 
-	// Investigation summary from HolmesGPT
+	// Investigation summary from KA
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	InvestigationSummary string `json:"investigationSummary"`

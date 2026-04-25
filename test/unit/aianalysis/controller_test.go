@@ -126,7 +126,7 @@ var _ = Describe("AIAnalysis Controller", func() {
 				Build()
 
 			// Create test dependencies (P1 refactoring: handlers now required)
-			mockHolmesClient := mocks.NewMockHolmesGPTClient()
+			mockHolmesClient := mocks.NewMockAgentClient()
 			mockRegoEvaluator := mocks.NewMockRegoEvaluator()
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
@@ -210,7 +210,7 @@ var _ = Describe("AIAnalysis Controller", func() {
 	// Error audit tests have been implemented in integration tests
 	// See: test/integration/aianalysis/audit_flow_integration_test.go
 	//   - "should audit errors during investigation phase"
-	//   - "should audit HolmesGPT calls with error status code when API fails"
+	//   - "should audit KA calls with error status code when API fails"
 	//
 	// Rationale: Integration tests provide real K8s API, DataStorage verification,
 	// and full reconciliation loop behavior. Unit tests below are kept as reference
@@ -221,6 +221,6 @@ var _ = Describe("AIAnalysis Controller", func() {
 	// These tests require real infrastructure (DataStorage) to validate audit event persistence
 	// See test/integration/aianalysis/audit_flow_integration_test.go for comprehensive coverage:
 	//   - "should audit errors during investigation phase"
-	//   - "should audit HolmesGPT calls with error status code when API fails"
+	//   - "should audit KA calls with error status code when API fails"
 	// Unit tier limitation: fake client doesn't trigger controller error paths reliably
 })

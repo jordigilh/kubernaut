@@ -84,7 +84,7 @@ var _ = Describe("Health Endpoints E2E", Label("e2e", "health"), func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		})
 
-		It("should indicate HolmesGPT-API dependency status", func() {
+		It("should indicate KA dependency status", func() {
 			resp, err := httpClient.Get(healthURL + "/readyz?verbose=true")
 			Expect(err).NotTo(HaveOccurred())
 			defer func() {

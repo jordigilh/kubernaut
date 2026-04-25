@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package aianalysis implements the AIAnalysis CRD controller.
-// This controller orchestrates AI-based incident analysis using HolmesGPT-API
+// This controller orchestrates AI-based incident analysis using the Kubernaut Agent
 // and manages the workflow selection lifecycle.
 //
 // Business Requirements: BR-AI-001 to BR-AI-083 (V1.0)
@@ -286,7 +286,7 @@ func aiAnalysisUpdatePredicate() predicate.Predicate {
 // Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed/Failed
 
 // reconcileInvestigating handles AIAnalysis in Investigating phase
-// BR-AI-023: HolmesGPT-API integration
+// BR-AI-023: KA integration
 // BR-AI-017: Track phase timing
 
 // reconcileAnalyzing handles AIAnalysis in Analyzing phase

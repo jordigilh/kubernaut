@@ -40,7 +40,7 @@ const (
 	// Pending - Initial state, waiting to start investigation
 	Pending Phase = "Pending"
 
-	// Investigating - HolmesGPT API investigation in progress
+	// Investigating - KA investigation in progress
 	// Business Requirement: BR-AI-010 (Investigation phase)
 	Investigating Phase = "Investigating"
 
