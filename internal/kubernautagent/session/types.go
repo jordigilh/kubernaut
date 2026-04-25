@@ -24,6 +24,7 @@ import "encoding/json"
 //
 // Goose ACP mapping (future):
 //   - EventTypeReasoningDelta -> acp.StreamEvent with kind="reasoning"
+//   - EventTypeTokenDelta     -> acp.StreamEvent with kind="text_delta"
 //   - EventTypeToolCallStart  -> acp.StreamEvent with kind="tool_use"
 //   - EventTypeToolResult     -> acp.StreamEvent with kind="tool_result"
 //   - EventTypeError          -> acp.StreamEvent with kind="error"
@@ -46,4 +47,5 @@ const (
 	EventTypeError          = "error"
 	EventTypeComplete       = "complete"
 	EventTypeCancelled      = "cancelled"
+	EventTypeTokenDelta     = "token_delta"
 )

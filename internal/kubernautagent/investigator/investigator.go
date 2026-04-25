@@ -897,11 +897,12 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		reqEvent.Data["messages"] = messagesToAuditFormat(messages)
 		audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.logger)
 
-		resp, err := client.Chat(ctx, llm.ChatRequest{
+		chatReq := llm.ChatRequest{
 			Messages: messages,
 			Tools:    toolDefs,
 			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase), MaxTokens: maxTokens},
-		})
+		}
+		resp, err := chatOrStream(ctx, client, chatReq, turn, string(phase))
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
@@ -1190,6 +1191,25 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 	}
 
 	return result
+}
+
+// chatOrStream calls StreamChat when an event sink is present on the context,
+// forwarding token-level text deltas as EventTypeTokenDelta events. When no
+// event sink is present, it falls back to Chat for identical v1.4 behavior.
+// The returned ChatResponse is the same in both paths.
+func chatOrStream(ctx context.Context, client llm.Client, req llm.ChatRequest, turn int, phase string) (llm.ChatResponse, error) {
+	sink := session.EventSinkFromContext(ctx)
+	if sink == nil {
+		return client.Chat(ctx, req)
+	}
+	return client.StreamChat(ctx, req, func(evt llm.ChatStreamEvent) error {
+		if evt.Delta != "" {
+			emitToSink(ctx, session.EventTypeTokenDelta, turn, phase, map[string]interface{}{
+				"delta": evt.Delta,
+			})
+		}
+		return nil
+	})
 }
 
 // emitToSink sends an InvestigationEvent to the context-carried event sink
