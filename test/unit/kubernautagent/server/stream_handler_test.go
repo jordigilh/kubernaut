@@ -62,8 +62,12 @@ var _ = Describe("SSE Stream Handler — #823 PR7", func() {
 
 	Describe("UT-KA-823-D01: SSE stream delivers investigation events to HTTP client", func() {
 		It("returns SSE-framed events via io.Reader", func() {
+			// The investigation waits for `subscribed` before emitting events,
+			// ensuring the LazySink channel is active when events are sent.
+			subscribed := make(chan struct{})
 			proceed := make(chan struct{})
 			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+				<-subscribed
 				sink := session.EventSinkFromContext(ctx)
 				if sink != nil {
 					sink <- session.InvestigationEvent{
@@ -78,6 +82,14 @@ var _ = Describe("SSE Stream Handler — #823 PR7", func() {
 			}, map[string]string{"remediation_id": "rr-sse-test"})
 			Expect(err).NotTo(HaveOccurred())
 
+			Eventually(func() session.Status {
+				s, _ := mgr.GetSession(id)
+				if s == nil {
+					return session.StatusPending
+				}
+				return s.Status
+			}, 5*time.Second).Should(Equal(session.StatusRunning))
+
 			resp, handlerErr := h.SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 				context.Background(),
 				agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams{SessionID: id},
@@ -88,6 +100,7 @@ var _ = Describe("SSE Stream Handler — #823 PR7", func() {
 			Expect(ok).To(BeTrue(), "response should be OK type with SSE data")
 			Expect(okResp.Data).NotTo(BeNil())
 
+			close(subscribed)
 			close(proceed)
 			data, readErr := io.ReadAll(okResp.Data)
 			Expect(readErr).NotTo(HaveOccurred())
