@@ -46,10 +46,11 @@ type Session struct {
 	CreatedAt time.Time
 	Metadata  map[string]string
 
-	// cancel and eventChan are manager-managed internal fields.
+	// cancel, eventChan, and lazySink are manager-managed internal fields.
 	// They are NOT part of the public copy surface (clone excludes them).
 	cancel    context.CancelFunc
 	eventChan chan InvestigationEvent
+	lazySink  *LazySink
 }
 
 // ErrSessionNotFound is returned when a session ID does not exist in the store.
@@ -107,6 +108,7 @@ func (s *Session) clone() *Session {
 	cp := *s
 	cp.cancel = nil
 	cp.eventChan = nil
+	cp.lazySink = nil
 	if s.Metadata != nil {
 		cp.Metadata = make(map[string]string, len(s.Metadata))
 		for k, v := range s.Metadata {
