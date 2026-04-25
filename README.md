@@ -99,7 +99,7 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 
 ### Fleet Operations
 
-*From one cluster to your entire fleet.*
+*From one cluster to your entire fleet.* ([#54](https://github.com/jordigilh/kubernaut/issues/54))
 
 - **Fleet Deployment** — ACM-managed Kubernaut lifecycle across ManagedClusters — install, configure, and upgrade via Governance policies
 - **Fleet Remediation** — AAP remediation playbooks triggered by Kubernaut for cross-cluster workflows
