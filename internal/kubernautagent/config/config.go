@@ -119,6 +119,7 @@ type PrometheusToolConfig struct {
 	URL       string        `yaml:"url"`
 	Timeout   time.Duration `yaml:"timeout"`
 	SizeLimit int           `yaml:"size_limit"`
+	TLSCaFile string        `yaml:"tls_ca_file"`
 }
 
 type SanitizationConfig struct {
