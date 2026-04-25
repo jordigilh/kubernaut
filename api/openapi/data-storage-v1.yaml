@@ -2741,8 +2741,8 @@ components:
           description: "OCI execution bundle reference (digest-pinned)"
         executionEngine:
           type: string
-          description: "Execution engine (tekton, job)"
-          enum: [tekton, job]
+          description: "Execution engine (tekton, job, ansible)"
+          enum: [tekton, job, ansible]
         serviceAccountName:
           type: string
           description: "Per-workflow ServiceAccount name (DD-WE-005 v2.0). Omitted if not set."
@@ -3178,7 +3178,7 @@ components:
           $ref: '#/components/schemas/DetectedLabels'
         status:
           type: string
-          enum: [Active, Disabled, Deprecated, Archived, Superseded]
+          enum: [Active, Invalid, Pending, Disabled, Deprecated, Archived, Superseded]
           description: "Workflow lifecycle status"
         disabledAt:
           type: string
@@ -3936,7 +3936,7 @@ components:
           example: "payment"
         phase:
           type: string
-          enum: [Pending, Analyzing, Completed, Failed]
+          enum: [Pending, Investigating, Analyzing, Completed, Failed]
           description: Current phase of the AIAnalysis
         approval_required:
           type: boolean
@@ -5301,6 +5301,41 @@ components:
                   description: Resource namespace (empty for cluster-scoped)
                   example: "production"
               additionalProperties: false
+            causalChain:
+              type: array
+              items:
+                type: string
+              description: Five whys causal chain from signal to root cause. Each entry is one step tracing from the observed symptom to the deepest identifiable cause.
+              example: ["Signal: OOMKilled on pod X", "Why? Container exceeded memory limit", "Root cause: Missing memory limit configuration"]
+            dueDiligence:
+              type: object
+              description: Adversarial self-review across 8 dimensions (Issue #847). Captures the LLM's justification for its RCA.
+              properties:
+                causalCompleteness:
+                  type: string
+                  description: Assessment of causal chain depth and completeness
+                targetAccuracy:
+                  type: string
+                  description: Justification that remediation target is the root cause, not the symptom reporter
+                evidenceSufficiency:
+                  type: string
+                  description: Which claims are backed by tool evidence vs assumptions
+                alternativeHypotheses:
+                  type: string
+                  description: Alternative root causes considered and ruled out
+                scopeCompleteness:
+                  type: string
+                  description: Assessment of investigation coverage across all relevant resources
+                proportionality:
+                  type: string
+                  description: Whether remediation target matches the problem scope
+                regressionAwareness:
+                  type: string
+                  description: Assessment against previously failed remediations
+                confidenceCalibration:
+                  type: string
+                  description: Breakdown of factors that reduced confidence from 1.0
+              additionalProperties: false
           additionalProperties: false
         selectedWorkflow:
           type: object
@@ -5696,6 +5731,8 @@ components:
             - Expired
             - NoExecution
             - MetricsTimedOut
+            - AlertDecayTimeout
+            - Unrecoverable
           description: |
             Reason/status of the effectiveness assessment. Null if assessment
             not yet completed. When "SpecDrift", the effectiveness score is
@@ -5765,6 +5802,8 @@ components:
             - Expired
             - NoExecution
             - MetricsTimedOut
+            - AlertDecayTimeout
+            - Unrecoverable
           description: |
             Reason/status of the effectiveness assessment (same enum as
             RemediationHistoryEntry). When "SpecDrift", effectiveness score

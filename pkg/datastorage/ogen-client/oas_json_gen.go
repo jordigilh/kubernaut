@@ -1744,6 +1744,8 @@ func (s *AIAnalysisAuditPayloadPhase) Decode(d *jx.Decoder) error {
 	switch AIAnalysisAuditPayloadPhase(v) {
 	case AIAnalysisAuditPayloadPhasePending:
 		*s = AIAnalysisAuditPayloadPhasePending
+	case AIAnalysisAuditPayloadPhaseInvestigating:
+		*s = AIAnalysisAuditPayloadPhaseInvestigating
 	case AIAnalysisAuditPayloadPhaseAnalyzing:
 		*s = AIAnalysisAuditPayloadPhaseAnalyzing
 	case AIAnalysisAuditPayloadPhaseCompleted:
@@ -7301,40 +7303,6 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case ConversationTurnPayloadAuditEventEventData:
-		e.FieldStart("event_type")
-		e.Str("aiagent.conversation.turn")
-		{
-			s := s.ConversationTurnPayload
-			{
-				e.FieldStart("event_id")
-				e.Str(s.EventID)
-			}
-			{
-				e.FieldStart("session_id")
-				e.Str(s.SessionID)
-			}
-			{
-				e.FieldStart("user_id")
-				e.Str(s.UserID)
-			}
-			{
-				e.FieldStart("question")
-				e.Str(s.Question)
-			}
-			{
-				if s.Answer.Set {
-					e.FieldStart("answer")
-					s.Answer.Encode(e)
-				}
-			}
-			{
-				if s.TurnNumber.Set {
-					e.FieldStart("turn_number")
-					s.TurnNumber.Encode(e)
-				}
-			}
-		}
 	case WorkflowValidationPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("aiagent.workflow.validation_attempt")
@@ -8080,9 +8048,6 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.llm.tool_call":
 					s.Type = LLMToolCallPayloadAuditEventEventData
 					found = true
-				case "aiagent.conversation.turn":
-					s.Type = ConversationTurnPayloadAuditEventEventData
-					found = true
 				case "aiagent.workflow.validation_attempt":
 					s.Type = WorkflowValidationPayloadAuditEventEventData
 					found = true
@@ -8279,10 +8244,6 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case LLMToolCallPayloadAuditEventEventData:
 		if err := s.LLMToolCallPayload.Decode(d); err != nil {
-			return err
-		}
-	case ConversationTurnPayloadAuditEventEventData:
-		if err := s.ConversationTurnPayload.Decode(d); err != nil {
 			return err
 		}
 	case WorkflowValidationPayloadAuditEventEventData:
@@ -10381,40 +10342,6 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case ConversationTurnPayloadAuditEventRequestEventData:
-		e.FieldStart("event_type")
-		e.Str("aiagent.conversation.turn")
-		{
-			s := s.ConversationTurnPayload
-			{
-				e.FieldStart("event_id")
-				e.Str(s.EventID)
-			}
-			{
-				e.FieldStart("session_id")
-				e.Str(s.SessionID)
-			}
-			{
-				e.FieldStart("user_id")
-				e.Str(s.UserID)
-			}
-			{
-				e.FieldStart("question")
-				e.Str(s.Question)
-			}
-			{
-				if s.Answer.Set {
-					e.FieldStart("answer")
-					s.Answer.Encode(e)
-				}
-			}
-			{
-				if s.TurnNumber.Set {
-					e.FieldStart("turn_number")
-					s.TurnNumber.Encode(e)
-				}
-			}
-		}
 	case WorkflowValidationPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
 		e.Str("aiagent.workflow.validation_attempt")
@@ -11160,9 +11087,6 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.llm.tool_call":
 					s.Type = LLMToolCallPayloadAuditEventRequestEventData
 					found = true
-				case "aiagent.conversation.turn":
-					s.Type = ConversationTurnPayloadAuditEventRequestEventData
-					found = true
 				case "aiagent.workflow.validation_attempt":
 					s.Type = WorkflowValidationPayloadAuditEventRequestEventData
 					found = true
@@ -11359,10 +11283,6 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case LLMToolCallPayloadAuditEventRequestEventData:
 		if err := s.LLMToolCallPayload.Decode(d); err != nil {
-			return err
-		}
-	case ConversationTurnPayloadAuditEventRequestEventData:
-		if err := s.ConversationTurnPayload.Decode(d); err != nil {
 			return err
 		}
 	case WorkflowValidationPayloadAuditEventRequestEventData:
@@ -12961,240 +12881,6 @@ func (s *BatchAuditEventResponse) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *BatchAuditEventResponse) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
-func (s *ConversationTurnPayload) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *ConversationTurnPayload) encodeFields(e *jx.Encoder) {
-	{
-		e.FieldStart("event_type")
-		s.EventType.Encode(e)
-	}
-	{
-		e.FieldStart("event_id")
-		e.Str(s.EventID)
-	}
-	{
-		e.FieldStart("session_id")
-		e.Str(s.SessionID)
-	}
-	{
-		e.FieldStart("user_id")
-		e.Str(s.UserID)
-	}
-	{
-		e.FieldStart("question")
-		e.Str(s.Question)
-	}
-	{
-		if s.Answer.Set {
-			e.FieldStart("answer")
-			s.Answer.Encode(e)
-		}
-	}
-	{
-		if s.TurnNumber.Set {
-			e.FieldStart("turn_number")
-			s.TurnNumber.Encode(e)
-		}
-	}
-}
-
-var jsonFieldsNameOfConversationTurnPayload = [7]string{
-	0: "event_type",
-	1: "event_id",
-	2: "session_id",
-	3: "user_id",
-	4: "question",
-	5: "answer",
-	6: "turn_number",
-}
-
-// Decode decodes ConversationTurnPayload from json.
-func (s *ConversationTurnPayload) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode ConversationTurnPayload to nil")
-	}
-	var requiredBitSet [1]uint8
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "event_type":
-			requiredBitSet[0] |= 1 << 0
-			if err := func() error {
-				if err := s.EventType.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"event_type\"")
-			}
-		case "event_id":
-			requiredBitSet[0] |= 1 << 1
-			if err := func() error {
-				v, err := d.Str()
-				s.EventID = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"event_id\"")
-			}
-		case "session_id":
-			requiredBitSet[0] |= 1 << 2
-			if err := func() error {
-				v, err := d.Str()
-				s.SessionID = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"session_id\"")
-			}
-		case "user_id":
-			requiredBitSet[0] |= 1 << 3
-			if err := func() error {
-				v, err := d.Str()
-				s.UserID = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"user_id\"")
-			}
-		case "question":
-			requiredBitSet[0] |= 1 << 4
-			if err := func() error {
-				v, err := d.Str()
-				s.Question = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"question\"")
-			}
-		case "answer":
-			if err := func() error {
-				s.Answer.Reset()
-				if err := s.Answer.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"answer\"")
-			}
-		case "turn_number":
-			if err := func() error {
-				s.TurnNumber.Reset()
-				if err := s.TurnNumber.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"turn_number\"")
-			}
-		default:
-			return d.Skip()
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode ConversationTurnPayload")
-	}
-	// Validate required fields.
-	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00011111,
-	} {
-		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
-			// Mask only required fields and check equality to mask using XOR.
-			//
-			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
-			// Bits of fields which would be set are actually bits of missed fields.
-			missed := bits.OnesCount8(result)
-			for bitN := 0; bitN < missed; bitN++ {
-				bitIdx := bits.TrailingZeros8(result)
-				fieldIdx := i*8 + bitIdx
-				var name string
-				if fieldIdx < len(jsonFieldsNameOfConversationTurnPayload) {
-					name = jsonFieldsNameOfConversationTurnPayload[fieldIdx]
-				} else {
-					name = strconv.Itoa(fieldIdx)
-				}
-				failures = append(failures, validate.FieldError{
-					Name:  name,
-					Error: validate.ErrFieldRequired,
-				})
-				// Reset bit.
-				result &^= 1 << bitIdx
-			}
-		}
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *ConversationTurnPayload) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *ConversationTurnPayload) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes ConversationTurnPayloadEventType as json.
-func (s ConversationTurnPayloadEventType) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes ConversationTurnPayloadEventType from json.
-func (s *ConversationTurnPayloadEventType) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode ConversationTurnPayloadEventType to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch ConversationTurnPayloadEventType(v) {
-	case ConversationTurnPayloadEventTypeAiagentConversationTurn:
-		*s = ConversationTurnPayloadEventTypeAiagentConversationTurn
-	default:
-		*s = ConversationTurnPayloadEventType(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s ConversationTurnPayloadEventType) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *ConversationTurnPayloadEventType) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -18461,13 +18147,31 @@ func (s *IncidentResponseDataRootCauseAnalysis) encodeFields(e *jx.Encoder) {
 			s.RemediationTarget.Encode(e)
 		}
 	}
+	{
+		if s.CausalChain != nil {
+			e.FieldStart("causalChain")
+			e.ArrStart()
+			for _, elem := range s.CausalChain {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.DueDiligence.Set {
+			e.FieldStart("dueDiligence")
+			s.DueDiligence.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfIncidentResponseDataRootCauseAnalysis = [4]string{
+var jsonFieldsNameOfIncidentResponseDataRootCauseAnalysis = [6]string{
 	0: "summary",
 	1: "severity",
 	2: "contributingFactors",
 	3: "remediationTarget",
+	4: "causalChain",
+	5: "dueDiligence",
 }
 
 // Decode decodes IncidentResponseDataRootCauseAnalysis from json.
@@ -18531,6 +18235,35 @@ func (s *IncidentResponseDataRootCauseAnalysis) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"remediationTarget\"")
 			}
+		case "causalChain":
+			if err := func() error {
+				s.CausalChain = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.CausalChain = append(s.CausalChain, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"causalChain\"")
+			}
+		case "dueDiligence":
+			if err := func() error {
+				s.DueDiligence.Reset()
+				if err := s.DueDiligence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"dueDiligence\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -18583,6 +18316,188 @@ func (s *IncidentResponseDataRootCauseAnalysis) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *IncidentResponseDataRootCauseAnalysis) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) encodeFields(e *jx.Encoder) {
+	{
+		if s.CausalCompleteness.Set {
+			e.FieldStart("causalCompleteness")
+			s.CausalCompleteness.Encode(e)
+		}
+	}
+	{
+		if s.TargetAccuracy.Set {
+			e.FieldStart("targetAccuracy")
+			s.TargetAccuracy.Encode(e)
+		}
+	}
+	{
+		if s.EvidenceSufficiency.Set {
+			e.FieldStart("evidenceSufficiency")
+			s.EvidenceSufficiency.Encode(e)
+		}
+	}
+	{
+		if s.AlternativeHypotheses.Set {
+			e.FieldStart("alternativeHypotheses")
+			s.AlternativeHypotheses.Encode(e)
+		}
+	}
+	{
+		if s.ScopeCompleteness.Set {
+			e.FieldStart("scopeCompleteness")
+			s.ScopeCompleteness.Encode(e)
+		}
+	}
+	{
+		if s.Proportionality.Set {
+			e.FieldStart("proportionality")
+			s.Proportionality.Encode(e)
+		}
+	}
+	{
+		if s.RegressionAwareness.Set {
+			e.FieldStart("regressionAwareness")
+			s.RegressionAwareness.Encode(e)
+		}
+	}
+	{
+		if s.ConfidenceCalibration.Set {
+			e.FieldStart("confidenceCalibration")
+			s.ConfidenceCalibration.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfIncidentResponseDataRootCauseAnalysisDueDiligence = [8]string{
+	0: "causalCompleteness",
+	1: "targetAccuracy",
+	2: "evidenceSufficiency",
+	3: "alternativeHypotheses",
+	4: "scopeCompleteness",
+	5: "proportionality",
+	6: "regressionAwareness",
+	7: "confidenceCalibration",
+}
+
+// Decode decodes IncidentResponseDataRootCauseAnalysisDueDiligence from json.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentResponseDataRootCauseAnalysisDueDiligence to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "causalCompleteness":
+			if err := func() error {
+				s.CausalCompleteness.Reset()
+				if err := s.CausalCompleteness.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"causalCompleteness\"")
+			}
+		case "targetAccuracy":
+			if err := func() error {
+				s.TargetAccuracy.Reset()
+				if err := s.TargetAccuracy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"targetAccuracy\"")
+			}
+		case "evidenceSufficiency":
+			if err := func() error {
+				s.EvidenceSufficiency.Reset()
+				if err := s.EvidenceSufficiency.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"evidenceSufficiency\"")
+			}
+		case "alternativeHypotheses":
+			if err := func() error {
+				s.AlternativeHypotheses.Reset()
+				if err := s.AlternativeHypotheses.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alternativeHypotheses\"")
+			}
+		case "scopeCompleteness":
+			if err := func() error {
+				s.ScopeCompleteness.Reset()
+				if err := s.ScopeCompleteness.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"scopeCompleteness\"")
+			}
+		case "proportionality":
+			if err := func() error {
+				s.Proportionality.Reset()
+				if err := s.Proportionality.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"proportionality\"")
+			}
+		case "regressionAwareness":
+			if err := func() error {
+				s.RegressionAwareness.Reset()
+				if err := s.RegressionAwareness.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"regressionAwareness\"")
+			}
+		case "confidenceCalibration":
+			if err := func() error {
+				s.ConfidenceCalibration.Reset()
+				if err := s.ConfidenceCalibration.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"confidenceCalibration\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode IncidentResponseDataRootCauseAnalysisDueDiligence")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -20752,8 +20667,6 @@ func (s *NotificationAuditChannel) Decode(d *jx.Decoder) error {
 		*s = NotificationAuditChannelSlack
 	case NotificationAuditChannelPagerduty:
 		*s = NotificationAuditChannelPagerduty
-	case NotificationAuditChannelTeams:
-		*s = NotificationAuditChannelTeams
 	case NotificationAuditChannelWebhook:
 		*s = NotificationAuditChannelWebhook
 	default:
@@ -21669,8 +21582,6 @@ func (s *NotificationAuditResponseChannel) Decode(d *jx.Decoder) error {
 		*s = NotificationAuditResponseChannelSlack
 	case NotificationAuditResponseChannelPagerduty:
 		*s = NotificationAuditResponseChannelPagerduty
-	case NotificationAuditResponseChannelTeams:
-		*s = NotificationAuditResponseChannelTeams
 	case NotificationAuditResponseChannelWebhook:
 		*s = NotificationAuditResponseChannelWebhook
 	default:
@@ -23560,6 +23471,39 @@ func (s OptIncidentResponseDataHumanReviewReason) MarshalJSON() ([]byte, error) 
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptIncidentResponseDataHumanReviewReason) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentResponseDataRootCauseAnalysisDueDiligence as json.
+func (o OptIncidentResponseDataRootCauseAnalysisDueDiligence) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes IncidentResponseDataRootCauseAnalysisDueDiligence from json.
+func (o *OptIncidentResponseDataRootCauseAnalysisDueDiligence) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptIncidentResponseDataRootCauseAnalysisDueDiligence to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptIncidentResponseDataRootCauseAnalysisDueDiligence) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptIncidentResponseDataRootCauseAnalysisDueDiligence) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -28612,6 +28556,10 @@ func (s *RemediationHistoryEntryAssessmentReason) Decode(d *jx.Decoder) error {
 		*s = RemediationHistoryEntryAssessmentReasonNoExecution
 	case RemediationHistoryEntryAssessmentReasonMetricsTimedOut:
 		*s = RemediationHistoryEntryAssessmentReasonMetricsTimedOut
+	case RemediationHistoryEntryAssessmentReasonAlertDecayTimeout:
+		*s = RemediationHistoryEntryAssessmentReasonAlertDecayTimeout
+	case RemediationHistoryEntryAssessmentReasonUnrecoverable:
+		*s = RemediationHistoryEntryAssessmentReasonUnrecoverable
 	default:
 		*s = RemediationHistoryEntryAssessmentReason(v)
 	}
@@ -28935,6 +28883,10 @@ func (s *RemediationHistorySummaryAssessmentReason) Decode(d *jx.Decoder) error 
 		*s = RemediationHistorySummaryAssessmentReasonNoExecution
 	case RemediationHistorySummaryAssessmentReasonMetricsTimedOut:
 		*s = RemediationHistorySummaryAssessmentReasonMetricsTimedOut
+	case RemediationHistorySummaryAssessmentReasonAlertDecayTimeout:
+		*s = RemediationHistorySummaryAssessmentReasonAlertDecayTimeout
+	case RemediationHistorySummaryAssessmentReasonUnrecoverable:
+		*s = RemediationHistorySummaryAssessmentReasonUnrecoverable
 	default:
 		*s = RemediationHistorySummaryAssessmentReason(v)
 	}
@@ -31477,6 +31429,10 @@ func (s *RemediationWorkflowStatus) Decode(d *jx.Decoder) error {
 	switch RemediationWorkflowStatus(v) {
 	case RemediationWorkflowStatusActive:
 		*s = RemediationWorkflowStatusActive
+	case RemediationWorkflowStatusInvalid:
+		*s = RemediationWorkflowStatusInvalid
+	case RemediationWorkflowStatusPending:
+		*s = RemediationWorkflowStatusPending
 	case RemediationWorkflowStatusDisabled:
 		*s = RemediationWorkflowStatusDisabled
 	case RemediationWorkflowStatusDeprecated:
@@ -34674,6 +34630,8 @@ func (s *WorkflowDiscoveryEntryExecutionEngine) Decode(d *jx.Decoder) error {
 		*s = WorkflowDiscoveryEntryExecutionEngineTekton
 	case WorkflowDiscoveryEntryExecutionEngineJob:
 		*s = WorkflowDiscoveryEntryExecutionEngineJob
+	case WorkflowDiscoveryEntryExecutionEngineAnsible:
+		*s = WorkflowDiscoveryEntryExecutionEngineAnsible
 	default:
 		*s = WorkflowDiscoveryEntryExecutionEngine(v)
 	}
@@ -35258,8 +35216,6 @@ func (s *WorkflowExecutionAuditPayloadFailureReason) Decode(d *jx.Decoder) error
 		*s = WorkflowExecutionAuditPayloadFailureReasonTaskFailed
 	case WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine:
 		*s = WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine
-	case WorkflowExecutionAuditPayloadFailureReasonDeduplicated:
-		*s = WorkflowExecutionAuditPayloadFailureReasonDeduplicated
 	case WorkflowExecutionAuditPayloadFailureReasonUnknown:
 		*s = WorkflowExecutionAuditPayloadFailureReasonUnknown
 	default:

@@ -2092,7 +2092,6 @@ components:
             - email
             - slack
             - pagerduty
-            - teams
             - webhook
           description: |
             Notification delivery channel.
@@ -2463,7 +2462,6 @@ components:
             - $ref: '#/components/schemas/LLMRequestPayload'
             - $ref: '#/components/schemas/LLMResponsePayload'
             - $ref: '#/components/schemas/LLMToolCallPayload'
-            - $ref: '#/components/schemas/ConversationTurnPayload'
             - $ref: '#/components/schemas/WorkflowValidationPayload'
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
@@ -2543,7 +2541,6 @@ components:
               'aiagent.llm.request': '#/components/schemas/LLMRequestPayload'
               'aiagent.llm.response': '#/components/schemas/LLMResponsePayload'
               'aiagent.llm.tool_call': '#/components/schemas/LLMToolCallPayload'
-              'aiagent.conversation.turn': '#/components/schemas/ConversationTurnPayload'
               'aiagent.workflow.validation_attempt': '#/components/schemas/WorkflowValidationPayload'
               'effectiveness.health.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.hash.computed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
@@ -2741,8 +2738,8 @@ components:
           description: "OCI execution bundle reference (digest-pinned)"
         executionEngine:
           type: string
-          description: "Execution engine (tekton, job)"
-          enum: [tekton, job]
+          description: "Execution engine (tekton, job, ansible)"
+          enum: [tekton, job, ansible]
         serviceAccountName:
           type: string
           description: "Per-workflow ServiceAccount name (DD-WE-005 v2.0). Omitted if not set."
@@ -3178,7 +3175,7 @@ components:
           $ref: '#/components/schemas/DetectedLabels'
         status:
           type: string
-          enum: [Active, Disabled, Deprecated, Archived, Superseded]
+          enum: [Active, Invalid, Pending, Disabled, Deprecated, Archived, Superseded]
           description: "Workflow lifecycle status"
         disabledAt:
           type: string
@@ -3936,7 +3933,7 @@ components:
           example: "payment"
         phase:
           type: string
-          enum: [Pending, Analyzing, Completed, Failed]
+          enum: [Pending, Investigating, Analyzing, Completed, Failed]
           description: Current phase of the AIAnalysis
         approval_required:
           type: boolean
@@ -4025,7 +4022,7 @@ components:
         # Failure Fields (conditional)
         failure_reason:
           type: string
-          enum: [OOMKilled, DeadlineExceeded, Forbidden, ImagePullBackOff, ConfigurationError, ResourceExhausted, TaskFailed, UnsupportedEngine, Deduplicated, Unknown]
+          enum: [OOMKilled, DeadlineExceeded, Forbidden, ImagePullBackOff, ConfigurationError, ResourceExhausted, TaskFailed, UnsupportedEngine, Unknown]
           description: Categorized failure reason
         failure_message:
           type: string
@@ -5301,6 +5298,41 @@ components:
                   description: Resource namespace (empty for cluster-scoped)
                   example: "production"
               additionalProperties: false
+            causalChain:
+              type: array
+              items:
+                type: string
+              description: Five whys causal chain from signal to root cause. Each entry is one step tracing from the observed symptom to the deepest identifiable cause.
+              example: ["Signal: OOMKilled on pod X", "Why? Container exceeded memory limit", "Root cause: Missing memory limit configuration"]
+            dueDiligence:
+              type: object
+              description: Adversarial self-review across 8 dimensions (Issue #847). Captures the LLM's justification for its RCA.
+              properties:
+                causalCompleteness:
+                  type: string
+                  description: Assessment of causal chain depth and completeness
+                targetAccuracy:
+                  type: string
+                  description: Justification that remediation target is the root cause, not the symptom reporter
+                evidenceSufficiency:
+                  type: string
+                  description: Which claims are backed by tool evidence vs assumptions
+                alternativeHypotheses:
+                  type: string
+                  description: Alternative root causes considered and ruled out
+                scopeCompleteness:
+                  type: string
+                  description: Assessment of investigation coverage across all relevant resources
+                proportionality:
+                  type: string
+                  description: Whether remediation target matches the problem scope
+                regressionAwareness:
+                  type: string
+                  description: Assessment against previously failed remediations
+                confidenceCalibration:
+                  type: string
+                  description: Breakdown of factors that reduced confidence from 1.0
+              additionalProperties: false
           additionalProperties: false
         selectedWorkflow:
           type: object
@@ -5696,6 +5728,8 @@ components:
             - Expired
             - NoExecution
             - MetricsTimedOut
+            - AlertDecayTimeout
+            - Unrecoverable
           description: |
             Reason/status of the effectiveness assessment. Null if assessment
             not yet completed. When "SpecDrift", the effectiveness score is
@@ -5765,6 +5799,8 @@ components:
             - Expired
             - NoExecution
             - MetricsTimedOut
+            - AlertDecayTimeout
+            - Unrecoverable
           description: |
             Reason/status of the effectiveness assessment (same enum as
             RemediationHistoryEntry). When "SpecDrift", effectiveness score
@@ -6145,35 +6181,6 @@ components:
             type: string
         requested_by:
           type: string
-
-    ConversationTurnPayload:
-      type: object
-      required: [event_type, event_id, session_id, user_id, question]
-      description: Conversation turn event payload (aiagent.conversation.turn)
-      properties:
-        event_type:
-          type: string
-          enum: ['aiagent.conversation.turn']
-          description: Event type for discriminator (matches parent event_type)
-        event_id:
-          type: string
-          description: Unique event identifier
-        session_id:
-          type: string
-          description: Conversation session identifier
-        user_id:
-          type: string
-          description: Authenticated user who sent the message
-        question:
-          type: string
-          description: User's question or message
-        answer:
-          type: string
-          description: Agent's response
-        turn_number:
-          type: integer
-          minimum: 0
-          description: Sequential turn number within the session
 
     ActionTypeWebhookAuditPayload:
       type: object

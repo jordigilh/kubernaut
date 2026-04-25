@@ -355,6 +355,8 @@ func (s AIAnalysisAuditPayloadPhase) Validate() error {
 	switch s {
 	case "Pending":
 		return nil
+	case "Investigating":
+		return nil
 	case "Analyzing":
 		return nil
 	case "Completed":
@@ -1115,11 +1117,6 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
-	case ConversationTurnPayloadAuditEventEventData:
-		if err := s.ConversationTurnPayload.Validate(); err != nil {
-			return err
-		}
-		return nil
 	case WorkflowValidationPayloadAuditEventEventData:
 		if err := s.WorkflowValidationPayload.Validate(); err != nil {
 			return err
@@ -1469,11 +1466,6 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
-	case ConversationTurnPayloadAuditEventRequestEventData:
-		if err := s.ConversationTurnPayload.Validate(); err != nil {
-			return err
-		}
-		return nil
 	case WorkflowValidationPayloadAuditEventRequestEventData:
 		if err := s.WorkflowValidationPayload.Validate(); err != nil {
 			return err
@@ -1694,66 +1686,6 @@ func (s *AuditExportResponseHashChainVerification) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
-}
-
-func (s *ConversationTurnPayload) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if err := s.EventType.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "event_type",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.TurnNumber.Get(); ok {
-			if err := func() error {
-				if err := (validate.Int{
-					MinSet:        true,
-					Min:           0,
-					MaxSet:        false,
-					Max:           0,
-					MinExclusive:  false,
-					MaxExclusive:  false,
-					MultipleOfSet: false,
-					MultipleOf:    0,
-					Pattern:       nil,
-				}).Validate(int64(value)); err != nil {
-					return errors.Wrap(err, "int")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "turn_number",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s ConversationTurnPayloadEventType) Validate() error {
-	switch s {
-	case "aiagent.conversation.turn":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
 }
 
 func (s *CreateActionTypeCreated) Validate() error {
@@ -3707,8 +3639,6 @@ func (s NotificationAuditChannel) Validate() error {
 		return nil
 	case "pagerduty":
 		return nil
-	case "teams":
-		return nil
 	case "webhook":
 		return nil
 	default:
@@ -4142,8 +4072,6 @@ func (s NotificationAuditResponseChannel) Validate() error {
 	case "slack":
 		return nil
 	case "pagerduty":
-		return nil
-	case "teams":
 		return nil
 	case "webhook":
 		return nil
@@ -4604,6 +4532,10 @@ func (s RemediationHistoryEntryAssessmentReason) Validate() error {
 		return nil
 	case "MetricsTimedOut":
 		return nil
+	case "AlertDecayTimeout":
+		return nil
+	case "Unrecoverable":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -4711,6 +4643,10 @@ func (s RemediationHistorySummaryAssessmentReason) Validate() error {
 	case "NoExecution":
 		return nil
 	case "MetricsTimedOut":
+		return nil
+	case "AlertDecayTimeout":
+		return nil
+	case "Unrecoverable":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -5745,6 +5681,10 @@ func (s RemediationWorkflowStatus) Validate() error {
 	switch s {
 	case "Active":
 		return nil
+	case "Invalid":
+		return nil
+	case "Pending":
+		return nil
 	case "Disabled":
 		return nil
 	case "Deprecated":
@@ -6475,6 +6415,8 @@ func (s WorkflowDiscoveryEntryExecutionEngine) Validate() error {
 		return nil
 	case "job":
 		return nil
+	case "ansible":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -6635,8 +6577,6 @@ func (s WorkflowExecutionAuditPayloadFailureReason) Validate() error {
 	case "TaskFailed":
 		return nil
 	case "UnsupportedEngine":
-		return nil
-	case "Deduplicated":
 		return nil
 	case "Unknown":
 		return nil

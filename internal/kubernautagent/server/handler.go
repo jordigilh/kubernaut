@@ -305,6 +305,14 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 		cfRaw, _ := json.Marshal(r.ContributingFactors)
 		rca["contributing_factors"] = jx.Raw(cfRaw)
 	}
+	if len(r.CausalChain) > 0 {
+		ccRaw, _ := json.Marshal(r.CausalChain)
+		rca["causal_chain"] = jx.Raw(ccRaw)
+	}
+	if r.DueDiligence != nil {
+		ddRaw, _ := json.Marshal(r.DueDiligence)
+		rca["due_diligence"] = jx.Raw(ddRaw)
+	}
 	resp.RootCauseAnalysis = rca
 
 	if r.HumanReviewNeeded {

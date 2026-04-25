@@ -897,16 +897,18 @@ func (s *AIAnalysisAuditPayloadEventType) UnmarshalText(data []byte) error {
 type AIAnalysisAuditPayloadPhase string
 
 const (
-	AIAnalysisAuditPayloadPhasePending   AIAnalysisAuditPayloadPhase = "Pending"
-	AIAnalysisAuditPayloadPhaseAnalyzing AIAnalysisAuditPayloadPhase = "Analyzing"
-	AIAnalysisAuditPayloadPhaseCompleted AIAnalysisAuditPayloadPhase = "Completed"
-	AIAnalysisAuditPayloadPhaseFailed    AIAnalysisAuditPayloadPhase = "Failed"
+	AIAnalysisAuditPayloadPhasePending       AIAnalysisAuditPayloadPhase = "Pending"
+	AIAnalysisAuditPayloadPhaseInvestigating AIAnalysisAuditPayloadPhase = "Investigating"
+	AIAnalysisAuditPayloadPhaseAnalyzing     AIAnalysisAuditPayloadPhase = "Analyzing"
+	AIAnalysisAuditPayloadPhaseCompleted     AIAnalysisAuditPayloadPhase = "Completed"
+	AIAnalysisAuditPayloadPhaseFailed        AIAnalysisAuditPayloadPhase = "Failed"
 )
 
 // AllValues returns all AIAnalysisAuditPayloadPhase values.
 func (AIAnalysisAuditPayloadPhase) AllValues() []AIAnalysisAuditPayloadPhase {
 	return []AIAnalysisAuditPayloadPhase{
 		AIAnalysisAuditPayloadPhasePending,
+		AIAnalysisAuditPayloadPhaseInvestigating,
 		AIAnalysisAuditPayloadPhaseAnalyzing,
 		AIAnalysisAuditPayloadPhaseCompleted,
 		AIAnalysisAuditPayloadPhaseFailed,
@@ -917,6 +919,8 @@ func (AIAnalysisAuditPayloadPhase) AllValues() []AIAnalysisAuditPayloadPhase {
 func (s AIAnalysisAuditPayloadPhase) MarshalText() ([]byte, error) {
 	switch s {
 	case AIAnalysisAuditPayloadPhasePending:
+		return []byte(s), nil
+	case AIAnalysisAuditPayloadPhaseInvestigating:
 		return []byte(s), nil
 	case AIAnalysisAuditPayloadPhaseAnalyzing:
 		return []byte(s), nil
@@ -934,6 +938,9 @@ func (s *AIAnalysisAuditPayloadPhase) UnmarshalText(data []byte) error {
 	switch AIAnalysisAuditPayloadPhase(data) {
 	case AIAnalysisAuditPayloadPhasePending:
 		*s = AIAnalysisAuditPayloadPhasePending
+		return nil
+	case AIAnalysisAuditPayloadPhaseInvestigating:
+		*s = AIAnalysisAuditPayloadPhaseInvestigating
 		return nil
 	case AIAnalysisAuditPayloadPhaseAnalyzing:
 		*s = AIAnalysisAuditPayloadPhaseAnalyzing
@@ -2774,7 +2781,6 @@ type AuditEventEventData struct {
 	LLMRequestPayload                      LLMRequestPayload
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
-	ConversationTurnPayload                ConversationTurnPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
 	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
@@ -2854,7 +2860,6 @@ const (
 	LLMRequestPayloadAuditEventEventData                                             AuditEventEventDataType = "aiagent.llm.request"
 	LLMResponsePayloadAuditEventEventData                                            AuditEventEventDataType = "aiagent.llm.response"
 	LLMToolCallPayloadAuditEventEventData                                            AuditEventEventDataType = "aiagent.llm.tool_call"
-	ConversationTurnPayloadAuditEventEventData                                       AuditEventEventDataType = "aiagent.conversation.turn"
 	WorkflowValidationPayloadAuditEventEventData                                     AuditEventEventDataType = "aiagent.workflow.validation_attempt"
 	RemediationRequestWebhookAuditPayloadAuditEventEventData                         AuditEventEventDataType = "webhook.remediationrequest.timeout_modified"
 	AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.create"
@@ -3059,11 +3064,6 @@ func (s AuditEventEventData) IsLLMResponsePayload() bool {
 // IsLLMToolCallPayload reports whether AuditEventEventData is LLMToolCallPayload.
 func (s AuditEventEventData) IsLLMToolCallPayload() bool {
 	return s.Type == LLMToolCallPayloadAuditEventEventData
-}
-
-// IsConversationTurnPayload reports whether AuditEventEventData is ConversationTurnPayload.
-func (s AuditEventEventData) IsConversationTurnPayload() bool {
-	return s.Type == ConversationTurnPayloadAuditEventEventData
 }
 
 // IsWorkflowValidationPayload reports whether AuditEventEventData is WorkflowValidationPayload.
@@ -3989,27 +3989,6 @@ func NewLLMToolCallPayloadAuditEventEventData(v LLMToolCallPayload) AuditEventEv
 	return s
 }
 
-// SetConversationTurnPayload sets AuditEventEventData to ConversationTurnPayload.
-func (s *AuditEventEventData) SetConversationTurnPayload(v ConversationTurnPayload) {
-	s.Type = ConversationTurnPayloadAuditEventEventData
-	s.ConversationTurnPayload = v
-}
-
-// GetConversationTurnPayload returns ConversationTurnPayload and true boolean if AuditEventEventData is ConversationTurnPayload.
-func (s AuditEventEventData) GetConversationTurnPayload() (v ConversationTurnPayload, ok bool) {
-	if !s.IsConversationTurnPayload() {
-		return v, false
-	}
-	return s.ConversationTurnPayload, true
-}
-
-// NewConversationTurnPayloadAuditEventEventData returns new AuditEventEventData from ConversationTurnPayload.
-func NewConversationTurnPayloadAuditEventEventData(v ConversationTurnPayload) AuditEventEventData {
-	var s AuditEventEventData
-	s.SetConversationTurnPayload(v)
-	return s
-}
-
 // SetWorkflowValidationPayload sets AuditEventEventData to WorkflowValidationPayload.
 func (s *AuditEventEventData) SetWorkflowValidationPayload(v WorkflowValidationPayload) {
 	s.Type = WorkflowValidationPayloadAuditEventEventData
@@ -4749,7 +4728,6 @@ type AuditEventRequestEventData struct {
 	LLMRequestPayload                      LLMRequestPayload
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
-	ConversationTurnPayload                ConversationTurnPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
 	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
@@ -4829,7 +4807,6 @@ const (
 	LLMRequestPayloadAuditEventRequestEventData                                                    AuditEventRequestEventDataType = "aiagent.llm.request"
 	LLMResponsePayloadAuditEventRequestEventData                                                   AuditEventRequestEventDataType = "aiagent.llm.response"
 	LLMToolCallPayloadAuditEventRequestEventData                                                   AuditEventRequestEventDataType = "aiagent.llm.tool_call"
-	ConversationTurnPayloadAuditEventRequestEventData                                              AuditEventRequestEventDataType = "aiagent.conversation.turn"
 	WorkflowValidationPayloadAuditEventRequestEventData                                            AuditEventRequestEventDataType = "aiagent.workflow.validation_attempt"
 	RemediationRequestWebhookAuditPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "webhook.remediationrequest.timeout_modified"
 	AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.create"
@@ -5034,11 +5011,6 @@ func (s AuditEventRequestEventData) IsLLMResponsePayload() bool {
 // IsLLMToolCallPayload reports whether AuditEventRequestEventData is LLMToolCallPayload.
 func (s AuditEventRequestEventData) IsLLMToolCallPayload() bool {
 	return s.Type == LLMToolCallPayloadAuditEventRequestEventData
-}
-
-// IsConversationTurnPayload reports whether AuditEventRequestEventData is ConversationTurnPayload.
-func (s AuditEventRequestEventData) IsConversationTurnPayload() bool {
-	return s.Type == ConversationTurnPayloadAuditEventRequestEventData
 }
 
 // IsWorkflowValidationPayload reports whether AuditEventRequestEventData is WorkflowValidationPayload.
@@ -5961,27 +5933,6 @@ func (s AuditEventRequestEventData) GetLLMToolCallPayload() (v LLMToolCallPayloa
 func NewLLMToolCallPayloadAuditEventRequestEventData(v LLMToolCallPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetLLMToolCallPayload(v)
-	return s
-}
-
-// SetConversationTurnPayload sets AuditEventRequestEventData to ConversationTurnPayload.
-func (s *AuditEventRequestEventData) SetConversationTurnPayload(v ConversationTurnPayload) {
-	s.Type = ConversationTurnPayloadAuditEventRequestEventData
-	s.ConversationTurnPayload = v
-}
-
-// GetConversationTurnPayload returns ConversationTurnPayload and true boolean if AuditEventRequestEventData is ConversationTurnPayload.
-func (s AuditEventRequestEventData) GetConversationTurnPayload() (v ConversationTurnPayload, ok bool) {
-	if !s.IsConversationTurnPayload() {
-		return v, false
-	}
-	return s.ConversationTurnPayload, true
-}
-
-// NewConversationTurnPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ConversationTurnPayload.
-func NewConversationTurnPayloadAuditEventRequestEventData(v ConversationTurnPayload) AuditEventRequestEventData {
-	var s AuditEventRequestEventData
-	s.SetConversationTurnPayload(v)
 	return s
 }
 
@@ -6988,130 +6939,6 @@ func (s *BatchAuditEventResponse) SetEventIds(val []uuid.UUID) {
 // SetMessage sets the value of Message.
 func (s *BatchAuditEventResponse) SetMessage(val OptString) {
 	s.Message = val
-}
-
-// Conversation turn event payload (aiagent.conversation.turn).
-// Ref: #/components/schemas/ConversationTurnPayload
-type ConversationTurnPayload struct {
-	// Event type for discriminator (matches parent event_type).
-	EventType ConversationTurnPayloadEventType `json:"event_type"`
-	// Unique event identifier.
-	EventID string `json:"event_id"`
-	// Conversation session identifier.
-	SessionID string `json:"session_id"`
-	// Authenticated user who sent the message.
-	UserID string `json:"user_id"`
-	// User's question or message.
-	Question string `json:"question"`
-	// Agent's response.
-	Answer OptString `json:"answer"`
-	// Sequential turn number within the session.
-	TurnNumber OptInt `json:"turn_number"`
-}
-
-// GetEventType returns the value of EventType.
-func (s *ConversationTurnPayload) GetEventType() ConversationTurnPayloadEventType {
-	return s.EventType
-}
-
-// GetEventID returns the value of EventID.
-func (s *ConversationTurnPayload) GetEventID() string {
-	return s.EventID
-}
-
-// GetSessionID returns the value of SessionID.
-func (s *ConversationTurnPayload) GetSessionID() string {
-	return s.SessionID
-}
-
-// GetUserID returns the value of UserID.
-func (s *ConversationTurnPayload) GetUserID() string {
-	return s.UserID
-}
-
-// GetQuestion returns the value of Question.
-func (s *ConversationTurnPayload) GetQuestion() string {
-	return s.Question
-}
-
-// GetAnswer returns the value of Answer.
-func (s *ConversationTurnPayload) GetAnswer() OptString {
-	return s.Answer
-}
-
-// GetTurnNumber returns the value of TurnNumber.
-func (s *ConversationTurnPayload) GetTurnNumber() OptInt {
-	return s.TurnNumber
-}
-
-// SetEventType sets the value of EventType.
-func (s *ConversationTurnPayload) SetEventType(val ConversationTurnPayloadEventType) {
-	s.EventType = val
-}
-
-// SetEventID sets the value of EventID.
-func (s *ConversationTurnPayload) SetEventID(val string) {
-	s.EventID = val
-}
-
-// SetSessionID sets the value of SessionID.
-func (s *ConversationTurnPayload) SetSessionID(val string) {
-	s.SessionID = val
-}
-
-// SetUserID sets the value of UserID.
-func (s *ConversationTurnPayload) SetUserID(val string) {
-	s.UserID = val
-}
-
-// SetQuestion sets the value of Question.
-func (s *ConversationTurnPayload) SetQuestion(val string) {
-	s.Question = val
-}
-
-// SetAnswer sets the value of Answer.
-func (s *ConversationTurnPayload) SetAnswer(val OptString) {
-	s.Answer = val
-}
-
-// SetTurnNumber sets the value of TurnNumber.
-func (s *ConversationTurnPayload) SetTurnNumber(val OptInt) {
-	s.TurnNumber = val
-}
-
-// Event type for discriminator (matches parent event_type).
-type ConversationTurnPayloadEventType string
-
-const (
-	ConversationTurnPayloadEventTypeAiagentConversationTurn ConversationTurnPayloadEventType = "aiagent.conversation.turn"
-)
-
-// AllValues returns all ConversationTurnPayloadEventType values.
-func (ConversationTurnPayloadEventType) AllValues() []ConversationTurnPayloadEventType {
-	return []ConversationTurnPayloadEventType{
-		ConversationTurnPayloadEventTypeAiagentConversationTurn,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ConversationTurnPayloadEventType) MarshalText() ([]byte, error) {
-	switch s {
-	case ConversationTurnPayloadEventTypeAiagentConversationTurn:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ConversationTurnPayloadEventType) UnmarshalText(data []byte) error {
-	switch ConversationTurnPayloadEventType(data) {
-	case ConversationTurnPayloadEventTypeAiagentConversationTurn:
-		*s = ConversationTurnPayloadEventTypeAiagentConversationTurn
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }
 
 type CreateActionTypeCreated ActionTypeCreateResponse
@@ -9898,6 +9725,11 @@ type IncidentResponseDataRootCauseAnalysis struct {
 	ContributingFactors []string `json:"contributingFactors"`
 	// Target resource for remediation (kind/name/namespace from KA investigation).
 	RemediationTarget OptIncidentResponseDataRootCauseAnalysisRemediationTarget `json:"remediationTarget"`
+	// Five whys causal chain from signal to root cause. Each entry is one step tracing from the observed
+	// symptom to the deepest identifiable cause.
+	CausalChain []string `json:"causalChain"`
+	// Adversarial self-review across 8 dimensions (Issue.
+	DueDiligence OptIncidentResponseDataRootCauseAnalysisDueDiligence `json:"dueDiligence"`
 }
 
 // GetSummary returns the value of Summary.
@@ -9920,6 +9752,16 @@ func (s *IncidentResponseDataRootCauseAnalysis) GetRemediationTarget() OptIncide
 	return s.RemediationTarget
 }
 
+// GetCausalChain returns the value of CausalChain.
+func (s *IncidentResponseDataRootCauseAnalysis) GetCausalChain() []string {
+	return s.CausalChain
+}
+
+// GetDueDiligence returns the value of DueDiligence.
+func (s *IncidentResponseDataRootCauseAnalysis) GetDueDiligence() OptIncidentResponseDataRootCauseAnalysisDueDiligence {
+	return s.DueDiligence
+}
+
 // SetSummary sets the value of Summary.
 func (s *IncidentResponseDataRootCauseAnalysis) SetSummary(val string) {
 	s.Summary = val
@@ -9938,6 +9780,116 @@ func (s *IncidentResponseDataRootCauseAnalysis) SetContributingFactors(val []str
 // SetRemediationTarget sets the value of RemediationTarget.
 func (s *IncidentResponseDataRootCauseAnalysis) SetRemediationTarget(val OptIncidentResponseDataRootCauseAnalysisRemediationTarget) {
 	s.RemediationTarget = val
+}
+
+// SetCausalChain sets the value of CausalChain.
+func (s *IncidentResponseDataRootCauseAnalysis) SetCausalChain(val []string) {
+	s.CausalChain = val
+}
+
+// SetDueDiligence sets the value of DueDiligence.
+func (s *IncidentResponseDataRootCauseAnalysis) SetDueDiligence(val OptIncidentResponseDataRootCauseAnalysisDueDiligence) {
+	s.DueDiligence = val
+}
+
+// Adversarial self-review across 8 dimensions (Issue.
+type IncidentResponseDataRootCauseAnalysisDueDiligence struct {
+	// Assessment of causal chain depth and completeness.
+	CausalCompleteness OptString `json:"causalCompleteness"`
+	// Justification that remediation target is the root cause, not the symptom reporter.
+	TargetAccuracy OptString `json:"targetAccuracy"`
+	// Which claims are backed by tool evidence vs assumptions.
+	EvidenceSufficiency OptString `json:"evidenceSufficiency"`
+	// Alternative root causes considered and ruled out.
+	AlternativeHypotheses OptString `json:"alternativeHypotheses"`
+	// Assessment of investigation coverage across all relevant resources.
+	ScopeCompleteness OptString `json:"scopeCompleteness"`
+	// Whether remediation target matches the problem scope.
+	Proportionality OptString `json:"proportionality"`
+	// Assessment against previously failed remediations.
+	RegressionAwareness OptString `json:"regressionAwareness"`
+	// Breakdown of factors that reduced confidence from 1.0.
+	ConfidenceCalibration OptString `json:"confidenceCalibration"`
+}
+
+// GetCausalCompleteness returns the value of CausalCompleteness.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetCausalCompleteness() OptString {
+	return s.CausalCompleteness
+}
+
+// GetTargetAccuracy returns the value of TargetAccuracy.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetTargetAccuracy() OptString {
+	return s.TargetAccuracy
+}
+
+// GetEvidenceSufficiency returns the value of EvidenceSufficiency.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetEvidenceSufficiency() OptString {
+	return s.EvidenceSufficiency
+}
+
+// GetAlternativeHypotheses returns the value of AlternativeHypotheses.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetAlternativeHypotheses() OptString {
+	return s.AlternativeHypotheses
+}
+
+// GetScopeCompleteness returns the value of ScopeCompleteness.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetScopeCompleteness() OptString {
+	return s.ScopeCompleteness
+}
+
+// GetProportionality returns the value of Proportionality.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetProportionality() OptString {
+	return s.Proportionality
+}
+
+// GetRegressionAwareness returns the value of RegressionAwareness.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetRegressionAwareness() OptString {
+	return s.RegressionAwareness
+}
+
+// GetConfidenceCalibration returns the value of ConfidenceCalibration.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetConfidenceCalibration() OptString {
+	return s.ConfidenceCalibration
+}
+
+// SetCausalCompleteness sets the value of CausalCompleteness.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetCausalCompleteness(val OptString) {
+	s.CausalCompleteness = val
+}
+
+// SetTargetAccuracy sets the value of TargetAccuracy.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetTargetAccuracy(val OptString) {
+	s.TargetAccuracy = val
+}
+
+// SetEvidenceSufficiency sets the value of EvidenceSufficiency.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetEvidenceSufficiency(val OptString) {
+	s.EvidenceSufficiency = val
+}
+
+// SetAlternativeHypotheses sets the value of AlternativeHypotheses.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetAlternativeHypotheses(val OptString) {
+	s.AlternativeHypotheses = val
+}
+
+// SetScopeCompleteness sets the value of ScopeCompleteness.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetScopeCompleteness(val OptString) {
+	s.ScopeCompleteness = val
+}
+
+// SetProportionality sets the value of Proportionality.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetProportionality(val OptString) {
+	s.Proportionality = val
+}
+
+// SetRegressionAwareness sets the value of RegressionAwareness.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetRegressionAwareness(val OptString) {
+	s.RegressionAwareness = val
+}
+
+// SetConfidenceCalibration sets the value of ConfidenceCalibration.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetConfidenceCalibration(val OptString) {
+	s.ConfidenceCalibration = val
 }
 
 // Target resource for remediation (kind/name/namespace from KA investigation).
@@ -11321,7 +11273,6 @@ const (
 	NotificationAuditChannelEmail     NotificationAuditChannel = "email"
 	NotificationAuditChannelSlack     NotificationAuditChannel = "slack"
 	NotificationAuditChannelPagerduty NotificationAuditChannel = "pagerduty"
-	NotificationAuditChannelTeams     NotificationAuditChannel = "teams"
 	NotificationAuditChannelWebhook   NotificationAuditChannel = "webhook"
 )
 
@@ -11331,7 +11282,6 @@ func (NotificationAuditChannel) AllValues() []NotificationAuditChannel {
 		NotificationAuditChannelEmail,
 		NotificationAuditChannelSlack,
 		NotificationAuditChannelPagerduty,
-		NotificationAuditChannelTeams,
 		NotificationAuditChannelWebhook,
 	}
 }
@@ -11344,8 +11294,6 @@ func (s NotificationAuditChannel) MarshalText() ([]byte, error) {
 	case NotificationAuditChannelSlack:
 		return []byte(s), nil
 	case NotificationAuditChannelPagerduty:
-		return []byte(s), nil
-	case NotificationAuditChannelTeams:
 		return []byte(s), nil
 	case NotificationAuditChannelWebhook:
 		return []byte(s), nil
@@ -11365,9 +11313,6 @@ func (s *NotificationAuditChannel) UnmarshalText(data []byte) error {
 		return nil
 	case NotificationAuditChannelPagerduty:
 		*s = NotificationAuditChannelPagerduty
-		return nil
-	case NotificationAuditChannelTeams:
-		*s = NotificationAuditChannelTeams
 		return nil
 	case NotificationAuditChannelWebhook:
 		*s = NotificationAuditChannelWebhook
@@ -12053,7 +11998,6 @@ const (
 	NotificationAuditResponseChannelEmail     NotificationAuditResponseChannel = "email"
 	NotificationAuditResponseChannelSlack     NotificationAuditResponseChannel = "slack"
 	NotificationAuditResponseChannelPagerduty NotificationAuditResponseChannel = "pagerduty"
-	NotificationAuditResponseChannelTeams     NotificationAuditResponseChannel = "teams"
 	NotificationAuditResponseChannelWebhook   NotificationAuditResponseChannel = "webhook"
 )
 
@@ -12063,7 +12007,6 @@ func (NotificationAuditResponseChannel) AllValues() []NotificationAuditResponseC
 		NotificationAuditResponseChannelEmail,
 		NotificationAuditResponseChannelSlack,
 		NotificationAuditResponseChannelPagerduty,
-		NotificationAuditResponseChannelTeams,
 		NotificationAuditResponseChannelWebhook,
 	}
 }
@@ -12076,8 +12019,6 @@ func (s NotificationAuditResponseChannel) MarshalText() ([]byte, error) {
 	case NotificationAuditResponseChannelSlack:
 		return []byte(s), nil
 	case NotificationAuditResponseChannelPagerduty:
-		return []byte(s), nil
-	case NotificationAuditResponseChannelTeams:
 		return []byte(s), nil
 	case NotificationAuditResponseChannelWebhook:
 		return []byte(s), nil
@@ -12097,9 +12038,6 @@ func (s *NotificationAuditResponseChannel) UnmarshalText(data []byte) error {
 		return nil
 	case NotificationAuditResponseChannelPagerduty:
 		*s = NotificationAuditResponseChannelPagerduty
-		return nil
-	case NotificationAuditResponseChannelTeams:
-		*s = NotificationAuditResponseChannelTeams
 		return nil
 	case NotificationAuditResponseChannelWebhook:
 		*s = NotificationAuditResponseChannelWebhook
@@ -13823,6 +13761,52 @@ func (o OptIncidentResponseDataHumanReviewReason) Get() (v IncidentResponseDataH
 
 // Or returns value if set, or given parameter if does not.
 func (o OptIncidentResponseDataHumanReviewReason) Or(d IncidentResponseDataHumanReviewReason) IncidentResponseDataHumanReviewReason {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptIncidentResponseDataRootCauseAnalysisDueDiligence returns new OptIncidentResponseDataRootCauseAnalysisDueDiligence with value set to v.
+func NewOptIncidentResponseDataRootCauseAnalysisDueDiligence(v IncidentResponseDataRootCauseAnalysisDueDiligence) OptIncidentResponseDataRootCauseAnalysisDueDiligence {
+	return OptIncidentResponseDataRootCauseAnalysisDueDiligence{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptIncidentResponseDataRootCauseAnalysisDueDiligence is optional IncidentResponseDataRootCauseAnalysisDueDiligence.
+type OptIncidentResponseDataRootCauseAnalysisDueDiligence struct {
+	Value IncidentResponseDataRootCauseAnalysisDueDiligence
+	Set   bool
+}
+
+// IsSet returns true if OptIncidentResponseDataRootCauseAnalysisDueDiligence was set.
+func (o OptIncidentResponseDataRootCauseAnalysisDueDiligence) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptIncidentResponseDataRootCauseAnalysisDueDiligence) Reset() {
+	var v IncidentResponseDataRootCauseAnalysisDueDiligence
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptIncidentResponseDataRootCauseAnalysisDueDiligence) SetTo(v IncidentResponseDataRootCauseAnalysisDueDiligence) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptIncidentResponseDataRootCauseAnalysisDueDiligence) Get() (v IncidentResponseDataRootCauseAnalysisDueDiligence, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptIncidentResponseDataRootCauseAnalysisDueDiligence) Or(d IncidentResponseDataRootCauseAnalysisDueDiligence) IncidentResponseDataRootCauseAnalysisDueDiligence {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -18019,12 +18003,14 @@ func (s *RemediationHistoryEntry) SetAssessedAt(val OptDateTime) {
 type RemediationHistoryEntryAssessmentReason string
 
 const (
-	RemediationHistoryEntryAssessmentReasonFull            RemediationHistoryEntryAssessmentReason = "Full"
-	RemediationHistoryEntryAssessmentReasonPartial         RemediationHistoryEntryAssessmentReason = "Partial"
-	RemediationHistoryEntryAssessmentReasonSpecDrift       RemediationHistoryEntryAssessmentReason = "SpecDrift"
-	RemediationHistoryEntryAssessmentReasonExpired         RemediationHistoryEntryAssessmentReason = "Expired"
-	RemediationHistoryEntryAssessmentReasonNoExecution     RemediationHistoryEntryAssessmentReason = "NoExecution"
-	RemediationHistoryEntryAssessmentReasonMetricsTimedOut RemediationHistoryEntryAssessmentReason = "MetricsTimedOut"
+	RemediationHistoryEntryAssessmentReasonFull              RemediationHistoryEntryAssessmentReason = "Full"
+	RemediationHistoryEntryAssessmentReasonPartial           RemediationHistoryEntryAssessmentReason = "Partial"
+	RemediationHistoryEntryAssessmentReasonSpecDrift         RemediationHistoryEntryAssessmentReason = "SpecDrift"
+	RemediationHistoryEntryAssessmentReasonExpired           RemediationHistoryEntryAssessmentReason = "Expired"
+	RemediationHistoryEntryAssessmentReasonNoExecution       RemediationHistoryEntryAssessmentReason = "NoExecution"
+	RemediationHistoryEntryAssessmentReasonMetricsTimedOut   RemediationHistoryEntryAssessmentReason = "MetricsTimedOut"
+	RemediationHistoryEntryAssessmentReasonAlertDecayTimeout RemediationHistoryEntryAssessmentReason = "AlertDecayTimeout"
+	RemediationHistoryEntryAssessmentReasonUnrecoverable     RemediationHistoryEntryAssessmentReason = "Unrecoverable"
 )
 
 // AllValues returns all RemediationHistoryEntryAssessmentReason values.
@@ -18036,6 +18022,8 @@ func (RemediationHistoryEntryAssessmentReason) AllValues() []RemediationHistoryE
 		RemediationHistoryEntryAssessmentReasonExpired,
 		RemediationHistoryEntryAssessmentReasonNoExecution,
 		RemediationHistoryEntryAssessmentReasonMetricsTimedOut,
+		RemediationHistoryEntryAssessmentReasonAlertDecayTimeout,
+		RemediationHistoryEntryAssessmentReasonUnrecoverable,
 	}
 }
 
@@ -18053,6 +18041,10 @@ func (s RemediationHistoryEntryAssessmentReason) MarshalText() ([]byte, error) {
 	case RemediationHistoryEntryAssessmentReasonNoExecution:
 		return []byte(s), nil
 	case RemediationHistoryEntryAssessmentReasonMetricsTimedOut:
+		return []byte(s), nil
+	case RemediationHistoryEntryAssessmentReasonAlertDecayTimeout:
+		return []byte(s), nil
+	case RemediationHistoryEntryAssessmentReasonUnrecoverable:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -18079,6 +18071,12 @@ func (s *RemediationHistoryEntryAssessmentReason) UnmarshalText(data []byte) err
 		return nil
 	case RemediationHistoryEntryAssessmentReasonMetricsTimedOut:
 		*s = RemediationHistoryEntryAssessmentReasonMetricsTimedOut
+		return nil
+	case RemediationHistoryEntryAssessmentReasonAlertDecayTimeout:
+		*s = RemediationHistoryEntryAssessmentReasonAlertDecayTimeout
+		return nil
+	case RemediationHistoryEntryAssessmentReasonUnrecoverable:
+		*s = RemediationHistoryEntryAssessmentReasonUnrecoverable
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -18259,12 +18257,14 @@ func (s *RemediationHistorySummary) SetCompletedAt(val time.Time) {
 type RemediationHistorySummaryAssessmentReason string
 
 const (
-	RemediationHistorySummaryAssessmentReasonFull            RemediationHistorySummaryAssessmentReason = "Full"
-	RemediationHistorySummaryAssessmentReasonPartial         RemediationHistorySummaryAssessmentReason = "Partial"
-	RemediationHistorySummaryAssessmentReasonSpecDrift       RemediationHistorySummaryAssessmentReason = "SpecDrift"
-	RemediationHistorySummaryAssessmentReasonExpired         RemediationHistorySummaryAssessmentReason = "Expired"
-	RemediationHistorySummaryAssessmentReasonNoExecution     RemediationHistorySummaryAssessmentReason = "NoExecution"
-	RemediationHistorySummaryAssessmentReasonMetricsTimedOut RemediationHistorySummaryAssessmentReason = "MetricsTimedOut"
+	RemediationHistorySummaryAssessmentReasonFull              RemediationHistorySummaryAssessmentReason = "Full"
+	RemediationHistorySummaryAssessmentReasonPartial           RemediationHistorySummaryAssessmentReason = "Partial"
+	RemediationHistorySummaryAssessmentReasonSpecDrift         RemediationHistorySummaryAssessmentReason = "SpecDrift"
+	RemediationHistorySummaryAssessmentReasonExpired           RemediationHistorySummaryAssessmentReason = "Expired"
+	RemediationHistorySummaryAssessmentReasonNoExecution       RemediationHistorySummaryAssessmentReason = "NoExecution"
+	RemediationHistorySummaryAssessmentReasonMetricsTimedOut   RemediationHistorySummaryAssessmentReason = "MetricsTimedOut"
+	RemediationHistorySummaryAssessmentReasonAlertDecayTimeout RemediationHistorySummaryAssessmentReason = "AlertDecayTimeout"
+	RemediationHistorySummaryAssessmentReasonUnrecoverable     RemediationHistorySummaryAssessmentReason = "Unrecoverable"
 )
 
 // AllValues returns all RemediationHistorySummaryAssessmentReason values.
@@ -18276,6 +18276,8 @@ func (RemediationHistorySummaryAssessmentReason) AllValues() []RemediationHistor
 		RemediationHistorySummaryAssessmentReasonExpired,
 		RemediationHistorySummaryAssessmentReasonNoExecution,
 		RemediationHistorySummaryAssessmentReasonMetricsTimedOut,
+		RemediationHistorySummaryAssessmentReasonAlertDecayTimeout,
+		RemediationHistorySummaryAssessmentReasonUnrecoverable,
 	}
 }
 
@@ -18293,6 +18295,10 @@ func (s RemediationHistorySummaryAssessmentReason) MarshalText() ([]byte, error)
 	case RemediationHistorySummaryAssessmentReasonNoExecution:
 		return []byte(s), nil
 	case RemediationHistorySummaryAssessmentReasonMetricsTimedOut:
+		return []byte(s), nil
+	case RemediationHistorySummaryAssessmentReasonAlertDecayTimeout:
+		return []byte(s), nil
+	case RemediationHistorySummaryAssessmentReasonUnrecoverable:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -18319,6 +18325,12 @@ func (s *RemediationHistorySummaryAssessmentReason) UnmarshalText(data []byte) e
 		return nil
 	case RemediationHistorySummaryAssessmentReasonMetricsTimedOut:
 		*s = RemediationHistorySummaryAssessmentReasonMetricsTimedOut
+		return nil
+	case RemediationHistorySummaryAssessmentReasonAlertDecayTimeout:
+		*s = RemediationHistorySummaryAssessmentReasonAlertDecayTimeout
+		return nil
+	case RemediationHistorySummaryAssessmentReasonUnrecoverable:
+		*s = RemediationHistorySummaryAssessmentReasonUnrecoverable
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -20008,6 +20020,8 @@ type RemediationWorkflowStatus string
 
 const (
 	RemediationWorkflowStatusActive     RemediationWorkflowStatus = "Active"
+	RemediationWorkflowStatusInvalid    RemediationWorkflowStatus = "Invalid"
+	RemediationWorkflowStatusPending    RemediationWorkflowStatus = "Pending"
 	RemediationWorkflowStatusDisabled   RemediationWorkflowStatus = "Disabled"
 	RemediationWorkflowStatusDeprecated RemediationWorkflowStatus = "Deprecated"
 	RemediationWorkflowStatusArchived   RemediationWorkflowStatus = "Archived"
@@ -20018,6 +20032,8 @@ const (
 func (RemediationWorkflowStatus) AllValues() []RemediationWorkflowStatus {
 	return []RemediationWorkflowStatus{
 		RemediationWorkflowStatusActive,
+		RemediationWorkflowStatusInvalid,
+		RemediationWorkflowStatusPending,
 		RemediationWorkflowStatusDisabled,
 		RemediationWorkflowStatusDeprecated,
 		RemediationWorkflowStatusArchived,
@@ -20029,6 +20045,10 @@ func (RemediationWorkflowStatus) AllValues() []RemediationWorkflowStatus {
 func (s RemediationWorkflowStatus) MarshalText() ([]byte, error) {
 	switch s {
 	case RemediationWorkflowStatusActive:
+		return []byte(s), nil
+	case RemediationWorkflowStatusInvalid:
+		return []byte(s), nil
+	case RemediationWorkflowStatusPending:
 		return []byte(s), nil
 	case RemediationWorkflowStatusDisabled:
 		return []byte(s), nil
@@ -20048,6 +20068,12 @@ func (s *RemediationWorkflowStatus) UnmarshalText(data []byte) error {
 	switch RemediationWorkflowStatus(data) {
 	case RemediationWorkflowStatusActive:
 		*s = RemediationWorkflowStatusActive
+		return nil
+	case RemediationWorkflowStatusInvalid:
+		*s = RemediationWorkflowStatusInvalid
+		return nil
+	case RemediationWorkflowStatusPending:
+		*s = RemediationWorkflowStatusPending
 		return nil
 	case RemediationWorkflowStatusDisabled:
 		*s = RemediationWorkflowStatusDisabled
@@ -21867,7 +21893,7 @@ type WorkflowDiscoveryEntry struct {
 	SchemaImage OptString `json:"schemaImage"`
 	// OCI execution bundle reference (digest-pinned).
 	ExecutionBundle OptString `json:"executionBundle"`
-	// Execution engine (tekton, job).
+	// Execution engine (tekton, job, ansible).
 	ExecutionEngine OptWorkflowDiscoveryEntryExecutionEngine `json:"executionEngine"`
 	// Per-workflow ServiceAccount name (DD-WE-005 v2.0). Omitted if not set.
 	ServiceAccountName OptString `json:"serviceAccountName"`
@@ -21973,12 +21999,13 @@ func (s *WorkflowDiscoveryEntry) SetServiceAccountName(val OptString) {
 	s.ServiceAccountName = val
 }
 
-// Execution engine (tekton, job).
+// Execution engine (tekton, job, ansible).
 type WorkflowDiscoveryEntryExecutionEngine string
 
 const (
-	WorkflowDiscoveryEntryExecutionEngineTekton WorkflowDiscoveryEntryExecutionEngine = "tekton"
-	WorkflowDiscoveryEntryExecutionEngineJob    WorkflowDiscoveryEntryExecutionEngine = "job"
+	WorkflowDiscoveryEntryExecutionEngineTekton  WorkflowDiscoveryEntryExecutionEngine = "tekton"
+	WorkflowDiscoveryEntryExecutionEngineJob     WorkflowDiscoveryEntryExecutionEngine = "job"
+	WorkflowDiscoveryEntryExecutionEngineAnsible WorkflowDiscoveryEntryExecutionEngine = "ansible"
 )
 
 // AllValues returns all WorkflowDiscoveryEntryExecutionEngine values.
@@ -21986,6 +22013,7 @@ func (WorkflowDiscoveryEntryExecutionEngine) AllValues() []WorkflowDiscoveryEntr
 	return []WorkflowDiscoveryEntryExecutionEngine{
 		WorkflowDiscoveryEntryExecutionEngineTekton,
 		WorkflowDiscoveryEntryExecutionEngineJob,
+		WorkflowDiscoveryEntryExecutionEngineAnsible,
 	}
 }
 
@@ -21995,6 +22023,8 @@ func (s WorkflowDiscoveryEntryExecutionEngine) MarshalText() ([]byte, error) {
 	case WorkflowDiscoveryEntryExecutionEngineTekton:
 		return []byte(s), nil
 	case WorkflowDiscoveryEntryExecutionEngineJob:
+		return []byte(s), nil
+	case WorkflowDiscoveryEntryExecutionEngineAnsible:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -22009,6 +22039,9 @@ func (s *WorkflowDiscoveryEntryExecutionEngine) UnmarshalText(data []byte) error
 		return nil
 	case WorkflowDiscoveryEntryExecutionEngineJob:
 		*s = WorkflowDiscoveryEntryExecutionEngineJob
+		return nil
+	case WorkflowDiscoveryEntryExecutionEngineAnsible:
+		*s = WorkflowDiscoveryEntryExecutionEngineAnsible
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -22331,7 +22364,6 @@ const (
 	WorkflowExecutionAuditPayloadFailureReasonResourceExhausted  WorkflowExecutionAuditPayloadFailureReason = "ResourceExhausted"
 	WorkflowExecutionAuditPayloadFailureReasonTaskFailed         WorkflowExecutionAuditPayloadFailureReason = "TaskFailed"
 	WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine  WorkflowExecutionAuditPayloadFailureReason = "UnsupportedEngine"
-	WorkflowExecutionAuditPayloadFailureReasonDeduplicated       WorkflowExecutionAuditPayloadFailureReason = "Deduplicated"
 	WorkflowExecutionAuditPayloadFailureReasonUnknown            WorkflowExecutionAuditPayloadFailureReason = "Unknown"
 )
 
@@ -22346,7 +22378,6 @@ func (WorkflowExecutionAuditPayloadFailureReason) AllValues() []WorkflowExecutio
 		WorkflowExecutionAuditPayloadFailureReasonResourceExhausted,
 		WorkflowExecutionAuditPayloadFailureReasonTaskFailed,
 		WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine,
-		WorkflowExecutionAuditPayloadFailureReasonDeduplicated,
 		WorkflowExecutionAuditPayloadFailureReasonUnknown,
 	}
 }
@@ -22369,8 +22400,6 @@ func (s WorkflowExecutionAuditPayloadFailureReason) MarshalText() ([]byte, error
 	case WorkflowExecutionAuditPayloadFailureReasonTaskFailed:
 		return []byte(s), nil
 	case WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine:
-		return []byte(s), nil
-	case WorkflowExecutionAuditPayloadFailureReasonDeduplicated:
 		return []byte(s), nil
 	case WorkflowExecutionAuditPayloadFailureReasonUnknown:
 		return []byte(s), nil
@@ -22405,9 +22434,6 @@ func (s *WorkflowExecutionAuditPayloadFailureReason) UnmarshalText(data []byte) 
 		return nil
 	case WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine:
 		*s = WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine
-		return nil
-	case WorkflowExecutionAuditPayloadFailureReasonDeduplicated:
-		*s = WorkflowExecutionAuditPayloadFailureReasonDeduplicated
 		return nil
 	case WorkflowExecutionAuditPayloadFailureReasonUnknown:
 		*s = WorkflowExecutionAuditPayloadFailureReasonUnknown
