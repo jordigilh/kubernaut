@@ -318,7 +318,12 @@ func main() {
 	// Issue #753: /config remains on API port; health, readiness and metrics move to dedicated ports
 	r.Get("/config", configHandler(cfg, swappable))
 
+	apiRateLimiter := kaserver.NewRateLimiter(kaserver.DefaultRateLimitConfig())
+	defer apiRateLimiter.Stop()
+
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(apiRateLimiter.Middleware)
+
 		authMw := newAuthMiddleware(k8sInfra, logrLogger)
 		if authMw != nil {
 			r.Use(authMw.Handler)
@@ -339,7 +344,7 @@ func main() {
 			slogger.Info("conversation routes registered under /api/v1/conversations")
 		}
 
-		r.Handle("/*", ogenSrv)
+		r.Handle("/*", kaserver.SSEHeadersMiddleware(ogenSrv))
 	})
 
 	httpServer := &http.Server{
@@ -461,6 +466,7 @@ func main() {
 
 	<-ctx.Done()
 	slogger.Info("shutting down...")
+	mgr.Shutdown()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

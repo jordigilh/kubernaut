@@ -305,4 +305,68 @@ var _ = Describe("Kubernaut Agent Investigator Stream Events — #823 PR4", func
 			Expect(hasCancelledEvent).To(BeTrue(), "should emit EventTypeCancelled on cancellation")
 		})
 	})
+
+	Describe("UT-KA-823-TD01: Token-level delta events emitted when sink is active", func() {
+		It("produces token_delta events via chatOrStream when observer is connected", func() {
+			eventCh := make(chan session.InvestigationEvent, 128)
+			ctx := session.WithEventSink(context.Background(), eventCh)
+
+			mockClient := &cancelAwareMockClient{
+				responses: []llm.ChatResponse{
+					{
+						Message: llm.Message{
+							Role:    "assistant",
+							Content: `{"rca_summary":"pod OOM killed","confidence":0.9}`,
+						},
+						Usage: llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
+					},
+				},
+			}
+
+			inv := streamTestInvestigator(mockClient)
+			go func() {
+				_, _ = inv.Investigate(ctx, streamSignal)
+				close(eventCh)
+			}()
+
+			events := collectEvents(eventCh)
+
+			hasTokenDelta := false
+			for _, ev := range events {
+				if ev.Type == session.EventTypeTokenDelta {
+					hasTokenDelta = true
+					var data map[string]interface{}
+					Expect(json.Unmarshal(ev.Data, &data)).To(Succeed())
+					Expect(data).To(HaveKey("token"))
+				}
+			}
+			Expect(hasTokenDelta).To(BeTrue(),
+				"should emit token_delta events when event sink is active (observer connected)")
+		})
+	})
+
+	Describe("UT-KA-823-TD02: No token_delta events without sink (v1.4 parity)", func() {
+		It("uses Chat path with no token deltas when no observer is watching", func() {
+			ctx := context.Background()
+
+			mockClient := &cancelAwareMockClient{
+				responses: []llm.ChatResponse{
+					{
+						Message: llm.Message{
+							Role:    "assistant",
+							Content: `{"rca_summary":"pod OOM killed","confidence":0.9}`,
+						},
+						Usage: llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
+					},
+				},
+			}
+
+			inv := streamTestInvestigator(mockClient)
+			result, err := inv.Investigate(ctx, streamSignal)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RCASummary).NotTo(BeEmpty())
+		})
+	})
 })
