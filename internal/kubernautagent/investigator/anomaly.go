@@ -33,11 +33,13 @@ type AnomalyConfig struct {
 }
 
 // DefaultAnomalyConfig returns production defaults per DD-HAPI-019-003.
+// MaxToolCallsPerTool raised from 5 to 10 per #860 to accommodate
+// workflow discovery pagination (DD-WORKFLOW-016).
 // ExemptPrefixes includes "todo_" per #770: internal planning tools should
 // not consume the investigation tool budget.
 func DefaultAnomalyConfig() AnomalyConfig {
 	return AnomalyConfig{
-		MaxToolCallsPerTool: 5,
+		MaxToolCallsPerTool: 10,
 		MaxTotalToolCalls:   30,
 		MaxRepeatedFailures: 3,
 		ExemptPrefixes:      []string{"todo_"},
@@ -74,6 +76,8 @@ func NewAnomalyDetector(config AnomalyConfig, suspiciousPatterns []*regexp.Regex
 // Returns Allowed=false if the call should be rejected.
 // Tools matching ExemptPrefixes are checked for suspicious arguments but
 // do not count against total or per-tool budgets (#770).
+// Pagination calls (cursor-bearing calls to list_workflows / list_available_actions)
+// count toward MaxTotalToolCalls but are exempt from per-tool counting (#860).
 func (d *AnomalyDetector) CheckToolCall(name string, args json.RawMessage) AnomalyResult {
 	if r := d.checkSuspiciousArgs(name, args); !r.Allowed {
 		return r
@@ -91,6 +95,10 @@ func (d *AnomalyDetector) CheckToolCall(name string, args json.RawMessage) Anoma
 		}
 	}
 
+	if isPaginationCall(name, args) {
+		return AnomalyResult{Allowed: true}
+	}
+
 	d.toolCallCounts[name]++
 	if d.toolCallCounts[name] > d.config.MaxToolCallsPerTool {
 		return AnomalyResult{
@@ -100,6 +108,26 @@ func (d *AnomalyDetector) CheckToolCall(name string, args json.RawMessage) Anoma
 	}
 
 	return AnomalyResult{Allowed: true}
+}
+
+// isPaginationCall returns true when the call is a cursor-based pagination
+// continuation for a known paginated tool. Only list_workflows and
+// list_available_actions qualify (DD-WORKFLOW-016). Returns false (fail-closed)
+// on malformed input, missing cursor, or unrecognized tool names.
+func isPaginationCall(name string, args json.RawMessage) bool {
+	if name != "list_workflows" && name != "list_available_actions" {
+		return false
+	}
+	if len(args) == 0 {
+		return false
+	}
+	var parsed struct {
+		Cursor string `json:"cursor"`
+	}
+	if err := json.Unmarshal(args, &parsed); err != nil {
+		return false
+	}
+	return parsed.Cursor != ""
 }
 
 // isExempt returns true if the tool name matches any configured exempt prefix.

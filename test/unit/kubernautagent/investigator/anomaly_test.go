@@ -10,6 +10,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 )
 
+// DescribeTable and Entry are dot-imported from ginkgo/v2 above.
+
 var _ = Describe("Kubernaut Agent I7 Anomaly Detection — #433", func() {
 
 	Describe("UT-KA-433-054: Per-tool call limit triggers abort", func() {
@@ -318,11 +320,103 @@ var _ = Describe("Kubernaut Agent I7 Anomaly Detection — #433", func() {
 			Expect(result.Allowed).To(BeFalse(), "custom per-tool limit of 2 should apply")
 		})
 
-		It("should use default config values when DefaultAnomalyConfig is used", func() {
+		It("UT-KA-860-005: DefaultAnomalyConfig reflects MaxToolCallsPerTool=10 (BR-HAPI-433-004 I7)", func() {
 			cfg := investigator.DefaultAnomalyConfig()
-			Expect(cfg.MaxToolCallsPerTool).To(Equal(5))
+			Expect(cfg.MaxToolCallsPerTool).To(Equal(10),
+				"UT-KA-860-005: default per-tool limit raised to 10 per #860")
 			Expect(cfg.MaxTotalToolCalls).To(Equal(30))
 			Expect(cfg.MaxRepeatedFailures).To(Equal(3))
+		})
+	})
+
+	Describe("Pagination Exemption from Per-Tool Budget (#860, BR-HAPI-433-004 I7)", func() {
+
+		It("UT-KA-860-001: pagination call (list_workflows with cursor) does NOT increment per-tool count", func() {
+			cfg := investigator.AnomalyConfig{
+				MaxToolCallsPerTool: 3,
+				MaxTotalToolCalls:   100,
+				MaxRepeatedFailures: 100,
+			}
+			detector := investigator.NewAnomalyDetector(cfg, nil)
+
+			paginationArgs := json.RawMessage(`{"action_type":"cordon","cursor":"eyJvZmZzZXQiOjEwfQ=="}`)
+			for i := 0; i < 10; i++ {
+				result := detector.CheckToolCall("list_workflows", paginationArgs)
+				Expect(result.Allowed).To(BeTrue(),
+					"UT-KA-860-001: pagination call %d should be allowed (cursor exempt from per-tool count)", i+1)
+			}
+		})
+
+		It("UT-KA-860-002: non-pagination call increments per-tool count and rejects at limit=10", func() {
+			cfg := investigator.AnomalyConfig{
+				MaxToolCallsPerTool: 10,
+				MaxTotalToolCalls:   100,
+				MaxRepeatedFailures: 100,
+			}
+			detector := investigator.NewAnomalyDetector(cfg, nil)
+
+			for i := 0; i < 10; i++ {
+				result := detector.CheckToolCall("kubectl_describe", json.RawMessage(`{}`))
+				Expect(result.Allowed).To(BeTrue(), "call %d should be allowed", i+1)
+			}
+			result := detector.CheckToolCall("kubectl_describe", json.RawMessage(`{}`))
+			Expect(result.Allowed).To(BeFalse(),
+				"UT-KA-860-002: 11th non-pagination call should be rejected at limit=10")
+			Expect(result.Reason).To(ContainSubstring("per-tool call limit exceeded"))
+		})
+
+		It("UT-KA-860-003: pagination calls still count toward MaxTotalToolCalls (safety net)", func() {
+			cfg := investigator.AnomalyConfig{
+				MaxToolCallsPerTool: 100,
+				MaxTotalToolCalls:   5,
+				MaxRepeatedFailures: 100,
+			}
+			detector := investigator.NewAnomalyDetector(cfg, nil)
+
+			paginationArgs := json.RawMessage(`{"action_type":"cordon","cursor":"abc123"}`)
+			for i := 0; i < 5; i++ {
+				result := detector.CheckToolCall("list_workflows", paginationArgs)
+				Expect(result.Allowed).To(BeTrue(),
+					"UT-KA-860-003: pagination call %d within total budget should be allowed", i+1)
+			}
+			result := detector.CheckToolCall("list_workflows", paginationArgs)
+			Expect(result.Allowed).To(BeFalse(),
+				"UT-KA-860-003: 6th pagination call should hit MaxTotalToolCalls=5 safety net")
+			Expect(result.Reason).To(ContainSubstring("total tool call limit exceeded"))
+		})
+
+		Describe("UT-KA-860-004: isPaginationCall edge cases (fail-closed)", func() {
+			var detector *investigator.AnomalyDetector
+
+			BeforeEach(func() {
+				cfg := investigator.AnomalyConfig{
+					MaxToolCallsPerTool: 1,
+					MaxTotalToolCalls:   100,
+					MaxRepeatedFailures: 100,
+				}
+				detector = investigator.NewAnomalyDetector(cfg, nil)
+			})
+
+			DescribeTable("should treat non-pagination calls as counted (fail-closed)",
+				func(toolName string, args json.RawMessage, shouldBePagination bool) {
+					detector.CheckToolCall(toolName, args)
+					result := detector.CheckToolCall(toolName, args)
+					if shouldBePagination {
+						Expect(result.Allowed).To(BeTrue(),
+							"pagination call should NOT count against per-tool limit")
+					} else {
+						Expect(result.Allowed).To(BeFalse(),
+							"non-pagination call should count and reject at limit=1")
+					}
+				},
+				Entry("nil args", "list_workflows", json.RawMessage(nil), false),
+				Entry("empty args", "list_workflows", json.RawMessage(`{}`), false),
+				Entry("malformed JSON", "list_workflows", json.RawMessage(`{bad`), false),
+				Entry("empty cursor", "list_workflows", json.RawMessage(`{"cursor":""}`), false),
+				Entry("non-paginated tool with cursor", "kubectl_describe", json.RawMessage(`{"cursor":"abc"}`), false),
+				Entry("list_available_actions with cursor", "list_available_actions", json.RawMessage(`{"cursor":"abc"}`), true),
+				Entry("list_workflows with cursor", "list_workflows", json.RawMessage(`{"action_type":"cordon","cursor":"abc"}`), true),
+			)
 		})
 	})
 })
