@@ -57,14 +57,17 @@ enrichment context provided.
 **Step 1**: Call `list_available_actions` to discover available remediation action types.
 Review all returned action types and their descriptions. Choose the action type that
 best matches the RCA findings.
+DO NOT GUESS action types. You MUST call `list_available_actions` first to see what is available.
+If the response includes `pagination.hasNext`, call the tool again with `page: "next"` and `cursor` set to the `nextCursor` value to review ALL action types before selecting one.
 
 **Action Type Selection Rules** (apply BEFORE calling Step 2):
 - If `cluster_context` shows `gitOpsManaged=true`, MUST prefer git-based action types.
 - If the RCA reveals an error rate spike correlating with a recent deployment revision change, prefer ProactiveRollback.
 - Cross-reference each action type's `when_to_use` and `when_not_to_use` guidance against the RCA findings.
 
-**Step 2**: Call `list_workflows` with `action_type` set to your chosen action type.
-**CRITICAL**: If the response includes `pagination.hasNext`, call the tool again with `page: "next"` and `cursor` set to the `nextCursor` value to review ALL workflows.
+**Step 2**: Call `list_workflows` with `action_type` set to your chosen action type from Step 1.
+DO NOT GUESS workflow IDs. You MUST call `list_workflows` to see what is available.
+**CRITICAL**: If the response includes `pagination.hasNext`, call the tool again with `page: "next"` and `cursor` set to the `nextCursor` value to review ALL workflows before selecting one.
 
 **Step 3**: Call `get_workflow` with the `workflow_id` of your selected workflow to retrieve its full parameter schema.
 

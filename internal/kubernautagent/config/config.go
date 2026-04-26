@@ -279,7 +279,7 @@ func DefaultConfig() *Config {
 		Investigator: InvestigatorConfig{MaxTurns: 15},
 		Audit:        AuditConfig{Enabled: true},
 		Anomaly: AnomalyConfig{
-			MaxToolCallsPerTool: 5,
+			MaxToolCallsPerTool: 10,
 			MaxTotalToolCalls:   30,
 			MaxRepeatedFailures: 3,
 			ExemptPrefixes:      []string{"todo_"},

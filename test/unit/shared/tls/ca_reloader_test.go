@@ -256,4 +256,16 @@ var _ = Describe("CAReloader (#756)", func() {
 		Expect(poolContainsSubject(pool, subjectFromPEM(pemBytes))).To(BeTrue(),
 			"the single cert must be our file CA")
 	})
+
+	// Issue #853: IdleConnTimeout on TLS path
+	It("UT-RT-853-014: buildCATransport must set IdleConnTimeout=15s", func() {
+		pemBytes := generateCAPEM("idle-timeout-ca")
+
+		reloader, err := sharedtls.NewCAReloader(pemBytes)
+		Expect(err).ToNot(HaveOccurred())
+
+		transport := reloader.CurrentTransport()
+		Expect(transport.IdleConnTimeout).To(Equal(15*time.Second),
+			"Issue #853: TLS path must set IdleConnTimeout to 15s to prevent stale connection reuse")
+	})
 })

@@ -113,7 +113,7 @@ pagination without exposing raw numeric offsets or total counts.
 
 - **DataStorage server-side pagination** (`pkg/datastorage/server/workflow_handlers.go`): Already covered by existing DS tests. ParsePagination clamping is assumed correct.
 - **Ogen client/server codegen** (`pkg/datastorage/ogen-client/`): Generated code, tested upstream.
-- **Anomaly detector tool call limits** (`internal/kubernautagent/investigator/anomaly.go`): Unchanged; pagination adds tool calls within existing limits.
+- **Anomaly detector tool call limits** (`internal/kubernautagent/investigator/anomaly.go`): Updated by #860 — pagination calls (`list_workflows`, `list_available_actions` with `cursor`) are exempt from per-tool budget but still count toward `MaxTotalToolCalls` (30). `MaxToolCallsPerTool` raised from 5 to 10.
 - **Golden transcript replay**: Will need separate update if transcripts include pagination; deferred to post-merge validation.
 
 ### 4.3 Design Decisions
