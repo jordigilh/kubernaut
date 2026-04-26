@@ -44,7 +44,7 @@ var _ = Describe("UT-KA-779-PD: Prompt builder default fallback behavior", func(
 				Namespace: "default",
 				Severity:  "critical",
 				Message:   "OOMKilled",
-			}, nil)
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).To(ContainSubstring("Pod"),
 				"Empty ResourceKind should default to 'Pod' in rendered prompt")
@@ -58,7 +58,7 @@ var _ = Describe("UT-KA-779-PD: Prompt builder default fallback behavior", func(
 				Namespace: "staging-ns",
 				Severity:  "critical",
 				Message:   "OOMKilled",
-			}, nil)
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).To(ContainSubstring("staging-ns"),
 				"Empty Environment should fall back to the Namespace value")
@@ -72,7 +72,7 @@ var _ = Describe("UT-KA-779-PD: Prompt builder default fallback behavior", func(
 				Namespace: "default",
 				Severity:  "critical",
 				Message:   "OOMKilled",
-			}, nil)
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).NotTo(ContainSubstring("Proactive Signal Mode"),
 				"Empty SignalMode should default to reactive -- proactive section must not render")
@@ -88,7 +88,7 @@ var _ = Describe("UT-KA-779-PD: Prompt builder default fallback behavior", func(
 				Namespace: "default",
 				Severity:  "critical",
 				Message:   "OOMKilled",
-			}, nil)
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).To(ContainSubstring("kubernaut-gateway"),
 				"Empty SignalSource should default to 'kubernaut-gateway' in rendered prompt")
@@ -106,7 +106,7 @@ var _ = Describe("UT-KA-779-PD: Prompt builder default fallback behavior", func(
 				Environment:  "staging",
 				SignalMode:   "proactive",
 				SignalSource: "prometheus-alertmanager",
-			}, nil)
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).To(ContainSubstring("StatefulSet"),
 				"Provided ResourceKind should appear in prompt")

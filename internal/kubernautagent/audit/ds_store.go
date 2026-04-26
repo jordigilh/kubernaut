@@ -207,6 +207,23 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		}
 		return ogenclient.NewAIAgentResponsePayloadAuditEventRequestEventData(payload), true
 
+	case EventTypeRCAComplete:
+		payload := ogenclient.AIAgentRCACompletePayload{
+			EventType:  ogenclient.AIAgentRCACompletePayloadEventTypeAiagentRcaComplete,
+			EventID:    dataString(event.Data, "event_id"),
+			IncidentID: event.CorrelationID,
+		}
+		if rd := dataString(event.Data, "response_data"); rd != "" {
+			payload.ResponseData = toIncidentResponseData(rd, event.CorrelationID)
+		}
+		if pt := dataInt(event.Data, "total_prompt_tokens"); pt > 0 {
+			payload.TotalPromptTokens.SetTo(pt)
+		}
+		if ct := dataInt(event.Data, "total_completion_tokens"); ct > 0 {
+			payload.TotalCompletionTokens.SetTo(ct)
+		}
+		return ogenclient.NewAIAgentRCACompletePayloadAuditEventRequestEventData(payload), true
+
 	case EventTypeResponseFailed:
 		payload := ogenclient.AIAgentResponseFailedPayload{
 			EventType:    ogenclient.AIAgentResponseFailedPayloadEventTypeAiagentResponseFailed,

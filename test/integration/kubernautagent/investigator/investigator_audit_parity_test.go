@@ -232,6 +232,96 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 		})
 	})
 
+	Describe("IT-KA-851-AP-001: Investigation emits rca.complete after Phase 1 with forensic fields", func() {
+		It("should emit aiagent.rca.complete with response_data containing causal_chain and due_diligence", func() {
+			mockClient.responses = []llm.ChatResponse{
+				{
+					Message: llm.Message{Role: "assistant", Content: `{
+						"rca_summary":"DiskPressure from emptyDir overuse",
+						"severity":"critical",
+						"confidence":0.92,
+						"remediation_target":{"kind":"Deployment","name":"postgres-emptydir","namespace":"demo-disk"},
+						"causal_chain":["DiskPressure alert fired","emptyDir writes exceed capacity","postgres container writing unbounded WAL"],
+						"due_diligence":{
+							"causal_completeness":"Traced to emptyDir sizing",
+							"target_accuracy":"postgres-emptydir is primary writer",
+							"evidence_sufficiency":"Backed by metrics",
+							"alternative_hypotheses":"Considered image layers",
+							"scope_completeness":"All deployments checked",
+							"proportionality":"Single offender",
+							"regression_awareness":"N/A",
+							"confidence_calibration":"0.92"
+						}
+					}`},
+					Usage: llm.TokenUsage{PromptTokens: 150, CompletionTokens: 80, TotalTokens: 230},
+				},
+				func() llm.ChatResponse {
+					r := wfToolResp(`{"workflow_id":"set-ephemeral-limit","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"postgres-emptydir","namespace":"demo-disk"}}`)
+					r.Usage = llm.TokenUsage{PromptTokens: 200, CompletionTokens: 100, TotalTokens: 300}
+					return r
+				}(),
+			}
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			_, err := inv.Investigate(context.Background(), signal)
+			Expect(err).NotTo(HaveOccurred())
+
+			rcaEvents := eventsOfType(audit.EventTypeRCAComplete)
+			Expect(rcaEvents).To(HaveLen(1), "exactly one aiagent.rca.complete event per investigation")
+
+			rcaEvt := rcaEvents[0]
+			Expect(rcaEvt.EventAction).To(Equal(audit.ActionLLMResponse))
+			Expect(rcaEvt.EventOutcome).To(Equal(audit.OutcomeSuccess))
+			Expect(rcaEvt.CorrelationID).NotTo(BeEmpty())
+
+			rd, ok := rcaEvt.Data["response_data"].(string)
+			Expect(ok).To(BeTrue(), "response_data must be a JSON string")
+			Expect(rd).To(ContainSubstring("DiskPressure from emptyDir overuse"))
+			Expect(rd).To(ContainSubstring("causal_chain"))
+			Expect(rd).To(ContainSubstring("due_diligence"))
+			Expect(rd).To(ContainSubstring("postgres-emptydir"))
+
+			completeEvents := eventsOfType(audit.EventTypeResponseComplete)
+			Expect(completeEvents).To(HaveLen(1), "response.complete should still be emitted after Phase 3")
+		})
+	})
+
+	Describe("IT-KA-851-AP-002: rca.complete emitted even when human review needed (early exit)", func() {
+		It("should emit aiagent.rca.complete before the early-exit response.complete", func() {
+			mockClient.responses = []llm.ChatResponse{
+				{
+					Message: llm.Message{Role: "assistant", Content: `{
+						"rca_summary":"Cannot determine root cause",
+						"severity":"unknown",
+						"confidence":0.3,
+						"needs_human_review":true,
+						"human_review_reason":"insufficient_evidence"
+					}`},
+					Usage: llm.TokenUsage{PromptTokens: 100, CompletionTokens: 40, TotalTokens: 140},
+				},
+			}
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			result, err := inv.Investigate(context.Background(), signal)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.HumanReviewNeeded).To(BeTrue())
+
+			rcaEvents := eventsOfType(audit.EventTypeRCAComplete)
+			Expect(rcaEvents).To(HaveLen(1),
+				"rca.complete must be emitted even on human-review early exit for forensic completeness")
+
+			completeEvents := eventsOfType(audit.EventTypeResponseComplete)
+			Expect(completeEvents).To(HaveLen(1),
+				"response.complete should still be emitted on early exit")
+		})
+	})
+
 	Describe("IT-KA-433-AP-006: Investigation emits response.failed on LLM error", func() {
 		It("should include error_message and phase in response.failed event", func() {
 			failingClient := &errorLLMClient{err: fmt.Errorf("LLM timeout after 30s")}
@@ -271,6 +361,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 				audit.EventTypeLLMResponse:       true,
 				audit.EventTypeLLMToolCall:       true,
 				audit.EventTypeValidationAttempt: true,
+				audit.EventTypeRCAComplete:       true,
 				audit.EventTypeResponseComplete:  true,
 				audit.EventTypeResponseFailed:    true,
 			}

@@ -34,6 +34,7 @@ const (
 	EventTypeValidationAttempt   = "aiagent.workflow.validation_attempt"
 	EventTypeResponseComplete    = "aiagent.response.complete"
 	EventTypeResponseFailed      = "aiagent.response.failed"
+	EventTypeRCAComplete         = "aiagent.rca.complete"
 	EventTypeEnrichmentCompleted = "aiagent.enrichment.completed"
 	EventTypeEnrichmentFailed    = "aiagent.enrichment.failed"
 	EventTypeAlignmentStep       = "aiagent.alignment.step"
@@ -65,6 +66,7 @@ var AllEventTypes = []string{
 	EventTypeConversationTurn,
 	EventTypeValidationAttempt,
 	EventTypeResponseComplete,
+	EventTypeRCAComplete,
 	EventTypeResponseFailed,
 	EventTypeEnrichmentCompleted,
 	EventTypeEnrichmentFailed,

@@ -596,6 +596,221 @@ func (s *AIAgentEnrichmentFailedPayloadEventType) UnmarshalJSON(data []byte) err
 }
 
 // Encode implements json.Marshaler.
+func (s *AIAgentRCACompletePayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentRCACompletePayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("event_id")
+		e.Str(s.EventID)
+	}
+	{
+		e.FieldStart("incident_id")
+		e.Str(s.IncidentID)
+	}
+	{
+		e.FieldStart("response_data")
+		s.ResponseData.Encode(e)
+	}
+	{
+		if s.TotalPromptTokens.Set {
+			e.FieldStart("total_prompt_tokens")
+			s.TotalPromptTokens.Encode(e)
+		}
+	}
+	{
+		if s.TotalCompletionTokens.Set {
+			e.FieldStart("total_completion_tokens")
+			s.TotalCompletionTokens.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfAIAgentRCACompletePayload = [6]string{
+	0: "event_type",
+	1: "event_id",
+	2: "incident_id",
+	3: "response_data",
+	4: "total_prompt_tokens",
+	5: "total_completion_tokens",
+}
+
+// Decode decodes AIAgentRCACompletePayload from json.
+func (s *AIAgentRCACompletePayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentRCACompletePayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "event_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.EventID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_id\"")
+			}
+		case "incident_id":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.IncidentID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"incident_id\"")
+			}
+		case "response_data":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				if err := s.ResponseData.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"response_data\"")
+			}
+		case "total_prompt_tokens":
+			if err := func() error {
+				s.TotalPromptTokens.Reset()
+				if err := s.TotalPromptTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_prompt_tokens\"")
+			}
+		case "total_completion_tokens":
+			if err := func() error {
+				s.TotalCompletionTokens.Reset()
+				if err := s.TotalCompletionTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_completion_tokens\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentRCACompletePayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00001111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAgentRCACompletePayload) {
+					name = jsonFieldsNameOfAIAgentRCACompletePayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentRCACompletePayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentRCACompletePayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentRCACompletePayloadEventType as json.
+func (s AIAgentRCACompletePayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentRCACompletePayloadEventType from json.
+func (s *AIAgentRCACompletePayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentRCACompletePayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentRCACompletePayloadEventType(v) {
+	case AIAgentRCACompletePayloadEventTypeAiagentRcaComplete:
+		*s = AIAgentRCACompletePayloadEventTypeAiagentRcaComplete
+	default:
+		*s = AIAgentRCACompletePayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentRCACompletePayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentRCACompletePayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *AIAgentResponseFailedPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -7055,6 +7270,36 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AIAgentRCACompletePayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.rca.complete")
+		{
+			s := s.AIAgentRCACompletePayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("response_data")
+				s.ResponseData.Encode(e)
+			}
+			{
+				if s.TotalPromptTokens.Set {
+					e.FieldStart("total_prompt_tokens")
+					s.TotalPromptTokens.Encode(e)
+				}
+			}
+			{
+				if s.TotalCompletionTokens.Set {
+					e.FieldStart("total_completion_tokens")
+					s.TotalCompletionTokens.Encode(e)
+				}
+			}
+		}
 	case AIAgentResponseFailedPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("aiagent.response.failed")
@@ -8030,6 +8275,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.response.complete":
 					s.Type = AIAgentResponsePayloadAuditEventEventData
 					found = true
+				case "aiagent.rca.complete":
+					s.Type = AIAgentRCACompletePayloadAuditEventEventData
+					found = true
 				case "aiagent.response.failed":
 					s.Type = AIAgentResponseFailedPayloadAuditEventEventData
 					found = true
@@ -8220,6 +8468,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case AIAgentResponsePayloadAuditEventEventData:
 		if err := s.AIAgentResponsePayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentRCACompletePayloadAuditEventEventData:
+		if err := s.AIAgentRCACompletePayload.Decode(d); err != nil {
 			return err
 		}
 	case AIAgentResponseFailedPayloadAuditEventEventData:
@@ -10094,6 +10346,36 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AIAgentRCACompletePayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.rca.complete")
+		{
+			s := s.AIAgentRCACompletePayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("response_data")
+				s.ResponseData.Encode(e)
+			}
+			{
+				if s.TotalPromptTokens.Set {
+					e.FieldStart("total_prompt_tokens")
+					s.TotalPromptTokens.Encode(e)
+				}
+			}
+			{
+				if s.TotalCompletionTokens.Set {
+					e.FieldStart("total_completion_tokens")
+					s.TotalCompletionTokens.Encode(e)
+				}
+			}
+		}
 	case AIAgentResponseFailedPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
 		e.Str("aiagent.response.failed")
@@ -11069,6 +11351,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.response.complete":
 					s.Type = AIAgentResponsePayloadAuditEventRequestEventData
 					found = true
+				case "aiagent.rca.complete":
+					s.Type = AIAgentRCACompletePayloadAuditEventRequestEventData
+					found = true
 				case "aiagent.response.failed":
 					s.Type = AIAgentResponseFailedPayloadAuditEventRequestEventData
 					found = true
@@ -11259,6 +11544,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case AIAgentResponsePayloadAuditEventRequestEventData:
 		if err := s.AIAgentResponsePayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentRCACompletePayloadAuditEventRequestEventData:
+		if err := s.AIAgentRCACompletePayload.Decode(d); err != nil {
 			return err
 		}
 	case AIAgentResponseFailedPayloadAuditEventRequestEventData:

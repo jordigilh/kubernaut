@@ -154,8 +154,8 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 		})
 	})
 
-	Describe("IT-KA-433-DL-002: InvestigationResult carries DetectedLabels through toPromptEnrichment to prompt", func() {
-		It("should include detected label information in the LLM system prompt", func() {
+	Describe("IT-KA-433-DL-002: DetectedLabels appear in workflow selection prompt (Phase 3), not investigation (Phase 1)", func() {
+		It("should include detected labels in Phase 3 prompt and exclude from Phase 1", func() {
 			scheme := runtime.NewScheme()
 			_ = appsv1.AddToScheme(scheme)
 			_ = autoscalingv2.AddToScheme(scheme)
@@ -200,18 +200,17 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(len(mockClient.calls)).To(BeNumerically(">=", 1))
-			firstCall := mockClient.calls[0]
-			systemPrompt := ""
-			for _, msg := range firstCall.Messages {
-				if msg.Role == "system" {
-					systemPrompt = msg.Content
-					break
-				}
-			}
-			Expect(systemPrompt).NotTo(BeEmpty())
-			Expect(systemPrompt).To(ContainSubstring("helmManaged"),
-				"detected labels should appear in the investigation prompt via toPromptEnrichment")
+			Expect(len(mockClient.calls)).To(BeNumerically(">=", 2))
+
+			By("Phase 1 (investigation) should NOT contain enrichment labels")
+			rcaPrompt := mockClient.calls[0].Messages[0].Content
+			Expect(rcaPrompt).NotTo(ContainSubstring("Detected Labels"),
+				"Phase 1 investigation prompt must NOT contain enrichment labels")
+
+			By("Phase 3 (workflow selection) should contain enrichment labels")
+			wfPrompt := mockClient.calls[1].Messages[0].Content
+			Expect(wfPrompt).To(ContainSubstring("helmManaged"),
+				"Phase 3 workflow selection prompt should contain detected labels")
 		})
 	})
 

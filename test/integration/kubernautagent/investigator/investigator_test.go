@@ -366,8 +366,8 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		})
 	})
 
-	Describe("IT-KA-433W-005: Investigator with enricher includes owner chain in RCA system prompt", func() {
-		It("should include owner chain in RCA prompt but NOT remediation history (Phase 3 only per #700)", func() {
+	Describe("IT-KA-433W-005: Investigation prompt excludes enrichment, workflow selection includes it", func() {
+		It("should NOT include enrichment in RCA prompt; remediation history appears in Phase 3 only", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Memory pressure detected"}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
@@ -384,10 +384,12 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 
 			rcaCall := mockClient.calls[0]
 			systemPrompt := rcaCall.Messages[0].Content
-			Expect(systemPrompt).To(ContainSubstring("Deployment/api-server"),
-				"RCA system prompt should contain owner chain entries")
+			Expect(systemPrompt).NotTo(ContainSubstring("Owner Chain"),
+				"RCA system prompt must NOT contain enrichment owner chain (Phase 3 only)")
+			Expect(systemPrompt).NotTo(ContainSubstring("Detected Labels"),
+				"RCA system prompt must NOT contain enrichment labels (Phase 3 only)")
 			Expect(systemPrompt).NotTo(ContainSubstring("oom-increase-memory"),
-				"RCA system prompt must NOT contain remediation history (Phase 3 only per #700)")
+				"RCA system prompt must NOT contain remediation history (Phase 3 only)")
 
 			By("remediation history should appear in workflow selection prompt instead")
 			wdCall := mockClient.calls[1]

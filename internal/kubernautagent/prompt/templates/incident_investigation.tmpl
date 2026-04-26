@@ -64,35 +64,6 @@ that a **{{ .SignalName }}** event will occur for **{{ .Namespace }}/{{ .Resourc
 
 **Note**: This indicates the same signal fingerprint was detected multiple times, suggesting a persistent or recurring issue.
 {{ end -}}
-{{ if .PDBSignalGuidance }}
-## PDB-Specific Investigation Guidance (Issue #198)
-
-**IMPORTANT**: This signal indicates a PodDisruptionBudget is blocking voluntary
-disruptions (drain/eviction). Before concluding this is a taint or scheduling issue:
-
-1. **Inspect the PDB spec**: Call `get_namespaced_resource_context` for the PDB itself
-   (kind=PodDisruptionBudget) to understand its selector and minAvailable/maxUnavailable.
-2. **Check matched pods**: The PDB's selector identifies which pods it protects.
-   Verify the replica count vs minAvailable constraint.
-3. **Prefer RelaxPDB over RemoveTaint**: A drained node with SchedulingDisabled is a
-   SYMPTOM of the PDB blocking eviction, not the root cause.
-4. **RCA target**: The affected resource should be the PDB, not the Node.
-{{ end -}}
-{{ if or .OwnerChain .DetectedLabels .QuotaDetails }}
-## Enrichment Context (AUTO-DETECTED)
-{{ if .OwnerChain }}
-**Owner Chain**: {{ .OwnerChain }}
-{{ end -}}
-{{ if .DetectedLabels }}
-**Detected Labels**: {{ .DetectedLabels }}
-{{ end -}}
-{{ if .QuotaDetails }}
-**Resource Quotas** (enforced in this namespace):
-{{- range $resource, $usage := .QuotaDetails }}
-- {{ $resource }}: {{ $usage.Used }} used of {{ $usage.Hard }} limit
-{{- end }}
-{{ end -}}
-{{ end -}}
 ## Investigation Methodology
 
 **CRITICAL**: Follow this sequence in order. Do NOT search for workflows before investigating.
@@ -158,6 +129,24 @@ When checking logs:
 - Always check both `kubectl_logs` AND `kubectl_previous_logs` because a pod restart means current logs may not contain relevant pre-restart data
 - For multi-container pods, fetch logs for all relevant containers
 - Something reporting "Running" and healthy does not mean it is without issues — always check logs
+
+## Prometheus Investigation Guidance
+
+When using Prometheus tools during investigation:
+
+### Discovery Pattern
+1. Start with `get_metric_names` using `match` to filter (e.g. `{__name__=~".*fs.*|.*disk.*"}` for disk issues, `{__name__=~".*memory.*|.*oom.*"}` for memory issues).
+2. Use `get_metric_metadata` to confirm metric type (counter vs gauge) before querying.
+3. Use `get_series` with a specific selector to discover available label sets before writing PromQL.
+
+### Query Patterns
+- Use `topk(10, ...)` or `bottomk(10, ...)` to limit cardinality in results.
+- For rate-based metrics (counters), always wrap with `rate()` or `increase()`.
+- Use `by (pod, namespace, container)` to break down per-workload.
+- Add `{namespace="<target-namespace>"}` to scope queries.
+
+### Truncation Awareness
+Prometheus responses may be truncated. If a response indicates truncation, narrow your query with more specific label selectors or `topk()` rather than assuming the partial data is complete.
 
 ### Phase 2: {{ if eq .SignalMode "proactive" }}Assess Prediction and Determine Prevention Strategy{{ else }}Determine Root Cause (RCA){{ end }}
 {{ if eq .SignalMode "proactive" -}}

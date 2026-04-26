@@ -58,6 +58,7 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 			Entry("aiagent.conversation.turn", audit.EventTypeConversationTurn),
 			Entry("aiagent.workflow.validation_attempt", audit.EventTypeValidationAttempt),
 			Entry("aiagent.response.complete", audit.EventTypeResponseComplete),
+			Entry("aiagent.rca.complete", audit.EventTypeRCAComplete),
 			Entry("aiagent.response.failed", audit.EventTypeResponseFailed),
 			Entry("aiagent.enrichment.completed", audit.EventTypeEnrichmentCompleted),
 			Entry("aiagent.enrichment.failed", audit.EventTypeEnrichmentFailed),
@@ -65,8 +66,13 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 			Entry("aiagent.alignment.verdict", audit.EventTypeAlignmentVerdict),
 		)
 
-		It("should define exactly 11 event types", func() {
-			Expect(audit.AllEventTypes).To(HaveLen(11))
+		It("should define exactly 12 event types", func() {
+			Expect(audit.AllEventTypes).To(HaveLen(12))
+		})
+
+		It("should include aiagent.rca.complete in AllEventTypes", func() {
+			Expect(audit.AllEventTypes).To(ContainElement(audit.EventTypeRCAComplete))
+			Expect(audit.EventTypeRCAComplete).To(Equal("aiagent.rca.complete"))
 		})
 	})
 

@@ -216,6 +216,8 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		return nil, fmt.Errorf("RCA invocation: %w", err)
 	}
 
+	inv.emitRCAComplete(ctx, rcaResult, tokens, correlationID)
+
 	if rcaResult.HumanReviewNeeded {
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)
@@ -347,7 +349,7 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 }
 
 func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (*katypes.InvestigationResult, error) {
-	systemPrompt, err := inv.builder.RenderInvestigation(signalToPrompt(signal), enrichData)
+	systemPrompt, err := inv.builder.RenderInvestigation(signalToPrompt(signal))
 	if err != nil {
 		return nil, fmt.Errorf("rendering investigation prompt: %w", err)
 	}
@@ -1203,6 +1205,19 @@ func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katyp
 		completeEvent.Data["response_data"] = string(b)
 	}
 	audit.StoreBestEffort(ctx, inv.auditStore, completeEvent, inv.logger)
+}
+
+func (inv *Investigator) emitRCAComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {
+	ev := audit.NewEvent(audit.EventTypeRCAComplete, correlationID)
+	ev.EventAction = audit.ActionLLMResponse
+	ev.EventOutcome = audit.OutcomeSuccess
+	for k, v := range tokens.AuditData() {
+		ev.Data[k] = v
+	}
+	if b, err := json.Marshal(ResultToAuditJSON(result)); err == nil {
+		ev.Data["response_data"] = string(b)
+	}
+	audit.StoreBestEffort(ctx, inv.auditStore, ev, inv.logger)
 }
 
 func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {

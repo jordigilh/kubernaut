@@ -313,6 +313,119 @@ func (s *AIAgentEnrichmentFailedPayloadEventType) UnmarshalText(data []byte) err
 	}
 }
 
+// AI Agent Phase 1 RCA completion event payload (aiagent.rca.complete). Emitted immediately after
+// runRCA returns, before Phase 3 workflow selection. Captures causal_chain and due_diligence for
+// forensic investigation and model capability comparison (Issue.
+// Ref: #/components/schemas/AIAgentRCACompletePayload
+type AIAgentRCACompletePayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentRCACompletePayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Incident correlation ID from request.
+	IncidentID   string               `json:"incident_id"`
+	ResponseData IncidentResponseData `json:"response_data"`
+	// Prompt tokens consumed during Phase 1 RCA.
+	TotalPromptTokens OptInt `json:"total_prompt_tokens"`
+	// Completion tokens consumed during Phase 1 RCA.
+	TotalCompletionTokens OptInt `json:"total_completion_tokens"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentRCACompletePayload) GetEventType() AIAgentRCACompletePayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentRCACompletePayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetIncidentID returns the value of IncidentID.
+func (s *AIAgentRCACompletePayload) GetIncidentID() string {
+	return s.IncidentID
+}
+
+// GetResponseData returns the value of ResponseData.
+func (s *AIAgentRCACompletePayload) GetResponseData() IncidentResponseData {
+	return s.ResponseData
+}
+
+// GetTotalPromptTokens returns the value of TotalPromptTokens.
+func (s *AIAgentRCACompletePayload) GetTotalPromptTokens() OptInt {
+	return s.TotalPromptTokens
+}
+
+// GetTotalCompletionTokens returns the value of TotalCompletionTokens.
+func (s *AIAgentRCACompletePayload) GetTotalCompletionTokens() OptInt {
+	return s.TotalCompletionTokens
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentRCACompletePayload) SetEventType(val AIAgentRCACompletePayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentRCACompletePayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetIncidentID sets the value of IncidentID.
+func (s *AIAgentRCACompletePayload) SetIncidentID(val string) {
+	s.IncidentID = val
+}
+
+// SetResponseData sets the value of ResponseData.
+func (s *AIAgentRCACompletePayload) SetResponseData(val IncidentResponseData) {
+	s.ResponseData = val
+}
+
+// SetTotalPromptTokens sets the value of TotalPromptTokens.
+func (s *AIAgentRCACompletePayload) SetTotalPromptTokens(val OptInt) {
+	s.TotalPromptTokens = val
+}
+
+// SetTotalCompletionTokens sets the value of TotalCompletionTokens.
+func (s *AIAgentRCACompletePayload) SetTotalCompletionTokens(val OptInt) {
+	s.TotalCompletionTokens = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentRCACompletePayloadEventType string
+
+const (
+	AIAgentRCACompletePayloadEventTypeAiagentRcaComplete AIAgentRCACompletePayloadEventType = "aiagent.rca.complete"
+)
+
+// AllValues returns all AIAgentRCACompletePayloadEventType values.
+func (AIAgentRCACompletePayloadEventType) AllValues() []AIAgentRCACompletePayloadEventType {
+	return []AIAgentRCACompletePayloadEventType{
+		AIAgentRCACompletePayloadEventTypeAiagentRcaComplete,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentRCACompletePayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentRCACompletePayloadEventTypeAiagentRcaComplete:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentRCACompletePayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentRCACompletePayloadEventType(data) {
+	case AIAgentRCACompletePayloadEventTypeAiagentRcaComplete:
+		*s = AIAgentRCACompletePayloadEventTypeAiagentRcaComplete
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // AI Agent response failure event payload (aiagent.response.failed) - Emitted when an investigation
 // fails (DD-AUDIT-005, SOC2 CC8.1).
 // Ref: #/components/schemas/AIAgentResponseFailedPayload
@@ -2775,6 +2888,7 @@ type AuditEventEventData struct {
 	NotificationMessageAcknowledgedPayload NotificationMessageAcknowledgedPayload
 	NotificationMessageEscalatedPayload    NotificationMessageEscalatedPayload
 	AIAgentResponsePayload                 AIAgentResponsePayload
+	AIAgentRCACompletePayload              AIAgentRCACompletePayload
 	AIAgentResponseFailedPayload           AIAgentResponseFailedPayload
 	AIAgentEnrichmentCompletedPayload      AIAgentEnrichmentCompletedPayload
 	AIAgentEnrichmentFailedPayload         AIAgentEnrichmentFailedPayload
@@ -2854,6 +2968,7 @@ const (
 	NotificationMessageAcknowledgedPayloadAuditEventEventData                        AuditEventEventDataType = "notification.message.acknowledged"
 	NotificationMessageEscalatedPayloadAuditEventEventData                           AuditEventEventDataType = "notification.message.escalated"
 	AIAgentResponsePayloadAuditEventEventData                                        AuditEventEventDataType = "aiagent.response.complete"
+	AIAgentRCACompletePayloadAuditEventEventData                                     AuditEventEventDataType = "aiagent.rca.complete"
 	AIAgentResponseFailedPayloadAuditEventEventData                                  AuditEventEventDataType = "aiagent.response.failed"
 	AIAgentEnrichmentCompletedPayloadAuditEventEventData                             AuditEventEventDataType = "aiagent.enrichment.completed"
 	AIAgentEnrichmentFailedPayloadAuditEventEventData                                AuditEventEventDataType = "aiagent.enrichment.failed"
@@ -3034,6 +3149,11 @@ func (s AuditEventEventData) IsNotificationMessageEscalatedPayload() bool {
 // IsAIAgentResponsePayload reports whether AuditEventEventData is AIAgentResponsePayload.
 func (s AuditEventEventData) IsAIAgentResponsePayload() bool {
 	return s.Type == AIAgentResponsePayloadAuditEventEventData
+}
+
+// IsAIAgentRCACompletePayload reports whether AuditEventEventData is AIAgentRCACompletePayload.
+func (s AuditEventEventData) IsAIAgentRCACompletePayload() bool {
+	return s.Type == AIAgentRCACompletePayloadAuditEventEventData
 }
 
 // IsAIAgentResponseFailedPayload reports whether AuditEventEventData is AIAgentResponseFailedPayload.
@@ -3860,6 +3980,27 @@ func (s AuditEventEventData) GetAIAgentResponsePayload() (v AIAgentResponsePaylo
 func NewAIAgentResponsePayloadAuditEventEventData(v AIAgentResponsePayload) AuditEventEventData {
 	var s AuditEventEventData
 	s.SetAIAgentResponsePayload(v)
+	return s
+}
+
+// SetAIAgentRCACompletePayload sets AuditEventEventData to AIAgentRCACompletePayload.
+func (s *AuditEventEventData) SetAIAgentRCACompletePayload(v AIAgentRCACompletePayload) {
+	s.Type = AIAgentRCACompletePayloadAuditEventEventData
+	s.AIAgentRCACompletePayload = v
+}
+
+// GetAIAgentRCACompletePayload returns AIAgentRCACompletePayload and true boolean if AuditEventEventData is AIAgentRCACompletePayload.
+func (s AuditEventEventData) GetAIAgentRCACompletePayload() (v AIAgentRCACompletePayload, ok bool) {
+	if !s.IsAIAgentRCACompletePayload() {
+		return v, false
+	}
+	return s.AIAgentRCACompletePayload, true
+}
+
+// NewAIAgentRCACompletePayloadAuditEventEventData returns new AuditEventEventData from AIAgentRCACompletePayload.
+func NewAIAgentRCACompletePayloadAuditEventEventData(v AIAgentRCACompletePayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentRCACompletePayload(v)
 	return s
 }
 
@@ -4722,6 +4863,7 @@ type AuditEventRequestEventData struct {
 	NotificationMessageAcknowledgedPayload NotificationMessageAcknowledgedPayload
 	NotificationMessageEscalatedPayload    NotificationMessageEscalatedPayload
 	AIAgentResponsePayload                 AIAgentResponsePayload
+	AIAgentRCACompletePayload              AIAgentRCACompletePayload
 	AIAgentResponseFailedPayload           AIAgentResponseFailedPayload
 	AIAgentEnrichmentCompletedPayload      AIAgentEnrichmentCompletedPayload
 	AIAgentEnrichmentFailedPayload         AIAgentEnrichmentFailedPayload
@@ -4801,6 +4943,7 @@ const (
 	NotificationMessageAcknowledgedPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "notification.message.acknowledged"
 	NotificationMessageEscalatedPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "notification.message.escalated"
 	AIAgentResponsePayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "aiagent.response.complete"
+	AIAgentRCACompletePayloadAuditEventRequestEventData                                            AuditEventRequestEventDataType = "aiagent.rca.complete"
 	AIAgentResponseFailedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "aiagent.response.failed"
 	AIAgentEnrichmentCompletedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "aiagent.enrichment.completed"
 	AIAgentEnrichmentFailedPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "aiagent.enrichment.failed"
@@ -4981,6 +5124,11 @@ func (s AuditEventRequestEventData) IsNotificationMessageEscalatedPayload() bool
 // IsAIAgentResponsePayload reports whether AuditEventRequestEventData is AIAgentResponsePayload.
 func (s AuditEventRequestEventData) IsAIAgentResponsePayload() bool {
 	return s.Type == AIAgentResponsePayloadAuditEventRequestEventData
+}
+
+// IsAIAgentRCACompletePayload reports whether AuditEventRequestEventData is AIAgentRCACompletePayload.
+func (s AuditEventRequestEventData) IsAIAgentRCACompletePayload() bool {
+	return s.Type == AIAgentRCACompletePayloadAuditEventRequestEventData
 }
 
 // IsAIAgentResponseFailedPayload reports whether AuditEventRequestEventData is AIAgentResponseFailedPayload.
@@ -5807,6 +5955,27 @@ func (s AuditEventRequestEventData) GetAIAgentResponsePayload() (v AIAgentRespon
 func NewAIAgentResponsePayloadAuditEventRequestEventData(v AIAgentResponsePayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetAIAgentResponsePayload(v)
+	return s
+}
+
+// SetAIAgentRCACompletePayload sets AuditEventRequestEventData to AIAgentRCACompletePayload.
+func (s *AuditEventRequestEventData) SetAIAgentRCACompletePayload(v AIAgentRCACompletePayload) {
+	s.Type = AIAgentRCACompletePayloadAuditEventRequestEventData
+	s.AIAgentRCACompletePayload = v
+}
+
+// GetAIAgentRCACompletePayload returns AIAgentRCACompletePayload and true boolean if AuditEventRequestEventData is AIAgentRCACompletePayload.
+func (s AuditEventRequestEventData) GetAIAgentRCACompletePayload() (v AIAgentRCACompletePayload, ok bool) {
+	if !s.IsAIAgentRCACompletePayload() {
+		return v, false
+	}
+	return s.AIAgentRCACompletePayload, true
+}
+
+// NewAIAgentRCACompletePayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentRCACompletePayload.
+func NewAIAgentRCACompletePayloadAuditEventRequestEventData(v AIAgentRCACompletePayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentRCACompletePayload(v)
 	return s
 }
 
