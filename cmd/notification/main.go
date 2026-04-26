@@ -410,7 +410,8 @@ func main() {
 	// Resolves workflow UUIDs to human-readable names in notification bodies
 	// before delivery. Uses the DataStorage catalog API.
 	// ========================================
-	dsBaseTransport, err := sharedtls.DefaultBaseTransport()
+	// Issue #853: Wrapped with RetryTransport for transient failure resilience.
+	dsBaseTransport, err := sharedtls.DefaultBaseTransportWithRetry()
 	if err != nil {
 		logger.Error(err, "Failed to create TLS-aware base transport for DS enrichment client")
 		os.Exit(1)

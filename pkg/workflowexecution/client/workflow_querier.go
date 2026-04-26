@@ -120,7 +120,8 @@ func NewOgenWorkflowQuerierFromConfig(baseURL string, timeout time.Duration) (*O
 		timeout = 10 * time.Second
 	}
 
-	baseTransport, err := sharedtls.DefaultBaseTransport()
+	// Issue #853: Wrapped with RetryTransport for transient failure resilience.
+	baseTransport, err := sharedtls.DefaultBaseTransportWithRetry()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base transport: %w", err)
 	}
