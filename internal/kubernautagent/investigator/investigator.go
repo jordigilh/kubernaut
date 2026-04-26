@@ -274,7 +274,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	inv.pipeline.AnomalyDetector.Reset()
 
-	p1Ctx := buildPhase1Context(rcaResult)
+	p1Ctx := BuildPhase1Context(rcaResult)
 
 	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, tokens, correlationID, client, modelName)
 	if err != nil {
@@ -285,7 +285,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		workflowResult.RCASummary = rcaResult.RCASummary
 	}
 
-	mergePhase1Fallbacks(workflowResult, p1Ctx)
+	MergePhase1Fallbacks(workflowResult, p1Ctx)
 
 	backfillSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
@@ -1176,13 +1176,13 @@ func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katyp
 	for k, v := range tokens.AuditData() {
 		completeEvent.Data[k] = v
 	}
-	if b, err := json.Marshal(resultToAuditJSON(result)); err == nil {
+	if b, err := json.Marshal(ResultToAuditJSON(result)); err == nil {
 		completeEvent.Data["response_data"] = string(b)
 	}
 	audit.StoreBestEffort(ctx, inv.auditStore, completeEvent, inv.logger)
 }
 
-func resultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
+func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	m := map[string]interface{}{
 		"rca_summary":        r.RCASummary,
 		"severity":           r.Severity,
@@ -1271,9 +1271,9 @@ func toolErrorJSON(msg string) string {
 	return string(b)
 }
 
-// buildPhase1Context extracts structured assessment fields from the Phase 1
+// BuildPhase1Context extracts structured assessment fields from the Phase 1
 // InvestigationResult for propagation into Phase 3 (HAPI parity: #715).
-func buildPhase1Context(rcaResult *katypes.InvestigationResult) *prompt.Phase1Data {
+func BuildPhase1Context(rcaResult *katypes.InvestigationResult) *prompt.Phase1Data {
 	if rcaResult == nil {
 		return nil
 	}
@@ -1288,13 +1288,15 @@ func buildPhase1Context(rcaResult *katypes.InvestigationResult) *prompt.Phase1Da
 		InvestigationOutcome:  rcaResult.InvestigationOutcome,
 		Confidence:            rcaResult.Confidence,
 		InvestigationAnalysis: rcaResult.InvestigationAnalysis,
+		CausalChain:           rcaResult.CausalChain,
+		DueDiligence:          rcaResult.DueDiligence,
 	}
 }
 
-// mergePhase1Fallbacks applies Phase 1 assessment fields to the Phase 3 result
+// MergePhase1Fallbacks applies Phase 1 assessment fields to the Phase 3 result
 // when Phase 3 did not produce them. Matches HAPI's result.setdefault() pattern:
 // Phase 3 values always take precedence; Phase 1 fills in gaps only.
-func mergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1Data) {
+func MergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1Data) {
 	if result == nil || p1 == nil {
 		return
 	}
@@ -1318,6 +1320,12 @@ func mergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 			result.HumanReviewNeeded = false
 			result.HumanReviewReason = ""
 		}
+	}
+	if len(result.CausalChain) == 0 && len(p1.CausalChain) > 0 {
+		result.CausalChain = p1.CausalChain
+	}
+	if result.DueDiligence == nil && p1.DueDiligence != nil {
+		result.DueDiligence = p1.DueDiligence
 	}
 }
 
