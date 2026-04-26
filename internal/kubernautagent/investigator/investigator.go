@@ -1377,26 +1377,6 @@ func emitToSink(ctx context.Context, eventType string, turn int, phase string, d
 	}
 }
 
-// chatOrStream calls StreamChat when an event sink is active (observer connected),
-// emitting token-level deltas for real-time streaming. Falls back to Chat when
-// no observer is watching (autonomous mode, v1.4 parity). This preserves the
-// non-streaming path for autonomous investigations while giving SSE subscribers
-// incremental text deltas.
-func chatOrStream(ctx context.Context, client llm.Client, req llm.ChatRequest, turn int, phase string) (llm.ChatResponse, error) {
-	sink := session.EventSinkFromContext(ctx)
-	if sink == nil {
-		return client.Chat(ctx, req)
-	}
-	return client.StreamChat(ctx, req, func(ev llm.ChatStreamEvent) error {
-		if ev.Delta != "" {
-			emitToSink(ctx, session.EventTypeTokenDelta, turn, phase, map[string]interface{}{
-				"token": ev.Delta,
-			})
-		}
-		return nil
-	})
-}
-
 // emitCancellationAudit emits an investigation-level cancellation event
 // carrying the phase and turn at which cancellation was detected. The context
 // may already be cancelled so we use context.Background() for the audit store

@@ -48,5 +48,4 @@ const (
 	EventTypeError          = "error"
 	EventTypeComplete       = "complete"
 	EventTypeCancelled      = "cancelled"
-	EventTypeTokenDelta     = "token_delta"
 )
