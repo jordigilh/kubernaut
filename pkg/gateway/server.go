@@ -176,6 +176,11 @@ type Server struct {
 	// Production: always non-nil (K8sAuthenticator + K8sAuthorizer)
 	authMiddleware *auth.Middleware
 
+	// BR-GATEWAY-185 / Issue #852: Informer cache sync gate
+	// Zero-value (false) = fail-closed: readiness rejects until WaitForCacheSync completes.
+	// Set to true ONLY after cache.WaitForCacheSync succeeds in production startup.
+	cacheReady atomic.Bool
+
 	// Graceful shutdown flag
 	// When true, readiness probe returns 503 (not ready)
 	// This ensures Kubernetes removes pod from Service endpoints BEFORE
@@ -198,6 +203,43 @@ func (s *Server) LivenessHandler() http.HandlerFunc {
 // dedicated health server (Issue #753: port 8081, /readyz).
 func (s *Server) ReadinessHandler() http.HandlerFunc {
 	return s.readinessHandler
+}
+
+// MarkCacheReady signals that the informer cache has completed initial sync.
+// Call this ONCE from production startup after cache.WaitForCacheSync succeeds.
+// The readiness handler returns 503 until this is called (fail-closed design).
+func (s *Server) MarkCacheReady() {
+	s.cacheReady.Store(true)
+	s.logger.Info("Informer cache sync complete, readiness probe unblocked")
+}
+
+// SetCacheReadyForTesting allows tests to control the cache-ready state.
+// Production code must use MarkCacheReady instead.
+func (s *Server) SetCacheReadyForTesting(ready bool) {
+	s.cacheReady.Store(ready)
+}
+
+// SetShuttingDownForTesting allows tests to control the shutdown state.
+func (s *Server) SetShuttingDownForTesting(shuttingDown bool) {
+	s.isShuttingDown.Store(shuttingDown)
+}
+
+// NewMinimalServerForReadinessTest creates a lightweight Server suitable for
+// readiness handler unit tests. If apiReaders are provided, the first is used
+// as the apiReader for the K8s connectivity check; otherwise the K8s check
+// will panic (acceptable for tests that return before reaching it).
+func NewMinimalServerForReadinessTest(logger logr.Logger, apiReaders ...client.Reader) *Server {
+	return &Server{
+		logger:    logger,
+		apiReader: firstReader(apiReaders),
+	}
+}
+
+func firstReader(readers []client.Reader) client.Reader {
+	if len(readers) > 0 {
+		return readers[0]
+	}
+	return nil
 }
 
 // NewServer creates a new Gateway server with default metrics registry
@@ -324,6 +366,10 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		metricsInstance:     metricsInstance,
 		logger:              logger,
 	}
+
+	// Issue #852: Mark cache as ready in test constructor. Real production startup
+	// calls MarkCacheReady() after WaitForCacheSync; tests bypass cache startup.
+	server.cacheReady.Store(true)
 
 	// Create CRD creator with retry observer wired to server audit emission
 	// BR-GATEWAY-058: retryAuditObserver emits gateway.crd.failed per retry attempt
@@ -652,6 +698,10 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		metricsInstance:     metricsInstance,
 		logger:              logger,
 	}
+
+	// Issue #852: Mark cache as ready. createServerWithClients is only reached after
+	// WaitForCacheSync succeeds (production) or with direct K8s client (tests).
+	server.cacheReady.Store(true)
 
 	// Create CRD creator with retry observer wired to server audit emission
 	// BR-GATEWAY-058: retryAuditObserver emits gateway.crd.failed per retry attempt
@@ -1487,71 +1537,60 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 // Industry best practice: Google SRE, Netflix, Kubernetes community
 // See: READINESS_PROBE_SHUTDOWN_ANALYSIS.md
 func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
-	// GRACEFUL SHUTDOWN: Return 503 immediately when shutting down
-	// This ensures Kubernetes removes pod from Service endpoints BEFORE
-	// we stop accepting new connections via httpServer.Shutdown()
-	//
-	// WHY: Prevents race condition between readiness probe and listener closure
-	// BENEFIT: Guaranteed endpoint removal before in-flight request completion
-	//
-	// RFC 7807: Use standard Problem Details format for structured error response
+	// Shutdown takes highest priority — Kubernetes must remove pod from
+	// Service endpoints BEFORE httpServer.Shutdown closes the listener.
 	if s.isShuttingDown.Load() {
-		s.logger.Info("Readiness check failed: server is shutting down")
-
-		// Use RFC 7807 Problem Details format for structured error response
-		w.Header().Set("Content-Type", "application/problem+json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-
-		errorResponse := gwerrors.RFC7807Error{
-			Type:     gwerrors.ErrorTypeServiceUnavailable,
-			Title:    gwerrors.TitleServiceUnavailable,
-			Detail:   "Server is shutting down gracefully",
-			Status:   http.StatusServiceUnavailable,
-			Instance: r.URL.Path,
-		}
-
-		if encErr := json.NewEncoder(w).Encode(errorResponse); encErr != nil {
-			s.logger.Error(encErr, "Failed to encode readiness error response")
-		}
+		s.writeReadinessUnavailable(w, r, "server is shutting down",
+			"Server is shutting down gracefully")
 		return
 	}
 
-	// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
-	// Only check Kubernetes API connectivity
+	// BR-GATEWAY-185 / Issue #852: Gate on informer cache sync.
+	// Prevents stale-data responses during startup or cache resync.
+	if !s.cacheReady.Load() {
+		s.writeReadinessUnavailable(w, r, "informer cache not synced",
+			"Informer cache has not completed initial sync")
+		return
+	}
+
+	// K8s API connectivity check (ADR-057: uses apiReader to bypass restricted cache).
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	// Check Kubernetes API connectivity by listing namespaces
-	// ADR-057: Use apiReader (uncached) — ctrlClient's cache only watches RemediationRequest
-	// in controllerNS; List(NamespaceList) may fail when served from restricted cache.
 	reader := s.apiReader
 	if reader == nil {
 		reader = s.ctrlClient
 	}
 	namespaceList := &corev1.NamespaceList{}
 	if err := reader.List(ctx, namespaceList, client.Limit(1)); err != nil {
-		s.logger.Info("Readiness check failed: Kubernetes API not reachable", "error", err)
-
-		w.Header().Set("Content-Type", "application/problem+json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-
-		errorResponse := gwerrors.RFC7807Error{
-			Type:     gwerrors.ErrorTypeServiceUnavailable,
-			Title:    gwerrors.TitleServiceUnavailable,
-			Detail:   "Kubernetes API is not reachable",
-			Status:   http.StatusServiceUnavailable,
-			Instance: r.URL.Path,
-		}
-
-		if encErr := json.NewEncoder(w).Encode(errorResponse); encErr != nil {
-			s.logger.Error(encErr, "Failed to encode readiness error response")
-		}
+		s.writeReadinessUnavailable(w, r, "Kubernetes API not reachable",
+			"Kubernetes API is not reachable")
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ready"}); err != nil {
 		s.logger.Error(err, "Failed to encode readiness response")
+	}
+}
+
+// writeReadinessUnavailable writes a 503 RFC 7807 response for the readiness probe.
+// logReason appears in the structured log; detail appears in the response body.
+func (s *Server) writeReadinessUnavailable(w http.ResponseWriter, r *http.Request, logReason, detail string) {
+	s.logger.Info("Readiness check failed: "+logReason)
+
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+
+	resp := gwerrors.RFC7807Error{
+		Type:     gwerrors.ErrorTypeServiceUnavailable,
+		Title:    gwerrors.TitleServiceUnavailable,
+		Detail:   detail,
+		Status:   http.StatusServiceUnavailable,
+		Instance: r.URL.Path,
+	}
+	if encErr := json.NewEncoder(w).Encode(resp); encErr != nil {
+		s.logger.Error(encErr, "Failed to encode readiness error response")
 	}
 }
 

@@ -464,7 +464,8 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger *slog.Logger) *
 		return nil
 	}
 
-	dsBase, tlsErr := sharedtls.DefaultBaseTransport()
+	// Issue #853: Wrapped with RetryTransport for transient failure resilience.
+	dsBase, tlsErr := sharedtls.DefaultBaseTransportWithRetry()
 	if tlsErr != nil {
 		logger.Error("failed to create TLS-aware transport for DS client", "error", tlsErr)
 		return nil
@@ -659,11 +660,21 @@ func buildToolRegistry(cfg *kaconfig.Config, logger *slog.Logger, infra *k8sInfr
 	}
 
 	if cfg.Tools.Prometheus.URL != "" {
-		promClient, promErr := promtools.NewClient(promtools.ClientConfig{
+		promCfg := promtools.ClientConfig{
 			URL:       cfg.Tools.Prometheus.URL,
 			Timeout:   cfg.Tools.Prometheus.Timeout,
 			SizeLimit: cfg.Tools.Prometheus.SizeLimit,
-		})
+		}
+		if cfg.Tools.Prometheus.TLSCaFile != "" {
+			promBase, promTLSErr := sharedtls.NewTLSTransport(cfg.Tools.Prometheus.TLSCaFile)
+			if promTLSErr != nil {
+				logger.Error("failed to create Prometheus TLS transport", "error", promTLSErr, "ca_file", cfg.Tools.Prometheus.TLSCaFile)
+			} else {
+				promCfg.Transport = auth.NewServiceAccountTransportWithBase(promBase)
+				logger.Info("Prometheus client configured with TLS + SA bearer auth", "ca_file", cfg.Tools.Prometheus.TLSCaFile)
+			}
+		}
+		promClient, promErr := promtools.NewClient(promCfg)
 		if promErr != nil {
 			logger.Error("failed to create Prometheus client", "error", promErr)
 		} else {

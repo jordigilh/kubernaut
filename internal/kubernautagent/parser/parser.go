@@ -234,13 +234,15 @@ type llmAlternative struct {
 }
 
 type llmRCA struct {
-	Summary               string        `json:"summary"`
-	Severity              string        `json:"severity,omitempty"`
-	SignalName            string        `json:"signal_name,omitempty"`
-	ContributingFactors   []string      `json:"contributing_factors,omitempty"`
-	RemediationTarget     *llmRemTarget `json:"remediation_target,omitempty"`
-	RemediationTargetAlt  *llmRemTarget `json:"remediationTarget,omitempty"`
-	InvestigationAnalysis string        `json:"investigation_analysis,omitempty"`
+	Summary               string                      `json:"summary"`
+	Severity              string                      `json:"severity,omitempty"`
+	SignalName            string                      `json:"signal_name,omitempty"`
+	ContributingFactors   []string                    `json:"contributing_factors,omitempty"`
+	RemediationTarget     *llmRemTarget               `json:"remediation_target,omitempty"`
+	RemediationTargetAlt  *llmRemTarget               `json:"remediationTarget,omitempty"`
+	InvestigationAnalysis string                      `json:"investigation_analysis,omitempty"`
+	CausalChain           []string                    `json:"causal_chain,omitempty"`
+	DueDiligence          *katypes.DueDiligenceReview `json:"due_diligence,omitempty"`
 }
 
 func (r *llmRCA) resolvedTarget() *llmRemTarget {
@@ -417,6 +419,8 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 		result.SignalName = rca.SignalName
 		result.ContributingFactors = rca.ContributingFactors
 		result.InvestigationAnalysis = rca.InvestigationAnalysis
+		result.CausalChain = rca.CausalChain
+		result.DueDiligence = rca.DueDiligence
 		if t := rca.resolvedTarget(); t != nil {
 			result.RemediationTarget = katypes.RemediationTarget{
 				Kind:      t.Kind,

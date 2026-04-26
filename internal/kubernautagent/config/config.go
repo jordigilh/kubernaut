@@ -119,6 +119,7 @@ type PrometheusToolConfig struct {
 	URL       string        `yaml:"url"`
 	Timeout   time.Duration `yaml:"timeout"`
 	SizeLimit int           `yaml:"size_limit"`
+	TLSCaFile string        `yaml:"tls_ca_file"`
 }
 
 type SanitizationConfig struct {
@@ -278,7 +279,7 @@ func DefaultConfig() *Config {
 		Investigator: InvestigatorConfig{MaxTurns: 15},
 		Audit:        AuditConfig{Enabled: true},
 		Anomaly: AnomalyConfig{
-			MaxToolCallsPerTool: 5,
+			MaxToolCallsPerTool: 10,
 			MaxTotalToolCalls:   30,
 			MaxRepeatedFailures: 3,
 			ExemptPrefixes:      []string{"todo_"},
