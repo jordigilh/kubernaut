@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 )
 
 // CAReloader is an http.RoundTripper that supports hot-reloading of the TLS
@@ -132,6 +133,7 @@ func buildCertPool(pemData []byte) (*x509.CertPool, error) {
 // Issue #748: Applies the process-wide SecurityProfile when set (OCP deployments).
 func buildCATransport(pool *x509.CertPool) *http.Transport {
 	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.IdleConnTimeout = 15 * time.Second // Issue #853: prevents stale connection reuse after pod rescheduling
 	t.TLSClientConfig = &tls.Config{
 		RootCAs:    pool,
 		MinVersion: tls.VersionTLS12,

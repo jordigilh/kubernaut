@@ -205,4 +205,37 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 			Expect(cfg.Enabled()).To(BeFalse())
 		})
 	})
+
+	// Issue #853: IdleConnTimeout reduction from 90s to 15s
+	Describe("IdleConnTimeout (#853)", func() {
+		It("UT-RT-853-011: DefaultBaseTransport returns IdleConnTimeout=15s (non-TLS)", func() {
+			os.Unsetenv("TLS_CA_FILE")
+			sharedtls.ResetDefaultTransportForTesting()
+
+			rt, err := sharedtls.DefaultBaseTransport()
+			Expect(err).ToNot(HaveOccurred())
+
+			plainTransport, ok := rt.(*http.Transport)
+			Expect(ok).To(BeTrue(), "non-TLS path must return *http.Transport")
+			Expect(plainTransport.IdleConnTimeout).To(Equal(15*time.Second),
+				"Issue #853: IdleConnTimeout must be 15s to prevent stale connection reuse after pod rescheduling")
+		})
+	})
+
+	Describe("DefaultBaseTransportWithRetry (#853)", func() {
+		It("UT-RT-853-016: wraps DefaultBaseTransport with RetryTransport", func() {
+			os.Unsetenv("TLS_CA_FILE")
+			sharedtls.ResetDefaultTransportForTesting()
+
+			rt, err := sharedtls.DefaultBaseTransportWithRetry()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rt).ToNot(BeNil(), "must return a non-nil RoundTripper")
+
+			// The returned transport should NOT be a plain *http.Transport
+			// (it should be wrapped by RetryTransport)
+			_, isPlain := rt.(*http.Transport)
+			Expect(isPlain).To(BeFalse(),
+				"DefaultBaseTransportWithRetry must wrap with RetryTransport, not return plain transport")
+		})
+	})
 })

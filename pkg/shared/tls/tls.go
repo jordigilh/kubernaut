@@ -32,6 +32,7 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	"github.com/jordigilh/kubernaut/pkg/shared/transport"
 )
 
 // TLSConfig holds TLS configuration shared across services.
@@ -132,7 +133,7 @@ func DefaultBaseTransport() (http.RoundTripper, error) {
 		return &http.Transport{
 			MaxIdleConns:        100,
 			MaxIdleConnsPerHost: 100,
-			IdleConnTimeout:     90 * time.Second,
+			IdleConnTimeout:     15 * time.Second, // Issue #853: reduced from 90s — prevents stale connection reuse after pod rescheduling
 		}, nil
 	}
 
@@ -149,6 +150,23 @@ func DefaultBaseTransport() (http.RoundTripper, error) {
 	}
 	caReloaderInstance = instance
 	return instance, nil
+}
+
+// DefaultBaseTransportWithRetry returns DefaultBaseTransport wrapped with a
+// RetryTransport using default retry configuration (3 attempts, exponential
+// backoff with 20% jitter). Use this for inter-service HTTP clients that
+// should survive transient failures (connection reset, 502/503/504).
+//
+// IMPORTANT: Do NOT use for the audit client — it has its own application-level
+// retry in BufferedAuditStore.writeBatchWithRetry (DD-AUDIT-003).
+//
+// Issue #853: Inter-service HTTP clients lack retry/circuit-breaker.
+func DefaultBaseTransportWithRetry() (http.RoundTripper, error) {
+	base, err := DefaultBaseTransport()
+	if err != nil {
+		return nil, err
+	}
+	return transport.NewRetryTransport(base, transport.DefaultRetryConfig()), nil
 }
 
 // ResetDefaultTransportForTesting resets the singleton CAReloader so that
