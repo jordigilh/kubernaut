@@ -898,7 +898,7 @@ To:
 ### Security Considerations
 
 - **Tampered cursors**: LLM may craft arbitrary cursor values. `DecodeCursor` validates and clamps (offset >= 0, 0 < limit <= 100). DS `ParsePagination` provides a second layer of clamping.
-- **DoS via large offsets**: Capped by anomaly detector's `MaxToolCallsPerTool` (default 5), limiting practical max offset to 50 items. Catalog data is small (10 action types, ~10s of workflows per type).
+- **DoS via large offsets**: Capped by anomaly detector's `MaxTotalToolCalls` (default 30). Pagination calls (`list_workflows`, `list_available_actions` with a `cursor` argument) are exempt from the per-tool budget (`MaxToolCallsPerTool`, default 10) but still count against the total budget (#860). Catalog data is small (10 action types, ~10s of workflows per type).
 - **Cursor opacity**: Base64 is encoding, not encryption. Cursor contents are not secret — the trust boundary is server-side validation, not encoding.
 
 ---

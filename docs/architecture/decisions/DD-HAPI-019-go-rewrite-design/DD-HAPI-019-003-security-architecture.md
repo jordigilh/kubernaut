@@ -222,7 +222,7 @@ Phase transitions are controlled by the investigator loop based on conversation 
 
 ```go
 type AnomalyDetector struct {
-    maxToolCallsPerTool int           // default: 5
+    maxToolCallsPerTool int           // default: 10 (raised from 5 per #860 for pagination)
     maxTotalToolCalls   int           // default: 30
     maxRepeatedFailures int           // default: 3
     suspiciousPatterns  []*regexp.Regexp
@@ -236,7 +236,7 @@ func (d *AnomalyDetector) RecordFailure(name string, args json.RawMessage) (Anom
 
 | Anomaly | Default Threshold | Response |
 |---|---|---|
-| Per-tool call limit exceeded | 5 calls per tool | Abort, flag human review |
+| Per-tool call limit exceeded | 10 calls per tool (pagination-exempt, #860) | Abort, flag human review |
 | Total tool calls exceeded | 30 calls per investigation | Abort, flag human review |
 | Repeated identical failures | 3 same-args failures | Abort, flag human review |
 | Suspicious argument patterns | Regex match | Log warning, optionally reject |
