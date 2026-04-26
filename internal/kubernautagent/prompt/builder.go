@@ -26,6 +26,7 @@ import (
 	"text/template"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
+	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 )
 
 //go:embed templates/*.tmpl
@@ -137,6 +138,8 @@ type Phase1Data struct {
 	InvestigationOutcome  string
 	Confidence            float64
 	InvestigationAnalysis string
+	CausalChain           []string
+	DueDiligence          *katypes.DueDiligenceReview
 }
 
 // BuilderOption configures prompt builder behaviour.
