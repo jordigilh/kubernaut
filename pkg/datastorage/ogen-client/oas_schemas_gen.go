@@ -313,6 +313,119 @@ func (s *AIAgentEnrichmentFailedPayloadEventType) UnmarshalText(data []byte) err
 	}
 }
 
+// AI Agent Phase 1 RCA completion event payload (aiagent.rca.complete). Emitted immediately after
+// runRCA returns, before Phase 3 workflow selection. Captures causal_chain and due_diligence for
+// forensic investigation and model capability comparison (Issue.
+// Ref: #/components/schemas/AIAgentRCACompletePayload
+type AIAgentRCACompletePayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentRCACompletePayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Incident correlation ID from request.
+	IncidentID   string               `json:"incident_id"`
+	ResponseData IncidentResponseData `json:"response_data"`
+	// Prompt tokens consumed during Phase 1 RCA.
+	TotalPromptTokens OptInt `json:"total_prompt_tokens"`
+	// Completion tokens consumed during Phase 1 RCA.
+	TotalCompletionTokens OptInt `json:"total_completion_tokens"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentRCACompletePayload) GetEventType() AIAgentRCACompletePayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentRCACompletePayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetIncidentID returns the value of IncidentID.
+func (s *AIAgentRCACompletePayload) GetIncidentID() string {
+	return s.IncidentID
+}
+
+// GetResponseData returns the value of ResponseData.
+func (s *AIAgentRCACompletePayload) GetResponseData() IncidentResponseData {
+	return s.ResponseData
+}
+
+// GetTotalPromptTokens returns the value of TotalPromptTokens.
+func (s *AIAgentRCACompletePayload) GetTotalPromptTokens() OptInt {
+	return s.TotalPromptTokens
+}
+
+// GetTotalCompletionTokens returns the value of TotalCompletionTokens.
+func (s *AIAgentRCACompletePayload) GetTotalCompletionTokens() OptInt {
+	return s.TotalCompletionTokens
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentRCACompletePayload) SetEventType(val AIAgentRCACompletePayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentRCACompletePayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetIncidentID sets the value of IncidentID.
+func (s *AIAgentRCACompletePayload) SetIncidentID(val string) {
+	s.IncidentID = val
+}
+
+// SetResponseData sets the value of ResponseData.
+func (s *AIAgentRCACompletePayload) SetResponseData(val IncidentResponseData) {
+	s.ResponseData = val
+}
+
+// SetTotalPromptTokens sets the value of TotalPromptTokens.
+func (s *AIAgentRCACompletePayload) SetTotalPromptTokens(val OptInt) {
+	s.TotalPromptTokens = val
+}
+
+// SetTotalCompletionTokens sets the value of TotalCompletionTokens.
+func (s *AIAgentRCACompletePayload) SetTotalCompletionTokens(val OptInt) {
+	s.TotalCompletionTokens = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentRCACompletePayloadEventType string
+
+const (
+	AIAgentRCACompletePayloadEventTypeAiagentRcaComplete AIAgentRCACompletePayloadEventType = "aiagent.rca.complete"
+)
+
+// AllValues returns all AIAgentRCACompletePayloadEventType values.
+func (AIAgentRCACompletePayloadEventType) AllValues() []AIAgentRCACompletePayloadEventType {
+	return []AIAgentRCACompletePayloadEventType{
+		AIAgentRCACompletePayloadEventTypeAiagentRcaComplete,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentRCACompletePayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentRCACompletePayloadEventTypeAiagentRcaComplete:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentRCACompletePayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentRCACompletePayloadEventType(data) {
+	case AIAgentRCACompletePayloadEventTypeAiagentRcaComplete:
+		*s = AIAgentRCACompletePayloadEventTypeAiagentRcaComplete
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // AI Agent response failure event payload (aiagent.response.failed) - Emitted when an investigation
 // fails (DD-AUDIT-005, SOC2 CC8.1).
 // Ref: #/components/schemas/AIAgentResponseFailedPayload
@@ -897,16 +1010,18 @@ func (s *AIAnalysisAuditPayloadEventType) UnmarshalText(data []byte) error {
 type AIAnalysisAuditPayloadPhase string
 
 const (
-	AIAnalysisAuditPayloadPhasePending   AIAnalysisAuditPayloadPhase = "Pending"
-	AIAnalysisAuditPayloadPhaseAnalyzing AIAnalysisAuditPayloadPhase = "Analyzing"
-	AIAnalysisAuditPayloadPhaseCompleted AIAnalysisAuditPayloadPhase = "Completed"
-	AIAnalysisAuditPayloadPhaseFailed    AIAnalysisAuditPayloadPhase = "Failed"
+	AIAnalysisAuditPayloadPhasePending       AIAnalysisAuditPayloadPhase = "Pending"
+	AIAnalysisAuditPayloadPhaseInvestigating AIAnalysisAuditPayloadPhase = "Investigating"
+	AIAnalysisAuditPayloadPhaseAnalyzing     AIAnalysisAuditPayloadPhase = "Analyzing"
+	AIAnalysisAuditPayloadPhaseCompleted     AIAnalysisAuditPayloadPhase = "Completed"
+	AIAnalysisAuditPayloadPhaseFailed        AIAnalysisAuditPayloadPhase = "Failed"
 )
 
 // AllValues returns all AIAnalysisAuditPayloadPhase values.
 func (AIAnalysisAuditPayloadPhase) AllValues() []AIAnalysisAuditPayloadPhase {
 	return []AIAnalysisAuditPayloadPhase{
 		AIAnalysisAuditPayloadPhasePending,
+		AIAnalysisAuditPayloadPhaseInvestigating,
 		AIAnalysisAuditPayloadPhaseAnalyzing,
 		AIAnalysisAuditPayloadPhaseCompleted,
 		AIAnalysisAuditPayloadPhaseFailed,
@@ -917,6 +1032,8 @@ func (AIAnalysisAuditPayloadPhase) AllValues() []AIAnalysisAuditPayloadPhase {
 func (s AIAnalysisAuditPayloadPhase) MarshalText() ([]byte, error) {
 	switch s {
 	case AIAnalysisAuditPayloadPhasePending:
+		return []byte(s), nil
+	case AIAnalysisAuditPayloadPhaseInvestigating:
 		return []byte(s), nil
 	case AIAnalysisAuditPayloadPhaseAnalyzing:
 		return []byte(s), nil
@@ -934,6 +1051,9 @@ func (s *AIAnalysisAuditPayloadPhase) UnmarshalText(data []byte) error {
 	switch AIAnalysisAuditPayloadPhase(data) {
 	case AIAnalysisAuditPayloadPhasePending:
 		*s = AIAnalysisAuditPayloadPhasePending
+		return nil
+	case AIAnalysisAuditPayloadPhaseInvestigating:
+		*s = AIAnalysisAuditPayloadPhaseInvestigating
 		return nil
 	case AIAnalysisAuditPayloadPhaseAnalyzing:
 		*s = AIAnalysisAuditPayloadPhaseAnalyzing
@@ -2768,6 +2888,7 @@ type AuditEventEventData struct {
 	NotificationMessageAcknowledgedPayload NotificationMessageAcknowledgedPayload
 	NotificationMessageEscalatedPayload    NotificationMessageEscalatedPayload
 	AIAgentResponsePayload                 AIAgentResponsePayload
+	AIAgentRCACompletePayload              AIAgentRCACompletePayload
 	AIAgentResponseFailedPayload           AIAgentResponseFailedPayload
 	AIAgentEnrichmentCompletedPayload      AIAgentEnrichmentCompletedPayload
 	AIAgentEnrichmentFailedPayload         AIAgentEnrichmentFailedPayload
@@ -2847,6 +2968,7 @@ const (
 	NotificationMessageAcknowledgedPayloadAuditEventEventData                        AuditEventEventDataType = "notification.message.acknowledged"
 	NotificationMessageEscalatedPayloadAuditEventEventData                           AuditEventEventDataType = "notification.message.escalated"
 	AIAgentResponsePayloadAuditEventEventData                                        AuditEventEventDataType = "aiagent.response.complete"
+	AIAgentRCACompletePayloadAuditEventEventData                                     AuditEventEventDataType = "aiagent.rca.complete"
 	AIAgentResponseFailedPayloadAuditEventEventData                                  AuditEventEventDataType = "aiagent.response.failed"
 	AIAgentEnrichmentCompletedPayloadAuditEventEventData                             AuditEventEventDataType = "aiagent.enrichment.completed"
 	AIAgentEnrichmentFailedPayloadAuditEventEventData                                AuditEventEventDataType = "aiagent.enrichment.failed"
@@ -3027,6 +3149,11 @@ func (s AuditEventEventData) IsNotificationMessageEscalatedPayload() bool {
 // IsAIAgentResponsePayload reports whether AuditEventEventData is AIAgentResponsePayload.
 func (s AuditEventEventData) IsAIAgentResponsePayload() bool {
 	return s.Type == AIAgentResponsePayloadAuditEventEventData
+}
+
+// IsAIAgentRCACompletePayload reports whether AuditEventEventData is AIAgentRCACompletePayload.
+func (s AuditEventEventData) IsAIAgentRCACompletePayload() bool {
+	return s.Type == AIAgentRCACompletePayloadAuditEventEventData
 }
 
 // IsAIAgentResponseFailedPayload reports whether AuditEventEventData is AIAgentResponseFailedPayload.
@@ -3853,6 +3980,27 @@ func (s AuditEventEventData) GetAIAgentResponsePayload() (v AIAgentResponsePaylo
 func NewAIAgentResponsePayloadAuditEventEventData(v AIAgentResponsePayload) AuditEventEventData {
 	var s AuditEventEventData
 	s.SetAIAgentResponsePayload(v)
+	return s
+}
+
+// SetAIAgentRCACompletePayload sets AuditEventEventData to AIAgentRCACompletePayload.
+func (s *AuditEventEventData) SetAIAgentRCACompletePayload(v AIAgentRCACompletePayload) {
+	s.Type = AIAgentRCACompletePayloadAuditEventEventData
+	s.AIAgentRCACompletePayload = v
+}
+
+// GetAIAgentRCACompletePayload returns AIAgentRCACompletePayload and true boolean if AuditEventEventData is AIAgentRCACompletePayload.
+func (s AuditEventEventData) GetAIAgentRCACompletePayload() (v AIAgentRCACompletePayload, ok bool) {
+	if !s.IsAIAgentRCACompletePayload() {
+		return v, false
+	}
+	return s.AIAgentRCACompletePayload, true
+}
+
+// NewAIAgentRCACompletePayloadAuditEventEventData returns new AuditEventEventData from AIAgentRCACompletePayload.
+func NewAIAgentRCACompletePayloadAuditEventEventData(v AIAgentRCACompletePayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentRCACompletePayload(v)
 	return s
 }
 
@@ -4715,6 +4863,7 @@ type AuditEventRequestEventData struct {
 	NotificationMessageAcknowledgedPayload NotificationMessageAcknowledgedPayload
 	NotificationMessageEscalatedPayload    NotificationMessageEscalatedPayload
 	AIAgentResponsePayload                 AIAgentResponsePayload
+	AIAgentRCACompletePayload              AIAgentRCACompletePayload
 	AIAgentResponseFailedPayload           AIAgentResponseFailedPayload
 	AIAgentEnrichmentCompletedPayload      AIAgentEnrichmentCompletedPayload
 	AIAgentEnrichmentFailedPayload         AIAgentEnrichmentFailedPayload
@@ -4794,6 +4943,7 @@ const (
 	NotificationMessageAcknowledgedPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "notification.message.acknowledged"
 	NotificationMessageEscalatedPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "notification.message.escalated"
 	AIAgentResponsePayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "aiagent.response.complete"
+	AIAgentRCACompletePayloadAuditEventRequestEventData                                            AuditEventRequestEventDataType = "aiagent.rca.complete"
 	AIAgentResponseFailedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "aiagent.response.failed"
 	AIAgentEnrichmentCompletedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "aiagent.enrichment.completed"
 	AIAgentEnrichmentFailedPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "aiagent.enrichment.failed"
@@ -4974,6 +5124,11 @@ func (s AuditEventRequestEventData) IsNotificationMessageEscalatedPayload() bool
 // IsAIAgentResponsePayload reports whether AuditEventRequestEventData is AIAgentResponsePayload.
 func (s AuditEventRequestEventData) IsAIAgentResponsePayload() bool {
 	return s.Type == AIAgentResponsePayloadAuditEventRequestEventData
+}
+
+// IsAIAgentRCACompletePayload reports whether AuditEventRequestEventData is AIAgentRCACompletePayload.
+func (s AuditEventRequestEventData) IsAIAgentRCACompletePayload() bool {
+	return s.Type == AIAgentRCACompletePayloadAuditEventRequestEventData
 }
 
 // IsAIAgentResponseFailedPayload reports whether AuditEventRequestEventData is AIAgentResponseFailedPayload.
@@ -5800,6 +5955,27 @@ func (s AuditEventRequestEventData) GetAIAgentResponsePayload() (v AIAgentRespon
 func NewAIAgentResponsePayloadAuditEventRequestEventData(v AIAgentResponsePayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetAIAgentResponsePayload(v)
+	return s
+}
+
+// SetAIAgentRCACompletePayload sets AuditEventRequestEventData to AIAgentRCACompletePayload.
+func (s *AuditEventRequestEventData) SetAIAgentRCACompletePayload(v AIAgentRCACompletePayload) {
+	s.Type = AIAgentRCACompletePayloadAuditEventRequestEventData
+	s.AIAgentRCACompletePayload = v
+}
+
+// GetAIAgentRCACompletePayload returns AIAgentRCACompletePayload and true boolean if AuditEventRequestEventData is AIAgentRCACompletePayload.
+func (s AuditEventRequestEventData) GetAIAgentRCACompletePayload() (v AIAgentRCACompletePayload, ok bool) {
+	if !s.IsAIAgentRCACompletePayload() {
+		return v, false
+	}
+	return s.AIAgentRCACompletePayload, true
+}
+
+// NewAIAgentRCACompletePayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentRCACompletePayload.
+func NewAIAgentRCACompletePayloadAuditEventRequestEventData(v AIAgentRCACompletePayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentRCACompletePayload(v)
 	return s
 }
 
@@ -9718,6 +9894,11 @@ type IncidentResponseDataRootCauseAnalysis struct {
 	ContributingFactors []string `json:"contributingFactors"`
 	// Target resource for remediation (kind/name/namespace from KA investigation).
 	RemediationTarget OptIncidentResponseDataRootCauseAnalysisRemediationTarget `json:"remediationTarget"`
+	// Five whys causal chain from signal to root cause. Each entry is one step tracing from the observed
+	// symptom to the deepest identifiable cause.
+	CausalChain []string `json:"causalChain"`
+	// Adversarial self-review across 8 dimensions (Issue.
+	DueDiligence OptIncidentResponseDataRootCauseAnalysisDueDiligence `json:"dueDiligence"`
 }
 
 // GetSummary returns the value of Summary.
@@ -9740,6 +9921,16 @@ func (s *IncidentResponseDataRootCauseAnalysis) GetRemediationTarget() OptIncide
 	return s.RemediationTarget
 }
 
+// GetCausalChain returns the value of CausalChain.
+func (s *IncidentResponseDataRootCauseAnalysis) GetCausalChain() []string {
+	return s.CausalChain
+}
+
+// GetDueDiligence returns the value of DueDiligence.
+func (s *IncidentResponseDataRootCauseAnalysis) GetDueDiligence() OptIncidentResponseDataRootCauseAnalysisDueDiligence {
+	return s.DueDiligence
+}
+
 // SetSummary sets the value of Summary.
 func (s *IncidentResponseDataRootCauseAnalysis) SetSummary(val string) {
 	s.Summary = val
@@ -9758,6 +9949,116 @@ func (s *IncidentResponseDataRootCauseAnalysis) SetContributingFactors(val []str
 // SetRemediationTarget sets the value of RemediationTarget.
 func (s *IncidentResponseDataRootCauseAnalysis) SetRemediationTarget(val OptIncidentResponseDataRootCauseAnalysisRemediationTarget) {
 	s.RemediationTarget = val
+}
+
+// SetCausalChain sets the value of CausalChain.
+func (s *IncidentResponseDataRootCauseAnalysis) SetCausalChain(val []string) {
+	s.CausalChain = val
+}
+
+// SetDueDiligence sets the value of DueDiligence.
+func (s *IncidentResponseDataRootCauseAnalysis) SetDueDiligence(val OptIncidentResponseDataRootCauseAnalysisDueDiligence) {
+	s.DueDiligence = val
+}
+
+// Adversarial self-review across 8 dimensions (Issue.
+type IncidentResponseDataRootCauseAnalysisDueDiligence struct {
+	// Assessment of causal chain depth and completeness.
+	CausalCompleteness OptString `json:"causalCompleteness"`
+	// Justification that remediation target is the root cause, not the symptom reporter.
+	TargetAccuracy OptString `json:"targetAccuracy"`
+	// Which claims are backed by tool evidence vs assumptions.
+	EvidenceSufficiency OptString `json:"evidenceSufficiency"`
+	// Alternative root causes considered and ruled out.
+	AlternativeHypotheses OptString `json:"alternativeHypotheses"`
+	// Assessment of investigation coverage across all relevant resources.
+	ScopeCompleteness OptString `json:"scopeCompleteness"`
+	// Whether remediation target matches the problem scope.
+	Proportionality OptString `json:"proportionality"`
+	// Assessment against previously failed remediations.
+	RegressionAwareness OptString `json:"regressionAwareness"`
+	// Breakdown of factors that reduced confidence from 1.0.
+	ConfidenceCalibration OptString `json:"confidenceCalibration"`
+}
+
+// GetCausalCompleteness returns the value of CausalCompleteness.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetCausalCompleteness() OptString {
+	return s.CausalCompleteness
+}
+
+// GetTargetAccuracy returns the value of TargetAccuracy.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetTargetAccuracy() OptString {
+	return s.TargetAccuracy
+}
+
+// GetEvidenceSufficiency returns the value of EvidenceSufficiency.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetEvidenceSufficiency() OptString {
+	return s.EvidenceSufficiency
+}
+
+// GetAlternativeHypotheses returns the value of AlternativeHypotheses.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetAlternativeHypotheses() OptString {
+	return s.AlternativeHypotheses
+}
+
+// GetScopeCompleteness returns the value of ScopeCompleteness.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetScopeCompleteness() OptString {
+	return s.ScopeCompleteness
+}
+
+// GetProportionality returns the value of Proportionality.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetProportionality() OptString {
+	return s.Proportionality
+}
+
+// GetRegressionAwareness returns the value of RegressionAwareness.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetRegressionAwareness() OptString {
+	return s.RegressionAwareness
+}
+
+// GetConfidenceCalibration returns the value of ConfidenceCalibration.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) GetConfidenceCalibration() OptString {
+	return s.ConfidenceCalibration
+}
+
+// SetCausalCompleteness sets the value of CausalCompleteness.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetCausalCompleteness(val OptString) {
+	s.CausalCompleteness = val
+}
+
+// SetTargetAccuracy sets the value of TargetAccuracy.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetTargetAccuracy(val OptString) {
+	s.TargetAccuracy = val
+}
+
+// SetEvidenceSufficiency sets the value of EvidenceSufficiency.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetEvidenceSufficiency(val OptString) {
+	s.EvidenceSufficiency = val
+}
+
+// SetAlternativeHypotheses sets the value of AlternativeHypotheses.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetAlternativeHypotheses(val OptString) {
+	s.AlternativeHypotheses = val
+}
+
+// SetScopeCompleteness sets the value of ScopeCompleteness.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetScopeCompleteness(val OptString) {
+	s.ScopeCompleteness = val
+}
+
+// SetProportionality sets the value of Proportionality.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetProportionality(val OptString) {
+	s.Proportionality = val
+}
+
+// SetRegressionAwareness sets the value of RegressionAwareness.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetRegressionAwareness(val OptString) {
+	s.RegressionAwareness = val
+}
+
+// SetConfidenceCalibration sets the value of ConfidenceCalibration.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) SetConfidenceCalibration(val OptString) {
+	s.ConfidenceCalibration = val
 }
 
 // Target resource for remediation (kind/name/namespace from KA investigation).
@@ -13629,6 +13930,52 @@ func (o OptIncidentResponseDataHumanReviewReason) Get() (v IncidentResponseDataH
 
 // Or returns value if set, or given parameter if does not.
 func (o OptIncidentResponseDataHumanReviewReason) Or(d IncidentResponseDataHumanReviewReason) IncidentResponseDataHumanReviewReason {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptIncidentResponseDataRootCauseAnalysisDueDiligence returns new OptIncidentResponseDataRootCauseAnalysisDueDiligence with value set to v.
+func NewOptIncidentResponseDataRootCauseAnalysisDueDiligence(v IncidentResponseDataRootCauseAnalysisDueDiligence) OptIncidentResponseDataRootCauseAnalysisDueDiligence {
+	return OptIncidentResponseDataRootCauseAnalysisDueDiligence{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptIncidentResponseDataRootCauseAnalysisDueDiligence is optional IncidentResponseDataRootCauseAnalysisDueDiligence.
+type OptIncidentResponseDataRootCauseAnalysisDueDiligence struct {
+	Value IncidentResponseDataRootCauseAnalysisDueDiligence
+	Set   bool
+}
+
+// IsSet returns true if OptIncidentResponseDataRootCauseAnalysisDueDiligence was set.
+func (o OptIncidentResponseDataRootCauseAnalysisDueDiligence) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptIncidentResponseDataRootCauseAnalysisDueDiligence) Reset() {
+	var v IncidentResponseDataRootCauseAnalysisDueDiligence
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptIncidentResponseDataRootCauseAnalysisDueDiligence) SetTo(v IncidentResponseDataRootCauseAnalysisDueDiligence) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptIncidentResponseDataRootCauseAnalysisDueDiligence) Get() (v IncidentResponseDataRootCauseAnalysisDueDiligence, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptIncidentResponseDataRootCauseAnalysisDueDiligence) Or(d IncidentResponseDataRootCauseAnalysisDueDiligence) IncidentResponseDataRootCauseAnalysisDueDiligence {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -17825,12 +18172,14 @@ func (s *RemediationHistoryEntry) SetAssessedAt(val OptDateTime) {
 type RemediationHistoryEntryAssessmentReason string
 
 const (
-	RemediationHistoryEntryAssessmentReasonFull            RemediationHistoryEntryAssessmentReason = "Full"
-	RemediationHistoryEntryAssessmentReasonPartial         RemediationHistoryEntryAssessmentReason = "Partial"
-	RemediationHistoryEntryAssessmentReasonSpecDrift       RemediationHistoryEntryAssessmentReason = "SpecDrift"
-	RemediationHistoryEntryAssessmentReasonExpired         RemediationHistoryEntryAssessmentReason = "Expired"
-	RemediationHistoryEntryAssessmentReasonNoExecution     RemediationHistoryEntryAssessmentReason = "NoExecution"
-	RemediationHistoryEntryAssessmentReasonMetricsTimedOut RemediationHistoryEntryAssessmentReason = "MetricsTimedOut"
+	RemediationHistoryEntryAssessmentReasonFull              RemediationHistoryEntryAssessmentReason = "Full"
+	RemediationHistoryEntryAssessmentReasonPartial           RemediationHistoryEntryAssessmentReason = "Partial"
+	RemediationHistoryEntryAssessmentReasonSpecDrift         RemediationHistoryEntryAssessmentReason = "SpecDrift"
+	RemediationHistoryEntryAssessmentReasonExpired           RemediationHistoryEntryAssessmentReason = "Expired"
+	RemediationHistoryEntryAssessmentReasonNoExecution       RemediationHistoryEntryAssessmentReason = "NoExecution"
+	RemediationHistoryEntryAssessmentReasonMetricsTimedOut   RemediationHistoryEntryAssessmentReason = "MetricsTimedOut"
+	RemediationHistoryEntryAssessmentReasonAlertDecayTimeout RemediationHistoryEntryAssessmentReason = "AlertDecayTimeout"
+	RemediationHistoryEntryAssessmentReasonUnrecoverable     RemediationHistoryEntryAssessmentReason = "Unrecoverable"
 )
 
 // AllValues returns all RemediationHistoryEntryAssessmentReason values.
@@ -17842,6 +18191,8 @@ func (RemediationHistoryEntryAssessmentReason) AllValues() []RemediationHistoryE
 		RemediationHistoryEntryAssessmentReasonExpired,
 		RemediationHistoryEntryAssessmentReasonNoExecution,
 		RemediationHistoryEntryAssessmentReasonMetricsTimedOut,
+		RemediationHistoryEntryAssessmentReasonAlertDecayTimeout,
+		RemediationHistoryEntryAssessmentReasonUnrecoverable,
 	}
 }
 
@@ -17859,6 +18210,10 @@ func (s RemediationHistoryEntryAssessmentReason) MarshalText() ([]byte, error) {
 	case RemediationHistoryEntryAssessmentReasonNoExecution:
 		return []byte(s), nil
 	case RemediationHistoryEntryAssessmentReasonMetricsTimedOut:
+		return []byte(s), nil
+	case RemediationHistoryEntryAssessmentReasonAlertDecayTimeout:
+		return []byte(s), nil
+	case RemediationHistoryEntryAssessmentReasonUnrecoverable:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -17885,6 +18240,12 @@ func (s *RemediationHistoryEntryAssessmentReason) UnmarshalText(data []byte) err
 		return nil
 	case RemediationHistoryEntryAssessmentReasonMetricsTimedOut:
 		*s = RemediationHistoryEntryAssessmentReasonMetricsTimedOut
+		return nil
+	case RemediationHistoryEntryAssessmentReasonAlertDecayTimeout:
+		*s = RemediationHistoryEntryAssessmentReasonAlertDecayTimeout
+		return nil
+	case RemediationHistoryEntryAssessmentReasonUnrecoverable:
+		*s = RemediationHistoryEntryAssessmentReasonUnrecoverable
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -18065,12 +18426,14 @@ func (s *RemediationHistorySummary) SetCompletedAt(val time.Time) {
 type RemediationHistorySummaryAssessmentReason string
 
 const (
-	RemediationHistorySummaryAssessmentReasonFull            RemediationHistorySummaryAssessmentReason = "Full"
-	RemediationHistorySummaryAssessmentReasonPartial         RemediationHistorySummaryAssessmentReason = "Partial"
-	RemediationHistorySummaryAssessmentReasonSpecDrift       RemediationHistorySummaryAssessmentReason = "SpecDrift"
-	RemediationHistorySummaryAssessmentReasonExpired         RemediationHistorySummaryAssessmentReason = "Expired"
-	RemediationHistorySummaryAssessmentReasonNoExecution     RemediationHistorySummaryAssessmentReason = "NoExecution"
-	RemediationHistorySummaryAssessmentReasonMetricsTimedOut RemediationHistorySummaryAssessmentReason = "MetricsTimedOut"
+	RemediationHistorySummaryAssessmentReasonFull              RemediationHistorySummaryAssessmentReason = "Full"
+	RemediationHistorySummaryAssessmentReasonPartial           RemediationHistorySummaryAssessmentReason = "Partial"
+	RemediationHistorySummaryAssessmentReasonSpecDrift         RemediationHistorySummaryAssessmentReason = "SpecDrift"
+	RemediationHistorySummaryAssessmentReasonExpired           RemediationHistorySummaryAssessmentReason = "Expired"
+	RemediationHistorySummaryAssessmentReasonNoExecution       RemediationHistorySummaryAssessmentReason = "NoExecution"
+	RemediationHistorySummaryAssessmentReasonMetricsTimedOut   RemediationHistorySummaryAssessmentReason = "MetricsTimedOut"
+	RemediationHistorySummaryAssessmentReasonAlertDecayTimeout RemediationHistorySummaryAssessmentReason = "AlertDecayTimeout"
+	RemediationHistorySummaryAssessmentReasonUnrecoverable     RemediationHistorySummaryAssessmentReason = "Unrecoverable"
 )
 
 // AllValues returns all RemediationHistorySummaryAssessmentReason values.
@@ -18082,6 +18445,8 @@ func (RemediationHistorySummaryAssessmentReason) AllValues() []RemediationHistor
 		RemediationHistorySummaryAssessmentReasonExpired,
 		RemediationHistorySummaryAssessmentReasonNoExecution,
 		RemediationHistorySummaryAssessmentReasonMetricsTimedOut,
+		RemediationHistorySummaryAssessmentReasonAlertDecayTimeout,
+		RemediationHistorySummaryAssessmentReasonUnrecoverable,
 	}
 }
 
@@ -18099,6 +18464,10 @@ func (s RemediationHistorySummaryAssessmentReason) MarshalText() ([]byte, error)
 	case RemediationHistorySummaryAssessmentReasonNoExecution:
 		return []byte(s), nil
 	case RemediationHistorySummaryAssessmentReasonMetricsTimedOut:
+		return []byte(s), nil
+	case RemediationHistorySummaryAssessmentReasonAlertDecayTimeout:
+		return []byte(s), nil
+	case RemediationHistorySummaryAssessmentReasonUnrecoverable:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -18125,6 +18494,12 @@ func (s *RemediationHistorySummaryAssessmentReason) UnmarshalText(data []byte) e
 		return nil
 	case RemediationHistorySummaryAssessmentReasonMetricsTimedOut:
 		*s = RemediationHistorySummaryAssessmentReasonMetricsTimedOut
+		return nil
+	case RemediationHistorySummaryAssessmentReasonAlertDecayTimeout:
+		*s = RemediationHistorySummaryAssessmentReasonAlertDecayTimeout
+		return nil
+	case RemediationHistorySummaryAssessmentReasonUnrecoverable:
+		*s = RemediationHistorySummaryAssessmentReasonUnrecoverable
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -19814,6 +20189,8 @@ type RemediationWorkflowStatus string
 
 const (
 	RemediationWorkflowStatusActive     RemediationWorkflowStatus = "Active"
+	RemediationWorkflowStatusInvalid    RemediationWorkflowStatus = "Invalid"
+	RemediationWorkflowStatusPending    RemediationWorkflowStatus = "Pending"
 	RemediationWorkflowStatusDisabled   RemediationWorkflowStatus = "Disabled"
 	RemediationWorkflowStatusDeprecated RemediationWorkflowStatus = "Deprecated"
 	RemediationWorkflowStatusArchived   RemediationWorkflowStatus = "Archived"
@@ -19824,6 +20201,8 @@ const (
 func (RemediationWorkflowStatus) AllValues() []RemediationWorkflowStatus {
 	return []RemediationWorkflowStatus{
 		RemediationWorkflowStatusActive,
+		RemediationWorkflowStatusInvalid,
+		RemediationWorkflowStatusPending,
 		RemediationWorkflowStatusDisabled,
 		RemediationWorkflowStatusDeprecated,
 		RemediationWorkflowStatusArchived,
@@ -19835,6 +20214,10 @@ func (RemediationWorkflowStatus) AllValues() []RemediationWorkflowStatus {
 func (s RemediationWorkflowStatus) MarshalText() ([]byte, error) {
 	switch s {
 	case RemediationWorkflowStatusActive:
+		return []byte(s), nil
+	case RemediationWorkflowStatusInvalid:
+		return []byte(s), nil
+	case RemediationWorkflowStatusPending:
 		return []byte(s), nil
 	case RemediationWorkflowStatusDisabled:
 		return []byte(s), nil
@@ -19854,6 +20237,12 @@ func (s *RemediationWorkflowStatus) UnmarshalText(data []byte) error {
 	switch RemediationWorkflowStatus(data) {
 	case RemediationWorkflowStatusActive:
 		*s = RemediationWorkflowStatusActive
+		return nil
+	case RemediationWorkflowStatusInvalid:
+		*s = RemediationWorkflowStatusInvalid
+		return nil
+	case RemediationWorkflowStatusPending:
+		*s = RemediationWorkflowStatusPending
 		return nil
 	case RemediationWorkflowStatusDisabled:
 		*s = RemediationWorkflowStatusDisabled
@@ -21673,7 +22062,7 @@ type WorkflowDiscoveryEntry struct {
 	SchemaImage OptString `json:"schemaImage"`
 	// OCI execution bundle reference (digest-pinned).
 	ExecutionBundle OptString `json:"executionBundle"`
-	// Execution engine (tekton, job).
+	// Execution engine (tekton, job, ansible).
 	ExecutionEngine OptWorkflowDiscoveryEntryExecutionEngine `json:"executionEngine"`
 	// Per-workflow ServiceAccount name (DD-WE-005 v2.0). Omitted if not set.
 	ServiceAccountName OptString `json:"serviceAccountName"`
@@ -21779,12 +22168,13 @@ func (s *WorkflowDiscoveryEntry) SetServiceAccountName(val OptString) {
 	s.ServiceAccountName = val
 }
 
-// Execution engine (tekton, job).
+// Execution engine (tekton, job, ansible).
 type WorkflowDiscoveryEntryExecutionEngine string
 
 const (
-	WorkflowDiscoveryEntryExecutionEngineTekton WorkflowDiscoveryEntryExecutionEngine = "tekton"
-	WorkflowDiscoveryEntryExecutionEngineJob    WorkflowDiscoveryEntryExecutionEngine = "job"
+	WorkflowDiscoveryEntryExecutionEngineTekton  WorkflowDiscoveryEntryExecutionEngine = "tekton"
+	WorkflowDiscoveryEntryExecutionEngineJob     WorkflowDiscoveryEntryExecutionEngine = "job"
+	WorkflowDiscoveryEntryExecutionEngineAnsible WorkflowDiscoveryEntryExecutionEngine = "ansible"
 )
 
 // AllValues returns all WorkflowDiscoveryEntryExecutionEngine values.
@@ -21792,6 +22182,7 @@ func (WorkflowDiscoveryEntryExecutionEngine) AllValues() []WorkflowDiscoveryEntr
 	return []WorkflowDiscoveryEntryExecutionEngine{
 		WorkflowDiscoveryEntryExecutionEngineTekton,
 		WorkflowDiscoveryEntryExecutionEngineJob,
+		WorkflowDiscoveryEntryExecutionEngineAnsible,
 	}
 }
 
@@ -21801,6 +22192,8 @@ func (s WorkflowDiscoveryEntryExecutionEngine) MarshalText() ([]byte, error) {
 	case WorkflowDiscoveryEntryExecutionEngineTekton:
 		return []byte(s), nil
 	case WorkflowDiscoveryEntryExecutionEngineJob:
+		return []byte(s), nil
+	case WorkflowDiscoveryEntryExecutionEngineAnsible:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -21815,6 +22208,9 @@ func (s *WorkflowDiscoveryEntryExecutionEngine) UnmarshalText(data []byte) error
 		return nil
 	case WorkflowDiscoveryEntryExecutionEngineJob:
 		*s = WorkflowDiscoveryEntryExecutionEngineJob
+		return nil
+	case WorkflowDiscoveryEntryExecutionEngineAnsible:
+		*s = WorkflowDiscoveryEntryExecutionEngineAnsible
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -22136,6 +22532,7 @@ const (
 	WorkflowExecutionAuditPayloadFailureReasonConfigurationError WorkflowExecutionAuditPayloadFailureReason = "ConfigurationError"
 	WorkflowExecutionAuditPayloadFailureReasonResourceExhausted  WorkflowExecutionAuditPayloadFailureReason = "ResourceExhausted"
 	WorkflowExecutionAuditPayloadFailureReasonTaskFailed         WorkflowExecutionAuditPayloadFailureReason = "TaskFailed"
+	WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine  WorkflowExecutionAuditPayloadFailureReason = "UnsupportedEngine"
 	WorkflowExecutionAuditPayloadFailureReasonUnknown            WorkflowExecutionAuditPayloadFailureReason = "Unknown"
 )
 
@@ -22149,6 +22546,7 @@ func (WorkflowExecutionAuditPayloadFailureReason) AllValues() []WorkflowExecutio
 		WorkflowExecutionAuditPayloadFailureReasonConfigurationError,
 		WorkflowExecutionAuditPayloadFailureReasonResourceExhausted,
 		WorkflowExecutionAuditPayloadFailureReasonTaskFailed,
+		WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine,
 		WorkflowExecutionAuditPayloadFailureReasonUnknown,
 	}
 }
@@ -22169,6 +22567,8 @@ func (s WorkflowExecutionAuditPayloadFailureReason) MarshalText() ([]byte, error
 	case WorkflowExecutionAuditPayloadFailureReasonResourceExhausted:
 		return []byte(s), nil
 	case WorkflowExecutionAuditPayloadFailureReasonTaskFailed:
+		return []byte(s), nil
+	case WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine:
 		return []byte(s), nil
 	case WorkflowExecutionAuditPayloadFailureReasonUnknown:
 		return []byte(s), nil
@@ -22200,6 +22600,9 @@ func (s *WorkflowExecutionAuditPayloadFailureReason) UnmarshalText(data []byte) 
 		return nil
 	case WorkflowExecutionAuditPayloadFailureReasonTaskFailed:
 		*s = WorkflowExecutionAuditPayloadFailureReasonTaskFailed
+		return nil
+	case WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine:
+		*s = WorkflowExecutionAuditPayloadFailureReasonUnsupportedEngine
 		return nil
 	case WorkflowExecutionAuditPayloadFailureReasonUnknown:
 		*s = WorkflowExecutionAuditPayloadFailureReasonUnknown

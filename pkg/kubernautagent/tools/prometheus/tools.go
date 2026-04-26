@@ -57,7 +57,12 @@ var (
 	}`)
 	metricNamesSchema = json.RawMessage(`{
 		"type": "object",
-		"properties": {},
+		"properties": {
+			"match": {
+				"type": "string",
+				"description": "Optional PromQL series selector to filter metric names (e.g. {__name__=~\".*fs.*|.*disk.*\"}). If omitted, returns all metric names."
+			}
+		},
 		"additionalProperties": false
 	}`)
 	labelValuesSchema = json.RawMessage(`{
@@ -118,9 +123,19 @@ func NewAllTools(client *Client) []tools.Tool {
 				return c.doGet(ctx, "/api/v1/query_range", params)
 			},
 		},
-		&promTool{client: client, toolName: "get_metric_names", desc: "Get available metric names", schema: metricNamesSchema,
-			exec: func(ctx context.Context, c *Client, _ json.RawMessage) (string, error) {
-				return c.doGet(ctx, "/api/v1/label/__name__/values", nil)
+		&promTool{client: client, toolName: "get_metric_names", desc: "Get available metric names. Optionally filter by match[] selector (e.g. {__name__=~\".*fs.*\"}).", schema: metricNamesSchema,
+			exec: func(ctx context.Context, c *Client, args json.RawMessage) (string, error) {
+				var a struct {
+					Match string `json:"match"`
+				}
+				if len(args) > 0 {
+					_ = json.Unmarshal(args, &a)
+				}
+				var params url.Values
+				if a.Match != "" {
+					params = url.Values{"match[]": {a.Match}}
+				}
+				return c.doGet(ctx, "/api/v1/label/__name__/values", params)
 			},
 		},
 		&promTool{client: client, toolName: "get_label_values", desc: "Get values for a label", schema: labelValuesSchema,

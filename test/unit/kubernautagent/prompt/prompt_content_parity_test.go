@@ -41,7 +41,7 @@ var _ = Describe("Prompt Content Parity — TP-433-PARITY (#433)", func() {
 				ResourceName: "web-deploy",
 				ClusterName:  "us-east-1-prod",
 				Environment:  "production",
-			}, nil)
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).To(ContainSubstring("finance-prod"))
 			Expect(rendered).To(ContainSubstring("Deployment"))
@@ -51,28 +51,22 @@ var _ = Describe("Prompt Content Parity — TP-433-PARITY (#433)", func() {
 		})
 	})
 
-	Describe("UT-KA-433-PB-002: Detected labels section rendered when populated", func() {
-		It("should include detected labels in prompt when EnrichmentData.DetectedLabels is non-empty", func() {
+	Describe("UT-KA-433-PB-002: Investigation prompt excludes enrichment data", func() {
+		It("should NOT include detected labels in Phase 1 investigation prompt (enrichment is Phase 3 only)", func() {
 			builder, err := prompt.NewBuilder()
 			Expect(err).NotTo(HaveOccurred())
 
-			enrichData := &prompt.EnrichmentData{
-				DetectedLabels: map[string]string{
-					"gitOpsManaged": "true",
-					"hpaEnabled":    "true",
-					"pdbProtected":  "false",
-				},
-			}
 			rendered, err := builder.RenderInvestigation(prompt.SignalData{
 				Name:      "web-deploy-oom",
 				Namespace: "production",
 				Severity:  "critical",
 				Message:   "OOMKilled",
-			}, enrichData)
+			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rendered).To(ContainSubstring("Detected Labels"))
-			Expect(rendered).To(ContainSubstring("gitOpsManaged"))
-			Expect(rendered).To(ContainSubstring("hpaEnabled"))
+			Expect(rendered).NotTo(ContainSubstring("Detected Labels"),
+				"Investigation prompt must NOT include enrichment labels (Phase 3 only)")
+			Expect(rendered).NotTo(ContainSubstring("Owner Chain"),
+				"Investigation prompt must NOT include enrichment owner chain (Phase 3 only)")
 		})
 	})
 
@@ -87,7 +81,7 @@ var _ = Describe("Prompt Content Parity — TP-433-PARITY (#433)", func() {
 				Severity:   "warning",
 				Message:    "Memory exhaustion predicted in 2h",
 				SignalMode: "proactive",
-			}, nil)
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).To(ContainSubstring("Proactive Signal Mode"))
 			Expect(rendered).To(ContainSubstring("Anticipated Incident"))
@@ -124,7 +118,7 @@ var _ = Describe("Prompt Content Parity — TP-433-PARITY (#433)", func() {
 				Severity:   "critical",
 				Message:    "CrashLoopBackOff",
 				SignalMode: "reactive",
-			}, nil)
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).NotTo(ContainSubstring("Proactive Signal Mode"))
 			Expect(rendered).NotTo(ContainSubstring("Anticipated Incident"))
@@ -141,7 +135,7 @@ var _ = Describe("Prompt Content Parity — TP-433-PARITY (#433)", func() {
 				Namespace: "production",
 				Severity:  "critical",
 				Message:   "CrashLoopBackOff",
-			}, nil)
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).NotTo(ContainSubstring("Proactive Signal Mode"))
 			Expect(rendered).NotTo(ContainSubstring("Anticipated Incident"))
@@ -158,7 +152,7 @@ var _ = Describe("Prompt Content Parity — TP-433-PARITY (#433)", func() {
 				Namespace: "production",
 				Severity:  "critical",
 				Message:   "OOMKilled",
-			}, &prompt.EnrichmentData{})
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).NotTo(ContainSubstring("Detected Labels"))
 		})
@@ -172,9 +166,30 @@ var _ = Describe("Prompt Content Parity — TP-433-PARITY (#433)", func() {
 				Namespace: "production",
 				Severity:  "critical",
 				Message:   "OOMKilled",
-			}, nil)
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).NotTo(ContainSubstring("Detected Labels"))
+		})
+	})
+
+	Describe("UT-KA-851-003: Investigation prompt includes Prometheus guidance", func() {
+		It("should contain generic Prometheus discovery and query guidance", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			rendered, err := builder.RenderInvestigation(prompt.SignalData{
+				Name:      "DiskPressure",
+				Namespace: "production",
+				Severity:  "critical",
+				Message:   "Node disk pressure detected",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("Prometheus Investigation Guidance"),
+				"investigation prompt should include Prometheus guidance section")
+			Expect(rendered).To(ContainSubstring("topk"),
+				"Prometheus guidance should mention topk for cardinality control")
+			Expect(rendered).To(ContainSubstring("Truncation Awareness"),
+				"Prometheus guidance should warn about truncation")
 		})
 	})
 })

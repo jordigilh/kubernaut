@@ -98,9 +98,30 @@ const rcaResultSchemaJSON = `{
             "namespace": { "type": "string" }
           }
         },
-        "investigation_analysis": { "type": "string", "description": "Concise narrative summary of the investigation findings and reasoning (< 500 words). This field is consumed by the Phase 3 workflow selection LLM to provide investigation context." }
+        "investigation_analysis": { "type": "string", "description": "Concise narrative summary of the investigation findings and reasoning (< 500 words). This field is consumed by the Phase 3 workflow selection LLM to provide investigation context." },
+        "causal_chain": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 2,
+          "description": "Five whys causal chain from signal to root cause. Each entry is one why step tracing from the observed symptom to the deepest identifiable cause. Last entry is the root cause."
+        },
+        "due_diligence": {
+          "type": "object",
+          "description": "Adversarial self-review across 8 dimensions. Every field is mandatory.",
+          "properties": {
+            "causal_completeness": { "type": "string", "description": "Have you traced the full causal chain to the deepest reachable root cause? Could it be explained by a deeper cause?" },
+            "target_accuracy": { "type": "string", "description": "Is the remediation_target the resource whose configuration change fixes the problem, not just the symptom reporter?" },
+            "evidence_sufficiency": { "type": "string", "description": "Which claims are backed by tool evidence? Which are assumptions? What data sources were inaccessible?" },
+            "alternative_hypotheses": { "type": "string", "description": "What alternative root causes were considered and ruled out? What contradicting evidence was searched for?" },
+            "scope_completeness": { "type": "string", "description": "Were all resources, components, and data sources from the signal investigated? Any upstream/downstream gaps?" },
+            "proportionality": { "type": "string", "description": "Does the remediation target match the problem scope? If multiple contributors, why this one?" },
+            "regression_awareness": { "type": "string", "description": "Does this approach differ from previously failed remediations? N/A if no history available." },
+            "confidence_calibration": { "type": "string", "description": "How was confidence determined? List each factor that reduced it from 1.0." }
+          },
+          "required": ["causal_completeness", "target_accuracy", "evidence_sufficiency", "alternative_hypotheses", "scope_completeness", "proportionality", "regression_awareness", "confidence_calibration"]
+        }
       },
-      "required": ["summary"]
+      "required": ["summary", "causal_chain", "due_diligence"]
     },
     "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
