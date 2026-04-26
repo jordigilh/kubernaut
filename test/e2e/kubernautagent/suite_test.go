@@ -76,6 +76,10 @@ var (
 	// (e.g., RFC 7807 validation) that bypass the ogen client.
 	authHTTPClient *http.Client
 
+	// authHTTPClientB carries a DIFFERENT ServiceAccount token (kubernaut-agent-e2e-sa-2)
+	// for cross-user authorization tests (E2E-KA-AUTHZ-001).
+	authHTTPClientB *http.Client
+
 	anyTestFailed  bool
 	setupSucceeded bool
 	projectRoot    string
@@ -173,6 +177,25 @@ var _ = SynchronizedBeforeSuite(
 			Timeout:   30 * time.Second,
 		}
 
+		// E2E-KA-AUTHZ-001: Create a second ServiceAccount with KA API access
+		// for cross-user authorization testing. Uses the same Role (can call KA)
+		// but a different identity so object-level authz denies access to other
+		// users' sessions.
+		saNameB := "kubernaut-agent-e2e-sa-2"
+		err = infrastructure.CreateServiceAccount(ctx, sharedNamespace, kubeconfigPath, saNameB, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create second E2E ServiceAccount")
+
+		err = infrastructure.CreateKAE2EClientRBACForSA(ctx, sharedNamespace, kubeconfigPath, saNameB, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create RBAC for second E2E ServiceAccount")
+
+		saTokenB, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, saNameB, kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get second ServiceAccount token")
+
+		authHTTPClientB = &http.Client{
+			Transport: testauth.NewServiceAccountTransport(saTokenB),
+			Timeout:   30 * time.Second,
+		}
+
 		setupSucceeded = true
 		return []byte(kubeconfigPath)
 	},
@@ -215,6 +238,13 @@ var _ = SynchronizedBeforeSuite(
 
 		authHTTPClient = &http.Client{
 			Transport: testauth.NewServiceAccountTransport(saToken),
+			Timeout:   30 * time.Second,
+		}
+
+		saTokenB, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "kubernaut-agent-e2e-sa-2", kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get second ServiceAccount token")
+		authHTTPClientB = &http.Client{
+			Transport: testauth.NewServiceAccountTransport(saTokenB),
 			Timeout:   30 * time.Second,
 		}
 	},

@@ -39,9 +39,6 @@ import (
 //   - SSE streaming: GET /api/v1/incident/session/{id}/stream
 //   - Session cancellation: POST /api/v1/incident/session/{id}/cancel
 //
-// Features deferred (post v1.4 rebase):
-//   - Object-level authz: requires second ServiceAccount in suite_test.go
-//
 // Features intentionally skipped:
 //   - Rate limiting: exhausting the limiter poisons parallel tests (covered by IT-WIRE-02)
 //   - Graceful shutdown: not feasible in Kind cluster (covered by IT-WIRE-SIGTERM)
@@ -246,6 +243,80 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 			body, _ := io.ReadAll(cancelResp.Body)
 			Expect(cancelResp.StatusCode).To(Equal(http.StatusConflict),
 				"cancel on completed session should return 409, got body: %s", string(body))
+		})
+	})
+
+	// -----------------------------------------------------------------
+	// CROSS-USER AUTHORIZATION
+	// -----------------------------------------------------------------
+
+	Context("Cross-User Authorization", func() {
+
+		It("E2E-KA-AUTHZ-001: Different user cannot access another user's session", func() {
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "test-authz-001",
+				RemediationID:     "test-rem-authz-001",
+				SignalName:        "CrashLoopBackOff",
+				Severity:          agentclient.SeverityHigh,
+				SignalSource:      "kubernetes",
+				ResourceNamespace: "default",
+				ResourceKind:      "Pod",
+				ResourceName:      "authz-pod-001",
+				ErrorMessage:      "Container restarting",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
+			}
+
+			By("User A submits investigation")
+			sessionID, err := sessionClient.SubmitInvestigation(ctx, req)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Waiting for investigation to be active")
+			Eventually(func() string {
+				status, pollErr := sessionClient.PollSession(ctx, sessionID)
+				if pollErr != nil {
+					return "error"
+				}
+				return status.Status
+			}, 15*time.Second, 500*time.Millisecond).Should(
+				SatisfyAny(Equal("investigating"), Equal("completed")))
+
+			By("User B attempts to read session status — expects 404 (authz denial)")
+			statusReq, err := http.NewRequestWithContext(ctx, "GET",
+				fmt.Sprintf("%s/api/v1/incident/session/%s/status", kaURL, sessionID), nil)
+			Expect(err).ToNot(HaveOccurred())
+			statusResp, err := authHTTPClientB.Do(statusReq)
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = statusResp.Body.Close() }()
+			_, _ = io.ReadAll(statusResp.Body)
+			Expect(statusResp.StatusCode).To(Equal(http.StatusNotFound),
+				"cross-user session status should return 404")
+
+			By("User B attempts to cancel session — expects 404")
+			cancelReq, err := http.NewRequestWithContext(ctx, "POST",
+				fmt.Sprintf("%s/api/v1/incident/session/%s/cancel", kaURL, sessionID), nil)
+			Expect(err).ToNot(HaveOccurred())
+			cancelResp, err := authHTTPClientB.Do(cancelReq)
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = cancelResp.Body.Close() }()
+			_, _ = io.ReadAll(cancelResp.Body)
+			Expect(cancelResp.StatusCode).To(Equal(http.StatusNotFound),
+				"cross-user session cancel should return 404")
+
+			By("User B attempts to stream session — expects 404")
+			streamReq, err := http.NewRequestWithContext(ctx, "GET",
+				fmt.Sprintf("%s/api/v1/incident/session/%s/stream", kaURL, sessionID), nil)
+			Expect(err).ToNot(HaveOccurred())
+			streamReq.Header.Set("Accept", "text/event-stream")
+			streamResp, err := authHTTPClientB.Do(streamReq)
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = streamResp.Body.Close() }()
+			_, _ = io.ReadAll(streamResp.Body)
+			Expect(streamResp.StatusCode).To(Equal(http.StatusNotFound),
+				"cross-user session stream should return 404")
 		})
 	})
 })
