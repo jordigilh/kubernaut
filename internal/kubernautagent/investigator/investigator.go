@@ -216,6 +216,8 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		return nil, fmt.Errorf("RCA invocation: %w", err)
 	}
 
+	inv.emitRCAComplete(ctx, rcaResult, tokens, correlationID)
+
 	if rcaResult.HumanReviewNeeded {
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)
@@ -274,7 +276,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	inv.pipeline.AnomalyDetector.Reset()
 
-	p1Ctx := buildPhase1Context(rcaResult)
+	p1Ctx := BuildPhase1Context(rcaResult)
 
 	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, tokens, correlationID, client, modelName)
 	if err != nil {
@@ -288,7 +290,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		workflowResult.SignalName = rcaResult.SignalName
 	}
 
-	mergePhase1Fallbacks(workflowResult, p1Ctx)
+	MergePhase1Fallbacks(workflowResult, p1Ctx)
 
 	backfillSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
@@ -347,7 +349,7 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 }
 
 func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (*katypes.InvestigationResult, error) {
-	systemPrompt, err := inv.builder.RenderInvestigation(signalToPrompt(signal), enrichData)
+	systemPrompt, err := inv.builder.RenderInvestigation(signalToPrompt(signal))
 	if err != nil {
 		return nil, fmt.Errorf("rendering investigation prompt: %w", err)
 	}
@@ -392,6 +394,12 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 			RCASummary: content,
 		}, nil
 	}
+
+	// Same-kind sentinel validation gate (Issue #847): when the LLM's
+	// remediation_target.kind matches the signal's resource_kind, the LLM may
+	// be targeting the symptom reporter instead of the actual root cause.
+	// Inject a single correction message and re-run. Max 1 retry.
+	result = inv.sameKindValidationGate(ctx, result, signal, messages, tokens, correlationID, client, modelName)
 
 	// Defense-in-depth: RCA phase must never abort the pipeline via
 	// needs_human_review. Only max-turns exhaustion (above) is a valid RCA abort.
@@ -495,6 +503,122 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 		retryMessages = append(retryMessages, resp.Message)
 	}
 	return nil
+}
+
+// sameKindValidationGate checks whether the LLM's remediation_target.kind
+// matches the signal's resource_kind. When they match, the LLM may be targeting
+// the symptom reporter (e.g., Node) rather than the actual root cause (e.g.,
+// Deployment). This gate injects one correction message requesting the LLM to
+// re-evaluate its target. If the retry also returns the same kind, the result
+// is accepted as-is (the LLM explicitly confirmed its choice).
+// Issue #847 / DD-HAPI-847, Layer 3: Programmatic Sentinel Validation Gate.
+func (inv *Investigator) sameKindValidationGate(
+	ctx context.Context,
+	result *katypes.InvestigationResult,
+	signal katypes.SignalContext,
+	history []llm.Message,
+	tokens *TokenAccumulator,
+	correlationID string,
+	client llm.Client,
+	modelName string,
+) *katypes.InvestigationResult {
+	if signal.ResourceKind == "" || result.RemediationTarget.Kind == "" {
+		return result
+	}
+	if !strings.EqualFold(result.RemediationTarget.Kind, signal.ResourceKind) {
+		return result
+	}
+
+	inv.logger.Info("same-kind validation gate triggered: remediation_target.kind matches signal resource_kind",
+		slog.String("target_kind", result.RemediationTarget.Kind),
+		slog.String("signal_resource_kind", signal.ResourceKind),
+		slog.String("correlation_id", correlationID))
+
+	gateEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+	gateEvent.EventAction = "same_kind_validation_gate"
+	gateEvent.EventOutcome = audit.OutcomeSuccess
+	gateEvent.Data["signal_resource_kind"] = signal.ResourceKind
+	gateEvent.Data["target_kind"] = result.RemediationTarget.Kind
+	gateEvent.Data["target_name"] = result.RemediationTarget.Name
+	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.logger)
+
+	correctionMsg := fmt.Sprintf(
+		`Your remediation_target.kind is "%s", which is the same resource kind as the input signal. `+
+			`Signals often propagate upward: workload-level issues manifest as conditions on parent resources `+
+			`(e.g., pod memory leaks cause node DiskPressure, deployment misconfigurations appear as node conditions). `+
+			`Please re-evaluate: is a child resource (Deployment, StatefulSet, DaemonSet, Pod) the actual root cause `+
+			`whose configuration should be modified? If after re-evaluation you are confident the %s itself is the `+
+			`correct remediation target, confirm by resubmitting with the same target and explain why in your `+
+			`due_diligence.target_accuracy field.`,
+		result.RemediationTarget.Kind,
+		result.RemediationTarget.Kind,
+	)
+
+	submitOnlyTools := []llm.ToolDefinition{
+		{
+			Name:        SubmitResultToolName,
+			Description: "Submit root cause analysis result.",
+			Parameters:  parser.RCAResultSchema(),
+		},
+	}
+
+	retryMessages := make([]llm.Message, len(history))
+	copy(retryMessages, history)
+	retryMessages = append(retryMessages,
+		llm.Message{Role: "user", Content: correctionMsg},
+	)
+
+	resp, err := client.Chat(ctx, llm.ChatRequest{
+		Messages: retryMessages,
+		Tools:    submitOnlyTools,
+		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
+	})
+	if err != nil {
+		inv.logger.Warn("same-kind validation gate retry failed, keeping original result",
+			slog.String("error", err.Error()),
+			slog.String("correlation_id", correlationID))
+		return result
+	}
+	if tokens != nil {
+		tokens.Add(resp.Usage)
+	}
+
+	var retryContent string
+	for _, tc := range resp.ToolCalls {
+		if tc.Name == SubmitResultToolName {
+			retryContent = tc.Arguments
+			break
+		}
+	}
+	if retryContent == "" && resp.Message.Content != "" {
+		retryContent = resp.Message.Content
+	}
+	if retryContent == "" {
+		inv.logger.Warn("same-kind validation gate: no content in retry response, keeping original",
+			slog.String("correlation_id", correlationID))
+		return result
+	}
+
+	retryResult, parseErr := inv.resultParser.Parse(retryContent)
+	if parseErr != nil {
+		inv.logger.Warn("same-kind validation gate: retry parse failed, keeping original",
+			slog.String("error", parseErr.Error()),
+			slog.String("correlation_id", correlationID))
+		return result
+	}
+
+	if retryResult.RemediationTarget.Kind == "" && result.RemediationTarget.Kind != "" {
+		inv.logger.Warn("same-kind validation gate: retry lost remediation_target, keeping original",
+			slog.String("original_target", result.RemediationTarget.Kind+"/"+result.RemediationTarget.Name),
+			slog.String("correlation_id", correlationID))
+		return result
+	}
+
+	inv.logger.Info("same-kind validation gate: accepted retry result",
+		slog.String("original_target", result.RemediationTarget.Kind+"/"+result.RemediationTarget.Name),
+		slog.String("retry_target", retryResult.RemediationTarget.Kind+"/"+retryResult.RemediationTarget.Name),
+		slog.String("correlation_id", correlationID))
+	return retryResult
 }
 
 func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (*katypes.InvestigationResult, error) {
@@ -1084,13 +1208,26 @@ func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katyp
 	for k, v := range tokens.AuditData() {
 		completeEvent.Data[k] = v
 	}
-	if b, err := json.Marshal(resultToAuditJSON(result)); err == nil {
+	if b, err := json.Marshal(ResultToAuditJSON(result)); err == nil {
 		completeEvent.Data["response_data"] = string(b)
 	}
 	audit.StoreBestEffort(ctx, inv.auditStore, completeEvent, inv.logger)
 }
 
-func resultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
+func (inv *Investigator) emitRCAComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {
+	ev := audit.NewEvent(audit.EventTypeRCAComplete, correlationID)
+	ev.EventAction = audit.ActionLLMResponse
+	ev.EventOutcome = audit.OutcomeSuccess
+	for k, v := range tokens.AuditData() {
+		ev.Data[k] = v
+	}
+	if b, err := json.Marshal(ResultToAuditJSON(result)); err == nil {
+		ev.Data["response_data"] = string(b)
+	}
+	audit.StoreBestEffort(ctx, inv.auditStore, ev, inv.logger)
+}
+
+func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	m := map[string]interface{}{
 		"rca_summary":        r.RCASummary,
 		"severity":           r.Severity,
@@ -1162,6 +1299,21 @@ func resultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 		}
 		m["alternative_workflows"] = alts
 	}
+	if len(r.CausalChain) > 0 {
+		m["causal_chain"] = r.CausalChain
+	}
+	if r.DueDiligence != nil {
+		m["due_diligence"] = map[string]interface{}{
+			"causal_completeness":    r.DueDiligence.CausalCompleteness,
+			"target_accuracy":        r.DueDiligence.TargetAccuracy,
+			"evidence_sufficiency":   r.DueDiligence.EvidenceSufficiency,
+			"alternative_hypotheses": r.DueDiligence.AlternativeHypotheses,
+			"scope_completeness":     r.DueDiligence.ScopeCompleteness,
+			"proportionality":        r.DueDiligence.Proportionality,
+			"regression_awareness":   r.DueDiligence.RegressionAwareness,
+			"confidence_calibration": r.DueDiligence.ConfidenceCalibration,
+		}
+	}
 	return m
 }
 
@@ -1191,9 +1343,9 @@ func toolErrorJSON(msg string) string {
 	return string(b)
 }
 
-// buildPhase1Context extracts structured assessment fields from the Phase 1
+// BuildPhase1Context extracts structured assessment fields from the Phase 1
 // InvestigationResult for propagation into Phase 3 (HAPI parity: #715).
-func buildPhase1Context(rcaResult *katypes.InvestigationResult) *prompt.Phase1Data {
+func BuildPhase1Context(rcaResult *katypes.InvestigationResult) *prompt.Phase1Data {
 	if rcaResult == nil {
 		return nil
 	}
@@ -1208,13 +1360,15 @@ func buildPhase1Context(rcaResult *katypes.InvestigationResult) *prompt.Phase1Da
 		InvestigationOutcome:  rcaResult.InvestigationOutcome,
 		Confidence:            rcaResult.Confidence,
 		InvestigationAnalysis: rcaResult.InvestigationAnalysis,
+		CausalChain:           rcaResult.CausalChain,
+		DueDiligence:          rcaResult.DueDiligence,
 	}
 }
 
-// mergePhase1Fallbacks applies Phase 1 assessment fields to the Phase 3 result
+// MergePhase1Fallbacks applies Phase 1 assessment fields to the Phase 3 result
 // when Phase 3 did not produce them. Matches HAPI's result.setdefault() pattern:
 // Phase 3 values always take precedence; Phase 1 fills in gaps only.
-func mergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1Data) {
+func MergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1Data) {
 	if result == nil || p1 == nil {
 		return
 	}
@@ -1238,6 +1392,12 @@ func mergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 			result.HumanReviewNeeded = false
 			result.HumanReviewReason = ""
 		}
+	}
+	if len(result.CausalChain) == 0 && len(p1.CausalChain) > 0 {
+		result.CausalChain = p1.CausalChain
+	}
+	if result.DueDiligence == nil && p1.DueDiligence != nil {
+		result.DueDiligence = p1.DueDiligence
 	}
 }
 
@@ -1395,7 +1555,36 @@ func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 		}
 		return
 	}
-	// LLM identified a different Kind (cross-type target) — preserve it.
+
+	// BR-496 v2 / BR-HAPI-261 AC#5: if the LLM's kind is a descendant
+	// in the ownership hierarchy (e.g. Pod when root is Deployment),
+	// resolve upward to the K8s-verified root owner. Only preserve
+	// the LLM's target when its kind is genuinely cross-type (not in
+	// the owner chain at all, e.g. Node vs Deployment).
+	if enrichData != nil && isKindInOwnerChain(llmKind, signal.ResourceKind, enrichData.OwnerChain) {
+		result.RemediationTarget = katypes.RemediationTarget{
+			Kind:      rootKind,
+			Name:      rootName,
+			Namespace: rootNS,
+		}
+		return
+	}
+}
+
+// isKindInOwnerChain returns true when the given kind matches the signal's own
+// resource kind or any entry in the enrichment owner chain. This identifies
+// descendants within the same K8s ownership hierarchy (e.g. Pod, ReplicaSet
+// under a Deployment) as opposed to genuinely cross-type targets (e.g. Node).
+func isKindInOwnerChain(kind, signalKind string, chain []enrichment.OwnerChainEntry) bool {
+	if strings.EqualFold(kind, signalKind) {
+		return true
+	}
+	for _, entry := range chain {
+		if strings.EqualFold(entry.Kind, kind) {
+			return true
+		}
+	}
+	return false
 }
 
 // injectTargetResourceParameters merges TARGET_RESOURCE_NAME, TARGET_RESOURCE_KIND,

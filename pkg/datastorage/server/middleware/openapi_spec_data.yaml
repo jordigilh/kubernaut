@@ -2457,6 +2457,7 @@ components:
             - $ref: '#/components/schemas/NotificationMessageAcknowledgedPayload'
             - $ref: '#/components/schemas/NotificationMessageEscalatedPayload'
             - $ref: '#/components/schemas/AIAgentResponsePayload'
+            - $ref: '#/components/schemas/AIAgentRCACompletePayload'
             - $ref: '#/components/schemas/AIAgentResponseFailedPayload'
             - $ref: '#/components/schemas/AIAgentEnrichmentCompletedPayload'
             - $ref: '#/components/schemas/AIAgentEnrichmentFailedPayload'
@@ -2537,6 +2538,7 @@ components:
               'notification.message.acknowledged': '#/components/schemas/NotificationMessageAcknowledgedPayload'
               'notification.message.escalated': '#/components/schemas/NotificationMessageEscalatedPayload'
               'aiagent.response.complete': '#/components/schemas/AIAgentResponsePayload'
+              'aiagent.rca.complete': '#/components/schemas/AIAgentRCACompletePayload'
               'aiagent.response.failed': '#/components/schemas/AIAgentResponseFailedPayload'
               'aiagent.enrichment.completed': '#/components/schemas/AIAgentEnrichmentCompletedPayload'
               'aiagent.enrichment.failed': '#/components/schemas/AIAgentEnrichmentFailedPayload'
@@ -2741,8 +2743,8 @@ components:
           description: "OCI execution bundle reference (digest-pinned)"
         executionEngine:
           type: string
-          description: "Execution engine (tekton, job)"
-          enum: [tekton, job]
+          description: "Execution engine (tekton, job, ansible)"
+          enum: [tekton, job, ansible]
         serviceAccountName:
           type: string
           description: "Per-workflow ServiceAccount name (DD-WE-005 v2.0). Omitted if not set."
@@ -3178,7 +3180,7 @@ components:
           $ref: '#/components/schemas/DetectedLabels'
         status:
           type: string
-          enum: [Active, Disabled, Deprecated, Archived, Superseded]
+          enum: [Active, Invalid, Pending, Disabled, Deprecated, Archived, Superseded]
           description: "Workflow lifecycle status"
         disabledAt:
           type: string
@@ -3936,7 +3938,7 @@ components:
           example: "payment"
         phase:
           type: string
-          enum: [Pending, Analyzing, Completed, Failed]
+          enum: [Pending, Investigating, Analyzing, Completed, Failed]
           description: Current phase of the AIAnalysis
         approval_required:
           type: boolean
@@ -5134,6 +5136,34 @@ components:
           minimum: 0
           description: Total completion tokens consumed across all LLM calls in this investigation session (#435)
 
+    AIAgentRCACompletePayload:
+      type: object
+      required: [event_type, event_id, incident_id, response_data]
+      description: AI Agent Phase 1 RCA completion event payload (aiagent.rca.complete). Emitted immediately after runRCA returns, before Phase 3 workflow selection. Captures causal_chain and due_diligence for forensic investigation and model capability comparison (Issue #847).
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.rca.complete']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+          example: "evt-rca-123-abc"
+        incident_id:
+          type: string
+          description: Incident correlation ID from request
+          example: "incident-payment-api-2025-12-17-abc123"
+        response_data:
+          $ref: '#/components/schemas/IncidentResponseData'
+        total_prompt_tokens:
+          type: integer
+          minimum: 0
+          description: Prompt tokens consumed during Phase 1 RCA
+        total_completion_tokens:
+          type: integer
+          minimum: 0
+          description: Completion tokens consumed during Phase 1 RCA
+
     AIAgentResponseFailedPayload:
       type: object
       required: [event_type, event_id, incident_id, error_message, phase]
@@ -5300,6 +5330,41 @@ components:
                   type: string
                   description: Resource namespace (empty for cluster-scoped)
                   example: "production"
+              additionalProperties: false
+            causalChain:
+              type: array
+              items:
+                type: string
+              description: Five whys causal chain from signal to root cause. Each entry is one step tracing from the observed symptom to the deepest identifiable cause.
+              example: ["Signal: OOMKilled on pod X", "Why? Container exceeded memory limit", "Root cause: Missing memory limit configuration"]
+            dueDiligence:
+              type: object
+              description: Adversarial self-review across 8 dimensions (Issue #847). Captures the LLM's justification for its RCA.
+              properties:
+                causalCompleteness:
+                  type: string
+                  description: Assessment of causal chain depth and completeness
+                targetAccuracy:
+                  type: string
+                  description: Justification that remediation target is the root cause, not the symptom reporter
+                evidenceSufficiency:
+                  type: string
+                  description: Which claims are backed by tool evidence vs assumptions
+                alternativeHypotheses:
+                  type: string
+                  description: Alternative root causes considered and ruled out
+                scopeCompleteness:
+                  type: string
+                  description: Assessment of investigation coverage across all relevant resources
+                proportionality:
+                  type: string
+                  description: Whether remediation target matches the problem scope
+                regressionAwareness:
+                  type: string
+                  description: Assessment against previously failed remediations
+                confidenceCalibration:
+                  type: string
+                  description: Breakdown of factors that reduced confidence from 1.0
               additionalProperties: false
           additionalProperties: false
         selectedWorkflow:
@@ -5696,6 +5761,8 @@ components:
             - Expired
             - NoExecution
             - MetricsTimedOut
+            - AlertDecayTimeout
+            - Unrecoverable
           description: |
             Reason/status of the effectiveness assessment. Null if assessment
             not yet completed. When "SpecDrift", the effectiveness score is
@@ -5765,6 +5832,8 @@ components:
             - Expired
             - NoExecution
             - MetricsTimedOut
+            - AlertDecayTimeout
+            - Unrecoverable
           description: |
             Reason/status of the effectiveness assessment (same enum as
             RemediationHistoryEntry). When "SpecDrift", effectiveness score

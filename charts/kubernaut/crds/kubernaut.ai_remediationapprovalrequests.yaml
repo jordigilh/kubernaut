@@ -132,7 +132,7 @@ spec:
                   type: string
                 type: array
               investigationSummary:
-                description: Investigation summary from HolmesGPT
+                description: Investigation summary from KA
                 minLength: 1
                 type: string
               policyEvaluation:

@@ -3,6 +3,8 @@ package prometheus_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"time"
 
@@ -13,7 +15,60 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/prometheus"
 )
 
+type roundTripperFunc struct {
+	fn func(*http.Request) (*http.Response, error)
+}
+
+func (rt *roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return rt.fn(req)
+}
+
 var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
+
+	Describe("UT-KA-838-001: NewClient uses custom Transport when provided (OCP bearer auth)", func() {
+		It("should inject the custom transport into the underlying http.Client", func() {
+			var capturedHeaders http.Header
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedHeaders = r.Header.Clone()
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"scalar","result":[1,"42"]}}`))
+			}))
+			defer server.Close()
+
+			bearerTransport := &roundTripperFunc{fn: func(req *http.Request) (*http.Response, error) {
+				req = req.Clone(req.Context())
+				req.Header.Set("Authorization", "Bearer test-sa-token")
+				return http.DefaultTransport.RoundTrip(req)
+			}}
+
+			cfg := prometheus.ClientConfig{
+				URL:       server.URL,
+				Transport: bearerTransport,
+			}
+			client, err := prometheus.NewClient(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			allTools := prometheus.NewAllTools(client)
+			var queryTool tools.Tool
+			for _, t := range allTools {
+				if t.Name() == "execute_prometheus_instant_query" {
+					queryTool = t
+					break
+				}
+			}
+			Expect(queryTool).NotTo(BeNil())
+
+			_, _ = queryTool.Execute(context.Background(), json.RawMessage(`{"query":"up"}`))
+			Expect(capturedHeaders.Get("Authorization")).To(Equal("Bearer test-sa-token"))
+		})
+
+		It("should use default transport when Transport is nil", func() {
+			cfg := prometheus.ClientConfig{URL: "http://prometheus:9090"}
+			client, err := prometheus.NewClient(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client).NotTo(BeNil())
+		})
+	})
 
 	Describe("UT-KA-433-033: Prometheus client config parses URL, headers, timeout, size limit", func() {
 		It("should create a client from valid config with all fields set", func() {
@@ -176,6 +231,100 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 			_, err = seriesTool.Execute(context.Background(), json.RawMessage(`{}`))
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("match"))
+		})
+	})
+
+	Describe("UT-KA-851-001: get_metric_names schema accepts optional match parameter", func() {
+		It("should have match property in schema but not in required", func() {
+			cfg := prometheus.ClientConfig{URL: "http://prometheus:9090"}
+			client, err := prometheus.NewClient(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			allTools := prometheus.NewAllTools(client)
+			var metricNamesTool tools.Tool
+			for _, t := range allTools {
+				if t.Name() == "get_metric_names" {
+					metricNamesTool = t
+					break
+				}
+			}
+			Expect(metricNamesTool).NotTo(BeNil(), "get_metric_names tool should exist")
+
+			var schema map[string]interface{}
+			Expect(json.Unmarshal(metricNamesTool.Parameters(), &schema)).To(Succeed())
+
+			props, ok := schema["properties"].(map[string]interface{})
+			Expect(ok).To(BeTrue())
+			Expect(props).To(HaveKey("match"), "schema should declare optional match property")
+
+			_, hasRequired := schema["required"]
+			if hasRequired {
+				required, ok := schema["required"].([]interface{})
+				if ok {
+					Expect(required).NotTo(ContainElement("match"), "match should be optional")
+				}
+			}
+		})
+	})
+
+	Describe("UT-KA-851-002: get_metric_names passes match[] query parameter when provided", func() {
+		It("should send match[] param to Prometheus API", func() {
+			var capturedQuery string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedQuery = r.URL.RawQuery
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"status":"success","data":["container_fs_writes_bytes_total","container_fs_usage_bytes"]}`))
+			}))
+			defer server.Close()
+
+			cfg := prometheus.ClientConfig{URL: server.URL}
+			client, err := prometheus.NewClient(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			allTools := prometheus.NewAllTools(client)
+			var metricNamesTool tools.Tool
+			for _, t := range allTools {
+				if t.Name() == "get_metric_names" {
+					metricNamesTool = t
+					break
+				}
+			}
+			Expect(metricNamesTool).NotTo(BeNil())
+
+			result, err := metricNamesTool.Execute(context.Background(),
+				json.RawMessage(`{"match":"{__name__=~\".*fs.*\"}"}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("container_fs_writes_bytes_total"))
+			Expect(capturedQuery).To(ContainSubstring("match%5B%5D="),
+				"should send match[] query parameter")
+		})
+
+		It("should work without match parameter (backward compatible)", func() {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				Expect(r.URL.RawQuery).To(BeEmpty(),
+					"no query params when match is not provided")
+				_, _ = w.Write([]byte(`{"status":"success","data":["up","node_cpu_seconds_total"]}`))
+			}))
+			defer server.Close()
+
+			cfg := prometheus.ClientConfig{URL: server.URL}
+			client, err := prometheus.NewClient(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			allTools := prometheus.NewAllTools(client)
+			var metricNamesTool tools.Tool
+			for _, t := range allTools {
+				if t.Name() == "get_metric_names" {
+					metricNamesTool = t
+					break
+				}
+			}
+			Expect(metricNamesTool).NotTo(BeNil())
+
+			result, err := metricNamesTool.Execute(context.Background(), json.RawMessage(`{}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("up"))
 		})
 	})
 

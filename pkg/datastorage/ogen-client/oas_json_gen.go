@@ -596,6 +596,221 @@ func (s *AIAgentEnrichmentFailedPayloadEventType) UnmarshalJSON(data []byte) err
 }
 
 // Encode implements json.Marshaler.
+func (s *AIAgentRCACompletePayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentRCACompletePayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("event_id")
+		e.Str(s.EventID)
+	}
+	{
+		e.FieldStart("incident_id")
+		e.Str(s.IncidentID)
+	}
+	{
+		e.FieldStart("response_data")
+		s.ResponseData.Encode(e)
+	}
+	{
+		if s.TotalPromptTokens.Set {
+			e.FieldStart("total_prompt_tokens")
+			s.TotalPromptTokens.Encode(e)
+		}
+	}
+	{
+		if s.TotalCompletionTokens.Set {
+			e.FieldStart("total_completion_tokens")
+			s.TotalCompletionTokens.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfAIAgentRCACompletePayload = [6]string{
+	0: "event_type",
+	1: "event_id",
+	2: "incident_id",
+	3: "response_data",
+	4: "total_prompt_tokens",
+	5: "total_completion_tokens",
+}
+
+// Decode decodes AIAgentRCACompletePayload from json.
+func (s *AIAgentRCACompletePayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentRCACompletePayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "event_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.EventID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_id\"")
+			}
+		case "incident_id":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.IncidentID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"incident_id\"")
+			}
+		case "response_data":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				if err := s.ResponseData.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"response_data\"")
+			}
+		case "total_prompt_tokens":
+			if err := func() error {
+				s.TotalPromptTokens.Reset()
+				if err := s.TotalPromptTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_prompt_tokens\"")
+			}
+		case "total_completion_tokens":
+			if err := func() error {
+				s.TotalCompletionTokens.Reset()
+				if err := s.TotalCompletionTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_completion_tokens\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentRCACompletePayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00001111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAgentRCACompletePayload) {
+					name = jsonFieldsNameOfAIAgentRCACompletePayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentRCACompletePayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentRCACompletePayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentRCACompletePayloadEventType as json.
+func (s AIAgentRCACompletePayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentRCACompletePayloadEventType from json.
+func (s *AIAgentRCACompletePayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentRCACompletePayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentRCACompletePayloadEventType(v) {
+	case AIAgentRCACompletePayloadEventTypeAiagentRcaComplete:
+		*s = AIAgentRCACompletePayloadEventTypeAiagentRcaComplete
+	default:
+		*s = AIAgentRCACompletePayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentRCACompletePayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentRCACompletePayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *AIAgentResponseFailedPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -1744,6 +1959,8 @@ func (s *AIAnalysisAuditPayloadPhase) Decode(d *jx.Decoder) error {
 	switch AIAnalysisAuditPayloadPhase(v) {
 	case AIAnalysisAuditPayloadPhasePending:
 		*s = AIAnalysisAuditPayloadPhasePending
+	case AIAnalysisAuditPayloadPhaseInvestigating:
+		*s = AIAnalysisAuditPayloadPhaseInvestigating
 	case AIAnalysisAuditPayloadPhaseAnalyzing:
 		*s = AIAnalysisAuditPayloadPhaseAnalyzing
 	case AIAnalysisAuditPayloadPhaseCompleted:
@@ -7053,6 +7270,36 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AIAgentRCACompletePayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.rca.complete")
+		{
+			s := s.AIAgentRCACompletePayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("response_data")
+				s.ResponseData.Encode(e)
+			}
+			{
+				if s.TotalPromptTokens.Set {
+					e.FieldStart("total_prompt_tokens")
+					s.TotalPromptTokens.Encode(e)
+				}
+			}
+			{
+				if s.TotalCompletionTokens.Set {
+					e.FieldStart("total_completion_tokens")
+					s.TotalCompletionTokens.Encode(e)
+				}
+			}
+		}
 	case AIAgentResponseFailedPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("aiagent.response.failed")
@@ -8062,6 +8309,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.response.complete":
 					s.Type = AIAgentResponsePayloadAuditEventEventData
 					found = true
+				case "aiagent.rca.complete":
+					s.Type = AIAgentRCACompletePayloadAuditEventEventData
+					found = true
 				case "aiagent.response.failed":
 					s.Type = AIAgentResponseFailedPayloadAuditEventEventData
 					found = true
@@ -8255,6 +8505,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case AIAgentResponsePayloadAuditEventEventData:
 		if err := s.AIAgentResponsePayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentRCACompletePayloadAuditEventEventData:
+		if err := s.AIAgentRCACompletePayload.Decode(d); err != nil {
 			return err
 		}
 	case AIAgentResponseFailedPayloadAuditEventEventData:
@@ -10133,6 +10387,36 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AIAgentRCACompletePayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.rca.complete")
+		{
+			s := s.AIAgentRCACompletePayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("response_data")
+				s.ResponseData.Encode(e)
+			}
+			{
+				if s.TotalPromptTokens.Set {
+					e.FieldStart("total_prompt_tokens")
+					s.TotalPromptTokens.Encode(e)
+				}
+			}
+			{
+				if s.TotalCompletionTokens.Set {
+					e.FieldStart("total_completion_tokens")
+					s.TotalCompletionTokens.Encode(e)
+				}
+			}
+		}
 	case AIAgentResponseFailedPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
 		e.Str("aiagent.response.failed")
@@ -11142,6 +11426,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.response.complete":
 					s.Type = AIAgentResponsePayloadAuditEventRequestEventData
 					found = true
+				case "aiagent.rca.complete":
+					s.Type = AIAgentRCACompletePayloadAuditEventRequestEventData
+					found = true
 				case "aiagent.response.failed":
 					s.Type = AIAgentResponseFailedPayloadAuditEventRequestEventData
 					found = true
@@ -11335,6 +11622,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case AIAgentResponsePayloadAuditEventRequestEventData:
 		if err := s.AIAgentResponsePayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentRCACompletePayloadAuditEventRequestEventData:
+		if err := s.AIAgentRCACompletePayload.Decode(d); err != nil {
 			return err
 		}
 	case AIAgentResponseFailedPayloadAuditEventRequestEventData:
@@ -18461,13 +18752,31 @@ func (s *IncidentResponseDataRootCauseAnalysis) encodeFields(e *jx.Encoder) {
 			s.RemediationTarget.Encode(e)
 		}
 	}
+	{
+		if s.CausalChain != nil {
+			e.FieldStart("causalChain")
+			e.ArrStart()
+			for _, elem := range s.CausalChain {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.DueDiligence.Set {
+			e.FieldStart("dueDiligence")
+			s.DueDiligence.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfIncidentResponseDataRootCauseAnalysis = [4]string{
+var jsonFieldsNameOfIncidentResponseDataRootCauseAnalysis = [6]string{
 	0: "summary",
 	1: "severity",
 	2: "contributingFactors",
 	3: "remediationTarget",
+	4: "causalChain",
+	5: "dueDiligence",
 }
 
 // Decode decodes IncidentResponseDataRootCauseAnalysis from json.
@@ -18531,6 +18840,35 @@ func (s *IncidentResponseDataRootCauseAnalysis) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"remediationTarget\"")
 			}
+		case "causalChain":
+			if err := func() error {
+				s.CausalChain = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.CausalChain = append(s.CausalChain, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"causalChain\"")
+			}
+		case "dueDiligence":
+			if err := func() error {
+				s.DueDiligence.Reset()
+				if err := s.DueDiligence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"dueDiligence\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -18583,6 +18921,188 @@ func (s *IncidentResponseDataRootCauseAnalysis) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *IncidentResponseDataRootCauseAnalysis) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) encodeFields(e *jx.Encoder) {
+	{
+		if s.CausalCompleteness.Set {
+			e.FieldStart("causalCompleteness")
+			s.CausalCompleteness.Encode(e)
+		}
+	}
+	{
+		if s.TargetAccuracy.Set {
+			e.FieldStart("targetAccuracy")
+			s.TargetAccuracy.Encode(e)
+		}
+	}
+	{
+		if s.EvidenceSufficiency.Set {
+			e.FieldStart("evidenceSufficiency")
+			s.EvidenceSufficiency.Encode(e)
+		}
+	}
+	{
+		if s.AlternativeHypotheses.Set {
+			e.FieldStart("alternativeHypotheses")
+			s.AlternativeHypotheses.Encode(e)
+		}
+	}
+	{
+		if s.ScopeCompleteness.Set {
+			e.FieldStart("scopeCompleteness")
+			s.ScopeCompleteness.Encode(e)
+		}
+	}
+	{
+		if s.Proportionality.Set {
+			e.FieldStart("proportionality")
+			s.Proportionality.Encode(e)
+		}
+	}
+	{
+		if s.RegressionAwareness.Set {
+			e.FieldStart("regressionAwareness")
+			s.RegressionAwareness.Encode(e)
+		}
+	}
+	{
+		if s.ConfidenceCalibration.Set {
+			e.FieldStart("confidenceCalibration")
+			s.ConfidenceCalibration.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfIncidentResponseDataRootCauseAnalysisDueDiligence = [8]string{
+	0: "causalCompleteness",
+	1: "targetAccuracy",
+	2: "evidenceSufficiency",
+	3: "alternativeHypotheses",
+	4: "scopeCompleteness",
+	5: "proportionality",
+	6: "regressionAwareness",
+	7: "confidenceCalibration",
+}
+
+// Decode decodes IncidentResponseDataRootCauseAnalysisDueDiligence from json.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IncidentResponseDataRootCauseAnalysisDueDiligence to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "causalCompleteness":
+			if err := func() error {
+				s.CausalCompleteness.Reset()
+				if err := s.CausalCompleteness.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"causalCompleteness\"")
+			}
+		case "targetAccuracy":
+			if err := func() error {
+				s.TargetAccuracy.Reset()
+				if err := s.TargetAccuracy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"targetAccuracy\"")
+			}
+		case "evidenceSufficiency":
+			if err := func() error {
+				s.EvidenceSufficiency.Reset()
+				if err := s.EvidenceSufficiency.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"evidenceSufficiency\"")
+			}
+		case "alternativeHypotheses":
+			if err := func() error {
+				s.AlternativeHypotheses.Reset()
+				if err := s.AlternativeHypotheses.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alternativeHypotheses\"")
+			}
+		case "scopeCompleteness":
+			if err := func() error {
+				s.ScopeCompleteness.Reset()
+				if err := s.ScopeCompleteness.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"scopeCompleteness\"")
+			}
+		case "proportionality":
+			if err := func() error {
+				s.Proportionality.Reset()
+				if err := s.Proportionality.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"proportionality\"")
+			}
+		case "regressionAwareness":
+			if err := func() error {
+				s.RegressionAwareness.Reset()
+				if err := s.RegressionAwareness.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"regressionAwareness\"")
+			}
+		case "confidenceCalibration":
+			if err := func() error {
+				s.ConfidenceCalibration.Reset()
+				if err := s.ConfidenceCalibration.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"confidenceCalibration\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode IncidentResponseDataRootCauseAnalysisDueDiligence")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IncidentResponseDataRootCauseAnalysisDueDiligence) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -23560,6 +24080,39 @@ func (s OptIncidentResponseDataHumanReviewReason) MarshalJSON() ([]byte, error) 
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptIncidentResponseDataHumanReviewReason) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IncidentResponseDataRootCauseAnalysisDueDiligence as json.
+func (o OptIncidentResponseDataRootCauseAnalysisDueDiligence) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes IncidentResponseDataRootCauseAnalysisDueDiligence from json.
+func (o *OptIncidentResponseDataRootCauseAnalysisDueDiligence) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptIncidentResponseDataRootCauseAnalysisDueDiligence to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptIncidentResponseDataRootCauseAnalysisDueDiligence) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptIncidentResponseDataRootCauseAnalysisDueDiligence) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -28612,6 +29165,10 @@ func (s *RemediationHistoryEntryAssessmentReason) Decode(d *jx.Decoder) error {
 		*s = RemediationHistoryEntryAssessmentReasonNoExecution
 	case RemediationHistoryEntryAssessmentReasonMetricsTimedOut:
 		*s = RemediationHistoryEntryAssessmentReasonMetricsTimedOut
+	case RemediationHistoryEntryAssessmentReasonAlertDecayTimeout:
+		*s = RemediationHistoryEntryAssessmentReasonAlertDecayTimeout
+	case RemediationHistoryEntryAssessmentReasonUnrecoverable:
+		*s = RemediationHistoryEntryAssessmentReasonUnrecoverable
 	default:
 		*s = RemediationHistoryEntryAssessmentReason(v)
 	}
@@ -28935,6 +29492,10 @@ func (s *RemediationHistorySummaryAssessmentReason) Decode(d *jx.Decoder) error 
 		*s = RemediationHistorySummaryAssessmentReasonNoExecution
 	case RemediationHistorySummaryAssessmentReasonMetricsTimedOut:
 		*s = RemediationHistorySummaryAssessmentReasonMetricsTimedOut
+	case RemediationHistorySummaryAssessmentReasonAlertDecayTimeout:
+		*s = RemediationHistorySummaryAssessmentReasonAlertDecayTimeout
+	case RemediationHistorySummaryAssessmentReasonUnrecoverable:
+		*s = RemediationHistorySummaryAssessmentReasonUnrecoverable
 	default:
 		*s = RemediationHistorySummaryAssessmentReason(v)
 	}
@@ -31477,6 +32038,10 @@ func (s *RemediationWorkflowStatus) Decode(d *jx.Decoder) error {
 	switch RemediationWorkflowStatus(v) {
 	case RemediationWorkflowStatusActive:
 		*s = RemediationWorkflowStatusActive
+	case RemediationWorkflowStatusInvalid:
+		*s = RemediationWorkflowStatusInvalid
+	case RemediationWorkflowStatusPending:
+		*s = RemediationWorkflowStatusPending
 	case RemediationWorkflowStatusDisabled:
 		*s = RemediationWorkflowStatusDisabled
 	case RemediationWorkflowStatusDeprecated:
@@ -34674,6 +35239,8 @@ func (s *WorkflowDiscoveryEntryExecutionEngine) Decode(d *jx.Decoder) error {
 		*s = WorkflowDiscoveryEntryExecutionEngineTekton
 	case WorkflowDiscoveryEntryExecutionEngineJob:
 		*s = WorkflowDiscoveryEntryExecutionEngineJob
+	case WorkflowDiscoveryEntryExecutionEngineAnsible:
+		*s = WorkflowDiscoveryEntryExecutionEngineAnsible
 	default:
 		*s = WorkflowDiscoveryEntryExecutionEngine(v)
 	}

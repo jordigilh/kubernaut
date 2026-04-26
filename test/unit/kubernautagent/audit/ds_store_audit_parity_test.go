@@ -584,6 +584,136 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 		})
 	})
 
+	// --- Phase 8: RCA Complete (Phase 1 forensic audit — #847/#851) ---
+
+	Describe("UT-KA-851-AP-001: buildEventData maps AIAgentRCACompletePayload for aiagent.rca.complete", func() {
+		It("should produce AIAgentRCACompletePayload with response_data and token totals", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeRCAComplete, "corr-rca-complete")
+			event.EventAction = "llm_response"
+			event.EventOutcome = audit.OutcomeSuccess
+			event.Data["response_data"] = `{
+				"rca_summary": "DiskPressure caused by emptyDir overuse",
+				"severity": "critical",
+				"confidence": 0.92,
+				"contributing_factors": ["unbounded emptyDir", "no ephemeral-storage limits"],
+				"remediation_target": {"kind": "Deployment", "name": "postgres-emptydir", "namespace": "demo-disk"},
+				"causal_chain": ["DiskPressure alert fired", "emptyDir writes exceed node capacity"],
+				"due_diligence": {
+					"causal_completeness": "Traced to emptyDir sizing",
+					"target_accuracy": "postgres-emptydir is primary writer",
+					"evidence_sufficiency": "Backed by container_fs_writes_bytes_total",
+					"alternative_hypotheses": "Considered image layers; ruled out",
+					"scope_completeness": "All 4 deployments investigated",
+					"proportionality": "Single primary offender",
+					"regression_awareness": "N/A - first incident",
+					"confidence_calibration": "0.92 - reduced for multi-contributor"
+				}
+			}`
+			event.Data["total_prompt_tokens"] = 2000
+			event.Data["total_completion_tokens"] = 900
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			req := recorder.calls[0]
+			Expect(req.EventType).To(Equal("aiagent.rca.complete"))
+			Expect(req.EventData.Type).To(Equal(ogenclient.AIAgentRCACompletePayloadAuditEventRequestEventData))
+
+			payload, ok := req.EventData.GetAIAgentRCACompletePayload()
+			Expect(ok).To(BeTrue(), "must deserialize as AIAgentRCACompletePayload")
+			Expect(payload.EventID).NotTo(BeEmpty())
+			Expect(payload.IncidentID).To(Equal("corr-rca-complete"))
+			Expect(payload.ResponseData.RootCauseAnalysis.Summary).To(Equal("DiskPressure caused by emptyDir overuse"))
+			Expect(payload.TotalPromptTokens.Value).To(Equal(2000))
+			Expect(payload.TotalCompletionTokens.Value).To(Equal(900))
+		})
+	})
+
+	Describe("UT-KA-851-AP-002: RCA complete payload includes causal_chain and due_diligence in response_data", func() {
+		It("should map causal_chain array and due_diligence object from response_data JSON", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeRCAComplete, "corr-rca-forensic")
+			event.Data["response_data"] = `{
+				"rca_summary": "OOMKilled",
+				"severity": "high",
+				"confidence": 0.88,
+				"causal_chain": ["OOMKilled signal", "container exceeded 256Mi limit", "connection pool leak"],
+				"due_diligence": {
+					"causal_completeness": "full",
+					"target_accuracy": "correct",
+					"evidence_sufficiency": "sufficient",
+					"alternative_hypotheses": "none remaining",
+					"scope_completeness": "all checked",
+					"proportionality": "single target",
+					"regression_awareness": "N/A",
+					"confidence_calibration": "0.88"
+				}
+			}`
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			payload, ok := recorder.calls[0].EventData.GetAIAgentRCACompletePayload()
+			Expect(ok).To(BeTrue())
+
+			rca := payload.ResponseData.RootCauseAnalysis
+			Expect(rca.CausalChain).To(HaveLen(3),
+				"causal_chain must carry all entries from Phase 1 RCA")
+			Expect(rca.CausalChain[0]).To(Equal("OOMKilled signal"))
+			Expect(rca.CausalChain[2]).To(Equal("connection pool leak"))
+
+			dd, ddOk := rca.DueDiligence.Get()
+			Expect(ddOk).To(BeTrue(), "due_diligence must be present for forensic investigation")
+			Expect(dd.CausalCompleteness.Value).To(Equal("full"))
+			Expect(dd.TargetAccuracy.Value).To(Equal("correct"))
+			Expect(dd.EvidenceSufficiency.Value).To(Equal("sufficient"))
+			Expect(dd.ConfidenceCalibration.Value).To(Equal("0.88"))
+		})
+	})
+
+	Describe("UT-KA-851-AP-003: RCA complete handles minimal response_data without panic", func() {
+		It("should not panic when causal_chain and due_diligence are absent", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeRCAComplete, "corr-rca-minimal")
+			event.Data["response_data"] = `{"rca_summary":"minimal RCA","severity":"low","confidence":0.5}`
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			payload, ok := recorder.calls[0].EventData.GetAIAgentRCACompletePayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.ResponseData.RootCauseAnalysis.Summary).To(Equal("minimal RCA"))
+			Expect(payload.ResponseData.RootCauseAnalysis.CausalChain).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-KA-851-AP-004: RCA complete omits token fields when zero", func() {
+		It("should not set token fields when not provided", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeRCAComplete, "corr-rca-no-tokens")
+			event.Data["response_data"] = `{"rca_summary":"test","severity":"low","confidence":0.5}`
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			payload, ok := recorder.calls[0].EventData.GetAIAgentRCACompletePayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.TotalPromptTokens.Set).To(BeFalse(),
+				"TotalPromptTokens should not be set when zero")
+			Expect(payload.TotalCompletionTokens.Set).To(BeFalse(),
+				"TotalCompletionTokens should not be set when zero")
+		})
+	})
+
 	// --- AP-022: warnings default ---
 
 	Describe("UT-KA-433-AP-022: toIncidentResponseData defaults warnings to empty array", func() {

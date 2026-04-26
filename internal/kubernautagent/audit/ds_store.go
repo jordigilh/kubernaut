@@ -207,6 +207,23 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		}
 		return ogenclient.NewAIAgentResponsePayloadAuditEventRequestEventData(payload), true
 
+	case EventTypeRCAComplete:
+		payload := ogenclient.AIAgentRCACompletePayload{
+			EventType:  ogenclient.AIAgentRCACompletePayloadEventTypeAiagentRcaComplete,
+			EventID:    dataString(event.Data, "event_id"),
+			IncidentID: event.CorrelationID,
+		}
+		if rd := dataString(event.Data, "response_data"); rd != "" {
+			payload.ResponseData = toIncidentResponseData(rd, event.CorrelationID)
+		}
+		if pt := dataInt(event.Data, "total_prompt_tokens"); pt > 0 {
+			payload.TotalPromptTokens.SetTo(pt)
+		}
+		if ct := dataInt(event.Data, "total_completion_tokens"); ct > 0 {
+			payload.TotalCompletionTokens.SetTo(ct)
+		}
+		return ogenclient.NewAIAgentRCACompletePayloadAuditEventRequestEventData(payload), true
+
 	case EventTypeResponseFailed:
 		payload := ogenclient.AIAgentResponseFailedPayload{
 			EventType:    ogenclient.AIAgentResponseFailedPayloadEventTypeAiagentResponseFailed,
@@ -322,6 +339,19 @@ type investigationResultJSON struct {
 	Parameters           map[string]interface{}        `json:"parameters"`
 	AlternativeWorkflows []altWorkflowJSON            `json:"alternative_workflows"`
 	RemediationTarget    *remediationTargetJSON       `json:"remediation_target"`
+	CausalChain          []string                     `json:"causal_chain"`
+	DueDiligence         *dueDiligenceJSON            `json:"due_diligence"`
+}
+
+type dueDiligenceJSON struct {
+	CausalCompleteness    string `json:"causal_completeness"`
+	TargetAccuracy        string `json:"target_accuracy"`
+	EvidenceSufficiency   string `json:"evidence_sufficiency"`
+	AlternativeHypotheses string `json:"alternative_hypotheses"`
+	ScopeCompleteness     string `json:"scope_completeness"`
+	Proportionality       string `json:"proportionality"`
+	RegressionAwareness   string `json:"regression_awareness"`
+	ConfidenceCalibration string `json:"confidence_calibration"`
 }
 
 type altWorkflowJSON struct {
@@ -370,6 +400,38 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 			rt.Namespace.SetTo(ir.RemediationTarget.Namespace)
 		}
 		data.RootCauseAnalysis.RemediationTarget.SetTo(rt)
+	}
+
+	if len(ir.CausalChain) > 0 {
+		data.RootCauseAnalysis.CausalChain = ir.CausalChain
+	}
+	if ir.DueDiligence != nil {
+		dd := ogenclient.IncidentResponseDataRootCauseAnalysisDueDiligence{}
+		if ir.DueDiligence.CausalCompleteness != "" {
+			dd.CausalCompleteness.SetTo(ir.DueDiligence.CausalCompleteness)
+		}
+		if ir.DueDiligence.TargetAccuracy != "" {
+			dd.TargetAccuracy.SetTo(ir.DueDiligence.TargetAccuracy)
+		}
+		if ir.DueDiligence.EvidenceSufficiency != "" {
+			dd.EvidenceSufficiency.SetTo(ir.DueDiligence.EvidenceSufficiency)
+		}
+		if ir.DueDiligence.AlternativeHypotheses != "" {
+			dd.AlternativeHypotheses.SetTo(ir.DueDiligence.AlternativeHypotheses)
+		}
+		if ir.DueDiligence.ScopeCompleteness != "" {
+			dd.ScopeCompleteness.SetTo(ir.DueDiligence.ScopeCompleteness)
+		}
+		if ir.DueDiligence.Proportionality != "" {
+			dd.Proportionality.SetTo(ir.DueDiligence.Proportionality)
+		}
+		if ir.DueDiligence.RegressionAwareness != "" {
+			dd.RegressionAwareness.SetTo(ir.DueDiligence.RegressionAwareness)
+		}
+		if ir.DueDiligence.ConfidenceCalibration != "" {
+			dd.ConfidenceCalibration.SetTo(ir.DueDiligence.ConfidenceCalibration)
+		}
+		data.RootCauseAnalysis.DueDiligence.SetTo(dd)
 	}
 
 	if ir.WorkflowID != "" {

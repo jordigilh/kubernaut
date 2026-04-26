@@ -70,6 +70,10 @@ type InvestigationResult struct {
 	SignalName          string   `json:"signal_name,omitempty"`
 	ContributingFactors []string `json:"contributing_factors,omitempty"`
 
+	// Adversarial Due Diligence (Issue #847 / DD-HAPI-847)
+	CausalChain  []string            `json:"causal_chain,omitempty"`
+	DueDiligence *DueDiligenceReview `json:"due_diligence,omitempty"`
+
 	// Observability
 	Warnings       []string               `json:"warnings,omitempty"`
 	DetectedLabels map[string]interface{} `json:"detected_labels,omitempty"`
@@ -100,6 +104,19 @@ type AlternativeWorkflow struct {
 	ExecutionBundle string  `json:"execution_bundle,omitempty"`
 	Confidence      float64 `json:"confidence"`
 	Rationale       string  `json:"rationale"`
+}
+
+// DueDiligenceReview captures the LLM's adversarial self-review across 8 dimensions.
+// Enforced by JSON schema in rcaResultSchemaJSON (Issue #847).
+type DueDiligenceReview struct {
+	CausalCompleteness    string `json:"causal_completeness"`
+	TargetAccuracy        string `json:"target_accuracy"`
+	EvidenceSufficiency   string `json:"evidence_sufficiency"`
+	AlternativeHypotheses string `json:"alternative_hypotheses"`
+	ScopeCompleteness     string `json:"scope_completeness"`
+	Proportionality       string `json:"proportionality"`
+	RegressionAwareness   string `json:"regression_awareness"`
+	ConfidenceCalibration string `json:"confidence_calibration"`
 }
 
 // RemediationTarget identifies the K8s resource to remediate.
