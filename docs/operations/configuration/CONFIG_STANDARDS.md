@@ -173,7 +173,7 @@ sanitization:
   i1_injection: true                # Default: true — I1 injection stripping
 
 anomaly:
-  max_tool_calls_per_tool: 5        # Default: 5 — I7 per-tool call limit
+  max_tool_calls_per_tool: 10       # Default: 10 — I7 per-tool call limit (raised from 5, #860; pagination calls exempt)
   max_total_tool_calls: 30          # Default: 30 — I7 total tool call limit
   max_repeated_failures: 3          # Default: 3 — I7 consecutive failure limit
 

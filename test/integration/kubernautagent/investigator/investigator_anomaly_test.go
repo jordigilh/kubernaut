@@ -61,17 +61,17 @@ var _ = Describe("Kubernaut Agent Anomaly Detector Wiring — TP-433-WIR Phase 4
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
-	Describe("IT-KA-433W-012: executeTool rejects 6th call to same tool (per-tool limit)", func() {
-		It("should return error JSON on 6th call when MaxToolCallsPerTool=5", func() {
+	Describe("IT-KA-433W-012: executeTool rejects 11th call to same tool (per-tool limit=10, #860)", func() {
+		It("should return error JSON on 11th call when MaxToolCallsPerTool=10", func() {
 			reg := registry.New()
 			reg.Register(&fakeTool{name: "kubectl_describe", result: `{"status":"ok"}`})
 
 			detector := investigator.NewAnomalyDetector(
-				investigator.AnomalyConfig{MaxToolCallsPerTool: 5, MaxTotalToolCalls: 100, MaxRepeatedFailures: 10},
+				investigator.AnomalyConfig{MaxToolCallsPerTool: 10, MaxTotalToolCalls: 100, MaxRepeatedFailures: 10},
 				nil,
 			)
 
-			toolCalls := make([]llm.ToolCall, 6)
+			toolCalls := make([]llm.ToolCall, 11)
 			for i := range toolCalls {
 				toolCalls[i] = llm.ToolCall{ID: fmt.Sprintf("tc_%d", i+1), Name: "kubectl_describe", Arguments: `{}`}
 			}
@@ -103,7 +103,7 @@ var _ = Describe("Kubernaut Agent Anomaly Detector Wiring — TP-433-WIR Phase 4
 				}
 			}
 			Expect(foundRejection).To(BeTrue(),
-				"6th tool call should be rejected with per-tool limit error")
+				"11th tool call should be rejected with per-tool limit error")
 		})
 	})
 
@@ -150,6 +150,52 @@ var _ = Describe("Kubernaut Agent Anomaly Detector Wiring — TP-433-WIR Phase 4
 			}
 			Expect(foundRejection).To(BeTrue(),
 				"3rd identical failure should trigger repeated-failure anomaly")
+		})
+	})
+
+	Describe("IT-KA-860-001: executeTool allows pagination-heavy list_workflows sequence (#860, BR-HAPI-433-004 I7)", func() {
+		It("should allow 12 list_workflows calls (5 initial + 7 pagination) without per-tool rejection", func() {
+			reg := registry.New()
+			reg.Register(&fakeTool{name: "list_workflows", result: `{"workflows":[{"id":"drain-node"}],"pagination":{"hasNext":true,"nextCursor":"abc"}}`})
+
+			detector := investigator.NewAnomalyDetector(
+				investigator.AnomalyConfig{MaxToolCallsPerTool: 10, MaxTotalToolCalls: 100, MaxRepeatedFailures: 100},
+				nil,
+			)
+
+			toolCalls := make([]llm.ToolCall, 12)
+			for i := range toolCalls {
+				args := `{"action_type":"cordon"}`
+				if i >= 5 {
+					args = fmt.Sprintf(`{"action_type":"cordon","cursor":"page_%d"}`, i-4)
+				}
+				toolCalls[i] = llm.ToolCall{ID: fmt.Sprintf("tc_%d", i+1), Name: "list_workflows", Arguments: args}
+			}
+
+			mockClient := &mockLLMClient{
+				responses: []llm.ChatResponse{
+					{
+						Message:   llm.Message{Role: "assistant", Content: "listing workflows"},
+						ToolCalls: toolCalls,
+					},
+					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"needs drain","confidence":0.9}`}},
+					wfToolResp(`{"workflow_id":"drain-node","confidence":0.9}`),
+				},
+			}
+
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg, Pipeline: investigator.Pipeline{AnomalyDetector: detector}})
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api", Namespace: "default", Severity: "warning", Message: "DiskPressure",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			secondCall := mockClient.calls[1]
+			for _, msg := range secondCall.Messages {
+				if msg.Role == "tool" {
+					Expect(msg.Content).NotTo(ContainSubstring("per-tool call limit exceeded"),
+						"IT-KA-860-001: no list_workflows call should be rejected — pagination calls are exempt from per-tool budget")
+				}
+			}
 		})
 	})
 

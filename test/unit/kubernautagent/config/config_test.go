@@ -72,7 +72,7 @@ llm:
 			Expect(cfg.Server.Port).To(Equal(8080), "default port should be 8080")
 			Expect(cfg.Session.TTL).To(Equal(30*time.Minute), "default TTL should be 30m")
 			Expect(cfg.Investigator.MaxTurns).To(Equal(15), "default max turns should be 15")
-			Expect(cfg.Anomaly.MaxToolCallsPerTool).To(Equal(5), "default per-tool limit should be 5")
+			Expect(cfg.Anomaly.MaxToolCallsPerTool).To(Equal(10), "UT-KA-860-006: default per-tool limit raised to 10 per #860")
 			Expect(cfg.Anomaly.MaxTotalToolCalls).To(Equal(30), "default total tool calls should be 30")
 			Expect(cfg.Anomaly.MaxRepeatedFailures).To(Equal(3), "default repeated failures should be 3")
 		})
@@ -263,9 +263,9 @@ summarizer:
 	})
 
 	Describe("UT-KA-433W-011: DefaultConfig applies anomaly thresholds", func() {
-		It("should set MaxToolCallsPerTool=5, MaxTotalToolCalls=30, MaxRepeatedFailures=3", func() {
+		It("should set MaxToolCallsPerTool=10, MaxTotalToolCalls=30, MaxRepeatedFailures=3 (#860)", func() {
 			cfg := config.DefaultConfig()
-			Expect(cfg.Anomaly.MaxToolCallsPerTool).To(Equal(5))
+			Expect(cfg.Anomaly.MaxToolCallsPerTool).To(Equal(10))
 			Expect(cfg.Anomaly.MaxTotalToolCalls).To(Equal(30))
 			Expect(cfg.Anomaly.MaxRepeatedFailures).To(Equal(3))
 		})
