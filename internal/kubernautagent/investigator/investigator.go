@@ -607,6 +607,13 @@ func (inv *Investigator) sameKindValidationGate(
 		return result
 	}
 
+	if retryResult.RemediationTarget.Kind == "" && result.RemediationTarget.Kind != "" {
+		inv.logger.Warn("same-kind validation gate: retry lost remediation_target, keeping original",
+			slog.String("original_target", result.RemediationTarget.Kind+"/"+result.RemediationTarget.Name),
+			slog.String("correlation_id", correlationID))
+		return result
+	}
+
 	inv.logger.Info("same-kind validation gate: accepted retry result",
 		slog.String("original_target", result.RemediationTarget.Kind+"/"+result.RemediationTarget.Name),
 		slog.String("retry_target", retryResult.RemediationTarget.Kind+"/"+retryResult.RemediationTarget.Name),
@@ -1548,7 +1555,36 @@ func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 		}
 		return
 	}
-	// LLM identified a different Kind (cross-type target) — preserve it.
+
+	// BR-496 v2 / BR-HAPI-261 AC#5: if the LLM's kind is a descendant
+	// in the ownership hierarchy (e.g. Pod when root is Deployment),
+	// resolve upward to the K8s-verified root owner. Only preserve
+	// the LLM's target when its kind is genuinely cross-type (not in
+	// the owner chain at all, e.g. Node vs Deployment).
+	if enrichData != nil && isKindInOwnerChain(llmKind, signal.ResourceKind, enrichData.OwnerChain) {
+		result.RemediationTarget = katypes.RemediationTarget{
+			Kind:      rootKind,
+			Name:      rootName,
+			Namespace: rootNS,
+		}
+		return
+	}
+}
+
+// isKindInOwnerChain returns true when the given kind matches the signal's own
+// resource kind or any entry in the enrichment owner chain. This identifies
+// descendants within the same K8s ownership hierarchy (e.g. Pod, ReplicaSet
+// under a Deployment) as opposed to genuinely cross-type targets (e.g. Node).
+func isKindInOwnerChain(kind, signalKind string, chain []enrichment.OwnerChainEntry) bool {
+	if strings.EqualFold(kind, signalKind) {
+		return true
+	}
+	for _, entry := range chain {
+		if strings.EqualFold(entry.Kind, kind) {
+			return true
+		}
+	}
+	return false
 }
 
 // injectTargetResourceParameters merges TARGET_RESOURCE_NAME, TARGET_RESOURCE_KIND,

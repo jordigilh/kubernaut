@@ -678,10 +678,60 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 		})
 	})
 
+	Describe("IT-KA-847-D-001: sameKindValidationGate rejects retry that lost remediation_target", func() {
+		It("should keep original target when retry response drops remediation_target (DD-HAPI-847)", func() {
+			// Signal is a Node, RCA also names Node → same-kind gate fires.
+			// Retry response (fallback) has no remediation_target.
+			// Approach D defensive check must preserve the original Node target.
+			k8s := &fakeK8sClient{ownerChain: nil, err: nil}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			localEnricher := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+
+			mockClient.responses = []llm.ChatResponse{
+				// Phase 1 RCA: same kind as signal (Node == Node) → gate triggers
+				{Message: llm.Message{Role: "assistant", Content: `{
+					"rca_summary":"disk pressure from emptyDir overuse",
+					"confidence":0.85,
+					"remediation_target":{"kind":"Node","name":"ip-10-0-1-42","namespace":""}
+				}`}},
+				// Gate retry: fallback response with NO remediation_target
+				{Message: llm.Message{Role: "assistant", Content: `{
+					"rca_summary":"confirmed disk pressure on node",
+					"confidence":0.80
+				}`}},
+				// Workflow selection
+				wfToolResp(`{"workflow_id":"drain-node","confidence":0.9,"remediation_target":{"kind":"Node","name":"ip-10-0-1-42","namespace":""}}`),
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: localEnricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				ResourceKind: "Node",
+				ResourceName: "ip-10-0-1-42",
+				Name:         "ip-10-0-1-42",
+				Namespace:    "",
+				Severity:     "warning",
+				Message:      "DiskPressure condition detected",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RemediationTarget.Kind).To(Equal("Node"),
+				"IT-KA-847-D-001: defensive check must preserve original Node target when retry loses it")
+			Expect(result.RemediationTarget.Name).To(Equal("ip-10-0-1-42"),
+				"IT-KA-847-D-001: must preserve original name")
+			Expect(result.RCASummary).To(ContainSubstring("disk pressure"),
+				"IT-KA-847-D-001: RCA summary should come from the original (not retry)")
+		})
+	})
+
 	Describe("IT-KA-704-001: Owner chain failure triggers rca_incomplete", func() {
 		It("should set needs_human_review=true with rca_incomplete when GetOwnerChain fails", func() {
 			notFoundErr := apierrors.NewNotFound(
-				schema.GroupResource{Resource: "pods"}, "target-pod")
+				schema.GroupResource{Resource: "deployments"}, "target-deploy")
 			k8s := &fakeK8sClient{
 				ownerChain: nil,
 				err:        notFoundErr,
@@ -693,10 +743,12 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			// RCA names a DIFFERENT target than the signal to trigger re-enrichment.
-			// Only one response needed: flow returns at rca_incomplete before workflow selection.
+			// RCA names a DIFFERENT kind+name than the signal to trigger
+			// re-enrichment. Using Deployment (vs signal Pod) avoids the
+			// same-kind validation gate (#847) so only one LLM response is needed.
+			// Flow returns at rca_incomplete before workflow selection.
 			mockClient.responses = []llm.ChatResponse{
-				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded","remediation_target":{"kind":"Pod","name":"target-pod","namespace":"production"}}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded","remediation_target":{"kind":"Deployment","name":"target-deploy","namespace":"production"}}`}},
 			}
 
 			inv := investigator.New(investigator.Config{
