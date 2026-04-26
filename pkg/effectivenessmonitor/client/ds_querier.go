@@ -66,7 +66,8 @@ func NewOgenDataStorageQuerierWithTransport(baseURL string, timeout time.Duratio
 	}
 
 	if transport == nil {
-		baseTransport, err := sharedtls.DefaultBaseTransport()
+		// Issue #853: Wrapped with RetryTransport for transient failure resilience.
+		baseTransport, err := sharedtls.DefaultBaseTransportWithRetry()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create base transport: %w", err)
 		}

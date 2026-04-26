@@ -464,7 +464,8 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger *slog.Logger) *
 		return nil
 	}
 
-	dsBase, tlsErr := sharedtls.DefaultBaseTransport()
+	// Issue #853: Wrapped with RetryTransport for transient failure resilience.
+	dsBase, tlsErr := sharedtls.DefaultBaseTransportWithRetry()
 	if tlsErr != nil {
 		logger.Error("failed to create TLS-aware transport for DS client", "error", tlsErr)
 		return nil

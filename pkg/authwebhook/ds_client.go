@@ -59,9 +59,9 @@ func NewDSClientAdapter(baseURL string, timeout time.Duration, logger logr.Logge
 		timeout = 5 * time.Second
 	}
 
-	// Issue #750: Use DefaultBaseTransport so TLS_CA_FILE is honoured for
-	// inter-service HTTPS when tls.interService.enabled=true.
-	baseTransport, err := sharedtls.DefaultBaseTransport()
+	// Issue #750: TLS_CA_FILE honoured for inter-service HTTPS.
+	// Issue #853: Wrapped with RetryTransport for transient failure resilience.
+	baseTransport, err := sharedtls.DefaultBaseTransportWithRetry()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TLS-aware base transport: %w", err)
 	}
