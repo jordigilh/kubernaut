@@ -91,6 +91,105 @@ func (s AIAgentEnrichmentFailedPayloadEventType) Validate() error {
 	}
 }
 
+func (s *AIAgentRCACompletePayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.ResponseData.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "response_data",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.TotalPromptTokens.Get(); ok {
+			if err := func() error {
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        false,
+					Max:           0,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+					Pattern:       nil,
+				}).Validate(int64(value)); err != nil {
+					return errors.Wrap(err, "int")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "total_prompt_tokens",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.TotalCompletionTokens.Get(); ok {
+			if err := func() error {
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        false,
+					Max:           0,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+					Pattern:       nil,
+				}).Validate(int64(value)); err != nil {
+					return errors.Wrap(err, "int")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "total_completion_tokens",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentRCACompletePayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.rca.complete":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *AIAgentResponseFailedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -1087,6 +1186,11 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case AIAgentRCACompletePayloadAuditEventEventData:
+		if err := s.AIAgentRCACompletePayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case AIAgentResponseFailedPayloadAuditEventEventData:
 		if err := s.AIAgentResponseFailedPayload.Validate(); err != nil {
 			return err
@@ -1433,6 +1537,11 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil // no validation needed
 	case AIAgentResponsePayloadAuditEventRequestEventData:
 		if err := s.AIAgentResponsePayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentRCACompletePayloadAuditEventRequestEventData:
+		if err := s.AIAgentRCACompletePayload.Validate(); err != nil {
 			return err
 		}
 		return nil

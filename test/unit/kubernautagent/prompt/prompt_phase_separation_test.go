@@ -17,12 +17,9 @@ limitations under the License.
 package prompt_test
 
 import (
-	"time"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 )
 
@@ -41,7 +38,7 @@ var _ = Describe("Phase Separation: Prompt Contracts — #700", func() {
 			rendered, err := builder.RenderInvestigation(prompt.SignalData{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical",
 				Message: "OOMKilled: container api exceeded memory limit",
-			}, nil)
+			})
 			Expect(err).NotTo(HaveOccurred())
 
 			By("excluding workflow discovery tool references")
@@ -67,7 +64,7 @@ var _ = Describe("Phase Separation: Prompt Contracts — #700", func() {
 			rendered, err := builder.RenderInvestigation(prompt.SignalData{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical",
 				Message: "OOMKilled",
-			}, nil)
+			})
 			Expect(err).NotTo(HaveOccurred())
 
 			By("excluding escalation and workflow fields from submit_result example")
@@ -82,38 +79,25 @@ var _ = Describe("Phase Separation: Prompt Contracts — #700", func() {
 		})
 	})
 
-	Describe("UT-KA-700-005: RCA prompt excludes remediation history", func() {
-		It("should not contain remediation history even when enrichment provides it", func() {
-			enrichData := &prompt.EnrichmentData{
-				OwnerChain:     []string{"Deployment/api-server", "ReplicaSet/api-server-abc123"},
-				DetectedLabels: map[string]string{"app": "api-server"},
-				HistoryResult: &enrichment.RemediationHistoryResult{
-					TargetResource: "production/Pod/api-server-abc",
-					Tier1: []enrichment.Tier1Entry{
-						{RemediationUID: "oom-increase-memory", ActionType: "increase_memory", Outcome: "success", CompletedAt: time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)},
-						{RemediationUID: "oom-increase-memory", ActionType: "increase_memory", Outcome: "success", CompletedAt: time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC)},
-						{RemediationUID: "oom-increase-memory", ActionType: "increase_memory", Outcome: "success", CompletedAt: time.Date(2026, 3, 3, 10, 0, 0, 0, time.UTC)},
-					},
-					Tier1Window: "72h",
-				},
-			}
+	Describe("UT-KA-700-005: RCA prompt excludes all enrichment data", func() {
+		It("should not contain enrichment context in the investigation prompt", func() {
 			rendered, err := builder.RenderInvestigation(prompt.SignalData{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical",
 				Message: "OOMKilled",
-			}, enrichData)
+			})
 			Expect(err).NotTo(HaveOccurred())
 
-			By("excluding remediation history section")
+			By("excluding all enrichment data from investigation prompt")
 			Expect(rendered).NotTo(ContainSubstring("REMEDIATION HISTORY"),
 				"RCA prompt must NOT contain remediation history (belongs in Phase 3)")
 			Expect(rendered).NotTo(ContainSubstring("CONFIGURATION REGRESSION DETECTED"),
 				"RCA prompt must NOT contain regression warning (biases RCA toward escalation)")
 			Expect(rendered).NotTo(ContainSubstring("oom-increase-memory"),
 				"RCA prompt must NOT name specific past remediations")
-
-			By("still including non-history enrichment data")
-			Expect(rendered).To(ContainSubstring("Deployment/api-server"),
-				"RCA prompt should still include owner chain from enrichment")
+			Expect(rendered).NotTo(ContainSubstring("Owner Chain"),
+				"RCA prompt must NOT include enrichment owner chain (Phase 3 only)")
+			Expect(rendered).NotTo(ContainSubstring("Detected Labels"),
+				"RCA prompt must NOT include enrichment labels (Phase 3 only)")
 		})
 	})
 

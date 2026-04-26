@@ -33,6 +33,7 @@ const (
 	EventTypeValidationAttempt   = "aiagent.workflow.validation_attempt"
 	EventTypeResponseComplete    = "aiagent.response.complete"
 	EventTypeResponseFailed      = "aiagent.response.failed"
+	EventTypeRCAComplete         = "aiagent.rca.complete"
 	EventTypeEnrichmentCompleted = "aiagent.enrichment.completed"
 	EventTypeEnrichmentFailed    = "aiagent.enrichment.failed"
 )
@@ -52,13 +53,14 @@ const (
 	OutcomePending = "pending"
 )
 
-// AllEventTypes lists all 8 Kubernaut Agent audit event types.
+// AllEventTypes lists all 9 Kubernaut Agent audit event types.
 var AllEventTypes = []string{
 	EventTypeLLMRequest,
 	EventTypeLLMResponse,
 	EventTypeLLMToolCall,
 	EventTypeValidationAttempt,
 	EventTypeResponseComplete,
+	EventTypeRCAComplete,
 	EventTypeResponseFailed,
 	EventTypeEnrichmentCompleted,
 	EventTypeEnrichmentFailed,

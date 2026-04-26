@@ -85,15 +85,11 @@ type investigationTemplateData struct {
 	FiringTime                  string
 	ReceivedTime                string
 	SignalMode                  string
-	OwnerChain                  string
-	DetectedLabels              string
-	QuotaDetails                map[string]enrichment.QuotaResourceUsage
 	IsDuplicate                 bool
 	OccurrenceCount             int
 	DeduplicationWindowMinutes  int
 	FirstSeen                   string
 	LastSeen                    string
-	PDBSignalGuidance           string
 	Priority                    string
 	BusinessCategory            string
 	RiskTolerance               string
@@ -178,7 +174,7 @@ func NewBuilder(opts ...BuilderOption) (*Builder, error) {
 }
 
 // RenderInvestigation renders the Phase 1 investigation prompt.
-func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentData) (string, error) {
+func (b *Builder) RenderInvestigation(signal SignalData) (string, error) {
 	sanitized := sanitizeSignal(signal)
 
 	data := investigationTemplateData{
@@ -207,22 +203,6 @@ func (b *Builder) RenderInvestigation(signal SignalData, enrichData *EnrichmentD
 		DeduplicationWindowMinutes: derefIntOr(sanitized.DeduplicationWindowMinutes, 0),
 		FirstSeen:                  sanitized.FirstSeen,
 		LastSeen:                   sanitized.LastSeen,
-	}
-
-	if isPDBSignal(sanitized.ResourceKind) {
-		data.PDBSignalGuidance = "active"
-	}
-
-	if enrichData != nil {
-		if len(enrichData.OwnerChain) > 0 {
-			data.OwnerChain = strings.Join(enrichData.OwnerChain, " → ")
-		}
-		if len(enrichData.DetectedLabels) > 0 {
-			data.DetectedLabels = sortedLabelString(enrichData.DetectedLabels)
-		}
-		if len(enrichData.QuotaDetails) > 0 {
-			data.QuotaDetails = enrichData.QuotaDetails
-		}
 	}
 
 	var buf bytes.Buffer
@@ -356,10 +336,6 @@ func derefIntOr(p *int, fallback int) int {
 		return *p
 	}
 	return fallback
-}
-
-func isPDBSignal(resourceKind string) bool {
-	return resourceKind == "PodDisruptionBudget"
 }
 
 func sanitizeSignal(signal SignalData) SignalData {

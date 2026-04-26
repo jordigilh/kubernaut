@@ -234,6 +234,100 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 		})
 	})
 
+	Describe("UT-KA-851-001: get_metric_names schema accepts optional match parameter", func() {
+		It("should have match property in schema but not in required", func() {
+			cfg := prometheus.ClientConfig{URL: "http://prometheus:9090"}
+			client, err := prometheus.NewClient(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			allTools := prometheus.NewAllTools(client)
+			var metricNamesTool tools.Tool
+			for _, t := range allTools {
+				if t.Name() == "get_metric_names" {
+					metricNamesTool = t
+					break
+				}
+			}
+			Expect(metricNamesTool).NotTo(BeNil(), "get_metric_names tool should exist")
+
+			var schema map[string]interface{}
+			Expect(json.Unmarshal(metricNamesTool.Parameters(), &schema)).To(Succeed())
+
+			props, ok := schema["properties"].(map[string]interface{})
+			Expect(ok).To(BeTrue())
+			Expect(props).To(HaveKey("match"), "schema should declare optional match property")
+
+			_, hasRequired := schema["required"]
+			if hasRequired {
+				required, ok := schema["required"].([]interface{})
+				if ok {
+					Expect(required).NotTo(ContainElement("match"), "match should be optional")
+				}
+			}
+		})
+	})
+
+	Describe("UT-KA-851-002: get_metric_names passes match[] query parameter when provided", func() {
+		It("should send match[] param to Prometheus API", func() {
+			var capturedQuery string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedQuery = r.URL.RawQuery
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"status":"success","data":["container_fs_writes_bytes_total","container_fs_usage_bytes"]}`))
+			}))
+			defer server.Close()
+
+			cfg := prometheus.ClientConfig{URL: server.URL}
+			client, err := prometheus.NewClient(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			allTools := prometheus.NewAllTools(client)
+			var metricNamesTool tools.Tool
+			for _, t := range allTools {
+				if t.Name() == "get_metric_names" {
+					metricNamesTool = t
+					break
+				}
+			}
+			Expect(metricNamesTool).NotTo(BeNil())
+
+			result, err := metricNamesTool.Execute(context.Background(),
+				json.RawMessage(`{"match":"{__name__=~\".*fs.*\"}"}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("container_fs_writes_bytes_total"))
+			Expect(capturedQuery).To(ContainSubstring("match%5B%5D="),
+				"should send match[] query parameter")
+		})
+
+		It("should work without match parameter (backward compatible)", func() {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				Expect(r.URL.RawQuery).To(BeEmpty(),
+					"no query params when match is not provided")
+				_, _ = w.Write([]byte(`{"status":"success","data":["up","node_cpu_seconds_total"]}`))
+			}))
+			defer server.Close()
+
+			cfg := prometheus.ClientConfig{URL: server.URL}
+			client, err := prometheus.NewClient(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			allTools := prometheus.NewAllTools(client)
+			var metricNamesTool tools.Tool
+			for _, t := range allTools {
+				if t.Name() == "get_metric_names" {
+					metricNamesTool = t
+					break
+				}
+			}
+			Expect(metricNamesTool).NotTo(BeNil())
+
+			result, err := metricNamesTool.Execute(context.Background(), json.RawMessage(`{}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("up"))
+		})
+	})
+
 	Describe("UT-KA-433-195: ClientConfig defaults MetadataLimit and MetadataTimeWindowHrs", func() {
 		It("should default MetadataLimit to 100 when zero", func() {
 			cfg := prometheus.ClientConfig{URL: "http://prometheus:9090"}
