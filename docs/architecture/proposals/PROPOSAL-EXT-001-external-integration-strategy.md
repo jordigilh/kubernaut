@@ -4,13 +4,13 @@
 **Date**: April 15, 2026
 **Author**: Kubernaut Architecture Team
 **Confidence**: 95% (post design gate mitigation)
-**Related**: [#703](https://github.com/jordigilh/kubernaut/issues/703) (MCP Interactive Mode), [#705](https://github.com/jordigilh/kubernaut/issues/705) (A2A Protocol), [#708](https://github.com/jordigilh/kubernaut/issues/708) (API Frontend Service), [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [#713](https://github.com/jordigilh/kubernaut/issues/713) (Kubernaut Console), [#714](https://github.com/jordigilh/kubernaut/issues/714) (NL Signal Intake), [#592](https://github.com/jordigilh/kubernaut/issues/592) (Conversational Mode), [DD-INTERACTIVE-001](../decisions/DD-INTERACTIVE-001-interactive-mode-crd-placement-and-timeouts.md)
+**Related**: [#703](https://github.com/jordigilh/kubernaut/issues/703) (MCP Interactive Mode), [#705](https://github.com/jordigilh/kubernaut/issues/705) (A2A Protocol), [#708](https://github.com/jordigilh/kubernaut/issues/708) (API Frontend Service), [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [#713](https://github.com/jordigilh/kubernaut/issues/713) (Kubernaut Console), [#714](https://github.com/jordigilh/kubernaut/issues/714) (NL Signal Intake), [DD-INTERACTIVE-001](../decisions/DD-INTERACTIVE-001-interactive-mode-crd-placement-and-timeouts.md)
 
 ---
 
 ## Purpose
 
-This proposal defines Kubernaut's external integration strategy: **who** interacts with Kubernaut, **through what protocols**, and **where the boundaries are** between Kubernaut and integrating platforms. It is the umbrella document for three enhancement proposals (#703, #705, #592) that share persona definitions, infrastructure, and architectural decisions.
+This proposal defines Kubernaut's external integration strategy: **who** interacts with Kubernaut, **through what protocols**, and **where the boundaries are** between Kubernaut and integrating platforms. It is the umbrella document for enhancement proposals #703 (MCP Interactive Mode) and #705 (A2A Protocol) that share persona definitions, infrastructure, and architectural decisions.
 
 This is a proposal, not a committed design. Once accepted, persona definitions graduate into a formal ADR, and business requirements are extracted per-persona per-capability.
 
@@ -22,7 +22,7 @@ This is a proposal, not a committed design. Once accepted, persona definitions g
 2. [Protocol Architecture](#2-protocol-architecture)
 3. [API Frontend Service](#3-api-frontend-service)
 4. [CRD and Controller Changes](#4-crd-and-controller-changes)
-5. [Relationship to #592 (Conversational Mode)](#5-relationship-to-592-conversational-mode)
+5. [Relationship to #592 (Conversational Mode) -- REMOVED](#5-relationship-to-592-conversational-mode----removed)
 6. [Open Design Questions](#6-open-design-questions)
 7. [Work Estimation](#7-work-estimation)
 8. [Evolution Path](#8-evolution-path)
@@ -264,25 +264,14 @@ All items below are **planned for v1.4**. None have been implemented yet.
 
 ---
 
-## 5. Relationship to #592 (Conversational Mode)
+## 5. Relationship to #592 (Conversational Mode) -- REMOVED
 
-Three enhancements form a layered stack. Understanding the boundaries prevents scope creep and clarifies what infrastructure is shared.
+> **Status: REMOVED** -- #592 (Conversational RAR API) was deprecated and removed from `main` in favor of the MCP/A2A interactive mode (#703, #708, #713). All product code, OpenAPI schema, tests, Helm config, and DD-CONV-001 have been deleted. The SSE streaming, auth middleware, and session management capabilities originally built by #592 will be re-implemented natively by the MCP/A2A stack per DD-INTERACTIVE-001.
 
 | Enhancement | Scope | Entry Points | Target Version |
 |-------------|-------|-------------|----------------|
-| **#592** Conversational Mode | **RAR-scoped** -- ask about a pending approval | Slack bot thread replies, `kubectl kubernaut chat` | v1.4 |
-| **#703** MCP Interactive Mode | **RR-scoped** -- drive the full investigation lifecycle | Any MCP-compatible client (IDE copilots, Slack bots, consoles) | v1.4 |
-| **#705** A2A Protocol | **Signal-scoped** -- delegate remediation, track task lifecycle | External A2A agents | v1.4 |
-
-### What #703 inherits from #592
-
-| Artifact | Built by #592 | Extended by #703 |
-|----------|---------------|------------------|
-| SSE streaming | TLS + SSE with event IDs, reconnection, proxy-friendly headers | Reused as-is for MCP Streamable HTTP transport |
-| Auth middleware | TokenReview + SAR (`can user UPDATE rar/{name}?`) | Extended to MCP-scoped RBAC verbs |
-| Session management | In-memory sessions with TTL, shared-session model | Extended with RR-level locking and conversation history |
-| Audit-seeded reconstruction | Fetch audit chain by `correlation_id`, map to LLM messages | Reused for "join mid-flight" and session recovery |
-| LLM tool access | Read-only toolsets during conversation | Extended to full investigation toolset |
+| **#703** MCP Interactive Mode | **RR-scoped** -- drive the full investigation lifecycle | Any MCP-compatible client (IDE copilots, Slack bots, consoles) | v1.5 |
+| **#705** A2A Protocol | **Signal-scoped** -- delegate remediation, track task lifecycle | External A2A agents | v1.5 |
 
 ### What #705 shares with #703
 
@@ -290,7 +279,7 @@ Three enhancements form a layered stack. Understanding the boundaries prevents s
 |----------|--------|----------|
 | CRD watch layer | Yes -- one informer, two protocol outputs | A2A maps to task states; MCP maps to SSE events |
 | API Frontend service | Yes -- same binary hosts both MCP and A2A endpoints | Different route handlers, different auth models |
-| Session/conversation state | No -- A2A is stateless (task lifecycle via CRDs) | MCP has multi-turn interactive sessions |
+| Session state | No -- A2A is stateless (task lifecycle via CRDs) | MCP has multi-turn interactive sessions |
 
 ---
 
@@ -304,7 +293,7 @@ Both #703 and #705 expose the limitation that the RR lifecycle is strictly forwa
 
 **MCP endpoint security**
 
-Enhancement #592 defines a detailed auth model (TokenReview + SAR) for conversational endpoints that #703 inherits. MCP-specific aspects still need a DD: namespace scoping (limit sessions to namespaces the operator has access to), RBAC verb granularity (dedicated `investigate` verb on `remediationrequests`?), and MCP client authentication (K8s bearer, OAuth2, API key).
+MCP endpoint security needs a DD: namespace scoping (limit sessions to namespaces the operator has access to), RBAC verb granularity (dedicated `investigate` verb on `remediationrequests`?), and MCP client authentication (K8s bearer via TokenReview + SAR, OAuth2, API key).
 
 ### 6.2 Unresolved (need design work)
 
@@ -318,7 +307,7 @@ A2A agents must be scoped to authorized namespaces. High-priority gap identified
 
 **Session continuity across KA restarts**
 
-Enhancement #592 acknowledges that in-memory sessions are lost on pod restart. The session is auto-recreated from the durable audit chain, but conversation turns added during the interactive session are lost. Full session persistence in DataStorage is deferred to v1.5. This is a known v1.4 limitation that carries forward to #703.
+MCP interactive sessions (#703) require session persistence across KA pod restarts. Full session persistence in DataStorage is a v1.5 requirement (DD-INTERACTIVE-001).
 
 ---
 
