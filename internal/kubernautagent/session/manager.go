@@ -20,8 +20,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
@@ -38,15 +40,17 @@ type Manager struct {
 	store      *Store
 	logger     *slog.Logger
 	auditStore audit.AuditStore
+	metrics    *metrics.Metrics
 }
 
 // NewManager creates a session manager backed by the given store.
 // If auditStore is nil, a NopAuditStore is used (no audit events emitted).
-func NewManager(store *Store, logger *slog.Logger, auditStore audit.AuditStore) *Manager {
+// metrics may be nil (all metric calls are nil-safe per OPS-1).
+func NewManager(store *Store, logger *slog.Logger, auditStore audit.AuditStore, m *metrics.Metrics) *Manager {
 	if auditStore == nil {
 		auditStore = audit.NopAuditStore{}
 	}
-	return &Manager{store: store, logger: logger, auditStore: auditStore}
+	return &Manager{store: store, logger: logger, auditStore: auditStore, metrics: m}
 }
 
 // eventChannelBuffer is the capacity of the per-session event channel.
@@ -119,8 +123,11 @@ func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, me
 		startExtra = append(startExtra, "created_by", v)
 	}
 	m.emitSessionEvent(ctx, audit.EventTypeSessionStarted, audit.ActionSessionStarted, audit.OutcomeSuccess, id, correlationID, nil, startExtra...)
+	m.metrics.RecordSessionStarted(metadata["signal_name"], metadata["severity"])
 
 	go func() {
+		start := time.Now() // COR-2: goroutine wall-clock, not HTTP handler time
+		defer m.recordSessionMetrics(id, start)
 		defer m.closeEventChan(id)
 		defer m.recoverPanic(id, correlationID)
 
@@ -352,6 +359,24 @@ func (m *Manager) EmitAccessDenied(ctx context.Context, sessionID, endpoint, req
 		event.Data["session_owner"] = sessionOwner
 	}
 	audit.StoreBestEffort(ctx, m.auditStore, event, m.logger)
+}
+
+// recordSessionMetrics records session completion metrics when the investigation
+// goroutine exits. Reads final status from the store (COR-3) to handle the race
+// where a session is cancelled while the goroutine is still running.
+func (m *Manager) recordSessionMetrics(id string, start time.Time) {
+	duration := time.Since(start).Seconds()
+	m.store.mu.RLock()
+	sess := m.store.sessions[id]
+	var outcome string
+	if sess != nil {
+		outcome = string(sess.Status)
+	}
+	m.store.mu.RUnlock()
+	if outcome == "" {
+		outcome = "unknown"
+	}
+	m.metrics.RecordSessionCompleted(outcome, duration)
 }
 
 // emitSessionEvent builds and stores an audit event for a session lifecycle

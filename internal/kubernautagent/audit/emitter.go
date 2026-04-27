@@ -149,3 +149,28 @@ func StoreBestEffort(ctx context.Context, store AuditStore, event *AuditEvent, l
 		)
 	}
 }
+
+// InstrumentedAuditStore wraps an AuditStore to call a recorder after each
+// successful store. This enables BR-KA-OBSERVABILITY-001.7 audit pipeline
+// throughput metrics without changing StoreBestEffort callers.
+type InstrumentedAuditStore struct {
+	inner    AuditStore
+	recorder func(eventType string)
+}
+
+// NewInstrumentedAuditStore wraps an AuditStore. recorder is called on each
+// successful StoreAudit with the event type. recorder may be nil.
+func NewInstrumentedAuditStore(inner AuditStore, recorder func(eventType string)) AuditStore {
+	if recorder == nil {
+		return inner
+	}
+	return &InstrumentedAuditStore{inner: inner, recorder: recorder}
+}
+
+func (s *InstrumentedAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error {
+	err := s.inner.StoreAudit(ctx, event)
+	if err == nil {
+		s.recorder(event.EventType)
+	}
+	return err
+}
