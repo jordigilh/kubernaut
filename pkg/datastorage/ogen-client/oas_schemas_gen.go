@@ -2895,7 +2895,6 @@ type AuditEventEventData struct {
 	LLMRequestPayload                      LLMRequestPayload
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
-	ConversationTurnPayload                ConversationTurnPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
 	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
@@ -2976,7 +2975,6 @@ const (
 	LLMRequestPayloadAuditEventEventData                                             AuditEventEventDataType = "aiagent.llm.request"
 	LLMResponsePayloadAuditEventEventData                                            AuditEventEventDataType = "aiagent.llm.response"
 	LLMToolCallPayloadAuditEventEventData                                            AuditEventEventDataType = "aiagent.llm.tool_call"
-	ConversationTurnPayloadAuditEventEventData                                       AuditEventEventDataType = "aiagent.conversation.turn"
 	WorkflowValidationPayloadAuditEventEventData                                     AuditEventEventDataType = "aiagent.workflow.validation_attempt"
 	RemediationRequestWebhookAuditPayloadAuditEventEventData                         AuditEventEventDataType = "webhook.remediationrequest.timeout_modified"
 	AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.create"
@@ -3186,11 +3184,6 @@ func (s AuditEventEventData) IsLLMResponsePayload() bool {
 // IsLLMToolCallPayload reports whether AuditEventEventData is LLMToolCallPayload.
 func (s AuditEventEventData) IsLLMToolCallPayload() bool {
 	return s.Type == LLMToolCallPayloadAuditEventEventData
-}
-
-// IsConversationTurnPayload reports whether AuditEventEventData is ConversationTurnPayload.
-func (s AuditEventEventData) IsConversationTurnPayload() bool {
-	return s.Type == ConversationTurnPayloadAuditEventEventData
 }
 
 // IsWorkflowValidationPayload reports whether AuditEventEventData is WorkflowValidationPayload.
@@ -4137,27 +4130,6 @@ func NewLLMToolCallPayloadAuditEventEventData(v LLMToolCallPayload) AuditEventEv
 	return s
 }
 
-// SetConversationTurnPayload sets AuditEventEventData to ConversationTurnPayload.
-func (s *AuditEventEventData) SetConversationTurnPayload(v ConversationTurnPayload) {
-	s.Type = ConversationTurnPayloadAuditEventEventData
-	s.ConversationTurnPayload = v
-}
-
-// GetConversationTurnPayload returns ConversationTurnPayload and true boolean if AuditEventEventData is ConversationTurnPayload.
-func (s AuditEventEventData) GetConversationTurnPayload() (v ConversationTurnPayload, ok bool) {
-	if !s.IsConversationTurnPayload() {
-		return v, false
-	}
-	return s.ConversationTurnPayload, true
-}
-
-// NewConversationTurnPayloadAuditEventEventData returns new AuditEventEventData from ConversationTurnPayload.
-func NewConversationTurnPayloadAuditEventEventData(v ConversationTurnPayload) AuditEventEventData {
-	var s AuditEventEventData
-	s.SetConversationTurnPayload(v)
-	return s
-}
-
 // SetWorkflowValidationPayload sets AuditEventEventData to WorkflowValidationPayload.
 func (s *AuditEventEventData) SetWorkflowValidationPayload(v WorkflowValidationPayload) {
 	s.Type = WorkflowValidationPayloadAuditEventEventData
@@ -4898,7 +4870,6 @@ type AuditEventRequestEventData struct {
 	LLMRequestPayload                      LLMRequestPayload
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
-	ConversationTurnPayload                ConversationTurnPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
 	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
@@ -4979,7 +4950,6 @@ const (
 	LLMRequestPayloadAuditEventRequestEventData                                                    AuditEventRequestEventDataType = "aiagent.llm.request"
 	LLMResponsePayloadAuditEventRequestEventData                                                   AuditEventRequestEventDataType = "aiagent.llm.response"
 	LLMToolCallPayloadAuditEventRequestEventData                                                   AuditEventRequestEventDataType = "aiagent.llm.tool_call"
-	ConversationTurnPayloadAuditEventRequestEventData                                              AuditEventRequestEventDataType = "aiagent.conversation.turn"
 	WorkflowValidationPayloadAuditEventRequestEventData                                            AuditEventRequestEventDataType = "aiagent.workflow.validation_attempt"
 	RemediationRequestWebhookAuditPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "webhook.remediationrequest.timeout_modified"
 	AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.create"
@@ -5189,11 +5159,6 @@ func (s AuditEventRequestEventData) IsLLMResponsePayload() bool {
 // IsLLMToolCallPayload reports whether AuditEventRequestEventData is LLMToolCallPayload.
 func (s AuditEventRequestEventData) IsLLMToolCallPayload() bool {
 	return s.Type == LLMToolCallPayloadAuditEventRequestEventData
-}
-
-// IsConversationTurnPayload reports whether AuditEventRequestEventData is ConversationTurnPayload.
-func (s AuditEventRequestEventData) IsConversationTurnPayload() bool {
-	return s.Type == ConversationTurnPayloadAuditEventRequestEventData
 }
 
 // IsWorkflowValidationPayload reports whether AuditEventRequestEventData is WorkflowValidationPayload.
@@ -6137,27 +6102,6 @@ func (s AuditEventRequestEventData) GetLLMToolCallPayload() (v LLMToolCallPayloa
 func NewLLMToolCallPayloadAuditEventRequestEventData(v LLMToolCallPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetLLMToolCallPayload(v)
-	return s
-}
-
-// SetConversationTurnPayload sets AuditEventRequestEventData to ConversationTurnPayload.
-func (s *AuditEventRequestEventData) SetConversationTurnPayload(v ConversationTurnPayload) {
-	s.Type = ConversationTurnPayloadAuditEventRequestEventData
-	s.ConversationTurnPayload = v
-}
-
-// GetConversationTurnPayload returns ConversationTurnPayload and true boolean if AuditEventRequestEventData is ConversationTurnPayload.
-func (s AuditEventRequestEventData) GetConversationTurnPayload() (v ConversationTurnPayload, ok bool) {
-	if !s.IsConversationTurnPayload() {
-		return v, false
-	}
-	return s.ConversationTurnPayload, true
-}
-
-// NewConversationTurnPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ConversationTurnPayload.
-func NewConversationTurnPayloadAuditEventRequestEventData(v ConversationTurnPayload) AuditEventRequestEventData {
-	var s AuditEventRequestEventData
-	s.SetConversationTurnPayload(v)
 	return s
 }
 
@@ -7164,130 +7108,6 @@ func (s *BatchAuditEventResponse) SetEventIds(val []uuid.UUID) {
 // SetMessage sets the value of Message.
 func (s *BatchAuditEventResponse) SetMessage(val OptString) {
 	s.Message = val
-}
-
-// Conversation turn event payload (aiagent.conversation.turn).
-// Ref: #/components/schemas/ConversationTurnPayload
-type ConversationTurnPayload struct {
-	// Event type for discriminator (matches parent event_type).
-	EventType ConversationTurnPayloadEventType `json:"event_type"`
-	// Unique event identifier.
-	EventID string `json:"event_id"`
-	// Conversation session identifier.
-	SessionID string `json:"session_id"`
-	// Authenticated user who sent the message.
-	UserID string `json:"user_id"`
-	// User's question or message.
-	Question string `json:"question"`
-	// Agent's response.
-	Answer OptString `json:"answer"`
-	// Sequential turn number within the session.
-	TurnNumber OptInt `json:"turn_number"`
-}
-
-// GetEventType returns the value of EventType.
-func (s *ConversationTurnPayload) GetEventType() ConversationTurnPayloadEventType {
-	return s.EventType
-}
-
-// GetEventID returns the value of EventID.
-func (s *ConversationTurnPayload) GetEventID() string {
-	return s.EventID
-}
-
-// GetSessionID returns the value of SessionID.
-func (s *ConversationTurnPayload) GetSessionID() string {
-	return s.SessionID
-}
-
-// GetUserID returns the value of UserID.
-func (s *ConversationTurnPayload) GetUserID() string {
-	return s.UserID
-}
-
-// GetQuestion returns the value of Question.
-func (s *ConversationTurnPayload) GetQuestion() string {
-	return s.Question
-}
-
-// GetAnswer returns the value of Answer.
-func (s *ConversationTurnPayload) GetAnswer() OptString {
-	return s.Answer
-}
-
-// GetTurnNumber returns the value of TurnNumber.
-func (s *ConversationTurnPayload) GetTurnNumber() OptInt {
-	return s.TurnNumber
-}
-
-// SetEventType sets the value of EventType.
-func (s *ConversationTurnPayload) SetEventType(val ConversationTurnPayloadEventType) {
-	s.EventType = val
-}
-
-// SetEventID sets the value of EventID.
-func (s *ConversationTurnPayload) SetEventID(val string) {
-	s.EventID = val
-}
-
-// SetSessionID sets the value of SessionID.
-func (s *ConversationTurnPayload) SetSessionID(val string) {
-	s.SessionID = val
-}
-
-// SetUserID sets the value of UserID.
-func (s *ConversationTurnPayload) SetUserID(val string) {
-	s.UserID = val
-}
-
-// SetQuestion sets the value of Question.
-func (s *ConversationTurnPayload) SetQuestion(val string) {
-	s.Question = val
-}
-
-// SetAnswer sets the value of Answer.
-func (s *ConversationTurnPayload) SetAnswer(val OptString) {
-	s.Answer = val
-}
-
-// SetTurnNumber sets the value of TurnNumber.
-func (s *ConversationTurnPayload) SetTurnNumber(val OptInt) {
-	s.TurnNumber = val
-}
-
-// Event type for discriminator (matches parent event_type).
-type ConversationTurnPayloadEventType string
-
-const (
-	ConversationTurnPayloadEventTypeAiagentConversationTurn ConversationTurnPayloadEventType = "aiagent.conversation.turn"
-)
-
-// AllValues returns all ConversationTurnPayloadEventType values.
-func (ConversationTurnPayloadEventType) AllValues() []ConversationTurnPayloadEventType {
-	return []ConversationTurnPayloadEventType{
-		ConversationTurnPayloadEventTypeAiagentConversationTurn,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ConversationTurnPayloadEventType) MarshalText() ([]byte, error) {
-	switch s {
-	case ConversationTurnPayloadEventTypeAiagentConversationTurn:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ConversationTurnPayloadEventType) UnmarshalText(data []byte) error {
-	switch ConversationTurnPayloadEventType(data) {
-	case ConversationTurnPayloadEventTypeAiagentConversationTurn:
-		*s = ConversationTurnPayloadEventTypeAiagentConversationTurn
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }
 
 type CreateActionTypeCreated ActionTypeCreateResponse
