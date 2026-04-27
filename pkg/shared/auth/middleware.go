@@ -196,8 +196,11 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 }
 
 // GetUserFromContext extracts the authenticated user identity from the request context.
-// Returns empty string if user is not in context.
+// Returns empty string if the context is nil or the user is not in context.
 func GetUserFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
 	if user, ok := ctx.Value(UserContextKey).(string); ok {
 		return user
 	}
