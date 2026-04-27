@@ -513,11 +513,11 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 		retryEvent.Data["retry_reason"] = "rca_parse_correction"
 		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.logger)
 
-		resp, err := client.Chat(ctx, llm.ChatRequest{
+		resp, err := chatOrStream(ctx, client, llm.ChatRequest{
 			Messages: retryMessages,
 			Tools:    submitOnlyTools,
 			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
-		})
+		}, attempt+1, string(katypes.PhaseRCA))
 		if err != nil {
 			inv.logger.Warn("RCA retry LLM call failed",
 				slog.String("error", err.Error()),
@@ -626,11 +626,11 @@ func (inv *Investigator) sameKindValidationGate(
 		llm.Message{Role: "user", Content: correctionMsg},
 	)
 
-	resp, err := client.Chat(ctx, llm.ChatRequest{
+	resp, err := chatOrStream(ctx, client, llm.ChatRequest{
 		Messages: retryMessages,
 		Tools:    submitOnlyTools,
 		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
-	})
+	}, 0, string(katypes.PhaseRCA))
 	if err != nil {
 		inv.logger.Warn("same-kind validation gate retry failed, keeping original result",
 			slog.String("error", err.Error()),
@@ -936,11 +936,11 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 		retryEvent.Data["retry_reason"] = "parse_level_correction"
 		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.logger)
 
-		resp, err := client.Chat(ctx, llm.ChatRequest{
+		resp, err := chatOrStream(ctx, client, llm.ChatRequest{
 			Messages: retryMessages,
 			Tools:    submitOnlyTools,
 			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.InvestigationResultSchema()},
-		})
+		}, attempt+1, string(katypes.PhaseWorkflowDiscovery))
 		if err != nil {
 			inv.logger.Warn("retry LLM call failed",
 				slog.String("error", err.Error()),

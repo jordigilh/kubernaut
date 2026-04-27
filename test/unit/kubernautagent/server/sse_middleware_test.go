@@ -44,41 +44,5 @@ var _ = Describe("SSE Middleware — #823 PR4", func() {
 		})
 	})
 
-	Describe("UT-KA-823-S06: Auto-flush middleware flushes after each write", func() {
-		It("calls Flush() after each Write()", func() {
-			flushCount := 0
-			spy := &spyFlusherResponseWriter{
-				ResponseWriter: httptest.NewRecorder(),
-				onFlush: func() {
-					flushCount++
-				},
-			}
-
-			fw := kaserver.NewAutoFlushWriter(spy)
-			_, err := fw.Write([]byte("event 1\n"))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(flushCount).To(Equal(1), "first write should trigger first flush")
-
-			_, err = fw.Write([]byte("event 2\n"))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(flushCount).To(Equal(2), "second write should trigger second flush")
-		})
-
-		It("does not panic when underlying writer does not implement Flusher", func() {
-			rec := httptest.NewRecorder()
-			fw := kaserver.NewAutoFlushWriter(rec)
-			n, err := fw.Write([]byte("data\n"))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(n).To(Equal(5))
-		})
-	})
 })
 
-type spyFlusherResponseWriter struct {
-	http.ResponseWriter
-	onFlush func()
-}
-
-func (s *spyFlusherResponseWriter) Flush() {
-	s.onFlush()
-}

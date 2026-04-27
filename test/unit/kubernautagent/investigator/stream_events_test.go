@@ -337,7 +337,7 @@ var _ = Describe("Kubernaut Agent Investigator Stream Events — #823 PR4", func
 					hasTokenDelta = true
 					var data map[string]interface{}
 					Expect(json.Unmarshal(ev.Data, &data)).To(Succeed())
-					Expect(data).To(HaveKey("token"))
+					Expect(data).To(HaveKey("delta"))
 				}
 			}
 			Expect(hasTokenDelta).To(BeTrue(),
