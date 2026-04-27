@@ -507,12 +507,6 @@ rules:
     resources: ["services"]
     resourceNames: ["kubernaut-agent"]
     verbs: ["create", "get"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationapprovalrequests"]
-    verbs: ["get", "update"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationworkflows"]
-    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -636,9 +630,6 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["get", "list"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationapprovalrequests", "remediationworkflows"]
-    verbs: ["get"]
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates", "clusterissuers", "certificaterequests"]
     verbs: ["get", "list", "watch"]

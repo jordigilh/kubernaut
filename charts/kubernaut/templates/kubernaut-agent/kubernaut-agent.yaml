@@ -78,12 +78,6 @@ rules:
   - apiGroups: ["monitoring.coreos.com"]
     resources: ["prometheusrules", "servicemonitors", "podmonitors", "probes"]
     verbs: ["get", "list", "watch"]
-  # ── Kubernaut CRDs (conversation lifecycle polling) ─────────────────────
-  - apiGroups: ["kubernaut.ai"]
-    resources:
-      - remediationapprovalrequests
-      - remediationworkflows
-    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
