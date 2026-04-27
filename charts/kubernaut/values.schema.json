@@ -768,7 +768,8 @@
           "type": "string",
           "default": "upstream",
           "enum": ["upstream", "ocp"],
-          "description": "PostgreSQL image variant: upstream (postgres:16-alpine) or ocp (Red Hat RHEL10 image)"
+          "description": "DEPRECATED v1.4 (Issue #848): PostgreSQL image variant. The 'ocp' variant will be removed in v1.5 — use the Kubernaut Operator for OpenShift deployments.",
+          "deprecated": true
         },
         "image": {
           "type": "string",
@@ -876,8 +877,8 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": false, "description": "Enable Prometheus integration for both EM and KA" },
-            "url": { "type": "string", "default": "", "description": "Prometheus API base URL. On OCP, auto-detected when empty." },
-            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS. On OCP, auto-detected when empty." }
+            "url": { "type": "string", "default": "", "description": "Prometheus API base URL. OCP auto-detection deprecated v1.4 (Issue #848) — will be removed in v1.5." },
+            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS. OCP auto-detection deprecated v1.4 (Issue #848) — will be removed in v1.5." }
           }
         },
         "alertManager": {
@@ -885,8 +886,8 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": false, "description": "Enable AlertManager integration for EM" },
-            "url": { "type": "string", "default": "", "description": "AlertManager API base URL. On OCP, auto-detected when empty." },
-            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS. On OCP, auto-detected when empty." }
+            "url": { "type": "string", "default": "", "description": "AlertManager API base URL. OCP auto-detection deprecated v1.4 (Issue #848) — will be removed in v1.5." },
+            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS. OCP auto-detection deprecated v1.4 (Issue #848) — will be removed in v1.5." }
           }
         }
       }
