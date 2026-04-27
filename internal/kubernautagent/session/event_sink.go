@@ -22,6 +22,7 @@ import (
 )
 
 type eventSinkKey struct{}
+type sessionIDKey struct{}
 
 // LazySink holds a channel reference that can be set after the context is
 // created. This allows Subscribe to attach the event sink lazily while the
@@ -68,4 +69,18 @@ func EventSinkFromContext(ctx context.Context) chan<- InvestigationEvent {
 		return nil
 	}
 	return ls.Get()
+}
+
+// WithSessionID returns a derived context carrying the session ID so that
+// lower-level code (e.g. the investigator) can cross-reference audit events.
+func WithSessionID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, sessionIDKey{}, id)
+}
+
+// SessionIDFromContext retrieves the session ID from ctx, or "" if absent.
+func SessionIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(sessionIDKey{}).(string); ok {
+		return v
+	}
+	return ""
 }
