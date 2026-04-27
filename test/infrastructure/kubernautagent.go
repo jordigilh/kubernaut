@@ -22,7 +22,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
@@ -185,73 +184,6 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy client ClusterRole: %w", err)
 	}
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4.6: Install CRDs required for conversation E2E (#592)
-	// RemediationApprovalRequest CRD needed for conversation SAR checks.
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📋 PHASE 4.6: Installing CRDs for conversation E2E...")
-	conversationCRDs := []string{
-		"kubernaut.ai_remediationapprovalrequests.yaml",
-		"kubernaut.ai_remediationworkflows.yaml",
-	}
-	for _, crdFile := range conversationCRDs {
-		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
-		_, _ = fmt.Fprintf(writer, "  ├── Installing %s...\n", crdFile)
-		crdCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
-		crdCmd.Stdout = writer
-		crdCmd.Stderr = writer
-		if err := crdCmd.Run(); err != nil {
-			return fmt.Errorf("failed to apply CRD %s: %w", crdFile, err)
-		}
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ Conversation CRDs installed")
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4.7: Create RAR fixture for conversation E2E (#592 hardening)
-	// Provides a real RAR CRD instance with investigation context so that
-	// mock LLM golden transcript replay can match via extractSignal().
-	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📋 PHASE 4.7: Creating RAR fixture for conversation E2E...")
-	rarFixtureYAML := fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationApprovalRequest
-metadata:
-  name: e2e-conversation-rar
-  namespace: %s
-spec:
-  remediationRequestRef:
-    apiVersion: kubernaut.ai/v1alpha1
-    kind: RemediationRequest
-    name: rr-e2e-crashloop
-    namespace: %s
-  aiAnalysisRef:
-    name: aia-e2e-crashloop
-  confidence: 0.85
-  confidenceLevel: high
-  reason: "Pod crash-looping due to configuration error"
-  recommendedWorkflow:
-    workflowId: "crashloop-config-fix"
-    version: "1.0"
-    executionBundle: "fix-config"
-    rationale: "Configuration error detected"
-  investigationSummary: |
-    - Signal Name: KubePodCrashLooping
-    Root cause analysis determined the pod is crash-looping due to a missing
-    configuration file. Recommended remediation: apply crashloop-config-fix workflow.
-  recommendedActions:
-    - action: "Apply crashloop-config-fix workflow"
-      rationale: "Fixes configuration error"
-  whyApprovalRequired: "Production workload requires human approval"
-  requiredBy: "2026-12-31T23:59:59Z"
-`, namespace, namespace)
-	rarCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	rarCmd.Stdin = strings.NewReader(rarFixtureYAML)
-	rarCmd.Stdout = writer
-	rarCmd.Stderr = writer
-	if err := rarCmd.Run(); err != nil {
-		return fmt.Errorf("failed to create RAR fixture: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ RAR fixture e2e-conversation-rar created")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 5: Seed workflows + deploy Mock LLM (same as AIAnalysis E2E Phase 4c/4d)
@@ -778,15 +710,6 @@ data:
       batch_size: 50
     auth:
       resource_name: "kubernaut-agent"
-    conversation:
-      enabled: true
-      session:
-        ttl: "5m"
-        max_turns: 30
-      rate_limit:
-        per_user_per_minute: 10
-        per_session: 30
-      max_tool_turns: 15
     alignmentCheck:
       enabled: true
       timeout: "10s"
