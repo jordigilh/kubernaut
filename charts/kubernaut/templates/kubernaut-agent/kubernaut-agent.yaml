@@ -31,7 +31,9 @@ rules:
       - namespaces
       - replicationcontrollers
       - persistentvolumeclaims
+      - persistentvolumes
       - resourcequotas
+      - serviceaccounts
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
@@ -46,10 +48,18 @@ rules:
     resources: ["poddisruptionbudgets"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["networking.k8s.io"]
-    resources: ["networkpolicies"]
+    resources: ["networkpolicies", "ingresses"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  # ── Storage (#872) ─────────────────────────────────────────────────────────
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "csidrivers", "csinodes", "volumeattachments"]
+    verbs: ["get", "list", "watch"]
+  # ── Discovery (#872) ───────────────────────────────────────────────────────
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
     verbs: ["get", "list", "watch"]
   # ── cert-manager ─────────────────────────────────────────────────────────
   - apiGroups: ["cert-manager.io"]
