@@ -10,6 +10,8 @@
 **Status**: Draft
 **Branch**: `development/v1.4`
 
+> **Partial Deprecation Notice**: References to #592 conversational mode and conversation-scoped overrides in this test plan are **stale**. The #592 conversational RAR API was removed (PR #867) in favor of MCP/A2A interactive mode (#703, #708, #713). Operator workflow/parameter override capabilities will be re-designed as part of the MCP interactive mode.
+
 ---
 
 ## 1. Introduction

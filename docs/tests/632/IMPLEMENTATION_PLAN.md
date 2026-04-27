@@ -5,6 +5,8 @@
 **Branch**: `development/v1.4`
 **Created**: 2026-03-04
 
+> **Partial Deprecation Notice**: References to the #592 conversational RAR API and `/api/v1/conversations/...` endpoints in this plan are **stale**. The conversation backend was removed (PR #867). The console plugin's chat interface will need to target MCP tools (#703) instead.
+
 ---
 
 ## Overview

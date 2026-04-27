@@ -10,6 +10,8 @@
 **Status**: Draft
 **Branch**: `development/v1.4`
 
+> **Partial Deprecation Notice**: References to the #592 conversational RAR API (`/api/v1/conversations/...` endpoints, SSE streaming chat, conversation session management) in this test plan are **stale**. The conversation backend was removed (PR #867) in favor of MCP/A2A interactive mode (#703, #708, #713). The OCP Console Plugin's conversational interface will need to be re-designed to use MCP tools instead of the removed conversation API.
+
 ---
 
 ## 1. Introduction
