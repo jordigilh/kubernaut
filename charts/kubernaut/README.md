@@ -15,9 +15,9 @@ Kubernaut is an autonomous Kubernetes remediation platform that detects incident
 
 **Workflow execution engine** (at least one):
 
-- Kubernetes Jobs (built-in, no extra dependency)
-- Tekton Pipelines (optional)
-- Ansible Automation Platform (AAP) / AWX (optional)
+- Kubernetes Jobs (built-in, always available)
+- Tekton Pipelines (auto-discovered via CRDs; [Issue #868](https://github.com/jordigilh/kubernaut/issues/868))
+- Ansible Automation Platform (AAP) / AWX (config-gated)
 
 ## Quick Start
 
@@ -302,6 +302,7 @@ For Vertex AI, Azure, or advanced setups (toolsets, MCP servers), use `sdkConfig
 | Parameter | Description | Default |
 |---|---|---|
 | `workflowexecution.config.execution.cooldownPeriod` | Cooldown between workflow executions | `1m` |
+| `workflowexecution.config.tekton.enabled` | `true`/omit = auto-discover Tekton CRDs; `false` = disable (#868) | _(auto-discover)_ |
 | `workflowexecution.config.ansible.apiURL` | AWX/AAP API URL (enables Ansible engine) | _(not set)_ |
 | `workflowexecution.config.ansible.insecure` | Skip TLS verification for AWX API | `false` |
 | `workflowexecution.config.ansible.organizationID` | AWX organization ID | `1` |
