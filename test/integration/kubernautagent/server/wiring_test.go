@@ -18,6 +18,7 @@ package server_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -330,6 +331,135 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			Expect(res.err).NotTo(HaveOccurred())
 			Expect(res.body).To(ContainSubstring("event: complete"),
 				"SSE stream must contain EventTypeComplete when investigation finishes")
+		})
+	})
+
+	// ---------------------------------------------------------------
+	// IT-WIRE-12: Snapshot endpoint returns enriched fields after completion
+	// ---------------------------------------------------------------
+	Describe("IT-WIRE-12: Snapshot returns enriched fields after investigation completes", func() {
+		It("GET /snapshot returns session_id, status, rca_summary, and token counts", func() {
+			h := newTestHarness()
+			defer h.Close()
+
+			id := startInvestigationWithFunc(h, func(ctx context.Context) (interface{}, error) {
+				return &katypes.InvestigationResult{
+					RCASummary: "pod OOM killed due to memory leak in worker container",
+					Confidence: 0.92,
+					TokenUsage: &katypes.TokenUsageSummary{
+						PromptTokens:     800,
+						CompletionTokens: 200,
+					},
+				}, nil
+			})
+			waitForStatus(h, id, session.StatusCompleted)
+
+			resp, err := http.Get(h.Server.URL + "/api/v1/incident/session/" + id + "/snapshot")
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusOK),
+				"snapshot of completed session should return 200")
+
+			body, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
+
+			var snap map[string]interface{}
+			Expect(json.Unmarshal(body, &snap)).To(Succeed())
+			Expect(snap["session_id"]).To(Equal(id))
+			Expect(snap["status"]).To(Equal("completed"))
+			Expect(snap["rca_summary"]).To(Equal("pod OOM killed due to memory leak in worker container"))
+			Expect(snap["total_prompt_tokens"]).To(BeNumerically("==", 800))
+			Expect(snap["total_completion_tokens"]).To(BeNumerically("==", 200))
+		})
+
+		It("GET /snapshot returns 409 for in-progress session", func() {
+			h := newTestHarness()
+			defer h.Close()
+
+			id := startInvestigation(h)
+			waitForStatus(h, id, session.StatusRunning)
+
+			resp, err := http.Get(h.Server.URL + "/api/v1/incident/session/" + id + "/snapshot")
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusConflict),
+				"snapshot of running session should return 409 Conflict")
+
+			h.Manager.CancelInvestigation(id)
+		})
+	})
+
+	// ---------------------------------------------------------------
+	// IT-WIRE-13: Token delta events flow through SSE to client
+	// ---------------------------------------------------------------
+	Describe("IT-WIRE-13: Token delta events flow through SSE to HTTP client", func() {
+		It("SSE body contains event: token_delta when investigation streams tokens", func() {
+			h := newTestHarness()
+			defer h.Close()
+
+			proceed := make(chan struct{})
+			id := startInvestigationWithFunc(h, func(ctx context.Context) (interface{}, error) {
+				<-proceed
+				sink := session.EventSinkFromContext(ctx)
+				if sink != nil {
+					sink <- session.InvestigationEvent{
+						Type:  session.EventTypeTokenDelta,
+						Turn:  1,
+						Phase: "rca",
+						Data:  []byte(`{"delta":"The root cause"}`),
+					}
+					sink <- session.InvestigationEvent{
+						Type:  session.EventTypeTokenDelta,
+						Turn:  1,
+						Phase: "rca",
+						Data:  []byte(`{"delta":" is OOM"}`),
+					}
+				}
+				return &katypes.InvestigationResult{RCASummary: "OOM killed"}, nil
+			})
+			waitForStatus(h, id, session.StatusRunning)
+
+			type sseResult struct {
+				body string
+				err  error
+			}
+			ch := make(chan sseResult, 1)
+			go func() {
+				resp, err := http.Get(h.Server.URL + "/api/v1/incident/session/" + id + "/stream")
+				if err != nil {
+					ch <- sseResult{"", err}
+					return
+				}
+				defer resp.Body.Close()
+				data, readErr := io.ReadAll(resp.Body)
+				ch <- sseResult{string(data), readErr}
+			}()
+
+			Eventually(func() int {
+				return len(h.AuditStore.EventsOfType(audit.EventTypeSessionObserved))
+			}, 5*time.Second).Should(BeNumerically(">=", 1),
+				"subscriber must connect before investigation completes")
+			close(proceed)
+
+			var res sseResult
+			Eventually(func() bool {
+				select {
+				case res = <-ch:
+					return true
+				default:
+					return false
+				}
+			}, 10*time.Second).Should(BeTrue(), "SSE stream should complete")
+
+			Expect(res.err).NotTo(HaveOccurred())
+			Expect(res.body).To(ContainSubstring("event: token_delta"),
+				"SSE stream must contain token_delta events when investigation streams tokens")
+			Expect(res.body).To(ContainSubstring("The root cause"),
+				"token_delta event data must flow through to the SSE body")
+			Expect(res.body).To(ContainSubstring("event: complete"),
+				"stream must terminate with complete event after token deltas")
 		})
 	})
 
