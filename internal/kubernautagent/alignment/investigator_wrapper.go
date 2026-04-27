@@ -133,9 +133,11 @@ func (w *InvestigatorWrapper) emitAlignmentAudit(ctx context.Context, signal kat
 		return
 	}
 
+	correlationID := signal.RemediationID
+
 	for _, obs := range verdict.Observations {
 		if obs.Suspicious {
-			event := audit.NewEvent(audit.EventTypeAlignmentStep, signal.Name)
+			event := audit.NewEvent(audit.EventTypeAlignmentStep, correlationID)
 			event.EventAction = audit.ActionAlignmentEvaluate
 			event.EventOutcome = audit.OutcomeFailure
 			event.Data["step_index"] = obs.Step.Index
@@ -146,7 +148,7 @@ func (w *InvestigatorWrapper) emitAlignmentAudit(ctx context.Context, signal kat
 		}
 	}
 
-	event := audit.NewEvent(audit.EventTypeAlignmentVerdict, signal.Name)
+	event := audit.NewEvent(audit.EventTypeAlignmentVerdict, correlationID)
 	event.EventAction = audit.ActionAlignmentVerdict
 	if verdict.Result == VerdictSuspicious {
 		event.EventOutcome = audit.OutcomeFailure

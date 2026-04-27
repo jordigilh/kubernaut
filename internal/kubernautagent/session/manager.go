@@ -104,7 +104,20 @@ func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, me
 	_ = m.store.Update(id, StatusRunning, nil, nil)
 
 	correlationID := metadata["remediation_id"]
-	m.emitSessionEvent(ctx, audit.EventTypeSessionStarted, audit.ActionSessionStarted, audit.OutcomeSuccess, id, correlationID, nil)
+	var startExtra []string
+	if v := metadata["incident_id"]; v != "" {
+		startExtra = append(startExtra, "incident_id", v)
+	}
+	if v := metadata["signal_name"]; v != "" {
+		startExtra = append(startExtra, "signal_name", v)
+	}
+	if v := metadata["severity"]; v != "" {
+		startExtra = append(startExtra, "severity", v)
+	}
+	if v := metadata["created_by"]; v != "" {
+		startExtra = append(startExtra, "created_by", v)
+	}
+	m.emitSessionEvent(ctx, audit.EventTypeSessionStarted, audit.ActionSessionStarted, audit.OutcomeSuccess, id, correlationID, nil, startExtra...)
 
 	go func() {
 		defer m.closeEventChan(id)
@@ -209,11 +222,15 @@ func (m *Manager) Subscribe(ctx context.Context, id string) (<-chan Investigatio
 
 	ch := sess.eventChan
 	correlationID := sess.Metadata["remediation_id"]
+	sessionOwner := sess.Metadata["created_by"]
 	m.store.mu.Unlock()
 
 	var extra []string
 	if user := auth.GetUserFromContext(ctx); user != "" {
 		extra = append(extra, "observer_user", user)
+	}
+	if sessionOwner != "" {
+		extra = append(extra, "session_owner", sessionOwner)
 	}
 	m.emitSessionEvent(ctx, audit.EventTypeSessionObserved, audit.ActionSessionObserved, audit.OutcomeSuccess, id, correlationID, nil, extra...)
 
@@ -312,14 +329,27 @@ func (m *Manager) emitCompleteEvent(id string) {
 }
 
 // EmitAccessDenied records a failed session access attempt for SOC2 CC8.1
-// failed-access audit trail. Fire-and-forget per ADR-038.
+// failed-access audit trail. Includes correlationID and session_owner for
+// forensic cross-event correlation (SEC-2). Fire-and-forget per ADR-038.
 func (m *Manager) EmitAccessDenied(ctx context.Context, sessionID, endpoint, requestingUser string) {
-	event := audit.NewEvent(audit.EventTypeSessionAccessDenied, "")
+	m.store.mu.RLock()
+	sess := m.store.sessions[sessionID]
+	var correlationID, sessionOwner string
+	if sess != nil {
+		correlationID = sess.Metadata["remediation_id"]
+		sessionOwner = sess.Metadata["created_by"]
+	}
+	m.store.mu.RUnlock()
+
+	event := audit.NewEvent(audit.EventTypeSessionAccessDenied, correlationID)
 	event.EventAction = audit.ActionSessionAccessDenied
 	event.EventOutcome = audit.OutcomeFailure
 	event.Data["session_id"] = sessionID
 	event.Data["endpoint"] = endpoint
 	event.Data["requesting_user"] = requestingUser
+	if sessionOwner != "" {
+		event.Data["session_owner"] = sessionOwner
+	}
 	audit.StoreBestEffort(ctx, m.auditStore, event, m.logger)
 }
 

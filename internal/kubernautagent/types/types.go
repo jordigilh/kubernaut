@@ -98,6 +98,25 @@ type InvestigationResult struct {
 	// cancellation was detected. Together with CancelledPhase, this enables
 	// full audit reconstruction of investigation progress (SOC2 CC8.1).
 	CancelledAtTurn int `json:"cancelled_at_turn,omitempty"`
+
+	// AccumulatedMessages holds the LLM conversation accumulated before
+	// cancellation. Serialized into audit events for forensic post-mortem
+	// RAG (BR-AUDIT-070). Only populated when Cancelled is true.
+	AccumulatedMessages []map[string]interface{} `json:"accumulated_messages,omitempty"`
+
+	// TokenUsage holds cumulative token counts at the point of result
+	// construction. For cancelled investigations this captures spend up to
+	// cancellation; for completed investigations it captures total spend.
+	// Used for cost attribution and forensic audit (BR-AUDIT-070, CC6.1).
+	TokenUsage *TokenUsageSummary `json:"token_usage,omitempty"`
+}
+
+// TokenUsageSummary holds cumulative token counts. Mirrors
+// investigator.TokenUsageSummary for cross-package use.
+type TokenUsageSummary struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 // ValidationAttemptRecord captures a single validation attempt during
