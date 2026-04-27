@@ -4141,14 +4141,49 @@ func (s *SessionSnapshot) encodeFields(e *jx.Encoder) {
 			s.Error.Encode(e)
 		}
 	}
+	{
+		if s.CancelledPhase.Set {
+			e.FieldStart("cancelled_phase")
+			s.CancelledPhase.Encode(e)
+		}
+	}
+	{
+		if s.CancelledAtTurn.Set {
+			e.FieldStart("cancelled_at_turn")
+			s.CancelledAtTurn.Encode(e)
+		}
+	}
+	{
+		if s.RcaSummary.Set {
+			e.FieldStart("rca_summary")
+			s.RcaSummary.Encode(e)
+		}
+	}
+	{
+		if s.TotalPromptTokens.Set {
+			e.FieldStart("total_prompt_tokens")
+			s.TotalPromptTokens.Encode(e)
+		}
+	}
+	{
+		if s.TotalCompletionTokens.Set {
+			e.FieldStart("total_completion_tokens")
+			s.TotalCompletionTokens.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfSessionSnapshot = [5]string{
+var jsonFieldsNameOfSessionSnapshot = [10]string{
 	0: "session_id",
 	1: "status",
 	2: "metadata",
 	3: "created_at",
 	4: "error",
+	5: "cancelled_phase",
+	6: "cancelled_at_turn",
+	7: "rca_summary",
+	8: "total_prompt_tokens",
+	9: "total_completion_tokens",
 }
 
 // Decode decodes SessionSnapshot from json.
@@ -4156,7 +4191,7 @@ func (s *SessionSnapshot) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode SessionSnapshot to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -4216,6 +4251,56 @@ func (s *SessionSnapshot) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"error\"")
 			}
+		case "cancelled_phase":
+			if err := func() error {
+				s.CancelledPhase.Reset()
+				if err := s.CancelledPhase.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cancelled_phase\"")
+			}
+		case "cancelled_at_turn":
+			if err := func() error {
+				s.CancelledAtTurn.Reset()
+				if err := s.CancelledAtTurn.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cancelled_at_turn\"")
+			}
+		case "rca_summary":
+			if err := func() error {
+				s.RcaSummary.Reset()
+				if err := s.RcaSummary.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rca_summary\"")
+			}
+		case "total_prompt_tokens":
+			if err := func() error {
+				s.TotalPromptTokens.Reset()
+				if err := s.TotalPromptTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_prompt_tokens\"")
+			}
+		case "total_completion_tokens":
+			if err := func() error {
+				s.TotalCompletionTokens.Reset()
+				if err := s.TotalCompletionTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_completion_tokens\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -4225,8 +4310,9 @@ func (s *SessionSnapshot) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
+	for i, mask := range [2]uint8{
 		0b00001011,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

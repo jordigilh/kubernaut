@@ -2362,7 +2362,9 @@ func (o OptSessionSnapshotMetadata) Or(d SessionSnapshotMetadata) SessionSnapsho
 
 // Point-in-time snapshot of session state.
 // Business Requirement: BR-SESSION-002 (Session lifecycle visibility)
-// PR3 extends with messages, turn, phase, tokens from CancelledResult.
+// BR-AUDIT-070: Forensic Post-Mortem RAG Data Completeness
+// Extended with cancelled_phase, cancelled_at_turn, rca_summary, and token usage from investigation
+// result.
 // Ref: #/components/schemas/SessionSnapshot
 type SessionSnapshot struct {
 	// Session identifier.
@@ -2375,6 +2377,17 @@ type SessionSnapshot struct {
 	CreatedAt string `json:"created_at"`
 	// Error message for failed sessions, null otherwise.
 	Error OptNilString `json:"error"`
+	// Investigation phase active at cancellation (rca or workflow_discovery), null for non-cancelled
+	// sessions.
+	CancelledPhase OptNilString `json:"cancelled_phase"`
+	// LLM conversation turn at cancellation, null for non-cancelled sessions.
+	CancelledAtTurn OptNilInt `json:"cancelled_at_turn"`
+	// Root cause analysis summary from investigation result, null if not available.
+	RcaSummary OptNilString `json:"rca_summary"`
+	// Cumulative prompt tokens consumed during the investigation.
+	TotalPromptTokens OptNilInt `json:"total_prompt_tokens"`
+	// Cumulative completion tokens consumed during the investigation.
+	TotalCompletionTokens OptNilInt `json:"total_completion_tokens"`
 }
 
 // GetSessionID returns the value of SessionID.
@@ -2402,6 +2415,31 @@ func (s *SessionSnapshot) GetError() OptNilString {
 	return s.Error
 }
 
+// GetCancelledPhase returns the value of CancelledPhase.
+func (s *SessionSnapshot) GetCancelledPhase() OptNilString {
+	return s.CancelledPhase
+}
+
+// GetCancelledAtTurn returns the value of CancelledAtTurn.
+func (s *SessionSnapshot) GetCancelledAtTurn() OptNilInt {
+	return s.CancelledAtTurn
+}
+
+// GetRcaSummary returns the value of RcaSummary.
+func (s *SessionSnapshot) GetRcaSummary() OptNilString {
+	return s.RcaSummary
+}
+
+// GetTotalPromptTokens returns the value of TotalPromptTokens.
+func (s *SessionSnapshot) GetTotalPromptTokens() OptNilInt {
+	return s.TotalPromptTokens
+}
+
+// GetTotalCompletionTokens returns the value of TotalCompletionTokens.
+func (s *SessionSnapshot) GetTotalCompletionTokens() OptNilInt {
+	return s.TotalCompletionTokens
+}
+
 // SetSessionID sets the value of SessionID.
 func (s *SessionSnapshot) SetSessionID(val string) {
 	s.SessionID = val
@@ -2425,6 +2463,31 @@ func (s *SessionSnapshot) SetCreatedAt(val string) {
 // SetError sets the value of Error.
 func (s *SessionSnapshot) SetError(val OptNilString) {
 	s.Error = val
+}
+
+// SetCancelledPhase sets the value of CancelledPhase.
+func (s *SessionSnapshot) SetCancelledPhase(val OptNilString) {
+	s.CancelledPhase = val
+}
+
+// SetCancelledAtTurn sets the value of CancelledAtTurn.
+func (s *SessionSnapshot) SetCancelledAtTurn(val OptNilInt) {
+	s.CancelledAtTurn = val
+}
+
+// SetRcaSummary sets the value of RcaSummary.
+func (s *SessionSnapshot) SetRcaSummary(val OptNilString) {
+	s.RcaSummary = val
+}
+
+// SetTotalPromptTokens sets the value of TotalPromptTokens.
+func (s *SessionSnapshot) SetTotalPromptTokens(val OptNilInt) {
+	s.TotalPromptTokens = val
+}
+
+// SetTotalCompletionTokens sets the value of TotalCompletionTokens.
+func (s *SessionSnapshot) SetTotalCompletionTokens(val OptNilInt) {
+	s.TotalCompletionTokens = val
 }
 
 func (*SessionSnapshot) sessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes() {}

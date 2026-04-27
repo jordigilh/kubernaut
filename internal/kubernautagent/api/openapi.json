@@ -1334,6 +1334,66 @@
             ],
             "title": "Error",
             "description": "Error message for failed sessions, null otherwise"
+          },
+          "cancelled_phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled Phase",
+            "description": "Investigation phase active at cancellation (rca or workflow_discovery), null for non-cancelled sessions"
+          },
+          "cancelled_at_turn": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At Turn",
+            "description": "LLM conversation turn at cancellation, null for non-cancelled sessions"
+          },
+          "rca_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "RCA Summary",
+            "description": "Root cause analysis summary from investigation result, null if not available"
+          },
+          "total_prompt_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Prompt Tokens",
+            "description": "Cumulative prompt tokens consumed during the investigation"
+          },
+          "total_completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Completion Tokens",
+            "description": "Cumulative completion tokens consumed during the investigation"
           }
         },
         "type": "object",
@@ -1343,7 +1403,7 @@
           "created_at"
         ],
         "title": "SessionSnapshot",
-        "description": "Point-in-time snapshot of session state.\n\nBusiness Requirement: BR-SESSION-002 (Session lifecycle visibility)\n\nPR3 extends with messages, turn, phase, tokens from CancelledResult."
+        "description": "Point-in-time snapshot of session state.\n\nBusiness Requirement: BR-SESSION-002 (Session lifecycle visibility)\nBR-AUDIT-070: Forensic Post-Mortem RAG Data Completeness\n\nExtended with cancelled_phase, cancelled_at_turn, rca_summary, and token usage from investigation result."
       },
       "Severity": {
         "type": "string",
