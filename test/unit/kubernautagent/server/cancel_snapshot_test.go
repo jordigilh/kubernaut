@@ -167,6 +167,63 @@ var _ = Describe("TP-823-OAS: Cancel, Snapshot, Stream Endpoints (#823 PR2)", fu
 		})
 	})
 
+	Describe("UT-KA-PR9-T1: Snapshot returns enriched forensic fields from cancelled InvestigationResult", func() {
+		It("should return cancelled_phase, cancelled_at_turn, rca_summary, and token counts", func() {
+			sessionID, err := manager.StartInvestigation(
+				context.Background(),
+				func(_ context.Context) (interface{}, error) {
+					return &katypes.InvestigationResult{
+						Cancelled:       true,
+						CancelledPhase:  "workflow_discovery",
+						CancelledAtTurn: 3,
+						RCASummary:      "OOMKilled due to memory limit",
+						TokenUsage: &katypes.TokenUsageSummary{
+							PromptTokens:     400,
+							CompletionTokens: 200,
+							TotalTokens:      600,
+						},
+					}, nil
+				},
+				map[string]string{"incident_id": "snap-forensic", "remediation_id": "rem-forensic"},
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func() session.Status {
+				s, _ := manager.GetSession(sessionID)
+				return s.Status
+			}).Should(Equal(session.StatusCompleted))
+
+			params := agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams{
+				SessionID: sessionID,
+			}
+			resp, err := handler.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(context.Background(), params)
+			Expect(err).NotTo(HaveOccurred())
+
+			snap, ok := resp.(*agentclient.SessionSnapshot)
+			Expect(ok).To(BeTrue(), "response should be *SessionSnapshot")
+			Expect(snap.SessionID).To(Equal(sessionID))
+
+			phase, hasPhase := snap.CancelledPhase.Get()
+			Expect(hasPhase).To(BeTrue(), "cancelled_phase must be present")
+			Expect(phase).To(Equal("workflow_discovery"))
+
+			turn, hasTurn := snap.CancelledAtTurn.Get()
+			Expect(hasTurn).To(BeTrue(), "cancelled_at_turn must be present")
+			Expect(turn).To(Equal(3))
+
+			summary, hasSummary := snap.RcaSummary.Get()
+			Expect(hasSummary).To(BeTrue(), "rca_summary must be present")
+			Expect(summary).To(Equal("OOMKilled due to memory limit"))
+
+			prompt, hasPrompt := snap.TotalPromptTokens.Get()
+			Expect(hasPrompt).To(BeTrue(), "total_prompt_tokens must be present")
+			Expect(prompt).To(Equal(400))
+
+			completion, hasCompletion := snap.TotalCompletionTokens.Get()
+			Expect(hasCompletion).To(BeTrue(), "total_completion_tokens must be present")
+			Expect(completion).To(Equal(200))
+		})
+	})
+
 	Describe("UT-KA-823-OAS-005: Snapshot of running session returns 409", func() {
 		It("should return 409 indicating session is in progress", func() {
 			sessionID, err := manager.StartInvestigation(

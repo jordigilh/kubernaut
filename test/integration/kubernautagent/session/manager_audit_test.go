@@ -28,6 +28,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 type spyAuditStore struct {
@@ -95,12 +96,15 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 	})
 
 	Describe("IT-KA-823-A01: StartInvestigation emits session.started audit event", func() {
-		It("should emit a session.started event with session_id and remediation_id", func() {
+		It("should emit a session.started event with session_id, remediation_id, and incident metadata (GAP-T8)", func() {
+			userCtx := context.WithValue(context.Background(), auth.UserContextKey, "operator-alice")
 			metadata := map[string]string{
 				"remediation_id": "rr-123",
 				"incident_id":    "inc-456",
+				"signal_name":    "OOMKilled",
+				"severity":       "critical",
 			}
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(userCtx, func(ctx context.Context) (interface{}, error) {
 				return "result", nil
 			}, metadata)
 			Expect(err).NotTo(HaveOccurred())
@@ -115,6 +119,12 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 			Expect(started.Data).To(HaveKeyWithValue("session_id", id))
 			Expect(started.EventAction).To(Equal(audit.ActionSessionStarted))
 			Expect(started.EventCategory).To(Equal(audit.EventCategory))
+
+			By("verifying incident metadata fields (AUD-2 / GAP-T8)")
+			Expect(started.Data).To(HaveKeyWithValue("incident_id", "inc-456"))
+			Expect(started.Data).To(HaveKeyWithValue("signal_name", "OOMKilled"))
+			Expect(started.Data).To(HaveKeyWithValue("severity", "critical"))
+			Expect(started.Data).To(HaveKeyWithValue("created_by", "operator-alice"))
 		})
 	})
 

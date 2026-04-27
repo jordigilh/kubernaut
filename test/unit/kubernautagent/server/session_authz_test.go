@@ -226,18 +226,32 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 			Expect(ok).To(BeTrue())
 			Expect(httpErr.Status).To(Equal(404))
 
-			Eventually(func() bool {
-				for _, evt := range recorder.Events() {
-					if evt.EventType == audit.EventTypeSessionAccessDenied {
-						user, _ := evt.Data["requesting_user"].(string)
-						sid, _ := evt.Data["session_id"].(string)
-						ep, _ := evt.Data["endpoint"].(string)
-						return user == "user-b" && sid == id && ep != ""
-					}
+		Eventually(func() bool {
+			for _, evt := range recorder.Events() {
+				if evt.EventType == audit.EventTypeSessionAccessDenied {
+					user, _ := evt.Data["requesting_user"].(string)
+					sid, _ := evt.Data["session_id"].(string)
+					ep, _ := evt.Data["endpoint"].(string)
+					return user == "user-b" && sid == id && ep != ""
 				}
-				return false
-			}, 5*time.Second).Should(BeTrue(),
-				"access_denied audit event must include requesting_user, session_id, and endpoint")
+			}
+			return false
+		}, 5*time.Second).Should(BeTrue(),
+			"access_denied audit event must include requesting_user, session_id, and endpoint")
+
+			By("verifying session_owner is included (GAP-T5 / SEC-2)")
+			var found *audit.AuditEvent
+			for _, evt := range recorder.Events() {
+				if evt.EventType == audit.EventTypeSessionAccessDenied {
+					found = evt
+					break
+				}
+			}
+			Expect(found).NotTo(BeNil())
+			owner, _ := found.Data["session_owner"].(string)
+			Expect(owner).To(Equal("user-a"), "session_owner must identify the session creator")
+			Expect(found.CorrelationID).To(Equal("rr-denied-audit"),
+				"correlationID must be the remediation_id from session metadata")
 		})
 	})
 
@@ -259,17 +273,29 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 
 			close(proceed)
 
-			Eventually(func() bool {
-				for _, evt := range recorder.Events() {
-					if evt.EventType == audit.EventTypeSessionObserved {
-						if observer, ok := evt.Data["observer_user"].(string); ok {
-							return observer == "user-a"
-						}
+		Eventually(func() bool {
+			for _, evt := range recorder.Events() {
+				if evt.EventType == audit.EventTypeSessionObserved {
+					if observer, ok := evt.Data["observer_user"].(string); ok {
+						return observer == "user-a"
 					}
 				}
-				return false
-			}, 5*time.Second).Should(BeTrue(),
-				"session.observed audit event must include observer_user identity")
+			}
+			return false
+		}, 5*time.Second).Should(BeTrue(),
+			"session.observed audit event must include observer_user identity")
+
+			By("verifying session_owner is included (GAP-T6 / SEC-4)")
+			var observedEvt *audit.AuditEvent
+			for _, evt := range recorder.Events() {
+				if evt.EventType == audit.EventTypeSessionObserved {
+					observedEvt = evt
+					break
+				}
+			}
+			Expect(observedEvt).NotTo(BeNil())
+			owner, _ := observedEvt.Data["session_owner"].(string)
+			Expect(owner).To(Equal("user-a"), "session_owner must identify the session creator in observed events")
 		})
 	})
 
