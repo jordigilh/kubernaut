@@ -54,7 +54,6 @@ import (
 	alignprompt "github.com/jordigilh/kubernaut/internal/kubernautagent/alignment/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/conversation"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
@@ -274,45 +273,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	var convHandler *conversation.Handler
-	if cfg.Conversation.Enabled {
-		convLLMCfg := cfg.Conversation.EffectiveLLM(cfg.LLM)
-		convCfgMerge := *cfg
-		convCfgMerge.LLM = convLLMCfg
-		convLLMClient, convErr := langchaingo.New(
-			convLLMCfg.Provider, convLLMCfg.Endpoint, convLLMCfg.Model, convLLMCfg.APIKey,
-			buildLLMProviderOpts(&convCfgMerge)...)
-		if convErr != nil {
-			slogger.Warn("conversation LLM client failed, disabled", "error", convErr)
-		} else {
-			convAuthn, convAuthz := buildConversationAuth(k8sInfra, slogger)
-			if convAuthn != nil && convAuthz != nil {
-				var rarReader conversation.RARReader
-			if k8sInfra != nil {
-				rarReader = conversation.NewDynamicRARReader(k8sInfra.dynClient, slogger)
-			}
-			convHandler = conversation.NewHandler(conversation.HandlerDeps{
-					Authenticator: convAuthn,
-					Authorizer:    convAuthz,
-					AuditStore:    auditStore,
-					Config:        cfg.Conversation,
-					Logger:        slogger,
-					PromptBuilder: promptBuilder,
-					RARReader:     rarReader,
-				}).WithLLMClient(conversation.LLMAdapterDeps{
-					Client:             llm.NewInstrumentedClient(convLLMClient),
-					ToolRegistry:       effectiveReg,
-					AuditStore:         auditStore,
-					Logger:             slogger,
-					MaxToolTurns:       cfg.Conversation.MaxToolTurns,
-					ModelName:          convLLMCfg.Model,
-					AlignmentEvaluator: alignEvaluator,
-				})
-				slogger.Info("conversation API enabled", "model", convLLMCfg.Model)
-			}
-		}
-	}
-
 	r := chi.NewRouter()
 
 	// Issue #753: /config remains on API port; health, readiness and metrics move to dedicated ports
@@ -329,14 +289,6 @@ func main() {
 			)
 		} else {
 			slogger.Info("auth middleware DISABLED (no in-cluster K8s config)")
-		}
-
-		if convHandler != nil {
-			r.Route("/conversations", func(r chi.Router) {
-				r.Post("/sessions", convHandler.HandleCreateSession)
-				r.Post("/sessions/{sessionID}/messages", convHandler.HandlePostMessage)
-			})
-			slogger.Info("conversation routes registered under /api/v1/conversations")
 		}
 
 		r.Handle("/*", ogenSrv)
@@ -919,11 +871,3 @@ func newAuthMiddleware(infra *k8sInfra, logger logr.Logger) *auth.Middleware {
 	}, logger)
 }
 
-// buildConversationAuth creates authenticator/authorizer for the conversation API using shared k8sInfra.
-func buildConversationAuth(infra *k8sInfra, logger *slog.Logger) (auth.Authenticator, auth.Authorizer) {
-	if infra == nil || infra.clientset == nil {
-		logger.Warn("K8s infrastructure unavailable for conversation auth")
-		return nil, nil
-	}
-	return auth.NewK8sAuthenticator(infra.clientset), auth.NewK8sAuthorizer(infra.clientset)
-}
