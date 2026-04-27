@@ -87,7 +87,9 @@ var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
 			store := session.NewStore(30 * time.Minute)
 			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{})
 
+			subscribed := make(chan struct{})
 			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+				<-subscribed
 				sink := session.EventSinkFromContext(ctx)
 				if sink != nil {
 					sink <- session.InvestigationEvent{
@@ -107,6 +109,7 @@ var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
 
 			ch, subErr := mgr.Subscribe(context.Background(), id)
 			Expect(subErr).NotTo(HaveOccurred())
+			close(subscribed)
 
 			var events []session.InvestigationEvent
 			Eventually(func() int {
