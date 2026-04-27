@@ -90,6 +90,7 @@ func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, me
 
 	ls := &LazySink{}
 	bgCtx = WithLazySink(bgCtx, ls)
+	bgCtx = WithSessionID(bgCtx, id)
 
 	m.store.mu.Lock()
 	sess := m.store.sessions[id]

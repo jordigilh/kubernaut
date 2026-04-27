@@ -1106,7 +1106,9 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 				}
 			}
 
-			messages = append(messages, resp.Message)
+			assistantMsg := resp.Message
+			assistantMsg.ToolCalls = resp.ToolCalls
+			messages = append(messages, assistantMsg)
 			for i, tc := range resp.ToolCalls {
 				emitToSink(ctx, session.EventTypeToolCallStart, turn, string(phase), map[string]interface{}{
 					"tool_name": tc.Name,
@@ -1406,6 +1408,9 @@ func (inv *Investigator) emitCancellationAudit(ctx context.Context, result *katy
 	event := audit.NewEvent(audit.EventTypeInvestigationCancelled, correlationID)
 	event.EventAction = audit.ActionInvestigationCancelled
 	event.EventOutcome = audit.OutcomeFailure
+	if sid := session.SessionIDFromContext(ctx); sid != "" {
+		event.Data["session_id"] = sid
+	}
 	event.Data["cancelled_phase"] = result.CancelledPhase
 	event.Data["cancelled_at_turn"] = result.CancelledAtTurn
 	if result.TokenUsage != nil {

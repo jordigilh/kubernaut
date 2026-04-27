@@ -2466,6 +2466,15 @@ components:
             - $ref: '#/components/schemas/LLMToolCallPayload'
             - $ref: '#/components/schemas/ConversationTurnPayload'
             - $ref: '#/components/schemas/WorkflowValidationPayload'
+            - $ref: '#/components/schemas/AIAgentSessionStartedPayload'
+            - $ref: '#/components/schemas/AIAgentSessionCompletedPayload'
+            - $ref: '#/components/schemas/AIAgentSessionFailedPayload'
+            - $ref: '#/components/schemas/AIAgentSessionCancelledPayload'
+            - $ref: '#/components/schemas/AIAgentSessionObservedPayload'
+            - $ref: '#/components/schemas/AIAgentSessionAccessDeniedPayload'
+            - $ref: '#/components/schemas/AIAgentInvestigationCancelledPayload'
+            - $ref: '#/components/schemas/AIAgentAlignmentStepPayload'
+            - $ref: '#/components/schemas/AIAgentAlignmentVerdictPayload'
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
             - $ref: '#/components/schemas/EffectivenessAssessmentAuditPayload'
@@ -2547,6 +2556,15 @@ components:
               'aiagent.llm.tool_call': '#/components/schemas/LLMToolCallPayload'
               'aiagent.conversation.turn': '#/components/schemas/ConversationTurnPayload'
               'aiagent.workflow.validation_attempt': '#/components/schemas/WorkflowValidationPayload'
+              'aiagent.session.started': '#/components/schemas/AIAgentSessionStartedPayload'
+              'aiagent.session.completed': '#/components/schemas/AIAgentSessionCompletedPayload'
+              'aiagent.session.failed': '#/components/schemas/AIAgentSessionFailedPayload'
+              'aiagent.session.cancelled': '#/components/schemas/AIAgentSessionCancelledPayload'
+              'aiagent.session.observed': '#/components/schemas/AIAgentSessionObservedPayload'
+              'aiagent.session.access_denied': '#/components/schemas/AIAgentSessionAccessDeniedPayload'
+              'aiagent.investigation.cancelled': '#/components/schemas/AIAgentInvestigationCancelledPayload'
+              'aiagent.alignment.step': '#/components/schemas/AIAgentAlignmentStepPayload'
+              'aiagent.alignment.verdict': '#/components/schemas/AIAgentAlignmentVerdictPayload'
               'effectiveness.health.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.hash.computed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.alert.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
@@ -5594,6 +5612,233 @@ components:
           type: boolean
           default: false
           description: Whether this is the final validation attempt
+
+    # ─── Session Lifecycle Payloads (BR-AUDIT-070, SOC2 CC7.2/CC8.1) ───
+
+    AIAgentSessionStartedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Session started event payload (aiagent.session.started) - Emitted when a new investigation session begins (SOC2 CC7.2, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.started']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+        incident_id:
+          type: string
+          description: Incident correlation ID (remediation_id) linking to the triggering signal
+        signal_name:
+          type: string
+          description: Alert/signal name that triggered the investigation
+        severity:
+          type: string
+          description: Severity of the triggering signal
+        created_by:
+          type: string
+          description: Authenticated user identity that initiated the investigation
+
+    AIAgentSessionCompletedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Session completed event payload (aiagent.session.completed) - Emitted when investigation finishes successfully (SOC2 CC7.2, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.completed']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+
+    AIAgentSessionFailedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Session failed event payload (aiagent.session.failed) - Emitted when investigation encounters a fatal error (SOC2 CC7.2, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.failed']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+        error:
+          type: string
+          description: Error message from the failed investigation
+
+    AIAgentSessionCancelledPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Session cancelled event payload (aiagent.session.cancelled) - Emitted when an operator cancels an active investigation (SOC2 CC7.2, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.cancelled']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+
+    AIAgentSessionObservedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Session observed event payload (aiagent.session.observed) - Emitted when an operator subscribes to the SSE stream (SOC2 CC8.1, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.observed']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+        observer_user:
+          type: string
+          description: Authenticated user who subscribed to the session stream
+        session_owner:
+          type: string
+          description: User who owns the observed session (SEC-4 attribution)
+
+    AIAgentSessionAccessDeniedPayload:
+      type: object
+      required: [event_type, event_id, session_id, endpoint, requesting_user]
+      description: Session access denied event payload (aiagent.session.access_denied) - Emitted when a user attempts to access a session they do not own (SOC2 CC8.1, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.access_denied']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Target session identifier
+        endpoint:
+          type: string
+          description: API endpoint that was accessed
+          example: "/api/v1/incident/session/{id}/status"
+        requesting_user:
+          type: string
+          description: Authenticated user who attempted the access
+        session_owner:
+          type: string
+          description: User who owns the target session
+
+    # ─── Investigation Cancellation Payload (BR-AUDIT-070, SOC2 CC8.1) ───
+
+    AIAgentInvestigationCancelledPayload:
+      type: object
+      required: [event_type, event_id, cancelled_phase, cancelled_at_turn]
+      description: Investigation-level cancellation event payload (aiagent.investigation.cancelled) - Carries investigator-internal state at cancellation point for forensic audit reconstruction (SOC2 CC8.1, BR-AUDIT-070). Distinct from session.cancelled which records the lifecycle transition.
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.investigation.cancelled']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier for cross-event correlation (AUD-4)
+        cancelled_phase:
+          type: string
+          description: Investigation phase active at cancellation (rca or workflow_discovery)
+          example: "rca"
+        cancelled_at_turn:
+          type: integer
+          minimum: 0
+          description: LLM conversation turn number at cancellation
+        total_prompt_tokens:
+          type: integer
+          minimum: 0
+          description: Cumulative prompt tokens consumed before cancellation (cost attribution)
+        total_completion_tokens:
+          type: integer
+          minimum: 0
+          description: Cumulative completion tokens consumed before cancellation (cost attribution)
+        total_tokens:
+          type: integer
+          minimum: 0
+          description: Cumulative total tokens consumed before cancellation
+        accumulated_messages:
+          type: string
+          description: JSON-serialized conversation messages accumulated before cancellation (forensic RAG, capped at 64KB)
+
+    # ─── Alignment Payloads (BR-AUDIT-070, SOC2 CC7.2) ───
+
+    AIAgentAlignmentStepPayload:
+      type: object
+      required: [event_type, event_id, step_index, step_kind, explanation]
+      description: Alignment step event payload (aiagent.alignment.step) - Emitted per suspicious observation from the shadow agent alignment check (SOC2 CC7.2, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.alignment.step']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        step_index:
+          type: integer
+          minimum: 0
+          description: Sequential index of the observed step
+        step_kind:
+          type: string
+          description: Kind of step observed (signal_input, tool_call, llm_response, etc.)
+          example: "tool_call"
+        tool:
+          type: string
+          description: Tool name if step_kind is tool_call
+        explanation:
+          type: string
+          description: Shadow agent explanation of why the step was flagged as suspicious
+
+    AIAgentAlignmentVerdictPayload:
+      type: object
+      required: [event_type, event_id, result, flagged, total]
+      description: Alignment verdict event payload (aiagent.alignment.verdict) - Final verdict from the shadow agent alignment evaluation (SOC2 CC7.2, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.alignment.verdict']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        result:
+          type: string
+          description: Verdict result (aligned or suspicious)
+          example: "aligned"
+        summary:
+          type: string
+          description: Human-readable summary of the alignment verdict
+        flagged:
+          type: integer
+          minimum: 0
+          description: Number of steps flagged as suspicious
+        total:
+          type: integer
+          minimum: 0
+          description: Total number of steps evaluated
 
     # ─── Remediation History Context (DD-HAPI-016) ───
 
