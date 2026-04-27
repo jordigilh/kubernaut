@@ -1,4 +1,22 @@
-# OCP overlay for OpenShift deployments.
+# ┌──────────────────────────────────────────────────────────────────────────────┐
+# │  DEPRECATED (v1.4) — This file will be REMOVED in v1.5.                    │
+# │                                                                             │
+# │  For OpenShift deployments, use the Kubernaut Operator instead:             │
+# │    https://jordigilh.github.io/kubernaut-docs/operations/operator/          │
+# │                                                                             │
+# │  The Operator provides native OCP integration including:                    │
+# │    - TLS certificate lifecycle via service-ca                               │
+# │    - OCP-specific RBAC and SecurityContextConstraints                       │
+# │    - OLM catalog integration and automated upgrades                         │
+# │    - Health monitoring and drift reconciliation                             │
+# │                                                                             │
+# │  Migration guide:                                                           │
+# │    https://jordigilh.github.io/kubernaut-docs/operations/helm-to-operator/  │
+# │                                                                             │
+# │  See: Issue #848 (deprecation), Issue #864 (removal in v1.5)               │
+# └──────────────────────────────────────────────────────────────────────────────┘
+#
+# OCP overlay for OpenShift deployments (DEPRECATED).
 # Usage: helm install kubernaut charts/kubernaut -f charts/kubernaut/values-ocp.yaml
 #
 # Layer this on top of your values to:

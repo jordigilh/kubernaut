@@ -170,6 +170,8 @@ data:
       prometheus:
         url: {{ include "kubernaut.monitoring.prometheus.url" . | quote }}
 {{- end }}
+{{/* DEPRECATED v1.4 (Issue #848): OCP service-ca inject-cabundle ConfigMap.
+     Will be removed in v1.5 — use the Kubernaut Operator for OCP. */}}
 {{- if include "kubernaut.agent.tlsEnabled" . }}
 ---
 apiVersion: v1
@@ -384,6 +386,7 @@ spec:
       targetPort: 9090
   selector:
     app: kubernaut-agent
+{{/* DEPRECATED v1.4 (Issue #848): OCP monitoring RBAC. Removed in v1.5. */}}
 {{- if include "kubernaut.monitoring.ocpRbac" . }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1

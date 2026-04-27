@@ -35,9 +35,10 @@ data:
       {{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
       tlsCaFile: /etc/ssl/em/service-ca.crt
       {{- end }}
+{{/* DEPRECATED v1.4 (Issue #848): OCP service-ca inject-cabundle ConfigMap.
+     Will be removed in v1.5 — use the Kubernaut Operator for OCP. */}}
 {{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
 ---
-# Issue #452/#463: OCP service-serving CA injection.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -252,10 +253,9 @@ spec:
           configMap:
             name: inter-service-ca
             optional: true
+{{/* DEPRECATED v1.4 (Issue #848): OCP monitoring RBAC block. Removed in v1.5. */}}
 {{- if include "kubernaut.monitoring.ocpRbac" . }}
 ---
-# Issue #452: OCP monitoring RBAC — Prometheus metrics.
-# Grants the EM service account read access to cluster monitoring on OCP.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -272,7 +272,6 @@ subjects:
     namespace: {{ .Release.Namespace }}
 {{- if include "kubernaut.monitoring.alertManager.enabled" . }}
 ---
-# Issue #576/#463: OCP AlertManager API access via kube-rbac-proxy.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

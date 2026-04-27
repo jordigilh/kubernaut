@@ -173,6 +173,7 @@ metadata:
     app: datastorage
     {{- include "kubernaut.labels" . | nindent 4 }}
   annotations:
+    # DEPRECATED v1.4 (Issue #848): OCP service-ca annotation. Removed in v1.5.
     service.beta.openshift.io/serving-cert-secret-name: datastorage-tls
 spec:
   type: {{ .Values.datastorage.service.type }}

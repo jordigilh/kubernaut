@@ -1,4 +1,26 @@
 Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Namespace }}.
+{{- if or (include "kubernaut.monitoring.isOCP" .) (eq (.Values.postgresql.variant | default "upstream") "ocp") }}
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  ⚠️  DEPRECATION WARNING (Issue #848)                                       ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║  OpenShift-specific Helm chart paths are DEPRECATED in v1.4 and will be      ║
+║  REMOVED in v1.5. This includes:                                             ║
+║                                                                              ║
+║    - values-ocp.yaml overlay                                                 ║
+║    - postgresql.variant: "ocp"                                               ║
+║    - OCP service-ca annotations and inject-cabundle ConfigMaps               ║
+║    - OCP monitoring RBAC (cluster-monitoring-view bindings)                   ║
+║    - OCP auto-detection for Prometheus/AlertManager URLs                     ║
+║                                                                              ║
+║  MIGRATION: Use the Kubernaut Operator for OpenShift deployments.            ║
+║                                                                              ║
+║    Docs:  https://jordigilh.github.io/kubernaut-docs/operations/operator/    ║
+║    Guide: https://jordigilh.github.io/kubernaut-docs/operations/helm-to-operator/
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+{{- end }}
 
 === Post-Install Verification ===
 

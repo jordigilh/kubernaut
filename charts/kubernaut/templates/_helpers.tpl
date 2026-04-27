@@ -327,6 +327,8 @@ Usage: {{ include "kubernaut.podSecurityContext" .Values.gateway | nindent 6 }}
 
 {{/*
 Whether the cluster is OCP (presence of route.openshift.io/v1 API).
+DEPRECATED v1.4 (Issue #848): OCP auto-detection will be removed in v1.5.
+Use the Kubernaut Operator for OpenShift deployments.
 */}}
 {{- define "kubernaut.monitoring.isOCP" -}}
 {{- if .Capabilities.APIVersions.Has "route.openshift.io/v1" -}}true{{- end -}}
@@ -393,6 +395,8 @@ Resolved AlertManager TLS CA file path. On OCP, defaults to service-serving CA.
 {{/*
 Whether OCP monitoring RBAC should be created.
 True when monitoring is enabled and cluster is OCP.
+DEPRECATED v1.4 (Issue #848): OCP RBAC helpers will be removed in v1.5.
+Use the Kubernaut Operator for OpenShift deployments.
 */}}
 {{- define "kubernaut.monitoring.ocpRbac" -}}
 {{- if and (or (include "kubernaut.monitoring.prometheus.enabled" .) (include "kubernaut.monitoring.alertManager.enabled" .)) (include "kubernaut.monitoring.isOCP" .) -}}true{{- end -}}

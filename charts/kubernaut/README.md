@@ -207,7 +207,15 @@ valkey:
 
 ### OpenShift (OCP)
 
+> **DEPRECATED v1.4 (Issue #848)**: The OCP Helm chart overlay is deprecated and will be
+> **removed in v1.5**. For OpenShift deployments, use the
+> [Kubernaut Operator](https://jordigilh.github.io/kubernaut-docs/operations/operator/)
+> which provides native OCP integration (service-ca TLS, OLM catalog, SCC management,
+> automated upgrades). See the
+> [Helm-to-Operator Migration Guide](https://jordigilh.github.io/kubernaut-docs/operations/helm-to-operator/).
+
 ```bash
+# DEPRECATED — use the Kubernaut Operator instead (available since v1.3)
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   -n kubernaut-system \
   -f charts/kubernaut/values-ocp.yaml \
@@ -253,9 +261,9 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 | `kubernautAgent.existingSdkConfigMap` | Pre-existing ConfigMap for SDK config (highest priority) | `""` |
 | `kubernautAgent.prometheus.enabled` | Enable Prometheus toolset in auto-generated SDK config | `false` |
 | `kubernautAgent.prometheus.url` | Prometheus/Thanos URL | `""` |
-| `kubernautAgent.prometheus.ocpMonitoringRbac` | Create RBAC for OCP monitoring stack | `false` |
+| `kubernautAgent.prometheus.ocpMonitoringRbac` | **DEPRECATED v1.4** — Create RBAC for OCP monitoring stack | `false` |
 | `kubernautAgent.prometheus.tls.enabled` | Enable TLS CA trust for Prometheus connections | `false` |
-| `kubernautAgent.prometheus.tls.caConfigMapName` | ConfigMap with CA PEM (leave empty on OCP) | `""` |
+| `kubernautAgent.prometheus.tls.caConfigMapName` | ConfigMap with CA PEM | `""` |
 
 **SDK config precedence**: `existingSdkConfigMap` > `sdkConfigContent` > `llm.provider`+`llm.model` > fail.
 
