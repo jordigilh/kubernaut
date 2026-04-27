@@ -700,14 +700,6 @@
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
         "tolerations": { "$ref": "#/definitions/tolerations" },
-        "conversations": {
-          "type": "object",
-          "description": "Conversational API (#592) configuration.",
-          "additionalProperties": true,
-          "properties": {
-            "enabled": { "type": "boolean", "default": false }
-          }
-        },
         "alignmentCheck": {
           "type": "object",
           "description": "Shadow agent alignment check (#601): parallel audit for prompt injection detection.",
@@ -1000,12 +992,7 @@
           "description": "NetworkPolicy toggle for Kubernaut Agent",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": true },
-            "conversationIngress": {
-              "type": "array",
-              "description": "Custom source selectors for conversation API traffic. Defaults to gateway-service pods.",
-              "items": { "type": "object" }
-            }
+            "enabled": { "type": "boolean", "default": true }
           }
         },
         "signalprocessing": {

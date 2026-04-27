@@ -30,7 +30,6 @@ const (
 	EventTypeLLMRequest          = "aiagent.llm.request"
 	EventTypeLLMResponse         = "aiagent.llm.response"
 	EventTypeLLMToolCall         = "aiagent.llm.tool_call"
-	EventTypeConversationTurn    = "aiagent.conversation.turn"
 	EventTypeValidationAttempt   = "aiagent.workflow.validation_attempt"
 	EventTypeResponseComplete    = "aiagent.response.complete"
 	EventTypeResponseFailed      = "aiagent.response.failed"
@@ -63,7 +62,6 @@ var AllEventTypes = []string{
 	EventTypeLLMRequest,
 	EventTypeLLMResponse,
 	EventTypeLLMToolCall,
-	EventTypeConversationTurn,
 	EventTypeValidationAttempt,
 	EventTypeResponseComplete,
 	EventTypeRCAComplete,

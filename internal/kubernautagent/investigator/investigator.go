@@ -910,7 +910,7 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 	result.WorkflowVersion = meta.Version
 }
 
-// runLLMLoop executes the multi-turn LLM conversation loop with tool
+// runLLMLoop executes the multi-turn LLM interaction loop with tool
 // execution routed through the registry. correlationID is propagated to
 // all audit events per BR-AUDIT-005 (remediation_id as query key).
 // Returns a sealed LoopResult; callers dispatch via type switch (#760 v2).

@@ -211,7 +211,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		})
 	})
 
-	Describe("IT-KA-433-007: Investigation preserves conversation history", func() {
+	Describe("IT-KA-433-007: Investigation preserves interaction history", func() {
 		It("should pass RCA context into the workflow selection invocation", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"memory leak in api-server container"}`}},

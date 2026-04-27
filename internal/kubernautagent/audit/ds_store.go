@@ -154,22 +154,6 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		}
 		return ogenclient.NewLLMToolCallPayloadAuditEventRequestEventData(payload), true
 
-	case EventTypeConversationTurn:
-		payload := ogenclient.ConversationTurnPayload{
-			EventType: ogenclient.ConversationTurnPayloadEventTypeAiagentConversationTurn,
-			EventID:   dataString(event.Data, "event_id"),
-			SessionID: dataString(event.Data, "session_id"),
-			UserID:    dataString(event.Data, "user_id"),
-			Question:  dataString(event.Data, "question"),
-		}
-		if answer := dataString(event.Data, "answer"); answer != "" {
-			payload.Answer.SetTo(answer)
-		}
-		if tn := dataInt(event.Data, "turn_number"); tn > 0 {
-			payload.TurnNumber.SetTo(tn)
-		}
-		return ogenclient.NewConversationTurnPayloadAuditEventRequestEventData(payload), true
-
 	case EventTypeValidationAttempt:
 		payload := ogenclient.WorkflowValidationPayload{
 			EventType:   ogenclient.WorkflowValidationPayloadEventTypeAiagentWorkflowValidationAttempt,

@@ -40,7 +40,6 @@ type Config struct {
 	Sanitization   SanitizationConfig   `yaml:"sanitization"`
 	Anomaly        AnomalyConfig        `yaml:"anomaly"`
 	Summarizer     SummarizerConfig     `yaml:"summarizer"`
-	Conversation   ConversationConfig   `yaml:"conversation"`
 	AlignmentCheck AlignmentCheckConfig `yaml:"alignmentCheck"`
 	Enrichment     EnrichmentConfig     `yaml:"enrichment"`
 
@@ -157,27 +156,6 @@ type AnomalyConfig struct {
 	ExemptPrefixes      []string `yaml:"exempt_prefixes"`
 }
 
-// ConversationConfig holds settings for the conversational RAR API (#592).
-type ConversationConfig struct {
-	Enabled      bool                      `yaml:"enabled"`
-	LLM          *LLMConfig                `yaml:"llm"`
-	Session      ConversationSessionConfig `yaml:"session"`
-	RateLimit    RateLimitConfig           `yaml:"rate_limit"`
-	MaxToolTurns int                       `yaml:"max_tool_turns"` // DD-CONV-001: bounded tool-call loop iterations (default 15)
-}
-
-// ConversationSessionConfig controls conversation session behavior.
-type ConversationSessionConfig struct {
-	TTL      time.Duration `yaml:"ttl"`
-	MaxTurns int           `yaml:"max_turns"`
-}
-
-// RateLimitConfig controls per-user and per-session rate limits.
-type RateLimitConfig struct {
-	PerUserPerMinute int `yaml:"per_user_per_minute"`
-	PerSession       int `yaml:"per_session"`
-}
-
 // AlignmentCheckConfig holds settings for the shadow agent alignment checker (#601).
 type AlignmentCheckConfig struct {
 	Enabled       bool          `yaml:"enabled"`
@@ -221,11 +199,6 @@ func mergeLLMConfig(base LLMConfig, override *LLMConfig) LLMConfig {
 
 // EffectiveLLM returns a merged LLM config for the alignment checker.
 func (c *AlignmentCheckConfig) EffectiveLLM(base LLMConfig) LLMConfig {
-	return mergeLLMConfig(base, c.LLM)
-}
-
-// EffectiveLLM returns a merged LLM config for the conversation subsystem.
-func (c *ConversationConfig) EffectiveLLM(base LLMConfig) LLMConfig {
 	return mergeLLMConfig(base, c.LLM)
 }
 
@@ -382,11 +355,6 @@ func DefaultConfig() *Config {
 			MaxTotalToolCalls:   30,
 			MaxRepeatedFailures: 3,
 			ExemptPrefixes:      []string{"todo_"},
-		},
-		Conversation: ConversationConfig{
-			Session:      ConversationSessionConfig{TTL: 30 * time.Minute, MaxTurns: 30},
-			RateLimit:    RateLimitConfig{PerUserPerMinute: 10, PerSession: 30},
-			MaxToolTurns: 15,
 		},
 		Sanitization: SanitizationConfig{
 			InjectionPatternsEnabled: true,

@@ -22,19 +22,5 @@ spec:
         - podSelector:
             matchLabels:
               app: aianalysis-controller
-    # Conversation API traffic
-    {{- if .Values.kubernautAgent.conversations.enabled }}
-    - ports:
-        - port: {{ .Values.kubernautAgent.conversations.port | default 8444 }}
-          protocol: TCP
-      from:
-        {{- if .Values.networkPolicies.kubernautAgent.conversationIngress }}
-        {{- toYaml .Values.networkPolicies.kubernautAgent.conversationIngress | nindent 8 }}
-        {{- else }}
-        - podSelector:
-            matchLabels:
-              app: gateway-service
-        {{- end }}
-    {{- end }}
     {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
 {{- end }}
