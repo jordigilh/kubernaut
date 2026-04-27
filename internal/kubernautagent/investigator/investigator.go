@@ -42,6 +42,10 @@ import (
 
 const maxSelfCorrectionAttempts = 3
 
+// maxForensicPayloadBytes caps serialized accumulated messages in cancellation
+// audit events to 64KB (SEC-1, OPS-3). Generous to preserve forensic RAG value.
+const maxForensicPayloadBytes = 64 * 1024
+
 // SubmitResultToolName is the sentinel tool name that the LLM calls to deliver
 // its structured investigation result. When detected in runLLMLoop, the tool
 // call arguments are returned as content without executing any real tool.
@@ -391,11 +395,21 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	var content string
 	switch r := loopRes.(type) {
 	case *CancelledResult:
-		return &katypes.InvestigationResult{
-			Cancelled:       true,
-			CancelledPhase:  string(katypes.PhaseRCA),
-			CancelledAtTurn: r.Turn,
-		}, nil
+		result := &katypes.InvestigationResult{
+			Cancelled:           true,
+			CancelledPhase:      string(katypes.PhaseRCA),
+			CancelledAtTurn:     r.Turn,
+			AccumulatedMessages: messagesToAuditFormat(r.Messages),
+		}
+		if r.Tokens != nil {
+			s := r.Tokens.Summary()
+			result.TokenUsage = &katypes.TokenUsageSummary{
+				PromptTokens:     s.PromptTokens,
+				CompletionTokens: s.CompletionTokens,
+				TotalTokens:      s.TotalTokens,
+			}
+		}
+		return result, nil
 	case *ExhaustedResult:
 		return &katypes.InvestigationResult{
 			HumanReviewNeeded: true,
@@ -689,12 +703,22 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	var content string
 	switch r := loopRes.(type) {
 	case *CancelledResult:
-		return &katypes.InvestigationResult{
-			RCASummary:      rcaSummary,
-			Cancelled:       true,
-			CancelledPhase:  string(katypes.PhaseWorkflowDiscovery),
-			CancelledAtTurn: r.Turn,
-		}, nil
+		result := &katypes.InvestigationResult{
+			RCASummary:          rcaSummary,
+			Cancelled:           true,
+			CancelledPhase:      string(katypes.PhaseWorkflowDiscovery),
+			CancelledAtTurn:     r.Turn,
+			AccumulatedMessages: messagesToAuditFormat(r.Messages),
+		}
+		if r.Tokens != nil {
+			s := r.Tokens.Summary()
+			result.TokenUsage = &katypes.TokenUsageSummary{
+				PromptTokens:     s.PromptTokens,
+				CompletionTokens: s.CompletionTokens,
+				TotalTokens:      s.TotalTokens,
+			}
+		}
+		return result, nil
 	case *ExhaustedResult:
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
@@ -1201,6 +1225,17 @@ func messagesToAuditFormat(messages []llm.Message) []map[string]interface{} {
 		if m.ToolName != "" {
 			entry["name"] = m.ToolName
 		}
+		if len(m.ToolCalls) > 0 {
+			calls := make([]map[string]interface{}, len(m.ToolCalls))
+			for j, tc := range m.ToolCalls {
+				calls[j] = map[string]interface{}{
+					"id":        tc.ID,
+					"name":      tc.Name,
+					"arguments": tc.Arguments,
+				}
+			}
+			entry["tool_calls"] = calls
+		}
 		out[i] = entry
 	}
 	return out
@@ -1362,15 +1397,31 @@ func emitToSink(ctx context.Context, eventType string, turn int, phase string, d
 }
 
 // emitCancellationAudit emits an investigation-level cancellation event
-// carrying the phase and turn at which cancellation was detected. The context
-// may already be cancelled so we use context.Background() for the audit store
-// call to avoid losing the event (fire-and-forget per ADR-038).
+// carrying the phase, turn, token usage, and accumulated messages at the point
+// of cancellation. Enriched per COR-2 (token cost attribution), AUD-4
+// (session cross-reference), AUD-6 (messages for forensic RAG), and SEC-1
+// (content cap at 64KB). The context may already be cancelled so we use
+// context.Background() for the audit store call (fire-and-forget per ADR-038).
 func (inv *Investigator) emitCancellationAudit(ctx context.Context, result *katypes.InvestigationResult, correlationID string) {
 	event := audit.NewEvent(audit.EventTypeInvestigationCancelled, correlationID)
 	event.EventAction = audit.ActionInvestigationCancelled
 	event.EventOutcome = audit.OutcomeFailure
 	event.Data["cancelled_phase"] = result.CancelledPhase
 	event.Data["cancelled_at_turn"] = result.CancelledAtTurn
+	if result.TokenUsage != nil {
+		event.Data["total_prompt_tokens"] = result.TokenUsage.PromptTokens
+		event.Data["total_completion_tokens"] = result.TokenUsage.CompletionTokens
+		event.Data["total_tokens"] = result.TokenUsage.TotalTokens
+	}
+	if len(result.AccumulatedMessages) > 0 {
+		if b, err := json.Marshal(result.AccumulatedMessages); err == nil {
+			s := string(b)
+			if len(s) > maxForensicPayloadBytes {
+				s = s[:maxForensicPayloadBytes]
+			}
+			event.Data["accumulated_messages"] = s
+		}
+	}
 	audit.StoreBestEffort(context.Background(), inv.auditStore, event, inv.logger)
 }
 
