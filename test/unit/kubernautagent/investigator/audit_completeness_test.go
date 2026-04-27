@@ -92,7 +92,7 @@ func longAnalysis(prefix string) string {
 	return prefix + strings.Repeat(" detailed-analysis-padding", 30)
 }
 
-var _ = Describe("Phase 0: Audit Completeness — #592", func() {
+var _ = Describe("Phase 0: Audit Completeness — BR-AUDIT-070", func() {
 	var (
 		capStore *capturingAuditStore
 		builder  *prompt.Builder
@@ -116,7 +116,7 @@ var _ = Describe("Phase 0: Audit Completeness — #592", func() {
 		}
 	})
 
-	Describe("UT-CS-592-026: LLM request event contains structured messages array", func() {
+	Describe("UT-AUDIT-070-026: LLM request event contains structured messages array", func() {
 		It("should store full messages in aiagent.llm.request event, not just prompt_preview", func() {
 			rcaJSON := `{"rca_summary":"OOM due to memory leak","severity":"critical","needs_human_review":true,"reason":"needs operator confirmation"}`
 			mockLLM := newScriptedLLM(llm.ChatResponse{
@@ -166,7 +166,7 @@ var _ = Describe("Phase 0: Audit Completeness — #592", func() {
 		})
 	})
 
-	Describe("UT-CS-592-027: LLM response event contains full analysis_content", func() {
+	Describe("UT-AUDIT-070-027: LLM response event contains full analysis_content", func() {
 		It("should store full analysis in aiagent.llm.response event, not just 500-char preview", func() {
 			fullContent := longAnalysis(`{"rca_summary":"OOM due to memory leak in connection pool handler that exhausts available heap space under sustained load",`)
 			fullContent += `"severity":"critical","needs_human_review":true,"reason":"needs confirmation"}`
@@ -204,7 +204,7 @@ var _ = Describe("Phase 0: Audit Completeness — #592", func() {
 		})
 	})
 
-	Describe("UT-CS-592-028: response.complete event contains complete InvestigationResult", func() {
+	Describe("UT-AUDIT-070-028: response.complete event contains complete InvestigationResult", func() {
 		It("should serialize is_actionable, signal_name, and full alternative workflows in response_data", func() {
 			rcaJSON := `{
 				"root_cause_analysis": {
@@ -284,7 +284,7 @@ var _ = Describe("Phase 0: Audit Completeness — #592", func() {
 		})
 	})
 
-	Describe("UT-CS-592-029: response.complete serializes both HumanReviewReason and Reason", func() {
+	Describe("UT-AUDIT-070-029: response.complete serializes both HumanReviewReason and Reason", func() {
 		It("should store human_review_reason enum value AND reason string separately", func() {
 			rcaJSON := `{
 				"rca_summary": "Investigation inconclusive due to insufficient data",

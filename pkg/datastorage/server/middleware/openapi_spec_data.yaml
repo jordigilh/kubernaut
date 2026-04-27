@@ -5530,7 +5530,7 @@ components:
         tool_call_index:
           type: integer
           minimum: 0
-          description: Sequential index of tool call in conversation
+          description: Sequential index of tool call in the LLM interaction
         tool_name:
           type: string
           description: Name of tool invoked

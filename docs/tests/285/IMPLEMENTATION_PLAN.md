@@ -5,6 +5,8 @@
 **Branch**: `development/v1.4`
 **Created**: 2026-04-04
 
+> **Partial Deprecation Notice**: References to #592 conversation ingress and `conversationIngress` Helm values in this plan are **stale**. The conversation API and its NetworkPolicy rule were removed (PR #867).
+
 ---
 
 ## Overview

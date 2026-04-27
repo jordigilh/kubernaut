@@ -14,6 +14,8 @@
 **Status**: Draft
 **Branch**: `development/v1.4`
 
+> **Partial Deprecation Notice**: References to "KA conversation ingress" and #592 feature-gated NetworkPolicy rules in this test plan are **stale**. The #592 conversational RAR API and its NetworkPolicy ingress rule were removed (PR #867). NetworkPolicy tests for the Kubernaut Agent should only cover the investigation traffic path (port 8443 from aianalysis-controller) and metrics ingress.
+
 ---
 
 ## 1. Introduction

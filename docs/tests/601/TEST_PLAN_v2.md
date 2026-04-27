@@ -10,6 +10,8 @@
 **Status**: Draft
 **Branch**: `development/v1.4`
 
+> **Partial Deprecation Notice**: References to `internal/kubernautagent/conversation/llm_adapter.go` and the "conversation adapter" in this test plan are **stale**. The #592 conversational RAR API was removed (PR #867) in favor of MCP/A2A interactive mode (#703, #708, #713). The alignment check shadow agent (#601) no longer integrates with a conversation adapter. Test scenarios referencing conversation-mode tool calls should be updated to reflect the current architecture.
+
 ---
 
 ## 1. Introduction

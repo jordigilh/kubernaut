@@ -10542,7 +10542,7 @@ type LLMToolCallPayload struct {
 	EventID string `json:"event_id"`
 	// Incident correlation ID (remediation_id).
 	IncidentID string `json:"incident_id"`
-	// Sequential index of tool call in conversation.
+	// Sequential index of tool call in the LLM interaction.
 	ToolCallIndex int `json:"tool_call_index"`
 	// Name of tool invoked.
 	ToolName string `json:"tool_name"`
