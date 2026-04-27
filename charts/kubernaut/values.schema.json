@@ -535,6 +535,14 @@
                 "cooldownPeriod": { "type": "string", "default": "1m", "description": "Cooldown between workflow executions" }
               }
             },
+            "tekton": {
+              "type": "object",
+              "description": "Tekton Pipelines engine configuration (issue #868). Omit for auto-discovery.",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "description": "true or omit = auto-discover CRDs; false = disable Tekton engine" }
+              }
+            },
             "ansible": {
               "type": "object",
               "description": "AWX/AAP connectivity for the ansible executor (issue #478). Omit to disable.",
