@@ -30,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
@@ -338,8 +339,9 @@ var _ = Describe("Kubernaut Agent Investigator Cancellation — #823 PR3", func(
 	})
 
 	Describe("UT-KA-823-C11: Cancellation emits investigation-level audit event (RR-4)", func() {
-		It("emits aiagent.investigation.cancelled with phase and turn on cancellation", func() {
+		It("emits aiagent.investigation.cancelled with phase, turn, tokens, messages, and session_id", func() {
 			ctx, cancel := context.WithCancel(context.Background())
+			ctx = session.WithSessionID(ctx, "sess-c11")
 			spy := &cancelTestSpyAuditStore{}
 			mockClient := &cancelAwareMockClient{
 				cancelAfter: 1,
@@ -361,6 +363,24 @@ var _ = Describe("Kubernaut Agent Investigator Cancellation — #823 PR3", func(
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Cancelled).To(BeTrue())
 
+			By("verifying the InvestigationResult carries AccumulatedMessages and TokenUsage (GAP-T2)")
+			Expect(result.AccumulatedMessages).NotTo(BeEmpty(), "cancelled result must carry accumulated messages for forensic RAG")
+			Expect(result.TokenUsage).NotTo(BeNil(), "cancelled result must carry token usage for cost attribution")
+			Expect(result.TokenUsage.PromptTokens).To(Equal(100))
+			Expect(result.TokenUsage.CompletionTokens).To(Equal(50))
+			Expect(result.TokenUsage.TotalTokens).To(Equal(150))
+
+			By("verifying tool_calls appear in AccumulatedMessages (GAP-T3)")
+			foundToolCalls := false
+			for _, msg := range result.AccumulatedMessages {
+				if _, ok := msg["tool_calls"]; ok {
+					foundToolCalls = true
+					break
+				}
+			}
+			Expect(foundToolCalls).To(BeTrue(), "assistant messages with tool calls must include tool_calls key in serialized format")
+
+			By("verifying the audit event fields")
 			cancelEvents := spy.eventsByType(audit.EventTypeInvestigationCancelled)
 			Expect(cancelEvents).To(HaveLen(1), "exactly one investigation.cancelled event expected")
 
@@ -370,6 +390,60 @@ var _ = Describe("Kubernaut Agent Investigator Cancellation — #823 PR3", func(
 			Expect(evt.Data).To(HaveKeyWithValue("cancelled_phase", "rca"))
 			Expect(evt.Data).To(HaveKey("cancelled_at_turn"))
 			Expect(evt.CorrelationID).To(Equal(testSignal.RemediationID))
+
+			By("verifying token counts in the audit event (COR-2)")
+			Expect(evt.Data).To(HaveKeyWithValue("total_prompt_tokens", 100))
+			Expect(evt.Data).To(HaveKeyWithValue("total_completion_tokens", 50))
+			Expect(evt.Data).To(HaveKeyWithValue("total_tokens", 150))
+
+			By("verifying accumulated_messages in the audit event (AUD-6)")
+			Expect(evt.Data).To(HaveKey("accumulated_messages"))
+
+			By("verifying session_id cross-reference via context (GAP-D2 / AUD-4)")
+			Expect(evt.Data).To(HaveKeyWithValue("session_id", "sess-c11"))
+		})
+	})
+
+	Describe("UT-KA-PR9-T4: 64KB cap on accumulated_messages in cancellation audit event (SEC-1)", func() {
+		It("truncates accumulated_messages to maxForensicPayloadBytes when payload exceeds 64KB", func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			spy := &cancelTestSpyAuditStore{}
+
+			largeContent := string(make([]byte, 40000))
+			for i := range largeContent {
+				_ = i
+			}
+			largeStr := fmt.Sprintf(`{"rca_summary":"x%s","confidence":0.1}`, string(make([]byte, 40000)))
+			_ = largeStr
+
+			mockClient := &cancelAwareMockClient{
+				cancelAfter: 1,
+				cancelFn:    cancel,
+				responses: []llm.ChatResponse{
+					{
+						Message: llm.Message{Role: "assistant", Content: string(make([]byte, 80000))},
+						ToolCalls: []llm.ToolCall{
+							{ID: "tc_big", Name: "kubectl_describe", Arguments: `{"kind":"Pod","name":"test","namespace":"default"}`},
+						},
+						Usage: llm.TokenUsage{PromptTokens: 500, CompletionTokens: 500, TotalTokens: 1000},
+					},
+				},
+			}
+
+			inv := cancelTestInvestigatorWithAudit(mockClient, spy)
+			result, err := inv.Investigate(ctx, testSignal)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Cancelled).To(BeTrue())
+
+			cancelEvents := spy.eventsByType(audit.EventTypeInvestigationCancelled)
+			Expect(cancelEvents).To(HaveLen(1))
+
+			evt := cancelEvents[0]
+			accMsgs, ok := evt.Data["accumulated_messages"].(string)
+			Expect(ok).To(BeTrue(), "accumulated_messages must be a string")
+			Expect(len(accMsgs)).To(BeNumerically("<=", 64*1024),
+				"accumulated_messages must be capped at 64KB (maxForensicPayloadBytes)")
 		})
 	})
 

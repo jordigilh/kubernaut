@@ -48,3 +48,38 @@ var _ = Describe("Event Sink Context Helpers — #823 PR3", func() {
 		})
 	})
 })
+
+var _ = Describe("Session ID Context Helpers — BR-AUDIT-070", func() {
+
+	Describe("UT-KA-PR9-SID-001: WithSessionID / SessionIDFromContext round-trip", func() {
+		It("session ID attached to context is retrievable", func() {
+			ctx := session.WithSessionID(context.Background(), "sess-abc-123")
+			Expect(session.SessionIDFromContext(ctx)).To(Equal("sess-abc-123"))
+		})
+	})
+
+	Describe("UT-KA-PR9-SID-002: SessionIDFromContext returns empty string for plain context", func() {
+		It("returns empty string without panic when no session ID is attached", func() {
+			ctx := context.Background()
+			Expect(session.SessionIDFromContext(ctx)).To(Equal(""))
+		})
+	})
+
+	Describe("UT-KA-PR9-SID-003: SessionIDFromContext returns empty string for nil context value", func() {
+		It("does not panic when context has wrong type for session ID key", func() {
+			ctx := context.Background()
+			Expect(session.SessionIDFromContext(ctx)).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-KA-PR9-SID-004: WithSessionID does not interfere with event sink", func() {
+		It("both session ID and event sink coexist on the same context", func() {
+			ch := make(chan session.InvestigationEvent, 1)
+			ctx := session.WithEventSink(context.Background(), ch)
+			ctx = session.WithSessionID(ctx, "sess-coexist")
+
+			Expect(session.SessionIDFromContext(ctx)).To(Equal("sess-coexist"))
+			Expect(session.EventSinkFromContext(ctx)).NotTo(BeNil())
+		})
+	})
+})
