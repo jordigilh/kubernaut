@@ -331,7 +331,7 @@ For Vertex AI, Azure, or advanced setups (toolsets, MCP servers), use `sdkConfig
 |---|---|---|
 | `postgresql.enabled` | Deploy in-chart PostgreSQL | `true` |
 | `postgresql.auth.existingSecret` | Pre-created Secret name (empty = expect `postgresql-secret`) | `""` |
-| `postgresql.variant` | **DEPRECATED v1.4** — Image variant: `upstream` or `ocp` | `upstream` |
+| `postgresql.variant` | Image variant: `upstream` or `ocp` | `upstream` |
 | `postgresql.host` | External host (when `enabled=false`) | `""` |
 | `datastorage.dbExistingSecret` | DEPRECATED: db-secrets.yaml is now in postgresql-secret | `""` |
 | `valkey.enabled` | Deploy in-chart Valkey | `true` |

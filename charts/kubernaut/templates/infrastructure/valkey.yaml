@@ -48,7 +48,6 @@ spec:
       serviceAccountName: valkey
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       {{- $pscDefaults := dict "seccompProfile" (dict "type" "RuntimeDefault") }}
-      {{- /* DEPRECATED v1.4 (Issue #848): OCP variant check. Removed in v1.5. */ -}}
       {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" }}
       {{- $_ := set $pscDefaults "runAsNonRoot" true }}
       {{- end }}

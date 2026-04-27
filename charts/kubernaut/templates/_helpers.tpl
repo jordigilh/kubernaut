@@ -158,8 +158,6 @@ Return the PostgreSQL database name.
 
 {{/*
 Return the PostgreSQL variant ("upstream" or "ocp").
-DEPRECATED v1.4 (Issue #848): The "ocp" variant will be removed in v1.5.
-Use the Kubernaut Operator for OpenShift deployments.
 */}}
 {{- define "kubernaut.postgresql.variant" -}}
 {{- .Values.postgresql.variant | default "upstream" -}}
@@ -168,7 +166,6 @@ Use the Kubernaut Operator for OpenShift deployments.
 {{/*
 Return the env var name for the PostgreSQL user, by variant.
 Secret keys are always POSTGRES_*; env var names differ per image.
-DEPRECATED v1.4 (Issue #848): The "ocp" branch will be removed in v1.5.
 */}}
 {{- define "kubernaut.postgresql.envVarUser" -}}
 {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_USER{{- else -}}POSTGRES_USER{{- end -}}
@@ -176,7 +173,6 @@ DEPRECATED v1.4 (Issue #848): The "ocp" branch will be removed in v1.5.
 
 {{/*
 Return the env var name for the PostgreSQL password, by variant.
-DEPRECATED v1.4 (Issue #848): The "ocp" branch will be removed in v1.5.
 */}}
 {{- define "kubernaut.postgresql.envVarPassword" -}}
 {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_PASSWORD{{- else -}}POSTGRES_PASSWORD{{- end -}}
@@ -184,7 +180,6 @@ DEPRECATED v1.4 (Issue #848): The "ocp" branch will be removed in v1.5.
 
 {{/*
 Return the env var name for the PostgreSQL database, by variant.
-DEPRECATED v1.4 (Issue #848): The "ocp" branch will be removed in v1.5.
 */}}
 {{- define "kubernaut.postgresql.envVarDatabase" -}}
 {{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_DATABASE{{- else -}}POSTGRES_DB{{- end -}}

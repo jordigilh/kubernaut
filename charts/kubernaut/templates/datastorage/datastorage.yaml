@@ -77,7 +77,6 @@ spec:
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           securityContext:
             runAsNonRoot: true
-            {{- /* DEPRECATED v1.4 (Issue #848): OCP variant check. Removed in v1.5. */ -}}
             {{- if ne (include "kubernaut.postgresql.variant" .) "ocp" }}
             runAsUser: 70
             {{- end }}

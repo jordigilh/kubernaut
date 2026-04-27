@@ -383,8 +383,6 @@ postgresql:
   #   ocp      — Red Hat RHEL10 PostgreSQL with POSTGRESQL_* env vars,
   #              runs non-root (UID 26), compatible with restricted-v2 SCC
   # Data directory: /var/lib/kubernaut-pg/data (image-agnostic, see #464)
-  # DEPRECATED v1.4 (Issue #848): The "ocp" variant will be removed in v1.5.
-  # Use the Kubernaut Operator for OpenShift deployments.
   variant: upstream
   image: postgres:16-alpine
   auth:

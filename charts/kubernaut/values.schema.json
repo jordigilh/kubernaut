@@ -768,8 +768,7 @@
           "type": "string",
           "default": "upstream",
           "enum": ["upstream", "ocp"],
-          "description": "DEPRECATED v1.4 (Issue #848): PostgreSQL image variant. The 'ocp' variant will be removed in v1.5 — use the Kubernaut Operator for OpenShift deployments.",
-          "deprecated": true
+          "description": "PostgreSQL image variant: upstream (postgres:16-alpine) or ocp (Red Hat RHEL10 image)"
         },
         "image": {
           "type": "string",
