@@ -495,10 +495,12 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	// ========================================
 	exec, err := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
 	if err != nil {
+		// Issue #868: Provide actionable guidance for unavailable engines
+		guidance := engineGuidance(wfe.Status.ExecutionEngine)
+		msg := fmt.Sprintf("execution engine %q is not available -- %s", wfe.Status.ExecutionEngine, guidance)
 		logger.Error(err, "Unsupported execution engine", "engine", wfe.Status.ExecutionEngine)
-		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
-			fmt.Sprintf("Unsupported execution engine %q: %v", wfe.Status.ExecutionEngine, err))
-		markErr := r.MarkFailedWithReason(ctx, wfe, "UnsupportedEngine", err.Error())
+		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed, msg)
+		markErr := r.MarkFailedWithReason(ctx, wfe, "UnsupportedEngine", msg)
 		return ctrl.Result{}, markErr
 	}
 
@@ -1846,6 +1848,18 @@ func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha
 func (r *WorkflowExecutionReconciler) emitPhaseTransition(wfe *workflowexecutionv1alpha1.WorkflowExecution, from, to string) {
 	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
 		fmt.Sprintf("Phase transition: %s → %s", from, to))
+}
+
+// engineGuidance returns a human-readable remediation hint for a missing engine (Issue #868).
+func engineGuidance(engine string) string {
+	switch engine {
+	case "tekton":
+		return `install Tekton Pipelines CRDs or use executionEngine: "job"`
+	case "ansible":
+		return "configure ansible section in workflowexecution config"
+	default:
+		return "check controller configuration and logs"
+	}
 }
 
 // mapExecutorReasonToCRDEnum maps engine-specific failure reasons (e.g., AWXJobFailed)

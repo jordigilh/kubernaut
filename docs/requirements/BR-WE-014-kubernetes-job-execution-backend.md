@@ -186,21 +186,27 @@ type JobExecutor struct {
 
 ### TR-5: Controller Dispatch
 
+Engine dispatch uses a `Registry` (strategy pattern) populated at startup based on infrastructure availability ([Issue #868](https://github.com/jordigilh/kubernaut/issues/868)):
+
+- **`job`**: Always registered (core `batch/v1` API).
+- **`tekton`**: Registered if Tekton CRDs are discovered via `RESTMapper` (auto-discovery), or explicitly disabled via `tekton.enabled: false` in config.
+- **`ansible`**: Registered if the `ansible` config block is present (config-gated, unchanged).
+
 ```go
-func (r *WorkflowExecutionReconciler) getExecutor(wfe *v1alpha1.WorkflowExecution) (executor.Executor, error) {
-    // Issue #518: engine resolved from DS catalog, stored in status
-    switch wfe.Status.ExecutionEngine {
-    case "tekton":
-        return r.tektonExecutor, nil
-    case "job":
-        return r.jobExecutor, nil
-    case "ansible":
-        return r.ansibleExecutor, nil
-    default:
-        return nil, fmt.Errorf("unsupported execution engine: %q", wfe.Status.ExecutionEngine)
-    }
+// At startup (cmd/workflowexecution/main.go):
+executorRegistry := weexecutor.NewRegistry()
+executorRegistry.Register("job", weexecutor.NewJobExecutor(mgr.GetClient()))
+if cfg.TektonEnabled() && tektonCRDsAvailable(mgr.GetRESTMapper()) {
+    executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(mgr.GetClient()))
 }
+// Ansible: config-gated registration (unchanged)
+
+// At reconcile time:
+exec, err := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
+// Returns actionable error if engine is not registered (e.g., "install Tekton CRDs")
 ```
+
+If a WFE targets an unregistered engine, the controller marks it as `Failed` with `UnsupportedEngine` and an actionable remediation message.
 
 ### TR-6: RO Integration -- Pure Dispatcher (Issue #518)
 

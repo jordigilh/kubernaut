@@ -18,9 +18,15 @@
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| **Tekton Pipelines** | Latest stable | Workflow execution engine |
-| **Bundle Resolver** | Built-in | Resolves OCI bundle references |
-| **kubernaut-workflows** namespace | - | Dedicated namespace for all PipelineRuns |
+| **kubernaut-workflows** namespace | - | Dedicated namespace for all PipelineRuns/Jobs |
+
+### Optional (engine-dependent)
+
+| Dependency | Version | When needed |
+|------------|---------|-------------|
+| **Tekton Pipelines** | Latest stable | Auto-discovered via CRDs at startup ([#868](https://github.com/jordigilh/kubernaut/issues/868)). Required for `executionEngine: "tekton"` workflows. |
+| **Bundle Resolver** | Built-in (Tekton) | Resolves OCI bundle references (Tekton engine only) |
+| **AWX / AAP** | 21+ | Required for `executionEngine: "ansible"` workflows. Config-gated via `ansible` config block. |
 
 ### Dedicated Execution Namespace Setup
 
@@ -196,7 +202,8 @@ spec:
 |---------|--------------|---------|
 | **RemediationOrchestrator** | Parent | Creates WorkflowExecution CRD, watches for completion |
 | **AIAnalysis Service** | Upstream | Provides selected workflow and parameters |
-| **Tekton Pipelines** | Downstream | Executes workflows via PipelineRun (ADR-044) |
+| **Tekton Pipelines** | Downstream (optional) | Executes workflows via PipelineRun (ADR-044). Auto-discovered at startup ([#868](https://github.com/jordigilh/kubernaut/issues/868)). |
+| **AWX / AAP** | Downstream (optional) | Executes workflows via AWX job templates (BR-WE-015). Config-gated. |
 | **Data Storage Service** | External | Persists audit trail for compliance |
 
 **Coordination Pattern**: CRD-based (no HTTP calls between controllers)
@@ -205,11 +212,13 @@ spec:
 
 ## 🎯 Service Responsibilities
 
-1. **Create PipelineRun** - Create Tekton PipelineRun from user-provided workflow OCI bundle
-2. **Pass Parameters** - Forward workflow parameters to PipelineRun
-3. **Check Resource Locks** - Prevent parallel/redundant execution (DD-WE-001)
-4. **Sync Status** - Map PipelineRun conditions to WorkflowExecution status
-5. **Extract Failures** - Build FailureDetails from TaskRun errors for recovery context
+1. **Register Engines** - Discover available execution backends at startup: `job` (always), `tekton` (CRD auto-discovery, [#868](https://github.com/jordigilh/kubernaut/issues/868)), `ansible` (config-gated)
+2. **Create Execution Resource** - Create Job, PipelineRun, or AWX job template launch depending on `status.executionEngine`
+3. **Pass Parameters** - Forward workflow parameters to the execution resource
+4. **Check Resource Locks** - Prevent parallel/redundant execution (DD-WE-001)
+5. **Sync Status** - Map execution resource conditions to WorkflowExecution status
+6. **Extract Failures** - Build FailureDetails from execution errors for recovery context
+7. **Report Availability** - Expose engine availability via readyz sub-check and startup logs ([#868](https://github.com/jordigilh/kubernaut/issues/868))
 
 ---
 
@@ -233,7 +242,8 @@ See: [BR-WE-009-011-resource-locking.md](../../../requirements/BR-WE-009-011-res
 
 | Decision | Choice | Document |
 |----------|--------|----------|
-| **Execution Model** | Tekton PipelineRun | [ADR-044](../../../architecture/decisions/ADR-044-workflow-execution-engine-delegation.md) |
+| **Execution Model** | Multi-engine: Job, Tekton, Ansible | [ADR-044](../../../architecture/decisions/ADR-044-workflow-execution-engine-delegation.md), [BR-WE-014](../../../requirements/BR-WE-014-kubernetes-job-execution-backend.md) |
+| **Engine Registration** | CRD auto-discovery (Tekton), config-gated (Ansible) | [#868](https://github.com/jordigilh/kubernaut/issues/868) |
 | **Workflow Source** | User-provided OCI bundles | [ADR-043](../../../architecture/decisions/ADR-043-workflow-schema-definition-standard.md) |
 | **Resource Locking** | Target-scoped locking | [DD-WE-001](../../../architecture/decisions/DD-WE-001-resource-locking-safety.md) |
 | **Owner Reference** | RemediationRequest owns this | [Finalizers & Lifecycle](./finalizers-lifecycle.md) |
@@ -329,6 +339,7 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 **Changelog**:
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.5 | 2026-04-27 | **Issue #868**: Tekton is now optional (CRD auto-discovery). Updated prerequisites, responsibilities, architectural decisions, and related services to reflect multi-engine registration. |
 | 4.4 | 2026-03-21 | **DD-WE-005 v2.0**: README setup uses operator-managed `my-workflow-sa` + example bindings; removed Helm-provisioned shared runner SA. |
 | 4.3 | 2026-02-18 | **Issue #91**: Removed `kubernaut.ai/component` label from Namespace example (ownerRef sufficient for CRD ownership) |
 | 4.2 | 2025-12-06 | Added links to new user guides, troubleshooting, and runbook in centralized docs/ |

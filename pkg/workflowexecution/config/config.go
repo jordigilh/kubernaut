@@ -46,6 +46,7 @@ const DefaultConfigPath = "/etc/workflowexecution/config.yaml"
 // Issue #99: BackoffConfig removed (DD-RO-002 Phase 3 -- RO handles all routing/backoff)
 type Config struct {
 	Execution   ExecutionConfig              `yaml:"execution" validate:"required"`
+	Tekton      *TektonConfig                `yaml:"tekton,omitempty"`
 	Ansible     *AnsibleConfig               `yaml:"ansible,omitempty"`
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 	Controller  ControllerConfig             `yaml:"controller" validate:"required"`
@@ -53,6 +54,23 @@ type Config struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+}
+
+// TektonConfig controls Tekton Pipelines engine registration (Issue #868).
+// When nil or Enabled is nil, Tekton is auto-discovered via CRD availability.
+// Set Enabled to false to explicitly disable Tekton even if CRDs are present.
+type TektonConfig struct {
+	Enabled *bool `yaml:"enabled,omitempty"`
+}
+
+// TektonEnabled returns whether the Tekton engine should be considered for
+// registration. Returns true (auto-discovery) when Tekton config is nil or
+// Enabled is nil. Returns the explicit value when Enabled is set.
+func (c *Config) TektonEnabled() bool {
+	if c.Tekton == nil || c.Tekton.Enabled == nil {
+		return true
+	}
+	return *c.Tekton.Enabled
 }
 
 // AnsibleConfig holds AWX/AAP connectivity settings (BR-WE-015).

@@ -213,6 +213,8 @@ workflowexecution:
   config:
     execution:
       cooldownPeriod: "1m"
+    # tekton:                             # Issue #868: Tekton Pipelines engine (optional)
+    #   enabled: true                     # nil/true = auto-discover CRDs; false = disable
     # ansible:                            # Issue #478: AWX/AAP connectivity (optional)
     #   apiURL: "https://awx.example.com" # required when ansible block is present
     #   insecure: false
