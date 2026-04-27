@@ -237,6 +237,130 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		}
 		return ogenclient.NewAIAgentResponseFailedPayloadAuditEventRequestEventData(payload), true
 
+	case EventTypeSessionStarted:
+		payload := ogenclient.AIAgentSessionStartedPayload{
+			EventType: ogenclient.AIAgentSessionStartedPayloadEventTypeAiagentSessionStarted,
+			EventID:   dataString(event.Data, "event_id"),
+			SessionID: dataString(event.Data, "session_id"),
+		}
+		if v := dataString(event.Data, "incident_id"); v != "" {
+			payload.IncidentID.SetTo(v)
+		}
+		if v := dataString(event.Data, "signal_name"); v != "" {
+			payload.SignalName.SetTo(v)
+		}
+		if v := dataString(event.Data, "severity"); v != "" {
+			payload.Severity.SetTo(v)
+		}
+		if v := dataString(event.Data, "created_by"); v != "" {
+			payload.CreatedBy.SetTo(v)
+		}
+		return ogenclient.NewAIAgentSessionStartedPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeSessionCompleted:
+		payload := ogenclient.AIAgentSessionCompletedPayload{
+			EventType: ogenclient.AIAgentSessionCompletedPayloadEventTypeAiagentSessionCompleted,
+			EventID:   dataString(event.Data, "event_id"),
+			SessionID: dataString(event.Data, "session_id"),
+		}
+		return ogenclient.NewAIAgentSessionCompletedPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeSessionFailed:
+		payload := ogenclient.AIAgentSessionFailedPayload{
+			EventType: ogenclient.AIAgentSessionFailedPayloadEventTypeAiagentSessionFailed,
+			EventID:   dataString(event.Data, "event_id"),
+			SessionID: dataString(event.Data, "session_id"),
+		}
+		if v := dataString(event.Data, "error"); v != "" {
+			payload.Error.SetTo(v)
+		}
+		return ogenclient.NewAIAgentSessionFailedPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeSessionCancelled:
+		payload := ogenclient.AIAgentSessionCancelledPayload{
+			EventType: ogenclient.AIAgentSessionCancelledPayloadEventTypeAiagentSessionCancelled,
+			EventID:   dataString(event.Data, "event_id"),
+			SessionID: dataString(event.Data, "session_id"),
+		}
+		return ogenclient.NewAIAgentSessionCancelledPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeSessionObserved:
+		payload := ogenclient.AIAgentSessionObservedPayload{
+			EventType: ogenclient.AIAgentSessionObservedPayloadEventTypeAiagentSessionObserved,
+			EventID:   dataString(event.Data, "event_id"),
+			SessionID: dataString(event.Data, "session_id"),
+		}
+		if v := dataString(event.Data, "observer_user"); v != "" {
+			payload.ObserverUser.SetTo(v)
+		}
+		if v := dataString(event.Data, "session_owner"); v != "" {
+			payload.SessionOwner.SetTo(v)
+		}
+		return ogenclient.NewAIAgentSessionObservedPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeSessionAccessDenied:
+		payload := ogenclient.AIAgentSessionAccessDeniedPayload{
+			EventType:      ogenclient.AIAgentSessionAccessDeniedPayloadEventTypeAiagentSessionAccessDenied,
+			EventID:        dataString(event.Data, "event_id"),
+			SessionID:      dataString(event.Data, "session_id"),
+			Endpoint:       dataString(event.Data, "endpoint"),
+			RequestingUser: dataString(event.Data, "requesting_user"),
+		}
+		if v := dataString(event.Data, "session_owner"); v != "" {
+			payload.SessionOwner.SetTo(v)
+		}
+		return ogenclient.NewAIAgentSessionAccessDeniedPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeInvestigationCancelled:
+		payload := ogenclient.AIAgentInvestigationCancelledPayload{
+			EventType:       ogenclient.AIAgentInvestigationCancelledPayloadEventTypeAiagentInvestigationCancelled,
+			EventID:         dataString(event.Data, "event_id"),
+			CancelledPhase:  dataString(event.Data, "cancelled_phase"),
+			CancelledAtTurn: dataInt(event.Data, "cancelled_at_turn"),
+		}
+		if v := dataString(event.Data, "session_id"); v != "" {
+			payload.SessionID.SetTo(v)
+		}
+		if pt := dataInt(event.Data, "total_prompt_tokens"); pt > 0 {
+			payload.TotalPromptTokens.SetTo(pt)
+		}
+		if ct := dataInt(event.Data, "total_completion_tokens"); ct > 0 {
+			payload.TotalCompletionTokens.SetTo(ct)
+		}
+		if tt := dataInt(event.Data, "total_tokens"); tt > 0 {
+			payload.TotalTokens.SetTo(tt)
+		}
+		if v := dataString(event.Data, "accumulated_messages"); v != "" {
+			payload.AccumulatedMessages.SetTo(v)
+		}
+		return ogenclient.NewAIAgentInvestigationCancelledPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeAlignmentStep:
+		payload := ogenclient.AIAgentAlignmentStepPayload{
+			EventType:   ogenclient.AIAgentAlignmentStepPayloadEventTypeAiagentAlignmentStep,
+			EventID:     dataString(event.Data, "event_id"),
+			StepIndex:   dataInt(event.Data, "step_index"),
+			StepKind:    dataString(event.Data, "step_kind"),
+			Explanation: dataString(event.Data, "explanation"),
+		}
+		if v := dataString(event.Data, "tool"); v != "" {
+			payload.Tool.SetTo(v)
+		}
+		return ogenclient.NewAIAgentAlignmentStepPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeAlignmentVerdict:
+		payload := ogenclient.AIAgentAlignmentVerdictPayload{
+			EventType: ogenclient.AIAgentAlignmentVerdictPayloadEventTypeAiagentAlignmentVerdict,
+			EventID:   dataString(event.Data, "event_id"),
+			Result:    dataString(event.Data, "result"),
+			Flagged:   dataInt(event.Data, "flagged"),
+			Total:     dataInt(event.Data, "total"),
+		}
+		if v := dataString(event.Data, "summary"); v != "" {
+			payload.Summary.SetTo(v)
+		}
+		return ogenclient.NewAIAgentAlignmentVerdictPayloadAuditEventRequestEventData(payload), true
+
 	default:
 		return ogenclient.AuditEventRequestEventData{}, false
 	}

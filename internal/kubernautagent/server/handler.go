@@ -303,6 +303,21 @@ func (h *Handler) SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(
 	if sess.Error != nil {
 		snap.Error.SetTo(sess.Error.Error())
 	}
+	if ir, ok := sess.Result.(*katypes.InvestigationResult); ok && ir != nil {
+		if ir.CancelledPhase != "" {
+			snap.CancelledPhase.SetTo(ir.CancelledPhase)
+		}
+		if ir.CancelledAtTurn > 0 {
+			snap.CancelledAtTurn.SetTo(ir.CancelledAtTurn)
+		}
+		if ir.RCASummary != "" {
+			snap.RcaSummary.SetTo(ir.RCASummary)
+		}
+		if ir.TokenUsage != nil {
+			snap.TotalPromptTokens.SetTo(ir.TokenUsage.PromptTokens)
+			snap.TotalCompletionTokens.SetTo(ir.TokenUsage.CompletionTokens)
+		}
+	}
 	return snap, nil
 }
 
