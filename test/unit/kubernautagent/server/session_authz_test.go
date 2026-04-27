@@ -47,13 +47,13 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 
 	BeforeEach(func() {
 		store = session.NewStore(30 * time.Minute)
-		mgr = session.NewManager(store, slog.Default(), audit.NopAuditStore{})
+		mgr = session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
 		h = server.NewHandler(mgr, &stubInvestigator{
 			fn: func(ctx context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
 				<-ctx.Done()
 				return &katypes.InvestigationResult{RCASummary: "cancelled"}, nil
 			},
-		}, slog.Default())
+		}, slog.Default(), nil)
 	})
 
 	createSessionAs := func(user string) string {
@@ -159,8 +159,8 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 	Describe("UT-KA-823-A07: Non-owner gets 404 on result", func() {
 		It("returns 404 when non-owner tries to read result", func() {
 			completedStore := session.NewStore(30 * time.Minute)
-			completedMgr := session.NewManager(completedStore, slog.Default(), audit.NopAuditStore{})
-			completedH := server.NewHandler(completedMgr, nil, slog.Default())
+			completedMgr := session.NewManager(completedStore, slog.Default(), audit.NopAuditStore{}, nil)
+			completedH := server.NewHandler(completedMgr, nil, slog.Default(), nil)
 
 			id, sErr := completedMgr.StartInvestigation(userCtx("user-a"), func(ctx context.Context) (interface{}, error) {
 				return &katypes.InvestigationResult{RCASummary: "done", Confidence: 0.9}, nil
@@ -205,8 +205,8 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 		It("emits aiagent.session.access_denied when non-owner attempts access", func() {
 			recorder := &syncAuditRecorder{}
 			authzStore := session.NewStore(30 * time.Minute)
-			authzMgr := session.NewManager(authzStore, slog.Default(), recorder)
-			authzH := server.NewHandler(authzMgr, nil, slog.Default())
+			authzMgr := session.NewManager(authzStore, slog.Default(), recorder, nil)
+			authzH := server.NewHandler(authzMgr, nil, slog.Default(), nil)
 
 			proceed := make(chan struct{})
 			id, err := authzMgr.StartInvestigation(userCtx("user-a"), func(ctx context.Context) (interface{}, error) {
@@ -259,7 +259,7 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 		It("audit event includes the subscribing user extracted from context", func() {
 			recorder := &syncAuditRecorder{}
 			authzStore := session.NewStore(30 * time.Minute)
-			authzMgr := session.NewManager(authzStore, slog.Default(), recorder)
+			authzMgr := session.NewManager(authzStore, slog.Default(), recorder, nil)
 
 			proceed := make(chan struct{})
 			id, err := authzMgr.StartInvestigation(userCtx("user-a"), func(ctx context.Context) (interface{}, error) {

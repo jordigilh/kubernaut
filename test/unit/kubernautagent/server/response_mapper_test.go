@@ -45,8 +45,8 @@ var _ = Describe("Response Mapper — #433", func() {
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
 		logger = slog.Default()
-		manager = session.NewManager(store, logger, nil)
-		handler = server.NewHandler(manager, nil, logger)
+		manager = session.NewManager(store, logger, nil, nil)
+		handler = server.NewHandler(manager, nil, logger, nil)
 	})
 
 	Describe("UT-KA-433-MAPPER-001: IncidentID is populated from session metadata", func() {

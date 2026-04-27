@@ -92,7 +92,7 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
 		spy = &spyAuditStore{}
-		mgr = session.NewManager(store, slog.Default(), spy)
+		mgr = session.NewManager(store, slog.Default(), spy, nil)
 	})
 
 	Describe("IT-KA-823-A01: StartInvestigation emits session.started audit event", func() {
@@ -272,7 +272,7 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 	Describe("IT-KA-823-A07: Nil AuditStore defaults to NopAuditStore", func() {
 		It("should not panic when AuditStore is nil", func() {
 			nilStore := session.NewStore(5 * time.Minute)
-			nilMgr := session.NewManager(nilStore, slog.Default(), nil)
+			nilMgr := session.NewManager(nilStore, slog.Default(), nil, nil)
 
 			id, err := nilMgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
 				return "safe", nil
@@ -293,7 +293,7 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 	Describe("IT-KA-823-A08: Audit store error does not abort investigation", func() {
 		It("should complete the investigation even when audit store fails", func() {
 			failStore := &failingAuditStore{}
-			failMgr := session.NewManager(session.NewStore(5*time.Minute), slog.Default(), failStore)
+			failMgr := session.NewManager(session.NewStore(5*time.Minute), slog.Default(), failStore, nil)
 
 			id, err := failMgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
 				return "resilient", nil

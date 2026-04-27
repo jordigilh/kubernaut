@@ -32,7 +32,7 @@ var _ = Describe("Session Metadata — #433", func() {
 	Describe("UT-KA-433-METADATA-001: StartInvestigation propagates metadata to session", func() {
 		It("should store metadata on the session and make it retrievable", func() {
 			store := session.NewStore(5 * time.Minute)
-			manager := session.NewManager(store, slog.Default(), nil)
+			manager := session.NewManager(store, slog.Default(), nil, nil)
 
 			metadata := map[string]string{
 				"incident_id": "e2e-ka-001-oom",
@@ -55,7 +55,7 @@ var _ = Describe("Session Metadata — #433", func() {
 	Describe("UT-KA-433-METADATA-002: Metadata persists after investigation completes", func() {
 		It("should retain metadata on a completed session", func() {
 			store := session.NewStore(5 * time.Minute)
-			manager := session.NewManager(store, slog.Default(), nil)
+			manager := session.NewManager(store, slog.Default(), nil, nil)
 
 			metadata := map[string]string{
 				"incident_id": "e2e-ka-002-crash",
@@ -84,7 +84,7 @@ var _ = Describe("Session Metadata — #433", func() {
 	Describe("UT-KA-433-METADATA-003: Nil metadata does not cause issues", func() {
 		It("should handle nil metadata gracefully", func() {
 			store := session.NewStore(5 * time.Minute)
-			manager := session.NewManager(store, slog.Default(), nil)
+			manager := session.NewManager(store, slog.Default(), nil, nil)
 
 			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
 				return "result", nil
