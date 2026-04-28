@@ -18,6 +18,8 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	pkgconfig "github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
@@ -29,6 +31,7 @@ import (
 // Nested sub-configs support forward-compatibility with Phases 2-6
 // without breaking Phase 1 tests.
 type Config struct {
+	Logging        LoggingConfig        `yaml:"logging"`
 	LLM            LLMConfig            `yaml:"llm"`
 	DataStorage    DataStorageConfig    `yaml:"data_storage"`
 	Server         ServerConfig         `yaml:"server"`
@@ -46,6 +49,26 @@ type Config struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+}
+
+// LoggingConfig holds log-level configuration (#875).
+type LoggingConfig struct {
+	Level string `yaml:"level"` // DEBUG, INFO, WARN, ERROR
+}
+
+// SlogLevel converts the configured level string to an slog.Level.
+// Defaults to slog.LevelInfo for empty or unrecognised values.
+func (l LoggingConfig) SlogLevel() slog.Level {
+	switch strings.ToUpper(l.Level) {
+	case "DEBUG":
+		return slog.LevelDebug
+	case "WARN":
+		return slog.LevelWarn
+	case "ERROR":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 type LLMConfig struct {
@@ -292,6 +315,12 @@ func (c *Config) MergeSDKConfig(data []byte) error {
 
 // Validate checks required fields and value constraints.
 func (c *Config) Validate() error {
+	if c.Logging.Level != "" {
+		validLevels := map[string]bool{"DEBUG": true, "INFO": true, "WARN": true, "ERROR": true}
+		if !validLevels[strings.ToUpper(c.Logging.Level)] {
+			return fmt.Errorf("invalid log level: %s (must be DEBUG, INFO, WARN, or ERROR)", c.Logging.Level)
+		}
+	}
 	switch c.LLM.Provider {
 	case "bedrock", "huggingface", "anthropic", "openai", "vertex", "vertex_ai":
 		// endpoint is optional: LangChainGo uses default endpoints or project/location for these providers
@@ -344,6 +373,7 @@ func (c *Config) Validate() error {
 // DefaultConfig returns a Config with production defaults applied.
 func DefaultConfig() *Config {
 	return &Config{
+		Logging:      LoggingConfig{Level: "INFO"},
 		LLM:          LLMConfig{Provider: "openai"},
 		DataStorage:  DataStorageConfig{SATokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"},
 		Server:       ServerConfig{Address: "0.0.0.0", Port: 8080, HealthAddr: ":8081", MetricsAddr: ":9090"},
