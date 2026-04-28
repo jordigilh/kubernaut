@@ -735,7 +735,11 @@ auth:
 	By(fmt.Sprintf("[Process %d] Setting up per-process agent client with authentication", processNum))
 	// DD-AUTH-014: KA middleware requires Bearer token (real K8s auth via envtest)
 	// Use ServiceAccount transport (KA will mock-validate the token)
-	kaAuthTransport := testauth.NewServiceAccountTransport(token)
+	// Wrap with RetryOn429Transport to absorb transient rate-limit rejections
+	// from the per-IP token-bucket limiter during parallel test execution.
+	kaAuthTransport := testauth.NewRetryOn429Transport(
+		testauth.NewServiceAccountTransport(token),
+	)
 	realAgentClient, err = agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{
 		BaseURL: "http://localhost:18120",
 		Timeout: 30 * time.Second,
