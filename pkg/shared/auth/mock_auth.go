@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"sync"
 )
 
 // MockAuthenticator is a test double implementation of Authenticator.
@@ -33,6 +34,8 @@ import (
 //	user, err := authenticator.ValidateToken(ctx, "invalid-token")
 //	// Returns: "", error
 type MockAuthenticator struct {
+	mu sync.Mutex
+
 	// ValidUsers maps tokens to user identities.
 	// Key: token string
 	// Value: user identity (e.g., "system:serviceaccount:namespace:sa-name")
@@ -48,10 +51,12 @@ type MockAuthenticator struct {
 }
 
 // ValidateToken implements the Authenticator interface for testing.
-func (a *MockAuthenticator) ValidateToken(ctx context.Context, token string) (string, error) {
+func (a *MockAuthenticator) ValidateToken(_ context.Context, token string) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	a.CallCount++
 
-	// Simulate API failure if configured
 	if a.ErrorToReturn != nil {
 		return "", a.ErrorToReturn
 	}
@@ -106,6 +111,8 @@ func (a *MockAuthenticator) ValidateToken(ctx context.Context, token string) (st
 //	)
 //	// Returns: false, nil
 type MockAuthorizer struct {
+	mu sync.Mutex
+
 	// AllowedUsers maps user identities to authorization decisions.
 	AllowedUsers map[string]bool
 
@@ -135,7 +142,10 @@ func (a *MockAuthorizer) CheckAccess(ctx context.Context, user, namespace, resou
 }
 
 // CheckAccessWithGroup implements the Authorizer interface for testing with API group support.
-func (a *MockAuthorizer) CheckAccessWithGroup(ctx context.Context, user, namespace, apiGroup, resource, resourceName, verb string) (bool, error) {
+func (a *MockAuthorizer) CheckAccessWithGroup(_ context.Context, user, namespace, apiGroup, resource, resourceName, verb string) (bool, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	a.CallCount++
 
 	if a.ErrorToReturn != nil {
