@@ -177,4 +177,72 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 			Expect(store.events[0].CorrelationID).To(Equal("corr-789"))
 		})
 	})
+
+	Describe("UT-KA-OBS-016: InstrumentedAuditStore records event type on success (BR-KA-OBSERVABILITY-001.7)", func() {
+		It("calls recorder with event type after successful store", func() {
+			inner := &mockAuditStore{}
+			var recorded []string
+			store := audit.NewInstrumentedAuditStore(inner, func(eventType string) {
+				recorded = append(recorded, eventType)
+			})
+
+			event := &audit.AuditEvent{
+				EventType:     audit.EventTypeSessionStarted,
+				EventCategory: audit.EventCategory,
+				CorrelationID: "corr-obs-1",
+			}
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(inner.events).To(HaveLen(1))
+			Expect(recorded).To(Equal([]string{audit.EventTypeSessionStarted}))
+		})
+
+		It("does not call recorder when inner store fails", func() {
+			inner := &mockAuditStore{err: errors.New("ds unreachable")}
+			var recorded []string
+			store := audit.NewInstrumentedAuditStore(inner, func(eventType string) {
+				recorded = append(recorded, eventType)
+			})
+
+			event := &audit.AuditEvent{
+				EventType:     audit.EventTypeLLMRequest,
+				EventCategory: audit.EventCategory,
+				CorrelationID: "corr-obs-2",
+			}
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).To(HaveOccurred())
+			Expect(recorded).To(BeEmpty())
+		})
+
+		It("returns inner store directly when recorder is nil", func() {
+			inner := &mockAuditStore{}
+			store := audit.NewInstrumentedAuditStore(inner, nil)
+			Expect(store).To(BeIdenticalTo(inner))
+		})
+
+		It("records multiple event types across multiple calls", func() {
+			inner := &mockAuditStore{}
+			var recorded []string
+			store := audit.NewInstrumentedAuditStore(inner, func(eventType string) {
+				recorded = append(recorded, eventType)
+			})
+
+			for _, et := range []string{
+				audit.EventTypeSessionStarted,
+				audit.EventTypeLLMRequest,
+				audit.EventTypeLLMResponse,
+			} {
+				err := store.StoreAudit(context.Background(), &audit.AuditEvent{
+					EventType:     et,
+					EventCategory: audit.EventCategory,
+				})
+				Expect(err).NotTo(HaveOccurred())
+			}
+			Expect(recorded).To(Equal([]string{
+				audit.EventTypeSessionStarted,
+				audit.EventTypeLLMRequest,
+				audit.EventTypeLLMResponse,
+			}))
+		})
+	})
 })
