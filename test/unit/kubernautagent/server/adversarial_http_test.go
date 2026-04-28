@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -38,14 +39,14 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 		store   *session.Store
 		manager *session.Manager
 		handler *server.Handler
-		logger  *slog.Logger
+		lr      logr.Logger
 	)
 
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
-		logger = slog.Default()
-		manager = session.NewManager(store, logger)
-		handler = server.NewHandler(manager, nil, logger)
+		lr = logr.FromSlogHandler(slog.Default().Handler())
+		manager = session.NewManager(store, lr)
+		handler = server.NewHandler(manager, nil, lr)
 	})
 
 	Describe("UT-KA-433-HTTP-001: Error response has RFC 7807 fields (GAP-004)", func() {

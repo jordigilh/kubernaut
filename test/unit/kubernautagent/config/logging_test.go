@@ -17,10 +17,9 @@ limitations under the License.
 package config_test
 
 import (
-	"log/slog"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 )
@@ -87,9 +86,9 @@ logging:
 		)
 	})
 
-	Describe("UT-KA-875-005: SlogLevel returns correct slog.Level", func() {
+	Describe("UT-KA-875-005: ZapLevel returns correct zapcore.Level", func() {
 		DescribeTable("level mapping",
-			func(level string, expected slog.Level) {
+			func(level string, expected zapcore.Level) {
 				yamlData := []byte(`
 llm:
   provider: "openai"
@@ -99,19 +98,19 @@ logging:
 `)
 				cfg, err := config.Load(yamlData)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(cfg.Logging.SlogLevel()).To(Equal(expected))
+				Expect(cfg.Logging.ZapLevel()).To(Equal(expected))
 			},
-			Entry("DEBUG -> slog.LevelDebug", "DEBUG", slog.LevelDebug),
-			Entry("INFO -> slog.LevelInfo", "INFO", slog.LevelInfo),
-			Entry("WARN -> slog.LevelWarn", "WARN", slog.LevelWarn),
-			Entry("ERROR -> slog.LevelError", "ERROR", slog.LevelError),
+			Entry("DEBUG -> DebugLevel", "DEBUG", zapcore.DebugLevel),
+			Entry("INFO -> InfoLevel", "INFO", zapcore.InfoLevel),
+			Entry("WARN -> WarnLevel", "WARN", zapcore.WarnLevel),
+			Entry("ERROR -> ErrorLevel", "ERROR", zapcore.ErrorLevel),
 		)
 	})
 
-	Describe("UT-KA-875-006: SlogLevel defaults to INFO for empty level", func() {
-		It("should return slog.LevelInfo when level is empty", func() {
+	Describe("UT-KA-875-006: ZapLevel defaults to InfoLevel for empty level", func() {
+		It("should return InfoLevel when level is empty", func() {
 			cfg := config.DefaultConfig()
-			Expect(cfg.Logging.SlogLevel()).To(Equal(slog.LevelInfo))
+			Expect(cfg.Logging.ZapLevel()).To(Equal(zapcore.InfoLevel))
 		})
 	})
 })

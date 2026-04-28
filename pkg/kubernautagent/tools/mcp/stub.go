@@ -18,24 +18,25 @@ package mcp
 
 import (
 	"context"
-	"log/slog"
+
+	"github.com/go-logr/logr"
 )
 
 // StubProvider is the v1.3 MCP tool provider that logs a warning and
 // returns an empty tool list. Config parsing and registry wiring are
 // tested; real SSE/stdio transport deferred to v1.5.
 type StubProvider struct {
-	logger *slog.Logger
+	logger logr.Logger
 }
 
 // NewStubProvider creates a stub MCP provider.
-func NewStubProvider(logger *slog.Logger) *StubProvider {
+func NewStubProvider(logger logr.Logger) *StubProvider {
 	return &StubProvider{logger: logger}
 }
 
 // DiscoverTools returns an empty tool list and logs a warning.
 func (p *StubProvider) DiscoverTools(_ context.Context) ([]Tool, error) {
-	p.logger.Warn("MCP tool discovery is stubbed in v1.3; returning empty tool list")
+	p.logger.Info("MCP tool discovery is stubbed in v1.3; returning empty tool list")
 	return []Tool{}, nil
 }
 

@@ -17,8 +17,9 @@ limitations under the License.
 package llm
 
 import (
-	"log/slog"
 	"net/http"
+
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
@@ -37,7 +38,7 @@ func NewLLMClient(baseURL string, headers []config.HeaderDefinition) (*http.Clie
 // NewLLMClientWithLogger creates an http.Client with custom authentication headers
 // and structured logging. Header injection events are logged with sensitive values
 // redacted per DD-HAPI-019-003 (G4: Credential Scrubbing).
-func NewLLMClientWithLogger(baseURL string, headers []config.HeaderDefinition, logger *slog.Logger) (*http.Client, error) {
+func NewLLMClientWithLogger(baseURL string, headers []config.HeaderDefinition, logger logr.Logger) (*http.Client, error) {
 	rt := transport.NewAuthHeadersTransportWithLogger(headers, http.DefaultTransport, logger)
 	return &http.Client{Transport: rt}, nil
 }

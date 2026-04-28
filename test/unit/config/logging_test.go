@@ -17,8 +17,6 @@ limitations under the License.
 package config_test
 
 import (
-	"log/slog"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
@@ -95,23 +93,7 @@ var _ = Describe("Shared LoggingConfig — BR-PLATFORM-875", func() {
 		)
 	})
 
-	Describe("UT-CFG-875-006: SlogLevel maps correctly (bridge for KA)", func() {
-		DescribeTable("slog level mapping",
-			func(level string, expected slog.Level) {
-				cfg := config.LoggingConfig{Level: level}
-				Expect(cfg.SlogLevel()).To(Equal(expected))
-			},
-			Entry("DEBUG -> slog.LevelDebug", "DEBUG", slog.LevelDebug),
-			Entry("INFO -> slog.LevelInfo", "INFO", slog.LevelInfo),
-			Entry("WARN -> slog.LevelWarn", "WARN", slog.LevelWarn),
-			Entry("ERROR -> slog.LevelError", "ERROR", slog.LevelError),
-			Entry("debug (lowercase) -> slog.LevelDebug", "debug", slog.LevelDebug),
-			Entry("empty string -> slog.LevelInfo", "", slog.LevelInfo),
-			Entry("unknown -> slog.LevelInfo", "TRACE", slog.LevelInfo),
-		)
-	})
-
-	Describe("UT-CFG-875-007: ParseAndSetLevel hot-reload helper", func() {
+	Describe("UT-CFG-875-006: ParseAndSetLevel hot-reload helper", func() {
 		It("should update AtomicLevel from INFO to DEBUG", func() {
 			al := zap.NewAtomicLevelAt(zapcore.InfoLevel)
 			err := config.ParseAndSetLevel(al, "DEBUG")

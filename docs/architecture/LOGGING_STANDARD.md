@@ -27,7 +27,7 @@
 | Library | Files | Status | Action |
 |---------|-------|--------|--------|
 | **go.uber.org/zap** | 496+ files (99.8%) | STANDARD | APPROVED |
-| **log/slog** | ~47 files (kubernaut-agent) | Legacy | Migration to zap planned |
+| **log/slog** | 0 files (migrated) | Removed | Completed (Issue #885) |
 
 ### Unified Strategy (v2.0)
 
@@ -129,12 +129,12 @@ Same pattern as CRD controllers, but uses `zap.New(zap.Level(atomicLevel))` dire
 
 ---
 
-## Kubernaut Agent (Temporary: slog)
+## Kubernaut Agent
 
-The kubernaut-agent currently uses `log/slog` instead of zap. Its `LoggingConfig`
-has been migrated to the shared `internal/config.LoggingConfig` type, which provides
-a `SlogLevel()` bridge method. A follow-up issue will migrate the agent to
-`pkg/log` (zap-backed `logr.Logger`) to eliminate this special case.
+Fully migrated from `log/slog` to `pkg/log` (zap-backed `logr.Logger`) as part of
+Issue #885. Uses `kubelog.NewLoggerWithAtomicLevel()` with the shared
+`internal/config.LoggingConfig` for config-driven log level and `FileWatcher`
+hot-reload, identical to the gateway/notification/datastorage pattern.
 
 ---
 
@@ -392,7 +392,7 @@ logger.Info("Signal processed",
 | **Gateway** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #877) |
 | **Notification** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #878) |
 | **DataStorage** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #875) |
-| **Kubernaut Agent** | log/slog (temporary) | `internal/config` | Planned | Config aligned; full slog->zap migration TBD |
+| **Kubernaut Agent** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #885) |
 
 ---
 
@@ -441,8 +441,8 @@ logger.Info("Signal processed",
 4. `zap.AtomicLevel` is thread-safe and zero-allocation
 
 **Migration**:
-- 9/10 services fully migrated to config-file-only log level with hot-reload
-- kubernaut-agent: config aligned to shared type; full slog->zap migration in follow-up PR
+- All 10 services fully migrated to config-file-only log level with hot-reload
+- kubernaut-agent: fully migrated from log/slog to pkg/log (zap-backed logr.Logger)
 
 ---
 

@@ -19,10 +19,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/go-logr/logr"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
@@ -114,54 +115,54 @@ func sdkReloadCallback(
 	mainConfigPath string,
 	currentCfg func() *kaconfig.Config,
 	swappable *llm.SwappableClient,
-	logger *slog.Logger,
+	logger logr.Logger,
 ) func(newContent string) error {
 	return func(newContent string) error {
 		oldModel := swappable.ModelName()
 
 		if strings.TrimSpace(newContent) == "" {
-			logger.Warn("sdk_config_reload rejected: empty content",
+			logger.Info("sdk_config_reload rejected: empty content",
 				"event", "sdk_config_reload", "status", "rejected", "reason", "empty_content")
 			return fmt.Errorf("SDK config reload rejected: empty or whitespace-only content")
 		}
 
 		freshCfg, err := loadFreshConfig(mainConfigPath)
 		if err != nil {
-			logger.Error("sdk_config_reload failed: cannot re-read main config",
-				"event", "sdk_config_reload", "status", "error", "reason", "main_config_read", "error", err)
+			logger.Error(err, "sdk_config_reload failed: cannot re-read main config",
+				"event", "sdk_config_reload", "status", "error", "reason", "main_config_read")
 			return fmt.Errorf("reload: re-reading main config: %w", err)
 		}
 
 		if err := freshCfg.MergeSDKConfig([]byte(newContent)); err != nil {
-			logger.Error("sdk_config_reload failed: merge error",
-				"event", "sdk_config_reload", "status", "error", "reason", "merge_failed", "error", err)
+			logger.Error(err, "sdk_config_reload failed: merge error",
+				"event", "sdk_config_reload", "status", "error", "reason", "merge_failed")
 			return fmt.Errorf("reload: merging SDK config: %w", err)
 		}
 
 		cur := currentCfg()
 
 		if err := validateReloadSafety(cur, freshCfg); err != nil {
-			logger.Warn("sdk_config_reload rejected",
+			logger.Info("sdk_config_reload rejected",
 				"event", "sdk_config_reload", "status", "rejected", "reason", err.Error())
 			return err
 		}
 
 		if err := freshCfg.Validate(); err != nil {
-			logger.Warn("sdk_config_reload rejected: validation failed",
+			logger.Info("sdk_config_reload rejected: validation failed",
 				"event", "sdk_config_reload", "status", "rejected", "reason", "validation_failed", "error", err)
 			return fmt.Errorf("reload: validation failed: %w", err)
 		}
 
 		newClient, err := buildLLMClientFromConfig(context.Background(), freshCfg)
 		if err != nil {
-			logger.Error("sdk_config_reload failed: client build error",
-				"event", "sdk_config_reload", "status", "error", "reason", "client_build_failed", "error", err)
+			logger.Error(err, "sdk_config_reload failed: client build error",
+				"event", "sdk_config_reload", "status", "error", "reason", "client_build_failed")
 			return fmt.Errorf("reload: building LLM client: %w", err)
 		}
 
 		if err := swappable.Swap(newClient, freshCfg.LLM.Model); err != nil {
-			logger.Error("sdk_config_reload failed: swap error",
-				"event", "sdk_config_reload", "status", "error", "reason", "swap_failed", "error", err)
+			logger.Error(err, "sdk_config_reload failed: swap error",
+				"event", "sdk_config_reload", "status", "error", "reason", "swap_failed")
 			return fmt.Errorf("reload: swapping client: %w", err)
 		}
 

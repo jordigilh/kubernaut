@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"github.com/go-logr/logr"
 	"os"
 	"time"
 
@@ -144,7 +145,7 @@ func filterEvents(events []*audit.AuditEvent, eventType string) []*audit.AuditEv
 var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     logr.Logger
 		auditStore *recordingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
@@ -154,7 +155,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		logger = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
@@ -535,7 +536,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     logr.Logger
 		auditStore *recordingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
@@ -544,7 +545,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		logger = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()

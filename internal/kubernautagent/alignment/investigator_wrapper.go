@@ -19,8 +19,9 @@ package alignment
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
+
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
@@ -35,7 +36,7 @@ type InvestigatorWrapper struct {
 	evaluator      *Evaluator
 	verdictTimeout time.Duration
 	auditStore     audit.AuditStore
-	logger         *slog.Logger
+	logger         logr.Logger
 }
 
 var _ kaserver.InvestigationRunner = (*InvestigatorWrapper)(nil)
@@ -46,7 +47,7 @@ type InvestigatorWrapperConfig struct {
 	Evaluator      *Evaluator
 	VerdictTimeout time.Duration
 	AuditStore     audit.AuditStore
-	Logger         *slog.Logger
+	Logger         logr.Logger
 }
 
 // NewInvestigatorWrapper creates an InvestigatorWrapper.
@@ -59,8 +60,8 @@ func NewInvestigatorWrapper(cfg InvestigatorWrapperConfig) *InvestigatorWrapper 
 		panic("alignment.NewInvestigatorWrapper: Evaluator must not be nil")
 	}
 	logger := cfg.Logger
-	if logger == nil {
-		logger = slog.Default()
+	if logger.GetSink() == nil {
+		logger = logr.Discard()
 	}
 	return &InvestigatorWrapper{
 		inner:          cfg.Inner,
@@ -108,20 +109,20 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 		result.HumanReviewReason = "alignment_check_failed"
 		result.Warnings = append(result.Warnings,
 			fmt.Sprintf("Shadow agent alignment check flagged suspicious content: %s", verdict.Summary))
-		w.logger.Warn("shadow agent flagged suspicious content",
-			slog.String("signal", signal.Name),
-			slog.String("namespace", signal.Namespace),
-			slog.Int("flagged", verdict.Flagged),
-			slog.Int("total", verdict.Total),
-			slog.Int("pending", verdict.Pending),
-			slog.Bool("timed_out", verdict.TimedOut),
-			slog.String("summary", verdict.Summary),
+		w.logger.Info("shadow agent flagged suspicious content",
+			"signal", signal.Name,
+			"namespace", signal.Namespace,
+			"flagged", verdict.Flagged,
+			"total", verdict.Total,
+			"pending", verdict.Pending,
+			"timed_out", verdict.TimedOut,
+			"summary", verdict.Summary,
 		)
 	} else {
 		w.logger.Info("shadow agent alignment check passed",
-			slog.String("signal", signal.Name),
-			slog.String("namespace", signal.Namespace),
-			slog.Int("total", verdict.Total),
+			"signal", signal.Name,
+			"namespace", signal.Namespace,
+			"total", verdict.Total,
 		)
 	}
 

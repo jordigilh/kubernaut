@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+
+	"github.com/go-logr/logr"
 	"sync/atomic"
 	"time"
 
@@ -68,6 +70,7 @@ func (c *countingK8sClient) CallCount() int {
 var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func() {
 	var (
 		logger     *slog.Logger
+		lr         logr.Logger
 		auditStore *recordingAuditStore
 		ds         *fakeDataStorageClient
 		ctx        context.Context
@@ -75,6 +78,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 
 	BeforeEach(func() {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		lr = logr.FromSlogHandler(logger.Handler())
 		auditStore = &recordingAuditStore{}
 		ds = &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
 		ctx = context.Background()
@@ -86,7 +90,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 			k8s := &countingK8sClient{
 				errSeq: []error{transientErr, transientErr, transientErr, transientErr},
 			}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr).
 				WithRetryConfig(enrichment.RetryConfig{
 					MaxRetries:  3,
 					BaseBackoff: 1 * time.Millisecond,
@@ -115,7 +119,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 				errSeq:   []error{transientErr, nil},
 				chainSeq: [][]enrichment.OwnerChainEntry{nil, successChain},
 			}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr).
 				WithRetryConfig(enrichment.RetryConfig{
 					MaxRetries:  3,
 					BaseBackoff: 1 * time.Millisecond,
@@ -143,7 +147,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 			k8s := &countingK8sClient{
 				errSeq: []error{notFoundErr, notFoundErr, notFoundErr, notFoundErr},
 			}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr).
 				WithRetryConfig(enrichment.RetryConfig{
 					MaxRetries:  3,
 					BaseBackoff: 1 * time.Millisecond,
@@ -169,7 +173,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 			k8s := &countingK8sClient{
 				errSeq: []error{forbiddenErr, forbiddenErr, forbiddenErr, forbiddenErr},
 			}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr).
 				WithRetryConfig(enrichment.RetryConfig{
 					MaxRetries:  3,
 					BaseBackoff: 1 * time.Millisecond,
@@ -194,7 +198,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 			k8s := &countingK8sClient{
 				errSeq: []error{transientErr},
 			}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr)
 
 			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "inc-004")
 			Expect(err).NotTo(HaveOccurred())
@@ -218,7 +222,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 			k8s := &countingK8sClient{
 				errSeq: []error{noMatchErr, noMatchErr, noMatchErr, noMatchErr},
 			}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr).
 				WithRetryConfig(enrichment.RetryConfig{
 					MaxRetries:  3,
 					BaseBackoff: 1 * time.Millisecond,
@@ -240,7 +244,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 			k8s := &countingK8sClient{
 				errSeq: []error{notFoundErr, notFoundErr, notFoundErr, notFoundErr},
 			}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr).
 				WithRetryConfig(enrichment.RetryConfig{
 					MaxRetries:  3,
 					BaseBackoff: 1 * time.Millisecond,

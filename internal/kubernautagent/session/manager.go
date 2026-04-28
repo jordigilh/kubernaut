@@ -18,7 +18,8 @@ package session
 
 import (
 	"context"
-	"log/slog"
+
+	"github.com/go-logr/logr"
 )
 
 // InvestigateFunc is the function signature for running an investigation.
@@ -28,11 +29,14 @@ type InvestigateFunc func(ctx context.Context) (interface{}, error)
 // background goroutine and tracking progress via the Store.
 type Manager struct {
 	store  *Store
-	logger *slog.Logger
+	logger logr.Logger
 }
 
 // NewManager creates a session manager backed by the given store.
-func NewManager(store *Store, logger *slog.Logger) *Manager {
+func NewManager(store *Store, logger logr.Logger) *Manager {
+	if logger.GetSink() == nil {
+		logger = logr.Discard()
+	}
 	return &Manager{store: store, logger: logger}
 }
 
@@ -57,7 +61,7 @@ func (m *Manager) StartInvestigation(_ context.Context, fn InvestigateFunc, meta
 		bgCtx := context.Background()
 		result, fnErr := fn(bgCtx)
 		if fnErr != nil {
-			m.logger.Error("investigation failed", slog.String("session_id", id), slog.String("error", fnErr.Error()))
+			m.logger.Error(fnErr, "investigation failed", "session_id", id)
 			_ = m.store.Update(id, StatusFailed, nil, fnErr)
 			return
 		}

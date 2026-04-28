@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"github.com/go-logr/logr"
 	"os"
 	"strings"
 
@@ -48,7 +49,7 @@ func (f *alwaysFailLLM) Close() error { return nil }
 var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -57,7 +58,7 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		logger = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()

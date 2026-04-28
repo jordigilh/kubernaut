@@ -17,7 +17,7 @@ limitations under the License.
 package credentials
 
 import (
-	"log/slog"
+	"github.com/go-logr/logr"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,7 +42,7 @@ var providerKeyFiles = map[string]string{
 // actual credentials JSON or a file path pointing to the real credentials (#686).
 // When the content looks like a path rather than JSON, the function follows
 // the indirection and reads the target file.
-func ResolveCredentialsFile(provider, credDir string, logger *slog.Logger) string {
+func ResolveCredentialsFile(provider, credDir string, logger logr.Logger) string {
 	if keyFile, ok := providerKeyFiles[provider]; ok {
 		path := filepath.Join(credDir, keyFile)
 		if data, err := os.ReadFile(path); err == nil {
@@ -91,7 +91,7 @@ const maxCredentialFileSize = 1 << 20 // 1 MB (F-05)
 //   - F-10: relative paths are rejected
 //   - Gap 5: content is trimmed before the JSON-object check
 //   - Gap 6: returns empty string on failure (not the original content)
-func ResolveGCPCredentialIndirection(provider, content, credDir string, logger *slog.Logger) string {
+func ResolveGCPCredentialIndirection(provider, content, credDir string, logger logr.Logger) string {
 	switch provider {
 	case "vertex", "vertex_ai":
 	default:
@@ -113,7 +113,7 @@ func ResolveGCPCredentialIndirection(provider, content, credDir string, logger *
 	// F-10: reject relative paths — they make no sense in a container context
 	// and are ambiguous about the working directory.
 	if !filepath.IsAbs(target) {
-		logger.Warn("GCP credentials indirection rejected: path is not absolute",
+		logger.Info("GCP credentials indirection rejected: path is not absolute",
 			"path", target)
 		return ""
 	}
@@ -122,7 +122,7 @@ func ResolveGCPCredentialIndirection(provider, content, credDir string, logger *
 	cleaned := filepath.Clean(target)
 	if !strings.HasPrefix(cleaned, filepath.Clean(credDir)+string(filepath.Separator)) &&
 		cleaned != filepath.Clean(credDir) {
-		logger.Warn("GCP credentials indirection rejected: path escapes credential directory",
+		logger.Info("GCP credentials indirection rejected: path escapes credential directory",
 			"path", target, "credDir", credDir)
 		return ""
 	}
@@ -130,26 +130,26 @@ func ResolveGCPCredentialIndirection(provider, content, credDir string, logger *
 	// F-05: enforce file size limit before reading.
 	info, err := os.Stat(cleaned)
 	if err != nil {
-		logger.Warn("GCP credentials indirection target is unreadable",
-			"path", cleaned, "error", err)
+		logger.Error(err, "GCP credentials indirection target is unreadable",
+			"path", cleaned)
 		return "" // Gap 6: return empty, not the original content
 	}
 	if info.Size() > maxCredentialFileSize {
-		logger.Warn("GCP credentials indirection target exceeds size limit",
+		logger.Info("GCP credentials indirection target exceeds size limit",
 			"path", cleaned, "size", info.Size(), "limit", maxCredentialFileSize)
 		return ""
 	}
 
 	data, err := os.ReadFile(cleaned)
 	if err != nil {
-		logger.Warn("GCP credentials indirection target read failed",
-			"path", cleaned, "error", err)
+		logger.Error(err, "GCP credentials indirection target read failed",
+			"path", cleaned)
 		return ""
 	}
 
 	resolved := strings.TrimSpace(string(data))
 	if resolved == "" {
-		logger.Warn("GCP credentials indirection target is empty", "path", cleaned)
+		logger.Info("GCP credentials indirection target is empty", "path", cleaned)
 		return ""
 	}
 

@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -438,7 +439,7 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.FromSlogHandler(slog.Default().Handler()),
 			})
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 
@@ -603,7 +604,7 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 50 * time.Millisecond,
-				Logger:         slog.Default(),
+				Logger:         logr.FromSlogHandler(slog.Default().Handler()),
 			})
 
 			res, err := wrapper.Investigate(context.Background(), katypes.SignalContext{Name: "s", Namespace: "ns"})
@@ -636,7 +637,7 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.FromSlogHandler(slog.Default().Handler()),
 			})
 
 			res, err := wrapper.Investigate(context.Background(), katypes.SignalContext{Name: "s", Namespace: "ns"})
@@ -783,7 +784,7 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 				alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 					Inner:     nil,
 					Evaluator: &alignment.Evaluator{},
-					Logger:    slog.Default(),
+					Logger:    logr.FromSlogHandler(slog.Default().Handler()),
 				})
 			}).To(Panic(), "nil Inner must cause panic at construction time")
 		})
@@ -793,7 +794,7 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 				alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 					Inner:     &mockInvestigationRunner{},
 					Evaluator: nil,
-					Logger:    slog.Default(),
+					Logger:    logr.FromSlogHandler(slog.Default().Handler()),
 				})
 			}).To(Panic(), "nil Evaluator must cause panic at construction time")
 		})
@@ -863,7 +864,7 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.FromSlogHandler(slog.Default().Handler()),
 			})
 
 			sig := katypes.SignalContext{
@@ -897,7 +898,7 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.FromSlogHandler(slog.Default().Handler()),
 			})
 
 			sig := katypes.SignalContext{
@@ -928,7 +929,7 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.FromSlogHandler(slog.Default().Handler()),
 			})
 
 			sig := katypes.SignalContext{}

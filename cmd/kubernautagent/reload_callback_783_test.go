@@ -18,16 +18,16 @@ package main
 
 import (
 	"context"
-	"log/slog"
-	"os"
 	"testing"
+
+	"github.com/go-logr/logr"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
-func testLogger() *slog.Logger {
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+func testLogger() logr.Logger {
+	return logr.Discard()
 }
 
 // baseCfg returns a config that simulates a live config after initial SDK merge.

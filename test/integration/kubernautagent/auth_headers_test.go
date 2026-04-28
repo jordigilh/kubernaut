@@ -18,7 +18,7 @@ package kubernautagent_test
 
 import (
 	"bytes"
-	"log/slog"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,9 +26,27 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
+
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 	llmclient "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
+
+// authHeaderScratchSink captures structured log messages for assertions (IT-KA-417-004 scrubbing).
+type authHeaderScratchSink struct {
+	buf bytes.Buffer
+}
+
+func (s *authHeaderScratchSink) Init(logr.RuntimeInfo) {}
+func (s *authHeaderScratchSink) Enabled(int) bool      { return true }
+func (s *authHeaderScratchSink) Info(level int, msg string, keysAndValues ...interface{}) {
+	_, _ = fmt.Fprintf(&s.buf, "[%d] %s %v\n", level, msg, keysAndValues)
+}
+func (s *authHeaderScratchSink) Error(err error, msg string, keysAndValues ...interface{}) {
+	_, _ = fmt.Fprintf(&s.buf, "%s %v\n", msg, append([]interface{}{err}, keysAndValues...))
+}
+func (s *authHeaderScratchSink) WithValues(...interface{}) logr.LogSink { return s }
+func (s *authHeaderScratchSink) WithName(string) logr.LogSink           { return s }
 
 var _ = Describe("Auth Headers Integration — #417", func() {
 
@@ -151,8 +169,8 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 			}))
 			defer server.Close()
 
-			var logBuf bytes.Buffer
-			logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			scratch := &authHeaderScratchSink{}
+			logger := logr.New(scratch)
 
 			hdefs := []config.HeaderDefinition{
 				{Name: "Authorization", SecretKeyRef: "KA_IT_SCRUB_SECRET"},
@@ -167,7 +185,7 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
 
-			Expect(logBuf.String()).NotTo(ContainSubstring("super-secret-key-do-not-leak"),
+			Expect(scratch.buf.String()).NotTo(ContainSubstring("super-secret-key-do-not-leak"),
 				"sensitive header value must not appear in log output")
 		})
 	})

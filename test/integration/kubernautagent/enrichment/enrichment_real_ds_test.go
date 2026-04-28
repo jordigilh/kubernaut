@@ -33,6 +33,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -274,8 +275,9 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			By("Building a broken enricher (K8s error + DS error) with real audit store")
 			brokenK8s := &errorK8sClient{err: errors.New("envtest unreachable")}
 			brokenDS := &errorDSClient{err: errors.New("DS endpoint unreachable")}
+			testSl := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 			brokenEnricher := enrichment.NewEnricher(brokenK8s, brokenDS, auditStore,
-				slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+				logr.FromSlogHandler(testSl.Handler()))
 
 			By("Calling broken enricher")
 			result, err := brokenEnricher.Enrich(testCtx, "Pod", "broken-pod-"+testID, "it-enrichment", "", incidentID)
@@ -323,8 +325,9 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			By("Building enricher with broken K8s + real DS + real audit store")
 			brokenK8s := &errorK8sClient{err: errors.New("K8s API unavailable")}
 			dsAdapter := enrichment.NewDSAdapter(ogenClient)
+			testSl2 := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 			partialEnricher := enrichment.NewEnricher(brokenK8s, dsAdapter, auditStore,
-				slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+				logr.FromSlogHandler(testSl2.Handler()))
 
 			By("Calling enricher")
 			result, err := partialEnricher.Enrich(testCtx, "StatefulSet", "redis-"+testID, "it-enrichment", "sha256:pre5", incidentID)
@@ -394,8 +397,9 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 
 			By("Building enricher with real K8s + broken DS + real audit store")
 			brokenDS := &errorDSClient{err: errors.New("DS connection refused")}
+			testSl3 := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 			partialEnricher := enrichment.NewEnricher(k8sAdapter, brokenDS, auditStore,
-				slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+				logr.FromSlogHandler(testSl3.Handler()))
 
 			By("Calling enricher")
 			result, err := partialEnricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "sha256:test7", incidentID)

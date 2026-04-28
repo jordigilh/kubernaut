@@ -19,6 +19,7 @@ package investigator_test
 import (
 	"context"
 	"log/slog"
+	"github.com/go-logr/logr"
 	"os"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -36,7 +37,7 @@ import (
 var _ = Describe("KA-KA Integration Parity — Token Usage (TP-433-PARITY)", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -45,7 +46,7 @@ var _ = Describe("KA-KA Integration Parity — Token Usage (TP-433-PARITY)", fun
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		logger = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
@@ -105,7 +106,7 @@ var _ = Describe("KA-KA Integration Parity — Token Usage (TP-433-PARITY)", fun
 var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -114,7 +115,7 @@ var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", fun
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		logger = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
@@ -194,7 +195,7 @@ var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", fun
 var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -203,7 +204,7 @@ var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		logger = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()

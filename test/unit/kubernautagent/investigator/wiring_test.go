@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -80,7 +81,7 @@ var _ = Describe("TP-433-ADV P1: Critical Wiring — GAP-006/GAP-007", func() {
 
 			cfg := investigator.Config{
 				Client: instrumented,
-				Logger: slog.Default(),
+				Logger: logr.FromSlogHandler(slog.Default().Handler()),
 			}
 			inv := investigator.New(cfg)
 			Expect(inv).NotTo(BeNil(),

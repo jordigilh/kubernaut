@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"github.com/go-logr/logr"
 	"os"
 
 	"github.com/google/uuid"
@@ -60,7 +61,7 @@ func (e *errorLLMClient) Close() error { return nil }
 var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     logr.Logger
 		auditStore *recordingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
@@ -70,7 +71,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		logger = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
@@ -533,7 +534,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 	Describe("IT-KA-433-AP-004: Investigation emits validation_attempt per self-correction attempt", func() {
 		It("should emit one failure validation_attempt then one success when correction succeeds", func() {
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+			logger := logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 			auditStore := &recordingAuditStore{}
 			builder, _ := prompt.NewBuilder()
 			rp := parser.NewResultParser()
@@ -586,7 +587,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 		})
 
 		It("should emit isValid=false on final event when validation is exhausted", func() {
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+			logger := logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 			auditStore := &recordingAuditStore{}
 			builder, _ := prompt.NewBuilder()
 			rp := parser.NewResultParser()

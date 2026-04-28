@@ -19,6 +19,7 @@ package investigator_test
 import (
 	"context"
 	"log/slog"
+	"github.com/go-logr/logr"
 	"os"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -35,7 +36,7 @@ import (
 var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -44,7 +45,7 @@ var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		logger = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
@@ -415,7 +416,7 @@ var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
 var _ = Describe("Workflow Selection Decline Classification — #760", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -424,7 +425,7 @@ var _ = Describe("Workflow Selection Decline Classification — #760", func() {
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		logger = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()

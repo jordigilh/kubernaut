@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -73,7 +74,7 @@ func newItTestMapper() meta.RESTMapper {
 var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)", func() {
 
 	var (
-		logger     *slog.Logger
+		lr         logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -81,7 +82,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		lr = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
@@ -121,7 +122,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 				},
 			}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger).WithLabelDetector(ld)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, lr).WithLabelDetector(ld)
 
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -132,7 +133,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: lr,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
@@ -179,7 +180,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 				},
 			}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger).WithLabelDetector(ld)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, lr).WithLabelDetector(ld)
 
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -190,7 +191,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: lr,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
@@ -239,7 +240,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 				},
 			}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger).WithLabelDetector(ld)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, lr).WithLabelDetector(ld)
 
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -250,7 +251,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: lr,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
@@ -302,7 +303,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 				},
 			}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger).WithLabelDetector(ld)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, lr).WithLabelDetector(ld)
 
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -313,7 +314,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: lr,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
@@ -363,7 +364,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 				},
 			}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger).WithLabelDetector(ld)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, lr).WithLabelDetector(ld)
 
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -374,7 +375,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: lr,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
@@ -427,7 +428,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 				},
 			}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger).WithLabelDetector(ld)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, lr).WithLabelDetector(ld)
 
 			result, err := enricher.Enrich(context.Background(), "Pod", "web-app-xyz", "constrained", "", "inc-1")
 			Expect(err).NotTo(HaveOccurred())

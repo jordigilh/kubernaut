@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"github.com/go-logr/logr"
 	"os"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -36,7 +37,7 @@ import (
 var _ = Describe("Phase Separation: Investigator — #700", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     logr.Logger
 		auditStore *recordingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
@@ -46,7 +47,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		logger = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder(prompt.WithStructuredOutput(true))

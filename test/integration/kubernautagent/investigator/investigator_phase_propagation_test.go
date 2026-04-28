@@ -19,6 +19,7 @@ package investigator_test
 import (
 	"context"
 	"log/slog"
+	"github.com/go-logr/logr"
 	"os"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -35,7 +36,7 @@ import (
 var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     logr.Logger
 		auditStore *recordingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
@@ -45,7 +46,7 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		logger = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder(prompt.WithStructuredOutput(true))

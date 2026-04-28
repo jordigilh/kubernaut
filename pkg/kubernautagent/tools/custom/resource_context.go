@@ -20,11 +20,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
+
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 )
+
+// resourceContextPkgLog is used for warnings from resource-context helpers and tools.
+// SetResourceContextLogger may be called from agent wiring when a scoped logger is available.
+var resourceContextPkgLog logr.Logger = logr.Discard()
+
+// SetResourceContextLogger configures the package logger for resource context tools.
+func SetResourceContextLogger(l logr.Logger) {
+	resourceContextPkgLog = l
+}
 
 var namespacedResourceContextSchema = json.RawMessage(`{
 	"type": "object",
@@ -52,21 +62,21 @@ type rootOwnerResponse struct {
 }
 
 type namespacedResponse struct {
-	RootOwner          rootOwnerResponse              `json:"root_owner"`
+	RootOwner          rootOwnerResponse                    `json:"root_owner"`
 	RemediationHistory *enrichment.RemediationHistoryResult `json:"remediation_history"`
 }
 
 type clusterResponse struct {
-	RootOwner          rootOwnerResponse              `json:"root_owner"`
+	RootOwner          rootOwnerResponse                    `json:"root_owner"`
 	RemediationHistory *enrichment.RemediationHistoryResult `json:"remediation_history"`
 }
 
 func computeSpecHash(ctx context.Context, k8s enrichment.K8sClient, kind, name, namespace, toolName string) string {
 	computed, err := k8s.GetSpecHash(ctx, kind, name, namespace)
 	if err != nil {
-		slog.Warn(toolName+": specHash computation failed, proceeding with empty",
-			slog.String("kind", kind), slog.String("name", name),
-			slog.String("namespace", namespace), slog.String("error", err.Error()))
+		resourceContextPkgLog.Info(toolName+": specHash computation failed, proceeding with empty",
+			"kind", kind, "name", name,
+			"namespace", namespace, "error", err)
 		return ""
 	}
 	return computed
@@ -75,9 +85,9 @@ func computeSpecHash(ctx context.Context, k8s enrichment.K8sClient, kind, name, 
 func fetchRemediationHistory(ctx context.Context, ds enrichment.DataStorageClient, kind, name, namespace, specHash, toolName string) *enrichment.RemediationHistoryResult {
 	result, err := ds.GetRemediationHistory(ctx, kind, name, namespace, specHash)
 	if err != nil {
-		slog.Warn(toolName+": remediation history fetch failed",
-			slog.String("kind", kind), slog.String("name", name),
-			slog.String("namespace", namespace), slog.String("error", err.Error()))
+		resourceContextPkgLog.Info(toolName+": remediation history fetch failed",
+			"kind", kind, "name", name,
+			"namespace", namespace, "error", err)
 	}
 	if result == nil {
 		result = &enrichment.RemediationHistoryResult{}
@@ -97,9 +107,13 @@ func NewNamespacedResourceContextTool(ds enrichment.DataStorageClient, k8s enric
 	return &namespacedResourceContextTool{ds: ds, k8s: k8s}
 }
 
-func (t *namespacedResourceContextTool) Name() string               { return "get_namespaced_resource_context" }
-func (t *namespacedResourceContextTool) Description() string         { return "Get resource context including owner chain root, remediation history, and detected infrastructure for a namespaced resource" }
-func (t *namespacedResourceContextTool) Parameters() json.RawMessage { return namespacedResourceContextSchema }
+func (t *namespacedResourceContextTool) Name() string { return "get_namespaced_resource_context" }
+func (t *namespacedResourceContextTool) Description() string {
+	return "Get resource context including owner chain root, remediation history, and detected infrastructure for a namespaced resource"
+}
+func (t *namespacedResourceContextTool) Parameters() json.RawMessage {
+	return namespacedResourceContextSchema
+}
 
 func (t *namespacedResourceContextTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var params struct {
@@ -113,9 +127,9 @@ func (t *namespacedResourceContextTool) Execute(ctx context.Context, args json.R
 
 	chain, chainErr := t.k8s.GetOwnerChain(ctx, params.Kind, params.Name, params.Namespace)
 	if chainErr != nil {
-		slog.Warn("get_namespaced_resource_context: owner chain resolution failed",
-			slog.String("kind", params.Kind), slog.String("name", params.Name),
-			slog.String("namespace", params.Namespace), slog.String("error", chainErr.Error()))
+		resourceContextPkgLog.Info("get_namespaced_resource_context: owner chain resolution failed",
+			"kind", params.Kind, "name", params.Name,
+			"namespace", params.Namespace, "error", chainErr)
 	}
 
 	rootOwner := rootOwnerResponse{
@@ -158,9 +172,13 @@ func NewClusterResourceContextTool(ds enrichment.DataStorageClient, k8s enrichme
 	return &clusterResourceContextTool{ds: ds, k8s: k8s}
 }
 
-func (t *clusterResourceContextTool) Name() string               { return "get_cluster_resource_context" }
-func (t *clusterResourceContextTool) Description() string         { return "Get resource context including remediation history for a cluster-scoped resource" }
-func (t *clusterResourceContextTool) Parameters() json.RawMessage { return clusterResourceContextSchema }
+func (t *clusterResourceContextTool) Name() string { return "get_cluster_resource_context" }
+func (t *clusterResourceContextTool) Description() string {
+	return "Get resource context including remediation history for a cluster-scoped resource"
+}
+func (t *clusterResourceContextTool) Parameters() json.RawMessage {
+	return clusterResourceContextSchema
+}
 
 func (t *clusterResourceContextTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var params struct {

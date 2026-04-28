@@ -19,6 +19,7 @@ package investigator_test
 import (
 	"context"
 	"log/slog"
+	"github.com/go-logr/logr"
 	"os"
 	"strings"
 
@@ -38,7 +39,7 @@ import (
 var _ = Describe("Kubernaut Agent Summarizer Wiring — TP-433-WIR Phase 6", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -47,7 +48,7 @@ var _ = Describe("Kubernaut Agent Summarizer Wiring — TP-433-WIR Phase 6", fun
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		logger = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()

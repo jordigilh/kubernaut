@@ -21,11 +21,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/go-faster/jx"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 
@@ -47,13 +47,16 @@ type Handler struct {
 
 	sessions     *session.Manager
 	investigator InvestigationRunner
-	logger       *slog.Logger
+	logger       logr.Logger
 }
 
 var _ agentclient.Handler = (*Handler)(nil)
 
 // NewHandler creates a Kubernaut Agent ogen handler.
-func NewHandler(sessions *session.Manager, inv InvestigationRunner, logger *slog.Logger) *Handler {
+func NewHandler(sessions *session.Manager, inv InvestigationRunner, logger logr.Logger) *Handler {
+	if logger.GetSink() == nil {
+		logger = logr.Discard()
+	}
 	return &Handler{
 		sessions:     sessions,
 		investigator: inv,
@@ -87,7 +90,7 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 	}
 
 	if h.investigator == nil {
-		h.logger.Error("investigator not configured")
+		h.logger.Error(errors.New("investigator not configured"), "investigator not configured")
 		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
 			Type:     "https://kubernaut.ai/problems/internal-error",
 			Title:    "Internal Server Error",
@@ -111,7 +114,7 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 		return h.investigator.Investigate(bgCtx, signal)
 	}, metadata)
 	if err != nil {
-		h.logger.Error("failed to start investigation", "error", err)
+		h.logger.Error(err, "failed to start investigation")
 		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
 			Type:     "https://kubernaut.ai/problems/internal-error",
 			Title:    "Internal Server Error",
@@ -142,7 +145,7 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 				Instance: fmt.Sprintf("/api/v1/incident/session/%s", params.SessionID),
 			}, nil
 		}
-		h.logger.Error("session lookup failed", "session_id", params.SessionID, "error", err)
+		h.logger.Error(err, "session lookup failed", "session_id", params.SessionID)
 		return nil, fmt.Errorf("session lookup: %w", err)
 	}
 
@@ -172,7 +175,7 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 				Instance: fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID),
 			}, nil
 		}
-		h.logger.Error("session lookup failed", "session_id", params.SessionID, "error", err)
+		h.logger.Error(err, "session lookup failed", "session_id", params.SessionID)
 		return nil, fmt.Errorf("session lookup: %w", err)
 	}
 
@@ -188,7 +191,7 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 
 	result, ok := sess.Result.(*katypes.InvestigationResult)
 	if !ok {
-		h.logger.Error("unexpected result type in session", "session_id", sess.ID)
+		h.logger.Error(errors.New("unexpected result type"), "unexpected result type in session", "session_id", sess.ID)
 		return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{
 			Type:     "https://kubernaut.ai/problems/session-not-completed",
 			Title:    "Session Not Completed",
@@ -203,7 +206,7 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 		incidentID = sess.Metadata["incident_id"]
 	}
 
-	resp := mapInvestigationResultToResponse(result, incidentID)
+	resp := mapInvestigationResultToResponse(h.logger, result, incidentID)
 	return resp, nil
 }
 
@@ -276,7 +279,7 @@ func mapSessionStatusToAPI(s session.Status) string {
 	}
 }
 
-func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID string) *agentclient.IncidentResponse {
+func mapInvestigationResultToResponse(logger logr.Logger, r *katypes.InvestigationResult, incidentID string) *agentclient.IncidentResponse {
 	resp := &agentclient.IncidentResponse{
 		IncidentID: incidentID,
 		Analysis:   r.RCASummary,
@@ -323,7 +326,7 @@ func mapInvestigationResultToResponse(r *katypes.InvestigationResult, incidentID
 		}
 		mapped, isDefault := mapHumanReviewReason(reason)
 		if isDefault && reason != "" {
-			slog.Warn("unrecognized human review reason, falling back to investigation_inconclusive",
+			logger.Info("unrecognized human review reason, falling back to investigation_inconclusive",
 				"original_reason", reason)
 		}
 		resp.HumanReviewReason.SetTo(mapped)

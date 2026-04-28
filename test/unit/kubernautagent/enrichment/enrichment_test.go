@@ -24,6 +24,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -212,11 +213,13 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 
 	var (
 		logger     *slog.Logger
+		lr         logr.Logger
 		auditStore *recordingAuditStore
 	)
 
 	BeforeEach(func() {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		lr = logr.FromSlogHandler(logger.Handler())
 		auditStore = &recordingAuditStore{}
 	})
 
@@ -232,7 +235,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 			ds := &fakeDataStorageClient{
 				history: &enrichment.RemediationHistoryResult{},
 			}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr)
 			result, err := e.Enrich(context.Background(), "Pod", "api-server-abc-xyz", "production", "", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil(), "Enrich should return a result")
@@ -254,7 +257,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 					},
 				},
 			}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr)
 			result, err := e.Enrich(context.Background(), "Pod", "api-server-abc", "production", "", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -274,7 +277,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 					},
 				},
 			}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr)
 			result, err := e.Enrich(context.Background(), "Pod", "api-server-abc", "production", "", "")
 			Expect(err).NotTo(HaveOccurred(), "partial failure should not return error")
 			Expect(result).NotTo(BeNil())
@@ -293,7 +296,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 			ds := &fakeDataStorageClient{
 				history: &enrichment.RemediationHistoryResult{},
 			}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr)
 			_, err := e.Enrich(context.Background(), "Deployment", "api-server", "default", "", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ds.capturedSpecHash).To(Equal("sha256:auto-computed-hash"),
@@ -308,7 +311,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 			ds := &fakeDataStorageClient{
 				history: &enrichment.RemediationHistoryResult{},
 			}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr)
 			_, err := e.Enrich(context.Background(), "Deployment", "api-server", "default", "sha256:caller-provided", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ds.capturedSpecHash).To(Equal("sha256:caller-provided"),
@@ -323,7 +326,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 			ds := &fakeDataStorageClient{
 				history: &enrichment.RemediationHistoryResult{},
 			}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr)
 			result, err := e.Enrich(context.Background(), "Deployment", "api-server", "default", "", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -336,7 +339,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 		It("should set ResourceKind, ResourceName, ResourceNamespace from input params", func() {
 			k8s := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
 			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr)
 			result, err := e.Enrich(context.Background(), "Deployment", "worker", "demo-crashloop", "", "inc-1")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -360,7 +363,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 					{RemediationUID: "oom-recovery", Outcome: "success", CompletedAt: time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)},
 				},
 			}}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr)
 			_, err := e.Enrich(context.Background(), "Pod", "api-server-abc", "production", "", "test-incident-001")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -382,7 +385,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 		It("should emit enrichment.failed with structured EventData when both clients fail", func() {
 			k8s := &fakeK8sClient{err: errors.New("K8s down")}
 			ds := &fakeDataStorageClient{err: errors.New("DS down")}
-			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			e := enrichment.NewEnricher(k8s, ds, auditStore, lr)
 			_, err := e.Enrich(context.Background(), "Pod", "api-server-abc", "production", "", "test-incident-002")
 			Expect(err).NotTo(HaveOccurred())
 

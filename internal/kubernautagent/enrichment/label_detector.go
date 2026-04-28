@@ -19,9 +19,9 @@ package enrichment
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -46,12 +46,28 @@ var (
 type LabelDetector struct {
 	dynClient dynamic.Interface
 	mapper    meta.RESTMapper
+	logger    logr.Logger
 }
 
 // NewLabelDetector creates a LabelDetector backed by the given dynamic K8s client
 // and REST mapper. The mapper resolves any Kubernetes kind to its GVR (#679).
 func NewLabelDetector(dynClient dynamic.Interface, mapper meta.RESTMapper) *LabelDetector {
 	return &LabelDetector{dynClient: dynClient, mapper: mapper}
+}
+
+func (ld *LabelDetector) inheritLogger(l logr.Logger) {
+	if l.GetSink() == nil {
+		ld.logger = logr.Discard()
+		return
+	}
+	ld.logger = l
+}
+
+func (ld *LabelDetector) log() logr.Logger {
+	if ld.logger.GetSink() == nil {
+		return logr.Discard()
+	}
+	return ld.logger
 }
 
 // DetectLabels detects infrastructure characteristics for the given resource,
@@ -72,7 +88,7 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, kind, name, namespace 
 
 	rootObj, err := d.fetchResource(ctx, rootKind, rootName, rootNS)
 	if err != nil {
-		slog.Warn("label detection: root owner fetch failed", "kind", rootKind, "name", rootName, "error", err)
+		d.log().Info("label detection: root owner fetch failed", "kind", rootKind, "name", rootName, "error", err)
 		result.FailedDetections = append([]string(nil), AllDetectionCategories...)
 		return result, nil, nil
 	}
@@ -97,7 +113,7 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, kind, name, namespace 
 		result.FailedDetections = failed
 	}
 
-	slog.Debug("label detection complete",
+	d.log().V(1).Info("label detection complete",
 		"root", rootKind+"/"+rootName,
 		"namespace", rootNS,
 		"gitOpsManaged", result.GitOpsManaged,
@@ -153,7 +169,7 @@ func (d *LabelDetector) resolveMapping(kind string) (*meta.RESTMapping, error) {
 func (d *LabelDetector) fetchNamespace(ctx context.Context, namespace string) *unstructured.Unstructured {
 	obj, err := d.dynClient.Resource(namespaceGVR).Get(ctx, namespace, metav1.GetOptions{})
 	if err != nil {
-		slog.Warn("label detection: namespace fetch failed (best-effort skip)", "namespace", namespace, "error", err)
+		d.log().Info("label detection: namespace fetch failed (best-effort skip)", "namespace", namespace, "error", err)
 		return nil
 	}
 	return obj
@@ -227,21 +243,21 @@ func detectGitOps(rootObj *unstructured.Unstructured, podTemplateAnnotations map
 
 	// DD-HAPI-018 priorities 1-10 then legacy 11-13
 	checks := []gitOpsCheck{
-		{podTemplateAnnotations, "argocd.argoproj.io/tracking-id", "argocd"},  // P1
-		{podTemplateLabels, "argocd.argoproj.io/instance", "argocd"},          // P2
-		{rootAnnotations, "argocd.argoproj.io/tracking-id", "argocd"},         // P3
-		{rootLabels, "fluxcd.io/sync-gc-mark", "flux"},                        // P4
-		{rootAnnotations, "argocd.argoproj.io/instance", "argocd"},            // P5 (annotation)
-		{rootLabels, "argocd.argoproj.io/instance", "argocd"},                 // P5 (label)
-		{nsLabels, "argocd.argoproj.io/instance", "argocd"},                   // P6
-		{nsAnnotations, "argocd.argoproj.io/tracking-id", "argocd"},           // P7
-		{nsAnnotations, "fluxcd.io/sync-gc-mark", "flux"},                     // P8
-		{nsAnnotations, "argocd.argoproj.io/managed", "argocd"},               // P9
-		{nsAnnotations, "fluxcd.io/sync-status", "flux"},                      // P10
+		{podTemplateAnnotations, "argocd.argoproj.io/tracking-id", "argocd"}, // P1
+		{podTemplateLabels, "argocd.argoproj.io/instance", "argocd"},         // P2
+		{rootAnnotations, "argocd.argoproj.io/tracking-id", "argocd"},        // P3
+		{rootLabels, "fluxcd.io/sync-gc-mark", "flux"},                       // P4
+		{rootAnnotations, "argocd.argoproj.io/instance", "argocd"},           // P5 (annotation)
+		{rootLabels, "argocd.argoproj.io/instance", "argocd"},                // P5 (label)
+		{nsLabels, "argocd.argoproj.io/instance", "argocd"},                  // P6
+		{nsAnnotations, "argocd.argoproj.io/tracking-id", "argocd"},          // P7
+		{nsAnnotations, "fluxcd.io/sync-gc-mark", "flux"},                    // P8
+		{nsAnnotations, "argocd.argoproj.io/managed", "argocd"},              // P9
+		{nsAnnotations, "fluxcd.io/sync-status", "flux"},                     // P10
 		// Legacy fallbacks (backward compatibility, not in DD-HAPI-018)
-		{rootAnnotations, "argocd.argoproj.io/managed-by", "argocd"},          // L11
-		{rootAnnotations, "fluxcd.io/sync-checksum", "flux"},                  // L12
-		{rootAnnotations, "kustomize.toolkit.fluxcd.io/name", "flux"},         // L13
+		{rootAnnotations, "argocd.argoproj.io/managed-by", "argocd"},  // L11
+		{rootAnnotations, "fluxcd.io/sync-checksum", "flux"},          // L12
+		{rootAnnotations, "kustomize.toolkit.fluxcd.io/name", "flux"}, // L13
 	}
 
 	for _, c := range checks {
@@ -326,7 +342,7 @@ func (d *LabelDetector) detectHPA(ctx context.Context, ownerChain []OwnerChainEn
 
 	list, err := d.dynClient.Resource(hpaGVR).Namespace(rootNS).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("label detection: HPA list failed", "namespace", rootNS, "error", err)
+		d.log().Info("label detection: HPA list failed", "namespace", rootNS, "error", err)
 		*failed = append(*failed, "hpaEnabled")
 		return
 	}
@@ -366,7 +382,7 @@ func (d *LabelDetector) detectPDB(ctx context.Context, rootObj *unstructured.Uns
 	}
 	list, err := d.dynClient.Resource(pdbGVR).Namespace(rootNS).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("label detection: PDB list failed", "namespace", rootNS, "error", err)
+		d.log().Info("label detection: PDB list failed", "namespace", rootNS, "error", err)
 		*failed = append(*failed, "pdbProtected")
 		return
 	}
@@ -421,7 +437,7 @@ func (d *LabelDetector) detectNetworkPolicy(ctx context.Context, namespace strin
 	}
 	list, err := d.dynClient.Resource(networkPolicyGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("label detection: NetworkPolicy list failed", "namespace", namespace, "error", err)
+		d.log().Info("label detection: NetworkPolicy list failed", "namespace", namespace, "error", err)
 		*failed = append(*failed, "networkIsolated")
 		return
 	}
@@ -437,7 +453,7 @@ func (d *LabelDetector) detectResourceQuota(ctx context.Context, namespace strin
 	}
 	list, err := d.dynClient.Resource(resourceQuotaGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("label detection: ResourceQuota list failed", "namespace", namespace, "error", err)
+		d.log().Info("label detection: ResourceQuota list failed", "namespace", namespace, "error", err)
 		*failed = append(*failed, "resourceQuotaConstrained")
 		return nil
 	}

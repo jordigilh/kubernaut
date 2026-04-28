@@ -19,6 +19,7 @@ package investigator_test
 import (
 	"context"
 	"log/slog"
+	"github.com/go-logr/logr"
 	"os"
 
 	"github.com/google/uuid"
@@ -74,7 +75,7 @@ func (p *paramCapturingDS) GetWorkflowByID(_ context.Context, _ ogenclient.GetWo
 var _ = Describe("IT-KA-779: Signal context propagation through investigator to DS tool params", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -82,7 +83,7 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		logger = logr.FromSlogHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).Handler())
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()

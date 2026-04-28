@@ -19,6 +19,8 @@ package credentials_test
 import (
 	"log/slog"
 	"os"
+
+	"github.com/go-logr/logr"
 	"path/filepath"
 	"strings"
 
@@ -32,7 +34,7 @@ var _ = Describe("ResolveGCPCredentialIndirection — #686", func() {
 
 	var (
 		credDir string
-		logger  *slog.Logger
+		logger  logr.Logger
 	)
 
 	BeforeEach(func() {
@@ -41,7 +43,8 @@ var _ = Describe("ResolveGCPCredentialIndirection — #686", func() {
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { os.RemoveAll(credDir) })
 
-		logger = slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		sl := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		logger = logr.FromSlogHandler(sl.Handler())
 	})
 
 	// -- Passthrough scenarios --

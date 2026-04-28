@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -32,6 +31,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
@@ -46,10 +46,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
 
-	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
-	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
-	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
-
+	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	alignprompt "github.com/jordigilh/kubernaut/internal/kubernautagent/alignment/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -69,6 +66,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/sanitization"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/rest"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
@@ -85,48 +86,51 @@ func main() {
 	flag.StringVar(&addr, "addr", "", "HTTP listen address (overrides config server.port)")
 	flag.Parse()
 
-	// Bootstrap logger at INFO for startup; replaced after config is loaded (#875).
-	bootHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
-	slogger := slog.New(bootHandler)
+	// Bootstrap logger at INFO for startup; replaced after config is loaded.
+	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	var logger logr.Logger = kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "kubernaut-agent",
+	}, bootstrapLevel)
+	defer func() { kubelog.Sync(logger) }()
 
 	cfgData, err := os.ReadFile(configPath)
 	if err != nil {
-		slogger.Error("failed to read config", "path", configPath, "error", err)
+		logger.Error(err, "failed to read config", "path", configPath)
 		os.Exit(1)
 	}
 	cfg, err := kaconfig.Load(cfgData)
 	if err != nil {
-		slogger.Error("failed to parse config", "error", err)
+		logger.Error(err, "failed to parse config")
 		os.Exit(1)
 	}
 
-	// Re-create logger with configured level (#875).
-	slogHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.Logging.SlogLevel()})
-	slogger = slog.New(slogHandler)
-	logrLogger := logr.FromSlogHandler(slogHandler)
+	atomicLevel := cfg.Logging.NewAtomicLevel()
+	logger = kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "kubernaut-agent",
+	}, atomicLevel)
 
-	slogger.Info("log level configured", "level", cfg.Logging.Level)
+	logger.Info("log level configured", "level", cfg.Logging.Level)
 
 	if sdkData, sdkErr := os.ReadFile(sdkConfigPath); sdkErr == nil {
 		if mergeErr := cfg.MergeSDKConfig(sdkData); mergeErr != nil {
-			slogger.Warn("failed to parse SDK config, continuing with main config only",
+			logger.Info("failed to parse SDK config, continuing with main config only",
 				"path", sdkConfigPath, "error", mergeErr)
 		} else {
-			slogger.Info("merged SDK config", "path", sdkConfigPath)
+			logger.Info("merged SDK config", "path", sdkConfigPath)
 		}
 	} else {
-		slogger.Info("SDK config not found, using main config only", "path", sdkConfigPath)
+		logger.Info("SDK config not found, using main config only", "path", sdkConfigPath)
 	}
 
 	if cfg.LLM.APIKey == "" {
 		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
-		cfg.LLM.APIKey = credentials.ResolveCredentialsFile(cfg.LLM.Provider, credDir, slogger)
+		cfg.LLM.APIKey = credentials.ResolveCredentialsFile(cfg.LLM.Provider, credDir, logger)
 	}
 
 	switch cfg.LLM.Provider {
 	case "vertex", "vertex_ai":
 		if cfg.LLM.APIKey == "" {
-			slogger.Warn("GCP provider configured without credentials — requests will use ambient ADC if available",
+			logger.Info("GCP provider configured without credentials — requests will use ambient ADC if available",
 				"provider", cfg.LLM.Provider)
 		}
 	}
@@ -141,7 +145,7 @@ func main() {
 	}
 
 	if err := cfg.Validate(); err != nil {
-		slogger.Error("invalid configuration", "error", err)
+		logger.Error(err, "invalid configuration")
 		os.Exit(1)
 	}
 
@@ -149,17 +153,17 @@ func main() {
 		addr = fmt.Sprintf("%s:%d", cfg.Server.Address, cfg.Server.Port)
 	}
 
-	slogger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
+	logger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
 
 	llmClient, err := buildLLMClientFromConfig(context.Background(), cfg)
 	if err != nil {
-		slogger.Error("failed to create LLM client", "provider", cfg.LLM.Provider, "error", err)
+		logger.Error(err, "failed to create LLM client", "provider", cfg.LLM.Provider)
 		os.Exit(1)
 	}
 
 	swappable, err := llm.NewSwappableClient(llmClient, cfg.LLM.Model)
 	if err != nil {
-		slogger.Error("failed to create swappable LLM client", "error", err)
+		logger.Error(err, "failed to create swappable LLM client")
 		os.Exit(1)
 	}
 
@@ -169,30 +173,30 @@ func main() {
 	}
 	promptBuilder, err := prompt.NewBuilder(promptOpts...)
 	if err != nil {
-		slogger.Error("failed to create prompt builder", "error", err)
+		logger.Error(err, "failed to create prompt builder")
 		os.Exit(1)
 	}
 
-	resultParser := parser.NewResultParser(logrLogger.WithName("parser"))
+	resultParser := parser.NewResultParser(logger.WithName("parser"))
 	phaseTools := investigator.DefaultPhaseToolMap()
 
-	k8sInfra := initK8sInfra(slogger)
-	ds := initDSClients(cfg, k8sInfra, slogger)
-	auditStore, auditCleanup := buildAuditStore(cfg, slogger, logrLogger)
-	reg := buildToolRegistry(cfg, slogger, k8sInfra, ds)
-	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, slogger)
-	sanitizer := buildSanitizationPipeline(cfg, slogger)
-	anomalyDetector := buildAnomalyDetector(cfg, slogger)
-	sum := buildSummarizer(swappable, cfg, slogger)
+	k8sInfra := initK8sInfra(logger)
+	ds := initDSClients(cfg, k8sInfra, logger)
+	auditStore, auditCleanup := buildAuditStore(cfg, logger)
+	reg := buildToolRegistry(cfg, logger, k8sInfra, ds)
+	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, logger)
+	sanitizer := buildSanitizationPipeline(cfg, logger)
+	anomalyDetector := buildAnomalyDetector(cfg, logger)
+	sum := buildSummarizer(swappable, cfg, logger)
 
 	instrumentedLLM := llm.NewInstrumentedClient(swappable)
 
 	var catalogFetcher investigator.CatalogFetcher
 	if ds != nil {
-		catalogFetcher = newDSCatalogFetcher(ds, slogger)
-		slogger.Info("workflow catalog fetcher enabled (per-request, DD-HAPI-002)")
+		catalogFetcher = newDSCatalogFetcher(ds, logger)
+		logger.Info("workflow catalog fetcher enabled (per-request, DD-HAPI-002)")
 	} else {
-		slogger.Info("workflow catalog fetcher disabled (no DataStorage — dev mode)")
+		logger.Info("workflow catalog fetcher disabled (no DataStorage — dev mode)")
 	}
 
 	var effectiveLLM llm.Client = instrumentedLLM
@@ -203,7 +207,7 @@ func main() {
 		var shadowClient llm.Client
 		if cfg.AlignmentCheck.LLM == nil {
 			shadowClient = instrumentedLLM
-			slogger.Info("shadow agent shares investigation LLM client")
+			logger.Info("shadow agent shares investigation LLM client")
 		} else {
 			alignLLMCfg := cfg.AlignmentCheck.EffectiveLLM(cfg.LLM)
 			alignCfgMerge := *cfg
@@ -212,11 +216,11 @@ func main() {
 				alignLLMCfg.Provider, alignLLMCfg.Endpoint, alignLLMCfg.Model, alignLLMCfg.APIKey,
 				buildLLMProviderOpts(&alignCfgMerge)...)
 			if alignErr != nil {
-				slogger.Error("alignment check LLM client failed (fail-closed): alignment is enabled but shadow client unavailable", "error", alignErr)
+				logger.Error(alignErr, "alignment check LLM client failed (fail-closed): alignment is enabled but shadow client unavailable")
 				os.Exit(1)
 			} else {
 				shadowClient = llm.NewInstrumentedClient(raw)
-				slogger.Info("shadow agent using dedicated LLM client", "model", alignLLMCfg.Model)
+				logger.Info("shadow agent using dedicated LLM client", "model", alignLLMCfg.Model)
 			}
 		}
 		if shadowClient != nil {
@@ -227,7 +231,7 @@ func main() {
 			}, alignprompt.SystemPrompt())
 			effectiveLLM = alignment.NewLLMProxy(instrumentedLLM)
 			effectiveReg = alignment.NewToolProxy(reg)
-			slogger.Info("shadow agent alignment check enabled")
+			logger.Info("shadow agent alignment check enabled")
 		}
 	}
 
@@ -242,7 +246,7 @@ func main() {
 		ResultParser:  resultParser,
 		Enricher:      enricher,
 		AuditStore:    auditStore,
-		Logger:        slogger,
+		Logger:        logger,
 		MaxTurns:      cfg.Investigator.MaxTurns,
 		PhaseTools:    phaseTools,
 		Registry:      effectiveReg,
@@ -265,18 +269,18 @@ func main() {
 			Evaluator:      alignEvaluator,
 			VerdictTimeout: 30 * time.Second,
 			AuditStore:     auditStore,
-			Logger:         slogger,
+			Logger:         logger,
 		})
 	}
 
 	store := session.NewStore(cfg.Session.TTL)
-	mgr := session.NewManager(store, slogger)
+	mgr := session.NewManager(store, logger)
 
-	handler := kaserver.NewHandler(mgr, investigationRunner, slogger)
+	handler := kaserver.NewHandler(mgr, investigationRunner, logger)
 
 	ogenSrv, err := agentclient.NewServer(handler)
 	if err != nil {
-		slogger.Error("failed to create ogen server", "error", err)
+		logger.Error(err, "failed to create ogen server")
 		os.Exit(1)
 	}
 
@@ -286,16 +290,16 @@ func main() {
 	r.Get("/config", configHandler(cfg, swappable))
 
 	r.Route("/api/v1", func(r chi.Router) {
-		authMw := newAuthMiddleware(k8sInfra, logrLogger)
+		authMw := newAuthMiddleware(k8sInfra, logger)
 		if authMw != nil {
 			r.Use(authMw.Handler)
-			slogger.Info("auth middleware enabled (DD-AUTH-014)",
+			logger.Info("auth middleware enabled (DD-AUTH-014)",
 				"resource", "services",
 				"resourceName", "kubernaut-agent",
 				"verb", "create",
 			)
 		} else {
-			slogger.Info("auth middleware DISABLED (no in-cluster K8s config)")
+			logger.Info("auth middleware DISABLED (no in-cluster K8s config)")
 		}
 
 		r.Handle("/*", ogenSrv)
@@ -313,12 +317,12 @@ func main() {
 	if cfg.Server.TLS.Enabled() {
 		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(httpServer, cfg.Server.TLS.CertDir)
 		if tlsErr != nil {
-			slogger.Error("Failed to configure TLS", "error", tlsErr)
+			logger.Error(tlsErr, "Failed to configure TLS")
 			os.Exit(1)
 		}
 		if isTLS {
 			certReloader = reloader
-			slogger.Info("TLS configured for HTTP server", "certDir", cfg.Server.TLS.CertDir)
+			logger.Info("TLS configured for HTTP server", "certDir", cfg.Server.TLS.CertDir)
 		}
 	}
 
@@ -335,53 +339,78 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Issue #875: Log level hot-reload via FileWatcher
+	logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
+		configPath,
+		func(newContent string) error {
+			var partial struct {
+				Logging internalconfig.LoggingConfig `yaml:"logging"`
+			}
+			if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
+				return fmt.Errorf("failed to parse config for log level reload: %w", err)
+			}
+			return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
+		},
+		logger.WithName("log-level-watcher"),
+	)
+	if logWatchErr != nil {
+		logger.Error(logWatchErr, "Failed to create log level file watcher")
+	} else {
+		if err := logLevelWatcher.Start(ctx); err != nil {
+			logger.Info("Log level file watcher failed to start", "error", err)
+		} else {
+			logger.Info("Log level hot-reload watcher started", "path", configPath)
+			defer logLevelWatcher.Stop()
+		}
+	}
+
 	// Issue #756: Wire FileWatcher for server cert hot-reload
 	if certReloader != nil {
 		certWatcher, watchErr := hotreload.NewFileWatcher(
 			filepath.Join(cfg.Server.TLS.CertDir, "tls.crt"),
 			certReloader.ReloadCallback,
-			logr.FromSlogHandler(slogger.Handler()).WithName("cert-reloader"),
+			logger.WithName("cert-reloader"),
 		)
 		if watchErr != nil {
-			slogger.Error("Failed to create cert file watcher", "error", watchErr)
+			logger.Error(watchErr, "Failed to create cert file watcher")
 			os.Exit(1)
 		}
 		if err := certWatcher.Start(ctx); err != nil {
-			slogger.Error("Failed to start cert file watcher", "error", err)
+			logger.Error(err, "Failed to start cert file watcher")
 			os.Exit(1)
 		}
 		defer certWatcher.Stop()
 	}
 
 	// Issue #783: Wire FileWatcher for SDK config hot-reload
-	sdkCallback := sdkReloadCallback(configPath, func() *kaconfig.Config { return cfg }, swappable, slogger)
+	sdkCallback := sdkReloadCallback(configPath, func() *kaconfig.Config { return cfg }, swappable, logger)
 	sdkWatcher, sdkWatchErr := hotreload.NewFileWatcher(
 		sdkConfigPath,
 		sdkCallback,
-		logr.FromSlogHandler(slogger.Handler()).WithName("sdk-config-reloader"),
+		logger.WithName("sdk-config-reloader"),
 	)
 	if sdkWatchErr != nil {
-		slogger.Warn("SDK config file watcher not started (file may not exist yet)", "error", sdkWatchErr)
+		logger.Info("SDK config file watcher not started (file may not exist yet)", "error", sdkWatchErr)
 	} else {
 		if err := sdkWatcher.Start(ctx); err != nil {
-			slogger.Warn("SDK config file watcher failed to start", "error", err)
+			logger.Info("SDK config file watcher failed to start", "error", err)
 		} else {
 			defer sdkWatcher.Stop()
-			slogger.Info("SDK config hot-reload enabled (#783)", "path", sdkConfigPath)
+			logger.Info("SDK config hot-reload enabled (#783)", "path", sdkConfigPath)
 		}
 	}
 
 	// Issue #748: Load OCP TLS security profile from config before any TLS setup
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
-		slogger.Error("Invalid TLS security profile in config, using default TLS 1.2", "error", err)
+		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
 	} else if cfg.TLSProfile != "" {
-		slogger.Info("TLS security profile active", "profile", cfg.TLSProfile)
+		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
 	}
 
 	// Issue #756: Start CA file watcher for client-side TLS hot-reload
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logr.FromSlogHandler(slogger.Handler()))
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
 	if caWatchErr != nil {
-		slogger.Error("Failed to start CA file watcher", "error", caWatchErr)
+		logger.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
 	}
 	if caWatcher != nil {
@@ -392,20 +421,20 @@ func main() {
 
 	// Issue #753: Start dedicated health and metrics servers
 	go func() {
-		slogger.Info("health server listening", "addr", cfg.Server.HealthAddr)
+		logger.Info("health server listening", "addr", cfg.Server.HealthAddr)
 		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slogger.Error("health server error", "error", err)
+			logger.Error(err, "health server error")
 		}
 	}()
 	go func() {
-		slogger.Info("metrics server listening", "addr", cfg.Server.MetricsAddr)
+		logger.Info("metrics server listening", "addr", cfg.Server.MetricsAddr)
 		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slogger.Error("metrics server error", "error", err)
+			logger.Error(err, "metrics server error")
 		}
 	}()
 
 	go func() {
-		slogger.Info("HTTP server listening", "addr", addr)
+		logger.Info("HTTP server listening", "addr", addr)
 		var listenErr error
 		if httpServer.TLSConfig != nil {
 			listenErr = httpServer.ListenAndServeTLS("", "")
@@ -413,13 +442,13 @@ func main() {
 			listenErr = httpServer.ListenAndServe()
 		}
 		if listenErr != nil && listenErr != http.ErrServerClosed {
-			slogger.Error("HTTP server error", "error", listenErr)
+			logger.Error(listenErr, "HTTP server error")
 			os.Exit(1)
 		}
 	}()
 
 	<-ctx.Done()
-	slogger.Info("shutting down...")
+	logger.Info("shutting down...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -433,7 +462,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "metrics server shutdown error: %v\n", shutdownErr)
 	}
 
-	slogger.Info("flushing audit store...")
+	logger.Info("flushing audit store...")
 	auditCleanup()
 }
 
@@ -487,20 +516,20 @@ type k8sInfra struct {
 
 // initK8sInfra creates the shared Kubernetes clients. Returns nil when
 // running outside a cluster (e.g. local development).
-func initK8sInfra(logger *slog.Logger) *k8sInfra {
+func initK8sInfra(logger logr.Logger) *k8sInfra {
 	kubeConfig, err := ctrl.GetConfig()
 	if err != nil {
-		logger.Warn("K8s config not available, K8s tools and enricher disabled", "error", err)
+		logger.Info("K8s config not available, K8s tools and enricher disabled", "error", err)
 		return nil
 	}
 	k8sClient, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
-		logger.Error("failed to create K8s clientset", "error", err)
+		logger.Error(err, "failed to create K8s clientset")
 		return nil
 	}
 	dynClient, err := dynamic.NewForConfig(kubeConfig)
 	if err != nil {
-		logger.Error("failed to create dynamic client", "error", err)
+		logger.Error(err, "failed to create dynamic client")
 		return nil
 	}
 	cachedDisc := memory.NewMemCacheClient(k8sClient.Discovery())
@@ -523,20 +552,20 @@ type dsClients struct {
 // or default /var/run/secrets/kubernetes.io/serviceaccount/token), the ogen
 // client is configured with a Bearer token transport so that all DS API calls
 // (including ListWorkflows for the workflow validator) pass authentication.
-func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger *slog.Logger) *dsClients {
+func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *dsClients {
 	if cfg.DataStorage.URL == "" {
 		logger.Info("DataStorage URL not configured, DS adapters disabled")
 		return nil
 	}
 	if infra == nil {
-		logger.Warn("K8s infrastructure unavailable, DS adapters disabled")
+		logger.Info("K8s infrastructure unavailable, DS adapters disabled")
 		return nil
 	}
 
 	// Issue #853: Wrapped with RetryTransport for transient failure resilience.
 	dsBase, tlsErr := sharedtls.DefaultBaseTransportWithRetry()
 	if tlsErr != nil {
-		logger.Error("failed to create TLS-aware transport for DS client", "error", tlsErr)
+		logger.Error(tlsErr, "failed to create TLS-aware transport for DS client")
 		return nil
 	}
 
@@ -548,13 +577,13 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger *slog.Logger) *
 		}))
 		logger.Info("DS client auth configured (DD-AUTH-014)", "token_path", cfg.DataStorage.SATokenPath)
 	} else {
-		logger.Warn("SA token not available for DS client — DS API calls may fail auth",
+		logger.Info("SA token not available for DS client — DS API calls may fail auth",
 			"path", cfg.DataStorage.SATokenPath, "error", err)
 	}
 
 	ogenClient, err := ogenclient.NewClient(cfg.DataStorage.URL, opts...)
 	if err != nil {
-		logger.Error("failed to create DataStorage ogen client", "url", cfg.DataStorage.URL, "error", err)
+		logger.Error(err, "failed to create DataStorage ogen client", "url", cfg.DataStorage.URL)
 		return nil
 	}
 	logger.Info("DataStorage clients initialized", "url", cfg.DataStorage.URL)
@@ -581,7 +610,7 @@ func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // buildEnricher creates the enrichment.Enricher when DS clients are available.
 // ADR-056: attaches LabelDetector so detected_labels are populated during enrichment.
 // #704: wires RetryConfig from config for HAPI-aligned owner chain retry+fail-hard.
-func buildEnricher(cfg *kaconfig.Config, ds *dsClients, infra *k8sInfra, auditStore audit.AuditStore, logger *slog.Logger) *enrichment.Enricher {
+func buildEnricher(cfg *kaconfig.Config, ds *dsClients, infra *k8sInfra, auditStore audit.AuditStore, logger logr.Logger) *enrichment.Enricher {
 	if ds == nil {
 		return nil
 	}
@@ -595,15 +624,15 @@ func buildEnricher(cfg *kaconfig.Config, ds *dsClients, infra *k8sInfra, auditSt
 		BaseBackoff: cfg.Enrichment.BaseBackoff,
 	})
 	logger.Info("enrichment retry config wired (#704)",
-		slog.Int("max_retries", cfg.Enrichment.MaxRetries),
-		slog.Duration("base_backoff", cfg.Enrichment.BaseBackoff),
+		"max_retries", cfg.Enrichment.MaxRetries,
+		"base_backoff", cfg.Enrichment.BaseBackoff,
 	)
 	return e
 }
 
 // buildSanitizationPipeline creates the G4 + I1 sanitization pipeline
 // per DD-HAPI-019-003. Returns nil when both stages are disabled.
-func buildSanitizationPipeline(cfg *kaconfig.Config, logger *slog.Logger) *sanitization.Pipeline {
+func buildSanitizationPipeline(cfg *kaconfig.Config, logger logr.Logger) *sanitization.Pipeline {
 	var stages []sanitization.Stage
 	if cfg.Sanitization.CredentialScrubEnabled {
 		stages = append(stages, sanitization.NewCredentialSanitizer())
@@ -624,10 +653,10 @@ func buildSanitizationPipeline(cfg *kaconfig.Config, logger *slog.Logger) *sanit
 // Uses the same OpenAPIClientAdapter + BufferedAuditStore stack as every other
 // platform service. Auth transport is shared with initDSClients (same SA token)
 // to guarantee identical authentication behavior.
-func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Logger) (audit.AuditStore, func()) {
+func buildAuditStore(cfg *kaconfig.Config, logger logr.Logger) (audit.AuditStore, func()) {
 	nop := func() {}
 	if !cfg.Audit.Enabled || cfg.DataStorage.URL == "" {
-		slogger.Info("audit store disabled (nop)")
+		logger.Info("audit store disabled (nop)")
 		return audit.NopAuditStore{}, nop
 	}
 
@@ -635,17 +664,17 @@ func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Lo
 	// configured path and inject as Bearer header on every request.
 	auditBase, tlsErr := sharedtls.DefaultBaseTransport()
 	if tlsErr != nil {
-		slogger.Error("failed to create TLS-aware transport for audit store", "error", tlsErr)
+		logger.Error(tlsErr, "failed to create TLS-aware transport for audit store")
 		return audit.NopAuditStore{}, nop
 	}
 
 	var transport http.RoundTripper
 	if tokenData, err := os.ReadFile(cfg.DataStorage.SATokenPath); err == nil && len(tokenData) > 0 {
 		transport = &bearerTransport{base: auditBase, token: string(tokenData)}
-		slogger.Info("audit store auth configured (same SA token as DS client)",
+		logger.Info("audit store auth configured (same SA token as DS client)",
 			"token_path", cfg.DataStorage.SATokenPath)
 	} else {
-		slogger.Warn("SA token not available for audit store — batch writes may fail auth",
+		logger.Info("SA token not available for audit store — batch writes may fail auth",
 			"path", cfg.DataStorage.SATokenPath, "error", err)
 	}
 
@@ -653,7 +682,7 @@ func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Lo
 		cfg.DataStorage.URL, 5*time.Second, transport,
 	)
 	if err != nil {
-		slogger.Error("failed to create DS audit client, falling back to nop", "error", err)
+		logger.Error(err, "failed to create DS audit client, falling back to nop")
 		return audit.NopAuditStore{}, nop
 	}
 
@@ -669,16 +698,16 @@ func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Lo
 		storeOpts = append(storeOpts, audit.WithBatchSize(cfg.Audit.BatchSize))
 	}
 
-	store, err := audit.NewBufferedDSAuditStore(dsClient, logrLog, storeOpts...)
+	store, err := audit.NewBufferedDSAuditStore(dsClient, logger, storeOpts...)
 	if err != nil {
-		slogger.Error("failed to create buffered audit store, falling back to nop", "error", err)
+		logger.Error(err, "failed to create buffered audit store, falling back to nop")
 		return audit.NopAuditStore{}, nop
 	}
-	slogger.Info("audit store enabled (buffered, DD-AUDIT-002 aligned)",
+	logger.Info("audit store enabled (buffered, DD-AUDIT-002 aligned)",
 		"ds_url", cfg.DataStorage.URL)
 	return store, func() {
 		if closeErr := store.Close(); closeErr != nil {
-			slogger.Error("audit store close error", "error", closeErr)
+			logger.Error(closeErr, "audit store close error")
 		}
 	}
 }
@@ -686,7 +715,7 @@ func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Lo
 // buildSummarizer creates a tool output summarizer when the threshold is positive.
 // When MaxToolOutputSize is configured, it enables pre-truncation to prevent
 // the summarizer's own LLM call from exceeding context window limits (#752).
-func buildSummarizer(llmClient llm.Client, cfg *kaconfig.Config, logger *slog.Logger) *summarizer.Summarizer {
+func buildSummarizer(llmClient llm.Client, cfg *kaconfig.Config, logger logr.Logger) *summarizer.Summarizer {
 	if cfg.Summarizer.Threshold <= 0 {
 		logger.Info("summarizer disabled (threshold <= 0)")
 		return nil
@@ -702,7 +731,7 @@ func buildSummarizer(llmClient llm.Client, cfg *kaconfig.Config, logger *slog.Lo
 }
 
 // buildAnomalyDetector creates the I7 anomaly detector from config thresholds.
-func buildAnomalyDetector(cfg *kaconfig.Config, logger *slog.Logger) *investigator.AnomalyDetector {
+func buildAnomalyDetector(cfg *kaconfig.Config, logger logr.Logger) *investigator.AnomalyDetector {
 	ac := investigator.AnomalyConfig{
 		MaxToolCallsPerTool: cfg.Anomaly.MaxToolCallsPerTool,
 		MaxTotalToolCalls:   cfg.Anomaly.MaxTotalToolCalls,
@@ -719,7 +748,7 @@ func buildAnomalyDetector(cfg *kaconfig.Config, logger *slog.Logger) *investigat
 }
 
 // buildToolRegistry creates and populates the tool registry with all available tool sets.
-func buildToolRegistry(cfg *kaconfig.Config, logger *slog.Logger, infra *k8sInfra, ds *dsClients) *registry.Registry {
+func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra, ds *dsClients) *registry.Registry {
 	reg := registry.New()
 
 	if infra != nil {
@@ -735,7 +764,7 @@ func buildToolRegistry(cfg *kaconfig.Config, logger *slog.Logger, infra *k8sInfr
 		if cfg.Tools.Prometheus.TLSCaFile != "" {
 			promBase, promTLSErr := sharedtls.NewTLSTransport(cfg.Tools.Prometheus.TLSCaFile)
 			if promTLSErr != nil {
-				logger.Error("failed to create Prometheus TLS transport", "error", promTLSErr, "ca_file", cfg.Tools.Prometheus.TLSCaFile)
+				logger.Error(promTLSErr, "failed to create Prometheus TLS transport", "ca_file", cfg.Tools.Prometheus.TLSCaFile)
 			} else {
 				promCfg.Transport = auth.NewServiceAccountTransportWithBase(promBase)
 				logger.Info("Prometheus client configured with TLS + SA bearer auth", "ca_file", cfg.Tools.Prometheus.TLSCaFile)
@@ -743,7 +772,7 @@ func buildToolRegistry(cfg *kaconfig.Config, logger *slog.Logger, infra *k8sInfr
 		}
 		promClient, promErr := promtools.NewClient(promCfg)
 		if promErr != nil {
-			logger.Error("failed to create Prometheus client", "error", promErr)
+			logger.Error(promErr, "failed to create Prometheus client")
 		} else {
 			for _, t := range promtools.NewAllTools(promClient) {
 				reg.Register(t)
@@ -764,10 +793,10 @@ func buildToolRegistry(cfg *kaconfig.Config, logger *slog.Logger, infra *k8sInfr
 	return reg
 }
 
-func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger *slog.Logger) {
+func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logger) {
 	kindIndex, err := k8stools.BuildKindIndex(infra.clientset.Discovery())
 	if err != nil {
-		logger.Warn("failed to build kind index, using empty index", "error", err)
+		logger.Info("failed to build kind index, using empty index", "error", err)
 		kindIndex = make(map[string]schema.GroupKind)
 	}
 	resolver := k8stools.NewDynamicResolver(infra.dynClient, infra.mapper, kindIndex)
@@ -782,7 +811,7 @@ func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger *slog.Logg
 
 	mc, mcErr := metricsclient.NewForConfig(infra.kubeConfig)
 	if mcErr != nil {
-		logger.Error("failed to create metrics client, metrics tools will not be registered", "error", mcErr)
+		logger.Error(mcErr, "failed to create metrics client, metrics tools will not be registered")
 	} else {
 		for _, t := range k8stools.NewMetricsTools(k8stools.NewMetricsClient(mc)) {
 			reg.Register(t)
@@ -800,10 +829,10 @@ func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger *slog.Logg
 // without needing a restart when workflows are added/removed.
 type dsCatalogFetcher struct {
 	ds     *dsClients
-	logger *slog.Logger
+	logger logr.Logger
 }
 
-func newDSCatalogFetcher(ds *dsClients, logger *slog.Logger) *dsCatalogFetcher {
+func newDSCatalogFetcher(ds *dsClients, logger logr.Logger) *dsCatalogFetcher {
 	return &dsCatalogFetcher{ds: ds, logger: logger}
 }
 
@@ -877,4 +906,3 @@ func newAuthMiddleware(infra *k8sInfra, logger logr.Logger) *auth.Middleware {
 		Verb:         "create",
 	}, logger)
 }
-
