@@ -9,6 +9,8 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   remediationorchestrator.yaml: |
+    logging:
+      level: {{ .Values.remediationorchestrator.logging.level | default "INFO" | quote }}
     controller:
       metricsAddr: ":9090"
       healthProbeAddr: ":8081"

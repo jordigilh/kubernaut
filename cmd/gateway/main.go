@@ -19,16 +19,21 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
+	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -39,12 +44,11 @@ func main() {
 	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
 	flag.Parse()
 
-	// DD-005: Initialize logger using shared logging library (logr.Logger interface)
-	logger := kubelog.NewLogger(kubelog.Options{
-		Development: false,
-		Level:       0, // INFO
+	// Bootstrap logger at INFO for config loading
+	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	logger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
 		ServiceName: "gateway",
-	})
+	}, bootstrapLevel)
 	defer kubelog.Sync(logger)
 
 	ctrl.SetLogger(logger)
@@ -70,6 +74,14 @@ func main() {
 		logger.Info("No config file specified, using defaults")
 		serverCfg = config.DefaultServerConfig()
 	}
+
+	// Issue #877: Apply config-driven log level
+	atomicLevel := serverCfg.Logging.NewAtomicLevel()
+	logger = kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "gateway",
+	}, atomicLevel)
+	ctrl.SetLogger(logger)
+	logger.Info("Log level configured from config file", "level", serverCfg.Logging.Level)
 
 	// Override configuration with environment variables (e.g., secrets only per ADR-030)
 	serverCfg.LoadFromEnv()
@@ -133,6 +145,33 @@ func main() {
 		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
 	} else if serverCfg.TLSProfile != "" {
 		logger.Info("TLS security profile active", "profile", serverCfg.TLSProfile)
+	}
+
+	// Issue #877: Log level hot-reload via FileWatcher
+	if configPath != "" {
+		logLevelWatcher, watchErr := hotreload.NewFileWatcher(
+			configPath,
+			func(newContent string) error {
+				var partial struct {
+					Logging internalconfig.LoggingConfig `yaml:"logging"`
+				}
+				if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
+					return fmt.Errorf("failed to parse config for log level reload: %w", err)
+				}
+				return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
+			},
+			logger.WithName("log-level-watcher"),
+		)
+		if watchErr != nil {
+			logger.Error(watchErr, "Failed to create log level file watcher")
+		} else {
+			if err := logLevelWatcher.Start(serverCtx); err != nil {
+				logger.Info("Log level file watcher failed to start", "error", err)
+			} else {
+				logger.Info("Log level hot-reload watcher started", "path", configPath)
+				defer logLevelWatcher.Stop()
+			}
+		}
 	}
 
 	// Issue #756: Start CA file watcher for client-side TLS hot-reload

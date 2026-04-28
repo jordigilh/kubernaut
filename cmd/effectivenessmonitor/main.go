@@ -24,6 +24,7 @@ import (
 	"os"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	"github.com/go-logr/zapr"
 	zaplog "go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -41,6 +42,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	config "github.com/jordigilh/kubernaut/internal/config/effectivenessmonitor"
 	controller "github.com/jordigilh/kubernaut/internal/controller/effectivenessmonitor"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -73,13 +75,11 @@ func main() {
 	var configPath string
 	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
 
-	opts := zap.Options{
-		Development: true,
-	}
-	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	// Issue #875: Bootstrap logger at INFO for config loading
+	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
 
 	setupLog.Info("Starting EffectivenessMonitor Controller",
 		"version", version.Version,
@@ -100,6 +100,10 @@ func main() {
 	} else {
 		setupLog.Info("No config file specified, using defaults")
 	}
+
+	// Issue #875: Apply config-driven log level
+	atomicLevel.SetLevel(cfg.Logging.ZapLevel())
+	setupLog.Info("Log level configured from config file", "level", cfg.Logging.Level)
 
 	// Validate configuration (ADR-030)
 	if err := cfg.Validate(); err != nil {
@@ -399,6 +403,31 @@ func main() {
 	}
 	if caWatcher != nil {
 		defer caWatcher.Stop()
+	}
+
+	// Issue #875: Log level hot-reload via FileWatcher
+	logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
+		configPath,
+		func(newContent string) error {
+			var partial struct {
+				Logging internalconfig.LoggingConfig `yaml:"logging"`
+			}
+			if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
+				return fmt.Errorf("failed to parse config for log level reload: %w", err)
+			}
+			return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
+		},
+		setupLog.WithName("log-level-watcher"),
+	)
+	if logWatchErr != nil {
+		setupLog.Error(logWatchErr, "Failed to create log level file watcher")
+	} else {
+		if err := logLevelWatcher.Start(ctx); err != nil {
+			setupLog.Info("Log level file watcher failed to start", "error", err)
+		} else {
+			setupLog.Info("Log level hot-reload watcher started", "path", configPath)
+			defer logLevelWatcher.Stop()
+		}
 	}
 
 	setupLog.Info("starting manager")

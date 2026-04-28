@@ -3,18 +3,23 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	actiontypev1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	awconfig "github.com/jordigilh/kubernaut/pkg/authwebhook/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -46,7 +51,9 @@ func main() {
 	flag.StringVar(&configPath, "config", awconfig.DefaultConfigPath, "Path to YAML configuration file (ADR-030)")
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	// Issue #876: Bootstrap logger at INFO for config loading
+	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
 
 	setupLog.Info("Starting AuthWebhook",
 		"version", version.Version,
@@ -74,6 +81,10 @@ func main() {
 		setupLog.Error(err, "Configuration validation failed")
 		os.Exit(1)
 	}
+
+	// Issue #876: Apply config-driven log level
+	atomicLevel.SetLevel(cfg.Logging.ZapLevel())
+	setupLog.Info("Log level configured from config file", "level", cfg.Logging.Level)
 
 	setupLog.Info("Webhook server configuration",
 		"webhook_port", cfg.Webhook.Port,
@@ -285,6 +296,31 @@ func main() {
 	}
 	if caWatcher != nil {
 		defer caWatcher.Stop()
+	}
+
+	// Issue #876: Log level hot-reload via FileWatcher
+	logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
+		configPath,
+		func(newContent string) error {
+			var partial struct {
+				Logging internalconfig.LoggingConfig `yaml:"logging"`
+			}
+			if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
+				return fmt.Errorf("failed to parse config for log level reload: %w", err)
+			}
+			return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
+		},
+		setupLog.WithName("log-level-watcher"),
+	)
+	if logWatchErr != nil {
+		setupLog.Error(logWatchErr, "Failed to create log level file watcher")
+	} else {
+		if err := logLevelWatcher.Start(ctx); err != nil {
+			setupLog.Info("Log level file watcher failed to start", "error", err)
+		} else {
+			setupLog.Info("Log level hot-reload watcher started", "path", configPath)
+			defer logLevelWatcher.Stop()
+		}
 	}
 
 	setupLog.Info("Starting webhook server", "port", cfg.Webhook.Port)

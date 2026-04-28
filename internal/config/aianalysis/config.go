@@ -46,6 +46,9 @@ type Config struct {
 	// Rego policy evaluation configuration (BR-AI-012)
 	Rego RegoConfig `yaml:"rego"`
 
+	// Logging configuration (Issue #875: config-file-only log level with hot-reload)
+	Logging sharedconfig.LoggingConfig `yaml:"logging"`
+
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
@@ -104,6 +107,7 @@ func DefaultConfig() *Config {
 		Rego: RegoConfig{
 			PolicyPath: "/etc/aianalysis/policies/approval.rego",
 		},
+		Logging: sharedconfig.DefaultLoggingConfig(),
 	}
 }
 
@@ -135,6 +139,11 @@ func LoadFromFile(path string) (*Config, error) {
 
 // Validate checks AIAnalysis configuration for common issues.
 func (c *Config) Validate() error {
+	// Issue #875: Logging validation
+	if err := c.Logging.Validate(); err != nil {
+		return err
+	}
+
 	// Validate controller config
 	if c.Controller.MetricsAddr == "" {
 		return fmt.Errorf("controller.metricsAddr is required")

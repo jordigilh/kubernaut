@@ -44,6 +44,8 @@ gateway:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   config:
     server:
       maxConcurrentRequests: 100
@@ -91,6 +93,8 @@ datastorage:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   dbExistingSecret: ""  # DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret.
   config:
     database:
@@ -115,6 +119,8 @@ aianalysis:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   rego:
     confidenceThreshold: null  # nil = use Rego default (0.8 per BR-AI-076)
   # -- Approval policy externalization.
@@ -139,6 +145,8 @@ signalprocessing:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   # -- Unified Rego policy externalization (ADR-060, #415).
   # Single policy.rego file containing all classification rules
   # (environment, severity, priority, custom labels).
@@ -170,6 +178,8 @@ remediationorchestrator:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   resources:
     requests:
       cpu: 100m
@@ -210,6 +220,8 @@ workflowexecution:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   config:
     execution:
       cooldownPeriod: "1m"
@@ -238,6 +250,8 @@ notification:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   # -- Slack quickstart shortcut.
   # Set secretName to auto-generate Slack routing and credential projection.
   # For advanced routing (multiple receivers, custom routes), use routing.content or routing.existingConfigMap.
@@ -269,6 +283,8 @@ effectivenessmonitor:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   config:
     assessment:
       stabilizationWindow: "30s"
@@ -289,6 +305,8 @@ kubernautAgent:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   resources:
     requests:
       cpu: 200m
@@ -348,6 +366,8 @@ authwebhook:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   resources:
     requests:
       memory: 128Mi

@@ -168,6 +168,8 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   workflowexecution.yaml: |
+    logging:
+      level: {{ .Values.workflowexecution.logging.level | default "INFO" | quote }}
     controller:
       metricsAddr: ":9090"
       healthProbeAddr: ":8081"

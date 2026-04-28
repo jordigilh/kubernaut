@@ -88,6 +88,19 @@
       "description": "Pod tolerations (overrides global.tolerations for this component)",
       "type": "array",
       "items": { "$ref": "#/definitions/toleration" }
+    },
+    "serviceLogging": {
+      "description": "Structured logging level for service ConfigMap (Issue #875)",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["DEBUG", "INFO", "WARN", "ERROR"],
+          "default": "INFO",
+          "description": "Log level (Issue #875)"
+        }
+      }
     }
   },
   "properties": {
@@ -305,6 +318,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -343,6 +357,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -378,6 +393,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -412,6 +428,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -512,6 +529,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -576,6 +594,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -625,6 +644,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -656,6 +676,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -668,6 +689,7 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "resources": { "$ref": "#/definitions/resources" },
         "service": { "$ref": "#/definitions/serviceConfig" },
         "llm": {
@@ -737,6 +759,7 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "resources": { "$ref": "#/definitions/resources" },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },

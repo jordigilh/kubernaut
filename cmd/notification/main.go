@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-logr/zapr"
 	zaplog "go.uber.org/zap"
+	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -36,6 +37,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/internal/version"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -131,20 +133,13 @@ func main() {
 	flag.StringVar(&configPath, "config",
 		"/etc/notification/config.yaml",
 		"Path to configuration file (ADR-030)")
-
-	opts := zap.Options{
-		Development: true,
-	}
-	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	// ADR-030: Initialize kubelog logger first (for config error reporting)
-	// DD-005 v2.0: Use pkg/log shared library with logr interface
-	logger := kubelog.NewLogger(kubelog.Options{
-		Development: os.Getenv("ENV") != "production",
-		Level:       0, // INFO
+	// Bootstrap logger at INFO for config loading
+	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	logger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
 		ServiceName: "notification",
-	})
+	}, bootstrapLevel)
 	defer kubelog.Sync(logger)
 
 	logger.Info("Starting Notification Controller",
@@ -177,15 +172,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Issue #878: Apply config-driven log level
+	atomicLevel := cfg.Logging.NewAtomicLevel()
+	logger = kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "notification",
+	}, atomicLevel)
+	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
+
 	logger.Info("Configuration loaded successfully (ADR-030)",
 		"service", "notification",
+		"log_level", cfg.Logging.Level,
 		"metrics_addr", cfg.Controller.MetricsAddr,
 		"health_probe_addr", cfg.Controller.HealthProbeAddr,
 		"data_storage_url", cfg.DataStorage.URL,
 		"credentials_dir", cfg.Delivery.Credentials.Dir)
-
-	// Set controller-runtime logger (still needed for controller-runtime internals)
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	// ADR-030: Use configuration values for controller manager
 	// #244: ConfigMap cache removed — routing config now loaded via FileWatcher
@@ -507,6 +507,31 @@ func main() {
 	} else {
 		logger.Info("Routing file watcher started (#244)", "path", routingConfigPath)
 		defer routingWatcher.Stop()
+	}
+
+	// Issue #878: Log level hot-reload via FileWatcher
+	logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
+		configPath,
+		func(newContent string) error {
+			var partial struct {
+				Logging internalconfig.LoggingConfig `yaml:"logging"`
+			}
+			if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
+				return fmt.Errorf("failed to parse config for log level reload: %w", err)
+			}
+			return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
+		},
+		logger.WithName("log-level-watcher"),
+	)
+	if logWatchErr != nil {
+		logger.Error(logWatchErr, "Failed to create log level file watcher")
+	} else {
+		if err := logLevelWatcher.Start(ctx); err != nil {
+			logger.Info("Log level file watcher failed to start", "error", err)
+		} else {
+			logger.Info("Log level hot-reload watcher started", "path", configPath)
+			defer logLevelWatcher.Stop()
+		}
 	}
 
 	// Issue #748: Load OCP TLS security profile from config before any TLS setup

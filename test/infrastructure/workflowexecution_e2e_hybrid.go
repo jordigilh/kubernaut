@@ -1326,7 +1326,6 @@ spec:
         imagePullPolicy: %[4]s
         args:
         - --config=/etc/config/workflowexecution.yaml
-        - --zap-devel=true
         ports:
         - containerPort: 9090
           name: metrics
