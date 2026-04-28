@@ -85,9 +85,9 @@ func main() {
 	flag.StringVar(&addr, "addr", "", "HTTP listen address (overrides config server.port)")
 	flag.Parse()
 
-	slogHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
-	slogger := slog.New(slogHandler)
-	logrLogger := logr.FromSlogHandler(slogHandler)
+	// Bootstrap logger at INFO for startup; replaced after config is loaded (#875).
+	bootHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
+	slogger := slog.New(bootHandler)
 
 	cfgData, err := os.ReadFile(configPath)
 	if err != nil {
@@ -99,6 +99,13 @@ func main() {
 		slogger.Error("failed to parse config", "error", err)
 		os.Exit(1)
 	}
+
+	// Re-create logger with configured level (#875).
+	slogHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.Logging.SlogLevel()})
+	slogger = slog.New(slogHandler)
+	logrLogger := logr.FromSlogHandler(slogHandler)
+
+	slogger.Info("log level configured", "level", cfg.Logging.Level)
 
 	if sdkData, sdkErr := os.ReadFile(sdkConfigPath); sdkErr == nil {
 		if mergeErr := cfg.MergeSDKConfig(sdkData); mergeErr != nil {
