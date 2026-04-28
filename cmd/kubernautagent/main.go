@@ -57,6 +57,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
+	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
@@ -231,6 +232,10 @@ func main() {
 		}
 	}
 
+	agentMetrics := kametrics.NewMetrics()
+
+	instrumentedAudit := audit.NewInstrumentedAuditStore(auditStore, agentMetrics.RecordAuditEventEmitted)
+
 	var scopeResolver investigator.ScopeResolver
 	if k8sInfra != nil {
 		scopeResolver = investigator.NewMapperScopeResolver(k8sInfra.mapper)
@@ -241,7 +246,7 @@ func main() {
 		Builder:       promptBuilder,
 		ResultParser:  resultParser,
 		Enricher:      enricher,
-		AuditStore:    auditStore,
+		AuditStore:    instrumentedAudit,
 		Logger:        slogger,
 		MaxTurns:      cfg.Investigator.MaxTurns,
 		PhaseTools:    phaseTools,
@@ -249,6 +254,7 @@ func main() {
 		ModelName:     cfg.LLM.Model,
 		Swappable:     swappable,
 		ScopeResolver: scopeResolver,
+		Metrics:       agentMetrics,
 		Pipeline: investigator.Pipeline{
 			Sanitizer:         sanitizer,
 			AnomalyDetector:   anomalyDetector,
@@ -264,15 +270,15 @@ func main() {
 			Inner:          inv,
 			Evaluator:      alignEvaluator,
 			VerdictTimeout: 30 * time.Second,
-			AuditStore:     auditStore,
+			AuditStore:     instrumentedAudit,
 			Logger:         slogger,
 		})
 	}
 
 	store := session.NewStore(cfg.Session.TTL)
-	mgr := session.NewManager(store, slogger)
+	mgr := session.NewManager(store, slogger, instrumentedAudit, agentMetrics)
 
-	handler := kaserver.NewHandler(mgr, investigationRunner, slogger)
+	handler := kaserver.NewHandler(mgr, investigationRunner, slogger, agentMetrics)
 
 	ogenSrv, err := agentclient.NewServer(handler)
 	if err != nil {
@@ -285,7 +291,13 @@ func main() {
 	// Issue #753: /config remains on API port; health, readiness and metrics move to dedicated ports
 	r.Get("/config", configHandler(cfg, swappable))
 
+	apiRateLimiter := kaserver.NewRateLimiter(kaserver.DefaultRateLimitConfig(), agentMetrics.HTTPRateLimitedTotal)
+	defer apiRateLimiter.Stop()
+
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(kaserver.HTTPMetricsMiddleware(agentMetrics))
+		r.Use(apiRateLimiter.Middleware)
+
 		authMw := newAuthMiddleware(k8sInfra, logrLogger)
 		if authMw != nil {
 			r.Use(authMw.Handler)
@@ -298,13 +310,17 @@ func main() {
 			slogger.Info("auth middleware DISABLED (no in-cluster K8s config)")
 		}
 
-		r.Handle("/*", ogenSrv)
+		r.Handle("/*", kaserver.SSEHeadersMiddleware(ogenSrv))
 	})
 
 	httpServer := &http.Server{
 		Addr:              addr,
 		Handler:           r,
 		ReadHeaderTimeout: 30 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// WriteTimeout intentionally omitted: SSE streams are long-lived
+		// connections that would be killed by a finite WriteTimeout.
 	}
 
 	// Issue #493: Conditional TLS for the HTTP server
@@ -330,6 +346,9 @@ func main() {
 		Addr:              cfg.Server.MetricsAddr,
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       30 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -420,6 +439,7 @@ func main() {
 
 	<-ctx.Done()
 	slogger.Info("shutting down...")
+	mgr.Shutdown()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

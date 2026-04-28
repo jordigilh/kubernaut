@@ -10,6 +10,17 @@ import (
 
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
+	// CancelSessionAPIV1IncidentSessionSessionIDCancelPost implements cancel_session_api_v1_incident_session__session_id__cancel_post operation.
+	//
+	// Cancel a running investigation session.
+	// Business Requirement: BR-SESSION-003 (Session cancellability)
+	// Design Decision: DD-004 (RFC 7807 Problem Details)
+	// Returns 200 with cancelled session state.
+	// Returns 404 if session not found.
+	// Returns 409 if session already in terminal state.
+	//
+	// POST /api/v1/incident/session/{session_id}/cancel
+	CancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx context.Context, params CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams) (CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, error)
 	// GetConfigConfigGet implements get_config_config_get operation.
 	//
 	// Get service configuration (sanitized)
@@ -59,6 +70,27 @@ type Handler interface {
 	//
 	// GET /ready
 	ReadinessCheckReadyGet(ctx context.Context) (jx.Raw, error)
+	// SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet implements session_snapshot_api_v1_incident_session__session_id__snapshot_get operation.
+	//
+	// Retrieve point-in-time snapshot of session state.
+	// Business Requirement: BR-SESSION-002 (Session lifecycle visibility)
+	// Returns 200 with session state for terminal sessions (cancelled, completed, failed).
+	// Returns 409 if session is still in progress.
+	// Returns 404 if session not found.
+	// PR3 extends the response with CancelledResult fields (messages, turn, phase, tokens).
+	//
+	// GET /api/v1/incident/session/{session_id}/snapshot
+	SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx context.Context, params SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams) (SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, error)
+	// SessionStreamAPIV1IncidentSessionSessionIDStreamGet implements session_stream_api_v1_incident_session__session_id__stream_get operation.
+	//
+	// Subscribe to live investigation events via Server-Sent Events (SSE).
+	// Business Requirement: BR-SESSION-007 (Investigation event observability)
+	// PR2: Returns 501 Not Implemented (stub).
+	// PR4: Full SSE implementation with turn-level and token-level events.
+	// SSE format: id: {seq}\nevent: {type}\ndata: {json}\n\n.
+	//
+	// GET /api/v1/incident/session/{session_id}/stream
+	SessionStreamAPIV1IncidentSessionSessionIDStreamGet(ctx context.Context, params SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams) (SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

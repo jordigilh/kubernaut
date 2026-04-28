@@ -2,10 +2,22 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: November 8, 2025
-**Last Reviewed**: March 25, 2026
-**Version**: 1.8
+**Last Reviewed**: April 24, 2026
+**Version**: 1.9
 **Confidence**: 95%
 **Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 12 services
+
+**Recent Changes** (v1.9 - April 24, 2026):
+- **Kubernaut Agent (KA)**: Added 4 session lifecycle audit events per Issue #823 (PR 1.5):
+  - `aiagent.session.started` — Investigation session started (StatusRunning)
+  - `aiagent.session.cancelled` — Investigation session cancelled by operator
+  - `aiagent.session.completed` — Investigation session completed successfully
+  - `aiagent.session.failed` — Investigation session failed with error
+  - `aiagent.investigation.cancelled` — Investigator detected context cancellation mid-investigation; carries phase, turn number for audit reconstruction
+- **Authority**: BR-AUDIT-005 v2.0 (SOC2 CC8.1), Issue #823
+- **Implementation**: Session lifecycle events emitted by `internal/kubernautagent/session/manager.go` (Manager-level via `StoreBestEffort`). Investigation cancellation event emitted by `internal/kubernautagent/investigator/investigator.go` (`emitCancellationAudit` via `StoreBestEffort` with `context.Background()` since caller context is already cancelled).
+- **Expected Volume**: +200 events/day (session lifecycle tracking: 1 started + 1 terminal per investigation, plus ~5% investigation cancellation events)
+- **Note**: Typed OpenAPI payloads deferred to follow-up DataStorage schema update; events use untyped `event_data` JSONB fallback
 
 **Recent Changes** (v1.8 - March 25, 2026):
 - **HolmesGPT API Service**: Added 2 Phase 2 enrichment audit events per Issue #533:
@@ -942,8 +954,15 @@ In v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433), Kubern
 | `aiagent.response.failed` | `response_failed` | `failure` |
 | `aiagent.enrichment.completed` | `enrichment` | `success` |
 | `aiagent.enrichment.failed` | `enrichment` | `failure` |
+| `aiagent.session.started` | `session_started` | `success` |
+| `aiagent.session.cancelled` | `session_cancelled` | `success` |
+| `aiagent.session.completed` | `session_completed` | `success` |
+| `aiagent.session.failed` | `session_failed` | `failure` |
+| `aiagent.investigation.cancelled` | `investigation_cancelled` | `failure` |
+| `aiagent.session.observed` | `session_observed` | `success` |
+| `aiagent.session.access_denied` | `session_access_denied` | `failure` |
 
-**Granularity**: `aiagent.llm.tool_call` is emitted **once per tool call**. `aiagent.workflow.validation_attempt` is emitted per validation attempt and includes `workflow_id` and `is_final_attempt` where applicable.
+**Granularity**: `aiagent.llm.tool_call` is emitted **once per tool call**. `aiagent.workflow.validation_attempt` is emitted per validation attempt and includes `workflow_id` and `is_final_attempt` where applicable. `aiagent.session.observed` includes `observer_user` (the authenticated identity of the subscribing user, extracted from `auth.UserContextKey` in the request context) for SOC2 CC8.1 operator attribution. `aiagent.session.access_denied` is emitted when an authenticated user attempts to access a session they do not own; includes `requesting_user`, `session_id`, and `endpoint` for SOC2 CC8.1 failed-access audit trail.
 
 **Reference**: [TP-433-AUDIT-SOC2](../../tests/433/TP-433-AUDIT-SOC2.md).
 

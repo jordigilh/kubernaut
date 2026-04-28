@@ -33,6 +33,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -215,7 +216,10 @@ func parseInputSchema(raw json.RawMessage) anthropic.ToolInputSchemaParam {
 		Properties any      `json:"properties"`
 		Required   []string `json:"required"`
 	}
-	_ = json.Unmarshal(raw, &s)
+	if err := json.Unmarshal(raw, &s); err != nil {
+		slog.Warn("vertexanthropic: malformed tool parameter schema, using empty schema",
+			slog.String("error", err.Error()))
+	}
 	return anthropic.ToolInputSchemaParam{
 		Properties: s.Properties,
 		Required:   s.Required,
@@ -311,6 +315,41 @@ func safeWithGoogleAuth(ctx context.Context, location, project string) (opt opti
 	opt = vertex.WithGoogleAuth(ctx, location, project,
 		"https://www.googleapis.com/auth/cloud-platform")
 	return opt, nil
+}
+
+// StreamChat uses the Anthropic SDK's Messages.NewStreaming to deliver text
+// deltas incrementally. The final ChatResponse is built from the accumulated
+// message, reusing the existing mapResponse path.
+func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	params := c.buildParams(req)
+	stream := c.sdk.Messages.NewStreaming(ctx, params)
+	acc := anthropic.Message{}
+	for stream.Next() {
+		event := stream.Current()
+		acc.Accumulate(event)
+		if delta, ok := extractTextDelta(event); ok && delta != "" {
+			if err := callback(llm.ChatStreamEvent{Delta: delta}); err != nil {
+				return llm.ChatResponse{}, err
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return llm.ChatResponse{}, fmt.Errorf("vertexanthropic: stream error: %w", err)
+	}
+	_ = callback(llm.ChatStreamEvent{Done: true})
+	return c.mapResponse(&acc), nil
+}
+
+// extractTextDelta extracts the text delta from a content_block_delta event.
+// Returns ("", false) for non-delta events or non-text deltas (e.g., tool input).
+func extractTextDelta(event anthropic.MessageStreamEventUnion) (string, bool) {
+	if event.Type != "content_block_delta" {
+		return "", false
+	}
+	if event.Delta.Text != "" {
+		return event.Delta.Text, true
+	}
+	return "", false
 }
 
 // Close is a no-op for the Anthropic SDK client which has no closeable

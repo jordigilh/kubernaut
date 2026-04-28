@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -249,7 +250,10 @@ func buildCallOptions(req llm.ChatRequest) []llms.CallOption {
 		for _, td := range req.Tools {
 			var params any
 			if len(td.Parameters) > 0 {
-				_ = json.Unmarshal(td.Parameters, &params)
+				if err := json.Unmarshal(td.Parameters, &params); err != nil {
+					slog.Warn("langchaingo: malformed tool parameter schema, using nil params",
+						slog.String("tool", td.Name), slog.String("error", err.Error()))
+				}
 			}
 			tools = append(tools, llms.Tool{
 				Type: "function",
@@ -337,6 +341,26 @@ func normalizeStopReason(raw string) string {
 		}
 		return llm.FinishReasonStop
 	}
+}
+
+// StreamChat uses LangChainGo's WithStreamingFunc to forward text deltas
+// to the callback incrementally. The final ChatResponse is built from the
+// complete ContentResponse return value.
+func (a *Adapter) StreamChat(ctx context.Context, req llm.ChatRequest, callback func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	if len(req.Options.OutputSchema) > 0 {
+		ctx = transport.WithOutputSchema(ctx, req.Options.OutputSchema)
+	}
+	msgs := toMessages(req.Messages)
+	opts := buildCallOptions(req)
+	opts = append(opts, llms.WithStreamingFunc(func(_ context.Context, chunk []byte) error {
+		return callback(llm.ChatStreamEvent{Delta: string(chunk)})
+	}))
+	resp, err := a.model.GenerateContent(ctx, msgs, opts...)
+	if err != nil {
+		return llm.ChatResponse{}, err
+	}
+	_ = callback(llm.ChatStreamEvent{Done: true})
+	return fromContentResponse(resp), nil
 }
 
 // Close releases resources held by the adapter. For providers with gRPC

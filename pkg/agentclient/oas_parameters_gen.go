@@ -14,6 +14,71 @@ import (
 	"github.com/ogen-go/ogen/validate"
 )
 
+// CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams is parameters of cancel_session_api_v1_incident_session__session_id__cancel_post operation.
+type CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams struct {
+	SessionID string
+}
+
+func unpackCancelSessionAPIV1IncidentSessionSessionIDCancelPostParams(packed middleware.Parameters) (params CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "session_id",
+			In:   "path",
+		}
+		params.SessionID = packed[key].(string)
+	}
+	return params
+}
+
+func decodeCancelSessionAPIV1IncidentSessionSessionIDCancelPostParams(args [1]string, argsEscaped bool, r *http.Request) (params CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams, _ error) {
+	// Decode path: session_id.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "session_id",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.SessionID = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "session_id",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams is parameters of incident_session_result_endpoint_api_v1_incident_session__session_id__result_get operation.
 type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams struct {
 	SessionID string
@@ -96,6 +161,136 @@ func unpackIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams(p
 }
 
 func decodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams(args [1]string, argsEscaped bool, r *http.Request) (params IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams, _ error) {
+	// Decode path: session_id.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "session_id",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.SessionID = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "session_id",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams is parameters of session_snapshot_api_v1_incident_session__session_id__snapshot_get operation.
+type SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams struct {
+	SessionID string
+}
+
+func unpackSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams(packed middleware.Parameters) (params SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "session_id",
+			In:   "path",
+		}
+		params.SessionID = packed[key].(string)
+	}
+	return params
+}
+
+func decodeSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams(args [1]string, argsEscaped bool, r *http.Request) (params SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams, _ error) {
+	// Decode path: session_id.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "session_id",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.SessionID = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "session_id",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams is parameters of session_stream_api_v1_incident_session__session_id__stream_get operation.
+type SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams struct {
+	SessionID string
+}
+
+func unpackSessionStreamAPIV1IncidentSessionSessionIDStreamGetParams(packed middleware.Parameters) (params SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "session_id",
+			In:   "path",
+		}
+		params.SessionID = packed[key].(string)
+	}
+	return params
+}
+
+func decodeSessionStreamAPIV1IncidentSessionSessionIDStreamGetParams(args [1]string, argsEscaped bool, r *http.Request) (params SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams, _ error) {
 	// Decode path: session_id.
 	if err := func() error {
 		param := args[0]

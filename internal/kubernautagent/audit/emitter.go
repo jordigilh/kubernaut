@@ -38,6 +38,30 @@ const (
 	EventTypeEnrichmentFailed    = "aiagent.enrichment.failed"
 	EventTypeAlignmentStep       = "aiagent.alignment.step"
 	EventTypeAlignmentVerdict    = "aiagent.alignment.verdict"
+
+	EventTypeSessionStarted   = "aiagent.session.started"
+	EventTypeSessionCancelled = "aiagent.session.cancelled"
+	EventTypeSessionCompleted = "aiagent.session.completed"
+	EventTypeSessionFailed    = "aiagent.session.failed"
+
+	// EventTypeInvestigationCancelled is emitted by the investigator when
+	// it detects context cancellation mid-investigation (BR-SESSION-001).
+	// Unlike EventTypeSessionCancelled (emitted by session.Manager at the
+	// session lifecycle level), this event carries investigation-internal
+	// state: the phase, turn number, and accumulated token usage at the
+	// point of cancellation. This enables SOC2 CC8.1 audit reconstruction
+	// of partial investigation progress.
+	EventTypeInvestigationCancelled = "aiagent.investigation.cancelled"
+
+	// EventTypeSessionObserved is emitted when an operator subscribes to an
+	// active investigation's SSE stream (BR-SESSION-005). Records who is
+	// observing which investigation for SOC2 CC8.1 audit trail.
+	EventTypeSessionObserved = "aiagent.session.observed"
+
+	// EventTypeSessionAccessDenied is emitted when an authenticated user
+	// attempts to access a session they do not own. Records the requesting
+	// user, target session, and endpoint for SOC2 CC8.1 failed-access audit.
+	EventTypeSessionAccessDenied = "aiagent.session.access_denied"
 )
 
 const (
@@ -49,6 +73,15 @@ const (
 	ActionResponseFailed    = "response_failed"
 	ActionAlignmentEvaluate = "alignment_evaluate"
 	ActionAlignmentVerdict  = "alignment_verdict"
+
+	ActionSessionStarted   = "session_started"
+	ActionSessionCancelled = "session_cancelled"
+	ActionSessionCompleted = "session_completed"
+	ActionSessionFailed    = "session_failed"
+
+	ActionInvestigationCancelled = "investigation_cancelled"
+	ActionSessionObserved       = "session_observed"
+	ActionSessionAccessDenied   = "session_access_denied"
 )
 
 const (
@@ -70,6 +103,13 @@ var AllEventTypes = []string{
 	EventTypeEnrichmentFailed,
 	EventTypeAlignmentStep,
 	EventTypeAlignmentVerdict,
+	EventTypeSessionStarted,
+	EventTypeSessionCancelled,
+	EventTypeSessionCompleted,
+	EventTypeSessionFailed,
+	EventTypeInvestigationCancelled,
+	EventTypeSessionObserved,
+	EventTypeSessionAccessDenied,
 }
 
 // AuditEvent represents an audit event to be stored.
@@ -108,4 +148,29 @@ func StoreBestEffort(ctx context.Context, store AuditStore, event *AuditEvent, l
 			slog.String("error", err.Error()),
 		)
 	}
+}
+
+// InstrumentedAuditStore wraps an AuditStore to call a recorder after each
+// successful store. This enables BR-KA-OBSERVABILITY-001.7 audit pipeline
+// throughput metrics without changing StoreBestEffort callers.
+type InstrumentedAuditStore struct {
+	inner    AuditStore
+	recorder func(eventType string)
+}
+
+// NewInstrumentedAuditStore wraps an AuditStore. recorder is called on each
+// successful StoreAudit with the event type. recorder may be nil.
+func NewInstrumentedAuditStore(inner AuditStore, recorder func(eventType string)) AuditStore {
+	if recorder == nil {
+		return inner
+	}
+	return &InstrumentedAuditStore{inner: inner, recorder: recorder}
+}
+
+func (s *InstrumentedAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error {
+	err := s.inner.StoreAudit(ctx, event)
+	if err == nil {
+		s.recorder(event.EventType)
+	}
+	return err
 }

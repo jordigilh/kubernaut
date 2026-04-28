@@ -272,6 +272,195 @@ func (s *BusinessClassification) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict as json.
+func (s *CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict) Encode(e *jx.Encoder) {
+	unwrapped := (*HTTPError)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict from json.
+func (s *CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict to nil")
+	}
+	var unwrapped HTTPError
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound as json.
+func (s *CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound) Encode(e *jx.Encoder) {
+	unwrapped := (*HTTPError)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound from json.
+func (s *CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound to nil")
+	}
+	var unwrapped HTTPError
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *CancelSessionResponse) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *CancelSessionResponse) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("session_id")
+		e.Str(s.SessionID)
+	}
+	{
+		e.FieldStart("status")
+		e.Str(s.Status)
+	}
+}
+
+var jsonFieldsNameOfCancelSessionResponse = [2]string{
+	0: "session_id",
+	1: "status",
+}
+
+// Decode decodes CancelSessionResponse from json.
+func (s *CancelSessionResponse) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CancelSessionResponse to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "session_id":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.SessionID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"session_id\"")
+			}
+		case "status":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Status = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode CancelSessionResponse")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfCancelSessionResponse) {
+					name = jsonFieldsNameOfCancelSessionResponse[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *CancelSessionResponse) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CancelSessionResponse) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode implements json.Marshaler.
 func (s *EnrichmentResults) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -3881,6 +4070,422 @@ func (s OptNilString) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptNilString) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SessionSnapshotMetadata as json.
+func (o OptSessionSnapshotMetadata) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SessionSnapshotMetadata from json.
+func (o *OptSessionSnapshotMetadata) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSessionSnapshotMetadata to nil")
+	}
+	o.Set = true
+	o.Value = make(SessionSnapshotMetadata)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSessionSnapshotMetadata) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSessionSnapshotMetadata) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SessionSnapshot) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SessionSnapshot) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("session_id")
+		e.Str(s.SessionID)
+	}
+	{
+		e.FieldStart("status")
+		e.Str(s.Status)
+	}
+	{
+		if s.Metadata.Set {
+			e.FieldStart("metadata")
+			s.Metadata.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("created_at")
+		e.Str(s.CreatedAt)
+	}
+	{
+		if s.Error.Set {
+			e.FieldStart("error")
+			s.Error.Encode(e)
+		}
+	}
+	{
+		if s.CancelledPhase.Set {
+			e.FieldStart("cancelled_phase")
+			s.CancelledPhase.Encode(e)
+		}
+	}
+	{
+		if s.CancelledAtTurn.Set {
+			e.FieldStart("cancelled_at_turn")
+			s.CancelledAtTurn.Encode(e)
+		}
+	}
+	{
+		if s.RcaSummary.Set {
+			e.FieldStart("rca_summary")
+			s.RcaSummary.Encode(e)
+		}
+	}
+	{
+		if s.TotalPromptTokens.Set {
+			e.FieldStart("total_prompt_tokens")
+			s.TotalPromptTokens.Encode(e)
+		}
+	}
+	{
+		if s.TotalCompletionTokens.Set {
+			e.FieldStart("total_completion_tokens")
+			s.TotalCompletionTokens.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSessionSnapshot = [10]string{
+	0: "session_id",
+	1: "status",
+	2: "metadata",
+	3: "created_at",
+	4: "error",
+	5: "cancelled_phase",
+	6: "cancelled_at_turn",
+	7: "rca_summary",
+	8: "total_prompt_tokens",
+	9: "total_completion_tokens",
+}
+
+// Decode decodes SessionSnapshot from json.
+func (s *SessionSnapshot) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SessionSnapshot to nil")
+	}
+	var requiredBitSet [2]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "session_id":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.SessionID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"session_id\"")
+			}
+		case "status":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Status = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		case "metadata":
+			if err := func() error {
+				s.Metadata.Reset()
+				if err := s.Metadata.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"metadata\"")
+			}
+		case "created_at":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Str()
+				s.CreatedAt = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"created_at\"")
+			}
+		case "error":
+			if err := func() error {
+				s.Error.Reset()
+				if err := s.Error.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"error\"")
+			}
+		case "cancelled_phase":
+			if err := func() error {
+				s.CancelledPhase.Reset()
+				if err := s.CancelledPhase.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cancelled_phase\"")
+			}
+		case "cancelled_at_turn":
+			if err := func() error {
+				s.CancelledAtTurn.Reset()
+				if err := s.CancelledAtTurn.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cancelled_at_turn\"")
+			}
+		case "rca_summary":
+			if err := func() error {
+				s.RcaSummary.Reset()
+				if err := s.RcaSummary.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rca_summary\"")
+			}
+		case "total_prompt_tokens":
+			if err := func() error {
+				s.TotalPromptTokens.Reset()
+				if err := s.TotalPromptTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_prompt_tokens\"")
+			}
+		case "total_completion_tokens":
+			if err := func() error {
+				s.TotalCompletionTokens.Reset()
+				if err := s.TotalCompletionTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_completion_tokens\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SessionSnapshot")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b00001011,
+		0b00000000,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSessionSnapshot) {
+					name = jsonFieldsNameOfSessionSnapshot[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SessionSnapshot) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SessionSnapshot) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetConflict as json.
+func (s *SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetConflict) Encode(e *jx.Encoder) {
+	unwrapped := (*HTTPError)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetConflict from json.
+func (s *SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetConflict) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetConflict to nil")
+	}
+	var unwrapped HTTPError
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetConflict(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetConflict) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetConflict) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound as json.
+func (s *SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound) Encode(e *jx.Encoder) {
+	unwrapped := (*HTTPError)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound from json.
+func (s *SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound to nil")
+	}
+	var unwrapped HTTPError
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s SessionSnapshotMetadata) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s SessionSnapshotMetadata) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes SessionSnapshotMetadata from json.
+func (s *SessionSnapshotMetadata) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SessionSnapshotMetadata to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SessionSnapshotMetadata")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SessionSnapshotMetadata) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SessionSnapshotMetadata) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

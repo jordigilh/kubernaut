@@ -80,6 +80,22 @@ func (ic *InstrumentedClient) Chat(ctx context.Context, req ChatRequest) (ChatRe
 	return resp, nil
 }
 
+// StreamChat delegates to the inner client's StreamChat and records metrics.
+func (ic *InstrumentedClient) StreamChat(ctx context.Context, req ChatRequest, callback func(ChatStreamEvent) error) (ChatResponse, error) {
+	start := time.Now()
+	resp, err := ic.inner.StreamChat(ctx, req, callback)
+	duration := time.Since(start).Seconds()
+	llmRequestDuration.Observe(duration)
+	if err != nil {
+		llmRequestsTotal.WithLabelValues("error").Inc()
+		return resp, err
+	}
+	llmRequestsTotal.WithLabelValues("success").Inc()
+	llmTokensTotal.WithLabelValues("prompt").Add(float64(resp.Usage.PromptTokens))
+	llmTokensTotal.WithLabelValues("completion").Add(float64(resp.Usage.CompletionTokens))
+	return resp, nil
+}
+
 // Close delegates to the inner client's Close method.
 func (ic *InstrumentedClient) Close() error {
 	return ic.inner.Close()

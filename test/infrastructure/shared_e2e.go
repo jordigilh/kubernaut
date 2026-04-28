@@ -126,6 +126,43 @@ subjects:
 	return nil
 }
 
+// CreateKAE2EClientRBACForSA binds an existing ServiceAccount to the
+// kubernaut-agent-e2e-client-access Role so it can call the KA API.
+// The Role must already exist (created by createKAE2EServiceAccount).
+// Used for cross-user authz E2E tests (E2E-KA-AUTHZ-001).
+func CreateKAE2EClientRBACForSA(ctx context.Context, namespace, kubeconfigPath, saName string, writer io.Writer) error {
+	rbYAML := fmt.Sprintf(`---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: %s-ka-client-access
+  namespace: %s
+  labels:
+    app: kubernaut-agent
+    component: e2e-testing
+    authorization: dd-auth-014
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubernaut-agent-e2e-client-access
+subjects:
+  - kind: ServiceAccount
+    name: %s
+    namespace: %s
+`, saName, namespace, saName, namespace)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
+	cmd.Stdin = strings.NewReader(rbYAML)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply KA client RBAC for %s: %w", saName, err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ KA client RBAC created for %s\n", saName)
+	return nil
+}
+
 // deployMockLLMInNamespace deploys the Go Mock LLM service to a Kind namespace.
 // Uses ClusterIP for internal access only (no NodePort needed for E2E).
 func deployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, imageTag string, workflowUUIDs map[string]string, writer io.Writer) error {
