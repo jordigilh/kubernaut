@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -192,32 +193,46 @@ var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVAB
 
 	Context("E2E-KA-OBS-004: Audit pipeline metrics", func() {
 		It("audit_events_emitted_total increments after investigation", func() {
-			By("Capturing baseline audit metric")
-			baselineBody := fetchMetrics()
-			baselineCount := countMetricOccurrences(baselineBody, metrics.MetricNameAuditEventsEmittedTotal)
+			By("Capturing baseline audit metric value sum")
+			baselineSum := sumMetricValues(fetchMetrics(), metrics.MetricNameAuditEventsEmittedTotal)
 
 			By("Triggering investigation to generate audit events")
 			triggerInvestigation("obs-004", "OOMKilled")
 
 			By("Verifying audit events emitted total increased")
-			Eventually(func() bool {
-				body := fetchMetrics()
-				return countMetricOccurrences(body, metrics.MetricNameAuditEventsEmittedTotal) > baselineCount
-			}, "30s", "2s").Should(BeTrue(),
-				"audit_events_emitted_total should increase after investigation")
+			Eventually(func() float64 {
+				return sumMetricValues(fetchMetrics(), metrics.MetricNameAuditEventsEmittedTotal)
+			}, "30s", "2s").Should(BeNumerically(">", baselineSum),
+				"audit_events_emitted_total sum should increase after investigation")
 		})
 	})
 })
 
-func countMetricOccurrences(body, metricName string) int {
-	count := 0
+// sumMetricValues parses the Prometheus exposition text and sums all sample
+// values for the given metric name across all label combinations.
+// For example, given lines like:
+//
+//	aiagent_audit_events_emitted_total{event_type="aiagent.llm.request"} 5
+//	aiagent_audit_events_emitted_total{event_type="aiagent.llm.response"} 3
+//
+// it returns 8.0.
+func sumMetricValues(body, metricName string) float64 {
+	var total float64
 	for _, line := range strings.Split(body, "\n") {
 		if strings.HasPrefix(line, "#") || strings.TrimSpace(line) == "" {
 			continue
 		}
-		if strings.HasPrefix(line, metricName) {
-			count++
+		if !strings.HasPrefix(line, metricName) {
+			continue
+		}
+		// Value is after the last space on the line.
+		idx := strings.LastIndex(line, " ")
+		if idx < 0 {
+			continue
+		}
+		if v, err := strconv.ParseFloat(strings.TrimSpace(line[idx+1:]), 64); err == nil {
+			total += v
 		}
 	}
-	return count
+	return total
 }
