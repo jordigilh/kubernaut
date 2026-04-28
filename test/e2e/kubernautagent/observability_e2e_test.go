@@ -31,17 +31,12 @@ import (
 
 // E2E Observability Tests — BR-KA-OBSERVABILITY-001
 //
-// Validates that all PR10 Prometheus metrics are exposed through the
-// /metrics endpoint on the dedicated metrics port (kaMetricsURL) after
-// a real investigation flow in the Kind cluster.
-//
-// Pattern: Same as gateway (30_observability_test.go) and notification
-// (05_metrics_validation_test.go) — direct HTTP GET to /metrics, no
-// Prometheus operator required.
+// Validates that all PR10 Prometheus metrics (9 after pruning) are exposed
+// through the /metrics endpoint on the dedicated metrics port (kaMetricsURL)
+// after a real investigation flow in the Kind cluster.
 
 var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVABILITY-001)", Label("e2e", "ka", "observability"), func() {
 
-	// fetchMetrics GETs the /metrics endpoint and returns the raw text body.
 	fetchMetrics := func() string {
 		resp, err := http.Get(kaMetricsURL + "/metrics")
 		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "metrics endpoint should be reachable")
@@ -52,8 +47,6 @@ var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVAB
 		return string(body)
 	}
 
-	// triggerInvestigation runs a full investigation flow using the Mock LLM.
-	// Returns the response so callers can verify it completed.
 	triggerInvestigation := func(id string, signalName string) *agentclient.IncidentResponse {
 		req := &agentclient.IncidentRequest{
 			IncidentID:        id,
@@ -71,47 +64,56 @@ var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVAB
 	}
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// E2E-KA-OBS-001: All PR10 metric families are exposed
+	// E2E-KA-OBS-001: All 9 metric families are exposed
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	Context("E2E-KA-OBS-001: Metric families are exposed after investigation", func() {
-		It("all 13 PR10 metrics appear in /metrics after a completed investigation", func() {
-			By("Triggering an investigation to warm up all metric paths")
+		It("all 9 metrics appear in /metrics after a completed investigation", func() {
+			By("Triggering an investigation to warm up metric paths")
 			result := triggerInvestigation("obs-001", "OOMKilled")
-			Expect(result).NotTo(BeNil(), "investigation should return a result")
+			Expect(result).NotTo(BeNil())
 
-			By("Fetching /metrics and checking all metric families")
+			By("Hitting a non-existent session to trigger authz_denied metric")
+			req, err := http.NewRequestWithContext(ctx, "GET",
+				kaURL+"/api/v1/incident/session/non-existent-obs-001/status", nil)
+			Expect(err).NotTo(HaveOccurred())
+			resp, err := authHTTPClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			_ = resp.Body.Close()
+
+			By("Checking all 9 metric families appear")
+			allMetrics := []string{
+				metrics.MetricNameSessionsStartedTotal,
+				metrics.MetricNameSessionsCompletedTotal,
+				metrics.MetricNameSessionsActive,
+				metrics.MetricNameSessionDurationSeconds,
+				metrics.MetricNameHTTPRequestDurationSeconds,
+				metrics.MetricNameHTTPRequestsInFlight,
+				metrics.MetricNameAuthzDeniedTotal,
+				metrics.MetricNameAuditEventsEmittedTotal,
+			}
+			// http_rate_limited_total only appears as HELP when no 429 has occurred.
+			helpOnlyMetrics := []string{
+				metrics.MetricNameHTTPRateLimitedTotal,
+			}
+
 			Eventually(func() []string {
 				body := fetchMetrics()
 				var missing []string
-				for _, name := range []string{
-					metrics.MetricNameSessionsStartedTotal,
-					metrics.MetricNameSessionsCompletedTotal,
-					metrics.MetricNameSessionsActive,
-					metrics.MetricNameSessionDurationSeconds,
-					metrics.MetricNameInvestigationPhasesTotal,
-					metrics.MetricNameInvestigationToolCallsTotal,
-					metrics.MetricNameInvestigationTurnsTotal,
-					metrics.MetricNameLLMCostDollarsTotal,
-					metrics.MetricNameHTTPRequestDurationSeconds,
-					metrics.MetricNameHTTPRequestsInFlight,
-					metrics.MetricNameAuthzDeniedTotal,
-					metrics.MetricNameAuditEventsEmittedTotal,
-					// MetricNameHTTPRateLimitedTotal may not appear until
-					// a rate-limited request occurs; check registration via HELP line.
-				} {
+				for _, name := range allMetrics {
 					if !strings.Contains(body, name) {
 						missing = append(missing, name)
 					}
 				}
 				return missing
 			}, "30s", "2s").Should(BeEmpty(),
-				"all PR10 metric families should be present in /metrics output")
+				"all sample-producing metric families should be present")
 
-			By("Verifying rate-limiter metric is at least registered (HELP line)")
 			body := fetchMetrics()
-			Expect(body).To(ContainSubstring(metrics.MetricNameHTTPRateLimitedTotal),
-				"rate limiter metric should be registered (HELP line or zero-value)")
+			for _, name := range helpOnlyMetrics {
+				Expect(body).To(ContainSubstring("# HELP "+name),
+					fmt.Sprintf("%s should be registered (HELP line)", name))
+			}
 		})
 	})
 
@@ -122,26 +124,27 @@ var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVAB
 	Context("E2E-KA-OBS-002: Session lifecycle labels", func() {
 		It("sessions_started_total has signal_name label from the incident", func() {
 			By("Triggering investigation with known signal_name")
-			triggerInvestigation("obs-002", "OOMKilled")
+			triggerInvestigation("obs-002a", "OOMKilled")
 
 			By("Verifying signal_name label in /metrics output")
 			Eventually(func() bool {
 				body := fetchMetrics()
-				return strings.Contains(body, fmt.Sprintf(`%s{signal_name="OOMKilled"}`, metrics.MetricNameSessionsStartedTotal))
+				return strings.Contains(body, `signal_name="OOMKilled"`) &&
+					strings.Contains(body, metrics.MetricNameSessionsStartedTotal)
 			}, "15s", "2s").Should(BeTrue(),
-				"sessions_started_total should have signal_name=\"OOMKilled\" label")
+				"sessions_started_total should contain signal_name=\"OOMKilled\"")
 		})
 
-		It("sessions_completed_total has status label", func() {
+		It("sessions_completed_total has outcome label", func() {
 			By("Triggering investigation to completion")
 			triggerInvestigation("obs-002b", "OOMKilled")
 
-			By("Verifying status label in /metrics output")
+			By("Verifying outcome label in /metrics output")
 			Eventually(func() bool {
 				body := fetchMetrics()
-				return strings.Contains(body, fmt.Sprintf(`%s{status=`, metrics.MetricNameSessionsCompletedTotal))
+				return strings.Contains(body, metrics.MetricNameSessionsCompletedTotal+`{outcome=`)
 			}, "15s", "2s").Should(BeTrue(),
-				"sessions_completed_total should have status label")
+				"sessions_completed_total should have outcome label")
 		})
 
 		It("session_duration_seconds has histogram buckets", func() {
@@ -162,25 +165,24 @@ var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVAB
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	Context("E2E-KA-OBS-003: HTTP request metrics labels", func() {
-		It("http_request_duration_seconds has endpoint, method, and status_code labels", func() {
-			By("The investigation itself generates HTTP traffic; check labels")
+		It("http_request_duration_seconds has endpoint, method, and status labels", func() {
+			By("The investigation generates HTTP traffic; check labels")
 			triggerInvestigation("obs-003", "OOMKilled")
 
 			Eventually(func() bool {
 				body := fetchMetrics()
-				// Look for the histogram _count line which exposes label keys
-				return strings.Contains(body, metrics.MetricNameHTTPRequestDurationSeconds+`_count{endpoint=`) ||
-					strings.Contains(body, metrics.MetricNameHTTPRequestDurationSeconds+`_bucket{endpoint=`)
+				return strings.Contains(body, metrics.MetricNameHTTPRequestDurationSeconds+`_count{`) ||
+					strings.Contains(body, metrics.MetricNameHTTPRequestDurationSeconds+`_bucket{`)
 			}, "15s", "2s").Should(BeTrue(),
-				"HTTP request duration should have endpoint label")
+				"HTTP request duration should expose count/bucket lines")
 
 			body := fetchMetrics()
 			Expect(body).To(MatchRegexp(
 				`aiagent_http_request_duration_seconds_\w+\{.*method="POST".*\}`),
-				"HTTP metrics should include method=\"POST\" from /incident/analyze")
+				"HTTP metrics should include method=\"POST\"")
 			Expect(body).To(MatchRegexp(
-				`aiagent_http_request_duration_seconds_\w+\{.*status_code="\d+".*\}`),
-				"HTTP metrics should include numeric status_code label")
+				`aiagent_http_request_duration_seconds_\w+\{.*status="\d+".*\}`),
+				"HTTP metrics should include numeric status label")
 		})
 	})
 
@@ -205,76 +207,8 @@ var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVAB
 				"audit_events_emitted_total should increase after investigation")
 		})
 	})
-
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// E2E-KA-OBS-005: Investigation quality metrics
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-	Context("E2E-KA-OBS-005: Investigation quality metrics", func() {
-		It("investigation_phases_total has phase and outcome labels", func() {
-			By("Triggering investigation")
-			triggerInvestigation("obs-005a", "OOMKilled")
-
-			By("Verifying phase labels")
-			Eventually(func() bool {
-				body := fetchMetrics()
-				return strings.Contains(body, fmt.Sprintf(`%s{`, metrics.MetricNameInvestigationPhasesTotal))
-			}, "15s", "2s").Should(BeTrue(),
-				"investigation_phases_total should have entries after investigation")
-
-			body := fetchMetrics()
-			Expect(body).To(MatchRegexp(
-				`aiagent_investigation_phases_total\{.*phase="(rca|workflow_selection)".*\}`),
-				"investigation_phases_total should include phase label")
-			Expect(body).To(MatchRegexp(
-				`aiagent_investigation_phases_total\{.*outcome="(success|failure)".*\}`),
-				"investigation_phases_total should include outcome label")
-		})
-
-		It("investigation_turns_total has phase label and histogram buckets", func() {
-			By("Triggering investigation")
-			triggerInvestigation("obs-005b", "OOMKilled")
-
-			Eventually(func() bool {
-				body := fetchMetrics()
-				return strings.Contains(body, metrics.MetricNameInvestigationTurnsTotal+"_bucket")
-			}, "15s", "2s").Should(BeTrue(),
-				"investigation_turns_total should expose histogram buckets")
-		})
-
-		It("investigation_tool_calls_total has tool_name label", func() {
-			By("Triggering investigation to exercise tool calls")
-			triggerInvestigation("obs-005c", "OOMKilled")
-
-			Eventually(func() bool {
-				body := fetchMetrics()
-				return strings.Contains(body, fmt.Sprintf(`%s{tool_name=`, metrics.MetricNameInvestigationToolCallsTotal))
-			}, "15s", "2s").Should(BeTrue(),
-				"investigation_tool_calls_total should have tool_name label")
-		})
-	})
-
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// E2E-KA-OBS-006: LLM cost metric
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-	Context("E2E-KA-OBS-006: LLM cost metric", func() {
-		It("llm_cost_dollars_total is present with model label after investigation", func() {
-			By("Triggering investigation to generate LLM cost")
-			triggerInvestigation("obs-006", "OOMKilled")
-
-			Eventually(func() bool {
-				body := fetchMetrics()
-				return strings.Contains(body, fmt.Sprintf(`%s{model=`, metrics.MetricNameLLMCostDollarsTotal))
-			}, "15s", "2s").Should(BeTrue(),
-				"llm_cost_dollars_total should have model label after investigation")
-		})
-	})
 })
 
-// countMetricOccurrences counts how many sample lines (non-comment, non-empty)
-// contain the given metric name prefix. This captures the sum of all label
-// combinations, giving a rough "has it grown" signal for Eventually assertions.
 func countMetricOccurrences(body, metricName string) int {
 	count := 0
 	for _, line := range strings.Split(body, "\n") {

@@ -90,7 +90,7 @@ var _ = Describe("Kubernaut Agent Metrics — BR-KA-OBSERVABILITY-001", func() {
 	})
 
 	Describe("UT-KA-OBS-001: Metrics registration", func() {
-		It("registers all 13 metrics without panic", func() {
+		It("registers all 9 metrics without panic", func() {
 			families, err := reg.Gather()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -103,10 +103,6 @@ var _ = Describe("Kubernaut Agent Metrics — BR-KA-OBSERVABILITY-001", func() {
 			// exercise every metric first.
 			m.RecordSessionStarted("test", "critical")
 			m.RecordSessionCompleted("completed", 1.0)
-			m.RecordInvestigationPhase("rca", "success")
-			m.RecordToolCall("kubectl_events")
-			m.RecordInvestigationTurns("rca", 3)
-			m.RecordLLMCost("gpt-4", 100, 50)
 			m.RecordRateLimited()
 			m.RecordAuthzDenied("owner_mismatch")
 			m.RecordAuditEventEmitted("aiagent.session.started")
@@ -124,10 +120,6 @@ var _ = Describe("Kubernaut Agent Metrics — BR-KA-OBSERVABILITY-001", func() {
 			Expect(names).To(HaveKey(kametrics.MetricNameSessionsCompletedTotal))
 			Expect(names).To(HaveKey(kametrics.MetricNameSessionsActive))
 			Expect(names).To(HaveKey(kametrics.MetricNameSessionDurationSeconds))
-			Expect(names).To(HaveKey(kametrics.MetricNameInvestigationPhasesTotal))
-			Expect(names).To(HaveKey(kametrics.MetricNameInvestigationToolCallsTotal))
-			Expect(names).To(HaveKey(kametrics.MetricNameInvestigationTurnsTotal))
-			Expect(names).To(HaveKey(kametrics.MetricNameLLMCostDollarsTotal))
 			Expect(names).To(HaveKey(kametrics.MetricNameHTTPRateLimitedTotal))
 			Expect(names).To(HaveKey(kametrics.MetricNameHTTPRequestDurationSeconds))
 			Expect(names).To(HaveKey(kametrics.MetricNameHTTPRequestsInFlight))
@@ -205,77 +197,6 @@ var _ = Describe("Kubernaut Agent Metrics — BR-KA-OBSERVABILITY-001", func() {
 		})
 	})
 
-	Describe("UT-KA-OBS-006: RecordInvestigationPhase", func() {
-		It("increments with phase and outcome labels", func() {
-			m.RecordInvestigationPhase("rca", "success")
-			m.RecordInvestigationPhase("rca", "failure")
-			m.RecordInvestigationPhase("workflow_discovery", "success")
-
-			v := gatherCounter(reg, kametrics.MetricNameInvestigationPhasesTotal, map[string]string{
-				"phase": "rca", "outcome": "success",
-			})
-			Expect(v).To(BeNumerically("==", 1))
-
-			v = gatherCounter(reg, kametrics.MetricNameInvestigationPhasesTotal, map[string]string{
-				"phase": "rca", "outcome": "failure",
-			})
-			Expect(v).To(BeNumerically("==", 1))
-		})
-	})
-
-	Describe("UT-KA-OBS-007: RecordToolCall", func() {
-		It("increments with tool_name label", func() {
-			m.RecordToolCall("kubectl_events")
-			m.RecordToolCall("kubectl_events")
-			m.RecordToolCall("kubernetes_jq_query")
-
-			v := gatherCounter(reg, kametrics.MetricNameInvestigationToolCallsTotal, map[string]string{
-				"tool_name": "kubectl_events",
-			})
-			Expect(v).To(BeNumerically("==", 2))
-		})
-	})
-
-	Describe("UT-KA-OBS-008: RecordInvestigationTurns", func() {
-		It("observes turn count per phase", func() {
-			m.RecordInvestigationTurns("rca", 5)
-			m.RecordInvestigationTurns("rca", 3)
-
-			count := gatherHistogramCount(reg, kametrics.MetricNameInvestigationTurnsTotal, map[string]string{
-				"phase": "rca",
-			})
-			Expect(count).To(BeNumerically("==", 2))
-		})
-	})
-
-	Describe("UT-KA-OBS-009: RecordLLMCost with known model", func() {
-		It("increments cost counter with model label", func() {
-			m.RecordLLMCost("gpt-4", 1000, 500)
-
-			v := gatherCounter(reg, kametrics.MetricNameLLMCostDollarsTotal, map[string]string{
-				"model": "gpt-4",
-			})
-			// gpt-4: prompt=$0.03/1K, completion=$0.06/1K
-			// cost = (1000/1000 * 0.03) + (500/1000 * 0.06) = 0.03 + 0.03 = 0.06
-			Expect(v).To(BeNumerically("~", 0.06, 0.0001))
-		})
-	})
-
-	Describe("UT-KA-OBS-010: RecordLLMCost with unknown model", func() {
-		It("does not increment counter for unknown model", func() {
-			m.RecordLLMCost("unknown-model", 1000, 500)
-
-			families, err := reg.Gather()
-			Expect(err).NotTo(HaveOccurred())
-			for _, f := range families {
-				if f.GetName() == kametrics.MetricNameLLMCostDollarsTotal {
-					Expect(f.GetMetric()).To(BeEmpty(),
-						"unknown model should not create a time series")
-				}
-			}
-		})
-	})
-
 	Describe("UT-KA-OBS-011: RecordRateLimited", func() {
 		It("increments counter", func() {
 			m.RecordRateLimited()
@@ -316,10 +237,6 @@ var _ = Describe("Kubernaut Agent Metrics — BR-KA-OBSERVABILITY-001", func() {
 			Expect(func() {
 				nilMetrics.RecordSessionStarted("test", "critical")
 				nilMetrics.RecordSessionCompleted("completed", 1.0)
-				nilMetrics.RecordInvestigationPhase("rca", "success")
-				nilMetrics.RecordToolCall("kubectl_events")
-				nilMetrics.RecordInvestigationTurns("rca", 3)
-				nilMetrics.RecordLLMCost("gpt-4", 100, 50)
 				nilMetrics.RecordRateLimited()
 				nilMetrics.RecordAuthzDenied("owner_mismatch")
 				nilMetrics.RecordAuditEventEmitted("aiagent.session.started")
@@ -334,10 +251,6 @@ var _ = Describe("Kubernaut Agent Metrics — BR-KA-OBSERVABILITY-001", func() {
 				kametrics.MetricNameSessionsCompletedTotal,
 				kametrics.MetricNameSessionsActive,
 				kametrics.MetricNameSessionDurationSeconds,
-				kametrics.MetricNameInvestigationPhasesTotal,
-				kametrics.MetricNameInvestigationToolCallsTotal,
-				kametrics.MetricNameInvestigationTurnsTotal,
-				kametrics.MetricNameLLMCostDollarsTotal,
 				kametrics.MetricNameHTTPRateLimitedTotal,
 				kametrics.MetricNameHTTPRequestDurationSeconds,
 				kametrics.MetricNameHTTPRequestsInFlight,

@@ -381,14 +381,6 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 }
 
 func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (result *katypes.InvestigationResult, retErr error) {
-	defer func() {
-		outcome := "success"
-		if retErr != nil || (result != nil && result.Cancelled) {
-			outcome = "failure"
-		}
-		inv.metrics.RecordInvestigationPhase(string(katypes.PhaseRCA), outcome)
-	}()
-
 	systemPrompt, err := inv.builder.RenderInvestigation(signalToPrompt(signal))
 	if err != nil {
 		return nil, fmt.Errorf("rendering investigation prompt: %w", err)
@@ -692,14 +684,6 @@ func (inv *Investigator) sameKindValidationGate(
 }
 
 func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) (result *katypes.InvestigationResult, retErr error) {
-	defer func() {
-		outcome := "success"
-		if retErr != nil || (result != nil && result.Cancelled) {
-			outcome = "failure"
-		}
-		inv.metrics.RecordInvestigationPhase(string(katypes.PhaseWorkflowDiscovery), outcome)
-	}()
-
 	// Attach signal context so workflow discovery tools (list_available_actions,
 	// list_workflows) can extract severity/component/environment/priority from
 	// ctx instead of using hardcoded values. Fix for #779.
@@ -1053,11 +1037,8 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 	loopStart := time.Now()
 	truncationRetried := false
 	maxTokens := 0
-	finalTurn := 0
-	defer func() { inv.metrics.RecordInvestigationTurns(string(phase), finalTurn) }()
 
 	for turn := 0; turn < inv.maxTurns; turn++ {
-		finalTurn = turn + 1
 		if ctx.Err() != nil {
 			emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
 			return &CancelledResult{
@@ -1335,8 +1316,6 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 	if inv.registry == nil {
 		return toolErrorJSON("no registry configured for tool " + name)
 	}
-	inv.metrics.RecordToolCall(name)
-
 	if ar := inv.pipeline.AnomalyDetector.CheckToolCall(name, args); !ar.Allowed {
 		inv.logger.Warn("anomaly detector rejected tool call",
 			slog.String("tool", name),
@@ -1407,9 +1386,6 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 			}
 			return nil
 		})
-	}
-	if err == nil {
-		inv.metrics.RecordLLMCost(modelName, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
 	}
 	return resp, err
 }

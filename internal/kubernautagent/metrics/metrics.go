@@ -29,38 +29,20 @@ import (
 
 // DD-005 V3.0: Metric Name Constants (MANDATORY)
 const (
-	MetricNameSessionsStartedTotal          = "aiagent_sessions_started_total"
-	MetricNameSessionsCompletedTotal        = "aiagent_sessions_completed_total"
-	MetricNameSessionsActive                = "aiagent_sessions_active"
-	MetricNameSessionDurationSeconds        = "aiagent_session_duration_seconds"
-	MetricNameInvestigationPhasesTotal      = "aiagent_investigation_phases_total"
-	MetricNameInvestigationToolCallsTotal   = "aiagent_investigation_tool_calls_total"
-	MetricNameInvestigationTurnsTotal       = "aiagent_investigation_turns_total"
-	MetricNameLLMCostDollarsTotal           = "aiagent_llm_cost_dollars_total"
-	MetricNameHTTPRateLimitedTotal          = "aiagent_http_rate_limited_total"
-	MetricNameHTTPRequestDurationSeconds    = "aiagent_http_request_duration_seconds"
-	MetricNameHTTPRequestsInFlight          = "aiagent_http_requests_in_flight"
-	MetricNameAuthzDeniedTotal              = "aiagent_authz_denied_total"
-	MetricNameAuditEventsEmittedTotal       = "aiagent_audit_events_emitted_total"
+	MetricNameSessionsStartedTotal       = "aiagent_sessions_started_total"
+	MetricNameSessionsCompletedTotal     = "aiagent_sessions_completed_total"
+	MetricNameSessionsActive             = "aiagent_sessions_active"
+	MetricNameSessionDurationSeconds     = "aiagent_session_duration_seconds"
+	MetricNameHTTPRateLimitedTotal       = "aiagent_http_rate_limited_total"
+	MetricNameHTTPRequestDurationSeconds = "aiagent_http_request_duration_seconds"
+	MetricNameHTTPRequestsInFlight       = "aiagent_http_requests_in_flight"
+	MetricNameAuthzDeniedTotal           = "aiagent_authz_denied_total"
+	MetricNameAuditEventsEmittedTotal    = "aiagent_audit_events_emitted_total"
 )
 
 // maxSignalNameLen bounds the signal_name label to prevent Prometheus TSDB
 // memory pressure from attacker-influenced input (SEC-1).
 const maxSignalNameLen = 128
-
-// llmPricing maps model names to per-1K-token pricing (prompt, completion).
-// Default $0 fallback for unknown models (BR-HAPI-195 minimal).
-var llmPricing = map[string][2]float64{
-	"gpt-4":            {0.03, 0.06},
-	"gpt-4-turbo":      {0.01, 0.03},
-	"gpt-4o":           {0.005, 0.015},
-	"gpt-4o-mini":      {0.00015, 0.0006},
-	"gpt-3.5-turbo":    {0.0005, 0.0015},
-	"claude-3-opus":    {0.015, 0.075},
-	"claude-3-sonnet":  {0.003, 0.015},
-	"claude-3-haiku":   {0.00025, 0.00125},
-	"claude-3.5-sonnet": {0.003, 0.015},
-}
 
 // Metrics holds all Prometheus metrics for the Kubernaut Agent.
 // Per DD-METRICS-001: Dependency injection pattern for testability.
@@ -68,12 +50,8 @@ type Metrics struct {
 	SessionsStartedTotal        *prometheus.CounterVec
 	SessionsCompletedTotal      *prometheus.CounterVec
 	SessionsActive              prometheus.Gauge
-	SessionDurationSeconds      *prometheus.HistogramVec
-	InvestigationPhasesTotal    *prometheus.CounterVec
-	InvestigationToolCallsTotal *prometheus.CounterVec
-	InvestigationTurnsTotal     *prometheus.HistogramVec
-	LLMCostDollarsTotal         *prometheus.CounterVec
-	HTTPRateLimitedTotal        prometheus.Counter
+	SessionDurationSeconds *prometheus.HistogramVec
+	HTTPRateLimitedTotal   prometheus.Counter
 	HTTPRequestDurationSeconds  *prometheus.HistogramVec
 	HTTPRequestsInFlight        prometheus.Gauge
 	AuthzDeniedTotal            *prometheus.CounterVec
@@ -130,35 +108,6 @@ func newMetrics(registry prometheus.Registerer) *Metrics {
 			},
 			[]string{"outcome"},
 		),
-		InvestigationPhasesTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameInvestigationPhasesTotal,
-				Help: "Total investigation phase completions by phase and outcome",
-			},
-			[]string{"phase", "outcome"},
-		),
-		InvestigationToolCallsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameInvestigationToolCallsTotal,
-				Help: "Total tool calls executed during investigations",
-			},
-			[]string{"tool_name"},
-		),
-		InvestigationTurnsTotal: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    MetricNameInvestigationTurnsTotal,
-				Help:    "Number of LLM turns per investigation phase",
-				Buckets: []float64{1, 2, 3, 5, 7, 10, 15, 20},
-			},
-			[]string{"phase"},
-		),
-		LLMCostDollarsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameLLMCostDollarsTotal,
-				Help: "Estimated LLM cost in US dollars",
-			},
-			[]string{"model"},
-		),
 		HTTPRateLimitedTotal: prometheus.NewCounter(
 			prometheus.CounterOpts{
 				Name: MetricNameHTTPRateLimitedTotal,
@@ -200,10 +149,6 @@ func newMetrics(registry prometheus.Registerer) *Metrics {
 		m.SessionsCompletedTotal,
 		m.SessionsActive,
 		m.SessionDurationSeconds,
-		m.InvestigationPhasesTotal,
-		m.InvestigationToolCallsTotal,
-		m.InvestigationTurnsTotal,
-		m.LLMCostDollarsTotal,
 		m.HTTPRateLimitedTotal,
 		m.HTTPRequestDurationSeconds,
 		m.HTTPRequestsInFlight,
@@ -236,44 +181,6 @@ func (m *Metrics) RecordSessionCompleted(outcome string, durationSeconds float64
 	m.SessionsCompletedTotal.WithLabelValues(outcome).Inc()
 	m.SessionsActive.Dec()
 	m.SessionDurationSeconds.WithLabelValues(outcome).Observe(durationSeconds)
-}
-
-// RecordInvestigationPhase increments the phase completion counter.
-func (m *Metrics) RecordInvestigationPhase(phase, outcome string) {
-	if m == nil {
-		return
-	}
-	m.InvestigationPhasesTotal.WithLabelValues(phase, outcome).Inc()
-}
-
-// RecordToolCall increments the tool call counter.
-func (m *Metrics) RecordToolCall(toolName string) {
-	if m == nil {
-		return
-	}
-	m.InvestigationToolCallsTotal.WithLabelValues(toolName).Inc()
-}
-
-// RecordInvestigationTurns observes the number of LLM turns for a phase.
-func (m *Metrics) RecordInvestigationTurns(phase string, turns int) {
-	if m == nil {
-		return
-	}
-	m.InvestigationTurnsTotal.WithLabelValues(phase).Observe(float64(turns))
-}
-
-// RecordLLMCost estimates and records LLM cost from token usage.
-// Unknown models default to $0 (safe fallback per BR-HAPI-195).
-func (m *Metrics) RecordLLMCost(model string, promptTokens, completionTokens int) {
-	if m == nil {
-		return
-	}
-	pricing, ok := llmPricing[model]
-	if !ok {
-		return
-	}
-	cost := (float64(promptTokens) / 1000 * pricing[0]) + (float64(completionTokens) / 1000 * pricing[1])
-	m.LLMCostDollarsTotal.WithLabelValues(model).Add(cost)
 }
 
 // RecordRateLimited increments the rate limited counter.
