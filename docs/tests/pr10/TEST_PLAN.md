@@ -149,9 +149,20 @@ Validate that all 13 new Prometheus metrics defined in BR-KA-OBSERVABILITY-001 a
 | `IT-KA-OBS-004` | Authz denial increments `authz_denied_total` on owner mismatch | Pending |
 | `IT-KA-OBS-005` | Rate limiter increments `rate_limited_total` when request rejected | Pending |
 
-### Tier Skip Rationale
+### Tier 3: E2E Tests
 
-- **E2E**: Deferred. Metrics endpoint validation in Kind cluster requires ServiceMonitor CRD and Prometheus operator, which are post-v1.0 infrastructure.
+**Testable code scope**: Full-stack metric exposition through dedicated `/metrics` port in Kind cluster (>=80% coverage of metric families)
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `E2E-KA-OBS-001` | All 13 PR10 metric families are exposed at `/metrics` after investigation | Pending |
+| `E2E-KA-OBS-002` | Session lifecycle metrics carry correct labels (signal_name, status) | Pending |
+| `E2E-KA-OBS-003` | HTTP duration histogram has endpoint/method/status_code labels | Pending |
+| `E2E-KA-OBS-004` | Audit events emitted total increments after investigation | Pending |
+| `E2E-KA-OBS-005` | Investigation quality metrics carry phase/outcome/tool_name labels | Pending |
+| `E2E-KA-OBS-006` | LLM cost metric carries model label after investigation | Pending |
+
+**Pattern**: Direct HTTP GET to dedicated metrics port (`kaMetricsURL/metrics`), same as gateway (`30_observability_test.go`) and notification (`05_metrics_validation_test.go`). No ServiceMonitor CRD or Prometheus operator required.
 
 ---
 
