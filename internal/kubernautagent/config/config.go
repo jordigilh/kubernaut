@@ -88,6 +88,15 @@ type ServerConfig struct {
 	HealthAddr  string              `yaml:"health_addr"`  // Issue #753: Dedicated health probe port (default ":8081")
 	MetricsAddr string              `yaml:"metrics_addr"` // Issue #753: Dedicated metrics port (default ":9090")
 	TLS         sharedtls.TLSConfig `yaml:"tls,omitempty"`
+	RateLimit   RateLimitConfig     `yaml:"rate_limit"`
+}
+
+// RateLimitConfig configures per-IP HTTP rate limiting for the agent API.
+type RateLimitConfig struct {
+	RequestsPerSecond float64       `yaml:"requests_per_second"`
+	Burst             int           `yaml:"burst"`
+	CleanupInterval   time.Duration `yaml:"cleanup_interval"`
+	MaxAge            time.Duration `yaml:"max_age"`
 }
 
 type SessionConfig struct {
@@ -306,6 +315,12 @@ func (c *Config) Validate() error {
 	if c.Investigator.MaxTurns <= 0 {
 		return fmt.Errorf("investigator.max_turns must be positive, got %d", c.Investigator.MaxTurns)
 	}
+	if c.Server.RateLimit.RequestsPerSecond <= 0 {
+		return fmt.Errorf("server.rate_limit.requests_per_second must be positive, got %v", c.Server.RateLimit.RequestsPerSecond)
+	}
+	if c.Server.RateLimit.Burst <= 0 {
+		return fmt.Errorf("server.rate_limit.burst must be positive, got %d", c.Server.RateLimit.Burst)
+	}
 	if c.LLM.OAuth2.Enabled {
 		if c.LLM.OAuth2.TokenURL == "" {
 			return fmt.Errorf("llm.oauth2.token_url is required when oauth2.enabled=true")
@@ -346,7 +361,15 @@ func DefaultConfig() *Config {
 	return &Config{
 		LLM:          LLMConfig{Provider: "openai"},
 		DataStorage:  DataStorageConfig{SATokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"},
-		Server:       ServerConfig{Address: "0.0.0.0", Port: 8080, HealthAddr: ":8081", MetricsAddr: ":9090"},
+		Server: ServerConfig{
+			Address: "0.0.0.0", Port: 8080, HealthAddr: ":8081", MetricsAddr: ":9090",
+			RateLimit: RateLimitConfig{
+				RequestsPerSecond: 5,
+				Burst:             10,
+				CleanupInterval:   5 * time.Minute,
+				MaxAge:            10 * time.Minute,
+			},
+		},
 		Session:      SessionConfig{TTL: 30 * time.Minute},
 		Investigator: InvestigatorConfig{MaxTurns: 15},
 		Audit:        AuditConfig{Enabled: true},

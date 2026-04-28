@@ -570,5 +570,70 @@ llm:
 			Expect(cfg.Validate()).NotTo(HaveOccurred())
 		})
 	})
+
+	Describe("UT-KA-823-CFG-001: DefaultConfig includes rate limit defaults", func() {
+		It("should set rate limit defaults matching production values", func() {
+			cfg := config.DefaultConfig()
+			Expect(cfg.Server.RateLimit.RequestsPerSecond).To(Equal(5.0))
+			Expect(cfg.Server.RateLimit.Burst).To(Equal(10))
+			Expect(cfg.Server.RateLimit.CleanupInterval).To(Equal(5 * time.Minute))
+			Expect(cfg.Server.RateLimit.MaxAge).To(Equal(10 * time.Minute))
+		})
+	})
+
+	Describe("UT-KA-823-CFG-002: Validate rejects invalid rate limit values", func() {
+		It("should reject zero requests_per_second", func() {
+			yaml := []byte(`
+llm:
+  provider: "openai"
+  model: "gpt-4o"
+server:
+  rate_limit:
+    requests_per_second: 0
+    burst: 10
+`)
+			cfg, err := config.Load(yaml)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("server.rate_limit.requests_per_second must be positive")))
+		})
+
+		It("should reject zero burst", func() {
+			yaml := []byte(`
+llm:
+  provider: "openai"
+  model: "gpt-4o"
+server:
+  rate_limit:
+    requests_per_second: 5
+    burst: 0
+`)
+			cfg, err := config.Load(yaml)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("server.rate_limit.burst must be positive")))
+		})
+	})
+
+	Describe("UT-KA-823-CFG-003: Rate limit config parsed from YAML", func() {
+		It("should deserialize custom rate limit values", func() {
+			yaml := []byte(`
+llm:
+  provider: "openai"
+  model: "gpt-4o"
+server:
+  rate_limit:
+    requests_per_second: 20
+    burst: 50
+    cleanup_interval: 10m
+    max_age: 30m
+`)
+			cfg, err := config.Load(yaml)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Server.RateLimit.RequestsPerSecond).To(Equal(20.0))
+			Expect(cfg.Server.RateLimit.Burst).To(Equal(50))
+			Expect(cfg.Server.RateLimit.CleanupInterval).To(Equal(10 * time.Minute))
+			Expect(cfg.Server.RateLimit.MaxAge).To(Equal(30 * time.Minute))
+			Expect(cfg.Validate()).NotTo(HaveOccurred())
+		})
+	})
 })
 

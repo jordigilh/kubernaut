@@ -284,7 +284,12 @@ func main() {
 	// Issue #753: /config remains on API port; health, readiness and metrics move to dedicated ports
 	r.Get("/config", configHandler(cfg, swappable))
 
-	apiRateLimiter := kaserver.NewRateLimiter(kaserver.DefaultRateLimitConfig(), agentMetrics.HTTPRateLimitedTotal)
+	apiRateLimiter := kaserver.NewRateLimiter(kaserver.RateLimitConfig{
+		RequestsPerSecond: cfg.Server.RateLimit.RequestsPerSecond,
+		Burst:             cfg.Server.RateLimit.Burst,
+		CleanupInterval:   cfg.Server.RateLimit.CleanupInterval,
+		MaxAge:            cfg.Server.RateLimit.MaxAge,
+	}, agentMetrics.HTTPRateLimitedTotal)
 	defer apiRateLimiter.Stop()
 
 	r.Route("/api/v1", func(r chi.Router) {
