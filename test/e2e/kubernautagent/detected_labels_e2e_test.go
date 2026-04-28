@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -29,6 +30,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -68,7 +70,7 @@ var _ = Describe("E2E-KA ADR-056 DetectedLabels", Label("e2e", "ka", "adr-056", 
 		Expect(err).NotTo(HaveOccurred(), "Failed to create K8s clientset")
 
 		// Create unique test namespace
-		testNS = fmt.Sprintf("adr056-e2e-%d", time.Now().UnixNano()%100000)
+		testNS = fmt.Sprintf("adr056-e2e-%s", uuid.New().String()[:8])
 		deployName = "test-app"
 
 		ns := &corev1.Namespace{
@@ -115,6 +117,15 @@ var _ = Describe("E2E-KA ADR-056 DetectedLabels", Label("e2e", "ka", "adr-056", 
 		if clientset != nil && testNS != "" {
 			_ = clientset.CoreV1().Namespaces().Delete(
 				context.Background(), testNS, metav1.DeleteOptions{})
+
+			// Wait for namespace to fully terminate to prevent
+			// "object is being deleted" errors in subsequent tests.
+			Eventually(func() bool {
+				_, err := clientset.CoreV1().Namespaces().Get(
+					context.Background(), testNS, metav1.GetOptions{})
+				return apierrors.IsNotFound(err)
+			}, "60s", "1s").Should(BeTrue(),
+				"namespace should be fully deleted before next test")
 		}
 		testCancel()
 	})
