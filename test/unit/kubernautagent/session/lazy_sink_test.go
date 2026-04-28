@@ -34,7 +34,7 @@ var _ = Describe("Lazy Event Sink — #823 PR7", func() {
 	Describe("UT-KA-823-D05: Autonomous investigation receives no event sink", func() {
 		It("EventSinkFromContext returns nil when no Subscribe has been called", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{})
+			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
 
 			sinkResult := make(chan bool, 1)
 			_, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
@@ -52,7 +52,7 @@ var _ = Describe("Lazy Event Sink — #823 PR7", func() {
 	Describe("UT-KA-823-D06: Panic in investigation goroutine transitions session to Failed", func() {
 		It("session reaches StatusFailed and goroutine does not crash the process", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{})
+			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
 
 			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
 				panic("simulated investigation panic")
@@ -73,7 +73,7 @@ var _ = Describe("Lazy Event Sink — #823 PR7", func() {
 	Describe("UT-KA-823-D07: EventTypeComplete emitted at investigation end", func() {
 		It("subscriber receives a complete event before channel closure", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{})
+			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
 
 			proceed := make(chan struct{})
 			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
@@ -112,7 +112,7 @@ var _ = Describe("Lazy Event Sink — #823 PR7", func() {
 		It("audit store receives session.observed event when Subscribe is called", func() {
 			store := session.NewStore(30 * time.Minute)
 			recorder := &auditRecorder{}
-			mgr := session.NewManager(store, slog.Default(), recorder)
+			mgr := session.NewManager(store, slog.Default(), recorder, nil)
 
 			proceed := make(chan struct{})
 			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {

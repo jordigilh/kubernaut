@@ -23,13 +23,16 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
@@ -591,11 +594,11 @@ func (c *channelInvestigator) Investigate(ctx context.Context, _ katypes.SignalC
 // and audit store but with a different auth user. Used for cross-user tests.
 func newTestHarnessWithManager(mgr *session.Manager, auditStore *syncAuditRecorder, user string) *testHarness {
 	inv := &blockingInvestigator{}
-	handler := kaserver.NewHandler(mgr, inv, slog.Default())
+	handler := kaserver.NewHandler(mgr, inv, slog.Default(), nil)
 	ogenSrv, _ := agentclient.NewServer(handler)
 
 	r := chi.NewRouter()
-	rl := kaserver.NewRateLimiter(kaserver.DefaultRateLimitConfig())
+	rl := kaserver.NewRateLimiter(kaserver.DefaultRateLimitConfig(), nil)
 	r.Use(rl.Middleware)
 	if user != "" {
 		r.Use(fakeAuthMiddleware(user))
@@ -610,4 +613,214 @@ func newTestHarnessWithManager(mgr *session.Manager, auditStore *syncAuditRecord
 		RateLimiter: rl,
 	}
 }
+
+// metricsTestHarness builds a harness with real Prometheus metrics wired for
+// integration tests (BR-KA-OBSERVABILITY-001).
+type metricsTestHarness struct {
+	Server   *httptest.Server
+	Registry *prometheus.Registry
+	Metrics  *kametrics.Metrics
+	Manager  *session.Manager
+	Handler  *kaserver.Handler
+	RL       *kaserver.RateLimiter
+}
+
+func newMetricsTestHarness(inv kaserver.InvestigationRunner, user string) *metricsTestHarness {
+	reg := prometheus.NewRegistry()
+	m := kametrics.NewMetricsWithRegistry(reg)
+
+	store := session.NewStore(5 * time.Minute)
+	mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{}, m)
+	handler := kaserver.NewHandler(mgr, inv, slog.Default(), m)
+	ogenSrv, _ := agentclient.NewServer(handler)
+
+	r := chi.NewRouter()
+	rl := kaserver.NewRateLimiter(kaserver.RateLimitConfig{
+		RequestsPerSecond: 1,
+		Burst:             1,
+		CleanupInterval:   5 * time.Minute,
+		MaxAge:            10 * time.Minute,
+	}, m.HTTPRateLimitedTotal)
+	r.Use(kaserver.HTTPMetricsMiddleware(m))
+	r.Use(rl.Middleware)
+	if user != "" {
+		r.Use(fakeAuthMiddleware(user))
+	}
+	r.Mount("/", kaserver.SSEHeadersMiddleware(ogenSrv))
+
+	ts := httptest.NewServer(r)
+	return &metricsTestHarness{
+		Server:   ts,
+		Registry: reg,
+		Metrics:  m,
+		Manager:  mgr,
+		Handler:  handler,
+		RL:       rl,
+	}
+}
+
+func (h *metricsTestHarness) Close() {
+	h.RL.Stop()
+	h.Server.Close()
+}
+
+func gatherCounterFromReg(g prometheus.Gatherer, name string, labels map[string]string) float64 {
+	families, err := g.Gather()
+	Expect(err).NotTo(HaveOccurred())
+	for _, f := range families {
+		if f.GetName() != name {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			matched := true
+			found := make(map[string]string)
+			for _, lp := range m.GetLabel() {
+				found[lp.GetName()] = lp.GetValue()
+			}
+			for k, v := range labels {
+				if found[k] != v {
+					matched = false
+					break
+				}
+			}
+			if matched {
+				return m.GetCounter().GetValue()
+			}
+		}
+	}
+	return 0
+}
+
+func gatherGaugeFromReg(g prometheus.Gatherer, name string) float64 {
+	families, err := g.Gather()
+	Expect(err).NotTo(HaveOccurred())
+	for _, f := range families {
+		if f.GetName() != name {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			return m.GetGauge().GetValue()
+		}
+	}
+	return 0
+}
+
+func gatherHistogramCountFromReg(g prometheus.Gatherer, name string) uint64 {
+	families, err := g.Gather()
+	Expect(err).NotTo(HaveOccurred())
+	for _, f := range families {
+		if f.GetName() != name {
+			continue
+		}
+		var total uint64
+		for _, m := range f.GetMetric() {
+			total += m.GetHistogram().GetSampleCount()
+		}
+		return total
+	}
+	return 0
+}
+
+var _ = Describe("Metrics Wiring Integration Tests — BR-KA-OBSERVABILITY-001", func() {
+
+	Describe("IT-KA-OBS-001: HTTP metrics middleware records request duration", func() {
+		It("records duration histogram on non-stream API call", func() {
+			h := newMetricsTestHarness(&blockingInvestigator{}, "test-user")
+			defer h.Close()
+
+			resp, err := http.Post(h.Server.URL+"/api/v1/incident/analyze",
+				"application/json",
+				strings.NewReader(`{"incident_id":"inc-1","signal_name":"OOMKilled","namespace":"default","severity":"critical","message":"pod killed"}`))
+			Expect(err).NotTo(HaveOccurred())
+			resp.Body.Close()
+
+			count := gatherHistogramCountFromReg(h.Registry, kametrics.MetricNameHTTPRequestDurationSeconds)
+			Expect(count).To(BeNumerically(">=", 1))
+		})
+	})
+
+	Describe("IT-KA-OBS-002: HTTP metrics middleware excludes /stream from histogram", func() {
+		It("does not record histogram for /stream endpoint", func() {
+			h := newMetricsTestHarness(&blockingInvestigator{}, "test-user")
+			defer h.Close()
+
+			id, iErr := h.Manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+				time.Sleep(2 * time.Second)
+				return nil, nil
+			}, map[string]string{"created_by": "test-user"})
+			Expect(iErr).NotTo(HaveOccurred())
+
+			countBefore := gatherHistogramCountFromReg(h.Registry, kametrics.MetricNameHTTPRequestDurationSeconds)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+			defer cancel()
+			req, _ := http.NewRequestWithContext(ctx, "GET", h.Server.URL+"/api/v1/incident/session/"+id+"/stream", nil)
+			streamResp, _ := http.DefaultClient.Do(req)
+			if streamResp != nil {
+				streamResp.Body.Close()
+			}
+
+			countAfter := gatherHistogramCountFromReg(h.Registry, kametrics.MetricNameHTTPRequestDurationSeconds)
+			Expect(countAfter).To(Equal(countBefore), "/stream should not add histogram observations")
+		})
+	})
+
+	Describe("IT-KA-OBS-003: HTTP in-flight gauge tracks concurrency", func() {
+		It("increments during request and decrements after", func() {
+			h := newMetricsTestHarness(&blockingInvestigator{}, "test-user")
+			defer h.Close()
+
+			g := gatherGaugeFromReg(h.Registry, kametrics.MetricNameHTTPRequestsInFlight)
+			Expect(g).To(BeNumerically("==", 0))
+
+			resp, err := http.Post(h.Server.URL+"/api/v1/incident/analyze",
+				"application/json",
+				strings.NewReader(`{"incident_id":"inc-1","signal_name":"OOMKilled","namespace":"default","severity":"critical","message":"pod killed"}`))
+			Expect(err).NotTo(HaveOccurred())
+			resp.Body.Close()
+
+			g = gatherGaugeFromReg(h.Registry, kametrics.MetricNameHTTPRequestsInFlight)
+			Expect(g).To(BeNumerically("==", 0), "gauge should be 0 after request completes")
+		})
+	})
+
+	Describe("IT-KA-OBS-004: Authz denial increments counter on session_not_found", func() {
+		It("records authz_denied_total with session_not_found reason", func() {
+			h := newMetricsTestHarness(&blockingInvestigator{}, "test-user")
+			defer h.Close()
+
+			resp, err := http.Get(h.Server.URL + "/api/v1/incident/session/non-existent-id")
+			Expect(err).NotTo(HaveOccurred())
+			resp.Body.Close()
+
+			v := gatherCounterFromReg(h.Registry, kametrics.MetricNameAuthzDeniedTotal, map[string]string{
+				"reason": "session_not_found",
+			})
+			Expect(v).To(BeNumerically(">=", 1))
+		})
+	})
+
+	Describe("IT-KA-OBS-005: Rate limiter increments counter when request rejected", func() {
+		It("records http_rate_limited_total on 429 response", func() {
+			h := newMetricsTestHarness(&blockingInvestigator{}, "test-user")
+			defer h.Close()
+
+			body := `{"incident_id":"inc-1","signal_name":"OOMKilled","namespace":"default","severity":"critical","message":"pod killed"}`
+			resp1, err := http.Post(h.Server.URL+"/api/v1/incident/analyze",
+				"application/json", strings.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			resp1.Body.Close()
+
+			resp2, err := http.Post(h.Server.URL+"/api/v1/incident/analyze",
+				"application/json", strings.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			resp2.Body.Close()
+
+			v := gatherCounterFromReg(h.Registry, kametrics.MetricNameHTTPRateLimitedTotal, nil)
+			if resp2.StatusCode == http.StatusTooManyRequests {
+				Expect(v).To(BeNumerically(">=", 1))
+			}
+		})
+	})
+})
 

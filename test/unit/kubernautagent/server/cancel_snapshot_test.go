@@ -44,8 +44,8 @@ var _ = Describe("TP-823-OAS: Cancel, Snapshot, Stream Endpoints (#823 PR2)", fu
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
 		logger = slog.Default()
-		manager = session.NewManager(store, logger, nil)
-		handler = server.NewHandler(manager, nil, logger)
+		manager = session.NewManager(store, logger, nil, nil)
+		handler = server.NewHandler(manager, nil, logger, nil)
 	})
 
 	// --- Cancel Endpoint ---

@@ -31,6 +31,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
@@ -51,16 +52,19 @@ type Handler struct {
 	sessions     *session.Manager
 	investigator InvestigationRunner
 	logger       *slog.Logger
+	metrics      *metrics.Metrics
 }
 
 var _ agentclient.Handler = (*Handler)(nil)
 
 // NewHandler creates a Kubernaut Agent ogen handler.
-func NewHandler(sessions *session.Manager, inv InvestigationRunner, logger *slog.Logger) *Handler {
+// metrics may be nil (all metric calls are nil-safe per OPS-1).
+func NewHandler(sessions *session.Manager, inv InvestigationRunner, logger *slog.Logger, m *metrics.Metrics) *Handler {
 	return &Handler{
 		sessions:     sessions,
 		investigator: inv,
 		logger:       logger,
+		metrics:      m,
 	}
 }
 
@@ -479,6 +483,7 @@ func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 func (h *Handler) getAuthorizedSession(ctx context.Context, sessionID, endpoint string) (*session.Session, error) {
 	sess, err := h.sessions.GetSession(sessionID)
 	if err != nil {
+		h.metrics.RecordAuthzDenied("session_not_found")
 		return nil, err
 	}
 
@@ -489,6 +494,7 @@ func (h *Handler) getAuthorizedSession(ctx context.Context, sessionID, endpoint 
 
 	owner := sess.Metadata["created_by"]
 	if owner != "" && subtle.ConstantTimeCompare([]byte(owner), []byte(requestUser)) != 1 {
+		h.metrics.RecordAuthzDenied("owner_mismatch")
 		h.sessions.EmitAccessDenied(ctx, sessionID, endpoint, requestUser)
 		return nil, session.ErrSessionNotFound
 	}

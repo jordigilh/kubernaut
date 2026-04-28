@@ -75,24 +75,24 @@ func newTestHarness(opts ...harnessOption) *testHarness {
 
 	store := session.NewStore(30 * time.Minute)
 	auditRec := &syncAuditRecorder{}
-	mgr := session.NewManager(store, slog.Default(), auditRec)
+	mgr := session.NewManager(store, slog.Default(), auditRec, nil)
 
 	inv := cfg.investigator
 	if inv == nil {
 		inv = &blockingInvestigator{}
 	}
 
-	handler := kaserver.NewHandler(mgr, inv, slog.Default())
+	handler := kaserver.NewHandler(mgr, inv, slog.Default(), nil)
 	ogenSrv, _ := agentclient.NewServer(handler)
 
 	r := chi.NewRouter()
 
 	var rl *kaserver.RateLimiter
 	if cfg.rateLimitCfg != nil {
-		rl = kaserver.NewRateLimiter(*cfg.rateLimitCfg)
+		rl = kaserver.NewRateLimiter(*cfg.rateLimitCfg, nil)
 	} else {
 		defaultCfg := kaserver.DefaultRateLimitConfig()
-		rl = kaserver.NewRateLimiter(defaultCfg)
+		rl = kaserver.NewRateLimiter(defaultCfg, nil)
 	}
 	r.Use(rl.Middleware)
 

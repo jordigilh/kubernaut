@@ -44,8 +44,8 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
 		logger = slog.Default()
-		manager = session.NewManager(store, logger, nil)
-		handler = server.NewHandler(manager, nil, logger)
+		manager = session.NewManager(store, logger, nil, nil)
+		handler = server.NewHandler(manager, nil, logger, nil)
 	})
 
 	Describe("UT-KA-433-HTTP-001: Error response has RFC 7807 fields (GAP-004)", func() {
@@ -545,9 +545,9 @@ var _ = Describe("Handler metadata wiring — BR-AUDIT-070", func() {
 		It("should store signal_name and severity from the request into session metadata", func() {
 			store := session.NewStore(5 * time.Minute)
 			logger := slog.Default()
-			mgr := session.NewManager(store, logger, nil)
+			mgr := session.NewManager(store, logger, nil, nil)
 			inv := &immediateInvestigator{result: &katypes.InvestigationResult{RCASummary: "test"}}
-			h := server.NewHandler(mgr, inv, logger)
+			h := server.NewHandler(mgr, inv, logger, nil)
 
 			req := &agentclient.IncidentRequest{
 				IncidentID:        "inc-d1",

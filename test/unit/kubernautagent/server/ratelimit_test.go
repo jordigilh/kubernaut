@@ -37,7 +37,7 @@ var _ = Describe("Rate Limiter — #823 Hardening", func() {
 				CleanupInterval:   time.Hour,
 				MaxAge:            time.Hour,
 			}
-			rl := kaserver.NewRateLimiter(cfg)
+			rl := kaserver.NewRateLimiter(cfg, nil)
 			defer rl.Stop()
 
 			handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +62,7 @@ var _ = Describe("Rate Limiter — #823 Hardening", func() {
 				CleanupInterval:   time.Hour,
 				MaxAge:            time.Hour,
 			}
-			rl := kaserver.NewRateLimiter(cfg)
+			rl := kaserver.NewRateLimiter(cfg, nil)
 			defer rl.Stop()
 
 			handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +93,7 @@ var _ = Describe("Rate Limiter — #823 Hardening", func() {
 				CleanupInterval:   time.Hour,
 				MaxAge:            time.Hour,
 			}
-			rl := kaserver.NewRateLimiter(cfg)
+			rl := kaserver.NewRateLimiter(cfg, nil)
 			defer rl.Stop()
 
 			handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +128,7 @@ var _ = Describe("Rate Limiter — #823 Hardening", func() {
 				CleanupInterval:   time.Hour,
 				MaxAge:            time.Hour,
 			}
-			rl := kaserver.NewRateLimiter(cfg)
+			rl := kaserver.NewRateLimiter(cfg, nil)
 			defer rl.Stop()
 
 			handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

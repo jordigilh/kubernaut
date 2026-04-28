@@ -38,7 +38,7 @@ var _ = Describe("Kubernaut Agent Session Manager Cancellation — #823 PR3", fu
 
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
-		manager = session.NewManager(store, slog.Default(), audit.NopAuditStore{})
+		manager = session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
 	})
 
 	Describe("IT-KA-823-C01: Cancelled session stores partial result for snapshot", func() {

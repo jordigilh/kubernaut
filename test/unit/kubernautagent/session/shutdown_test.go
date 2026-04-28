@@ -33,7 +33,7 @@ var _ = Describe("Manager Shutdown — #823 Hardening", func() {
 	Describe("UT-KA-823-SD01: Shutdown cancels running investigations", func() {
 		It("transitions running sessions to cancelled and fires cancel func", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{})
+			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
 
 			cancelled := make(chan struct{})
 			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
@@ -65,7 +65,7 @@ var _ = Describe("Manager Shutdown — #823 Hardening", func() {
 	Describe("UT-KA-823-SD02: Shutdown is idempotent", func() {
 		It("can be called multiple times without panic", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{})
+			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
 
 			Expect(func() {
 				mgr.Shutdown()
@@ -77,7 +77,7 @@ var _ = Describe("Manager Shutdown — #823 Hardening", func() {
 	Describe("UT-KA-823-SD03: Shutdown skips already-terminal sessions", func() {
 		It("does not affect completed/failed sessions", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{})
+			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
 
 			done := make(chan string, 1)
 			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {

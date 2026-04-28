@@ -33,7 +33,7 @@ var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
 	Describe("IT-KA-823-S04: Lazy event sink activated by Subscribe", func() {
 		It("investigation function receives non-nil event sink after Subscribe", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{})
+			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
 
 			subscribed := make(chan struct{})
 			sinkReceived := make(chan bool, 1)
@@ -60,7 +60,7 @@ var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
 	Describe("IT-KA-823-S02: Investigation completes — event channel closed", func() {
 		It("subscriber channel is closed when investigation finishes", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{})
+			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
 
 			proceed := make(chan struct{})
 			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
@@ -85,7 +85,7 @@ var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
 	Describe("IT-KA-823-S01: Full event flow — events arrive from investigation via event sink", func() {
 		It("events emitted by investigation function are received by subscriber", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{})
+			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
 
 			subscribed := make(chan struct{})
 			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {

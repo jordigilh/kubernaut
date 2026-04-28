@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
 )
 
@@ -52,20 +53,23 @@ type ipLimiter struct {
 
 // RateLimiter tracks per-IP token-bucket limiters.
 type RateLimiter struct {
-	mu       sync.Mutex
-	limiters map[string]*ipLimiter
-	cfg      RateLimitConfig
-	stopOnce sync.Once
-	stopCh   chan struct{}
+	mu              sync.Mutex
+	limiters        map[string]*ipLimiter
+	cfg             RateLimitConfig
+	stopOnce        sync.Once
+	stopCh          chan struct{}
+	rateLimitedCounter prometheus.Counter
 }
 
 // NewRateLimiter creates a per-IP rate limiter and starts a background
 // goroutine to evict stale entries.
-func NewRateLimiter(cfg RateLimitConfig) *RateLimiter {
+// rateLimitedCounter may be nil (no metrics emitted).
+func NewRateLimiter(cfg RateLimitConfig, rateLimitedCounter prometheus.Counter) *RateLimiter {
 	rl := &RateLimiter{
-		limiters: make(map[string]*ipLimiter),
-		cfg:      cfg,
-		stopCh:   make(chan struct{}),
+		limiters:           make(map[string]*ipLimiter),
+		cfg:                cfg,
+		stopCh:             make(chan struct{}),
+		rateLimitedCounter: rateLimitedCounter,
 	}
 	go rl.cleanup()
 	return rl
@@ -117,6 +121,9 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := extractIP(r)
 		if !rl.getLimiter(ip).Allow() {
+			if rl.rateLimitedCounter != nil {
+				rl.rateLimitedCounter.Inc()
+			}
 			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
 			return
 		}
