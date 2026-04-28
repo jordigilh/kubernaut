@@ -286,7 +286,7 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 
 			By("User B attempts to read session status — expects 404 (authz denial)")
 			statusReq, err := http.NewRequestWithContext(ctx, "GET",
-				fmt.Sprintf("%s/api/v1/incident/session/%s/status", kaURL, sessionID), nil)
+				fmt.Sprintf("%s/api/v1/incident/session/%s", kaURL, sessionID), nil)
 			Expect(err).ToNot(HaveOccurred())
 			statusResp, err := authHTTPClientB.Do(statusReq)
 			Expect(err).ToNot(HaveOccurred())
