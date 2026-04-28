@@ -120,6 +120,39 @@ var _ = Describe("Rate Limiter — #823 Hardening", func() {
 		})
 	})
 
+	Describe("UT-KA-823-RL05: 429 response includes Retry-After header", func() {
+		It("sets Retry-After: 1 on rate-limited responses", func() {
+			cfg := kaserver.RateLimitConfig{
+				RequestsPerSecond: 1,
+				Burst:             1,
+				CleanupInterval:   time.Hour,
+				MaxAge:            time.Hour,
+			}
+			rl := kaserver.NewRateLimiter(cfg, nil)
+			defer rl.Stop()
+
+			handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+
+			req1 := httptest.NewRequest("GET", "/", nil)
+			req1.RemoteAddr = "10.0.0.50:12345"
+			rec1 := httptest.NewRecorder()
+			handler.ServeHTTP(rec1, req1)
+			Expect(rec1.Code).To(Equal(http.StatusOK))
+			Expect(rec1.Header().Get("Retry-After")).To(BeEmpty(),
+				"successful requests must not have Retry-After")
+
+			req2 := httptest.NewRequest("GET", "/", nil)
+			req2.RemoteAddr = "10.0.0.50:12345"
+			rec2 := httptest.NewRecorder()
+			handler.ServeHTTP(rec2, req2)
+			Expect(rec2.Code).To(Equal(http.StatusTooManyRequests))
+			Expect(rec2.Header().Get("Retry-After")).To(Equal("1"),
+				"429 responses must include Retry-After header (RFC 6585)")
+		})
+	})
+
 	Describe("UT-KA-823-RL04: X-Forwarded-For is used for IP extraction", func() {
 		It("limits based on X-Forwarded-For when present", func() {
 			cfg := kaserver.RateLimitConfig{
