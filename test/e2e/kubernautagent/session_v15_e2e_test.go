@@ -317,6 +317,17 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 			_, _ = io.ReadAll(streamResp.Body)
 			Expect(streamResp.StatusCode).To(Equal(http.StatusNotFound),
 				"cross-user session stream should return 404")
+
+			By("User B attempts to snapshot session — expects 404")
+			snapReq, err := http.NewRequestWithContext(ctx, "GET",
+				fmt.Sprintf("%s/api/v1/incident/session/%s/snapshot", kaURL, sessionID), nil)
+			Expect(err).ToNot(HaveOccurred())
+			snapResp, err := authHTTPClientB.Do(snapReq)
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = snapResp.Body.Close() }()
+			_, _ = io.ReadAll(snapResp.Body)
+			Expect(snapResp.StatusCode).To(Equal(http.StatusNotFound),
+				"cross-user session snapshot should return 404")
 		})
 	})
 })
