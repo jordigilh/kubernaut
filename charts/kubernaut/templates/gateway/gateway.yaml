@@ -9,6 +9,8 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   config.yaml: |
+    logging:
+      level: {{ .Values.gateway.logging.level | default "INFO" | quote }}
     server:
       listenAddr: ":8080"
       healthAddr: ":8081"

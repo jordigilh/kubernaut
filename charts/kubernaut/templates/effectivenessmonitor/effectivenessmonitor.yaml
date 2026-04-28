@@ -10,6 +10,8 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   effectivenessmonitor.yaml: |
+    logging:
+      level: {{ .Values.effectivenessmonitor.logging.level | default "INFO" | quote }}
     assessment:
       stabilizationWindow: {{ .Values.effectivenessmonitor.config.assessment.stabilizationWindow | default "30s" }}
       validityWindow: {{ .Values.effectivenessmonitor.config.assessment.validityWindow | default "300s" }}

@@ -149,6 +149,30 @@ func NewLogger(opts Options) logr.Logger {
 	return logger
 }
 
+// NewLoggerWithAtomicLevel creates a logr.Logger whose level is controlled by
+// the provided zap.AtomicLevel. The caller retains the AtomicLevel reference
+// and can mutate it at runtime for hot-reload (e.g., via FileWatcher).
+//
+// Issue #875: Config-file-only log level with hot-reload.
+//
+// Example:
+//
+//	atomicLevel := cfg.Logging.NewAtomicLevel()
+//	logger := log.NewLoggerWithAtomicLevel(log.Options{ServiceName: "gateway"}, atomicLevel)
+//	defer log.Sync(logger)
+//	// Later, on hot-reload:
+//	atomicLevel.SetLevel(zapcore.DebugLevel)
+func NewLoggerWithAtomicLevel(opts Options, level zap.AtomicLevel) logr.Logger {
+	zapLogger := newZapLoggerWithLevel(opts, level)
+	logger := zapr.NewLogger(zapLogger)
+
+	if opts.ServiceName != "" {
+		logger = logger.WithName(opts.ServiceName)
+	}
+
+	return logger
+}
+
 // NewLoggerFromEnvironment creates a logger configured from environment variables.
 //
 // Environment variables:
@@ -223,6 +247,22 @@ func GetZapLogger(logger logr.Logger) *zap.Logger {
 
 // newZapLogger creates the underlying zap logger with the specified options.
 func newZapLogger(opts Options) *zap.Logger {
+	// Map Options.Level to a zap.AtomicLevel
+	var level zap.AtomicLevel
+	switch opts.Level {
+	case 0:
+		level = zap.NewAtomicLevelAt(zap.InfoLevel)
+	case 1:
+		level = zap.NewAtomicLevelAt(zap.DebugLevel)
+	default:
+		level = zap.NewAtomicLevelAt(zap.DebugLevel)
+	}
+	return newZapLoggerWithLevel(opts, level)
+}
+
+// newZapLoggerWithLevel creates the underlying zap logger with an externally
+// supplied AtomicLevel. Shared by both NewLogger and NewLoggerWithAtomicLevel.
+func newZapLoggerWithLevel(opts Options, level zap.AtomicLevel) *zap.Logger {
 	var config zap.Config
 
 	if opts.Development {
@@ -232,20 +272,7 @@ func newZapLogger(opts Options) *zap.Logger {
 		config = zap.NewProductionConfig()
 	}
 
-	// Set log level based on verbosity
-	// logr uses positive V levels, zap uses negative levels
-	// V(0) = INFO = zap.InfoLevel
-	// V(1) = DEBUG = zap.DebugLevel
-	switch opts.Level {
-	case 0:
-		config.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
-	case 1:
-		config.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
-	default:
-		// V(2+) = TRACE = zap.DebugLevel (zap doesn't have TRACE)
-		config.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
-	}
-
+	config.Level = level
 	config.DisableCaller = opts.DisableCaller
 	config.DisableStacktrace = opts.DisableStacktrace
 
@@ -255,7 +282,6 @@ func newZapLogger(opts Options) *zap.Logger {
 
 	logger, err := config.Build()
 	if err != nil {
-		// Fallback to no-op logger if configuration fails
 		return zap.NewNop()
 	}
 

@@ -18,12 +18,12 @@ package config
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	pkgconfig "github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"gopkg.in/yaml.v3"
@@ -38,10 +38,10 @@ type Config struct {
 
 // RuntimeConfig holds operational infrastructure settings.
 type RuntimeConfig struct {
-	Logging LoggingConfig `yaml:"logging"`
-	Server  ServerConfig  `yaml:"server"`
-	Session SessionConfig `yaml:"session"`
-	Audit   AuditConfig   `yaml:"audit"`
+	Logging internalconfig.LoggingConfig `yaml:"logging"`
+	Server  ServerConfig                 `yaml:"server"`
+	Session SessionConfig                `yaml:"session"`
+	Audit   AuditConfig                  `yaml:"audit"`
 }
 
 // AIConfig holds LLM, investigation behavior, and safety guardrails.
@@ -65,26 +65,6 @@ type IntegrationsConfig struct {
 	DataStorage DataStorageConfig `yaml:"dataStorage"`
 	Tools       ToolsConfig       `yaml:"tools"`
 	MCP         MCPConfig         `yaml:"mcp"`
-}
-
-// LoggingConfig holds log-level configuration (#875).
-type LoggingConfig struct {
-	Level string `yaml:"level"` // DEBUG, INFO, WARN, ERROR
-}
-
-// SlogLevel converts the configured level string to an slog.Level.
-// Defaults to slog.LevelInfo for empty or unrecognised values.
-func (l LoggingConfig) SlogLevel() slog.Level {
-	switch strings.ToUpper(l.Level) {
-	case "DEBUG":
-		return slog.LevelDebug
-	case "WARN":
-		return slog.LevelWarn
-	case "ERROR":
-		return slog.LevelError
-	default:
-		return slog.LevelInfo
-	}
 }
 
 // LLMConfig holds static LLM provider settings that require a pod restart to change.
@@ -337,11 +317,8 @@ func (r *LLMRuntimeConfig) Validate(provider string) error {
 // Validate checks required fields and value constraints for the static config.
 // Runtime LLM fields are validated separately via LLMRuntimeConfig.Validate().
 func (c *Config) Validate() error {
-	if c.Runtime.Logging.Level != "" {
-		validLevels := map[string]bool{"DEBUG": true, "INFO": true, "WARN": true, "ERROR": true}
-		if !validLevels[strings.ToUpper(c.Runtime.Logging.Level)] {
-			return fmt.Errorf("invalid log level: %s (must be DEBUG, INFO, WARN, or ERROR)", c.Runtime.Logging.Level)
-		}
+	if err := c.Runtime.Logging.Validate(); err != nil {
+		return err
 	}
 	if c.AI.Investigation.MaxTurns <= 0 {
 		return fmt.Errorf("ai.investigation.maxTurns must be positive, got %d", c.AI.Investigation.MaxTurns)
@@ -369,7 +346,7 @@ func (c *Config) Validate() error {
 func DefaultConfig() *Config {
 	return &Config{
 		Runtime: RuntimeConfig{
-			Logging: LoggingConfig{Level: "INFO"},
+			Logging: internalconfig.DefaultLoggingConfig(),
 			Server:  ServerConfig{Address: "0.0.0.0", Port: 8080, HealthAddr: ":8081", MetricsAddr: ":9090"},
 			Session: SessionConfig{TTL: 30 * time.Minute},
 			Audit:   AuditConfig{Enabled: true},

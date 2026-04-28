@@ -46,6 +46,9 @@ type Config struct {
 	// External service configuration
 	External ExternalConfig `yaml:"external"`
 
+	// Logging configuration (Issue #875: config-file-only log level with hot-reload)
+	Logging sharedconfig.LoggingConfig `yaml:"logging"`
+
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
@@ -124,6 +127,7 @@ func DefaultConfig() *Config {
 			PrometheusLookback:  30 * time.Minute,
 			ScrapeInterval:      60 * time.Second,
 		},
+		Logging: sharedconfig.DefaultLoggingConfig(),
 	}
 }
 
@@ -155,6 +159,11 @@ func LoadFromFile(path string) (*Config, error) {
 
 // Validate checks EM configuration for common issues.
 func (c *Config) Validate() error {
+	// Issue #875: Logging validation
+	if err := c.Logging.Validate(); err != nil {
+		return err
+	}
+
 	// Validate assessment config
 	if c.Assessment.StabilizationWindow < 30*time.Second {
 		return fmt.Errorf("assessment.stabilizationWindow must be at least 30s, got %v", c.Assessment.StabilizationWindow)
