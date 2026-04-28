@@ -157,10 +157,12 @@ var _ = SynchronizedBeforeSuite(
 			Fail(fmt.Sprintf("Failed to get ServiceAccount token: %v", err))
 		}
 
+		saTransport := testauth.NewRetryOn429Transport(testauth.NewServiceAccountTransport(saToken))
+
 		kaClient, err = agentclient.NewClient(
 			kaURL,
 			agentclient.WithClient(&http.Client{
-				Transport: testauth.NewServiceAccountTransport(saToken),
+				Transport: saTransport,
 				Timeout:   60 * time.Second,
 			}),
 		)
@@ -168,12 +170,12 @@ var _ = SynchronizedBeforeSuite(
 
 		sessionClient, err = agentclient.NewKubernautAgentClientWithTransport(
 			agentclient.Config{BaseURL: kaURL},
-			testauth.NewServiceAccountTransport(saToken),
+			saTransport,
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create session client")
 
 		authHTTPClient = &http.Client{
-			Transport: testauth.NewServiceAccountTransport(saToken),
+			Transport: saTransport,
 			Timeout:   30 * time.Second,
 		}
 
@@ -191,8 +193,9 @@ var _ = SynchronizedBeforeSuite(
 		saTokenB, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, saNameB, kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to get second ServiceAccount token")
 
+		saTransportB := testauth.NewRetryOn429Transport(testauth.NewServiceAccountTransport(saTokenB))
 		authHTTPClientB = &http.Client{
-			Transport: testauth.NewServiceAccountTransport(saTokenB),
+			Transport: saTransportB,
 			Timeout:   30 * time.Second,
 		}
 
@@ -221,10 +224,12 @@ var _ = SynchronizedBeforeSuite(
 		saToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "kubernaut-agent-e2e-sa", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to get ServiceAccount token")
 
+		saTransport := testauth.NewRetryOn429Transport(testauth.NewServiceAccountTransport(saToken))
+
 		kaClient, err = agentclient.NewClient(
 			kaURL,
 			agentclient.WithClient(&http.Client{
-				Transport: testauth.NewServiceAccountTransport(saToken),
+				Transport: saTransport,
 				Timeout:   60 * time.Second,
 			}),
 		)
@@ -232,19 +237,20 @@ var _ = SynchronizedBeforeSuite(
 
 		sessionClient, err = agentclient.NewKubernautAgentClientWithTransport(
 			agentclient.Config{BaseURL: kaURL},
-			testauth.NewServiceAccountTransport(saToken),
+			saTransport,
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create session client")
 
 		authHTTPClient = &http.Client{
-			Transport: testauth.NewServiceAccountTransport(saToken),
+			Transport: saTransport,
 			Timeout:   30 * time.Second,
 		}
 
 		saTokenB, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "kubernaut-agent-e2e-sa-2", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to get second ServiceAccount token")
+		saTransportB := testauth.NewRetryOn429Transport(testauth.NewServiceAccountTransport(saTokenB))
 		authHTTPClientB = &http.Client{
-			Transport: testauth.NewServiceAccountTransport(saTokenB),
+			Transport: saTransportB,
 			Timeout:   30 * time.Second,
 		}
 	},
