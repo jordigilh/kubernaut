@@ -19,11 +19,13 @@ package server_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -98,15 +100,21 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			defer h.Close()
 
 			codes := make([]int, 3)
+			var lastResp *http.Response
 			for i := 0; i < 3; i++ {
 				resp, err := http.Get(h.Server.URL + "/api/v1/incident/session/nonexistent")
 				Expect(err).NotTo(HaveOccurred())
 				codes[i] = resp.StatusCode
+				if i == 2 {
+					lastResp = resp
+				}
 				resp.Body.Close()
 			}
 
 			Expect(codes[2]).To(Equal(http.StatusTooManyRequests),
 				"third request should be rate-limited (429)")
+			Expect(lastResp.Header.Get("Retry-After")).To(Equal("1"),
+				"429 response must include Retry-After header (RFC 6585)")
 		})
 	})
 
@@ -575,6 +583,102 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 
 			Expect(resp.StatusCode).To(Equal(http.StatusNotFound),
 				"stream on terminal session must return 404 per ErrSessionTerminal mapping")
+		})
+	})
+
+	// ---------------------------------------------------------------
+	// IT-WIRE-16: Concurrent sessions with independent SSE streams
+	// ---------------------------------------------------------------
+	Describe("IT-WIRE-16: Concurrent sessions each deliver independent SSE streams", func() {
+		It("3 parallel investigations each stream events to their own SSE client", func() {
+			h := newTestHarness(withRateLimit(kaserver.RateLimitConfig{
+				RequestsPerSecond: 100,
+				Burst:             100,
+				CleanupInterval:   time.Hour,
+				MaxAge:            time.Hour,
+			}))
+			defer h.Close()
+
+			const numSessions = 3
+			proceeds := make([]chan struct{}, numSessions)
+			ids := make([]string, numSessions)
+
+			for i := 0; i < numSessions; i++ {
+				proceeds[i] = make(chan struct{})
+				idx := i
+				ids[i] = startInvestigationWithFunc(h, func(ctx context.Context) (interface{}, error) {
+					<-proceeds[idx]
+					sink := session.EventSinkFromContext(ctx)
+					if sink != nil {
+						sink <- session.InvestigationEvent{
+							Type:  session.EventTypeReasoningDelta,
+							Turn:  idx,
+							Phase: fmt.Sprintf("session-%d", idx),
+						}
+					}
+					return map[string]string{"rca_summary": fmt.Sprintf("result-%d", idx)}, nil
+				})
+			}
+
+			for _, id := range ids {
+				waitForStatus(h, id, session.StatusRunning)
+			}
+
+			type sseResult struct {
+				body string
+				err  error
+			}
+			results := make([]chan sseResult, numSessions)
+			var wg sync.WaitGroup
+
+			for i := 0; i < numSessions; i++ {
+				results[i] = make(chan sseResult, 1)
+				wg.Add(1)
+				go func(idx int) {
+					defer wg.Done()
+					resp, err := http.Get(h.Server.URL + "/api/v1/incident/session/" + ids[idx] + "/stream")
+					if err != nil {
+						results[idx] <- sseResult{"", err}
+						return
+					}
+					defer resp.Body.Close()
+					data, readErr := io.ReadAll(resp.Body)
+					results[idx] <- sseResult{string(data), readErr}
+				}(i)
+			}
+
+			Eventually(func() int {
+				return len(h.AuditStore.EventsOfType(audit.EventTypeSessionObserved))
+			}, 5*time.Second).Should(BeNumerically(">=", numSessions),
+				"all SSE clients must connect before investigations proceed")
+
+			for _, p := range proceeds {
+				close(p)
+			}
+
+			for i := 0; i < numSessions; i++ {
+				var res sseResult
+				Eventually(func() bool {
+					select {
+					case res = <-results[i]:
+						return true
+					default:
+						return false
+					}
+				}, 10*time.Second).Should(BeTrue(),
+					fmt.Sprintf("SSE stream for session %d should complete", i))
+
+				Expect(res.err).NotTo(HaveOccurred(),
+					fmt.Sprintf("SSE stream %d should not error", i))
+				Expect(res.body).To(ContainSubstring("event: reasoning_delta"),
+					fmt.Sprintf("session %d must receive reasoning_delta event", i))
+				Expect(res.body).To(ContainSubstring(fmt.Sprintf("session-%d", i)),
+					fmt.Sprintf("session %d must receive its own phase identifier", i))
+				Expect(res.body).To(ContainSubstring("event: complete"),
+					fmt.Sprintf("session %d must receive complete event", i))
+			}
+
+			wg.Wait()
 		})
 	})
 })

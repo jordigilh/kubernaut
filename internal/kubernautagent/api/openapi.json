@@ -587,7 +587,7 @@
           "Session Control"
         ],
         "summary": "Stream Investigation Events",
-        "description": "Subscribe to live investigation events via Server-Sent Events (SSE).\n\nBusiness Requirement: BR-SESSION-007 (Investigation event observability)\n\nPR2: Returns 501 Not Implemented (stub).\nPR4: Full SSE implementation with turn-level and token-level events.\n\nSSE format: id: {seq}\\nevent: {type}\\ndata: {json}\\n\\n",
+        "description": "Subscribe to live investigation events via Server-Sent Events (SSE).\n\nBusiness Requirement: BR-SESSION-007 (Investigation event observability)\n\nStreams turn-level and token-level events in real time.\nReturns 404 if session not found or already in terminal state (use the snapshot endpoint instead).\n\nSSE format: id: {seq}\\nevent: {type}\\ndata: {json}\\n\\n",
         "operationId": "session_stream_api_v1_incident_session__session_id__stream_get",
         "parameters": [
           {

@@ -1132,8 +1132,8 @@ func (s *Server) handleSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRe
 //
 // Subscribe to live investigation events via Server-Sent Events (SSE).
 // Business Requirement: BR-SESSION-007 (Investigation event observability)
-// PR2: Returns 501 Not Implemented (stub).
-// PR4: Full SSE implementation with turn-level and token-level events.
+// Streams turn-level and token-level events in real time.
+// Returns 404 if session not found or already in terminal state (use the snapshot endpoint instead).
 // SSE format: id: {seq}\nevent: {type}\ndata: {json}\n\n.
 //
 // GET /api/v1/incident/session/{session_id}/stream

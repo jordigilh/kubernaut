@@ -124,6 +124,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			if rl.rateLimitedCounter != nil {
 				rl.rateLimitedCounter.Inc()
 			}
+			w.Header().Set("Retry-After", "1")
 			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
 			return
 		}
