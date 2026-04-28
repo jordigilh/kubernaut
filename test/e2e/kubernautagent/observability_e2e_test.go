@@ -76,7 +76,7 @@ var _ = Describe("E2E-KA-OBS: Observability / Prometheus Metrics (BR-KA-OBSERVAB
 
 			By("Hitting a non-existent session to trigger authz_denied metric")
 			req, err := http.NewRequestWithContext(ctx, "GET",
-				kaURL+"/api/v1/incident/session/non-existent-obs-001/status", nil)
+				kaURL+"/api/v1/incident/session/non-existent-obs-001", nil)
 			Expect(err).NotTo(HaveOccurred())
 			resp, err := authHTTPClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
