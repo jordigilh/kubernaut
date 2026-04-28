@@ -531,6 +531,52 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 				"stream must still terminate with complete event after error")
 		})
 	})
+
+	// ---------------------------------------------------------------
+	// IT-WIRE-14: POST /cancel on terminal session returns 409
+	// ---------------------------------------------------------------
+	Describe("IT-WIRE-14: Cancel on completed session returns 409 (ErrSessionTerminal)", func() {
+		It("POST /cancel returns 409 after investigation completes", func() {
+			h := newTestHarness()
+			defer h.Close()
+
+			id := startInvestigationWithFunc(h, func(_ context.Context) (interface{}, error) {
+				return &katypes.InvestigationResult{RCASummary: "done"}, nil
+			})
+			waitForStatus(h, id, session.StatusCompleted)
+
+			resp, err := http.Post(
+				h.Server.URL+"/api/v1/incident/session/"+id+"/cancel",
+				"application/json", nil)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusConflict),
+				"cancel on terminal session must return 409 per ErrSessionTerminal mapping")
+		})
+	})
+
+	// ---------------------------------------------------------------
+	// IT-WIRE-15: GET /stream on terminal session returns 404
+	// ---------------------------------------------------------------
+	Describe("IT-WIRE-15: Stream on completed session returns 404 (ErrSessionTerminal)", func() {
+		It("GET /stream returns 404 after investigation completes", func() {
+			h := newTestHarness()
+			defer h.Close()
+
+			id := startInvestigationWithFunc(h, func(_ context.Context) (interface{}, error) {
+				return &katypes.InvestigationResult{RCASummary: "done"}, nil
+			})
+			waitForStatus(h, id, session.StatusCompleted)
+
+			resp, err := http.Get(h.Server.URL + "/api/v1/incident/session/" + id + "/stream")
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusNotFound),
+				"stream on terminal session must return 404 per ErrSessionTerminal mapping")
+		})
+	})
 })
 
 // --- Helpers ---
@@ -798,6 +844,33 @@ var _ = Describe("Metrics Wiring Integration Tests — BR-KA-OBSERVABILITY-001",
 			})
 			Expect(v).To(BeNumerically(">=", 1))
 		})
+
+		It("records authz_denied_total with owner_mismatch reason on cross-user access", func() {
+			h := newMetricsTestHarness(&blockingInvestigator{}, "user-b")
+			defer h.Close()
+
+			ctx := context.WithValue(context.Background(), auth.UserContextKey, "user-a")
+			id, err := h.Manager.StartInvestigation(ctx, func(ctx context.Context) (interface{}, error) {
+				<-ctx.Done()
+				return &katypes.InvestigationResult{RCASummary: "cancelled"}, nil
+			}, map[string]string{"remediation_id": "rr-obs-004b"})
+			Expect(err).NotTo(HaveOccurred())
+
+			resp, err := http.Get(h.Server.URL + "/api/v1/incident/session/" + id)
+			Expect(err).NotTo(HaveOccurred())
+			resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusNotFound),
+				"cross-user access should return 404")
+
+			v := gatherCounterFromReg(h.Registry, kametrics.MetricNameAuthzDeniedTotal, map[string]string{
+				"reason": "owner_mismatch",
+			})
+			Expect(v).To(BeNumerically(">=", 1),
+				"owner_mismatch reason should be recorded when a different user accesses the session")
+
+			h.Manager.CancelInvestigation(id)
+		})
 	})
 
 	Describe("IT-KA-OBS-005: Rate limiter increments counter when request rejected", func() {
@@ -820,6 +893,38 @@ var _ = Describe("Metrics Wiring Integration Tests — BR-KA-OBSERVABILITY-001",
 			if resp2.StatusCode == http.StatusTooManyRequests {
 				Expect(v).To(BeNumerically(">=", 1))
 			}
+		})
+	})
+
+	Describe("IT-KA-OBS-006: InstrumentedAuditStore increments audit_events_emitted_total", func() {
+		It("records metric after session lifecycle generates audit events", func() {
+			reg := prometheus.NewRegistry()
+			m := kametrics.NewMetricsWithRegistry(reg)
+
+			instrumentedStore := audit.NewInstrumentedAuditStore(
+				audit.NopAuditStore{}, m.RecordAuditEventEmitted,
+			)
+
+			store := session.NewStore(5 * time.Minute)
+			mgr := session.NewManager(store, slog.Default(), instrumentedStore, m)
+
+			id, err := mgr.StartInvestigation(context.Background(),
+				func(_ context.Context) (interface{}, error) {
+					return &katypes.InvestigationResult{RCASummary: "done"}, nil
+				}, map[string]string{"remediation_id": "rr-obs-006"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() string {
+				s, _ := mgr.GetSession(id)
+				if s == nil {
+					return ""
+				}
+				return string(s.Status)
+			}, 5*time.Second).Should(Equal(string(session.StatusCompleted)))
+
+			v := gatherCounterFromReg(reg, kametrics.MetricNameAuditEventsEmittedTotal, nil)
+			Expect(v).To(BeNumerically(">=", 1),
+				"audit_events_emitted_total should increment from session lifecycle audit events")
 		})
 	})
 })

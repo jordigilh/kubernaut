@@ -51,7 +51,10 @@ func (s *stubTool) Parameters() json.RawMessage                                 
 func (s *stubTool) Execute(_ context.Context, _ json.RawMessage) (string, error) { return "", nil }
 
 // mockLLMClient implements llm.Client for testing.
+// A mutex guards shared mutable state because Observer.SubmitAsync
+// calls EvaluateStep (and therefore Chat) from concurrent goroutines.
 type mockLLMClient struct {
+	mu        sync.Mutex
 	responses []llm.ChatResponse
 	errs      []error
 	call      int
@@ -64,6 +67,10 @@ func (m *mockLLMClient) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatRe
 	for _, msg := range req.Messages {
 		b.WriteString(msg.Content)
 	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	m.capturedRequestContents = append(m.capturedRequestContents, b.String())
 
 	if m.call < len(m.errs) && m.errs[m.call] != nil {
@@ -90,7 +97,11 @@ func (m *mockLLMClient) StreamChat(ctx context.Context, req llm.ChatRequest, cb 
 
 func (m *mockLLMClient) Close() error { return nil }
 
-func (m *mockLLMClient) chatCalls() int { return m.call }
+func (m *mockLLMClient) chatCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.call
+}
 
 // slowMockLLMClient adds a delay before responding, used to test timeout behavior.
 type slowMockLLMClient struct {
