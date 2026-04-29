@@ -48,17 +48,20 @@ This test plan validates the CRD-aware engine registration feature introduced by
 
 ### 3.1 Unit Tests
 
+All tests in `test/unit/workflowexecution/engine_discovery_test.go`.
+
 | ID | Description | BR |
 |----|-------------|-----|
-| UT-WE-868-001 | Default `TektonConfig` (nil) allows auto-discovery | BR-WORKFLOW-868 |
-| UT-WE-868-002 | `TektonEnabled()` returns false when `enabled: false` | BR-WORKFLOW-868 |
-| UT-WE-868-003 | `TektonEnabled()` returns true when `enabled: true` | BR-WORKFLOW-868 |
-| UT-WE-868-005 | `ExecutorRegistry.Get` returns error for unregistered engine | BR-WORKFLOW-868 |
-| UT-WE-868-010 | `EngineAvailability` reports available/unavailable correctly | BR-WORKFLOW-868 |
-| UT-WE-868-011 | `EngineAvailability` with zero optional engines (job only) | BR-WORKFLOW-868 |
-| UT-WE-868-012 | `engineGuidance` produces actionable message for tekton | BR-WORKFLOW-868 |
-| UT-WE-868-020 | Readiness check passes with job-only (zero optional engines) | BR-WORKFLOW-868 |
-| UT-WE-868-021 | Readiness check fails with zero engines registered | BR-WORKFLOW-868 |
+| UT-WE-868-001 | Default config has nil Tekton (auto-discovery) | BR-WORKFLOW-868 |
+| UT-WE-868-002 | `TektonEnabled()` returns true when Tekton config is nil (auto-discovery default) | BR-WORKFLOW-868 |
+| UT-WE-868-003 | `TektonEnabled()` returns true when `Tekton.Enabled` is nil (auto-discovery) | BR-WORKFLOW-868 |
+| UT-WE-868-004 | `TektonEnabled()` returns true when `enabled: true` | BR-WORKFLOW-868 |
+| UT-WE-868-005 | `TektonEnabled()` returns false when `enabled: false` | BR-WORKFLOW-868 |
+| UT-WE-868-010 | `EngineAvailability` with job-only registry reports tekton and ansible unavailable | BR-WORKFLOW-868 |
+| UT-WE-868-011 | `EngineAvailability` with all engines reports none unavailable | BR-WORKFLOW-868 |
+| UT-WE-868-012 | `EngineAvailability` with empty known set reports only registered as available | BR-WORKFLOW-868 |
+| UT-WE-868-020 | `Get` for unregistered tekton returns actionable error with guidance | BR-WORKFLOW-868 |
+| UT-WE-868-021 | `Get` for unregistered ansible returns actionable error with guidance | BR-WORKFLOW-868 |
 
 ### 3.2 E2E Coverage (Indirect)
 

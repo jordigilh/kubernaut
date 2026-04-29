@@ -78,12 +78,16 @@ All other config fields (controller settings, timeouts, DataStorage URL, routing
 
 ### 4.1 Unit Tests — Shared FileWatcher
 
+Tests use `DD-INFRA-001` naming convention in `test/unit/shared/hotreload/file_watcher_test.go`.
+
 | ID | Description | BR |
 |----|-------------|-----|
-| UT-HR-835-001 | FileWatcher invokes callback on file change | BR-PLATFORM-875 |
-| UT-HR-835-002 | FileWatcher debounces rapid changes | BR-PLATFORM-875 |
-| UT-HR-835-003 | Callback error does not crash watcher | BR-PLATFORM-875 |
-| UT-HR-835-004 | FileWatcher stops cleanly on context cancellation | BR-PLATFORM-875 |
+| DD-INFRA-001 / NewFileWatcher | FileWatcher creates with valid parameters, rejects empty path and nil callback | BR-PLATFORM-875 |
+| DD-INFRA-001 / file change detection | FileWatcher invokes callback on file write with correct content | BR-PLATFORM-875 |
+| DD-INFRA-001 / debounce | FileWatcher debounces rapid changes into single callback | BR-PLATFORM-875 |
+| DD-INFRA-001 / callback error | Callback error does not crash watcher; previous config preserved | BR-PLATFORM-875 |
+| DD-INFRA-001 / stop | FileWatcher stops cleanly on context cancellation | BR-PLATFORM-875 |
+| DD-INFRA-001 / nonexistent file | FileWatcher handles missing file gracefully | BR-PLATFORM-875 |
 
 ### 4.2 Unit Tests — LoggingConfig
 
