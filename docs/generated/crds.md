@@ -103,6 +103,7 @@ _Appears in:_
 | `totalAnalysisTime`| _integer_| TotalAnalysisTime is the total duration of the analysis in seconds|
 | `consecutiveFailures`| _integer_| ConsecutiveFailures tracks retry attempts for exponential backoff<br /> Reset to 0 on success, increment on transient failure<br />Used with for retry logic with jitter|
 | `investigationSession`| _[InvestigationSession](#investigationsession)_| Tracks the async submit/poll session with HAPI<br />InvestigationSession tracks the async HAPI session for submit/poll pattern|
+| `interactiveSession`| _[InteractiveSessionInfo](#interactivesessioninfo)_| Tracks the dynamic takeover session for MCP interactive mode <br />InteractiveSession tracks who is currently driving the investigation.<br />Populated when a user takes over via MCP; nil during autonomous mode.<br /> Every RR is takeover-capable; this is observability-only.|
 | `postRCAContext`| _[PostRCAContext](#postrcacontext)_| Runtime-computed cluster characteristics from HAPI<br />PostRCAContext holds data computed by HAPI after RCA (e.g., DetectedLabels).<br />Immutable once set — use CEL validation on the PostRCAContext type.|
 | `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions|
 
@@ -757,6 +758,25 @@ _Validation:_
 | `WorkflowExecution`||
 | `Blocked`||
 | `Deduplicated`| FailurePhaseDeduplicated indicates an RR that inherited a failure from a<br />deduplicated WorkflowExecution collision . Excluded from<br />consecutive failure counting per .|
+
+
+### InteractiveSessionInfo
+
+
+InteractiveSessionInfo tracks the dynamic takeover session for MCP interactive mode.
+ Observability-only status field showing who is driving the investigation.
+ Operators can see the current driver via kubectl.
+
+_Appears in:_
+- [AIAnalysisStatus](#aianalysisstatus)
+
+| Field| Type| Description|
+| ---| ---| ---|
+| `sessionId`| _string_| SessionID is the KA-assigned interactive session identifier|
+| `mcpSessionId`| _string_| MCPSessionID is the go-sdk MCP session identifier|
+| `actingUser`| _string_| ActingUser is the resolved identity currently driving the investigation|
+| `startedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| StartedAt is when the user took over|
+| `completedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| CompletedAt is when the user disconnected (KA resumed autonomous)|
 
 
 ### InvestigationSession

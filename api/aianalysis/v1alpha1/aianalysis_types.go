@@ -442,6 +442,16 @@ type AIAnalysisStatus struct {
 	InvestigationSession *InvestigationSession `json:"investigationSession,omitempty"`
 
 	// ========================================
+	// INTERACTIVE SESSION (DD-INTERACTIVE-002)
+	// Tracks the dynamic takeover session for MCP interactive mode (#703)
+	// ========================================
+	// InteractiveSession tracks who is currently driving the investigation.
+	// Populated when a user takes over via MCP; nil during autonomous mode.
+	// DD-INTERACTIVE-002: Every RR is takeover-capable; this is observability-only.
+	// +optional
+	InteractiveSession *InteractiveSessionInfo `json:"interactiveSession,omitempty"`
+
+	// ========================================
 	// POST-RCA CONTEXT (ADR-056)
 	// Runtime-computed cluster characteristics from HAPI
 	// ========================================
@@ -493,6 +503,27 @@ type InvestigationSession struct {
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	PollCount int32 `json:"pollCount,omitempty"`
+}
+
+// InteractiveSessionInfo tracks the dynamic takeover session for MCP interactive mode.
+// DD-INTERACTIVE-002: Observability-only status field showing who is driving the investigation.
+// BR-INTERACTIVE-007: Operators can see the current driver via kubectl.
+type InteractiveSessionInfo struct {
+	// SessionID is the KA-assigned interactive session identifier
+	// +optional
+	SessionID string `json:"sessionId,omitempty"`
+	// MCPSessionID is the go-sdk MCP session identifier
+	// +optional
+	MCPSessionID string `json:"mcpSessionId,omitempty"`
+	// ActingUser is the resolved identity currently driving the investigation
+	// +optional
+	ActingUser string `json:"actingUser,omitempty"`
+	// StartedAt is when the user took over
+	// +optional
+	StartedAt *metav1.Time `json:"startedAt,omitempty"`
+	// CompletedAt is when the user disconnected (KA resumed autonomous)
+	// +optional
+	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
 }
 
 // RootCauseAnalysis contains detailed RCA results
