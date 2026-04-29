@@ -26,10 +26,10 @@ import (
 
 var _ = Describe("Kubernaut Agent Logging Configuration — #875", func() {
 
-	Describe("UT-KA-875-001: DefaultConfig sets logging level to INFO", func() {
-		It("should default Logging.Level to INFO", func() {
+	Describe("UT-KA-875-001: DefaultConfig sets logging level to info", func() {
+		It("should default Logging.Level to info", func() {
 			cfg := config.DefaultConfig()
-			Expect(cfg.Logging.Level).To(Equal("INFO"))
+			Expect(cfg.Logging.Level).To(Equal("info"))
 		})
 	})
 
@@ -40,11 +40,11 @@ llm:
   provider: "openai"
   model: "gpt-4o"
 logging:
-  level: "DEBUG"
+  level: "debug"
 `)
 			cfg, err := config.Load(yamlData)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.Logging.Level).To(Equal("DEBUG"))
+			Expect(cfg.Logging.Level).To(Equal("debug"))
 		})
 	})
 
@@ -79,10 +79,11 @@ logging:
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cfg.Validate()).To(Succeed())
 			},
-			Entry("DEBUG", "DEBUG"),
-			Entry("INFO", "INFO"),
-			Entry("WARN", "WARN"),
-			Entry("ERROR", "ERROR"),
+			Entry("debug", "debug"),
+			Entry("info", "info"),
+			Entry("warn", "warn"),
+			Entry("error", "error"),
+			Entry("DEBUG (uppercase accepted)", "DEBUG"),
 		)
 	})
 
@@ -100,10 +101,10 @@ logging:
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cfg.Logging.ZapLevel()).To(Equal(expected))
 			},
-			Entry("DEBUG -> DebugLevel", "DEBUG", zapcore.DebugLevel),
-			Entry("INFO -> InfoLevel", "INFO", zapcore.InfoLevel),
-			Entry("WARN -> WarnLevel", "WARN", zapcore.WarnLevel),
-			Entry("ERROR -> ErrorLevel", "ERROR", zapcore.ErrorLevel),
+			Entry("debug -> DebugLevel", "debug", zapcore.DebugLevel),
+			Entry("info -> InfoLevel", "info", zapcore.InfoLevel),
+			Entry("warn -> WarnLevel", "warn", zapcore.WarnLevel),
+			Entry("error -> ErrorLevel", "error", zapcore.ErrorLevel),
 		)
 	})
 

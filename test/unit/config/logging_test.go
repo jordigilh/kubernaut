@@ -27,10 +27,10 @@ import (
 
 var _ = Describe("Shared LoggingConfig — BR-PLATFORM-875", func() {
 
-	Describe("UT-CFG-875-001: DefaultLoggingConfig returns INFO", func() {
-		It("should default to INFO", func() {
+	Describe("UT-CFG-875-001: DefaultLoggingConfig returns info", func() {
+		It("should default to info", func() {
 			cfg := config.DefaultLoggingConfig()
-			Expect(cfg.Level).To(Equal("INFO"))
+			Expect(cfg.Level).To(Equal("info"))
 		})
 	})
 
@@ -40,11 +40,11 @@ var _ = Describe("Shared LoggingConfig — BR-PLATFORM-875", func() {
 				cfg := config.LoggingConfig{Level: level}
 				Expect(cfg.ZapLevel()).To(Equal(expected))
 			},
-			Entry("DEBUG -> DebugLevel", "DEBUG", zapcore.DebugLevel),
-			Entry("INFO -> InfoLevel", "INFO", zapcore.InfoLevel),
-			Entry("WARN -> WarnLevel", "WARN", zapcore.WarnLevel),
-			Entry("ERROR -> ErrorLevel", "ERROR", zapcore.ErrorLevel),
-			Entry("debug (lowercase) -> DebugLevel", "debug", zapcore.DebugLevel),
+			Entry("debug -> DebugLevel", "debug", zapcore.DebugLevel),
+			Entry("info -> InfoLevel", "info", zapcore.InfoLevel),
+			Entry("warn -> WarnLevel", "warn", zapcore.WarnLevel),
+			Entry("error -> ErrorLevel", "error", zapcore.ErrorLevel),
+			Entry("DEBUG (uppercase) -> DebugLevel", "DEBUG", zapcore.DebugLevel),
 			Entry("empty string -> InfoLevel", "", zapcore.InfoLevel),
 			Entry("unknown -> InfoLevel", "TRACE", zapcore.InfoLevel),
 		)
@@ -57,10 +57,10 @@ var _ = Describe("Shared LoggingConfig — BR-PLATFORM-875", func() {
 				al := cfg.NewAtomicLevel()
 				Expect(al.Level()).To(Equal(expected))
 			},
-			Entry("DEBUG", "DEBUG", zapcore.DebugLevel),
-			Entry("INFO", "INFO", zapcore.InfoLevel),
-			Entry("WARN", "WARN", zapcore.WarnLevel),
-			Entry("ERROR", "ERROR", zapcore.ErrorLevel),
+			Entry("debug", "debug", zapcore.DebugLevel),
+			Entry("info", "info", zapcore.InfoLevel),
+			Entry("warn", "warn", zapcore.WarnLevel),
+			Entry("error", "error", zapcore.ErrorLevel),
 		)
 	})
 
@@ -70,10 +70,11 @@ var _ = Describe("Shared LoggingConfig — BR-PLATFORM-875", func() {
 				cfg := config.LoggingConfig{Level: level}
 				Expect(cfg.Validate()).To(Succeed())
 			},
-			Entry("DEBUG", "DEBUG"),
-			Entry("INFO", "INFO"),
-			Entry("WARN", "WARN"),
-			Entry("ERROR", "ERROR"),
+			Entry("debug", "debug"),
+			Entry("info", "info"),
+			Entry("warn", "warn"),
+			Entry("error", "error"),
+			Entry("DEBUG (uppercase accepted)", "DEBUG"),
 			Entry("empty (not yet set)", ""),
 		)
 	})
@@ -94,16 +95,16 @@ var _ = Describe("Shared LoggingConfig — BR-PLATFORM-875", func() {
 	})
 
 	Describe("UT-CFG-875-006: ParseAndSetLevel hot-reload helper", func() {
-		It("should update AtomicLevel from INFO to DEBUG", func() {
+		It("should update AtomicLevel from info to debug", func() {
 			al := zap.NewAtomicLevelAt(zapcore.InfoLevel)
-			err := config.ParseAndSetLevel(al, "DEBUG")
+			err := config.ParseAndSetLevel(al, "debug")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(al.Level()).To(Equal(zapcore.DebugLevel))
 		})
 
-		It("should update AtomicLevel from DEBUG to ERROR", func() {
+		It("should update AtomicLevel from debug to error", func() {
 			al := zap.NewAtomicLevelAt(zapcore.DebugLevel)
-			err := config.ParseAndSetLevel(al, "ERROR")
+			err := config.ParseAndSetLevel(al, "error")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(al.Level()).To(Equal(zapcore.ErrorLevel))
 		})
