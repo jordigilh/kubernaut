@@ -634,6 +634,37 @@ spec:
                 - investigation_inconclusive
                 - rca_incomplete
                 type: string
+              interactiveSession:
+                description: |-
+                  ========================================
+                  INTERACTIVE SESSION (DD-INTERACTIVE-002)
+                  Tracks the dynamic takeover session for MCP interactive mode (#703)
+                  ========================================
+                  InteractiveSession tracks who is currently driving the investigation.
+                  Populated when a user takes over via MCP; nil during autonomous mode.
+                  DD-INTERACTIVE-002: Every RR is takeover-capable; this is observability-only.
+                properties:
+                  actingUser:
+                    description: ActingUser is the resolved identity currently driving
+                      the investigation
+                    type: string
+                  completedAt:
+                    description: CompletedAt is when the user disconnected (KA resumed
+                      autonomous)
+                    format: date-time
+                    type: string
+                  mcpSessionId:
+                    description: MCPSessionID is the go-sdk MCP session identifier
+                    type: string
+                  sessionId:
+                    description: SessionID is the KA-assigned interactive session
+                      identifier
+                    type: string
+                  startedAt:
+                    description: StartedAt is when the user took over
+                    format: date-time
+                    type: string
+                type: object
               investigationId:
                 description: |-
                   ========================================
