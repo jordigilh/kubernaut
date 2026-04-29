@@ -10,7 +10,7 @@ metadata:
 data:
   remediationorchestrator.yaml: |
     logging:
-      level: {{ .Values.remediationorchestrator.logging.level | default "INFO" | quote }}
+      level: {{ .Values.remediationorchestrator.logging.level | default "info" | quote }}
     controller:
       metricsAddr: ":9090"
       healthProbeAddr: ":8081"

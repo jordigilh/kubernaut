@@ -61,7 +61,7 @@ metadata:
 data:
   config.yaml: |
     logging:
-      level: {{ .Values.notification.logging.level | default "INFO" | quote }}
+      level: {{ .Values.notification.logging.level | default "info" | quote }}
     controller:
       metricsAddr: ":9090"
       healthProbeAddr: ":8081"

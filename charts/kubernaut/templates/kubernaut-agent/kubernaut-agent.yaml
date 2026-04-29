@@ -130,7 +130,7 @@ metadata:
 data:
   config.yaml: |
     logging:
-      level: {{ .Values.kubernautAgent.logging.level | default "INFO" | quote }}
+      level: {{ .Values.kubernautAgent.logging.level | default "info" | quote }}
     server:
       address: "0.0.0.0"
       port: 8080

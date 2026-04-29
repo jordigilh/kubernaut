@@ -169,7 +169,7 @@ metadata:
 data:
   workflowexecution.yaml: |
     logging:
-      level: {{ .Values.workflowexecution.logging.level | default "INFO" | quote }}
+      level: {{ .Values.workflowexecution.logging.level | default "info" | quote }}
     controller:
       metricsAddr: ":9090"
       healthProbeAddr: ":8081"

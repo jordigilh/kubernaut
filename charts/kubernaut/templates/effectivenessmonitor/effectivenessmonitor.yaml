@@ -11,7 +11,7 @@ metadata:
 data:
   effectivenessmonitor.yaml: |
     logging:
-      level: {{ .Values.effectivenessmonitor.logging.level | default "INFO" | quote }}
+      level: {{ .Values.effectivenessmonitor.logging.level | default "info" | quote }}
     assessment:
       stabilizationWindow: {{ .Values.effectivenessmonitor.config.assessment.stabilizationWindow | default "30s" }}
       validityWindow: {{ .Values.effectivenessmonitor.config.assessment.validityWindow | default "300s" }}

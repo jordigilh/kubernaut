@@ -78,7 +78,7 @@ metadata:
 data:
   authwebhook.yaml: |
     logging:
-      level: {{ .Values.authwebhook.logging.level | default "INFO" | quote }}
+      level: {{ .Values.authwebhook.logging.level | default "info" | quote }}
     webhook:
       port: 9443
       certDir: /tmp/k8s-webhook-server/serving-certs

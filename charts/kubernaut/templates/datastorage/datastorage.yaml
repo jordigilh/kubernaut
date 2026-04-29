@@ -40,7 +40,7 @@ data:
       secretsFile: "/etc/datastorage/secrets/valkey-secrets.yaml"
       passwordKey: "password"
     logging:
-      level: {{ .Values.datastorage.logging.level | default "INFO" | quote }}
+      level: {{ .Values.datastorage.logging.level | default "info" | quote }}
       format: json
 ---
 apiVersion: apps/v1
