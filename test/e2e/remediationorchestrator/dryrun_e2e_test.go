@@ -133,7 +133,7 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 		It("should complete RR with outcome DryRun and NOT create WorkflowExecution", func() {
 			By("Creating RemediationRequest")
 			now := metav1.Now()
-			fingerprint := "e2edryrun1111111111111111111111111111111111111111111111111111001"
+			fingerprint := "e2ed010011111111111111111111111111111111111111111111111111111001"
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-e2e-dryrun-001",
