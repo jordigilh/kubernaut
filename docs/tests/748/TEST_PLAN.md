@@ -70,20 +70,34 @@ On vanilla Kubernetes (Kind), `tlsProfile` is typically empty — the feature is
 
 ### 4.1 Unit Tests
 
+All tests in `test/unit/shared/tls/profile_test.go`.
+
 | ID | Description | BR |
 |----|-------------|-----|
-| UT-TLS-748-001 | `ProfileForType("Old")` returns correct cipher suites and min TLS version | BR-SECURITY-748 |
-| UT-TLS-748-002 | `ProfileForType("Intermediate")` returns TLS 1.2+ ciphers | BR-SECURITY-748 |
-| UT-TLS-748-003 | `ProfileForType("Modern")` returns TLS 1.3 only | BR-SECURITY-748 |
-| UT-TLS-748-004 | `ProfileForType("")` returns nil (no-op) | BR-SECURITY-748 |
-| UT-TLS-748-005 | `ProfileForType("Custom")` returns nil (operator-side) | BR-SECURITY-748 |
-| UT-TLS-748-006 | `ProfileForType("invalid")` returns nil | BR-SECURITY-748 |
-| UT-TLS-748-010 | `SetDefaultSecurityProfileFromConfig("")` is no-op | BR-SECURITY-748 |
-| UT-TLS-748-011 | `SetDefaultSecurityProfileFromConfig("Intermediate")` sets process-wide default | BR-SECURITY-748 |
-| UT-TLS-748-012 | `SetDefaultSecurityProfileFromConfig("invalid")` returns error | BR-SECURITY-748 |
-| UT-TLS-748-020 | `ConfigureConditionalTLS` applies active profile to server | BR-SECURITY-748 |
-| UT-TLS-748-021 | `NewTLSTransport` applies active profile to client | BR-SECURITY-748 |
-| UT-TLS-748-030 | `ApplyProfile` does not mutate built-in profile (immutability) | BR-SECURITY-748 |
+| UT-TLS-748-002 | Intermediate cipher suites contain exactly the 6 AEAD ECDHE suites | BR-SECURITY-748 |
+| UT-TLS-748-003 | Old profile includes all Intermediate ciphers plus CBC/RSA fallbacks | BR-SECURITY-748 |
+| UT-TLS-748-004 | Modern MinTLSVersion is 1.3 and CipherSuites is empty | BR-SECURITY-748 |
+| UT-TLS-748-005 | Curve preferences: X25519 first, followed by P-256 and P-384 | BR-SECURITY-748 |
+| UT-TLS-748-010 | `ApplyProfile` overlays MinVersion, CipherSuites, CurvePreferences | BR-SECURITY-748 |
+| UT-TLS-748-011 | `ApplyProfile` overrides MinVersion when profile requires higher | BR-SECURITY-748 |
+| UT-TLS-748-012 | `ApplyProfile` with nil profile leaves config unchanged | BR-SECURITY-748 |
+| UT-TLS-748-013 | `ApplyProfile` with nil config does not panic | BR-SECURITY-748 |
+| UT-TLS-748-014 | MaxTLSVersion is applied for Custom profiles | BR-SECURITY-748 |
+| UT-TLS-748-020 | `ProfileForType` returns matching profile for each known type | BR-SECURITY-748 |
+| UT-TLS-748-021 | `ProfileForType("Custom")` returns nil (requires explicit construction) | BR-SECURITY-748 |
+| UT-TLS-748-022 | `ProfileForType` returns nil for unrecognized type | BR-SECURITY-748 |
+| UT-TLS-748-050 | Modern profile upgrades server MinVersion to TLS 1.3 | BR-SECURITY-748 |
+| UT-TLS-748-051 | Intermediate profile sets cipher suites on server | BR-SECURITY-748 |
+| UT-TLS-748-052 | Old profile lowers server MinVersion to TLS 1.0 | BR-SECURITY-748 |
+| UT-TLS-748-060 | Server uses TLS 1.2 with no cipher restriction when profile is absent | BR-SECURITY-748 |
+| UT-TLS-748-061 | Empty config string is a no-op | BR-SECURITY-748 |
+| UT-TLS-748-070 | `Intermediate` config value produces TLS 1.2 AEAD on server | BR-SECURITY-748 |
+| UT-TLS-748-071 | `Modern` config value produces TLS 1.3 on server | BR-SECURITY-748 |
+| UT-TLS-748-080 | Unknown profile name returns error and preserves TLS 1.2 default | BR-SECURITY-748 |
+| UT-TLS-748-090 | Modern profile upgrades client transport to TLS 1.3 | BR-SECURITY-748 |
+| UT-TLS-748-091 | No profile preserves TLS 1.2 on client transport | BR-SECURITY-748 |
+| UT-TLS-748-100 | Mutating one Intermediate profile does not affect another (immutability) | BR-SECURITY-748 |
+| UT-TLS-748-101 | Mutating Old profile curves does not affect Modern profile | BR-SECURITY-748 |
 
 ---
 
