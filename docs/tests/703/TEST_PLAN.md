@@ -4,8 +4,9 @@
 
 **Test Plan Identifier**: TP-703-v1
 **Feature**: Dynamic takeover interactive investigation via MCP
-**Version**: 1.0
+**Version**: 2.0
 **Created**: 2026-04-29
+**Revised**: 2026-04-29
 **Author**: AI-assisted
 **Status**: Draft
 **Branch**: `feat/703-ka-mcp-interactive`
@@ -43,7 +44,7 @@ Validate that the KA MCP Interactive Mode enables secure, auditable, dynamic tak
 
 ### 2.1 Authority (governing documents)
 
-- BR-INTERACTIVE-001 through BR-INTERACTIVE-008
+- BR-INTERACTIVE-001 through BR-INTERACTIVE-008 (`docs/requirements/BR-INTERACTIVE.md`)
 - DD-AUTH-MCP-001: MCP Endpoint Security and User Impersonation
 - DD-INTERACTIVE-002: Dynamic Takeover Model (supersedes DD-001)
 - Issue #703: KA MCP Interactive Mode
@@ -62,7 +63,7 @@ Validate that the KA MCP Interactive Mode enables secure, auditable, dynamic tak
 | ID | Risk | Impact | Probability | Affected Tests | Mitigation |
 |----|------|--------|-------------|----------------|------------|
 | R1 | Impersonation header injection allows privilege escalation | Critical | Low | PEN-01 through PEN-14 | Middleware header stripping + SAR verification |
-| R2 | Suspend/resume loses conversation context | High | Low | TAKE-05, TAKE-06 | Cancel+reconstruct from DS audit events |
+| R2 | Cancel+reconstruct loses conversation context | High | Low | TAKE-05, TAKE-06 | Reconstruct from DS audit events with golden sequence validation |
 | R3 | go-sdk v1.5.0 API incompatibility | High | Medium | All PR2 tests | Half-day spike at PR2 start |
 | R4 | Lease orphan prevents new sessions | Medium | Low | SESS-04 | 30s Lease expiry + AfterEach cleanup |
 | R5 | Interactive E2E exceeds CI timeout | Medium | Medium | E2E-* | Separate Ginkgo label group, 20m timeout |
@@ -108,11 +109,58 @@ Validate that the KA MCP Interactive Mode enables secure, auditable, dynamic tak
 
 **FAIL**: Any P0 test fails, coverage below thresholds, existing tests regress, any Critical checkpoint finding.
 
+### 5.3 Suspension Criteria
+
+Testing shall be suspended when:
+1. Build failures prevent test compilation (`go build ./...` fails)
+2. Critical infrastructure unavailable (Kind cluster, mock-LLM, DS) for >10 minutes
+3. Blocking dependency not available (go-sdk v1.5.0 for CP-2+)
+4. Security vulnerability discovered in auth path (immediate stop until patched)
+
+### 5.4 Resumption Requirements
+
+Testing resumes when:
+1. Build/infrastructure issue resolved and verified
+2. Root cause of suspension documented in this plan's changelog
+3. All previously-passing tests re-verified green before proceeding
+
 ---
 
-## 6. Checkpoint-to-Test Mapping
+## 6. Test Deliverables
 
-### CP-0: Design Gate (22 checks)
+| Deliverable | Format | Location |
+|-------------|--------|----------|
+| Test Plan (this document) | Markdown | `docs/tests/703/TEST_PLAN.md` |
+| CP-0 Test Specifications | Markdown | `docs/tests/703/CP-0_DESIGN_GATE.md` |
+| CP-1 Test Specifications | Markdown | `docs/tests/703/CP-1_CRD_CONTROLLER_GATE.md` |
+| CP-2 Test Specifications | Markdown | `docs/tests/703/CP-2_SECURITY_GATE.md` |
+| CP-3 Test Specifications | Markdown | `docs/tests/703/CP-3_SESSION_AUDIT_GATE.md` |
+| CP-4 Test Specifications | Markdown | `docs/tests/703/CP-4_TOOL_COMPLETENESS_GATE.md` |
+| CP-5 Test Specifications | Markdown | `docs/tests/703/CP-5_RELEASE_GATE.md` |
+| Unit test code | Go (Ginkgo) | `test/unit/kubernautagent/mcp/` |
+| Integration test code | Go (Ginkgo) | `test/integration/kubernautagent/mcp/` |
+| E2E test code | Go (Ginkgo) | `test/e2e/kubernautagent/` |
+| Coverage reports | HTML/text | CI artifacts |
+
+---
+
+## 7. Responsibilities
+
+| Role | Responsibility | Personnel |
+|------|---------------|-----------|
+| Test Plan Author | Create and maintain test specifications | AI-assisted + Project Lead |
+| Test Implementer | Write test code following specifications | AI-assisted |
+| Test Reviewer | Validate tests match specifications | Project Lead |
+| Security Reviewer | Validate CP-2 penetration coverage | Architecture Team |
+| Sign-off Authority | Approve checkpoint gates | Project Lead |
+
+---
+
+## 8. Checkpoint-to-Test Mapping (Summary)
+
+Detailed test case specifications (preconditions, steps, acceptance criteria) are in the per-checkpoint files linked below.
+
+### CP-0: Design Gate (22 checks) → [CP-0_DESIGN_GATE.md](CP-0_DESIGN_GATE.md)
 
 | Check ID | Test ID | Tier | Description |
 |----------|---------|------|-------------|
@@ -121,7 +169,7 @@ Validate that the KA MCP Interactive Mode enables secure, auditable, dynamic tak
 | QE-01..05 | N/A (doc review) | Review | Test plan coverage audit |
 | GOV-01..06 | N/A (doc review) | Review | Governance documents exist |
 
-### CP-1: CRD & Controller Gate (13 checks)
+### CP-1: CRD & Controller Gate (13 checks) → [CP-1_CRD_CONTROLLER_GATE.md](CP-1_CRD_CONTROLLER_GATE.md)
 
 | Check ID | Test ID | Tier | Description |
 |----------|---------|------|-------------|
@@ -135,7 +183,7 @@ Validate that the KA MCP Interactive Mode enables secure, auditable, dynamic tak
 | SEC-CRD-02 | UT-KA-INT-008 | Unit | ActingUser from authenticated source |
 | REG-01..05 | UT-KA-INT-009..013 | Unit | Regression: existing tests pass unchanged |
 
-### CP-2: SECURITY GATE (28 checks)
+### CP-2: SECURITY GATE (28 checks) → [CP-2_SECURITY_GATE.md](CP-2_SECURITY_GATE.md)
 
 | Check ID | Test ID | Tier | Description |
 |----------|---------|------|-------------|
@@ -156,7 +204,7 @@ Validate that the KA MCP Interactive Mode enables secure, auditable, dynamic tak
 | PROP-01..05 | UT-KA-SEC-014..018 | Unit | Security properties |
 | QE-INT-01..05 | IT-KA-SEC-002..006 | Integration | MCP integration checks |
 
-### CP-3: SESSION & AUDIT GATE (34 checks)
+### CP-3: SESSION & AUDIT GATE (34 checks) → [CP-3_SESSION_AUDIT_GATE.md](CP-3_SESSION_AUDIT_GATE.md)
 
 | Check ID | Test ID | Tier | Description |
 |----------|---------|------|-------------|
@@ -186,14 +234,14 @@ Validate that the KA MCP Interactive Mode enables secure, auditable, dynamic tak
 | AUD-01..07 | UT-KA-AUD-001..007 | Unit | Audit completeness |
 | PROP-SESS-01..04 | UT-KA-SESS-009..012 | Unit | Session security properties |
 
-### CP-4: Tool Completeness Gate (12 checks)
+### CP-4: Tool Completeness Gate (12 checks) → [CP-4_TOOL_COMPLETENESS_GATE.md](CP-4_TOOL_COMPLETENESS_GATE.md)
 
 | Check ID | Test ID | Tier | Description |
 |----------|---------|------|-------------|
 | TOOL-01..07 | UT-KA-TOOL-001..007 | Unit | Adversarial tool scenarios |
 | CONSIST-01..05 | UT-KA-TOOL-008..012 | Unit | Cross-tool consistency |
 
-### CP-5: RELEASE GATE (29 checks)
+### CP-5: RELEASE GATE (29 checks) → [CP-5_RELEASE_GATE.md](CP-5_RELEASE_GATE.md)
 
 | Check ID | Test ID | Tier | Description |
 |----------|---------|------|-------------|
@@ -206,7 +254,7 @@ Validate that the KA MCP Interactive Mode enables secure, auditable, dynamic tak
 
 ---
 
-## 7. BR Coverage Matrix
+## 9. BR Coverage Matrix
 
 | BR ID | Description | Priority | Tier | Test IDs | Status |
 |-------|-------------|----------|------|----------|--------|
@@ -221,21 +269,21 @@ Validate that the KA MCP Interactive Mode enables secure, auditable, dynamic tak
 
 ---
 
-## 8. Environmental Needs
+## 10. Environmental Needs
 
-### 8.1 Unit Tests
+### 10.1 Unit Tests
 
 - **Framework**: Ginkgo/Gomega BDD
 - **Mocks**: Mock LLM, mock K8s (fake.NewClientBuilder), mock DS client
 - **Location**: `test/unit/kubernautagent/mcp/`
 
-### 8.2 Integration Tests
+### 10.2 Integration Tests
 
 - **Framework**: Ginkgo/Gomega BDD
 - **Infrastructure**: httptest server, envtest (K8s API), mock LLM ConfigMap
 - **Location**: `test/integration/kubernautagent/mcp/`
 
-### 8.3 E2E Tests
+### 10.3 E2E Tests
 
 - **Framework**: Ginkgo/Gomega BDD with `Label("interactive")`
 - **Infrastructure**: Kind cluster, mock LLM, DS, full Helm deployment
@@ -244,7 +292,7 @@ Validate that the KA MCP Interactive Mode enables secure, auditable, dynamic tak
 
 ---
 
-## 9. Execution
+## 11. Execution
 
 ```bash
 # Unit tests
@@ -266,16 +314,16 @@ go tool cover -func=coverage.out | grep -E 'auth|mcp|impersonate'
 
 ---
 
-## 10. Dependencies & Schedule
+## 12. Dependencies & Schedule
 
-### 10.1 Blocking Dependencies
+### 12.1 Blocking Dependencies
 
 | Dependency | Type | Status | Impact if Not Available |
 |------------|------|--------|-------------------------|
 | go-sdk v1.5.0 | Library | Available | All MCP tests blocked |
 | kubernaut-operator#26 | Cross-repo | Open | E2E impersonation tests blocked (use Helm RBAC) |
 
-### 10.2 Execution Order
+### 12.2 Execution Order
 
 1. **PR0** (this plan + design docs) → CP-0
 2. **PR1** (CRD) → CP-1
@@ -286,8 +334,9 @@ go tool cover -func=coverage.out | grep -E 'auth|mcp|impersonate'
 
 ---
 
-## 11. Changelog
+## 13. Changelog
 
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-04-29 | Initial test plan. 138 checkpoint checks mapped. |
+| 2.0 | 2026-04-29 | IEEE 829 compliance: added suspension/resumption criteria, test deliverables, responsibilities, per-checkpoint detail files with full test case specifications. |
