@@ -125,6 +125,8 @@ UNIT_TEST_*.md
 *SESSION*.md
 # Exception: test plan documents containing "session" in docs/testing/
 !docs/testing/**/session_*
+# Exception: test plan checkpoint files in docs/tests/
+!docs/tests/**/*SESSION*
 *-HOUR-*.md
 *INFRASTRUCTURE-SETUP*.md
 *INFRASTRUCTURE-FINAL*.md

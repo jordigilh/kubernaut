@@ -64,7 +64,7 @@ Validate that the KA MCP Interactive Mode enables secure, auditable, dynamic tak
 |----|------|--------|-------------|----------------|------------|
 | R1 | Impersonation header injection allows privilege escalation | Critical | Low | PEN-01 through PEN-14 | Middleware header stripping + SAR verification |
 | R2 | Cancel+reconstruct loses conversation context | High | Low | TAKE-05, TAKE-06 | Reconstruct from DS audit events with golden sequence validation |
-| R3 | go-sdk v1.5.0 API incompatibility | High | Medium | All PR2 tests | Half-day spike at PR2 start |
+| R3 | go-sdk v1.5.0 API incompatibility | High | Low | All PR2 tests | Compilation verified; SDK API matches design |
 | R4 | Lease orphan prevents new sessions | Medium | Low | SESS-04 | 30s Lease expiry + AfterEach cleanup |
 | R5 | Interactive E2E exceeds CI timeout | Medium | Medium | E2E-* | Separate Ginkgo label group, 20m timeout |
 | R6 | DS unavailable during auto-inject | Medium | Low | TAKE-07 | Best-effort; proceed with empty context |
@@ -320,7 +320,7 @@ go tool cover -func=coverage.out | grep -E 'auth|mcp|impersonate'
 
 | Dependency | Type | Status | Impact if Not Available |
 |------------|------|--------|-------------------------|
-| go-sdk v1.5.0 | Library | Available | All MCP tests blocked |
+| go-sdk v1.5.0 (`github.com/modelcontextprotocol/go-sdk`) | Library | Available (verified) | All MCP tests blocked |
 | kubernaut-operator#26 | Cross-repo | Open | E2E impersonation tests blocked (use Helm RBAC) |
 
 ### 12.2 Execution Order
