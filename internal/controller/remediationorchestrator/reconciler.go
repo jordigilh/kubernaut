@@ -32,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 
@@ -134,6 +135,10 @@ type Reconciler struct {
 	// Prevents duplicate WFEs when concurrent reconciles target the same resource.
 	// nil = locking disabled (single-replica deployments).
 	lockManager *locking.DistributedLockManager
+
+	// #835: Guards hot-reloadable config fields. Setters acquire write lock,
+	// getters acquire read lock. Per DD-INFRA-001 thread-safety requirement.
+	configMu sync.RWMutex
 
 	// #265: CRD retention TTL — how long terminal RRs persist before cleanup.
 	// Default: 24h. Configurable via SetRetentionPeriod or YAML config.
@@ -348,7 +353,7 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 				return nil
 			})
 		},
-		IsDryRun:      func() bool { return r.dryRun },
+		IsDryRun:      r.isDryRun,
 		WFECallbacks:  wfeCallbacks,
 	}))
 	r.phaseRegistry.MustRegister(NewAwaitingApprovalHandler(c, m, AwaitingApprovalCallbacks{
@@ -461,10 +466,21 @@ func (r *Reconciler) SetWorkflowResolver(resolver routing.WorkflowDisplayResolve
 
 // SetRetentionPeriod configures how long terminal RemediationRequest CRDs persist
 // before automatic cleanup. Default: 24h. Issue #265.
+// Thread-safe: acquires configMu write lock (#835, DD-INFRA-001).
 func (r *Reconciler) SetRetentionPeriod(d time.Duration) {
 	if d > 0 {
+		r.configMu.Lock()
 		r.retentionPeriod = d
+		r.configMu.Unlock()
 	}
+}
+
+// getRetentionPeriod returns the current retention TTL for terminal RRs.
+// Thread-safe: acquires configMu read lock (#835).
+func (r *Reconciler) getRetentionPeriod() time.Duration {
+	r.configMu.RLock()
+	defer r.configMu.RUnlock()
+	return r.retentionPeriod
 }
 
 // SetDSClient wires the DataStorage history querier into the routing engine.
@@ -482,9 +498,28 @@ func (r *Reconciler) SetDSClient(dsClient routing.RemediationHistoryQuerier) {
 // When enabled, the pipeline stops after AI analysis without creating WFE or EA.
 // holdPeriod controls how long the Gateway suppresses re-triggering for the same fingerprint.
 // #712, #736: Called from cmd/remediationorchestrator/main.go.
+// Thread-safe: acquires configMu write lock (#835, DD-INFRA-001).
 func (r *Reconciler) SetDryRun(enabled bool, holdPeriod time.Duration) {
+	r.configMu.Lock()
 	r.dryRun = enabled
 	r.dryRunHoldPeriod = holdPeriod
+	r.configMu.Unlock()
+}
+
+// isDryRun returns whether dry-run mode is enabled.
+// Thread-safe: acquires configMu read lock (#835).
+func (r *Reconciler) isDryRun() bool {
+	r.configMu.RLock()
+	defer r.configMu.RUnlock()
+	return r.dryRun
+}
+
+// getDryRunHoldPeriod returns the current dry-run suppression window.
+// Thread-safe: acquires configMu read lock (#835).
+func (r *Reconciler) getDryRunHoldPeriod() time.Duration {
+	r.configMu.RLock()
+	defer r.configMu.RUnlock()
+	return r.dryRunHoldPeriod
 }
 
 // ========================================
@@ -795,9 +830,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 
 		// Stamp expiry on first terminal reconcile (non-blocking — housekeeping continues)
-		retentionRequeue := r.retentionPeriod
+		retention := r.getRetentionPeriod()
+		retentionRequeue := retention
 		if rr.Status.RetentionExpiryTime == nil {
-			expiry := metav1.NewTime(time.Now().Add(r.retentionPeriod))
+			expiry := metav1.NewTime(time.Now().Add(retention))
 			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.RetentionExpiryTime = &expiry
 				return nil
@@ -977,7 +1013,7 @@ func (r *Reconciler) transitionToCompletedWithoutVerification(ctx context.Contex
 		rr.Status.ObservedGeneration = rr.Generation
 
 		// Set NextAllowedExecution for GW suppression, only if later than existing value
-		dryRunNAE := metav1.NewTime(now.Add(r.dryRunHoldPeriod))
+		dryRunNAE := metav1.NewTime(now.Add(r.getDryRunHoldPeriod()))
 		if rr.Status.NextAllowedExecution == nil || dryRunNAE.After(rr.Status.NextAllowedExecution.Time) {
 			rr.Status.NextAllowedExecution = &dryRunNAE
 		}
@@ -1766,7 +1802,8 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 		isCRD = true
 	}
 
-	propagationDelay := r.asyncPropagation.ComputePropagationDelay(isGitOpsManaged, isCRD)
+	asyncCfg := r.getAsyncPropagation()
+	propagationDelay := asyncCfg.ComputePropagationDelay(isGitOpsManaged, isCRD)
 	if propagationDelay > 0 {
 		hashComputeDelay = &metav1.Duration{Duration: propagationDelay}
 		logger.Info("Async-managed target detected, setting hash check delay",
@@ -1780,11 +1817,11 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 	// Proactive alerts (e.g. predict_linear) need extra time to resolve.
 	var alertCheckDelay *metav1.Duration
 	if ai != nil && ai.Spec.AnalysisRequest.SignalContext.SignalMode == "proactive" {
-		if r.asyncPropagation.ProactiveAlertDelay > 0 {
-			alertCheckDelay = &metav1.Duration{Duration: r.asyncPropagation.ProactiveAlertDelay}
+		if asyncCfg.ProactiveAlertDelay > 0 {
+			alertCheckDelay = &metav1.Duration{Duration: asyncCfg.ProactiveAlertDelay}
 			logger.Info("Proactive signal detected, setting alert check delay",
 				"signalMode", ai.Spec.AnalysisRequest.SignalContext.SignalMode,
-				"alertCheckDelay", r.asyncPropagation.ProactiveAlertDelay)
+				"alertCheckDelay", asyncCfg.ProactiveAlertDelay)
 		}
 	}
 
@@ -1955,11 +1992,12 @@ func (r *Reconciler) emitEACreatedAudit(ctx context.Context, rr *remediationv1.R
 	if alertCheckDelay != nil {
 		data.AlertCheckDelay = alertCheckDelay.Duration
 	}
+	auditAsyncCfg := r.getAsyncPropagation()
 	if isGitOpsManaged {
-		data.GitOpsSyncDelay = r.asyncPropagation.GitOpsSyncDelay
+		data.GitOpsSyncDelay = auditAsyncCfg.GitOpsSyncDelay
 	}
 	if isCRD {
-		data.OperatorReconcileDelay = r.asyncPropagation.OperatorReconcileDelay
+		data.OperatorReconcileDelay = auditAsyncCfg.OperatorReconcileDelay
 	}
 
 	event, err := r.auditManager.BuildEACreatedEvent(rr.Name, rr.Namespace, rr.Name, data)
@@ -3009,8 +3047,39 @@ func (r *Reconciler) SetRESTMapper(mapper meta.RESTMapper) {
 
 // SetAsyncPropagation configures propagation delays for async-managed targets.
 // DD-EM-004 v2.0, Issue #253: Called from cmd/remediationorchestrator/main.go.
+// Thread-safe: acquires configMu write lock (#835, DD-INFRA-001).
 func (r *Reconciler) SetAsyncPropagation(cfg roconfig.AsyncPropagationConfig) {
+	r.configMu.Lock()
 	r.asyncPropagation = cfg
+	r.configMu.Unlock()
+}
+
+// getAsyncPropagation returns the current async propagation config.
+// Thread-safe: acquires configMu read lock (#835).
+func (r *Reconciler) getAsyncPropagation() roconfig.AsyncPropagationConfig {
+	r.configMu.RLock()
+	defer r.configMu.RUnlock()
+	return r.asyncPropagation
+}
+
+// IsDryRunExported exposes isDryRun for unit testing hot-reload thread safety (#835).
+func (r *Reconciler) IsDryRunExported() bool {
+	return r.isDryRun()
+}
+
+// GetDryRunHoldPeriodExported exposes getDryRunHoldPeriod for unit testing (#835).
+func (r *Reconciler) GetDryRunHoldPeriodExported() time.Duration {
+	return r.getDryRunHoldPeriod()
+}
+
+// GetRetentionPeriodExported exposes getRetentionPeriod for unit testing (#835).
+func (r *Reconciler) GetRetentionPeriodExported() time.Duration {
+	return r.getRetentionPeriod()
+}
+
+// GetAsyncPropagationExported exposes getAsyncPropagation for unit testing (#835).
+func (r *Reconciler) GetAsyncPropagationExported() roconfig.AsyncPropagationConfig {
+	return r.getAsyncPropagation()
 }
 
 // SetNotifySelfResolved enables or disables the self-resolved status-update notification.
