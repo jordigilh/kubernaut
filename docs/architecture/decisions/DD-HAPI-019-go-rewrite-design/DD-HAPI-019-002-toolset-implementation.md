@@ -226,7 +226,7 @@ type MCPServerConfig struct {
 
 **v1.3 stub** (`pkg/kubernautagent/tools/mcp/stub.go`): Logs a warning ("MCP servers configured but transport not implemented until v1.4") and returns an empty tool list. This ensures the config parsing and registration wiring are tested without premature transport complexity.
 
-**v1.4 evolution**: Replace stub with real `MCPClient` (e.g., `mark3labs/mcp-go`) implementing SSE transport. The `MCPToolProvider` interface and registry integration remain unchanged.
+**v1.4 evolution**: Replace stub with real `MCPClient` (e.g., `modelcontextprotocol/go-sdk`) implementing SSE transport. The `MCPToolProvider` interface and registry integration remain unchanged.
 
 ---
 

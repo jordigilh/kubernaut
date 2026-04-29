@@ -28,7 +28,7 @@ CP-5 is the final release gate. It validates the complete interactive flow end-t
 - **Timeout**: 20m (separate CI job from 15m autonomous E2E)
 - **Key Imports**:
   ```go
-  "github.com/mark3labs/mcp-go/client"
+  "github.com/modelcontextprotocol/go-sdk/mcp"
   "github.com/jordigilh/kubernaut/pkg/agentclient"
   dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
   coordinationv1 "k8s.io/api/coordination/v1"

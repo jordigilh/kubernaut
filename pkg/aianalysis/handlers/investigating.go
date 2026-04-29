@@ -427,6 +427,8 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 	switch status.Status {
 	case "pending", "investigating":
 		return h.handleSessionPollPending(ctx, analysis, status)
+	case "user_driving":
+		return h.handleSessionPollUserDriving(ctx, analysis, status)
 	case "completed":
 		return h.handleSessionPollCompleted(ctx, analysis)
 	case "failed":
@@ -436,6 +438,31 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 		h.log.Info("Unknown session status, treating as pending", "status", status.Status)
 		return h.handleSessionPollPending(ctx, analysis, status)
 	}
+}
+
+// handleSessionPollUserDriving handles the case where a user has taken over the
+// interactive session via MCP (DD-INTERACTIVE-002 dynamic takeover).
+// The controller continues polling at the normal interval so it detects when the
+// user-driven session completes or fails.
+// BR-INTERACTIVE-001: User takeover observability via CRD status.
+func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatus) (ctrl.Result, error) {
+	session := analysis.Status.InvestigationSession
+
+	session.PollCount++
+	now := metav1.Now()
+	session.LastPolled = &now
+
+	h.log.Info("Session under user control, continuing to poll",
+		"sessionID", session.ID,
+		"progress", status.Progress,
+		"nextPollIn", h.sessionPollInterval,
+		"pollCount", session.PollCount,
+	)
+
+	h.recorder.Eventf(analysis, corev1.EventTypeNormal, events.EventReasonUserDriving,
+		"Interactive session %s: user is driving investigation", session.ID)
+
+	return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
 }
 
 // handleSessionPollPending handles poll results where investigation is still in progress.
