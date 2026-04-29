@@ -1,9 +1,10 @@
 # DD-INTERACTIVE-001: Interactive Mode CRD Placement and Timeout Policy
 
 ## Status
-**✅ Approved** (2026-04-15)
-**Last Reviewed**: 2026-04-15
-**Confidence**: 95%
+**⚠️ Superseded** by [DD-INTERACTIVE-002](DD-INTERACTIVE-002-dynamic-takeover-model.md) (2026-04-29)
+**Originally Approved**: 2026-04-15
+**Superseded**: 2026-04-29
+**Confidence**: N/A (superseded)
 
 ---
 
