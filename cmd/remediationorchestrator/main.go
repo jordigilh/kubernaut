@@ -43,6 +43,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/version"
 	clusterid "github.com/jordigilh/kubernaut/pkg/shared/cluster"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	config "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
@@ -355,6 +356,24 @@ func main() {
 		setupLog.Info("Dry-run mode enabled: pipeline stops after AI analysis",
 			"holdPeriod", cfg.DryRunHoldPeriod)
 	}
+
+	// #835, DD-INFRA-001: Start config file watcher for hot-reload.
+	// Only enabled when a config file is explicitly provided (not defaults).
+	if configPath != "" {
+		reloadCallback := controller.NewReloadCallback(roReconciler, setupLog)
+		configWatcher, watchErr := hotreload.NewFileWatcher(configPath, reloadCallback, setupLog)
+		if watchErr != nil {
+			setupLog.Error(watchErr, "Failed to create config file watcher, hot-reload disabled")
+		} else {
+			if startErr := configWatcher.Start(context.Background()); startErr != nil {
+				setupLog.Error(startErr, "Failed to start config file watcher, hot-reload disabled")
+			} else {
+				defer configWatcher.Stop()
+				setupLog.Info("Config hot-reload enabled (DD-INFRA-001)", "watchPath", configPath)
+			}
+		}
+	}
+
 	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)
