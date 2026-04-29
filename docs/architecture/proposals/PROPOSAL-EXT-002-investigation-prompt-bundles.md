@@ -4,19 +4,210 @@
 **Date**: April 15, 2026
 **Author**: Kubernaut Architecture Team
 **Confidence**: 90% (architecture validated through adversarial review; A2A task contracts and execution trace enforcement finalized)
-**Related**: [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [PROPOSAL-EXT-001](PROPOSAL-EXT-001-external-integration-strategy.md) (External Integration Strategy), [DD-016](../decisions/DD-016-dynamic-toolset-v2-deferral.md) (Dynamic Toolset Deferral)
+**Related**: [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [#883](https://github.com/jordigilh/kubernaut/issues/883) (Goose Recipe Format Convergence), [PROPOSAL-EXT-001](PROPOSAL-EXT-001-external-integration-strategy.md) (External Integration Strategy), [DD-016](../decisions/DD-016-dynamic-toolset-v2-deferral.md) (Dynamic Toolset Deferral)
 
 ---
 
 ## Purpose
 
-This proposal defines how customers inject their Standard Operating Procedures (SOPs) into Kubernaut Agent's investigation pipeline. Prompts and skill dependencies are packaged as OCI artifacts called **Prompt Bundles**, enabling a standardized, versionable, and distributable mechanism for customizing the investigation flow.
+This proposal defines how Kubernaut becomes a **recipe-programmable investigation and remediation engine** where the domain is defined by the recipe, not by Kubernaut's code.
 
-The design makes KA **prompt-bundle-driven**: every prompt -- including Kubernaut's own defaults embedded in the binary -- follows the same Prompt Bundle format. This makes all prompts overridable by customer bundles at well-defined hook points, using the same schema, validation, and distribution mechanism.
+Kubernaut ships with default recipes for Kubernetes alert-driven RCA and remediation. By swapping recipes, customers transform Kubernaut into a cost optimization engine, a security remediation engine, a compliance drift engine, or any domain-specific investigation platform -- all using the same pipeline, CRD lifecycle, audit trail, approval gating, and execution engines.
+
+Recipes are the mechanism that makes this possible. They are [Goose recipes](https://github.com/aaif-goose/goose) -- the open standard format for reusable AI agent configurations -- packaged as OCI artifacts for enterprise distribution. Each recipe defines what the LLM investigates, which MCP tools it has access to, and what structured result it returns. KA provides the stable contract: structured signal context and enrichment data flow into the recipe as parameters; a structured result matching a defined JSON schema flows back out. Everything between those two boundaries -- the investigation logic, the tool calls, the reasoning -- is owned by the recipe author.
+
+The design makes KA **recipe-driven**: every prompt -- including Kubernaut's own defaults embedded in the binary -- follows the same recipe format. This makes all investigation and workflow selection logic overridable by customer recipes at well-defined hook points, using the same schema, validation, and distribution mechanism.
+
+---
+
+## Strategic Vision: Kubernaut as a Programmable Platform
+
+### The Core Insight
+
+Kubernaut's investigation pipeline (signal → enrichment → investigation → RCA → workflow selection → execution → effectiveness verification) is **domain-agnostic**. The pipeline infrastructure -- CRD lifecycle management, approval gating, audit trails, execution engines (Tekton, Ansible, Job), effectiveness monitoring -- applies equally to any domain where an LLM investigates a signal, reasons about root cause, and selects a remediation action.
+
+What makes Kubernaut domain-specific today is the **prompt content** and the **MCP tools** available during investigation. By externalizing both into recipes, the domain becomes a configuration choice, not a code change.
+
+### Cookbooks: Domain as Configuration
+
+Out of the box, Kubernaut ships a default cookbook for Kubernetes alert-driven remediation. Customer or partner-authored cookbooks extend Kubernaut into new domains:
+
+#### Cost Optimization (FinOps)
+
+A FinOps cookbook replaces the default investigation prompt with cost-aware reasoning and adds cost-specific MCP tools:
+
+```yaml
+title: "FinOps Investigation"
+description: "Investigate cost signals — identify overprovisioned resources and recommend rightsizing"
+parameters:
+  - key: signal
+    input_type: object
+    requirement: required
+    description: "Cost alert context from Kubecost/OpenCost"
+  - key: enrichment
+    input_type: object
+    requirement: required
+    description: "Resource enrichment data"
+
+instructions: |
+  A cost alert fired for {{ signal.namespace }}/{{ signal.resource_kind }}/{{ signal.resource_name }}.
+
+  {% if signal.alert_type == "overprovisioned" %}
+  This resource is flagged as overprovisioned. Investigate actual vs allocated usage.
+  {% elif signal.alert_type == "idle" %}
+  This resource appears idle. Verify it is not a scheduled job or canary deployment.
+  {% endif %}
+
+  Use the cost-forecast tool to project 30-day costs under current and proposed configurations.
+  Use query_prometheus to compare allocated vs actual CPU and memory usage over the past 7 days.
+
+  Identify the root cause of cost growth and recommend a rightsizing or cleanup workflow.
+
+extensions:
+  - type: streamable_http
+    name: cost-forecast-mcp
+    uri: "http://cost-forecast.monitoring.svc:8080/mcp"
+    timeout: 30
+  - type: streamable_http
+    name: prometheus-mcp
+    uri: "http://prometheus-tools.monitoring.svc:8080/mcp"
+    timeout: 30
+
+response:
+  json_schema:
+    type: object
+    properties:
+      root_cause_analysis:
+        type: object
+        properties:
+          summary: { type: string }
+          severity: { type: string }
+          current_monthly_cost: { type: string }
+          projected_savings: { type: string }
+      selected_workflow:
+        type: object
+        properties:
+          workflow_id: { type: string }
+          rationale: { type: string }
+          parameters: { type: object }
+    required: [root_cause_analysis]
+```
+
+The LLM decides how to investigate: it calls `query_prometheus` to check memory usage trends, calls `cost-forecast` to project savings, discovers the root cause ("api-server allocated 4Gi but averaging 380Mi for 30 days, no HPA configured"), and selects the `rightsizing-with-vpa` workflow. The customer didn't program that sequence -- the LLM reasoned through it because it had the tools and the context.
+
+#### Security Remediation
+
+A security cookbook investigates vulnerability and threat signals:
+
+```yaml
+title: "Security Threat Investigation"
+description: "Investigate security signals — CVEs, anomalous access, policy violations"
+parameters:
+  - key: signal
+    input_type: object
+    requirement: required
+    description: "Security alert context"
+  - key: enrichment
+    input_type: object
+    requirement: required
+    description: "Resource and network context"
+
+instructions: |
+  A {{ signal.severity }} security signal "{{ signal.name }}" detected for
+  {{ signal.resource_kind }}/{{ signal.resource_name }} in {{ signal.namespace }}.
+
+  {% if signal.alert_type == "cve" %}
+  Scan the running image for known CVEs.
+  Check if a patched image version is available in the registry.
+  {% elif signal.alert_type == "anomalous_access" %}
+  Review RBAC bindings and recent audit log entries for the service account.
+  Check network policies for unexpected egress.
+  {% endif %}
+
+  Determine the severity, blast radius, and recommend a remediation workflow.
+
+extensions:
+  - type: streamable_http
+    name: vulnerability-scanner-mcp
+    uri: "http://vuln-scanner.security.svc:8080/mcp"
+    timeout: 60
+  - type: streamable_http
+    name: k8s-audit-mcp
+    uri: "http://k8s-audit.security.svc:8080/mcp"
+    timeout: 30
+```
+
+#### Compliance Drift
+
+A compliance cookbook investigates policy drift signals from OPA/Kyverno:
+
+```yaml
+title: "Compliance Drift Investigation"
+description: "Investigate policy violations — drift from declared state, regulatory non-compliance"
+parameters:
+  - key: signal
+    input_type: object
+    requirement: required
+    description: "Policy violation signal"
+  - key: enrichment
+    input_type: object
+    requirement: required
+    description: "Resource and policy context"
+
+instructions: |
+  Policy violation detected: "{{ signal.name }}" for {{ signal.resource_kind }}/{{ signal.resource_name }}.
+
+  Check the resource's current state against the declared policy.
+  Identify what drifted, when, and whether a recent deployment caused the change.
+  Determine if the drift is a configuration error, a missing policy exception, or an unauthorized change.
+
+  Recommend a remediation workflow: revert to compliant state, create a policy exception, or escalate.
+
+extensions:
+  - type: streamable_http
+    name: opa-policy-mcp
+    uri: "http://opa-tools.policy.svc:8080/mcp"
+    timeout: 30
+  - type: streamable_http
+    name: gitops-mcp
+    uri: "http://gitops-tools.argocd.svc:8080/mcp"
+    timeout: 30
+```
+
+### What Stays Constant Across Domains
+
+Regardless of the recipe, KA's pipeline infrastructure handles:
+
+| Concern | Owned by KA (constant) | Owned by Recipe (variable) |
+|---------|----------------------|---------------------------|
+| Signal intake and normalization | Gateway adapters, `RemediationRequest` CRD | -- |
+| Signal enrichment | K8s owner chain, labels, history | -- |
+| Investigation reasoning | -- | Prompt instructions, MCP tools |
+| Structured result extraction | `response.json_schema` validation, self-correction | Output schema definition |
+| Approval gating | Rego policies, `RemediationApprovalRequest` CRD | -- |
+| Workflow execution | Tekton, Ansible, Job engines | Workflow parameters |
+| Effectiveness verification | `EffectivenessAssessment` CRD, EM recipes | -- |
+| Audit trail | Full execution trace, DataStorage pipeline | -- |
+
+This separation means issues like [#555](https://github.com/jordigilh/kubernaut/issues/555) (Cost Optimization) and [#554](https://github.com/jordigilh/kubernaut/issues/554) (Threat Remediation) are not new features requiring custom code. They are **cookbooks** -- different recipes, different MCP extensions, same Kubernaut pipeline.
+
+### The LLM Reasoning Model
+
+The power of this approach is that customers don't pre-build investigation flows. They provide tools and context, and the LLM's reasoning discovers the investigation path. A cost investigation might go:
+
+1. "Let me check which namespaces are spending the most" → calls `query_prometheus`
+2. "Namespace production is 60% of total spend. Which deployments?" → calls `query_prometheus` with a different query
+3. "api-server is allocated 4Gi but using 400Mi. Let me project savings" → calls `cost-forecast`
+4. "Saving $1,200/month. Is there an HPA on this?" → calls `get_cluster_resource_context`
+5. "No HPA, no VPA. Recommend rightsizing with VPA enabled" → selects workflow
+
+No one programmed that sequence. The LLM reasoned through it because it had the tools, the context, and the instructions. The recipe defines the *capability surface*; the LLM defines the *investigation path*.
 
 ---
 
 ## Table of Contents
+
+- [Strategic Vision: Kubernaut as a Programmable Platform](#strategic-vision-kubernaut-as-a-programmable-platform)
 
 1. [Concepts and Terminology](#1-concepts-and-terminology)
 2. [Prompt Bundle Manifest](#2-prompt-bundle-manifest)
@@ -981,15 +1172,17 @@ The `signal_context` and `enrichment_context` fields ensure the remote agent has
 
 | Version | Capability | Notes |
 |---------|-----------|-------|
+| **v1.5** | Goose recipe format convergence | Customer-facing recipes use standard [Goose recipe format](https://github.com/aaif-goose/goose). KA provides structured context as Goose parameters, receives structured results via `response.json_schema`. Pending upstream support for structured parameter types (`object`, `array`) -- see [#883](https://github.com/jordigilh/kubernaut/issues/883). OCI distribution wraps standard Goose recipe YAML. |
 | **v1.5** | Hybrid execution: inline core phases + remote pre/post hooks via A2A | Phase executor is a single reusable component. Pre/post-investigation hooks always delegate to customer-managed A2A agents. Core phases (investigation, rca-resolution, workflow-selection) execute inline. `failClosed` default. |
 | **v1.5** | Skills marketplace integration | External skill resolution via OCI pull for inline phases. Requires marketplace format to be stable. |
 | **v1.5** | Execution trace contract | Remote agents return structured execution traces (tool calls, LLM responses, token usage) as A2A artifacts. KA ingests these into the unified audit trail. |
+| **v1.6** | Domain cookbooks | Partner and customer-authored cookbooks for cost optimization (FinOps), security remediation, compliance drift, and capacity planning. Each cookbook replaces default investigation/workflow-selection recipes with domain-specific prompts and MCP tools. See [Strategic Vision](#strategic-vision-kubernaut-as-a-programmable-platform). |
 | **v1.6** | KA builtin tools extracted into MCP servers | `k8s-investigation-tools`, `prometheus-tools`, `workflow-tools` as standalone deployments. Prerequisite for fully remote execution. |
 | **v1.6** | **Target architecture: fully remote execution** | All phases delegate to A2A agents. KA becomes a pure pipeline orchestrator + CRD lifecycle manager. Each agent pod runs with its own SA, enforcing least-privilege per phase. |
-| **v1.6** | `kubernaut bundle test` CLI | Validates a bundle against synthetic signal data with a mock or real LLM. Verifies: template renders, declared skills are called, output meets expectations. |
+| **v1.6** | `kubernaut recipe test` CLI | Validates a recipe against synthetic signal data with a mock or real LLM. Verifies: template renders, declared extensions are called, output meets expectations. |
 | **v1.6+** | OCI signature verification (sigstore) | Blocked on sigstore adoption for workflow bundles. Same infrastructure reused. |
 | **v1.6+** | Agent marketplace integration | A2A agent artifacts as skill-like dependencies. |
-| **v1.6+** | Prompt Bundle marketplace | Customers publish and share prompt bundles via a dedicated marketplace. |
+| **v1.6+** | Recipe marketplace | Customers and partners publish and share recipes via a dedicated marketplace. |
 
 ### Design Gates
 
@@ -1094,15 +1287,17 @@ Initially this critique was thought to hold for `rca-resolution`, where natural 
 |------|------------|
 | **A2A** | Agent-to-Agent protocol -- standard for inter-agent communication and task delegation |
 | **CMDB** | Configuration Management Database -- customer infrastructure inventory |
-| **DocsClaw** | Lightweight agentic runtime from Red Hat OCTO (5 MiB per pod, ConfigMap-driven, A2A native). A complementary execution runtime for prompt bundles |
+| **DocsClaw** | Lightweight agentic runtime from Red Hat OCTO (5 MiB per pod, ConfigMap-driven, A2A native). A complementary execution runtime for recipes |
 | **Execution Trace** | Structured record of a remote agent's intermediate steps (tool calls, LLM responses, token usage) returned as an A2A artifact |
-| **failClosed** | Failure policy that aborts the pipeline when a bundle fails. Default behavior |
-| **failOpen** | Failure policy that skips the failed bundle (hook phases) or falls back to the default bundle (core phases) |
-| **Inline Execution** | Bundle execution mode where KA runs the LLM loop in-process. Used for core phases in v1.5 |
+| **failClosed** | Failure policy that aborts the pipeline when a recipe fails. Default behavior |
+| **failOpen** | Failure policy that skips the failed recipe (hook phases) or falls back to the default recipe (core phases) |
+| **Goose Recipe** | The open standard format for reusable AI agent configurations, defined by the [Goose project](https://github.com/aaif-goose/goose). Kubernaut converges on this format for customer-facing recipes. See [#883](https://github.com/jordigilh/kubernaut/issues/883) |
+| **Inline Execution** | Recipe execution mode where KA runs the LLM loop in-process. Used for core phases in v1.5 |
 | **KA** | Kubernaut Agent -- the investigation pipeline orchestrator |
 | **LRU** | Least Recently Used -- cache eviction strategy |
 | **MCP** | Model Context Protocol -- protocol for connecting AI agents to tools and data sources |
 | **OCI** | Open Container Initiative -- standards for container image and artifact distribution |
 | **RCA** | Root Cause Analysis -- the investigation output identifying what caused the incident |
-| **Remote Execution** | Bundle execution mode where KA delegates to an external A2A agent. Used for hook phases in v1.5, all phases in target architecture |
+| **Cookbook** | A group of Goose recipes that together cover a domain (e.g., FinOps, security, compliance). A cookbook bundles the investigation recipe, workflow-selection recipe, MCP extension definitions, and related ActionType/RemediationWorkflow CRDs needed to extend Kubernaut into a new domain without changing pipeline code |
+| **Remote Execution** | Recipe execution mode where KA delegates to an external A2A agent. Used for hook phases in v1.5, all phases in target architecture |
 | **SOP** | Standard Operating Procedure -- customer-defined investigation procedures |
