@@ -562,6 +562,162 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 	})
 
 	// ========================================
+	// 1.4 Interactive Session -- User Driving (DD-INTERACTIVE-002)
+	// ========================================
+	Describe("Interactive Session -- User Driving", func() {
+		// UT-AA-703-001: Poll session -- status "user_driving", requeues at poll interval
+		// BR: BR-INTERACTIVE-001 (User takeover observability)
+		Context("UT-AA-703-001: Poll returns user_driving status", func() {
+			It("should requeue at the configured session poll interval", func() {
+				analysis := createSessionTestAnalysis()
+				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+					ID:         "session-interactive-001",
+					Generation: 0,
+					CreatedAt:  &metav1.Time{Time: time.Now().Add(-60 * time.Second)},
+				}
+
+				mockClient.WithSessionPollStatus("user_driving")
+
+				result, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval),
+					"Should requeue at constant session poll interval during user_driving")
+			})
+		})
+
+		// UT-AA-703-002: Poll session -- status "user_driving", increments PollCount and sets LastPolled
+		// BR: BR-INTERACTIVE-001
+		Context("UT-AA-703-002: user_driving increments poll tracking", func() {
+			It("should increment PollCount and set LastPolled", func() {
+				analysis := createSessionTestAnalysis()
+				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+					ID:         "session-interactive-002",
+					Generation: 0,
+					PollCount:  3,
+					CreatedAt:  &metav1.Time{Time: time.Now().Add(-120 * time.Second)},
+				}
+
+				mockClient.WithSessionPollStatus("user_driving")
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.InvestigationSession.PollCount).To(Equal(int32(4)),
+					"PollCount should be incremented from 3 to 4")
+				Expect(analysis.Status.InvestigationSession.LastPolled).NotTo(BeNil(),
+					"LastPolled should be set")
+			})
+		})
+
+		// UT-AA-703-003: Poll session -- status "user_driving", emits K8s UserDriving event
+		// BR: BR-INTERACTIVE-007 (Operator observability)
+		Context("UT-AA-703-003: user_driving emits K8s event", func() {
+			It("should emit a Normal event with reason UserDriving", func() {
+				analysis := createSessionTestAnalysis()
+				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+					ID:         "session-interactive-003",
+					Generation: 0,
+					CreatedAt:  &metav1.Time{Time: time.Now().Add(-30 * time.Second)},
+				}
+
+				mockClient.WithSessionPollStatus("user_driving")
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+
+				var foundEvent bool
+				close(recorder.Events)
+				for event := range recorder.Events {
+					if event != "" {
+						// Events format: "Normal UserDriving ..."
+						if len(event) > 0 {
+							Expect(event).To(ContainSubstring("UserDriving"))
+							foundEvent = true
+							break
+						}
+					}
+				}
+				Expect(foundEvent).To(BeTrue(), "Should emit a UserDriving K8s event")
+			})
+		})
+
+		// UT-AA-703-004: Poll session -- user_driving then completed transition
+		// BR: BR-INTERACTIVE-001
+		Context("UT-AA-703-004: user_driving followed by completed", func() {
+			It("should transition to completed on second poll", func() {
+				analysis := createSessionTestAnalysis()
+				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+					ID:         "session-interactive-004",
+					Generation: 0,
+					CreatedAt:  &metav1.Time{Time: time.Now().Add(-180 * time.Second)},
+				}
+
+				callCount := 0
+				mockClient.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
+					callCount++
+					if callCount == 1 {
+						return &agentclient.SessionStatus{Status: "user_driving", Progress: "User investigating"}, nil
+					}
+					return &agentclient.SessionStatus{Status: "completed"}, nil
+				}
+				mockClient.WithFullResponse(
+					"Root cause: config drift",
+					0.85,
+					[]string{},
+					"Config drift detected",
+					"medium",
+					"wf-rollback",
+					"kubernaut.io/workflows/rollback:v1.0.0",
+					0.85,
+					"Selected for config drift",
+					false,
+				)
+
+				// First poll: user_driving
+				result1, err := handler.Handle(ctx, analysis)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result1.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval))
+
+				// Second poll: completed
+				_, err = handler.Handle(ctx, analysis)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing),
+					"Should advance to Analyzing after user_driving -> completed")
+			})
+		})
+
+		// UT-AA-703-005: user_driving interval matches sessionPollInterval across multiple polls
+		// BR: BR-ORCH-028 (constant interval)
+		Context("UT-AA-703-005: user_driving uses constant poll interval", func() {
+			It("should return the same RequeueAfter duration across multiple user_driving polls", func() {
+				analysis := createSessionTestAnalysis()
+				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+					ID:         "session-interactive-005",
+					Generation: 0,
+					CreatedAt:  &metav1.Time{Time: time.Now().Add(-300 * time.Second)},
+				}
+
+				mockClient.WithSessionPollStatus("user_driving")
+
+				var intervals []time.Duration
+				for i := 0; i < 4; i++ {
+					result, err := handler.Handle(ctx, analysis)
+					Expect(err).NotTo(HaveOccurred())
+					intervals = append(intervals, result.RequeueAfter)
+				}
+
+				Expect(intervals).To(HaveLen(4))
+				for _, interval := range intervals {
+					Expect(interval).To(Equal(handlers.DefaultSessionPollInterval),
+						"All user_driving polls should use the same constant interval")
+				}
+			})
+		})
+	})
+
+	// ========================================
 	// 1.5 Client Configuration Correctness
 	// ========================================
 	Describe("Client Configuration", func() {

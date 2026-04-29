@@ -183,6 +183,7 @@ type TimeoutConfig struct {
 	Executing        time.Duration // Default: 30 minutes
 	AwaitingApproval time.Duration // Default: 15 minutes (ADR-040)
 	Verifying        time.Duration // Default: 30 minutes (#280: safety-net for Verifying phase)
+	MaxAnalyzing     time.Duration // Default: 45 minutes (DD-INTERACTIVE-002: hard cap for interactive sessions)
 }
 
 // NewReconciler creates a new Reconciler with all dependencies.
@@ -216,6 +217,9 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	}
 	if timeouts.Verifying == 0 {
 		timeouts.Verifying = 30 * time.Minute
+	}
+	if timeouts.MaxAnalyzing == 0 {
+		timeouts.MaxAnalyzing = 45 * time.Minute
 	}
 
 	nc := creator.NewNotificationCreator(c, s, m)
@@ -620,6 +624,13 @@ func (r *Reconciler) validateControllerTimeouts() error {
 		return fmt.Errorf("executing timeout must be positive, got %v", r.timeouts.Executing)
 	}
 
+	if r.timeouts.MaxAnalyzing <= 0 {
+		return fmt.Errorf("maxAnalyzing timeout must be positive, got %v", r.timeouts.MaxAnalyzing)
+	}
+	if r.timeouts.MaxAnalyzing < r.timeouts.Analyzing {
+		return fmt.Errorf("maxAnalyzing timeout (%v) must be >= analyzing timeout (%v)", r.timeouts.MaxAnalyzing, r.timeouts.Analyzing)
+	}
+
 	// Warn if per-phase timeouts exceed global (not fatal, but suspicious)
 	if r.timeouts.Processing > r.timeouts.Global {
 		return fmt.Errorf("processing timeout (%v) exceeds global timeout (%v)", r.timeouts.Processing, r.timeouts.Global)
@@ -629,6 +640,9 @@ func (r *Reconciler) validateControllerTimeouts() error {
 	}
 	if r.timeouts.Executing > r.timeouts.Global {
 		return fmt.Errorf("executing timeout (%v) exceeds global timeout (%v)", r.timeouts.Executing, r.timeouts.Global)
+	}
+	if r.timeouts.MaxAnalyzing > r.timeouts.Global {
+		return fmt.Errorf("maxAnalyzing timeout (%v) exceeds global timeout (%v)", r.timeouts.MaxAnalyzing, r.timeouts.Global)
 	}
 
 	return nil
@@ -2691,6 +2705,11 @@ func (r *Reconciler) checkPhaseTimeouts(ctx context.Context, rr *remediationv1.R
 		return nil
 	}
 
+	// DD-INTERACTIVE-002: Extend Analyzing timeout when interactive session is active
+	if currentPhase == remediationv1.PhaseAnalyzing {
+		phaseTimeout = r.applyInteractiveTimeoutExtension(ctx, rr, phaseTimeout)
+	}
+
 	// Check if phase has exceeded timeout
 	timeSincePhaseStart := time.Since(phaseStartTime.Time)
 	if timeSincePhaseStart > phaseTimeout {
@@ -2704,6 +2723,51 @@ func (r *Reconciler) checkPhaseTimeouts(ctx context.Context, rr *remediationv1.R
 	}
 
 	return nil
+}
+
+// applyInteractiveTimeoutExtension checks if the associated AIAnalysis has an active
+// interactive session and extends the timeout to MaxAnalyzing if so.
+// Falls back gracefully to the original timeout on AA fetch errors.
+// Reference: DD-INTERACTIVE-002 (dynamic timeout extension)
+func (r *Reconciler) applyInteractiveTimeoutExtension(ctx context.Context, rr *remediationv1.RemediationRequest, defaultTimeout time.Duration) time.Duration {
+	if rr.Status.AIAnalysisRef == nil {
+		return defaultTimeout
+	}
+
+	logger := log.FromContext(ctx)
+	ai := &aianalysisv1.AIAnalysis{}
+	key := client.ObjectKey{
+		Name:      rr.Status.AIAnalysisRef.Name,
+		Namespace: rr.Status.AIAnalysisRef.Namespace,
+	}
+	if key.Namespace == "" {
+		key.Namespace = rr.Namespace
+	}
+
+	if err := r.client.Get(ctx, key, ai); err != nil {
+		logger.V(1).Info("Failed to fetch AIAnalysis for interactive timeout check, using default",
+			"aiAnalysis", key, "error", err)
+		return defaultTimeout
+	}
+
+	if ai.Status.InteractiveSession == nil {
+		return defaultTimeout
+	}
+
+	// Active session: StartedAt set, CompletedAt nil
+	if ai.Status.InteractiveSession.StartedAt != nil && ai.Status.InteractiveSession.CompletedAt == nil {
+		extended := r.timeouts.MaxAnalyzing
+		if extended > defaultTimeout {
+			logger.Info("Extending Analyzing timeout for active interactive session",
+				"sessionID", ai.Status.InteractiveSession.SessionID,
+				"actingUser", ai.Status.InteractiveSession.ActingUser,
+				"defaultTimeout", defaultTimeout,
+				"extendedTimeout", extended)
+			return extended
+		}
+	}
+
+	return defaultTimeout
 }
 
 // handlePhaseTimeout handles phase timeout by transitioning to TimedOut phase.
