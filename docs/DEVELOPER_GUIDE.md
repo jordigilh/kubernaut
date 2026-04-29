@@ -19,7 +19,7 @@ This guide is the single entry point for anyone contributing to Kubernaut — wh
 | Tool | Version | Purpose |
 |------|---------|---------|
 | **Go** | 1.25.6+ | Service development (toolchain 1.25.7) |
-| **Python** | 3.12+ | HolmesGPT API service |
+| **Python** | 3.12+ | Kubernaut Agent (legacy SDK) |
 | **Kubernetes** | 1.32+ | Runtime platform |
 | **kubectl** | 1.32+ | Cluster management |
 | **Kind** | 0.30+ | Local development clusters |
@@ -253,14 +253,14 @@ Kubernaut is composed of 10 Go services (under `cmd/`) and 1 Python service. All
 | **gateway** | HTTP Server | `cmd/gateway` | Ingests AlertManager webhooks and Kubernetes Events, deduplicates by fingerprint, resolves owner chains, creates RemediationRequest CRDs |
 | **remediationorchestrator** | CRD Controller | `cmd/remediationorchestrator` | Orchestrates the full remediation pipeline: creates child CRDs (SignalProcessing, AIAnalysis, WorkflowExecution, EffectivenessAssessment, Notification), manages approval gates and timeouts |
 | **signalprocessing** | CRD Controller | `cmd/signalprocessing` | Enriches K8s context, classifies environment/severity/priority, traverses owner chains, detects custom labels |
-| **aianalysis** | CRD Controller | `cmd/aianalysis` | Triggers LLM-based root cause analysis via HolmesGPT API and manages workflow selection lifecycle |
+| **aianalysis** | CRD Controller | `cmd/aianalysis` | Triggers LLM-based root cause analysis via Kubernaut Agent and manages workflow selection lifecycle |
 | **workflowexecution** | CRD Controller | `cmd/workflowexecution` | Executes remediations via Kubernetes Jobs, Tekton Pipelines, or Ansible (AWX/AAP) |
 | **effectivenessmonitor** | CRD Controller | `cmd/effectivenessmonitor` | Evaluates whether remediations worked (health checks, alert resolution, spec drift) |
 | **datastorage** | HTTP Server | `cmd/datastorage` | Persistence layer (PostgreSQL), workflow catalog, audit trail, OpenAPI |
 | **notification** | CRD Controller | `cmd/notification` | Delivers Slack and console notifications with remediation context |
 | **authwebhook** | Webhook Server | `cmd/authwebhook` | Admission webhooks for CRD validation, registers workflows with DataStorage |
 | **must-gather** | CLI Tool | `cmd/must-gather` | Diagnostics collection script (not included in `SERVICES` build var) |
-| **kubernaut-agent** | Python | `kubernaut-agent/` | REST wrapper around the HolmesGPT SDK for LLM investigations |
+| **kubernaut-agent** | Python | `kubernaut-agent/` | REST wrapper around the LLM SDK for investigations (legacy — v1.4 Go-native KA replaces this) |
 
 ---
 
