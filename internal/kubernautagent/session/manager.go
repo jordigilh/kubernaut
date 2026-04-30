@@ -24,6 +24,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
+	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
@@ -94,20 +95,6 @@ func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, me
 	}
 	m.store.SetMetadata(id, metadata)
 
-	bgCtx, cancelFn := context.WithCancel(context.Background())
-
-	ls := &LazySink{}
-	bgCtx = WithLazySink(bgCtx, ls)
-	bgCtx = WithSessionID(bgCtx, id)
-
-	m.store.mu.Lock()
-	sess := m.store.sessions[id]
-	sess.cancel = cancelFn
-	sess.lazySink = ls
-	m.store.mu.Unlock()
-
-	_ = m.store.Update(id, StatusRunning, nil, nil)
-
 	correlationID := metadata["remediation_id"]
 	var startExtra []string
 	if v := metadata["incident_id"]; v != "" {
@@ -122,11 +109,69 @@ func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, me
 	if v := metadata["created_by"]; v != "" {
 		startExtra = append(startExtra, "created_by", v)
 	}
+
+	return m.launchInvestigation(ctx, id, fn, correlationID, metadata["signal_name"], metadata["severity"], startExtra)
+}
+
+// StartInvestigationWithContext creates a new session with typed SessionContext
+// and launches the investigation function in a background goroutine.
+// This is the typed alternative to StartInvestigation that preserves the full
+// SignalContext for interactive takeover. The Metadata map is populated from
+// SessionContext.ToMap() for backward compatibility with audit events and
+// existing code that reads Metadata.
+func (m *Manager) StartInvestigationWithContext(ctx context.Context, fn InvestigateFunc, sctx SessionContext) (string, error) {
+	if user := auth.GetUserFromContext(ctx); user != "" {
+		sctx.CreatedBy = user
+	}
+	metadata := sctx.ToMap()
+	id, err := m.store.Create()
+	if err != nil {
+		return "", err
+	}
+	m.store.SetMetadata(id, metadata)
+	m.store.SetContext(id, sctx)
+
+	correlationID := sctx.RemediationID
+	var startExtra []string
+	if sctx.IncidentID != "" {
+		startExtra = append(startExtra, "incident_id", sctx.IncidentID)
+	}
+	if sctx.Signal.Name != "" {
+		startExtra = append(startExtra, "signal_name", sctx.Signal.Name)
+	}
+	if sctx.Signal.Severity != "" {
+		startExtra = append(startExtra, "severity", sctx.Signal.Severity)
+	}
+	if sctx.CreatedBy != "" {
+		startExtra = append(startExtra, "created_by", sctx.CreatedBy)
+	}
+
+	return m.launchInvestigation(ctx, id, fn, correlationID, sctx.Signal.Name, sctx.Signal.Severity, startExtra)
+}
+
+// launchInvestigation is the shared goroutine launcher used by both
+// StartInvestigation and StartInvestigationWithContext. It wires the cancel
+// context, lazy sink, emits the started audit event, and spawns the goroutine.
+func (m *Manager) launchInvestigation(ctx context.Context, id string, fn InvestigateFunc, correlationID, signalName, severity string, startExtra []string) (string, error) {
+	bgCtx, cancelFn := context.WithCancel(context.Background())
+
+	ls := &LazySink{}
+	bgCtx = WithLazySink(bgCtx, ls)
+	bgCtx = WithSessionID(bgCtx, id)
+
+	m.store.mu.Lock()
+	sess := m.store.sessions[id]
+	sess.cancel = cancelFn
+	sess.lazySink = ls
+	m.store.mu.Unlock()
+
+	_ = m.store.Update(id, StatusRunning, nil, nil)
+
 	m.emitSessionEvent(ctx, audit.EventTypeSessionStarted, audit.ActionSessionStarted, audit.OutcomeSuccess, id, correlationID, nil, startExtra...)
-	m.metrics.RecordSessionStarted(metadata["signal_name"], metadata["severity"])
+	m.metrics.RecordSessionStarted(signalName, severity)
 
 	go func() {
-		start := time.Now() // COR-2: goroutine wall-clock, not HTTP handler time
+		start := time.Now()
 		defer m.recordSessionMetrics(id, start)
 		defer m.closeEventChan(id)
 		defer m.recoverPanic(id, correlationID)
@@ -303,6 +348,35 @@ func (m *Manager) Shutdown() {
 // GetSession retrieves the current state of an investigation session.
 func (m *Manager) GetSession(id string) (*Session, error) {
 	return m.store.Get(id)
+}
+
+// GetSessionContext retrieves only the typed SessionContext for a session.
+// Returns ErrSessionNotFound if the session does not exist.
+func (m *Manager) GetSessionContext(id string) (*SessionContext, error) {
+	sess, err := m.store.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	ctx := sess.Context
+	return &ctx, nil
+}
+
+// GetSignalForRemediation looks up the running session associated with the
+// given remediationID and returns its SignalContext. This enables interactive
+// tools (enrich, select_workflow) to inherit security gate parameters from the
+// autonomous investigation session. Returns ErrSessionNotFound if no running
+// session matches the rrID.
+func (m *Manager) GetSignalForRemediation(rrID string) (*katypes.SignalContext, error) {
+	sessionID, found := m.FindByRemediationID(rrID)
+	if !found {
+		return nil, ErrSessionNotFound
+	}
+	sess, err := m.store.Get(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	signal := sess.Context.Signal
+	return &signal, nil
 }
 
 // storePartialResult attaches a result to a session that is already in a

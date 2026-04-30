@@ -44,7 +44,8 @@ type Session struct {
 	Result    interface{}
 	Error     error
 	CreatedAt time.Time
-	Metadata  map[string]string
+	Context   SessionContext
+	Metadata  map[string]string // Deprecated: use Context. Retained for backward compat.
 
 	// cancel, eventChan, and lazySink are manager-managed internal fields.
 	// They are NOT part of the public copy surface (clone excludes them).
@@ -103,7 +104,8 @@ func (s *Store) Get(id string) (*Session, error) {
 
 // clone returns an isolated copy of the session. Internal control fields
 // (cancel, eventChan) are excluded to prevent callers from interfering
-// with active investigations.
+// with active investigations. SessionContext is a value type except for
+// SignalContext.SignalAnnotations and SignalLabels which are deep-copied.
 func (s *Session) clone() *Session {
 	cp := *s
 	cp.cancel = nil
@@ -113,6 +115,18 @@ func (s *Session) clone() *Session {
 		cp.Metadata = make(map[string]string, len(s.Metadata))
 		for k, v := range s.Metadata {
 			cp.Metadata[k] = v
+		}
+	}
+	if s.Context.Signal.SignalAnnotations != nil {
+		cp.Context.Signal.SignalAnnotations = make(map[string]string, len(s.Context.Signal.SignalAnnotations))
+		for k, v := range s.Context.Signal.SignalAnnotations {
+			cp.Context.Signal.SignalAnnotations[k] = v
+		}
+	}
+	if s.Context.Signal.SignalLabels != nil {
+		cp.Context.Signal.SignalLabels = make(map[string]string, len(s.Context.Signal.SignalLabels))
+		for k, v := range s.Context.Signal.SignalLabels {
+			cp.Context.Signal.SignalLabels[k] = v
 		}
 	}
 	return &cp
@@ -125,11 +139,21 @@ func IsTerminal(st Status) bool {
 }
 
 // SetMetadata stores request-level metadata on an existing session.
+// Deprecated: Use SetContext for typed access. Retained for backward compatibility.
 func (s *Store) SetMetadata(id string, metadata map[string]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if sess, ok := s.sessions[id]; ok {
 		sess.Metadata = metadata
+	}
+}
+
+// SetContext stores typed SessionContext on an existing session.
+func (s *Store) SetContext(id string, ctx SessionContext) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess, ok := s.sessions[id]; ok {
+		sess.Context = ctx
 	}
 }
 
