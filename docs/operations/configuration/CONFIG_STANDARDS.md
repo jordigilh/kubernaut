@@ -152,49 +152,46 @@ metrics:
 > The Python HolmesGPT SDK dependency has been eliminated.
 
 ```yaml
-llm:
-  provider: "openai"                # REQUIRED: openai, ollama, azure, vertex, anthropic, bedrock, huggingface, mistral
-  endpoint: "https://api.openai.com" # Provider-specific base URL (required for openai, ollama, azure, vertex, mistral; optional for anthropic; unused by bedrock, huggingface)
-  model: "gpt-4"                    # Default: "gpt-4"
-  apiKey: ""                       # Use env var LLM_API_KEY (required for openai, azure, anthropic, huggingface, mistral; unused by bedrock, vertex, ollama)
-  azureApiVersion: ""             # Required when provider=azure (e.g. "2024-02-15-preview")
-  vertexProject: ""                # Required when provider=vertex (GCP project ID)
-  vertexLocation: "us-central1"    # Default: "us-central1" (for provider=vertex)
-  bedrockRegion: ""                # Optional when provider=bedrock (overrides AWS_REGION env / SDK default credential chain)
+runtime:
+  logging:
+    level: "info"                     # Default: "info"
+    format: "json"                    # Default: "json"
+  server:
+    address: "0.0.0.0"                # Default: "0.0.0.0"
+    port: 8080                        # Default: 8080
+    healthAddr: ":8081"               # Default: ":8081" — liveness/readiness
+    metricsAddr: ":9090"              # Default: ":9090" — Prometheus scrape
+  session:
+    ttl: 10m                          # Default: 10m — async session expiry
+  audit:
+    enabled: true                     # Default: true — sends audit events to DataStorage
 
-dataStorage:
-  url: "http://data-storage:8080"   # REQUIRED - no default
+ai:
+  llm:
+    provider: "openai"                # REQUIRED: openai, ollama, azure, vertex, anthropic, bedrock, huggingface, mistral
+    endpoint: "https://api.openai.com" # Provider-specific base URL (required for openai, ollama, azure, vertex, mistral; optional for anthropic; unused by bedrock, huggingface)
+    model: "gpt-4"                    # Default: "gpt-4"
+    apiKey: ""                       # Use env var LLM_API_KEY (required for openai, azure, anthropic, huggingface, mistral; unused by bedrock, vertex, ollama)
+    azureApiVersion: ""             # Required when provider=azure (e.g. "2024-02-15-preview")
+    vertexProject: ""                # Required when provider=vertex (GCP project ID)
+    vertexLocation: "us-central1"    # Default: "us-central1" (for provider=vertex)
+    bedrockRegion: ""                # Optional when provider=bedrock (overrides AWS_REGION env / SDK default credential chain)
+  investigation:
+    maxTurns: 40                     # Default: 40 — max LLM tool-call turns per investigation
+  safety:
+    sanitization:
+      injectionPatternsEnabled: true              # Default: true — I1 injection stripping
+      credentialScrubEnabled: true               # Default: true — G4 credential scrubbing
+    anomaly:
+      maxToolCallsPerTool: 10       # Default: 10 — I7 per-tool call limit (raised from 5, #860; pagination calls exempt)
+      maxTotalToolCalls: 30          # Default: 30 — I7 total tool call limit
+      maxRepeatedFailures: 3          # Default: 3 — I7 consecutive failure limit
+  summarizer:
+    threshold: 8000                   # Default: 8000 chars — above this, tool output is LLM-summarized
 
-investigator:
-  maxTurns: 15                     # Default: 15 — max LLM tool-call turns per investigation
-
-sanitization:
-  injectionPatternsEnabled: true              # Default: true — I1 injection stripping
-  credentialScrubEnabled: true               # Default: true — G4 credential scrubbing
-
-anomaly:
-  maxToolCallsPerTool: 10       # Default: 10 — I7 per-tool call limit (raised from 5, #860; pagination calls exempt)
-  maxTotalToolCalls: 30          # Default: 30 — I7 total tool call limit
-  maxRepeatedFailures: 3          # Default: 3 — I7 consecutive failure limit
-
-summarizer:
-  threshold: 8000                   # Default: 8000 chars — above this, tool output is LLM-summarized
-
-audit:
-  enabled: true                     # Default: true — sends audit events to DataStorage
-
-session:
-  ttl: 10m                          # Default: 10m — async session expiry
-
-logging:
-  level: "info"                     # Default: "info"
-  format: "json"                    # Default: "json"
-
-server:
-  address: "0.0.0.0"                # Default: "0.0.0.0"
-  port: 8080                        # Default: 8080
-  healthAddr: ":8081"               # Default: ":8081" — liveness/readiness
-  metricsAddr: ":9090"              # Default: ":9090" — Prometheus scrape
+integrations:
+  dataStorage:
+    url: "http://data-storage:8080"   # REQUIRED - no default
 ```
 
 #### Air-gapped / On-prem LLM Guidance

@@ -122,18 +122,19 @@ kubernautAgent:
 ### Service Configuration (YAML)
 
 ```yaml
-alignmentCheck:
-  enabled: true
-  timeout: 10s
-  maxStepTokens: 500
-  llm:
-    provider: "openai"
-    model: "gpt-4o-mini"
+ai:
+  alignmentCheck:
+    enabled: true
+    timeout: 10s
+    maxStepTokens: 500
+    llm:
+      provider: "openai"
+      model: "gpt-4o-mini"
 ```
 
 ### Validation Rules
 
-When `alignmentCheck.enabled=true`:
+When `ai.alignmentCheck.enabled=true`:
 - `timeout` must be positive
 - `maxStepTokens` must be positive
 - If `llm` is set, `model` must be non-empty and `endpoint` is required for non-managed providers (bedrock, huggingface, anthropic, openai are managed)

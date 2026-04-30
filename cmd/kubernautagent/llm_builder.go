@@ -35,13 +35,13 @@ import (
 // This is a pure function used both at startup and by the SDK hot-reload
 // callback. It does not mutate cfg.
 func buildLLMClientFromConfig(ctx context.Context, cfg *kaconfig.Config) (llm.Client, error) {
-	switch cfg.LLM.Provider {
+	switch cfg.AI.LLM.Provider {
 	case "vertex_ai":
 		return vertexanthropic.New(ctx,
-			cfg.LLM.Model, []byte(cfg.LLM.APIKey),
-			cfg.LLM.VertexProject, cfg.LLM.VertexLocation)
+			cfg.AI.LLM.Model, []byte(cfg.AI.LLM.APIKey),
+			cfg.AI.LLM.VertexProject, cfg.AI.LLM.VertexLocation)
 	default:
-		return langchaingo.New(cfg.LLM.Provider, cfg.LLM.Endpoint, cfg.LLM.Model, cfg.LLM.APIKey,
+		return langchaingo.New(cfg.AI.LLM.Provider, cfg.AI.LLM.Endpoint, cfg.AI.LLM.Model, cfg.AI.LLM.APIKey,
 			buildLLMProviderOpts(cfg)...)
 	}
 }
@@ -50,17 +50,17 @@ func buildLLMClientFromConfig(ctx context.Context, cfg *kaconfig.Config) (llm.Cl
 // config. Extracted from buildLLMProviderOptions for reuse.
 func buildLLMProviderOpts(cfg *kaconfig.Config) []langchaingo.Option {
 	var opts []langchaingo.Option
-	if cfg.LLM.AzureAPIVersion != "" {
-		opts = append(opts, langchaingo.WithAzureAPIVersion(cfg.LLM.AzureAPIVersion))
+	if cfg.AI.LLM.AzureAPIVersion != "" {
+		opts = append(opts, langchaingo.WithAzureAPIVersion(cfg.AI.LLM.AzureAPIVersion))
 	}
-	if cfg.LLM.VertexProject != "" {
-		opts = append(opts, langchaingo.WithVertexProject(cfg.LLM.VertexProject))
+	if cfg.AI.LLM.VertexProject != "" {
+		opts = append(opts, langchaingo.WithVertexProject(cfg.AI.LLM.VertexProject))
 	}
-	if cfg.LLM.VertexLocation != "" {
-		opts = append(opts, langchaingo.WithVertexLocation(cfg.LLM.VertexLocation))
+	if cfg.AI.LLM.VertexLocation != "" {
+		opts = append(opts, langchaingo.WithVertexLocation(cfg.AI.LLM.VertexLocation))
 	}
-	if cfg.LLM.BedrockRegion != "" {
-		opts = append(opts, langchaingo.WithBedrockRegion(cfg.LLM.BedrockRegion))
+	if cfg.AI.LLM.BedrockRegion != "" {
+		opts = append(opts, langchaingo.WithBedrockRegion(cfg.AI.LLM.BedrockRegion))
 	}
 
 	if rt := buildTransportChainFromConfig(cfg); rt != nil {
@@ -81,15 +81,15 @@ func buildTransportChainFromConfig(cfg *kaconfig.Config) http.RoundTripper {
 	var base http.RoundTripper = http.DefaultTransport
 	needsCustom := false
 
-	if cfg.LLM.OAuth2.Enabled {
-		base = llmtransport.NewOAuth2ClientCredentialsTransport(cfg.LLM.OAuth2, base)
+	if cfg.AI.LLM.OAuth2.Enabled {
+		base = llmtransport.NewOAuth2ClientCredentialsTransport(cfg.AI.LLM.OAuth2, base)
 		needsCustom = true
 	}
-	if len(cfg.LLM.CustomHeaders) > 0 {
-		base = llmtransport.NewAuthHeadersTransport(cfg.LLM.CustomHeaders, base)
+	if len(cfg.AI.LLM.CustomHeaders) > 0 {
+		base = llmtransport.NewAuthHeadersTransport(cfg.AI.LLM.CustomHeaders, base)
 		needsCustom = true
 	}
-	if cfg.LLM.StructuredOutput {
+	if cfg.AI.LLM.StructuredOutput {
 		base = llmtransport.NewStructuredOutputTransport(nil, base)
 		needsCustom = true
 	}
@@ -159,7 +159,7 @@ func sdkReloadCallback(
 			return fmt.Errorf("reload: building LLM client: %w", err)
 		}
 
-		if err := swappable.Swap(newClient, freshCfg.LLM.Model); err != nil {
+		if err := swappable.Swap(newClient, freshCfg.AI.LLM.Model); err != nil {
 			logger.Error("sdk_config_reload failed: swap error",
 				"event", "sdk_config_reload", "status", "error", "reason", "swap_failed", "error", err)
 			return fmt.Errorf("reload: swapping client: %w", err)
@@ -169,9 +169,9 @@ func sdkReloadCallback(
 			"event", "sdk_config_reload",
 			"status", "success",
 			"old_model", oldModel,
-			"new_model", freshCfg.LLM.Model,
-			"old_endpoint", cur.LLM.Endpoint,
-			"new_endpoint", freshCfg.LLM.Endpoint,
+			"new_model", freshCfg.AI.LLM.Model,
+			"old_endpoint", cur.AI.LLM.Endpoint,
+			"new_endpoint", freshCfg.AI.LLM.Endpoint,
 		)
 		return nil
 	}
@@ -193,23 +193,23 @@ var readFile = os.ReadFile
 // validateReloadSafety checks that the new config does not violate hot-reload
 // safety constraints.
 func validateReloadSafety(current, proposed *kaconfig.Config) error {
-	if current.LLM.Provider != proposed.LLM.Provider {
+	if current.AI.LLM.Provider != proposed.AI.LLM.Provider {
 		return fmt.Errorf("SDK config reload rejected: provider change from %q to %q requires pod restart",
-			current.LLM.Provider, proposed.LLM.Provider)
+			current.AI.LLM.Provider, proposed.AI.LLM.Provider)
 	}
 
-	if current.LLM.StructuredOutput != proposed.LLM.StructuredOutput {
+	if current.AI.LLM.StructuredOutput != proposed.AI.LLM.StructuredOutput {
 		return fmt.Errorf("SDK config reload rejected: structured_output change requires pod restart")
 	}
 
-	if err := validateOAuth2Safety(current.LLM.OAuth2, proposed.LLM.OAuth2); err != nil {
+	if err := validateOAuth2Safety(current.AI.LLM.OAuth2, proposed.AI.LLM.OAuth2); err != nil {
 		return err
 	}
 
-	if proposed.LLM.OAuth2.Enabled && proposed.LLM.OAuth2.TokenURL != "" {
-		if !strings.HasPrefix(strings.ToLower(proposed.LLM.OAuth2.TokenURL), "https://") {
+	if proposed.AI.LLM.OAuth2.Enabled && proposed.AI.LLM.OAuth2.TokenURL != "" {
+		if !strings.HasPrefix(strings.ToLower(proposed.AI.LLM.OAuth2.TokenURL), "https://") {
 			return fmt.Errorf("SDK config reload rejected: oauth2.token_url must use https:// scheme, got %q",
-				proposed.LLM.OAuth2.TokenURL)
+				proposed.AI.LLM.OAuth2.TokenURL)
 		}
 	}
 
