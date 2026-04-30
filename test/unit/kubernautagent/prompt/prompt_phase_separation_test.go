@@ -29,7 +29,7 @@ var _ = Describe("Phase Separation: Prompt Contracts — #700", func() {
 
 	BeforeEach(func() {
 		var err error
-		builder, err = prompt.NewBuilder(prompt.WithStructuredOutput(true))
+		builder, err = prompt.NewBuilder()
 		Expect(err).NotTo(HaveOccurred())
 	})
 

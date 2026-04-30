@@ -19,6 +19,8 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -85,32 +87,80 @@ func (l LoggingConfig) SlogLevel() slog.Level {
 	}
 }
 
+// LLMConfig holds static LLM provider settings that require a pod restart to change.
 type LLMConfig struct {
-	Provider         string                       `yaml:"provider"`
-	Endpoint         string                       `yaml:"endpoint"`
-	Model            string                       `yaml:"model"`
-	APIKey           string                       `yaml:"apiKey"`
-	AzureAPIVersion  string                       `yaml:"azureApiVersion"`
-	VertexProject    string                       `yaml:"vertexProject"`
-	VertexLocation   string                       `yaml:"vertexLocation"`
-	BedrockRegion    string                       `yaml:"bedrockRegion"`
-	Temperature      float64                      `yaml:"temperature"`
-	MaxRetries       int                          `yaml:"maxRetries"`
-	TimeoutSeconds   int                          `yaml:"timeoutSeconds"`
-	StructuredOutput bool                         `yaml:"-"`
-	CustomHeaders    []pkgconfig.HeaderDefinition `yaml:"-"`
-	OAuth2           OAuth2Config                 `yaml:"-"`
+	Provider        string       `yaml:"provider"`
+	AzureAPIVersion string       `yaml:"azureApiVersion"`
+	VertexProject   string       `yaml:"vertexProject"`
+	VertexLocation  string       `yaml:"vertexLocation"`
+	BedrockRegion   string       `yaml:"bedrockRegion"`
+	OAuth2          OAuth2Config `yaml:"oauth2,omitempty"`
+}
+
+// LLMRuntimeConfig holds hot-reloadable LLM settings that can change without restart.
+// This struct maps to a separate ConfigMap (kubernaut-agent-llm-runtime) watched by
+// the FileWatcher.
+type LLMRuntimeConfig struct {
+	Model          string                       `yaml:"model"`
+	Endpoint       string                       `yaml:"endpoint"`
+	APIKey         string                       `yaml:"apiKey"`
+	Temperature    float64                      `yaml:"temperature"`
+	MaxRetries     int                          `yaml:"maxRetries"`
+	TimeoutSeconds int                          `yaml:"timeoutSeconds"`
+	CustomHeaders  []pkgconfig.HeaderDefinition `yaml:"customHeaders,omitempty"`
 }
 
 // OAuth2Config holds OAuth2 client credentials configuration for enterprise
 // LLM gateway authentication. When enabled, KA acquires and refreshes JWTs
 // automatically via the client credentials grant (RFC 6749 s4.4).
+//
+// Security: clientID and clientSecret are resolved from mounted Secret files
+// at runtime (not stored in ConfigMap). Only tokenURL, scopes, and
+// credentialsDir are configured via YAML.
 type OAuth2Config struct {
-	Enabled      bool     `yaml:"enabled"`
-	TokenURL     string   `yaml:"tokenURL"`
-	ClientID     string   `yaml:"clientID"`
-	ClientSecret string   `yaml:"clientSecret"`
-	Scopes       []string `yaml:"scopes,omitempty"`
+	Enabled        bool     `yaml:"enabled"`
+	TokenURL       string   `yaml:"tokenURL"`
+	Scopes         []string `yaml:"scopes,omitempty"`
+	CredentialsDir string   `yaml:"credentialsDir"`
+	ClientID       string   `yaml:"-"`
+	ClientSecret   string   `yaml:"-"`
+}
+
+// ResolveOAuth2Credentials reads clientID and clientSecret from mounted
+// Secret files in the configured credentialsDir. Expected file layout:
+//
+//	<credentialsDir>/client-id
+//	<credentialsDir>/client-secret
+func (c *OAuth2Config) ResolveOAuth2Credentials() error {
+	if !c.Enabled {
+		return nil
+	}
+	if c.CredentialsDir == "" {
+		return fmt.Errorf("oauth2.credentialsDir is required when oauth2.enabled=true")
+	}
+	clientID, err := readSecretFile(filepath.Join(c.CredentialsDir, "client-id"))
+	if err != nil {
+		return fmt.Errorf("reading oauth2 client-id: %w", err)
+	}
+	clientSecret, err := readSecretFile(filepath.Join(c.CredentialsDir, "client-secret"))
+	if err != nil {
+		return fmt.Errorf("reading oauth2 client-secret: %w", err)
+	}
+	c.ClientID = clientID
+	c.ClientSecret = clientSecret
+	return nil
+}
+
+func readSecretFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	v := strings.TrimSpace(string(data))
+	if v == "" {
+		return "", fmt.Errorf("file %s is empty", path)
+	}
+	return v, nil
 }
 
 type DataStorageConfig struct {
@@ -196,48 +246,59 @@ type AnomalyConfig struct {
 
 // AlignmentCheckConfig holds settings for the shadow agent alignment checker (#601).
 type AlignmentCheckConfig struct {
-	Enabled       bool          `yaml:"enabled"`
-	LLM           *LLMConfig    `yaml:"llm"`
-	Timeout       time.Duration `yaml:"timeout"`
-	MaxStepTokens int           `yaml:"maxStepTokens"`
+	Enabled       bool               `yaml:"enabled"`
+	LLM           *LLMOverrideConfig `yaml:"llm"`
+	Timeout       time.Duration      `yaml:"timeout"`
+	MaxStepTokens int                `yaml:"maxStepTokens"`
 }
 
-// mergeLLMConfig overlays non-zero fields from override onto base and returns the result.
-func mergeLLMConfig(base LLMConfig, override *LLMConfig) LLMConfig {
-	if override == nil {
-		return base
-	}
-	merged := base
-	if override.Provider != "" {
-		merged.Provider = override.Provider
-	}
-	if override.Endpoint != "" {
-		merged.Endpoint = override.Endpoint
-	}
-	if override.Model != "" {
-		merged.Model = override.Model
-	}
-	if override.APIKey != "" {
-		merged.APIKey = override.APIKey
-	}
-	if override.AzureAPIVersion != "" {
-		merged.AzureAPIVersion = override.AzureAPIVersion
-	}
-	if override.VertexProject != "" {
-		merged.VertexProject = override.VertexProject
-	}
-	if override.VertexLocation != "" {
-		merged.VertexLocation = override.VertexLocation
-	}
-	if override.BedrockRegion != "" {
-		merged.BedrockRegion = override.BedrockRegion
-	}
-	return merged
+// LLMOverrideConfig allows the alignment checker to use a different LLM than
+// the primary investigator. All fields are optional; non-zero fields override
+// the corresponding base values.
+type LLMOverrideConfig struct {
+	Provider        string `yaml:"provider"`
+	Endpoint        string `yaml:"endpoint"`
+	Model           string `yaml:"model"`
+	APIKey          string `yaml:"apiKey"`
+	AzureAPIVersion string `yaml:"azureApiVersion"`
+	VertexProject   string `yaml:"vertexProject"`
+	VertexLocation  string `yaml:"vertexLocation"`
+	BedrockRegion   string `yaml:"bedrockRegion"`
 }
 
-// EffectiveLLM returns a merged LLM config for the alignment checker.
-func (c *AlignmentCheckConfig) EffectiveLLM(base LLMConfig) LLMConfig {
-	return mergeLLMConfig(base, c.LLM)
+// EffectiveLLM returns a merged set of static + runtime fields for the
+// alignment checker client builder. If override fields are set, they win.
+func (c *AlignmentCheckConfig) EffectiveLLM(base LLMConfig, runtime LLMRuntimeConfig) (LLMConfig, LLMRuntimeConfig) {
+	if c.LLM == nil {
+		return base, runtime
+	}
+	staticOut := base
+	runtimeOut := runtime
+	if c.LLM.Provider != "" {
+		staticOut.Provider = c.LLM.Provider
+	}
+	if c.LLM.AzureAPIVersion != "" {
+		staticOut.AzureAPIVersion = c.LLM.AzureAPIVersion
+	}
+	if c.LLM.VertexProject != "" {
+		staticOut.VertexProject = c.LLM.VertexProject
+	}
+	if c.LLM.VertexLocation != "" {
+		staticOut.VertexLocation = c.LLM.VertexLocation
+	}
+	if c.LLM.BedrockRegion != "" {
+		staticOut.BedrockRegion = c.LLM.BedrockRegion
+	}
+	if c.LLM.Model != "" {
+		runtimeOut.Model = c.LLM.Model
+	}
+	if c.LLM.Endpoint != "" {
+		runtimeOut.Endpoint = c.LLM.Endpoint
+	}
+	if c.LLM.APIKey != "" {
+		runtimeOut.APIKey = c.LLM.APIKey
+	}
+	return staticOut, runtimeOut
 }
 
 // Load parses configuration from YAML bytes and applies defaults.
@@ -249,98 +310,38 @@ func Load(data []byte) (*Config, error) {
 	return cfg, nil
 }
 
-// SDKConfig represents the SDK configuration file structure.
-// This maps to the kubernaut-agent-sdk-config ConfigMap rendered by
-// the Helm chart when llm.provider/model are set. All LLM fields
-// use gap-fill semantics (main config wins when non-zero) except
-// transport fields (structured_output, custom_headers, oauth2) which
-// are sourced exclusively from this config.
-type SDKConfig struct {
-	LLM struct {
-		Provider         string                       `yaml:"provider"`
-		Model            string                       `yaml:"model"`
-		Endpoint         string                       `yaml:"endpoint"`
-		APIKey           string                       `yaml:"apiKey"`
-		AzureAPIVersion  string                       `yaml:"azureApiVersion"`
-		VertexProject    string                       `yaml:"vertexProject"`
-		VertexLocation   string                       `yaml:"vertexLocation"`
-		BedrockRegion    string                       `yaml:"bedrockRegion"`
-		MaxRetries       int                          `yaml:"maxRetries"`
-		TimeoutSeconds   int                          `yaml:"timeoutSeconds"`
-		Temperature      float64                      `yaml:"temperature"`
-		StructuredOutput bool                         `yaml:"structuredOutput"`
-		CustomHeaders    []pkgconfig.HeaderDefinition `yaml:"customHeaders,omitempty"`
-		OAuth2           OAuth2Config                 `yaml:"oauth2,omitempty"`
-	} `yaml:"llm"`
+// LoadLLMRuntime parses LLM runtime configuration from YAML bytes.
+func LoadLLMRuntime(data []byte) (*LLMRuntimeConfig, error) {
+	var rt LLMRuntimeConfig
+	if err := yaml.Unmarshal(data, &rt); err != nil {
+		return nil, fmt.Errorf("parsing llm runtime config: %w", err)
+	}
+	return &rt, nil
 }
 
-// MergeSDKConfig loads an SDK config file and merges LLM fields into
-// the main config. Gap-fill semantics: the main config value is kept
-// when non-zero; the SDK value fills the gap only when the main value
-// is the zero value.
-func (c *Config) MergeSDKConfig(data []byte) error {
-	var sdk SDKConfig
-	if err := yaml.Unmarshal(data, &sdk); err != nil {
-		return fmt.Errorf("parsing SDK config: %w", err)
+// Validate checks that the LLM runtime config has the minimum required fields.
+func (r *LLMRuntimeConfig) Validate(provider string) error {
+	if r.Model == "" {
+		return fmt.Errorf("model is required")
 	}
-	if c.AI.LLM.Provider == "" || c.AI.LLM.Provider == DefaultConfig().AI.LLM.Provider {
-		if sdk.LLM.Provider != "" {
-			c.AI.LLM.Provider = sdk.LLM.Provider
+	switch provider {
+	case "bedrock", "huggingface", "anthropic", "openai", "vertex", "vertex_ai":
+	default:
+		if r.Endpoint == "" {
+			return fmt.Errorf("endpoint is required for provider %q", provider)
 		}
 	}
-	if c.AI.LLM.Model == "" && sdk.LLM.Model != "" {
-		c.AI.LLM.Model = sdk.LLM.Model
-	}
-	if c.AI.LLM.Endpoint == "" && sdk.LLM.Endpoint != "" {
-		c.AI.LLM.Endpoint = sdk.LLM.Endpoint
-	}
-	if c.AI.LLM.APIKey == "" && sdk.LLM.APIKey != "" {
-		c.AI.LLM.APIKey = sdk.LLM.APIKey
-	}
-	if c.AI.LLM.VertexProject == "" && sdk.LLM.VertexProject != "" {
-		c.AI.LLM.VertexProject = sdk.LLM.VertexProject
-	}
-	if c.AI.LLM.VertexLocation == "" && sdk.LLM.VertexLocation != "" {
-		c.AI.LLM.VertexLocation = sdk.LLM.VertexLocation
-	}
-	if c.AI.LLM.BedrockRegion == "" && sdk.LLM.BedrockRegion != "" {
-		c.AI.LLM.BedrockRegion = sdk.LLM.BedrockRegion
-	}
-	if c.AI.LLM.AzureAPIVersion == "" && sdk.LLM.AzureAPIVersion != "" {
-		c.AI.LLM.AzureAPIVersion = sdk.LLM.AzureAPIVersion
-	}
-	if c.AI.LLM.Temperature == 0 && sdk.LLM.Temperature != 0 {
-		c.AI.LLM.Temperature = sdk.LLM.Temperature
-	}
-	if c.AI.LLM.MaxRetries == 0 && sdk.LLM.MaxRetries != 0 {
-		c.AI.LLM.MaxRetries = sdk.LLM.MaxRetries
-	}
-	if c.AI.LLM.TimeoutSeconds == 0 && sdk.LLM.TimeoutSeconds != 0 {
-		c.AI.LLM.TimeoutSeconds = sdk.LLM.TimeoutSeconds
-	}
-	c.AI.LLM.StructuredOutput = sdk.LLM.StructuredOutput
-	c.AI.LLM.CustomHeaders = sdk.LLM.CustomHeaders
-	c.AI.LLM.OAuth2 = sdk.LLM.OAuth2
 	return nil
 }
 
-// Validate checks required fields and value constraints.
+// Validate checks required fields and value constraints for the static config.
+// Runtime LLM fields are validated separately via LLMRuntimeConfig.Validate().
 func (c *Config) Validate() error {
 	if c.Runtime.Logging.Level != "" {
 		validLevels := map[string]bool{"DEBUG": true, "INFO": true, "WARN": true, "ERROR": true}
 		if !validLevels[strings.ToUpper(c.Runtime.Logging.Level)] {
 			return fmt.Errorf("invalid log level: %s (must be DEBUG, INFO, WARN, or ERROR)", c.Runtime.Logging.Level)
 		}
-	}
-	switch c.AI.LLM.Provider {
-	case "bedrock", "huggingface", "anthropic", "openai", "vertex", "vertex_ai":
-	default:
-		if c.AI.LLM.Endpoint == "" {
-			return fmt.Errorf("ai.llm.endpoint is required for provider %q", c.AI.LLM.Provider)
-		}
-	}
-	if c.AI.LLM.Model == "" {
-		return fmt.Errorf("ai.llm.model is required")
 	}
 	if c.AI.Investigation.MaxTurns <= 0 {
 		return fmt.Errorf("ai.investigation.maxTurns must be positive, got %d", c.AI.Investigation.MaxTurns)
@@ -349,11 +350,8 @@ func (c *Config) Validate() error {
 		if c.AI.LLM.OAuth2.TokenURL == "" {
 			return fmt.Errorf("ai.llm.oauth2.tokenURL is required when oauth2.enabled=true")
 		}
-		if c.AI.LLM.OAuth2.ClientID == "" {
-			return fmt.Errorf("ai.llm.oauth2.clientID is required when oauth2.enabled=true")
-		}
-		if c.AI.LLM.OAuth2.ClientSecret == "" {
-			return fmt.Errorf("ai.llm.oauth2.clientSecret is required when oauth2.enabled=true")
+		if c.AI.LLM.OAuth2.CredentialsDir == "" {
+			return fmt.Errorf("ai.llm.oauth2.credentialsDir is required when oauth2.enabled=true")
 		}
 	}
 	if c.AI.AlignmentCheck.Enabled {
@@ -362,19 +360,6 @@ func (c *Config) Validate() error {
 		}
 		if c.AI.AlignmentCheck.MaxStepTokens <= 0 {
 			return fmt.Errorf("ai.alignmentCheck.maxStepTokens must be positive when enabled, got %d", c.AI.AlignmentCheck.MaxStepTokens)
-		}
-		if c.AI.AlignmentCheck.LLM != nil {
-			merged := c.AI.AlignmentCheck.EffectiveLLM(c.AI.LLM)
-			switch merged.Provider {
-			case "bedrock", "huggingface", "anthropic", "openai":
-			default:
-				if merged.Endpoint == "" {
-					return fmt.Errorf("ai.alignmentCheck.llm.endpoint is required for provider %q", merged.Provider)
-				}
-			}
-			if merged.Model == "" {
-				return fmt.Errorf("ai.alignmentCheck.llm.model is required when alignmentCheck.llm is set")
-			}
 		}
 	}
 	return nil
@@ -421,5 +406,14 @@ func DefaultConfig() *Config {
 		Integrations: IntegrationsConfig{
 			DataStorage: DataStorageConfig{SATokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"},
 		},
+	}
+}
+
+// DefaultLLMRuntime returns an LLMRuntimeConfig with sensible production defaults.
+func DefaultLLMRuntime() *LLMRuntimeConfig {
+	return &LLMRuntimeConfig{
+		Temperature:    0.7,
+		MaxRetries:     3,
+		TimeoutSeconds: 120,
 	}
 }

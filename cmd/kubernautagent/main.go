@@ -76,12 +76,12 @@ import (
 
 func main() {
 	var (
-		configPath    string
-		sdkConfigPath string
-		addr          string
+		configPath     string
+		llmRuntimePath string
+		addr           string
 	)
-	flag.StringVar(&configPath, "config", "/etc/kubernautagent/config.yaml", "Path to YAML configuration file")
-	flag.StringVar(&sdkConfigPath, "sdk-config", "/etc/kubernaut-agent/sdk/sdk-config.yaml", "Path to SDK configuration file (LLM provider, model, auth, transport)")
+	flag.StringVar(&configPath, "config", "/etc/kubernautagent/config.yaml", "Path to static YAML configuration file")
+	flag.StringVar(&llmRuntimePath, "llm-runtime", "/etc/kubernautagent/llm-runtime.yaml", "Path to hot-reloadable LLM runtime configuration")
 	flag.StringVar(&addr, "addr", "", "HTTP listen address (overrides config server.port)")
 	flag.Parse()
 
@@ -107,41 +107,45 @@ func main() {
 
 	slogger.Info("log level configured", "level", cfg.Runtime.Logging.Level)
 
-	if sdkData, sdkErr := os.ReadFile(sdkConfigPath); sdkErr == nil {
-		if mergeErr := cfg.MergeSDKConfig(sdkData); mergeErr != nil {
-			slogger.Warn("failed to parse SDK config, continuing with main config only",
-				"path", sdkConfigPath, "error", mergeErr)
-		} else {
-			slogger.Info("merged SDK config", "path", sdkConfigPath)
-		}
-	} else {
-		slogger.Info("SDK config not found, using main config only", "path", sdkConfigPath)
+	llmRtData, err := os.ReadFile(llmRuntimePath)
+	if err != nil {
+		slogger.Error("failed to read llm runtime config", "path", llmRuntimePath, "error", err)
+		os.Exit(1)
+	}
+	llmRuntime, err := kaconfig.LoadLLMRuntime(llmRtData)
+	if err != nil {
+		slogger.Error("failed to parse llm runtime config", "error", err)
+		os.Exit(1)
 	}
 
-	if cfg.AI.LLM.APIKey == "" {
+	if llmRuntime.APIKey == "" {
 		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
-		cfg.AI.LLM.APIKey = credentials.ResolveCredentialsFile(cfg.AI.LLM.Provider, credDir, slogger)
+		llmRuntime.APIKey = credentials.ResolveCredentialsFile(cfg.AI.LLM.Provider, credDir, slogger)
 	}
 
 	switch cfg.AI.LLM.Provider {
 	case "vertex", "vertex_ai":
-		if cfg.AI.LLM.APIKey == "" {
+		if llmRuntime.APIKey == "" {
 			slogger.Warn("GCP provider configured without credentials — requests will use ambient ADC if available",
 				"provider", cfg.AI.LLM.Provider)
 		}
 	}
 
 	if cfg.AI.LLM.OAuth2.Enabled {
-		if v := os.Getenv("OAUTH2_CLIENT_ID"); v != "" {
-			cfg.AI.LLM.OAuth2.ClientID = v
+		if err := cfg.AI.LLM.OAuth2.ResolveOAuth2Credentials(); err != nil {
+			slogger.Error("failed to resolve OAuth2 credentials from mounted Secret", "error", err)
+			os.Exit(1)
 		}
-		if v := os.Getenv("OAUTH2_CLIENT_SECRET"); v != "" {
-			cfg.AI.LLM.OAuth2.ClientSecret = v
-		}
+		slogger.Info("OAuth2 credentials resolved from mounted Secret",
+			"credentialsDir", cfg.AI.LLM.OAuth2.CredentialsDir)
 	}
 
 	if err := cfg.Validate(); err != nil {
 		slogger.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+	if err := llmRuntime.Validate(cfg.AI.LLM.Provider); err != nil {
+		slogger.Error("invalid llm runtime configuration", "error", err)
 		os.Exit(1)
 	}
 
@@ -151,23 +155,19 @@ func main() {
 
 	slogger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
 
-	llmClient, err := buildLLMClientFromConfig(context.Background(), cfg)
+	llmClient, err := buildLLMClientFromConfig(context.Background(), cfg, llmRuntime)
 	if err != nil {
 		slogger.Error("failed to create LLM client", "provider", cfg.AI.LLM.Provider, "error", err)
 		os.Exit(1)
 	}
 
-	swappable, err := llm.NewSwappableClient(llmClient, cfg.AI.LLM.Model)
+	swappable, err := llm.NewSwappableClient(llmClient, llmRuntime.Model)
 	if err != nil {
 		slogger.Error("failed to create swappable LLM client", "error", err)
 		os.Exit(1)
 	}
 
-	var promptOpts []prompt.BuilderOption
-	if cfg.AI.LLM.StructuredOutput {
-		promptOpts = append(promptOpts, prompt.WithStructuredOutput(true))
-	}
-	promptBuilder, err := prompt.NewBuilder(promptOpts...)
+	promptBuilder, err := prompt.NewBuilder()
 	if err != nil {
 		slogger.Error("failed to create prompt builder", "error", err)
 		os.Exit(1)
@@ -205,18 +205,18 @@ func main() {
 			shadowClient = instrumentedLLM
 			slogger.Info("shadow agent shares investigation LLM client")
 		} else {
-			alignLLMCfg := cfg.AI.AlignmentCheck.EffectiveLLM(cfg.AI.LLM)
+			alignStaticCfg, alignRtCfg := cfg.AI.AlignmentCheck.EffectiveLLM(cfg.AI.LLM, *llmRuntime)
 			alignCfgMerge := *cfg
-			alignCfgMerge.AI.LLM = alignLLMCfg
+			alignCfgMerge.AI.LLM = alignStaticCfg
 			raw, alignErr := langchaingo.New(
-				alignLLMCfg.Provider, alignLLMCfg.Endpoint, alignLLMCfg.Model, alignLLMCfg.APIKey,
-				buildLLMProviderOpts(&alignCfgMerge)...)
+				alignStaticCfg.Provider, alignRtCfg.Endpoint, alignRtCfg.Model, alignRtCfg.APIKey,
+				buildLLMProviderOpts(&alignCfgMerge, &alignRtCfg)...)
 			if alignErr != nil {
 				slogger.Error("alignment check LLM client failed (fail-closed): alignment is enabled but shadow client unavailable", "error", alignErr)
 				os.Exit(1)
 			} else {
 				shadowClient = llm.NewInstrumentedClient(raw)
-				slogger.Info("shadow agent using dedicated LLM client", "model", alignLLMCfg.Model)
+				slogger.Info("shadow agent using dedicated LLM client", "model", alignRtCfg.Model)
 			}
 		}
 		if shadowClient != nil {
@@ -246,7 +246,7 @@ func main() {
 		MaxTurns:      cfg.AI.Investigation.MaxTurns,
 		PhaseTools:    phaseTools,
 		Registry:      effectiveReg,
-		ModelName:     cfg.AI.LLM.Model,
+		ModelName:     llmRuntime.Model,
 		Swappable:     swappable,
 		ScopeResolver: scopeResolver,
 		Pipeline: investigator.Pipeline{
@@ -353,21 +353,21 @@ func main() {
 		defer certWatcher.Stop()
 	}
 
-	// Issue #783: Wire FileWatcher for SDK config hot-reload
-	sdkCallback := sdkReloadCallback(configPath, func() *kaconfig.Config { return cfg }, swappable, slogger)
-	sdkWatcher, sdkWatchErr := hotreload.NewFileWatcher(
-		sdkConfigPath,
-		sdkCallback,
-		logr.FromSlogHandler(slogger.Handler()).WithName("sdk-config-reloader"),
+	// Issue #916: Wire FileWatcher for LLM runtime config hot-reload
+	rtCallback := llmRuntimeReloadCallback(cfg, swappable, slogger)
+	rtWatcher, rtWatchErr := hotreload.NewFileWatcher(
+		llmRuntimePath,
+		rtCallback,
+		logr.FromSlogHandler(slogger.Handler()).WithName("llm-runtime-reloader"),
 	)
-	if sdkWatchErr != nil {
-		slogger.Warn("SDK config file watcher not started (file may not exist yet)", "error", sdkWatchErr)
+	if rtWatchErr != nil {
+		slogger.Warn("llm runtime file watcher not started", "error", rtWatchErr)
 	} else {
-		if err := sdkWatcher.Start(ctx); err != nil {
-			slogger.Warn("SDK config file watcher failed to start", "error", err)
+		if err := rtWatcher.Start(ctx); err != nil {
+			slogger.Warn("llm runtime file watcher failed to start", "error", err)
 		} else {
-			defer sdkWatcher.Stop()
-			slogger.Info("SDK config hot-reload enabled (#783)", "path", sdkConfigPath)
+			defer rtWatcher.Stop()
+			slogger.Info("llm runtime hot-reload enabled (#916)", "path", llmRuntimePath)
 		}
 	}
 
@@ -452,13 +452,10 @@ func readyHandler(w http.ResponseWriter, _ *http.Request) {
 
 func configHandler(cfg *kaconfig.Config, swappable *llm.SwappableClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		model := cfg.AI.LLM.Model
-		if swappable != nil {
-			model = swappable.ModelName()
-		}
+		model := swappable.ModelName()
 		sanitized := map[string]interface{}{
 			"service":     "kubernaut-agent",
-			"version":     "v1.3",
+			"version":     "v1.4",
 			"llm_model":   model,
 			"session_ttl": cfg.Runtime.Session.TTL.String(),
 		}

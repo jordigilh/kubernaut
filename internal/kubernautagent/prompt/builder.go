@@ -93,9 +93,8 @@ type investigationTemplateData struct {
 	LastSeen                    string
 	Priority                    string
 	BusinessCategory            string
-	RiskTolerance               string
-	StructuredOutput            bool
-	SignalAnnotations           map[string]string
+	RiskTolerance    string
+	SignalAnnotations map[string]string
 }
 
 // workflowTemplateData maps to fields expected by phase3_workflow_selection.tmpl.
@@ -112,7 +111,6 @@ type workflowTemplateData struct {
 	RiskDescription       string
 	RCASummary            string
 	EnrichmentContext     string
-	StructuredOutput      bool
 	Phase1Assessment      string
 	InvestigationAnalysis string
 }
@@ -138,25 +136,14 @@ type Phase1Data struct {
 	DueDiligence          *katypes.DueDiligenceReview
 }
 
-// BuilderOption configures prompt builder behaviour.
-type BuilderOption func(*Builder)
-
-// WithStructuredOutput enables the structured JSON output prompt format.
-// When enabled, the investigation template instructs the LLM to return a
-// single JSON object instead of section headers with fragments.
-func WithStructuredOutput(enabled bool) BuilderOption {
-	return func(b *Builder) { b.structuredOutput = enabled }
-}
-
 // Builder renders prompt templates with signal and enrichment data.
 type Builder struct {
 	investigationTmpl *template.Template
 	workflowTmpl      *template.Template
-	structuredOutput  bool
 }
 
 // NewBuilder creates a prompt builder with embedded templates.
-func NewBuilder(opts ...BuilderOption) (*Builder, error) {
+func NewBuilder() (*Builder, error) {
 	invTmpl, err := template.ParseFS(templateFS, "templates/incident_investigation.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("parsing investigation template: %w", err)
@@ -165,14 +152,10 @@ func NewBuilder(opts ...BuilderOption) (*Builder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing workflow selection template: %w", err)
 	}
-	b := &Builder{
+	return &Builder{
 		investigationTmpl: invTmpl,
 		workflowTmpl:      wfTmpl,
-	}
-	for _, opt := range opts {
-		opt(b)
-	}
-	return b, nil
+	}, nil
 }
 
 // RenderInvestigation renders the Phase 1 investigation prompt.
@@ -180,7 +163,6 @@ func (b *Builder) RenderInvestigation(signal SignalData) (string, error) {
 	sanitized := sanitizeSignal(signal)
 
 	data := investigationTemplateData{
-		StructuredOutput:    b.structuredOutput,
 		IncidentSummary:     fmt.Sprintf("%s %s in %s: %s", sanitized.Severity, sanitized.Name, sanitized.Namespace, sanitized.Message),
 		PriorityDescription: withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
 		Environment:         withDefault(sanitized.Environment, sanitized.Namespace),
@@ -240,7 +222,6 @@ func (b *Builder) RenderWorkflowSelection(in WorkflowSelectionInput) (string, er
 		Environment:         withDefault(sanitized.Environment, sanitized.Namespace),
 		RiskDescription:     withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
 		RCASummary:            sanitizeField(in.RCASummary),
-		StructuredOutput:      b.structuredOutput,
 		Phase1Assessment:      formatPhase1Assessment(in.Phase1),
 		InvestigationAnalysis: formatInvestigationAnalysis(in.Phase1),
 	}

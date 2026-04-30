@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
@@ -31,24 +30,23 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
 )
 
-// buildLLMClientFromConfig constructs an llm.Client from the given config.
-// This is a pure function used both at startup and by the SDK hot-reload
-// callback. It does not mutate cfg.
-func buildLLMClientFromConfig(ctx context.Context, cfg *kaconfig.Config) (llm.Client, error) {
+// buildLLMClientFromConfig constructs an llm.Client from the static config and
+// runtime config. This is a pure function used both at startup and by the
+// hot-reload callback. It does not mutate either config.
+func buildLLMClientFromConfig(ctx context.Context, cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) (llm.Client, error) {
 	switch cfg.AI.LLM.Provider {
 	case "vertex_ai":
 		return vertexanthropic.New(ctx,
-			cfg.AI.LLM.Model, []byte(cfg.AI.LLM.APIKey),
+			rt.Model, []byte(rt.APIKey),
 			cfg.AI.LLM.VertexProject, cfg.AI.LLM.VertexLocation)
 	default:
-		return langchaingo.New(cfg.AI.LLM.Provider, cfg.AI.LLM.Endpoint, cfg.AI.LLM.Model, cfg.AI.LLM.APIKey,
-			buildLLMProviderOpts(cfg)...)
+		return langchaingo.New(cfg.AI.LLM.Provider, rt.Endpoint, rt.Model, rt.APIKey,
+			buildLLMProviderOpts(cfg, rt)...)
 	}
 }
 
-// buildLLMProviderOpts returns provider-specific LangChainGo options based on
-// config. Extracted from buildLLMProviderOptions for reuse.
-func buildLLMProviderOpts(cfg *kaconfig.Config) []langchaingo.Option {
+// buildLLMProviderOpts returns provider-specific LangChainGo options.
+func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) []langchaingo.Option {
 	var opts []langchaingo.Option
 	if cfg.AI.LLM.AzureAPIVersion != "" {
 		opts = append(opts, langchaingo.WithAzureAPIVersion(cfg.AI.LLM.AzureAPIVersion))
@@ -63,10 +61,10 @@ func buildLLMProviderOpts(cfg *kaconfig.Config) []langchaingo.Option {
 		opts = append(opts, langchaingo.WithBedrockRegion(cfg.AI.LLM.BedrockRegion))
 	}
 
-	if rt := buildTransportChainFromConfig(cfg); rt != nil {
-		opts = append(opts, langchaingo.WithHTTPClient(&http.Client{Transport: rt}))
+	if transport := buildTransportChain(cfg, rt); transport != nil {
+		opts = append(opts, langchaingo.WithHTTPClient(&http.Client{Transport: transport}))
 		opts = append(opts, langchaingo.WithCloser(func() error {
-			if t, ok := rt.(interface{ CloseIdleConnections() }); ok {
+			if t, ok := transport.(interface{ CloseIdleConnections() }); ok {
 				t.CloseIdleConnections()
 			}
 			return nil
@@ -75,9 +73,9 @@ func buildLLMProviderOpts(cfg *kaconfig.Config) []langchaingo.Option {
 	return opts
 }
 
-// buildTransportChainFromConfig composes the HTTP transport stack. Extracted
-// from buildTransportChain for reuse by the reload callback.
-func buildTransportChainFromConfig(cfg *kaconfig.Config) http.RoundTripper {
+// buildTransportChain composes the HTTP transport stack from static (OAuth2)
+// and runtime (CustomHeaders) config layers.
+func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) http.RoundTripper {
 	var base http.RoundTripper = http.DefaultTransport
 	needsCustom := false
 
@@ -85,12 +83,8 @@ func buildTransportChainFromConfig(cfg *kaconfig.Config) http.RoundTripper {
 		base = llmtransport.NewOAuth2ClientCredentialsTransport(cfg.AI.LLM.OAuth2, base)
 		needsCustom = true
 	}
-	if len(cfg.AI.LLM.CustomHeaders) > 0 {
-		base = llmtransport.NewAuthHeadersTransport(cfg.AI.LLM.CustomHeaders, base)
-		needsCustom = true
-	}
-	if cfg.AI.LLM.StructuredOutput {
-		base = llmtransport.NewStructuredOutputTransport(nil, base)
+	if len(rt.CustomHeaders) > 0 {
+		base = llmtransport.NewAuthHeadersTransport(rt.CustomHeaders, base)
 		needsCustom = true
 	}
 	if !needsCustom {
@@ -99,20 +93,15 @@ func buildTransportChainFromConfig(cfg *kaconfig.Config) http.RoundTripper {
 	return base
 }
 
-// sdkReloadCallback creates a hotreload.ReloadCallback for SDK config changes.
-// It re-reads the main config from disk, merges the new SDK content, validates,
-// builds a new client, and swaps it into the SwappableClient.
+// llmRuntimeReloadCallback creates a hotreload.ReloadCallback for LLM runtime
+// config file changes. It parses the new content, validates it, builds a new
+// LLM client, and swaps it into the SwappableClient.
 //
-// Security invariants (per #783 adversarial review):
-//   - Provider changes are rejected
-//   - OAuth2 credential changes (token_url, client_id, client_secret) are rejected
-//   - Empty/whitespace SDK content is rejected
-//   - token_url must use https:// scheme
-//   - structured_output changes are rejected
-//   - Fresh config copy is used (live cfg never mutated on failure)
-func sdkReloadCallback(
-	mainConfigPath string,
-	currentCfg func() *kaconfig.Config,
+// Since the runtime file only contains hot-reloadable fields (model, endpoint,
+// apiKey, temperature, maxRetries, timeoutSeconds, customHeaders), no safety
+// checks are needed — all fields are safe to change at runtime.
+func llmRuntimeReloadCallback(
+	staticCfg *kaconfig.Config,
 	swappable *llm.SwappableClient,
 	logger *slog.Logger,
 ) func(newContent string) error {
@@ -120,115 +109,44 @@ func sdkReloadCallback(
 		oldModel := swappable.ModelName()
 
 		if strings.TrimSpace(newContent) == "" {
-			logger.Warn("sdk_config_reload rejected: empty content",
-				"event", "sdk_config_reload", "status", "rejected", "reason", "empty_content")
-			return fmt.Errorf("SDK config reload rejected: empty or whitespace-only content")
+			logger.Warn("llm_runtime_reload rejected: empty content",
+				"event", "llm_runtime_reload", "status", "rejected", "reason", "empty_content")
+			return fmt.Errorf("llm runtime reload rejected: empty or whitespace-only content")
 		}
 
-		freshCfg, err := loadFreshConfig(mainConfigPath)
+		rt, err := kaconfig.LoadLLMRuntime([]byte(newContent))
 		if err != nil {
-			logger.Error("sdk_config_reload failed: cannot re-read main config",
-				"event", "sdk_config_reload", "status", "error", "reason", "main_config_read", "error", err)
-			return fmt.Errorf("reload: re-reading main config: %w", err)
+			logger.Error("llm_runtime_reload failed: parse error",
+				"event", "llm_runtime_reload", "status", "error", "error", err)
+			return fmt.Errorf("reload: parsing llm runtime config: %w", err)
 		}
 
-		if err := freshCfg.MergeSDKConfig([]byte(newContent)); err != nil {
-			logger.Error("sdk_config_reload failed: merge error",
-				"event", "sdk_config_reload", "status", "error", "reason", "merge_failed", "error", err)
-			return fmt.Errorf("reload: merging SDK config: %w", err)
-		}
-
-		cur := currentCfg()
-
-		if err := validateReloadSafety(cur, freshCfg); err != nil {
-			logger.Warn("sdk_config_reload rejected",
-				"event", "sdk_config_reload", "status", "rejected", "reason", err.Error())
-			return err
-		}
-
-		if err := freshCfg.Validate(); err != nil {
-			logger.Warn("sdk_config_reload rejected: validation failed",
-				"event", "sdk_config_reload", "status", "rejected", "reason", "validation_failed", "error", err)
+		if err := rt.Validate(staticCfg.AI.LLM.Provider); err != nil {
+			logger.Warn("llm_runtime_reload rejected: validation failed",
+				"event", "llm_runtime_reload", "status", "rejected", "error", err)
 			return fmt.Errorf("reload: validation failed: %w", err)
 		}
 
-		newClient, err := buildLLMClientFromConfig(context.Background(), freshCfg)
+		newClient, err := buildLLMClientFromConfig(context.Background(), staticCfg, rt)
 		if err != nil {
-			logger.Error("sdk_config_reload failed: client build error",
-				"event", "sdk_config_reload", "status", "error", "reason", "client_build_failed", "error", err)
+			logger.Error("llm_runtime_reload failed: client build error",
+				"event", "llm_runtime_reload", "status", "error", "error", err)
 			return fmt.Errorf("reload: building LLM client: %w", err)
 		}
 
-		if err := swappable.Swap(newClient, freshCfg.AI.LLM.Model); err != nil {
-			logger.Error("sdk_config_reload failed: swap error",
-				"event", "sdk_config_reload", "status", "error", "reason", "swap_failed", "error", err)
+		if err := swappable.Swap(newClient, rt.Model); err != nil {
+			logger.Error("llm_runtime_reload failed: swap error",
+				"event", "llm_runtime_reload", "status", "error", "error", err)
 			return fmt.Errorf("reload: swapping client: %w", err)
 		}
 
-		logger.Info("sdk_config_reload success",
-			"event", "sdk_config_reload",
+		logger.Info("llm_runtime_reload success",
+			"event", "llm_runtime_reload",
 			"status", "success",
 			"old_model", oldModel,
-			"new_model", freshCfg.AI.LLM.Model,
-			"old_endpoint", cur.AI.LLM.Endpoint,
-			"new_endpoint", freshCfg.AI.LLM.Endpoint,
+			"new_model", rt.Model,
+			"new_endpoint", rt.Endpoint,
 		)
 		return nil
 	}
-}
-
-// loadFreshConfig re-reads the main config file from disk and returns a fresh
-// Config struct. This ensures the reload callback never mutates the live config.
-func loadFreshConfig(path string) (*kaconfig.Config, error) {
-	data, err := readFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading config %s: %w", path, err)
-	}
-	return kaconfig.Load(data)
-}
-
-// readFile is a package-level variable for test injection.
-var readFile = os.ReadFile
-
-// validateReloadSafety checks that the new config does not violate hot-reload
-// safety constraints.
-func validateReloadSafety(current, proposed *kaconfig.Config) error {
-	if current.AI.LLM.Provider != proposed.AI.LLM.Provider {
-		return fmt.Errorf("SDK config reload rejected: provider change from %q to %q requires pod restart",
-			current.AI.LLM.Provider, proposed.AI.LLM.Provider)
-	}
-
-	if current.AI.LLM.StructuredOutput != proposed.AI.LLM.StructuredOutput {
-		return fmt.Errorf("SDK config reload rejected: structured_output change requires pod restart")
-	}
-
-	if err := validateOAuth2Safety(current.AI.LLM.OAuth2, proposed.AI.LLM.OAuth2); err != nil {
-		return err
-	}
-
-	if proposed.AI.LLM.OAuth2.Enabled && proposed.AI.LLM.OAuth2.TokenURL != "" {
-		if !strings.HasPrefix(strings.ToLower(proposed.AI.LLM.OAuth2.TokenURL), "https://") {
-			return fmt.Errorf("SDK config reload rejected: oauth2.token_url must use https:// scheme, got %q",
-				proposed.AI.LLM.OAuth2.TokenURL)
-		}
-	}
-
-	return nil
-}
-
-func validateOAuth2Safety(current, proposed kaconfig.OAuth2Config) error {
-	if !current.Enabled && !proposed.Enabled {
-		return nil
-	}
-
-	if current.TokenURL != proposed.TokenURL {
-		return fmt.Errorf("SDK config reload rejected: oauth2.token_url change requires pod restart")
-	}
-	if current.ClientID != proposed.ClientID {
-		return fmt.Errorf("SDK config reload rejected: oauth2.client_id change requires pod restart")
-	}
-	if current.ClientSecret != proposed.ClientSecret {
-		return fmt.Errorf("SDK config reload rejected: oauth2.client_secret change requires pod restart")
-	}
-	return nil
 }

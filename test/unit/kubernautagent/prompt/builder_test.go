@@ -152,7 +152,7 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 	})
 
 	Describe("UT-KA-686-008: Prompt renders submit_result tool instruction", func() {
-		It("should include submit_result instruction in investigation prompt regardless of StructuredOutput", func() {
+		It("should include submit_result instruction in investigation prompt", func() {
 			builder, err := prompt.NewBuilder()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -492,24 +492,7 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 	})
 
 	Describe("UT-KA-SO-PROMPT-001: Prompt uses unified submit_result tool instruction", func() {
-		It("should include submit_result instruction regardless of structured output setting", func() {
-			builder, err := prompt.NewBuilder(prompt.WithStructuredOutput(true))
-			Expect(err).NotTo(HaveOccurred())
-
-			rendered, err := builder.RenderInvestigation(prompt.SignalData{
-				Name:      "test-signal",
-				Namespace: "default",
-				Severity:  "high",
-				Message:   "Test message",
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(rendered).To(ContainSubstring("submit_result"),
-				"prompt must instruct LLM to call submit_result tool")
-			Expect(rendered).NotTo(ContainSubstring("Use section header format"),
-				"prompt must NOT include legacy section header instructions")
-		})
-
-		It("should include submit_result instruction when structured output is disabled", func() {
+		It("should include submit_result instruction", func() {
 			builder, err := prompt.NewBuilder()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -521,7 +504,7 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rendered).To(ContainSubstring("submit_result"),
-				"prompt must instruct LLM to call submit_result tool even without structured output")
+				"prompt must instruct LLM to call submit_result tool")
 			Expect(rendered).NotTo(ContainSubstring("Use section header format"),
 				"prompt must NOT include legacy section header instructions")
 		})
