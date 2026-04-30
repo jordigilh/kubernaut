@@ -338,7 +338,7 @@ func main() {
 				})
 				slogger.Info("MCP interactive route mounted",
 					"path", "/api/v1/mcp",
-					"rate_limit_per_user", cfg.Interactive.RateLimitPerUser,
+					"rateLimitPerUser", cfg.Interactive.RateLimitPerUser,
 				)
 			} else {
 				slogger.Error("MCP interactive mode enabled but handler construction failed (check preceding errors)")

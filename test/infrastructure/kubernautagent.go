@@ -718,10 +718,10 @@ data:
         url: "https://data-storage-service:8080"
     interactive:
       enabled: true
-      session_ttl: "5m"
-      inactivity_timeout: "2m"
-      max_concurrent_sessions: 3
-      rate_limit_per_user: 20
+      sessionTTL: "5m"
+      inactivityTimeout: "2m"
+      maxConcurrentSessions: 3
+      rateLimitPerUser: 20
 ---
 apiVersion: v1
 kind: ConfigMap

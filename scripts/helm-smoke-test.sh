@@ -1516,7 +1516,7 @@ for d in docs:
     --set kubernautAgent.interactive.sessionTTL=15m \
     --set kubernautAgent.interactive.maxConcurrentSessions=10 2>&1)
   if echo "$interactive_out" | grep -q '15m' && \
-     echo "$interactive_out" | grep -q "max_concurrent_sessions: 10"; then
+     echo "$interactive_out" | grep -q "maxConcurrentSessions: 10"; then
     tap_ok "HELM-05: custom sessionTTL and maxConcurrentSessions rendered in ConfigMap"
   else
     tap_not_ok "HELM-05: custom interactive values" \

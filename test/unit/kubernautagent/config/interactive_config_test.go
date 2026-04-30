@@ -27,22 +27,29 @@ import (
 
 var _ = Describe("InteractiveConfig Validation — #703", func() {
 
-	// Helper: returns a valid base config with LLM fields satisfied.
+	// Helper: returns a valid base config with required fields satisfied.
 	validBaseYAML := func(interactiveBlock string) []byte {
 		return []byte(`
-llm:
-  endpoint: "http://localhost:11434/v1"
-  model: "llama3"
+runtime:
+  server:
+    rateLimit:
+      requestsPerSecond: 5
+      burst: 10
+ai:
+  llm:
+    provider: "openai"
+  investigation:
+    maxTurns: 40
 ` + interactiveBlock)
 	}
 
 	Describe("UT-KA-703-A01: Validate() rejects Interactive.Enabled=true with missing SessionTTL", func() {
-		It("should return an error when session_ttl is zero", func() {
+		It("should return an error when sessionTTL is zero", func() {
 			yaml := validBaseYAML(`
 interactive:
   enabled: true
-  inactivity_timeout: 5m
-  max_concurrent_sessions: 10
+  inactivityTimeout: 5m
+  maxConcurrentSessions: 10
 `)
 			cfg, err := config.Load(yaml)
 			Expect(err).NotTo(HaveOccurred())
@@ -50,17 +57,17 @@ interactive:
 
 			err = cfg.Validate()
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("session_ttl"))
+			Expect(err.Error()).To(ContainSubstring("sessionTTL"))
 		})
 	})
 
 	Describe("UT-KA-703-A02: Validate() rejects Interactive.Enabled=true with missing InactivityTimeout", func() {
-		It("should return an error when inactivity_timeout is zero", func() {
+		It("should return an error when inactivityTimeout is zero", func() {
 			yaml := validBaseYAML(`
 interactive:
   enabled: true
-  session_ttl: 30m
-  max_concurrent_sessions: 10
+  sessionTTL: 30m
+  maxConcurrentSessions: 10
 `)
 			cfg, err := config.Load(yaml)
 			Expect(err).NotTo(HaveOccurred())
@@ -68,7 +75,7 @@ interactive:
 
 			err = cfg.Validate()
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("inactivity_timeout"))
+			Expect(err.Error()).To(ContainSubstring("inactivityTimeout"))
 		})
 	})
 
@@ -92,10 +99,10 @@ interactive:
 			yaml := validBaseYAML(`
 interactive:
   enabled: true
-  session_ttl: 30m
-  inactivity_timeout: 5m
-  max_concurrent_sessions: 10
-  max_analyzing_timeout: 45m
+  sessionTTL: 30m
+  inactivityTimeout: 5m
+  maxConcurrentSessions: 10
+  maxAnalyzingTimeout: 45m
 `)
 			cfg, err := config.Load(yaml)
 			Expect(err).NotTo(HaveOccurred())
@@ -119,58 +126,58 @@ interactive:
 	})
 
 	Describe("UT-KA-703-A06: Validate() rejects SessionTTL exceeding 1h upper bound", func() {
-		It("should return an error when session_ttl exceeds maximum", func() {
+		It("should return an error when sessionTTL exceeds maximum", func() {
 			yaml := validBaseYAML(`
 interactive:
   enabled: true
-  session_ttl: 2h
-  inactivity_timeout: 5m
-  max_concurrent_sessions: 10
+  sessionTTL: 2h
+  inactivityTimeout: 5m
+  maxConcurrentSessions: 10
 `)
 			cfg, err := config.Load(yaml)
 			Expect(err).NotTo(HaveOccurred())
 
 			err = cfg.Validate()
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("session_ttl"))
+			Expect(err.Error()).To(ContainSubstring("sessionTTL"))
 			Expect(err.Error()).To(ContainSubstring("exceed"))
 		})
 	})
 
 	Describe("UT-KA-703-A07: Validate() rejects InactivityTimeout exceeding 30m upper bound", func() {
-		It("should return an error when inactivity_timeout exceeds maximum", func() {
+		It("should return an error when inactivityTimeout exceeds maximum", func() {
 			yaml := validBaseYAML(`
 interactive:
   enabled: true
-  session_ttl: 30m
-  inactivity_timeout: 45m
-  max_concurrent_sessions: 10
+  sessionTTL: 30m
+  inactivityTimeout: 45m
+  maxConcurrentSessions: 10
 `)
 			cfg, err := config.Load(yaml)
 			Expect(err).NotTo(HaveOccurred())
 
 			err = cfg.Validate()
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("inactivity_timeout"))
+			Expect(err.Error()).To(ContainSubstring("inactivityTimeout"))
 			Expect(err.Error()).To(ContainSubstring("exceed"))
 		})
 	})
 
 	Describe("UT-KA-703-A08: Validate() rejects MaxConcurrentSessions exceeding 100", func() {
-		It("should return an error when max_concurrent_sessions exceeds limit", func() {
+		It("should return an error when maxConcurrentSessions exceeds limit", func() {
 			yaml := validBaseYAML(`
 interactive:
   enabled: true
-  session_ttl: 30m
-  inactivity_timeout: 5m
-  max_concurrent_sessions: 200
+  sessionTTL: 30m
+  inactivityTimeout: 5m
+  maxConcurrentSessions: 200
 `)
 			cfg, err := config.Load(yaml)
 			Expect(err).NotTo(HaveOccurred())
 
 			err = cfg.Validate()
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("max_concurrent_sessions"))
+			Expect(err.Error()).To(ContainSubstring("maxConcurrentSessions"))
 			Expect(err.Error()).To(ContainSubstring("exceed"))
 		})
 	})

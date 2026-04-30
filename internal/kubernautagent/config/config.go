@@ -191,11 +191,11 @@ type MCPConfig struct {
 // investigations. Feature is gated off by default.
 type InteractiveConfig struct {
 	Enabled               bool          `yaml:"enabled"`
-	SessionTTL            time.Duration `yaml:"session_ttl"`
-	InactivityTimeout     time.Duration `yaml:"inactivity_timeout"`
-	MaxConcurrentSessions int           `yaml:"max_concurrent_sessions"`
-	RateLimitPerUser      int           `yaml:"rate_limit_per_user"`
-	MaxAnalyzingTimeout   time.Duration `yaml:"max_analyzing_timeout"`
+	SessionTTL            time.Duration `yaml:"sessionTTL"`
+	InactivityTimeout     time.Duration `yaml:"inactivityTimeout"`
+	MaxConcurrentSessions int           `yaml:"maxConcurrentSessions"`
+	RateLimitPerUser      int           `yaml:"rateLimitPerUser"`
+	MaxAnalyzingTimeout   time.Duration `yaml:"maxAnalyzingTimeout"`
 }
 
 type MCPServerEntry struct {
@@ -371,28 +371,28 @@ func (c *Config) Validate() error {
 	}
 	if c.Interactive.Enabled {
 		if c.Interactive.SessionTTL <= 0 {
-			return fmt.Errorf("interactive.session_ttl must be positive when enabled, got %v", c.Interactive.SessionTTL)
+			return fmt.Errorf("interactive.sessionTTL must be positive when enabled, got %v", c.Interactive.SessionTTL)
 		}
 		if c.Interactive.SessionTTL > time.Hour {
-			return fmt.Errorf("interactive.session_ttl must not exceed 1h, got %v", c.Interactive.SessionTTL)
+			return fmt.Errorf("interactive.sessionTTL must not exceed 1h, got %v", c.Interactive.SessionTTL)
 		}
 		if c.Interactive.InactivityTimeout <= 0 {
-			return fmt.Errorf("interactive.inactivity_timeout must be positive when enabled, got %v", c.Interactive.InactivityTimeout)
+			return fmt.Errorf("interactive.inactivityTimeout must be positive when enabled, got %v", c.Interactive.InactivityTimeout)
 		}
 		if c.Interactive.InactivityTimeout > 30*time.Minute {
-			return fmt.Errorf("interactive.inactivity_timeout must not exceed 30m, got %v", c.Interactive.InactivityTimeout)
+			return fmt.Errorf("interactive.inactivityTimeout must not exceed 30m, got %v", c.Interactive.InactivityTimeout)
 		}
 		if c.Interactive.MaxConcurrentSessions <= 0 {
-			return fmt.Errorf("interactive.max_concurrent_sessions must be positive when enabled, got %d", c.Interactive.MaxConcurrentSessions)
+			return fmt.Errorf("interactive.maxConcurrentSessions must be positive when enabled, got %d", c.Interactive.MaxConcurrentSessions)
 		}
 		if c.Interactive.MaxConcurrentSessions > 100 {
-			return fmt.Errorf("interactive.max_concurrent_sessions must not exceed 100, got %d", c.Interactive.MaxConcurrentSessions)
+			return fmt.Errorf("interactive.maxConcurrentSessions must not exceed 100, got %d", c.Interactive.MaxConcurrentSessions)
 		}
 		if c.Interactive.RateLimitPerUser <= 0 {
 			c.Interactive.RateLimitPerUser = 10
 		}
 		if c.Interactive.RateLimitPerUser > 100 {
-			return fmt.Errorf("interactive.rate_limit_per_user must not exceed 100, got %d", c.Interactive.RateLimitPerUser)
+			return fmt.Errorf("interactive.rateLimitPerUser must not exceed 100, got %d", c.Interactive.RateLimitPerUser)
 		}
 	}
 	return nil

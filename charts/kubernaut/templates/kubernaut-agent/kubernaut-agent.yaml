@@ -203,10 +203,10 @@ data:
 {{- if .Values.kubernautAgent.interactive.enabled }}
     interactive:
       enabled: true
-      session_ttl: {{ .Values.kubernautAgent.interactive.sessionTTL | default "30m" | quote }}
-      inactivity_timeout: {{ .Values.kubernautAgent.interactive.inactivityTimeout | default "10m" | quote }}
-      max_concurrent_sessions: {{ .Values.kubernautAgent.interactive.maxConcurrentSessions | default 5 }}
-      rate_limit_per_user: {{ .Values.kubernautAgent.interactive.rateLimitPerUser | default 10 }}
+      sessionTTL: {{ .Values.kubernautAgent.interactive.sessionTTL | default "30m" | quote }}
+      inactivityTimeout: {{ .Values.kubernautAgent.interactive.inactivityTimeout | default "10m" | quote }}
+      maxConcurrentSessions: {{ .Values.kubernautAgent.interactive.maxConcurrentSessions | default 5 }}
+      rateLimitPerUser: {{ .Values.kubernautAgent.interactive.rateLimitPerUser | default 10 }}
 {{- end }}
     integrations:
       dataStorage:
