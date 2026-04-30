@@ -20,6 +20,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -142,6 +143,105 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(mgr.IsDriverActive("rr-007")).To(BeTrue())
+		})
+	})
+
+	Describe("UT-KA-SEC01-001: Takeover rejects empty username", func() {
+		It("should return ErrEmptyUsername for anonymous identity", func() {
+			user := mcpinternal.UserInfo{Username: "", Groups: nil}
+			_, err := mgr.Takeover(ctx, "rr-sec01", user)
+			Expect(err).To(MatchError(mcpinternal.ErrEmptyUsername))
+		})
+	})
+
+	Describe("UT-KA-SEC03-001: Takeover enforces maxConcurrentSessions", func() {
+		It("should reject when max sessions reached", func() {
+			mgrLimited := mcpinternal.NewLeaseSessionManager(k8sClient, namespace, logger,
+				mcpinternal.WithMaxConcurrentSessions(2),
+			)
+
+			user := mcpinternal.UserInfo{Username: "alice@example.com"}
+			_, err := mgrLimited.Takeover(ctx, "rr-max-1", user)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = mgrLimited.Takeover(ctx, "rr-max-2", user)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = mgrLimited.Takeover(ctx, "rr-max-3", user)
+			Expect(err).To(MatchError(mcpinternal.ErrMaxSessionsReached))
+		})
+
+		It("should allow new sessions after release", func() {
+			mgrLimited := mcpinternal.NewLeaseSessionManager(k8sClient, namespace, logger,
+				mcpinternal.WithMaxConcurrentSessions(1),
+			)
+
+			user := mcpinternal.UserInfo{Username: "bob@example.com"}
+			sess, err := mgrLimited.Takeover(ctx, "rr-max-release-1", user)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mgrLimited.Release(sess.SessionID, "complete")).To(Succeed())
+
+			_, err = mgrLimited.Takeover(ctx, "rr-max-release-2", user)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Describe("UT-KA-SEC04-001: GetDriver auto-releases expired sessions (TTL)", func() {
+		It("should return ErrSessionExpired when session TTL has elapsed", func() {
+			mgrShortTTL := mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger,
+				mcpinternal.WithSessionTTL(1*time.Millisecond),
+			)
+
+			user := mcpinternal.UserInfo{Username: "alice@example.com"}
+			_, err := mgrShortTTL.Takeover(ctx, "rr-ttl-001", user)
+			Expect(err).NotTo(HaveOccurred())
+
+			time.Sleep(5 * time.Millisecond)
+
+			sess, err := mgrShortTTL.GetDriver("rr-ttl-001")
+			Expect(err).To(MatchError(mcpinternal.ErrSessionExpired))
+			Expect(sess).To(BeNil())
+
+			Expect(mgrShortTTL.IsDriverActive("rr-ttl-001")).To(BeFalse())
+		})
+	})
+
+	Describe("UT-KA-SEC04-002: GetDriver auto-releases inactive sessions", func() {
+		It("should return ErrSessionExpired when inactivity timeout exceeded", func() {
+			mgrShortInactivity := mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger,
+				mcpinternal.WithSessionTTL(1*time.Hour),
+				mcpinternal.WithInactivityTimeout(1*time.Millisecond),
+			)
+
+			user := mcpinternal.UserInfo{Username: "bob@example.com"}
+			_, err := mgrShortInactivity.Takeover(ctx, "rr-inact-001", user)
+			Expect(err).NotTo(HaveOccurred())
+
+			time.Sleep(5 * time.Millisecond)
+
+			sess, err := mgrShortInactivity.GetDriver("rr-inact-001")
+			Expect(err).To(MatchError(mcpinternal.ErrSessionExpired))
+			Expect(sess).To(BeNil())
+		})
+
+		It("should NOT expire when TouchActivity resets the timer", func() {
+			mgrShortInactivity := mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger,
+				mcpinternal.WithSessionTTL(1*time.Hour),
+				mcpinternal.WithInactivityTimeout(50*time.Millisecond),
+			)
+
+			user := mcpinternal.UserInfo{Username: "charlie@example.com"}
+			_, err := mgrShortInactivity.Takeover(ctx, "rr-inact-002", user)
+			Expect(err).NotTo(HaveOccurred())
+
+			time.Sleep(30 * time.Millisecond)
+			mgrShortInactivity.TouchActivity("rr-inact-002")
+
+			time.Sleep(30 * time.Millisecond)
+			sess, err := mgrShortInactivity.GetDriver("rr-inact-002")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess).NotTo(BeNil())
 		})
 	})
 })

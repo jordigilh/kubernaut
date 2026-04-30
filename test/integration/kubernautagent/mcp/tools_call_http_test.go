@@ -18,6 +18,7 @@ package mcp_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 
@@ -86,6 +87,8 @@ func (m *stubSessionManager) IsDriverActive(rrID string) bool {
 	_, ok := m.sessions[rrID]
 	return ok
 }
+
+func (m *stubSessionManager) TouchActivity(_ string) {}
 
 // stubInvestigatorRunner implements tools.InvestigatorRunner for integration testing.
 type stubInvestigatorRunner struct{}
@@ -186,8 +189,14 @@ var _ = Describe("MCP tools/call over HTTP — PR6a", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse(), "tool call should not return error")
 
-			// The structured output contains session_id and status.
+			// QE-02: Decode and verify structured output fields.
 			Expect(result.StructuredContent).NotTo(BeNil())
+			raw, jsonErr := json.Marshal(result.StructuredContent)
+			Expect(jsonErr).NotTo(HaveOccurred())
+			var output map[string]interface{}
+			Expect(json.Unmarshal(raw, &output)).To(Succeed())
+			Expect(output["session_id"]).To(Equal("sess-rr-test-001"))
+			Expect(output["status"]).To(Equal("started"))
 		})
 	})
 
@@ -228,6 +237,26 @@ var _ = Describe("MCP tools/call over HTTP — PR6a", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
+
+			// QE-02: Verify the LLM response content is present.
+			Expect(result.StructuredContent).NotTo(BeNil())
+			raw, jsonErr := json.Marshal(result.StructuredContent)
+			Expect(jsonErr).NotTo(HaveOccurred())
+			var output map[string]interface{}
+			Expect(json.Unmarshal(raw, &output)).To(Succeed())
+			Expect(output["status"]).To(Equal("message_received"))
+			Expect(output["response"]).To(Equal("mock LLM response"))
+			Expect(output["session_id"]).To(Equal("sess-rr-test-002"))
+		})
+	})
+
+	Describe("IT-KA-PR6A-TOOLS-004: unauthenticated request returns 401", func() {
+		It("should reject requests without Authorization header", func() {
+			// QE-03: Send request without auth header to verify middleware rejects.
+			resp, err := http.Get(ts.URL + "/mcp")
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
 		})
 	})
 })

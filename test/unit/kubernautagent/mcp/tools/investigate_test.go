@@ -56,6 +56,8 @@ func (m *mockSessionManager) IsDriverActive(_ string) bool {
 	return m.isActive
 }
 
+func (m *mockSessionManager) TouchActivity(_ string) {}
+
 type mockInvestigatorRunner struct {
 	response string
 	err      error

@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/adapters"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -99,4 +100,40 @@ var _ = Describe("WorkflowCatalogAdapter — PR6a", func() {
 			var _ tools.WorkflowCatalog = &adapters.WorkflowCatalogAdapter{}
 		})
 	})
+})
+
+var _ = Describe("ExtractContent — QE-01", func() {
+
+	DescribeTable("maps LoopResult variants to string",
+		func(result investigator.LoopResult, expectedContent string, expectErr bool) {
+			content, err := adapters.ExtractContent(result)
+			if expectErr {
+				Expect(err).To(HaveOccurred())
+			} else {
+				Expect(err).NotTo(HaveOccurred())
+				Expect(content).To(Equal(expectedContent))
+			}
+		},
+		Entry("UT-KA-QE01-001: TextResult",
+			&investigator.TextResult{Content: "analysis in progress"},
+			"analysis in progress", false),
+		Entry("UT-KA-QE01-002: SubmitResult",
+			&investigator.SubmitResult{Content: "root cause: OOM"},
+			"root cause: OOM", false),
+		Entry("UT-KA-QE01-003: SubmitWithWorkflowResult",
+			&investigator.SubmitWithWorkflowResult{Content: "execute restart-pod"},
+			"execute restart-pod", false),
+		Entry("UT-KA-QE01-004: SubmitNoWorkflowResult",
+			&investigator.SubmitNoWorkflowResult{Content: "no remediation needed"},
+			"no remediation needed", false),
+		Entry("UT-KA-QE01-005: ExhaustedResult returns error",
+			&investigator.ExhaustedResult{Reason: "max turns reached"},
+			"", true),
+		Entry("UT-KA-QE01-006: CancelledResult returns error",
+			&investigator.CancelledResult{Turn: 3},
+			"", true),
+		Entry("UT-KA-QE01-007: nil result returns error",
+			nil,
+			"", true),
+	)
 })
