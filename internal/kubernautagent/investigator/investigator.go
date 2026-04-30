@@ -1428,12 +1428,9 @@ func emitToSink(ctx context.Context, eventType string, turn int, phase string, d
 // (content cap at 64KB). The context may already be cancelled so we use
 // context.Background() for the audit store call (fire-and-forget per ADR-038).
 func (inv *Investigator) emitCancellationAudit(ctx context.Context, result *katypes.InvestigationResult, correlationID string) {
-	event := audit.NewEvent(audit.EventTypeInvestigationCancelled, correlationID)
+	event := audit.NewEvent(audit.EventTypeInvestigationCancelled, correlationID, audit.WithSessionID(session.SessionIDFromContext(ctx)))
 	event.EventAction = audit.ActionInvestigationCancelled
 	event.EventOutcome = audit.OutcomeFailure
-	if sid := session.SessionIDFromContext(ctx); sid != "" {
-		event.Data["session_id"] = sid
-	}
 	event.Data["cancelled_phase"] = result.CancelledPhase
 	event.Data["cancelled_at_turn"] = result.CancelledAtTurn
 	if result.TokenUsage != nil {
