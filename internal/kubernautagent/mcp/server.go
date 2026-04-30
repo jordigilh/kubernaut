@@ -17,9 +17,11 @@ limitations under the License.
 package mcp
 
 import (
+	"context"
 	"net/http"
 	"sync/atomic"
 
+	sharedauth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -32,7 +34,7 @@ type MCPServer struct {
 
 // NewMCPServer creates a new MCP server instance configured for Kubernaut Agent
 // interactive mode. The server starts with zero tools; tools are registered
-// dynamically when sessions are established.
+// via RegisterTools before the handler is created.
 func NewMCPServer() *MCPServer {
 	impl := &mcpsdk.Implementation{
 		Name:    "kubernaut-agent-interactive",
@@ -52,7 +54,7 @@ func (s *MCPServer) Implementation() *mcpsdk.Implementation {
 	return s.impl
 }
 
-// ToolCount returns the number of registered tools.
+// ToolCount returns the number of tools registered with the MCP SDK server.
 func (s *MCPServer) ToolCount() int {
 	return int(s.toolCount.Load())
 }
@@ -60,6 +62,86 @@ func (s *MCPServer) ToolCount() int {
 // Server returns the underlying go-sdk MCP server for handler construction.
 func (s *MCPServer) Server() *mcpsdk.Server {
 	return s.server
+}
+
+// ToolRegistration is a function that registers a tool with the MCP SDK server.
+// Each tool package provides its own registration function that calls mcp.AddTool
+// with the correct generic type parameters, avoiding import cycles.
+type ToolRegistration func(server *mcpsdk.Server, userFromCtx func(context.Context) UserInfo)
+
+// ToolDeps holds optional tool registration functions.
+// nil fields are skipped during registration.
+type ToolDeps struct {
+	Investigate    ToolRegistration
+	Enrich         ToolRegistration
+	SelectWorkflow ToolRegistration
+}
+
+// MCPDeps holds the dependencies needed to bootstrap the MCP server.
+type MCPDeps struct {
+	AuthMiddleware func(http.Handler) http.Handler
+	Tools          ToolDeps
+}
+
+// userFromContext extracts the authenticated user identity from the request
+// context (set by auth middleware via sharedauth.UserContextKey).
+func userFromContext(ctx context.Context) UserInfo {
+	username := sharedauth.GetUserFromContext(ctx)
+	return UserInfo{Username: username}
+}
+
+// registerTools invokes each non-nil ToolRegistration, which calls mcp.AddTool
+// on the SDK server with the correct generic type parameters.
+func (s *MCPServer) registerTools(deps ToolDeps) {
+	userFn := userFromContext
+
+	if deps.Investigate != nil {
+		deps.Investigate(s.server, userFn)
+		s.toolCount.Add(1)
+	}
+	if deps.Enrich != nil {
+		deps.Enrich(s.server, userFn)
+		s.toolCount.Add(1)
+	}
+	if deps.SelectWorkflow != nil {
+		deps.SelectWorkflow(s.server, userFn)
+		s.toolCount.Add(1)
+	}
+}
+
+// BootstrapMCP creates a fully configured MCP handler with tools registered
+// via the MCP SDK's AddTool. Returns the handler and the MCPServer for
+// lifecycle management.
+//
+// Panics if AuthMiddleware is nil — the MCP endpoint must never be exposed
+// without authentication (defense-in-depth, DD-AUTH-MCP-001).
+func BootstrapMCP(deps MCPDeps) (http.Handler, *MCPServer) {
+	if deps.AuthMiddleware == nil {
+		panic("MCP interactive mode enabled but auth middleware is nil — refusing to start without authentication")
+	}
+
+	srv := NewMCPServer()
+	srv.registerTools(deps.Tools)
+
+	mcpHandler := mcpsdk.NewStreamableHTTPHandler(func(_ *http.Request) *mcpsdk.Server {
+		return srv.Server()
+	}, nil)
+
+	handler := deps.AuthMiddleware(mcpHandler)
+	return handler, srv
+}
+
+// BootstrapMCPNoAuth creates a configured MCP handler without auth middleware.
+// Used ONLY by integration tests that provide their own auth context.
+func BootstrapMCPNoAuth(toolDeps ToolDeps) (http.Handler, *MCPServer) {
+	srv := NewMCPServer()
+	srv.registerTools(toolDeps)
+
+	mcpHandler := mcpsdk.NewStreamableHTTPHandler(func(_ *http.Request) *mcpsdk.Server {
+		return srv.Server()
+	}, nil)
+
+	return mcpHandler, srv
 }
 
 // NewMCPHandler creates an http.Handler for the MCP server endpoint.
@@ -81,66 +163,4 @@ func NewMCPHandler(authMiddleware func(http.Handler) http.Handler, enabled bool)
 	}, nil)
 
 	return authMiddleware(handler)
-}
-
-// ToolDeps holds optional tool instances for registration.
-// nil fields are skipped during registration.
-type ToolDeps struct {
-	Investigate    ToolHandler
-	Enrich         ToolHandler
-	SelectWorkflow ToolHandler
-}
-
-// MCPDeps holds the dependencies needed to bootstrap the MCP server.
-type MCPDeps struct {
-	AuthMiddleware func(http.Handler) http.Handler
-	Tools          ToolDeps
-}
-
-// BootstrapMCP creates a fully configured MCP handler with tools registered
-// from deps.Tools. Returns the handler and the MCPServer for lifecycle management.
-func BootstrapMCP(deps MCPDeps) (http.Handler, *MCPServer) {
-	srv := NewMCPServer()
-
-	if deps.Tools.Investigate != nil {
-		srv.toolCount.Add(1)
-	}
-	if deps.Tools.Enrich != nil {
-		srv.toolCount.Add(1)
-	}
-	if deps.Tools.SelectWorkflow != nil {
-		srv.toolCount.Add(1)
-	}
-
-	mcpHandler := mcpsdk.NewStreamableHTTPHandler(func(_ *http.Request) *mcpsdk.Server {
-		return srv.Server()
-	}, nil)
-
-	var handler http.Handler = mcpHandler
-	if deps.AuthMiddleware != nil {
-		handler = deps.AuthMiddleware(mcpHandler)
-	}
-
-	return handler, srv
-}
-
-// ToolHandler defines the contract for MCP tool handlers that can be registered
-// with BootstrapMCPWithTool.
-type ToolHandler interface{}
-
-// BootstrapMCPWithTool creates a configured MCP handler with a pre-built tool
-// registered. Used by integration tests that need to wire their own tool dependencies.
-func BootstrapMCPWithTool(deps MCPDeps, _ ToolHandler) (http.Handler, *MCPServer) {
-	srv := NewMCPServer()
-
-	mcpHandler := mcpsdk.NewStreamableHTTPHandler(func(_ *http.Request) *mcpsdk.Server {
-		return srv.Server()
-	}, nil)
-
-	var handler http.Handler = mcpHandler
-	if deps.AuthMiddleware != nil {
-		handler = deps.AuthMiddleware(mcpHandler)
-	}
-
-	return handler, srv
 }

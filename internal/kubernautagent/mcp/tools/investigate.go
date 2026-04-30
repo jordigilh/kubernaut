@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
@@ -50,23 +51,45 @@ type AutonomousSessionManager interface {
 // InvestigateTool handles the kubernaut_investigate MCP tool actions:
 // start, message, complete, cancel, takeover. BR-INTERACTIVE-001, BR-INTERACTIVE-004.
 type InvestigateTool struct {
-	sessions  mcpinternal.SessionManager
-	runner    InvestigatorRunner
-	recon     mcpinternal.ContextReconstructor
-	autoMgr   AutonomousSessionManager
-	sessionMu sync.Map // rrID -> *sync.Mutex (per-session serialization)
+	sessions     mcpinternal.SessionManager
+	runner       InvestigatorRunner
+	recon        mcpinternal.ContextReconstructor
+	autoMgr      AutonomousSessionManager
+	metrics      ToolMetrics
+	sessionMu    sync.Map // rrID -> *sync.Mutex (per-session serialization)
+	reconHistory sync.Map // rrID -> []LLMMessage (reconstructed context for LLM)
+}
+
+// InvestigateOption configures optional dependencies for InvestigateTool.
+type InvestigateOption func(*InvestigateTool)
+
+// WithAutonomousManager enables autonomous session takeover.
+func WithAutonomousManager(mgr AutonomousSessionManager) InvestigateOption {
+	return func(t *InvestigateTool) {
+		if mgr != nil {
+			t.autoMgr = mgr
+		}
+	}
+}
+
+// WithToolMetrics enables metrics recording on tool operations (PROD-01).
+func WithToolMetrics(m ToolMetrics) InvestigateOption {
+	return func(t *InvestigateTool) {
+		if m != nil {
+			t.metrics = m
+		}
+	}
 }
 
 // NewInvestigateTool creates the tool handler with its dependencies.
-// autoMgr may be nil if dynamic takeover is not enabled (PR3 compatibility).
-func NewInvestigateTool(sessions mcpinternal.SessionManager, runner InvestigatorRunner, recon mcpinternal.ContextReconstructor, autoMgr ...AutonomousSessionManager) *InvestigateTool {
+func NewInvestigateTool(sessions mcpinternal.SessionManager, runner InvestigatorRunner, recon mcpinternal.ContextReconstructor, opts ...InvestigateOption) *InvestigateTool {
 	t := &InvestigateTool{
 		sessions: sessions,
 		runner:   runner,
 		recon:    recon,
 	}
-	if len(autoMgr) > 0 && autoMgr[0] != nil {
-		t.autoMgr = autoMgr[0]
+	for _, opt := range opts {
+		opt(t)
 	}
 	return t
 }
@@ -83,6 +106,18 @@ func (t *InvestigateTool) Handle(ctx context.Context, input InvestigateInput, us
 		return InvestigateOutput{}, err
 	}
 
+	start := time.Now()
+	output, err := t.dispatch(ctx, input, user)
+
+	// PROD-01: Record command duration for all actions.
+	if t.metrics != nil {
+		t.metrics.RecordInteractiveCommandDuration("kubernaut_investigate", input.Action, time.Since(start).Seconds())
+	}
+
+	return output, err
+}
+
+func (t *InvestigateTool) dispatch(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
 	switch input.Action {
 	case ActionStart:
 		return t.handleStart(ctx, input, user)
@@ -104,10 +139,18 @@ func (t *InvestigateTool) Handle(ctx context.Context, input InvestigateInput, us
 func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
 	sess, err := t.sessions.Takeover(ctx, input.RRID, user)
 	if err != nil {
+		if errors.Is(err, mcpinternal.ErrLeaseHeld) && t.metrics != nil {
+			t.metrics.RecordInteractiveLeaseContention()
+		}
 		return InvestigateOutput{}, err
 	}
 
-	_, _ = t.recon.Reconstruct(ctx, input.RRID, sess.SessionID)
+	if t.metrics != nil {
+		t.metrics.RecordInteractiveSessionStarted()
+		t.metrics.RecordInteractiveTakeover("start_success")
+	}
+
+	t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
 
 	return InvestigateOutput{
 		SessionID: sess.SessionID,
@@ -135,6 +178,9 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 	sess, err := t.sessions.Takeover(ctx, input.RRID, user)
 	if err != nil {
 		if errors.Is(err, mcpinternal.ErrLeaseHeld) {
+			if t.metrics != nil {
+				t.metrics.RecordInteractiveLeaseContention()
+			}
 			driver, _ := t.sessions.GetDriver(input.RRID)
 			driverName := "unknown"
 			if driver != nil {
@@ -145,8 +191,13 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 		return InvestigateOutput{}, fmt.Errorf("takeover session: %w", err)
 	}
 
-	turns, _ := t.recon.Reconstruct(ctx, input.RRID, sess.SessionID)
-	contextSummary := fmt.Sprintf("%d prior turns reconstructed", len(turns))
+	if t.metrics != nil {
+		t.metrics.RecordInteractiveSessionStarted()
+		t.metrics.RecordInteractiveTakeover("takeover_success")
+	}
+
+	reconCount := t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
+	contextSummary := fmt.Sprintf("%d prior turns reconstructed", reconCount)
 
 	return InvestigateOutput{
 		SessionID: sess.SessionID,
@@ -165,7 +216,13 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 	}
 
 	sess, err := t.sessions.GetDriver(input.RRID)
-	if err != nil || sess == nil {
+	if err != nil {
+		if errors.Is(err, mcpinternal.ErrSessionExpired) {
+			return InvestigateOutput{}, ErrCodeSessionExpired
+		}
+		return InvestigateOutput{}, ErrCodeNotDriving
+	}
+	if sess == nil {
 		return InvestigateOutput{}, ErrCodeNotDriving
 	}
 
@@ -173,7 +230,11 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", sess.ActingUser.Username)
 	}
 
-	messages := []LLMMessage{{Role: "user", Content: input.Message}}
+	// SEC-04: Touch activity to reset inactivity timer.
+	t.sessions.TouchActivity(input.RRID)
+
+	// PROD-02: Prepend reconstructed context turns so the LLM has full history.
+	messages := t.buildMessagesWithContext(input.RRID, input.Message)
 
 	response, err := t.runner.RunInteractiveTurn(ctx, messages, input.RRID)
 	if err != nil {
@@ -204,7 +265,12 @@ func (t *InvestigateTool) handleComplete(input InvestigateInput) (InvestigateOut
 		return InvestigateOutput{}, fmt.Errorf("release session: %w", err)
 	}
 
+	if t.metrics != nil {
+		t.metrics.RecordInteractiveSessionEnded()
+	}
+
 	t.sessionMu.Delete(input.RRID)
+	t.reconHistory.Delete(input.RRID)
 
 	return InvestigateOutput{
 		SessionID: sess.SessionID,
@@ -256,10 +322,42 @@ func (t *InvestigateTool) handleCancel(input InvestigateInput) (InvestigateOutpu
 		return InvestigateOutput{}, fmt.Errorf("release session: %w", err)
 	}
 
+	if t.metrics != nil {
+		t.metrics.RecordInteractiveSessionEnded()
+	}
+
 	t.sessionMu.Delete(input.RRID)
+	t.reconHistory.Delete(input.RRID)
 
 	return InvestigateOutput{
 		SessionID: sess.SessionID,
 		Status:    "cancelled",
 	}, nil
+}
+
+// storeReconstructedContext queries the reconstructor and caches prior turns
+// for the session's lifetime. Returns the number of turns stored.
+func (t *InvestigateTool) storeReconstructedContext(ctx context.Context, rrID, sessionID string) int {
+	turns, _ := t.recon.Reconstruct(ctx, rrID, sessionID)
+	if len(turns) == 0 {
+		return 0
+	}
+
+	history := make([]LLMMessage, len(turns))
+	for i, turn := range turns {
+		history[i] = LLMMessage{Role: turn.Role, Content: turn.Content}
+	}
+	t.reconHistory.Store(rrID, history)
+	return len(history)
+}
+
+// buildMessagesWithContext prepends any cached reconstruction history to the
+// current user message, giving the LLM full prior context (PROD-02).
+func (t *InvestigateTool) buildMessagesWithContext(rrID, userMessage string) []LLMMessage {
+	var messages []LLMMessage
+	if raw, ok := t.reconHistory.Load(rrID); ok {
+		messages = append(messages, raw.([]LLMMessage)...)
+	}
+	messages = append(messages, LLMMessage{Role: "user", Content: userMessage})
+	return messages
 }

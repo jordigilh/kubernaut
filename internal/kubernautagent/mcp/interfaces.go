@@ -87,6 +87,10 @@ type SessionManager interface {
 
 	// IsDriverActive returns true if a user is currently driving the given RR.
 	IsDriverActive(rrID string) bool
+
+	// TouchActivity updates the last activity timestamp for a session (SEC-04).
+	// Called by tool handlers on each interaction to reset the inactivity timer.
+	TouchActivity(rrID string)
 }
 
 // ConversationTurn represents a single LLM turn reconstructed from DS audit events.

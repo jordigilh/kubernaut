@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -58,6 +59,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpkg "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	mcpadapters "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/adapters"
+	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
@@ -71,9 +74,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/sanitization"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
+	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/rest"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func main() {
@@ -310,12 +315,27 @@ func main() {
 		}
 
 		if cfg.Interactive.Enabled {
-			mcpHandler, _ := mcpkg.BootstrapMCP(mcpkg.MCPDeps{
-				AuthMiddleware: authMw.Handler,
-			})
-			r.Handle("/mcp", kaserver.SSEHeadersMiddleware(mcpHandler))
-			r.Handle("/mcp/*", kaserver.SSEHeadersMiddleware(mcpHandler))
-			slogger.Info("MCP interactive route mounted", "path", "/api/v1/mcp")
+			mcpHandler := buildMCPHandler(cfg, k8sInfra, ds, inv, enricher, mgr, authMw, agentMetrics, slogger)
+			if mcpHandler != nil {
+				// SEC-02: Per-user rate limiting for MCP interactive endpoint.
+				userRL := kaserver.NewUserRateLimiter(
+					kaserver.DefaultUserRateLimitConfig(cfg.Interactive.RateLimitPerUser),
+					agentMetrics.HTTPRateLimitedTotal,
+				)
+				defer userRL.Stop()
+
+				r.Route("/mcp", func(mcpRouter chi.Router) {
+					mcpRouter.Use(userRL.Middleware)
+					mcpRouter.Handle("/", kaserver.SSEHeadersMiddleware(mcpHandler))
+					mcpRouter.Handle("/*", kaserver.SSEHeadersMiddleware(mcpHandler))
+				})
+				slogger.Info("MCP interactive route mounted",
+					"path", "/api/v1/mcp",
+					"rate_limit_per_user", cfg.Interactive.RateLimitPerUser,
+				)
+			} else {
+				slogger.Error("MCP interactive mode enabled but handler construction failed (check preceding errors)")
+			}
 		}
 
 		r.Handle("/*", kaserver.SSEHeadersMiddleware(ogenSrv))
@@ -499,7 +519,7 @@ func configHandler(cfg *kaconfig.Config, swappable *llm.SwappableClient) http.Ha
 func detectNamespace() string {
 	data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 	if err == nil && len(data) > 0 {
-		return string(data)
+		return strings.TrimSpace(string(data))
 	}
 	return "kubernaut-system"
 }
@@ -904,5 +924,121 @@ func newAuthMiddleware(infra *k8sInfra, logger logr.Logger) *auth.Middleware {
 		ResourceName: "kubernaut-agent",
 		Verb:         "create",
 	}, logger)
+}
+
+// buildMCPHandler constructs the fully-wired MCP interactive handler with all
+// tools registered. Returns nil if prerequisites are missing (K8s infra or DS).
+// PR6a: Production wiring for MCP interactive mode (BR-INTERACTIVE-001..008).
+func buildMCPHandler(
+	cfg *kaconfig.Config,
+	infra *k8sInfra,
+	ds *dsClients,
+	inv *investigator.Investigator,
+	enricher *enrichment.Enricher,
+	autoMgr *session.Manager,
+	authMw *auth.Middleware,
+	agentMetrics *kametrics.Metrics,
+	logger *slog.Logger,
+) http.Handler {
+	if infra == nil || infra.kubeConfig == nil {
+		logger.Error("MCP interactive mode: K8s infrastructure unavailable")
+		return nil
+	}
+	if authMw == nil {
+		logger.Error("MCP interactive mode: auth middleware unavailable (DD-AUTH-MCP-001)")
+		return nil
+	}
+	// SEC-05: Investigator is required for the core investigate tool.
+	if inv == nil {
+		logger.Error("MCP interactive mode: investigator unavailable")
+		return nil
+	}
+
+	// SEC-07: Build controller-runtime client with MCP-specific timeouts.
+	mcpRestConfig := *infra.kubeConfig
+	mcpRestConfig.Timeout = 10 * time.Second
+	mcpRestConfig.QPS = 20
+	mcpRestConfig.Burst = 40
+
+	ctrlCli, err := ctrlclient.New(&mcpRestConfig, ctrlclient.Options{})
+	if err != nil {
+		logger.Error("MCP interactive mode: failed to create controller-runtime client", "error", err)
+		return nil
+	}
+
+	namespace := detectNamespace()
+
+	// Session management via K8s Leases (single-driver guarantee).
+	leaseOpts := []mcpkg.LeaseOption{
+		mcpkg.WithSessionTTL(cfg.Interactive.SessionTTL),
+		mcpkg.WithInactivityTimeout(cfg.Interactive.InactivityTimeout),
+		mcpkg.WithMaxConcurrentSessions(cfg.Interactive.MaxConcurrentSessions),
+	}
+	leaseMgr := mcpkg.NewLeaseSessionManager(ctrlCli, namespace, logger, leaseOpts...)
+
+	// Context reconstruction from DS audit events (best-effort).
+	var recon mcpkg.ContextReconstructor
+	if ds != nil {
+		recon = mcpkg.NewDSContextReconstructor(ds.ogenClient, 10*time.Second, logger)
+	} else {
+		recon = &noopReconstructor{}
+		logger.Warn("MCP interactive mode: DS unavailable — context reconstruction disabled")
+	}
+
+	// Build the InvestigatorRunner adapter.
+	investigatorRunner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
+
+	// Build the InvestigateTool with optional dependencies.
+	investigateOpts := []mcptools.InvestigateOption{
+		mcptools.WithToolMetrics(agentMetrics),
+	}
+	if autoMgr != nil {
+		investigateOpts = append(investigateOpts, mcptools.WithAutonomousManager(autoMgr))
+	}
+	investigateTool := mcptools.NewInvestigateTool(leaseMgr, investigatorRunner, recon, investigateOpts...)
+
+	// Build the EnrichTool (enricher can be nil in dev mode).
+	var enrichTool *mcptools.EnrichTool
+	if enricher != nil {
+		enrichTool = mcptools.NewEnrichTool(enricher, leaseMgr)
+	}
+
+	// Build the WorkflowCatalog adapter and SelectWorkflowTool.
+	var selectWfTool *mcptools.SelectWorkflowTool
+	if ds != nil {
+		wfQuerier := wfclient.NewOgenWorkflowQuerier(ds.ogenClient)
+		catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
+		selectWfTool = mcptools.NewSelectWorkflowTool(catalogAdapter, leaseMgr)
+	}
+
+	// Register tools with the MCP SDK server.
+	toolDeps := mcpkg.ToolDeps{}
+	toolDeps.Investigate = mcptools.InvestigateRegistration(investigateTool)
+	if enrichTool != nil {
+		toolDeps.Enrich = mcptools.EnrichRegistration(enrichTool)
+	}
+	if selectWfTool != nil {
+		toolDeps.SelectWorkflow = mcptools.SelectWorkflowRegistration(selectWfTool)
+	}
+
+	mcpHandler, _ := mcpkg.BootstrapMCP(mcpkg.MCPDeps{
+		AuthMiddleware: authMw.Handler,
+		Tools:          toolDeps,
+	})
+
+	logger.Info("MCP interactive tools registered",
+		"investigate", true,
+		"enrich", enrichTool != nil,
+		"select_workflow", selectWfTool != nil,
+	)
+
+	return mcpHandler
+}
+
+// noopReconstructor is a no-op ContextReconstructor used when DS is unavailable.
+type noopReconstructor struct{}
+
+func (n *noopReconstructor) Reconstruct(_ context.Context, _ string, _ string) ([]mcpkg.ConversationTurn, error) {
+	return nil, nil
 }
 

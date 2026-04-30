@@ -70,4 +70,8 @@ var (
 		Code:    "rate_limited",
 		Message: "Too many requests. Please slow down.",
 	}
+	ErrCodeSessionExpired = &MCPError{
+		Code:    "session_expired",
+		Message: "Session has expired due to TTL or inactivity. Start a new session.",
+	}
 )

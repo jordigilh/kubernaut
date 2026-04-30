@@ -113,6 +113,8 @@ func (m *mockLeaseSessionManager) IsDriverActive(rrID string) bool {
 	return ok
 }
 
+func (m *mockLeaseSessionManager) TouchActivity(_ string) {}
+
 // mockReconIT mocks ContextReconstructor for integration tests.
 type mockReconIT struct{}
 
@@ -167,7 +169,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			leaseMgr := newMockLeaseSessionManager()
 			runner := &delayedMockRunner{delay: 10 * time.Millisecond, response: "interactive response"}
 			recon := &mockReconIT{}
-			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, autoMgr)
+			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, tools.WithAutonomousManager(autoMgr))
 
 			user := mcpinternal.UserInfo{Username: "sre-operator@example.com"}
 			input := tools.InvestigateInput{
@@ -210,7 +212,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			}, map[string]string{"remediation_id": "rr-concurrent-001"})
 			Expect(err).NotTo(HaveOccurred())
 
-			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, autoMgr)
+			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, tools.WithAutonomousManager(autoMgr))
 			user := mcpinternal.UserInfo{Username: "alice@example.com"}
 
 			// Perform takeover first
@@ -222,9 +224,12 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			Expect(err).NotTo(HaveOccurred())
 
 			// Build a real MCP server with the tool registered
-			handler, _ := mcpinternal.BootstrapMCPWithTool(mcpinternal.MCPDeps{
+			handler, _ := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
 				AuthMiddleware: fakeAuthMiddleware("alice@example.com"),
-			}, tool)
+				Tools: mcpinternal.ToolDeps{
+					Investigate: tools.InvestigateRegistration(tool),
+				},
+			})
 
 			r := chi.NewRouter()
 			r.Handle("/api/v1/mcp", kaserver.SSEHeadersMiddleware(handler))

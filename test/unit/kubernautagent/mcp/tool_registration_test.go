@@ -17,58 +17,107 @@ limitations under the License.
 package mcp_test
 
 import (
+	"context"
 	"net/http"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"net/http/httptest"
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("MCP Tool Registration — PR5 Slice E", func() {
+// stubInvestigate returns a minimal InvestigateTool for registration tests.
+func stubInvestigate() *mcptools.InvestigateTool {
+	return mcptools.NewInvestigateTool(nil, nil, nil)
+}
 
-	Describe("UT-KA-PR5-E01: BootstrapMCP registers all three MCP tools", func() {
-		It("should register investigate, enrich, and select_workflow tools", func() {
+// stubEnrich returns a minimal EnrichTool for registration tests.
+func stubEnrich() *mcptools.EnrichTool {
+	return mcptools.NewEnrichTool(nil, nil)
+}
+
+// stubSelectWorkflow returns a minimal SelectWorkflowTool for registration tests.
+func stubSelectWorkflow() *mcptools.SelectWorkflowTool {
+	return mcptools.NewSelectWorkflowTool(nil, nil)
+}
+
+var _ = Describe("MCP Tool Registration — PR6a", func() {
+
+	Describe("UT-KA-PR6A-001: BootstrapMCP registers all three tools with the MCP SDK", func() {
+		It("should expose 3 tools via the SDK tools/list protocol", func() {
 			deps := mcpinternal.MCPDeps{
 				AuthMiddleware: func(next http.Handler) http.Handler { return next },
 				Tools: mcpinternal.ToolDeps{
-					Investigate:    &mcptools.InvestigateTool{},
-					Enrich:         &mcptools.EnrichTool{},
-					SelectWorkflow: &mcptools.SelectWorkflowTool{},
+					Investigate:    mcptools.InvestigateRegistration(stubInvestigate()),
+					Enrich:         mcptools.EnrichRegistration(stubEnrich()),
+					SelectWorkflow: mcptools.SelectWorkflowRegistration(stubSelectWorkflow()),
 				},
 			}
 
 			handler, srv := mcpinternal.BootstrapMCP(deps)
 			Expect(handler).NotTo(BeNil())
-			Expect(srv.ToolCount()).To(Equal(3),
-				"all three tools (investigate, enrich, select_workflow) must be registered")
+			Expect(srv.ToolCount()).To(Equal(3))
+
+			ts := httptest.NewServer(handler)
+			defer ts.Close()
+
+			ctx := context.Background()
+			client := mcpsdk.NewClient(&mcpsdk.Implementation{
+				Name:    "test-client",
+				Version: "0.0.1",
+			}, nil)
+
+			transport := &mcpsdk.StreamableClientTransport{Endpoint: ts.URL}
+			session, err := client.Connect(ctx, transport, nil)
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = session.Close() }()
+
+			var toolNames []string
+			for tool, err := range session.Tools(ctx, nil) {
+				Expect(err).NotTo(HaveOccurred())
+				toolNames = append(toolNames, tool.Name)
+			}
+
+			Expect(toolNames).To(ConsistOf(
+				"kubernaut_investigate",
+				"kubernaut_enrich",
+				"kubernaut_select_workflow",
+			))
 		})
 	})
 
-	Describe("UT-KA-PR5-E02: BootstrapMCP with nil tools registers zero tools", func() {
+	Describe("UT-KA-PR6A-002: BootstrapMCP with nil tools registers zero", func() {
 		It("should register zero tools when no tool deps provided", func() {
 			deps := mcpinternal.MCPDeps{
 				AuthMiddleware: func(next http.Handler) http.Handler { return next },
 			}
 
 			_, srv := mcpinternal.BootstrapMCP(deps)
-			Expect(srv.ToolCount()).To(Equal(0),
-				"no tools should be registered when ToolDeps is zero-value")
+			Expect(srv.ToolCount()).To(Equal(0))
 		})
 	})
 
-	Describe("UT-KA-PR5-E03: BootstrapMCP with partial tools registers only provided tools", func() {
-		It("should register only the investigate tool when others are nil", func() {
+	Describe("UT-KA-PR6A-003: BootstrapMCP with partial tools registers only provided", func() {
+		It("should register only investigate when others are nil", func() {
 			deps := mcpinternal.MCPDeps{
 				AuthMiddleware: func(next http.Handler) http.Handler { return next },
 				Tools: mcpinternal.ToolDeps{
-					Investigate: &mcptools.InvestigateTool{},
+					Investigate: mcptools.InvestigateRegistration(stubInvestigate()),
 				},
 			}
 
 			_, srv := mcpinternal.BootstrapMCP(deps)
 			Expect(srv.ToolCount()).To(Equal(1))
+		})
+	})
+
+	Describe("UT-KA-PR6A-004: BootstrapMCP panics without auth middleware", func() {
+		It("should panic when AuthMiddleware is nil", func() {
+			Expect(func() {
+				mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{})
+			}).To(Panic())
 		})
 	})
 })

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,6 +38,15 @@ var (
 
 	// ErrSessionNotFound indicates no session exists with the given ID.
 	ErrSessionNotFound = errors.New("session not found")
+
+	// ErrEmptyUsername rejects sessions with no authenticated identity (SEC-01).
+	ErrEmptyUsername = errors.New("username must not be empty")
+
+	// ErrMaxSessionsReached rejects new sessions when capacity is exhausted (SEC-03).
+	ErrMaxSessionsReached = errors.New("maximum concurrent sessions reached")
+
+	// ErrSessionExpired indicates the session TTL has been exceeded (SEC-04).
+	ErrSessionExpired = errors.New("session expired")
 )
 
 const (
@@ -54,18 +64,22 @@ var DefaultSessionTTL = 30 * time.Minute
 // LeaseSessionManager implements SessionManager with K8s coordination/v1 Lease
 // for single-driver guarantee (BR-INTERACTIVE-002).
 type LeaseSessionManager struct {
-	client     client.Client
-	namespace  string
-	sessionTTL time.Duration
-	sessions   sync.Map // sessionID -> *sessionEntry
-	rrIndex    sync.Map // rrID -> sessionID
-	logger     *slog.Logger
+	client            client.Client
+	namespace         string
+	sessionTTL        time.Duration
+	inactivityTimeout time.Duration
+	maxSessions       int
+	sessions          sync.Map // sessionID -> *sessionEntry
+	rrIndex           sync.Map // rrID -> sessionID
+	activeCount       atomic.Int32
+	logger            *slog.Logger
 }
 
 type sessionEntry struct {
-	session    *InteractiveSession
-	rrID       string
-	signalMeta map[string]string
+	session      *InteractiveSession
+	rrID         string
+	signalMeta   map[string]string
+	lastActivity atomic.Value // stores time.Time
 }
 
 // LeaseOption configures optional parameters for LeaseSessionManager.
@@ -75,6 +89,20 @@ type LeaseOption func(*LeaseSessionManager)
 func WithSessionTTL(ttl time.Duration) LeaseOption {
 	return func(m *LeaseSessionManager) {
 		m.sessionTTL = ttl
+	}
+}
+
+// WithInactivityTimeout sets the per-session inactivity timeout (SEC-04).
+func WithInactivityTimeout(timeout time.Duration) LeaseOption {
+	return func(m *LeaseSessionManager) {
+		m.inactivityTimeout = timeout
+	}
+}
+
+// WithMaxConcurrentSessions sets the session capacity limit (SEC-03).
+func WithMaxConcurrentSessions(max int) LeaseOption {
+	return func(m *LeaseSessionManager) {
+		m.maxSessions = max
 	}
 }
 
@@ -120,7 +148,23 @@ func (m *LeaseSessionManager) GetSignalMetadata(sessionID string) map[string]str
 }
 
 func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user UserInfo) (*InteractiveSession, error) {
-	if _, ok := m.rrIndex.Load(rrID); ok {
+	// SEC-01: Reject anonymous/empty identity.
+	if user.Username == "" {
+		return nil, ErrEmptyUsername
+	}
+
+	// SEC-03: Enforce max concurrent sessions.
+	if m.maxSessions > 0 && int(m.activeCount.Load()) >= m.maxSessions {
+		return nil, ErrMaxSessionsReached
+	}
+
+	// UX-03: Check local index first and provide holder context in error.
+	if existingSessionID, ok := m.rrIndex.Load(rrID); ok {
+		if raw, found := m.sessions.Load(existingSessionID); found {
+			entry := raw.(*sessionEntry)
+			return nil, fmt.Errorf("%w: held by %q since %s",
+				ErrLeaseHeld, entry.session.ActingUser.Username, entry.session.StartedAt.Format(time.RFC3339))
+		}
 		return nil, ErrLeaseHeld
 	}
 
@@ -158,8 +202,10 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 	}
 
 	entry := &sessionEntry{session: session, rrID: rrID}
+	entry.lastActivity.Store(time.Now())
 	m.sessions.Store(sessionID, entry)
 	m.rrIndex.Store(rrID, sessionID)
+	m.activeCount.Add(1)
 
 	m.logger.Info("interactive session started",
 		slog.String("session_id", sessionID),
@@ -194,6 +240,7 @@ func (m *LeaseSessionManager) Release(sessionID string, reason string) error {
 
 	m.sessions.Delete(sessionID)
 	m.rrIndex.Delete(entry.rrID)
+	m.activeCount.Add(-1)
 
 	m.logger.Info("interactive session released",
 		slog.String("session_id", sessionID),
@@ -215,7 +262,46 @@ func (m *LeaseSessionManager) GetDriver(rrID string) (*InteractiveSession, error
 	if !ok {
 		return nil, nil
 	}
-	return raw.(*sessionEntry).session, nil
+	entry := raw.(*sessionEntry)
+
+	// SEC-04: Check session TTL expiry.
+	if m.sessionTTL > 0 && time.Since(entry.session.StartedAt) > m.sessionTTL {
+		m.logger.Warn("session TTL expired, auto-releasing",
+			slog.String("session_id", sessionID),
+			slog.String("rr_id", rrID))
+		_ = m.Release(sessionID, "ttl_expired")
+		return nil, ErrSessionExpired
+	}
+
+	// SEC-04: Check inactivity timeout.
+	if m.inactivityTimeout > 0 {
+		if lastAct, ok := entry.lastActivity.Load().(time.Time); ok {
+			if time.Since(lastAct) > m.inactivityTimeout {
+				m.logger.Warn("session inactivity timeout, auto-releasing",
+					slog.String("session_id", sessionID),
+					slog.String("rr_id", rrID))
+				_ = m.Release(sessionID, "inactivity_timeout")
+				return nil, ErrSessionExpired
+			}
+		}
+	}
+
+	return entry.session, nil
+}
+
+// TouchActivity updates the last activity timestamp for a session (SEC-04).
+// Called by tool handlers on each interaction to reset the inactivity timer.
+func (m *LeaseSessionManager) TouchActivity(rrID string) {
+	raw, ok := m.rrIndex.Load(rrID)
+	if !ok {
+		return
+	}
+	sessionID := raw.(string)
+	raw, ok = m.sessions.Load(sessionID)
+	if !ok {
+		return
+	}
+	raw.(*sessionEntry).lastActivity.Store(time.Now())
 }
 
 func (m *LeaseSessionManager) IsDriverActive(rrID string) bool {

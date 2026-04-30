@@ -1528,6 +1528,74 @@ for d in docs:
     tap_not_ok "UT-MON-463-013: helm lint with monitoring" \
       "helm lint failed with monitoring values"
   fi
+
+  echo "# --- Template Tests: MCP Interactive Mode (#703 PR6a) ---"
+
+  local interactive_out
+
+  # HELM-01: interactive.enabled=true emits interactive: block in ConfigMap
+  interactive_out=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set kubernautAgent.interactive.enabled=true 2>&1)
+  if echo "$interactive_out" | grep -q "interactive:" && \
+     echo "$interactive_out" | grep -q "enabled: true"; then
+    tap_ok "HELM-01: interactive.enabled=true emits interactive: block in ConfigMap"
+  else
+    tap_not_ok "HELM-01: interactive ConfigMap block" \
+      "interactive: block not found when interactive.enabled=true"
+  fi
+
+  # HELM-02: interactive.enabled=true adds Lease RBAC
+  if echo "$interactive_out" | grep -q "coordination.k8s.io" && \
+     echo "$interactive_out" | grep -q "leases"; then
+    tap_ok "HELM-02: interactive.enabled=true adds coordination.k8s.io/leases RBAC"
+  else
+    tap_not_ok "HELM-02: Lease RBAC" \
+      "coordination.k8s.io/leases RBAC not found when interactive enabled"
+  fi
+
+  # HELM-03: interactive.enabled=true adds impersonate RBAC
+  if echo "$interactive_out" | grep -q "impersonate"; then
+    tap_ok "HELM-03: interactive.enabled=true adds impersonate verb RBAC"
+  else
+    tap_not_ok "HELM-03: impersonate RBAC" \
+      "impersonate verb not found when interactive enabled"
+  fi
+
+  # HELM-04: interactive.enabled=false omits interactive: block and RBAC
+  local interactive_off
+  interactive_off=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
+  if ! echo "$interactive_off" | grep -q "interactive:" && \
+     ! echo "$interactive_off" | grep -q "impersonate"; then
+    tap_ok "HELM-04: interactive disabled omits interactive: block and impersonate RBAC"
+  else
+    tap_not_ok "HELM-04: interactive disabled should omit" \
+      "interactive: or impersonate found when interactive.enabled is false/unset"
+  fi
+
+  # HELM-05: custom sessionTTL and maxConcurrentSessions rendered
+  interactive_out=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set kubernautAgent.interactive.enabled=true \
+    --set kubernautAgent.interactive.sessionTTL=15m \
+    --set kubernautAgent.interactive.maxConcurrentSessions=10 2>&1)
+  if echo "$interactive_out" | grep -q '15m' && \
+     echo "$interactive_out" | grep -q "max_concurrent_sessions: 10"; then
+    tap_ok "HELM-05: custom sessionTTL and maxConcurrentSessions rendered in ConfigMap"
+  else
+    tap_not_ok "HELM-05: custom interactive values" \
+      "Custom sessionTTL or maxConcurrentSessions not rendered"
+  fi
+
+  # HELM-LINT: helm lint passes with interactive enabled
+  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set kubernautAgent.interactive.enabled=true >/dev/null 2>&1; then
+    tap_ok "HELM-LINT-INTERACTIVE: helm lint passes with interactive.enabled=true"
+  else
+    tap_not_ok "HELM-LINT-INTERACTIVE: helm lint with interactive" \
+      "helm lint failed with kubernautAgent.interactive.enabled=true"
+  fi
 }
 
 # ---------------------------------------------------------------------------

@@ -79,6 +79,8 @@ func (m *takeoverSessMgr) IsDriverActive(_ string) bool {
 	return m.driverActive
 }
 
+func (m *takeoverSessMgr) TouchActivity(_ string) {}
+
 // takeoverRunner mocks tools.InvestigatorRunner for takeover tests.
 type takeoverRunner struct {
 	response string
@@ -141,7 +143,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		}
 		runner = &takeoverRunner{response: "LLM response here"}
 		recon = &takeoverRecon{}
-		tool = tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr)
+		tool = tools.NewInvestigateTool(sessMgr, runner, recon, tools.WithAutonomousManager(autoMgr))
 		ctx = context.Background()
 	})
 

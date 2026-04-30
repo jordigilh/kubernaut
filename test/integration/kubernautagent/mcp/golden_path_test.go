@@ -84,7 +84,7 @@ var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001", func() {
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 		sessMgr := mcpinternal.NewLeaseSessionManagerConcrete(fakeClient, "kubernaut", logger)
-		tool = mcptools.NewInvestigateTool(sessMgr, runner, recon, autoMgr)
+		tool = mcptools.NewInvestigateTool(sessMgr, runner, recon, mcptools.WithAutonomousManager(autoMgr))
 	})
 
 	Describe("IT-KA-GOLDEN-001: Full lifecycle: status → takeover → message → status → complete", func() {
