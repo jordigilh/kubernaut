@@ -34,46 +34,56 @@ func NewK8sAuthenticator(client kubernetes.Interface) *K8sAuthenticator {
 	}
 }
 
-// ValidateToken validates a ServiceAccount token using Kubernetes TokenReview API.
-//
-// This method:
-// 1. Creates a TokenReview request with the provided token
-// 2. Sends the request to the Kubernetes API server
-// 3. Returns the authenticated user identity if valid
-//
-// Authority: https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/
+// ValidateToken validates a ServiceAccount token and returns the username.
+// This is a convenience wrapper over ValidateTokenFull for callers that only need
+// the username string.
 func (a *K8sAuthenticator) ValidateToken(ctx context.Context, token string) (string, error) {
+	info, err := a.ValidateTokenFull(ctx, token)
+	if err != nil {
+		return "", err
+	}
+	return info.Username, nil
+}
+
+// ValidateTokenFull validates a ServiceAccount token and returns full user info
+// including group memberships from the TokenReview response.
+func (a *K8sAuthenticator) ValidateTokenFull(ctx context.Context, token string) (UserInfo, error) {
 	if token == "" {
-		return "", errors.New("token cannot be empty")
+		return UserInfo{}, errors.New("token cannot be empty")
 	}
 
-	// Create TokenReview request
 	review := &authenticationv1.TokenReview{
 		Spec: authenticationv1.TokenReviewSpec{
 			Token: token,
 		},
 	}
 
-	// Call Kubernetes TokenReview API
 	result, err := a.client.AuthenticationV1().TokenReviews().Create(
 		ctx,
 		review,
 		metav1.CreateOptions{},
 	)
 	if err != nil {
-		return "", fmt.Errorf("token validation failed: %w", err)
+		return UserInfo{}, fmt.Errorf("token validation failed: %w", err)
 	}
 
 	if !result.Status.Authenticated {
-		return "", fmt.Errorf("%w: token rejected by API server", ErrTokenInvalid)
+		return UserInfo{}, fmt.Errorf("%w: token rejected by API server", ErrTokenInvalid)
 	}
 
-	// Check if user info is present
 	if result.Status.User.Username == "" {
-		return "", errors.New("token authenticated but user identity is empty")
+		return UserInfo{}, errors.New("token authenticated but user identity is empty")
 	}
 
-	return result.Status.User.Username, nil
+	groups := result.Status.User.Groups
+	if groups == nil {
+		groups = []string{}
+	}
+
+	return UserInfo{
+		Username: result.Status.User.Username,
+		Groups:   groups,
+	}, nil
 }
 
 // K8sAuthorizer implements Authorizer using Kubernetes SubjectAccessReview (SAR) API.

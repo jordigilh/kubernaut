@@ -252,7 +252,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 
 			denied := h.AuditStore.EventsOfType(audit.EventTypeSessionAccessDenied)
 			Expect(denied[0].Data["requesting_user"]).To(Equal("attacker-user"))
-			Expect(denied[0].Data["session_id"]).To(Equal(id))
+			Expect(denied[0].SessionID).To(Equal(id))
 
 			h.Manager.CancelInvestigation(id)
 		})

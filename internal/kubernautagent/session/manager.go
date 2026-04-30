@@ -349,10 +349,9 @@ func (m *Manager) EmitAccessDenied(ctx context.Context, sessionID, endpoint, req
 	}
 	m.store.mu.RUnlock()
 
-	event := audit.NewEvent(audit.EventTypeSessionAccessDenied, correlationID)
+	event := audit.NewEvent(audit.EventTypeSessionAccessDenied, correlationID, audit.WithSessionID(sessionID))
 	event.EventAction = audit.ActionSessionAccessDenied
 	event.EventOutcome = audit.OutcomeFailure
-	event.Data["session_id"] = sessionID
 	event.Data["endpoint"] = endpoint
 	event.Data["requesting_user"] = requestingUser
 	if sessionOwner != "" {
@@ -383,10 +382,9 @@ func (m *Manager) recordSessionMetrics(id string, start time.Time) {
 // transition. Optional extraData key-value pairs are merged into the event
 // data. Errors are fire-and-forget per ADR-038.
 func (m *Manager) emitSessionEvent(ctx context.Context, eventType, action, outcome, sessionID, correlationID string, fnErr error, extraData ...string) {
-	event := audit.NewEvent(eventType, correlationID)
+	event := audit.NewEvent(eventType, correlationID, audit.WithSessionID(sessionID))
 	event.EventAction = action
 	event.EventOutcome = outcome
-	event.Data["session_id"] = sessionID
 	if fnErr != nil {
 		event.Data["error"] = fnErr.Error()
 	}

@@ -42,6 +42,7 @@ type Config struct {
 	Summarizer     SummarizerConfig     `yaml:"summarizer"`
 	AlignmentCheck AlignmentCheckConfig `yaml:"alignmentCheck"`
 	Enrichment     EnrichmentConfig     `yaml:"enrichment"`
+	Interactive    InteractiveConfig    `yaml:"interactive"`
 
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
@@ -111,8 +112,21 @@ type AuditConfig struct {
 	BatchSize            int     `yaml:"batch_size"`
 }
 
+// Deprecated: MCPConfig configures outbound MCP client connections.
+// For interactive MCP server configuration, use InteractiveConfig instead (#703).
 type MCPConfig struct {
 	Servers []MCPServerEntry `yaml:"servers"`
+}
+
+// InteractiveConfig controls the MCP interactive session server (#703).
+// When Enabled=true, KA exposes an SSE-based MCP endpoint for user-driven
+// investigations. Feature is gated off by default.
+type InteractiveConfig struct {
+	Enabled               bool          `yaml:"enabled"`
+	SessionTTL            time.Duration `yaml:"session_ttl"`
+	InactivityTimeout     time.Duration `yaml:"inactivity_timeout"`
+	MaxConcurrentSessions int           `yaml:"max_concurrent_sessions"`
+	MaxAnalyzingTimeout   time.Duration `yaml:"max_analyzing_timeout"`
 }
 
 type MCPServerEntry struct {
@@ -351,6 +365,26 @@ func (c *Config) Validate() error {
 			if merged.Model == "" {
 				return fmt.Errorf("alignmentCheck.llm.model is required when alignmentCheck.llm is set")
 			}
+		}
+	}
+	if c.Interactive.Enabled {
+		if c.Interactive.SessionTTL <= 0 {
+			return fmt.Errorf("interactive.session_ttl must be positive when enabled, got %v", c.Interactive.SessionTTL)
+		}
+		if c.Interactive.SessionTTL > time.Hour {
+			return fmt.Errorf("interactive.session_ttl must not exceed 1h, got %v", c.Interactive.SessionTTL)
+		}
+		if c.Interactive.InactivityTimeout <= 0 {
+			return fmt.Errorf("interactive.inactivity_timeout must be positive when enabled, got %v", c.Interactive.InactivityTimeout)
+		}
+		if c.Interactive.InactivityTimeout > 30*time.Minute {
+			return fmt.Errorf("interactive.inactivity_timeout must not exceed 30m, got %v", c.Interactive.InactivityTimeout)
+		}
+		if c.Interactive.MaxConcurrentSessions <= 0 {
+			return fmt.Errorf("interactive.max_concurrent_sessions must be positive when enabled, got %d", c.Interactive.MaxConcurrentSessions)
+		}
+		if c.Interactive.MaxConcurrentSessions > 100 {
+			return fmt.Errorf("interactive.max_concurrent_sessions must not exceed 100, got %d", c.Interactive.MaxConcurrentSessions)
 		}
 	}
 	return nil

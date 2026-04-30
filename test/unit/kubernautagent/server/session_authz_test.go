@@ -230,9 +230,8 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 			for _, evt := range recorder.Events() {
 				if evt.EventType == audit.EventTypeSessionAccessDenied {
 					user, _ := evt.Data["requesting_user"].(string)
-					sid, _ := evt.Data["session_id"].(string)
 					ep, _ := evt.Data["endpoint"].(string)
-					return user == "user-b" && sid == id && ep != ""
+					return user == "user-b" && evt.SessionID == id && ep != ""
 				}
 			}
 			return false

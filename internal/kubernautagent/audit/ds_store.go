@@ -225,7 +225,7 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		payload := ogenclient.AIAgentSessionStartedPayload{
 			EventType: ogenclient.AIAgentSessionStartedPayloadEventTypeAiagentSessionStarted,
 			EventID:   dataString(event.Data, "event_id"),
-			SessionID: dataString(event.Data, "session_id"),
+			SessionID: event.SessionID,
 		}
 		if v := dataString(event.Data, "incident_id"); v != "" {
 			payload.IncidentID.SetTo(v)
@@ -245,7 +245,7 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		payload := ogenclient.AIAgentSessionCompletedPayload{
 			EventType: ogenclient.AIAgentSessionCompletedPayloadEventTypeAiagentSessionCompleted,
 			EventID:   dataString(event.Data, "event_id"),
-			SessionID: dataString(event.Data, "session_id"),
+			SessionID: event.SessionID,
 		}
 		return ogenclient.NewAIAgentSessionCompletedPayloadAuditEventRequestEventData(payload), true
 
@@ -253,7 +253,7 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		payload := ogenclient.AIAgentSessionFailedPayload{
 			EventType: ogenclient.AIAgentSessionFailedPayloadEventTypeAiagentSessionFailed,
 			EventID:   dataString(event.Data, "event_id"),
-			SessionID: dataString(event.Data, "session_id"),
+			SessionID: event.SessionID,
 		}
 		if v := dataString(event.Data, "error"); v != "" {
 			payload.Error.SetTo(v)
@@ -264,7 +264,7 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		payload := ogenclient.AIAgentSessionCancelledPayload{
 			EventType: ogenclient.AIAgentSessionCancelledPayloadEventTypeAiagentSessionCancelled,
 			EventID:   dataString(event.Data, "event_id"),
-			SessionID: dataString(event.Data, "session_id"),
+			SessionID: event.SessionID,
 		}
 		return ogenclient.NewAIAgentSessionCancelledPayloadAuditEventRequestEventData(payload), true
 
@@ -272,7 +272,7 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		payload := ogenclient.AIAgentSessionObservedPayload{
 			EventType: ogenclient.AIAgentSessionObservedPayloadEventTypeAiagentSessionObserved,
 			EventID:   dataString(event.Data, "event_id"),
-			SessionID: dataString(event.Data, "session_id"),
+			SessionID: event.SessionID,
 		}
 		if v := dataString(event.Data, "observer_user"); v != "" {
 			payload.ObserverUser.SetTo(v)
@@ -286,7 +286,7 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		payload := ogenclient.AIAgentSessionAccessDeniedPayload{
 			EventType:      ogenclient.AIAgentSessionAccessDeniedPayloadEventTypeAiagentSessionAccessDenied,
 			EventID:        dataString(event.Data, "event_id"),
-			SessionID:      dataString(event.Data, "session_id"),
+			SessionID:      event.SessionID,
 			Endpoint:       dataString(event.Data, "endpoint"),
 			RequestingUser: dataString(event.Data, "requesting_user"),
 		}
@@ -302,8 +302,8 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 			CancelledPhase:  dataString(event.Data, "cancelled_phase"),
 			CancelledAtTurn: dataInt(event.Data, "cancelled_at_turn"),
 		}
-		if v := dataString(event.Data, "session_id"); v != "" {
-			payload.SessionID.SetTo(v)
+		if event.SessionID != "" {
+			payload.SessionID.SetTo(event.SessionID)
 		}
 		if pt := dataInt(event.Data, "total_prompt_tokens"); pt > 0 {
 			payload.TotalPromptTokens.SetTo(pt)

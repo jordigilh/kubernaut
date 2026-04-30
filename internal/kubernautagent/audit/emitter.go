@@ -119,6 +119,7 @@ type AuditEvent struct {
 	EventAction   string
 	EventOutcome  string
 	CorrelationID string
+	SessionID     string
 	ParentEventID *uuid.UUID
 	Data          map[string]interface{}
 }
@@ -128,16 +129,30 @@ type AuditStore interface {
 	StoreAudit(ctx context.Context, event *AuditEvent) error
 }
 
+// EventOption configures optional fields on an AuditEvent.
+type EventOption func(*AuditEvent)
+
+// WithSessionID attaches an interactive session identifier to the audit event.
+func WithSessionID(sessionID string) EventOption {
+	return func(e *AuditEvent) {
+		e.SessionID = sessionID
+	}
+}
+
 // NewEvent creates an AuditEvent with the correct event_category and a unique event_id.
-func NewEvent(eventType string, correlationID string) *AuditEvent {
+func NewEvent(eventType string, correlationID string, opts ...EventOption) *AuditEvent {
 	data := make(map[string]interface{})
 	data["event_id"] = uuid.New().String()
-	return &AuditEvent{
+	event := &AuditEvent{
 		EventType:     eventType,
 		EventCategory: EventCategory,
 		CorrelationID: correlationID,
 		Data:          data,
 	}
+	for _, opt := range opts {
+		opt(event)
+	}
+	return event
 }
 
 // StoreBestEffort stores an audit event without propagating errors (fire-and-forget).

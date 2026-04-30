@@ -22,6 +22,14 @@ import (
 // Middleware uses this to return 401 instead of 500.
 var ErrTokenInvalid = errors.New("token not authenticated")
 
+// UserInfo contains the identity and group memberships of an authenticated user.
+// Returned by ValidateTokenFull for use cases that need group-based authorization
+// (e.g., impersonation in interactive MCP sessions, #703).
+type UserInfo struct {
+	Username string
+	Groups   []string
+}
+
 // Authenticator validates tokens and returns user identity.
 //
 // Implementations:
@@ -51,6 +59,15 @@ type Authenticator interface {
 	//   - Token cannot be authenticated
 	//   - Kubernetes API call fails
 	ValidateToken(ctx context.Context, token string) (string, error)
+
+	// ValidateTokenFull checks if the token is valid and returns full user info
+	// including group memberships. Required for interactive MCP sessions (#703)
+	// where impersonation needs both username and groups.
+	//
+	// Returns:
+	//   - UserInfo: Username and Groups from TokenReview response
+	//   - error: Token validation failure (wraps ErrTokenInvalid if rejected)
+	ValidateTokenFull(ctx context.Context, token string) (UserInfo, error)
 }
 
 // Authorizer checks if a user has permission to perform an action on a resource.

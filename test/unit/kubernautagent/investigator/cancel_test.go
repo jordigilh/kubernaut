@@ -400,7 +400,7 @@ var _ = Describe("Kubernaut Agent Investigator Cancellation — #823 PR3", func(
 			Expect(evt.Data).To(HaveKey("accumulated_messages"))
 
 			By("verifying session_id cross-reference via context (GAP-D2 / AUD-4)")
-			Expect(evt.Data).To(HaveKeyWithValue("session_id", "sess-c11"))
+			Expect(evt.SessionID).To(Equal("sess-c11"))
 		})
 	})
 
