@@ -18,122 +18,100 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
-	"sort"
-	"time"
-
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
-// AuditQuerier is the subset of the ogenclient used for context reconstruction.
-// Mirrors the pattern from pkg/effectivenessmonitor/client/ds_querier.go.
-type AuditQuerier interface {
-	QueryAuditEvents(ctx context.Context, params ogenclient.QueryAuditEventsParams) (*ogenclient.AuditEventsQueryResponse, error)
+const kaServiceAccount = "system:serviceaccount:kubernaut:kubernaut-agent"
+
+// ReconMessage represents a single conversation message for reconstruction.
+// Mirrors tools.LLMMessage to avoid import cycles.
+type ReconMessage struct {
+	Role    string
+	Content string
 }
 
-// DSContextReconstructor implements ContextReconstructor by querying DS audit
-// events. BR-INTERACTIVE-007: rebuild conversation from prior sessions.
-// BR-INTERACTIVE-008: DS unavailable = empty slice (best-effort).
-type DSContextReconstructor struct {
-	querier AuditQuerier
-	timeout time.Duration
-	logger  *slog.Logger
+// ReconRunner is the interface for executing LLM turns during reconstruction.
+// Implemented by the same adapter as tools.InvestigatorRunner.
+type ReconRunner interface {
+	RunReconTurn(ctx context.Context, messages []ReconMessage, correlationID string) (string, error)
 }
 
-// NewDSContextReconstructor creates a reconstructor backed by the DS audit API.
-func NewDSContextReconstructor(querier AuditQuerier, timeout time.Duration, logger *slog.Logger) *DSContextReconstructor {
-	return &DSContextReconstructor{
-		querier: querier,
-		timeout: timeout,
-		logger:  logger,
+// ReconstructionContext holds the information needed to reconstruct an
+// autonomous investigation after an interactive session ends.
+type ReconstructionContext struct {
+	CorrelationID string
+	SessionID     string
+	SignalMeta    map[string]string
+}
+
+// ReconstructionSpawner rebuilds the conversation context from DS audit events
+// and spawns a new autonomous investigation via RunReconTurn.
+// SEC-04: uses explicit KA SA identity for reconstructed sessions.
+type ReconstructionSpawner struct {
+	runner ReconRunner
+	recon  ContextReconstructor
+	logger *slog.Logger
+}
+
+// NewReconstructionSpawner creates a spawner with the given dependencies.
+func NewReconstructionSpawner(runner ReconRunner, recon ContextReconstructor, logger *slog.Logger) *ReconstructionSpawner {
+	return &ReconstructionSpawner{
+		runner: runner,
+		recon:  recon,
+		logger: logger,
 	}
 }
 
-const reconstructPageSize = 200
+// ServiceAccountIdentity returns the KA service account used for reconstructed sessions.
+func (s *ReconstructionSpawner) ServiceAccountIdentity() string {
+	return kaServiceAccount
+}
 
-func (r *DSContextReconstructor) Reconstruct(ctx context.Context, correlationID string, excludeActorID string) ([]ConversationTurn, error) {
-	queryCtx, cancel := context.WithTimeout(ctx, r.timeout)
-	defer cancel()
+// SpawnReconstruct rebuilds conversation context and invokes RunReconTurn
+// with the reconstructed messages. Best-effort: empty context is acceptable
+// (BR-INTERACTIVE-008). Safe to call as a goroutine: panics are recovered.
+func (s *ReconstructionSpawner) SpawnReconstruct(ctx context.Context, entry *ReconstructionContext) (retErr error) {
+	defer func() {
+		if r := recover(); r != nil {
+			retErr = fmt.Errorf("panic in SpawnReconstruct: %v", r)
+			s.logger.Error("panic recovered during reconstruction",
+				slog.String("correlation_id", entry.CorrelationID),
+				slog.Any("panic", r))
+		}
+	}()
 
-	params := ogenclient.QueryAuditEventsParams{
-		CorrelationID: ogenclient.OptString{Value: correlationID, Set: true},
-		EventCategory: ogenclient.OptString{Value: "aiagent", Set: true},
-		Limit:         ogenclient.OptInt{Value: reconstructPageSize, Set: true},
+	if entry == nil {
+		return fmt.Errorf("reconstruction context must not be nil")
 	}
 
-	resp, err := r.querier.QueryAuditEvents(queryCtx, params)
+	turns, reconErr := s.recon.Reconstruct(ctx, entry.CorrelationID, entry.SessionID)
+	if reconErr != nil {
+		s.logger.Warn("context reconstruction returned error; proceeding with empty context",
+			slog.String("correlation_id", entry.CorrelationID),
+			slog.String("error", reconErr.Error()))
+	}
+
+	messages := turnsToReconMessages(turns)
+
+	_, err := s.runner.RunReconTurn(ctx, messages, entry.CorrelationID)
 	if err != nil {
-		r.logger.Warn("DS audit query failed, returning empty context (best-effort)",
-			slog.String("correlation_id", correlationID),
-			slog.String("error", err.Error()),
-		)
-		return []ConversationTurn{}, nil
+		s.logger.Error("reconstruction RunReconTurn failed",
+			slog.String("correlation_id", entry.CorrelationID),
+			slog.String("error", err.Error()))
+		return fmt.Errorf("reconstruction RunReconTurn: %w", err)
 	}
 
-	if resp == nil || len(resp.Data) == 0 {
-		return []ConversationTurn{}, nil
-	}
-
-	var turns []ConversationTurn
-	for _, evt := range resp.Data {
-		role := eventTypeToRole(evt.EventType)
-		if role == "" {
-			continue
-		}
-
-		if excludeActorID != "" && evt.ActorID.IsSet() && evt.ActorID.Value == excludeActorID {
-			continue
-		}
-
-		content := extractContent(evt)
-		actingUser := ""
-		if evt.ActorID.IsSet() {
-			actingUser = evt.ActorID.Value
-		}
-
-		turns = append(turns, ConversationTurn{
-			ActingUser: actingUser,
-			Role:       role,
-			Content:    content,
-			Timestamp:  evt.EventTimestamp,
-		})
-	}
-
-	sort.Slice(turns, func(i, j int) bool {
-		return turns[i].Timestamp.Before(turns[j].Timestamp)
-	})
-
-	return turns, nil
+	return nil
 }
 
-func eventTypeToRole(eventType string) string {
-	switch eventType {
-	case "aiagent.llm.request":
-		return "user"
-	case "aiagent.llm.response":
-		return "assistant"
-	default:
-		return ""
+func turnsToReconMessages(turns []ConversationTurn) []ReconMessage {
+	if len(turns) == 0 {
+		return nil
 	}
+	messages := make([]ReconMessage, len(turns))
+	for i, t := range turns {
+		messages[i] = ReconMessage{Role: t.Role, Content: t.Content}
+	}
+	return messages
 }
-
-func extractContent(evt ogenclient.AuditEvent) string {
-	if evt.EventData.IsLLMRequestPayload() {
-		payload, ok := evt.EventData.GetLLMRequestPayload()
-		if ok {
-			return payload.PromptPreview
-		}
-	}
-	if evt.EventData.IsLLMResponsePayload() {
-		payload, ok := evt.EventData.GetLLMResponsePayload()
-		if ok {
-			if payload.AnalysisFull.IsSet() {
-				return payload.AnalysisFull.Value
-			}
-			return payload.AnalysisPreview
-		}
-	}
-	return ""
-}
-
-var _ ContextReconstructor = (*DSContextReconstructor)(nil)
