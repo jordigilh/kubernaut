@@ -350,6 +350,22 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		}
 		return ogenclient.NewAIAgentAlignmentVerdictPayloadAuditEventRequestEventData(payload), true
 
+	case EventTypeSessionSuspended, EventTypeInteractiveCompleted:
+		payload := ogenclient.AIAgentSessionCancelledPayload{
+			EventType: ogenclient.AIAgentSessionCancelledPayloadEventTypeAiagentSessionCancelled,
+			EventID:   dataString(event.Data, "event_id"),
+			SessionID: event.SessionID,
+		}
+		return ogenclient.NewAIAgentSessionCancelledPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeInteractiveStarted, EventTypeSessionResumed:
+		payload := ogenclient.AIAgentSessionStartedPayload{
+			EventType: ogenclient.AIAgentSessionStartedPayloadEventTypeAiagentSessionStarted,
+			EventID:   dataString(event.Data, "event_id"),
+			SessionID: event.SessionID,
+		}
+		return ogenclient.NewAIAgentSessionStartedPayloadAuditEventRequestEventData(payload), true
+
 	default:
 		return ogenclient.AuditEventRequestEventData{}, false
 	}
