@@ -35,10 +35,10 @@ func testLogger() *slog.Logger {
 // fills the gaps.
 func baseCfg() *kaconfig.Config {
 	cfg := kaconfig.DefaultConfig()
-	cfg.LLM.Provider = "openai"
-	cfg.LLM.Model = "gpt-4"
-	cfg.LLM.Endpoint = "http://localhost:11434"
-	cfg.LLM.APIKey = "test-key"
+	cfg.AI.LLM.Provider = "openai"
+	cfg.AI.LLM.Model = "gpt-4"
+	cfg.AI.LLM.Endpoint = "http://localhost:11434"
+	cfg.AI.LLM.APIKey = "test-key"
 	return cfg
 }
 
@@ -46,10 +46,11 @@ func baseCfg() *kaconfig.Config {
 // In production, the main config file does NOT contain LLM fields --
 // those come exclusively from the SDK config via MergeSDKConfig.
 func baseCfgYAML() string {
-	return `llm:
-  provider: openai
-investigator:
-  maxTurns: 15
+	return `ai:
+  llm:
+    provider: openai
+  investigation:
+    maxTurns: 40
 `
 }
 
@@ -125,7 +126,7 @@ func TestReloadRejectsProviderChange(t *testing.T) {
 func TestReloadRejectsOAuth2TokenURLChange(t *testing.T) {
 	currentCfg := func() *kaconfig.Config {
 		c := baseCfg()
-		c.LLM.OAuth2 = kaconfig.OAuth2Config{
+		c.AI.LLM.OAuth2 = kaconfig.OAuth2Config{
 			Enabled:      true,
 			TokenURL:     "https://idp.corp.com/token",
 			ClientID:     "my-client",
@@ -158,7 +159,7 @@ func TestReloadRejectsOAuth2TokenURLChange(t *testing.T) {
 func TestReloadRejectsOAuth2ClientIDChange(t *testing.T) {
 	currentCfg := func() *kaconfig.Config {
 		c := baseCfg()
-		c.LLM.OAuth2 = kaconfig.OAuth2Config{
+		c.AI.LLM.OAuth2 = kaconfig.OAuth2Config{
 			Enabled:      true,
 			TokenURL:     "https://idp.corp.com/token",
 			ClientID:     "my-client",
@@ -191,7 +192,7 @@ func TestReloadRejectsOAuth2ClientIDChange(t *testing.T) {
 func TestReloadRejectsOAuth2ClientSecretChange(t *testing.T) {
 	currentCfg := func() *kaconfig.Config {
 		c := baseCfg()
-		c.LLM.OAuth2 = kaconfig.OAuth2Config{
+		c.AI.LLM.OAuth2 = kaconfig.OAuth2Config{
 			Enabled:      true,
 			TokenURL:     "https://idp.corp.com/token",
 			ClientID:     "my-client",
@@ -224,7 +225,7 @@ func TestReloadRejectsOAuth2ClientSecretChange(t *testing.T) {
 func TestReloadAcceptsOAuth2ScopesChange(t *testing.T) {
 	currentCfg := func() *kaconfig.Config {
 		c := baseCfg()
-		c.LLM.OAuth2 = kaconfig.OAuth2Config{
+		c.AI.LLM.OAuth2 = kaconfig.OAuth2Config{
 			Enabled:      true,
 			TokenURL:     "https://idp.corp.com/token",
 			ClientID:     "my-client",
@@ -307,11 +308,12 @@ func TestReloadAcceptsEndpointChange(t *testing.T) {
 
 func TestReloadRejectsValidationFailure(t *testing.T) {
 	restore := withReadFile(func(string) ([]byte, error) {
-		return []byte(`llm:
-  provider: openai
-  model: ""
-investigator:
-  maxTurns: 15
+		return []byte(`ai:
+  llm:
+    provider: openai
+    model: ""
+  investigation:
+    maxTurns: 40
 `), nil
 	})
 	defer restore()
@@ -333,7 +335,7 @@ investigator:
 func TestReloadRejectsTokenURLHTTPScheme(t *testing.T) {
 	currentCfg := func() *kaconfig.Config {
 		c := baseCfg()
-		c.LLM.OAuth2 = kaconfig.OAuth2Config{
+		c.AI.LLM.OAuth2 = kaconfig.OAuth2Config{
 			Enabled:      true,
 			TokenURL:     "http://insecure.com/token",
 			ClientID:     "my-client",
@@ -382,17 +384,18 @@ func TestReloadRejectsStructuredOutputChange(t *testing.T) {
 
 func TestReloadFreshCopyInvariant(t *testing.T) {
 	restore := withReadFile(func(string) ([]byte, error) {
-		return []byte(`llm:
-  provider: openai
-  model: ""
-investigator:
-  maxTurns: 15
+		return []byte(`ai:
+  llm:
+    provider: openai
+    model: ""
+  investigation:
+    maxTurns: 40
 `), nil
 	})
 	defer restore()
 
 	origCfg := baseCfg()
-	origModel := origCfg.LLM.Model
+	origModel := origCfg.AI.LLM.Model
 
 	sc := setupSwappable(t)
 	cb := sdkReloadCallback("/tmp/fake.yaml", func() *kaconfig.Config { return origCfg }, sc, testLogger())
@@ -402,7 +405,7 @@ investigator:
   model: ""
 `)
 
-	if origCfg.LLM.Model != origModel {
-		t.Fatalf("live config must not be mutated on failed reload; model was %q, now %q", origModel, origCfg.LLM.Model)
+	if origCfg.AI.LLM.Model != origModel {
+		t.Fatalf("live config must not be mutated on failed reload; model was %q, now %q", origModel, origCfg.AI.LLM.Model)
 	}
 }

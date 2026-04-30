@@ -683,33 +683,34 @@ metadata:
   namespace: %s
 data:
   config.yaml: |
-    llm:
-      provider: "openai"
-      model: "mock-model"
-      endpoint: "http://mock-llm:8080"
-      apiKey: "mock-api-key-for-e2e"
-    server:
-      tls:
-        certDir: /etc/tls
-    dataStorage:
-      url: "https://data-storage-service:8080"
-    logging:
-      level: "debug"
-    audit:
-      flushIntervalSeconds: 0.1
-      bufferSize: 10000
-      batchSize: 50
-    auth:
-      resource_name: "kubernaut-agent"
-    alignmentCheck:
-      enabled: true
-      timeout: "10s"
-      maxStepTokens: 500
+    runtime:
+      logging:
+        level: "debug"
+      server:
+        tls:
+          certDir: /etc/tls
+      audit:
+        flushIntervalSeconds: 0.1
+        bufferSize: 10000
+        batchSize: 50
+    ai:
       llm:
         provider: "openai"
-        model: "shadow-eval"
-        endpoint: "http://mock-llm-shadow:8080"
-        api_key: "mock-shadow-key"
+        model: "mock-model"
+        endpoint: "http://mock-llm:8080"
+        apiKey: "mock-api-key-for-e2e"
+      alignmentCheck:
+        enabled: true
+        timeout: "10s"
+        maxStepTokens: 500
+        llm:
+          provider: "openai"
+          model: "shadow-eval"
+          endpoint: "http://mock-llm-shadow:8080"
+          apiKey: "mock-shadow-key"
+    integrations:
+      dataStorage:
+        url: "https://data-storage-service:8080"
 ---
 apiVersion: apps/v1
 kind: Deployment

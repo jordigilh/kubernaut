@@ -129,50 +129,55 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   config.yaml: |
-    logging:
-      level: "INFO"
-    server:
-      address: "0.0.0.0"
-      port: 8080
-      healthAddr: ":8081"
-      metricsAddr: ":9090"
-      tls:
-        certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
-    dataStorage:
-      url: "{{ include "kubernaut.datastorage.url" . }}"
-{{- if include "kubernaut.agent.tlsEnabled" . }}
-      tls:
-        caFile: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
-{{- end }}
-    audit:
-      flushIntervalSeconds: 1.0
-      bufferSize: 10000
-      batchSize: 50
+    runtime:
+      logging:
+        level: "INFO"
+      server:
+        address: "0.0.0.0"
+        port: 8080
+        healthAddr: ":8081"
+        metricsAddr: ":9090"
+        tls:
+          certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
+      audit:
+        flushIntervalSeconds: 1.0
+        bufferSize: 10000
+        batchSize: 50
+    ai:
+      investigation:
+        maxTurns: 40
 {{- if .Values.kubernautAgent.alignmentCheck.enabled }}
-    alignmentCheck:
-      enabled: true
-      timeout: {{ .Values.kubernautAgent.alignmentCheck.timeout | default "10s" }}
-      maxStepTokens: {{ .Values.kubernautAgent.alignmentCheck.maxStepTokens | default 500 }}
+      alignmentCheck:
+        enabled: true
+        timeout: {{ .Values.kubernautAgent.alignmentCheck.timeout | default "10s" }}
+        maxStepTokens: {{ .Values.kubernautAgent.alignmentCheck.maxStepTokens | default 500 }}
 {{- with .Values.kubernautAgent.alignmentCheck.llm }}
-      llm:
+        llm:
 {{- if .provider }}
-        provider: {{ .provider }}
+          provider: {{ .provider }}
 {{- end }}
 {{- if .model }}
-        model: {{ .model }}
+          model: {{ .model }}
 {{- end }}
 {{- if .endpoint }}
-        endpoint: {{ .endpoint }}
+          endpoint: {{ .endpoint }}
 {{- end }}
 {{- if .apiKey }}
-        apiKey: {{ .apiKey }}
+          apiKey: {{ .apiKey }}
 {{- end }}
 {{- end }}
+{{- end }}
+    integrations:
+      dataStorage:
+        url: "{{ include "kubernaut.datastorage.url" . }}"
+{{- if include "kubernaut.agent.tlsEnabled" . }}
+        tls:
+          caFile: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
 {{- end }}
 {{- if include "kubernaut.monitoring.prometheus.enabled" . }}
-    tools:
-      prometheus:
-        url: {{ include "kubernaut.monitoring.prometheus.url" . | quote }}
+      tools:
+        prometheus:
+          url: {{ include "kubernaut.monitoring.prometheus.url" . | quote }}
 {{- end }}
 {{/* DEPRECATED v1.4 (Issue #848): OCP service-ca inject-cabundle ConfigMap.
      Will be removed in v1.5 — use the Kubernaut Operator for OCP. */}}

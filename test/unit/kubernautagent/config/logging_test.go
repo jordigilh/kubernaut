@@ -30,33 +30,37 @@ var _ = Describe("Kubernaut Agent Logging Configuration — #875", func() {
 	Describe("UT-KA-875-001: DefaultConfig sets logging level to INFO", func() {
 		It("should default Logging.Level to INFO", func() {
 			cfg := config.DefaultConfig()
-			Expect(cfg.Logging.Level).To(Equal("INFO"))
+			Expect(cfg.Runtime.Logging.Level).To(Equal("INFO"))
 		})
 	})
 
 	Describe("UT-KA-875-002: Logging level parsed from YAML config", func() {
 		It("should parse logging.level from YAML", func() {
 			yamlData := []byte(`
-llm:
-  provider: "openai"
-  model: "gpt-4o"
-logging:
-  level: "DEBUG"
+ai:
+  llm:
+    provider: "openai"
+    model: "gpt-4o"
+runtime:
+  logging:
+    level: "DEBUG"
 `)
 			cfg, err := config.Load(yamlData)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.Logging.Level).To(Equal("DEBUG"))
+			Expect(cfg.Runtime.Logging.Level).To(Equal("DEBUG"))
 		})
 	})
 
 	Describe("UT-KA-875-003: Validate rejects invalid log level", func() {
 		It("should reject an unrecognized log level", func() {
 			yamlData := []byte(`
-llm:
-  provider: "openai"
-  model: "gpt-4o"
-logging:
-  level: "VERBOSE"
+ai:
+  llm:
+    provider: "openai"
+    model: "gpt-4o"
+runtime:
+  logging:
+    level: "VERBOSE"
 `)
 			cfg, err := config.Load(yamlData)
 			Expect(err).NotTo(HaveOccurred())
@@ -70,11 +74,13 @@ logging:
 		DescribeTable("valid log levels",
 			func(level string) {
 				yamlData := []byte(`
-llm:
-  provider: "openai"
-  model: "gpt-4o"
-logging:
-  level: "` + level + `"
+ai:
+  llm:
+    provider: "openai"
+    model: "gpt-4o"
+runtime:
+  logging:
+    level: "` + level + `"
 `)
 				cfg, err := config.Load(yamlData)
 				Expect(err).NotTo(HaveOccurred())
@@ -91,15 +97,17 @@ logging:
 		DescribeTable("level mapping",
 			func(level string, expected slog.Level) {
 				yamlData := []byte(`
-llm:
-  provider: "openai"
-  model: "gpt-4o"
-logging:
-  level: "` + level + `"
+ai:
+  llm:
+    provider: "openai"
+    model: "gpt-4o"
+runtime:
+  logging:
+    level: "` + level + `"
 `)
 				cfg, err := config.Load(yamlData)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(cfg.Logging.SlogLevel()).To(Equal(expected))
+				Expect(cfg.Runtime.Logging.SlogLevel()).To(Equal(expected))
 			},
 			Entry("DEBUG -> slog.LevelDebug", "DEBUG", slog.LevelDebug),
 			Entry("INFO -> slog.LevelInfo", "INFO", slog.LevelInfo),
@@ -111,7 +119,7 @@ logging:
 	Describe("UT-KA-875-006: SlogLevel defaults to INFO for empty level", func() {
 		It("should return slog.LevelInfo when level is empty", func() {
 			cfg := config.DefaultConfig()
-			Expect(cfg.Logging.SlogLevel()).To(Equal(slog.LevelInfo))
+			Expect(cfg.Runtime.Logging.SlogLevel()).To(Equal(slog.LevelInfo))
 		})
 	})
 })

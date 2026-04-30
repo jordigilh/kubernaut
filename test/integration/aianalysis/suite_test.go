@@ -535,25 +535,26 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		dsURL = "http://host.containers.internal:18095"
 	}
 
-	kaConfigContent := fmt.Sprintf(`llm:
-  provider: "openai"
-  model: "mock-model"
-  endpoint: "%s"
-  apiKey: "mock-api-key-for-integration-tests"
-dataStorage:
-  url: "%s"
-logging:
-  level: "debug"
-server:
-  port: 18120
-  healthAddr: ":18121"
-  metricsAddr: ":18122"
-audit:
-  flushIntervalSeconds: 0.1
-  bufferSize: 10000
-  batchSize: 50
-auth:
-  resource_name: "kubernaut-agent"
+	kaConfigContent := fmt.Sprintf(`runtime:
+  logging:
+    level: "debug"
+  server:
+    port: 18120
+    healthAddr: ":18121"
+    metricsAddr: ":18122"
+  audit:
+    flushIntervalSeconds: 0.1
+    bufferSize: 10000
+    batchSize: 50
+ai:
+  llm:
+    provider: "openai"
+    model: "mock-model"
+    endpoint: "%s"
+    apiKey: "mock-api-key-for-integration-tests"
+integrations:
+  dataStorage:
+    url: "%s"
 `, llmEndpoint, dsURL)
 	kaConfigPath := filepath.Join(kaConfigDir, "config.yaml")
 	err = os.WriteFile(kaConfigPath, []byte(kaConfigContent), 0644)
