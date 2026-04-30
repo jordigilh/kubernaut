@@ -116,7 +116,7 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 
 			started := spy.eventsOfType(audit.EventTypeSessionStarted)[0]
 			Expect(started.CorrelationID).To(Equal("rr-123"))
-			Expect(started.Data).To(HaveKeyWithValue("session_id", id))
+			Expect(started.SessionID).To(Equal(id))
 			Expect(started.EventAction).To(Equal(audit.ActionSessionStarted))
 			Expect(started.EventCategory).To(Equal(audit.EventCategory))
 
@@ -196,7 +196,7 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 			Expect(cancelled.CorrelationID).To(Equal("rr-cancel"))
 			Expect(cancelled.EventOutcome).To(Equal(audit.OutcomeSuccess))
 			Expect(cancelled.EventAction).To(Equal(audit.ActionSessionCancelled))
-			Expect(cancelled.Data).To(HaveKeyWithValue("session_id", id))
+			Expect(cancelled.SessionID).To(Equal(id))
 		})
 	})
 
@@ -261,8 +261,8 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 			for _, event := range spy.getEvents() {
 				Expect(event.CorrelationID).To(Equal("rr-soc2-456"),
 					"all events should have remediation_id as CorrelationID, got type: %s", event.EventType)
-				Expect(event.Data).To(HaveKeyWithValue("session_id", id),
-					"all events should carry session_id in data, got type: %s", event.EventType)
+				Expect(event.SessionID).To(Equal(id),
+					"all events should carry session_id, got type: %s", event.EventType)
 				Expect(event.EventCategory).To(Equal(audit.EventCategory),
 					"all events should have EventCategory=aiagent, got type: %s", event.EventType)
 			}

@@ -83,15 +83,34 @@ func NewMCPHandler(authMiddleware func(http.Handler) http.Handler, enabled bool)
 	return authMiddleware(handler)
 }
 
+// ToolDeps holds optional tool instances for registration.
+// nil fields are skipped during registration.
+type ToolDeps struct {
+	Investigate    ToolHandler
+	Enrich         ToolHandler
+	SelectWorkflow ToolHandler
+}
+
 // MCPDeps holds the dependencies needed to bootstrap the MCP server.
 type MCPDeps struct {
 	AuthMiddleware func(http.Handler) http.Handler
+	Tools          ToolDeps
 }
 
-// BootstrapMCP creates a fully configured MCP handler with the kubernaut_investigate
-// tool registered. Returns the handler and the MCPServer for lifecycle management.
+// BootstrapMCP creates a fully configured MCP handler with tools registered
+// from deps.Tools. Returns the handler and the MCPServer for lifecycle management.
 func BootstrapMCP(deps MCPDeps) (http.Handler, *MCPServer) {
 	srv := NewMCPServer()
+
+	if deps.Tools.Investigate != nil {
+		srv.toolCount.Add(1)
+	}
+	if deps.Tools.Enrich != nil {
+		srv.toolCount.Add(1)
+	}
+	if deps.Tools.SelectWorkflow != nil {
+		srv.toolCount.Add(1)
+	}
 
 	mcpHandler := mcpsdk.NewStreamableHTTPHandler(func(_ *http.Request) *mcpsdk.Server {
 		return srv.Server()
