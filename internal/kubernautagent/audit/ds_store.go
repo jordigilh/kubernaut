@@ -53,8 +53,13 @@ func (s *DSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error 
 		EventOutcome:   ogenclient.AuditEventRequestEventOutcome(event.EventOutcome),
 		CorrelationID:  event.CorrelationID,
 	}
-	req.ActorType.SetTo("Service")
-	req.ActorID.SetTo("kubernaut-agent")
+	if event.ActingUser != "" {
+		req.ActorType.SetTo("User")
+		req.ActorID.SetTo(event.ActingUser)
+	} else {
+		req.ActorType.SetTo("Service")
+		req.ActorID.SetTo("kubernaut-agent")
+	}
 	if event.ParentEventID != nil {
 		req.ParentEventID.SetTo(*event.ParentEventID)
 	}
@@ -701,8 +706,13 @@ func (s *BufferedDSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent
 		EventOutcome:   ogenclient.AuditEventRequestEventOutcome(event.EventOutcome),
 		CorrelationID:  event.CorrelationID,
 	}
-	req.ActorType.SetTo("Service")
-	req.ActorID.SetTo("kubernaut-agent")
+	if event.ActingUser != "" {
+		req.ActorType.SetTo("User")
+		req.ActorID.SetTo(event.ActingUser)
+	} else {
+		req.ActorType.SetTo("Service")
+		req.ActorID.SetTo("kubernaut-agent")
+	}
 
 	if ed, ok := buildEventData(event); ok {
 		req.EventData = ed

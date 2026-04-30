@@ -120,6 +120,7 @@ type AuditEvent struct {
 	EventOutcome  string
 	CorrelationID string
 	SessionID     string
+	ActingUser    string
 	ParentEventID *uuid.UUID
 	Data          map[string]interface{}
 }
@@ -136,6 +137,15 @@ type EventOption func(*AuditEvent)
 func WithSessionID(sessionID string) EventOption {
 	return func(e *AuditEvent) {
 		e.SessionID = sessionID
+	}
+}
+
+// WithActingUser attaches the identity of the user who triggered the event.
+// Used in interactive MCP sessions for SOC2 per-event user attribution
+// (BR-INTERACTIVE-005).
+func WithActingUser(user string) EventOption {
+	return func(e *AuditEvent) {
+		e.ActingUser = user
 	}
 }
 
