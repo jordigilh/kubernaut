@@ -208,6 +208,20 @@ func New(cfg Config) *Investigator {
 	}
 }
 
+// RunInteractiveTurn executes a single interactive LLM loop iteration.
+// Used by the MCP kubernaut_investigate tool for interactive sessions.
+// Uses PhaseRCA tool set. Streaming works via LazySink on context.
+func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.Message, correlationID string) (LoopResult, error) {
+	client := inv.client
+	modelName := inv.modelName
+	if inv.swappable != nil {
+		pinned := inv.swappable.Snapshot()
+		client = llm.NewInstrumentedClient(pinned)
+		modelName = inv.swappable.ModelName()
+	}
+	return inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, nil, correlationID, client, modelName)
+}
+
 // Investigate runs the two-invocation investigation and returns the result.
 // Per BR-AUDIT-005, all audit events use signal.RemediationID as correlation ID
 // so that DataStorage queries by remediation_id return the full investigation trail.
