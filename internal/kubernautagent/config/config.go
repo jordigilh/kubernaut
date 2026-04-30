@@ -33,7 +33,7 @@ import (
 type Config struct {
 	Logging        LoggingConfig        `yaml:"logging"`
 	LLM            LLMConfig            `yaml:"llm"`
-	DataStorage    DataStorageConfig    `yaml:"data_storage"`
+	DataStorage    DataStorageConfig    `yaml:"dataStorage"`
 	Server         ServerConfig         `yaml:"server"`
 	Session        SessionConfig        `yaml:"session"`
 	Audit          AuditConfig          `yaml:"audit"`
@@ -46,8 +46,6 @@ type Config struct {
 	AlignmentCheck AlignmentCheckConfig `yaml:"alignmentCheck"`
 	Enrichment     EnrichmentConfig     `yaml:"enrichment"`
 
-	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
-	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
 }
 
@@ -75,14 +73,14 @@ type LLMConfig struct {
 	Provider         string                       `yaml:"provider"`
 	Endpoint         string                       `yaml:"endpoint"`
 	Model            string                       `yaml:"model"`
-	APIKey           string                       `yaml:"api_key"`
-	AzureAPIVersion  string                       `yaml:"azure_api_version"`
-	VertexProject    string                       `yaml:"vertex_project"`
-	VertexLocation   string                       `yaml:"vertex_location"`
-	BedrockRegion    string                       `yaml:"bedrock_region"`
+	APIKey           string                       `yaml:"apiKey"`
+	AzureAPIVersion  string                       `yaml:"azureApiVersion"`
+	VertexProject    string                       `yaml:"vertexProject"`
+	VertexLocation   string                       `yaml:"vertexLocation"`
+	BedrockRegion    string                       `yaml:"bedrockRegion"`
 	Temperature      float64                      `yaml:"temperature"`
-	MaxRetries       int                          `yaml:"max_retries"`
-	TimeoutSeconds   int                          `yaml:"timeout_seconds"`
+	MaxRetries       int                          `yaml:"maxRetries"`
+	TimeoutSeconds   int                          `yaml:"timeoutSeconds"`
 	StructuredOutput bool                         `yaml:"-"`
 	CustomHeaders    []pkgconfig.HeaderDefinition `yaml:"-"`
 	OAuth2           OAuth2Config                 `yaml:"-"`
@@ -93,23 +91,23 @@ type LLMConfig struct {
 // automatically via the client credentials grant (RFC 6749 s4.4).
 type OAuth2Config struct {
 	Enabled      bool     `yaml:"enabled"`
-	TokenURL     string   `yaml:"token_url"`
-	ClientID     string   `yaml:"client_id"`
-	ClientSecret string   `yaml:"client_secret"`
+	TokenURL     string   `yaml:"tokenURL"`
+	ClientID     string   `yaml:"clientID"`
+	ClientSecret string   `yaml:"clientSecret"`
 	Scopes       []string `yaml:"scopes,omitempty"`
 }
 
 type DataStorageConfig struct {
 	URL         string              `yaml:"url"`
-	SATokenPath string              `yaml:"sa_token_path"`
+	SATokenPath string              `yaml:"saTokenPath"`
 	TLS         sharedtls.TLSConfig `yaml:"tls,omitempty"`
 }
 
 type ServerConfig struct {
 	Address     string              `yaml:"address"`
 	Port        int                 `yaml:"port"`
-	HealthAddr  string              `yaml:"health_addr"`  // Issue #753: Dedicated health probe port (default ":8081")
-	MetricsAddr string              `yaml:"metrics_addr"` // Issue #753: Dedicated metrics port (default ":9090")
+	HealthAddr  string              `yaml:"healthAddr"`  // Issue #753: Dedicated health probe port (default ":8081")
+	MetricsAddr string              `yaml:"metricsAddr"` // Issue #753: Dedicated metrics port (default ":9090")
 	TLS         sharedtls.TLSConfig `yaml:"tls,omitempty"`
 }
 
@@ -120,9 +118,9 @@ type SessionConfig struct {
 type AuditConfig struct {
 	Enabled              bool    `yaml:"enabled"`
 	Endpoint             string  `yaml:"endpoint"`
-	FlushIntervalSeconds float64 `yaml:"flush_interval_seconds"`
-	BufferSize           int     `yaml:"buffer_size"`
-	BatchSize            int     `yaml:"batch_size"`
+	FlushIntervalSeconds float64 `yaml:"flushIntervalSeconds"`
+	BufferSize           int     `yaml:"bufferSize"`
+	BatchSize            int     `yaml:"batchSize"`
 }
 
 type MCPConfig struct {
@@ -136,7 +134,7 @@ type MCPServerEntry struct {
 }
 
 type InvestigatorConfig struct {
-	MaxTurns int `yaml:"max_turns"`
+	MaxTurns int `yaml:"maxTurns"`
 }
 
 type ToolsConfig struct {
@@ -146,13 +144,13 @@ type ToolsConfig struct {
 type PrometheusToolConfig struct {
 	URL       string        `yaml:"url"`
 	Timeout   time.Duration `yaml:"timeout"`
-	SizeLimit int           `yaml:"size_limit"`
-	TLSCaFile string        `yaml:"tls_ca_file"`
+	SizeLimit int           `yaml:"sizeLimit"`
+	TLSCaFile string        `yaml:"tlsCaFile"`
 }
 
 type SanitizationConfig struct {
-	InjectionPatternsEnabled  bool `yaml:"injection_patterns_enabled"`
-	CredentialScrubEnabled    bool `yaml:"credential_scrub_enabled"`
+	InjectionPatternsEnabled  bool `yaml:"injectionPatternsEnabled"`
+	CredentialScrubEnabled    bool `yaml:"credentialScrubEnabled"`
 }
 
 // DefaultMaxToolOutputSize is the default hard character limit for tool output
@@ -161,22 +159,22 @@ const DefaultMaxToolOutputSize = 100000
 
 type SummarizerConfig struct {
 	Threshold         int `yaml:"threshold"`
-	MaxToolOutputSize int `yaml:"max_tool_output_size"`
+	MaxToolOutputSize int `yaml:"maxToolOutputSize"`
 }
 
 // EnrichmentConfig controls retry behavior for K8s owner chain resolution
 // during enrichment. HAPI-aligned defaults (MaxRetries=3, BaseBackoff=1s)
 // ensure rca_incomplete is triggered on definitive enrichment failure.
 type EnrichmentConfig struct {
-	MaxRetries  int           `yaml:"max_retries"`
-	BaseBackoff time.Duration `yaml:"base_backoff"`
+	MaxRetries  int           `yaml:"maxRetries"`
+	BaseBackoff time.Duration `yaml:"baseBackoff"`
 }
 
 type AnomalyConfig struct {
-	MaxToolCallsPerTool int      `yaml:"max_tool_calls_per_tool"`
-	MaxTotalToolCalls   int      `yaml:"max_total_tool_calls"`
-	MaxRepeatedFailures int      `yaml:"max_repeated_failures"`
-	ExemptPrefixes      []string `yaml:"exempt_prefixes"`
+	MaxToolCallsPerTool int      `yaml:"maxToolCallsPerTool"`
+	MaxTotalToolCalls   int      `yaml:"maxTotalToolCalls"`
+	MaxRepeatedFailures int      `yaml:"maxRepeatedFailures"`
+	ExemptPrefixes      []string `yaml:"exemptPrefixes"`
 }
 
 // AlignmentCheckConfig holds settings for the shadow agent alignment checker (#601).
@@ -245,16 +243,16 @@ type SDKConfig struct {
 		Provider         string                       `yaml:"provider"`
 		Model            string                       `yaml:"model"`
 		Endpoint         string                       `yaml:"endpoint"`
-		APIKey           string                       `yaml:"api_key"`
-		AzureAPIVersion  string                       `yaml:"azure_api_version"`
-		VertexProject    string                       `yaml:"vertex_project"`
-		VertexLocation   string                       `yaml:"vertex_location"`
-		BedrockRegion    string                       `yaml:"bedrock_region"`
-		MaxRetries       int                          `yaml:"max_retries"`
-		TimeoutSeconds   int                          `yaml:"timeout_seconds"`
+		APIKey           string                       `yaml:"apiKey"`
+		AzureAPIVersion  string                       `yaml:"azureApiVersion"`
+		VertexProject    string                       `yaml:"vertexProject"`
+		VertexLocation   string                       `yaml:"vertexLocation"`
+		BedrockRegion    string                       `yaml:"bedrockRegion"`
+		MaxRetries       int                          `yaml:"maxRetries"`
+		TimeoutSeconds   int                          `yaml:"timeoutSeconds"`
 		Temperature      float64                      `yaml:"temperature"`
-		StructuredOutput bool                         `yaml:"structured_output"`
-		CustomHeaders    []pkgconfig.HeaderDefinition `yaml:"custom_headers,omitempty"`
+		StructuredOutput bool                         `yaml:"structuredOutput"`
+		CustomHeaders    []pkgconfig.HeaderDefinition `yaml:"customHeaders,omitempty"`
 		OAuth2           OAuth2Config                 `yaml:"oauth2,omitempty"`
 	} `yaml:"llm"`
 }

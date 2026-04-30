@@ -33,7 +33,7 @@ var _ = Describe("Kubernaut Agent Configuration — #433", func() {
 llm:
   endpoint: "http://localhost:11434/v1"
   model: "llama3"
-  api_key: "test-key"
+  apiKey: "test-key"
 server:
   address: "0.0.0.0"
   port: 8080
@@ -43,7 +43,7 @@ audit:
   enabled: true
   endpoint: "http://datastorage:8080"
 investigator:
-  max_turns: 15
+  maxTurns: 15
 `)
 			cfg, err := config.Load(yaml)
 			Expect(err).NotTo(HaveOccurred())
@@ -110,7 +110,7 @@ llm:
   endpoint: "http://localhost:11434/v1"
   model: "llama3"
 investigator:
-  max_turns: 0
+  maxTurns: 0
 `)
 			cfg, err := config.Load(yaml)
 			if err == nil && cfg != nil {
@@ -126,7 +126,7 @@ llm:
   endpoint: "http://localhost:11434/v1"
   model: "llama3"
 investigator:
-  max_turns: -5
+  maxTurns: -5
 `)
 			cfg, err := config.Load(yaml)
 			if err == nil && cfg != nil {
@@ -161,7 +161,7 @@ llm:
 llm:
   provider: "anthropic"
   model: "claude-sonnet-4-20250514"
-  structured_output: true
+  structuredOutput: true
 `)
 			cfg, err := config.Load(mainYAML)
 			Expect(err).NotTo(HaveOccurred())
@@ -198,7 +198,7 @@ llm:
 llm:
   provider: "openai"
   model: "gpt-4o"
-  custom_headers:
+  customHeaders:
     - name: "X-Custom-Auth"
       value: "Bearer token123"
     - name: "X-Org-Id"
@@ -246,7 +246,7 @@ llm:
   model: "llama3"
 summarizer:
   threshold: 8000
-  max_tool_output_size: 50000
+  maxToolOutputSize: 50000
 `)
 			cfg, err := config.Load(yaml)
 			Expect(err).NotTo(HaveOccurred())
@@ -290,9 +290,9 @@ llm:
   model: "claude-sonnet-4-20250514"
   oauth2:
     enabled: true
-    token_url: "https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"
-    client_id: "kubernaut-agent"
-    client_secret: "s3cret"
+    tokenURL: "https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"
+    clientID: "kubernaut-agent"
+    clientSecret: "s3cret"
     scopes:
       - "openid"
       - "llm-gateway"
@@ -314,7 +314,7 @@ llm:
 llm:
   provider: "anthropic"
   model: "claude-sonnet-4-20250514"
-  structured_output: true
+  structuredOutput: true
 `)
 				cfg, err := config.Load(mainYAML)
 				Expect(err).NotTo(HaveOccurred())
@@ -329,7 +329,7 @@ llm:
 llm:
   provider: "anthropic"
   model: "claude-sonnet-4-20250514"
-  custom_headers:
+  customHeaders:
     - name: "X-Custom-Auth"
       value: "Bearer token123"
     - name: "X-Org-Id"
@@ -354,11 +354,11 @@ llm:
   model: "claude-sonnet-4-20250514"
   oauth2:
     enabled: true
-    token_url: "https://keycloak.acme.com/token"
-    client_id: "ka"
-    client_secret: "secret"
-  structured_output: true
-  custom_headers:
+    tokenURL: "https://keycloak.acme.com/token"
+    clientID: "ka"
+    clientSecret: "secret"
+  structuredOutput: true
+  customHeaders:
     - name: "X-Test"
       value: "should-be-ignored"
 `)
@@ -417,9 +417,9 @@ llm:
   model: "claude-sonnet-4-20250514"
   oauth2:
     enabled: true
-    token_url: "https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"
-    client_id: "kubernaut-agent"
-    client_secret: "s3cret"
+    tokenURL: "https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"
+    clientID: "kubernaut-agent"
+    clientSecret: "s3cret"
     scopes:
       - "openid"
       - "llm-gateway"
@@ -471,8 +471,8 @@ llm:
   model: "claude-sonnet-4-20250514"
   oauth2:
     enabled: true
-    client_id: "kubernaut-agent"
-    client_secret: "s3cret"
+    clientID: "kubernaut-agent"
+    clientSecret: "s3cret"
 `)
 			cfg, err := config.Load(mainYAML)
 			Expect(err).NotTo(HaveOccurred())
@@ -496,8 +496,8 @@ llm:
   model: "claude-sonnet-4-20250514"
   oauth2:
     enabled: true
-    token_url: "https://keycloak.acme.com/token"
-    client_secret: "s3cret"
+    tokenURL: "https://keycloak.acme.com/token"
+    clientSecret: "s3cret"
 `)
 			cfg, err := config.Load(mainYAML)
 			Expect(err).NotTo(HaveOccurred())
@@ -521,8 +521,8 @@ llm:
   model: "claude-sonnet-4-20250514"
   oauth2:
     enabled: true
-    token_url: "https://keycloak.acme.com/token"
-    client_id: "kubernaut-agent"
+    tokenURL: "https://keycloak.acme.com/token"
+    clientID: "kubernaut-agent"
 `)
 			cfg, err := config.Load(mainYAML)
 			Expect(err).NotTo(HaveOccurred())

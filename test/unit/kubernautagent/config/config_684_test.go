@@ -55,7 +55,7 @@ llm:
 llm:
   provider: "vertex_ai"
   model: "claude-sonnet-4-6"
-  vertex_project: "my-gcp-project"
+  vertexProject: "my-gcp-project"
 `)
 			cfg, err := config.Load(mainYAML)
 			Expect(err).NotTo(HaveOccurred())
@@ -68,7 +68,7 @@ llm:
 llm:
   provider: "vertex_ai"
   model: "claude-sonnet-4-6"
-  vertex_location: "europe-west1"
+  vertexLocation: "europe-west1"
 `)
 			cfg, err := config.Load(mainYAML)
 			Expect(err).NotTo(HaveOccurred())
@@ -81,7 +81,7 @@ llm:
 llm:
   provider: "vertex_ai"
   model: "claude-sonnet-4-6"
-  api_key: "sk-test-from-sdk"
+  apiKey: "sk-test-from-sdk"
 `)
 			cfg, err := config.Load(mainYAML)
 			Expect(err).NotTo(HaveOccurred())
@@ -107,8 +107,8 @@ llm:
 llm:
   provider: "vertex_ai"
   model: "claude-sonnet-4-6"
-  max_retries: 3
-  timeout_seconds: 120
+  maxRetries: 3
+  timeoutSeconds: 120
 `)
 			cfg, err := config.Load(mainYAML)
 			Expect(err).NotTo(HaveOccurred())
@@ -141,7 +141,7 @@ llm:
 llm:
   provider: "bedrock"
   model: "anthropic.claude-3-sonnet"
-  bedrock_region: "eu-west-1"
+  bedrockRegion: "eu-west-1"
 `)
 			mainBedrock := []byte(`
 llm:
@@ -159,7 +159,7 @@ llm:
 llm:
   provider: "azure"
   model: "gpt-4"
-  azure_api_version: "2024-02-15-preview"
+  azureApiVersion: "2024-02-15-preview"
 `)
 			mainAzure := []byte(`
 llm:

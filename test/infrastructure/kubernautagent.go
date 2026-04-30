@@ -687,18 +687,18 @@ data:
       provider: "openai"
       model: "mock-model"
       endpoint: "http://mock-llm:8080"
-      api_key: "mock-api-key-for-e2e"
+      apiKey: "mock-api-key-for-e2e"
     server:
       tls:
         certDir: /etc/tls
-    data_storage:
+    dataStorage:
       url: "https://data-storage-service:8080"
     logging:
       level: "debug"
     audit:
-      flush_interval_seconds: 0.1
-      buffer_size: 10000
-      batch_size: 50
+      flushIntervalSeconds: 0.1
+      bufferSize: 10000
+      batchSize: 50
     auth:
       resource_name: "kubernaut-agent"
     alignmentCheck:

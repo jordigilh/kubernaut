@@ -49,7 +49,7 @@ func baseCfgYAML() string {
 	return `llm:
   provider: openai
 investigator:
-  max_turns: 15
+  maxTurns: 15
 `
 }
 
@@ -146,9 +146,9 @@ func TestReloadRejectsOAuth2TokenURLChange(t *testing.T) {
   model: gpt-4
   oauth2:
     enabled: true
-    token_url: https://evil.com/token
-    client_id: my-client
-    client_secret: my-secret
+    tokenURL: https://evil.com/token
+    clientID: my-client
+    clientSecret: my-secret
 `)
 	if err == nil {
 		t.Fatal("expected error for OAuth2 token_url change")
@@ -179,9 +179,9 @@ func TestReloadRejectsOAuth2ClientIDChange(t *testing.T) {
   model: gpt-4
   oauth2:
     enabled: true
-    token_url: https://idp.corp.com/token
-    client_id: different-client
-    client_secret: my-secret
+    tokenURL: https://idp.corp.com/token
+    clientID: different-client
+    clientSecret: my-secret
 `)
 	if err == nil {
 		t.Fatal("expected error for OAuth2 client_id change")
@@ -212,9 +212,9 @@ func TestReloadRejectsOAuth2ClientSecretChange(t *testing.T) {
   model: gpt-4
   oauth2:
     enabled: true
-    token_url: https://idp.corp.com/token
-    client_id: my-client
-    client_secret: different-secret
+    tokenURL: https://idp.corp.com/token
+    clientID: my-client
+    clientSecret: different-secret
 `)
 	if err == nil {
 		t.Fatal("expected error for OAuth2 client_secret change")
@@ -245,12 +245,12 @@ func TestReloadAcceptsOAuth2ScopesChange(t *testing.T) {
 	sdkContent := `llm:
   model: gpt-4-turbo
   endpoint: http://localhost:11434
-  api_key: test-key
+  apiKey: test-key
   oauth2:
     enabled: true
-    token_url: https://idp.corp.com/token
-    client_id: my-client
-    client_secret: my-secret
+    tokenURL: https://idp.corp.com/token
+    clientID: my-client
+    clientSecret: my-secret
     scopes:
       - read
       - write
@@ -276,7 +276,7 @@ func TestReloadAcceptsModelChange(t *testing.T) {
 	err := cb(`llm:
   model: gpt-4-turbo
   endpoint: http://localhost:11434
-  api_key: test-key
+  apiKey: test-key
 `)
 	if err != nil {
 		t.Fatalf("model change should succeed, got: %v", err)
@@ -298,7 +298,7 @@ func TestReloadAcceptsEndpointChange(t *testing.T) {
 	err := cb(`llm:
   model: gpt-4
   endpoint: http://new-endpoint:8080
-  api_key: test-key
+  apiKey: test-key
 `)
 	if err != nil {
 		t.Fatalf("endpoint change should succeed, got: %v", err)
@@ -311,7 +311,7 @@ func TestReloadRejectsValidationFailure(t *testing.T) {
   provider: openai
   model: ""
 investigator:
-  max_turns: 15
+  maxTurns: 15
 `), nil
 	})
 	defer restore()
@@ -354,9 +354,9 @@ func TestReloadRejectsTokenURLHTTPScheme(t *testing.T) {
   model: gpt-4
   oauth2:
     enabled: true
-    token_url: http://insecure.com/token
-    client_id: my-client
-    client_secret: my-secret
+    tokenURL: http://insecure.com/token
+    clientID: my-client
+    clientSecret: my-secret
 `)
 	if err == nil {
 		t.Fatal("expected error for http:// token_url scheme")
@@ -373,7 +373,7 @@ func TestReloadRejectsStructuredOutputChange(t *testing.T) {
 	cb := sdkReloadCallback("/tmp/fake.yaml", baseCfg, sc, testLogger())
 
 	err := cb(`llm:
-  structured_output: true
+  structuredOutput: true
 `)
 	if err == nil {
 		t.Fatal("expected error for structured_output change")
@@ -386,7 +386,7 @@ func TestReloadFreshCopyInvariant(t *testing.T) {
   provider: openai
   model: ""
 investigator:
-  max_turns: 15
+  maxTurns: 15
 `), nil
 	})
 	defer restore()
