@@ -274,6 +274,10 @@ func runWEMigrations(projectRoot string, writer io.Writer) error {
 	`
 
 	// Use host.containers.internal for macOS compatibility (Podman VM can reach host)
+	const migrationsImage = "docker.io/library/postgres:16-alpine"
+	if err := PullImageWithRetry(migrationsImage, 3, writer); err != nil {
+		return fmt.Errorf("failed to pull migrations image: %w", err)
+	}
 	cmd := exec.Command("podman", "run", "--rm",
 		"--name", WEIntegrationMigrationsContainer,
 		"-v", fmt.Sprintf("%s:/migrations:ro", migrationsDir),
@@ -282,7 +286,7 @@ func runWEMigrations(projectRoot string, writer io.Writer) error {
 		"-e", "PGUSER="+WEIntegrationDBUser,
 		"-e", "PGPASSWORD="+WEIntegrationDBPassword,
 		"-e", "PGDATABASE="+WEIntegrationDBName,
-		"docker.io/library/postgres:16-alpine",
+		migrationsImage,
 		"bash", "-c", migrationScript,
 	)
 	cmd.Stdout = writer
