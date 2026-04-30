@@ -78,10 +78,10 @@ func (c *Config) TektonEnabled() bool {
 
 // AnsibleConfig holds AWX/AAP connectivity settings (BR-WE-015).
 // Optional: if nil, the ansible executor is not registered.
+// Issue #902: Removed Insecure toggle — TLS CA trust uses sharedtls.DefaultBaseTransport().
 type AnsibleConfig struct {
 	APIURL         string        `yaml:"apiURL" validate:"required,url"`
 	TokenSecretRef *SecretKeyRef `yaml:"tokenSecretRef,omitempty"`
-	Insecure       bool          `yaml:"insecure,omitempty"`
 	OrganizationID int           `yaml:"organizationID,omitempty"`
 }
 

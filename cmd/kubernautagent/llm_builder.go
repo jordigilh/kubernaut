@@ -28,6 +28,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // buildLLMClientFromConfig constructs an llm.Client from the static config and
@@ -73,11 +74,22 @@ func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) [
 	return opts
 }
 
-// buildTransportChain composes the HTTP transport stack from static (OAuth2)
-// and runtime (CustomHeaders) config layers.
+// buildTransportChain composes the HTTP transport stack from static (TLS CA,
+// OAuth2) and runtime (CustomHeaders) config layers.
+// Issue #902: When tlsCaFile is set, uses sharedtls.NewTLSTransport as the
+// base instead of http.DefaultTransport.
 func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) http.RoundTripper {
 	var base http.RoundTripper = http.DefaultTransport
 	needsCustom := false
+
+	if cfg.AI.LLM.TLSCaFile != "" {
+		tlsTransport, err := sharedtls.NewTLSTransport(cfg.AI.LLM.TLSCaFile)
+		if err != nil {
+			return nil
+		}
+		base = tlsTransport
+		needsCustom = true
+	}
 
 	if cfg.AI.LLM.OAuth2.Enabled {
 		base = llmtransport.NewOAuth2ClientCredentialsTransport(cfg.AI.LLM.OAuth2, base)

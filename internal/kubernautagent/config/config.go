@@ -74,6 +74,7 @@ type LLMConfig struct {
 	VertexProject   string       `yaml:"vertexProject"`
 	VertexLocation  string       `yaml:"vertexLocation"`
 	BedrockRegion   string       `yaml:"bedrockRegion"`
+	TLSCaFile       string       `yaml:"tlsCaFile,omitempty"`
 	OAuth2          OAuth2Config `yaml:"oauth2,omitempty"`
 }
 

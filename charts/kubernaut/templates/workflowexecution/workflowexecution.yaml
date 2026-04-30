@@ -189,7 +189,6 @@ data:
     {{- if .Values.workflowexecution.config.ansible }}
     ansible:
       apiURL: {{ .Values.workflowexecution.config.ansible.apiURL | quote }}
-      insecure: {{ .Values.workflowexecution.config.ansible.insecure | default false }}
       organizationID: {{ .Values.workflowexecution.config.ansible.organizationID | default 1 }}
       {{- if .Values.workflowexecution.config.ansible.tokenSecretRef }}
       tokenSecretRef:

@@ -19,12 +19,13 @@ package executor
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
+
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // AWXHTTPClient implements AWXClient using the AWX REST API.
@@ -35,19 +36,28 @@ type AWXHTTPClient struct {
 }
 
 // NewAWXHTTPClient creates a new AWX REST API client.
-func NewAWXHTTPClient(baseURL, token string, insecure bool) *AWXHTTPClient {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if insecure {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+// Issue #902: Uses sharedtls.DefaultBaseTransport() to honour TLS_CA_FILE.
+func NewAWXHTTPClient(baseURL, token string) (*AWXHTTPClient, error) {
+	if baseURL == "" {
+		return nil, fmt.Errorf("baseURL must not be empty")
 	}
+	if token == "" {
+		return nil, fmt.Errorf("token must not be empty")
+	}
+
+	rt, err := sharedtls.DefaultBaseTransport()
+	if err != nil {
+		return nil, fmt.Errorf("initialize TLS transport: %w", err)
+	}
+
 	return &AWXHTTPClient{
 		baseURL: baseURL,
 		token:   token,
 		httpClient: &http.Client{
 			Timeout:   30 * time.Second,
-			Transport: transport,
+			Transport: rt,
 		},
-	}
+	}, nil
 }
 
 func (c *AWXHTTPClient) LaunchJobTemplate(ctx context.Context, templateID int, extraVars map[string]interface{}) (int, error) {
