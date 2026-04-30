@@ -1716,6 +1716,12 @@ func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, w
 	_ = exec.Command("podman", "stop", infra.PostgresContainer).Run()
 	_ = exec.Command("podman", "rm", infra.PostgresContainer).Run()
 
+	// Pull image with retry to handle transient registry failures (#914)
+	const postgresImage = "docker.io/library/postgres:16-alpine"
+	if err := PullImageWithRetry(postgresImage, 3, writer); err != nil {
+		return fmt.Errorf("failed to pull PostgreSQL image: %w", err)
+	}
+
 	// Start PostgreSQL
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", infra.PostgresContainer,
@@ -1723,7 +1729,7 @@ func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, w
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", cfg.DBName),
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", cfg.DBUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", cfg.DBPassword),
-		"docker.io/library/postgres:16-alpine")
+		postgresImage)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1749,11 +1755,17 @@ func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer
 	_ = exec.Command("podman", "stop", infra.RedisContainer).Run()
 	_ = exec.Command("podman", "rm", infra.RedisContainer).Run()
 
+	// Pull image with retry to handle transient registry failures (#914)
+	const redisImage = "quay.io/jordigilh/redis:7-alpine"
+	if err := PullImageWithRetry(redisImage, 3, writer); err != nil {
+		return fmt.Errorf("failed to pull Redis image: %w", err)
+	}
+
 	// Start Redis
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", infra.RedisContainer,
 		"-p", fmt.Sprintf("%s:6379", cfg.RedisPort),
-		"quay.io/jordigilh/redis:7-alpine")
+		redisImage)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

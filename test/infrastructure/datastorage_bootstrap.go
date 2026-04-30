@@ -509,9 +509,39 @@ func createDSBootstrapNetwork(infra *DSBootstrapInfra, writer io.Writer) error {
 	return cmd.Run()
 }
 
+// PullImageWithRetry pulls a container image with exponential backoff.
+// This prevents transient registry failures (e.g., Docker Hub 504) from failing the entire test suite.
+func PullImageWithRetry(image string, maxRetries int, writer io.Writer) error {
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		cmd := exec.Command("podman", "pull", image)
+		cmd.Stdout = writer
+		cmd.Stderr = writer
+		if err := cmd.Run(); err != nil {
+			lastErr = err
+			if attempt < maxRetries {
+				backoff := time.Duration(1<<uint(attempt)) * time.Second // 2s, 4s, 8s...
+				_, _ = fmt.Fprintf(writer, "   ⚠️  Image pull failed (attempt %d/%d), retrying in %v: %v\n", attempt, maxRetries, backoff, err)
+				time.Sleep(backoff)
+			}
+			continue
+		}
+		if attempt > 1 {
+			_, _ = fmt.Fprintf(writer, "   ✅ Image pull succeeded on attempt %d/%d\n", attempt, maxRetries)
+		}
+		return nil
+	}
+	return fmt.Errorf("image pull failed after %d attempts: %w", maxRetries, lastErr)
+}
+
 // startDSBootstrapPostgreSQL starts the PostgreSQL container
 func startDSBootstrapPostgreSQL(infra *DSBootstrapInfra, writer io.Writer) error {
 	cfg := infra.Config
+
+	const postgresImage = "docker.io/library/postgres:16-alpine"
+	if err := PullImageWithRetry(postgresImage, 3, writer); err != nil {
+		return fmt.Errorf("failed to pull PostgreSQL image: %w", err)
+	}
 
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", infra.PostgresContainer,
@@ -520,7 +550,7 @@ func startDSBootstrapPostgreSQL(infra *DSBootstrapInfra, writer io.Writer) error
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", defaultPostgresUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", defaultPostgresPassword),
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", defaultPostgresDB),
-		"docker.io/library/postgres:16-alpine",
+		postgresImage,
 	)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -553,11 +583,16 @@ func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, write
 func startDSBootstrapRedis(infra *DSBootstrapInfra, writer io.Writer) error {
 	cfg := infra.Config
 
+	const redisImage = "redis:7-alpine"
+	if err := PullImageWithRetry(redisImage, 3, writer); err != nil {
+		return fmt.Errorf("failed to pull Redis image: %w", err)
+	}
+
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", infra.RedisContainer,
 		"--network", infra.Network,
 		"-p", fmt.Sprintf("%d:6379", cfg.RedisPort),
-		"redis:7-alpine",
+		redisImage,
 	)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
