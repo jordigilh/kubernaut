@@ -47,6 +47,9 @@ type ServerConfig struct {
 	// Business logic configuration
 	Processing ProcessingSettings `yaml:"processing"`
 
+	// Logging configuration (Issue #877: config-file-only log level with hot-reload)
+	Logging sharedconfig.LoggingConfig `yaml:"logging"`
+
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
@@ -259,6 +262,7 @@ func DefaultServerConfig() *ServerConfig {
 			},
 			Retry: DefaultRetrySettings(),
 		},
+		Logging: sharedconfig.DefaultLoggingConfig(),
 	}
 }
 
@@ -427,6 +431,11 @@ func (c *ServerConfig) Validate() error {
 	// Retry validation (GAP-8: Enhanced Configuration Validation)
 	if err := c.Processing.Retry.Validate(); err != nil {
 		return err // Already a structured ConfigError
+	}
+
+	// Issue #877: Logging validation
+	if err := c.Logging.Validate(); err != nil {
+		return err
 	}
 
 	return nil

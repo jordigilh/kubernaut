@@ -25,207 +25,145 @@ import (
 
 var _ = Describe("Vertex AI + Claude Regression — #684", func() {
 
-	// Bug 1: MergeSDKConfig() drops critical LLM fields
-	Describe("Bug 1: SDK config merge completeness", func() {
-		var mainYAML []byte
+	Describe("Static LLM fields parsed from main config", func() {
 
-		BeforeEach(func() {
-			mainYAML = []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
+		It("UT-KA-684-002: parses vertexProject from main config", func() {
+			cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "vertex_ai"
+    vertexProject: "my-gcp-project"
 `)
+			cfg, err := config.Load(cfgYAML)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.AI.LLM.VertexProject).To(Equal("my-gcp-project"))
 		})
 
-		It("UT-KA-684-001: merges endpoint from SDK config when main has none", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  endpoint: "https://europe-west1-aiplatform.googleapis.com" # pre-commit:allow-sensitive (test fixture)
+		It("UT-KA-684-003: parses vertexLocation from main config", func() {
+			cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "vertex_ai"
+    vertexLocation: "europe-west1"
 `)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.LLM.Endpoint).To(Equal("https://europe-west1-aiplatform.googleapis.com")) // pre-commit:allow-sensitive (test fixture)
+			Expect(cfg.AI.LLM.VertexLocation).To(Equal("europe-west1"))
 		})
 
-		It("UT-KA-684-002: merges vertex_project from SDK config when main has none", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  vertex_project: "my-gcp-project"
+		It("UT-KA-684-008: parses bedrockRegion from main config", func() {
+			cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "bedrock"
+    bedrockRegion: "eu-west-1"
 `)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.LLM.VertexProject).To(Equal("my-gcp-project"))
+			Expect(cfg.AI.LLM.BedrockRegion).To(Equal("eu-west-1"))
 		})
 
-		It("UT-KA-684-003: merges vertex_location from SDK config when main has none", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  vertex_location: "europe-west1"
+		It("UT-KA-684-009: parses azureApiVersion from main config", func() {
+			cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "azure"
+    azureApiVersion: "2024-02-15-preview"
 `)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.LLM.VertexLocation).To(Equal("europe-west1"))
-		})
-
-		It("UT-KA-684-004: merges api_key from SDK config when main has none", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  api_key: "sk-test-from-sdk"
-`)
-			cfg, err := config.Load(mainYAML)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.LLM.APIKey).To(Equal("sk-test-from-sdk"))
-		})
-
-		It("UT-KA-684-005: merges temperature from SDK config", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  temperature: 0.7
-`)
-			cfg, err := config.Load(mainYAML)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.LLM.Temperature).To(BeNumerically("~", 0.7, 0.001))
-		})
-
-		It("UT-KA-684-006: merges max_retries and timeout_seconds from SDK config", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  max_retries: 3
-  timeout_seconds: 120
-`)
-			cfg, err := config.Load(mainYAML)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.LLM.MaxRetries).To(Equal(3))
-			Expect(cfg.LLM.TimeoutSeconds).To(Equal(120))
-		})
-
-		It("UT-KA-684-007: main config endpoint takes precedence over SDK (gap-fill)", func() {
-			mainWithEndpoint := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  endpoint: "http://main-endpoint"
-`)
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  endpoint: "http://sdk-endpoint"
-`)
-			cfg, err := config.Load(mainWithEndpoint)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.LLM.Endpoint).To(Equal("http://main-endpoint"))
-		})
-
-		It("UT-KA-684-008: merges bedrock_region from SDK config when main has none", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "bedrock"
-  model: "anthropic.claude-3-sonnet"
-  bedrock_region: "eu-west-1"
-`)
-			mainBedrock := []byte(`
-llm:
-  provider: "bedrock"
-  model: "anthropic.claude-3-sonnet"
-`)
-			cfg, err := config.Load(mainBedrock)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.LLM.BedrockRegion).To(Equal("eu-west-1"))
-		})
-
-		It("UT-KA-684-009: merges azure_api_version from SDK config when main has none", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "azure"
-  model: "gpt-4"
-  azure_api_version: "2024-02-15-preview"
-`)
-			mainAzure := []byte(`
-llm:
-  provider: "azure"
-  model: "gpt-4"
-  endpoint: "https://my-resource.openai.azure.com" # pre-commit:allow-sensitive (test fixture)
-`)
-			cfg, err := config.Load(mainAzure)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.LLM.AzureAPIVersion).To(Equal("2024-02-15-preview"))
-		})
-
-		It("UT-KA-684-010: existing provider/model gap-fill semantics unchanged", func() {
-			minimalMain := []byte(`
-llm:
-  endpoint: "http://localhost:11434/v1"
-`)
-			sdkYAML := []byte(`
-llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-`)
-			cfg, err := config.Load(minimalMain)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.LLM.Provider).To(Equal("anthropic"))
-			Expect(cfg.LLM.Model).To(Equal("claude-sonnet-4-20250514"))
-			Expect(cfg.LLM.Endpoint).To(Equal("http://localhost:11434/v1"),
-				"main config endpoint must not be overwritten")
+			Expect(cfg.AI.LLM.AzureAPIVersion).To(Equal("2024-02-15-preview"))
 		})
 	})
 
-	// Bug 2: Provider name validation
-	Describe("Bug 2: Validate() endpoint exemptions", func() {
-		It("UT-KA-684-103: accepts vertex_ai provider with no endpoint", func() {
-			yaml := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
+	Describe("Runtime LLM fields parsed from LLMRuntimeConfig", func() {
+
+		It("UT-KA-684-001: parses endpoint from runtime config", func() {
+			rtYAML := []byte(`
+model: "claude-sonnet-4-6"
+endpoint: "https://europe-west1-aiplatform.googleapis.com" # pre-commit:allow-sensitive (test fixture)
 `)
-			cfg, err := config.Load(yaml)
+			rt, err := config.LoadLLMRuntime(rtYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.Validate()).NotTo(HaveOccurred())
+			Expect(rt.Endpoint).To(Equal("https://europe-west1-aiplatform.googleapis.com")) // pre-commit:allow-sensitive (test fixture)
 		})
 
-		It("UT-KA-684-103b: accepts vertex provider with no endpoint", func() {
-			yaml := []byte(`
-llm:
-  provider: "vertex"
-  model: "gemini-1.5-pro"
+		It("UT-KA-684-004: parses apiKey from runtime config", func() {
+			rtYAML := []byte(`
+model: "claude-sonnet-4-6"
+apiKey: "sk-test-from-config"
 `)
-			cfg, err := config.Load(yaml)
+			rt, err := config.LoadLLMRuntime(rtYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.Validate()).NotTo(HaveOccurred())
+			Expect(rt.APIKey).To(Equal("sk-test-from-config"))
 		})
 
-		It("UT-KA-684-104: still rejects mistral provider with no endpoint", func() {
-			yaml := []byte(`
-llm:
-  provider: "mistral"
-  model: "mistral-large"
+		It("UT-KA-684-005: parses temperature from runtime config", func() {
+			rtYAML := []byte(`
+model: "claude-sonnet-4-6"
+temperature: 0.7
 `)
-			cfg, err := config.Load(yaml)
+			rt, err := config.LoadLLMRuntime(rtYAML)
 			Expect(err).NotTo(HaveOccurred())
-			err = cfg.Validate()
+			Expect(rt.Temperature).To(BeNumerically("~", 0.7, 0.001))
+		})
+
+		It("UT-KA-684-006: parses maxRetries and timeoutSeconds from runtime config", func() {
+			rtYAML := []byte(`
+model: "claude-sonnet-4-6"
+maxRetries: 3
+timeoutSeconds: 120
+`)
+			rt, err := config.LoadLLMRuntime(rtYAML)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rt.MaxRetries).To(Equal(3))
+			Expect(rt.TimeoutSeconds).To(Equal(120))
+		})
+
+		It("UT-KA-684-010: all runtime LLM fields parsed correctly", func() {
+			rtYAML := []byte(`
+model: "claude-sonnet-4-20250514"
+endpoint: "http://localhost:11434/v1"
+temperature: 0.5
+maxRetries: 5
+timeoutSeconds: 60
+`)
+			rt, err := config.LoadLLMRuntime(rtYAML)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rt.Model).To(Equal("claude-sonnet-4-20250514"))
+			Expect(rt.Endpoint).To(Equal("http://localhost:11434/v1"))
+			Expect(rt.Temperature).To(BeNumerically("~", 0.5, 0.001))
+			Expect(rt.MaxRetries).To(Equal(5))
+			Expect(rt.TimeoutSeconds).To(Equal(60))
+		})
+	})
+
+	Describe("Validate() runtime config", func() {
+		It("UT-KA-684-103: runtime config accepts vertex_ai provider with no endpoint", func() {
+			rtYAML := []byte(`
+model: "claude-sonnet-4-6"
+`)
+			rt, err := config.LoadLLMRuntime(rtYAML)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rt.Validate("vertex_ai")).NotTo(HaveOccurred())
+		})
+
+		It("UT-KA-684-103b: runtime config accepts vertex provider with no endpoint", func() {
+			rtYAML := []byte(`
+model: "gemini-1.5-pro"
+`)
+			rt, err := config.LoadLLMRuntime(rtYAML)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rt.Validate("vertex")).NotTo(HaveOccurred())
+		})
+
+		It("UT-KA-684-104: runtime config rejects mistral provider with no endpoint", func() {
+			rtYAML := []byte(`
+model: "mistral-large"
+`)
+			rt, err := config.LoadLLMRuntime(rtYAML)
+			Expect(err).NotTo(HaveOccurred())
+			err = rt.Validate("mistral")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("endpoint"))
 		})

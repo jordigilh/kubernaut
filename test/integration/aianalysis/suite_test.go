@@ -535,28 +535,39 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		dsURL = "http://host.containers.internal:18095"
 	}
 
-	kaConfigContent := fmt.Sprintf(`llm:
-  provider: "openai"
-  model: "mock-model"
-  endpoint: "%s"
-  api_key: "mock-api-key-for-integration-tests"
-data_storage:
-  url: "%s"
-logging:
-  level: "debug"
-server:
-  port: 18120
-  health_addr: ":18121"
-  metrics_addr: ":18122"
-audit:
-  flush_interval_seconds: 0.1
-  buffer_size: 10000
-  batch_size: 50
-auth:
-  resource_name: "kubernaut-agent"
-`, llmEndpoint, dsURL)
+	kaConfigContent := fmt.Sprintf(`runtime:
+  logging:
+    level: "debug"
+  server:
+    port: 18120
+    healthAddr: ":18121"
+    metricsAddr: ":18122"
+  audit:
+    flushIntervalSeconds: 0.1
+    bufferSize: 10000
+    batchSize: 50
+ai:
+  llm:
+    provider: "openai"
+integrations:
+  dataStorage:
+    url: "%s"
+`, dsURL)
 	kaConfigPath := filepath.Join(kaConfigDir, "config.yaml")
 	err = os.WriteFile(kaConfigPath, []byte(kaConfigContent), 0644)
+	Expect(err).ToNot(HaveOccurred())
+
+	kaLLMRuntimeDir, err := os.MkdirTemp("", "ka-llm-runtime-*")
+	Expect(err).ToNot(HaveOccurred())
+	Expect(os.Chmod(kaLLMRuntimeDir, 0755)).To(Succeed())
+	kaLLMRuntimeContent := fmt.Sprintf(`model: "mock-model"
+endpoint: "%s"
+apiKey: "mock-api-key-for-integration-tests"
+temperature: 0.7
+maxRetries: 3
+timeoutSeconds: 120
+`, llmEndpoint)
+	err = os.WriteFile(filepath.Join(kaLLMRuntimeDir, "llm-runtime.yaml"), []byte(kaLLMRuntimeContent), 0644)
 	Expect(err).ToNot(HaveOccurred())
 
 	kaContainerConfig := infrastructure.GenericContainerConfig{
@@ -566,9 +577,10 @@ auth:
 			"KUBECONFIG":    "/tmp/kubeconfig",
 			"POD_NAMESPACE": "default",
 		},
-		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml"},
+		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml", "-llm-runtime", "/etc/kubernautagent-llm-runtime/llm-runtime.yaml"},
 		Volumes: map[string]string{
 			kaConfigDir:                          "/etc/kubernautagent:ro",
+			kaLLMRuntimeDir:                      "/etc/kubernautagent-llm-runtime:ro",
 			kaServiceAuthConfig.KubeconfigPath:   "/tmp/kubeconfig:ro",
 			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
 		},

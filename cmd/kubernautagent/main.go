@@ -83,18 +83,18 @@ import (
 
 func main() {
 	var (
-		configPath    string
-		sdkConfigPath string
-		addr          string
+		configPath     string
+		llmRuntimePath string
+		addr           string
 	)
-	flag.StringVar(&configPath, "config", "/etc/kubernautagent/config.yaml", "Path to YAML configuration file")
-	flag.StringVar(&sdkConfigPath, "sdk-config", "/etc/kubernaut-agent/sdk/sdk-config.yaml", "Path to SDK configuration file (LLM provider, model, auth, transport)")
+	flag.StringVar(&configPath, "config", "/etc/kubernautagent/config.yaml", "Path to static YAML configuration file")
+	flag.StringVar(&llmRuntimePath, "llm-runtime", "/etc/kubernautagent/llm-runtime.yaml", "Path to hot-reloadable LLM runtime configuration")
 	flag.StringVar(&addr, "addr", "", "HTTP listen address (overrides config server.port)")
 	flag.Parse()
 
-	slogHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
-	slogger := slog.New(slogHandler)
-	logrLogger := logr.FromSlogHandler(slogHandler)
+	// Bootstrap logger at INFO for startup; replaced after config is loaded (#875).
+	bootHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
+	slogger := slog.New(bootHandler)
 
 	cfgData, err := os.ReadFile(configPath)
 	if err != nil {
@@ -107,67 +107,74 @@ func main() {
 		os.Exit(1)
 	}
 
-	if sdkData, sdkErr := os.ReadFile(sdkConfigPath); sdkErr == nil {
-		if mergeErr := cfg.MergeSDKConfig(sdkData); mergeErr != nil {
-			slogger.Warn("failed to parse SDK config, continuing with main config only",
-				"path", sdkConfigPath, "error", mergeErr)
-		} else {
-			slogger.Info("merged SDK config", "path", sdkConfigPath)
-		}
-	} else {
-		slogger.Info("SDK config not found, using main config only", "path", sdkConfigPath)
+	// Re-create logger with configured level (#875).
+	slogHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.Runtime.Logging.SlogLevel()})
+	slogger = slog.New(slogHandler)
+	logrLogger := logr.FromSlogHandler(slogHandler)
+
+	slogger.Info("log level configured", "level", cfg.Runtime.Logging.Level)
+
+	llmRtData, err := os.ReadFile(llmRuntimePath)
+	if err != nil {
+		slogger.Error("failed to read llm runtime config", "path", llmRuntimePath, "error", err)
+		os.Exit(1)
+	}
+	llmRuntime, err := kaconfig.LoadLLMRuntime(llmRtData)
+	if err != nil {
+		slogger.Error("failed to parse llm runtime config", "error", err)
+		os.Exit(1)
 	}
 
-	if cfg.LLM.APIKey == "" {
+	if llmRuntime.APIKey == "" {
 		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
-		cfg.LLM.APIKey = credentials.ResolveCredentialsFile(cfg.LLM.Provider, credDir, slogger)
+		llmRuntime.APIKey = credentials.ResolveCredentialsFile(cfg.AI.LLM.Provider, credDir, slogger)
 	}
 
-	switch cfg.LLM.Provider {
+	switch cfg.AI.LLM.Provider {
 	case "vertex", "vertex_ai":
-		if cfg.LLM.APIKey == "" {
+		if llmRuntime.APIKey == "" {
 			slogger.Warn("GCP provider configured without credentials — requests will use ambient ADC if available",
-				"provider", cfg.LLM.Provider)
+				"provider", cfg.AI.LLM.Provider)
 		}
 	}
 
-	if cfg.LLM.OAuth2.Enabled {
-		if v := os.Getenv("OAUTH2_CLIENT_ID"); v != "" {
-			cfg.LLM.OAuth2.ClientID = v
+	if cfg.AI.LLM.OAuth2.Enabled {
+		if err := cfg.AI.LLM.OAuth2.ResolveOAuth2Credentials(); err != nil {
+			slogger.Error("failed to resolve OAuth2 credentials from mounted Secret", "error", err)
+			os.Exit(1)
 		}
-		if v := os.Getenv("OAUTH2_CLIENT_SECRET"); v != "" {
-			cfg.LLM.OAuth2.ClientSecret = v
-		}
+		slogger.Info("OAuth2 credentials resolved from mounted Secret",
+			"credentialsDir", cfg.AI.LLM.OAuth2.CredentialsDir)
 	}
 
 	if err := cfg.Validate(); err != nil {
 		slogger.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
+	if err := llmRuntime.Validate(cfg.AI.LLM.Provider); err != nil {
+		slogger.Error("invalid llm runtime configuration", "error", err)
+		os.Exit(1)
+	}
 
 	if addr == "" {
-		addr = fmt.Sprintf("%s:%d", cfg.Server.Address, cfg.Server.Port)
+		addr = fmt.Sprintf("%s:%d", cfg.Runtime.Server.Address, cfg.Runtime.Server.Port)
 	}
 
 	slogger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
 
-	llmClient, err := buildLLMClientFromConfig(context.Background(), cfg)
+	llmClient, err := buildLLMClientFromConfig(context.Background(), cfg, llmRuntime)
 	if err != nil {
-		slogger.Error("failed to create LLM client", "provider", cfg.LLM.Provider, "error", err)
+		slogger.Error("failed to create LLM client", "provider", cfg.AI.LLM.Provider, "error", err)
 		os.Exit(1)
 	}
 
-	swappable, err := llm.NewSwappableClient(llmClient, cfg.LLM.Model)
+	swappable, err := llm.NewSwappableClient(llmClient, llmRuntime.Model)
 	if err != nil {
 		slogger.Error("failed to create swappable LLM client", "error", err)
 		os.Exit(1)
 	}
 
-	var promptOpts []prompt.BuilderOption
-	if cfg.LLM.StructuredOutput {
-		promptOpts = append(promptOpts, prompt.WithStructuredOutput(true))
-	}
-	promptBuilder, err := prompt.NewBuilder(promptOpts...)
+	promptBuilder, err := prompt.NewBuilder()
 	if err != nil {
 		slogger.Error("failed to create prompt builder", "error", err)
 		os.Exit(1)
@@ -199,30 +206,30 @@ func main() {
 	var effectiveReg registry.ToolRegistry = reg
 	var alignEvaluator *alignment.Evaluator
 
-	if cfg.AlignmentCheck.Enabled {
+	if cfg.AI.AlignmentCheck.Enabled {
 		var shadowClient llm.Client
-		if cfg.AlignmentCheck.LLM == nil {
+		if cfg.AI.AlignmentCheck.LLM == nil {
 			shadowClient = instrumentedLLM
 			slogger.Info("shadow agent shares investigation LLM client")
 		} else {
-			alignLLMCfg := cfg.AlignmentCheck.EffectiveLLM(cfg.LLM)
+			alignStaticCfg, alignRtCfg := cfg.AI.AlignmentCheck.EffectiveLLM(cfg.AI.LLM, *llmRuntime)
 			alignCfgMerge := *cfg
-			alignCfgMerge.LLM = alignLLMCfg
+			alignCfgMerge.AI.LLM = alignStaticCfg
 			raw, alignErr := langchaingo.New(
-				alignLLMCfg.Provider, alignLLMCfg.Endpoint, alignLLMCfg.Model, alignLLMCfg.APIKey,
-				buildLLMProviderOpts(&alignCfgMerge)...)
+				alignStaticCfg.Provider, alignRtCfg.Endpoint, alignRtCfg.Model, alignRtCfg.APIKey,
+				buildLLMProviderOpts(&alignCfgMerge, &alignRtCfg)...)
 			if alignErr != nil {
 				slogger.Error("alignment check LLM client failed (fail-closed): alignment is enabled but shadow client unavailable", "error", alignErr)
 				os.Exit(1)
 			} else {
 				shadowClient = llm.NewInstrumentedClient(raw)
-				slogger.Info("shadow agent using dedicated LLM client", "model", alignLLMCfg.Model)
+				slogger.Info("shadow agent using dedicated LLM client", "model", alignRtCfg.Model)
 			}
 		}
 		if shadowClient != nil {
 			alignEvaluator = alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
-				Timeout:       cfg.AlignmentCheck.Timeout,
-				MaxStepTokens: cfg.AlignmentCheck.MaxStepTokens,
+				Timeout:       cfg.AI.AlignmentCheck.Timeout,
+				MaxStepTokens: cfg.AI.AlignmentCheck.MaxStepTokens,
 				MaxRetries:    1,
 			}, alignprompt.SystemPrompt())
 			effectiveLLM = alignment.NewLLMProxy(instrumentedLLM)
@@ -247,10 +254,10 @@ func main() {
 		Enricher:      enricher,
 		AuditStore:    instrumentedAudit,
 		Logger:        slogger,
-		MaxTurns:      cfg.Investigator.MaxTurns,
+		MaxTurns:      cfg.AI.Investigation.MaxTurns,
 		PhaseTools:    phaseTools,
 		Registry:      effectiveReg,
-		ModelName:     cfg.LLM.Model,
+		ModelName:     llmRuntime.Model,
 		Swappable:     swappable,
 		ScopeResolver: scopeResolver,
 		Metrics:       agentMetrics,
@@ -259,7 +266,7 @@ func main() {
 			AnomalyDetector:   anomalyDetector,
 			CatalogFetcher:    catalogFetcher,
 			Summarizer:        sum,
-			MaxToolOutputSize: cfg.Summarizer.MaxToolOutputSize,
+			MaxToolOutputSize: cfg.AI.Summarizer.MaxToolOutputSize,
 		},
 	})
 
@@ -274,7 +281,7 @@ func main() {
 		})
 	}
 
-	store := session.NewStore(cfg.Session.TTL)
+	store := session.NewStore(cfg.Runtime.Session.TTL)
 	mgr := session.NewManager(store, slogger, instrumentedAudit, agentMetrics)
 
 	handler := kaserver.NewHandler(mgr, investigationRunner, slogger, agentMetrics)
@@ -291,10 +298,10 @@ func main() {
 	r.Get("/config", configHandler(cfg, swappable))
 
 	apiRateLimiter := kaserver.NewRateLimiter(kaserver.RateLimitConfig{
-		RequestsPerSecond: cfg.Server.RateLimit.RequestsPerSecond,
-		Burst:             cfg.Server.RateLimit.Burst,
-		CleanupInterval:   cfg.Server.RateLimit.CleanupInterval,
-		MaxAge:            cfg.Server.RateLimit.MaxAge,
+		RequestsPerSecond: cfg.Runtime.Server.RateLimit.RequestsPerSecond,
+		Burst:             cfg.Runtime.Server.RateLimit.Burst,
+		CleanupInterval:   cfg.Runtime.Server.RateLimit.CleanupInterval,
+		MaxAge:            cfg.Runtime.Server.RateLimit.MaxAge,
 	}, agentMetrics.HTTPRateLimitedTotal)
 	defer apiRateLimiter.Stop()
 
@@ -354,24 +361,24 @@ func main() {
 	// Issue #493: Conditional TLS for the HTTP server
 	// Issue #756: CertReloader enables hot-reload of server certificates
 	var certReloader *sharedtls.CertReloader
-	if cfg.Server.TLS.Enabled() {
-		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(httpServer, cfg.Server.TLS.CertDir)
+	if cfg.Runtime.Server.TLS.Enabled() {
+		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(httpServer, cfg.Runtime.Server.TLS.CertDir)
 		if tlsErr != nil {
 			slogger.Error("Failed to configure TLS", "error", tlsErr)
 			os.Exit(1)
 		}
 		if isTLS {
 			certReloader = reloader
-			slogger.Info("TLS configured for HTTP server", "certDir", cfg.Server.TLS.CertDir)
+			slogger.Info("TLS configured for HTTP server", "certDir", cfg.Runtime.Server.TLS.CertDir)
 		}
 	}
 
 	// Issue #753: Dedicated health and metrics servers (plain HTTP, never TLS)
-	healthServer := sharedhealth.NewHealthServer(cfg.Server.HealthAddr, healthHandler, readyHandler)
+	healthServer := sharedhealth.NewHealthServer(cfg.Runtime.Server.HealthAddr, healthHandler, readyHandler)
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.Handler())
 	metricsServer := &http.Server{
-		Addr:              cfg.Server.MetricsAddr,
+		Addr:              cfg.Runtime.Server.MetricsAddr,
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
@@ -385,7 +392,7 @@ func main() {
 	// Issue #756: Wire FileWatcher for server cert hot-reload
 	if certReloader != nil {
 		certWatcher, watchErr := hotreload.NewFileWatcher(
-			filepath.Join(cfg.Server.TLS.CertDir, "tls.crt"),
+			filepath.Join(cfg.Runtime.Server.TLS.CertDir, "tls.crt"),
 			certReloader.ReloadCallback,
 			logr.FromSlogHandler(slogger.Handler()).WithName("cert-reloader"),
 		)
@@ -400,29 +407,29 @@ func main() {
 		defer certWatcher.Stop()
 	}
 
-	// Issue #783: Wire FileWatcher for SDK config hot-reload
-	sdkCallback := sdkReloadCallback(configPath, func() *kaconfig.Config { return cfg }, swappable, slogger)
-	sdkWatcher, sdkWatchErr := hotreload.NewFileWatcher(
-		sdkConfigPath,
-		sdkCallback,
-		logr.FromSlogHandler(slogger.Handler()).WithName("sdk-config-reloader"),
+	// Issue #916: Wire FileWatcher for LLM runtime config hot-reload
+	rtCallback := llmRuntimeReloadCallback(cfg, swappable, slogger)
+	rtWatcher, rtWatchErr := hotreload.NewFileWatcher(
+		llmRuntimePath,
+		rtCallback,
+		logr.FromSlogHandler(slogger.Handler()).WithName("llm-runtime-reloader"),
 	)
-	if sdkWatchErr != nil {
-		slogger.Warn("SDK config file watcher not started (file may not exist yet)", "error", sdkWatchErr)
+	if rtWatchErr != nil {
+		slogger.Warn("llm runtime file watcher not started", "error", rtWatchErr)
 	} else {
-		if err := sdkWatcher.Start(ctx); err != nil {
-			slogger.Warn("SDK config file watcher failed to start", "error", err)
+		if err := rtWatcher.Start(ctx); err != nil {
+			slogger.Warn("llm runtime file watcher failed to start", "error", err)
 		} else {
-			defer sdkWatcher.Stop()
-			slogger.Info("SDK config hot-reload enabled (#783)", "path", sdkConfigPath)
+			defer rtWatcher.Stop()
+			slogger.Info("llm runtime hot-reload enabled (#916)", "path", llmRuntimePath)
 		}
 	}
 
 	// Issue #748: Load OCP TLS security profile from config before any TLS setup
-	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
+	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.Runtime.Server.TLSProfile); err != nil {
 		slogger.Error("Invalid TLS security profile in config, using default TLS 1.2", "error", err)
-	} else if cfg.TLSProfile != "" {
-		slogger.Info("TLS security profile active", "profile", cfg.TLSProfile)
+	} else if cfg.Runtime.Server.TLSProfile != "" {
+		slogger.Info("TLS security profile active", "profile", cfg.Runtime.Server.TLSProfile)
 	}
 
 	// Issue #756: Start CA file watcher for client-side TLS hot-reload
@@ -435,17 +442,17 @@ func main() {
 		defer caWatcher.Stop()
 	}
 
-	store.StartCleanupLoop(ctx, cfg.Session.TTL/2)
+	store.StartCleanupLoop(ctx, cfg.Runtime.Session.TTL/2)
 
 	// Issue #753: Start dedicated health and metrics servers
 	go func() {
-		slogger.Info("health server listening", "addr", cfg.Server.HealthAddr)
+		slogger.Info("health server listening", "addr", cfg.Runtime.Server.HealthAddr)
 		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slogger.Error("health server error", "error", err)
 		}
 	}()
 	go func() {
-		slogger.Info("metrics server listening", "addr", cfg.Server.MetricsAddr)
+		slogger.Info("metrics server listening", "addr", cfg.Runtime.Server.MetricsAddr)
 		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slogger.Error("metrics server error", "error", err)
 		}
@@ -500,15 +507,12 @@ func readyHandler(w http.ResponseWriter, _ *http.Request) {
 
 func configHandler(cfg *kaconfig.Config, swappable *llm.SwappableClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		model := cfg.LLM.Model
-		if swappable != nil {
-			model = swappable.ModelName()
-		}
+		model := swappable.ModelName()
 		sanitized := map[string]interface{}{
 			"service":     "kubernaut-agent",
-			"version":     "v1.3",
+			"version":     "v1.4",
 			"llm_model":   model,
-			"session_ttl": cfg.Session.TTL.String(),
+			"session_ttl": cfg.Runtime.Session.TTL.String(),
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(sanitized)
@@ -572,7 +576,7 @@ type dsClients struct {
 // client is configured with a Bearer token transport so that all DS API calls
 // (including ListWorkflows for the workflow validator) pass authentication.
 func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger *slog.Logger) *dsClients {
-	if cfg.DataStorage.URL == "" {
+	if cfg.Integrations.DataStorage.URL == "" {
 		logger.Info("DataStorage URL not configured, DS adapters disabled")
 		return nil
 	}
@@ -589,23 +593,23 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger *slog.Logger) *
 	}
 
 	var opts []ogenclient.ClientOption
-	if tokenData, err := os.ReadFile(cfg.DataStorage.SATokenPath); err == nil && len(tokenData) > 0 {
+	if tokenData, err := os.ReadFile(cfg.Integrations.DataStorage.SATokenPath); err == nil && len(tokenData) > 0 {
 		token := string(tokenData)
 		opts = append(opts, ogenclient.WithClient(&http.Client{
 			Transport: &bearerTransport{base: dsBase, token: token},
 		}))
-		logger.Info("DS client auth configured (DD-AUTH-014)", "token_path", cfg.DataStorage.SATokenPath)
+		logger.Info("DS client auth configured (DD-AUTH-014)", "token_path", cfg.Integrations.DataStorage.SATokenPath)
 	} else {
 		logger.Warn("SA token not available for DS client — DS API calls may fail auth",
-			"path", cfg.DataStorage.SATokenPath, "error", err)
+			"path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
 	}
 
-	ogenClient, err := ogenclient.NewClient(cfg.DataStorage.URL, opts...)
+	ogenClient, err := ogenclient.NewClient(cfg.Integrations.DataStorage.URL, opts...)
 	if err != nil {
-		logger.Error("failed to create DataStorage ogen client", "url", cfg.DataStorage.URL, "error", err)
+		logger.Error("failed to create DataStorage ogen client", "url", cfg.Integrations.DataStorage.URL, "error", err)
 		return nil
 	}
-	logger.Info("DataStorage clients initialized", "url", cfg.DataStorage.URL)
+	logger.Info("DataStorage clients initialized", "url", cfg.Integrations.DataStorage.URL)
 	return &dsClients{
 		ogenClient: ogenClient,
 		dsAdapter:  enrichment.NewDSAdapter(ogenClient),
@@ -639,12 +643,12 @@ func buildEnricher(cfg *kaconfig.Config, ds *dsClients, infra *k8sInfra, auditSt
 		logger.Info("label detector enabled (ADR-056)")
 	}
 	e.WithRetryConfig(enrichment.RetryConfig{
-		MaxRetries:  cfg.Enrichment.MaxRetries,
-		BaseBackoff: cfg.Enrichment.BaseBackoff,
+		MaxRetries:  cfg.AI.Enrichment.MaxRetries,
+		BaseBackoff: cfg.AI.Enrichment.BaseBackoff,
 	})
 	logger.Info("enrichment retry config wired (#704)",
-		slog.Int("max_retries", cfg.Enrichment.MaxRetries),
-		slog.Duration("base_backoff", cfg.Enrichment.BaseBackoff),
+		slog.Int("max_retries", cfg.AI.Enrichment.MaxRetries),
+		slog.Duration("base_backoff", cfg.AI.Enrichment.BaseBackoff),
 	)
 	return e
 }
@@ -653,10 +657,10 @@ func buildEnricher(cfg *kaconfig.Config, ds *dsClients, infra *k8sInfra, auditSt
 // per DD-HAPI-019-003. Returns nil when both stages are disabled.
 func buildSanitizationPipeline(cfg *kaconfig.Config, logger *slog.Logger) *sanitization.Pipeline {
 	var stages []sanitization.Stage
-	if cfg.Sanitization.CredentialScrubEnabled {
+	if cfg.AI.Safety.Sanitization.CredentialScrubEnabled {
 		stages = append(stages, sanitization.NewCredentialSanitizer())
 	}
-	if cfg.Sanitization.InjectionPatternsEnabled {
+	if cfg.AI.Safety.Sanitization.InjectionPatternsEnabled {
 		stages = append(stages, sanitization.NewInjectionSanitizer(nil))
 	}
 	if len(stages) == 0 {
@@ -674,7 +678,7 @@ func buildSanitizationPipeline(cfg *kaconfig.Config, logger *slog.Logger) *sanit
 // to guarantee identical authentication behavior.
 func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Logger) (audit.AuditStore, func()) {
 	nop := func() {}
-	if !cfg.Audit.Enabled || cfg.DataStorage.URL == "" {
+	if !cfg.Runtime.Audit.Enabled || cfg.Integrations.DataStorage.URL == "" {
 		slogger.Info("audit store disabled (nop)")
 		return audit.NopAuditStore{}, nop
 	}
@@ -688,17 +692,17 @@ func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Lo
 	}
 
 	var transport http.RoundTripper
-	if tokenData, err := os.ReadFile(cfg.DataStorage.SATokenPath); err == nil && len(tokenData) > 0 {
+	if tokenData, err := os.ReadFile(cfg.Integrations.DataStorage.SATokenPath); err == nil && len(tokenData) > 0 {
 		transport = &bearerTransport{base: auditBase, token: string(tokenData)}
 		slogger.Info("audit store auth configured (same SA token as DS client)",
-			"token_path", cfg.DataStorage.SATokenPath)
+			"token_path", cfg.Integrations.DataStorage.SATokenPath)
 	} else {
 		slogger.Warn("SA token not available for audit store — batch writes may fail auth",
-			"path", cfg.DataStorage.SATokenPath, "error", err)
+			"path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
 	}
 
 	dsClient, err := sharedaudit.NewOpenAPIClientAdapterWithTransport(
-		cfg.DataStorage.URL, 5*time.Second, transport,
+		cfg.Integrations.DataStorage.URL, 5*time.Second, transport,
 	)
 	if err != nil {
 		slogger.Error("failed to create DS audit client, falling back to nop", "error", err)
@@ -706,15 +710,15 @@ func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Lo
 	}
 
 	var storeOpts []audit.BufferedDSAuditStoreOption
-	if cfg.Audit.FlushIntervalSeconds > 0 {
+	if cfg.Runtime.Audit.FlushIntervalSeconds > 0 {
 		storeOpts = append(storeOpts, audit.WithFlushInterval(
-			time.Duration(cfg.Audit.FlushIntervalSeconds*float64(time.Second))))
+			time.Duration(cfg.Runtime.Audit.FlushIntervalSeconds*float64(time.Second))))
 	}
-	if cfg.Audit.BufferSize > 0 {
-		storeOpts = append(storeOpts, audit.WithBufferSize(cfg.Audit.BufferSize))
+	if cfg.Runtime.Audit.BufferSize > 0 {
+		storeOpts = append(storeOpts, audit.WithBufferSize(cfg.Runtime.Audit.BufferSize))
 	}
-	if cfg.Audit.BatchSize > 0 {
-		storeOpts = append(storeOpts, audit.WithBatchSize(cfg.Audit.BatchSize))
+	if cfg.Runtime.Audit.BatchSize > 0 {
+		storeOpts = append(storeOpts, audit.WithBatchSize(cfg.Runtime.Audit.BatchSize))
 	}
 
 	store, err := audit.NewBufferedDSAuditStore(dsClient, logrLog, storeOpts...)
@@ -723,7 +727,7 @@ func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Lo
 		return audit.NopAuditStore{}, nop
 	}
 	slogger.Info("audit store enabled (buffered, DD-AUDIT-002 aligned)",
-		"ds_url", cfg.DataStorage.URL)
+		"ds_url", cfg.Integrations.DataStorage.URL)
 	return store, func() {
 		if closeErr := store.Close(); closeErr != nil {
 			slogger.Error("audit store close error", "error", closeErr)
@@ -735,27 +739,27 @@ func buildAuditStore(cfg *kaconfig.Config, slogger *slog.Logger, logrLog logr.Lo
 // When MaxToolOutputSize is configured, it enables pre-truncation to prevent
 // the summarizer's own LLM call from exceeding context window limits (#752).
 func buildSummarizer(llmClient llm.Client, cfg *kaconfig.Config, logger *slog.Logger) *summarizer.Summarizer {
-	if cfg.Summarizer.Threshold <= 0 {
+	if cfg.AI.Summarizer.Threshold <= 0 {
 		logger.Info("summarizer disabled (threshold <= 0)")
 		return nil
 	}
-	if cfg.Summarizer.MaxToolOutputSize > 0 {
+	if cfg.AI.Summarizer.MaxToolOutputSize > 0 {
 		logger.Info("summarizer enabled with pre-truncation",
-			"threshold", cfg.Summarizer.Threshold,
-			"max_tool_output_size", cfg.Summarizer.MaxToolOutputSize)
-		return summarizer.NewWithMaxInput(llmClient, cfg.Summarizer.Threshold, cfg.Summarizer.MaxToolOutputSize)
+			"threshold", cfg.AI.Summarizer.Threshold,
+			"max_tool_output_size", cfg.AI.Summarizer.MaxToolOutputSize)
+		return summarizer.NewWithMaxInput(llmClient, cfg.AI.Summarizer.Threshold, cfg.AI.Summarizer.MaxToolOutputSize)
 	}
-	logger.Info("summarizer enabled", "threshold", cfg.Summarizer.Threshold)
-	return summarizer.New(llmClient, cfg.Summarizer.Threshold)
+	logger.Info("summarizer enabled", "threshold", cfg.AI.Summarizer.Threshold)
+	return summarizer.New(llmClient, cfg.AI.Summarizer.Threshold)
 }
 
 // buildAnomalyDetector creates the I7 anomaly detector from config thresholds.
 func buildAnomalyDetector(cfg *kaconfig.Config, logger *slog.Logger) *investigator.AnomalyDetector {
 	ac := investigator.AnomalyConfig{
-		MaxToolCallsPerTool: cfg.Anomaly.MaxToolCallsPerTool,
-		MaxTotalToolCalls:   cfg.Anomaly.MaxTotalToolCalls,
-		MaxRepeatedFailures: cfg.Anomaly.MaxRepeatedFailures,
-		ExemptPrefixes:      cfg.Anomaly.ExemptPrefixes,
+		MaxToolCallsPerTool: cfg.AI.Safety.Anomaly.MaxToolCallsPerTool,
+		MaxTotalToolCalls:   cfg.AI.Safety.Anomaly.MaxTotalToolCalls,
+		MaxRepeatedFailures: cfg.AI.Safety.Anomaly.MaxRepeatedFailures,
+		ExemptPrefixes:      cfg.AI.Safety.Anomaly.ExemptPrefixes,
 	}
 	logger.Info("anomaly detector enabled",
 		"maxToolCallsPerTool", ac.MaxToolCallsPerTool,
@@ -774,19 +778,19 @@ func buildToolRegistry(cfg *kaconfig.Config, logger *slog.Logger, infra *k8sInfr
 		registerK8sTools(reg, infra, logger)
 	}
 
-	if cfg.Tools.Prometheus.URL != "" {
+	if cfg.Integrations.Tools.Prometheus.URL != "" {
 		promCfg := promtools.ClientConfig{
-			URL:       cfg.Tools.Prometheus.URL,
-			Timeout:   cfg.Tools.Prometheus.Timeout,
-			SizeLimit: cfg.Tools.Prometheus.SizeLimit,
+			URL:       cfg.Integrations.Tools.Prometheus.URL,
+			Timeout:   cfg.Integrations.Tools.Prometheus.Timeout,
+			SizeLimit: cfg.Integrations.Tools.Prometheus.SizeLimit,
 		}
-		if cfg.Tools.Prometheus.TLSCaFile != "" {
-			promBase, promTLSErr := sharedtls.NewTLSTransport(cfg.Tools.Prometheus.TLSCaFile)
+		if cfg.Integrations.Tools.Prometheus.TLSCaFile != "" {
+			promBase, promTLSErr := sharedtls.NewTLSTransport(cfg.Integrations.Tools.Prometheus.TLSCaFile)
 			if promTLSErr != nil {
-				logger.Error("failed to create Prometheus TLS transport", "error", promTLSErr, "ca_file", cfg.Tools.Prometheus.TLSCaFile)
+				logger.Error("failed to create Prometheus TLS transport", "error", promTLSErr, "ca_file", cfg.Integrations.Tools.Prometheus.TLSCaFile)
 			} else {
 				promCfg.Transport = auth.NewServiceAccountTransportWithBase(promBase)
-				logger.Info("Prometheus client configured with TLS + SA bearer auth", "ca_file", cfg.Tools.Prometheus.TLSCaFile)
+				logger.Info("Prometheus client configured with TLS + SA bearer auth", "ca_file", cfg.Integrations.Tools.Prometheus.TLSCaFile)
 			}
 		}
 		promClient, promErr := promtools.NewClient(promCfg)

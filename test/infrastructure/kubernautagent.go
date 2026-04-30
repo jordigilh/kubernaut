@@ -691,39 +691,51 @@ metadata:
   namespace: %s
 data:
   config.yaml: |
-    llm:
-      provider: "openai"
-      model: "mock-model"
-      endpoint: "http://mock-llm:8080"
-      api_key: "mock-api-key-for-e2e"
-    server:
-      tls:
-        certDir: /etc/tls
-    data_storage:
-      url: "https://data-storage-service:8080"
-    logging:
-      level: "debug"
-    audit:
-      flush_interval_seconds: 0.1
-      buffer_size: 10000
-      batch_size: 50
-    auth:
-      resource_name: "kubernaut-agent"
-    alignmentCheck:
-      enabled: true
-      timeout: "10s"
-      maxStepTokens: 500
+    runtime:
+      logging:
+        level: "debug"
+      server:
+        tls:
+          certDir: /etc/tls
+      audit:
+        flushIntervalSeconds: 0.1
+        bufferSize: 10000
+        batchSize: 50
+    ai:
       llm:
         provider: "openai"
-        model: "shadow-eval"
-        endpoint: "http://mock-llm-shadow:8080"
-        api_key: "mock-shadow-key"
+      alignmentCheck:
+        enabled: true
+        timeout: "10s"
+        maxStepTokens: 500
+        llm:
+          provider: "openai"
+          model: "shadow-eval"
+          endpoint: "http://mock-llm-shadow:8080"
+          apiKey: "mock-shadow-key"
+    integrations:
+      dataStorage:
+        url: "https://data-storage-service:8080"
     interactive:
       enabled: true
       session_ttl: "5m"
       inactivity_timeout: "2m"
       max_concurrent_sessions: 3
       rate_limit_per_user: 20
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernaut-agent-llm-runtime
+  namespace: %s
+data:
+  llm-runtime.yaml: |
+    model: "mock-model"
+    endpoint: "http://mock-llm:8080"
+    apiKey: "mock-api-key-for-e2e"
+    temperature: 0.7
+    maxRetries: 3
+    timeoutSeconds: 120
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -755,6 +767,8 @@ spec:
         args:
         - "-config"
         - "/etc/kubernautagent/config.yaml"
+        - "-llm-runtime"
+        - "/etc/kubernautagent/llm-runtime/llm-runtime.yaml"
         env:
         - name: TLS_CA_FILE
           value: /etc/tls-ca/ca.crt
@@ -770,6 +784,9 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /etc/kubernautagent
+          readOnly: true
+        - name: llm-runtime
+          mountPath: /etc/kubernautagent/llm-runtime
           readOnly: true
         - name: tls-certs
           mountPath: /etc/tls
@@ -794,6 +811,9 @@ spec:
       - name: config
         configMap:
           name: kubernaut-agent-config
+      - name: llm-runtime
+        configMap:
+          name: kubernaut-agent-llm-runtime
       - name: tls-certs
         secret:
           secretName: kubernautagent-tls
@@ -825,7 +845,7 @@ spec:
     nodePort: 30988
   selector:
     app: kubernaut-agent
-`, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)
+`, namespace, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)
 
 	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)

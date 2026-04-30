@@ -88,6 +88,19 @@
       "description": "Pod tolerations (overrides global.tolerations for this component)",
       "type": "array",
       "items": { "$ref": "#/definitions/toleration" }
+    },
+    "serviceLogging": {
+      "description": "Structured logging level for service ConfigMap (Issue #875)",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["DEBUG", "INFO", "WARN", "ERROR"],
+          "default": "INFO",
+          "description": "Log level (Issue #875)"
+        }
+      }
     }
   },
   "properties": {
@@ -305,6 +318,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -343,6 +357,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -378,6 +393,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -412,6 +428,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -512,6 +529,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -533,6 +551,14 @@
               "additionalProperties": false,
               "properties": {
                 "cooldownPeriod": { "type": "string", "default": "1m", "description": "Cooldown between workflow executions" }
+              }
+            },
+            "tekton": {
+              "type": "object",
+              "description": "Tekton Pipelines engine configuration (issue #868). Omit for auto-discovery.",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "description": "true or omit = auto-discover CRDs; false = disable Tekton engine" }
               }
             },
             "ansible": {
@@ -568,6 +594,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -617,6 +644,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -648,6 +676,7 @@
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
@@ -660,6 +689,7 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "resources": { "$ref": "#/definitions/resources" },
         "service": { "$ref": "#/definitions/serviceConfig" },
         "llm": {
@@ -667,9 +697,12 @@
           "additionalProperties": false,
           "properties": {
             "credentialsSecretName": { "type": "string", "default": "llm-credentials", "description": "Name of the pre-existing K8s Secret containing LLM API credentials (e.g. OPENAI_API_KEY)" },
-            "provider": { "type": "string", "default": "", "description": "Quickstart: LLM provider name (openai, anthropic). Auto-generates SDK config when set with model." },
-            "model": { "type": "string", "default": "", "description": "Quickstart: LLM model name (gpt-4o, claude-sonnet-4-20250514). Auto-generates SDK config when set with provider." },
-            "structuredOutput": { "type": "boolean", "default": false, "description": "Enable structured JSON output via provider-native schema enforcement." },
+            "provider": { "type": "string", "default": "", "description": "LLM provider name (openai, anthropic). Static — requires pod restart." },
+            "model": { "type": "string", "default": "", "description": "LLM model name (gpt-4o, claude-sonnet-4-20250514). Hot-reloadable." },
+            "endpoint": { "type": "string", "default": "", "description": "LLM endpoint URL. Hot-reloadable." },
+            "temperature": { "type": "number", "default": 0.7, "description": "LLM sampling temperature. Hot-reloadable." },
+            "maxRetries": { "type": "integer", "default": 3, "description": "Max retries for LLM requests. Hot-reloadable." },
+            "timeoutSeconds": { "type": "integer", "default": 120, "description": "LLM request timeout in seconds. Hot-reloadable." },
             "oauth2": {
               "type": "object",
               "description": "OAuth2 client credentials grant for enterprise LLM gateway authentication.",
@@ -683,16 +716,7 @@
             }
           }
         },
-        "sdkConfigContent": {
-          "type": "string",
-          "default": "",
-          "description": "Raw SDK config YAML. When set (e.g. via --set-file), replaces auto-generated SDK config in the kubernaut-agent-sdk-config ConfigMap."
-        },
-        "existingSdkConfigMap": {
-          "type": "string",
-          "default": "",
-          "description": "Use a pre-existing ConfigMap for SDK config instead of chart-generated. When set, kubernaut-agent-sdk-config is not created. Takes priority over sdkConfigContent."
-        },
+       
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
@@ -741,6 +765,7 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
         "resources": { "$ref": "#/definitions/resources" },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },

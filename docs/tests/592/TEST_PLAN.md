@@ -7,7 +7,7 @@
 **Version**: 5.0
 **Created**: 2026-03-04
 **Author**: AI Assistant
-**Status**: Active
+**Status**: Archived — Feature removed in v1.4 per PROPOSAL-EXT-001 (MCP/A2A architecture path)
 **Branch**: `development/v1.4`
 
 ---

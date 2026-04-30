@@ -49,7 +49,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 		auditStore = &recordingAuditStore{}
 		mockClient = &mockLLMClient{}
-		builder, _ = prompt.NewBuilder(prompt.WithStructuredOutput(true))
+		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
 		k8sClient := &fakeK8sClient{
 			ownerChain: []enrichment.OwnerChainEntry{

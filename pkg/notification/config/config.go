@@ -55,6 +55,9 @@ type Config struct {
 	// DataStorage connectivity (ADR-030: audit trail + workflow catalog)
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 
+	// Logging configuration (Issue #878: config-file-only log level with hot-reload)
+	Logging sharedconfig.LoggingConfig `yaml:"logging"`
+
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
@@ -156,6 +159,11 @@ func (c *Config) Validate() error {
 		return err
 	}
 
+	// Issue #878: Logging validation
+	if err := c.Logging.Validate(); err != nil {
+		return err
+	}
+
 	// Controller validation
 	if c.Controller.MetricsAddr == "" {
 		return fmt.Errorf("controller.metrics_addr cannot be empty")
@@ -223,6 +231,7 @@ func DefaultConfig() *Config {
 			LeaderElection:   false,
 			LeaderElectionID: "notification.kubernaut.ai",
 		},
+		Logging: sharedconfig.DefaultLoggingConfig(),
 		Delivery: DeliverySettings{
 			Console: ConsoleSettings{Enabled: true},
 			File: FileSettings{

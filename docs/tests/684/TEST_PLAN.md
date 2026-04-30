@@ -330,7 +330,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 **File**: `test/unit/kubernautagent/config/config_684_test.go`
 
 **Test Steps**:
-1. **Given**: Main config has no vertex_project; SDK YAML has `vertex_project: "my-gcp-project"`
+1. **Given**: Main config has no vertex_project; SDK YAML has `vertexProject: "my-gcp-project"`
 2. **When**: `MergeSDKConfig()` is called
 3. **Then**: `cfg.LLM.VertexProject` equals `"my-gcp-project"`
 
@@ -344,7 +344,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 **File**: `test/unit/kubernautagent/config/config_684_test.go`
 
 **Test Steps**:
-1. **Given**: Main config has no vertex_location; SDK YAML has `vertex_location: "europe-west1"`
+1. **Given**: Main config has no vertex_location; SDK YAML has `vertexLocation: "europe-west1"`
 2. **When**: `MergeSDKConfig()` is called
 3. **Then**: `cfg.LLM.VertexLocation` equals `"europe-west1"`
 
@@ -358,7 +358,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 **File**: `test/unit/kubernautagent/config/config_684_test.go`
 
 **Test Steps**:
-1. **Given**: Main config has no api_key; SDK YAML has `api_key: "sk-test-from-sdk"`
+1. **Given**: Main config has no api_key; SDK YAML has `apiKey: "sk-test-from-sdk"`
 2. **When**: `MergeSDKConfig()` is called
 3. **Then**: `cfg.LLM.APIKey` equals `"sk-test-from-sdk"`
 

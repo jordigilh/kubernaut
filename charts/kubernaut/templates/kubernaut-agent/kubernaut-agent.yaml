@@ -31,7 +31,9 @@ rules:
       - namespaces
       - replicationcontrollers
       - persistentvolumeclaims
+      - persistentvolumes
       - resourcequotas
+      - serviceaccounts
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
@@ -46,10 +48,18 @@ rules:
     resources: ["poddisruptionbudgets"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["networking.k8s.io"]
-    resources: ["networkpolicies"]
+    resources: ["networkpolicies", "ingresses"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  # ── Storage (#872) ─────────────────────────────────────────────────────────
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "csidrivers", "csinodes", "volumeattachments"]
+    verbs: ["get", "list", "watch"]
+  # ── Discovery (#872) ───────────────────────────────────────────────────────
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
     verbs: ["get", "list", "watch"]
   # ── cert-manager ─────────────────────────────────────────────────────────
   - apiGroups: ["cert-manager.io"]
@@ -134,43 +144,59 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   config.yaml: |
-    logging:
-      level: "INFO"
-    server:
-      address: "0.0.0.0"
-      port: 8080
-      health_addr: ":8081"
-      metrics_addr: ":9090"
-      tls:
-        certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
-    data_storage:
-      url: "{{ include "kubernaut.datastorage.url" . }}"
-{{- if include "kubernaut.agent.tlsEnabled" . }}
-    tls:
-      ca_file: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
-{{- end }}
-    audit:
-      flush_interval_seconds: 1.0
-      buffer_size: 10000
-      batch_size: 50
-{{- if .Values.kubernautAgent.alignmentCheck.enabled }}
-    alignmentCheck:
-      enabled: true
-      timeout: {{ .Values.kubernautAgent.alignmentCheck.timeout | default "10s" }}
-      maxStepTokens: {{ .Values.kubernautAgent.alignmentCheck.maxStepTokens | default 500 }}
-{{- with .Values.kubernautAgent.alignmentCheck.llm }}
+    runtime:
+      logging:
+        level: {{ .Values.kubernautAgent.logging.level | default "INFO" | quote }}
+      server:
+        address: "0.0.0.0"
+        port: 8080
+        healthAddr: ":8081"
+        metricsAddr: ":9090"
+        tls:
+          certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
+      audit:
+        flushIntervalSeconds: 1.0
+        bufferSize: 10000
+        batchSize: 50
+    ai:
+{{- if and .Values.kubernautAgent.llm.provider .Values.kubernautAgent.llm.model }}
       llm:
+        provider: {{ .Values.kubernautAgent.llm.provider | quote }}
+{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+        oauth2:
+          enabled: true
+          tokenURL: {{ .Values.kubernautAgent.llm.oauth2.tokenURL | quote }}
+          credentialsDir: "/etc/kubernaut-agent/oauth2"
+{{- if .Values.kubernautAgent.llm.oauth2.scopes }}
+          scopes:
+{{- range (splitList " " .Values.kubernautAgent.llm.oauth2.scopes) }}
+            - {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- else }}
+{{- fail "LLM configuration required: set kubernautAgent.llm.provider and kubernautAgent.llm.model" }}
+{{- end }}
+      investigation:
+        maxTurns: 40
+{{- if .Values.kubernautAgent.alignmentCheck.enabled }}
+      alignmentCheck:
+        enabled: true
+        timeout: {{ .Values.kubernautAgent.alignmentCheck.timeout | default "10s" }}
+        maxStepTokens: {{ .Values.kubernautAgent.alignmentCheck.maxStepTokens | default 500 }}
+{{- with .Values.kubernautAgent.alignmentCheck.llm }}
+        llm:
 {{- if .provider }}
-        provider: {{ .provider }}
+          provider: {{ .provider }}
 {{- end }}
 {{- if .model }}
-        model: {{ .model }}
+          model: {{ .model }}
 {{- end }}
 {{- if .endpoint }}
-        endpoint: {{ .endpoint }}
+          endpoint: {{ .endpoint }}
 {{- end }}
 {{- if .apiKey }}
-        api_key: {{ .apiKey }}
+          apiKey: {{ .apiKey }}
 {{- end }}
 {{- end }}
 {{- end }}
@@ -182,10 +208,17 @@ data:
       max_concurrent_sessions: {{ .Values.kubernautAgent.interactive.maxConcurrentSessions | default 5 }}
       rate_limit_per_user: {{ .Values.kubernautAgent.interactive.rateLimitPerUser | default 10 }}
 {{- end }}
+    integrations:
+      dataStorage:
+        url: "{{ include "kubernaut.datastorage.url" . }}"
+{{- if include "kubernaut.agent.tlsEnabled" . }}
+        tls:
+          caFile: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
+{{- end }}
 {{- if include "kubernaut.monitoring.prometheus.enabled" . }}
-    tools:
-      prometheus:
-        url: {{ include "kubernaut.monitoring.prometheus.url" . | quote }}
+      tools:
+        prometheus:
+          url: {{ include "kubernaut.monitoring.prometheus.url" . | quote }}
 {{- end }}
 {{/* DEPRECATED v1.4 (Issue #848): OCP service-ca inject-cabundle ConfigMap.
      Will be removed in v1.5 — use the Kubernaut Operator for OCP. */}}
@@ -208,51 +241,25 @@ data: {}
 {{- fail "kubernautAgent.llm.oauth2.tokenURL is required when oauth2.enabled=true" }}
 {{- end }}
 {{- if not .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
-{{- fail "kubernautAgent.llm.oauth2.credentialsSecretRef is required when oauth2.enabled=true" }}
+{{- fail "kubernautAgent.llm.oauth2.credentialsSecretRef is required when oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
 {{- end }}
 {{- end }}
-{{- if not .Values.kubernautAgent.existingSdkConfigMap }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: kubernaut-agent-sdk-config
+  name: kubernaut-agent-llm-runtime
   namespace: {{ .Release.Namespace }}
   labels:
     app: kubernaut-agent
-    component: sdk-config
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
-  sdk-config.yaml: |
-{{- if .Values.kubernautAgent.sdkConfigContent }}
-{{ .Values.kubernautAgent.sdkConfigContent | indent 4 }}
-{{- else if and .Values.kubernautAgent.llm.provider .Values.kubernautAgent.llm.model }}
-    llm:
-      provider: {{ .Values.kubernautAgent.llm.provider | quote }}
-      model: {{ .Values.kubernautAgent.llm.model | quote }}
-      max_retries: 3
-      timeout_seconds: 120
-      temperature: 0.7
-{{- if .Values.kubernautAgent.llm.structuredOutput }}
-      structured_output: true
-{{- end }}
-{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
-      oauth2:
-        enabled: true
-        token_url: {{ .Values.kubernautAgent.llm.oauth2.tokenURL | quote }}
-{{- if .Values.kubernautAgent.llm.oauth2.scopes }}
-        scopes:
-{{- range (splitList " " .Values.kubernautAgent.llm.oauth2.scopes) }}
-          - {{ . | quote }}
-{{- end }}
-{{- end }}
-{{- end }}
-    toolsets: {}
-    mcp_servers: {}
-{{- else }}
-{{- fail "LLM configuration required. Choose one:\n  1) --set kubernautAgent.llm.provider=openai --set kubernautAgent.llm.model=gpt-4o  (quickstart)\n  2) --set-file kubernautAgent.sdkConfigContent=sdk-config.yaml  (full config)\n  3) --set kubernautAgent.existingSdkConfigMap=my-configmap  (pre-existing)" }}
-{{- end }}
-{{- end }}
+  llm-runtime.yaml: |
+    model: {{ .Values.kubernautAgent.llm.model | quote }}
+    endpoint: {{ .Values.kubernautAgent.llm.endpoint | default "" | quote }}
+    temperature: {{ .Values.kubernautAgent.llm.temperature | default 0.7 }}
+    maxRetries: {{ .Values.kubernautAgent.llm.maxRetries | default 3 }}
+    timeoutSeconds: {{ .Values.kubernautAgent.llm.timeoutSeconds | default 120 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -296,33 +303,28 @@ spec:
             - name: metrics
               containerPort: 9090
           env:
-{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
-            - name: OAUTH2_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
-                  key: client-id
-            - name: OAUTH2_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
-                  key: client-secret
-{{- end }}
             - name: TLS_CA_FILE
               value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
           args:
             - "-config"
             - "/etc/kubernaut-agent/config.yaml"
+            - "-llm-runtime"
+            - "/etc/kubernaut-agent/llm-runtime/llm-runtime.yaml"
           volumeMounts:
+            - name: llm-runtime
+              mountPath: /etc/kubernaut-agent/llm-runtime
+              readOnly: true
             - name: config
               mountPath: /etc/kubernaut-agent
-              readOnly: true
-            - name: sdk-config
-              mountPath: /etc/kubernaut-agent/sdk
               readOnly: true
             - name: llm-credentials-file
               mountPath: /etc/kubernaut-agent/credentials
               readOnly: true
+{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+            - name: oauth2-credentials
+              mountPath: /etc/kubernaut-agent/oauth2
+              readOnly: true
+{{- end }}
             {{- if include "kubernaut.agent.tlsEnabled" . }}
             - name: service-ca
               mountPath: {{ include "kubernaut.agent.tlsCaDir" . }}
@@ -358,12 +360,17 @@ spec:
         - name: config
           configMap:
             name: kubernaut-agent-config
-        - name: sdk-config
+        - name: llm-runtime
           configMap:
-            name: {{ .Values.kubernautAgent.existingSdkConfigMap | default "kubernaut-agent-sdk-config" }}
+            name: kubernaut-agent-llm-runtime
         - name: llm-credentials-file
           secret:
             secretName: {{ .Values.kubernautAgent.llm.credentialsSecretName }}
+{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+        - name: oauth2-credentials
+          secret:
+            secretName: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
+{{- end }}
         {{- if include "kubernaut.agent.tlsEnabled" . }}
         - name: service-ca
           configMap:

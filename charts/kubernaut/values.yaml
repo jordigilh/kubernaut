@@ -44,6 +44,8 @@ gateway:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   config:
     server:
       maxConcurrentRequests: 100
@@ -91,6 +93,8 @@ datastorage:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   dbExistingSecret: ""  # DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret.
   config:
     database:
@@ -115,6 +119,8 @@ aianalysis:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   rego:
     confidenceThreshold: null  # nil = use Rego default (0.8 per BR-AI-076)
   # -- Approval policy externalization.
@@ -139,6 +145,8 @@ signalprocessing:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   # -- Unified Rego policy externalization (ADR-060, #415).
   # Single policy.rego file containing all classification rules
   # (environment, severity, priority, custom labels).
@@ -170,6 +178,8 @@ remediationorchestrator:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   resources:
     requests:
       cpu: 100m
@@ -210,9 +220,13 @@ workflowexecution:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   config:
     execution:
       cooldownPeriod: "1m"
+    # tekton:                             # Issue #868: Tekton Pipelines engine (optional)
+    #   enabled: true                     # nil/true = auto-discover CRDs; false = disable
     # ansible:                            # Issue #478: AWX/AAP connectivity (optional)
     #   apiURL: "https://awx.example.com" # required when ansible block is present
     #   insecure: false
@@ -236,6 +250,8 @@ notification:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   # -- Slack quickstart shortcut.
   # Set secretName to auto-generate Slack routing and credential projection.
   # For advanced routing (multiple receivers, custom routes), use routing.content or routing.existingConfigMap.
@@ -267,6 +283,8 @@ effectivenessmonitor:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   config:
     assessment:
       stabilizationWindow: "30s"
@@ -289,6 +307,8 @@ kubernautAgent:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   resources:
     requests:
       cpu: 200m
@@ -299,35 +319,28 @@ kubernautAgent:
   service:
     type: ClusterIP
   llm:
-    # K8s Secret reference for LLM API credentials (not part of SDK ConfigMap).
+    # K8s Secret reference for LLM API credentials (mounted at /etc/kubernaut-agent/credentials).
     credentialsSecretName: llm-credentials
-    # -- Quickstart: set provider + model to auto-generate a minimal SDK config.
+    # -- LLM provider (static, requires pod restart to change).
     # Supported providers: openai, anthropic, bedrock, mistral, vertex, local.
     provider: ""   # e.g., "openai", "anthropic"
+    # -- LLM runtime fields (hot-reloadable via kubernaut-agent-llm-runtime ConfigMap).
     model: ""      # e.g., "gpt-4o", "claude-sonnet-4-20250514"
-    # -- Enable structured JSON output via provider-native schema enforcement.
-    # When true, the LLM HTTP transport injects response format constraints
-    # (e.g., Anthropic output_config.format) so the model returns pure JSON
-    # instead of section-header format. Requires a provider that supports it.
-    structuredOutput: false
+    endpoint: ""   # e.g., "http://llm-gateway:8080/v1"
+    temperature: 0.7
+    maxRetries: 3
+    timeoutSeconds: 120
     # -- OAuth2 client credentials grant for enterprise LLM gateway authentication.
     # When enabled, KA automatically acquires, caches, and refreshes JWTs via
     # the client credentials grant (RFC 6749 s4.4) and injects
     # Authorization: Bearer <token> into every outbound LLM request.
+    # Credentials (client-id, client-secret) are mounted from a K8s Secret
+    # as files — never exposed as environment variables.
     oauth2:
       enabled: false
       tokenURL: ""              # e.g., "https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"
-      credentialsSecretRef: ""  # K8s Secret containing keys: client-id, client-secret
+      credentialsSecretRef: ""  # K8s Secret containing keys: client-id, client-secret (mounted as files)
       scopes: ""                # Space-separated scopes, e.g., "openid llm-gateway"
-  # -- Raw SDK config YAML content. When set, used verbatim in the
-  # kubernaut-agent-sdk-config ConfigMap. Takes priority over llm.provider/model.
-  # Usage: helm install --set-file kubernautAgent.sdkConfigContent=my-sdk-config.yaml
-  sdkConfigContent: ""
-  # -- Use a pre-existing ConfigMap for SDK config instead of chart-generated.
-  # When set, the chart does NOT create kubernaut-agent-sdk-config and mounts
-  # this ConfigMap at /etc/kubernaut-agent/sdk/ instead.
-  # Takes priority over sdkConfigContent and llm.provider/model.
-  existingSdkConfigMap: ""
   # -- Shadow agent alignment check (#601): parallel audit for prompt injection detection.
   alignmentCheck:
     enabled: false
@@ -348,6 +361,8 @@ authwebhook:
     enabled: false
     # minAvailable: 1
     # maxUnavailable: ""
+  logging:
+    level: "INFO"
   resources:
     requests:
       memory: 128Mi

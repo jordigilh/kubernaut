@@ -77,6 +77,8 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   authwebhook.yaml: |
+    logging:
+      level: {{ .Values.authwebhook.logging.level | default "INFO" | quote }}
     webhook:
       port: 9443
       certDir: /tmp/k8s-webhook-server/serving-certs

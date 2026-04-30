@@ -196,6 +196,10 @@ func StartNotificationIntegrationInfrastructure(writer io.Writer) error {
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "🔄 Running database migrations...\n")
 	projectRoot := getProjectRoot()
+	const migrationsImage = "docker.io/library/postgres:16-alpine"
+	if err := PullImageWithRetry(migrationsImage, 3, writer); err != nil {
+		return fmt.Errorf("failed to pull migrations image: %w", err)
+	}
 	migrationsCmd := exec.Command("podman", "run", "--rm",
 		"-e", "PGHOST=host.containers.internal", // Use host.containers.internal for port-mapped PostgreSQL
 		"-e", fmt.Sprintf("PGPORT=%d", NTIntegrationPostgresPort),
@@ -203,7 +207,7 @@ func StartNotificationIntegrationInfrastructure(writer io.Writer) error {
 		"-e", fmt.Sprintf("PGPASSWORD=%s", NTIntegrationDBPassword),
 		"-e", fmt.Sprintf("PGDATABASE=%s", NTIntegrationDBName),
 		"-v", filepath.Join(projectRoot, "migrations")+":/migrations:ro",
-		"docker.io/library/postgres:16-alpine",
+		migrationsImage,
 		"sh", "-c",
 		`set -e
 echo "Applying migrations (Up sections only)..."

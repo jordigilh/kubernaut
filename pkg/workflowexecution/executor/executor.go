@@ -149,3 +149,16 @@ func (r *Registry) Engines() []string {
 	}
 	return engines
 }
+
+// EngineAvailability returns the list of registered engines and the subset of
+// knownEngines that are not registered. This is used for startup logging and
+// readyz reporting (Issue #868).
+func (r *Registry) EngineAvailability(knownEngines []string) (available, unavailable []string) {
+	available = r.Engines()
+	for _, engine := range knownEngines {
+		if _, ok := r.executors[engine]; !ok {
+			unavailable = append(unavailable, engine)
+		}
+	}
+	return available, unavailable
+}

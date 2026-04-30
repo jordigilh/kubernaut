@@ -18,86 +18,154 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
+	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	pkgconfig "github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds all Kubernaut Agent configuration.
-// Nested sub-configs support forward-compatibility with Phases 2-6
-// without breaking Phase 1 tests.
+// Config holds all Kubernaut Agent configuration organized into 3 concern domains.
 type Config struct {
-	LLM            LLMConfig            `yaml:"llm"`
-	DataStorage    DataStorageConfig    `yaml:"data_storage"`
-	Server         ServerConfig         `yaml:"server"`
-	Session        SessionConfig        `yaml:"session"`
-	Audit          AuditConfig          `yaml:"audit"`
-	MCP            MCPConfig            `yaml:"mcp"`
-	Investigator   InvestigatorConfig   `yaml:"investigator"`
-	Tools          ToolsConfig          `yaml:"tools"`
-	Sanitization   SanitizationConfig   `yaml:"sanitization"`
-	Anomaly        AnomalyConfig        `yaml:"anomaly"`
-	Summarizer     SummarizerConfig     `yaml:"summarizer"`
-	AlignmentCheck AlignmentCheckConfig `yaml:"alignmentCheck"`
-	Enrichment     EnrichmentConfig     `yaml:"enrichment"`
-	Interactive    InteractiveConfig    `yaml:"interactive"`
-
-	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
-	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
-	TLSProfile string `yaml:"tlsProfile,omitempty"`
+	Runtime      RuntimeConfig      `yaml:"runtime"`
+	AI           AIConfig           `yaml:"ai"`
+	Integrations IntegrationsConfig `yaml:"integrations"`
+	Interactive  InteractiveConfig  `yaml:"interactive"`
 }
 
+// RuntimeConfig holds operational infrastructure settings.
+type RuntimeConfig struct {
+	Logging internalconfig.LoggingConfig `yaml:"logging"`
+	Server  ServerConfig                 `yaml:"server"`
+	Session SessionConfig                `yaml:"session"`
+	Audit   AuditConfig                  `yaml:"audit"`
+}
+
+// AIConfig holds LLM, investigation behavior, and safety guardrails.
+type AIConfig struct {
+	LLM            LLMConfig            `yaml:"llm"`
+	Investigation  InvestigationConfig  `yaml:"investigation"`
+	Summarizer     SummarizerConfig     `yaml:"summarizer"`
+	Enrichment     EnrichmentConfig     `yaml:"enrichment"`
+	AlignmentCheck AlignmentCheckConfig `yaml:"alignmentCheck"`
+	Safety         SafetyConfig         `yaml:"safety"`
+}
+
+// SafetyConfig holds guardrails that constrain AI behavior.
+type SafetyConfig struct {
+	Sanitization SanitizationConfig `yaml:"sanitization"`
+	Anomaly      AnomalyConfig      `yaml:"anomaly"`
+}
+
+// IntegrationsConfig holds external service connection settings.
+type IntegrationsConfig struct {
+	DataStorage DataStorageConfig `yaml:"dataStorage"`
+	Tools       ToolsConfig       `yaml:"tools"`
+	MCP         MCPConfig         `yaml:"mcp"`
+}
+
+// LLMConfig holds static LLM provider settings that require a pod restart to change.
 type LLMConfig struct {
-	Provider         string                       `yaml:"provider"`
-	Endpoint         string                       `yaml:"endpoint"`
-	Model            string                       `yaml:"model"`
-	APIKey           string                       `yaml:"api_key"`
-	AzureAPIVersion  string                       `yaml:"azure_api_version"`
-	VertexProject    string                       `yaml:"vertex_project"`
-	VertexLocation   string                       `yaml:"vertex_location"`
-	BedrockRegion    string                       `yaml:"bedrock_region"`
-	Temperature      float64                      `yaml:"temperature"`
-	MaxRetries       int                          `yaml:"max_retries"`
-	TimeoutSeconds   int                          `yaml:"timeout_seconds"`
-	StructuredOutput bool                         `yaml:"-"`
-	CustomHeaders    []pkgconfig.HeaderDefinition `yaml:"-"`
-	OAuth2           OAuth2Config                 `yaml:"-"`
+	Provider        string       `yaml:"provider"`
+	AzureAPIVersion string       `yaml:"azureApiVersion"`
+	VertexProject   string       `yaml:"vertexProject"`
+	VertexLocation  string       `yaml:"vertexLocation"`
+	BedrockRegion   string       `yaml:"bedrockRegion"`
+	OAuth2          OAuth2Config `yaml:"oauth2,omitempty"`
+}
+
+// LLMRuntimeConfig holds hot-reloadable LLM settings that can change without restart.
+// This struct maps to a separate ConfigMap (kubernaut-agent-llm-runtime) watched by
+// the FileWatcher.
+type LLMRuntimeConfig struct {
+	Model          string                       `yaml:"model"`
+	Endpoint       string                       `yaml:"endpoint"`
+	APIKey         string                       `yaml:"apiKey"`
+	Temperature    float64                      `yaml:"temperature"`
+	MaxRetries     int                          `yaml:"maxRetries"`
+	TimeoutSeconds int                          `yaml:"timeoutSeconds"`
+	CustomHeaders  []pkgconfig.HeaderDefinition `yaml:"customHeaders,omitempty"`
 }
 
 // OAuth2Config holds OAuth2 client credentials configuration for enterprise
 // LLM gateway authentication. When enabled, KA acquires and refreshes JWTs
 // automatically via the client credentials grant (RFC 6749 s4.4).
+//
+// Security: clientID and clientSecret are resolved from mounted Secret files
+// at runtime (not stored in ConfigMap). Only tokenURL, scopes, and
+// credentialsDir are configured via YAML.
 type OAuth2Config struct {
-	Enabled      bool     `yaml:"enabled"`
-	TokenURL     string   `yaml:"token_url"`
-	ClientID     string   `yaml:"client_id"`
-	ClientSecret string   `yaml:"client_secret"`
-	Scopes       []string `yaml:"scopes,omitempty"`
+	Enabled        bool     `yaml:"enabled"`
+	TokenURL       string   `yaml:"tokenURL"`
+	Scopes         []string `yaml:"scopes,omitempty"`
+	CredentialsDir string   `yaml:"credentialsDir"`
+	ClientID       string   `yaml:"-"`
+	ClientSecret   string   `yaml:"-"`
+}
+
+// ResolveOAuth2Credentials reads clientID and clientSecret from mounted
+// Secret files in the configured credentialsDir. Expected file layout:
+//
+//	<credentialsDir>/client-id
+//	<credentialsDir>/client-secret
+func (c *OAuth2Config) ResolveOAuth2Credentials() error {
+	if !c.Enabled {
+		return nil
+	}
+	if c.CredentialsDir == "" {
+		return fmt.Errorf("oauth2.credentialsDir is required when oauth2.enabled=true")
+	}
+	clientID, err := readSecretFile(filepath.Join(c.CredentialsDir, "client-id"))
+	if err != nil {
+		return fmt.Errorf("reading oauth2 client-id: %w", err)
+	}
+	clientSecret, err := readSecretFile(filepath.Join(c.CredentialsDir, "client-secret"))
+	if err != nil {
+		return fmt.Errorf("reading oauth2 client-secret: %w", err)
+	}
+	c.ClientID = clientID
+	c.ClientSecret = clientSecret
+	return nil
+}
+
+func readSecretFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	v := strings.TrimSpace(string(data))
+	if v == "" {
+		return "", fmt.Errorf("file %s is empty", path)
+	}
+	return v, nil
 }
 
 type DataStorageConfig struct {
 	URL         string              `yaml:"url"`
-	SATokenPath string              `yaml:"sa_token_path"`
+	SATokenPath string              `yaml:"saTokenPath"`
 	TLS         sharedtls.TLSConfig `yaml:"tls,omitempty"`
 }
 
 type ServerConfig struct {
 	Address     string              `yaml:"address"`
 	Port        int                 `yaml:"port"`
-	HealthAddr  string              `yaml:"health_addr"`  // Issue #753: Dedicated health probe port (default ":8081")
-	MetricsAddr string              `yaml:"metrics_addr"` // Issue #753: Dedicated metrics port (default ":9090")
+	HealthAddr  string              `yaml:"healthAddr"`
+	MetricsAddr string              `yaml:"metricsAddr"`
 	TLS         sharedtls.TLSConfig `yaml:"tls,omitempty"`
-	RateLimit   RateLimitConfig     `yaml:"rate_limit"`
+	TLSProfile  string              `yaml:"tlsProfile,omitempty"`
+	RateLimit   RateLimitConfig     `yaml:"rateLimit"`
 }
 
 // RateLimitConfig configures per-IP HTTP rate limiting for the agent API.
 type RateLimitConfig struct {
-	RequestsPerSecond float64       `yaml:"requests_per_second"`
+	RequestsPerSecond float64       `yaml:"requestsPerSecond"`
 	Burst             int           `yaml:"burst"`
-	CleanupInterval   time.Duration `yaml:"cleanup_interval"`
-	MaxAge            time.Duration `yaml:"max_age"`
+	CleanupInterval   time.Duration `yaml:"cleanupInterval"`
+	MaxAge            time.Duration `yaml:"maxAge"`
 }
 
 type SessionConfig struct {
@@ -107,9 +175,9 @@ type SessionConfig struct {
 type AuditConfig struct {
 	Enabled              bool    `yaml:"enabled"`
 	Endpoint             string  `yaml:"endpoint"`
-	FlushIntervalSeconds float64 `yaml:"flush_interval_seconds"`
-	BufferSize           int     `yaml:"buffer_size"`
-	BatchSize            int     `yaml:"batch_size"`
+	FlushIntervalSeconds float64 `yaml:"flushIntervalSeconds"`
+	BufferSize           int     `yaml:"bufferSize"`
+	BatchSize            int     `yaml:"batchSize"`
 }
 
 // Deprecated: MCPConfig configures outbound MCP client connections.
@@ -136,8 +204,8 @@ type MCPServerEntry struct {
 	Transport string `yaml:"transport"`
 }
 
-type InvestigatorConfig struct {
-	MaxTurns int `yaml:"max_turns"`
+type InvestigationConfig struct {
+	MaxTurns int `yaml:"maxTurns"`
 }
 
 type ToolsConfig struct {
@@ -147,13 +215,13 @@ type ToolsConfig struct {
 type PrometheusToolConfig struct {
 	URL       string        `yaml:"url"`
 	Timeout   time.Duration `yaml:"timeout"`
-	SizeLimit int           `yaml:"size_limit"`
-	TLSCaFile string        `yaml:"tls_ca_file"`
+	SizeLimit int           `yaml:"sizeLimit"`
+	TLSCaFile string        `yaml:"tlsCaFile"`
 }
 
 type SanitizationConfig struct {
-	InjectionPatternsEnabled  bool `yaml:"injection_patterns_enabled"`
-	CredentialScrubEnabled    bool `yaml:"credential_scrub_enabled"`
+	InjectionPatternsEnabled bool `yaml:"injectionPatternsEnabled"`
+	CredentialScrubEnabled   bool `yaml:"credentialScrubEnabled"`
 }
 
 // DefaultMaxToolOutputSize is the default hard character limit for tool output
@@ -162,68 +230,79 @@ const DefaultMaxToolOutputSize = 100000
 
 type SummarizerConfig struct {
 	Threshold         int `yaml:"threshold"`
-	MaxToolOutputSize int `yaml:"max_tool_output_size"`
+	MaxToolOutputSize int `yaml:"maxToolOutputSize"`
 }
 
 // EnrichmentConfig controls retry behavior for K8s owner chain resolution
 // during enrichment. HAPI-aligned defaults (MaxRetries=3, BaseBackoff=1s)
 // ensure rca_incomplete is triggered on definitive enrichment failure.
 type EnrichmentConfig struct {
-	MaxRetries  int           `yaml:"max_retries"`
-	BaseBackoff time.Duration `yaml:"base_backoff"`
+	MaxRetries  int           `yaml:"maxRetries"`
+	BaseBackoff time.Duration `yaml:"baseBackoff"`
 }
 
 type AnomalyConfig struct {
-	MaxToolCallsPerTool int      `yaml:"max_tool_calls_per_tool"`
-	MaxTotalToolCalls   int      `yaml:"max_total_tool_calls"`
-	MaxRepeatedFailures int      `yaml:"max_repeated_failures"`
-	ExemptPrefixes      []string `yaml:"exempt_prefixes"`
+	MaxToolCallsPerTool int      `yaml:"maxToolCallsPerTool"`
+	MaxTotalToolCalls   int      `yaml:"maxTotalToolCalls"`
+	MaxRepeatedFailures int      `yaml:"maxRepeatedFailures"`
+	ExemptPrefixes      []string `yaml:"exemptPrefixes"`
 }
 
 // AlignmentCheckConfig holds settings for the shadow agent alignment checker (#601).
 type AlignmentCheckConfig struct {
-	Enabled       bool          `yaml:"enabled"`
-	LLM           *LLMConfig    `yaml:"llm"`
-	Timeout       time.Duration `yaml:"timeout"`
-	MaxStepTokens int           `yaml:"maxStepTokens"`
+	Enabled       bool               `yaml:"enabled"`
+	LLM           *LLMOverrideConfig `yaml:"llm"`
+	Timeout       time.Duration      `yaml:"timeout"`
+	MaxStepTokens int                `yaml:"maxStepTokens"`
 }
 
-// mergeLLMConfig overlays non-zero fields from override onto base and returns the result.
-func mergeLLMConfig(base LLMConfig, override *LLMConfig) LLMConfig {
-	if override == nil {
-		return base
-	}
-	merged := base
-	if override.Provider != "" {
-		merged.Provider = override.Provider
-	}
-	if override.Endpoint != "" {
-		merged.Endpoint = override.Endpoint
-	}
-	if override.Model != "" {
-		merged.Model = override.Model
-	}
-	if override.APIKey != "" {
-		merged.APIKey = override.APIKey
-	}
-	if override.AzureAPIVersion != "" {
-		merged.AzureAPIVersion = override.AzureAPIVersion
-	}
-	if override.VertexProject != "" {
-		merged.VertexProject = override.VertexProject
-	}
-	if override.VertexLocation != "" {
-		merged.VertexLocation = override.VertexLocation
-	}
-	if override.BedrockRegion != "" {
-		merged.BedrockRegion = override.BedrockRegion
-	}
-	return merged
+// LLMOverrideConfig allows the alignment checker to use a different LLM than
+// the primary investigator. All fields are optional; non-zero fields override
+// the corresponding base values.
+type LLMOverrideConfig struct {
+	Provider        string `yaml:"provider"`
+	Endpoint        string `yaml:"endpoint"`
+	Model           string `yaml:"model"`
+	APIKey          string `yaml:"apiKey"`
+	AzureAPIVersion string `yaml:"azureApiVersion"`
+	VertexProject   string `yaml:"vertexProject"`
+	VertexLocation  string `yaml:"vertexLocation"`
+	BedrockRegion   string `yaml:"bedrockRegion"`
 }
 
-// EffectiveLLM returns a merged LLM config for the alignment checker.
-func (c *AlignmentCheckConfig) EffectiveLLM(base LLMConfig) LLMConfig {
-	return mergeLLMConfig(base, c.LLM)
+// EffectiveLLM returns a merged set of static + runtime fields for the
+// alignment checker client builder. If override fields are set, they win.
+func (c *AlignmentCheckConfig) EffectiveLLM(base LLMConfig, runtime LLMRuntimeConfig) (LLMConfig, LLMRuntimeConfig) {
+	if c.LLM == nil {
+		return base, runtime
+	}
+	staticOut := base
+	runtimeOut := runtime
+	if c.LLM.Provider != "" {
+		staticOut.Provider = c.LLM.Provider
+	}
+	if c.LLM.AzureAPIVersion != "" {
+		staticOut.AzureAPIVersion = c.LLM.AzureAPIVersion
+	}
+	if c.LLM.VertexProject != "" {
+		staticOut.VertexProject = c.LLM.VertexProject
+	}
+	if c.LLM.VertexLocation != "" {
+		staticOut.VertexLocation = c.LLM.VertexLocation
+	}
+	if c.LLM.BedrockRegion != "" {
+		staticOut.BedrockRegion = c.LLM.BedrockRegion
+	}
+	if c.LLM.Model != "" {
+		runtimeOut.Model = c.LLM.Model
+	}
+	if c.LLM.Endpoint != "" {
+		runtimeOut.Endpoint = c.LLM.Endpoint
+	}
+	if c.LLM.APIKey != "" {
+		runtimeOut.APIKey = c.LLM.APIKey
+	}
+	return staticOut, runtimeOut
 }
 
 // Load parses configuration from YAML bytes and applies defaults.
@@ -235,137 +314,59 @@ func Load(data []byte) (*Config, error) {
 	return cfg, nil
 }
 
-// SDKConfig represents the SDK configuration file structure.
-// This maps to the kubernaut-agent-sdk-config ConfigMap rendered by
-// the Helm chart when llm.provider/model are set. All LLM fields
-// use gap-fill semantics (main config wins when non-zero) except
-// transport fields (structured_output, custom_headers, oauth2) which
-// are sourced exclusively from this config.
-type SDKConfig struct {
-	LLM struct {
-		Provider         string                       `yaml:"provider"`
-		Model            string                       `yaml:"model"`
-		Endpoint         string                       `yaml:"endpoint"`
-		APIKey           string                       `yaml:"api_key"`
-		AzureAPIVersion  string                       `yaml:"azure_api_version"`
-		VertexProject    string                       `yaml:"vertex_project"`
-		VertexLocation   string                       `yaml:"vertex_location"`
-		BedrockRegion    string                       `yaml:"bedrock_region"`
-		MaxRetries       int                          `yaml:"max_retries"`
-		TimeoutSeconds   int                          `yaml:"timeout_seconds"`
-		Temperature      float64                      `yaml:"temperature"`
-		StructuredOutput bool                         `yaml:"structured_output"`
-		CustomHeaders    []pkgconfig.HeaderDefinition `yaml:"custom_headers,omitempty"`
-		OAuth2           OAuth2Config                 `yaml:"oauth2,omitempty"`
-	} `yaml:"llm"`
+// LoadLLMRuntime parses LLM runtime configuration from YAML bytes.
+func LoadLLMRuntime(data []byte) (*LLMRuntimeConfig, error) {
+	var rt LLMRuntimeConfig
+	if err := yaml.Unmarshal(data, &rt); err != nil {
+		return nil, fmt.Errorf("parsing llm runtime config: %w", err)
+	}
+	return &rt, nil
 }
 
-// MergeSDKConfig loads an SDK config file and merges LLM fields into
-// the main config. Gap-fill semantics: the main config value is kept
-// when non-zero; the SDK value fills the gap only when the main value
-// is the zero value. Gap-fill fields: provider (special: also replaces
-// the default "openai"), model, endpoint, api_key, vertex_project,
-// vertex_location, bedrock_region, azure_api_version, temperature,
-// max_retries, timeout_seconds. Override fields (SDK always wins):
-// structured_output, custom_headers, oauth2.
-func (c *Config) MergeSDKConfig(data []byte) error {
-	var sdk SDKConfig
-	if err := yaml.Unmarshal(data, &sdk); err != nil {
-		return fmt.Errorf("parsing SDK config: %w", err)
+// Validate checks that the LLM runtime config has the minimum required fields.
+func (r *LLMRuntimeConfig) Validate(provider string) error {
+	if r.Model == "" {
+		return fmt.Errorf("model is required")
 	}
-	if c.LLM.Provider == "" || c.LLM.Provider == DefaultConfig().LLM.Provider {
-		if sdk.LLM.Provider != "" {
-			c.LLM.Provider = sdk.LLM.Provider
+	switch provider {
+	case "bedrock", "huggingface", "anthropic", "openai", "vertex", "vertex_ai":
+	default:
+		if r.Endpoint == "" {
+			return fmt.Errorf("endpoint is required for provider %q", provider)
 		}
 	}
-	if c.LLM.Model == "" && sdk.LLM.Model != "" {
-		c.LLM.Model = sdk.LLM.Model
-	}
-	if c.LLM.Endpoint == "" && sdk.LLM.Endpoint != "" {
-		c.LLM.Endpoint = sdk.LLM.Endpoint
-	}
-	if c.LLM.APIKey == "" && sdk.LLM.APIKey != "" {
-		c.LLM.APIKey = sdk.LLM.APIKey
-	}
-	if c.LLM.VertexProject == "" && sdk.LLM.VertexProject != "" {
-		c.LLM.VertexProject = sdk.LLM.VertexProject
-	}
-	if c.LLM.VertexLocation == "" && sdk.LLM.VertexLocation != "" {
-		c.LLM.VertexLocation = sdk.LLM.VertexLocation
-	}
-	if c.LLM.BedrockRegion == "" && sdk.LLM.BedrockRegion != "" {
-		c.LLM.BedrockRegion = sdk.LLM.BedrockRegion
-	}
-	if c.LLM.AzureAPIVersion == "" && sdk.LLM.AzureAPIVersion != "" {
-		c.LLM.AzureAPIVersion = sdk.LLM.AzureAPIVersion
-	}
-	if c.LLM.Temperature == 0 && sdk.LLM.Temperature != 0 {
-		c.LLM.Temperature = sdk.LLM.Temperature
-	}
-	if c.LLM.MaxRetries == 0 && sdk.LLM.MaxRetries != 0 {
-		c.LLM.MaxRetries = sdk.LLM.MaxRetries
-	}
-	if c.LLM.TimeoutSeconds == 0 && sdk.LLM.TimeoutSeconds != 0 {
-		c.LLM.TimeoutSeconds = sdk.LLM.TimeoutSeconds
-	}
-	c.LLM.StructuredOutput = sdk.LLM.StructuredOutput
-	c.LLM.CustomHeaders = sdk.LLM.CustomHeaders
-	c.LLM.OAuth2 = sdk.LLM.OAuth2
 	return nil
 }
 
-// Validate checks required fields and value constraints.
+// Validate checks required fields and value constraints for the static config.
+// Runtime LLM fields are validated separately via LLMRuntimeConfig.Validate().
 func (c *Config) Validate() error {
-	switch c.LLM.Provider {
-	case "bedrock", "huggingface", "anthropic", "openai", "vertex", "vertex_ai":
-		// endpoint is optional: LangChainGo uses default endpoints or project/location for these providers
-	default:
-		if c.LLM.Endpoint == "" {
-			return fmt.Errorf("llm.endpoint is required for provider %q", c.LLM.Provider)
+	if err := c.Runtime.Logging.Validate(); err != nil {
+		return err
+	}
+	if c.AI.Investigation.MaxTurns <= 0 {
+		return fmt.Errorf("ai.investigation.maxTurns must be positive, got %d", c.AI.Investigation.MaxTurns)
+	}
+	if c.AI.LLM.OAuth2.Enabled {
+		if c.AI.LLM.OAuth2.TokenURL == "" {
+			return fmt.Errorf("ai.llm.oauth2.tokenURL is required when oauth2.enabled=true")
+		}
+		if c.AI.LLM.OAuth2.CredentialsDir == "" {
+			return fmt.Errorf("ai.llm.oauth2.credentialsDir is required when oauth2.enabled=true")
 		}
 	}
-	if c.LLM.Model == "" {
-		return fmt.Errorf("llm.model is required")
+	if c.Runtime.Server.RateLimit.RequestsPerSecond <= 0 {
+		return fmt.Errorf("runtime.server.rateLimit.requestsPerSecond must be positive, got %v", c.Runtime.Server.RateLimit.RequestsPerSecond)
 	}
-	if c.Investigator.MaxTurns <= 0 {
-		return fmt.Errorf("investigator.max_turns must be positive, got %d", c.Investigator.MaxTurns)
+	if c.Runtime.Server.RateLimit.Burst <= 0 {
+		return fmt.Errorf("runtime.server.rateLimit.burst must be positive, got %d", c.Runtime.Server.RateLimit.Burst)
 	}
-	if c.Server.RateLimit.RequestsPerSecond <= 0 {
-		return fmt.Errorf("server.rate_limit.requests_per_second must be positive, got %v", c.Server.RateLimit.RequestsPerSecond)
-	}
-	if c.Server.RateLimit.Burst <= 0 {
-		return fmt.Errorf("server.rate_limit.burst must be positive, got %d", c.Server.RateLimit.Burst)
-	}
-	if c.LLM.OAuth2.Enabled {
-		if c.LLM.OAuth2.TokenURL == "" {
-			return fmt.Errorf("llm.oauth2.token_url is required when oauth2.enabled=true")
+	if c.AI.AlignmentCheck.Enabled {
+		if c.AI.AlignmentCheck.Timeout <= 0 {
+			return fmt.Errorf("ai.alignmentCheck.timeout must be positive when enabled, got %v", c.AI.AlignmentCheck.Timeout)
 		}
-		if c.LLM.OAuth2.ClientID == "" {
-			return fmt.Errorf("llm.oauth2.client_id is required when oauth2.enabled=true")
-		}
-		if c.LLM.OAuth2.ClientSecret == "" {
-			return fmt.Errorf("llm.oauth2.client_secret is required when oauth2.enabled=true")
-		}
-	}
-	if c.AlignmentCheck.Enabled {
-		if c.AlignmentCheck.Timeout <= 0 {
-			return fmt.Errorf("alignmentCheck.timeout must be positive when enabled, got %v", c.AlignmentCheck.Timeout)
-		}
-		if c.AlignmentCheck.MaxStepTokens <= 0 {
-			return fmt.Errorf("alignmentCheck.maxStepTokens must be positive when enabled, got %d", c.AlignmentCheck.MaxStepTokens)
-		}
-		if c.AlignmentCheck.LLM != nil {
-			merged := c.AlignmentCheck.EffectiveLLM(c.LLM)
-			switch merged.Provider {
-			case "bedrock", "huggingface", "anthropic", "openai":
-			default:
-				if merged.Endpoint == "" {
-					return fmt.Errorf("alignmentCheck.llm.endpoint is required for provider %q", merged.Provider)
-				}
-			}
-			if merged.Model == "" {
-				return fmt.Errorf("alignmentCheck.llm.model is required when alignmentCheck.llm is set")
-			}
+		if c.AI.AlignmentCheck.MaxStepTokens <= 0 {
+			return fmt.Errorf("ai.alignmentCheck.maxStepTokens must be positive when enabled, got %d", c.AI.AlignmentCheck.MaxStepTokens)
 		}
 	}
 	if c.Interactive.Enabled {
@@ -400,42 +401,60 @@ func (c *Config) Validate() error {
 // DefaultConfig returns a Config with production defaults applied.
 func DefaultConfig() *Config {
 	return &Config{
-		LLM:          LLMConfig{Provider: "openai"},
-		DataStorage:  DataStorageConfig{SATokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"},
-		Server: ServerConfig{
-			Address: "0.0.0.0", Port: 8080, HealthAddr: ":8081", MetricsAddr: ":9090",
-			RateLimit: RateLimitConfig{
-				RequestsPerSecond: 5,
-				Burst:             10,
-				CleanupInterval:   5 * time.Minute,
-				MaxAge:            10 * time.Minute,
+		Runtime: RuntimeConfig{
+			Logging: internalconfig.DefaultLoggingConfig(),
+			Server: ServerConfig{
+				Address: "0.0.0.0", Port: 8080, HealthAddr: ":8081", MetricsAddr: ":9090",
+				RateLimit: RateLimitConfig{
+					RequestsPerSecond: 5,
+					Burst:             10,
+					CleanupInterval:   5 * time.Minute,
+					MaxAge:            10 * time.Minute,
+				},
+			},
+			Session: SessionConfig{TTL: 30 * time.Minute},
+			Audit:   AuditConfig{Enabled: true},
+		},
+		AI: AIConfig{
+			LLM:           LLMConfig{Provider: "openai"},
+			Investigation: InvestigationConfig{MaxTurns: 40},
+			Summarizer: SummarizerConfig{
+				Threshold:         8000,
+				MaxToolOutputSize: DefaultMaxToolOutputSize,
+			},
+			Enrichment: EnrichmentConfig{
+				MaxRetries:  3,
+				BaseBackoff: 1 * time.Second,
+			},
+			AlignmentCheck: AlignmentCheckConfig{
+				Enabled:       false,
+				Timeout:       10 * time.Second,
+				MaxStepTokens: 500,
+			},
+			Safety: SafetyConfig{
+				Sanitization: SanitizationConfig{
+					InjectionPatternsEnabled: true,
+					CredentialScrubEnabled:   true,
+				},
+				Anomaly: AnomalyConfig{
+					MaxToolCallsPerTool: 10,
+					MaxTotalToolCalls:   30,
+					MaxRepeatedFailures: 3,
+					ExemptPrefixes:      []string{"todo_"},
+				},
 			},
 		},
-		Session:      SessionConfig{TTL: 30 * time.Minute},
-		Investigator: InvestigatorConfig{MaxTurns: 15},
-		Audit:        AuditConfig{Enabled: true},
-		Anomaly: AnomalyConfig{
-			MaxToolCallsPerTool: 10,
-			MaxTotalToolCalls:   30,
-			MaxRepeatedFailures: 3,
-			ExemptPrefixes:      []string{"todo_"},
+		Integrations: IntegrationsConfig{
+			DataStorage: DataStorageConfig{SATokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"},
 		},
-		Sanitization: SanitizationConfig{
-			InjectionPatternsEnabled: true,
-			CredentialScrubEnabled:   true,
-		},
-		Summarizer: SummarizerConfig{
-			Threshold:         8000,
-			MaxToolOutputSize: DefaultMaxToolOutputSize,
-		},
-		AlignmentCheck: AlignmentCheckConfig{
-			Enabled:       false,
-			Timeout:       10 * time.Second,
-			MaxStepTokens: 500,
-		},
-		Enrichment: EnrichmentConfig{
-			MaxRetries:  3,
-			BaseBackoff: 1 * time.Second,
-		},
+	}
+}
+
+// DefaultLLMRuntime returns an LLMRuntimeConfig with sensible production defaults.
+func DefaultLLMRuntime() *LLMRuntimeConfig {
+	return &LLMRuntimeConfig{
+		Temperature:    0.7,
+		MaxRetries:     3,
+		TimeoutSeconds: 120,
 	}
 }

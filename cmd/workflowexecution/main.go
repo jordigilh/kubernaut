@@ -20,12 +20,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 
+	"gopkg.in/yaml.v3"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -38,6 +42,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/internal/version"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
@@ -51,6 +56,7 @@ import (
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
 	westatus "github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -62,8 +68,21 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(workflowexecutionv1alpha1.AddToScheme(scheme))
+	// Issue #868: Registering Tekton types with the scheme is safe even when
+	// Tekton CRDs are absent — it only teaches the serializer about Go types.
+	// Actual CRD availability is checked at startup via tektonCRDsAvailable.
 	utilruntime.Must(tektonv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
+}
+
+// tektonCRDsAvailable checks whether Tekton Pipelines CRDs are installed in
+// the cluster by probing the REST mapper for the PipelineRun resource.
+// Issue #868: Used to gate Tekton executor registration at startup.
+func tektonCRDsAvailable(mapper meta.RESTMapper) bool {
+	_, err := mapper.RESTMapping(
+		schema.GroupKind{Group: "tekton.dev", Kind: "PipelineRun"}, "v1",
+	)
+	return err == nil
 }
 
 func main() {
@@ -74,11 +93,11 @@ func main() {
 	var configPath string
 	flag.StringVar(&configPath, "config", weconfig.DefaultConfigPath, "Path to configuration file (optional, uses defaults if not provided)")
 
-	opts := zap.Options{}
-	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	// Issue #875: Bootstrap logger at INFO for config loading
+	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
 
 	setupLog.Info("Starting WorkflowExecution Controller",
 		"version", version.Version,
@@ -100,6 +119,10 @@ func main() {
 		cfg = weconfig.DefaultConfig()
 		setupLog.Info("Using default configuration (no config file provided)")
 	}
+
+	// Issue #875: Apply config-driven log level
+	atomicLevel.SetLevel(cfg.Logging.ZapLevel())
+	setupLog.Info("Log level configured from config file", "level", cfg.Logging.Level)
 
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
@@ -236,17 +259,34 @@ func main() {
 
 	// ========================================
 	// BR-WE-014: Executor Registry (Strategy Pattern)
-	// Both Tekton and Job backends are always registered.
-	// If a workflow uses executionEngine: "tekton", the operator is responsible
-	// for ensuring Tekton Pipelines is installed in the cluster.
+	// Issue #868: Engines are registered based on availability:
+	//   - job: always (core batch/v1 API)
+	//   - tekton: CRD auto-discovery or explicit config
+	//   - ansible: config-gated (unchanged)
 	// ========================================
 	executorRegistry := weexecutor.NewRegistry()
-	executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(mgr.GetClient()))
 	executorRegistry.Register("job", weexecutor.NewJobExecutor(mgr.GetClient()))
+
+	var knownOptionalEngines []string
+
+	// Tekton: auto-discover CRDs unless explicitly disabled (Issue #868)
+	knownOptionalEngines = append(knownOptionalEngines, "tekton")
+	if cfg.TektonEnabled() {
+		if tektonCRDsAvailable(mgr.GetRESTMapper()) {
+			executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(mgr.GetClient()))
+			setupLog.Info("Tekton executor registered (CRDs discovered)")
+		} else {
+			setupLog.Info("Tekton executor not registered (CRDs not found)",
+				"group", "tekton.dev", "kind", "PipelineRun", "version", "v1")
+		}
+	} else {
+		setupLog.Info("Tekton executor disabled by configuration")
+	}
 
 	// BR-WE-015: Conditionally register Ansible executor if configured.
 	// Uses a direct clientset (not the cached mgr.GetClient()) because the
 	// controller-runtime cache is not started until mgr.Start().
+	knownOptionalEngines = append(knownOptionalEngines, "ansible")
 	if cfg.Ansible != nil && cfg.Ansible.TokenSecretRef != nil {
 		ns := cfg.Ansible.TokenSecretRef.Namespace
 		if ns == "" {
@@ -273,7 +313,9 @@ func main() {
 		setupLog.Info("Ansible config present but tokenSecretRef not set, ansible executor will not be available")
 	}
 
-	setupLog.Info("Executor registry initialized", "engines", executorRegistry.Engines())
+	// Issue #868: Log engine availability summary at startup
+	available, unavailable := executorRegistry.EngineAvailability(knownOptionalEngines)
+	setupLog.Info("Executor registry initialized", "available", available, "unavailable", unavailable)
 
 	// DD-WE-006: Create WorkflowQuerier for fetching dependencies from DS
 	workflowQuerier, err := weclient.NewOgenWorkflowQuerierFromConfig(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
@@ -318,6 +360,18 @@ func main() {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
+	// Issue #868: Report engine availability via readyz sub-check.
+	// The job engine is always registered, so this passes in normal operation
+	// but provides a clear signal if the registry is misconfigured.
+	if err := mgr.AddReadyzCheck("engines", healthz.Checker(func(_ *http.Request) error {
+		if len(executorRegistry.Engines()) == 0 {
+			return fmt.Errorf("no execution engines available")
+		}
+		return nil
+	})); err != nil {
+		setupLog.Error(err, "unable to set up engines readyz check")
+		os.Exit(1)
+	}
 
 	// Issue #756: Extract signal context for CA file watcher lifecycle
 	ctx := ctrl.SetupSignalHandler()
@@ -337,6 +391,31 @@ func main() {
 	}
 	if caWatcher != nil {
 		defer caWatcher.Stop()
+	}
+
+	// Issue #875: Log level hot-reload via FileWatcher
+	logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
+		configPath,
+		func(newContent string) error {
+			var partial struct {
+				Logging internalconfig.LoggingConfig `yaml:"logging"`
+			}
+			if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
+				return fmt.Errorf("failed to parse config for log level reload: %w", err)
+			}
+			return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
+		},
+		setupLog.WithName("log-level-watcher"),
+	)
+	if logWatchErr != nil {
+		setupLog.Error(logWatchErr, "Failed to create log level file watcher")
+	} else {
+		if err := logLevelWatcher.Start(ctx); err != nil {
+			setupLog.Info("Log level file watcher failed to start", "error", err)
+		} else {
+			setupLog.Info("Log level hot-reload watcher started", "path", configPath)
+			defer logLevelWatcher.Stop()
+		}
 	}
 
 	setupLog.Info("starting manager")

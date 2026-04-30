@@ -105,7 +105,7 @@ var _ = Describe("OAuth2 Client Credentials Transport — #417", func() {
 	})
 
 	Describe("UT-KA-417-028: Transport chain ordering is correct", func() {
-		It("should compose OAuth2 -> AuthHeaders -> StructuredOutput in the correct order", func() {
+		It("should compose OAuth2 -> AuthHeaders in the correct order", func() {
 			var capturedHeaders http.Header
 			llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				capturedHeaders = r.Header.Clone()
@@ -131,14 +131,13 @@ var _ = Describe("OAuth2 Client Credentials Transport — #417", func() {
 			base := http.DefaultTransport
 			oauth2RT := transport.NewOAuth2ClientCredentialsTransport(oauth2Cfg, base)
 			authRT := transport.NewAuthHeadersTransport(authHeaders, oauth2RT)
-			soRT := transport.NewStructuredOutputTransport(json.RawMessage(`{"type":"object"}`), authRT)
 
 			body := `{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"test"}]}`
 			req, err := http.NewRequest("POST", llmServer.URL+"/v1/messages", strings.NewReader(body))
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 
-			resp, err := soRT.RoundTrip(req)
+			resp, err := authRT.RoundTrip(req)
 			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
 

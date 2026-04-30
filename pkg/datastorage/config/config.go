@@ -302,15 +302,15 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("redis address required")
 	}
 
-	// Validate logging configuration
+	// Validate logging configuration (case-insensitive per Issue #875)
 	validLevels := map[string]bool{
-		"debug": true,
-		"info":  true,
-		"warn":  true,
-		"error": true,
+		"DEBUG": true,
+		"INFO":  true,
+		"WARN":  true,
+		"ERROR": true,
 	}
-	if c.Logging.Level != "" && !validLevels[c.Logging.Level] {
-		return fmt.Errorf("invalid log level: %s (must be debug, info, warn, or error)", c.Logging.Level)
+	if c.Logging.Level != "" && !validLevels[strings.ToUpper(c.Logging.Level)] {
+		return fmt.Errorf("invalid log level: %s (must be DEBUG, INFO, WARN, or ERROR)", c.Logging.Level)
 	}
 
 	validFormats := map[string]bool{

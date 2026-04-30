@@ -135,6 +135,11 @@ type PostgreSQLConfig struct {
 //	    return err
 //	}
 func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
+	const postgresImage = "docker.io/library/postgres:16-alpine"
+	if err := PullImageWithRetry(postgresImage, 3, writer); err != nil {
+		return fmt.Errorf("failed to pull PostgreSQL image: %w", err)
+	}
+
 	// Build podman run command
 	args := []string{"run", "-d",
 		"--name", cfg.ContainerName,
@@ -149,7 +154,7 @@ func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
 		args = append(args, "--network", cfg.Network)
 	}
 
-	args = append(args, "docker.io/library/postgres:16-alpine")
+	args = append(args, postgresImage)
 
 	// Add max_connections if specified
 	if cfg.MaxConnections > 0 {
@@ -262,6 +267,11 @@ type RedisConfig struct {
 //	    return err
 //	}
 func StartRedis(cfg RedisConfig, writer io.Writer) error {
+	const redisImage = "redis:7-alpine"
+	if err := PullImageWithRetry(redisImage, 3, writer); err != nil {
+		return fmt.Errorf("failed to pull Redis image: %w", err)
+	}
+
 	args := []string{"run", "-d",
 		"--name", cfg.ContainerName,
 		"-p", fmt.Sprintf("%d:6379", cfg.Port),
@@ -272,7 +282,7 @@ func StartRedis(cfg RedisConfig, writer io.Writer) error {
 		args = append(args, "--network", cfg.Network)
 	}
 
-	args = append(args, "redis:7-alpine")
+	args = append(args, redisImage)
 
 	cmd := exec.Command("podman", args...)
 	cmd.Stdout = writer

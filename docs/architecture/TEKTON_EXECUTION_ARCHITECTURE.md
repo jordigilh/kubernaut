@@ -10,11 +10,13 @@
 
 ## Executive Summary
 
-Kubernaut uses **Tekton Pipelines** as its workflow execution engine from **V1 (Q4 2025)**. This eliminates 500+ lines of custom orchestration code and ensures maximum Red Hat alignment through **OpenShift Pipelines**.
+Kubernaut uses **Tekton Pipelines** as its primary workflow execution engine from **V1 (Q4 2025)**, alongside Kubernetes Jobs and Ansible/AWX as alternative backends ([BR-WE-014](../requirements/BR-WE-014-kubernetes-job-execution-backend.md)).
+
+As of **v1.4** ([Issue #868](https://github.com/jordigilh/kubernaut/issues/868)), the Tekton executor is **auto-discovered at startup** via CRD probing. If Tekton CRDs are not installed, the controller degrades gracefully to `job`-only mode instead of crashing. Tekton can also be explicitly disabled via `tekton.enabled: false` in the WE config.
 
 **Key Principles**:
 - ✅ **Universal Availability**: OpenShift Pipelines (bundled) + Upstream Tekton (open source)
-- ✅ **Zero Throwaway Code**: Single architecture from V1 onward (no migration)
+- ✅ **Graceful Degradation**: Tekton CRD absence → job-only mode, not crash ([#868](https://github.com/jordigilh/kubernaut/issues/868))
 - ✅ **Generic Meta-Task**: One Tekton Task executes all 29+ action containers
 - ✅ **Direct Integration**: WorkflowExecution → Tekton PipelineRun (no intermediate layers)
 - ✅ **Persistent Business Data**: Data Storage Service for action history and analytics (not CRDs)
