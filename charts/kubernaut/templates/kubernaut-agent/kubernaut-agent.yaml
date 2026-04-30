@@ -83,6 +83,10 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "create", "update", "delete"]
+  # ── Interactive Impersonation (#703, DD-AUTH-MCP-001) ──────────────────
+  - apiGroups: [""]
+    resources: ["users", "groups", "serviceaccounts"]
+    verbs: ["impersonate"]
   {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -164,6 +168,14 @@ data:
         api_key: {{ .apiKey }}
 {{- end }}
 {{- end }}
+{{- end }}
+{{- if .Values.kubernautAgent.interactive.enabled }}
+    interactive:
+      enabled: true
+      session_ttl: {{ .Values.kubernautAgent.interactive.sessionTTL | default "30m" | quote }}
+      inactivity_timeout: {{ .Values.kubernautAgent.interactive.inactivityTimeout | default "10m" | quote }}
+      max_concurrent_sessions: {{ .Values.kubernautAgent.interactive.maxConcurrentSessions | default 5 }}
+      rate_limit_per_user: {{ .Values.kubernautAgent.interactive.rateLimitPerUser | default 10 }}
 {{- end }}
 {{- if include "kubernaut.monitoring.prometheus.enabled" . }}
     tools:

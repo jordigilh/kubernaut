@@ -720,6 +720,18 @@
               }
             }
           }
+        },
+        "interactive": {
+          "type": "object",
+          "description": "MCP interactive mode (#703): enables human-in-the-loop investigation sessions.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "Enable MCP interactive mode endpoint and Lease-based session management." },
+            "sessionTTL": { "type": "string", "default": "30m", "description": "Maximum duration for an interactive session before auto-release." },
+            "inactivityTimeout": { "type": "string", "default": "10m", "description": "Session timeout after last activity." },
+            "maxConcurrentSessions": { "type": "integer", "default": 5, "description": "Maximum concurrent interactive sessions per instance." },
+            "rateLimitPerUser": { "type": "integer", "default": 10, "description": "Maximum requests per second per authenticated user." }
+          }
         }
       }
     },
