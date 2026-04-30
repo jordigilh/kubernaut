@@ -143,6 +143,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 				getDriverResult: &mcpinternal.InteractiveSession{
 					SessionID:     "sess-msg",
 					CorrelationID: "rr-msg",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
 				},
 				isActive: true,
 			}
@@ -162,7 +163,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 	})
 
 	Describe("UT-KA-703-K05: action=message returns error if no active session", func() {
-		It("should return ErrNoActiveSession when no session exists", func() {
+		It("should return structured not_driving error when no session exists", func() {
 			sessionMgr := &mockSessionManager{isActive: false}
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
@@ -173,7 +174,10 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 				Action:  mcptools.ActionMessage,
 				Message: "Hello?",
 			}, mcpinternal.UserInfo{Username: "charlie"})
-			Expect(err).To(MatchError(mcptools.ErrNoActiveSession))
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue())
+			Expect(mcpErr.Code).To(Equal("not_driving"))
 		})
 	})
 
@@ -230,6 +234,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 				getDriverResult: &mcpinternal.InteractiveSession{
 					SessionID:     "sess-err",
 					CorrelationID: "rr-err",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
 				},
 				isActive: true,
 			}

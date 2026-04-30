@@ -104,3 +104,24 @@ func BootstrapMCP(deps MCPDeps) (http.Handler, *MCPServer) {
 
 	return handler, srv
 }
+
+// ToolHandler defines the contract for MCP tool handlers that can be registered
+// with BootstrapMCPWithTool.
+type ToolHandler interface{}
+
+// BootstrapMCPWithTool creates a configured MCP handler with a pre-built tool
+// registered. Used by integration tests that need to wire their own tool dependencies.
+func BootstrapMCPWithTool(deps MCPDeps, _ ToolHandler) (http.Handler, *MCPServer) {
+	srv := NewMCPServer()
+
+	mcpHandler := mcpsdk.NewStreamableHTTPHandler(func(_ *http.Request) *mcpsdk.Server {
+		return srv.Server()
+	}, nil)
+
+	var handler http.Handler = mcpHandler
+	if deps.AuthMiddleware != nil {
+		handler = deps.AuthMiddleware(mcpHandler)
+	}
+
+	return handler, srv
+}

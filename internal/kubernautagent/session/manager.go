@@ -195,6 +195,21 @@ func (m *Manager) CancelInvestigation(id string) error {
 	return nil
 }
 
+// FindByRemediationID scans running sessions for one whose metadata
+// "remediation_id" matches the given rrID. Returns the session ID and true
+// if found, or ("", false) otherwise. Uses RLock for safe concurrent access.
+// BR-INTERACTIVE-004: enables dynamic takeover by mapping rrID → autonomous session.
+func (m *Manager) FindByRemediationID(rrID string) (string, bool) {
+	m.store.mu.RLock()
+	defer m.store.mu.RUnlock()
+	for id, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] == rrID && sess.Status == StatusRunning {
+			return id, true
+		}
+	}
+	return "", false
+}
+
 // Subscribe returns a read-only channel that delivers investigation events
 // for the given session. The event sink is lazily created on the first
 // Subscribe call so that autonomous investigations (no observer) run without

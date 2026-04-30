@@ -283,6 +283,8 @@ effectivenessmonitor:
 # -- Kubernaut Agent (Go LLM investigation service)
 kubernautAgent:
   replicas: 1
+  interactive:
+    enabled: false
   pdb:
     enabled: false
     # minAvailable: 1

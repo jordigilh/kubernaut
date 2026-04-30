@@ -62,6 +62,26 @@ const (
 	// attempts to access a session they do not own. Records the requesting
 	// user, target session, and endpoint for SOC2 CC8.1 failed-access audit.
 	EventTypeSessionAccessDenied = "aiagent.session.access_denied"
+
+	// EventTypeSessionSuspended is emitted when an autonomous investigation is
+	// suspended due to dynamic takeover (BR-INTERACTIVE-004). The session remains
+	// in a terminal state; reconstruction spawns a new session after interactive
+	// mode ends. DD-INTERACTIVE-002 identity transition: KA SA → human operator.
+	EventTypeSessionSuspended = "aiagent.session.suspended"
+
+	// EventTypeInteractiveStarted is emitted when a user acquires the interactive
+	// Lease and begins driving the investigation (BR-INTERACTIVE-004).
+	EventTypeInteractiveStarted = "aiagent.interactive.started"
+
+	// EventTypeInteractiveCompleted is emitted when an interactive session ends,
+	// either by explicit complete, cancel, disconnect, or timeout. Carries the
+	// reason in event data for SOC2 attribution.
+	EventTypeInteractiveCompleted = "aiagent.interactive.completed"
+
+	// EventTypeSessionResumed is emitted when autonomous investigation resumes
+	// after interactive session ends (cancel+reconstruct). The new session ID
+	// and reconstructed context are included in event data.
+	EventTypeSessionResumed = "aiagent.session.resumed"
 )
 
 const (
@@ -82,6 +102,11 @@ const (
 	ActionInvestigationCancelled = "investigation_cancelled"
 	ActionSessionObserved       = "session_observed"
 	ActionSessionAccessDenied   = "session_access_denied"
+
+	ActionSessionSuspended     = "session_suspended"
+	ActionInteractiveStarted   = "interactive_started"
+	ActionInteractiveCompleted = "interactive_completed"
+	ActionSessionResumed       = "session_resumed"
 )
 
 const (
@@ -110,6 +135,10 @@ var AllEventTypes = []string{
 	EventTypeInvestigationCancelled,
 	EventTypeSessionObserved,
 	EventTypeSessionAccessDenied,
+	EventTypeSessionSuspended,
+	EventTypeInteractiveStarted,
+	EventTypeInteractiveCompleted,
+	EventTypeSessionResumed,
 }
 
 // AuditEvent represents an audit event to be stored.
