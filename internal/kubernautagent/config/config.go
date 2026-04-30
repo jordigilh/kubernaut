@@ -126,6 +126,7 @@ type InteractiveConfig struct {
 	SessionTTL            time.Duration `yaml:"session_ttl"`
 	InactivityTimeout     time.Duration `yaml:"inactivity_timeout"`
 	MaxConcurrentSessions int           `yaml:"max_concurrent_sessions"`
+	RateLimitPerUser      int           `yaml:"rate_limit_per_user"`
 	MaxAnalyzingTimeout   time.Duration `yaml:"max_analyzing_timeout"`
 }
 
@@ -385,6 +386,12 @@ func (c *Config) Validate() error {
 		}
 		if c.Interactive.MaxConcurrentSessions > 100 {
 			return fmt.Errorf("interactive.max_concurrent_sessions must not exceed 100, got %d", c.Interactive.MaxConcurrentSessions)
+		}
+		if c.Interactive.RateLimitPerUser <= 0 {
+			c.Interactive.RateLimitPerUser = 10
+		}
+		if c.Interactive.RateLimitPerUser > 100 {
+			return fmt.Errorf("interactive.rate_limit_per_user must not exceed 100, got %d", c.Interactive.RateLimitPerUser)
 		}
 	}
 	return nil
