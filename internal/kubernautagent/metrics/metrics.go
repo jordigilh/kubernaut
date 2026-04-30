@@ -38,6 +38,12 @@ const (
 	MetricNameHTTPRequestsInFlight       = "aiagent_http_requests_in_flight"
 	MetricNameAuthzDeniedTotal           = "aiagent_authz_denied_total"
 	MetricNameAuditEventsEmittedTotal    = "aiagent_audit_events_emitted_total"
+
+	// Interactive mode metrics (PR6a, BR-INTERACTIVE-001..008)
+	MetricNameInteractiveSessionsActive       = "kubernaut_interactive_sessions_active"
+	MetricNameInteractiveCommandDuration      = "kubernaut_interactive_command_duration_seconds"
+	MetricNameInteractiveTakeoverTotal        = "kubernaut_interactive_takeover_total"
+	MetricNameInteractiveLeaseContentionTotal = "kubernaut_interactive_lease_contention_total"
 )
 
 // maxSignalNameLen bounds the signal_name label to prevent Prometheus TSDB
@@ -56,6 +62,12 @@ type Metrics struct {
 	HTTPRequestsInFlight        prometheus.Gauge
 	AuthzDeniedTotal            *prometheus.CounterVec
 	AuditEventsEmittedTotal     *prometheus.CounterVec
+
+	// Interactive mode metrics (PR6a)
+	InteractiveSessionsActive       prometheus.Gauge
+	InteractiveCommandDuration      *prometheus.HistogramVec
+	InteractiveTakeoverTotal        *prometheus.CounterVec
+	InteractiveLeaseContentionTotal prometheus.Counter
 }
 
 var (
@@ -142,6 +154,33 @@ func newMetrics(registry prometheus.Registerer) *Metrics {
 			},
 			[]string{"event_type"},
 		),
+		InteractiveSessionsActive: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: MetricNameInteractiveSessionsActive,
+				Help: "Number of currently active MCP interactive sessions",
+			},
+		),
+		InteractiveCommandDuration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    MetricNameInteractiveCommandDuration,
+				Help:    "MCP tool call duration in seconds by tool name and action",
+				Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60},
+			},
+			[]string{"tool", "action"},
+		),
+		InteractiveTakeoverTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameInteractiveTakeoverTotal,
+				Help: "Total interactive takeover operations by outcome",
+			},
+			[]string{"outcome"},
+		),
+		InteractiveLeaseContentionTotal: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: MetricNameInteractiveLeaseContentionTotal,
+				Help: "Total Lease contention events (another driver holds the Lease)",
+			},
+		),
 	}
 
 	registry.MustRegister(
@@ -154,6 +193,10 @@ func newMetrics(registry prometheus.Registerer) *Metrics {
 		m.HTTPRequestsInFlight,
 		m.AuthzDeniedTotal,
 		m.AuditEventsEmittedTotal,
+		m.InteractiveSessionsActive,
+		m.InteractiveCommandDuration,
+		m.InteractiveTakeoverTotal,
+		m.InteractiveLeaseContentionTotal,
 	)
 
 	return m
@@ -205,4 +248,44 @@ func (m *Metrics) RecordAuditEventEmitted(eventType string) {
 		return
 	}
 	m.AuditEventsEmittedTotal.WithLabelValues(eventType).Inc()
+}
+
+// RecordInteractiveSessionStarted increments the active interactive sessions gauge.
+func (m *Metrics) RecordInteractiveSessionStarted() {
+	if m == nil {
+		return
+	}
+	m.InteractiveSessionsActive.Inc()
+}
+
+// RecordInteractiveSessionEnded decrements the active interactive sessions gauge.
+func (m *Metrics) RecordInteractiveSessionEnded() {
+	if m == nil {
+		return
+	}
+	m.InteractiveSessionsActive.Dec()
+}
+
+// RecordInteractiveCommandDuration observes the duration of an MCP tool call.
+func (m *Metrics) RecordInteractiveCommandDuration(tool, action string, durationSeconds float64) {
+	if m == nil {
+		return
+	}
+	m.InteractiveCommandDuration.WithLabelValues(tool, action).Observe(durationSeconds)
+}
+
+// RecordInteractiveTakeover increments the takeover counter by outcome.
+func (m *Metrics) RecordInteractiveTakeover(outcome string) {
+	if m == nil {
+		return
+	}
+	m.InteractiveTakeoverTotal.WithLabelValues(outcome).Inc()
+}
+
+// RecordInteractiveLeaseContention increments the Lease contention counter.
+func (m *Metrics) RecordInteractiveLeaseContention() {
+	if m == nil {
+		return
+	}
+	m.InteractiveLeaseContentionTotal.Inc()
 }

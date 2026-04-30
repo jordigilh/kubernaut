@@ -636,6 +636,14 @@ rules:
   - apiGroups: ["metrics.k8s.io"]
     resources: ["pods", "nodes"]
     verbs: ["get", "list"]
+  # Interactive mode: Lease-based session management (#703)
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "delete"]
+  # Interactive mode: user impersonation (DD-AUTH-MCP-001)
+  - apiGroups: [""]
+    resources: ["users", "groups", "serviceaccounts"]
+    verbs: ["impersonate"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -710,6 +718,12 @@ data:
         model: "shadow-eval"
         endpoint: "http://mock-llm-shadow:8080"
         api_key: "mock-shadow-key"
+    interactive:
+      enabled: true
+      session_ttl: "5m"
+      inactivity_timeout: "2m"
+      max_concurrent_sessions: 3
+      rate_limit_per_user: 20
 ---
 apiVersion: apps/v1
 kind: Deployment
