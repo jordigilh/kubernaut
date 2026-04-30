@@ -115,6 +115,9 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		// This header is a SOC2 trust anchor used by downstream services (DataStorage).
 		r.Header.Del("X-Auth-Request-User")
 
+		// Issue #703: Strip Kubernetes impersonation headers to prevent privilege escalation.
+		stripImpersonationHeaders(r)
+
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Missing Authorization header")
@@ -205,6 +208,19 @@ func GetUserFromContext(ctx context.Context) string {
 		return user
 	}
 	return ""
+}
+
+// stripImpersonationHeaders removes all Kubernetes impersonation headers from the
+// request. This prevents clients from injecting Impersonate-User/Group/Extra-* headers
+// that could escalate privileges when KA constructs impersonating K8s clients (#703).
+func stripImpersonationHeaders(r *http.Request) {
+	r.Header.Del("Impersonate-User")
+	r.Header.Del("Impersonate-Group")
+	for key := range r.Header {
+		if strings.HasPrefix(strings.ToLower(key), "impersonate-extra-") {
+			r.Header.Del(key)
+		}
+	}
 }
 
 // writeError writes an RFC 7807 Problem Details JSON error response.

@@ -41,6 +41,10 @@ type MockAuthenticator struct {
 	// Value: user identity (e.g., "system:serviceaccount:namespace:sa-name")
 	ValidUsers map[string]string
 
+	// ValidUsersFull maps tokens to full UserInfo (username + groups).
+	// Takes precedence over ValidUsers when set.
+	ValidUsersFull map[string]UserInfo
+
 	// ErrorToReturn allows tests to simulate TokenReview API failures.
 	// If set, ValidateToken will return this error instead of checking ValidUsers.
 	ErrorToReturn error
@@ -67,6 +71,32 @@ func (a *MockAuthenticator) ValidateToken(_ context.Context, token string) (stri
 	}
 
 	return user, nil
+}
+
+// ValidateTokenFull implements the Authenticator interface for testing with full UserInfo.
+func (a *MockAuthenticator) ValidateTokenFull(_ context.Context, token string) (UserInfo, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.CallCount++
+
+	if a.ErrorToReturn != nil {
+		return UserInfo{}, a.ErrorToReturn
+	}
+
+	if a.ValidUsersFull != nil {
+		info, ok := a.ValidUsersFull[token]
+		if ok {
+			return info, nil
+		}
+	}
+
+	user, ok := a.ValidUsers[token]
+	if !ok {
+		return UserInfo{}, fmt.Errorf("%w: token not in valid users map", ErrTokenInvalid)
+	}
+
+	return UserInfo{Username: user, Groups: []string{}}, nil
 }
 
 // MockAuthorizer is a test double implementation of Authorizer.
