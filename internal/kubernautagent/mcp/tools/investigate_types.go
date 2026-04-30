@@ -38,6 +38,7 @@ const (
 	ActionMessage  = "message"
 	ActionComplete = "complete"
 	ActionCancel   = "cancel"
+	ActionTakeover = "takeover"
 )
 
 var (
@@ -60,7 +61,7 @@ func ValidateInput(input InvestigateInput) error {
 		return ErrMissingRRID
 	}
 	switch input.Action {
-	case ActionStart, ActionComplete, ActionCancel:
+	case ActionStart, ActionComplete, ActionCancel, ActionTakeover:
 		return nil
 	case ActionMessage:
 		if input.Message == "" {
