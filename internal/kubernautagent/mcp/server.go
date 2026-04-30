@@ -82,3 +82,25 @@ func NewMCPHandler(authMiddleware func(http.Handler) http.Handler, enabled bool)
 
 	return authMiddleware(handler)
 }
+
+// MCPDeps holds the dependencies needed to bootstrap the MCP server.
+type MCPDeps struct {
+	AuthMiddleware func(http.Handler) http.Handler
+}
+
+// BootstrapMCP creates a fully configured MCP handler with the kubernaut_investigate
+// tool registered. Returns the handler and the MCPServer for lifecycle management.
+func BootstrapMCP(deps MCPDeps) (http.Handler, *MCPServer) {
+	srv := NewMCPServer()
+
+	mcpHandler := mcpsdk.NewStreamableHTTPHandler(func(_ *http.Request) *mcpsdk.Server {
+		return srv.Server()
+	}, nil)
+
+	var handler http.Handler = mcpHandler
+	if deps.AuthMiddleware != nil {
+		handler = deps.AuthMiddleware(mcpHandler)
+	}
+
+	return handler, srv
+}

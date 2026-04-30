@@ -23,6 +23,7 @@ import (
 
 type eventSinkKey struct{}
 type sessionIDKey struct{}
+type actingUserKey struct{}
 
 // LazySink holds a channel reference that can be set after the context is
 // created. This allows Subscribe to attach the event sink lazily while the
@@ -80,6 +81,22 @@ func WithSessionID(ctx context.Context, id string) context.Context {
 // SessionIDFromContext retrieves the session ID from ctx, or "" if absent.
 func SessionIDFromContext(ctx context.Context) string {
 	if v, ok := ctx.Value(sessionIDKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// WithActingUser returns a derived context carrying the acting user identity
+// for interactive sessions. Used by the MCP tool handler to propagate user
+// attribution to audit events emitted by the investigator (BR-INTERACTIVE-005).
+func WithActingUser(ctx context.Context, user string) context.Context {
+	return context.WithValue(ctx, actingUserKey{}, user)
+}
+
+// ActingUserFromContext retrieves the acting user identity from ctx, or "" if
+// absent (autonomous mode).
+func ActingUserFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(actingUserKey{}).(string); ok {
 		return v
 	}
 	return ""

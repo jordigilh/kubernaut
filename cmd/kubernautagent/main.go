@@ -57,6 +57,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
+	mcpkg "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
@@ -306,6 +307,15 @@ func main() {
 			)
 		} else {
 			slogger.Info("auth middleware DISABLED (no in-cluster K8s config)")
+		}
+
+		if cfg.Interactive.Enabled {
+			mcpHandler, _ := mcpkg.BootstrapMCP(mcpkg.MCPDeps{
+				AuthMiddleware: authMw.Handler,
+			})
+			r.Handle("/mcp", kaserver.SSEHeadersMiddleware(mcpHandler))
+			r.Handle("/mcp/*", kaserver.SSEHeadersMiddleware(mcpHandler))
+			slogger.Info("MCP interactive route mounted", "path", "/api/v1/mcp")
 		}
 
 		r.Handle("/*", kaserver.SSEHeadersMiddleware(ogenSrv))
