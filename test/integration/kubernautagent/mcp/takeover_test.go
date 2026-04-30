@@ -222,9 +222,12 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			Expect(err).NotTo(HaveOccurred())
 
 			// Build a real MCP server with the tool registered
-			handler, _ := mcpinternal.BootstrapMCPWithTool(mcpinternal.MCPDeps{
+			handler, _ := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
 				AuthMiddleware: fakeAuthMiddleware("alice@example.com"),
-			}, tool)
+				Tools: mcpinternal.ToolDeps{
+					Investigate: tools.InvestigateRegistration(tool),
+				},
+			})
 
 			r := chi.NewRouter()
 			r.Handle("/api/v1/mcp", kaserver.SSEHeadersMiddleware(handler))
