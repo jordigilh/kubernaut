@@ -1,456 +1,162 @@
 # Logging Standard - Kubernaut Services
 
-**Version**: v1.0
-**Last Updated**: October 6, 2025
-**Status**: ✅ **APPROVED & STANDARDIZED**
-**Scope**: All 11 Services
-**Standard**: `go.uber.org/zap`
-**Confidence**: **98%**
+**Version**: v2.0
+**Last Updated**: April 27, 2026
+**Status**: APPROVED & STANDARDIZED
+**Scope**: All 10 Services
+**Standard**: `go.uber.org/zap` via `pkg/log` (logr.Logger interface)
+**Log Level Source**: Config file only (no CLI flags) -- Issue #875
+**Hot-Reload**: Supported via `zap.AtomicLevel` + `FileWatcher`
 
 ---
 
-## 📊 **Official Standard: Zap Logging (Split Strategy)**
+## Official Standard: Config-File-Only Log Level (v2.0)
 
-### **Codebase Analysis**
+### v2.0 Changes (Issue #875)
+
+| Aspect | v1.0 (Old) | v2.0 (Current) |
+|--------|-----------|----------------|
+| **Log level source** | CLI flags (`--zap-log-level`) for CRD controllers; hardcoded for HTTP services | Config file (`logging.level` in YAML ConfigMap) for ALL services |
+| **Hot-reload** | Not supported | Supported via `zap.AtomicLevel` + `pkg/shared/hotreload/FileWatcher` |
+| **RBAC impact** | Changing log level required Deployment edit (deployments write access) | Changing log level requires ConfigMap edit only (configmaps write access) |
+| **Restart required** | Yes | No (hot-reload applies level change without pod restart) |
+| **Shared type** | None (each service rolled its own) | `internal/config.LoggingConfig` with `ZapLevel()`, `NewAtomicLevel()`, `ParseAndSetLevel()` |
+
+### Codebase Analysis
 
 | Library | Files | Status | Action |
 |---------|-------|--------|--------|
-| **go.uber.org/zap** | **496 files** (99.8%) | ✅ **STANDARD** | **APPROVED** |
-| **github.com/sirupsen/logrus** | **1 file** | ⚠️ Legacy adapter | Migrate (low priority) |
+| **go.uber.org/zap** | 496+ files (99.8%) | STANDARD | APPROVED |
+| **log/slog** | ~47 files (kubernaut-agent) | Legacy | Migration to zap planned |
 
-**Decision**: **Standardize on Zap Logging (Split Strategy)** (APPROVED)
+### Unified Strategy (v2.0)
 
-### **Split Strategy by Service Type**
+All services use the same pattern regardless of service type:
 
-| Service Type | Standard Import | Rationale |
-|--------------|----------------|-----------|
-| **CRD Controllers** | `sigs.k8s.io/controller-runtime/pkg/log/zap` | Official integration, Kubernetes flags, logr.Logger interface |
-| **HTTP Services** | `go.uber.org/zap` | Full control, consistent configuration, advanced features |
-| **Background Workers** | `go.uber.org/zap` | Advanced features (sampling, batching, custom encoders) |
-
-**Both packages use the same Uber Zap library underneath** - performance is identical.
+1. **Config file** (`logging.level`) is the single source of truth
+2. **`zap.AtomicLevel`** enables runtime level changes without logger recreation
+3. **`pkg/shared/hotreload/FileWatcher`** watches the ConfigMap-mounted config file
+4. **`internal/config.LoggingConfig`** provides shared parsing, validation, and level mapping
 
 ---
 
-## 🎯 **Rationale**
+## Architecture
 
-### **Why Zap?**
+### Shared Type: `internal/config.LoggingConfig`
 
-1. **Codebase Reality**: 99.8% already uses Zap (496/497 files)
-2. **Performance**: 5x faster than alternatives (500 ns/op vs 2,500 ns/op)
-3. **Active Development**: Maintained by Uber, actively developed
-4. **Logrus Status**: Maintenance mode - no new features
-5. **Industry Standard**: De-facto standard for Go structured logging
-6. **Ecosystem**: Native support in controller-runtime, OpenTelemetry
-7. **Type Safety**: Zero-allocation structured fields
-
-### **Why NOT Logrus?**
-
-1. ❌ **Maintenance mode** - no new features (GitHub issue #799)
-2. ❌ **Performance** - 5x slower, 3-5x more allocations
-3. ❌ **Migration cost** - Would require rewriting 496 files (40-80 hours)
-4. ❌ **Technical debt** - Using deprecated library
-5. ❌ **Industry trend** - Community migrating away
-
----
-
-## 📚 **Standard Zap Usage - Split Strategy**
-
----
-
-## 🔷 **PART 1: CRD Controllers** (Recommended: controller-runtime/zap)
-
-### **Why Controller-Runtime Zap for CRD Controllers?**
-
-✅ **Official integration** - Designed specifically for controller-runtime
-✅ **Command-line flags** - Built-in `--zap-log-level`, `--zap-encoder` flags
-✅ **logr.Logger interface** - What controller-runtime expects natively
-✅ **Kubernetes-friendly** - Structured output optimized for `kubectl logs`
-✅ **Opinionated defaults** - Best practices baked in for K8s controllers
-
-**Confidence**: **95%** (Official controller-runtime pattern)
-
----
-
-### **CRD Controller Example** (Remediation Orchestrator, AI Analysis, etc.)
+All services embed `internal/config.LoggingConfig` in their config struct:
 
 ```go
-// cmd/remediation-orchestrator/main.go
-package main
-
-import (
-    "flag"
-    "os"
-
-    "k8s.io/apimachinery/pkg/runtime"
-    ctrl "sigs.k8s.io/controller-runtime"
-    "sigs.k8s.io/controller-runtime/pkg/log/zap"
-    "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-    "sigs.k8s.io/controller-runtime/pkg/healthz"
-
-    remediationv1 "github.com/jordigilh/kubernaut/pkg/apis/remediation/v1"
-    "github.com/jordigilh/kubernaut/pkg/remediationorchestrator"
-)
-
-var (
-    scheme   = runtime.NewScheme()
-    setupLog = ctrl.Log.WithName("setup")
-)
-
-func init() {
-    _ = remediationv1.AddToScheme(scheme)
-}
-
-func main() {
-    var metricsAddr string
-    var probeAddr string
-    var enableLeaderElection bool
-
-    flag.StringVar(&metricsAddr, "metrics-bind-address", ":9090", "The address the metric endpoint binds to.")
-    flag.StringVar(&probeAddr, "health-probe-bind-address", ":8080", "The address the probe endpoint binds to.")
-    flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
-
-    // Controller-runtime zap options with built-in flags
-    opts := zap.Options{
-        Development: true, // Set to false for production
-    }
-    opts.BindFlags(flag.CommandLine) // Adds --zap-log-level, --zap-encoder, etc.
-
-    flag.Parse()
-
-    // Set global logger using controller-runtime zap package
-    ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
-    setupLog.Info("starting manager")
-
-    mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-        Scheme: scheme,
-        Metrics: server.Options{
-            BindAddress: metricsAddr,  // Port 9090 for metrics
-        },
-        HealthProbeBindAddress: probeAddr,  // Port 8080 for health checks
-        LeaderElection:         enableLeaderElection,
-        LeaderElectionID:       "remediation-orchestrator.kubernaut.io",
-    })
-    if err != nil {
-        setupLog.Error(err, "unable to start manager")
-        os.Exit(1)
-    }
-
-    if err = (&remediationorchestrator.RemediationRequestReconciler{
-        Client: mgr.GetClient(),
-        Scheme: mgr.GetScheme(),
-        Log:    ctrl.Log.WithName("controllers").WithName("RemediationRequest"),
-    }).SetupWithManager(mgr); err != nil {
-        setupLog.Error(err, "unable to create controller", "controller", "RemediationRequest")
-        os.Exit(1)
-    }
-
-    if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-        setupLog.Error(err, "unable to set up health check")
-        os.Exit(1)
-    }
-
-    if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-        setupLog.Error(err, "unable to set up ready check")
-        os.Exit(1)
-    }
-
-    setupLog.Info("starting manager")
-    if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-        setupLog.Error(err, "problem running manager")
-        os.Exit(1)
-    }
+type LoggingConfig struct {
+    Level string `yaml:"level"` // DEBUG, INFO, WARN, ERROR
 }
 ```
 
-**Command-line usage**:
-```bash
-# Development mode (human-readable console output)
-./remediation-orchestrator --zap-log-level=debug --zap-encoder=console
+Key methods:
+- `ZapLevel()` -- converts to `zapcore.Level`
+- `NewAtomicLevel()` -- creates a `zap.AtomicLevel` for runtime mutation
+- `Validate()` -- rejects unrecognised level strings
+- `SlogLevel()` -- bridge for services still using `log/slog` (kubernaut-agent)
 
-# Production mode (JSON structured output)
-./remediation-orchestrator --zap-log-level=info --zap-encoder=json
-
-# Custom time encoding
-./remediation-orchestrator --zap-time-encoding=iso8601
-```
-
-**Available Flags** (from controller-runtime/zap):
-- `--zap-log-level`: Log level (debug, info, error) - default: info
-- `--zap-encoder`: Log encoding (json, console) - default: json
-- `--zap-time-encoding`: Time format (epoch, millis, nano, iso8601, rfc3339) - default: epoch
-- `--zap-stacktrace-level`: Level to include stack traces (info, error, panic) - default: error
-- `--zap-devel`: Development mode (enables DPanic level) - default: false
-
----
-
-### **CRD Controller Reconciliation Loop Example**
+### Hot-Reload Helper: `ParseAndSetLevel()`
 
 ```go
-// pkg/remediationorchestrator/remediationrequest_reconciler.go
-package remediationorchestrator
-
-import (
-    "context"
-
-    "github.com/go-logr/logr"
-    "k8s.io/apimachinery/pkg/api/errors"
-    "k8s.io/apimachinery/pkg/runtime"
-    ctrl "sigs.k8s.io/controller-runtime"
-    "sigs.k8s.io/controller-runtime/pkg/client"
-
-    remediationv1 "github.com/jordigilh/kubernaut/pkg/apis/remediation/v1"
-)
-
-type RemediationRequestReconciler struct {
-    client.Client
-    Log    logr.Logger // logr.Logger from controller-runtime
-    Scheme *runtime.Scheme
-}
-
-func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    log := r.Log.WithValues("remediationrequest", req.NamespacedName)
-
-    log.Info("reconciling RemediationRequest")
-
-    remediationRequest := &remediationv1.RemediationRequest{}
-    err := r.Get(ctx, req.NamespacedName, remediationRequest)
-    if err != nil {
-        if errors.IsNotFound(err) {
-            log.Info("RemediationRequest resource not found. Ignoring since object must be deleted.")
-            return ctrl.Result{}, nil
-        }
-        log.Error(err, "Failed to get RemediationRequest")
-        return ctrl.Result{}, err
-    }
-
-    // Business logic here
-    log.Info("RemediationRequest reconciled successfully",
-        "phase", remediationRequest.Status.Phase,
-        "priority", remediationRequest.Spec.Priority,
-    )
-
-    return ctrl.Result{}, nil
-}
-
-func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
-    return ctrl.NewControllerManagedBy(mgr).
-        For(&remediationv1.RemediationRequest{}).
-        Complete(r)
-}
+func ParseAndSetLevel(atomicLvl zap.AtomicLevel, level string) error
 ```
 
----
-
-## 🔶 **PART 2: HTTP Services** (Recommended: go.uber.org/zap)
-
-### **Why Direct Uber Zap for HTTP Services?**
-
-✅ **Full control** - Complete configuration flexibility
-✅ **Advanced features** - Sampling, hooks, custom encoders
-✅ **Consistent** - Same config across all HTTP services
-✅ **High performance** - Zero-allocation structured fields
-✅ **Production-ready** - Battle-tested by Uber at scale
-
-**Confidence**: **98%** (Industry standard for Go services)
+Validates the new level string and atomically updates the running logger.
+Used as the callback body inside `FileWatcher`.
 
 ---
 
-### **HTTP Service Example** (Gateway, Context API, Data Storage, etc.)
+## Standard Pattern: CRD Controllers (AA, EM, SP, WE, RO)
 
 ```go
-// pkg/gateway/service.go
-package gateway
+// 1. Bootstrap at INFO before config is loaded
+atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
 
-import (
-    "context"
-    "time"
+// 2. Load config from YAML file
+cfg, err := config.LoadFromFile(configPath)
 
-    "go.uber.org/zap"
-)
+// 3. Apply config-driven level
+atomicLevel.SetLevel(cfg.Logging.ZapLevel())
 
-type Service struct {
-    logger *zap.Logger
-}
-
-func NewService(logger *zap.Logger) *Service {
-    return &Service{
-        logger: logger,
-    }
-}
-
-func (s *Service) ProcessSignal(ctx context.Context, signal *Signal) error {
-    start := time.Now()
-
-    s.logger.Info("Processing signal",
-        zap.String("signal_type", signal.Type),
-        zap.String("namespace", signal.Namespace),
-        zap.String("correlation_id", signal.CorrelationID),
-    )
-
-    // ... business logic ...
-
-    if err != nil {
-        s.logger.Error("Signal processing failed",
-            zap.Error(err),
-            zap.String("signal_type", signal.Type),
-            zap.String("correlation_id", signal.CorrelationID),
-        )
-        return err
-    }
-
-    s.logger.Info("Signal processed successfully",
-        zap.String("signal_type", signal.Type),
-        zap.Duration("duration", time.Since(start)),
-    )
-
-    return nil
-}
+// 4. Hot-reload watcher (before mgr.Start)
+logLevelWatcher, _ := hotreload.NewFileWatcher(configPath, func(content string) error {
+    var partial struct { Logging internalconfig.LoggingConfig `yaml:"logging"` }
+    yaml.Unmarshal([]byte(content), &partial)
+    return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
+}, setupLog.WithName("log-level-watcher"))
+logLevelWatcher.Start(ctx)
 ```
+
+No CLI flags (`--zap-log-level`, `--zap-devel`, etc.) are used. The config file is the single source of truth.
 
 ---
 
-### **Logger Initialization** (main.go)
+## Standard Pattern: kubelog Services (Gateway, Notification, DataStorage)
 
 ```go
-// cmd/gateway/main.go
-package main
+// 1. Bootstrap logger with AtomicLevel
+bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+logger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+    ServiceName: "gateway",
+}, bootstrapLevel)
 
-import (
-    "os"
+// 2. Load config and apply level
+cfg, _ := config.LoadFromFile(configPath)
+atomicLevel := cfg.Logging.NewAtomicLevel()
+logger = kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+    ServiceName: "gateway",
+}, atomicLevel)
 
-    "go.uber.org/zap"
-    "go.uber.org/zap/zapcore"
-)
-
-func main() {
-    // Production logger (JSON, structured)
-    logger, err := zap.NewProduction()
-    if err != nil {
-        panic(err)
-    }
-    defer logger.Sync() // Flush buffer on exit
-
-    // Or development logger (human-readable, console)
-    // logger, err := zap.NewDevelopment()
-
-    // Custom logger with configuration
-    config := zap.Config{
-        Level:       zap.NewAtomicLevelAt(zap.InfoLevel),
-        Development: false,
-        Encoding:    "json",
-        EncoderConfig: zapcore.EncoderConfig{
-            TimeKey:        "timestamp",
-            LevelKey:       "level",
-            NameKey:        "logger",
-            CallerKey:      "caller",
-            MessageKey:     "msg",
-            StacktraceKey:  "stacktrace",
-            LineEnding:     zapcore.DefaultLineEnding,
-            EncodeLevel:    zapcore.LowercaseLevelEncoder,
-            EncodeTime:     zapcore.ISO8601TimeEncoder,
-            EncodeDuration: zapcore.SecondsDurationEncoder,
-            EncodeCaller:   zapcore.ShortCallerEncoder,
-        },
-        OutputPaths:      []string{"stdout"},
-        ErrorOutputPaths: []string{"stderr"},
-    }
-
-    logger, err := config.Build()
-    if err != nil {
-        panic(err)
-    }
-
-    // Replace global logger (optional)
-    zap.ReplaceGlobals(logger)
-
-    // Start service
-    service := gateway.NewService(logger)
-    if err := service.Start(); err != nil {
-        logger.Fatal("Service failed to start", zap.Error(err))
-    }
-}
+// 3. Hot-reload watcher (same pattern as CRD controllers)
 ```
+
+### `pkg/log.NewLoggerWithAtomicLevel()`
+
+Added in v2.0 (Issue #875). Creates a `logr.Logger` backed by zap whose level is
+controlled by the caller-provided `zap.AtomicLevel`. Mutations to the `AtomicLevel`
+take effect immediately on all log calls.
 
 ---
 
+## AuthWebhook
+
+Same pattern as CRD controllers, but uses `zap.New(zap.Level(atomicLevel))` directly
+(no `BindFlags`, no `UseFlagOptions`). Previously hardcoded `zap.UseDevMode(true)`.
+
 ---
 
-## 🔀 **Alternative: Direct Uber Zap for CRD Controllers** (Advanced Use Case)
+## Kubernaut Agent (Temporary: slog)
 
-### **When to Use Direct Uber Zap for Controllers?**
+The kubernaut-agent currently uses `log/slog` instead of zap. Its `LoggingConfig`
+has been migrated to the shared `internal/config.LoggingConfig` type, which provides
+a `SlogLevel()` bridge method. A follow-up issue will migrate the agent to
+`pkg/log` (zap-backed `logr.Logger`) to eliminate this special case.
 
-Use this approach **ONLY IF** you need:
-- ⚠️ Advanced sampling configurations
-- ⚠️ Custom log hooks or sinks
-- ⚠️ Shared logger config between HTTP services and controllers
-- ⚠️ Custom encoder configurations
+---
 
-**Confidence**: **85%** (Works, but requires zapr bridge)
+## Helm Chart Configuration
 
-### **Direct Uber Zap + zapr Bridge Example**
+All services expose `logging.level` in their Helm values:
 
-```go
-// cmd/remediation-orchestrator/main.go (Alternative approach)
-package main
+```yaml
+gateway:
+  logging:
+    level: "INFO"
 
-import (
-    "flag"
-    "os"
-
-    "go.uber.org/zap"
-    "go.uber.org/zap/zapcore"
-    "github.com/go-logr/zapr"
-    ctrl "sigs.k8s.io/controller-runtime"
-
-    remediationv1 "github.com/jordigilh/kubernaut/pkg/apis/remediation/v1"
-    "github.com/jordigilh/kubernaut/pkg/remediationorchestrator"
-)
-
-func main() {
-    // Custom Uber Zap configuration
-    config := zap.Config{
-        Level:       zap.NewAtomicLevelAt(zap.InfoLevel),
-        Development: false,
-        Encoding:    "json",
-        EncoderConfig: zapcore.EncoderConfig{
-            TimeKey:        "timestamp",
-            LevelKey:       "level",
-            NameKey:        "logger",
-            CallerKey:      "caller",
-            MessageKey:     "msg",
-            StacktraceKey:  "stacktrace",
-            LineEnding:     zapcore.DefaultLineEnding,
-            EncodeLevel:    zapcore.LowercaseLevelEncoder,
-            EncodeTime:     zapcore.ISO8601TimeEncoder,
-            EncodeDuration: zapcore.SecondsDurationEncoder,
-            EncodeCaller:   zapcore.ShortCallerEncoder,
-        },
-        OutputPaths:      []string{"stdout"},
-        ErrorOutputPaths: []string{"stderr"},
-    }
-
-    zapLog, err := config.Build()
-    if err != nil {
-        panic(err)
-    }
-    defer zapLog.Sync()
-
-    // Bridge Uber Zap to logr.Logger using zapr
-    ctrl.SetLogger(zapr.NewLogger(zapLog))
-
-    setupLog := ctrl.Log.WithName("setup")
-    setupLog.Info("starting manager with custom zap configuration")
-
-    // ... rest of controller setup (same as controller-runtime/zap example) ...
-}
+aianalysis:
+  logging:
+    level: "INFO"
 ```
 
-**Required Imports**:
-- `go.uber.org/zap` - Uber Zap logger
-- `github.com/go-logr/zapr` - Bridge from Zap to logr.Logger
-- `sigs.k8s.io/controller-runtime` - Controller-runtime (expects logr.Logger)
+The level is rendered into each service's ConfigMap. Changing the value and
+performing `helm upgrade` (or editing the ConfigMap directly) triggers a
+hot-reload -- no pod restart required.
+
+Valid values: `DEBUG`, `INFO`, `WARN`, `ERROR`. Default: `INFO`.
 
 ---
 
@@ -673,91 +379,48 @@ logger.Info("Signal processed",
 
 ---
 
-## 📋 **Quick Reference: Which Import to Use?**
+## Quick Reference: Service Logging Matrix
 
-| Service | Import Path | Reason |
-|---------|-------------|--------|
-| **Remediation Orchestrator** | `sigs.k8s.io/controller-runtime/pkg/log/zap` | CRD controller |
-| **Remediation Processor** | `sigs.k8s.io/controller-runtime/pkg/log/zap` | CRD controller |
-| **AI Analysis** | `sigs.k8s.io/controller-runtime/pkg/log/zap` | CRD controller |
-| **Workflow Execution** | `sigs.k8s.io/controller-runtime/pkg/log/zap` | CRD controller |
-| **Kubernetes Executor** | `sigs.k8s.io/controller-runtime/pkg/log/zap` | CRD controller |
-| **Gateway Service** | `go.uber.org/zap` | HTTP service |
-| **Context API** | `go.uber.org/zap` | HTTP service |
-| **Data Storage** | `go.uber.org/zap` | HTTP service |
-| **HolmesGPT API** | `go.uber.org/zap` | HTTP service (Python, but Go gateway) |
-| **Notification Service** | `go.uber.org/zap` | HTTP service |
-| **Dynamic Toolset** | `go.uber.org/zap` | HTTP service |
-
----
-
-## 🔄 **Migration from Logrus** (Legacy Adapter)
-
-### **Single Legacy File**
-
-**File**: `pkg/workflow/engine/logger_adapter.go`
-
-**Current** (Logrus adapter):
-```go
-import "github.com/sirupsen/logrus"
-
-type LogrusAdapter struct {
-    logger *logrus.Logger
-}
-```
-
-**Migrate to** (Zap):
-```go
-import "go.uber.org/zap"
-
-type Logger interface {
-    Info(msg string, fields ...zap.Field)
-    Error(msg string, fields ...zap.Field)
-    // ... other methods
-}
-
-type ZapLogger struct {
-    logger *zap.Logger
-}
-
-func (z *ZapLogger) Info(msg string, fields ...zap.Field) {
-    z.logger.Info(msg, fields...)
-}
-```
-
-**Migration Priority**: **Low** (0.2% of codebase, isolated adapter)
+| Service | Logger Type | Config Import | Hot-Reload | Status |
+|---------|------------|--------------|------------|--------|
+| **AI Analysis** | controller-runtime/zap | `internal/config` | FileWatcher | Done (Issue #875) |
+| **Effectiveness Monitor** | controller-runtime/zap | `internal/config` | FileWatcher | Done (Issue #875) |
+| **Signal Processing** | controller-runtime/zap | `internal/config` | FileWatcher | Done (Issue #875) |
+| **Workflow Execution** | controller-runtime/zap | `internal/config` | FileWatcher | Done (Issue #875) |
+| **Remediation Orchestrator** | controller-runtime/zap | `internal/config` | FileWatcher | Done (Issue #875) |
+| **AuthWebhook** | controller-runtime/zap | `internal/config` | FileWatcher | Done (Issue #876) |
+| **Gateway** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #877) |
+| **Notification** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #878) |
+| **DataStorage** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #875) |
+| **Kubernaut Agent** | log/slog (temporary) | `internal/config` | Planned | Config aligned; full slog->zap migration TBD |
 
 ---
 
-## ✅ **Logging Standard Checklist**
+## Logging Standard Checklist (v2.0)
 
-### **For CRD Controllers**:
+### For ALL Services (v2.0 mandatory):
 
-1. ✅ **Import**: `import "sigs.k8s.io/controller-runtime/pkg/log/zap"`
-2. ✅ **Initialization**: Use `zap.Options` with `opts.BindFlags()`
-3. ✅ **Set Logger**: `ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))`
-4. ✅ **logr.Logger**: Use `ctrl.Log.WithName()` for component loggers
-5. ✅ **Command-line flags**: Enable `--zap-log-level`, `--zap-encoder`
-6. ✅ **Correlation IDs**: Include in reconciliation logs
-7. ✅ **Error context**: Use `log.Error(err, "message", "key", value)`
-8. ✅ **Production**: Set `Development: false` and `--zap-encoder=json`
+1. Log level read from config file (`logging.level` in YAML)
+2. No CLI flags for log level (`--zap-log-level` removed)
+3. `internal/config.LoggingConfig` embedded in service config struct
+4. `zap.AtomicLevel` used for runtime-mutable log level
+5. `FileWatcher` registered to watch config path for hot-reload
+6. Bootstrap logger at INFO before config load, re-configure after load
+7. Helm `values.yaml` exposes `<service>.logging.level` with default `"INFO"`
+8. `values.schema.json` validates level is one of `DEBUG|INFO|WARN|ERROR`
 
-### **For HTTP Services**:
+### For Structured Logging (unchanged from v1.0):
 
-1. ✅ **Import**: `import "go.uber.org/zap"`
-2. ✅ **Structured logging**: Use `zap.String()`, `zap.Int()`, etc.
-3. ✅ **Correlation IDs**: Include in all logs
-4. ✅ **Error context**: Include error details and context
-5. ✅ **Log levels**: Use appropriate levels (Debug, Info, Warn, Error)
-6. ✅ **Performance**: Check log level before expensive operations
-7. ✅ **Initialization**: Proper logger setup in main()
-8. ✅ **Sync on exit**: `defer logger.Sync()`
-9. ✅ **Standard fields**: Use standardized field names
-10. ✅ **No string formatting**: Use structured fields, not `fmt.Sprintf()`
+1. Use type-safe fields (`zap.String()`, `zap.Int()`, etc.)
+2. Include correlation IDs in all request-scoped logs
+3. Include error context: `log.Error(err, "message", "key", value)`
+4. Check log level before expensive debug operations
+5. Use standardized field names (see Common Field Names below)
+6. `defer kubelog.Sync(logger)` or `defer logger.Sync()` on exit
 
 ---
 
-## 📚 **Related Documentation**
+## Related Documentation
 
 - [LOG_CORRELATION_ID_STANDARD.md](./LOG_CORRELATION_ID_STANDARD.md) - Correlation ID patterns
 - [ERROR_RESPONSE_STANDARD.md](./ERROR_RESPONSE_STANDARD.md) - Error handling
@@ -765,42 +428,25 @@ func (z *ZapLogger) Info(msg string, fields ...zap.Field) {
 
 ---
 
-## 🎯 **Decision Summary**
+## Decision Summary
 
-### **Approved Standard: Zap Logging (Split Strategy)**
+### Approved Standard: Config-File-Only Log Level + Hot-Reload (v2.0)
 
-**Confidence**: **98%**
+**Issue**: #875 (hardcoded log levels), #876 (authwebhook), #877 (gateway), #878 (notification)
 
-**Evidence**:
-1. ✅ **Codebase Usage**: 496/497 files (99.8%) already use Zap
-2. ✅ **Performance**: 5x faster than alternatives (500 ns vs 2,500 ns per log)
-3. ✅ **Active Development**: Maintained by Uber, actively developed
-4. ✅ **Industry Standard**: Widely adopted in cloud-native ecosystems
-5. ✅ **Logrus Status**: Maintenance mode (deprecated - GitHub #799)
-6. ✅ **Controller-Runtime**: Official `pkg/log/zap` sub-package exists in v0.19.2
-7. ✅ **Split Strategy**: Best-of-both-worlds approach
-
-**Split Strategy Rationale**:
-| Aspect | CRD Controllers | HTTP Services |
-|--------|-----------------|---------------|
-| **Import** | `sigs.k8s.io/controller-runtime/pkg/log/zap` | `go.uber.org/zap` |
-| **Reason** | Official integration, built-in flags | Full control, advanced features |
-| **Interface** | `logr.Logger` (controller-runtime native) | `*zap.Logger` (direct) |
-| **Configuration** | Opinionated defaults for K8s | Fully customizable |
-| **Use Case** | 5 CRD controllers | 6 HTTP services |
+**Rationale**:
+1. RBAC separation: ConfigMap edit (low privilege) vs Deployment edit (high privilege)
+2. No pod restart needed for log level changes
+3. Single source of truth for all services (`logging.level` in config YAML)
+4. `zap.AtomicLevel` is thread-safe and zero-allocation
 
 **Migration**:
-- ✅ **No action needed** - codebase already uses Zap (99.8%)
-- ⚠️ **1 legacy file** - low priority migration (`pkg/workflow/engine/logger_adapter.go`)
-- ✅ **Controller-runtime/zap**: Use for all CRD controllers (5 services)
-- ✅ **Direct Uber Zap**: Use for all HTTP services (6 services)
-
-**Approval**: ✅ **APPROVED** (User confirmed - Split Strategy)
+- 9/10 services fully migrated to config-file-only log level with hot-reload
+- kubernaut-agent: config aligned to shared type; full slog->zap migration in follow-up PR
 
 ---
 
-**Document Status**: ✅ Complete & Approved
-**Standard**: `go.uber.org/zap`
-**Compliance**: 496/497 files (99.8%)
-**Last Updated**: October 6, 2025
-**Version**: 1.0
+**Document Status**: Complete & Approved
+**Standard**: `go.uber.org/zap` via config file
+**Last Updated**: April 27, 2026
+**Version**: 2.0

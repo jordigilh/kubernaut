@@ -36,6 +36,9 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"gopkg.in/yaml.v3"
+
+	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
@@ -43,6 +46,7 @@ import (
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/health"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
@@ -63,13 +67,11 @@ import (
 // ========================================
 
 func main() {
-	// Initialize logger first (before config loading for error reporting)
-	// DD-005 v2.0: Use pkg/log shared library with logr interface
-	logger := kubelog.NewLogger(kubelog.Options{
-		Development: os.Getenv("ENV") != "production",
-		Level:       0, // Info level
+	// Bootstrap logger at INFO for config loading
+	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	logger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
 		ServiceName: "datastorage",
-	})
+	}, bootstrapLevel)
 	defer kubelog.Sync(logger)
 
 	logger.Info("Starting DataStorage Service",
@@ -148,6 +150,13 @@ func main() {
 			)
 		}
 	}
+
+	// Issue #875: Apply config-driven log level using shared LoggingConfig mapping
+	dsLogging := internalconfig.LoggingConfig{Level: strings.ToUpper(cfg.Logging.Level)}
+	atomicLevel := dsLogging.NewAtomicLevel()
+	logger = kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "datastorage",
+	}, atomicLevel)
 
 	logger.Info("Configuration loaded successfully (ADR-030)",
 		"service", "data-storage",
@@ -392,6 +401,36 @@ func main() {
 	}
 	if caWatcher != nil {
 		defer caWatcher.Stop()
+	}
+
+	// Issue #875: Log level hot-reload via FileWatcher
+	if cfgPath != "" {
+		logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
+			cfgPath,
+			func(newContent string) error {
+				var partial struct {
+					Logging struct {
+						Level string `yaml:"level"`
+					} `yaml:"logging"`
+				}
+				if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
+					return fmt.Errorf("failed to parse config for log level reload: %w", err)
+				}
+				lvl := internalconfig.LoggingConfig{Level: strings.ToUpper(partial.Logging.Level)}
+				return internalconfig.ParseAndSetLevel(atomicLevel, lvl.Level)
+			},
+			logger.WithName("log-level-watcher"),
+		)
+		if logWatchErr != nil {
+			logger.Error(logWatchErr, "Failed to create log level file watcher")
+		} else {
+			if err := logLevelWatcher.Start(ctx); err != nil {
+				logger.Info("Log level file watcher failed to start", "error", err)
+			} else {
+				logger.Info("Log level hot-reload watcher started", "path", cfgPath)
+				defer logLevelWatcher.Stop()
+			}
+		}
 	}
 
 	// Start API server in goroutine

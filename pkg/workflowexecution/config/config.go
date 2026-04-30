@@ -51,6 +51,9 @@ type Config struct {
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 	Controller  ControllerConfig             `yaml:"controller" validate:"required"`
 
+	// Logging configuration (Issue #875: config-file-only log level with hot-reload)
+	Logging sharedconfig.LoggingConfig `yaml:"logging"`
+
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
@@ -134,6 +137,7 @@ func DefaultConfig() *Config {
 			CooldownPeriod: 5 * time.Minute,
 		},
 		DataStorage: sharedconfig.DefaultDataStorageConfig(),
+		Logging:     sharedconfig.DefaultLoggingConfig(),
 		Controller: ControllerConfig{
 			MetricsAddr:      ":9090",
 			HealthProbeAddr:  ":8081",
@@ -193,5 +197,10 @@ func (c *Config) Validate() error {
 		return err
 	}
 	// DataStorage uses shared validation (ADR-030)
-	return sharedconfig.ValidateDataStorageConfig(&c.DataStorage)
+	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
+		return err
+	}
+
+	// Issue #875: Logging validation
+	return c.Logging.Validate()
 }

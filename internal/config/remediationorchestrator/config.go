@@ -65,6 +65,9 @@ type Config struct {
 	// Retention configures CRD lifecycle cleanup (#265).
 	Retention RetentionConfig `yaml:"retention"`
 
+	// Logging configuration (Issue #875: config-file-only log level with hot-reload)
+	Logging sharedconfig.LoggingConfig `yaml:"logging"`
+
 	// DryRun enables dry-run mode: the pipeline stops after AI analysis without
 	// creating a WorkflowExecution or EffectivenessAssessment. The RR completes
 	// immediately with outcome "DryRun". Default: false. (#712, #736, #116)
@@ -288,6 +291,7 @@ func DefaultConfig() *Config {
 			IneffectiveTimeWindow:        4 * time.Hour,
 			NoActionRequiredDelayHours:   24, // Issue #314, #353: 24h suppression window
 		},
+		Logging:          sharedconfig.DefaultLoggingConfig(),
 		DryRunHoldPeriod: 1 * time.Hour, // #712, #736: Default GW suppression after dry-run completion
 	}
 }
@@ -320,6 +324,11 @@ func LoadFromFile(path string) (*Config, error) {
 
 // Validate checks configuration for common issues.
 func (c *Config) Validate() error {
+	// Issue #875: Logging validation
+	if err := c.Logging.Validate(); err != nil {
+		return err
+	}
+
 	// Validate DataStorage config (ADR-030)
 	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
 		return err

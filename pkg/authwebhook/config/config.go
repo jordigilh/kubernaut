@@ -45,6 +45,9 @@ type Config struct {
 	// DataStorage connectivity (ADR-030: audit trail + workflow catalog)
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 
+	// Logging configuration (Issue #876: config-file-only log level with hot-reload)
+	Logging sharedconfig.LoggingConfig `yaml:"logging"`
+
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
@@ -74,6 +77,7 @@ func DefaultConfig() *Config {
 			HealthProbeAddr: ":8081",
 		},
 		DataStorage: sharedconfig.DefaultDataStorageConfig(),
+		Logging:     sharedconfig.DefaultLoggingConfig(),
 	}
 }
 
@@ -113,5 +117,10 @@ func (c *Config) Validate() error {
 	}
 
 	// ADR-030: Validate DataStorage section
-	return sharedconfig.ValidateDataStorageConfig(&c.DataStorage)
+	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
+		return err
+	}
+
+	// Issue #876: Logging validation
+	return c.Logging.Validate()
 }
