@@ -18,6 +18,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -93,6 +94,8 @@ func (t *InvestigateTool) Handle(ctx context.Context, input InvestigateInput, us
 		return t.handleComplete(input)
 	case ActionCancel:
 		return t.handleCancel(input)
+	case ActionStatus:
+		return t.handleStatus(input)
 	default:
 		return InvestigateOutput{}, ErrInvalidAction
 	}
@@ -206,6 +209,36 @@ func (t *InvestigateTool) handleComplete(input InvestigateInput) (InvestigateOut
 	return InvestigateOutput{
 		SessionID: sess.SessionID,
 		Status:    "completed",
+	}, nil
+}
+
+func (t *InvestigateTool) handleStatus(input InvestigateInput) (InvestigateOutput, error) {
+	status := StatusOutput{RRID: input.RRID}
+
+	if t.sessions.IsDriverActive(input.RRID) {
+		driver, _ := t.sessions.GetDriver(input.RRID)
+		status.Mode = StatusModeInteractive
+		if driver != nil {
+			status.Driver = driver.ActingUser.Username
+		}
+	} else if t.autoMgr != nil {
+		if _, found := t.autoMgr.FindByRemediationID(input.RRID); found {
+			status.Mode = StatusModeAutonomous
+		} else {
+			status.Mode = StatusModeNotFound
+		}
+	} else {
+		status.Mode = StatusModeNotFound
+	}
+
+	data, err := json.Marshal(status)
+	if err != nil {
+		return InvestigateOutput{}, fmt.Errorf("marshal status: %w", err)
+	}
+
+	return InvestigateOutput{
+		Status:   "status",
+		Response: string(data),
 	}, nil
 }
 

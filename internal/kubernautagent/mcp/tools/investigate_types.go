@@ -32,6 +32,20 @@ type InvestigateOutput struct {
 	Response  string `json:"response,omitempty"`
 }
 
+// Status mode constants for StatusOutput.Mode.
+const (
+	StatusModeAutonomous  = "autonomous"
+	StatusModeInteractive = "interactive"
+	StatusModeNotFound    = "not_found"
+)
+
+// StatusOutput is the JSON response for action=status queries.
+type StatusOutput struct {
+	RRID   string `json:"rr_id"`
+	Mode   string `json:"mode"`
+	Driver string `json:"driver,omitempty"`
+}
+
 // Valid actions for the kubernaut_investigate tool.
 const (
 	ActionStart    = "start"
@@ -39,6 +53,7 @@ const (
 	ActionComplete = "complete"
 	ActionCancel   = "cancel"
 	ActionTakeover = "takeover"
+	ActionStatus   = "status"
 )
 
 var (
@@ -61,7 +76,7 @@ func ValidateInput(input InvestigateInput) error {
 		return ErrMissingRRID
 	}
 	switch input.Action {
-	case ActionStart, ActionComplete, ActionCancel, ActionTakeover:
+	case ActionStart, ActionComplete, ActionCancel, ActionTakeover, ActionStatus:
 		return nil
 	case ActionMessage:
 		if input.Message == "" {
