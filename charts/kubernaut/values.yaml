@@ -229,7 +229,6 @@ workflowexecution:
     #   enabled: true                     # nil/true = auto-discover CRDs; false = disable
     # ansible:                            # Issue #478: AWX/AAP connectivity (optional)
     #   apiURL: "https://awx.example.com" # required when ansible block is present
-    #   insecure: false
     #   organizationID: 1
     #   tokenSecretRef:
     #     name: awx-token                 # Secret name containing AWX API token
@@ -324,6 +323,10 @@ kubernautAgent:
     # -- LLM provider (static, requires pod restart to change).
     # Supported providers: openai, anthropic, bedrock, mistral, vertex, local.
     provider: ""   # e.g., "openai", "anthropic"
+    # -- Path to a PEM CA certificate for internal LLM endpoints (static).
+    # Use when the LLM gateway (vLLM, Ollama, LiteLLM, etc.) uses a
+    # private/internal CA. Leave empty for public LLM endpoints.
+    tlsCaFile: ""  # e.g., "/etc/kubernaut-agent/tls/ca.crt"
     # -- LLM runtime fields (hot-reloadable via kubernaut-agent-llm-runtime ConfigMap).
     model: ""      # e.g., "gpt-4o", "claude-sonnet-4-20250514"
     endpoint: ""   # e.g., "http://llm-gateway:8080/v1"

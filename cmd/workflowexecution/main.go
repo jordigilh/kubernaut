@@ -257,6 +257,26 @@ func main() {
 	auditManager := weaudit.NewManager(auditStore, ctrl.Log.WithName("audit-manager"))
 	setupLog.Info("WorkflowExecution audit manager initialized (P3: Audit Manager)")
 
+	// Issue #902: Initialize signal context and TLS before executor registry,
+	// so that DefaultBaseTransport() has the CA reloader ready when AWX client
+	// is constructed.
+	ctx := ctrl.SetupSignalHandler()
+
+	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
+		setupLog.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
+	} else if cfg.TLSProfile != "" {
+		setupLog.Info("TLS security profile active", "profile", cfg.TLSProfile)
+	}
+
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
+	if caWatchErr != nil {
+		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		defer caWatcher.Stop()
+	}
+
 	// ========================================
 	// BR-WE-014: Executor Registry (Strategy Pattern)
 	// Issue #868: Engines are registered based on availability:
@@ -300,13 +320,17 @@ func main() {
 			if readErr != nil {
 				setupLog.Error(readErr, "Failed to read AWX token secret, ansible executor not available")
 			} else {
-				awxClient := weexecutor.NewAWXHTTPClient(cfg.Ansible.APIURL, token, cfg.Ansible.Insecure)
-				orgID := cfg.Ansible.OrganizationID
-				if orgID <= 0 {
-					orgID = 1
+				awxClient, awxErr := weexecutor.NewAWXHTTPClient(cfg.Ansible.APIURL, token)
+				if awxErr != nil {
+					setupLog.Error(awxErr, "Failed to create AWX client")
+				} else {
+					orgID := cfg.Ansible.OrganizationID
+					if orgID <= 0 {
+						orgID = 1
+					}
+					executorRegistry.Register("ansible", weexecutor.NewAnsibleExecutor(awxClient, mgr.GetClient(), directClientset, orgID, ctrl.Log.WithName("ansible-executor")))
+					setupLog.Info("Ansible executor registered", "awxURL", cfg.Ansible.APIURL, "organizationID", orgID)
 				}
-				executorRegistry.Register("ansible", weexecutor.NewAnsibleExecutor(awxClient, mgr.GetClient(), directClientset, orgID, ctrl.Log.WithName("ansible-executor")))
-				setupLog.Info("Ansible executor registered", "awxURL", cfg.Ansible.APIURL, "organizationID", orgID)
 			}
 		}
 	} else if cfg.Ansible != nil {
@@ -371,26 +395,6 @@ func main() {
 	})); err != nil {
 		setupLog.Error(err, "unable to set up engines readyz check")
 		os.Exit(1)
-	}
-
-	// Issue #756: Extract signal context for CA file watcher lifecycle
-	ctx := ctrl.SetupSignalHandler()
-
-	// Issue #748: Load OCP TLS security profile from config before any TLS setup
-	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
-		setupLog.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
-	} else if cfg.TLSProfile != "" {
-		setupLog.Info("TLS security profile active", "profile", cfg.TLSProfile)
-	}
-
-	// Issue #756: Start CA file watcher for client-side TLS hot-reload
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
-	if caWatchErr != nil {
-		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
-		os.Exit(1)
-	}
-	if caWatcher != nil {
-		defer caWatcher.Stop()
 	}
 
 	// Issue #875: Log level hot-reload via FileWatcher

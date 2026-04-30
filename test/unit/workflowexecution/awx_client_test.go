@@ -49,7 +49,9 @@ var _ = Describe("AWXHTTPClient Credential API (BR-WE-015)", func() {
 		ctx = context.Background()
 		mux = http.NewServeMux()
 		server = httptest.NewServer(mux)
-		client = executor.NewAWXHTTPClient(server.URL, "test-token", false)
+		var clientErr error
+		client, clientErr = executor.NewAWXHTTPClient(server.URL, "test-token")
+		Expect(clientErr).ToNot(HaveOccurred())
 	})
 
 	AfterEach(func() {

@@ -83,7 +83,6 @@ DHE cipher suites from the OpenShift profile specification are omitted because G
 - Reading the `APIServer` CR directly from Kubernaut services (this is the operator's responsibility)
 - Modifying vanilla K8s / Kind behavior
 - Deprecated `pkg/effectivenessmonitor/client/ca_reloader.go` (production uses shared TLS)
-- External service clients (e.g., AWX `InsecureSkipVerify`)
 - Test infrastructure (`test/infrastructure/interservice_tls.go`)
 
 ## Consequences
@@ -105,8 +104,44 @@ DHE cipher suites from the OpenShift profile specification are omitted because G
 
 - If the operator sets an invalid profile name, `SetDefaultSecurityProfileFromConfig` returns an error. Each service logs the error and falls back to the hardcoded TLS 1.2 default. The service does **not** crash on invalid profile names.
 
+## Addendum: Issue #902 — AWX and KA LLM TLS Alignment
+
+**Date**: 2026-04-30
+
+### AWX Client (WorkflowExecution)
+
+The AWX HTTP client (`NewAWXHTTPClient`) was written before the shared TLS
+infrastructure existed (March 2026, PR #45). It cloned `http.DefaultTransport`
+directly and offered an `insecure` toggle for `InsecureSkipVerify`, bypassing
+the `CAReloader` singleton that `StartCAFileWatcher` operates on.
+
+**Changes**:
+- `NewAWXHTTPClient` now uses `sharedtls.DefaultBaseTransport()` as its base
+  transport, honoring `TLS_CA_FILE` and the OCP TLS security profile.
+- The `insecure` parameter and `AnsibleConfig.Insecure` field have been removed.
+  Operators who need custom CA trust should mount the CA via `TLS_CA_FILE`.
+- `StartCAFileWatcher` is now initialized **before** the executor registry in
+  `cmd/workflowexecution/main.go` to ensure the singleton is ready when the AWX
+  client is constructed.
+
+### Kubernaut Agent LLM Transport
+
+The LLM transport chain used raw `http.DefaultTransport` with no CA file
+support. Internal LLM endpoints (vLLM, Ollama, LiteLLM, corporate gateway)
+behind a private CA would fail with `x509: certificate signed by unknown
+authority`.
+
+**Changes**:
+- `LLMConfig` gains a `tlsCaFile` field (static, requires pod restart).
+- When set, `buildTransportChain` uses `sharedtls.NewTLSTransport(tlsCaFile)`
+  as the base transport. OAuth2 and custom headers wrap on top.
+- `WithHTTPClient` is now passed to all LangChainGo providers (openai, ollama,
+  azure, vertex, anthropic, bedrock, huggingface) that support it, ensuring the
+  custom transport is used regardless of provider.
+
 ## References
 
 - [OpenShift TLS Security Profiles](https://docs.openshift.com/container-platform/4.17/security/tls-security-profiles.html)
 - [Mozilla Server-Side TLS](https://wiki.mozilla.org/Security/Server_Side_TLS)
 - [kubernaut-operator#3](https://github.com/jordigilh/kubernaut-operator/issues/3) — Operator-side profile injection
+- [Issue #902](https://github.com/jordigilh/kubernaut/issues/902) — AWX HTTP client does not use TLS_CA_FILE CA

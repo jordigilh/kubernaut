@@ -257,6 +257,7 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 |---|---|---|
 | `kubernautAgent.llm.credentialsSecretName` | Secret with LLM API keys (e.g., `OPENAI_API_KEY`) | `llm-credentials` |
 | `kubernautAgent.llm.provider` | LLM provider for quickstart (`openai`, `anthropic`) | `""` |
+| `kubernautAgent.llm.tlsCaFile` | PEM CA cert path for internal LLM endpoints behind private CA | `""` |
 | `kubernautAgent.llm.model` | LLM model for quickstart (`gpt-4o`, `claude-sonnet-4-20250514`) | `""` |
 | `kubernautAgent.llm.oauth2.enabled` | Enable OAuth2 client credentials grant for LLM gateway | `false` |
 | `kubernautAgent.llm.oauth2.tokenURL` | OAuth2 token endpoint URL | `""` |
@@ -304,7 +305,6 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 | `workflowexecution.config.execution.cooldownPeriod` | Cooldown between workflow executions | `1m` |
 | `workflowexecution.config.tekton.enabled` | `true`/omit = auto-discover Tekton CRDs; `false` = disable (#868) | _(auto-discover)_ |
 | `workflowexecution.config.ansible.apiURL` | AWX/AAP API URL (enables Ansible engine) | _(not set)_ |
-| `workflowexecution.config.ansible.insecure` | Skip TLS verification for AWX API | `false` |
 | `workflowexecution.config.ansible.organizationID` | AWX organization ID | `1` |
 | `workflowexecution.config.ansible.tokenSecretRef.name` | Secret containing AWX API token | `""` |
 | `workflowexecution.config.ansible.tokenSecretRef.key` | Key within the Secret | `token` |
