@@ -54,25 +54,69 @@ var DefaultSessionTTL = 30 * time.Minute
 // LeaseSessionManager implements SessionManager with K8s coordination/v1 Lease
 // for single-driver guarantee (BR-INTERACTIVE-002).
 type LeaseSessionManager struct {
-	client    client.Client
-	namespace string
-	sessions  sync.Map // sessionID -> *sessionEntry
-	rrIndex   sync.Map // rrID -> sessionID
-	logger    *slog.Logger
+	client     client.Client
+	namespace  string
+	sessionTTL time.Duration
+	sessions   sync.Map // sessionID -> *sessionEntry
+	rrIndex    sync.Map // rrID -> sessionID
+	logger     *slog.Logger
 }
 
 type sessionEntry struct {
-	session *InteractiveSession
-	rrID    string
+	session    *InteractiveSession
+	rrID       string
+	signalMeta map[string]string
+}
+
+// LeaseOption configures optional parameters for LeaseSessionManager.
+type LeaseOption func(*LeaseSessionManager)
+
+// WithSessionTTL overrides the default session TTL used for Lease duration.
+func WithSessionTTL(ttl time.Duration) LeaseOption {
+	return func(m *LeaseSessionManager) {
+		m.sessionTTL = ttl
+	}
 }
 
 // NewLeaseSessionManager creates a LeaseSessionManager backed by the given K8s client.
-func NewLeaseSessionManager(c client.Client, namespace string, logger *slog.Logger) SessionManager {
-	return &LeaseSessionManager{
-		client:    c,
-		namespace: namespace,
-		logger:    logger,
+func NewLeaseSessionManager(c client.Client, namespace string, logger *slog.Logger, opts ...LeaseOption) SessionManager {
+	return NewLeaseSessionManagerConcrete(c, namespace, logger, opts...)
+}
+
+// NewLeaseSessionManagerConcrete returns the concrete *LeaseSessionManager type
+// for callers that need access to signal metadata storage (e.g., disconnect handler).
+func NewLeaseSessionManagerConcrete(c client.Client, namespace string, logger *slog.Logger, opts ...LeaseOption) *LeaseSessionManager {
+	m := &LeaseSessionManager{
+		client:     c,
+		namespace:  namespace,
+		sessionTTL: DefaultSessionTTL,
+		logger:     logger,
 	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// StoreSignalMetadata attaches signal context metadata to an active session entry.
+// Used by handleTakeover to persist autonomous session metadata for later reconstruction.
+func (m *LeaseSessionManager) StoreSignalMetadata(sessionID string, metadata map[string]string) {
+	raw, ok := m.sessions.Load(sessionID)
+	if !ok {
+		return
+	}
+	entry := raw.(*sessionEntry)
+	entry.signalMeta = metadata
+}
+
+// GetSignalMetadata retrieves stored signal metadata for a session.
+// Returns nil if session not found or no metadata stored.
+func (m *LeaseSessionManager) GetSignalMetadata(sessionID string) map[string]string {
+	raw, ok := m.sessions.Load(sessionID)
+	if !ok {
+		return nil
+	}
+	return raw.(*sessionEntry).signalMeta
 }
 
 func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user UserInfo) (*InteractiveSession, error) {
@@ -82,18 +126,20 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 
 	sessionID := uuid.New().String()
 	leaseName := leaseName(rrID)
+	leaseDuration := int32(m.sessionTTL.Seconds())
 
 	lease := &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      leaseName,
 			Namespace: m.namespace,
 			Annotations: map[string]string{
-				leaseTTLAnnotation: DefaultSessionTTL.String(),
+				leaseTTLAnnotation: m.sessionTTL.String(),
 			},
 		},
 		Spec: coordinationv1.LeaseSpec{
-			HolderIdentity: &sessionID,
-			AcquireTime:    nowMicroTime(),
+			HolderIdentity:       &sessionID,
+			LeaseDurationSeconds: &leaseDuration,
+			AcquireTime:          nowMicroTime(),
 		},
 	}
 
