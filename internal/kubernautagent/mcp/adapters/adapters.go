@@ -55,11 +55,11 @@ func (a *InvestigatorRunnerAdapter) RunInteractiveTurn(ctx context.Context, mess
 		return "", fmt.Errorf("interactive turn: %w", err)
 	}
 
-	return extractContent(result)
+	return ExtractContent(result)
 }
 
-// extractContent maps the sealed investigator.LoopResult to a plain string.
-func extractContent(result investigator.LoopResult) (string, error) {
+// ExtractContent maps the sealed investigator.LoopResult to a plain string.
+func ExtractContent(result investigator.LoopResult) (string, error) {
 	switch r := result.(type) {
 	case *investigator.TextResult:
 		return r.Content, nil

@@ -39,11 +39,11 @@ const (
 	MetricNameAuthzDeniedTotal           = "aiagent_authz_denied_total"
 	MetricNameAuditEventsEmittedTotal    = "aiagent_audit_events_emitted_total"
 
-	// Interactive mode metrics (PR6a, BR-INTERACTIVE-001..008)
-	MetricNameInteractiveSessionsActive       = "kubernaut_interactive_sessions_active"
-	MetricNameInteractiveCommandDuration      = "kubernaut_interactive_command_duration_seconds"
-	MetricNameInteractiveTakeoverTotal        = "kubernaut_interactive_takeover_total"
-	MetricNameInteractiveLeaseContentionTotal = "kubernaut_interactive_lease_contention_total"
+	// Interactive MCP mode metrics (PR6a, BR-INTERACTIVE-001..008)
+	MetricNameInteractiveSessionsActive       = "aiagent_mcp_interactive_sessions_active"
+	MetricNameInteractiveCommandDuration      = "aiagent_mcp_interactive_command_duration_seconds"
+	MetricNameInteractiveTakeoverTotal        = "aiagent_mcp_interactive_takeover_total"
+	MetricNameInteractiveLeaseContentionTotal = "aiagent_mcp_interactive_lease_contention_total"
 )
 
 // maxSignalNameLen bounds the signal_name label to prevent Prometheus TSDB
