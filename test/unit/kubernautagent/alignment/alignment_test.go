@@ -823,7 +823,6 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 	Describe("UT-SA-601-CX-004: Config verdictTimeout must be positive when enabled", func() {
 		It("should reject AlignmentCheck with Timeout <= 0 when enabled", func() {
 			cfg := config.DefaultConfig()
-			cfg.AI.LLM.Model = "test-model"
 			cfg.AI.AlignmentCheck.Enabled = true
 			cfg.AI.AlignmentCheck.Timeout = 0
 			cfg.AI.AlignmentCheck.MaxStepTokens = 500
