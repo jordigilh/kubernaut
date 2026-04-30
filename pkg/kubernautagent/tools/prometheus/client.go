@@ -35,9 +35,9 @@ type ClientConfig struct {
 	URL                   string            `yaml:"url"`
 	Headers               map[string]string `yaml:"headers"`
 	Timeout               time.Duration     `yaml:"timeout"`
-	SizeLimit             int               `yaml:"size_limit"`
-	MetadataLimit         int               `yaml:"metadata_limit"`
-	MetadataTimeWindowHrs int               `yaml:"metadata_time_window_hrs"`
+	SizeLimit             int               `yaml:"sizeLimit"`
+	MetadataLimit         int               `yaml:"metadataLimit"`
+	MetadataTimeWindowHrs int               `yaml:"metadataTimeWindowHrs"`
 
 	// Transport overrides the http.Client's RoundTripper. When set, it is used
 	// as the underlying transport for all Prometheus API requests. This enables

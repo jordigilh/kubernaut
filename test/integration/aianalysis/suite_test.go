@@ -539,19 +539,19 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
   provider: "openai"
   model: "mock-model"
   endpoint: "%s"
-  api_key: "mock-api-key-for-integration-tests"
-data_storage:
+  apiKey: "mock-api-key-for-integration-tests"
+dataStorage:
   url: "%s"
 logging:
   level: "debug"
 server:
   port: 18120
-  health_addr: ":18121"
-  metrics_addr: ":18122"
+  healthAddr: ":18121"
+  metricsAddr: ":18122"
 audit:
-  flush_interval_seconds: 0.1
-  buffer_size: 10000
-  batch_size: 50
+  flushIntervalSeconds: 0.1
+  bufferSize: 10000
+  batchSize: 50
 auth:
   resource_name: "kubernaut-agent"
 `, llmEndpoint, dsURL)

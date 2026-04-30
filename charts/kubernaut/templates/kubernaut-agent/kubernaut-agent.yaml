@@ -134,20 +134,20 @@ data:
     server:
       address: "0.0.0.0"
       port: 8080
-      health_addr: ":8081"
-      metrics_addr: ":9090"
+      healthAddr: ":8081"
+      metricsAddr: ":9090"
       tls:
         certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
-    data_storage:
+    dataStorage:
       url: "{{ include "kubernaut.datastorage.url" . }}"
 {{- if include "kubernaut.agent.tlsEnabled" . }}
-    tls:
-      ca_file: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
+      tls:
+        caFile: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
 {{- end }}
     audit:
-      flush_interval_seconds: 1.0
-      buffer_size: 10000
-      batch_size: 50
+      flushIntervalSeconds: 1.0
+      bufferSize: 10000
+      batchSize: 50
 {{- if .Values.kubernautAgent.alignmentCheck.enabled }}
     alignmentCheck:
       enabled: true
@@ -165,7 +165,7 @@ data:
         endpoint: {{ .endpoint }}
 {{- end }}
 {{- if .apiKey }}
-        api_key: {{ .apiKey }}
+        apiKey: {{ .apiKey }}
 {{- end }}
 {{- end }}
 {{- end }}
@@ -217,16 +217,16 @@ data:
     llm:
       provider: {{ .Values.kubernautAgent.llm.provider | quote }}
       model: {{ .Values.kubernautAgent.llm.model | quote }}
-      max_retries: 3
-      timeout_seconds: 120
+      maxRetries: 3
+      timeoutSeconds: 120
       temperature: 0.7
 {{- if .Values.kubernautAgent.llm.structuredOutput }}
-      structured_output: true
+      structuredOutput: true
 {{- end }}
 {{- if .Values.kubernautAgent.llm.oauth2.enabled }}
       oauth2:
         enabled: true
-        token_url: {{ .Values.kubernautAgent.llm.oauth2.tokenURL | quote }}
+        tokenURL: {{ .Values.kubernautAgent.llm.oauth2.tokenURL | quote }}
 {{- if .Values.kubernautAgent.llm.oauth2.scopes }}
         scopes:
 {{- range (splitList " " .Values.kubernautAgent.llm.oauth2.scopes) }}

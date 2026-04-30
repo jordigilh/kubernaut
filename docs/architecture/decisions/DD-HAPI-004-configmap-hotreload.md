@@ -92,8 +92,8 @@ data:
       provider: openai
       model: gpt-4
       endpoint: null  # Use default
-      max_retries: 3
-      timeout_seconds: 60
+      maxRetries: 3
+      timeoutSeconds: 60
       max_tokens_per_request: 4096
       temperature: 0.7
 

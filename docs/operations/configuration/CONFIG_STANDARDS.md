@@ -156,26 +156,26 @@ llm:
   provider: "openai"                # REQUIRED: openai, ollama, azure, vertex, anthropic, bedrock, huggingface, mistral
   endpoint: "https://api.openai.com" # Provider-specific base URL (required for openai, ollama, azure, vertex, mistral; optional for anthropic; unused by bedrock, huggingface)
   model: "gpt-4"                    # Default: "gpt-4"
-  api_key: ""                       # Use env var LLM_API_KEY (required for openai, azure, anthropic, huggingface, mistral; unused by bedrock, vertex, ollama)
-  azure_api_version: ""             # Required when provider=azure (e.g. "2024-02-15-preview")
-  vertex_project: ""                # Required when provider=vertex (GCP project ID)
-  vertex_location: "us-central1"    # Default: "us-central1" (for provider=vertex)
-  bedrock_region: ""                # Optional when provider=bedrock (overrides AWS_REGION env / SDK default credential chain)
+  apiKey: ""                       # Use env var LLM_API_KEY (required for openai, azure, anthropic, huggingface, mistral; unused by bedrock, vertex, ollama)
+  azureApiVersion: ""             # Required when provider=azure (e.g. "2024-02-15-preview")
+  vertexProject: ""                # Required when provider=vertex (GCP project ID)
+  vertexLocation: "us-central1"    # Default: "us-central1" (for provider=vertex)
+  bedrockRegion: ""                # Optional when provider=bedrock (overrides AWS_REGION env / SDK default credential chain)
 
-data_storage:
+dataStorage:
   url: "http://data-storage:8080"   # REQUIRED - no default
 
 investigator:
-  max_turns: 15                     # Default: 15 — max LLM tool-call turns per investigation
+  maxTurns: 15                     # Default: 15 — max LLM tool-call turns per investigation
 
 sanitization:
-  g4_credentials: true              # Default: true — G4 credential scrubbing
-  i1_injection: true                # Default: true — I1 injection stripping
+  injectionPatternsEnabled: true              # Default: true — I1 injection stripping
+  credentialScrubEnabled: true               # Default: true — G4 credential scrubbing
 
 anomaly:
-  max_tool_calls_per_tool: 10       # Default: 10 — I7 per-tool call limit (raised from 5, #860; pagination calls exempt)
-  max_total_tool_calls: 30          # Default: 30 — I7 total tool call limit
-  max_repeated_failures: 3          # Default: 3 — I7 consecutive failure limit
+  maxToolCallsPerTool: 10       # Default: 10 — I7 per-tool call limit (raised from 5, #860; pagination calls exempt)
+  maxTotalToolCalls: 30          # Default: 30 — I7 total tool call limit
+  maxRepeatedFailures: 3          # Default: 3 — I7 consecutive failure limit
 
 summarizer:
   threshold: 8000                   # Default: 8000 chars — above this, tool output is LLM-summarized
@@ -190,11 +190,11 @@ logging:
   level: "info"                     # Default: "info"
   format: "json"                    # Default: "json"
 
-health:
-  listen_addr: ":8081"              # Default: ":8081"
-
-metrics:
-  listen_addr: ":9090"              # Default: ":9090"
+server:
+  address: "0.0.0.0"                # Default: "0.0.0.0"
+  port: 8080                        # Default: 8080
+  healthAddr: ":8081"               # Default: ":8081" — liveness/readiness
+  metricsAddr: ":9090"              # Default: ":9090" — Prometheus scrape
 ```
 
 #### Air-gapped / On-prem LLM Guidance
