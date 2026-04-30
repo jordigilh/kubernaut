@@ -144,6 +144,31 @@ data:
         bufferSize: 10000
         batchSize: 50
     ai:
+{{- if and .Values.kubernautAgent.llm.provider .Values.kubernautAgent.llm.model }}
+      llm:
+        provider: {{ .Values.kubernautAgent.llm.provider | quote }}
+        model: {{ .Values.kubernautAgent.llm.model | quote }}
+        maxRetries: 3
+        timeoutSeconds: 120
+        temperature: 0.7
+{{- if .Values.kubernautAgent.llm.structuredOutput }}
+        structuredOutput: true
+{{- end }}
+{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+        oauth2:
+          enabled: true
+          tokenURL: {{ .Values.kubernautAgent.llm.oauth2.tokenURL | quote }}
+          credentialsDir: "/etc/kubernaut-agent/oauth2"
+{{- if .Values.kubernautAgent.llm.oauth2.scopes }}
+          scopes:
+{{- range (splitList " " .Values.kubernautAgent.llm.oauth2.scopes) }}
+            - {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- else }}
+{{- fail "LLM configuration required: set kubernautAgent.llm.provider and kubernautAgent.llm.model" }}
+{{- end }}
       investigation:
         maxTurns: 40
 {{- if .Values.kubernautAgent.alignmentCheck.enabled }}
@@ -200,49 +225,7 @@ data: {}
 {{- fail "kubernautAgent.llm.oauth2.tokenURL is required when oauth2.enabled=true" }}
 {{- end }}
 {{- if not .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
-{{- fail "kubernautAgent.llm.oauth2.credentialsSecretRef is required when oauth2.enabled=true" }}
-{{- end }}
-{{- end }}
-{{- if not .Values.kubernautAgent.existingSdkConfigMap }}
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: kubernaut-agent-sdk-config
-  namespace: {{ .Release.Namespace }}
-  labels:
-    app: kubernaut-agent
-    component: sdk-config
-    {{- include "kubernaut.labels" . | nindent 4 }}
-data:
-  sdk-config.yaml: |
-{{- if .Values.kubernautAgent.sdkConfigContent }}
-{{ .Values.kubernautAgent.sdkConfigContent | indent 4 }}
-{{- else if and .Values.kubernautAgent.llm.provider .Values.kubernautAgent.llm.model }}
-    llm:
-      provider: {{ .Values.kubernautAgent.llm.provider | quote }}
-      model: {{ .Values.kubernautAgent.llm.model | quote }}
-      maxRetries: 3
-      timeoutSeconds: 120
-      temperature: 0.7
-{{- if .Values.kubernautAgent.llm.structuredOutput }}
-      structuredOutput: true
-{{- end }}
-{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
-      oauth2:
-        enabled: true
-        tokenURL: {{ .Values.kubernautAgent.llm.oauth2.tokenURL | quote }}
-{{- if .Values.kubernautAgent.llm.oauth2.scopes }}
-        scopes:
-{{- range (splitList " " .Values.kubernautAgent.llm.oauth2.scopes) }}
-          - {{ . | quote }}
-{{- end }}
-{{- end }}
-{{- end }}
-    toolsets: {}
-    mcp_servers: {}
-{{- else }}
-{{- fail "LLM configuration required. Choose one:\n  1) --set kubernautAgent.llm.provider=openai --set kubernautAgent.llm.model=gpt-4o  (quickstart)\n  2) --set-file kubernautAgent.sdkConfigContent=sdk-config.yaml  (full config)\n  3) --set kubernautAgent.existingSdkConfigMap=my-configmap  (pre-existing)" }}
+{{- fail "kubernautAgent.llm.oauth2.credentialsSecretRef is required when oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
 {{- end }}
 {{- end }}
 ---
@@ -288,18 +271,6 @@ spec:
             - name: metrics
               containerPort: 9090
           env:
-{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
-            - name: OAUTH2_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
-                  key: client-id
-            - name: OAUTH2_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
-                  key: client-secret
-{{- end }}
             - name: TLS_CA_FILE
               value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
           args:
@@ -309,12 +280,14 @@ spec:
             - name: config
               mountPath: /etc/kubernaut-agent
               readOnly: true
-            - name: sdk-config
-              mountPath: /etc/kubernaut-agent/sdk
-              readOnly: true
             - name: llm-credentials-file
               mountPath: /etc/kubernaut-agent/credentials
               readOnly: true
+{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+            - name: oauth2-credentials
+              mountPath: /etc/kubernaut-agent/oauth2
+              readOnly: true
+{{- end }}
             {{- if include "kubernaut.agent.tlsEnabled" . }}
             - name: service-ca
               mountPath: {{ include "kubernaut.agent.tlsCaDir" . }}
@@ -350,12 +323,14 @@ spec:
         - name: config
           configMap:
             name: kubernaut-agent-config
-        - name: sdk-config
-          configMap:
-            name: {{ .Values.kubernautAgent.existingSdkConfigMap | default "kubernaut-agent-sdk-config" }}
         - name: llm-credentials-file
           secret:
             secretName: {{ .Values.kubernautAgent.llm.credentialsSecretName }}
+{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+        - name: oauth2-credentials
+          secret:
+            secretName: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
+{{- end }}
         {{- if include "kubernaut.agent.tlsEnabled" . }}
         - name: service-ca
           configMap:

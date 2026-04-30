@@ -165,7 +165,8 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --set postgresql.auth.existingSecret=pg-credentials \
   --set valkey.existingSecret=vk-credentials \
-  --set-file kubernautAgent.sdkConfigContent=my-sdk-config.yaml \
+  --set kubernautAgent.llm.provider=openai \
+  --set kubernautAgent.llm.model=gpt-4o \
   --set-file signalprocessing.policies.content=my-policy.rego \
   --set-file aianalysis.policies.content=my-approval.rego
 ```
@@ -257,17 +258,17 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 | `kubernautAgent.llm.credentialsSecretName` | Secret with LLM API keys (e.g., `OPENAI_API_KEY`) | `llm-credentials` |
 | `kubernautAgent.llm.provider` | LLM provider for quickstart (`openai`, `anthropic`) | `""` |
 | `kubernautAgent.llm.model` | LLM model for quickstart (`gpt-4o`, `claude-sonnet-4-20250514`) | `""` |
-| `kubernautAgent.sdkConfigContent` | Full SDK config YAML (via `--set-file`; overrides provider/model) | `""` |
-| `kubernautAgent.existingSdkConfigMap` | Pre-existing ConfigMap for SDK config (highest priority) | `""` |
-| `kubernautAgent.prometheus.enabled` | Enable Prometheus toolset in auto-generated SDK config | `false` |
+| `kubernautAgent.llm.structuredOutput` | Enable structured JSON output via provider schema enforcement | `false` |
+| `kubernautAgent.llm.oauth2.enabled` | Enable OAuth2 client credentials grant for LLM gateway | `false` |
+| `kubernautAgent.llm.oauth2.tokenURL` | OAuth2 token endpoint URL | `""` |
+| `kubernautAgent.llm.oauth2.credentialsSecretRef` | Secret with `client-id` and `client-secret` keys (mounted as files) | `""` |
+| `kubernautAgent.prometheus.enabled` | Enable Prometheus toolset | `false` |
 | `kubernautAgent.prometheus.url` | Prometheus/Thanos URL | `""` |
 | `kubernautAgent.prometheus.ocpMonitoringRbac` | **DEPRECATED v1.4** — Create RBAC for OCP monitoring stack | `false` |
 | `kubernautAgent.prometheus.tls.enabled` | Enable TLS CA trust for Prometheus connections | `false` |
 | `kubernautAgent.prometheus.tls.caConfigMapName` | ConfigMap with CA PEM | `""` |
 
-**SDK config precedence**: `existingSdkConfigMap` > `sdkConfigContent` > `llm.provider`+`llm.model` > fail.
-
-For Vertex AI, Azure, or advanced setups (toolsets, MCP servers), use `sdkConfigContent` or `existingSdkConfigMap`. See `examples/sdk-config.yaml`.
+All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap. OAuth2 credentials are mounted from a Secret as files (never exposed as environment variables).
 
 ### SignalProcessing
 
@@ -422,7 +423,7 @@ helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
 ```
 
 > **Warning — Do not `kubectl patch` Helm-managed ConfigMaps** (#539):
-> Using `kubectl patch` on chart-managed ConfigMaps (e.g., `kubernaut-agent-sdk-config`,
+> Using `kubectl patch` on chart-managed ConfigMaps (e.g., `kubernaut-agent-config`,
 > `workflowexecution-config`) transfers field ownership to the `kubectl-patch` field
 > manager. Subsequent `helm upgrade` will fail with a server-side apply conflict.
 >
@@ -433,7 +434,7 @@ helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
 > If you already have conflicting ConfigMaps, delete them before upgrading — Helm
 > will recreate them with the correct values:
 > ```bash
-> kubectl delete cm kubernaut-agent-sdk-config workflowexecution-config -n kubernaut-system
+> kubectl delete cm kubernaut-agent-config workflowexecution-config -n kubernaut-system
 > helm upgrade kubernaut ... -f my-values.yaml
 > ```
 

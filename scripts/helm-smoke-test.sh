@@ -1073,102 +1073,37 @@ run_template_tests() {
   local tpl_flag="-s"
   local tpl_path="templates/kubernaut-agent/kubernaut-agent.yaml"
   local output
-  local tier2_file
-  tier2_file=$(mktemp)
-  trap "rm -f '$tier2_file'" RETURN
 
-  cat > "$tier2_file" <<'SDKEOF'
-llm:
-  provider: anthropic
-  model: claude-4
-  endpoint: http://custom-llm:8080
-toolsets:
-  prometheus/metrics:
-    enabled: true
-    config:
-      prometheus_url: http://prom:9090
-SDKEOF
-
-  # IT-HAPI-390-001: Two ConfigMaps rendered
+  # IT-HAPI-390-001: Single ConfigMap rendered (SDK ConfigMap removed — consolidated)
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
   if echo "$output" | grep -q "name: kubernaut-agent-config" && \
-     echo "$output" | grep -q "name: kubernaut-agent-sdk-config"; then
-    tap_ok "IT-HAPI-390-001: helm template renders both kubernaut-agent-config and kubernaut-agent-sdk-config"
+     ! echo "$output" | grep -q "name: kubernaut-agent-sdk-config"; then
+    tap_ok "IT-HAPI-390-001: helm template renders kubernaut-agent-config only (SDK ConfigMap removed)"
   else
-    tap_not_ok "IT-HAPI-390-001: helm template renders both ConfigMaps" "Missing one or both ConfigMaps in output"
+    tap_not_ok "IT-HAPI-390-001: consolidated ConfigMap" "SDK ConfigMap still present or main ConfigMap missing"
   fi
 
-  # IT-HAPI-390-002: existingSdkConfigMap skips SDK template
-  output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set kubernautAgent.existingSdkConfigMap=my-custom 2>&1)
-  if ! echo "$output" | grep -q "name: kubernaut-agent-sdk-config" && \
-     echo "$output" | grep -q 'name: my-custom'; then
-    tap_ok "IT-HAPI-390-002: existingSdkConfigMap skips SDK ConfigMap, references user ConfigMap"
+  # IT-HAPI-390-002: LLM config embedded in main ConfigMap
+  if echo "$output" | grep -q "provider:" && \
+     echo "$output" | grep -q "model:"; then
+    tap_ok "IT-HAPI-390-002: LLM provider/model embedded in main ConfigMap"
   else
-    tap_not_ok "IT-HAPI-390-002: existingSdkConfigMap skips SDK template" "kubernaut-agent-sdk-config still rendered or user ConfigMap not referenced"
+    tap_not_ok "IT-HAPI-390-002: LLM in main ConfigMap" "LLM fields not found in main ConfigMap"
   fi
 
-  # IT-HAPI-390-003: Deployment has sdk-config volume mount
-  output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
-  if echo "$output" | grep -q "mountPath: /etc/kubernaut-agent/sdk" && \
-     echo "$output" | grep -q "name: sdk-config"; then
-    tap_ok "IT-HAPI-390-003: Deployment has sdk-config volume and /etc/kubernaut-agent/sdk mount"
+  # IT-HAPI-390-003: No SDK volume mount in Deployment
+  if ! echo "$output" | grep -q "mountPath: /etc/kubernaut-agent/sdk"; then
+    tap_ok "IT-HAPI-390-003: Deployment has no SDK volume mount (consolidated)"
   else
-    tap_not_ok "IT-HAPI-390-003: Deployment sdk-config volume mount" "Missing sdk-config volume or mount"
+    tap_not_ok "IT-HAPI-390-003: SDK volume mount removal" "SDK mount still present"
   fi
 
   # IT-HAPI-390-004: helm lint passes
-  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) >/dev/null 2>&1 && \
-     helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) --set kubernautAgent.existingSdkConfigMap=my-custom >/dev/null 2>&1; then
-    tap_ok "IT-HAPI-390-004: helm lint passes for default and existingSdkConfigMap modes"
+  if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) >/dev/null 2>&1; then
+    tap_ok "IT-HAPI-390-004: helm lint passes for consolidated config"
   else
-    tap_not_ok "IT-HAPI-390-004: helm lint" "One or more lint modes failed"
-  fi
-
-  echo "# --- Template Tests: SDK Auto-Generated Defaults ---"
-
-  # Auto-generated config: toolsets empty by default
-  output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
-  if echo "$output" | grep -A1 "toolsets:" | grep -q "{}"; then
-    tap_ok "ST-SDK-DEFAULTS-001: auto-generated config renders toolsets: {}"
-  else
-    tap_not_ok "ST-SDK-DEFAULTS-001: auto-generated defaults" "Expected empty toolsets"
-  fi
-
-  echo "# --- Template Tests: SDK Config Tiers ---"
-
-  # Tier 2: sdkConfigContent renders verbatim via --set-file
-  output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(policy_flags) \
-    --set-file "kubernautAgent.sdkConfigContent=$tier2_file" 2>&1)
-  if echo "$output" | grep -q "provider: anthropic" && \
-     echo "$output" | grep -q "model: claude-4"; then
-    tap_ok "ST-SDK-TIER2-001: sdkConfigContent renders user content verbatim via --set-file"
-  else
-    tap_not_ok "ST-SDK-TIER2-001: sdkConfigContent verbatim" "User content not found in output"
-  fi
-
-  # Tier 2: sdkConfigContent suppresses auto-generated values
-  if ! echo "$output" | grep -q "max_retries:"; then
-    tap_ok "ST-SDK-TIER2-002: sdkConfigContent suppresses auto-generated structured values"
-  else
-    tap_not_ok "ST-SDK-TIER2-002: sdkConfigContent suppresses auto-gen" "Auto-generated max_retries still present"
-  fi
-
-  # Tier 3 wins over Tier 2: existingSdkConfigMap takes priority
-  output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
-    $(template_common_args) $(policy_flags) \
-    --set-file "kubernautAgent.sdkConfigContent=$tier2_file" \
-    --set kubernautAgent.existingSdkConfigMap=external-cm 2>&1)
-  if ! echo "$output" | grep -q "name: kubernaut-agent-sdk-config" && \
-     echo "$output" | grep -q "name: external-cm"; then
-    tap_ok "ST-SDK-TIER3-001: existingSdkConfigMap takes priority over sdkConfigContent"
-  else
-    tap_not_ok "ST-SDK-TIER3-001: existingSdkConfigMap priority" "ConfigMap still rendered or external-cm not referenced"
+    tap_not_ok "IT-HAPI-390-004: helm lint" "lint failed"
   fi
 
   echo "# --- Template Tests: Helm Hook Hardening ---"
@@ -1411,7 +1346,7 @@ for d in docs:
   fi
 
   # Note: Vertex AI / GCP-specific fields (gcpProjectId, gcpRegion) are configured
-  # via sdkConfigContent or existingSdkConfigMap, not auto-generated quickstart config.
+  # via the main config.yaml, not the quickstart provider/model values.
 
   echo "# --- Template Tests: Unified Monitoring Config (Issue #463) ---"
 

@@ -19,6 +19,8 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -97,20 +99,62 @@ type LLMConfig struct {
 	Temperature      float64                      `yaml:"temperature"`
 	MaxRetries       int                          `yaml:"maxRetries"`
 	TimeoutSeconds   int                          `yaml:"timeoutSeconds"`
-	StructuredOutput bool                         `yaml:"-"`
-	CustomHeaders    []pkgconfig.HeaderDefinition `yaml:"-"`
-	OAuth2           OAuth2Config                 `yaml:"-"`
+	StructuredOutput bool                         `yaml:"structuredOutput"`
+	CustomHeaders    []pkgconfig.HeaderDefinition `yaml:"customHeaders,omitempty"`
+	OAuth2           OAuth2Config                 `yaml:"oauth2,omitempty"`
 }
 
 // OAuth2Config holds OAuth2 client credentials configuration for enterprise
 // LLM gateway authentication. When enabled, KA acquires and refreshes JWTs
 // automatically via the client credentials grant (RFC 6749 s4.4).
+//
+// Security: clientID and clientSecret are resolved from mounted Secret files
+// at runtime (not stored in ConfigMap). Only tokenURL, scopes, and
+// credentialsDir are configured via YAML.
 type OAuth2Config struct {
-	Enabled      bool     `yaml:"enabled"`
-	TokenURL     string   `yaml:"tokenURL"`
-	ClientID     string   `yaml:"clientID"`
-	ClientSecret string   `yaml:"clientSecret"`
-	Scopes       []string `yaml:"scopes,omitempty"`
+	Enabled        bool     `yaml:"enabled"`
+	TokenURL       string   `yaml:"tokenURL"`
+	Scopes         []string `yaml:"scopes,omitempty"`
+	CredentialsDir string   `yaml:"credentialsDir"`
+	ClientID       string   `yaml:"-"`
+	ClientSecret   string   `yaml:"-"`
+}
+
+// ResolveOAuth2Credentials reads clientID and clientSecret from mounted
+// Secret files in the configured credentialsDir. Expected file layout:
+//
+//	<credentialsDir>/client-id
+//	<credentialsDir>/client-secret
+func (c *OAuth2Config) ResolveOAuth2Credentials() error {
+	if !c.Enabled {
+		return nil
+	}
+	if c.CredentialsDir == "" {
+		return fmt.Errorf("oauth2.credentialsDir is required when oauth2.enabled=true")
+	}
+	clientID, err := readSecretFile(filepath.Join(c.CredentialsDir, "client-id"))
+	if err != nil {
+		return fmt.Errorf("reading oauth2 client-id: %w", err)
+	}
+	clientSecret, err := readSecretFile(filepath.Join(c.CredentialsDir, "client-secret"))
+	if err != nil {
+		return fmt.Errorf("reading oauth2 client-secret: %w", err)
+	}
+	c.ClientID = clientID
+	c.ClientSecret = clientSecret
+	return nil
+}
+
+func readSecretFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	v := strings.TrimSpace(string(data))
+	if v == "" {
+		return "", fmt.Errorf("file %s is empty", path)
+	}
+	return v, nil
 }
 
 type DataStorageConfig struct {
@@ -249,81 +293,6 @@ func Load(data []byte) (*Config, error) {
 	return cfg, nil
 }
 
-// SDKConfig represents the SDK configuration file structure.
-// This maps to the kubernaut-agent-sdk-config ConfigMap rendered by
-// the Helm chart when llm.provider/model are set. All LLM fields
-// use gap-fill semantics (main config wins when non-zero) except
-// transport fields (structured_output, custom_headers, oauth2) which
-// are sourced exclusively from this config.
-type SDKConfig struct {
-	LLM struct {
-		Provider         string                       `yaml:"provider"`
-		Model            string                       `yaml:"model"`
-		Endpoint         string                       `yaml:"endpoint"`
-		APIKey           string                       `yaml:"apiKey"`
-		AzureAPIVersion  string                       `yaml:"azureApiVersion"`
-		VertexProject    string                       `yaml:"vertexProject"`
-		VertexLocation   string                       `yaml:"vertexLocation"`
-		BedrockRegion    string                       `yaml:"bedrockRegion"`
-		MaxRetries       int                          `yaml:"maxRetries"`
-		TimeoutSeconds   int                          `yaml:"timeoutSeconds"`
-		Temperature      float64                      `yaml:"temperature"`
-		StructuredOutput bool                         `yaml:"structuredOutput"`
-		CustomHeaders    []pkgconfig.HeaderDefinition `yaml:"customHeaders,omitempty"`
-		OAuth2           OAuth2Config                 `yaml:"oauth2,omitempty"`
-	} `yaml:"llm"`
-}
-
-// MergeSDKConfig loads an SDK config file and merges LLM fields into
-// the main config. Gap-fill semantics: the main config value is kept
-// when non-zero; the SDK value fills the gap only when the main value
-// is the zero value.
-func (c *Config) MergeSDKConfig(data []byte) error {
-	var sdk SDKConfig
-	if err := yaml.Unmarshal(data, &sdk); err != nil {
-		return fmt.Errorf("parsing SDK config: %w", err)
-	}
-	if c.AI.LLM.Provider == "" || c.AI.LLM.Provider == DefaultConfig().AI.LLM.Provider {
-		if sdk.LLM.Provider != "" {
-			c.AI.LLM.Provider = sdk.LLM.Provider
-		}
-	}
-	if c.AI.LLM.Model == "" && sdk.LLM.Model != "" {
-		c.AI.LLM.Model = sdk.LLM.Model
-	}
-	if c.AI.LLM.Endpoint == "" && sdk.LLM.Endpoint != "" {
-		c.AI.LLM.Endpoint = sdk.LLM.Endpoint
-	}
-	if c.AI.LLM.APIKey == "" && sdk.LLM.APIKey != "" {
-		c.AI.LLM.APIKey = sdk.LLM.APIKey
-	}
-	if c.AI.LLM.VertexProject == "" && sdk.LLM.VertexProject != "" {
-		c.AI.LLM.VertexProject = sdk.LLM.VertexProject
-	}
-	if c.AI.LLM.VertexLocation == "" && sdk.LLM.VertexLocation != "" {
-		c.AI.LLM.VertexLocation = sdk.LLM.VertexLocation
-	}
-	if c.AI.LLM.BedrockRegion == "" && sdk.LLM.BedrockRegion != "" {
-		c.AI.LLM.BedrockRegion = sdk.LLM.BedrockRegion
-	}
-	if c.AI.LLM.AzureAPIVersion == "" && sdk.LLM.AzureAPIVersion != "" {
-		c.AI.LLM.AzureAPIVersion = sdk.LLM.AzureAPIVersion
-	}
-	if c.AI.LLM.Temperature == 0 && sdk.LLM.Temperature != 0 {
-		c.AI.LLM.Temperature = sdk.LLM.Temperature
-	}
-	if c.AI.LLM.MaxRetries == 0 && sdk.LLM.MaxRetries != 0 {
-		c.AI.LLM.MaxRetries = sdk.LLM.MaxRetries
-	}
-	if c.AI.LLM.TimeoutSeconds == 0 && sdk.LLM.TimeoutSeconds != 0 {
-		c.AI.LLM.TimeoutSeconds = sdk.LLM.TimeoutSeconds
-	}
-	c.AI.LLM.StructuredOutput = sdk.LLM.StructuredOutput
-	c.AI.LLM.CustomHeaders = sdk.LLM.CustomHeaders
-	c.AI.LLM.OAuth2 = sdk.LLM.OAuth2
-	return nil
-}
-
 // Validate checks required fields and value constraints.
 func (c *Config) Validate() error {
 	if c.Runtime.Logging.Level != "" {
@@ -349,11 +318,8 @@ func (c *Config) Validate() error {
 		if c.AI.LLM.OAuth2.TokenURL == "" {
 			return fmt.Errorf("ai.llm.oauth2.tokenURL is required when oauth2.enabled=true")
 		}
-		if c.AI.LLM.OAuth2.ClientID == "" {
-			return fmt.Errorf("ai.llm.oauth2.clientID is required when oauth2.enabled=true")
-		}
-		if c.AI.LLM.OAuth2.ClientSecret == "" {
-			return fmt.Errorf("ai.llm.oauth2.clientSecret is required when oauth2.enabled=true")
+		if c.AI.LLM.OAuth2.CredentialsDir == "" {
+			return fmt.Errorf("ai.llm.oauth2.credentialsDir is required when oauth2.enabled=true")
 		}
 	}
 	if c.AI.AlignmentCheck.Enabled {

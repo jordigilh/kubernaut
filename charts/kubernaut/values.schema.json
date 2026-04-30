@@ -691,16 +691,7 @@
             }
           }
         },
-        "sdkConfigContent": {
-          "type": "string",
-          "default": "",
-          "description": "Raw SDK config YAML. When set (e.g. via --set-file), replaces auto-generated SDK config in the kubernaut-agent-sdk-config ConfigMap."
-        },
-        "existingSdkConfigMap": {
-          "type": "string",
-          "default": "",
-          "description": "Use a pre-existing ConfigMap for SDK config instead of chart-generated. When set, kubernaut-agent-sdk-config is not created. Takes priority over sdkConfigContent."
-        },
+       
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },

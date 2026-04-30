@@ -17,6 +17,8 @@ limitations under the License.
 package config_test
 
 import (
+	"os"
+	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -158,87 +160,63 @@ ai:
 		})
 	})
 
-	Describe("UT-KA-SO-CFG-001: structured_output flag sourced from SDK config", func() {
-		It("should parse structured_output=true from SDK YAML via MergeSDKConfig", func() {
-			mainYAML := []byte(`
+	Describe("UT-KA-SO-CFG-001: structuredOutput parsed from main config", func() {
+		It("should parse structuredOutput=true from main YAML", func() {
+			cfgYAML := []byte(`
 ai:
   llm:
     provider: "anthropic"
     model: "claude-sonnet-4-20250514"
+    structuredOutput: true
 `)
-			sdkYAML := []byte(`
-llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-  structuredOutput: true
-`)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.AI.LLM.StructuredOutput).To(BeTrue())
 		})
 
-		It("should default structured_output to false when omitted from SDK config", func() {
-			mainYAML := []byte(`
+		It("should default structuredOutput to false when omitted", func() {
+			cfgYAML := []byte(`
 ai:
   llm:
     provider: "openai"
     model: "gpt-4o"
 `)
-			sdkYAML := []byte(`
-llm:
-  provider: "openai"
-  model: "gpt-4o"
-`)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.AI.LLM.StructuredOutput).To(BeFalse())
 		})
 	})
 
-	Describe("UT-KA-SO-CFG-002: custom_headers sourced from SDK config", func() {
-		It("should parse custom_headers from SDK YAML via MergeSDKConfig", func() {
-			mainYAML := []byte(`
+	Describe("UT-KA-SO-CFG-002: customHeaders parsed from main config", func() {
+		It("should parse customHeaders from main YAML", func() {
+			cfgYAML := []byte(`
 ai:
   llm:
     provider: "openai"
     model: "gpt-4o"
+    customHeaders:
+      - name: "X-Custom-Auth"
+        value: "Bearer token123"
+      - name: "X-Org-Id"
+        value: "org-42"
 `)
-			sdkYAML := []byte(`
-llm:
-  provider: "openai"
-  model: "gpt-4o"
-  customHeaders:
-    - name: "X-Custom-Auth"
-      value: "Bearer token123"
-    - name: "X-Org-Id"
-      value: "org-42"
-`)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.AI.LLM.CustomHeaders).To(HaveLen(2))
 			Expect(cfg.AI.LLM.CustomHeaders[0].Name).To(Equal("X-Custom-Auth"))
 			Expect(cfg.AI.LLM.CustomHeaders[0].Value).To(Equal("Bearer token123"))
 			Expect(cfg.AI.LLM.CustomHeaders[1].Name).To(Equal("X-Org-Id"))
 		})
 
-		It("should default custom_headers to nil when omitted from SDK config", func() {
-			mainYAML := []byte(`
+		It("should default customHeaders to nil when omitted", func() {
+			cfgYAML := []byte(`
 ai:
   llm:
     provider: "openai"
     model: "gpt-4o"
 `)
-			sdkYAML := []byte(`
-llm:
-  provider: "openai"
-  model: "gpt-4o"
-`)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.AI.LLM.CustomHeaders).To(BeEmpty())
 		})
 	})
@@ -284,74 +262,62 @@ ai:
 		})
 	})
 
-	Describe("MergeSDKConfig", func() {
-		var mainYAML []byte
+	Describe("Consolidated Config (SDK removed)", func() {
 
-		BeforeEach(func() {
-			mainYAML = []byte(`
+		Describe("UT-KA-CFG-CON-001: OAuth2 parsed from main config", func() {
+			It("should parse OAuth2 enabled/tokenURL/scopes from main YAML", func() {
+				cfgYAML := []byte(`
 ai:
   llm:
     provider: "anthropic"
     model: "claude-sonnet-4-20250514"
+    oauth2:
+      enabled: true
+      tokenURL: "https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"
+      credentialsDir: "/etc/kubernaut-agent/oauth2"
+      scopes:
+        - "openid"
+        - "llm-gateway"
 `)
-		})
-
-		Describe("UT-KA-CFG-SDK-001: SDK oauth2 config merges into main config", func() {
-			It("should populate cfg.LLM.OAuth2 from SDK YAML", func() {
-				sdkYAML := []byte(`
-llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-  oauth2:
-    enabled: true
-    tokenURL: "https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"
-    clientID: "kubernaut-agent"
-    clientSecret: "s3cret"
-    scopes:
-      - "openid"
-      - "llm-gateway"
-`)
-				cfg, err := config.Load(mainYAML)
+				cfg, err := config.Load(cfgYAML)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 				Expect(cfg.AI.LLM.OAuth2.Enabled).To(BeTrue())
 				Expect(cfg.AI.LLM.OAuth2.TokenURL).To(Equal("https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"))
-				Expect(cfg.AI.LLM.OAuth2.ClientID).To(Equal("kubernaut-agent"))
-				Expect(cfg.AI.LLM.OAuth2.ClientSecret).To(Equal("s3cret"))
+				Expect(cfg.AI.LLM.OAuth2.CredentialsDir).To(Equal("/etc/kubernaut-agent/oauth2"))
 				Expect(cfg.AI.LLM.OAuth2.Scopes).To(Equal([]string{"openid", "llm-gateway"}))
 			})
 		})
 
-		Describe("UT-KA-CFG-SDK-002: SDK structured_output merges into main config", func() {
-			It("should populate cfg.LLM.StructuredOutput from SDK YAML", func() {
-				sdkYAML := []byte(`
-llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-  structuredOutput: true
+		Describe("UT-KA-CFG-CON-002: structuredOutput parsed from main config", func() {
+			It("should populate cfg.AI.LLM.StructuredOutput from main YAML", func() {
+				cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "anthropic"
+    model: "claude-sonnet-4-20250514"
+    structuredOutput: true
 `)
-				cfg, err := config.Load(mainYAML)
+				cfg, err := config.Load(cfgYAML)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 				Expect(cfg.AI.LLM.StructuredOutput).To(BeTrue())
 			})
 		})
 
-		Describe("UT-KA-CFG-SDK-003: SDK custom_headers merge into main config", func() {
-			It("should populate cfg.LLM.CustomHeaders from SDK YAML", func() {
-				sdkYAML := []byte(`
-llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-  customHeaders:
-    - name: "X-Custom-Auth"
-      value: "Bearer token123"
-    - name: "X-Org-Id"
-      value: "org-42"
+		Describe("UT-KA-CFG-CON-003: customHeaders parsed from main config", func() {
+			It("should populate cfg.AI.LLM.CustomHeaders from main YAML", func() {
+				cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "anthropic"
+    model: "claude-sonnet-4-20250514"
+    customHeaders:
+      - name: "X-Custom-Auth"
+        value: "Bearer token123"
+      - name: "X-Org-Id"
+        value: "org-42"
 `)
-				cfg, err := config.Load(mainYAML)
+				cfg, err := config.Load(cfgYAML)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 				Expect(cfg.AI.LLM.CustomHeaders).To(HaveLen(2))
 				Expect(cfg.AI.LLM.CustomHeaders[0].Name).To(Equal("X-Custom-Auth"))
 				Expect(cfg.AI.LLM.CustomHeaders[0].Value).To(Equal("Bearer token123"))
@@ -359,10 +325,74 @@ llm:
 				Expect(cfg.AI.LLM.CustomHeaders[1].Value).To(Equal("org-42"))
 			})
 		})
+	})
 
-		Describe("UT-KA-CFG-SDK-004: Main config YAML with llm.oauth2 is ignored by config.Load()", func() {
-			It("should NOT parse oauth2 from main config YAML", func() {
-				mainWithOAuth := []byte(`
+	Describe("UT-KA-417-020: OAuth2Config parsed from main config", func() {
+		It("should parse all OAuth2 fields from main YAML", func() {
+			cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "anthropic"
+    model: "claude-sonnet-4-20250514"
+    oauth2:
+      enabled: true
+      tokenURL: "https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"
+      credentialsDir: "/etc/kubernaut-agent/oauth2"
+      scopes:
+        - "openid"
+        - "llm-gateway"
+`)
+			cfg, err := config.Load(cfgYAML)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.AI.LLM.OAuth2.Enabled).To(BeTrue())
+			Expect(cfg.AI.LLM.OAuth2.TokenURL).To(Equal("https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"))
+			Expect(cfg.AI.LLM.OAuth2.CredentialsDir).To(Equal("/etc/kubernaut-agent/oauth2"))
+			Expect(cfg.AI.LLM.OAuth2.Scopes).To(Equal([]string{"openid", "llm-gateway"}))
+			// clientID/clientSecret are resolved from files at runtime, not YAML
+			Expect(cfg.AI.LLM.OAuth2.ClientID).To(BeEmpty())
+			Expect(cfg.AI.LLM.OAuth2.ClientSecret).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-KA-417-021: OAuth2Config defaults to disabled when omitted", func() {
+		It("should have OAuth2 disabled with empty fields", func() {
+			cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "openai"
+    model: "gpt-4o"
+`)
+			cfg, err := config.Load(cfgYAML)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.AI.LLM.OAuth2.Enabled).To(BeFalse())
+			Expect(cfg.AI.LLM.OAuth2.TokenURL).To(BeEmpty())
+			Expect(cfg.AI.LLM.OAuth2.CredentialsDir).To(BeEmpty())
+			Expect(cfg.AI.LLM.OAuth2.Scopes).To(BeNil())
+		})
+	})
+
+	Describe("UT-KA-417-022: Validate rejects missing tokenURL when oauth2 enabled", func() {
+		It("should return error identifying missing tokenURL", func() {
+			cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "anthropic"
+    model: "claude-sonnet-4-20250514"
+    oauth2:
+      enabled: true
+      credentialsDir: "/etc/kubernaut-agent/oauth2"
+`)
+			cfg, err := config.Load(cfgYAML)
+			Expect(err).NotTo(HaveOccurred())
+			err = cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("tokenURL"))
+		})
+	})
+
+	Describe("UT-KA-417-023: Validate rejects missing credentialsDir when oauth2 enabled", func() {
+		It("should return error identifying missing credentialsDir", func() {
+			cfgYAML := []byte(`
 ai:
   llm:
     provider: "anthropic"
@@ -370,227 +400,93 @@ ai:
     oauth2:
       enabled: true
       tokenURL: "https://keycloak.acme.com/token"
-      clientID: "ka"
-      clientSecret: "secret"
-    structuredOutput: true
-    customHeaders:
-      - name: "X-Test"
-        value: "should-be-ignored"
 `)
-				cfg, err := config.Load(mainWithOAuth)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cfg.AI.LLM.OAuth2.Enabled).To(BeFalse(), "oauth2 must not be parsed from main config")
-				Expect(cfg.AI.LLM.OAuth2.TokenURL).To(BeEmpty())
-				Expect(cfg.AI.LLM.OAuth2.ClientID).To(BeEmpty())
-				Expect(cfg.AI.LLM.OAuth2.ClientSecret).To(BeEmpty())
-				Expect(cfg.AI.LLM.OAuth2.Scopes).To(BeNil())
-				Expect(cfg.AI.LLM.StructuredOutput).To(BeFalse(), "structured_output must not be parsed from main config")
-				Expect(cfg.AI.LLM.CustomHeaders).To(BeEmpty(), "custom_headers must not be parsed from main config")
-			})
-		})
-
-		Describe("UT-KA-CFG-SDK-005: Provider/model merge still works (regression)", func() {
-			It("should merge provider and model from SDK when main uses defaults", func() {
-				minimalMain := []byte(`
-ai:
-  llm:
-    endpoint: "http://localhost:11434/v1"
-`)
-				sdkYAML := []byte(`
-llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-`)
-				cfg, err := config.Load(minimalMain)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-				Expect(cfg.AI.LLM.Provider).To(Equal("anthropic"))
-				Expect(cfg.AI.LLM.Model).To(Equal("claude-sonnet-4-20250514"))
-			})
-		})
-
-		Describe("UT-KA-CFG-SDK-006: Malformed SDK YAML returns parse error", func() {
-			It("should return error for invalid YAML", func() {
-				cfg, err := config.Load(mainYAML)
-				Expect(err).NotTo(HaveOccurred())
-				err = cfg.MergeSDKConfig([]byte(`{invalid yaml: [`))
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("parsing SDK config"))
-			})
-		})
-	})
-
-	Describe("UT-KA-417-020: OAuth2Config sourced from SDK config", func() {
-		It("should parse all OAuth2 fields from SDK YAML via MergeSDKConfig", func() {
-			mainYAML := []byte(`
-ai:
-  llm:
-    provider: "anthropic"
-    model: "claude-sonnet-4-20250514"
-`)
-			sdkYAML := []byte(`
-llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-  oauth2:
-    enabled: true
-    tokenURL: "https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"
-    clientID: "kubernaut-agent"
-    clientSecret: "s3cret"
-    scopes:
-      - "openid"
-      - "llm-gateway"
-`)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.AI.LLM.OAuth2.Enabled).To(BeTrue())
-			Expect(cfg.AI.LLM.OAuth2.TokenURL).To(Equal("https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"))
-			Expect(cfg.AI.LLM.OAuth2.ClientID).To(Equal("kubernaut-agent"))
-			Expect(cfg.AI.LLM.OAuth2.ClientSecret).To(Equal("s3cret"))
-			Expect(cfg.AI.LLM.OAuth2.Scopes).To(Equal([]string{"openid", "llm-gateway"}))
-		})
-	})
-
-	Describe("UT-KA-417-021: OAuth2Config defaults to disabled when omitted from SDK", func() {
-		It("should have OAuth2 disabled with empty fields after SDK merge", func() {
-			mainYAML := []byte(`
-ai:
-  llm:
-    provider: "openai"
-    model: "gpt-4o"
-`)
-			sdkYAML := []byte(`
-llm:
-  provider: "openai"
-  model: "gpt-4o"
-`)
-			cfg, err := config.Load(mainYAML)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.AI.LLM.OAuth2.Enabled).To(BeFalse())
-			Expect(cfg.AI.LLM.OAuth2.TokenURL).To(BeEmpty())
-			Expect(cfg.AI.LLM.OAuth2.ClientID).To(BeEmpty())
-			Expect(cfg.AI.LLM.OAuth2.ClientSecret).To(BeEmpty())
-			Expect(cfg.AI.LLM.OAuth2.Scopes).To(BeNil())
-		})
-	})
-
-	Describe("UT-KA-417-022: Validate rejects missing token_url when oauth2 enabled", func() {
-		It("should return error identifying missing token_url", func() {
-			mainYAML := []byte(`
-ai:
-  llm:
-    provider: "anthropic"
-    model: "claude-sonnet-4-20250514"
-`)
-			sdkYAML := []byte(`
-llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-  oauth2:
-    enabled: true
-    clientID: "kubernaut-agent"
-    clientSecret: "s3cret"
-`)
-			cfg, err := config.Load(mainYAML)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			err = cfg.Validate()
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("tokenURL"))
-		})
-	})
-
-	Describe("UT-KA-417-023: Validate rejects missing client_id when oauth2 enabled", func() {
-		It("should return error identifying missing client_id", func() {
-			mainYAML := []byte(`
-ai:
-  llm:
-    provider: "anthropic"
-    model: "claude-sonnet-4-20250514"
-`)
-			sdkYAML := []byte(`
-llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-  oauth2:
-    enabled: true
-    tokenURL: "https://keycloak.acme.com/token"
-    clientSecret: "s3cret"
-`)
-			cfg, err := config.Load(mainYAML)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			err = cfg.Validate()
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("clientID"))
-		})
-	})
-
-	Describe("UT-KA-417-024: Validate rejects missing client_secret when oauth2 enabled", func() {
-		It("should return error identifying missing client_secret", func() {
-			mainYAML := []byte(`
-ai:
-  llm:
-    provider: "anthropic"
-    model: "claude-sonnet-4-20250514"
-`)
-			sdkYAML := []byte(`
-llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-  oauth2:
-    enabled: true
-    tokenURL: "https://keycloak.acme.com/token"
-    clientID: "kubernaut-agent"
-`)
-			cfg, err := config.Load(mainYAML)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			err = cfg.Validate()
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("clientSecret"))
+			Expect(err.Error()).To(ContainSubstring("credentialsDir"))
 		})
 	})
 
 	Describe("UT-KA-417-025: Validate accepts oauth2 disabled with empty fields", func() {
-		It("should not require OAuth2 fields when disabled in SDK config", func() {
-			mainYAML := []byte(`
+		It("should not require OAuth2 fields when disabled", func() {
+			cfgYAML := []byte(`
 ai:
   llm:
     provider: "anthropic"
     model: "claude-sonnet-4-20250514"
+    oauth2:
+      enabled: false
 `)
-			sdkYAML := []byte(`
-llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-  oauth2:
-    enabled: false
-`)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.Validate()).NotTo(HaveOccurred())
 		})
 
-		It("should not require OAuth2 fields when section omitted from SDK config", func() {
-			mainYAML := []byte(`
+		It("should not require OAuth2 fields when section omitted", func() {
+			cfgYAML := []byte(`
 ai:
   llm:
     provider: "anthropic"
     model: "claude-sonnet-4-20250514"
 `)
-			sdkYAML := []byte(`
-llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-`)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.Validate()).NotTo(HaveOccurred())
+		})
+	})
+
+	Describe("UT-KA-CFG-OAUTH2-RESOLVE: ResolveOAuth2Credentials reads from mounted Secret files", func() {
+		It("should resolve clientID and clientSecret from files", func() {
+			dir, err := os.MkdirTemp("", "oauth2-test")
+			Expect(err).NotTo(HaveOccurred())
+			defer os.RemoveAll(dir)
+
+			Expect(os.WriteFile(filepath.Join(dir, "client-id"), []byte("my-client\n"), 0600)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(dir, "client-secret"), []byte("s3cret\n"), 0600)).To(Succeed())
+
+			oauth2Cfg := &config.OAuth2Config{
+				Enabled:        true,
+				TokenURL:       "https://keycloak.acme.com/token",
+				CredentialsDir: dir,
+			}
+			Expect(oauth2Cfg.ResolveOAuth2Credentials()).To(Succeed())
+			Expect(oauth2Cfg.ClientID).To(Equal("my-client"))
+			Expect(oauth2Cfg.ClientSecret).To(Equal("s3cret"))
+		})
+
+		It("should return error when client-id file is missing", func() {
+			dir, err := os.MkdirTemp("", "oauth2-test")
+			Expect(err).NotTo(HaveOccurred())
+			defer os.RemoveAll(dir)
+
+			Expect(os.WriteFile(filepath.Join(dir, "client-secret"), []byte("s3cret"), 0600)).To(Succeed())
+
+			oauth2Cfg := &config.OAuth2Config{
+				Enabled:        true,
+				TokenURL:       "https://keycloak.acme.com/token",
+				CredentialsDir: dir,
+			}
+			err = oauth2Cfg.ResolveOAuth2Credentials()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("client-id"))
+		})
+
+		It("should return error when credentialsDir is empty", func() {
+			oauth2Cfg := &config.OAuth2Config{
+				Enabled:  true,
+				TokenURL: "https://keycloak.acme.com/token",
+			}
+			err := oauth2Cfg.ResolveOAuth2Credentials()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("credentialsDir"))
+		})
+
+		It("should be a no-op when oauth2 is disabled", func() {
+			oauth2Cfg := &config.OAuth2Config{Enabled: false}
+			Expect(oauth2Cfg.ResolveOAuth2Credentials()).To(Succeed())
+			Expect(oauth2Cfg.ClientID).To(BeEmpty())
 		})
 	})
 })

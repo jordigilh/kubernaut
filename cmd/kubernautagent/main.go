@@ -76,12 +76,10 @@ import (
 
 func main() {
 	var (
-		configPath    string
-		sdkConfigPath string
-		addr          string
+		configPath string
+		addr       string
 	)
 	flag.StringVar(&configPath, "config", "/etc/kubernautagent/config.yaml", "Path to YAML configuration file")
-	flag.StringVar(&sdkConfigPath, "sdk-config", "/etc/kubernaut-agent/sdk/sdk-config.yaml", "Path to SDK configuration file (LLM provider, model, auth, transport)")
 	flag.StringVar(&addr, "addr", "", "HTTP listen address (overrides config server.port)")
 	flag.Parse()
 
@@ -107,17 +105,6 @@ func main() {
 
 	slogger.Info("log level configured", "level", cfg.Runtime.Logging.Level)
 
-	if sdkData, sdkErr := os.ReadFile(sdkConfigPath); sdkErr == nil {
-		if mergeErr := cfg.MergeSDKConfig(sdkData); mergeErr != nil {
-			slogger.Warn("failed to parse SDK config, continuing with main config only",
-				"path", sdkConfigPath, "error", mergeErr)
-		} else {
-			slogger.Info("merged SDK config", "path", sdkConfigPath)
-		}
-	} else {
-		slogger.Info("SDK config not found, using main config only", "path", sdkConfigPath)
-	}
-
 	if cfg.AI.LLM.APIKey == "" {
 		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
 		cfg.AI.LLM.APIKey = credentials.ResolveCredentialsFile(cfg.AI.LLM.Provider, credDir, slogger)
@@ -132,12 +119,12 @@ func main() {
 	}
 
 	if cfg.AI.LLM.OAuth2.Enabled {
-		if v := os.Getenv("OAUTH2_CLIENT_ID"); v != "" {
-			cfg.AI.LLM.OAuth2.ClientID = v
+		if err := cfg.AI.LLM.OAuth2.ResolveOAuth2Credentials(); err != nil {
+			slogger.Error("failed to resolve OAuth2 credentials from mounted Secret", "error", err)
+			os.Exit(1)
 		}
-		if v := os.Getenv("OAUTH2_CLIENT_SECRET"); v != "" {
-			cfg.AI.LLM.OAuth2.ClientSecret = v
-		}
+		slogger.Info("OAuth2 credentials resolved from mounted Secret",
+			"credentialsDir", cfg.AI.LLM.OAuth2.CredentialsDir)
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -353,21 +340,21 @@ func main() {
 		defer certWatcher.Stop()
 	}
 
-	// Issue #783: Wire FileWatcher for SDK config hot-reload
-	sdkCallback := sdkReloadCallback(configPath, func() *kaconfig.Config { return cfg }, swappable, slogger)
-	sdkWatcher, sdkWatchErr := hotreload.NewFileWatcher(
-		sdkConfigPath,
-		sdkCallback,
-		logr.FromSlogHandler(slogger.Handler()).WithName("sdk-config-reloader"),
+	// Issue #783: Wire FileWatcher for main config hot-reload (LLM fields)
+	configCallback := configReloadCallback(configPath, func() *kaconfig.Config { return cfg }, swappable, slogger)
+	configWatcher, configWatchErr := hotreload.NewFileWatcher(
+		configPath,
+		configCallback,
+		logr.FromSlogHandler(slogger.Handler()).WithName("config-reloader"),
 	)
-	if sdkWatchErr != nil {
-		slogger.Warn("SDK config file watcher not started (file may not exist yet)", "error", sdkWatchErr)
+	if configWatchErr != nil {
+		slogger.Warn("config file watcher not started", "error", configWatchErr)
 	} else {
-		if err := sdkWatcher.Start(ctx); err != nil {
-			slogger.Warn("SDK config file watcher failed to start", "error", err)
+		if err := configWatcher.Start(ctx); err != nil {
+			slogger.Warn("config file watcher failed to start", "error", err)
 		} else {
-			defer sdkWatcher.Stop()
-			slogger.Info("SDK config hot-reload enabled (#783)", "path", sdkConfigPath)
+			defer configWatcher.Stop()
+			slogger.Info("config hot-reload enabled (#783)", "path", configPath)
 		}
 	}
 

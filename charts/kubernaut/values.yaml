@@ -299,9 +299,9 @@ kubernautAgent:
   service:
     type: ClusterIP
   llm:
-    # K8s Secret reference for LLM API credentials (not part of SDK ConfigMap).
+    # K8s Secret reference for LLM API credentials (mounted at /etc/kubernaut-agent/credentials).
     credentialsSecretName: llm-credentials
-    # -- Quickstart: set provider + model to auto-generate a minimal SDK config.
+    # -- LLM provider and model (required).
     # Supported providers: openai, anthropic, bedrock, mistral, vertex, local.
     provider: ""   # e.g., "openai", "anthropic"
     model: ""      # e.g., "gpt-4o", "claude-sonnet-4-20250514"
@@ -314,20 +314,13 @@ kubernautAgent:
     # When enabled, KA automatically acquires, caches, and refreshes JWTs via
     # the client credentials grant (RFC 6749 s4.4) and injects
     # Authorization: Bearer <token> into every outbound LLM request.
+    # Credentials (client-id, client-secret) are mounted from a K8s Secret
+    # as files — never exposed as environment variables.
     oauth2:
       enabled: false
       tokenURL: ""              # e.g., "https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"
-      credentialsSecretRef: ""  # K8s Secret containing keys: client-id, client-secret
+      credentialsSecretRef: ""  # K8s Secret containing keys: client-id, client-secret (mounted as files)
       scopes: ""                # Space-separated scopes, e.g., "openid llm-gateway"
-  # -- Raw SDK config YAML content. When set, used verbatim in the
-  # kubernaut-agent-sdk-config ConfigMap. Takes priority over llm.provider/model.
-  # Usage: helm install --set-file kubernautAgent.sdkConfigContent=my-sdk-config.yaml
-  sdkConfigContent: ""
-  # -- Use a pre-existing ConfigMap for SDK config instead of chart-generated.
-  # When set, the chart does NOT create kubernaut-agent-sdk-config and mounts
-  # this ConfigMap at /etc/kubernaut-agent/sdk/ instead.
-  # Takes priority over sdkConfigContent and llm.provider/model.
-  existingSdkConfigMap: ""
   # -- Shadow agent alignment check (#601): parallel audit for prompt injection detection.
   alignmentCheck:
     enabled: false

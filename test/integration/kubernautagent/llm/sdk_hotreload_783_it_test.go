@@ -54,12 +54,12 @@ func (r *recordingClient) Close() error {
 	return nil
 }
 
-var _ = Describe("SDK Hot-Reload Integration — TP-783-IT (#783)", func() {
+var _ = Describe("Config Hot-Reload Integration — TP-783-IT (#783)", func() {
 
 	Describe("IT-KA-783-001: FileWatcher + SwappableClient full reload flow", func() {
 		It("detects file change, invokes callback, and swaps the client", func() {
 			tmpDir := GinkgoT().TempDir()
-			sdkFile := filepath.Join(tmpDir, "sdk-config.yaml")
+			sdkFile := filepath.Join(tmpDir, "config.yaml")
 
 			Expect(os.WriteFile(sdkFile, []byte("version: 1"), 0644)).To(Succeed())
 

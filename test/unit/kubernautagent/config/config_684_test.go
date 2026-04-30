@@ -25,181 +25,138 @@ import (
 
 var _ = Describe("Vertex AI + Claude Regression — #684", func() {
 
-	// Bug 1: MergeSDKConfig() drops critical LLM fields
-	Describe("Bug 1: SDK config merge completeness", func() {
-		var mainYAML []byte
+	Describe("LLM fields parsed from consolidated main config", func() {
 
-		BeforeEach(func() {
-			mainYAML = []byte(`
+		It("UT-KA-684-001: parses endpoint from main config", func() {
+			cfgYAML := []byte(`
 ai:
   llm:
     provider: "vertex_ai"
     model: "claude-sonnet-4-6"
+    endpoint: "https://europe-west1-aiplatform.googleapis.com" # pre-commit:allow-sensitive (test fixture)
 `)
-		})
-
-		It("UT-KA-684-001: merges endpoint from SDK config when main has none", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  endpoint: "https://europe-west1-aiplatform.googleapis.com" # pre-commit:allow-sensitive (test fixture)
-`)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.AI.LLM.Endpoint).To(Equal("https://europe-west1-aiplatform.googleapis.com")) // pre-commit:allow-sensitive (test fixture)
 		})
 
-		It("UT-KA-684-002: merges vertex_project from SDK config when main has none", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  vertexProject: "my-gcp-project"
+		It("UT-KA-684-002: parses vertexProject from main config", func() {
+			cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "vertex_ai"
+    model: "claude-sonnet-4-6"
+    vertexProject: "my-gcp-project"
 `)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.AI.LLM.VertexProject).To(Equal("my-gcp-project"))
 		})
 
-		It("UT-KA-684-003: merges vertex_location from SDK config when main has none", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  vertexLocation: "europe-west1"
+		It("UT-KA-684-003: parses vertexLocation from main config", func() {
+			cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "vertex_ai"
+    model: "claude-sonnet-4-6"
+    vertexLocation: "europe-west1"
 `)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.AI.LLM.VertexLocation).To(Equal("europe-west1"))
 		})
 
-		It("UT-KA-684-004: merges api_key from SDK config when main has none", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  apiKey: "sk-test-from-sdk"
+		It("UT-KA-684-004: parses apiKey from main config", func() {
+			cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "vertex_ai"
+    model: "claude-sonnet-4-6"
+    apiKey: "sk-test-from-config"
 `)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.AI.LLM.APIKey).To(Equal("sk-test-from-sdk"))
+			Expect(cfg.AI.LLM.APIKey).To(Equal("sk-test-from-config"))
 		})
 
-		It("UT-KA-684-005: merges temperature from SDK config", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  temperature: 0.7
+		It("UT-KA-684-005: parses temperature from main config", func() {
+			cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "vertex_ai"
+    model: "claude-sonnet-4-6"
+    temperature: 0.7
 `)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.AI.LLM.Temperature).To(BeNumerically("~", 0.7, 0.001))
 		})
 
-		It("UT-KA-684-006: merges max_retries and timeout_seconds from SDK config", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  maxRetries: 3
-  timeoutSeconds: 120
+		It("UT-KA-684-006: parses maxRetries and timeoutSeconds from main config", func() {
+			cfgYAML := []byte(`
+ai:
+  llm:
+    provider: "vertex_ai"
+    model: "claude-sonnet-4-6"
+    maxRetries: 3
+    timeoutSeconds: 120
 `)
-			cfg, err := config.Load(mainYAML)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.AI.LLM.MaxRetries).To(Equal(3))
 			Expect(cfg.AI.LLM.TimeoutSeconds).To(Equal(120))
 		})
 
-		It("UT-KA-684-007: main config endpoint takes precedence over SDK (gap-fill)", func() {
-			mainWithEndpoint := []byte(`
-ai:
-  llm:
-    provider: "vertex_ai"
-    model: "claude-sonnet-4-6"
-    endpoint: "http://main-endpoint"
-`)
-			sdkYAML := []byte(`
-llm:
-  provider: "vertex_ai"
-  model: "claude-sonnet-4-6"
-  endpoint: "http://sdk-endpoint"
-`)
-			cfg, err := config.Load(mainWithEndpoint)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
-			Expect(cfg.AI.LLM.Endpoint).To(Equal("http://main-endpoint"))
-		})
-
-		It("UT-KA-684-008: merges bedrock_region from SDK config when main has none", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "bedrock"
-  model: "anthropic.claude-3-sonnet"
-  bedrockRegion: "eu-west-1"
-`)
-			mainBedrock := []byte(`
+		It("UT-KA-684-008: parses bedrockRegion from main config", func() {
+			cfgYAML := []byte(`
 ai:
   llm:
     provider: "bedrock"
     model: "anthropic.claude-3-sonnet"
+    bedrockRegion: "eu-west-1"
 `)
-			cfg, err := config.Load(mainBedrock)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.AI.LLM.BedrockRegion).To(Equal("eu-west-1"))
 		})
 
-		It("UT-KA-684-009: merges azure_api_version from SDK config when main has none", func() {
-			sdkYAML := []byte(`
-llm:
-  provider: "azure"
-  model: "gpt-4"
-  azureApiVersion: "2024-02-15-preview"
-`)
-			mainAzure := []byte(`
+		It("UT-KA-684-009: parses azureApiVersion from main config", func() {
+			cfgYAML := []byte(`
 ai:
   llm:
     provider: "azure"
     model: "gpt-4"
     endpoint: "https://my-resource.openai.azure.com" # pre-commit:allow-sensitive (test fixture)
+    azureApiVersion: "2024-02-15-preview"
 `)
-			cfg, err := config.Load(mainAzure)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.AI.LLM.AzureAPIVersion).To(Equal("2024-02-15-preview"))
 		})
 
-		It("UT-KA-684-010: existing provider/model gap-fill semantics unchanged", func() {
-			minimalMain := []byte(`
+		It("UT-KA-684-010: all LLM fields parsed from single config source", func() {
+			cfgYAML := []byte(`
 ai:
   llm:
+    provider: "anthropic"
+    model: "claude-sonnet-4-20250514"
     endpoint: "http://localhost:11434/v1"
+    temperature: 0.5
+    maxRetries: 5
+    timeoutSeconds: 60
 `)
-			sdkYAML := []byte(`
-llm:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
-`)
-			cfg, err := config.Load(minimalMain)
+			cfg, err := config.Load(cfgYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.MergeSDKConfig(sdkYAML)).To(Succeed())
 			Expect(cfg.AI.LLM.Provider).To(Equal("anthropic"))
 			Expect(cfg.AI.LLM.Model).To(Equal("claude-sonnet-4-20250514"))
-			Expect(cfg.AI.LLM.Endpoint).To(Equal("http://localhost:11434/v1"),
-				"main config endpoint must not be overwritten")
+			Expect(cfg.AI.LLM.Endpoint).To(Equal("http://localhost:11434/v1"))
+			Expect(cfg.AI.LLM.Temperature).To(BeNumerically("~", 0.5, 0.001))
+			Expect(cfg.AI.LLM.MaxRetries).To(Equal(5))
+			Expect(cfg.AI.LLM.TimeoutSeconds).To(Equal(60))
 		})
 	})
 
-	// Bug 2: Provider name validation
-	Describe("Bug 2: Validate() endpoint exemptions", func() {
+	Describe("Validate() endpoint exemptions", func() {
 		It("UT-KA-684-103: accepts vertex_ai provider with no endpoint", func() {
 			yaml := []byte(`
 ai:

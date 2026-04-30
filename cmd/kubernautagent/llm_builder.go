@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
@@ -32,7 +31,7 @@ import (
 )
 
 // buildLLMClientFromConfig constructs an llm.Client from the given config.
-// This is a pure function used both at startup and by the SDK hot-reload
+// This is a pure function used both at startup and by the config hot-reload
 // callback. It does not mutate cfg.
 func buildLLMClientFromConfig(ctx context.Context, cfg *kaconfig.Config) (llm.Client, error) {
 	switch cfg.AI.LLM.Provider {
@@ -99,19 +98,19 @@ func buildTransportChainFromConfig(cfg *kaconfig.Config) http.RoundTripper {
 	return base
 }
 
-// sdkReloadCallback creates a hotreload.ReloadCallback for SDK config changes.
-// It re-reads the main config from disk, merges the new SDK content, validates,
-// builds a new client, and swaps it into the SwappableClient.
+// configReloadCallback creates a hotreload.ReloadCallback for main config
+// file changes. It re-parses the new config content, validates safety
+// constraints, builds a new LLM client, and swaps it into the SwappableClient.
 //
 // Security invariants (per #783 adversarial review):
-//   - Provider changes are rejected
-//   - OAuth2 credential changes (token_url, client_id, client_secret) are rejected
-//   - Empty/whitespace SDK content is rejected
+//   - Provider changes are rejected (requires pod restart)
+//   - OAuth2 tokenURL changes are rejected (requires pod restart)
+//   - structured_output changes are rejected (requires pod restart)
+//   - Empty/whitespace content is rejected
 //   - token_url must use https:// scheme
-//   - structured_output changes are rejected
 //   - Fresh config copy is used (live cfg never mutated on failure)
-func sdkReloadCallback(
-	mainConfigPath string,
+func configReloadCallback(
+	configPath string,
 	currentCfg func() *kaconfig.Config,
 	swappable *llm.SwappableClient,
 	logger *slog.Logger,
@@ -120,53 +119,47 @@ func sdkReloadCallback(
 		oldModel := swappable.ModelName()
 
 		if strings.TrimSpace(newContent) == "" {
-			logger.Warn("sdk_config_reload rejected: empty content",
-				"event", "sdk_config_reload", "status", "rejected", "reason", "empty_content")
-			return fmt.Errorf("SDK config reload rejected: empty or whitespace-only content")
+			logger.Warn("config_reload rejected: empty content",
+				"event", "config_reload", "status", "rejected", "reason", "empty_content")
+			return fmt.Errorf("config reload rejected: empty or whitespace-only content")
 		}
 
-		freshCfg, err := loadFreshConfig(mainConfigPath)
+		freshCfg, err := kaconfig.Load([]byte(newContent))
 		if err != nil {
-			logger.Error("sdk_config_reload failed: cannot re-read main config",
-				"event", "sdk_config_reload", "status", "error", "reason", "main_config_read", "error", err)
-			return fmt.Errorf("reload: re-reading main config: %w", err)
-		}
-
-		if err := freshCfg.MergeSDKConfig([]byte(newContent)); err != nil {
-			logger.Error("sdk_config_reload failed: merge error",
-				"event", "sdk_config_reload", "status", "error", "reason", "merge_failed", "error", err)
-			return fmt.Errorf("reload: merging SDK config: %w", err)
+			logger.Error("config_reload failed: parse error",
+				"event", "config_reload", "status", "error", "reason", "parse_failed", "error", err)
+			return fmt.Errorf("reload: parsing config: %w", err)
 		}
 
 		cur := currentCfg()
 
 		if err := validateReloadSafety(cur, freshCfg); err != nil {
-			logger.Warn("sdk_config_reload rejected",
-				"event", "sdk_config_reload", "status", "rejected", "reason", err.Error())
+			logger.Warn("config_reload rejected",
+				"event", "config_reload", "status", "rejected", "reason", err.Error())
 			return err
 		}
 
 		if err := freshCfg.Validate(); err != nil {
-			logger.Warn("sdk_config_reload rejected: validation failed",
-				"event", "sdk_config_reload", "status", "rejected", "reason", "validation_failed", "error", err)
+			logger.Warn("config_reload rejected: validation failed",
+				"event", "config_reload", "status", "rejected", "reason", "validation_failed", "error", err)
 			return fmt.Errorf("reload: validation failed: %w", err)
 		}
 
 		newClient, err := buildLLMClientFromConfig(context.Background(), freshCfg)
 		if err != nil {
-			logger.Error("sdk_config_reload failed: client build error",
-				"event", "sdk_config_reload", "status", "error", "reason", "client_build_failed", "error", err)
+			logger.Error("config_reload failed: client build error",
+				"event", "config_reload", "status", "error", "reason", "client_build_failed", "error", err)
 			return fmt.Errorf("reload: building LLM client: %w", err)
 		}
 
 		if err := swappable.Swap(newClient, freshCfg.AI.LLM.Model); err != nil {
-			logger.Error("sdk_config_reload failed: swap error",
-				"event", "sdk_config_reload", "status", "error", "reason", "swap_failed", "error", err)
+			logger.Error("config_reload failed: swap error",
+				"event", "config_reload", "status", "error", "reason", "swap_failed", "error", err)
 			return fmt.Errorf("reload: swapping client: %w", err)
 		}
 
-		logger.Info("sdk_config_reload success",
-			"event", "sdk_config_reload",
+		logger.Info("config_reload success",
+			"event", "config_reload",
 			"status", "success",
 			"old_model", oldModel,
 			"new_model", freshCfg.AI.LLM.Model,
@@ -177,29 +170,18 @@ func sdkReloadCallback(
 	}
 }
 
-// loadFreshConfig re-reads the main config file from disk and returns a fresh
-// Config struct. This ensures the reload callback never mutates the live config.
-func loadFreshConfig(path string) (*kaconfig.Config, error) {
-	data, err := readFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading config %s: %w", path, err)
-	}
-	return kaconfig.Load(data)
-}
-
-// readFile is a package-level variable for test injection.
-var readFile = os.ReadFile
-
 // validateReloadSafety checks that the new config does not violate hot-reload
-// safety constraints.
+// safety constraints. Safe to change at runtime: model, endpoint, apiKey,
+// temperature, maxRetries, timeoutSeconds. Requires restart: provider,
+// structuredOutput, oauth2.tokenURL.
 func validateReloadSafety(current, proposed *kaconfig.Config) error {
 	if current.AI.LLM.Provider != proposed.AI.LLM.Provider {
-		return fmt.Errorf("SDK config reload rejected: provider change from %q to %q requires pod restart",
+		return fmt.Errorf("config reload rejected: provider change from %q to %q requires pod restart",
 			current.AI.LLM.Provider, proposed.AI.LLM.Provider)
 	}
 
 	if current.AI.LLM.StructuredOutput != proposed.AI.LLM.StructuredOutput {
-		return fmt.Errorf("SDK config reload rejected: structured_output change requires pod restart")
+		return fmt.Errorf("config reload rejected: structured_output change requires pod restart")
 	}
 
 	if err := validateOAuth2Safety(current.AI.LLM.OAuth2, proposed.AI.LLM.OAuth2); err != nil {
@@ -208,7 +190,7 @@ func validateReloadSafety(current, proposed *kaconfig.Config) error {
 
 	if proposed.AI.LLM.OAuth2.Enabled && proposed.AI.LLM.OAuth2.TokenURL != "" {
 		if !strings.HasPrefix(strings.ToLower(proposed.AI.LLM.OAuth2.TokenURL), "https://") {
-			return fmt.Errorf("SDK config reload rejected: oauth2.token_url must use https:// scheme, got %q",
+			return fmt.Errorf("config reload rejected: oauth2.tokenURL must use https:// scheme, got %q",
 				proposed.AI.LLM.OAuth2.TokenURL)
 		}
 	}
@@ -222,13 +204,7 @@ func validateOAuth2Safety(current, proposed kaconfig.OAuth2Config) error {
 	}
 
 	if current.TokenURL != proposed.TokenURL {
-		return fmt.Errorf("SDK config reload rejected: oauth2.token_url change requires pod restart")
-	}
-	if current.ClientID != proposed.ClientID {
-		return fmt.Errorf("SDK config reload rejected: oauth2.client_id change requires pod restart")
-	}
-	if current.ClientSecret != proposed.ClientSecret {
-		return fmt.Errorf("SDK config reload rejected: oauth2.client_secret change requires pod restart")
+		return fmt.Errorf("config reload rejected: oauth2.tokenURL change requires pod restart")
 	}
 	return nil
 }
