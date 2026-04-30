@@ -374,7 +374,7 @@ ai:
 		It("should resolve clientID and clientSecret from files", func() {
 			dir, err := os.MkdirTemp("", "oauth2-test")
 			Expect(err).NotTo(HaveOccurred())
-			defer os.RemoveAll(dir)
+			defer func() { _ = os.RemoveAll(dir) }()
 
 			Expect(os.WriteFile(filepath.Join(dir, "client-id"), []byte("my-client\n"), 0600)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(dir, "client-secret"), []byte("s3cret\n"), 0600)).To(Succeed())
@@ -392,7 +392,7 @@ ai:
 		It("should return error when client-id file is missing", func() {
 			dir, err := os.MkdirTemp("", "oauth2-test")
 			Expect(err).NotTo(HaveOccurred())
-			defer os.RemoveAll(dir)
+			defer func() { _ = os.RemoveAll(dir) }()
 
 			Expect(os.WriteFile(filepath.Join(dir, "client-secret"), []byte("s3cret"), 0600)).To(Succeed())
 

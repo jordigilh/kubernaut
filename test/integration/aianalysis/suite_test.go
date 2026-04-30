@@ -559,6 +559,7 @@ integrations:
 
 	kaLLMRuntimeDir, err := os.MkdirTemp("", "ka-llm-runtime-*")
 	Expect(err).ToNot(HaveOccurred())
+	Expect(os.Chmod(kaLLMRuntimeDir, 0755)).To(Succeed())
 	kaLLMRuntimeContent := fmt.Sprintf(`model: "mock-model"
 endpoint: "%s"
 apiKey: "mock-api-key-for-integration-tests"
@@ -576,10 +577,10 @@ timeoutSeconds: 120
 			"KUBECONFIG":    "/tmp/kubeconfig",
 			"POD_NAMESPACE": "default",
 		},
-		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml", "-llm-runtime", "/etc/kubernautagent/llm-runtime/llm-runtime.yaml"},
+		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml", "-llm-runtime", "/etc/kubernautagent-llm-runtime/llm-runtime.yaml"},
 		Volumes: map[string]string{
 			kaConfigDir:                          "/etc/kubernautagent:ro",
-			kaLLMRuntimeDir:                      "/etc/kubernautagent/llm-runtime:ro",
+			kaLLMRuntimeDir:                      "/etc/kubernautagent-llm-runtime:ro",
 			kaServiceAuthConfig.KubeconfigPath:   "/tmp/kubeconfig:ro",
 			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
 		},
