@@ -924,8 +924,7 @@ ansible:
   tokenSecretRef:
     name: "%s"
     namespace: "%s"
-    key: "token"
-  insecure: true`, AWXServiceName, namespace, AWXServicePort, AWXTokenSecretName, namespace)
+    key: "token"`, AWXServiceName, namespace, AWXServicePort, AWXTokenSecretName, namespace)
 
 	cm.Data["workflowexecution.yaml"] = currentConfig + ansibleSection
 
