@@ -221,7 +221,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusNotFound),
 				"non-owner should receive 404 for session status")
 
-			h.Manager.CancelInvestigation(id)
+			Expect(h.Manager.CancelInvestigation(id)).To(Succeed())
 		})
 	})
 
@@ -254,7 +254,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			Expect(denied[0].Data["requesting_user"]).To(Equal("attacker-user"))
 			Expect(denied[0].SessionID).To(Equal(id))
 
-			h.Manager.CancelInvestigation(id)
+			Expect(h.Manager.CancelInvestigation(id)).To(Succeed())
 		})
 	})
 
@@ -288,7 +288,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			observed := h.AuditStore.EventsOfType(audit.EventTypeSessionObserved)
 			Expect(observed[0].Data["observer_user"]).To(Equal("observer-user"))
 
-			h.Manager.CancelInvestigation(id)
+			Expect(h.Manager.CancelInvestigation(id)).To(Succeed())
 		})
 	})
 
@@ -398,7 +398,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusConflict),
 				"snapshot of running session should return 409 Conflict")
 
-			h.Manager.CancelInvestigation(id)
+			Expect(h.Manager.CancelInvestigation(id)).To(Succeed())
 		})
 	})
 
@@ -973,7 +973,7 @@ var _ = Describe("Metrics Wiring Integration Tests — BR-KA-OBSERVABILITY-001",
 			Expect(v).To(BeNumerically(">=", 1),
 				"owner_mismatch reason should be recorded when a different user accesses the session")
 
-			h.Manager.CancelInvestigation(id)
+			Expect(h.Manager.CancelInvestigation(id)).To(Succeed())
 		})
 	})
 
