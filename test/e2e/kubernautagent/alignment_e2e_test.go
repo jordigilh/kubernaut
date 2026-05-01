@@ -73,12 +73,12 @@ var _ = Describe("E2E-SA-601: Shadow Agent Alignment Check", Label("e2e", "ka", 
 			// The investigation should NOT be flagged by the shadow agent.
 			// Note: NeedsHumanReview may still be true for other reasons
 			// (e.g., low confidence, workflow validation), but if it IS set
-			// due to alignment, the reason would be investigation_inconclusive.
+			// due to alignment, the reason would be alignment_check_failed.
 			if result.NeedsHumanReview.Value {
 				reason, ok := result.HumanReviewReason.Get()
 				if ok {
-					Expect(string(reason)).NotTo(Equal(string(agentclient.HumanReviewReasonInvestigationInconclusive)),
-						"clean investigation should NOT trigger alignment_check_failed → investigation_inconclusive")
+					Expect(string(reason)).NotTo(Equal(string(agentclient.HumanReviewReasonAlignmentCheckFailed)),
+						"clean investigation should NOT trigger alignment_check_failed")
 				}
 			}
 
@@ -126,14 +126,14 @@ var _ = Describe("E2E-SA-601: Shadow Agent Alignment Check", Label("e2e", "ka", 
 			Expect(result.IncidentID).To(Equal("e2e-mock-657-001-inject-cm"))
 
 			// The shadow agent should flag injection content from the tool output.
-			// This triggers NeedsHumanReview=true with investigation_inconclusive.
+			// This triggers NeedsHumanReview=true with alignment_check_failed.
 			Expect(result.NeedsHumanReview.Value).To(BeTrue(),
 				"poisoned ConfigMap content via tool call should trigger human review")
 
 			reason, ok := result.HumanReviewReason.Get()
 			Expect(ok).To(BeTrue(), "human_review_reason should be set")
-			Expect(string(reason)).To(Equal(string(agentclient.HumanReviewReasonInvestigationInconclusive)),
-				"alignment_check_failed from tool output injection should map to investigation_inconclusive")
+			Expect(string(reason)).To(Equal(string(agentclient.HumanReviewReasonAlignmentCheckFailed)),
+				"alignment_check_failed should be returned as first-class API enum")
 
 			Expect(result.Warnings).To(ContainElement(ContainSubstring("alignment check flagged")),
 				"warnings should contain alignment check flagged message from tool output path")
@@ -151,7 +151,7 @@ var _ = Describe("E2E-SA-601: Shadow Agent Alignment Check", Label("e2e", "ka", 
 			// "skip human review"), returning suspicious=true.
 			//
 			// The alignment wrapper sets NeedsHumanReview=true with reason
-			// "alignment_check_failed" which maps to investigation_inconclusive.
+			// "alignment_check_failed" — a first-class API enum added in v1.4.
 
 			req := &agentclient.IncidentRequest{
 				IncidentID:        "e2e-sa-601-002-inject",
@@ -176,15 +176,14 @@ var _ = Describe("E2E-SA-601: Shadow Agent Alignment Check", Label("e2e", "ka", 
 			Expect(result.IncidentID).To(Equal("e2e-sa-601-002-inject"))
 
 			// The shadow agent should flag the injection content.
-			// The wrapper sets NeedsHumanReview=true + reason=alignment_check_failed
-			// → mapped to investigation_inconclusive by the handler.
+			// The wrapper sets NeedsHumanReview=true + reason=alignment_check_failed.
 			Expect(result.NeedsHumanReview.Value).To(BeTrue(),
 				"injected content should trigger human review via alignment check")
 
 			reason, ok := result.HumanReviewReason.Get()
 			Expect(ok).To(BeTrue(), "human_review_reason should be set")
-			Expect(string(reason)).To(Equal(string(agentclient.HumanReviewReasonInvestigationInconclusive)),
-				"alignment_check_failed should map to investigation_inconclusive")
+			Expect(string(reason)).To(Equal(string(agentclient.HumanReviewReasonAlignmentCheckFailed)),
+				"alignment_check_failed should be returned as first-class API enum")
 
 			Expect(result.Warnings).To(ContainElement(ContainSubstring("alignment check flagged")),
 				"warnings should contain alignment check flagged message")

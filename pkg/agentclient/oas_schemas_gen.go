@@ -306,7 +306,7 @@ func (*HTTPValidationError) incidentSessionResultEndpointAPIV1IncidentSessionSes
 func (*HTTPValidationError) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {}
 
 // Structured reason for needs_human_review=true.
-// Business Requirements: BR-HAPI-197, BR-HAPI-200, BR-496
+// Business Requirements: BR-HAPI-197, BR-HAPI-200, BR-496, BR-AI-601
 // Design Decision: DD-HAPI-002 v1.2, DD-HAPI-006 v1.3
 // AIAnalysis uses this for reliable subReason mapping instead of parsing warnings.
 // Ref: #/components/schemas/HumanReviewReason
@@ -321,6 +321,7 @@ const (
 	HumanReviewReasonLlmParsingError           HumanReviewReason = "llm_parsing_error"
 	HumanReviewReasonInvestigationInconclusive HumanReviewReason = "investigation_inconclusive"
 	HumanReviewReasonRcaIncomplete             HumanReviewReason = "rca_incomplete"
+	HumanReviewReasonAlignmentCheckFailed      HumanReviewReason = "alignment_check_failed"
 )
 
 // AllValues returns all HumanReviewReason values.
@@ -334,6 +335,7 @@ func (HumanReviewReason) AllValues() []HumanReviewReason {
 		HumanReviewReasonLlmParsingError,
 		HumanReviewReasonInvestigationInconclusive,
 		HumanReviewReasonRcaIncomplete,
+		HumanReviewReasonAlignmentCheckFailed,
 	}
 }
 
@@ -355,6 +357,8 @@ func (s HumanReviewReason) MarshalText() ([]byte, error) {
 	case HumanReviewReasonInvestigationInconclusive:
 		return []byte(s), nil
 	case HumanReviewReasonRcaIncomplete:
+		return []byte(s), nil
+	case HumanReviewReasonAlignmentCheckFailed:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -387,6 +391,9 @@ func (s *HumanReviewReason) UnmarshalText(data []byte) error {
 		return nil
 	case HumanReviewReasonRcaIncomplete:
 		*s = HumanReviewReasonRcaIncomplete
+		return nil
+	case HumanReviewReasonAlignmentCheckFailed:
+		*s = HumanReviewReasonAlignmentCheckFailed
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

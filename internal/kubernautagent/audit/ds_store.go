@@ -494,6 +494,7 @@ var validHumanReviewReasons = map[string]ogenclient.IncidentResponseDataHumanRev
 	"llm_parsing_error":           ogenclient.IncidentResponseDataHumanReviewReasonLlmParsingError,
 	"investigation_inconclusive":  ogenclient.IncidentResponseDataHumanReviewReasonInvestigationInconclusive,
 	"rca_incomplete":              ogenclient.IncidentResponseDataHumanReviewReasonRcaIncomplete,
+	"alignment_check_failed": ogenclient.IncidentResponseDataHumanReviewReasonAlignmentCheckFailed,
 }
 
 // validHumanReviewReason returns the ogen enum value if the string is a recognised

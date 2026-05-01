@@ -624,6 +624,7 @@ spec:
                 description: |-
                   Reason why human review needed (when NeedsHumanReview=true)
                   BR-HAPI-197: Maps to HAPI's human_review_reason enum values
+                  BR-AI-601: alignment_check_failed added for shadow agent alignment verdicts
                 enum:
                 - workflow_not_found
                 - image_mismatch
@@ -633,6 +634,7 @@ spec:
                 - llm_parsing_error
                 - investigation_inconclusive
                 - rca_incomplete
+                - alignment_check_failed
                 type: string
               investigationId:
                 description: |-

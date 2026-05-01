@@ -220,8 +220,8 @@ func main() {
 			alignEvaluator = alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout:       cfg.AI.AlignmentCheck.Timeout,
 				MaxStepTokens: cfg.AI.AlignmentCheck.MaxStepTokens,
-				MaxRetries:    1,
-			}, alignprompt.SystemPrompt())
+				MaxRetries:    cfg.AI.AlignmentCheck.MaxRetries,
+			}, alignprompt.SystemPrompt(), alignment.WithLogger(slogger))
 			effectiveLLM = alignment.NewLLMProxy(instrumentedLLM)
 			effectiveReg = alignment.NewToolProxy(reg)
 			slogger.Info("shadow agent alignment check enabled")
@@ -258,11 +258,13 @@ func main() {
 	var investigationRunner kaserver.InvestigationRunner = inv
 	if alignEvaluator != nil {
 		investigationRunner = alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
-			Inner:          inv,
-			Evaluator:      alignEvaluator,
-			VerdictTimeout: 30 * time.Second,
-			AuditStore:     auditStore,
-			Logger:         slogger,
+			Inner:                 inv,
+			Evaluator:             alignEvaluator,
+			VerdictTimeout:        cfg.AI.AlignmentCheck.VerdictTimeout,
+			AuditStore:            auditStore,
+			Logger:                slogger,
+			Mode:                  cfg.AI.AlignmentCheck.Mode,
+			CanaryForceEscalation: cfg.AI.AlignmentCheck.Canary.ForceEscalation,
 		})
 	}
 

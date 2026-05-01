@@ -38,6 +38,12 @@ func ObserverFromContext(ctx context.Context) *Observer {
 	return o
 }
 
+// DefaultMaxConcurrentEvals limits goroutines spawned per investigation.
+const DefaultMaxConcurrentEvals = 10
+
+// MaxObservationContentLen caps the stored content in observations to limit memory.
+const MaxObservationContentLen = 4096
+
 // Observer collects observations from concurrent evaluations and renders a verdict.
 // Each Observer instance is scoped to a single investigation — a fresh Observer
 // must be created per Investigate() call to avoid cross-request state leakage.
@@ -47,15 +53,21 @@ type Observer struct {
 	observations []Observation
 	wg           sync.WaitGroup
 	stepIdx      atomic.Int64
+	sem          chan struct{}
 }
 
 // NewObserver creates an Observer backed by the given evaluator.
 // Panics if evaluator is nil to prevent nil deref in SubmitAsync.
-func NewObserver(evaluator *Evaluator) *Observer {
+// maxConcurrent limits the number of goroutines; pass 0 for the default.
+func NewObserver(evaluator *Evaluator, maxConcurrent ...int) *Observer {
 	if evaluator == nil {
 		panic("alignment.NewObserver: evaluator must not be nil")
 	}
-	return &Observer{evaluator: evaluator}
+	limit := DefaultMaxConcurrentEvals
+	if len(maxConcurrent) > 0 && maxConcurrent[0] > 0 {
+		limit = maxConcurrent[0]
+	}
+	return &Observer{evaluator: evaluator, sem: make(chan struct{}, limit)}
 }
 
 // NextStepIndex returns the next monotonically increasing step index for this
@@ -67,11 +79,45 @@ func (o *Observer) NextStepIndex() int {
 // SubmitAsync queues a step for asynchronous evaluation. The WaitGroup counter
 // is incremented synchronously (before the goroutine launches) to prevent
 // a race between Add and Wait.
+//
+// Panics inside EvaluateStep (e.g. crypto/rand failure in boundary.Generate)
+// are recovered and converted to fail-closed observations to prevent a single
+// evaluation failure from crashing the entire KA process.
 func (o *Observer) SubmitAsync(ctx context.Context, step Step) {
 	o.wg.Add(1)
 	go func() {
 		defer o.wg.Done()
-		obs := o.evaluator.EvaluateStep(ctx, step)
+
+		o.sem <- struct{}{}
+		defer func() { <-o.sem }()
+
+		var obs Observation
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					obs = Observation{
+						Step:        step,
+						Suspicious:  true,
+						Explanation: fmt.Sprintf("evaluator_panic (fail-closed): %v", r),
+					}
+				}
+			}()
+			obs = o.evaluator.EvaluateStep(ctx, step)
+		}()
+
+		if len(obs.Step.Content) > MaxObservationContentLen {
+			obs.Step.Content = obs.Step.Content[:MaxObservationContentLen] + "...[capped]"
+		}
+
+		switch {
+		case strings.Contains(obs.Explanation, "evaluator_panic"):
+			alignmentStepTotal.WithLabelValues("panic").Inc()
+		case obs.Suspicious:
+			alignmentStepTotal.WithLabelValues("suspicious").Inc()
+		default:
+			alignmentStepTotal.WithLabelValues("clean").Inc()
+		}
+
 		o.mu.Lock()
 		o.observations = append(o.observations, obs)
 		o.mu.Unlock()
@@ -118,7 +164,8 @@ func (o *Observer) RenderVerdict(wr WaitResult) Verdict {
 	for _, ob := range obs {
 		if ob.Suspicious {
 			flagged++
-			summaryParts = append(summaryParts, fmt.Sprintf("step %d (%s): %s", ob.Step.Index, ob.Step.Tool, ob.Explanation))
+			summaryParts = append(summaryParts, fmt.Sprintf("step %d (%s): %s",
+				ob.Step.Index, ob.Step.Tool, SanitizeExplanation(ob.Explanation)))
 		}
 	}
 
