@@ -132,6 +132,32 @@ var _ = Describe("DSContextReconstructor — #703 BR-INTERACTIVE-007/008", func(
 		})
 	})
 
+	Describe("UT-KA-RECON-002: reconstruct is best-effort on DS HTTP 500", func() {
+		It("should return empty turns (not error) when DS returns 500", func() {
+			querier := &mockAuditQuerier{
+				err: errors.New("server responded with status 500"),
+			}
+
+			r := mcpinternal.NewDSContextReconstructor(querier, 5*time.Second, logger)
+			turns, err := r.Reconstruct(ctx, "rr-fail", "sess-fail")
+			Expect(err).NotTo(HaveOccurred(), "best-effort: should not propagate DS errors")
+			Expect(turns).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-KA-RECON-004: reconstruct respects timeout", func() {
+		It("should return empty turns when context deadline exceeded", func() {
+			querier := &mockAuditQuerier{
+				err: context.DeadlineExceeded,
+			}
+
+			r := mcpinternal.NewDSContextReconstructor(querier, 100*time.Millisecond, logger)
+			turns, err := r.Reconstruct(ctx, "rr-slow", "sess-slow")
+			Expect(err).NotTo(HaveOccurred(), "best-effort: should return empty on timeout")
+			Expect(turns).To(BeEmpty())
+		})
+	})
+
 	Describe("UT-KA-703-J05: Handles empty DS response gracefully", func() {
 		It("should return empty slice for empty DS response", func() {
 			querier := &mockAuditQuerier{

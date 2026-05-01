@@ -33,7 +33,7 @@ var _ = Describe("Verification API", func() {
 
 	BeforeEach(func() {
 		registry := scenarios.DefaultRegistry()
-		router := handlers.NewFullRouter(registry, false, "authorization", nil)
+		router := handlers.NewFullRouter(registry, false, "", "authorization", nil)
 		server = httptest.NewServer(router)
 	})
 

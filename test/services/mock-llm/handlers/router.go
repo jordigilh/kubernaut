@@ -28,14 +28,14 @@ import (
 )
 
 // NewRouter creates the HTTP mux with all Mock LLM endpoints registered.
-func NewRouter(registry *scenarios.Registry, forceText bool) http.Handler {
-	return NewFullRouter(registry, forceText, "", nil)
+func NewRouter(registry *scenarios.Registry, forceText bool, mode string) http.Handler {
+	return NewFullRouter(registry, forceText, mode, "", nil)
 }
 
 // NewMetricsRouter creates the HTTP mux with all Mock LLM endpoints plus
 // a /metrics endpoint serving Prometheus-format metrics.
-func NewMetricsRouter(registry *scenarios.Registry, forceText bool) http.Handler {
-	return NewFullRouterWithMetrics(registry, forceText, "", nil, mockmetrics.NewMetrics())
+func NewMetricsRouter(registry *scenarios.Registry, forceText bool, mode string) http.Handler {
+	return NewFullRouterWithMetrics(registry, forceText, mode, "", nil, mockmetrics.NewMetrics())
 }
 
 // NewFullRouter creates the HTTP mux with all Mock LLM endpoints,
@@ -43,10 +43,11 @@ func NewMetricsRouter(registry *scenarios.Registry, forceText bool) http.Handler
 func NewFullRouter(
 	registry *scenarios.Registry,
 	forceText bool,
+	mode string,
 	recordHeaders string,
 	faultInjector *fault.Injector,
 ) http.Handler {
-	return NewFullRouterWithMetrics(registry, forceText, recordHeaders, faultInjector, nil)
+	return NewFullRouterWithMetrics(registry, forceText, mode, recordHeaders, faultInjector, nil)
 }
 
 // NewFullRouterWithMetrics creates the HTTP mux with all Mock LLM endpoints,
@@ -56,6 +57,7 @@ func NewFullRouter(
 func NewFullRouterWithMetrics(
 	registry *scenarios.Registry,
 	forceText bool,
+	mode string,
 	recordHeaders string,
 	faultInjector *fault.Injector,
 	m *mockmetrics.Metrics,
@@ -78,9 +80,15 @@ func NewFullRouterWithMetrics(
 		faultInjector = fault.NewInjector()
 	}
 
+	effectiveMode := mode
+	if effectiveMode == "" {
+		effectiveMode = config.ResolveMode("", forceText)
+	}
+
 	h := &handler{
 		registry:       registry,
 		forceText:      forceText,
+		mode:           effectiveMode,
 		tracker:        t,
 		headerRecorder: hr,
 		faultInjector:  faultInjector,

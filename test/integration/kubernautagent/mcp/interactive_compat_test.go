@@ -34,7 +34,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 var _ = Describe("Interactive Session Compatibility — COMPAT BR-INTERACTIVE-007", Label("integration", "interactive", "compat"), func() {
@@ -46,12 +45,8 @@ var _ = Describe("Interactive Session Compatibility — COMPAT BR-INTERACTIVE-00
 
 			logger := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelError}))
 
-			mockLLM := newMockLLMServer()
-			defer mockLLM.Close()
-			mockDS := newMockDSServer()
-			defer mockDS.Close()
-
-			llmAdapter, err := langchaingo.New("openai", mockLLM.Server.URL, "test-model", "test-key")
+			// Real LLM client via langchaingo -> Podman Mock LLM
+			llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
 			Expect(err).NotTo(HaveOccurred())
 
 			promptBuilder, err := prompt.NewBuilder()
@@ -68,13 +63,12 @@ var _ = Describe("Interactive Session Compatibility — COMPAT BR-INTERACTIVE-00
 			})
 			runner := adapters.NewInvestigatorRunnerAdapter(inv)
 
-			dsClient, err := ogenclient.NewClient(mockDS.Server.URL)
-			Expect(err).NotTo(HaveOccurred())
-			recon := mcpinternal.NewDSContextReconstructor(dsClient, 5*time.Second, logger)
+			// Real DSContextReconstructor via ogenclient -> Podman DataStorage
+			Expect(sharedDSClient).NotTo(BeNil(), "shared DS client must be initialized by suite")
+			recon := mcpinternal.NewDSContextReconstructor(sharedDSClient, 5*time.Second, logger)
 
 			sessMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 
-			// Build InvestigateTool with zero optional deps.
 			investigateTool := tools.NewInvestigateTool(sessMgr, runner, recon)
 
 			toolDeps := mcpinternal.ToolDeps{

@@ -32,11 +32,13 @@ var _ = Describe("Environment Config", func() {
 			os.Unsetenv("MOCK_LLM_PORT")
 			os.Unsetenv("MOCK_LLM_FORCE_TEXT")
 			os.Unsetenv("MOCK_LLM_LOG_LEVEL")
+			os.Unsetenv("MOCK_LLM_MODE")
 
 			cfg := config.LoadFromEnv()
 			Expect(cfg.Host).To(Equal("0.0.0.0"))
 			Expect(cfg.Port).To(Equal("8080"))
 			Expect(cfg.ForceText).To(BeFalse())
+			Expect(cfg.Mode).To(Equal(config.ModeFull))
 			Expect(cfg.LogLevel).To(Equal("info"))
 		})
 
@@ -45,6 +47,7 @@ var _ = Describe("Environment Config", func() {
 			os.Setenv("MOCK_LLM_PORT", "9090")
 			os.Setenv("MOCK_LLM_FORCE_TEXT", "true")
 			os.Setenv("MOCK_LLM_LOG_LEVEL", "debug")
+			os.Unsetenv("MOCK_LLM_MODE")
 			defer func() {
 				os.Unsetenv("MOCK_LLM_HOST")
 				os.Unsetenv("MOCK_LLM_PORT")
@@ -56,7 +59,77 @@ var _ = Describe("Environment Config", func() {
 			Expect(cfg.Host).To(Equal("127.0.0.1"))
 			Expect(cfg.Port).To(Equal("9090"))
 			Expect(cfg.ForceText).To(BeTrue())
+			Expect(cfg.Mode).To(Equal(config.ModeAutonomous))
 			Expect(cfg.LogLevel).To(Equal("debug"))
+		})
+	})
+
+	Describe("UT-MOCK-032-002: MOCK_LLM_MODE env var", func() {
+		AfterEach(func() {
+			os.Unsetenv("MOCK_LLM_MODE")
+			os.Unsetenv("MOCK_LLM_FORCE_TEXT")
+		})
+
+		It("should use explicit MOCK_LLM_MODE when set", func() {
+			os.Setenv("MOCK_LLM_MODE", "interactive")
+			cfg := config.LoadFromEnv()
+			Expect(cfg.Mode).To(Equal(config.ModeInteractive))
+		})
+
+		It("should derive autonomous from FORCE_TEXT=true when MODE is unset", func() {
+			os.Unsetenv("MOCK_LLM_MODE")
+			os.Setenv("MOCK_LLM_FORCE_TEXT", "true")
+			cfg := config.LoadFromEnv()
+			Expect(cfg.Mode).To(Equal(config.ModeAutonomous))
+		})
+
+		It("should derive full from FORCE_TEXT=false when MODE is unset", func() {
+			os.Unsetenv("MOCK_LLM_MODE")
+			os.Unsetenv("MOCK_LLM_FORCE_TEXT")
+			cfg := config.LoadFromEnv()
+			Expect(cfg.Mode).To(Equal(config.ModeFull))
+		})
+
+		It("should prefer explicit MODE over FORCE_TEXT derivation", func() {
+			os.Setenv("MOCK_LLM_MODE", "full")
+			os.Setenv("MOCK_LLM_FORCE_TEXT", "true")
+			cfg := config.LoadFromEnv()
+			Expect(cfg.Mode).To(Equal(config.ModeFull))
+		})
+	})
+
+	Describe("UT-MOCK-032-003: ResolveMode logic", func() {
+		It("should return explicit mode when provided", func() {
+			Expect(config.ResolveMode("interactive", false)).To(Equal(config.ModeInteractive))
+			Expect(config.ResolveMode("autonomous", false)).To(Equal(config.ModeAutonomous))
+			Expect(config.ResolveMode("full", true)).To(Equal(config.ModeFull))
+		})
+
+		It("should derive from forceText when explicit is empty", func() {
+			Expect(config.ResolveMode("", true)).To(Equal(config.ModeAutonomous))
+			Expect(config.ResolveMode("", false)).To(Equal(config.ModeFull))
+		})
+	})
+
+	Describe("UT-MOCK-032-004: ValidateMode rejects unknown values", func() {
+		It("should accept valid modes", func() {
+			Expect(config.ValidateMode(config.ModeInteractive)).To(Succeed())
+			Expect(config.ValidateMode(config.ModeAutonomous)).To(Succeed())
+			Expect(config.ValidateMode(config.ModeFull)).To(Succeed())
+		})
+
+		It("should reject empty string", func() {
+			Expect(config.ValidateMode("")).To(MatchError(ContainSubstring("MOCK_LLM_MODE invalid")))
+		})
+
+		It("should reject unknown mode values", func() {
+			Expect(config.ValidateMode("unknown")).To(MatchError(ContainSubstring("MOCK_LLM_MODE invalid")))
+			Expect(config.ValidateMode("INTERACTIVE")).To(MatchError(ContainSubstring("MOCK_LLM_MODE invalid")))
+		})
+
+		It("should reject adversarial input", func() {
+			Expect(config.ValidateMode("interactive; rm -rf /")).To(MatchError(ContainSubstring("MOCK_LLM_MODE invalid")))
+			Expect(config.ValidateMode("full\x00interactive")).To(MatchError(ContainSubstring("MOCK_LLM_MODE invalid")))
 		})
 	})
 })

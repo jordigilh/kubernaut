@@ -48,7 +48,7 @@ var _ = Describe("Override Wiring Integration", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			registry := scenarios.DefaultRegistryWithOverrides(overrides)
-			router := handlers.NewRouter(registry, false)
+			router := handlers.NewRouter(registry, false, "")
 			server := httptest.NewServer(router)
 			defer server.Close()
 
@@ -93,7 +93,7 @@ var _ = Describe("Override Wiring Integration", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			registry := scenarios.DefaultRegistryWithOverrides(overrides)
-			router := handlers.NewRouter(registry, false)
+			router := handlers.NewRouter(registry, false, "")
 			server := httptest.NewServer(router)
 			defer server.Close()
 
@@ -117,7 +117,7 @@ var _ = Describe("Override Wiring Integration", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				registry := scenarios.DefaultRegistryWithOverrides(overrides)
-				router := handlers.NewRouter(registry, false)
+				router := handlers.NewRouter(registry, false, "")
 				server := httptest.NewServer(router)
 				defer server.Close()
 
@@ -208,7 +208,7 @@ var _ = Describe("Override Wiring Integration", func() {
 			Expect(overrides.Scenarios["crashloop"].WorkflowID).To(Equal("env-var-wired-uuid"))
 
 			registry := scenarios.DefaultRegistryWithOverrides(overrides)
-			router := handlers.NewRouter(registry, false)
+			router := handlers.NewRouter(registry, false, "")
 			server := httptest.NewServer(router)
 			defer server.Close()
 

@@ -33,7 +33,7 @@ var _ = Describe("Scenario Detection over HTTP", func() {
 
 	BeforeEach(func() {
 		registry := scenarios.DefaultRegistry()
-		router := handlers.NewRouter(registry, false)
+		router := handlers.NewRouter(registry, false, "")
 		server = httptest.NewServer(router)
 	})
 

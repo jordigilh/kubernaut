@@ -189,6 +189,9 @@ var _ = Describe("Interactive Session Lifecycle — INT BR-INTERACTIVE-001/004/0
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = session.Close() }()
 
+			By("capturing baseline request count from Mock LLM")
+			baseline := getMockLLMRequestCount()
+
 			By("starting session on rr-a")
 			result, err := callInvestigate(session, map[string]any{
 				"rr_id":  "rr-int-06-a",
@@ -222,7 +225,7 @@ var _ = Describe("Interactive Session Lifecycle — INT BR-INTERACTIVE-001/004/0
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
 
-			Expect(stack.MockLLM.GetRequests()).To(HaveLen(2), "two LLM calls expected — one per session message")
+			Expect(getMockLLMRequestCount() - baseline).To(Equal(2), "two LLM calls expected — one per session message")
 		})
 	})
 

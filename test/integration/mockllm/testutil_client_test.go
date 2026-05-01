@@ -37,7 +37,7 @@ var _ = Describe("Testutil Mock LLM Client", func() {
 
 	BeforeEach(func() {
 		registry := scenarios.DefaultRegistry()
-		router := handlers.NewFullRouter(registry, false, "Authorization", fault.NewInjector())
+		router := handlers.NewFullRouter(registry, false, "", "Authorization", fault.NewInjector())
 		server = httptest.NewServer(router)
 		client = mockllmutil.NewClient(server.URL)
 	})

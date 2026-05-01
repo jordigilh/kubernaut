@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -44,140 +43,13 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	openaitypes "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
 	sharedauth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // ---------------------------------------------------------------------------
-// Mock LLM httptest.Server (OpenAI-compatible /v1/chat/completions)
-// ---------------------------------------------------------------------------
-
-// mockLLMServer wraps an httptest.Server that serves OpenAI chat completions.
-// Tests enqueue responses; the server dequeues them in FIFO order.
-type mockLLMServer struct {
-	Server    *httptest.Server
-	mu        sync.Mutex
-	responses []openaitypes.ChatCompletionResponse
-	requests  []openaitypes.ChatCompletionRequest
-}
-
-func newMockLLMServer() *mockLLMServer {
-	m := &mockLLMServer{}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/chat/completions", m.handleChatCompletions)
-	m.Server = httptest.NewServer(mux)
-	return m
-}
-
-func (m *mockLLMServer) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	var req openaitypes.ChatCompletionRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, "decode json: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	m.mu.Lock()
-	m.requests = append(m.requests, req)
-	var resp openaitypes.ChatCompletionResponse
-	if len(m.responses) > 0 {
-		resp = m.responses[0]
-		m.responses = m.responses[1:]
-	} else {
-		text := "Default mock LLM response"
-		resp = openaitypes.ChatCompletionResponse{
-			ID:      "chatcmpl-test",
-			Object:  "chat.completion",
-			Model:   "test-model",
-			Choices: []openaitypes.Choice{{Index: 0, Message: openaitypes.Message{Role: "assistant", Content: &text}, FinishReason: "stop"}},
-			Usage:   openaitypes.Usage{PromptTokens: 10, CompletionTokens: 10, TotalTokens: 20},
-		}
-	}
-	m.mu.Unlock()
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
-}
-
-// Enqueue adds a response to the FIFO queue.
-func (m *mockLLMServer) Enqueue(resp openaitypes.ChatCompletionResponse) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.responses = append(m.responses, resp)
-}
-
-// EnqueueText adds a plain text assistant response.
-func (m *mockLLMServer) EnqueueText(text string) {
-	m.Enqueue(openaitypes.ChatCompletionResponse{
-		ID:      "chatcmpl-test",
-		Object:  "chat.completion",
-		Model:   "test-model",
-		Choices: []openaitypes.Choice{{Index: 0, Message: openaitypes.Message{Role: "assistant", Content: &text}, FinishReason: "stop"}},
-		Usage:   openaitypes.Usage{PromptTokens: 10, CompletionTokens: 10, TotalTokens: 20},
-	})
-}
-
-// GetRequests returns a copy of all captured requests.
-func (m *mockLLMServer) GetRequests() []openaitypes.ChatCompletionRequest {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	cp := make([]openaitypes.ChatCompletionRequest, len(m.requests))
-	copy(cp, m.requests)
-	return cp
-}
-
-func (m *mockLLMServer) Close() {
-	m.Server.Close()
-}
-
-// ---------------------------------------------------------------------------
-// Mock DataStorage httptest.Server (GET /api/v1/audit/events)
-// ---------------------------------------------------------------------------
-
-type mockDSServer struct {
-	Server *httptest.Server
-	mu     sync.Mutex
-	events []json.RawMessage
-}
-
-func newMockDSServer() *mockDSServer {
-	d := &mockDSServer{}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/audit/events", d.handleQueryAuditEvents)
-	d.Server = httptest.NewServer(mux)
-	return d
-}
-
-func (d *mockDSServer) handleQueryAuditEvents(w http.ResponseWriter, _ *http.Request) {
-	d.mu.Lock()
-	events := d.events
-	d.mu.Unlock()
-
-	resp := map[string]interface{}{
-		"data":       events,
-		"pagination": map[string]interface{}{},
-	}
-	if events == nil {
-		resp["data"] = []interface{}{}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
-}
-
-func (d *mockDSServer) Close() {
-	d.Server.Close()
-}
-
-// ---------------------------------------------------------------------------
 // Real MCP Test Stack (ZERO MOCKS policy compliant)
+// Uses Podman Mock LLM (mode=interactive) and real DataStorage from suite.
 // ---------------------------------------------------------------------------
 
 // realMCPTestStack holds all real production components for integration tests.
@@ -189,8 +61,6 @@ type realMCPTestStack struct {
 	TimeoutMgr  *mcpinternal.TimeoutManager
 	Notifier    *mcpinternal.SessionNotifier
 	EventStore  *mcpinternal.DelegatingEventStore
-	MockLLM     *mockLLMServer
-	MockDS      *mockDSServer
 	LLMClient   llm.Client
 	K8sClient   client.Client
 	Namespace   string
@@ -235,8 +105,8 @@ func defaultRealStackOpts() realStackOpts {
 
 // newRealMCPTestStack builds a fully production-wired MCP test stack using:
 // - envtest K8s client for real LeaseSessionManager
-// - httptest mock LLM for real investigator.Investigator via langchaingo
-// - httptest mock DS for real DSContextReconstructor via ogenclient
+// - Podman Mock LLM (mode=interactive) for real investigator.Investigator via langchaingo
+// - Podman DataStorage for real DSContextReconstructor via ogenclient
 // - real TimeoutManager, SessionRateLimiter, SessionNotifier, DelegatingEventStore
 func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realStackOpts) *realMCPTestStack {
 	stack := &realMCPTestStack{
@@ -246,36 +116,29 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 
 	logger := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	// Mock LLM httptest.Server
-	stack.MockLLM = newMockLLMServer()
-
-	// Mock DS httptest.Server
-	stack.MockDS = newMockDSServer()
-
-	// Real LLM client via langchaingo -> mock LLM
-	llmAdapter, err := langchaingo.New("openai", stack.MockLLM.Server.URL, "test-model", "test-key")
-	Expect(err).ToNot(HaveOccurred(), "langchaingo adapter should build")
+	// Real LLM client via langchaingo -> Podman Mock LLM (mode=interactive)
+	llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
+	Expect(err).ToNot(HaveOccurred(), "langchaingo adapter should build against Mock LLM at %s", sharedMockLLMEndpoint)
 	stack.LLMClient = llmAdapter
 
-	// Real investigator.Investigator (minimal config for RunInteractiveTurn)
+	// Real investigator.Investigator
 	promptBuilder, err := prompt.NewBuilder()
 	Expect(err).ToNot(HaveOccurred(), "prompt builder should build")
 
 	inv := investigator.New(investigator.Config{
-		Client:     llmAdapter,
-		Builder:    promptBuilder,
+		Client:       llmAdapter,
+		Builder:      promptBuilder,
 		ResultParser: parser.NewResultParser(),
-		AuditStore: audit.NopAuditStore{},
-		Logger:     logger,
-		MaxTurns:   15,
-		ModelName:  "test-model",
+		AuditStore:   audit.NopAuditStore{},
+		Logger:       logger,
+		MaxTurns:     15,
+		ModelName:    "test-model",
 	})
 	runner := adapters.NewInvestigatorRunnerAdapter(inv)
 
-	// Real DSContextReconstructor via ogenclient -> mock DS
-	dsClient, err := ogenclient.NewClient(stack.MockDS.Server.URL)
-	Expect(err).ToNot(HaveOccurred(), "ogen DS client should build")
-	recon := mcpinternal.NewDSContextReconstructor(dsClient, 5*time.Second, logger)
+	// Real DSContextReconstructor via ogenclient -> Podman DataStorage
+	Expect(sharedDSClient).ToNot(BeNil(), "shared DS client must be initialized by suite")
+	recon := mcpinternal.NewDSContextReconstructor(sharedDSClient, 5*time.Second, logger)
 
 	// Real LeaseSessionManager via envtest K8s client
 	leaseOpts := []mcpinternal.LeaseOption{
@@ -342,12 +205,34 @@ func (s *realMCPTestStack) Close() {
 	if s.LLMClient != nil {
 		_ = s.LLMClient.Close()
 	}
-	if s.MockLLM != nil {
-		s.MockLLM.Close()
-	}
-	if s.MockDS != nil {
-		s.MockDS.Close()
-	}
+}
+
+// ---------------------------------------------------------------------------
+// Mock LLM verification helpers (Podman container API)
+// ---------------------------------------------------------------------------
+
+// getMockLLMRequestCount queries the Mock LLM's verification API for total request count.
+func getMockLLMRequestCount() int {
+	GinkgoHelper()
+	resp, err := http.Get(sharedMockLLMEndpoint + "/api/test/request-count")
+	Expect(err).NotTo(HaveOccurred(), "Mock LLM request-count should be reachable")
+	defer resp.Body.Close()
+	Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+	var data struct{ Count int `json:"count"` }
+	Expect(json.NewDecoder(resp.Body).Decode(&data)).To(Succeed())
+	return data.Count
+}
+
+// resetMockLLMTracker resets the Mock LLM's request tracker and fault state.
+func resetMockLLMTracker() {
+	GinkgoHelper()
+	req, err := http.NewRequest(http.MethodPost, sharedMockLLMEndpoint+"/api/test/reset", nil)
+	Expect(err).NotTo(HaveOccurred())
+	resp, err := http.DefaultClient.Do(req)
+	Expect(err).NotTo(HaveOccurred(), "Mock LLM reset should be reachable")
+	defer resp.Body.Close()
+	Expect(resp.StatusCode).To(Equal(http.StatusOK))
 }
 
 // ---------------------------------------------------------------------------

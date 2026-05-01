@@ -33,7 +33,7 @@ var _ = Describe("Auth Header Endpoints", func() {
 
 	BeforeEach(func() {
 		registry := scenarios.DefaultRegistry()
-		router := handlers.NewFullRouter(registry, false, "authorization,x-kubernaut-token", nil)
+		router := handlers.NewFullRouter(registry, false, "", "authorization,x-kubernaut-token", nil)
 		server = httptest.NewServer(router)
 	})
 
@@ -97,7 +97,7 @@ var _ = Describe("Auth Header Endpoints", func() {
 	Describe("IT-MOCK-007-001: Headers not recorded when not configured", func() {
 		It("should return empty headers when record_headers is empty", func() {
 			registry := scenarios.DefaultRegistry()
-			router := handlers.NewFullRouter(registry, false, "", nil)
+			router := handlers.NewFullRouter(registry, false, "", "", nil)
 			noHeaderServer := httptest.NewServer(router)
 			defer noHeaderServer.Close()
 

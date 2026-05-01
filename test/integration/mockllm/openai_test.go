@@ -36,7 +36,7 @@ var _ = Describe("OpenAI + Ollama Endpoints", func() {
 
 	BeforeEach(func() {
 		registry := scenarios.DefaultRegistry()
-		router := handlers.NewRouter(registry, false)
+		router := handlers.NewRouter(registry, false, "")
 		server = httptest.NewServer(router)
 	})
 
@@ -71,7 +71,7 @@ var _ = Describe("OpenAI + Ollama Endpoints", func() {
 			Expect(json.NewDecoder(resp.Body).Decode(&result)).To(Succeed())
 			Expect(result.Choices[0].FinishReason).To(Equal("stop"))
 			Expect(result.Choices[0].Message.Content).NotTo(BeNil())
-			Expect(*result.Choices[0].Message.Content).To(ContainSubstring("Root Cause"))
+			Expect(*result.Choices[0].Message.Content).To(ContainSubstring("root_cause_analysis"))
 		})
 
 		It("IT-MOCK-001-003: should return HTTP 500 for permanent error keyword", func() {
@@ -110,7 +110,7 @@ var _ = Describe("OpenAI + Ollama Endpoints", func() {
 			var result openai.OllamaChatResponse
 			Expect(json.NewDecoder(resp.Body).Decode(&result)).To(Succeed())
 			Expect(result.Done).To(BeTrue())
-			Expect(result.Response).To(ContainSubstring("Root Cause"))
+			Expect(result.Response).To(ContainSubstring("root_cause_analysis"))
 		})
 
 		It("IT-MOCK-002-002: should handle /api/generate endpoint", func() {
@@ -137,7 +137,7 @@ var _ = Describe("OpenAI + Ollama Endpoints", func() {
 	Describe("IT-MOCK-004-001: Force-text mode over HTTP", func() {
 		It("should return text even when tools are provided in force-text mode", func() {
 			registry := scenarios.DefaultRegistry()
-			router := handlers.NewRouter(registry, true)
+			router := handlers.NewRouter(registry, true, "")
 			ftServer := httptest.NewServer(router)
 			defer ftServer.Close()
 
