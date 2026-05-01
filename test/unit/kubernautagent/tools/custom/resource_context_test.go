@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -75,7 +76,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			}}
 			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
 
-			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard())
 			result, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Pod","name":"api-server-abc-xyz","namespace":"production"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -94,7 +95,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			k8s := &fakeK8s{chain: nil}
 			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
 
-			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard())
 			result, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Pod","name":"orphan-pod","namespace":"default"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -120,7 +121,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 				},
 			}}
 
-			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard())
 			result, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Pod","name":"web","namespace":"prod"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -139,7 +140,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			k8s := &fakeK8s{chain: nil}
 			ds := &fakeDS{history: nil}
 
-			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard())
 			result, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Pod","name":"web","namespace":"default"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -154,7 +155,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 		It("should return a non-nil parameter schema with required kind/name/namespace", func() {
 			k8s := &fakeK8s{}
 			ds := &fakeDS{}
-			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard())
 
 			Expect(tool.Name()).To(Equal("get_namespaced_resource_context"))
 			Expect(tool.Description()).NotTo(BeEmpty())
@@ -179,7 +180,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			k8s := &fakeK8s{}
 			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
 
-			tool := custom.NewClusterResourceContextTool(ds, k8s)
+			tool := custom.NewClusterResourceContextTool(ds, k8s, logr.Discard())
 			result, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Node","name":"worker-1"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -204,7 +205,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 				},
 			}}
 
-			tool := custom.NewClusterResourceContextTool(ds, k8s)
+			tool := custom.NewClusterResourceContextTool(ds, k8s, logr.Discard())
 			result, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Node","name":"worker-1"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -224,7 +225,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 		It("should return a non-nil parameter schema with required kind/name", func() {
 			k8s := &fakeK8s{}
 			ds := &fakeDS{}
-			tool := custom.NewClusterResourceContextTool(ds, k8s)
+			tool := custom.NewClusterResourceContextTool(ds, k8s, logr.Discard())
 
 			Expect(tool.Name()).To(Equal("get_cluster_resource_context"))
 			Expect(tool.Description()).NotTo(BeEmpty())
@@ -249,7 +250,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			k8s := &fakeK8s{}
 			ds := &fakeDS{history: nil}
 
-			tool := custom.NewClusterResourceContextTool(ds, k8s)
+			tool := custom.NewClusterResourceContextTool(ds, k8s, logr.Discard())
 			result, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Namespace","name":"kube-system"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -280,7 +281,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			}
 			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
 
-			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard())
 			_, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Pod","name":"api-server-abc-xyz","namespace":"production"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -300,7 +301,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			}
 			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
 
-			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard())
 			_, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Pod","name":"orphan-pod","namespace":"default"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -320,7 +321,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			}
 			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
 
-			tool := custom.NewNamespacedResourceContextTool(ds, k8s)
+			tool := custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard())
 			result, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"CustomResource","name":"my-cr","namespace":"test"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -334,7 +335,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			k8s := &fakeK8s{specHash: "node-hash-abc"}
 			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
 
-			tool := custom.NewClusterResourceContextTool(ds, k8s)
+			tool := custom.NewClusterResourceContextTool(ds, k8s, logr.Discard())
 			_, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Node","name":"worker-1"}`))
 			Expect(err).NotTo(HaveOccurred())
@@ -351,7 +352,7 @@ var _ = Describe("Kubernaut Agent Resource Context Tools — #433", func() {
 			k8s := &fakeK8s{specHashErr: errors.New("node not found")}
 			ds := &fakeDS{history: &enrichment.RemediationHistoryResult{}}
 
-			tool := custom.NewClusterResourceContextTool(ds, k8s)
+			tool := custom.NewClusterResourceContextTool(ds, k8s, logr.Discard())
 			result, err := tool.Execute(context.Background(),
 				json.RawMessage(`{"kind":"Node","name":"missing-node"}`))
 			Expect(err).NotTo(HaveOccurred())

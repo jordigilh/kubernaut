@@ -75,8 +75,8 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 							{
 								RemediationUID:     "wf-old-001",
 								Outcome:            ogenclient.NewOptString("Failed"),
-								SignalType:          ogenclient.NewOptString("HighCPU"),
-								ActionType:          ogenclient.NewOptNilString("restart_pod"),
+								SignalType:         ogenclient.NewOptString("HighCPU"),
+								ActionType:         ogenclient.NewOptNilString("restart_pod"),
 								EffectivenessScore: ogenclient.OptNilFloat64{Value: 0.2, Set: true},
 								CompletedAt:        time.Date(2026, 1, 15, 8, 0, 0, 0, time.UTC),
 							},

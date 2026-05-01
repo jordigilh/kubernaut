@@ -18,7 +18,7 @@ package mcp_test
 
 import (
 	"context"
-	"log/slog"
+	"github.com/go-logr/logr"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -45,7 +45,7 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 	Describe("IT-KA-COV-001: takeover when no autonomous session exists", func() {
 		It("should succeed directly without cancellation attempt", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), nil, nil)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
 			autoMgr := &mockAutoMgrIT{mgr: mgr}
 
 			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)

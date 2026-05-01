@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
+	"github.com/go-logr/logr"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -744,7 +744,7 @@ func (c *channelInvestigator) Investigate(ctx context.Context, _ katypes.SignalC
 // and audit store but with a different auth user. Used for cross-user tests.
 func newTestHarnessWithManager(mgr *session.Manager, auditStore *syncAuditRecorder, user string) *testHarness {
 	inv := &blockingInvestigator{}
-	handler := kaserver.NewHandler(mgr, inv, slog.Default(), nil)
+	handler := kaserver.NewHandler(mgr, inv, logr.Discard(), nil)
 	ogenSrv, _ := agentclient.NewServer(handler)
 
 	r := chi.NewRouter()
@@ -780,8 +780,8 @@ func newMetricsTestHarness(inv kaserver.InvestigationRunner, user string) *metri
 	m := kametrics.NewMetricsWithRegistry(reg)
 
 	store := session.NewStore(5 * time.Minute)
-	mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{}, m)
-	handler := kaserver.NewHandler(mgr, inv, slog.Default(), m)
+	mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, m)
+	handler := kaserver.NewHandler(mgr, inv, logr.Discard(), m)
 	ogenSrv, _ := agentclient.NewServer(handler)
 
 	r := chi.NewRouter()
@@ -1010,7 +1010,7 @@ var _ = Describe("Metrics Wiring Integration Tests — BR-KA-OBSERVABILITY-001",
 			)
 
 			store := session.NewStore(5 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), instrumentedStore, m)
+			mgr := session.NewManager(store, logr.Discard(), instrumentedStore, m)
 
 			id, err := mgr.StartInvestigation(context.Background(),
 				func(_ context.Context) (interface{}, error) {

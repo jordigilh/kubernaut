@@ -18,7 +18,7 @@ package server_test
 
 import (
 	"context"
-	"log/slog"
+	"github.com/go-logr/logr"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -75,14 +75,14 @@ func newTestHarness(opts ...harnessOption) *testHarness {
 
 	store := session.NewStore(30 * time.Minute)
 	auditRec := &syncAuditRecorder{}
-	mgr := session.NewManager(store, slog.Default(), auditRec, nil)
+	mgr := session.NewManager(store, logr.Discard(), auditRec, nil)
 
 	inv := cfg.investigator
 	if inv == nil {
 		inv = &blockingInvestigator{}
 	}
 
-	handler := kaserver.NewHandler(mgr, inv, slog.Default(), nil)
+	handler := kaserver.NewHandler(mgr, inv, logr.Discard(), nil)
 	ogenSrv, _ := agentclient.NewServer(handler)
 
 	r := chi.NewRouter()

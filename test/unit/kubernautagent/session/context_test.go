@@ -18,7 +18,7 @@ package session_test
 
 import (
 	"context"
-	"log/slog"
+	"github.com/go-logr/logr"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -130,7 +130,7 @@ var _ = Describe("SessionContext — PR5 Slice A", func() {
 	Describe("UT-KA-PR5-A05: Manager.StartInvestigationWithContext propagates SessionContext", func() {
 		It("should store SessionContext and make it retrievable after investigation starts", func() {
 			store := session.NewStore(5 * time.Minute)
-			manager := session.NewManager(store, slog.Default(), nil, nil)
+			manager := session.NewManager(store, logr.Discard(), nil, nil)
 
 			signal := katypes.SignalContext{
 				Name:         "OOMKilled",

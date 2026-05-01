@@ -19,12 +19,12 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/server"
@@ -38,14 +38,12 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 		store   *session.Store
 		manager *session.Manager
 		handler *server.Handler
-		logger  *slog.Logger
 	)
 
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
-		logger = slog.Default()
-		manager = session.NewManager(store, logger, nil, nil)
-		handler = server.NewHandler(manager, nil, logger, nil)
+		manager = session.NewManager(store, logr.Discard(), nil, nil)
+		handler = server.NewHandler(manager, nil, logr.Discard(), nil)
 	})
 
 	Describe("UT-KA-433-HTTP-001: Error response has RFC 7807 fields (GAP-004)", func() {
@@ -544,10 +542,9 @@ var _ = Describe("Handler metadata wiring — BR-AUDIT-070", func() {
 	Describe("UT-KA-PR9-D1: IncidentAnalyze populates signal_name and severity in session metadata", func() {
 		It("should store signal_name and severity from the request into session metadata", func() {
 			store := session.NewStore(5 * time.Minute)
-			logger := slog.Default()
-			mgr := session.NewManager(store, logger, nil, nil)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
 			inv := &immediateInvestigator{result: &katypes.InvestigationResult{RCASummary: "test"}}
-			h := server.NewHandler(mgr, inv, logger, nil)
+			h := server.NewHandler(mgr, inv, logr.Discard(), nil)
 
 			req := &agentclient.IncidentRequest{
 				IncidentID:        "inc-d1",

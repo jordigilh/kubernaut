@@ -20,9 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"os"
 	"strings"
+
+	"github.com/go-logr/logr"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -52,7 +52,7 @@ func (f *alwaysFailLLM) Close() error { return nil }
 var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", func() {
 
 	var (
-		logger     *slog.Logger
+		invLogger  logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -61,13 +61,13 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		invLogger = logr.Discard()
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
 		k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
 		dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
@@ -91,11 +91,11 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 			maxOutput := 1000
 			inv := investigator.New(investigator.Config{
 				Client: investigationLLM, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
 				Pipeline: investigator.Pipeline{
 					MaxToolOutputSize: maxOutput,
-					AnomalyDetector:  investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil),
+					AnomalyDetector:   investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil),
 				},
 			})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -133,11 +133,11 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 
 			inv := investigator.New(investigator.Config{
 				Client: investigationLLM, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
 				Pipeline: investigator.Pipeline{
 					MaxToolOutputSize: 100000,
-					AnomalyDetector:  investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil),
+					AnomalyDetector:   investigator.NewAnomalyDetector(investigator.DefaultAnomalyConfig(), nil),
 				},
 			})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -175,7 +175,7 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 			maxOutput := 2000
 			inv := investigator.New(investigator.Config{
 				Client: investigationLLM, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
 				Pipeline: investigator.Pipeline{
 					Summarizer:        sum,

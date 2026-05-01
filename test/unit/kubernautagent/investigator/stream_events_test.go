@@ -19,7 +19,7 @@ package investigator_test
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
+	"github.com/go-logr/logr"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -35,7 +35,7 @@ import (
 )
 
 func streamTestInvestigator(client llm.Client) *investigator.Investigator {
-	logger := slog.Default()
+	logger := logr.Discard()
 	builder, _ := prompt.NewBuilder()
 	rp := parser.NewResultParser()
 	enricher := enrichment.NewEnricher(nopK8sClient{}, nopDSClient{}, audit.NopAuditStore{}, logger)

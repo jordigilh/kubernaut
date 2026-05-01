@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+
+	"github.com/go-logr/logr"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -114,7 +116,8 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 		Namespace: namespace,
 	}
 
-	logger := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelError}))
+	slogLogger := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelError}))
+	logrLogger := logr.FromSlogHandler(slogLogger.Handler())
 
 	// Real LLM client via langchaingo -> Podman Mock LLM (mode=interactive)
 	llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
@@ -130,7 +133,7 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 		Builder:      promptBuilder,
 		ResultParser: parser.NewResultParser(),
 		AuditStore:   audit.NopAuditStore{},
-		Logger:       logger,
+		Logger:       logrLogger,
 		MaxTurns:     15,
 		ModelName:    "test-model",
 	})
@@ -138,7 +141,7 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 
 	// Real DSContextReconstructor via ogenclient -> Podman DataStorage
 	Expect(sharedDSClient).ToNot(BeNil(), "shared DS client must be initialized by suite")
-	recon := mcpinternal.NewDSContextReconstructor(sharedDSClient, 5*time.Second, logger)
+	recon := mcpinternal.NewDSContextReconstructor(sharedDSClient, 5*time.Second, slogLogger)
 
 	// Real LeaseSessionManager via envtest K8s client
 	leaseOpts := []mcpinternal.LeaseOption{
@@ -147,7 +150,7 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 	if opts.maxSessions > 0 {
 		leaseOpts = append(leaseOpts, mcpinternal.WithMaxConcurrentSessions(opts.maxSessions))
 	}
-	stack.SessionMgr = mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger, leaseOpts...)
+	stack.SessionMgr = mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, slogLogger, leaseOpts...)
 
 	// Real rate limiter, notifier, timeout manager
 	stack.RateLimiter = mcpinternal.NewSessionRateLimiter(opts.maxPerMinute, opts.maxMessageSize)

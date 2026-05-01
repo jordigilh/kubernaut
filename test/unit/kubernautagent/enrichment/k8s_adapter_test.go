@@ -335,8 +335,8 @@ var _ = Describe("UT-KA-704-MAPPER: RESTMapper refresh for CRDs installed after 
 // a CRD after Reset(). The first lookup for "certificates" fails; after
 // registerCertificate() + Reset() it succeeds.
 type lateRegistrationMapper struct {
-	delegate     *meta.DefaultRESTMapper
-	certAdded    bool
+	delegate  *meta.DefaultRESTMapper
+	certAdded bool
 }
 
 func (m *lateRegistrationMapper) Reset() {

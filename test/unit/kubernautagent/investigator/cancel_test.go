@@ -19,7 +19,7 @@ package investigator_test
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"github.com/go-logr/logr"
 	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -134,7 +134,7 @@ func cancelTestInvestigator(client llm.Client) *investigator.Investigator {
 }
 
 func cancelTestInvestigatorWithAudit(client llm.Client, auditStore audit.AuditStore) *investigator.Investigator {
-	logger := slog.Default()
+	logger := logr.Discard()
 	builder, _ := prompt.NewBuilder()
 	rp := parser.NewResultParser()
 	enricher := enrichment.NewEnricher(nopK8sClient{}, nopDSClient{}, audit.NopAuditStore{}, logger)
@@ -472,9 +472,9 @@ var _ = Describe("Kubernaut Agent Investigator Cancellation — #823 PR3", func(
 				Client:       mockClient,
 				Builder:      func() *prompt.Builder { b, _ := prompt.NewBuilder(); return b }(),
 				ResultParser: parser.NewResultParser(),
-				Enricher:     enrichment.NewEnricher(nopK8sClient{}, nopDSClient{}, audit.NopAuditStore{}, slog.Default()),
+				Enricher:     enrichment.NewEnricher(nopK8sClient{}, nopDSClient{}, audit.NopAuditStore{}, logr.Discard()),
 				AuditStore:   audit.NopAuditStore{},
-				Logger:       slog.Default(),
+				Logger:       logr.Discard(),
 				MaxTurns:     15,
 				PhaseTools:   investigator.DefaultPhaseToolMap(),
 				Pipeline: investigator.Pipeline{

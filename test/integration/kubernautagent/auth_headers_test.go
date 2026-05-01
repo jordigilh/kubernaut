@@ -18,13 +18,15 @@ package kubernautagent_test
 
 import (
 	"bytes"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 
+	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 	llmclient "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
@@ -152,7 +154,11 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 			defer server.Close()
 
 			var logBuf bytes.Buffer
-			logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			encCfg := zap.NewProductionEncoderConfig()
+			ws := zapcore.AddSync(&logBuf)
+			core := zapcore.NewCore(zapcore.NewJSONEncoder(encCfg), ws, zapcore.DebugLevel)
+			zl := zap.New(core)
+			logger := zapr.NewLogger(zl)
 
 			hdefs := []config.HeaderDefinition{
 				{Name: "Authorization", SecretKeyRef: "KA_IT_SCRUB_SECRET"},

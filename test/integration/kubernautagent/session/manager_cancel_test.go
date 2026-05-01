@@ -18,7 +18,7 @@ package session_test
 
 import (
 	"context"
-	"log/slog"
+	"github.com/go-logr/logr"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -38,7 +38,7 @@ var _ = Describe("Kubernaut Agent Session Manager Cancellation — #823 PR3", fu
 
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
-		manager = session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
+		manager = session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
 	})
 
 	Describe("IT-KA-823-C01: Cancelled session stores partial result for snapshot", func() {

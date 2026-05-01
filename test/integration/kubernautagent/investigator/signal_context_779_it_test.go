@@ -18,9 +18,8 @@ package investigator_test
 
 import (
 	"context"
-	"log/slog"
-	"os"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -74,7 +73,7 @@ func (p *paramCapturingDS) GetWorkflowByID(_ context.Context, _ ogenclient.GetWo
 var _ = Describe("IT-KA-779: Signal context propagation through investigator to DS tool params", func() {
 
 	var (
-		logger     *slog.Logger
+		invLogger  logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -82,7 +81,7 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		invLogger = logr.Discard()
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
@@ -112,11 +111,11 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 
 			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
 			})
 
@@ -166,11 +165,11 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 
 			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
 			})
 

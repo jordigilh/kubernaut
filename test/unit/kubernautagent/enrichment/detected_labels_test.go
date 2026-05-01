@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -67,7 +68,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector = enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector = enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 			ctx = context.Background()
 
 			ownerChain := []enrichment.OwnerChainEntry{
@@ -108,7 +109,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, hpa)
-			detector = enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector = enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 			ctx = context.Background()
 
 			ownerChain := []enrichment.OwnerChainEntry{
@@ -155,7 +156,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, pdb)
-			detector = enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector = enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 			ctx = context.Background()
 
 			ownerChain := []enrichment.OwnerChainEntry{
@@ -185,7 +186,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector = enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector = enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 			ctx = context.Background()
 
 			ownerChain := []enrichment.OwnerChainEntry{
@@ -261,7 +262,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, hpa, pdb, netpol, quota)
-			detector = enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector = enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 			ctx = context.Background()
 
 			ownerChain := []enrichment.OwnerChainEntry{
@@ -296,7 +297,7 @@ var _ = Describe("Detected Labels Detection — TP-433-PARITY (#433)", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector = enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector = enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 			ctx = context.Background()
 
 			ownerChain := []enrichment.OwnerChainEntry{

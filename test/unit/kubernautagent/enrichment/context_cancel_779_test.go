@@ -19,6 +19,7 @@ package enrichment_test
 import (
 	"context"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -37,7 +38,7 @@ var _ = Describe("UT-KA-779-CC: Context cancellation behavior", func() {
 		It("should return a context error or fail gracefully", func() {
 			scheme := newFullScheme()
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
@@ -65,7 +66,7 @@ var _ = Describe("UT-KA-779-CC: Context cancellation behavior", func() {
 		It("should complete without panicking when called with cancelled context", func() {
 			scheme := runtime.NewScheme()
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()

@@ -19,9 +19,8 @@ package audit_test
 import (
 	"context"
 	"errors"
-	"log/slog"
-	"os"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -156,10 +155,9 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 				EventCategory: audit.EventCategory,
 				CorrelationID: "corr-456",
 			}
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 			Expect(func() {
-				audit.StoreBestEffort(context.Background(), store, event, logger)
+				audit.StoreBestEffort(context.Background(), store, event, logr.Discard())
 			}).NotTo(Panic())
 		})
 
@@ -170,9 +168,8 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 				EventCategory: audit.EventCategory,
 				CorrelationID: "corr-789",
 			}
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-			audit.StoreBestEffort(context.Background(), store, event, logger)
+			audit.StoreBestEffort(context.Background(), store, event, logr.Discard())
 			Expect(store.events).To(HaveLen(1))
 			Expect(store.events[0].CorrelationID).To(Equal("corr-789"))
 		})

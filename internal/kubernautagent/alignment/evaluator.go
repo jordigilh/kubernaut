@@ -20,10 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/security/boundary"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
@@ -40,7 +41,7 @@ type Evaluator struct {
 	client llm.Client
 	config EvaluatorConfig
 	prompt string
-	logger *slog.Logger
+	logger logr.Logger
 }
 
 type evalResponse struct {
@@ -50,10 +51,10 @@ type evalResponse struct {
 
 // NewEvaluator creates an Evaluator with the given shadow LLM client, config,
 // and system prompt. The prompt is immutable after construction.
-// The optional logger enables per-step DEBUG-level logging for operator
-// troubleshooting. Pass nil to disable step-level logging.
+// Without optional WithLogger, per-step diagnostics are discarded; attach a Logger
+// (e.g. zapr-backed) for operator troubleshooting (step detail at verbosity V(1)).
 func NewEvaluator(client llm.Client, cfg EvaluatorConfig, prompt string, opts ...EvaluatorOption) *Evaluator {
-	e := &Evaluator{client: client, config: cfg, prompt: prompt}
+	e := &Evaluator{client: client, config: cfg, prompt: prompt, logger: logr.Discard()}
 	for _, o := range opts {
 		o(e)
 	}
@@ -63,8 +64,8 @@ func NewEvaluator(client llm.Client, cfg EvaluatorConfig, prompt string, opts ..
 // EvaluatorOption configures optional Evaluator behavior.
 type EvaluatorOption func(*Evaluator)
 
-// WithLogger attaches a structured logger for per-step DEBUG output.
-func WithLogger(l *slog.Logger) EvaluatorOption {
+// WithLogger attaches a structured logger for per-step diagnostic output at V(1).
+func WithLogger(l logr.Logger) EvaluatorOption {
 	return func(e *Evaluator) { e.logger = l }
 }
 
@@ -144,7 +145,8 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 		}
 
 		var parsed evalResponse
-		if jsonErr := json.Unmarshal([]byte(respContent), &parsed); jsonErr != nil {
+		content := extractJSON(respContent)
+		if jsonErr := json.Unmarshal([]byte(content), &parsed); jsonErr != nil {
 			lastErr = fmt.Errorf("parse evaluator response: %w", jsonErr)
 			continue
 		}
@@ -156,15 +158,15 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 				Explanation: "evaluator_unavailable (fail-closed): shadow LLM response missing 'suspicious' field",
 			}
 			e.debugLog("step evaluated: missing suspicious field",
-				slog.Int("step_index", step.Index), slog.String("kind", string(step.Kind)),
-				slog.Bool("suspicious", true))
+				"step_index", step.Index, "kind", string(step.Kind),
+				"suspicious", true)
 			return obs
 		}
 
 		e.debugLog("step evaluated",
-			slog.Int("step_index", step.Index), slog.String("kind", string(step.Kind)),
-			slog.String("tool", step.Tool), slog.Bool("suspicious", *parsed.Suspicious),
-			slog.Int("attempt", attempt+1))
+			"step_index", step.Index, "kind", string(step.Kind),
+			"tool", step.Tool, "suspicious", *parsed.Suspicious,
+			"attempt", attempt+1)
 		return Observation{
 			Step:        step,
 			Suspicious:  *parsed.Suspicious,
@@ -177,6 +179,20 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 		Suspicious:  true,
 		Explanation: fmt.Sprintf("evaluator_unavailable (fail-closed): %v", lastErr),
 	}
+}
+
+// markdownFenceRe matches ```json ... ``` or ``` ... ``` blocks, with
+// optional leading/trailing whitespace. Issue #925: some models (e.g. Haiku
+// 4.5) wrap JSON in markdown fences even when JSONMode is requested.
+var markdownFenceRe = regexp.MustCompile("(?s)^\\s*```(?:json)?\\s*\n(.*?)\\s*```\\s*$")
+
+// extractJSON strips markdown code fences if present, returning the inner
+// content. If the input is not fenced, it is returned as-is after trimming.
+func extractJSON(s string) string {
+	if m := markdownFenceRe.FindStringSubmatch(s); len(m) == 2 {
+		return strings.TrimSpace(m[1])
+	}
+	return strings.TrimSpace(s)
 }
 
 const truncationMarker = "…[truncated]…"
@@ -199,10 +215,8 @@ func TruncateHeadTail(s string, max int) string {
 	return truncateHeadTail(s, max)
 }
 
-func (e *Evaluator) debugLog(msg string, attrs ...any) {
-	if e.logger != nil {
-		e.logger.Debug(msg, attrs...)
-	}
+func (e *Evaluator) debugLog(msg string, kvs ...any) {
+	e.logger.V(1).Info(msg, kvs...)
 }
 
 // hasDuplicateSuspiciousKey performs a raw-byte pre-scan for duplicate

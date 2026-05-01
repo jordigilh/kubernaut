@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -58,7 +59,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
@@ -92,7 +93,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "web-app", Namespace: "staging"},
@@ -125,7 +126,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, ns)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "web-app", Namespace: "argocd-managed-ns"},
@@ -156,7 +157,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "web-app", Namespace: "production"},
@@ -193,7 +194,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "mixed-app", Namespace: "production"},
@@ -230,7 +231,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "mixed-app", Namespace: "production"},
@@ -266,7 +267,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, ns)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "mixed-app", Namespace: "mixed-ns"},
@@ -309,7 +310,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "rich-app", Namespace: "production"},
@@ -342,7 +343,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, ns)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "plain-app", Namespace: "argocd-ns"},
@@ -375,7 +376,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, ns)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "plain-app", Namespace: "flux-ns"},
@@ -402,7 +403,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, node)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			labels, _, err := detector.DetectLabels(ctx, "Node", "worker-1", "", nil)
 			Expect(err).NotTo(HaveOccurred())
@@ -436,7 +437,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "meshed-app", Namespace: "production"},
@@ -469,7 +470,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "linkerd-app", Namespace: "production"},
@@ -496,7 +497,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "legacy-istio", Namespace: "production"},
@@ -523,7 +524,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "legacy-linkerd", Namespace: "production"},
@@ -563,7 +564,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, hpa)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
@@ -599,7 +600,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, hpa)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Pod", Name: "api-pod-xyz", Namespace: "production"},
@@ -637,7 +638,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, ss, hpa)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "StatefulSet", Name: "db-cluster", Namespace: "production"},
@@ -665,7 +666,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, ss)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Pod", Name: "db-pod-0", Namespace: "production"},
@@ -690,7 +691,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, ss)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Pod", Name: "db-pod-0", Namespace: "production"},
@@ -736,7 +737,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, quota)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "web-app", Namespace: "constrained-ns"},
@@ -797,7 +798,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, quota1, quota2)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "web-app", Namespace: "multi-quota-ns"},
@@ -829,7 +830,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, quota)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "web-app", Namespace: "empty-status-ns"},
@@ -853,7 +854,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "web-app", Namespace: "no-quota-ns"},
@@ -876,7 +877,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, node)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			labels, quotaDetails, err := detector.DetectLabels(ctx, "Node", "worker-node", "", nil)
 			Expect(err).NotTo(HaveOccurred())

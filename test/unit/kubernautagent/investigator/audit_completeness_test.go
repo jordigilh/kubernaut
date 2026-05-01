@@ -19,9 +19,10 @@ package investigator_test
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"strings"
 	"sync"
+
+	"github.com/go-logr/logr"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -137,7 +138,7 @@ var _ = Describe("Phase 0: Audit Completeness — #592", func() {
 				Builder:      builder,
 				ResultParser: parser.NewResultParser(),
 				AuditStore:   capStore,
-				Logger:       slog.Default(),
+				Logger:       logr.Discard(),
 				MaxTurns:     5,
 				ModelName:    "test-model",
 			})
@@ -189,7 +190,7 @@ var _ = Describe("Phase 0: Audit Completeness — #592", func() {
 				Builder:      builder,
 				ResultParser: parser.NewResultParser(),
 				AuditStore:   capStore,
-				Logger:       slog.Default(),
+				Logger:       logr.Discard(),
 				MaxTurns:     5,
 				ModelName:    "test-model",
 			})
@@ -255,7 +256,7 @@ var _ = Describe("Phase 0: Audit Completeness — #592", func() {
 				Builder:      builder,
 				ResultParser: parser.NewResultParser(),
 				AuditStore:   capStore,
-				Logger:       slog.Default(),
+				Logger:       logr.Discard(),
 				MaxTurns:     5,
 				ModelName:    "test-model",
 			})
@@ -321,7 +322,7 @@ var _ = Describe("Phase 0: Audit Completeness — #592", func() {
 				Builder:      builder,
 				ResultParser: parser.NewResultParser(),
 				AuditStore:   capStore,
-				Logger:       slog.Default(),
+				Logger:       logr.Discard(),
 				MaxTurns:     5,
 				ModelName:    "test-model",
 			})

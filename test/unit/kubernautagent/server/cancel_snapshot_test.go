@@ -19,7 +19,7 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
+	"github.com/go-logr/logr"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -38,14 +38,12 @@ var _ = Describe("TP-823-OAS: Cancel, Snapshot, Stream Endpoints (#823 PR2)", fu
 		store   *session.Store
 		manager *session.Manager
 		handler *server.Handler
-		logger  *slog.Logger
 	)
 
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
-		logger = slog.Default()
-		manager = session.NewManager(store, logger, nil, nil)
-		handler = server.NewHandler(manager, nil, logger, nil)
+		manager = session.NewManager(store, logr.Discard(), nil, nil)
+		handler = server.NewHandler(manager, nil, logr.Discard(), nil)
 	})
 
 	// --- Cancel Endpoint ---

@@ -18,7 +18,7 @@ package session_test
 
 import (
 	"context"
-	"log/slog"
+	"github.com/go-logr/logr"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -33,7 +33,7 @@ var _ = Describe("SSE Delivery Integration — #823 PR7", func() {
 	Describe("IT-KA-823-D01: Subscribe triggers event sink — events flow to subscriber", func() {
 		It("events emitted after Subscribe are received by subscriber", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
+			mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
 
 			subscribed := make(chan struct{})
 			proceed := make(chan struct{})
@@ -85,7 +85,7 @@ var _ = Describe("SSE Delivery Integration — #823 PR7", func() {
 	Describe("IT-KA-823-D02: Client disconnect does not block investigation", func() {
 		It("investigation completes even if subscriber stops reading", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
+			mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
 
 			subscribed := make(chan struct{})
 

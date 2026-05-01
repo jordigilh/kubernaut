@@ -19,9 +19,8 @@ package investigator_test
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -64,7 +63,7 @@ func (e *errorLLMClient) Close() error { return nil }
 var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 	var (
-		logger     *slog.Logger
+		invLogger  logr.Logger
 		auditStore *recordingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
@@ -74,7 +73,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		invLogger = logr.Discard()
 		auditStore = &recordingAuditStore{}
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
@@ -87,7 +86,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 		dsClient := &fakeDataStorageClient{
 			history: &enrichment.RemediationHistoryResult{},
 		}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
@@ -102,12 +101,12 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 	}
 
 	signal := katypes.SignalContext{
-		Name:         "api-server-abc",
-		Namespace:    "production",
-		Severity:     "critical",
-		Message:      "OOMKilled",
-		ResourceKind: "Deployment",
-		ResourceName: "api-server",
+		Name:          "api-server-abc",
+		Namespace:     "production",
+		Severity:      "critical",
+		Message:       "OOMKilled",
+		ResourceKind:  "Deployment",
+		ResourceName:  "api-server",
 		RemediationID: "rem-it-audit-parity",
 	}
 
@@ -119,7 +118,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
-				AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools,
 				ModelName: "claude-sonnet-4-20250514",
 			})
 
@@ -152,7 +151,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
-				AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
 			_, err := inv.Investigate(context.Background(), signal)
@@ -188,7 +187,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
-				AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools,
 				Registry: reg,
 			})
 
@@ -221,7 +220,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
-				AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
 			_, err := inv.Investigate(context.Background(), signal)
@@ -267,7 +266,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
-				AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
 			_, err := inv.Investigate(context.Background(), signal)
@@ -309,7 +308,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
-				AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
 			result, err := inv.Investigate(context.Background(), signal)
@@ -331,7 +330,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			failingClient := &errorLLMClient{err: fmt.Errorf("LLM timeout after 30s")}
 			inv := investigator.New(investigator.Config{
 				Client: failingClient, Builder: builder, ResultParser: rp, Enricher: enricher,
-				AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
 			_, err := inv.Investigate(context.Background(), signal)
@@ -354,7 +353,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
-				AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
 			_, err := inv.Investigate(context.Background(), signal)
@@ -392,7 +391,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			}
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
-				AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
 			_, err := inv.Investigate(context.Background(), signal)
@@ -460,7 +459,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			testMapper.Add(schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}, meta.RESTScopeNamespace)
 			testMapper.Add(schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"}, meta.RESTScopeNamespace)
 			testMapper.Add(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ResourceQuota"}, meta.RESTScopeNamespace)
-			ld := enrichment.NewLabelDetector(dynClient, testMapper)
+			ld := enrichment.NewLabelDetector(dynClient, testMapper, invLogger)
 
 			k8sClientForLabels := &resourceAwareK8sClient{
 				chains: map[string][]enrichment.OwnerChainEntry{
@@ -472,7 +471,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 				k8sClientForLabels,
 				&fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}},
 				auditStore,
-				logger,
+				invLogger,
 			).WithLabelDetector(ld)
 
 			labelMockClient := &mockLLMClient{}
@@ -503,7 +502,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 				ResultParser: rp,
 				Enricher:     labelEnricher,
 				AuditStore:   auditStore,
-				Logger:       logger,
+				Logger:       invLogger,
 				MaxTurns:     15,
 				PhaseTools:   phaseTools,
 			})
@@ -537,13 +536,13 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 	Describe("IT-KA-433-AP-004: Investigation emits validation_attempt per self-correction attempt", func() {
 		It("should emit one failure validation_attempt then one success when correction succeeds", func() {
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+			itInvLog := logr.Discard()
 			auditStore := &recordingAuditStore{}
 			builder, _ := prompt.NewBuilder()
 			rp := parser.NewResultParser()
 			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, itInvLog)
 			phaseTools := investigator.DefaultPhaseToolMap()
 
 			validator := parser.NewValidator([]string{"restart", "scale-up"})
@@ -558,7 +557,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: itInvLog,
 				MaxTurns: 15, PhaseTools: phaseTools,
 				Pipeline: investigator.Pipeline{
 					CatalogFetcher:  &staticCatalogFetcher{validator: validator},
@@ -590,13 +589,13 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 		})
 
 		It("should emit isValid=false on final event when validation is exhausted", func() {
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+			itInvLog := logr.Discard()
 			auditStore := &recordingAuditStore{}
 			builder, _ := prompt.NewBuilder()
 			rp := parser.NewResultParser()
 			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, itInvLog)
 			phaseTools := investigator.DefaultPhaseToolMap()
 
 			validator := parser.NewValidator([]string{"restart", "scale-up"})
@@ -612,7 +611,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: itInvLog,
 				MaxTurns: 15, PhaseTools: phaseTools,
 				Pipeline: investigator.Pipeline{
 					CatalogFetcher:  &staticCatalogFetcher{validator: validator},

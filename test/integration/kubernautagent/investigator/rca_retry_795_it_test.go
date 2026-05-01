@@ -18,8 +18,8 @@ package investigator_test
 
 import (
 	"context"
-	"log/slog"
-	"os"
+
+	"github.com/go-logr/logr"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -37,7 +37,7 @@ import (
 var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 
 	var (
-		logger     *slog.Logger
+		invLogger  logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -45,7 +45,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		invLogger = logr.Discard()
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
@@ -86,11 +86,11 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 				{Kind: "Deployment", Name: "api", Namespace: "production"},
 			}}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
 			})
 
@@ -148,11 +148,11 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 				{Kind: "Deployment", Name: "api", Namespace: "production"},
 			}}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
 			})
 
@@ -208,11 +208,11 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 				{Kind: "Deployment", Name: "web-frontend", Namespace: "demo-gitops"},
 			}}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
 			})
 
@@ -220,7 +220,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 				Name: "KubePodCrashLooping", Namespace: "demo-gitops", Severity: "critical",
 				Message: "Pod web-frontend-c8dc85956-jn2b8 CrashLoopBackOff", ResourceKind: "Pod",
 				ResourceName: "web-frontend-c8dc85956-jn2b8",
-				Environment: "staging", Priority: "P1",
+				Environment:  "staging", Priority: "P1",
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -272,11 +272,11 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 				{Kind: "Deployment", Name: "api", Namespace: "production"},
 			}}
 			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, Registry: reg,
 			})
 

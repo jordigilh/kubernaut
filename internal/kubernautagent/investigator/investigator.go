@@ -21,10 +21,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -151,7 +151,7 @@ type Config struct {
 	ResultParser  *parser.ResultParser
 	Enricher      *enrichment.Enricher
 	AuditStore    audit.AuditStore
-	Logger        *slog.Logger
+	Logger        logr.Logger
 	MaxTurns      int
 	PhaseTools    katypes.PhaseToolMap
 	Registry      registry.ToolRegistry
@@ -171,7 +171,7 @@ type Investigator struct {
 	resultParser  *parser.ResultParser
 	enricher      *enrichment.Enricher
 	auditStore    audit.AuditStore
-	logger        *slog.Logger
+	logger        logr.Logger
 	maxTurns      int
 	phaseTools    katypes.PhaseToolMap
 	registry      registry.ToolRegistry
@@ -180,6 +180,10 @@ type Investigator struct {
 	scopeResolver ScopeResolver
 	swappable     *llm.SwappableClient
 	metrics       *metrics.Metrics
+}
+
+func (inv *Investigator) auditLog() logr.Logger {
+	return inv.logger
 }
 
 // New creates an Investigator from the given configuration.
@@ -287,9 +291,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		// labels (e.g. pdbProtected) matches pre-#704 behaviour where
 		// allLabelDetectionsFailed() fell through to keep initial labels.
 		if reEnriched != nil && reEnriched.HardFail {
-			inv.logger.Warn("enrichment owner chain hard-failed, triggering rca_incomplete",
-				slog.String("error", reEnriched.OwnerChainError.Error()),
-			)
+			inv.logger.Error(reEnriched.OwnerChainError, "enrichment owner chain hard-failed, triggering rca_incomplete")
 			rcaResult.HumanReviewNeeded = true
 			rcaResult.HumanReviewReason = "rca_incomplete"
 			backfillSeverity(rcaResult, signal)
@@ -303,10 +305,10 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		if reEnriched != nil && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
 			enrichData = reEnriched
 		} else if reEnriched != nil {
-			inv.logger.Warn("re-enrichment labels all failed (RCA target not found), preserving signal-target labels",
+			inv.logger.Info("re-enrichment labels all failed (RCA target not found), preserving signal-target labels",
 				"rca_target", postRCAKind+"/"+postRCAName)
 		} else {
-			inv.logger.Warn("re-enrichment returned nil, retaining pre-RCA enrichment data")
+			inv.logger.Info("re-enrichment returned nil, retaining pre-RCA enrichment data")
 		}
 		promptEnrichment = toPromptEnrichment(enrichData)
 
@@ -388,7 +390,7 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 	}
 	result, err := inv.enricher.Enrich(ctx, kind, name, namespace, "", incidentID)
 	if err != nil {
-		inv.logger.Warn("enrichment failed", slog.String("error", err.Error()))
+		inv.logger.Error(err, "enrichment failed")
 		return nil
 	}
 	return result
@@ -455,9 +457,9 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		}, nil
 	}
 	if parseErr != nil {
-		inv.logger.Warn("RCA parse failed after retry, treating as summary",
-			slog.String("error", parseErr.Error()),
-			slog.String("correlation_id", correlationID))
+		inv.logger.Info("RCA parse failed after retry, treating as summary",
+			"error", parseErr.Error(),
+			"correlation_id", correlationID)
 		return &katypes.InvestigationResult{
 			RCASummary: content,
 		}, nil
@@ -474,8 +476,8 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	// Aligned with HAPI v1.2.1 where needs_human_review is parser-driven in Phase 3.
 	if result.HumanReviewNeeded {
 		inv.logger.Info("clearing HumanReviewNeeded set during RCA (parser-driven in Phase 3 only)",
-			slog.String("reason", result.HumanReviewReason),
-			slog.String("correlation_id", correlationID))
+			"reason", result.HumanReviewReason,
+			"correlation_id", correlationID)
 		result.HumanReviewNeeded = false
 		result.HumanReviewReason = ""
 	}
@@ -513,9 +515,9 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 			return nil
 		}
 		inv.logger.Info("parse-level retry for RCA submit",
-			slog.Int("attempt", attempt+1),
-			slog.Int("max", maxRCAParseRetries),
-			slog.String("correlation_id", correlationID))
+			"attempt", attempt+1,
+			"max", maxRCAParseRetries,
+			"correlation_id", correlationID)
 
 		retryMessages = append(retryMessages,
 			llm.Message{Role: "user", Content: correctionMsg},
@@ -529,7 +531,7 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 		retryEvent.Data["retry_max"] = maxRCAParseRetries
 		retryEvent.Data["phase"] = string(katypes.PhaseRCA)
 		retryEvent.Data["retry_reason"] = "rca_parse_correction"
-		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.logger)
+		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.auditLog())
 
 		resp, err := inv.chatOrStream(ctx, client, llm.ChatRequest{
 			Messages: retryMessages,
@@ -537,9 +539,8 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
 		}, attempt+1, string(katypes.PhaseRCA), modelName)
 		if err != nil {
-			inv.logger.Warn("RCA retry LLM call failed",
-				slog.String("error", err.Error()),
-				slog.String("correlation_id", correlationID))
+			inv.logger.Error(err, "RCA retry LLM call failed",
+				"correlation_id", correlationID)
 			continue
 		}
 		if tokens != nil {
@@ -555,14 +556,13 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 			if tc.Name == SubmitResultToolName {
 				result, parseErr := inv.resultParser.Parse(tc.Arguments)
 				if parseErr != nil {
-					inv.logger.Warn("RCA retry parse still failed",
-						slog.String("error", parseErr.Error()),
-						slog.String("correlation_id", correlationID))
+					inv.logger.Error(parseErr, "RCA retry parse still failed",
+						"correlation_id", correlationID)
 					retryMessages = append(retryMessages, resp.Message)
 					continue
 				}
 				inv.logger.Info("RCA retry succeeded",
-					slog.String("correlation_id", correlationID))
+					"correlation_id", correlationID)
 				return result
 			}
 		}
@@ -571,7 +571,7 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 			result, parseErr := inv.resultParser.Parse(resp.Message.Content)
 			if parseErr == nil {
 				inv.logger.Info("RCA retry succeeded from message content",
-					slog.String("correlation_id", correlationID))
+					"correlation_id", correlationID)
 				return result
 			}
 		}
@@ -606,9 +606,9 @@ func (inv *Investigator) sameKindValidationGate(
 	}
 
 	inv.logger.Info("same-kind validation gate triggered: remediation_target.kind matches signal resource_kind",
-		slog.String("target_kind", result.RemediationTarget.Kind),
-		slog.String("signal_resource_kind", signal.ResourceKind),
-		slog.String("correlation_id", correlationID))
+		"target_kind", result.RemediationTarget.Kind,
+		"signal_resource_kind", signal.ResourceKind,
+		"correlation_id", correlationID)
 
 	gateEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
 	gateEvent.EventAction = "same_kind_validation_gate"
@@ -616,7 +616,7 @@ func (inv *Investigator) sameKindValidationGate(
 	gateEvent.Data["signal_resource_kind"] = signal.ResourceKind
 	gateEvent.Data["target_kind"] = result.RemediationTarget.Kind
 	gateEvent.Data["target_name"] = result.RemediationTarget.Name
-	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.logger)
+	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
 
 	correctionMsg := fmt.Sprintf(
 		`Your remediation_target.kind is "%s", which is the same resource kind as the input signal. `+
@@ -650,9 +650,8 @@ func (inv *Investigator) sameKindValidationGate(
 		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
 	}, 0, string(katypes.PhaseRCA), modelName)
 	if err != nil {
-		inv.logger.Warn("same-kind validation gate retry failed, keeping original result",
-			slog.String("error", err.Error()),
-			slog.String("correlation_id", correlationID))
+		inv.logger.Error(err, "same-kind validation gate retry failed, keeping original result",
+			"correlation_id", correlationID)
 		return result
 	}
 	if tokens != nil {
@@ -670,30 +669,29 @@ func (inv *Investigator) sameKindValidationGate(
 		retryContent = resp.Message.Content
 	}
 	if retryContent == "" {
-		inv.logger.Warn("same-kind validation gate: no content in retry response, keeping original",
-			slog.String("correlation_id", correlationID))
+		inv.logger.Info("same-kind validation gate: no content in retry response, keeping original",
+			"correlation_id", correlationID)
 		return result
 	}
 
 	retryResult, parseErr := inv.resultParser.Parse(retryContent)
 	if parseErr != nil {
-		inv.logger.Warn("same-kind validation gate: retry parse failed, keeping original",
-			slog.String("error", parseErr.Error()),
-			slog.String("correlation_id", correlationID))
+		inv.logger.Error(parseErr, "same-kind validation gate: retry parse failed, keeping original",
+			"correlation_id", correlationID)
 		return result
 	}
 
 	if retryResult.RemediationTarget.Kind == "" && result.RemediationTarget.Kind != "" {
-		inv.logger.Warn("same-kind validation gate: retry lost remediation_target, keeping original",
-			slog.String("original_target", result.RemediationTarget.Kind+"/"+result.RemediationTarget.Name),
-			slog.String("correlation_id", correlationID))
+		inv.logger.Info("same-kind validation gate: retry lost remediation_target, keeping original",
+			"original_target", result.RemediationTarget.Kind+"/"+result.RemediationTarget.Name,
+			"correlation_id", correlationID)
 		return result
 	}
 
 	inv.logger.Info("same-kind validation gate: accepted retry result",
-		slog.String("original_target", result.RemediationTarget.Kind+"/"+result.RemediationTarget.Name),
-		slog.String("retry_target", retryResult.RemediationTarget.Kind+"/"+retryResult.RemediationTarget.Name),
-		slog.String("correlation_id", correlationID))
+		"original_target", result.RemediationTarget.Kind+"/"+result.RemediationTarget.Name,
+		"retry_target", retryResult.RemediationTarget.Kind+"/"+retryResult.RemediationTarget.Name,
+		"correlation_id", correlationID)
 	return retryResult
 }
 
@@ -750,7 +748,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		}, nil
 	case *SubmitNoWorkflowResult:
 		inv.logger.Info("submit_result_no_workflow sentinel: classifying as no_matching_workflows",
-			slog.String("correlation_id", correlationID))
+			"correlation_id", correlationID)
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
@@ -769,7 +767,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		// content cannot be parsed at all.
 		if _, textErr := inv.resultParser.Parse(r.Content); textErr == nil {
 			inv.logger.Info("workflow selection: parsed text response directly (no tool call)",
-				slog.String("correlation_id", correlationID))
+				"correlation_id", correlationID)
 			content = r.Content
 		} else {
 			retryResult := inv.retryWorkflowSubmit(ctx, r.Content, messages, rcaSummary, tokens, correlationID, client, modelName)
@@ -783,8 +781,8 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 					CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
 				}, nil
 			}
-			inv.logger.Warn("workflow selection: all retries exhausted, classifying as no_matching_workflows",
-				slog.String("correlation_id", correlationID))
+			inv.logger.Info("workflow selection: all retries exhausted, classifying as no_matching_workflows",
+				"correlation_id", correlationID)
 			return &katypes.InvestigationResult{
 				RCASummary:        rcaSummary,
 				HumanReviewNeeded: true,
@@ -807,9 +805,8 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 				CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
 			}, nil
 		}
-		inv.logger.Warn("workflow selection parse failed after retries, classifying as no_matching_workflows",
-			slog.String("error", parseErr.Error()),
-			slog.String("correlation_id", correlationID))
+		inv.logger.Error(parseErr, "workflow selection parse failed after retries, classifying as no_matching_workflows",
+			"correlation_id", correlationID)
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
@@ -821,8 +818,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	if inv.pipeline.CatalogFetcher != nil {
 		validator, fetchErr := inv.pipeline.CatalogFetcher.FetchValidator(ctx)
 		if fetchErr != nil {
-			inv.logger.Warn("workflow catalog unavailable, requiring human review",
-				slog.String("error", fetchErr.Error()))
+			inv.logger.Error(fetchErr, "workflow catalog unavailable, requiring human review")
 			result.HumanReviewNeeded = true
 			result.HumanReviewReason = "catalog_unavailable"
 			result.Reason = fmt.Sprintf("workflow catalog unavailable: %s", fetchErr)
@@ -936,9 +932,9 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 			return nil
 		}
 		inv.logger.Info("parse-level retry for workflow submit",
-			slog.Int("attempt", attempt+1),
-			slog.Int("max", maxParseRetries),
-			slog.String("correlation_id", correlationID))
+			"attempt", attempt+1,
+			"max", maxParseRetries,
+			"correlation_id", correlationID)
 
 		retryMessages = append(retryMessages,
 			llm.Message{Role: "user", Content: correctionTemplate},
@@ -952,7 +948,7 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 		retryEvent.Data["retry_max"] = maxParseRetries
 		retryEvent.Data["phase"] = string(katypes.PhaseWorkflowDiscovery)
 		retryEvent.Data["retry_reason"] = "parse_level_correction"
-		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.logger)
+		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.auditLog())
 
 		resp, err := inv.chatOrStream(ctx, client, llm.ChatRequest{
 			Messages: retryMessages,
@@ -960,9 +956,8 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.InvestigationResultSchema()},
 		}, attempt+1, string(katypes.PhaseWorkflowDiscovery), modelName)
 		if err != nil {
-			inv.logger.Warn("retry LLM call failed",
-				slog.String("error", err.Error()),
-				slog.String("correlation_id", correlationID))
+			inv.logger.Error(err, "retry LLM call failed",
+				"correlation_id", correlationID)
 			continue
 		}
 		if tokens != nil {
@@ -979,7 +974,7 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 				switch tc.Name {
 				case SubmitResultNoWorkflowToolName:
 					inv.logger.Info("retry succeeded: submit_result_no_workflow",
-					slog.String("correlation_id", correlationID))
+						"correlation_id", correlationID)
 					return &katypes.InvestigationResult{
 						RCASummary:        rcaSummary,
 						HumanReviewNeeded: true,
@@ -988,12 +983,11 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 					}
 				case SubmitResultWithWorkflowToolName:
 					inv.logger.Info("retry succeeded: submit_result_with_workflow",
-					slog.String("correlation_id", correlationID))
+						"correlation_id", correlationID)
 					result, parseErr := inv.resultParser.Parse(tc.Arguments)
 					if parseErr != nil {
-						inv.logger.Warn("retry submit_result_with_workflow parse failed",
-							slog.String("error", parseErr.Error()),
-							slog.String("correlation_id", correlationID))
+						inv.logger.Error(parseErr, "retry submit_result_with_workflow parse failed",
+							"correlation_id", correlationID)
 						retryMessages = append(retryMessages, resp.Message)
 						continue
 					}
@@ -1071,7 +1065,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		reqEvent.Data["prompt_preview"] = lastUserMessage(messages, 500)
 		reqEvent.Data["toolsets_enabled"] = toolNames(toolDefs)
 		reqEvent.Data["messages"] = messagesToAuditFormat(messages)
-		audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.logger)
+		audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.auditLog())
 
 		chatReq := llm.ChatRequest{
 			Messages: messages,
@@ -1095,7 +1089,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			failEvent.Data["error_message"] = err.Error()
 			failEvent.Data["phase"] = string(phase)
 			failEvent.Data["duration_seconds"] = time.Since(loopStart).Seconds()
-			audit.StoreBestEffort(ctx, inv.auditStore, failEvent, inv.logger)
+			audit.StoreBestEffort(ctx, inv.auditStore, failEvent, inv.auditLog())
 			return nil, fmt.Errorf("%s LLM call turn %d: %w", phase, turn, err)
 		}
 
@@ -1116,7 +1110,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		respEvent.Data["analysis_content"] = resp.Message.Content
 		respEvent.Data["tool_call_count"] = len(resp.ToolCalls)
 		respEvent.Data["finish_reason"] = resp.FinishReason
-		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.logger)
+		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.auditLog())
 
 		emitToSink(ctx, session.EventTypeReasoningDelta, turn, string(phase), map[string]interface{}{
 			"content_preview": truncatePreview(resp.Message.Content, 200),
@@ -1127,9 +1121,9 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			for _, tc := range resp.ToolCalls {
 				if sr := sentinelResult(tc); sr != nil {
 					inv.logger.Info("sentinel detected",
-						slog.String("tool", tc.Name),
-						slog.String("phase", string(phase)),
-						slog.String("correlation_id", correlationID))
+						"tool", tc.Name,
+						"phase", string(phase),
+						"correlation_id", correlationID)
 					return sr, nil
 				}
 			}
@@ -1159,7 +1153,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 				tcEvent.Data["tool_arguments"] = tc.Arguments
 				tcEvent.Data["tool_result"] = toolResult
 				tcEvent.Data["tool_result_preview"] = truncatePreview(toolResult, 500)
-				audit.StoreBestEffort(ctx, inv.auditStore, tcEvent, inv.logger)
+				audit.StoreBestEffort(ctx, inv.auditStore, tcEvent, inv.auditLog())
 
 				messages = append(messages, llm.Message{
 					Role:       "tool",
@@ -1168,19 +1162,19 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 					ToolName:   tc.Name,
 				})
 			}
-		if inv.pipeline.AnomalyDetector.TotalExceeded() {
-			return &ExhaustedResult{Reason: "tool budget exhausted"}, nil
-		}
+			if inv.pipeline.AnomalyDetector.TotalExceeded() {
+				return &ExhaustedResult{Reason: "tool budget exhausted"}, nil
+			}
 			continue
 		}
 
 		if resp.FinishReason == llm.FinishReasonLength && !truncationRetried {
 			truncationRetried = true
 			maxTokens = escalateMaxTokens(resp.Usage.CompletionTokens)
-			inv.logger.Warn("LLM response truncated, retrying with escalated MaxTokens",
-				slog.String("phase", string(phase)),
-				slog.Int("escalated_max_tokens", maxTokens),
-				slog.String("correlation_id", correlationID))
+			inv.logger.Info("LLM response truncated, retrying with escalated MaxTokens",
+				"phase", string(phase),
+				"escalated_max_tokens", maxTokens,
+				"correlation_id", correlationID)
 
 			truncEvent := audit.NewEvent(audit.EventTypeLLMResponse, correlationID)
 			truncEvent.EventAction = "truncation_detected"
@@ -1188,7 +1182,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			truncEvent.Data["finish_reason"] = resp.FinishReason
 			truncEvent.Data["escalated_max_tokens"] = maxTokens
 			truncEvent.Data["truncated_content_length"] = len(resp.Message.Content)
-			audit.StoreBestEffort(ctx, inv.auditStore, truncEvent, inv.logger)
+			audit.StoreBestEffort(ctx, inv.auditStore, truncEvent, inv.auditLog())
 
 			messages = append(messages, resp.Message)
 			messages = append(messages, llm.Message{
@@ -1331,18 +1325,17 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 		return toolErrorJSON("no registry configured for tool " + name)
 	}
 	if ar := inv.pipeline.AnomalyDetector.CheckToolCall(name, args); !ar.Allowed {
-		inv.logger.Warn("anomaly detector rejected tool call",
-			slog.String("tool", name),
-			slog.String("reason", ar.Reason),
+		inv.logger.Info("anomaly detector rejected tool call",
+			"tool", name,
+			"reason", ar.Reason,
 		)
 		return toolErrorJSON(ar.Reason)
 	}
 
 	result, err := inv.registry.Execute(ctx, name, args)
 	if err != nil {
-		inv.logger.Warn("tool execution failed",
-			slog.String("tool", name),
-			slog.String("error", err.Error()),
+		inv.logger.Error(err, "tool execution failed",
+			"tool", name,
 		)
 		if ar := inv.pipeline.AnomalyDetector.RecordFailure(name, args); !ar.Allowed {
 			return toolErrorJSON(ar.Reason)
@@ -1353,9 +1346,8 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 	if inv.pipeline.Sanitizer != nil {
 		sanitized, sanitizeErr := inv.pipeline.Sanitizer.Run(ctx, result)
 		if sanitizeErr != nil {
-			inv.logger.Warn("sanitization failed, returning raw output",
-				slog.String("tool", name),
-				slog.String("error", sanitizeErr.Error()),
+			inv.logger.Error(sanitizeErr, "sanitization failed, returning raw output",
+				"tool", name,
 			)
 		} else {
 			result = sanitized
@@ -1365,9 +1357,8 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 	if inv.pipeline.Summarizer != nil {
 		summarized, sumErr := inv.pipeline.Summarizer.MaybeSummarize(ctx, name, result)
 		if sumErr != nil {
-			inv.logger.Warn("summarization failed, returning unsummarized output",
-				slog.String("tool", name),
-				slog.String("error", sumErr.Error()),
+			inv.logger.Error(sumErr, "summarization failed, returning unsummarized output",
+				"tool", name,
 			)
 		} else {
 			result = summarized
@@ -1418,8 +1409,6 @@ func emitToSink(ctx context.Context, eventType string, turn int, phase string, d
 		var err error
 		raw, err = json.Marshal(data)
 		if err != nil {
-			slog.Warn("emitToSink: marshal failed, dropping event",
-				"event_type", eventType, "error", err)
 			return
 		}
 	}
@@ -1474,7 +1463,7 @@ func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katyp
 	if b, err := json.Marshal(ResultToAuditJSON(result)); err == nil {
 		completeEvent.Data["response_data"] = string(b)
 	}
-	audit.StoreBestEffort(ctx, inv.auditStore, completeEvent, inv.logger)
+	audit.StoreBestEffort(ctx, inv.auditStore, completeEvent, inv.auditLog())
 }
 
 func (inv *Investigator) emitRCAComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {
@@ -1487,7 +1476,7 @@ func (inv *Investigator) emitRCAComplete(ctx context.Context, result *katypes.In
 	if b, err := json.Marshal(ResultToAuditJSON(result)); err == nil {
 		ev.Data["response_data"] = string(b)
 	}
-	audit.StoreBestEffort(ctx, inv.auditStore, ev, inv.logger)
+	audit.StoreBestEffort(ctx, inv.auditStore, ev, inv.auditLog())
 }
 
 func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
@@ -1594,7 +1583,7 @@ func (inv *Investigator) emitValidationEvent(ctx context.Context, attempt, maxAt
 	valEvent.Data["errors"] = errors
 	valEvent.Data["workflow_id"] = workflowID
 	valEvent.Data["is_final_attempt"] = attempt == maxAttempts
-	audit.StoreBestEffort(ctx, inv.auditStore, valEvent, inv.logger)
+	audit.StoreBestEffort(ctx, inv.auditStore, valEvent, inv.auditLog())
 }
 
 func toolErrorJSON(msg string) string {
@@ -1904,8 +1893,8 @@ func (inv *Investigator) normalizeNamespace(kind, namespace string) string {
 	}
 	isCluster, err := inv.scopeResolver.IsClusterScoped(kind)
 	if err != nil {
-		inv.logger.Warn("ScopeResolver error, preserving namespace",
-			"kind", kind, "error", err)
+		inv.logger.Error(err, "ScopeResolver error, preserving namespace",
+			"kind", kind)
 		return namespace
 	}
 	if isCluster {

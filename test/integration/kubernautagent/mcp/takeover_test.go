@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
+	"github.com/go-logr/logr"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -80,7 +80,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			createNamespace(context.Background(), sharedK8sClient, nsName)
 
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), nil, nil)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
 			autoMgr := &mockAutoMgrIT{mgr: mgr}
 
 			var autonomousCompleted atomic.Bool
@@ -103,7 +103,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 				return s.Status
 			}).Should(Equal(session.StatusRunning))
 
-			logger := slog.Default()
+			logger := logr.Discard()
 			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 			runner := &delayedMockRunner{delay: 10 * time.Millisecond, response: "interactive response"}
 			recon := &mockReconIT{}
@@ -137,12 +137,12 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			nsName := uniqueNamespace("conc")
 			createNamespace(context.Background(), sharedK8sClient, nsName)
 
-			logger := slog.Default()
+			logger := logr.Discard()
 			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 			runner := &delayedMockRunner{delay: 30 * time.Millisecond, response: "llm-response"}
 			recon := &mockReconIT{}
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), nil, nil)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
 			autoMgr := &mockAutoMgrIT{mgr: mgr}
 
 			_, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {

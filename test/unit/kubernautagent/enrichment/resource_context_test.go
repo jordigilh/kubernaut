@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -50,7 +51,7 @@ var _ = Describe("Kubernaut Agent Resource Context — #433 (reclassified from I
 			}
 
 			reg := registry.New()
-			reg.Register(custom.NewNamespacedResourceContextTool(ds, k8s))
+			reg.Register(custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard()))
 
 			result, err := reg.Execute(context.Background(), "get_namespaced_resource_context",
 				json.RawMessage(`{"kind":"Pod","name":"api-server-abc-xyz","namespace":"production"}`))
@@ -83,7 +84,7 @@ var _ = Describe("Kubernaut Agent Resource Context — #433 (reclassified from I
 			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
 
 			reg := registry.New()
-			reg.Register(custom.NewNamespacedResourceContextTool(ds, k8s))
+			reg.Register(custom.NewNamespacedResourceContextTool(ds, k8s, logr.Discard()))
 
 			result, err := reg.Execute(context.Background(), "get_namespaced_resource_context",
 				json.RawMessage(`{"kind":"StatefulSet","name":"redis-ss","namespace":"default"}`))
@@ -111,7 +112,7 @@ var _ = Describe("Kubernaut Agent Resource Context — #433 (reclassified from I
 			}
 
 			reg := registry.New()
-			reg.Register(custom.NewClusterResourceContextTool(ds, k8s))
+			reg.Register(custom.NewClusterResourceContextTool(ds, k8s, logr.Discard()))
 
 			result, err := reg.Execute(context.Background(), "get_cluster_resource_context",
 				json.RawMessage(`{"kind":"Node","name":"worker-1"}`))

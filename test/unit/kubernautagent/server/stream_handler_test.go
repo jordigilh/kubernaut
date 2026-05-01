@@ -20,7 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log/slog"
+	"github.com/go-logr/logr"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -51,13 +51,13 @@ var _ = Describe("SSE Stream Handler — #823 PR7", func() {
 
 	BeforeEach(func() {
 		store = session.NewStore(30 * time.Minute)
-		mgr = session.NewManager(store, slog.Default(), audit.NopAuditStore{}, nil)
+		mgr = session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
 		h = server.NewHandler(mgr, &stubInvestigator{
 			fn: func(ctx context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
 				<-ctx.Done()
 				return &katypes.InvestigationResult{RCASummary: "cancelled"}, nil
 			},
-		}, slog.Default(), nil)
+		}, logr.Discard(), nil)
 	})
 
 	Describe("UT-KA-823-D01: SSE stream delivers investigation events to HTTP client", func() {

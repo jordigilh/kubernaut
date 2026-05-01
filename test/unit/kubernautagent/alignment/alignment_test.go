@@ -21,10 +21,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -472,7 +472,7 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 
@@ -550,6 +550,53 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 
 			obs := evaluator.EvaluateStep(context.Background(), step)
 			Expect(obs.Suspicious).To(BeTrue(), "fail-closed: empty JSON must → Suspicious=true")
+		})
+	})
+
+	Describe("UT-SA-925-001: EvaluateStep strips markdown fences from JSON response", func() {
+		It("should parse JSON wrapped in ```json fences (Haiku 4.5 format)", func() {
+			resp := llm.ChatResponse{
+				Message: llm.Message{Role: "assistant", Content: "```json\n{\"suspicious\":false,\"explanation\":\"clean\"}\n```"},
+			}
+			client := &mockLLMClient{responses: []llm.ChatResponse{resp}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			step := alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Content: "pod restarted"}
+
+			obs := evaluator.EvaluateStep(context.Background(), step)
+			Expect(obs.Suspicious).To(BeFalse(), "should parse JSON from markdown fences")
+			Expect(obs.Explanation).To(Equal("clean"))
+		})
+
+		It("should parse JSON wrapped in bare ``` fences (no language tag)", func() {
+			resp := llm.ChatResponse{
+				Message: llm.Message{Role: "assistant", Content: "```\n{\"suspicious\":true,\"explanation\":\"injected\"}\n```"},
+			}
+			client := &mockLLMClient{responses: []llm.ChatResponse{resp}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			step := alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Content: "c"}
+
+			obs := evaluator.EvaluateStep(context.Background(), step)
+			Expect(obs.Suspicious).To(BeTrue())
+			Expect(obs.Explanation).To(Equal("injected"))
+		})
+
+		It("should parse JSON with leading/trailing whitespace around fences", func() {
+			resp := llm.ChatResponse{
+				Message: llm.Message{Role: "assistant", Content: "  \n```json\n{\"suspicious\":false,\"explanation\":\"ok\"}\n```\n  "},
+			}
+			client := &mockLLMClient{responses: []llm.ChatResponse{resp}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			step := alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Content: "c"}
+
+			obs := evaluator.EvaluateStep(context.Background(), step)
+			Expect(obs.Suspicious).To(BeFalse())
+			Expect(obs.Explanation).To(Equal("ok"))
 		})
 	})
 
@@ -637,7 +684,7 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 50 * time.Millisecond,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			res, err := wrapper.Investigate(context.Background(), katypes.SignalContext{Name: "s", Namespace: "ns"})
@@ -670,7 +717,7 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			res, err := wrapper.Investigate(context.Background(), katypes.SignalContext{Name: "s", Namespace: "ns"})
@@ -817,7 +864,7 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 				alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 					Inner:     nil,
 					Evaluator: &alignment.Evaluator{},
-					Logger:    slog.Default(),
+					Logger:    logr.Discard(),
 				})
 			}).To(Panic(), "nil Inner must cause panic at construction time")
 		})
@@ -827,7 +874,7 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 				alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 					Inner:     &mockInvestigationRunner{},
 					Evaluator: nil,
-					Logger:    slog.Default(),
+					Logger:    logr.Discard(),
 				})
 			}).To(Panic(), "nil Evaluator must cause panic at construction time")
 		})
@@ -905,7 +952,7 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 				Mode:           config.AlignmentModeMonitor,
 			})
 
@@ -931,11 +978,11 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
 			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
-				Inner:              inner,
-				Evaluator:          evaluator,
-				VerdictTimeout:     5 * time.Second,
-				Logger:             slog.Default(),
-				Mode:               config.AlignmentModeMonitor,
+				Inner:                 inner,
+				Evaluator:             evaluator,
+				VerdictTimeout:        5 * time.Second,
+				Logger:                logr.Discard(),
+				Mode:                  config.AlignmentModeMonitor,
 				CanaryForceEscalation: true,
 			})
 
@@ -961,11 +1008,11 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
 			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
-				Inner:              inner,
-				Evaluator:          evaluator,
-				VerdictTimeout:     5 * time.Second,
-				Logger:             slog.Default(),
-				Mode:               config.AlignmentModeMonitor,
+				Inner:                 inner,
+				Evaluator:             evaluator,
+				VerdictTimeout:        5 * time.Second,
+				Logger:                logr.Discard(),
+				Mode:                  config.AlignmentModeMonitor,
 				CanaryForceEscalation: false,
 			})
 
@@ -1090,7 +1137,7 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{
@@ -1127,7 +1174,7 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{
@@ -1160,7 +1207,7 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{}
@@ -1268,7 +1315,7 @@ var _ = Describe("Explanation sanitization — SEC-2", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
@@ -1288,6 +1335,10 @@ type panicMockLLMClient struct{}
 
 func (p *panicMockLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResponse, error) {
 	panic("simulated crypto/rand failure in boundary.Generate")
+}
+
+func (p *panicMockLLMClient) StreamChat(_ context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	return p.Chat(context.Background(), req)
 }
 
 func (p *panicMockLLMClient) Close() error { return nil }
@@ -1414,7 +1465,7 @@ var _ = Describe("Canary integrity mechanism — SEC-3", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
@@ -1445,7 +1496,7 @@ var _ = Describe("Canary integrity mechanism — SEC-3", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
@@ -1472,7 +1523,7 @@ var _ = Describe("Canary integrity mechanism — SEC-3", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns"}
@@ -1540,7 +1591,7 @@ var _ = Describe("Alignment audit correlationID — BR-AUDIT-070", func() {
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				AuditStore:     spy,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{

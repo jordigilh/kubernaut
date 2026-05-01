@@ -29,9 +29,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
-	"os"
 	"time"
+
+	"github.com/go-logr/logr"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -275,7 +275,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			brokenK8s := &errorK8sClient{err: errors.New("envtest unreachable")}
 			brokenDS := &errorDSClient{err: errors.New("DS endpoint unreachable")}
 			brokenEnricher := enrichment.NewEnricher(brokenK8s, brokenDS, auditStore,
-				slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+				logr.Discard())
 
 			By("Calling broken enricher")
 			result, err := brokenEnricher.Enrich(testCtx, "Pod", "broken-pod-"+testID, "it-enrichment", "", incidentID)
@@ -324,7 +324,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			brokenK8s := &errorK8sClient{err: errors.New("K8s API unavailable")}
 			dsAdapter := enrichment.NewDSAdapter(ogenClient)
 			partialEnricher := enrichment.NewEnricher(brokenK8s, dsAdapter, auditStore,
-				slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+				logr.Discard())
 
 			By("Calling enricher")
 			result, err := partialEnricher.Enrich(testCtx, "StatefulSet", "redis-"+testID, "it-enrichment", "sha256:pre5", incidentID)
@@ -395,7 +395,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			By("Building enricher with real K8s + broken DS + real audit store")
 			brokenDS := &errorDSClient{err: errors.New("DS connection refused")}
 			partialEnricher := enrichment.NewEnricher(k8sAdapter, brokenDS, auditStore,
-				slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+				logr.Discard())
 
 			By("Calling enricher")
 			result, err := partialEnricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "sha256:test7", incidentID)

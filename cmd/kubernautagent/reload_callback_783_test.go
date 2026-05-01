@@ -18,16 +18,15 @@ package main
 
 import (
 	"context"
-	"log/slog"
-	"os"
 	"testing"
 
+	"github.com/go-logr/logr"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
-func testLogger() *slog.Logger {
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+func testReloadLogger() logr.Logger {
+	return logr.Discard()
 }
 
 func staticCfg() *kaconfig.Config {
@@ -60,7 +59,7 @@ func (s *stubLLMClient) Close() error { return nil }
 
 func TestReloadRejectsEmptyContent(t *testing.T) {
 	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testLogger())
+	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger())
 
 	err := cb("")
 	if err == nil {
@@ -73,7 +72,7 @@ func TestReloadRejectsEmptyContent(t *testing.T) {
 
 func TestReloadRejectsWhitespaceContent(t *testing.T) {
 	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testLogger())
+	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger())
 
 	err := cb("   \n  \t  ")
 	if err == nil {
@@ -83,7 +82,7 @@ func TestReloadRejectsWhitespaceContent(t *testing.T) {
 
 func TestReloadAcceptsModelChange(t *testing.T) {
 	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testLogger())
+	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger())
 
 	err := cb(`model: gpt-4-turbo
 endpoint: http://localhost:11434
@@ -99,7 +98,7 @@ apiKey: test-key
 
 func TestReloadAcceptsEndpointChange(t *testing.T) {
 	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testLogger())
+	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger())
 
 	err := cb(`model: gpt-4
 endpoint: http://new-endpoint:8080
@@ -112,7 +111,7 @@ apiKey: test-key
 
 func TestReloadRejectsValidationFailure(t *testing.T) {
 	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testLogger())
+	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger())
 
 	err := cb(`model: ""
 endpoint: http://localhost:11434
@@ -128,7 +127,7 @@ apiKey: test-key
 
 func TestReloadAcceptsTemperatureChange(t *testing.T) {
 	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testLogger())
+	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger())
 
 	err := cb(`model: gpt-4
 endpoint: http://localhost:11434

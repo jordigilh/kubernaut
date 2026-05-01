@@ -19,6 +19,8 @@ package mcp_test
 import (
 	"context"
 	"log/slog"
+
+	"github.com/go-logr/logr"
 	"net/http/httptest"
 	"time"
 
@@ -43,7 +45,8 @@ var _ = Describe("Interactive Session Compatibility — COMPAT BR-INTERACTIVE-00
 			nsName := uniqueNamespace("compat01")
 			createNamespace(context.Background(), sharedK8sClient, nsName)
 
-			logger := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelError}))
+			slogLogger := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelError}))
+			logrLogger := logr.FromSlogHandler(slogLogger.Handler())
 
 			// Real LLM client via langchaingo -> Podman Mock LLM
 			llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
@@ -57,7 +60,7 @@ var _ = Describe("Interactive Session Compatibility — COMPAT BR-INTERACTIVE-00
 				Builder:      promptBuilder,
 				ResultParser: parser.NewResultParser(),
 				AuditStore:   audit.NopAuditStore{},
-				Logger:       logger,
+				Logger:       logrLogger,
 				MaxTurns:     15,
 				ModelName:    "test-model",
 			})
@@ -65,9 +68,9 @@ var _ = Describe("Interactive Session Compatibility — COMPAT BR-INTERACTIVE-00
 
 			// Real DSContextReconstructor via ogenclient -> Podman DataStorage
 			Expect(sharedDSClient).NotTo(BeNil(), "shared DS client must be initialized by suite")
-			recon := mcpinternal.NewDSContextReconstructor(sharedDSClient, 5*time.Second, logger)
+			recon := mcpinternal.NewDSContextReconstructor(sharedDSClient, 5*time.Second, slogLogger)
 
-			sessMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
+			sessMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, slogLogger)
 
 			investigateTool := tools.NewInvestigateTool(sessMgr, runner, recon)
 

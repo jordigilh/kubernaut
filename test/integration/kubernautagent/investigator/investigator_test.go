@@ -20,9 +20,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
-	"os"
 	"time"
+
+	"github.com/go-logr/logr"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -134,10 +134,12 @@ type fakeTool struct {
 	err    error
 }
 
-func (f *fakeTool) Name() string                                                         { return f.name }
-func (f *fakeTool) Description() string                                                  { return "fake " + f.name }
-func (f *fakeTool) Parameters() json.RawMessage                                          { return nil }
-func (f *fakeTool) Execute(_ context.Context, _ json.RawMessage) (string, error) { return f.result, f.err }
+func (f *fakeTool) Name() string                { return f.name }
+func (f *fakeTool) Description() string         { return "fake " + f.name }
+func (f *fakeTool) Parameters() json.RawMessage { return nil }
+func (f *fakeTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {
+	return f.result, f.err
+}
 
 func filterEvents(events []*audit.AuditEvent, eventType string) []*audit.AuditEvent {
 	var filtered []*audit.AuditEvent
@@ -152,7 +154,7 @@ func filterEvents(events []*audit.AuditEvent, eventType string) []*audit.AuditEv
 var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 
 	var (
-		logger     *slog.Logger
+		invLogger  logr.Logger
 		auditStore *recordingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
@@ -162,7 +164,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		invLogger = logr.Discard()
 		auditStore = &recordingAuditStore{}
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
@@ -180,7 +182,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				},
 			},
 		}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
@@ -190,7 +192,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded"}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production"}}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name:      "api-server-abc",
 				Namespace: "production",
@@ -210,7 +212,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"issue found"}`}},
 				wfToolResp(`{"workflow_id":"restart-pod","confidence":0.8}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "pod-abc", Namespace: "default", Severity: "warning", Message: "CrashLoopBackOff",
 			})
@@ -225,7 +227,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"memory leak in api-server container"}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.88}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical", Message: "OOMKilled",
 			})
@@ -247,7 +249,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 					ToolCalls: []llm.ToolCall{{ID: "tc_1", Name: "kubectl_describe", Arguments: `{"kind":"Pod","name":"api","namespace":"default"}`}},
 				},
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 1, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 1, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "critical", Message: "OOMKilled",
 			})
@@ -272,7 +274,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				wfToolResp(`{"workflow_id":"generic-restart","confidence":0.7}`),
 			}
 
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
 			})
@@ -302,7 +304,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				wfToolResp(`{"workflow_id":"restart","confidence":0.5}`),
 			}
 
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "critical", Message: "OOMKilled",
 			})
@@ -327,7 +329,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 			}
 
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
 			})
@@ -355,7 +357,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 			}
 
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
 			})
@@ -380,7 +382,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Memory pressure detected"}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name:      "api-server-abc",
 				Namespace: "production",
@@ -413,7 +415,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Issue found"}`}},
 				wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: nil, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: nil, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "test-pod", Namespace: "default", Severity: "warning", Message: "CrashLoop",
 			})
@@ -451,7 +453,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.95}`),
 			}
 
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "production", Severity: "critical", Message: "OOMKilled",
 			})
@@ -474,7 +476,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 			}
 
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
 			})
@@ -509,7 +511,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				wfToolResp(`{"workflow_id":"restart","confidence":0.7}`),
 			}
 
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
 			})
@@ -525,7 +527,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"found issue"}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.85}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "production", Severity: "critical", Message: "OOMKilled",
 			})
@@ -543,7 +545,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() {
 
 	var (
-		logger     *slog.Logger
+		invLogger  logr.Logger
 		auditStore *recordingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
@@ -552,7 +554,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		invLogger = logr.Discard()
 		auditStore = &recordingAuditStore{}
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
@@ -572,7 +574,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 				},
 			}
 			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled in worker deployment","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
@@ -581,7 +583,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
@@ -614,7 +616,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 				},
 			}
 			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"CrashLoop in worker pod"}`}},
@@ -623,7 +625,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
@@ -656,7 +658,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 				},
 			}
 			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled targeting Deployment worker","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
@@ -665,7 +667,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
@@ -693,7 +695,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 			// Approach D defensive check must preserve the original Node target.
 			k8s := &fakeK8sClient{ownerChain: nil, err: nil}
 			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			localEnricher := enrichment.NewEnricher(k8s, ds, auditStore, logger)
+			localEnricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				// Phase 1 RCA: same kind as signal (Node == Node) → gate triggers
@@ -713,7 +715,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: localEnricher, AuditStore: auditStore, Logger: logger,
+				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
@@ -745,7 +747,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 				err:        notFoundErr,
 			}
 			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8s, ds, auditStore, logger).
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger).
 				WithRetryConfig(enrichment.RetryConfig{
 					MaxRetries:  3,
 					BaseBackoff: 1 * time.Millisecond,
@@ -761,7 +763,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 

@@ -18,7 +18,7 @@ package session_test
 
 import (
 	"context"
-	"log/slog"
+	"github.com/go-logr/logr"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -33,7 +33,7 @@ var _ = Describe("Signal Retrieval from Autonomous Session — PR5 Slice B", fun
 	Describe("UT-KA-PR5-B01: GetSessionContext returns typed context for existing session", func() {
 		It("should return the full SessionContext including Signal for a running session", func() {
 			store := session.NewStore(5 * time.Minute)
-			manager := session.NewManager(store, slog.Default(), nil, nil)
+			manager := session.NewManager(store, logr.Discard(), nil, nil)
 
 			sctx := session.SessionContext{
 				IncidentID:    "inc-b01",
@@ -75,7 +75,7 @@ var _ = Describe("Signal Retrieval from Autonomous Session — PR5 Slice B", fun
 	Describe("UT-KA-PR5-B02: GetSessionContext returns error for non-existent session", func() {
 		It("should return ErrSessionNotFound for unknown session ID", func() {
 			store := session.NewStore(5 * time.Minute)
-			manager := session.NewManager(store, slog.Default(), nil, nil)
+			manager := session.NewManager(store, logr.Discard(), nil, nil)
 
 			retrieved, err := manager.GetSessionContext("nonexistent-id")
 			Expect(err).To(MatchError(session.ErrSessionNotFound))
@@ -86,7 +86,7 @@ var _ = Describe("Signal Retrieval from Autonomous Session — PR5 Slice B", fun
 	Describe("UT-KA-PR5-B03: GetSignalForRemediation retrieves signal via remediation_id lookup", func() {
 		It("should find the autonomous session by rrID and return its SignalContext", func() {
 			store := session.NewStore(5 * time.Minute)
-			manager := session.NewManager(store, slog.Default(), nil, nil)
+			manager := session.NewManager(store, logr.Discard(), nil, nil)
 
 			sctx := session.SessionContext{
 				IncidentID:    "inc-b03",
@@ -118,7 +118,7 @@ var _ = Describe("Signal Retrieval from Autonomous Session — PR5 Slice B", fun
 	Describe("UT-KA-PR5-B04: GetSignalForRemediation returns error when no session found", func() {
 		It("should return ErrSessionNotFound when no running session has the rrID", func() {
 			store := session.NewStore(5 * time.Minute)
-			manager := session.NewManager(store, slog.Default(), nil, nil)
+			manager := session.NewManager(store, logr.Discard(), nil, nil)
 
 			signal, err := manager.GetSignalForRemediation("nonexistent-rr")
 			Expect(err).To(MatchError(session.ErrSessionNotFound))
@@ -129,7 +129,7 @@ var _ = Describe("Signal Retrieval from Autonomous Session — PR5 Slice B", fun
 	Describe("UT-KA-PR5-B05: GetSignalForRemediation gracefully handles session without Context", func() {
 		It("should return a zero SignalContext when session has no typed context", func() {
 			store := session.NewStore(5 * time.Minute)
-			manager := session.NewManager(store, slog.Default(), nil, nil)
+			manager := session.NewManager(store, logr.Discard(), nil, nil)
 
 			// Start with old-style metadata (no SessionContext)
 			metadata := map[string]string{

@@ -19,8 +19,9 @@ package session
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
+
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
@@ -39,7 +40,7 @@ type InvestigateFunc func(ctx context.Context) (interface{}, error)
 // background goroutine and tracking progress via the Store.
 type Manager struct {
 	store      *Store
-	logger     *slog.Logger
+	logger     logr.Logger
 	auditStore audit.AuditStore
 	metrics    *metrics.Metrics
 }
@@ -47,7 +48,7 @@ type Manager struct {
 // NewManager creates a session manager backed by the given store.
 // If auditStore is nil, a NopAuditStore is used (no audit events emitted).
 // metrics may be nil (all metric calls are nil-safe per OPS-1).
-func NewManager(store *Store, logger *slog.Logger, auditStore audit.AuditStore, m *metrics.Metrics) *Manager {
+func NewManager(store *Store, logger logr.Logger, auditStore audit.AuditStore, m *metrics.Metrics) *Manager {
 	if auditStore == nil {
 		auditStore = audit.NopAuditStore{}
 	}
@@ -179,14 +180,12 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 		result, fnErr := fn(bgCtx)
 		m.emitCompleteEvent(id)
 		if fnErr != nil {
-			m.logger.Error("investigation failed",
-				slog.String("session_id", id),
-				slog.String("error", fnErr.Error()))
+			m.logger.Error(fnErr, "investigation failed", "session_id", id)
 			if updateErr := m.store.Update(id, StatusFailed, nil, fnErr); updateErr != nil {
 				m.logger.Info("post-investigation status update rejected",
-					slog.String("session_id", id),
-					slog.String("attempted_status", string(StatusFailed)),
-					slog.String("reason", updateErr.Error()))
+					"session_id", id,
+					"attempted_status", string(StatusFailed),
+					"reason", updateErr.Error())
 				if bgCtx.Err() != nil {
 					m.storePartialResult(id, nil)
 				}
@@ -197,9 +196,9 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 		}
 		if updateErr := m.store.Update(id, StatusCompleted, result, nil); updateErr != nil {
 			m.logger.Info("post-investigation status update rejected",
-				slog.String("session_id", id),
-				slog.String("attempted_status", string(StatusCompleted)),
-				slog.String("reason", updateErr.Error()))
+				"session_id", id,
+				"attempted_status", string(StatusCompleted),
+				"reason", updateErr.Error())
 			if bgCtx.Err() != nil {
 				m.storePartialResult(id, result)
 			}
@@ -395,9 +394,8 @@ func (m *Manager) recoverPanic(id, correlationID string) {
 	if r == nil {
 		return
 	}
-	m.logger.Error("investigation panic recovered",
-		slog.String("session_id", id),
-		slog.Any("panic", r),
+	m.logger.Error(fmt.Errorf("panic: %v", r), "investigation panic recovered",
+		"session_id", id,
 	)
 	_ = m.store.Update(id, StatusFailed, nil, fmt.Errorf("panic: %v", r))
 	m.emitSessionEvent(context.Background(), audit.EventTypeSessionFailed, audit.ActionSessionFailed, audit.OutcomeFailure, id, correlationID, fmt.Errorf("panic: %v", r))

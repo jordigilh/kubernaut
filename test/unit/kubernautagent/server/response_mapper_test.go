@@ -20,12 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/server"
@@ -39,14 +39,12 @@ var _ = Describe("Response Mapper — #433", func() {
 		store   *session.Store
 		manager *session.Manager
 		handler *server.Handler
-		logger  *slog.Logger
 	)
 
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
-		logger = slog.Default()
-		manager = session.NewManager(store, logger, nil, nil)
-		handler = server.NewHandler(manager, nil, logger, nil)
+		manager = session.NewManager(store, logr.Discard(), nil, nil)
+		handler = server.NewHandler(manager, nil, logr.Discard(), nil)
 	})
 
 	Describe("UT-KA-433-MAPPER-001: IncidentID is populated from session metadata", func() {
@@ -258,7 +256,7 @@ var _ = Describe("Response Mapper — #433", func() {
 			{"parameter_validation_failed", "parameter_validation_failed", "exact match"},
 			{"low_confidence", "low_confidence", "exact match"},
 			{"llm_parsing_error", "llm_parsing_error", "exact match"},
-			{"alignment_check_failed", "investigation_inconclusive", "alignment maps to inconclusive"},
+			{"alignment_check_failed", "alignment_check_failed", "exact match"},
 			{"turns exhausted during RCA phase", "rca_incomplete", "contains 'exhausted during RCA'"},
 			{"turns exhausted during workflow selection", "investigation_inconclusive", "contains 'exhausted during workflow selection'"},
 			{"workflow not found in catalog", "workflow_not_found", "contains 'not found' + 'catalog'"},

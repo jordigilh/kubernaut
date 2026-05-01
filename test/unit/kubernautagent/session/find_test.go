@@ -18,7 +18,7 @@ package session_test
 
 import (
 	"context"
-	"log/slog"
+	"github.com/go-logr/logr"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -32,7 +32,7 @@ var _ = Describe("session.Manager.FindByRemediationID — BR-INTERACTIVE-004", f
 	Describe("UT-KA-FIND-001: FindByRemediationID returns running session for given rrID", func() {
 		It("should locate a running session by its remediation_id metadata", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, slog.Default(), nil, nil)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
 
 			// Start an investigation with remediation_id in metadata
 			sessionID, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {

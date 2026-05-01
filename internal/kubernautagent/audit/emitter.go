@@ -18,8 +18,8 @@ package audit
 
 import (
 	"context"
-	"log/slog"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 )
 
@@ -85,11 +85,11 @@ const (
 )
 
 const (
-	ActionLLMRequest     = "llm_request"
-	ActionLLMResponse    = "llm_response"
-	ActionToolExecution  = "tool_execution"
-	ActionValidation     = "validation"
-	ActionResponseSent   = "response_sent"
+	ActionLLMRequest        = "llm_request"
+	ActionLLMResponse       = "llm_response"
+	ActionToolExecution     = "tool_execution"
+	ActionValidation        = "validation"
+	ActionResponseSent      = "response_sent"
 	ActionResponseFailed    = "response_failed"
 	ActionAlignmentEvaluate = "alignment_evaluate"
 	ActionAlignmentVerdict  = "alignment_verdict"
@@ -195,12 +195,9 @@ func NewEvent(eventType string, correlationID string, opts ...EventOption) *Audi
 }
 
 // StoreBestEffort stores an audit event without propagating errors (fire-and-forget).
-func StoreBestEffort(ctx context.Context, store AuditStore, event *AuditEvent, logger *slog.Logger) {
+func StoreBestEffort(ctx context.Context, store AuditStore, event *AuditEvent, logger logr.Logger) {
 	if err := store.StoreAudit(ctx, event); err != nil {
-		logger.Warn("audit store failure (best-effort)",
-			slog.String("event_type", event.EventType),
-			slog.String("error", err.Error()),
-		)
+		logger.Error(err, "audit store failure (best-effort)", "event_type", event.EventType)
 	}
 }
 
