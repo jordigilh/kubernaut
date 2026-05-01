@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -967,8 +966,7 @@ func buildMCPHandler(
 		return nil
 	}
 
-	// Bridge: MCP pkg functions still accept *slog.Logger (pending their own logr migration).
-	slogBridge := slog.New(logr.ToSlogHandler(logger))
+	
 
 	// SEC-07: Build controller-runtime client with MCP-specific timeouts.
 	mcpRestConfig := *infra.kubeConfig
@@ -990,12 +988,12 @@ func buildMCPHandler(
 		mcpkg.WithInactivityTimeout(cfg.Interactive.InactivityTimeout),
 		mcpkg.WithMaxConcurrentSessions(cfg.Interactive.MaxConcurrentSessions),
 	}
-	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(ctrlCli, namespace, slogBridge, leaseOpts...)
+	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(ctrlCli, namespace, logger, leaseOpts...)
 
 	// Context reconstruction from DS audit events (best-effort).
 	var recon mcpkg.ContextReconstructor
 	if ds != nil {
-		recon = mcpkg.NewDSContextReconstructor(ds.ogenClient, 10*time.Second, slogBridge)
+		recon = mcpkg.NewDSContextReconstructor(ds.ogenClient, 10*time.Second, logger)
 	} else {
 		recon = &noopReconstructor{}
 		logger.Info("MCP interactive mode: DS unavailable — context reconstruction disabled")
@@ -1029,7 +1027,7 @@ func buildMCPHandler(
 	// ReconstructionSpawner: rebuilds context and spawns autonomous investigation
 	// after an interactive session ends (INT-06, BR-INTERACTIVE-008).
 	reconRunner := mcpadapters.NewReconRunnerAdapter(inv)
-	reconSpawner := mcpkg.NewReconstructionSpawner(reconRunner, recon, slogBridge)
+	reconSpawner := mcpkg.NewReconstructionSpawner(reconRunner, recon, logger)
 
 	// SessionClosedHandler: processes MCP disconnect events → release + reconstruct.
 	disconnectHandler := mcpkg.NewSessionClosedHandler(eventStore, func(mcpSessionID string) {
@@ -1065,7 +1063,7 @@ func buildMCPHandler(
 				SignalMeta:    signalMeta,
 			})
 		}()
-	}, slogBridge)
+	}, logger)
 
 	// Start disconnect handler goroutine (lifecycle tied to server context).
 	go disconnectHandler.Run(context.Background())

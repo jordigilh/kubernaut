@@ -33,12 +33,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/vertex"
+	"github.com/go-logr/logr"
 	"golang.org/x/oauth2/google"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
@@ -49,6 +49,7 @@ type Option func(*clientOpts)
 
 type clientOpts struct {
 	extraSDKOpts []option.RequestOption
+	logger       logr.Logger
 }
 
 // WithSDKOptions injects additional Anthropic SDK request options (e.g. base URL
@@ -57,11 +58,18 @@ func WithSDKOptions(opts ...option.RequestOption) Option {
 	return func(o *clientOpts) { o.extraSDKOpts = append(o.extraSDKOpts, opts...) }
 }
 
+// WithLogger injects a logr.Logger for diagnostic messages (e.g., malformed tool schemas).
+// If not provided, logging is silently discarded.
+func WithLogger(l logr.Logger) Option {
+	return func(o *clientOpts) { o.logger = l }
+}
+
 // Client implements llm.Client for Claude on Vertex AI using the official
 // Anthropic Go SDK with the vertex middleware.
 type Client struct {
-	sdk   anthropic.Client
-	model string
+	sdk    anthropic.Client
+	model  string
+	logger logr.Logger
 }
 
 // New creates a Client for Claude on Vertex AI.
@@ -83,7 +91,7 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 		location = "us-central1"
 	}
 
-	o := &clientOpts{}
+	o := &clientOpts{logger: logr.Discard()}
 	for _, fn := range opts {
 		fn(o)
 	}
@@ -115,7 +123,7 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 	sdkOpts = append(sdkOpts, o.extraSDKOpts...)
 	sdk := anthropic.NewClient(sdkOpts...)
 
-	return &Client{sdk: sdk, model: model}, nil
+	return &Client{sdk: sdk, model: model, logger: o.logger}, nil
 }
 
 // Chat translates a Kubernaut ChatRequest to the Anthropic Messages API,
@@ -196,7 +204,7 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 	if len(req.Tools) > 0 {
 		var tools []anthropic.ToolUnionParam
 		for _, td := range req.Tools {
-			schema := parseInputSchema(td.Parameters)
+			schema := parseInputSchema(td.Parameters, c.logger)
 			tools = append(tools, anthropic.ToolUnionParam{
 				OfTool: &anthropic.ToolParam{
 					Name:        td.Name,
@@ -211,14 +219,14 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 	return params
 }
 
-func parseInputSchema(raw json.RawMessage) anthropic.ToolInputSchemaParam {
+func parseInputSchema(raw json.RawMessage, logger logr.Logger) anthropic.ToolInputSchemaParam {
 	var s struct {
 		Properties any      `json:"properties"`
 		Required   []string `json:"required"`
 	}
 	if err := json.Unmarshal(raw, &s); err != nil {
-		slog.Warn("vertexanthropic: malformed tool parameter schema, using empty schema",
-			slog.String("error", err.Error()))
+		logger.Info("vertexanthropic: malformed tool parameter schema, using empty schema",
+			"error", err.Error())
 	}
 	return anthropic.ToolInputSchemaParam{
 		Properties: s.Properties,

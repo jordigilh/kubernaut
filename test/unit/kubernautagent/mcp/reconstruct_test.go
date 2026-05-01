@@ -19,10 +19,9 @@ package mcp_test
 import (
 	"context"
 	"errors"
-	"log/slog"
-	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -43,12 +42,12 @@ func (m *mockAuditQuerier) QueryAuditEvents(_ context.Context, _ ogenclient.Quer
 var _ = Describe("DSContextReconstructor — #703 BR-INTERACTIVE-007/008", func() {
 	var (
 		ctx    context.Context
-		logger *slog.Logger
+		logger logr.Logger
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		logger = logr.Discard()
 	})
 
 	Describe("UT-KA-703-J01: Returns ordered ConversationTurns for correlationID", func() {

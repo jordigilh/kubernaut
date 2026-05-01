@@ -132,7 +132,8 @@ Same pattern as CRD controllers, but uses `zap.New(zap.Level(atomicLevel))` dire
 The kubernaut-agent uses `pkg/log` (zap-backed `logr.Logger`), the same standard
 as Gateway, Notification, and DataStorage. It bootstraps with
 `kubelog.NewLoggerWithAtomicLevel()` and supports config-driven hot-reload via
-`zap.AtomicLevel`. The `SlogLevel()` bridge method has been removed (Issue #935).
+`zap.AtomicLevel`. All internal packages (MCP, LLM adapters) accept `logr.Logger`
+directly — no slog bridge remains (Issue #885).
 
 ---
 
@@ -390,7 +391,7 @@ logger.Info("Signal processed",
 | **Gateway** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #877) |
 | **Notification** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #878) |
 | **DataStorage** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #875) |
-| **Kubernaut Agent** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #935) |
+| **Kubernaut Agent** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #885) |
 
 ---
 
@@ -440,7 +441,7 @@ logger.Info("Signal processed",
 
 **Migration**:
 - All 10 services fully migrated to config-file-only log level with hot-reload
-- kubernaut-agent: migrated from slog to logr/zap in Issue #935
+- kubernaut-agent: migrated from slog to logr/zap in Issue #885
 
 ---
 

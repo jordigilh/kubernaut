@@ -18,10 +18,9 @@ package mcp_test
 
 import (
 	"context"
-	"log/slog"
-	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -39,14 +38,14 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 		k8sClient client.Client
 		scheme    *runtime.Scheme
 		namespace string
-		logger    *slog.Logger
+		logger    logr.Logger
 		mgr       mcpinternal.SessionManager
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		namespace = "kubernaut-system"
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		logger = logr.Discard()
 
 		scheme = runtime.NewScheme()
 		Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())

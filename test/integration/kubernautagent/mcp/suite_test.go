@@ -19,7 +19,6 @@ package mcp_test
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -50,13 +49,12 @@ const (
 )
 
 var (
-	sharedTestEnv  *envtest.Environment
+	sharedTestEnv   *envtest.Environment
 	sharedK8sConfig *rest.Config
 	sharedK8sClient client.Client
-	suiteLogger    *slog.Logger
 
 	// Mock LLM container (Podman, mode=interactive)
-	sharedMockLLMConfig infrastructure.MockLLMConfig
+	sharedMockLLMConfig   infrastructure.MockLLMConfig
 	sharedMockLLMEndpoint string
 
 	// DataStorage infrastructure (Podman: PostgreSQL + Redis + DS)
@@ -148,8 +146,6 @@ var _ = SynchronizedBeforeSuite(
 		return []byte(payload)
 	},
 	func(data []byte) {
-		suiteLogger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-
 		if sharedK8sClient == nil {
 			scheme := runtime.NewScheme()
 			Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())

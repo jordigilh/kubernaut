@@ -19,10 +19,9 @@ package mcp_test
 import (
 	"context"
 	"errors"
-	"log/slog"
-	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -47,7 +46,7 @@ var _ = Describe("CP-5 INT Degraded Scenarios (Unit Tests)", func() {
 	Describe("UT-KA-INT002: Takeover succeeds when DS unavailable for auto-inject", func() {
 		It("should complete takeover with empty context when DS returns error", func() {
 			ctx := context.Background()
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			logger := logr.Discard()
 
 			By("Setting up DS reconstructor that simulates DS unavailability")
 			dsDown := &mockAuditQuerier{
@@ -89,7 +88,7 @@ var _ = Describe("CP-5 INT Degraded Scenarios (Unit Tests)", func() {
 	Describe("UT-KA-INT006: Re-takeover succeeds after Lease expiry (pod restart)", func() {
 		It("should allow fresh takeover when no Lease exists (simulating expiry after restart)", func() {
 			ctx := context.Background()
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			logger := logr.Discard()
 
 			scheme := runtime.NewScheme()
 			Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
@@ -120,7 +119,7 @@ var _ = Describe("CP-5 INT Degraded Scenarios (Unit Tests)", func() {
 
 		It("should block takeover when stale Lease still exists (not yet expired)", func() {
 			ctx := context.Background()
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			logger := logr.Discard()
 
 			scheme := runtime.NewScheme()
 			Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
@@ -163,7 +162,7 @@ var _ = Describe("CP-5 INT Degraded Scenarios (Unit Tests)", func() {
 	Describe("UT-KA-INT002-B: DS recovery restores context reconstruction", func() {
 		It("should return turns once DS becomes available again", func() {
 			ctx := context.Background()
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			logger := logr.Discard()
 
 			t1 := time.Now().Add(-2 * time.Minute)
 			dsRecovered := &mockAuditQuerier{

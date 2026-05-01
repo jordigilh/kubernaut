@@ -32,12 +32,12 @@ import (
 var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integration", "coverage"), func() {
 
 	var (
-		logger *slog.Logger
+		logger logr.Logger
 		nsName string
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		logger = logr.Discard()
 		nsName = uniqueNamespace("covgap")
 		createNamespace(context.Background(), sharedK8sClient, nsName)
 	})

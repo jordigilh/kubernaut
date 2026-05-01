@@ -19,7 +19,6 @@ package llm_test
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -30,11 +29,11 @@ import (
 )
 
 type streamMockClient struct {
-	chatResp   llm.ChatResponse
-	chatErr    error
-	streamResp llm.ChatResponse
-	streamErr  error
-	chunks     []string
+	chatResp     llm.ChatResponse
+	chatErr      error
+	streamResp   llm.ChatResponse
+	streamErr    error
+	chunks       []string
 	streamCalled bool
 }
 
@@ -246,6 +245,5 @@ var _ = Describe("ChatStreamEvent Types — #823 PR5", func() {
 	})
 })
 
-// Silence unused import warning for slog and time
-var _ = slog.Default
+// Silence unused import warning for time
 var _ = time.Now

@@ -18,10 +18,10 @@ package mcp_test
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -58,11 +58,11 @@ var _ = Describe("DelegatingEventStore + SessionClosedHandler IT — BR-INTERACT
 	Describe("IT-KA-DES-003: SessionClosedHandler invokes onClose callback", func() {
 		It("should call the callback for each disconnect event", func() {
 			es := mcpinternal.NewDelegatingEventStore()
-			logger := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			logger := logr.Discard()
 
 			var (
-				mu      sync.Mutex
-				closed  []string
+				mu     sync.Mutex
+				closed []string
 			)
 			handler := mcpinternal.NewSessionClosedHandler(es, func(mcpSessionID string) {
 				mu.Lock()
@@ -93,7 +93,7 @@ var _ = Describe("DelegatingEventStore + SessionClosedHandler IT — BR-INTERACT
 	Describe("IT-KA-DES-004: SessionClosedHandler stops on context cancellation", func() {
 		It("should exit Run when context is cancelled", func() {
 			es := mcpinternal.NewDelegatingEventStore()
-			logger := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelError}))
+			logger := logr.Discard()
 
 			handler := mcpinternal.NewSessionClosedHandler(es, func(_ string) {}, logger)
 			ctx, cancel := context.WithCancel(context.Background())
@@ -111,7 +111,7 @@ var _ = Describe("DelegatingEventStore + SessionClosedHandler IT — BR-INTERACT
 
 	Describe("IT-KA-DES-005: SessionJanitor sweeps stale sessions", func() {
 		It("should expire sessions older than the interval", func() {
-			logger := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			logger := logr.Discard()
 			janitor := mcpinternal.NewSessionJanitor(200*time.Millisecond, logger)
 
 			var (
@@ -141,7 +141,7 @@ var _ = Describe("DelegatingEventStore + SessionClosedHandler IT — BR-INTERACT
 
 	Describe("IT-KA-DES-006: SessionJanitor does not expire tracked-then-untracked sessions", func() {
 		It("should skip sessions that were untracked before sweep", func() {
-			logger := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			logger := logr.Discard()
 			janitor := mcpinternal.NewSessionJanitor(200*time.Millisecond, logger)
 
 			expiredCount := 0

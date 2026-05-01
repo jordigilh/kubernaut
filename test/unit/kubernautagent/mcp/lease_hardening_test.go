@@ -18,9 +18,9 @@ package mcp_test
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -36,14 +36,14 @@ var _ = Describe("LeaseSessionManager Hardening — PR4 BR-INTERACTIVE-005", fun
 	var (
 		fakeClient client.Client
 		scheme     *runtime.Scheme
-		logger     *slog.Logger
+		logger     logr.Logger
 	)
 
 	BeforeEach(func() {
 		scheme = runtime.NewScheme()
 		Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
 		fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-		logger = slog.Default()
+		logger = logr.Discard()
 	})
 
 	Describe("UT-KA-LEASE-001: Lease spec.leaseDurationSeconds is set to configured SessionTTL", func() {
