@@ -76,9 +76,9 @@ var _ = Describe("DelegatingEventStore + SessionClosedHandler + Janitor — PR4 
 		It("should invoke the release callback with the closed session ID", func() {
 			des := mcpinternal.NewDelegatingEventStore()
 
-			var receivedID string
+			released := make(chan string, 1)
 			handler := mcpinternal.NewSessionClosedHandler(des, func(mcpSessionID string) {
-				receivedID = mcpSessionID
+				released <- mcpSessionID
 			}, slog.Default())
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -88,7 +88,7 @@ var _ = Describe("DelegatingEventStore + SessionClosedHandler + Janitor — PR4 
 			des.RegisterMCPSession("mcp-sess-003", "interactive-sess-003")
 			_ = des.SessionClosed(context.Background(), "mcp-sess-003")
 
-			Eventually(func() string { return receivedID }).Should(Equal("mcp-sess-003"))
+			Eventually(released).Should(Receive(Equal("mcp-sess-003")))
 		})
 	})
 
@@ -96,15 +96,15 @@ var _ = Describe("DelegatingEventStore + SessionClosedHandler + Janitor — PR4 
 		It("should clean sessions older than TTL", func() {
 			janitor := mcpinternal.NewSessionJanitor(50*time.Millisecond, slog.Default())
 
-			expired := false
+			expiredCh := make(chan string, 1)
 			janitor.Track("stale-sess-001", time.Now().Add(-1*time.Hour), func(sessionID string) {
-				expired = true
+				expiredCh <- sessionID
 			})
 
 			ctx, cancel := context.WithCancel(context.Background())
 			go janitor.Run(ctx)
 
-			Eventually(func() bool { return expired }).Should(BeTrue())
+			Eventually(expiredCh).Should(Receive(Equal("stale-sess-001")))
 			cancel()
 		})
 	})

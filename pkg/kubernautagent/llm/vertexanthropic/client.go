@@ -326,7 +326,9 @@ func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback f
 	acc := anthropic.Message{}
 	for stream.Next() {
 		event := stream.Current()
-		acc.Accumulate(event)
+		if err := acc.Accumulate(event); err != nil {
+			return llm.ChatResponse{}, fmt.Errorf("vertexanthropic: accumulate error: %w", err)
+		}
 		if delta, ok := extractTextDelta(event); ok && delta != "" {
 			if err := callback(llm.ChatStreamEvent{Delta: delta}); err != nil {
 				return llm.ChatResponse{}, err

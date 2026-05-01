@@ -63,9 +63,9 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, fu
 			Expect(os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "kubernaut-system")).To(Succeed())
 			DeferCleanup(func() {
 				if previousNS != "" {
-					os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", previousNS)
+					Expect(os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", previousNS)).To(Succeed())
 				} else {
-					os.Unsetenv("KUBERNAUT_CONTROLLER_NAMESPACE")
+					Expect(os.Unsetenv("KUBERNAUT_CONTROLLER_NAMESPACE")).To(Succeed())
 				}
 			})
 
@@ -226,9 +226,9 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, fu
 			Expect(os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "kubernaut-system")).To(Succeed())
 			DeferCleanup(func() {
 				if previousNS != "" {
-					os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", previousNS)
+					Expect(os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", previousNS)).To(Succeed())
 				} else {
-					os.Unsetenv("KUBERNAUT_CONTROLLER_NAMESPACE")
+					Expect(os.Unsetenv("KUBERNAUT_CONTROLLER_NAMESPACE")).To(Succeed())
 				}
 			})
 
