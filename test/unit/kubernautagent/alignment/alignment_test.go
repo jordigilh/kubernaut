@@ -1532,7 +1532,7 @@ var _ = Describe("GAP-2: InvestigatorWrapper inner error skips verdict — BR-AI
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			res, err := wrapper.Investigate(context.Background(), katypes.SignalContext{
@@ -1745,7 +1745,7 @@ var _ = Describe("GAP-11: Audit store emission — BR-AI-601", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 				AuditStore:     store,
 			})
 
@@ -1789,7 +1789,7 @@ var _ = Describe("GAP-11: Audit store emission — BR-AI-601", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 				AuditStore:     nil,
 			})
 
