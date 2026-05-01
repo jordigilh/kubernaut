@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -44,19 +45,22 @@ type goldenTranscript struct {
 	} `json:"kaDialog"`
 }
 
+// embeddedGoldenDir returns the path to the testdata/golden_transcripts
+// directory co-located with this test file.
+func embeddedGoldenDir() string {
+	_, thisFile, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(thisFile), "testdata", "golden_transcripts")
+}
+
 var _ = Describe("BR-TESTING-001 Phase 6: Parser Golden Tests", func() {
 	goldenDir := os.Getenv("KA_GOLDEN_TRANSCRIPTS_DIR")
-
 	if goldenDir == "" {
-		It("requires KA_GOLDEN_TRANSCRIPTS_DIR to be set", func() {
-			Skip("KA_GOLDEN_TRANSCRIPTS_DIR not set — golden parser tests skipped (not silently empty)")
-		})
-		return
+		goldenDir = embeddedGoldenDir()
 	}
 
 	entries, err := os.ReadDir(goldenDir)
 	if err != nil {
-		Fail("KA_GOLDEN_TRANSCRIPTS_DIR is set but unreadable: " + err.Error())
+		Fail("golden transcripts directory unreadable (" + goldenDir + "): " + err.Error())
 	}
 
 	p := parser.NewResultParser()
