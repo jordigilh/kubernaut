@@ -268,6 +268,28 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 		})
 	})
 
+	Describe("UT-KA-929-001: tool_result is required even when tool returns empty string (#929)", func() {
+		It("should include tool_result in payload when tool_result is empty", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeLLMToolCall, "corr-929")
+			event.Data["tool_call_index"] = 1
+			event.Data["tool_name"] = "kubectl_logs"
+			event.Data["tool_arguments"] = `{"name":"log-collector"}`
+			event.Data["tool_result"] = ""
+			event.Data["tool_result_preview"] = ""
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			payload, ok := recorder.calls[0].EventData.GetLLMToolCallPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.ToolResult).NotTo(BeNil(), "tool_result must be present (required by OpenAPI schema)")
+			Expect(payload.ToolResult).NotTo(BeEmpty(), "tool_result must not be empty jx.Raw")
+		})
+	})
+
 	// --- Phase 5: Response Failed ---
 
 	Describe("UT-KA-433-AP-011: buildEventData maps AIAgentResponseFailedPayload", func() {
