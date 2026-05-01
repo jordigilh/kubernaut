@@ -834,6 +834,7 @@ func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validato
 		meta := parser.WorkflowMeta{
 			ExecutionEngine: w.ExecutionEngine,
 			Version:         w.Version,
+			Component:       append([]string(nil), w.Labels.GetComponent()...),
 		}
 		if w.ExecutionBundle.Set {
 			meta.ExecutionBundle = w.ExecutionBundle.Value

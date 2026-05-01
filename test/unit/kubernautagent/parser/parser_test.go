@@ -1047,6 +1047,32 @@ false
 		})
 	})
 
+	Describe("Target-Workflow Alignment: WorkflowMeta.MatchesTargetKind (#934)", func() {
+
+		DescribeTable("UT-KA-934: MatchesTargetKind returns correct result for component/kind combinations",
+			func(component []string, targetKind string, expected bool) {
+				meta := parser.WorkflowMeta{Component: component}
+				Expect(meta.MatchesTargetKind(targetKind)).To(Equal(expected))
+			},
+			Entry("UT-KA-934-001: exact kind match",
+				[]string{"Deployment"}, "Deployment", true),
+			Entry("UT-KA-934-002: wildcard matches any kind",
+				[]string{"*"}, "Node", true),
+			Entry("UT-KA-934-003: case-insensitive match (lowercase component, PascalCase kind)",
+				[]string{"deployment"}, "Deployment", true),
+			Entry("UT-KA-934-004a: nil component = unconstrained",
+				nil, "Deployment", true),
+			Entry("UT-KA-934-004b: empty component slice = unconstrained",
+				[]string{}, "Deployment", true),
+			Entry("UT-KA-934-005: multi-component slice matches second element",
+				[]string{"Deployment", "StatefulSet"}, "StatefulSet", true),
+			Entry("UT-KA-934-006: no match returns false",
+				[]string{"Pod"}, "Node", false),
+			Entry("UT-KA-934-007: empty target kind = unconstrained (defensive)",
+				[]string{"Pod"}, "", true),
+		)
+	})
+
 	Describe("LLM Resilience Hardening: Array/Type/Truncation defenses", func() {
 
 		Describe("UT-KA-800-ARR-01: Single-element array wrapping is unwrapped", func() {
