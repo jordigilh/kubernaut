@@ -18,9 +18,9 @@ package mcp_test
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -29,10 +29,10 @@ import (
 
 var _ = Describe("DSContextReconstructor IT — BR-INTERACTIVE-009", Label("integration", "reconstructor"), func() {
 
-	var logger *slog.Logger
+	var logger logr.Logger
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		logger = logr.Discard()
 	})
 
 	Describe("IT-KA-RECON-001: reconstruct returns empty when no events exist", func() {

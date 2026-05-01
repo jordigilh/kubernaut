@@ -19,7 +19,8 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"log/slog"
+
+	"github.com/go-logr/logr"
 )
 
 const kaServiceAccount = "system:serviceaccount:kubernaut:kubernaut-agent"
@@ -51,11 +52,11 @@ type ReconstructionContext struct {
 type ReconstructionSpawner struct {
 	runner ReconRunner
 	recon  ContextReconstructor
-	logger *slog.Logger
+	logger logr.Logger
 }
 
 // NewReconstructionSpawner creates a spawner with the given dependencies.
-func NewReconstructionSpawner(runner ReconRunner, recon ContextReconstructor, logger *slog.Logger) *ReconstructionSpawner {
+func NewReconstructionSpawner(runner ReconRunner, recon ContextReconstructor, logger logr.Logger) *ReconstructionSpawner {
 	return &ReconstructionSpawner{
 		runner: runner,
 		recon:  recon,
@@ -75,9 +76,9 @@ func (s *ReconstructionSpawner) SpawnReconstruct(ctx context.Context, entry *Rec
 	defer func() {
 		if r := recover(); r != nil {
 			retErr = fmt.Errorf("panic in SpawnReconstruct: %v", r)
-			s.logger.Error("panic recovered during reconstruction",
-				slog.String("correlation_id", entry.CorrelationID),
-				slog.Any("panic", r))
+			s.logger.Error(retErr, "panic recovered during reconstruction",
+				"correlation_id", entry.CorrelationID,
+				"panic", r)
 		}
 	}()
 
@@ -87,18 +88,17 @@ func (s *ReconstructionSpawner) SpawnReconstruct(ctx context.Context, entry *Rec
 
 	turns, reconErr := s.recon.Reconstruct(ctx, entry.CorrelationID, entry.SessionID)
 	if reconErr != nil {
-		s.logger.Warn("context reconstruction returned error; proceeding with empty context",
-			slog.String("correlation_id", entry.CorrelationID),
-			slog.String("error", reconErr.Error()))
+		s.logger.Info("context reconstruction returned error; proceeding with empty context",
+			"correlation_id", entry.CorrelationID,
+			"error", reconErr.Error())
 	}
 
 	messages := turnsToReconMessages(turns)
 
 	_, err := s.runner.RunReconTurn(ctx, messages, entry.CorrelationID)
 	if err != nil {
-		s.logger.Error("reconstruction RunReconTurn failed",
-			slog.String("correlation_id", entry.CorrelationID),
-			slog.String("error", err.Error()))
+		s.logger.Error(err, "reconstruction RunReconTurn failed",
+			"correlation_id", entry.CorrelationID)
 		return fmt.Errorf("reconstruction RunReconTurn: %w", err)
 	}
 

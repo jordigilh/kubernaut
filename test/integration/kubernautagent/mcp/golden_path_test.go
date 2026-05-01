@@ -19,9 +19,9 @@ package mcp_test
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
-	"os"
 	"runtime"
+
+	"github.com/go-logr/logr"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -74,7 +74,7 @@ var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001"
 		nsName = uniqueNamespace("golden")
 		createNamespace(context.Background(), sharedK8sClient, nsName)
 
-		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		logger := logr.Discard()
 		runner = &goldenPathRunner{response: "The OOM was caused by memory leak in deployment/foo", delay: 50 * time.Millisecond}
 		recon := &goldenPathRecon{}
 		autoMgr = &goldenPathAutoMgr{}

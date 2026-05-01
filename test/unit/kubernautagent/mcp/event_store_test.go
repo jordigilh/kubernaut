@@ -18,9 +18,9 @@ package mcp_test
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -58,7 +58,7 @@ var _ = Describe("DelegatingEventStore + SessionClosedHandler + Janitor — PR4 
 			released := make(chan string, 1)
 			handler := mcpinternal.NewSessionClosedHandler(des, func(mcpSessionID string) {
 				released <- mcpSessionID
-			}, slog.Default())
+			}, logr.Discard())
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -79,7 +79,7 @@ var _ = Describe("DelegatingEventStore + SessionClosedHandler + Janitor — PR4 
 			released := make(chan string, 1)
 			handler := mcpinternal.NewSessionClosedHandler(des, func(mcpSessionID string) {
 				released <- mcpSessionID
-			}, slog.Default())
+			}, logr.Discard())
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -94,7 +94,7 @@ var _ = Describe("DelegatingEventStore + SessionClosedHandler + Janitor — PR4 
 
 	Describe("UT-KA-SESS-012: Janitor removes stale sessions exceeding TTL", func() {
 		It("should clean sessions older than TTL", func() {
-			janitor := mcpinternal.NewSessionJanitor(50*time.Millisecond, slog.Default())
+			janitor := mcpinternal.NewSessionJanitor(50*time.Millisecond, logr.Discard())
 
 			expiredCh := make(chan string, 1)
 			janitor.Track("stale-sess-001", time.Now().Add(-1*time.Hour), func(sessionID string) {

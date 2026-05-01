@@ -19,9 +19,9 @@ package mcp_test
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"sync/atomic"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -66,7 +66,7 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 				},
 			}
 
-			spawner := mcpinternal.NewReconstructionSpawner(runner, recon, slog.Default())
+			spawner := mcpinternal.NewReconstructionSpawner(runner, recon, logr.Discard())
 
 			entry := &mcpinternal.ReconstructionContext{
 				CorrelationID: "rr-recon-001",
@@ -91,7 +91,7 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 		It("should use the kubernaut-agent service account identity", func() {
 			runner := &reconSpawnRunner{}
 			recon := &reconSpawnRecon{}
-			spawner := mcpinternal.NewReconstructionSpawner(runner, recon, slog.Default())
+			spawner := mcpinternal.NewReconstructionSpawner(runner, recon, logr.Discard())
 
 			Expect(spawner.ServiceAccountIdentity()).To(ContainSubstring("kubernaut"))
 		})
@@ -101,7 +101,7 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 		It("should include signal metadata in reconstruction context", func() {
 			runner := &reconSpawnRunner{}
 			recon := &reconSpawnRecon{}
-			spawner := mcpinternal.NewReconstructionSpawner(runner, recon, slog.Default())
+			spawner := mcpinternal.NewReconstructionSpawner(runner, recon, logr.Discard())
 
 			entry := &mcpinternal.ReconstructionContext{
 				CorrelationID: "rr-meta-001",
@@ -122,12 +122,12 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 		It("should succeed even when reconstructor returns empty turns", func() {
 			runner := &reconSpawnRunner{}
 			recon := &reconSpawnRecon{turns: nil}
-			spawner := mcpinternal.NewReconstructionSpawner(runner, recon, slog.Default())
+			spawner := mcpinternal.NewReconstructionSpawner(runner, recon, logr.Discard())
 
 			entry := &mcpinternal.ReconstructionContext{
 				CorrelationID: "rr-empty-001",
 				SessionID:     "old-sess-003",
-				SignalMeta:     map[string]string{},
+				SignalMeta:    map[string]string{},
 			}
 
 			err := spawner.SpawnReconstruct(context.Background(), entry)
@@ -141,7 +141,7 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 		It("should recover from a panic and return an error", func() {
 			panicRunner := &reconSpawnPanicRunner{}
 			recon := &reconSpawnRecon{}
-			spawner := mcpinternal.NewReconstructionSpawner(panicRunner, recon, slog.Default())
+			spawner := mcpinternal.NewReconstructionSpawner(panicRunner, recon, logr.Discard())
 
 			entry := &mcpinternal.ReconstructionContext{
 				CorrelationID: "rr-panic-001",
@@ -158,7 +158,7 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 		It("should return an error when entry is nil", func() {
 			runner := &reconSpawnRunner{}
 			recon := &reconSpawnRecon{}
-			spawner := mcpinternal.NewReconstructionSpawner(runner, recon, slog.Default())
+			spawner := mcpinternal.NewReconstructionSpawner(runner, recon, logr.Discard())
 
 			err := spawner.SpawnReconstruct(context.Background(), nil)
 			Expect(err).To(HaveOccurred())
@@ -170,7 +170,7 @@ var _ = Describe("Reconstruction Spawning — PR4 BR-INTERACTIVE-004 SEC-04", fu
 		It("should proceed with empty messages when reconstructor returns error", func() {
 			runner := &reconSpawnRunner{}
 			recon := &reconSpawnRecon{err: errors.New("DS temporarily unavailable")}
-			spawner := mcpinternal.NewReconstructionSpawner(runner, recon, slog.Default())
+			spawner := mcpinternal.NewReconstructionSpawner(runner, recon, logr.Discard())
 
 			entry := &mcpinternal.ReconstructionContext{
 				CorrelationID: "rr-ds-fail",

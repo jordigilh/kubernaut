@@ -18,9 +18,9 @@ package mcp_test
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -35,7 +35,7 @@ var _ = Describe("IT-KA-MCP-007: Lease CRUD lifecycle — PR4 BR-INTERACTIVE-005
 		nsName := uniqueNamespace("crud")
 		createNamespace(context.Background(), sharedK8sClient, nsName)
 
-		logger := slog.Default()
+		logger := logr.Discard()
 		sessionTTL := 20 * time.Minute
 		mgr := mcpinternal.NewLeaseSessionManager(sharedK8sClient, nsName, logger,
 			mcpinternal.WithSessionTTL(sessionTTL))

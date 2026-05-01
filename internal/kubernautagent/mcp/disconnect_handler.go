@@ -18,9 +18,10 @@ package mcp
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/go-logr/logr"
 )
 
 // SessionClosedHandler processes disconnect events from the DelegatingEventStore.
@@ -30,11 +31,11 @@ import (
 type SessionClosedHandler struct {
 	eventStore *DelegatingEventStore
 	onClose    func(mcpSessionID string)
-	logger     *slog.Logger
+	logger     logr.Logger
 }
 
 // NewSessionClosedHandler creates a handler that processes disconnect events.
-func NewSessionClosedHandler(es *DelegatingEventStore, onClose func(string), logger *slog.Logger) *SessionClosedHandler {
+func NewSessionClosedHandler(es *DelegatingEventStore, onClose func(string), logger logr.Logger) *SessionClosedHandler {
 	return &SessionClosedHandler{
 		eventStore: es,
 		onClose:    onClose,
@@ -53,7 +54,7 @@ func (h *SessionClosedHandler) Run(ctx context.Context) {
 				return
 			}
 			h.logger.Info("MCP session closed, triggering release",
-				slog.String("mcp_session_id", mcpSessionID))
+				"mcp_session_id", mcpSessionID)
 			h.onClose(mcpSessionID)
 		}
 	}
@@ -64,7 +65,7 @@ func (h *SessionClosedHandler) Run(ctx context.Context) {
 // is not fired (e.g., process crash, network partition).
 type SessionJanitor struct {
 	interval time.Duration
-	logger   *slog.Logger
+	logger   logr.Logger
 	mu       sync.Mutex
 	tracked  map[string]*janitorEntry
 }
@@ -75,7 +76,7 @@ type janitorEntry struct {
 }
 
 // NewSessionJanitor creates a janitor that checks for stale sessions at the given interval.
-func NewSessionJanitor(interval time.Duration, logger *slog.Logger) *SessionJanitor {
+func NewSessionJanitor(interval time.Duration, logger logr.Logger) *SessionJanitor {
 	return &SessionJanitor{
 		interval: interval,
 		logger:   logger,
@@ -130,7 +131,7 @@ func (j *SessionJanitor) sweep() {
 	j.mu.Unlock()
 
 	for i, id := range expired {
-		j.logger.Info("janitor: expiring stale session", slog.String("session_id", id))
+		j.logger.Info("janitor: expiring stale session", "session_id", id)
 		callbacks[i](id)
 	}
 }

@@ -19,9 +19,10 @@ package mcp
 import (
 	"cmp"
 	"context"
-	"log/slog"
 	"slices"
 	"time"
+
+	"github.com/go-logr/logr"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
@@ -37,11 +38,11 @@ type AuditQuerier interface {
 type DSContextReconstructor struct {
 	querier AuditQuerier
 	timeout time.Duration
-	logger  *slog.Logger
+	logger  logr.Logger
 }
 
 // NewDSContextReconstructor creates a new reconstructor backed by the given DS querier.
-func NewDSContextReconstructor(querier AuditQuerier, timeout time.Duration, logger *slog.Logger) *DSContextReconstructor {
+func NewDSContextReconstructor(querier AuditQuerier, timeout time.Duration, logger logr.Logger) *DSContextReconstructor {
 	return &DSContextReconstructor{
 		querier: querier,
 		timeout: timeout,
@@ -63,9 +64,9 @@ func (r *DSContextReconstructor) Reconstruct(ctx context.Context, correlationID 
 
 	resp, err := r.querier.QueryAuditEvents(queryCtx, params)
 	if err != nil {
-		r.logger.Warn("DS query failed during reconstruction; continuing with empty context",
-			slog.String("correlation_id", correlationID),
-			slog.String("error", err.Error()))
+		r.logger.Info("DS query failed during reconstruction; continuing with empty context",
+			"correlation_id", correlationID,
+			"error", err.Error())
 		return nil, nil
 	}
 

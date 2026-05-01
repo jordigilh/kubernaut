@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 
 	"github.com/go-logr/logr"
 	"net/http"
@@ -116,8 +115,7 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 		Namespace: namespace,
 	}
 
-	slogLogger := slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelError}))
-	logrLogger := logr.FromSlogHandler(slogLogger.Handler())
+	logrLogger := logr.Discard()
 
 	// Real LLM client via langchaingo -> Podman Mock LLM (mode=interactive)
 	llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
@@ -141,7 +139,7 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 
 	// Real DSContextReconstructor via ogenclient -> Podman DataStorage
 	Expect(sharedDSClient).ToNot(BeNil(), "shared DS client must be initialized by suite")
-	recon := mcpinternal.NewDSContextReconstructor(sharedDSClient, 5*time.Second, slogLogger)
+	recon := mcpinternal.NewDSContextReconstructor(sharedDSClient, 5*time.Second, logrLogger)
 
 	// Real LeaseSessionManager via envtest K8s client
 	leaseOpts := []mcpinternal.LeaseOption{
@@ -150,7 +148,7 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 	if opts.maxSessions > 0 {
 		leaseOpts = append(leaseOpts, mcpinternal.WithMaxConcurrentSessions(opts.maxSessions))
 	}
-	stack.SessionMgr = mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, slogLogger, leaseOpts...)
+	stack.SessionMgr = mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logrLogger, leaseOpts...)
 
 	// Real rate limiter, notifier, timeout manager
 	stack.RateLimiter = mcpinternal.NewSessionRateLimiter(opts.maxPerMinute, opts.maxMessageSize)
@@ -223,7 +221,9 @@ func getMockLLMRequestCount() int {
 	defer resp.Body.Close()
 	Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-	var data struct{ Count int `json:"count"` }
+	var data struct {
+		Count int `json:"count"`
+	}
 	Expect(json.NewDecoder(resp.Body).Decode(&data)).To(Succeed())
 	return data.Count
 }
@@ -343,4 +343,3 @@ func decodeOutput(result *mcpsdk.CallToolResult) (map[string]interface{}, error)
 	err = json.Unmarshal(raw, &output)
 	return output, err
 }
-

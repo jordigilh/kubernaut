@@ -18,10 +18,10 @@ package mcp_test
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -31,12 +31,12 @@ import (
 var _ = Describe("LeaseSessionManager deep IT — BR-INTERACTIVE-005", Label("integration", "lease"), func() {
 
 	var (
-		logger *slog.Logger
+		logger logr.Logger
 		nsName string
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		logger = logr.Discard()
 		nsName = uniqueNamespace("lsm")
 		createNamespace(context.Background(), sharedK8sClient, nsName)
 	})
@@ -55,10 +55,10 @@ var _ = Describe("LeaseSessionManager deep IT — BR-INTERACTIVE-005", Label("in
 
 			const goroutines = 5
 			var (
-				wg       sync.WaitGroup
-				mu       sync.Mutex
-				winners  []string
-				losers   int
+				wg      sync.WaitGroup
+				mu      sync.Mutex
+				winners []string
+				losers  int
 			)
 
 			for i := 0; i < goroutines; i++ {

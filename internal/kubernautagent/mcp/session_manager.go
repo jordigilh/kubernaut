@@ -20,7 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
+	"github.com/go-logr/logr"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -72,7 +72,7 @@ type LeaseSessionManager struct {
 	sessions          sync.Map // sessionID -> *sessionEntry
 	rrIndex           sync.Map // rrID -> sessionID
 	activeCount       atomic.Int32
-	logger            *slog.Logger
+	logger            logr.Logger
 }
 
 type sessionEntry struct {
@@ -107,13 +107,13 @@ func WithMaxConcurrentSessions(max int) LeaseOption {
 }
 
 // NewLeaseSessionManager creates a LeaseSessionManager backed by the given K8s client.
-func NewLeaseSessionManager(c client.Client, namespace string, logger *slog.Logger, opts ...LeaseOption) SessionManager {
+func NewLeaseSessionManager(c client.Client, namespace string, logger logr.Logger, opts ...LeaseOption) SessionManager {
 	return NewLeaseSessionManagerConcrete(c, namespace, logger, opts...)
 }
 
 // NewLeaseSessionManagerConcrete returns the concrete *LeaseSessionManager type
 // for callers that need access to signal metadata storage (e.g., disconnect handler).
-func NewLeaseSessionManagerConcrete(c client.Client, namespace string, logger *slog.Logger, opts ...LeaseOption) *LeaseSessionManager {
+func NewLeaseSessionManagerConcrete(c client.Client, namespace string, logger logr.Logger, opts ...LeaseOption) *LeaseSessionManager {
 	m := &LeaseSessionManager{
 		client:     c,
 		namespace:  namespace,
@@ -220,9 +220,9 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 	m.activeCount.Add(1)
 
 	m.logger.Info("interactive session started",
-		slog.String("session_id", sessionID),
-		slog.String("rr_id", rrID),
-		slog.String("user", user.Username),
+		"session_id", sessionID,
+		"rr_id", rrID,
+		"user", user.Username,
 	)
 
 	return session, nil
@@ -255,9 +255,9 @@ func (m *LeaseSessionManager) Release(sessionID string, reason string) error {
 	m.activeCount.Add(-1)
 
 	m.logger.Info("interactive session released",
-		slog.String("session_id", sessionID),
-		slog.String("rr_id", entry.rrID),
-		slog.String("reason", reason),
+		"session_id", sessionID,
+		"rr_id", entry.rrID,
+		"reason", reason,
 	)
 
 	return nil
@@ -278,9 +278,9 @@ func (m *LeaseSessionManager) GetDriver(rrID string) (*InteractiveSession, error
 
 	// SEC-04: Check session TTL expiry.
 	if m.sessionTTL > 0 && time.Since(entry.session.StartedAt) > m.sessionTTL {
-		m.logger.Warn("session TTL expired, auto-releasing",
-			slog.String("session_id", sessionID),
-			slog.String("rr_id", rrID))
+		m.logger.Info("session TTL expired, auto-releasing",
+			"session_id", sessionID,
+			"rr_id", rrID)
 		_ = m.Release(sessionID, "ttl_expired")
 		return nil, ErrSessionExpired
 	}
@@ -289,9 +289,9 @@ func (m *LeaseSessionManager) GetDriver(rrID string) (*InteractiveSession, error
 	if m.inactivityTimeout > 0 {
 		if lastAct, ok := entry.lastActivity.Load().(time.Time); ok {
 			if time.Since(lastAct) > m.inactivityTimeout {
-				m.logger.Warn("session inactivity timeout, auto-releasing",
-					slog.String("session_id", sessionID),
-					slog.String("rr_id", rrID))
+				m.logger.Info("session inactivity timeout, auto-releasing",
+					"session_id", sessionID,
+					"rr_id", rrID)
 				_ = m.Release(sessionID, "inactivity_timeout")
 				return nil, ErrSessionExpired
 			}
