@@ -169,6 +169,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			})
 
 			r := chi.NewRouter()
+			r.Use(fakeAuthMiddleware("alice@example.com"))
 			r.Handle("/api/v1/mcp", kaserver.SSEHeadersMiddleware(handler))
 			r.Handle("/api/v1/mcp/*", kaserver.SSEHeadersMiddleware(handler))
 			ts := httptest.NewServer(r)

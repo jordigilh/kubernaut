@@ -231,11 +231,13 @@ func GetUserInfoFromContext(ctx context.Context) UserInfo {
 }
 
 // stripImpersonationHeaders removes all Kubernetes impersonation headers from the
-// request. This prevents clients from injecting Impersonate-User/Group/Extra-* headers
-// that could escalate privileges when KA constructs impersonating K8s clients (#703).
+// request. This prevents clients from injecting Impersonate-User/Group/Uid/Extra-*
+// headers that could escalate privileges when KA constructs impersonating K8s
+// clients (#703, #895). Covers KEP-1513 Impersonate-Uid (K8s 1.22+).
 func stripImpersonationHeaders(r *http.Request) {
 	r.Header.Del("Impersonate-User")
 	r.Header.Del("Impersonate-Group")
+	r.Header.Del("Impersonate-Uid")
 	for key := range r.Header {
 		if strings.HasPrefix(strings.ToLower(key), "impersonate-extra-") {
 			r.Header.Del(key)

@@ -18,6 +18,10 @@ package mcp_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -38,18 +42,11 @@ var _ = Describe("MCP Server — #703", func() {
 		})
 	})
 
-	Describe("UT-KA-703-F02: NewMCPHandler panics when auth middleware is nil and enabled=true", func() {
+	Describe("UT-KA-703-F02: BootstrapMCP panics when auth middleware is nil", func() {
 		It("should panic as a safety guard against auth bypass", func() {
 			Expect(func() {
-				mcpinternal.NewMCPHandler(nil, true)
+				mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{AuthMiddleware: nil})
 			}).To(Panic())
-		})
-	})
-
-	Describe("UT-KA-703-F03: NewMCPHandler returns nil when Interactive.Enabled=false", func() {
-		It("should not register MCP handler when disabled", func() {
-			handler := mcpinternal.NewMCPHandler(nil, false)
-			Expect(handler).To(BeNil())
 		})
 	})
 
@@ -77,15 +74,55 @@ var _ = Describe("MCP Server — #703", func() {
 		})
 	})
 
-	Describe("UT-KA-703-F06: MCP handler is an http.Handler for route mounting", func() {
-		It("should return a valid http.Handler for chi route registration", func() {
-			handler := mcpinternal.NewMCPHandler(nil, false)
-			// When disabled, handler is nil (no route mounted)
-			Expect(handler).To(BeNil())
+	Describe("UT-KA-703-F06: BootstrapMCP returns an http.Handler for route mounting", func() {
+		It("should return a non-nil handler when AuthMiddleware is provided", func() {
+			noopAuth := func(next http.Handler) http.Handler { return next }
+			handler, srv := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+				AuthMiddleware: noopAuth,
+			})
+			Expect(handler).NotTo(BeNil())
+			Expect(srv).NotTo(BeNil())
+		})
+	})
+})
 
-			// When enabled with non-nil auth, handler should be non-nil
-			mockAuth := func() {} // placeholder - actual auth tested in integration
-			Expect(mockAuth).NotTo(BeNil())
+var _ = Describe("BootstrapMCP Auth Architecture — #895/#896", func() {
+
+	Describe("UT-KA-895-002: BootstrapMCP panics when AuthMiddleware is nil", func() {
+		It("should panic as defense-in-depth against auth bypass", func() {
+			Expect(func() {
+				mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+					AuthMiddleware: nil,
+				})
+			}).To(PanicWith(ContainSubstring("auth middleware is nil")))
+		})
+	})
+
+	Describe("UT-KA-895-003: BootstrapMCP returns raw handler without internal auth wrapping", func() {
+		It("should NOT invoke the auth middleware when a request is sent to the returned handler", func() {
+			var authCallCount atomic.Int32
+			countingAuth := func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					authCallCount.Add(1)
+					next.ServeHTTP(w, r)
+				})
+			}
+
+			handler, _ := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+				AuthMiddleware: countingAuth,
+			})
+			Expect(handler).NotTo(BeNil())
+
+			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(jsonRPC))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			Expect(authCallCount.Load()).To(Equal(int32(0)),
+				"BootstrapMCP must NOT apply auth internally; auth should be applied at router level")
 		})
 	})
 })

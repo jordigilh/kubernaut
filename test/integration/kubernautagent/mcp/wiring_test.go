@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 
 	"github.com/go-chi/chi/v5"
 	. "github.com/onsi/ginkgo/v2"
@@ -122,6 +123,134 @@ var _ = Describe("MCP Route Wiring — #703 BR-INTERACTIVE-001", func() {
 
 			Expect(resp.Header.Get("Cache-Control")).To(ContainSubstring("no-cache"))
 			Expect(resp.Header.Get("X-Accel-Buffering")).To(Equal("no"))
+		})
+	})
+})
+
+var _ = Describe("MCP Auth Architecture — #895/#896 BR-SECURITY-896", func() {
+
+	Describe("IT-KA-895-001: Unauthenticated POST to /api/v1/mcp returns 401", func() {
+		It("should reject requests without Authorization header at the router level", func() {
+			var authCallCount atomic.Int32
+			countingAuth := func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					authCallCount.Add(1)
+					if r.Header.Get("Authorization") == "" {
+						http.Error(w, "Unauthorized", http.StatusUnauthorized)
+						return
+					}
+					next.ServeHTTP(w, r)
+				})
+			}
+
+			handler, _ := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+				AuthMiddleware: countingAuth,
+			})
+
+			r := chi.NewRouter()
+			r.Route("/api/v1", func(r chi.Router) {
+				r.Use(countingAuth)
+				r.Handle("/mcp", kaserver.SSEHeadersMiddleware(handler))
+				r.Handle("/mcp/*", kaserver.SSEHeadersMiddleware(handler))
+			})
+			ts := httptest.NewServer(r)
+			defer ts.Close()
+
+			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
+		})
+	})
+
+	Describe("IT-KA-895-002: Auth middleware invoked exactly once per MCP request", func() {
+		It("should call auth middleware only at the router level, not inside BootstrapMCP", func() {
+			var authCallCount atomic.Int32
+			countingAuth := func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					authCallCount.Add(1)
+					next.ServeHTTP(w, r)
+				})
+			}
+
+			handler, _ := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+				AuthMiddleware: countingAuth,
+			})
+
+			r := chi.NewRouter()
+			r.Route("/api/v1", func(r chi.Router) {
+				r.Use(countingAuth)
+				r.Handle("/mcp", kaserver.SSEHeadersMiddleware(handler))
+				r.Handle("/mcp/*", kaserver.SSEHeadersMiddleware(handler))
+			})
+			ts := httptest.NewServer(r)
+			defer ts.Close()
+
+			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			req.Header.Set("Authorization", "Bearer test-token")
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(authCallCount.Load()).To(Equal(int32(1)),
+				"auth middleware must be invoked exactly once (router level only), not 2x (double-auth bug)")
+		})
+	})
+
+	Describe("IT-KA-895-003: Authenticated request reaches MCP SDK and returns valid response", func() {
+		It("should process the request through the MCP SDK when auth passes at router level", func() {
+			passAuth := func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Header.Get("Authorization") == "" {
+						http.Error(w, "Unauthorized", http.StatusUnauthorized)
+						return
+					}
+					next.ServeHTTP(w, r)
+				})
+			}
+
+			handler, _ := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+				AuthMiddleware: passAuth,
+			})
+
+			r := chi.NewRouter()
+			r.Route("/api/v1", func(r chi.Router) {
+				r.Use(passAuth)
+				r.Handle("/mcp", kaserver.SSEHeadersMiddleware(handler))
+				r.Handle("/mcp/*", kaserver.SSEHeadersMiddleware(handler))
+			})
+			ts := httptest.NewServer(r)
+			defer ts.Close()
+
+			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			req.Header.Set("Authorization", "Bearer test-token")
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "body: %s", string(body))
+			Expect(string(body)).To(ContainSubstring("kubernaut-agent-interactive"),
+				"MCP SDK must process the request and return server implementation info")
 		})
 	})
 })

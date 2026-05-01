@@ -81,6 +81,7 @@ var _ = Describe("Interactive Session Compatibility — COMPAT BR-INTERACTIVE-00
 			})
 
 			r := chi.NewRouter()
+			r.Use(fakeAuthMiddlewareWithUserInfo)
 			r.Handle("/mcp", handler)
 			r.Handle("/mcp/*", handler)
 			ts := httptest.NewServer(r)

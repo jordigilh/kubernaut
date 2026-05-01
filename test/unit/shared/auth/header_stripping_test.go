@@ -124,4 +124,17 @@ var _ = Describe("Impersonation Header Stripping — #703", func() {
 			Expect(capturedHeaders.Get("X-Auth-Request-User")).To(Equal("system:serviceaccount:kubernaut-system:test-sa"))
 		})
 	})
+
+	Describe("UT-KA-895-001: Middleware strips Impersonate-Uid header (KEP-1513, K8s 1.22+)", func() {
+		It("should remove Impersonate-Uid before reaching the handler", func() {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/test", nil)
+			req.Header.Set("Authorization", "Bearer valid-token")
+			req.Header.Set("Impersonate-Uid", "fake-uid-12345")
+
+			middleware.Handler(handler()).ServeHTTP(recorder, req)
+
+			Expect(recorder.Code).To(Equal(http.StatusOK))
+			Expect(capturedHeaders.Get("Impersonate-Uid")).To(BeEmpty())
+		})
+	})
 })
