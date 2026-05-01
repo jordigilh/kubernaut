@@ -11106,7 +11106,7 @@ type IncidentResponseData struct {
 	Timestamp time.Time `json:"timestamp"`
 	// True when AI could not produce reliable result.
 	NeedsHumanReview OptBool `json:"needsHumanReview"`
-	// Structured reason when needsHumanReview=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212).
+	// Structured reason when needsHumanReview=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212, BR-AI-601).
 	HumanReviewReason OptIncidentResponseDataHumanReviewReason `json:"humanReviewReason"`
 	// Non-fatal warnings (e.g., OwnerChain validation issues).
 	Warnings []string `json:"warnings"`
@@ -11263,7 +11263,7 @@ func (s *IncidentResponseDataAlternativeWorkflowsItem) SetConfidence(val OptFloa
 	s.Confidence = val
 }
 
-// Structured reason when needsHumanReview=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212).
+// Structured reason when needsHumanReview=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212, BR-AI-601).
 type IncidentResponseDataHumanReviewReason string
 
 const (
@@ -11275,6 +11275,7 @@ const (
 	IncidentResponseDataHumanReviewReasonLlmParsingError           IncidentResponseDataHumanReviewReason = "llm_parsing_error"
 	IncidentResponseDataHumanReviewReasonInvestigationInconclusive IncidentResponseDataHumanReviewReason = "investigation_inconclusive"
 	IncidentResponseDataHumanReviewReasonRcaIncomplete             IncidentResponseDataHumanReviewReason = "rca_incomplete"
+	IncidentResponseDataHumanReviewReasonAlignmentCheckFailed      IncidentResponseDataHumanReviewReason = "alignment_check_failed"
 )
 
 // AllValues returns all IncidentResponseDataHumanReviewReason values.
@@ -11288,6 +11289,7 @@ func (IncidentResponseDataHumanReviewReason) AllValues() []IncidentResponseDataH
 		IncidentResponseDataHumanReviewReasonLlmParsingError,
 		IncidentResponseDataHumanReviewReasonInvestigationInconclusive,
 		IncidentResponseDataHumanReviewReasonRcaIncomplete,
+		IncidentResponseDataHumanReviewReasonAlignmentCheckFailed,
 	}
 }
 
@@ -11309,6 +11311,8 @@ func (s IncidentResponseDataHumanReviewReason) MarshalText() ([]byte, error) {
 	case IncidentResponseDataHumanReviewReasonInvestigationInconclusive:
 		return []byte(s), nil
 	case IncidentResponseDataHumanReviewReasonRcaIncomplete:
+		return []byte(s), nil
+	case IncidentResponseDataHumanReviewReasonAlignmentCheckFailed:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -11341,6 +11345,9 @@ func (s *IncidentResponseDataHumanReviewReason) UnmarshalText(data []byte) error
 		return nil
 	case IncidentResponseDataHumanReviewReasonRcaIncomplete:
 		*s = IncidentResponseDataHumanReviewReasonRcaIncomplete
+		return nil
+	case IncidentResponseDataHumanReviewReasonAlignmentCheckFailed:
+		*s = IncidentResponseDataHumanReviewReasonAlignmentCheckFailed
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

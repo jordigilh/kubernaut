@@ -249,12 +249,29 @@ type AnomalyConfig struct {
 	ExemptPrefixes      []string `yaml:"exemptPrefixes"`
 }
 
+// AlignmentMode determines how the alignment checker acts on its verdict.
+type AlignmentMode string
+
+const (
+	AlignmentModeEnforce AlignmentMode = "enforce"
+	AlignmentModeMonitor AlignmentMode = "monitor"
+)
+
 // AlignmentCheckConfig holds settings for the shadow agent alignment checker (#601).
 type AlignmentCheckConfig struct {
-	Enabled       bool               `yaml:"enabled"`
-	LLM           *LLMOverrideConfig `yaml:"llm"`
-	Timeout       time.Duration      `yaml:"timeout"`
-	MaxStepTokens int                `yaml:"maxStepTokens"`
+	Enabled        bool               `yaml:"enabled"`
+	Mode           AlignmentMode      `yaml:"mode"`
+	LLM            *LLMOverrideConfig `yaml:"llm"`
+	Timeout        time.Duration      `yaml:"timeout"`
+	MaxStepTokens  int                `yaml:"maxStepTokens"`
+	MaxRetries     int                `yaml:"maxRetries"`
+	VerdictTimeout time.Duration      `yaml:"verdictTimeout"`
+	Canary         CanaryConfig       `yaml:"canary"`
+}
+
+// CanaryConfig controls per-investigation canary integrity checks.
+type CanaryConfig struct {
+	ForceEscalation bool `yaml:"forceEscalation"`
 }
 
 // LLMOverrideConfig allows the alignment checker to use a different LLM than
@@ -369,6 +386,11 @@ func (c *Config) Validate() error {
 		if c.AI.AlignmentCheck.MaxStepTokens <= 0 {
 			return fmt.Errorf("ai.alignmentCheck.maxStepTokens must be positive when enabled, got %d", c.AI.AlignmentCheck.MaxStepTokens)
 		}
+		switch c.AI.AlignmentCheck.Mode {
+		case AlignmentModeEnforce, AlignmentModeMonitor:
+		default:
+			return fmt.Errorf("ai.alignmentCheck.mode must be 'enforce' or 'monitor', got %q", c.AI.AlignmentCheck.Mode)
+		}
 	}
 	if c.Interactive.Enabled {
 		if c.Interactive.SessionTTL <= 0 {
@@ -428,9 +450,13 @@ func DefaultConfig() *Config {
 				BaseBackoff: 1 * time.Second,
 			},
 			AlignmentCheck: AlignmentCheckConfig{
-				Enabled:       false,
-				Timeout:       10 * time.Second,
-				MaxStepTokens: 500,
+				Enabled:        false,
+				Mode:           AlignmentModeEnforce,
+				Timeout:        10 * time.Second,
+				MaxStepTokens:  500,
+				MaxRetries:     1,
+				VerdictTimeout: 30 * time.Second,
+				Canary:         CanaryConfig{ForceEscalation: true},
 			},
 			Safety: SafetyConfig{
 				Sanitization: SanitizationConfig{

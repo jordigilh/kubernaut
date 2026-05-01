@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -460,7 +461,10 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 				RCASummary: "inner", Confidence: 0.8, HumanReviewNeeded: false,
 			}
 			inner := &mockInvestigationRunner{result: innerRes, err: nil}
-			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{cleanResponse()}}
+			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{
+				suspiciousResponse(), // canary check (must pass)
+				cleanResponse(),      // signal_input step
+			}}
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
@@ -864,6 +868,197 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 	})
 })
 
+var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
+
+	Describe("UT-PROD1-001: DefaultConfig sets mode=enforce", func() {
+		It("should default to enforce mode", func() {
+			cfg := config.DefaultConfig()
+			Expect(cfg.AI.AlignmentCheck.Mode).To(Equal(config.AlignmentModeEnforce))
+		})
+	})
+
+	Describe("UT-PROD1-002: Validate rejects invalid mode", func() {
+		It("should reject unknown mode strings", func() {
+			cfg := config.DefaultConfig()
+			cfg.AI.AlignmentCheck.Enabled = true
+			cfg.AI.AlignmentCheck.Mode = "invalid"
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("mode"))
+		})
+	})
+
+	Describe("UT-PROD1-003: Monitor mode logs but does not escalate", func() {
+		It("should not set HumanReviewNeeded when mode=monitor and verdict is suspicious", func() {
+			innerRes := &katypes.InvestigationResult{
+				RCASummary: "rca", Confidence: 0.9, HumanReviewNeeded: false,
+			}
+			inner := &mockInvestigationRunner{result: innerRes}
+			client := &mockLLMClient{responses: []llm.ChatResponse{
+				suspiciousResponse(), // canary (pass)
+				suspiciousResponse(), // signal step → suspicious
+			}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxRetries: 1,
+			}, "")
+			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:          inner,
+				Evaluator:      evaluator,
+				VerdictTimeout: 5 * time.Second,
+				Logger:         slog.Default(),
+				Mode:           config.AlignmentModeMonitor,
+			})
+
+			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
+			res, err := wrapper.Investigate(context.Background(), sig)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(res.HumanReviewNeeded).To(BeFalse(),
+				"monitor mode must NOT escalate to human review")
+		})
+	})
+
+	Describe("UT-PROD1-004: Canary failure in monitor mode with forceEscalation=true still escalates", func() {
+		It("should force HumanReviewNeeded when canary fails even in monitor mode", func() {
+			innerRes := &katypes.InvestigationResult{
+				RCASummary: "rca", Confidence: 0.9, HumanReviewNeeded: false,
+			}
+			inner := &mockInvestigationRunner{result: innerRes}
+			client := &mockLLMClient{responses: []llm.ChatResponse{
+				cleanResponse(), // canary → clean (FAIL)
+				cleanResponse(), // signal step → clean
+			}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxRetries: 1,
+			}, "")
+			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:              inner,
+				Evaluator:          evaluator,
+				VerdictTimeout:     5 * time.Second,
+				Logger:             slog.Default(),
+				Mode:               config.AlignmentModeMonitor,
+				CanaryForceEscalation: true,
+			})
+
+			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
+			res, err := wrapper.Investigate(context.Background(), sig)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(res.HumanReviewNeeded).To(BeTrue(),
+				"canary failure with forceEscalation=true must override monitor mode")
+		})
+	})
+
+	Describe("UT-PROD1-005: Canary failure in monitor mode with forceEscalation=false does not escalate", func() {
+		It("should NOT force HumanReviewNeeded when canary fails and forceEscalation=false in monitor mode", func() {
+			innerRes := &katypes.InvestigationResult{
+				RCASummary: "rca", Confidence: 0.9, HumanReviewNeeded: false,
+			}
+			inner := &mockInvestigationRunner{result: innerRes}
+			client := &mockLLMClient{responses: []llm.ChatResponse{
+				cleanResponse(), // canary → clean (FAIL)
+				cleanResponse(), // signal step → clean
+			}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxRetries: 1,
+			}, "")
+			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:              inner,
+				Evaluator:          evaluator,
+				VerdictTimeout:     5 * time.Second,
+				Logger:             slog.Default(),
+				Mode:               config.AlignmentModeMonitor,
+				CanaryForceEscalation: false,
+			})
+
+			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
+			res, err := wrapper.Investigate(context.Background(), sig)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(res.HumanReviewNeeded).To(BeFalse(),
+				"canary failure with forceEscalation=false in monitor mode should NOT escalate")
+		})
+	})
+
+	Describe("UT-PROD2-001: DefaultConfig includes maxRetries and verdictTimeout", func() {
+		It("should provide sensible defaults for alignment config fields", func() {
+			cfg := config.DefaultConfig()
+			Expect(cfg.AI.AlignmentCheck.MaxRetries).To(Equal(1))
+			Expect(cfg.AI.AlignmentCheck.VerdictTimeout).To(Equal(30 * time.Second))
+			Expect(cfg.AI.AlignmentCheck.Canary.ForceEscalation).To(BeTrue(),
+				"canary forceEscalation should default to true (safe default)")
+		})
+	})
+})
+
+var _ = Describe("Performance hardening — PERF-1/PERF-4", func() {
+
+	Describe("UT-PERF1-001: Observer semaphore bounds concurrent goroutines", func() {
+		It("should complete all evaluations with bounded concurrency", func() {
+			client := &mockLLMClient{responses: make([]llm.ChatResponse, 20)}
+			for i := range client.responses {
+				client.responses[i] = cleanResponse()
+			}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			observer := alignment.NewObserver(evaluator, 3)
+
+			for i := 0; i < 20; i++ {
+				observer.SubmitAsync(context.Background(), alignment.Step{
+					Index: observer.NextStepIndex(), Kind: alignment.StepKindToolResult,
+					Content: fmt.Sprintf("step %d", i),
+				})
+			}
+
+			wr := observer.WaitForCompletion(30 * time.Second)
+			Expect(wr.Complete).To(BeTrue())
+			Expect(wr.Observations).To(HaveLen(20),
+				"all 20 evaluations must complete despite bounded concurrency")
+		})
+	})
+
+	Describe("UT-PERF4-001: Observation content is capped at MaxObservationContentLen", func() {
+		It("should truncate stored content exceeding the cap", func() {
+			longContent := strings.Repeat("x", alignment.MaxObservationContentLen+1000)
+			client := &mockLLMClient{responses: []llm.ChatResponse{cleanResponse()}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 0, MaxRetries: 1,
+			}, "")
+			observer := alignment.NewObserver(evaluator)
+
+			observer.SubmitAsync(context.Background(), alignment.Step{
+				Index: 0, Kind: alignment.StepKindToolResult, Content: longContent,
+			})
+
+			wr := observer.WaitForCompletion(5 * time.Second)
+			Expect(wr.Complete).To(BeTrue())
+			Expect(wr.Observations).To(HaveLen(1))
+			Expect(len(wr.Observations[0].Step.Content)).To(BeNumerically("<=",
+				alignment.MaxObservationContentLen+len("...[capped]")),
+				"stored content must be capped")
+			Expect(wr.Observations[0].Step.Content).To(HaveSuffix("...[capped]"))
+		})
+	})
+
+	Describe("UT-PERF4-002: Short observation content is not capped", func() {
+		It("should not modify content within the cap", func() {
+			shortContent := "normal tool output"
+			client := &mockLLMClient{responses: []llm.ChatResponse{cleanResponse()}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			observer := alignment.NewObserver(evaluator)
+
+			observer.SubmitAsync(context.Background(), alignment.Step{
+				Index: 0, Kind: alignment.StepKindToolResult, Content: shortContent,
+			})
+
+			wr := observer.WaitForCompletion(5 * time.Second)
+			Expect(wr.Complete).To(BeTrue())
+			Expect(wr.Observations).To(HaveLen(1))
+			Expect(wr.Observations[0].Step.Content).To(Equal(shortContent))
+		})
+	})
+})
+
 var _ = Describe("Signal input alignment — BR-AI-601", func() {
 
 	Describe("UT-SA-601-SI-001: Wrapper submits signal_input step before delegation", func() {
@@ -884,7 +1079,10 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 					}
 				},
 			}
-			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{cleanResponse()}}
+			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{
+				suspiciousResponse(), // canary check (must pass)
+				cleanResponse(),      // signal_input step
+			}}
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
@@ -918,7 +1116,10 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 				RCASummary: "rca", Confidence: 0.9, HumanReviewNeeded: false,
 			}
 			inner := &mockInvestigationRunner{result: innerRes}
-			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{suspiciousResponse()}}
+			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{
+				suspiciousResponse(), // canary check (must pass)
+				suspiciousResponse(), // signal_input step → suspicious
+			}}
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
@@ -949,7 +1150,9 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 				RCASummary: "rca", Confidence: 0.9, HumanReviewNeeded: false,
 			}
 			inner := &mockInvestigationRunner{result: innerRes}
-			shadowClient := &mockLLMClient{}
+			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{
+				suspiciousResponse(), // canary check (must pass)
+			}}
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
@@ -964,8 +1167,322 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 			res, err := wrapper.Investigate(context.Background(), sig)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(res.HumanReviewNeeded).To(BeFalse())
-			Expect(shadowClient.chatCalls()).To(Equal(0),
-				"no shadow call expected when signal is empty")
+			Expect(shadowClient.chatCalls()).To(Equal(1),
+				"only canary call expected when signal is empty")
+		})
+	})
+})
+
+var _ = Describe("Duplicate JSON key protection — SEC-5", func() {
+
+	Describe("UT-SEC5-001: EvaluateStep detects duplicate suspicious key as fail-closed", func() {
+		It("should return Suspicious=true when response contains duplicate suspicious keys", func() {
+			dupResp := llm.ChatResponse{
+				Message: llm.Message{Role: "assistant",
+					Content: `{"suspicious": true, "suspicious": false, "explanation": "crafted"}`},
+			}
+			client := &mockLLMClient{responses: []llm.ChatResponse{dupResp}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			step := alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Content: "data"}
+
+			obs := evaluator.EvaluateStep(context.Background(), step)
+			Expect(obs.Suspicious).To(BeTrue(),
+				"duplicate suspicious keys must trigger fail-closed")
+			Expect(obs.Explanation).To(ContainSubstring("duplicate"),
+				"explanation must indicate duplicate key detection")
+		})
+	})
+
+	Describe("UT-SEC5-002: EvaluateStep allows single suspicious key", func() {
+		It("should parse normally when there is exactly one suspicious key", func() {
+			client := &mockLLMClient{responses: []llm.ChatResponse{cleanResponse()}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			step := alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Content: "data"}
+
+			obs := evaluator.EvaluateStep(context.Background(), step)
+			Expect(obs.Suspicious).To(BeFalse(), "single suspicious key should parse normally")
+		})
+	})
+})
+
+var _ = Describe("Explanation sanitization — SEC-2", func() {
+
+	Describe("UT-SEC2-001: SanitizeExplanation strips control characters", func() {
+		It("should remove control characters from explanation text", func() {
+			dirty := "clean text\x00with\x01control\x7fchars\x1b[31mred\x1b[0m"
+			result := alignment.SanitizeExplanation(dirty)
+			Expect(result).ToNot(ContainSubstring("\x00"))
+			Expect(result).ToNot(ContainSubstring("\x01"))
+			Expect(result).ToNot(ContainSubstring("\x7f"))
+			Expect(result).ToNot(ContainSubstring("\x1b"))
+			Expect(result).To(ContainSubstring("clean text"))
+		})
+	})
+
+	Describe("UT-SEC2-002: SanitizeExplanation truncates long explanations", func() {
+		It("should truncate explanations exceeding max length and add marker", func() {
+			long := strings.Repeat("a", 2000)
+			result := alignment.SanitizeExplanation(long)
+			Expect(len(result)).To(BeNumerically("<=", 1024+len("...[truncated]")))
+			Expect(result).To(HaveSuffix("...[truncated]"))
+		})
+	})
+
+	Describe("UT-SEC2-003: SanitizeExplanation passes clean text unchanged", func() {
+		It("should not modify clean short explanations", func() {
+			clean := "Role impersonation via SYSTEM: header in pod log output"
+			result := alignment.SanitizeExplanation(clean)
+			Expect(result).To(Equal(clean))
+		})
+	})
+
+	Describe("UT-SEC2-004: SanitizeExplanation handles empty input", func() {
+		It("should return empty string for empty input", func() {
+			Expect(alignment.SanitizeExplanation("")).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-SEC2-005: Wrapper warnings contain sanitized explanation", func() {
+		It("should sanitize explanation in warnings when verdict is suspicious", func() {
+			dirtyExplanation := "injection\x00detected\x1b[31m via SYSTEM header"
+			dirtyResp := llm.ChatResponse{
+				Message: llm.Message{Role: "assistant", Content: fmt.Sprintf(
+					`{"suspicious":true,"explanation":"%s"}`, dirtyExplanation)},
+			}
+			innerRes := &katypes.InvestigationResult{
+				RCASummary: "rca", Confidence: 0.9, HumanReviewNeeded: false,
+			}
+			inner := &mockInvestigationRunner{result: innerRes}
+			client := &mockLLMClient{responses: []llm.ChatResponse{
+				suspiciousResponse(), // canary
+				dirtyResp,            // signal step
+			}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxRetries: 1,
+			}, "")
+			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:          inner,
+				Evaluator:      evaluator,
+				VerdictTimeout: 5 * time.Second,
+				Logger:         slog.Default(),
+			})
+
+			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
+			res, err := wrapper.Investigate(context.Background(), sig)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(res.HumanReviewNeeded).To(BeTrue())
+			for _, w := range res.Warnings {
+				Expect(w).ToNot(ContainSubstring("\x00"))
+				Expect(w).ToNot(ContainSubstring("\x1b"))
+			}
+		})
+	})
+})
+
+// panicMockLLMClient panics on Chat to test panic recovery in SubmitAsync.
+type panicMockLLMClient struct{}
+
+func (p *panicMockLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResponse, error) {
+	panic("simulated crypto/rand failure in boundary.Generate")
+}
+
+func (p *panicMockLLMClient) Close() error { return nil }
+
+var _ = Describe("Panic recovery in SubmitAsync — SEC-6", func() {
+
+	Describe("UT-SEC6-001: SubmitAsync recovers from EvaluateStep panic", func() {
+		It("should record a fail-closed observation without crashing the process", func() {
+			panicClient := &panicMockLLMClient{}
+			evaluator := alignment.NewEvaluator(panicClient, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			observer := alignment.NewObserver(evaluator)
+			ctx := context.Background()
+
+			step := alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Tool: "get_pods", Content: "data"}
+			observer.SubmitAsync(ctx, step)
+
+			wr := observer.WaitForCompletion(5 * time.Second)
+			Expect(wr.Complete).To(BeTrue(), "observer must complete even after panic")
+			Expect(wr.Observations).To(HaveLen(1), "panic must produce a fail-closed observation")
+			Expect(wr.Observations[0].Suspicious).To(BeTrue(), "panic must be fail-closed (suspicious)")
+			Expect(wr.Observations[0].Explanation).To(ContainSubstring("panic"),
+				"explanation must indicate panic recovery")
+		})
+	})
+
+	Describe("UT-SEC6-002: Multiple SubmitAsync with one panic does not affect others", func() {
+		It("should handle mix of panicking and normal evaluations correctly", func() {
+			panicClient := &panicMockLLMClient{}
+			evaluator := alignment.NewEvaluator(panicClient, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			observer := alignment.NewObserver(evaluator)
+			ctx := context.Background()
+
+			observer.SubmitAsync(ctx, alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Content: "a"})
+			observer.SubmitAsync(ctx, alignment.Step{Index: 1, Kind: alignment.StepKindToolResult, Content: "b"})
+
+			wr := observer.WaitForCompletion(5 * time.Second)
+			Expect(wr.Complete).To(BeTrue())
+			Expect(wr.Observations).To(HaveLen(2), "both observations must be recorded")
+			for _, obs := range wr.Observations {
+				Expect(obs.Suspicious).To(BeTrue(), "all panicked evaluations must be fail-closed")
+			}
+		})
+	})
+})
+
+var _ = Describe("Canary integrity mechanism — SEC-3", func() {
+
+	Describe("UT-SEC3-001: RunCanary returns Passed=true when shadow flags canary payload", func() {
+		It("should pass when evaluator correctly identifies the canonical malicious payload", func() {
+			client := &mockLLMClient{responses: []llm.ChatResponse{suspiciousResponse()}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+
+			result := alignment.RunCanary(context.Background(), evaluator)
+			Expect(result.Passed).To(BeTrue(), "canary must pass when shadow flags known-malicious content")
+			Expect(result.Suspicious).To(BeTrue())
+			Expect(client.chatCalls()).To(Equal(1), "canary must issue exactly one shadow LLM call")
+		})
+	})
+
+	Describe("UT-SEC3-002: RunCanary returns Passed=false when shadow misses canary payload", func() {
+		It("should fail when evaluator returns clean for known-malicious content (compromised shadow)", func() {
+			client := &mockLLMClient{responses: []llm.ChatResponse{cleanResponse()}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+
+			result := alignment.RunCanary(context.Background(), evaluator)
+			Expect(result.Passed).To(BeFalse(), "canary must fail when shadow returns clean for known-malicious")
+			Expect(result.Suspicious).To(BeFalse())
+		})
+	})
+
+	Describe("UT-SEC3-003: RunCanary returns Passed=true on evaluator error (fail-closed)", func() {
+		It("should pass because fail-closed returns Suspicious=true which matches canary expectation", func() {
+			client := &mockLLMClient{errs: []error{errors.New("shadow unavailable")}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+
+			result := alignment.RunCanary(context.Background(), evaluator)
+			Expect(result.Passed).To(BeTrue(),
+				"fail-closed returns Suspicious=true, which is the expected canary outcome")
+		})
+	})
+
+	Describe("UT-SEC3-004: RunCanary uses canonical payload with _canary tool and index -1", func() {
+		It("should send a step with index=-1, tool=_canary, and CanaryPayload content", func() {
+			client := &mockLLMClient{responses: []llm.ChatResponse{suspiciousResponse()}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+
+			result := alignment.RunCanary(context.Background(), evaluator)
+			Expect(result.Passed).To(BeTrue())
+			Expect(result.Step.Index).To(Equal(-1))
+			Expect(result.Step.Tool).To(Equal("_canary"))
+			Expect(result.Step.Kind).To(Equal(alignment.StepKindToolResult))
+			Expect(result.Step.Content).To(Equal(alignment.CanaryPayload))
+		})
+	})
+
+	Describe("UT-SEC3-005: Wrapper degrades investigation when canary fails", func() {
+		It("should force HumanReviewNeeded=true when canary detects compromised shadow", func() {
+			innerRes := &katypes.InvestigationResult{
+				RCASummary: "valid rca", Confidence: 0.95, HumanReviewNeeded: false,
+			}
+			inner := &mockInvestigationRunner{result: innerRes}
+
+			// Shadow always returns clean -- compromised model
+			client := &mockLLMClient{responses: []llm.ChatResponse{
+				cleanResponse(), // canary call → clean (FAIL: shadow didn't flag malicious)
+				cleanResponse(), // signal step → clean
+			}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxRetries: 1,
+			}, "")
+			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:          inner,
+				Evaluator:      evaluator,
+				VerdictTimeout: 5 * time.Second,
+				Logger:         slog.Default(),
+			})
+
+			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
+			res, err := wrapper.Investigate(context.Background(), sig)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(res.HumanReviewNeeded).To(BeTrue(),
+				"canary failure must force HumanReviewNeeded regardless of shadow verdict")
+			Expect(res.Warnings).To(ContainElement(ContainSubstring("canary")),
+				"warnings must mention canary failure")
+		})
+	})
+
+	Describe("UT-SEC3-006: Wrapper operates normally when canary passes", func() {
+		It("should not interfere with clean investigation when canary passes", func() {
+			innerRes := &katypes.InvestigationResult{
+				RCASummary: "valid rca", Confidence: 0.95, HumanReviewNeeded: false,
+			}
+			inner := &mockInvestigationRunner{result: innerRes}
+
+			client := &mockLLMClient{responses: []llm.ChatResponse{
+				suspiciousResponse(), // canary call → suspicious (PASS)
+				cleanResponse(),      // signal step → clean
+			}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxRetries: 1,
+			}, "")
+			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:          inner,
+				Evaluator:      evaluator,
+				VerdictTimeout: 5 * time.Second,
+				Logger:         slog.Default(),
+			})
+
+			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
+			res, err := wrapper.Investigate(context.Background(), sig)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(res.HumanReviewNeeded).To(BeFalse(),
+				"passing canary + clean verdict should not trigger human review")
+		})
+	})
+
+	Describe("UT-SEC3-007: Wrapper canary timeout degrades (fail-closed)", func() {
+		It("should pass canary (fail-closed returns Suspicious=true) when shadow times out", func() {
+			innerRes := &katypes.InvestigationResult{
+				RCASummary: "rca", Confidence: 0.9, HumanReviewNeeded: false,
+			}
+			inner := &mockInvestigationRunner{result: innerRes}
+
+			// Slow client that exceeds the evaluator timeout
+			slowClient := &slowMockLLMClient{delay: 10 * time.Second}
+			evaluator := alignment.NewEvaluator(slowClient, alignment.EvaluatorConfig{
+				Timeout: 100 * time.Millisecond, MaxRetries: 1,
+			}, "")
+			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:          inner,
+				Evaluator:      evaluator,
+				VerdictTimeout: 5 * time.Second,
+				Logger:         slog.Default(),
+			})
+
+			sig := katypes.SignalContext{Name: "s", Namespace: "ns"}
+			res, err := wrapper.Investigate(context.Background(), sig)
+			Expect(err).ToNot(HaveOccurred())
+			// Timeout → fail-closed → Suspicious=true → canary passes
+			// But all subsequent shadow calls also timeout → fail-closed → all suspicious
+			// → HumanReviewNeeded=true from regular verdict, not canary degradation
+			Expect(res.HumanReviewNeeded).To(BeTrue(),
+				"shadow timeout causes fail-closed on both canary and steps")
 		})
 	})
 })

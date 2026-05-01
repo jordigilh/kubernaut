@@ -3493,6 +3493,8 @@ func (s IncidentResponseDataHumanReviewReason) Validate() error {
 		return nil
 	case "rca_incomplete":
 		return nil
+	case "alignment_check_failed":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
