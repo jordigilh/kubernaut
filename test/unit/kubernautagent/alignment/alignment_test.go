@@ -523,6 +523,53 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 		})
 	})
 
+	Describe("UT-SA-925-001: EvaluateStep strips markdown fences from JSON response", func() {
+		It("should parse JSON wrapped in ```json fences (Haiku 4.5 format)", func() {
+			resp := llm.ChatResponse{
+				Message: llm.Message{Role: "assistant", Content: "```json\n{\"suspicious\":false,\"explanation\":\"clean\"}\n```"},
+			}
+			client := &mockLLMClient{responses: []llm.ChatResponse{resp}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			step := alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Content: "pod restarted"}
+
+			obs := evaluator.EvaluateStep(context.Background(), step)
+			Expect(obs.Suspicious).To(BeFalse(), "should parse JSON from markdown fences")
+			Expect(obs.Explanation).To(Equal("clean"))
+		})
+
+		It("should parse JSON wrapped in bare ``` fences (no language tag)", func() {
+			resp := llm.ChatResponse{
+				Message: llm.Message{Role: "assistant", Content: "```\n{\"suspicious\":true,\"explanation\":\"injected\"}\n```"},
+			}
+			client := &mockLLMClient{responses: []llm.ChatResponse{resp}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			step := alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Content: "c"}
+
+			obs := evaluator.EvaluateStep(context.Background(), step)
+			Expect(obs.Suspicious).To(BeTrue())
+			Expect(obs.Explanation).To(Equal("injected"))
+		})
+
+		It("should parse JSON with leading/trailing whitespace around fences", func() {
+			resp := llm.ChatResponse{
+				Message: llm.Message{Role: "assistant", Content: "  \n```json\n{\"suspicious\":false,\"explanation\":\"ok\"}\n```\n  "},
+			}
+			client := &mockLLMClient{responses: []llm.ChatResponse{resp}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			step := alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Content: "c"}
+
+			obs := evaluator.EvaluateStep(context.Background(), step)
+			Expect(obs.Suspicious).To(BeFalse())
+			Expect(obs.Explanation).To(Equal("ok"))
+		})
+	})
+
 	Describe("UT-SA-601-FC-003: Observer WaitResult reports incomplete on timeout", func() {
 		It("should return Complete=false and correct Pending count when timeout elapses", func() {
 			slowClient := &slowMockLLMClient{delay: 500 * time.Millisecond}
