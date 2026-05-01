@@ -590,7 +590,7 @@ CP-0 validates that all design documentation, threat models, and governance arti
 - [ ] Error taxonomy table with >=8 codes
 - [ ] Metric definitions table with >=4 metrics
 - [ ] Error codes follow kebab-case convention
-- [ ] Metrics follow `kubernaut_interactive_*` naming
+- [ ] Metrics follow `aiagent_mcp_interactive_*` naming
 
 ---
 

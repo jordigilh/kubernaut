@@ -5,6 +5,67 @@ All notable changes to Kubernaut will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - Unreleased
+
+### Added
+
+#### MCP Interactive Mode (#703)
+
+- **Interactive investigation sessions** — Kubernaut Agent exposes a Model Context Protocol (MCP) endpoint (`POST /api/v1/mcp`) enabling human-in-the-loop investigation of remediation requests. Operators can guide, question, and direct the agent in real-time.
+- **Three MCP tools**: `kubernaut_investigate` (start/takeover/message/complete/cancel/status), `kubernaut_enrich` (K8s resource enrichment with impersonation), `kubernaut_select_workflow` (workflow catalog lookup and selection).
+- **Lease-based session management** — Single-driver exclusivity via Kubernetes coordination/v1 Leases with automatic TTL expiry and inactivity timeout.
+- **Dynamic takeover** — Operators can take over autonomous or stale interactive sessions, reconstructing conversation context from DataStorage audit events.
+- **User impersonation** — All K8s API calls during interactive sessions execute under the operator's identity, enforcing their RBAC permissions.
+- **Session notifications** — MCP log-level push notifications for inactivity warnings and session events via `InMemoryNotificationBus`.
+- **Per-user rate limiting** — Token-bucket rate limiter keyed by authenticated username with configurable requests-per-second.
+- **Prometheus metrics** — 4 interactive metrics: `aiagent_mcp_interactive_sessions_active`, `aiagent_mcp_interactive_command_duration_seconds`, `aiagent_mcp_interactive_takeover_total`, `aiagent_mcp_interactive_lease_contention_total`.
+- **Observer status endpoint** — Read-only `action=status` for checking investigation mode without Lease acquisition.
+- **Helm integration** — Feature-gated via `kubernautAgent.interactive.enabled`; auto-provisions Lease Role/RoleBinding and impersonate ClusterRole.
+
+#### Session Cancellation and SSE Streaming (#823)
+
+- **Session cancellation infrastructure** — `StatusCancelled` terminal state, `CancelInvestigation()` with context propagation, `Subscribe()` with lazy event channel.
+- **SOC2 CC8.1 audit trail** — 22 `aiagent.*` event types emitted fire-and-forget for session lifecycle, investigation cancellation, and alignment events.
+- **SSE streaming** — Token-level streaming via `StreamChat` on `llm.Client` interface, delivered through `LazySink` + `io.Pipe` SSE pipeline. Autonomous mode unchanged (no sink = no streaming).
+- **Object-level session authorization** — Session ownership tracking with `created_by` identity; cross-user access returns 404.
+- **Operational hardening** — Per-IP rate limiter, `Manager.Shutdown()` graceful cancellation, panic recovery in investigation goroutines, error sanitization at handler boundaries.
+
+#### Configuration 3-Domain Restructure
+
+- **Runtime/AI/Integrations** top-level domains with camelCase YAML tags across all config fields.
+- **Interactive top-level config** — `InteractiveConfig` struct with `sessionTTL`, `inactivityTimeout`, `maxConcurrentSessions`, `rateLimitPerUser`, `maxAnalyzingTimeout`.
+- **RO config hot-reload** — `FileWatcher`-based live reload of Remediation Orchestrator configuration (#835).
+
+#### Alignment Check (Shadow Agent)
+
+- **Shadow agent evaluator** — Parallel evaluation of investigation quality via alignment check with configurable `mode` (shadow/enforce) and `verdictTimeout`.
+- **Canary force-escalation** — `canary.forceEscalation` flag for testing alignment enforcement paths.
+
+### Security
+
+- **Empty username rejection** — `Takeover` rejects sessions with empty driver identity (SEC-01).
+- **Max concurrent sessions** — Atomic counter enforcement per agent instance (SEC-03).
+- **Session TTL and inactivity timeout** — Checked on every `GetDriver` call (SEC-04).
+- **Per-user rate limiting middleware** — 401 for unauthenticated, 429 with `Retry-After` for rate-exceeded (SEC-02).
+- **Impersonate-* header stripping** — Client-supplied impersonation headers stripped before processing.
+- **Explicit QPS/Burst/Timeout** on MCP controller-runtime client (SEC-07).
+- **Constant-time session ownership comparison** — Mitigates timing attacks on session authorization.
+
+### Helm
+
+- **Interactive mode ConfigMap** — `interactive:` block emitted when `kubernautAgent.interactive.enabled=true`.
+- **coordination/v1 Leases RBAC** — Namespace-scoped Role/RoleBinding (least privilege).
+- **Impersonate verb** — Cluster-wide impersonate for users/groups/serviceaccounts (gated by `interactive.enabled`).
+- **values.schema.json** — Strict validation for interactive configuration fields.
+
+### Fixed
+
+- **Data races** — Fixed 2 races in `event_store_test.go` (buffered channels replacing bare variables).
+- **errcheck lint violations** — 12 fixes across wiring, timeout, security integration tests and `vertexanthropic/client.go`.
+- **Duplicate declarations** — Removed duplicate `EventTypeTokenDelta` and `chatOrStream` from rebase.
+- **nil context guard** — `GetUserFromContext` returns "" safely on nil context.
+- **100go.co anti-patterns** — Handle `json.Marshal` errors, `CloseWithError(nil)`, server timeouts, X-Forwarded-For parsing, goroutine lifecycle documentation.
+
 ## [1.2.0] - 2026-04-06
 
 ### Added

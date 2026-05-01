@@ -241,6 +241,7 @@ data:
       inactivityTimeout: {{ .Values.kubernautAgent.interactive.inactivityTimeout | default "10m" | quote }}
       maxConcurrentSessions: {{ .Values.kubernautAgent.interactive.maxConcurrentSessions | default 5 }}
       rateLimitPerUser: {{ .Values.kubernautAgent.interactive.rateLimitPerUser | default 10 }}
+      maxAnalyzingTimeout: {{ .Values.kubernautAgent.interactive.maxAnalyzingTimeout | default "45m" | quote }}
 {{- end }}
     integrations:
       dataStorage:

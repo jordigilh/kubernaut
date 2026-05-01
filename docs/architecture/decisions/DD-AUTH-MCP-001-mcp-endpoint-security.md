@@ -219,10 +219,10 @@ Prometheus, DataStorage, and log queries use KA SA (no user-level auth available
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `kubernaut_interactive_sessions_active` | Gauge | Currently active interactive sessions |
-| `kubernaut_interactive_takeover_total` | Counter | Total takeover events |
-| `kubernaut_interactive_lease_contention_total` | Counter | Lease acquisition failures (contention) |
-| `kubernaut_interactive_command_duration_seconds` | Histogram | Duration of interactive tool calls |
+| `aiagent_mcp_interactive_sessions_active` | Gauge | Currently active interactive sessions |
+| `aiagent_mcp_interactive_takeover_total` | Counter | Total takeover events |
+| `aiagent_mcp_interactive_lease_contention_total` | Counter | Lease acquisition failures (contention) |
+| `aiagent_mcp_interactive_command_duration_seconds` | Histogram | Duration of interactive tool calls |
 
 ### Data Classification Policy
 

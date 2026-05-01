@@ -1525,6 +1525,18 @@ for d in docs:
       "Custom sessionTTL or maxConcurrentSessions not rendered"
   fi
 
+  # HELM-06: custom maxAnalyzingTimeout rendered
+  interactive_out=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set kubernautAgent.interactive.enabled=true \
+    --set kubernautAgent.interactive.maxAnalyzingTimeout=60m 2>&1)
+  if echo "$interactive_out" | grep -q 'maxAnalyzingTimeout: "60m"'; then
+    tap_ok "HELM-06: custom maxAnalyzingTimeout rendered in ConfigMap"
+  else
+    tap_not_ok "HELM-06: custom maxAnalyzingTimeout" \
+      "Custom maxAnalyzingTimeout not rendered"
+  fi
+
   # HELM-LINT: helm lint passes with interactive enabled
   if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set kubernautAgent.interactive.enabled=true >/dev/null 2>&1; then

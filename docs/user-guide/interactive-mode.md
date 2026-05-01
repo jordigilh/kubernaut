@@ -141,11 +141,21 @@ Exceeding the limit returns a `rate_limited` error. Wait and retry.
 kubernautAgent:
   interactive:
     enabled: true
-    sessionTTL: "30m"
-    inactivityTimeout: "10m"
-    maxConcurrentSessions: 5
-    rateLimitPerUser: 10
+    sessionTTL: "30m"            # Max session duration before auto-release
+    inactivityTimeout: "10m"     # Auto-release after last activity
+    maxConcurrentSessions: 5     # Per-replica capacity
+    rateLimitPerUser: 10         # MCP requests/second per user
+    maxAnalyzingTimeout: "45m"   # Extended RO timeout while interactive session active
 ```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `false` | Feature gate for the MCP interactive endpoint |
+| `sessionTTL` | `30m` | Hard limit on session duration (max: 1h) |
+| `inactivityTimeout` | `10m` | Auto-release after inactivity (max: 30m) |
+| `maxConcurrentSessions` | `5` | Max concurrent sessions per agent replica (max: 100) |
+| `rateLimitPerUser` | `10` | MCP requests per second per authenticated user (max: 100) |
+| `maxAnalyzingTimeout` | `45m` | Extended analyzing timeout in Remediation Orchestrator while an interactive session is active, preventing RO from timing out the RR during operator investigation |
 
 ## Disconnect Behavior
 

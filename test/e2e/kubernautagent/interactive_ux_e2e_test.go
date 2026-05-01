@@ -260,8 +260,8 @@ var _ = Describe("CP-5 UX: User Experience & Operational Tests", Label("e2e", "k
 			Eventually(func() string {
 				return scrapeKAMetrics()
 			}, 10*time.Second, 1*time.Second).Should(Or(
-				ContainSubstring("kubernaut_interactive_sessions_active"),
-				ContainSubstring("kubernaut_interactive_takeover_total"),
+				ContainSubstring("aiagent_mcp_interactive_sessions_active"),
+				ContainSubstring("aiagent_mcp_interactive_takeover_total"),
 			), "interactive metrics should appear after session start")
 
 			afterStartMetrics := scrapeKAMetrics()
