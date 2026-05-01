@@ -729,7 +729,7 @@ CP-3 validates the core interactive session mechanics: session hijacking prevent
 5. Assert: publisher does NOT block (completes within 10ms)
 6. Assert: fast-consumer received all 20 events
 7. Assert: slow-consumer's channel has 10 events (buffer full, 10 dropped)
-8. Assert: metric `kubernaut_interactive_notifications_dropped_total` incremented by 10
+8. Assert: notification drops occurred (10 messages silently dropped per backpressure design)
 
 **Acceptance Criteria**:
 - Publisher never blocks (bounded channel, non-blocking send)

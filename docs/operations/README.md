@@ -10,10 +10,12 @@ Per [DOCUMENTATION_STRUCTURE.md](../DOCUMENTATION_STRUCTURE.md), this directory 
 
 ```
 operations/
-├── runbooks/                           # Service-specific runbooks
-│   └── workflowexecution-runbook.md    # WorkflowExecution production procedures
-├── monitoring/                         # Monitoring setup (future)
-└── maintenance/                        # Maintenance procedures (future)
+├── runbooks/                               # Service-specific runbooks
+│   ├── interactive-mode-runbook.md         # Interactive MCP session operations
+│   ├── workflowexecution-runbook.md        # WorkflowExecution production procedures
+│   └── workflow-registration-runbook.md    # Workflow catalog registration
+├── monitoring/                             # Monitoring setup (future)
+└── maintenance/                            # Maintenance procedures (future)
 ```
 
 ---
@@ -22,7 +24,9 @@ operations/
 
 | Service | Runbook | Alerts Covered |
 |---------|---------|----------------|
+| Kubernaut Agent (Interactive) | [interactive-mode-runbook.md](./runbooks/interactive-mode-runbook.md) | Sessions stuck, impersonation 403s, rate limiting, disconnect detection, timeout warnings |
 | WorkflowExecution | [workflowexecution-runbook.md](./runbooks/workflowexecution-runbook.md) | 6 runbooks (RB-WE-001 to RB-WE-006) |
+| Workflow Registration | [workflow-registration-runbook.md](./runbooks/workflow-registration-runbook.md) | Catalog sync, registration failures |
 
 ---
 

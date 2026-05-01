@@ -11,17 +11,16 @@ Mode feature (Issue #703, CP-5).
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `kubernaut_interactive_sessions_active` | Gauge | Currently active interactive sessions |
-| `kubernaut_interactive_command_duration_seconds` | Histogram | Tool execution latency |
-| `kubernaut_interactive_takeover_total` | Counter | Session start/takeover events |
-| `kubernaut_interactive_lease_contention_total` | Counter | Failed lease acquisitions |
-| `kubernaut_interactive_notifications_dropped_total` | Counter | Notification delivery failures |
+| `aiagent_mcp_interactive_sessions_active` | Gauge | Currently active interactive sessions |
+| `aiagent_mcp_interactive_command_duration_seconds` | Histogram | Tool execution latency |
+| `aiagent_mcp_interactive_takeover_total` | Counter | Session start/takeover events |
+| `aiagent_mcp_interactive_lease_contention_total` | Counter | Failed lease acquisitions |
 
 ### Alert Thresholds
 
-- **Active sessions at max**: `kubernaut_interactive_sessions_active >= maxConcurrentSessions`
+- **Active sessions at max**: `aiagent_mcp_interactive_sessions_active >= maxConcurrentSessions`
   - Action: Check for leaked sessions (timeout not firing)
-- **High lease contention**: `rate(kubernaut_interactive_lease_contention_total[5m]) > 5`
+- **High lease contention**: `rate(aiagent_mcp_interactive_lease_contention_total[5m]) > 5`
   - Action: Multiple users competing for same remediations; verify timeout is releasing stale sessions
 - **Gauge drift**: Active gauge stays elevated when no sessions expected
   - Action: Possible bug in session release path; restart agent pod
@@ -30,7 +29,7 @@ Mode feature (Issue #703, CP-5).
 
 ### 1. Session Stuck (Not Releasing)
 
-**Symptoms**: `kubernaut_interactive_sessions_active` elevated, users report "session_active" errors.
+**Symptoms**: `aiagent_mcp_interactive_sessions_active` elevated, users report "session_active" errors.
 
 **Diagnosis**:
 ```bash
@@ -109,7 +108,8 @@ interactive:
   sessionTTL: "30m"               # Max session duration
   inactivityTimeout: "10m"        # Auto-release after inactivity
   maxConcurrentSessions: 5        # Per-agent capacity
-  rateLimitPerUser: 10            # Messages/minute per session
+  rateLimitPerUser: 10            # Requests/second per user
+  maxAnalyzingTimeout: "45m"      # Extended RO timeout during interactive sessions
 ```
 
 ## RBAC Requirements

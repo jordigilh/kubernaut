@@ -754,7 +754,8 @@
             "sessionTTL": { "type": "string", "default": "30m", "description": "Maximum duration for an interactive session before auto-release." },
             "inactivityTimeout": { "type": "string", "default": "10m", "description": "Session timeout after last activity." },
             "maxConcurrentSessions": { "type": "integer", "default": 5, "description": "Maximum concurrent interactive sessions per instance." },
-            "rateLimitPerUser": { "type": "integer", "default": 10, "description": "Maximum requests per second per authenticated user." }
+            "rateLimitPerUser": { "type": "integer", "default": 10, "description": "Maximum requests per second per authenticated user." },
+            "maxAnalyzingTimeout": { "type": "string", "default": "45m", "description": "Extended analyzing timeout for RO when an interactive session is active. Prevents RO from timing out a RemediationRequest while an operator is investigating." }
           }
         }
       }

@@ -300,8 +300,23 @@ effectivenessmonitor:
 # -- Kubernaut Agent (Go LLM investigation service)
 kubernautAgent:
   replicas: 1
+  # -- MCP interactive mode (#703): human-in-the-loop investigation sessions.
+  # When enabled, KA exposes a Streamable HTTP MCP endpoint at POST /api/v1/mcp
+  # and provisions Lease RBAC + impersonate ClusterRole.
   interactive:
+    # -- Enable MCP interactive mode endpoint and Lease-based session management.
     enabled: false
+    # -- Maximum duration for an interactive session before auto-release (Go duration).
+    # sessionTTL: "30m"
+    # -- Session timeout after last operator activity (Go duration).
+    # inactivityTimeout: "10m"
+    # -- Maximum concurrent interactive sessions per agent replica.
+    # maxConcurrentSessions: 5
+    # -- Maximum MCP requests per second per authenticated user.
+    # rateLimitPerUser: 10
+    # -- Extended analyzing timeout for RO when an interactive session is active (Go duration).
+    # Prevents RO from timing out a RemediationRequest while an operator is investigating.
+    # maxAnalyzingTimeout: "45m"
   pdb:
     enabled: false
     # minAvailable: 1

@@ -839,11 +839,11 @@ CP-5 is the final release gate. It validates the complete interactive flow end-t
 - Kind cluster with Prometheus scraping KA
 
 **Steps**:
-1. User takes over → assert: `kubernaut_interactive_sessions_active` = 1
-2. Execute tool call → assert: `kubernaut_interactive_command_duration_seconds` histogram updated
-3. Assert: `kubernaut_interactive_takeover_total` incremented
-4. User disconnects → assert: `kubernaut_interactive_sessions_active` = 0
-5. Attempt concurrent takeover → assert: `kubernaut_interactive_lease_contention_total` incremented
+1. User takes over → assert: `aiagent_mcp_interactive_sessions_active` = 1
+2. Execute tool call → assert: `aiagent_mcp_interactive_command_duration_seconds` histogram updated
+3. Assert: `aiagent_mcp_interactive_takeover_total` incremented
+4. User disconnects → assert: `aiagent_mcp_interactive_sessions_active` = 0
+5. Attempt concurrent takeover → assert: `aiagent_mcp_interactive_lease_contention_total` incremented
 
 **Acceptance Criteria**:
 - All 4 documented metrics emitted
@@ -870,7 +870,7 @@ CP-5 is the final release gate. It validates the complete interactive flow end-t
 **Steps**:
 1. Slow down DS responses (add 2s latency to audit ingestion)
 2. Generate rapid audit events (multiple tool calls in quick succession)
-3. Assert: `kubernaut_interactive_notifications_dropped_total` increases (if NotificationBus drops)
+3. Assert: notification drops logged (if NotificationBus drops due to backpressure)
 4. Assert: audit events NOT lost (buffered and eventually delivered to DS)
 5. Assert: if drops occur, they are for NotificationBus observers only (not DS persistence)
 
