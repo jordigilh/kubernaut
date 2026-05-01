@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
@@ -144,7 +145,8 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 		}
 
 		var parsed evalResponse
-		if jsonErr := json.Unmarshal([]byte(respContent), &parsed); jsonErr != nil {
+		content := extractJSON(respContent)
+		if jsonErr := json.Unmarshal([]byte(content), &parsed); jsonErr != nil {
 			lastErr = fmt.Errorf("parse evaluator response: %w", jsonErr)
 			continue
 		}
@@ -177,6 +179,20 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 		Suspicious:  true,
 		Explanation: fmt.Sprintf("evaluator_unavailable (fail-closed): %v", lastErr),
 	}
+}
+
+// markdownFenceRe matches ```json ... ``` or ``` ... ``` blocks, with
+// optional leading/trailing whitespace. Issue #925: some models (e.g. Haiku
+// 4.5) wrap JSON in markdown fences even when JSONMode is requested.
+var markdownFenceRe = regexp.MustCompile("(?s)^\\s*```(?:json)?\\s*\n(.*?)\\s*```\\s*$")
+
+// extractJSON strips markdown code fences if present, returning the inner
+// content. If the input is not fenced, it is returned as-is after trimming.
+func extractJSON(s string) string {
+	if m := markdownFenceRe.FindStringSubmatch(s); len(m) == 2 {
+		return strings.TrimSpace(m[1])
+	}
+	return strings.TrimSpace(s)
 }
 
 const truncationMarker = "…[truncated]…"
