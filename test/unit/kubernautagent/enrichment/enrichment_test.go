@@ -20,13 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log/slog"
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 )
@@ -211,12 +210,11 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified from IT)", func() {
 
 	var (
-		logger     *slog.Logger
+		logger     = logr.Discard()
 		auditStore *recordingAuditStore
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 		auditStore = &recordingAuditStore{}
 	})
 

@@ -1,7 +1,7 @@
 # Logging Standard - Kubernaut Services
 
 **Version**: v2.0
-**Last Updated**: April 27, 2026
+**Last Updated**: April 26, 2026
 **Status**: APPROVED & STANDARDIZED
 **Scope**: All 10 Services
 **Standard**: `go.uber.org/zap` via `pkg/log` (logr.Logger interface)
@@ -27,7 +27,7 @@
 | Library | Files | Status | Action |
 |---------|-------|--------|--------|
 | **go.uber.org/zap** | 496+ files (99.8%) | STANDARD | APPROVED |
-| **log/slog** | ~47 files (kubernaut-agent) | Legacy | Migration to zap planned |
+| **log/slog** | 0 files | Removed | Migrated to logr/zap (Issue #935) |
 
 ### Unified Strategy (v2.0)
 
@@ -56,8 +56,6 @@ Key methods:
 - `ZapLevel()` -- converts to `zapcore.Level`
 - `NewAtomicLevel()` -- creates a `zap.AtomicLevel` for runtime mutation
 - `Validate()` -- rejects unrecognised level strings
-- `SlogLevel()` -- bridge for services still using `log/slog` (kubernaut-agent)
-
 ### Hot-Reload Helper: `ParseAndSetLevel()`
 
 ```go
@@ -129,12 +127,12 @@ Same pattern as CRD controllers, but uses `zap.New(zap.Level(atomicLevel))` dire
 
 ---
 
-## Kubernaut Agent (Temporary: slog)
+## Kubernaut Agent
 
-The kubernaut-agent currently uses `log/slog` instead of zap. Its `LoggingConfig`
-has been migrated to the shared `internal/config.LoggingConfig` type, which provides
-a `SlogLevel()` bridge method. A follow-up issue will migrate the agent to
-`pkg/log` (zap-backed `logr.Logger`) to eliminate this special case.
+The kubernaut-agent uses `pkg/log` (zap-backed `logr.Logger`), the same standard
+as Gateway, Notification, and DataStorage. It bootstraps with
+`kubelog.NewLoggerWithAtomicLevel()` and supports config-driven hot-reload via
+`zap.AtomicLevel`. The `SlogLevel()` bridge method has been removed (Issue #935).
 
 ---
 
@@ -392,7 +390,7 @@ logger.Info("Signal processed",
 | **Gateway** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #877) |
 | **Notification** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #878) |
 | **DataStorage** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #875) |
-| **Kubernaut Agent** | log/slog (temporary) | `internal/config` | Planned | Config aligned; full slog->zap migration TBD |
+| **Kubernaut Agent** | pkg/log (kubelog) | `internal/config` | FileWatcher | Done (Issue #935) |
 
 ---
 
@@ -441,12 +439,12 @@ logger.Info("Signal processed",
 4. `zap.AtomicLevel` is thread-safe and zero-allocation
 
 **Migration**:
-- 9/10 services fully migrated to config-file-only log level with hot-reload
-- kubernaut-agent: config aligned to shared type; full slog->zap migration in follow-up PR
+- All 10 services fully migrated to config-file-only log level with hot-reload
+- kubernaut-agent: migrated from slog to logr/zap in Issue #935
 
 ---
 
 **Document Status**: Complete & Approved
 **Standard**: `go.uber.org/zap` via config file
-**Last Updated**: April 27, 2026
+**Last Updated**: April 26, 2026
 **Version**: 2.0

@@ -18,8 +18,8 @@ package investigator_test
 
 import (
 	"context"
-	"log/slog"
-	"os"
+
+	"github.com/go-logr/logr"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -36,7 +36,7 @@ import (
 var _ = Describe("KA-KA Integration Parity — Token Usage (TP-433-PARITY)", func() {
 
 	var (
-		logger     *slog.Logger
+		invLogger  logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -45,13 +45,13 @@ var _ = Describe("KA-KA Integration Parity — Token Usage (TP-433-PARITY)", fun
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		invLogger = logr.Discard()
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
 		k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
 		dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
@@ -73,7 +73,7 @@ var _ = Describe("KA-KA Integration Parity — Token Usage (TP-433-PARITY)", fun
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
@@ -105,7 +105,7 @@ var _ = Describe("KA-KA Integration Parity — Token Usage (TP-433-PARITY)", fun
 var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", func() {
 
 	var (
-		logger     *slog.Logger
+		invLogger  logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -114,13 +114,13 @@ var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", fun
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		invLogger = logr.Discard()
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
 		k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
 		dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
@@ -143,7 +143,7 @@ var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", fun
 
 			inv := investigator.New(investigator.Config{
 				Client: instrumented, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
@@ -176,7 +176,7 @@ var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", fun
 
 			inv := investigator.New(investigator.Config{
 				Client: instrumented, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
@@ -194,7 +194,7 @@ var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", fun
 var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 
 	var (
-		logger     *slog.Logger
+		invLogger  logr.Logger
 		auditStore *recordingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -203,7 +203,7 @@ var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		invLogger = logr.Discard()
 		auditStore = &recordingAuditStore{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
@@ -213,7 +213,7 @@ var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 			},
 		}
 		dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
@@ -235,7 +235,7 @@ var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 
@@ -265,7 +265,7 @@ var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
-				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools,
 			})
 

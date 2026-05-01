@@ -19,9 +19,8 @@ package mcp_test
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
-	"os"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -47,8 +46,8 @@ var _ = Describe("MCP Skeleton — #433, Option C", func() {
 	})
 
 	Describe("UT-KA-433-011: MCP stub provider returns empty tool list", func() {
-		It("should return an empty slice and log a warning", func() {
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+		It("should return an empty slice and log at info level", func() {
+			logger := logr.Discard()
 			provider := mcp.NewStubProvider(logger)
 
 			tools, err := provider.DiscoverTools(context.Background())

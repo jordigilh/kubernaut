@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -85,7 +86,7 @@ var _ = Describe("LabelDetector Non-Workload Root Owners — Issue #679", func()
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, cm)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			labels, _, err := detector.DetectLabels(ctx, "ConfigMap", "worker-config", "demo-crashloop-helm", nil)
 			Expect(err).NotTo(HaveOccurred())
@@ -110,7 +111,7 @@ var _ = Describe("LabelDetector Non-Workload Root Owners — Issue #679", func()
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, secret)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			labels, _, err := detector.DetectLabels(ctx, "Secret", "tls-cert", "production", nil)
 			Expect(err).NotTo(HaveOccurred())
@@ -132,7 +133,7 @@ var _ = Describe("LabelDetector Non-Workload Root Owners — Issue #679", func()
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, svc)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			labels, _, err := detector.DetectLabels(ctx, "Service", "api-gateway", "default", nil)
 			Expect(err).NotTo(HaveOccurred())
@@ -157,7 +158,7 @@ var _ = Describe("LabelDetector Non-Workload Root Owners — Issue #679", func()
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, node)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			labels, _, err := detector.DetectLabels(ctx, "Node", "worker-1", "", nil)
 			Expect(err).NotTo(HaveOccurred())
@@ -183,7 +184,7 @@ var _ = Describe("LabelDetector Non-Workload Root Owners — Issue #679", func()
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "web-app", Namespace: "default"},
@@ -211,7 +212,7 @@ var _ = Describe("LabelDetector Non-Workload Root Owners — Issue #679", func()
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "web-deploy", Namespace: "default"},
@@ -240,7 +241,7 @@ var _ = Describe("LabelDetector Non-Workload Root Owners — Issue #679", func()
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "web-deploy", Namespace: "default"},
@@ -272,7 +273,7 @@ var _ = Describe("LabelDetector Non-Workload Root Owners — Issue #679", func()
 			}
 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, cm)
-			detector := enrichment.NewLabelDetector(dynClient, newTestMapper())
+			detector := enrichment.NewLabelDetector(dynClient, newTestMapper(), logr.Discard())
 
 			labels, _, err := detector.DetectLabels(ctx, "ConfigMap", "worker-config", "demo-crashloop-helm", nil)
 			Expect(err).NotTo(HaveOccurred())
@@ -286,7 +287,7 @@ var _ = Describe("LabelDetector Non-Workload Root Owners — Issue #679", func()
 		It("should return error when mapper is nil", func() {
 			scheme := newFullScheme()
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
-			detector := enrichment.NewLabelDetector(dynClient, nil)
+			detector := enrichment.NewLabelDetector(dynClient, nil, logr.Discard())
 
 			labels, _, err := detector.DetectLabels(ctx, "ConfigMap", "some-cm", "default", nil)
 			Expect(err).NotTo(HaveOccurred(), "DetectLabels should not error — it logs warnings")

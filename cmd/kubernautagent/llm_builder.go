@@ -19,9 +19,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/go-logr/logr"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
@@ -115,40 +116,40 @@ func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) ht
 func llmRuntimeReloadCallback(
 	staticCfg *kaconfig.Config,
 	swappable *llm.SwappableClient,
-	logger *slog.Logger,
+	logger logr.Logger,
 ) func(newContent string) error {
 	return func(newContent string) error {
 		oldModel := swappable.ModelName()
 
 		if strings.TrimSpace(newContent) == "" {
-			logger.Warn("llm_runtime_reload rejected: empty content",
+			logger.Info("llm_runtime_reload rejected: empty content",
 				"event", "llm_runtime_reload", "status", "rejected", "reason", "empty_content")
 			return fmt.Errorf("llm runtime reload rejected: empty or whitespace-only content")
 		}
 
 		rt, err := kaconfig.LoadLLMRuntime([]byte(newContent))
 		if err != nil {
-			logger.Error("llm_runtime_reload failed: parse error",
-				"event", "llm_runtime_reload", "status", "error", "error", err)
+			logger.Error(err, "llm_runtime_reload failed: parse error",
+				"event", "llm_runtime_reload", "status", "error")
 			return fmt.Errorf("reload: parsing llm runtime config: %w", err)
 		}
 
 		if err := rt.Validate(staticCfg.AI.LLM.Provider); err != nil {
-			logger.Warn("llm_runtime_reload rejected: validation failed",
+			logger.Info("llm_runtime_reload rejected: validation failed",
 				"event", "llm_runtime_reload", "status", "rejected", "error", err)
 			return fmt.Errorf("reload: validation failed: %w", err)
 		}
 
 		newClient, err := buildLLMClientFromConfig(context.Background(), staticCfg, rt)
 		if err != nil {
-			logger.Error("llm_runtime_reload failed: client build error",
-				"event", "llm_runtime_reload", "status", "error", "error", err)
+			logger.Error(err, "llm_runtime_reload failed: client build error",
+				"event", "llm_runtime_reload", "status", "error")
 			return fmt.Errorf("reload: building LLM client: %w", err)
 		}
 
 		if err := swappable.Swap(newClient, rt.Model); err != nil {
-			logger.Error("llm_runtime_reload failed: swap error",
-				"event", "llm_runtime_reload", "status", "error", "error", err)
+			logger.Error(err, "llm_runtime_reload failed: swap error",
+				"event", "llm_runtime_reload", "status", "error")
 			return fmt.Errorf("reload: swapping client: %w", err)
 		}
 

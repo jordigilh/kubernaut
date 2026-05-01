@@ -19,9 +19,9 @@ package alignment
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
@@ -36,7 +36,7 @@ type InvestigatorWrapper struct {
 	evaluator             *Evaluator
 	verdictTimeout        time.Duration
 	auditStore            audit.AuditStore
-	logger                *slog.Logger
+	logger                logr.Logger
 	mode                  config.AlignmentMode
 	canaryForceEscalation bool
 }
@@ -49,7 +49,7 @@ type InvestigatorWrapperConfig struct {
 	Evaluator             *Evaluator
 	VerdictTimeout        time.Duration
 	AuditStore            audit.AuditStore
-	Logger                *slog.Logger
+	Logger                logr.Logger
 	Mode                  config.AlignmentMode
 	CanaryForceEscalation bool
 }
@@ -64,8 +64,9 @@ func NewInvestigatorWrapper(cfg InvestigatorWrapperConfig) *InvestigatorWrapper 
 		panic("alignment.NewInvestigatorWrapper: Evaluator must not be nil")
 	}
 	logger := cfg.Logger
-	if logger == nil {
-		logger = slog.Default()
+	var zero logr.Logger
+	if logger == zero {
+		logger = logr.Discard()
 	}
 	mode := cfg.Mode
 	if mode == "" {
@@ -105,10 +106,10 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 	canary := RunCanary(ctx, w.evaluator)
 	canaryDegraded := !canary.Passed
 	if canaryDegraded {
-		w.logger.Warn("shadow agent canary failed: shadow model did not flag known-malicious content",
-			slog.String("signal", signal.Name),
-			slog.String("namespace", signal.Namespace),
-			slog.String("explanation", canary.Explanation),
+		w.logger.Info("shadow agent canary failed: shadow model did not flag known-malicious content",
+			"signal", signal.Name,
+			"namespace", signal.Namespace,
+			"explanation", canary.Explanation,
 		)
 	}
 
@@ -151,11 +152,11 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 			result.Warnings = append(result.Warnings,
 				"Shadow agent canary integrity check failed: shadow model may be compromised — forcing human review")
 		}
-		w.logger.Warn("canary degradation",
-			slog.String("signal", signal.Name),
-			slog.String("namespace", signal.Namespace),
-			slog.Bool("escalated", escalateCanary),
-			slog.String("mode", string(w.mode)),
+		w.logger.Info("canary degradation",
+			"signal", signal.Name,
+			"namespace", signal.Namespace,
+			"escalated", escalateCanary,
+			"mode", string(w.mode),
 		)
 	}
 
@@ -166,22 +167,22 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 			result.Warnings = append(result.Warnings,
 				fmt.Sprintf("Shadow agent alignment check flagged suspicious content: %s", verdict.Summary))
 		}
-		w.logger.Warn("shadow agent flagged suspicious content",
-			slog.String("signal", signal.Name),
-			slog.String("namespace", signal.Namespace),
-			slog.Int("flagged", verdict.Flagged),
-			slog.Int("total", verdict.Total),
-			slog.Int("pending", verdict.Pending),
-			slog.Bool("timed_out", verdict.TimedOut),
-			slog.String("summary", verdict.Summary),
-			slog.Bool("escalated", escalateVerdict),
-			slog.String("mode", string(w.mode)),
+		w.logger.Info("shadow agent flagged suspicious content",
+			"signal", signal.Name,
+			"namespace", signal.Namespace,
+			"flagged", verdict.Flagged,
+			"total", verdict.Total,
+			"pending", verdict.Pending,
+			"timed_out", verdict.TimedOut,
+			"summary", verdict.Summary,
+			"escalated", escalateVerdict,
+			"mode", string(w.mode),
 		)
 	} else if !canaryDegraded {
 		w.logger.Info("shadow agent alignment check passed",
-			slog.String("signal", signal.Name),
-			slog.String("namespace", signal.Namespace),
-			slog.Int("total", verdict.Total),
+			"signal", signal.Name,
+			"namespace", signal.Namespace,
+			"total", verdict.Total,
 		)
 	}
 

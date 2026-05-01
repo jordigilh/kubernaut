@@ -18,8 +18,9 @@ package transport
 
 import (
 	"fmt"
-	"log/slog"
 	"net/http"
+
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 )
@@ -33,18 +34,18 @@ import (
 type AuthHeadersTransport struct {
 	base    http.RoundTripper
 	headers []config.HeaderDefinition
-	logger  *slog.Logger
+	logger  logr.Logger
 }
 
 // NewAuthHeadersTransport wraps a base transport, injecting the given
 // headers into every outbound request. If base is nil, http.DefaultTransport is used.
 func NewAuthHeadersTransport(headers []config.HeaderDefinition, base http.RoundTripper) *AuthHeadersTransport {
-	return NewAuthHeadersTransportWithLogger(headers, base, nil)
+	return NewAuthHeadersTransportWithLogger(headers, base, logr.Discard())
 }
 
 // NewAuthHeadersTransportWithLogger wraps a base transport with structured logging.
 // Header values are redacted in log output per DD-HAPI-019-003 (G4).
-func NewAuthHeadersTransportWithLogger(headers []config.HeaderDefinition, base http.RoundTripper, logger *slog.Logger) *AuthHeadersTransport {
+func NewAuthHeadersTransportWithLogger(headers []config.HeaderDefinition, base http.RoundTripper, logger logr.Logger) *AuthHeadersTransport {
 	if base == nil {
 		base = http.DefaultTransport
 	}
@@ -69,12 +70,10 @@ func (t *AuthHeadersTransport) RoundTrip(req *http.Request) (*http.Response, err
 		}
 		reqClone.Header.Set(h.Name, val)
 
-		if t.logger != nil {
-			t.logger.Debug("injected auth header",
-				"header", h.Name,
-				"value", RedactHeaderValue(val, IsSensitiveSource(h)),
-			)
-		}
+		t.logger.V(1).Info("injected auth header",
+			"header", h.Name,
+			"value", RedactHeaderValue(val, IsSensitiveSource(h)),
+		)
 	}
 
 	return t.base.RoundTrip(reqClone)

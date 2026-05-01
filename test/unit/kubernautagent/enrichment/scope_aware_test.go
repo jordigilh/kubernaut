@@ -22,6 +22,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
+
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -154,16 +156,16 @@ var _ = Describe("TP-762: Scope-Aware LabelDetector (#762)", func() {
 
 			dynClient := fakedynamic.NewSimpleDynamicClientWithCustomListKinds(scheme,
 				map[schema.GroupVersionResource]string{
-					{Group: "", Version: "v1", Resource: "nodes"}:                                          "NodeList",
-					{Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"}:             "HorizontalPodAutoscalerList",
-					{Group: "policy", Version: "v1", Resource: "poddisruptionbudgets"}:                     "PodDisruptionBudgetList",
-					{Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"}:                "NetworkPolicyList",
-					{Group: "", Version: "v1", Resource: "resourcequotas"}:                                  "ResourceQuotaList",
+					{Group: "", Version: "v1", Resource: "nodes"}:                               "NodeList",
+					{Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"}: "HorizontalPodAutoscalerList",
+					{Group: "policy", Version: "v1", Resource: "poddisruptionbudgets"}:          "PodDisruptionBudgetList",
+					{Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"}:    "NetworkPolicyList",
+					{Group: "", Version: "v1", Resource: "resourcequotas"}:                      "ResourceQuotaList",
 				}, node)
 			mapper := newSimpleRESTMapper()
 			addLabelDetectorKinds(mapper)
 
-			ld := enrichment.NewLabelDetector(dynClient, mapper)
+			ld := enrichment.NewLabelDetector(dynClient, mapper, logr.Discard())
 			labels, _, err := ld.DetectLabels(context.Background(), "Node", "worker-1", "kube-system", nil)
 			Expect(err).NotTo(HaveOccurred(),
 				"UT-KA-762-005: LabelDetector must fetch Node using cluster-scoped client")
@@ -183,7 +185,7 @@ var _ = Describe("TP-762: Scope-Aware LabelDetector (#762)", func() {
 			mapper := newSimpleRESTMapper()
 			addLabelDetectorKinds(mapper)
 
-			ld := enrichment.NewLabelDetector(dynClient, mapper)
+			ld := enrichment.NewLabelDetector(dynClient, mapper, logr.Discard())
 			labels, _, err := ld.DetectLabels(context.Background(), "Node", "worker-1", "", nil)
 			Expect(err).NotTo(HaveOccurred(),
 				"UT-KA-762-006: should not error when namespace is empty")

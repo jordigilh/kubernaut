@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
@@ -98,12 +99,12 @@ func NewAllTools(ds WorkflowDiscoveryClient) []tools.Tool {
 // RegisterAll registers all 5 custom tools (3 DS workflow tools + 2 resource context tools)
 // into the given registry. Pass nil for any dependency to create tools that will fail at
 // execution time rather than registration time.
-func RegisterAll(reg *registry.Registry, dsOgenClient WorkflowDiscoveryClient, dsClient enrichment.DataStorageClient, k8sClient enrichment.K8sClient) {
+func RegisterAll(reg *registry.Registry, dsOgenClient WorkflowDiscoveryClient, dsClient enrichment.DataStorageClient, k8sClient enrichment.K8sClient, logger logr.Logger) {
 	for _, t := range NewAllTools(dsOgenClient) {
 		reg.Register(t)
 	}
-	reg.Register(NewNamespacedResourceContextTool(dsClient, k8sClient))
-	reg.Register(NewClusterResourceContextTool(dsClient, k8sClient))
+	reg.Register(NewNamespacedResourceContextTool(dsClient, k8sClient, logger))
+	reg.Register(NewClusterResourceContextTool(dsClient, k8sClient, logger))
 }
 
 // signalFromContext extracts the SignalContext from ctx. Workflow discovery
@@ -121,8 +122,10 @@ func signalFromContext(ctx context.Context, toolName string) (katypes.SignalCont
 
 type listActionsTool struct{ ds WorkflowDiscoveryClient }
 
-func (t *listActionsTool) Name() string               { return "list_available_actions" }
-func (t *listActionsTool) Description() string         { return "List available remediation action types from DataStorage" }
+func (t *listActionsTool) Name() string { return "list_available_actions" }
+func (t *listActionsTool) Description() string {
+	return "List available remediation action types from DataStorage"
+}
 func (t *listActionsTool) Parameters() json.RawMessage { return listAvailableActionsSchema }
 
 func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
@@ -162,8 +165,10 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 
 type listWorkflowsTool struct{ ds WorkflowDiscoveryClient }
 
-func (t *listWorkflowsTool) Name() string               { return "list_workflows" }
-func (t *listWorkflowsTool) Description() string         { return "Search for workflows by action type in DataStorage" }
+func (t *listWorkflowsTool) Name() string { return "list_workflows" }
+func (t *listWorkflowsTool) Description() string {
+	return "Search for workflows by action type in DataStorage"
+}
 func (t *listWorkflowsTool) Parameters() json.RawMessage { return listWorkflowsSchemaJSON }
 
 func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
@@ -207,7 +212,7 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 
 type getWorkflowTool struct{ ds WorkflowDiscoveryClient }
 
-func (t *getWorkflowTool) Name() string               { return "get_workflow" }
+func (t *getWorkflowTool) Name() string                { return "get_workflow" }
 func (t *getWorkflowTool) Description() string         { return "Get a specific workflow definition by ID" }
 func (t *getWorkflowTool) Parameters() json.RawMessage { return getWorkflowSchemaJSON }
 

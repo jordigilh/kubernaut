@@ -18,12 +18,12 @@ package server_test
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/server"
@@ -37,14 +37,12 @@ var _ = Describe("Response Mapper — #433", func() {
 		store   *session.Store
 		manager *session.Manager
 		handler *server.Handler
-		logger  *slog.Logger
 	)
 
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
-		logger = slog.Default()
-		manager = session.NewManager(store, logger)
-		handler = server.NewHandler(manager, nil, logger)
+		manager = session.NewManager(store, logr.Discard())
+		handler = server.NewHandler(manager, nil, logr.Discard())
 	})
 
 	Describe("UT-KA-433-MAPPER-001: IncidentID is populated from session metadata", func() {
