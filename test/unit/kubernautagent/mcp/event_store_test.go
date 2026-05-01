@@ -29,36 +29,31 @@ import (
 
 var _ = Describe("DelegatingEventStore + SessionClosedHandler + Janitor — PR4 OPS-01 DES-01", func() {
 
-	Describe("UT-KA-SESS-009: EventStore.Open delegates to inner store", func() {
-		It("should forward Open calls to the wrapped EventStore", func() {
-			inner := mcpinternal.NewInMemoryEventStore()
-			des := mcpinternal.NewDelegatingEventStore(inner)
+	Describe("UT-KA-SESS-009: EventStore.Open delegates to SDK MemoryEventStore", func() {
+		It("should forward Open calls to the wrapped SDK EventStore", func() {
+			des := mcpinternal.NewDelegatingEventStore()
 
-			err := des.Open(context.Background(), "mcp-session-001")
+			err := des.Open(context.Background(), "mcp-session-001", "stream-1")
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
 	Describe("UT-KA-SESS-010: EventStore.SessionClosed publishes to closedSessions channel", func() {
 		It("should send sessionID to the closedSessions channel on SessionClosed", func() {
-			inner := mcpinternal.NewInMemoryEventStore()
-			des := mcpinternal.NewDelegatingEventStore(inner)
+			des := mcpinternal.NewDelegatingEventStore()
 
-			// Register the mapping before closing
 			des.RegisterMCPSession("mcp-sess-001", "interactive-sess-001")
 
 			err := des.SessionClosed(context.Background(), "mcp-sess-001")
 			Expect(err).NotTo(HaveOccurred())
 
-			// Verify event appears on the closed channel
 			Eventually(des.ClosedSessions()).Should(Receive(Equal("mcp-sess-001")))
 		})
 	})
 
 	Describe("UT-KA-SESS-006: MCP disconnect cleanup — SessionClosed triggers Release", func() {
 		It("should trigger session Release when SessionClosed is called", func() {
-			inner := mcpinternal.NewInMemoryEventStore()
-			des := mcpinternal.NewDelegatingEventStore(inner)
+			des := mcpinternal.NewDelegatingEventStore()
 
 			released := make(chan string, 1)
 			handler := mcpinternal.NewSessionClosedHandler(des, func(mcpSessionID string) {
@@ -79,8 +74,7 @@ var _ = Describe("DelegatingEventStore + SessionClosedHandler + Janitor — PR4 
 
 	Describe("UT-KA-SESS-011: SessionClosedHandler calls Release with reason disconnect", func() {
 		It("should invoke the release callback with the closed session ID", func() {
-			inner := mcpinternal.NewInMemoryEventStore()
-			des := mcpinternal.NewDelegatingEventStore(inner)
+			des := mcpinternal.NewDelegatingEventStore()
 
 			var receivedID string
 			handler := mcpinternal.NewSessionClosedHandler(des, func(mcpSessionID string) {

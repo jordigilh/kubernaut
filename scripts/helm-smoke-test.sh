@@ -1480,13 +1480,15 @@ for d in docs:
       "interactive: block not found when interactive.enabled=true"
   fi
 
-  # HELM-02: interactive.enabled=true adds Lease RBAC
+  # HELM-02: interactive.enabled=true adds Lease RBAC under namespace-scoped Role
   if echo "$interactive_out" | grep -q "coordination.k8s.io" && \
-     echo "$interactive_out" | grep -q "leases"; then
-    tap_ok "HELM-02: interactive.enabled=true adds coordination.k8s.io/leases RBAC"
+     echo "$interactive_out" | grep -q "leases" && \
+     echo "$interactive_out" | grep -q "kind: Role" && \
+     echo "$interactive_out" | grep -q "kubernaut-agent-interactive-leases"; then
+    tap_ok "HELM-02: interactive.enabled=true adds coordination.k8s.io/leases under namespace-scoped Role"
   else
     tap_not_ok "HELM-02: Lease RBAC" \
-      "coordination.k8s.io/leases RBAC not found when interactive enabled"
+      "coordination.k8s.io/leases RBAC not found under namespace-scoped Role when interactive enabled"
   fi
 
   # HELM-03: interactive.enabled=true adds impersonate RBAC

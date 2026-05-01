@@ -35,7 +35,7 @@ var _ = Describe("Prometheus Metrics Endpoint", func() {
 
 	BeforeEach(func() {
 		registry := scenarios.DefaultRegistry()
-		router := handlers.NewMetricsRouter(registry, false)
+		router := handlers.NewMetricsRouter(registry, false, "")
 		server = httptest.NewServer(router)
 	})
 

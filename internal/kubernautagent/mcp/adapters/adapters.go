@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
+	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
@@ -80,6 +81,32 @@ func ExtractContent(result investigator.LoopResult) (string, error) {
 
 // Compile-time interface compliance check.
 var _ tools.InvestigatorRunner = (*InvestigatorRunnerAdapter)(nil)
+
+// ReconRunnerAdapter bridges the mcp.ReconRunner interface to the real
+// investigator.Investigator.RunInteractiveTurn method for reconstruction.
+type ReconRunnerAdapter struct {
+	inv *investigator.Investigator
+}
+
+// NewReconRunnerAdapter creates an adapter for reconstruction turns.
+func NewReconRunnerAdapter(inv *investigator.Investigator) *ReconRunnerAdapter {
+	return &ReconRunnerAdapter{inv: inv}
+}
+
+// RunReconTurn implements mcp.ReconRunner using RunInteractiveTurn.
+func (a *ReconRunnerAdapter) RunReconTurn(ctx context.Context, messages []mcpinternal.ReconMessage, correlationID string) (string, error) {
+	llmMessages := make([]llm.Message, len(messages))
+	for i, m := range messages {
+		llmMessages[i] = llm.Message{Role: m.Role, Content: m.Content}
+	}
+
+	result, err := a.inv.RunInteractiveTurn(ctx, llmMessages, correlationID)
+	if err != nil {
+		return "", fmt.Errorf("reconstruction turn: %w", err)
+	}
+
+	return ExtractContent(result)
+}
 
 // WorkflowCatalogAdapter bridges the MCP tools.WorkflowCatalog interface
 // to the real wfclient.WorkflowQuerier.ResolveWorkflowCatalogMetadata method.

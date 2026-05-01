@@ -34,10 +34,11 @@ var _ = Describe("Helm RBAC — PR4 H1 BR-INTERACTIVE-001", func() {
 		helmTemplate = string(data)
 	})
 
-	Describe("UT-KA-HELM-001: coordination.k8s.io/leases RBAC present in ClusterRole", func() {
+	Describe("UT-KA-HELM-001: coordination.k8s.io/leases RBAC present in namespace-scoped Role", func() {
 		It("should include Lease RBAC rules for interactive sessions", func() {
 			Expect(helmTemplate).To(ContainSubstring("coordination.k8s.io"))
 			Expect(helmTemplate).To(ContainSubstring("leases"))
+			Expect(helmTemplate).To(ContainSubstring("kubernaut-agent-interactive-leases"))
 		})
 	})
 
@@ -49,8 +50,8 @@ var _ = Describe("Helm RBAC — PR4 H1 BR-INTERACTIVE-001", func() {
 			for i, line := range lines {
 				if strings.Contains(line, "coordination.k8s.io") {
 					foundCoordination = true
-					// Verify there's an if-guard within 5 lines above
-					contextStart := i - 5
+					// Verify there's an if-guard within 15 lines above (Role block is conditionally rendered)
+					contextStart := i - 15
 					if contextStart < 0 {
 						contextStart = 0
 					}

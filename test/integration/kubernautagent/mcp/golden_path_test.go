@@ -26,9 +26,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	coordinationv1 "k8s.io/api/coordination/v1"
-	k8sruntime "k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
@@ -65,35 +62,34 @@ func (m *goldenPathAutoMgr) CancelInvestigation(_ string) error {
 	return nil
 }
 
-var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001", func() {
+var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001", func() {
 	var (
 		tool    *mcptools.InvestigateTool
 		runner  *goldenPathRunner
 		autoMgr *goldenPathAutoMgr
-		logger  *slog.Logger
+		nsName  string
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		nsName = uniqueNamespace("golden")
+		createNamespace(context.Background(), sharedK8sClient, nsName)
+
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		runner = &goldenPathRunner{response: "The OOM was caused by memory leak in deployment/foo", delay: 50 * time.Millisecond}
 		recon := &goldenPathRecon{}
 		autoMgr = &goldenPathAutoMgr{}
 
-		scheme := k8sruntime.NewScheme()
-		Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-
-		sessMgr := mcpinternal.NewLeaseSessionManagerConcrete(fakeClient, "kubernaut", logger)
+		sessMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 		tool = mcptools.NewInvestigateTool(sessMgr, runner, recon, mcptools.WithAutonomousManager(autoMgr))
 	})
 
-	Describe("IT-KA-GOLDEN-001: Full lifecycle: status → takeover → message → status → complete", func() {
+	Describe("IT-KA-GOLDEN-001: Full lifecycle: status -> takeover -> message -> status -> complete", func() {
 		It("should complete the full interactive lifecycle without errors or goroutine leaks", func() {
 			goroutinesBefore := runtime.NumGoroutine()
 			user := mcpinternal.UserInfo{Username: "alice@example.com"}
 			ctx := context.Background()
 
-			// Step 1: Status → autonomous
+			// Step 1: Status -> autonomous
 			statusResult, err := tool.Handle(ctx, mcptools.InvestigateInput{
 				RRID: "rr-golden-001", Action: mcptools.ActionStatus,
 			}, user)
@@ -120,7 +116,7 @@ var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001", func() {
 			Expect(msgResult.Status).To(Equal("message_received"))
 			Expect(msgResult.Response).To(ContainSubstring("OOM"))
 
-			// Step 4: Status → interactive
+			// Step 4: Status -> interactive
 			statusResult2, err := tool.Handle(ctx, mcptools.InvestigateInput{
 				RRID: "rr-golden-001", Action: mcptools.ActionStatus,
 			}, user)

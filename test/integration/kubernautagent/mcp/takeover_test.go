@@ -52,69 +52,6 @@ func (m *delayedMockRunner) RunInteractiveTurn(_ context.Context, _ []tools.LLMM
 	return m.response, nil
 }
 
-// mockLeaseSessionManager provides a fake in-memory SessionManager for integration tests.
-type mockLeaseSessionManager struct {
-	mu       sync.Mutex
-	sessions map[string]*mcpinternal.InteractiveSession
-	rrIndex  map[string]string
-}
-
-func newMockLeaseSessionManager() *mockLeaseSessionManager {
-	return &mockLeaseSessionManager{
-		sessions: make(map[string]*mcpinternal.InteractiveSession),
-		rrIndex:  make(map[string]string),
-	}
-}
-
-func (m *mockLeaseSessionManager) Takeover(_ context.Context, rrID string, user mcpinternal.UserInfo) (*mcpinternal.InteractiveSession, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if _, held := m.rrIndex[rrID]; held {
-		return nil, mcpinternal.ErrLeaseHeld
-	}
-	sessionID := fmt.Sprintf("int-sess-%d", time.Now().UnixNano())
-	sess := &mcpinternal.InteractiveSession{
-		SessionID:     sessionID,
-		CorrelationID: rrID,
-		ActingUser:    user,
-		StartedAt:     time.Now(),
-	}
-	m.sessions[sessionID] = sess
-	m.rrIndex[rrID] = sessionID
-	return sess, nil
-}
-
-func (m *mockLeaseSessionManager) Release(sessionID string, _ string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	sess, ok := m.sessions[sessionID]
-	if !ok {
-		return mcpinternal.ErrSessionNotFound
-	}
-	delete(m.rrIndex, sess.CorrelationID)
-	delete(m.sessions, sessionID)
-	return nil
-}
-
-func (m *mockLeaseSessionManager) GetDriver(rrID string) (*mcpinternal.InteractiveSession, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	sessID, ok := m.rrIndex[rrID]
-	if !ok {
-		return nil, nil
-	}
-	return m.sessions[sessID], nil
-}
-
-func (m *mockLeaseSessionManager) IsDriverActive(rrID string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	_, ok := m.rrIndex[rrID]
-	return ok
-}
-
-func (m *mockLeaseSessionManager) TouchActivity(_ string) {}
-
 // mockReconIT mocks ContextReconstructor for integration tests.
 type mockReconIT struct{}
 
@@ -122,7 +59,7 @@ func (m *mockReconIT) Reconstruct(_ context.Context, _ string, _ string) ([]mcpi
 	return nil, nil
 }
 
-// mockAutoMgrIT mocks AutonomousSessionManager backed by a real session.Manager.
+// mockAutoMgrIT wraps a real session.Manager for autonomous session management in tests.
 type mockAutoMgrIT struct {
 	mgr *session.Manager
 }
@@ -139,11 +76,13 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 
 	Describe("IT-KA-TAKE-001: Takeover mid-LLM-turn — autonomous cancelled after turn completes", func() {
 		It("should cancel the autonomous session and acquire the interactive lease", func() {
+			nsName := uniqueNamespace("take01")
+			createNamespace(context.Background(), sharedK8sClient, nsName)
+
 			store := session.NewStore(30 * time.Minute)
 			mgr := session.NewManager(store, slog.Default(), nil, nil)
 			autoMgr := &mockAutoMgrIT{mgr: mgr}
 
-			// Start an autonomous investigation (simulates 200ms LLM processing)
 			var autonomousCompleted atomic.Bool
 			sessionID, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
 				select {
@@ -156,7 +95,6 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			}, map[string]string{"remediation_id": "rr-it-001"})
 			Expect(err).NotTo(HaveOccurred())
 
-			// Wait for it to be running
 			Eventually(func() session.Status {
 				s, _ := mgr.GetSession(sessionID)
 				if s == nil {
@@ -165,8 +103,8 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 				return s.Status
 			}).Should(Equal(session.StatusRunning))
 
-			// Now perform takeover via the InvestigateTool
-			leaseMgr := newMockLeaseSessionManager()
+			logger := slog.Default()
+			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 			runner := &delayedMockRunner{delay: 10 * time.Millisecond, response: "interactive response"}
 			recon := &mockReconIT{}
 			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, tools.WithAutonomousManager(autoMgr))
@@ -182,7 +120,6 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			Expect(out.SessionID).NotTo(BeEmpty())
 			Expect(out.Status).To(Equal("takeover_started"))
 
-			// Autonomous session should now be cancelled
 			Eventually(func() session.Status {
 				s, _ := mgr.GetSession(sessionID)
 				if s == nil {
@@ -191,21 +128,23 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 				return s.Status
 			}).Should(Equal(session.StatusCancelled))
 
-			// Interactive session is active
 			Expect(leaseMgr.IsDriverActive("rr-it-001")).To(BeTrue())
 		})
 	})
 
 	Describe("IT-KA-MCP-003: Concurrent tools/call requests are serialized by session mutex via real MCP SDK", func() {
 		It("should process concurrent messages sequentially for the same session", func() {
-			leaseMgr := newMockLeaseSessionManager()
+			nsName := uniqueNamespace("conc")
+			createNamespace(context.Background(), sharedK8sClient, nsName)
+
+			logger := slog.Default()
+			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 			runner := &delayedMockRunner{delay: 30 * time.Millisecond, response: "llm-response"}
 			recon := &mockReconIT{}
 			store := session.NewStore(30 * time.Minute)
 			mgr := session.NewManager(store, slog.Default(), nil, nil)
 			autoMgr := &mockAutoMgrIT{mgr: mgr}
 
-			// Start autonomous session
 			_, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
 				<-ctx.Done()
 				return nil, ctx.Err()
@@ -215,7 +154,6 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, tools.WithAutonomousManager(autoMgr))
 			user := mcpinternal.UserInfo{Username: "alice@example.com"}
 
-			// Perform takeover first
 			takeoverInput := tools.InvestigateInput{
 				RRID:   "rr-concurrent-001",
 				Action: tools.ActionTakeover,
@@ -223,11 +161,10 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			_, err = tool.Handle(context.Background(), takeoverInput, user)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Build a real MCP server with the tool registered
 			handler, _ := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
 				AuthMiddleware: fakeAuthMiddleware("alice@example.com"),
 				Tools: mcpinternal.ToolDeps{
-					Investigate: tools.InvestigateRegistration(tool),
+					Investigate: tools.InvestigateRegistration(tool, nil, nil),
 				},
 			})
 
@@ -237,7 +174,6 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			ts := httptest.NewServer(r)
 			defer ts.Close()
 
-			// Send 3 concurrent message requests
 			var wg sync.WaitGroup
 			results := make([]int, 3)
 			startTimes := make([]time.Time, 3)
@@ -263,13 +199,9 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			}
 			wg.Wait()
 
-			// All 3 calls should have succeeded
 			Expect(results[0] + results[1] + results[2]).To(Equal(3))
-
-			// Verify serialization: total time >= 3 * delay (not parallel)
 			Expect(runner.calls.Load()).To(Equal(int32(3)))
 
-			// Find overall duration (from earliest start to latest end)
 			var earliest, latest time.Time
 			for i := 0; i < 3; i++ {
 				if earliest.IsZero() || startTimes[i].Before(earliest) {
@@ -280,7 +212,6 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 				}
 			}
 			totalDuration := latest.Sub(earliest)
-			// If truly serialized, total >= 3*30ms = 90ms. Parallel would be ~30ms.
 			Expect(totalDuration).To(BeNumerically(">=", 80*time.Millisecond),
 				"concurrent messages should be serialized (total time >= 80ms)")
 		})

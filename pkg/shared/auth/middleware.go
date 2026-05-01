@@ -30,8 +30,13 @@ import (
 type ContextKey string
 
 const (
-	// UserContextKey is the context key for the authenticated user identity.
+	// UserContextKey is the context key for the authenticated user identity (string).
 	UserContextKey ContextKey = "user"
+
+	// UserInfoContextKey is the context key for the full authenticated user info
+	// including group memberships. Required for interactive MCP sessions (#703)
+	// where impersonation needs both username and groups.
+	UserInfoContextKey ContextKey = "userInfo"
 )
 
 // Middleware provides authentication and authorization for HTTP requests.
@@ -135,7 +140,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
-		user, err := m.authenticator.ValidateToken(r.Context(), token)
+		userInfo, err := m.authenticator.ValidateTokenFull(r.Context(), token)
 		if err != nil {
 			if errors.Is(err, ErrTokenInvalid) {
 				m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
@@ -149,6 +154,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 			m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authentication service unavailable")
 			return
 		}
+		user := userInfo.Username
 
 		m.logger.V(2).Info("Token validated",
 			"user", user,
@@ -192,6 +198,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		)
 
 		ctx := context.WithValue(r.Context(), UserContextKey, user)
+		ctx = context.WithValue(ctx, UserInfoContextKey, userInfo)
 		r.Header.Set("X-Auth-Request-User", user)
 
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -208,6 +215,19 @@ func GetUserFromContext(ctx context.Context) string {
 		return user
 	}
 	return ""
+}
+
+// GetUserInfoFromContext extracts the full authenticated user info (username + groups)
+// from the request context. Returns zero-value UserInfo if not present.
+// SEC-CRIT-02 (#703): Required for impersonation to propagate group memberships.
+func GetUserInfoFromContext(ctx context.Context) UserInfo {
+	if ctx == nil {
+		return UserInfo{}
+	}
+	if info, ok := ctx.Value(UserInfoContextKey).(UserInfo); ok {
+		return info
+	}
+	return UserInfo{}
 }
 
 // stripImpersonationHeaders removes all Kubernetes impersonation headers from the

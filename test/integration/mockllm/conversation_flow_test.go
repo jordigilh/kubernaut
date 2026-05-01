@@ -35,7 +35,7 @@ var _ = Describe("Full Conversation Flows", func() {
 
 	BeforeEach(func() {
 		registry := scenarios.DefaultRegistry()
-		router := handlers.NewRouter(registry, false)
+		router := handlers.NewRouter(registry, false, "")
 		server = httptest.NewServer(router)
 	})
 
@@ -77,7 +77,7 @@ var _ = Describe("Full Conversation Flows", func() {
 			resp2.Body.Close()
 			Expect(r2.Choices[0].FinishReason).To(Equal("stop"))
 			Expect(r2.Choices[0].Message.Content).NotTo(BeNil())
-			Expect(*r2.Choices[0].Message.Content).To(ContainSubstring("Root Cause"))
+			Expect(*r2.Choices[0].Message.Content).To(ContainSubstring("root_cause_analysis"))
 		})
 	})
 
@@ -124,7 +124,7 @@ var _ = Describe("Full Conversation Flows", func() {
 			Expect(json.NewDecoder(resp.Body).Decode(&finalResult)).To(Succeed())
 			resp.Body.Close()
 			Expect(finalResult.Choices[0].FinishReason).To(Equal("stop"))
-			Expect(*finalResult.Choices[0].Message.Content).To(ContainSubstring("Root Cause"))
+			Expect(*finalResult.Choices[0].Message.Content).To(ContainSubstring("root_cause_analysis"))
 		})
 	})
 

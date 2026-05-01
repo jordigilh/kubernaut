@@ -34,6 +34,10 @@ import (
 func main() {
 	cfg := config.LoadFromEnv()
 
+	if err := config.ValidateMode(cfg.Mode); err != nil {
+		log.Fatalf("Configuration error: %v", err)
+	}
+
 	overrides, err := config.LoadYAMLOverrides(cfg.ConfigPath)
 	if err != nil {
 		log.Fatalf("Failed to load YAML overrides from %s: %v", cfg.ConfigPath, err)
@@ -42,7 +46,7 @@ func main() {
 	registry := scenarios.DefaultRegistryFull(overrides, cfg.GoldenDir)
 	m := mockmetrics.NewMetrics()
 
-	router := handlers.NewFullRouterWithMetrics(registry, cfg.ForceText, cfg.RecordHeaders, nil, m, overrides)
+	router := handlers.NewFullRouterWithMetrics(registry, cfg.ForceText, cfg.Mode, cfg.RecordHeaders, nil, m, overrides)
 
 	srv := &http.Server{
 		Handler:      router,
@@ -56,7 +60,7 @@ func main() {
 		log.Fatalf("Failed to listen on %s: %v", cfg.ListenAddr(), err)
 	}
 
-	log.Printf("Mock LLM server starting on %s (force_text=%v, mode=%q)", cfg.ListenAddr(), cfg.ForceText, overrides.Mode)
+	log.Printf("Mock LLM server starting on %s (mode=%q, force_text=%v)", cfg.ListenAddr(), cfg.Mode, cfg.ForceText)
 
 	errCh := make(chan error, 1)
 	go func() {

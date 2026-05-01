@@ -81,11 +81,17 @@ type ToolDeps struct {
 type MCPDeps struct {
 	AuthMiddleware func(http.Handler) http.Handler
 	Tools          ToolDeps
+	EventStore     *DelegatingEventStore // nil = no stream resumption or disconnect detection
 }
 
 // userFromContext extracts the authenticated user identity from the request
-// context (set by auth middleware via sharedauth.UserContextKey).
+// context (set by auth middleware). SEC-CRIT-02: uses GetUserInfoFromContext to
+// propagate group memberships for impersonation in interactive sessions.
 func userFromContext(ctx context.Context) UserInfo {
+	info := sharedauth.GetUserInfoFromContext(ctx)
+	if info.Username != "" {
+		return UserInfo{Username: info.Username, Groups: info.Groups}
+	}
 	username := sharedauth.GetUserFromContext(ctx)
 	return UserInfo{Username: username}
 }
@@ -123,9 +129,16 @@ func BootstrapMCP(deps MCPDeps) (http.Handler, *MCPServer) {
 	srv := NewMCPServer()
 	srv.registerTools(deps.Tools)
 
+	var opts *mcpsdk.StreamableHTTPOptions
+	if deps.EventStore != nil {
+		opts = &mcpsdk.StreamableHTTPOptions{
+			EventStore: deps.EventStore,
+		}
+	}
+
 	mcpHandler := mcpsdk.NewStreamableHTTPHandler(func(_ *http.Request) *mcpsdk.Server {
 		return srv.Server()
-	}, nil)
+	}, opts)
 
 	handler := deps.AuthMiddleware(mcpHandler)
 	return handler, srv

@@ -50,7 +50,7 @@ var _ = Describe("MCP Tool Registration — PR6a", func() {
 			deps := mcpinternal.MCPDeps{
 				AuthMiddleware: func(next http.Handler) http.Handler { return next },
 				Tools: mcpinternal.ToolDeps{
-					Investigate:    mcptools.InvestigateRegistration(stubInvestigate()),
+					Investigate:    mcptools.InvestigateRegistration(stubInvestigate(), nil, nil),
 					Enrich:         mcptools.EnrichRegistration(stubEnrich()),
 					SelectWorkflow: mcptools.SelectWorkflowRegistration(stubSelectWorkflow()),
 				},
@@ -104,7 +104,7 @@ var _ = Describe("MCP Tool Registration — PR6a", func() {
 			deps := mcpinternal.MCPDeps{
 				AuthMiddleware: func(next http.Handler) http.Handler { return next },
 				Tools: mcpinternal.ToolDeps{
-					Investigate: mcptools.InvestigateRegistration(stubInvestigate()),
+					Investigate: mcptools.InvestigateRegistration(stubInvestigate(), nil, nil),
 				},
 			}
 

@@ -24,8 +24,12 @@ import (
 )
 
 // InvestigateRegistration returns a ToolRegistration that registers the
-// kubernaut_investigate tool with the MCP SDK server.
-func InvestigateRegistration(tool *InvestigateTool) mcpinternal.ToolRegistration {
+// kubernaut_investigate tool with the MCP SDK server. When eventStore is
+// non-nil, successful session starts register the MCP→interactive session
+// mapping for disconnect detection (DD-INTERACTIVE-002).
+// When notifier is non-nil, successful start/takeover registers
+// ServerSession.Log as the session's notification callback (UX-01).
+func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.DelegatingEventStore, notifier *mcpinternal.SessionNotifier) mcpinternal.ToolRegistration {
 	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
 		mcpsdk.AddTool(server, &mcpsdk.Tool{
 			Name:        "kubernaut_investigate",
@@ -33,6 +37,21 @@ func InvestigateRegistration(tool *InvestigateTool) mcpinternal.ToolRegistration
 		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input InvestigateInput) (*mcpsdk.CallToolResult, InvestigateOutput, error) {
 			user := userFromCtx(ctx)
 			output, err := tool.Handle(ctx, input, user)
+			if err == nil && output.SessionID != "" {
+				if eventStore != nil {
+					eventStore.RegisterMCPSession(req.Session.ID(), output.SessionID)
+				}
+				if notifier != nil && (output.Status == "started" || output.Status == "takeover_started") {
+					sess := req.Session
+					notifier.Register(output.SessionID, func(msg string) {
+						_ = sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{
+							Level:  "warning",
+							Logger: "kubernaut-interactive",
+							Data:   msg,
+						})
+					})
+				}
+			}
 			return nil, output, err
 		})
 	}

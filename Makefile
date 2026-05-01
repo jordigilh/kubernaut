@@ -330,6 +330,19 @@ test-integration-kubernautagent: generate ginkgo setup-envtest ensure-coverage-d
 		go tool cover -func=coverage_integration_kubernautagent.out | grep total || echo "No coverage data"; \
 	fi
 
+# KubernautAgent interactive-mode integration tests (label-filtered subset)
+.PHONY: test-integration-kubernautagent-interactive
+test-integration-kubernautagent-interactive: ginkgo ensure-coverage-dirs ## Run interactive-mode integration tests (label: interactive)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 kubernautagent-interactive - Integration Tests (label: interactive)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --label-filter="interactive" --coverprofile=coverage_integration_kubernautagent_interactive.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/...,github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools/... ./test/integration/kubernautagent/mcp/...
+	@if [ -f coverage_integration_kubernautagent_interactive.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_integration_kubernautagent_interactive.out"; \
+		go tool cover -func=coverage_integration_kubernautagent_interactive.out | grep total || echo "No coverage data"; \
+	fi
+
 # DataStorage integration tests: exclude generated code from coverage
 .PHONY: test-integration-datastorage
 test-integration-datastorage: generate ginkgo setup-envtest ensure-coverage-dirs ## Run datastorage integration tests (coverage excludes ogen-client)

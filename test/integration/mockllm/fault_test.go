@@ -34,7 +34,7 @@ var _ = Describe("Fault Injection API", func() {
 
 	BeforeEach(func() {
 		registry := scenarios.DefaultRegistry()
-		router := handlers.NewFullRouter(registry, false, "", nil)
+		router := handlers.NewFullRouter(registry, false, "", "", nil)
 		server = httptest.NewServer(router)
 	})
 
