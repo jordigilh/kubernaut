@@ -379,7 +379,8 @@ type AIAnalysisStatus struct {
 	NeedsHumanReview bool `json:"needsHumanReview"`
 	// Reason why human review needed (when NeedsHumanReview=true)
 	// BR-HAPI-197: Maps to HAPI's human_review_reason enum values
-	// +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete
+	// BR-AI-601: alignment_check_failed added for shadow agent alignment verdicts
+	// +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete;alignment_check_failed
 	// +optional
 	HumanReviewReason string `json:"humanReviewReason,omitempty"`
 

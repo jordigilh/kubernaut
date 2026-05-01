@@ -460,7 +460,7 @@ func mapHumanReviewReason(reason string) (agentclient.HumanReviewReason, bool) {
 	case "llm_parsing_error":
 		return agentclient.HumanReviewReasonLlmParsingError, false
 	case "alignment_check_failed":
-		return agentclient.HumanReviewReasonInvestigationInconclusive, false
+		return agentclient.HumanReviewReasonAlignmentCheckFailed, false
 	}
 
 	switch {
