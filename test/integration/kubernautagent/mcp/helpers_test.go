@@ -188,6 +188,7 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 	stack.MCPServer = srv
 
 	r := chi.NewRouter()
+	r.Use(fakeAuthMiddlewareWithUserInfo)
 	r.Handle("/mcp", handler)
 	r.Handle("/mcp/*", handler)
 	stack.Server = httptest.NewServer(r)

@@ -79,6 +79,8 @@ type ToolDeps struct {
 
 // MCPDeps holds the dependencies needed to bootstrap the MCP server.
 type MCPDeps struct {
+	// AuthMiddleware is required (non-nil) as proof that auth is available.
+	// BootstrapMCP does NOT apply it; the caller must apply it at router level.
 	AuthMiddleware func(http.Handler) http.Handler
 	Tools          ToolDeps
 	EventStore     *DelegatingEventStore // nil = no stream resumption or disconnect detection
@@ -116,11 +118,16 @@ func (s *MCPServer) registerTools(deps ToolDeps) {
 }
 
 // BootstrapMCP creates a fully configured MCP handler with tools registered
-// via the MCP SDK's AddTool. Returns the handler and the MCPServer for
+// via the MCP SDK's AddTool. Returns the raw handler and the MCPServer for
 // lifecycle management.
 //
-// Panics if AuthMiddleware is nil — the MCP endpoint must never be exposed
-// without authentication (defense-in-depth, DD-AUTH-MCP-001).
+// Authentication is NOT applied internally — the caller is responsible for
+// wrapping the returned handler with auth middleware (e.g., via chi r.Use).
+// This matches the production pattern in cmd/kubernautagent/main.go where
+// auth is applied once at the /api/v1 router level.
+//
+// Panics if AuthMiddleware is nil — defense-in-depth guard ensuring the caller
+// has auth available even though BootstrapMCP does not apply it (DD-AUTH-MCP-001).
 func BootstrapMCP(deps MCPDeps) (http.Handler, *MCPServer) {
 	if deps.AuthMiddleware == nil {
 		panic("MCP interactive mode enabled but auth middleware is nil — refusing to start without authentication")
@@ -140,40 +147,6 @@ func BootstrapMCP(deps MCPDeps) (http.Handler, *MCPServer) {
 		return srv.Server()
 	}, opts)
 
-	handler := deps.AuthMiddleware(mcpHandler)
-	return handler, srv
-}
-
-// BootstrapMCPNoAuth creates a configured MCP handler without auth middleware.
-// Used ONLY by integration tests that provide their own auth context.
-func BootstrapMCPNoAuth(toolDeps ToolDeps) (http.Handler, *MCPServer) {
-	srv := NewMCPServer()
-	srv.registerTools(toolDeps)
-
-	mcpHandler := mcpsdk.NewStreamableHTTPHandler(func(_ *http.Request) *mcpsdk.Server {
-		return srv.Server()
-	}, nil)
-
 	return mcpHandler, srv
 }
 
-// NewMCPHandler creates an http.Handler for the MCP server endpoint.
-// When enabled=false, returns nil (no route to mount).
-// When enabled=true and authMiddleware is nil, panics as a safety guard
-// against accidentally exposing the MCP endpoint without authentication.
-func NewMCPHandler(authMiddleware func(http.Handler) http.Handler, enabled bool) http.Handler {
-	if !enabled {
-		return nil
-	}
-
-	if authMiddleware == nil {
-		panic("MCP interactive mode enabled but auth middleware is nil — refusing to start without authentication")
-	}
-
-	srv := NewMCPServer()
-	handler := mcpsdk.NewStreamableHTTPHandler(func(_ *http.Request) *mcpsdk.Server {
-		return srv.Server()
-	}, nil)
-
-	return authMiddleware(handler)
-}
