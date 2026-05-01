@@ -116,7 +116,7 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 	observer := NewObserver(w.evaluator)
 	ctx = WithObserver(ctx, observer)
 
-	if signalContent := buildSignalInputContent(signal); signalContent != "" {
+	if signalContent := BuildSignalInputContent(signal); signalContent != "" {
 		observer.SubmitAsync(ctx, Step{
 			Index:   observer.NextStepIndex(),
 			Kind:    StepKindSignalInput,
@@ -221,10 +221,10 @@ func (w *InvestigatorWrapper) emitAlignmentAudit(ctx context.Context, signal kat
 	audit.StoreBestEffort(ctx, w.auditStore, event, w.logger)
 }
 
-// buildSignalInputContent assembles the signal fields that enter the primary
+// BuildSignalInputContent assembles the signal fields that enter the primary
 // LLM as system/user prompt content. Mirrors the user message format from
 // investigator.runRCA so the shadow evaluates the same text the model sees.
-func buildSignalInputContent(signal katypes.SignalContext) string {
+func BuildSignalInputContent(signal katypes.SignalContext) string {
 	if signal.Message == "" && signal.Name == "" {
 		return ""
 	}

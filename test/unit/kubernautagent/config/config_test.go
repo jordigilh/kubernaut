@@ -423,3 +423,88 @@ ai:
 		})
 	})
 })
+
+var _ = Describe("AlignmentCheck EffectiveLLM merge — BR-AI-601", func() {
+
+	var (
+		base    config.LLMConfig
+		runtime config.LLMRuntimeConfig
+	)
+
+	BeforeEach(func() {
+		base = config.LLMConfig{
+			Provider:        "openai",
+			AzureAPIVersion: "2024-02",
+			VertexProject:   "proj-base",
+			VertexLocation:  "us-central1",
+			BedrockRegion:   "us-east-1",
+			TLSCaFile:       "/certs/ca.pem",
+			OAuth2:          config.OAuth2Config{Enabled: true, TokenURL: "https://auth.example.com/token"},
+		}
+		runtime = config.LLMRuntimeConfig{
+			Model:    "gpt-4o",
+			Endpoint: "https://api.openai.com/v1",
+			APIKey:   "sk-base-key",
+		}
+	})
+
+	Describe("UT-GAP1-001: nil LLM override returns inputs unchanged", func() {
+		It("should return base and runtime unchanged when LLM override is nil", func() {
+			cfg := config.AlignmentCheckConfig{LLM: nil}
+			sOut, rOut := cfg.EffectiveLLM(base, runtime)
+			Expect(sOut).To(Equal(base))
+			Expect(rOut).To(Equal(runtime))
+		})
+	})
+
+	Describe("UT-GAP1-002: partial override (model only) inherits other fields", func() {
+		It("should override model but inherit provider, endpoint, apiKey from base/runtime", func() {
+			cfg := config.AlignmentCheckConfig{
+				LLM: &config.LLMOverrideConfig{Model: "claude-3-opus"},
+			}
+			sOut, rOut := cfg.EffectiveLLM(base, runtime)
+			Expect(sOut.Provider).To(Equal("openai"))
+			Expect(rOut.Model).To(Equal("claude-3-opus"))
+			Expect(rOut.Endpoint).To(Equal("https://api.openai.com/v1"))
+			Expect(rOut.APIKey).To(Equal("sk-base-key"))
+		})
+	})
+
+	Describe("UT-GAP1-003: full override replaces all fields", func() {
+		It("should replace all overridable fields from LLMOverrideConfig", func() {
+			cfg := config.AlignmentCheckConfig{
+				LLM: &config.LLMOverrideConfig{
+					Provider:        "anthropic",
+					Model:           "claude-3-haiku",
+					Endpoint:        "https://api.anthropic.com",
+					APIKey:          "sk-shadow-key",
+					AzureAPIVersion: "2025-01",
+					VertexProject:   "proj-shadow",
+					VertexLocation:  "europe-west1",
+					BedrockRegion:   "eu-west-1",
+				},
+			}
+			sOut, rOut := cfg.EffectiveLLM(base, runtime)
+			Expect(sOut.Provider).To(Equal("anthropic"))
+			Expect(sOut.AzureAPIVersion).To(Equal("2025-01"))
+			Expect(sOut.VertexProject).To(Equal("proj-shadow"))
+			Expect(sOut.VertexLocation).To(Equal("europe-west1"))
+			Expect(sOut.BedrockRegion).To(Equal("eu-west-1"))
+			Expect(rOut.Model).To(Equal("claude-3-haiku"))
+			Expect(rOut.Endpoint).To(Equal("https://api.anthropic.com"))
+			Expect(rOut.APIKey).To(Equal("sk-shadow-key"))
+		})
+	})
+
+	Describe("UT-GAP1-004: override does not bleed into TLSCaFile or OAuth2", func() {
+		It("should not modify base fields that are not in LLMOverrideConfig", func() {
+			cfg := config.AlignmentCheckConfig{
+				LLM: &config.LLMOverrideConfig{Provider: "anthropic", Model: "claude-3-haiku"},
+			}
+			sOut, _ := cfg.EffectiveLLM(base, runtime)
+			Expect(sOut.TLSCaFile).To(Equal("/certs/ca.pem"))
+			Expect(sOut.OAuth2.Enabled).To(BeTrue())
+			Expect(sOut.OAuth2.TokenURL).To(Equal("https://auth.example.com/token"))
+		})
+	})
+})
