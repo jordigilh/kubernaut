@@ -41,10 +41,17 @@ type TimeoutManager struct {
 
 // NewTimeoutManager creates a manager with the given inactivity timeout,
 // warning intervals (from session start), and expiration callback.
+// Intervals that exceed the timeout are silently discarded.
 func NewTimeoutManager(inactivityTimeout time.Duration, warningIntervals []time.Duration, onExpire func(sessionID string)) *TimeoutManager {
+	var validIntervals []time.Duration
+	for _, iv := range warningIntervals {
+		if iv > 0 && iv < inactivityTimeout {
+			validIntervals = append(validIntervals, iv)
+		}
+	}
 	return &TimeoutManager{
 		inactivityTimeout: inactivityTimeout,
-		warningIntervals:  warningIntervals,
+		warningIntervals:  validIntervals,
 		onExpire:          onExpire,
 		sessions:          make(map[string]*timeoutEntry),
 	}

@@ -18,62 +18,41 @@ package mcp
 
 import (
 	"context"
+	"iter"
 	"sync"
+
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// EventStore defines the MCP SDK event store interface that tracks session lifecycle.
-// This matches the go-sdk/mcp.EventStore contract.
-type EventStore interface {
-	Open(ctx context.Context, sessionID string) error
-	SessionClosed(ctx context.Context, sessionID string) error
-}
-
-// InMemoryEventStore is a minimal event store that tracks open sessions.
-type InMemoryEventStore struct {
-	mu       sync.Mutex
-	sessions map[string]bool
-}
-
-// NewInMemoryEventStore creates an in-memory event store.
-func NewInMemoryEventStore() *InMemoryEventStore {
-	return &InMemoryEventStore{
-		sessions: make(map[string]bool),
-	}
-}
-
-func (s *InMemoryEventStore) Open(_ context.Context, sessionID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sessions[sessionID] = true
-	return nil
-}
-
-func (s *InMemoryEventStore) SessionClosed(_ context.Context, sessionID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.sessions, sessionID)
-	return nil
-}
-
-// DelegatingEventStore wraps an EventStore and publishes SessionClosed events
-// to a channel for the SessionClosedHandler to process. Keeps business logic
-// out of the EventStore (DES-01 separation of concerns).
+// DelegatingEventStore implements the MCP SDK's mcp.EventStore interface,
+// delegating stream resumption to MemoryEventStore while intercepting
+// SessionClosed to notify the SessionClosedHandler via a buffered channel.
+// DD-INTERACTIVE-002: session lifecycle detection feeds disconnect handling.
 type DelegatingEventStore struct {
-	inner        EventStore
+	inner        *mcpsdk.MemoryEventStore
 	closedChan   chan string
 	mcpToSession sync.Map // mcpSessionID -> interactiveSessionID
 }
 
-// NewDelegatingEventStore wraps the given EventStore with disconnect notification.
-func NewDelegatingEventStore(inner EventStore) *DelegatingEventStore {
+// NewDelegatingEventStore wraps the SDK's MemoryEventStore with disconnect
+// notification. The closedChan has capacity 64 to avoid blocking the SDK.
+func NewDelegatingEventStore() *DelegatingEventStore {
 	return &DelegatingEventStore{
-		inner:      inner,
+		inner:      mcpsdk.NewMemoryEventStore(nil),
 		closedChan: make(chan string, 64),
 	}
 }
 
-func (s *DelegatingEventStore) Open(ctx context.Context, sessionID string) error {
-	return s.inner.Open(ctx, sessionID)
+func (s *DelegatingEventStore) Open(ctx context.Context, sessionID, streamID string) error {
+	return s.inner.Open(ctx, sessionID, streamID)
+}
+
+func (s *DelegatingEventStore) Append(ctx context.Context, sessionID, streamID string, data []byte) error {
+	return s.inner.Append(ctx, sessionID, streamID, data)
+}
+
+func (s *DelegatingEventStore) After(ctx context.Context, sessionID, streamID string, index int) iter.Seq2[[]byte, error] {
+	return s.inner.After(ctx, sessionID, streamID, index)
 }
 
 func (s *DelegatingEventStore) SessionClosed(ctx context.Context, sessionID string) error {

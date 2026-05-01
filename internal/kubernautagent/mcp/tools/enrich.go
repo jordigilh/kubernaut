@@ -22,6 +22,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	"github.com/jordigilh/kubernaut/pkg/shared/transport"
 )
 
 // EnrichmentRunner abstracts the enrichment call for testability.
@@ -75,6 +76,9 @@ func (t *EnrichTool) Handle(ctx context.Context, input EnrichInput, user mcpinte
 	if driver.ActingUser.Username != user.Username {
 		return EnrichOutput{}, fmt.Errorf("caller is not the active driver for this session")
 	}
+
+	// SEC-06 (#703): Enrich context with user identity for impersonation.
+	ctx = transport.WithImpersonatedUser(ctx, user.Username, user.Groups)
 
 	result, err := t.runner.Enrich(ctx, input.Kind, input.Name, input.Namespace, input.SpecHash, input.IncidentID)
 	if err != nil {

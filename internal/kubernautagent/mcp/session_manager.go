@@ -147,6 +147,18 @@ func (m *LeaseSessionManager) GetSignalMetadata(sessionID string) map[string]str
 	return raw.(*sessionEntry).signalMeta
 }
 
+// GetSessionInfo returns the correlationID (rrID) and signal metadata for a session.
+// Must be called BEFORE Release, which deletes the session entry.
+// Returns empty values if session not found.
+func (m *LeaseSessionManager) GetSessionInfo(sessionID string) (rrID string, signalMeta map[string]string) {
+	raw, ok := m.sessions.Load(sessionID)
+	if !ok {
+		return "", nil
+	}
+	entry := raw.(*sessionEntry)
+	return entry.rrID, entry.signalMeta
+}
+
 func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user UserInfo) (*InteractiveSession, error) {
 	// SEC-01: Reject anonymous/empty identity.
 	if user.Username == "" {

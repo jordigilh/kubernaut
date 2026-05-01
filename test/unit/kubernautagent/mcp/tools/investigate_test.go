@@ -122,8 +122,8 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 		})
 	})
 
-	Describe("UT-KA-703-K03: action=start rejects with error when Lease held", func() {
-		It("should return error when another driver holds the Lease", func() {
+	Describe("UT-KA-703-K03: action=start rejects with structured error when Lease held", func() {
+		It("should return MCPError session_active when another driver holds the Lease", func() {
 			sessionMgr := &mockSessionManager{
 				takeoverErr: mcpinternal.ErrLeaseHeld,
 			}
@@ -135,7 +135,10 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 				RRID:   "rr-held",
 				Action: mcptools.ActionStart,
 			}, mcpinternal.UserInfo{Username: "bob"})
-			Expect(err).To(MatchError(mcpinternal.ErrLeaseHeld))
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue())
+			Expect(mcpErr.Code).To(Equal("session_active"))
 		})
 	})
 
@@ -189,6 +192,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 				getDriverResult: &mcpinternal.InteractiveSession{
 					SessionID:     "sess-complete",
 					CorrelationID: "rr-complete",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
 				},
 				isActive: true,
 			}
@@ -213,6 +217,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 				getDriverResult: &mcpinternal.InteractiveSession{
 					SessionID:     "sess-cancel",
 					CorrelationID: "rr-cancel",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
 				},
 				isActive: true,
 			}

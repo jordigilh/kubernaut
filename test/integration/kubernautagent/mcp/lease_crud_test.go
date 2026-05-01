@@ -24,23 +24,20 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	coordinationv1 "k8s.io/api/coordination/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 )
 
 var _ = Describe("IT-KA-MCP-007: Lease CRUD lifecycle — PR4 BR-INTERACTIVE-005", func() {
 
-	It("should create, verify, and delete Lease objects via controller-runtime client", func() {
-		scheme := runtime.NewScheme()
-		Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		logger := slog.Default()
+	It("should create, verify, and delete Lease objects via envtest K8s API", func() {
+		nsName := uniqueNamespace("crud")
+		createNamespace(context.Background(), sharedK8sClient, nsName)
 
+		logger := slog.Default()
 		sessionTTL := 20 * time.Minute
-		mgr := mcpinternal.NewLeaseSessionManager(fakeClient, "kube-system", logger,
+		mgr := mcpinternal.NewLeaseSessionManager(sharedK8sClient, nsName, logger,
 			mcpinternal.WithSessionTTL(sessionTTL))
 
 		user := mcpinternal.UserInfo{Username: "sre@example.com"}
@@ -52,7 +49,7 @@ var _ = Describe("IT-KA-MCP-007: Lease CRUD lifecycle — PR4 BR-INTERACTIVE-005
 
 		// READ: Verify Lease exists with correct fields
 		leaseList := &coordinationv1.LeaseList{}
-		Expect(fakeClient.List(context.Background(), leaseList, client.InNamespace("kube-system"))).To(Succeed())
+		Expect(sharedK8sClient.List(context.Background(), leaseList, client.InNamespace(nsName))).To(Succeed())
 		Expect(leaseList.Items).To(HaveLen(1))
 
 		lease := leaseList.Items[0]
@@ -68,7 +65,7 @@ var _ = Describe("IT-KA-MCP-007: Lease CRUD lifecycle — PR4 BR-INTERACTIVE-005
 		Expect(err).NotTo(HaveOccurred())
 
 		leaseList = &coordinationv1.LeaseList{}
-		Expect(fakeClient.List(context.Background(), leaseList, client.InNamespace("kube-system"))).To(Succeed())
+		Expect(sharedK8sClient.List(context.Background(), leaseList, client.InNamespace(nsName))).To(Succeed())
 		Expect(leaseList.Items).To(HaveLen(0))
 
 		// Verify second takeover on same rrID works after release

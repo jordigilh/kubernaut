@@ -26,6 +26,7 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	"github.com/jordigilh/kubernaut/pkg/shared/transport"
 )
 
 // LLMMessage represents a single conversation message for the investigator.
@@ -48,16 +49,33 @@ type AutonomousSessionManager interface {
 	CancelInvestigation(id string) error
 }
 
+// MessageRateLimiter enforces per-session rate limits on tool messages.
+// Implemented by *mcp.SessionRateLimiter.
+type MessageRateLimiter interface {
+	Allow(sessionID string, messageSize int) error
+}
+
+// TimeoutTracker manages per-session inactivity timeouts.
+// Implemented by *mcp.TimeoutManager.
+type TimeoutTracker interface {
+	StartTracking(sessionID string, notify func(msg string))
+	ResetInactivity(sessionID string)
+	StopTracking(sessionID string)
+}
+
 // InvestigateTool handles the kubernaut_investigate MCP tool actions:
 // start, message, complete, cancel, takeover. BR-INTERACTIVE-001, BR-INTERACTIVE-004.
 type InvestigateTool struct {
-	sessions     mcpinternal.SessionManager
-	runner       InvestigatorRunner
-	recon        mcpinternal.ContextReconstructor
-	autoMgr      AutonomousSessionManager
-	metrics      ToolMetrics
-	sessionMu    sync.Map // rrID -> *sync.Mutex (per-session serialization)
-	reconHistory sync.Map // rrID -> []LLMMessage (reconstructed context for LLM)
+	sessions       mcpinternal.SessionManager
+	runner         InvestigatorRunner
+	recon          mcpinternal.ContextReconstructor
+	autoMgr        AutonomousSessionManager
+	metrics        ToolMetrics
+	rateLimiter    MessageRateLimiter
+	timeoutTracker TimeoutTracker
+	notifyFn       func(sessionID, msg string) // optional: delivers timeout warnings to client
+	sessionMu      sync.Map                    // rrID -> *sync.Mutex (per-session serialization)
+	reconHistory   sync.Map                    // rrID -> []LLMMessage (reconstructed context for LLM)
 }
 
 // InvestigateOption configures optional dependencies for InvestigateTool.
@@ -77,6 +95,33 @@ func WithToolMetrics(m ToolMetrics) InvestigateOption {
 	return func(t *InvestigateTool) {
 		if m != nil {
 			t.metrics = m
+		}
+	}
+}
+
+// WithRateLimiter enables per-session message rate limiting (SEC-HIGH-01).
+func WithRateLimiter(rl MessageRateLimiter) InvestigateOption {
+	return func(t *InvestigateTool) {
+		if rl != nil {
+			t.rateLimiter = rl
+		}
+	}
+}
+
+// WithTimeoutTracker enables inactivity timeout tracking for sessions.
+func WithTimeoutTracker(tt TimeoutTracker) InvestigateOption {
+	return func(t *InvestigateTool) {
+		if tt != nil {
+			t.timeoutTracker = tt
+		}
+	}
+}
+
+// WithNotifyFunc sets the callback for delivering timeout warnings to the client.
+func WithNotifyFunc(fn func(sessionID, msg string)) InvestigateOption {
+	return func(t *InvestigateTool) {
+		if fn != nil {
+			t.notifyFn = fn
 		}
 	}
 }
@@ -126,9 +171,9 @@ func (t *InvestigateTool) dispatch(ctx context.Context, input InvestigateInput, 
 	case ActionMessage:
 		return t.handleMessage(ctx, input, user)
 	case ActionComplete:
-		return t.handleComplete(input)
+		return t.handleComplete(input, user)
 	case ActionCancel:
-		return t.handleCancel(input)
+		return t.handleCancel(input, user)
 	case ActionStatus:
 		return t.handleStatus(input)
 	default:
@@ -139,10 +184,16 @@ func (t *InvestigateTool) dispatch(ctx context.Context, input InvestigateInput, 
 func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
 	sess, err := t.sessions.Takeover(ctx, input.RRID, user)
 	if err != nil {
-		if errors.Is(err, mcpinternal.ErrLeaseHeld) && t.metrics != nil {
-			t.metrics.RecordInteractiveLeaseContention()
+		if errors.Is(err, mcpinternal.ErrLeaseHeld) {
+			if t.metrics != nil {
+				t.metrics.RecordInteractiveLeaseContention()
+			}
+			return InvestigateOutput{}, ErrCodeSessionActive
 		}
-		return InvestigateOutput{}, err
+		if errors.Is(err, mcpinternal.ErrMaxSessionsReached) {
+			return InvestigateOutput{}, &MCPError{Code: "max_sessions", Message: "Maximum concurrent sessions reached"}
+		}
+		return InvestigateOutput{}, fmt.Errorf("start session: %w", err)
 	}
 
 	if t.metrics != nil {
@@ -150,6 +201,7 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		t.metrics.RecordInteractiveTakeover("start_success")
 	}
 
+	t.startTimeoutTracking(sess.SessionID)
 	t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
 
 	return InvestigateOutput{
@@ -196,6 +248,8 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 		t.metrics.RecordInteractiveTakeover("takeover_success")
 	}
 
+	t.startTimeoutTracking(sess.SessionID)
+
 	reconCount := t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
 	contextSummary := fmt.Sprintf("%d prior turns reconstructed", reconCount)
 
@@ -230,8 +284,26 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", sess.ActingUser.Username)
 	}
 
+	// SEC-HIGH-01: Enforce per-session message rate limit before processing.
+	if t.rateLimiter != nil {
+		if err := t.rateLimiter.Allow(sess.SessionID, len(input.Message)); err != nil {
+			if errors.Is(err, mcpinternal.ErrRateLimited) {
+				return InvestigateOutput{}, ErrCodeRateLimited
+			}
+			return InvestigateOutput{}, ErrCodeRateLimited
+		}
+	}
+
 	// SEC-04: Touch activity to reset inactivity timer.
 	t.sessions.TouchActivity(input.RRID)
+	if t.timeoutTracker != nil {
+		t.timeoutTracker.ResetInactivity(sess.SessionID)
+	}
+
+	// SEC-06 (#703): Enrich context with session user identity so the
+	// ImpersonatingRoundTripper injects Impersonate-User/Group headers on
+	// K8s API calls, enforcing the user's RBAC during tool execution.
+	ctx = transport.WithImpersonatedUser(ctx, user.Username, user.Groups)
 
 	// PROD-02: Prepend reconstructed context turns so the LLM has full history.
 	messages := t.buildMessagesWithContext(input.RRID, input.Message)
@@ -248,14 +320,23 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 	}, nil
 }
 
-func (t *InvestigateTool) handleComplete(input InvestigateInput) (InvestigateOutput, error) {
+func (t *InvestigateTool) handleComplete(input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
 	if !t.sessions.IsDriverActive(input.RRID) {
-		return InvestigateOutput{}, nil
+		return InvestigateOutput{}, ErrCodeNotFound
 	}
 
 	sess, err := t.sessions.GetDriver(input.RRID)
 	if err != nil || sess == nil {
-		return InvestigateOutput{}, nil
+		return InvestigateOutput{}, ErrCodeNotFound
+	}
+
+	// SEC-CRIT-01: Only the active driver may terminate the session.
+	if sess.ActingUser.Username != user.Username {
+		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", sess.ActingUser.Username)
+	}
+
+	if t.timeoutTracker != nil {
+		t.timeoutTracker.StopTracking(sess.SessionID)
 	}
 
 	if err := t.sessions.Release(sess.SessionID, "complete"); err != nil {
@@ -308,7 +389,7 @@ func (t *InvestigateTool) handleStatus(input InvestigateInput) (InvestigateOutpu
 	}, nil
 }
 
-func (t *InvestigateTool) handleCancel(input InvestigateInput) (InvestigateOutput, error) {
+func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
 	if !t.sessions.IsDriverActive(input.RRID) {
 		return InvestigateOutput{}, ErrNoActiveSession
 	}
@@ -316,6 +397,15 @@ func (t *InvestigateTool) handleCancel(input InvestigateInput) (InvestigateOutpu
 	sess, err := t.sessions.GetDriver(input.RRID)
 	if err != nil || sess == nil {
 		return InvestigateOutput{}, ErrNoActiveSession
+	}
+
+	// SEC-CRIT-01: Only the active driver may cancel the session.
+	if sess.ActingUser.Username != user.Username {
+		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", sess.ActingUser.Username)
+	}
+
+	if t.timeoutTracker != nil {
+		t.timeoutTracker.StopTracking(sess.SessionID)
 	}
 
 	if err := t.sessions.Release(sess.SessionID, "explicit"); err != nil {
@@ -360,4 +450,17 @@ func (t *InvestigateTool) buildMessagesWithContext(rrID, userMessage string) []L
 	}
 	messages = append(messages, LLMMessage{Role: "user", Content: userMessage})
 	return messages
+}
+
+// startTimeoutTracking begins inactivity tracking for a session if configured.
+func (t *InvestigateTool) startTimeoutTracking(sessionID string) {
+	if t.timeoutTracker == nil {
+		return
+	}
+	notify := func(msg string) {
+		if t.notifyFn != nil {
+			t.notifyFn(sessionID, msg)
+		}
+	}
+	t.timeoutTracker.StartTracking(sessionID, notify)
 }

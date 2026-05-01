@@ -262,12 +262,9 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		})
 	})
 
-	Describe("UT-KA-SESS-007: Double-complete is idempotent (no error on second release)", func() {
-		It("should not error when completing an already-released session", func() {
-			callCount := 0
+	Describe("UT-KA-SESS-007: Double-complete returns not_found on second call", func() {
+		It("should return structured not_found error when session already released", func() {
 			sessMgr.releaseErr = nil
-			originalRelease := sessMgr.Release
-			_ = originalRelease
 
 			input := tools.InvestigateInput{
 				RRID:   "rr-001",
@@ -278,16 +275,18 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 			out, err := tool.Handle(ctx, input, testUser)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out.Status).To(Equal("completed"))
-			callCount++
 
 			// After release, driver is no longer active
 			sessMgr.driverActive = false
 			sessMgr.driverSession = nil
 			sessMgr.releaseErr = mcpinternal.ErrSessionNotFound
 
-			// Second complete: session already released → idempotent
+			// Second complete: session already released → structured error
 			_, err = tool.Handle(ctx, input, testUser)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).To(HaveOccurred())
+			var mcpErr *tools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue())
+			Expect(mcpErr.Code).To(Equal("not_found"))
 		})
 	})
 

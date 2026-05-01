@@ -89,10 +89,6 @@ rules:
     resources: ["prometheusrules", "servicemonitors", "podmonitors", "probes"]
     verbs: ["get", "list", "watch"]
   {{- if .Values.kubernautAgent.interactive.enabled }}
-  # ── Interactive Session Leases (#703) ──────────────────────────────────
-  - apiGroups: ["coordination.k8s.io"]
-    resources: ["leases"]
-    verbs: ["get", "create", "update", "delete"]
   # ── Interactive Impersonation (#703, DD-AUTH-MCP-001) ──────────────────
   # ACCEPTED RISK (SEC-06): Cluster-wide impersonate without resourceNames.
   # Mitigation: Only granted when interactive.enabled=true; application-level
@@ -133,6 +129,41 @@ subjects:
   - kind: ServiceAccount
     name: kubernaut-agent-sa
     namespace: {{ .Release.Namespace }}
+{{- if .Values.kubernautAgent.interactive.enabled }}
+---
+# HELM-03 (#703): Lease RBAC is namespace-scoped (least privilege).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubernaut-agent-interactive-leases
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    component: interactive
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernaut-agent-interactive-leases-binding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    component: interactive
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubernaut-agent-interactive-leases
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-agent-sa
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap

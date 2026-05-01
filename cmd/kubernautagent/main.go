@@ -50,6 +50,7 @@ import (
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	sharedtransport "github.com/jordigilh/kubernaut/pkg/shared/transport"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	alignprompt "github.com/jordigilh/kubernaut/internal/kubernautagent/alignment/prompt"
@@ -545,6 +546,14 @@ func initK8sInfra(logger *slog.Logger) *k8sInfra {
 		logger.Warn("K8s config not available, K8s tools and enricher disabled", "error", err)
 		return nil
 	}
+
+	// SEC-06 (#703): Wrap transport so interactive-mode tool calls impersonate
+	// the authenticated user. In autonomous mode (no user in context), the
+	// wrapper is a no-op and KA SA credentials are used directly.
+	kubeConfig.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
+		return sharedtransport.NewImpersonatingRoundTripper(rt)
+	}
+
 	k8sClient, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
 		logger.Error("failed to create K8s clientset", "error", err)
@@ -978,7 +987,7 @@ func buildMCPHandler(
 		mcpkg.WithInactivityTimeout(cfg.Interactive.InactivityTimeout),
 		mcpkg.WithMaxConcurrentSessions(cfg.Interactive.MaxConcurrentSessions),
 	}
-	leaseMgr := mcpkg.NewLeaseSessionManager(ctrlCli, namespace, logger, leaseOpts...)
+	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(ctrlCli, namespace, logger, leaseOpts...)
 
 	// Context reconstruction from DS audit events (best-effort).
 	var recon mcpkg.ContextReconstructor
@@ -989,12 +998,91 @@ func buildMCPHandler(
 		logger.Warn("MCP interactive mode: DS unavailable — context reconstruction disabled")
 	}
 
+	// DelegatingEventStore: bridges MCP SDK session lifecycle to our disconnect
+	// handler. Wraps SDK's MemoryEventStore for stream resumption support.
+	eventStore := mcpkg.NewDelegatingEventStore()
+
+	// NotificationBus: in-memory pub/sub for audit event delivery (DD-INTERACTIVE-002).
+	notifBus := mcpkg.NewInMemoryNotificationBus(32)
+	_ = notifBus // Available for future tool-level publish/subscribe wiring.
+
+	// TimeoutManager: fires onExpire when a session goes inactive (SEC-04, HARM-03/04).
+	timeoutMgr := mcpkg.NewTimeoutManager(
+		cfg.Interactive.InactivityTimeout,
+		[]time.Duration{cfg.Interactive.InactivityTimeout - 2*time.Minute, cfg.Interactive.InactivityTimeout - 30*time.Second},
+		func(sessionID string) {
+			logger.Warn("interactive session expired due to inactivity",
+				slog.String("session_id", sessionID))
+			if err := leaseMgr.Release(sessionID, "inactivity_timeout"); err != nil {
+				logger.Error("failed to release expired session",
+					slog.String("session_id", sessionID),
+					slog.String("error", err.Error()))
+				return
+			}
+			// T1-4: Decrement gauge on timeout expiry to prevent drift.
+			agentMetrics.RecordInteractiveSessionEnded()
+		},
+	)
+
+	// ReconstructionSpawner: rebuilds context and spawns autonomous investigation
+	// after an interactive session ends (INT-06, BR-INTERACTIVE-008).
+	reconRunner := mcpadapters.NewReconRunnerAdapter(inv)
+	reconSpawner := mcpkg.NewReconstructionSpawner(reconRunner, recon, logger)
+
+	// SessionClosedHandler: processes MCP disconnect events → release + reconstruct.
+	disconnectHandler := mcpkg.NewSessionClosedHandler(eventStore, func(mcpSessionID string) {
+		interactiveSessionID, ok := eventStore.LookupInteractiveSession(mcpSessionID)
+		if !ok {
+			logger.Debug("MCP session closed without interactive mapping (autonomous or already released)",
+				slog.String("mcp_session_id", mcpSessionID))
+			return
+		}
+
+		timeoutMgr.StopTracking(interactiveSessionID)
+
+		// T1-1: Snapshot session info BEFORE Release deletes the entry.
+		rrID, signalMeta := leaseMgr.GetSessionInfo(interactiveSessionID)
+
+		if err := leaseMgr.Release(interactiveSessionID, "disconnect"); err != nil {
+			logger.Warn("failed to release disconnected session",
+				slog.String("session_id", interactiveSessionID),
+				slog.String("error", err.Error()))
+			return
+		}
+
+		// T1-4: Decrement gauge on disconnect to prevent drift.
+		agentMetrics.RecordInteractiveSessionEnded()
+
+		// Spawn reconstruction in background (best-effort, BR-INTERACTIVE-008).
+		go func() {
+			reconCtx, reconCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer reconCancel()
+			_ = reconSpawner.SpawnReconstruct(reconCtx, &mcpkg.ReconstructionContext{
+				CorrelationID: rrID,
+				SessionID:     interactiveSessionID,
+				SignalMeta:    signalMeta,
+			})
+		}()
+	}, logger)
+
+	// Start disconnect handler goroutine (lifecycle tied to server context).
+	go disconnectHandler.Run(context.Background())
+
 	// Build the InvestigatorRunner adapter.
 	investigatorRunner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
+
+	// SEC-HIGH-01: Per-session message rate limiter (maxMessageSize = 64KB).
+	sessionRateLimiter := mcpkg.NewSessionRateLimiter(cfg.Interactive.RateLimitPerUser, 64*1024)
+
+	// UX-01/02: Session notifier delivers timeout warnings to MCP clients.
+	sessionNotifier := mcpkg.NewSessionNotifier()
 
 	// Build the InvestigateTool with optional dependencies.
 	investigateOpts := []mcptools.InvestigateOption{
 		mcptools.WithToolMetrics(agentMetrics),
+		mcptools.WithRateLimiter(sessionRateLimiter),
+		mcptools.WithTimeoutTracker(timeoutMgr),
+		mcptools.WithNotifyFunc(sessionNotifier.Notify),
 	}
 	if autoMgr != nil {
 		investigateOpts = append(investigateOpts, mcptools.WithAutonomousManager(autoMgr))
@@ -1017,7 +1105,7 @@ func buildMCPHandler(
 
 	// Register tools with the MCP SDK server.
 	toolDeps := mcpkg.ToolDeps{}
-	toolDeps.Investigate = mcptools.InvestigateRegistration(investigateTool)
+	toolDeps.Investigate = mcptools.InvestigateRegistration(investigateTool, eventStore, sessionNotifier)
 	if enrichTool != nil {
 		toolDeps.Enrich = mcptools.EnrichRegistration(enrichTool)
 	}
@@ -1028,12 +1116,18 @@ func buildMCPHandler(
 	mcpHandler, _ := mcpkg.BootstrapMCP(mcpkg.MCPDeps{
 		AuthMiddleware: authMw.Handler,
 		Tools:          toolDeps,
+		EventStore:     eventStore,
 	})
 
-	logger.Info("MCP interactive tools registered",
+	logger.Info("MCP interactive mode fully wired",
 		"investigate", true,
 		"enrich", enrichTool != nil,
 		"select_workflow", selectWfTool != nil,
+		"event_store", true,
+		"timeout_manager", true,
+		"disconnect_handler", true,
+		"reconstruction_spawner", true,
+		"notification_bus", true,
 	)
 
 	return mcpHandler
