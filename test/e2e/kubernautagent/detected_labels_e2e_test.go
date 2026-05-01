@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -68,7 +69,7 @@ var _ = Describe("E2E-KA ADR-056 DetectedLabels", Label("e2e", "ka", "adr-056", 
 		Expect(err).NotTo(HaveOccurred(), "Failed to create K8s clientset")
 
 		// Create unique test namespace
-		testNS = fmt.Sprintf("adr056-e2e-%d", time.Now().UnixNano()%100000)
+		testNS = fmt.Sprintf("adr056-e2e-%s", uuid.New().String()[:8])
 		deployName = "test-app"
 
 		ns := &corev1.Namespace{
