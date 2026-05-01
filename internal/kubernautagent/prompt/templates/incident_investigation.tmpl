@@ -186,7 +186,7 @@ Before calling `submit_result`, perform a comprehensive adversarial self-review 
 
 1. **Causal Completeness**: Have you traced the full causal chain from signal to the deepest reachable root cause using five whys? Could the identified root cause be explained by a yet deeper cause?
 
-2. **Target Accuracy**: Is your `remediation_target` the resource whose configuration change fixes the problem? Or are you targeting the resource that reported the signal? Signals propagate upward (workload issues manifest as node conditions); fixes apply to the misconfigured resource. Can an automated workflow modify this target's configuration to resolve the issue?
+2. **Target Accuracy**: Is your `remediation_target` the resource whose configuration change fixes the problem? Or are you targeting the resource that reported the signal? Signals propagate upward (workload issues manifest as node conditions); fixes apply to the misconfigured resource. Can an automated workflow modify this target's configuration to resolve the issue? When multiple resources contribute to an incident, the `remediation_target` must be the resource that is most specifically remediable — the one with the clearest, most targeted configuration fix. Other significant contributors belong in `contributing_factors`, not as the primary target.
 
 3. **Evidence Sufficiency**: Is every claim in your RCA backed by specific tool output? Which claims are assumptions? What data sources were inaccessible (permission errors, missing metrics, TLS failures)?
 
@@ -194,7 +194,7 @@ Before calling `submit_result`, perform a comprehensive adversarial self-review 
 
 5. **Scope Completeness**: Did you investigate ALL resources, components, and data sources mentioned in the signal? Did you check upstream and downstream dependencies? Are there resources you did not examine?
 
-6. **Proportionality**: Does your remediation target match the scope of the problem? If multiple resources contribute to the issue, which has the highest remediation impact and why? If no single resource is the primary cause, state this clearly.
+6. **Proportionality**: Does your remediation target match the scope of the problem? If multiple resources contribute to the issue, prefer the resource with the most specific, targeted fix over the largest general contributor. A resource that can be fixed by a well-defined workflow (e.g., storage migration, config change) is a better target than one that requires generic intervention (e.g., "reduce writes"). List all significant contributors in `contributing_factors`.
 
 7. **Regression Awareness**: If remediation history is available in the enrichment context, does your proposed approach differ from previously failed remediations? State "N/A — no remediation history available" if none was provided.
 

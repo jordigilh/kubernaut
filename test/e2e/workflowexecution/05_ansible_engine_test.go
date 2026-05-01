@@ -73,14 +73,9 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Verifying WFE transitions to Running (AWX job launched)")
-			Eventually(func() string {
-				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 60*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
-				"WFE should transition to Running when AWX launches the job")
+			Eventually(phaseOrFailFast(wfe.Name, wfe.Namespace), 60*time.Second, 2*time.Second).
+				Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
+					"WFE should transition to Running when AWX launches the job")
 
 			GinkgoWriter.Println("WFE transitioned to Running (AWX job launched)")
 
@@ -175,12 +170,24 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Verifying WFE tracks AWX execution reference after Running")
-			Eventually(func() bool {
+			Eventually(func() (bool, error) {
 				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-				if updated != nil && updated.Status.Phase == workflowexecutionv1alpha1.PhaseRunning {
-					return updated.Status.ExecutionRef != nil
+				if updated == nil {
+					return false, nil
 				}
-				return false
+				if updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed {
+					details := "no failure details available"
+					if updated.Status.FailureDetails != nil {
+						details = fmt.Sprintf("reason=%s, message=%s",
+							updated.Status.FailureDetails.Reason,
+							updated.Status.FailureDetails.Message)
+					}
+					return false, StopTrying(fmt.Sprintf("WFE reached terminal Failed state: %s", details))
+				}
+				if updated.Status.Phase == workflowexecutionv1alpha1.PhaseRunning {
+					return updated.Status.ExecutionRef != nil, nil
+				}
+				return false, nil
 			}, 60*time.Second, 2*time.Second).Should(BeTrue(), "WFE should track AWX job reference")
 
 			runningWFE, _ := getWFE(wfe.Name, wfe.Namespace)
@@ -235,11 +242,22 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for WFE to reach Running (AWX job launched)")
-			Eventually(func() bool {
+			Eventually(func() (bool, error) {
 				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-				return updated != nil &&
-					updated.Status.Phase == workflowexecutionv1alpha1.PhaseRunning &&
-					updated.Status.ExecutionRef != nil
+				if updated == nil {
+					return false, nil
+				}
+				if updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed {
+					details := "no failure details available"
+					if updated.Status.FailureDetails != nil {
+						details = fmt.Sprintf("reason=%s, message=%s",
+							updated.Status.FailureDetails.Reason,
+							updated.Status.FailureDetails.Message)
+					}
+					return false, StopTrying(fmt.Sprintf("WFE reached terminal Failed state: %s", details))
+				}
+				return updated.Status.Phase == workflowexecutionv1alpha1.PhaseRunning &&
+					updated.Status.ExecutionRef != nil, nil
 			}, 60*time.Second, 2*time.Second).Should(BeTrue(),
 				"WFE should be Running with ExecutionRef set")
 
@@ -326,13 +344,9 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("E2E-WE-015-005: Verifying WFE transitions to Running")
-			Eventually(func() string {
-				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 60*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
+			Eventually(phaseOrFailFast(wfe.Name, wfe.Namespace), 60*time.Second, 2*time.Second).
+				Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
+					"WFE should reach Running — ephemeral AWX credential injection must succeed")
 
 		By("E2E-WE-015-005: Verifying ephemeral credential IDs in status")
 		runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
@@ -401,13 +415,9 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("E2E-WE-015-006: Verifying WFE transitions to Running")
-			Eventually(func() string {
-				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 60*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
+			Eventually(phaseOrFailFast(wfe.Name, wfe.Namespace), 60*time.Second, 2*time.Second).
+				Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
+					"WFE should reach Running — ConfigMap extra_vars injection must succeed")
 
 			By("E2E-WE-015-006: Verifying NO ephemeral credential annotation (ConfigMaps use extra_vars)")
 			runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
@@ -478,14 +488,9 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("E2E-WE-365-001: Verifying WFE transitions to Running (AWX accepted the merged credential list)")
-			Eventually(func() string {
-				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-				if updated != nil {
-					return updated.Status.Phase
-				}
-				return ""
-			}, 60*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
-				"WFE should reach Running — AWX must not reject the launch with 400 about missing credentials")
+			Eventually(phaseOrFailFast(wfe.Name, wfe.Namespace), 60*time.Second, 2*time.Second).
+				Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
+					"WFE should reach Running — AWX must not reject the launch with 400 about missing credentials")
 
 		By("E2E-WE-365-001: Verifying ephemeral credential IDs in status")
 		runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
@@ -600,6 +605,30 @@ func cancelAWXJob(jobID int) {
 		fmt.Sprintf("AWX cancel should return 202 or 405, got %d: %s", resp.StatusCode, string(body)))
 
 	GinkgoWriter.Printf("AWX cancel response: %d\n", resp.StatusCode)
+}
+
+// phaseOrFailFast returns a polling function for use with Eventually that returns
+// the current WFE phase and fails fast via StopTrying when the WFE reaches a
+// terminal Failed state unexpectedly. This prevents 60s blind waits and surfaces
+// the actual AWX/controller failure reason in the test output.
+func phaseOrFailFast(name, namespace string) func() (string, error) {
+	return func() (string, error) {
+		updated, _ := getWFEDirect(name, namespace)
+		if updated == nil {
+			return "", nil
+		}
+		phase := updated.Status.Phase
+		if phase == workflowexecutionv1alpha1.PhaseFailed {
+			details := "no failure details available"
+			if updated.Status.FailureDetails != nil {
+				details = fmt.Sprintf("reason=%s, message=%s",
+					updated.Status.FailureDetails.Reason,
+					updated.Status.FailureDetails.Message)
+			}
+			return phase, StopTrying(fmt.Sprintf("WFE reached terminal Failed state: %s", details))
+		}
+		return phase, nil
+	}
 }
 
 // readAWXToken reads the AWX API token from the K8s Secret deployed during E2E setup.

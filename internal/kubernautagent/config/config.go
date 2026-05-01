@@ -386,6 +386,9 @@ func (c *Config) Validate() error {
 		if c.AI.AlignmentCheck.MaxStepTokens <= 0 {
 			return fmt.Errorf("ai.alignmentCheck.maxStepTokens must be positive when enabled, got %d", c.AI.AlignmentCheck.MaxStepTokens)
 		}
+		if c.AI.AlignmentCheck.VerdictTimeout <= 0 {
+			return fmt.Errorf("ai.alignmentCheck.verdictTimeout must be positive when enabled, got %v", c.AI.AlignmentCheck.VerdictTimeout)
+		}
 		switch c.AI.AlignmentCheck.Mode {
 		case AlignmentModeEnforce, AlignmentModeMonitor:
 		default:

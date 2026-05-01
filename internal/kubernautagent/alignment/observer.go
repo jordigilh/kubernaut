@@ -126,6 +126,12 @@ func (o *Observer) SubmitAsync(ctx context.Context, step Step) {
 
 // WaitForCompletion blocks until all submitted evaluations finish or timeout expires.
 // Returns a WaitResult snapshot capturing the state at that moment.
+//
+// Known limitation (SEC-10/PERF-5): the waiter goroutine (wg.Wait) is not
+// cancelled when timeout fires. It self-heals within config.Timeout (default
+// 10s) as all pending evaluations carry a per-step context.WithTimeout. A
+// clean fix (Observer-scoped context cancellation) would change NewObserver's
+// signature, impacting ~15 call sites — deferred to a follow-up PR.
 func (o *Observer) WaitForCompletion(timeout time.Duration) WaitResult {
 	done := make(chan struct{})
 	go func() {
@@ -164,8 +170,12 @@ func (o *Observer) RenderVerdict(wr WaitResult) Verdict {
 	for _, ob := range obs {
 		if ob.Suspicious {
 			flagged++
+			label := ob.Step.Tool
+			if label == "" {
+				label = string(ob.Step.Kind)
+			}
 			summaryParts = append(summaryParts, fmt.Sprintf("step %d (%s): %s",
-				ob.Step.Index, ob.Step.Tool, SanitizeExplanation(ob.Explanation)))
+				ob.Step.Index, label, SanitizeExplanation(ob.Explanation)))
 		}
 	}
 

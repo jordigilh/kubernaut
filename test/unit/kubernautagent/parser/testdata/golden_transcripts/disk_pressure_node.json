@@ -1,0 +1,17 @@
+{
+  "scenario": "disk-pressure-node",
+  "signalName": "KubeNodeCondition",
+  "analysis": {
+    "rootCauseAnalysis": {
+      "summary": "Node disk pressure caused by excessive container log accumulation from verbose debug logging"
+    },
+    "selectedWorkflow": {
+      "workflowId": ""
+    }
+  },
+  "kaDialog": {
+    "rawResponses": [
+      "Based on my investigation, here is the root cause analysis:\n\n```json\n{\"rca_summary\":\"Node disk pressure caused by excessive container log accumulation from verbose debug logging in the logging-agent DaemonSet\",\"signal_name\":\"KubeNodeCondition\",\"severity\":\"medium\",\"confidence\":0.78,\"remediation_target\":{\"kind\":\"DaemonSet\",\"name\":\"logging-agent\",\"namespace\":\"kube-system\"},\"contributing_factors\":[\"Debug-level logging enabled in production\",\"No log rotation configured\"],\"investigation_outcome\":\"actionable\"}\n```\n\nThe node is experiencing disk pressure due to excessive logging from the logging-agent DaemonSet."
+    ]
+  }
+}

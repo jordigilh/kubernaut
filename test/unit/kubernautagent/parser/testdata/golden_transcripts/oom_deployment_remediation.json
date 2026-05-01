@@ -1,0 +1,17 @@
+{
+  "scenario": "oom-deployment-remediation",
+  "signalName": "KubePodCrashLooping",
+  "analysis": {
+    "rootCauseAnalysis": {
+      "summary": "Container OOMKilled due to memory limit of 256Mi being exceeded under sustained load"
+    },
+    "selectedWorkflow": {
+      "workflowId": "oom-increase-memory"
+    }
+  },
+  "kaDialog": {
+    "rawResponses": [
+      "{\"rca_summary\":\"Container OOMKilled due to memory limit of 256Mi being exceeded under sustained load\",\"signal_name\":\"KubePodCrashLooping\",\"severity\":\"high\",\"confidence\":0.92,\"workflow_id\":\"oom-increase-memory\",\"remediation_target\":{\"kind\":\"Deployment\",\"name\":\"api-server\",\"namespace\":\"production\"},\"contributing_factors\":[\"Memory limit set to 256Mi\",\"Traffic spike increased request volume by 3x\"],\"investigation_outcome\":\"actionable\"}"
+    ]
+  }
+}

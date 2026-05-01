@@ -884,6 +884,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		}
 		inv.emitValidationEvent(ctx, attempt+1, maxSelfCorrectionAttempts, isValid, finalErrors, corrected.WorkflowID, correlationID)
 		enrichFromCatalog(corrected, validator)
+		CheckWorkflowTargetAlignment(ctx, corrected, validator, correlationID, inv.auditStore, inv.logger)
 		return corrected, nil
 	}
 
@@ -1026,6 +1027,42 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 		result.ServiceAccountName = meta.ServiceAccountName
 	}
 	result.WorkflowVersion = meta.Version
+}
+
+// CheckWorkflowTargetAlignment verifies that the selected workflow's component
+// scope includes the RCA remediation target kind. Emits an audit event and
+// appends a warning on mismatch. This is a WARNING-level gate: misalignment
+// does not force human review because the LLM may have legitimate cross-type
+// reasoning (Issue #934).
+func CheckWorkflowTargetAlignment(ctx context.Context, result *katypes.InvestigationResult, v *parser.Validator, correlationID string, auditStore audit.AuditStore, logger logr.Logger) {
+	if result == nil || v == nil || result.WorkflowID == "" {
+		return
+	}
+	meta, ok := v.GetWorkflowMeta(result.WorkflowID)
+	if !ok {
+		return
+	}
+
+	aligned := meta.MatchesTargetKind(result.RemediationTarget.Kind)
+
+	ev := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+	ev.EventAction = "workflow_target_alignment_gate"
+	if aligned {
+		ev.EventOutcome = audit.OutcomeSuccess
+	} else {
+		ev.EventOutcome = audit.OutcomeFailure
+	}
+	ev.Data["workflow_id"] = result.WorkflowID
+	ev.Data["target_kind"] = result.RemediationTarget.Kind
+	ev.Data["workflow_components"] = meta.Component
+	ev.Data["aligned"] = aligned
+	audit.StoreBestEffort(ctx, auditStore, ev, logger)
+
+	if !aligned {
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("Workflow %q target kind %q is not in the workflow's component scope %v",
+				result.WorkflowID, result.RemediationTarget.Kind, meta.Component))
+	}
 }
 
 // runLLMLoop executes the multi-turn LLM interaction loop with tool

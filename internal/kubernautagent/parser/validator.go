@@ -18,6 +18,7 @@ package parser
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
@@ -40,6 +41,25 @@ type WorkflowMeta struct {
 	ExecutionBundleDigest string
 	ServiceAccountName    string
 	Version               string
+	Component             []string // MandatoryLabels.Component: resource kinds this workflow targets (e.g., ["deployment"]), or ["*"]
+}
+
+// MatchesTargetKind reports whether the workflow's component scope includes
+// the given Kubernetes resource kind. Returns true when:
+//   - kind is empty (no constraint to check)
+//   - Component is nil or empty (unconstrained — backward compat)
+//   - Component contains "*" (wildcard)
+//   - Component contains kind (case-insensitive, consistent with DS SQL LOWER())
+func (m WorkflowMeta) MatchesTargetKind(kind string) bool {
+	if kind == "" || len(m.Component) == 0 {
+		return true
+	}
+	for _, c := range m.Component {
+		if c == "*" || strings.EqualFold(c, kind) {
+			return true
+		}
+	}
+	return false
 }
 
 // Validator checks InvestigationResult against session-specific constraints.

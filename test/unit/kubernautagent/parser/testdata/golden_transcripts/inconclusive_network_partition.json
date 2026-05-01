@@ -1,0 +1,17 @@
+{
+  "scenario": "inconclusive-network-partition",
+  "signalName": "KubeNodeUnreachable",
+  "analysis": {
+    "rootCauseAnalysis": {
+      "summary": "Intermittent network connectivity loss between nodes — multiple potential causes, insufficient evidence to isolate root cause"
+    },
+    "selectedWorkflow": {
+      "workflowId": ""
+    }
+  },
+  "kaDialog": {
+    "rawResponses": [
+      "{\"rca_summary\":\"Intermittent network connectivity loss between nodes — multiple potential causes, insufficient evidence to isolate root cause\",\"signal_name\":\"KubeNodeUnreachable\",\"severity\":\"high\",\"confidence\":0.4,\"investigation_outcome\":\"inconclusive\",\"actionable\":false,\"remediation_target\":{\"kind\":\"Node\",\"name\":\"worker-3\",\"namespace\":\"\"},\"contributing_factors\":[\"CNI plugin version mismatch across nodes\",\"Intermittent packet loss on node NIC\"]}"
+    ]
+  }
+}
