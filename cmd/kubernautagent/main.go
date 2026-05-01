@@ -43,7 +43,6 @@ import (
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
 
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
@@ -208,9 +207,7 @@ func main() {
 			alignStaticCfg, alignRtCfg := cfg.AI.AlignmentCheck.EffectiveLLM(cfg.AI.LLM, *llmRuntime)
 			alignCfgMerge := *cfg
 			alignCfgMerge.AI.LLM = alignStaticCfg
-			raw, alignErr := langchaingo.New(
-				alignStaticCfg.Provider, alignRtCfg.Endpoint, alignRtCfg.Model, alignRtCfg.APIKey,
-				buildLLMProviderOpts(&alignCfgMerge, &alignRtCfg)...)
+			raw, alignErr := buildLLMClientFromConfig(context.Background(), &alignCfgMerge, &alignRtCfg)
 			if alignErr != nil {
 				slogger.Error("alignment check LLM client failed (fail-closed): alignment is enabled but shadow client unavailable", "error", alignErr)
 				os.Exit(1)
