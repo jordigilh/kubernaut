@@ -17,11 +17,11 @@ limitations under the License.
 package credentials_test
 
 import (
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -32,7 +32,7 @@ var _ = Describe("ResolveGCPCredentialIndirection — #686", func() {
 
 	var (
 		credDir string
-		logger  *slog.Logger
+		logger  = logr.Discard()
 	)
 
 	BeforeEach(func() {
@@ -40,8 +40,6 @@ var _ = Describe("ResolveGCPCredentialIndirection — #686", func() {
 		credDir, err = os.MkdirTemp("", "cred-resolver-test-*")
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { os.RemoveAll(credDir) })
-
-		logger = slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	})
 
 	// -- Passthrough scenarios --

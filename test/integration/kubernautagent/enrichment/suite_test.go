@@ -20,14 +20,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log/slog"
-	"os"
 	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -64,7 +63,7 @@ var (
 	seedDB      *sql.DB
 	enricher    *enrichment.Enricher
 	auditStore  *audit.DSAuditStore
-	suiteLogger *slog.Logger
+	suiteLogger logr.Logger
 	k8sAdapter  enrichment.K8sClient
 )
 
@@ -120,8 +119,7 @@ var _ = SynchronizedBeforeSuite(
 		dsToken := lines[0]
 		kubeconfigPath := lines[1]
 
-		suiteLogger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
-
+		suiteLogger = logr.Discard()
 		dsURL := fmt.Sprintf("http://127.0.0.1:%d", enrDataStoragePort)
 		dsClients := integration.NewAuthenticatedDataStorageClients(dsURL, dsToken, 10*time.Second)
 		ogenClient = dsClients.OpenAPIClient
@@ -233,15 +231,15 @@ func createK8sFixtures(dynClient dynamic.Interface) {
 			"metadata": map[string]interface{}{
 				"name":      "web-rs-abc",
 				"namespace": "it-enrichment",
-			"ownerReferences": []interface{}{
-				map[string]interface{}{
-					"apiVersion": "apps/v1",
-					"kind":       "Deployment",
-					"name":       "web-deploy",
-					"uid":        deployUID,
-					"controller": true,
+				"ownerReferences": []interface{}{
+					map[string]interface{}{
+						"apiVersion": "apps/v1",
+						"kind":       "Deployment",
+						"name":       "web-deploy",
+						"uid":        deployUID,
+						"controller": true,
+					},
 				},
-			},
 			},
 			"spec": map[string]interface{}{
 				"replicas": int64(1),
@@ -276,15 +274,15 @@ func createK8sFixtures(dynClient dynamic.Interface) {
 			"metadata": map[string]interface{}{
 				"name":      "web-pod-1",
 				"namespace": "it-enrichment",
-			"ownerReferences": []interface{}{
-				map[string]interface{}{
-					"apiVersion": "apps/v1",
-					"kind":       "ReplicaSet",
-					"name":       "web-rs-abc",
-					"uid":        rsUID,
-					"controller": true,
+				"ownerReferences": []interface{}{
+					map[string]interface{}{
+						"apiVersion": "apps/v1",
+						"kind":       "ReplicaSet",
+						"name":       "web-rs-abc",
+						"uid":        rsUID,
+						"controller": true,
+					},
 				},
-			},
 			},
 			"spec": map[string]interface{}{
 				"containers": []interface{}{

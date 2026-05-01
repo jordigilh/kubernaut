@@ -21,10 +21,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -442,7 +442,7 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 
@@ -654,7 +654,7 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 50 * time.Millisecond,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			res, err := wrapper.Investigate(context.Background(), katypes.SignalContext{Name: "s", Namespace: "ns"})
@@ -687,7 +687,7 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			res, err := wrapper.Investigate(context.Background(), katypes.SignalContext{Name: "s", Namespace: "ns"})
@@ -834,7 +834,7 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 				alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 					Inner:     nil,
 					Evaluator: &alignment.Evaluator{},
-					Logger:    slog.Default(),
+					Logger:    logr.Discard(),
 				})
 			}).To(Panic(), "nil Inner must cause panic at construction time")
 		})
@@ -844,7 +844,7 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 				alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 					Inner:     &mockInvestigationRunner{},
 					Evaluator: nil,
-					Logger:    slog.Default(),
+					Logger:    logr.Discard(),
 				})
 			}).To(Panic(), "nil Evaluator must cause panic at construction time")
 		})
@@ -922,7 +922,7 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 				Mode:           config.AlignmentModeMonitor,
 			})
 
@@ -948,11 +948,11 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
 			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
-				Inner:              inner,
-				Evaluator:          evaluator,
-				VerdictTimeout:     5 * time.Second,
-				Logger:             slog.Default(),
-				Mode:               config.AlignmentModeMonitor,
+				Inner:                 inner,
+				Evaluator:             evaluator,
+				VerdictTimeout:        5 * time.Second,
+				Logger:                logr.Discard(),
+				Mode:                  config.AlignmentModeMonitor,
 				CanaryForceEscalation: true,
 			})
 
@@ -978,11 +978,11 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
 			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
-				Inner:              inner,
-				Evaluator:          evaluator,
-				VerdictTimeout:     5 * time.Second,
-				Logger:             slog.Default(),
-				Mode:               config.AlignmentModeMonitor,
+				Inner:                 inner,
+				Evaluator:             evaluator,
+				VerdictTimeout:        5 * time.Second,
+				Logger:                logr.Discard(),
+				Mode:                  config.AlignmentModeMonitor,
 				CanaryForceEscalation: false,
 			})
 
@@ -1107,7 +1107,7 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{
@@ -1144,7 +1144,7 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{
@@ -1177,7 +1177,7 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{}
@@ -1285,7 +1285,7 @@ var _ = Describe("Explanation sanitization — SEC-2", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
@@ -1431,7 +1431,7 @@ var _ = Describe("Canary integrity mechanism — SEC-3", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
@@ -1462,7 +1462,7 @@ var _ = Describe("Canary integrity mechanism — SEC-3", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
@@ -1489,7 +1489,7 @@ var _ = Describe("Canary integrity mechanism — SEC-3", func() {
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
-				Logger:         slog.Default(),
+				Logger:         logr.Discard(),
 			})
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns"}

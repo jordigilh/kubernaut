@@ -17,6 +17,7 @@ limitations under the License.
 package investigator_test
 
 import (
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -29,7 +30,7 @@ var _ = Describe("Kubernaut Agent Registry Wiring — TP-433-WIR Phase 2", func(
 	Describe("IT-KA-433W-007: Registry with DS URL includes all 5 custom tools", func() {
 		It("should register all 5 custom tool names when DataStorage is configured", func() {
 			reg := registry.New()
-			custom.RegisterAll(reg, nil, nil, nil)
+			custom.RegisterAll(reg, nil, nil, nil, logr.Discard())
 
 			allTools := reg.All()
 			toolNames := make([]string, len(allTools))

@@ -19,8 +19,8 @@ package investigator_test
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
-	"os"
+
+	"github.com/go-logr/logr"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -36,7 +36,7 @@ import (
 var _ = Describe("Phase Separation: Investigator — #700", func() {
 
 	var (
-		logger     *slog.Logger
+		invLogger  logr.Logger
 		auditStore *recordingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
@@ -46,7 +46,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+		invLogger = logr.Discard()
 		auditStore = &recordingAuditStore{}
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
@@ -64,7 +64,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 				},
 			},
 		}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, logger)
+		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
@@ -74,7 +74,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded","confidence":0.9}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical", Message: "OOMKilled",
 			})
@@ -117,7 +117,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled due to memory limit exceeded","confidence":0.9}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical", Message: "OOMKilled",
 			})
@@ -156,7 +156,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","needs_human_review":true,"human_review_reason":"complexity","confidence":0.8}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.85}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical", Message: "OOMKilled",
 			})
@@ -181,7 +181,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 					},
 				},
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 1, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 1, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "critical", Message: "OOMKilled",
 			})
@@ -200,7 +200,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"root_cause_analysis":{"summary":"OOMKilled due to memory limit exceeded on api-server"},"confidence":0.92}`}},
 				wfToolResp(`{"selected_workflow":{"workflow_id":"oom-increase-memory","confidence":0.95},"confidence":0.95}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical", Message: "OOMKilled",
 			})
@@ -224,7 +224,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 				},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.85}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical", Message: "OOMKilled",
 			})
@@ -246,7 +246,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Inconclusive — multiple potential causes","investigation_outcome":"inconclusive","confidence":0.4}`}},
 				wfToolResp(`{"workflow_id":"generic-restart","confidence":0.6}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server-abc", Namespace: "production", Severity: "warning", Message: "High memory usage",
 			})
@@ -267,7 +267,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: logger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical", Message: "OOMKilled",
 			})

@@ -19,13 +19,13 @@ package enrichment_test
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
 	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -67,14 +67,13 @@ func (c *countingK8sClient) CallCount() int {
 
 var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func() {
 	var (
-		logger     *slog.Logger
+		logger     = logr.Discard()
 		auditStore *recordingAuditStore
 		ds         *fakeDataStorageClient
 		ctx        context.Context
 	)
 
 	BeforeEach(func() {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 		auditStore = &recordingAuditStore{}
 		ds = &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
 		ctx = context.Background()

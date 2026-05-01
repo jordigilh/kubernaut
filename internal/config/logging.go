@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"go.uber.org/zap"
@@ -62,22 +61,6 @@ func (l LoggingConfig) ZapLevel() zapcore.Level {
 // The returned AtomicLevel can be mutated at runtime for hot-reload.
 func (l LoggingConfig) NewAtomicLevel() zap.AtomicLevel {
 	return zap.NewAtomicLevelAt(l.ZapLevel())
-}
-
-// SlogLevel converts the configured level string to an slog.Level.
-// Bridge method for services still using log/slog (e.g., kubernaut-agent).
-// Will be removed when all services migrate to zap-backed logr.Logger.
-func (l LoggingConfig) SlogLevel() slog.Level {
-	switch strings.ToUpper(l.Level) {
-	case "DEBUG":
-		return slog.LevelDebug
-	case "WARN":
-		return slog.LevelWarn
-	case "ERROR":
-		return slog.LevelError
-	default:
-		return slog.LevelInfo
-	}
 }
 
 // ParseAndSetLevel parses a level string and applies it to the given

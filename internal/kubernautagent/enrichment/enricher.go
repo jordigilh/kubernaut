@@ -19,9 +19,9 @@ package enrichment
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
@@ -154,10 +154,10 @@ type EnrichmentResult struct {
 	// exhaustion (all errors retried, matching HAPI v1.2.1). The
 	// investigator uses this to trigger rca_incomplete (BR-HAPI-261
 	// AC#7, #704). Only set when RetryConfig has MaxRetries > 0.
-	HardFail           bool                      `json:"-"`
-	DetectedLabels     *DetectedLabels              `json:"detected_labels,omitempty"`
+	HardFail           bool                          `json:"-"`
+	DetectedLabels     *DetectedLabels               `json:"detected_labels,omitempty"`
 	QuotaDetails       map[string]QuotaResourceUsage `json:"quota_details,omitempty"`
-	RemediationHistory *RemediationHistoryResult `json:"remediation_history,omitempty"`
+	RemediationHistory *RemediationHistoryResult     `json:"remediation_history,omitempty"`
 }
 
 // Enricher resolves owner chain, labels, and remediation history.
@@ -165,13 +165,13 @@ type Enricher struct {
 	k8s           K8sClient
 	ds            DataStorageClient
 	auditStore    audit.AuditStore
-	logger        *slog.Logger
+	logger        logr.Logger
 	labelDetector *LabelDetector
 	retryConfig   RetryConfig
 }
 
 // NewEnricher creates an enricher with the given clients.
-func NewEnricher(k8s K8sClient, ds DataStorageClient, auditStore audit.AuditStore, logger *slog.Logger) *Enricher {
+func NewEnricher(k8s K8sClient, ds DataStorageClient, auditStore audit.AuditStore, logger logr.Logger) *Enricher {
 	return &Enricher{
 		k8s:        k8s,
 		ds:         ds,
@@ -216,8 +216,8 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 	for attempt := 1; attempt <= e.retryConfig.MaxRetries; attempt++ {
 		wait := boCfg.Calculate(int32(attempt))
 		e.logger.Info("enrichment: retrying GetOwnerChain",
-			slog.Int("attempt", attempt),
-			slog.Duration("backoff", wait),
+			"attempt", attempt,
+			"backoff", wait,
 		)
 
 		select {
@@ -268,9 +268,8 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 	if specHash == "" {
 		computed, err := e.k8s.GetSpecHash(ctx, kind, name, namespace)
 		if err != nil {
-			e.logger.Warn("enrichment: specHash auto-computation failed, proceeding with empty",
-				slog.String("resource", namespace+"/"+kind+"/"+name),
-				slog.String("error", err.Error()),
+			e.logger.Error(err, "enrichment: specHash auto-computation failed, proceeding with empty",
+				"resource", namespace+"/"+kind+"/"+name,
 			)
 		} else {
 			specHash = computed
@@ -285,9 +284,8 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 		if e.retryConfig.MaxRetries > 0 && !IsNoMatchError(ownerErr) {
 			result.HardFail = true
 		}
-		e.logger.Warn("enrichment: owner chain resolution failed",
-			slog.String("resource", namespace+"/"+kind+"/"+name),
-			slog.String("error", ownerErr.Error()),
+		e.logger.Error(ownerErr, "enrichment: owner chain resolution failed",
+			"resource", namespace+"/"+kind+"/"+name,
 		)
 	} else {
 		result.OwnerChain = chain
@@ -296,9 +294,8 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 	if e.labelDetector != nil {
 		labels, quotaDetails, labelErr := e.labelDetector.DetectLabels(ctx, kind, name, namespace, result.OwnerChain)
 		if labelErr != nil {
-			e.logger.Warn("enrichment: label detection failed",
-				slog.String("resource", namespace+"/"+kind+"/"+name),
-				slog.String("error", labelErr.Error()),
+			e.logger.Error(labelErr, "enrichment: label detection failed",
+				"resource", namespace+"/"+kind+"/"+name,
 			)
 		}
 		if labels != nil {
@@ -312,9 +309,8 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 	histResult, err := e.ds.GetRemediationHistory(ctx, kind, name, namespace, specHash)
 	if err != nil {
 		histErr = err
-		e.logger.Warn("enrichment: remediation history fetch failed",
-			slog.String("resource", namespace+"/"+name),
-			slog.String("error", err.Error()),
+		e.logger.Error(err, "enrichment: remediation history fetch failed",
+			"resource", namespace+"/"+name,
 		)
 	} else {
 		result.RemediationHistory = histResult
