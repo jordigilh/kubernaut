@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -1023,22 +1024,31 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			}
 
 			messages = append(messages, resp.Message)
-			for i, tc := range resp.ToolCalls {
-				toolResult := inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
 
+			toolResults := make([]string, len(resp.ToolCalls))
+			var g errgroup.Group
+			for i, tc := range resp.ToolCalls {
+				g.Go(func() error {
+					toolResults[i] = inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
+					return nil
+				})
+			}
+			_ = g.Wait()
+
+			for i, tc := range resp.ToolCalls {
 				tcEvent := audit.NewEvent(audit.EventTypeLLMToolCall, correlationID)
 				tcEvent.EventAction = audit.ActionToolExecution
 				tcEvent.EventOutcome = audit.OutcomeSuccess
 				tcEvent.Data["tool_call_index"] = i
 				tcEvent.Data["tool_name"] = tc.Name
 				tcEvent.Data["tool_arguments"] = tc.Arguments
-				tcEvent.Data["tool_result"] = toolResult
-				tcEvent.Data["tool_result_preview"] = truncatePreview(toolResult, 500)
+				tcEvent.Data["tool_result"] = toolResults[i]
+				tcEvent.Data["tool_result_preview"] = truncatePreview(toolResults[i], 500)
 				audit.StoreBestEffort(ctx, inv.auditStore, tcEvent, inv.auditLog())
 
 				messages = append(messages, llm.Message{
 					Role:       "tool",
-					Content:    toolResult,
+					Content:    toolResults[i],
 					ToolCallID: tc.ID,
 					ToolName:   tc.Name,
 				})
