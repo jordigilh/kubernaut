@@ -208,6 +208,7 @@ var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios"
 			Expect(err).NotTo(HaveOccurred(), "User-B SA should be created")
 
 			rrID := "rr-harm006-concurrent"
+			createTestRemediationRequest(ctx, rrID)
 
 			By("User-A connects and starts interactive session (acquires Lease)")
 			sessionA, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{

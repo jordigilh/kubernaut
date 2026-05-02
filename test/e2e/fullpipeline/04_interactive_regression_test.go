@@ -116,7 +116,7 @@ var _ = Describe("CP-5 HARM-001: Autonomous regression — no interactive artifa
 				}
 			}
 			return false
-		}, 3*time.Minute, 2*time.Second).Should(BeTrue(), "Gateway should create RR for OOMKill")
+		}, timeout, interval).Should(BeTrue(), "Gateway should create RR for OOMKill")
 
 		By("Step 4: Waiting for AIAnalysis to reach Completed phase (autonomous)")
 		var aaName string

@@ -20,12 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
-	"github.com/go-logr/logr"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"time"
+
+	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 
 	"github.com/go-chi/chi/v5"
 	. "github.com/onsi/ginkgo/v2"
@@ -243,15 +244,11 @@ func resetMockLLMTracker() {
 // Namespace helpers for test isolation
 // ---------------------------------------------------------------------------
 
-var nsCounter uint64
-var nsCounterMu sync.Mutex
-
 func uniqueNamespace(prefix string) string {
-	nsCounterMu.Lock()
-	nsCounter++
-	n := nsCounter
-	nsCounterMu.Unlock()
-	return fmt.Sprintf("mcp-it-%s-%d", prefix, n)
+	return fmt.Sprintf("mcp-it-%s-%d-%s",
+		prefix,
+		GinkgoParallelProcess(),
+		uuid.New().String()[:8])
 }
 
 func createNamespace(ctx context.Context, k8sClient client.Client, name string) {
