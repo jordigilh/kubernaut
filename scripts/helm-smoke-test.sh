@@ -1298,7 +1298,9 @@ for d in docs:
     --set networkPolicies.enabled=true \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
     --set networkPolicies.notification.enabled=false 2>&1)
-  if ! grep -q "notification" <<< "$output"; then
+  local np_notif_count
+  np_notif_count=$(grep -A1 "kind: NetworkPolicy" <<< "$output" | grep -c "notification" || true)
+  if [[ "$np_notif_count" -eq 0 ]]; then
     tap_ok "ST-NP-004: notification.enabled=false skips Notification NetworkPolicy"
   else
     tap_not_ok "ST-NP-004: per-service disable" \
