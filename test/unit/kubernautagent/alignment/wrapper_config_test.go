@@ -63,13 +63,14 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 				Mode:           config.AlignmentModeMonitor,
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -92,7 +93,7 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:                 inner,
 				Evaluator:             evaluator,
 				VerdictTimeout:        5 * time.Second,
@@ -100,6 +101,7 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 				Mode:                  config.AlignmentModeMonitor,
 				CanaryForceEscalation: true,
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -122,7 +124,7 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:                 inner,
 				Evaluator:             evaluator,
 				VerdictTimeout:        5 * time.Second,
@@ -130,6 +132,7 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 				Mode:                  config.AlignmentModeMonitor,
 				CanaryForceEscalation: false,
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)

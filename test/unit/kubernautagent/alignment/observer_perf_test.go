@@ -40,7 +40,8 @@ var _ = Describe("Performance hardening — PERF-1/PERF-4", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator, 3)
+			observer, err := alignment.NewObserver(evaluator, 3)
+			Expect(err).NotTo(HaveOccurred())
 
 			for i := 0; i < 20; i++ {
 				observer.SubmitAsync(context.Background(), alignment.Step{
@@ -63,7 +64,8 @@ var _ = Describe("Performance hardening — PERF-1/PERF-4", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 0, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindToolResult, Content: longContent,
@@ -86,7 +88,8 @@ var _ = Describe("Performance hardening — PERF-1/PERF-4", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindToolResult, Content: shortContent,

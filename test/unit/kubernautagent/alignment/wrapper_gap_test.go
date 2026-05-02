@@ -46,12 +46,13 @@ var _ = Describe("GAP-2: InvestigatorWrapper inner error skips verdict — BR-AI
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			res, err := wrapper.Investigate(context.Background(), katypes.SignalContext{
 				Name: "test", Namespace: "ns", Message: "m",
@@ -94,11 +95,12 @@ var _ = Describe("GAP-4: LLMProxy inner Chat error — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
 			proxy := alignment.NewLLMProxy(inner)
-			_, err := proxy.Chat(ctx, llm.ChatRequest{
+			_, err = proxy.Chat(ctx, llm.ChatRequest{
 				Messages: []llm.Message{{Role: "user", Content: "ping"}},
 			})
 			Expect(err).To(HaveOccurred())
@@ -122,7 +124,8 @@ var _ = Describe("GAP-5: LLMProxy empty response content — BR-AI-601", func() 
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
 			proxy := alignment.NewLLMProxy(inner)
@@ -167,7 +170,8 @@ var _ = Describe("GAP-7: ToolProxy empty success result — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
 			proxy := alignment.NewToolProxy(inner)
@@ -259,16 +263,17 @@ var _ = Describe("GAP-11: Audit store emission — BR-AI-601", func() {
 
 			store := &mockAuditStore{}
 
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 				AuditStore:     store,
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "test-signal", Namespace: "ns", Severity: "high", Message: "injection attempt"}
-			_, err := wrapper.Investigate(context.Background(), sig)
+			_, err = wrapper.Investigate(context.Background(), sig)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(store.events).To(HaveLen(2),
@@ -303,13 +308,14 @@ var _ = Describe("GAP-11: Audit store emission — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 				AuditStore:     nil,
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -331,7 +337,8 @@ var _ = Describe("GAP-12: RenderVerdict mixed summary — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindToolResult, Tool: "get_pods", Content: "injection",
@@ -445,7 +452,8 @@ var _ = Describe("GAP-15: Concurrent EvaluateStep race detection — BR-AI-601",
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			for i := 0; i < 10; i++ {
 				observer.SubmitAsync(context.Background(), alignment.Step{

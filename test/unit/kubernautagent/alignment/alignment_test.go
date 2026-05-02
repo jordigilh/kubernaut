@@ -118,7 +118,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			steps := []alignment.Step{
 				{Index: 0, Kind: alignment.StepKindToolResult, Tool: "a", Content: "1"},
 				{Index: 1, Kind: alignment.StepKindToolResult, Tool: "b", Content: "2"},
@@ -140,7 +141,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(slowClient, alignment.EvaluatorConfig{
 				Timeout: 2 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: 0, Content: "slow"})
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: 1, Content: "slow"})
@@ -156,7 +158,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindToolResult, Tool: "get_pods", Content: "pods OK",
@@ -176,7 +179,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindToolResult, Tool: "get_pods",
@@ -212,12 +216,14 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
 
-			obs1 := alignment.NewObserver(evaluator)
+			obs1, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx1 := alignment.WithObserver(context.Background(), obs1)
 			retrieved1 := alignment.ObserverFromContext(ctx1)
 			Expect(retrieved1).To(BeIdenticalTo(obs1), "observer must be retrievable from context")
 
-			obs2 := alignment.NewObserver(evaluator)
+			obs2, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx2 := alignment.WithObserver(context.Background(), obs2)
 			retrieved2 := alignment.ObserverFromContext(ctx2)
 			Expect(retrieved2).To(BeIdenticalTo(obs2))
@@ -239,7 +245,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
 			proxy := alignment.NewLLMProxy(inner)
@@ -265,7 +272,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
 			proxy := alignment.NewToolProxy(inner)
@@ -311,12 +319,13 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(err).NotTo(HaveOccurred())
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 
 			res, err := wrapper.Investigate(context.Background(), sig)

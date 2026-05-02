@@ -30,33 +30,31 @@ import (
 
 var _ = Describe("Correctness fixes — BR-AI-601", func() {
 
-	Describe("UT-SA-601-CX-001: NewObserver panics on nil evaluator", func() {
-		It("should panic when passed nil evaluator", func() {
-			Expect(func() {
-				alignment.NewObserver(nil)
-			}).To(Panic())
+	Describe("UT-SA-601-CX-001: NewObserver returns error on nil evaluator", func() {
+		It("should return an error when passed nil evaluator", func() {
+			_, err := alignment.NewObserver(nil)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("evaluator must not be nil"))
 		})
 	})
 
-	Describe("UT-SA-601-CX-002: NewInvestigatorWrapper panics on nil inner/evaluator", func() {
-		It("should panic when Inner is nil", func() {
-			Expect(func() {
-				alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
-					Inner:     nil,
-					Evaluator: &alignment.Evaluator{},
-					Logger:    logr.Discard(),
-				})
-			}).To(Panic())
+	Describe("UT-SA-601-CX-002: NewInvestigatorWrapper returns error on nil inner/evaluator", func() {
+		It("should return error when Inner is nil", func() {
+			_, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:     nil,
+				Evaluator: &alignment.Evaluator{},
+				Logger:    logr.Discard(),
+			})
+			Expect(err).To(HaveOccurred())
 		})
 
-		It("should panic when Evaluator is nil", func() {
-			Expect(func() {
-				alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
-					Inner:     &mockInvestigationRunner{},
-					Evaluator: nil,
-					Logger:    logr.Discard(),
-				})
-			}).To(Panic())
+		It("should return error when Evaluator is nil", func() {
+			_, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:     &mockInvestigationRunner{},
+				Evaluator: nil,
+				Logger:    logr.Discard(),
+			})
+			Expect(err).To(HaveOccurred())
 		})
 	})
 
@@ -66,7 +64,8 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
 			step := alignment.Step{

@@ -58,12 +58,13 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{
 				Name: "CrashLoopBackOff", Namespace: "production",
@@ -95,12 +96,13 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{
 				Name: "CrashLoopBackOff", Namespace: "production",
@@ -128,12 +130,13 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -236,12 +239,13 @@ var _ = Describe("Explanation sanitization — SEC-2", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)

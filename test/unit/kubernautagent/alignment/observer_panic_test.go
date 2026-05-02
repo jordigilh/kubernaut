@@ -34,7 +34,8 @@ var _ = Describe("Panic recovery in SubmitAsync — SEC-6", func() {
 			evaluator := alignment.NewEvaluator(panicClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx := context.Background()
 
 			step := alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Tool: "get_pods", Content: "data"}
@@ -55,7 +56,8 @@ var _ = Describe("Panic recovery in SubmitAsync — SEC-6", func() {
 			evaluator := alignment.NewEvaluator(panicClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx := context.Background()
 
 			observer.SubmitAsync(ctx, alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Content: "a"})

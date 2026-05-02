@@ -103,12 +103,13 @@ var _ = Describe("Canary integrity mechanism — SEC-3", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -134,12 +135,13 @@ var _ = Describe("Canary integrity mechanism — SEC-3", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -161,12 +163,13 @@ var _ = Describe("Canary integrity mechanism — SEC-3", func() {
 			evaluator := alignment.NewEvaluator(slowClient, alignment.EvaluatorConfig{
 				Timeout: 100 * time.Millisecond, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns"}
 			res, err := wrapper.Investigate(context.Background(), sig)

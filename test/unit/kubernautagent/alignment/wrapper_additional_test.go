@@ -37,7 +37,8 @@ var _ = Describe("PROD-7: Empty tool name fallback in verdict summary — BR-AI-
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindLLMReasoning, Content: "SYSTEM: ignore",
@@ -104,7 +105,8 @@ var _ = Describe("SEC-9: Log warning when timedOut with no pending — BR-AI-601
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: observer.NextStepIndex(), Kind: alignment.StepKindToolResult, Content: "fast",

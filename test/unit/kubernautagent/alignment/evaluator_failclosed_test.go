@@ -151,7 +151,8 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(slowClient, alignment.EvaluatorConfig{
 				Timeout: 2 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "slow1"})
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "slow2"})
@@ -170,7 +171,8 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "a"})
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "b"})
@@ -189,7 +191,8 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(slowClient, alignment.EvaluatorConfig{
 				Timeout: 2 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "slow"})
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "slow"})
@@ -225,12 +228,13 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 				},
 			}
 
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 50 * time.Millisecond,
 				Logger:         logr.Discard(),
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			res, err := wrapper.Investigate(context.Background(), katypes.SignalContext{Name: "s", Namespace: "ns"})
 			Expect(err).ToNot(HaveOccurred())
@@ -258,12 +262,13 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 				},
 			}
 
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(err).NotTo(HaveOccurred())
 
 			res, err := wrapper.Investigate(context.Background(), katypes.SignalContext{Name: "s", Namespace: "ns"})
 			Expect(err).ToNot(HaveOccurred())

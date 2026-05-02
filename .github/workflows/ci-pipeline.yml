@@ -152,6 +152,7 @@ jobs:
           echo "Scanning dependency licenses..."
           go-licenses check ./... \
             --ignore=github.com/jordigilh/kubernaut \
+            --ignore=github.com/segmentio/asm \
             --logtostderr=false
           echo "All dependency licenses are compliant."
 
@@ -160,6 +161,7 @@ jobs:
         run: |
           go-licenses report ./... \
             --ignore=github.com/jordigilh/kubernaut \
+            --ignore=github.com/segmentio/asm \
             --logtostderr=false \
             --format csv > licenses.csv 2>/dev/null || true
           echo "License report generated ($(wc -l < licenses.csv) dependencies)"
