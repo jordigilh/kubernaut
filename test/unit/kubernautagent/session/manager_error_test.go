@@ -34,8 +34,8 @@ import (
 
 var _ = Describe("UT-KA-948: Session manager logs store.Update errors — BR-AUDIT-005", func() {
 
-	Describe("UT-KA-948-001: Manager logs error when session is cleaned up before goroutine completes", func() {
-		It("should log an error when Update fails due to TTL cleanup", func() {
+	Describe("UT-KA-948-001: Manager logs error when session is cancelled before goroutine completes", func() {
+		It("should log when Update fails due to terminal state conflict", func() {
 			var mu sync.Mutex
 			var logLines []string
 			logger := funcr.New(func(prefix, args string) {
@@ -44,21 +44,21 @@ var _ = Describe("UT-KA-948: Session manager logs store.Update errors — BR-AUD
 				logLines = append(logLines, prefix+" "+args)
 			}, funcr.Options{Verbosity: 10})
 
-			store := session.NewStore(1 * time.Millisecond)
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			store.StartCleanupLoop(ctx, 1*time.Millisecond)
-
+			store := session.NewStore(5 * time.Minute)
 			mgr := session.NewManager(store, logger, audit.NopAuditStore{}, metrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
+			gate := make(chan struct{})
 			done := make(chan struct{})
-			_, err := mgr.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
-				time.Sleep(50 * time.Millisecond)
+			id, err := mgr.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+				<-gate
 				close(done)
 				return "result", nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 
+			Expect(mgr.CancelInvestigation(id)).To(Succeed())
+
+			close(gate)
 			Eventually(done, 2*time.Second).Should(BeClosed())
 
 			Eventually(func() string {
@@ -66,7 +66,7 @@ var _ = Describe("UT-KA-948: Session manager logs store.Update errors — BR-AUD
 				defer mu.Unlock()
 				return strings.Join(logLines, "\n")
 			}, 2*time.Second, 5*time.Millisecond).Should(
-				ContainSubstring("failed to update session"),
+				ContainSubstring("post-investigation status update rejected"),
 				"manager must log store.Update errors instead of silently discarding them",
 			)
 		})

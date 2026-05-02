@@ -63,8 +63,8 @@ var _ = Describe("Header Value Resolver — #417", func() {
 	// UT-KA-417-003: secretKeyRef resolves from mounted file (simulated as env var)
 	Describe("UT-KA-417-003: ResolveSecretKeyRef from mounted volume (env)", func() {
 		It("should return the env var value set from mounted secret", func() {
-			os.Setenv("KA_TEST_MOUNTED_SECRET", "mounted-secret-value")
-			defer os.Unsetenv("KA_TEST_MOUNTED_SECRET")
+			Expect(os.Setenv("KA_TEST_MOUNTED_SECRET", "mounted-secret-value")).To(Succeed())
+			DeferCleanup(os.Unsetenv, "KA_TEST_MOUNTED_SECRET")
 
 			val, err := transport.ResolveSecretKeyRef("KA_TEST_MOUNTED_SECRET")
 			Expect(err).NotTo(HaveOccurred())
@@ -77,7 +77,7 @@ var _ = Describe("Header Value Resolver — #417", func() {
 		It("should return trimmed file content", func() {
 			tmpFile, err := os.CreateTemp("", "ka-test-token-*")
 			Expect(err).NotTo(HaveOccurred())
-			defer os.Remove(tmpFile.Name())
+			DeferCleanup(os.Remove, tmpFile.Name())
 
 			_, err = tmpFile.WriteString("jwt-token-xyz\n")
 			Expect(err).NotTo(HaveOccurred())
@@ -94,7 +94,7 @@ var _ = Describe("Header Value Resolver — #417", func() {
 		It("should return updated content after file overwrite", func() {
 			tmpFile, err := os.CreateTemp("", "ka-test-rotation-*")
 			Expect(err).NotTo(HaveOccurred())
-			defer os.Remove(tmpFile.Name())
+			DeferCleanup(os.Remove, tmpFile.Name())
 
 			err = os.WriteFile(tmpFile.Name(), []byte("token-v1"), 0644)
 			Expect(err).NotTo(HaveOccurred())
@@ -132,7 +132,7 @@ var _ = Describe("Header Value Resolver — #417", func() {
 		It("should return error for empty file", func() {
 			tmpFile, err := os.CreateTemp("", "ka-test-empty-*")
 			Expect(err).NotTo(HaveOccurred())
-			defer os.Remove(tmpFile.Name())
+			DeferCleanup(os.Remove, tmpFile.Name())
 			tmpFile.Close()
 
 			_, err = transport.ResolveFilePath(tmpFile.Name())
@@ -143,7 +143,7 @@ var _ = Describe("Header Value Resolver — #417", func() {
 		It("should return error for whitespace-only file", func() {
 			tmpFile, err := os.CreateTemp("", "ka-test-ws-*")
 			Expect(err).NotTo(HaveOccurred())
-			defer os.Remove(tmpFile.Name())
+			DeferCleanup(os.Remove, tmpFile.Name())
 
 			err = os.WriteFile(tmpFile.Name(), []byte("  \n\t\n  "), 0644)
 			Expect(err).NotTo(HaveOccurred())

@@ -28,11 +28,11 @@ var _ = Describe("Environment Config", func() {
 
 	Describe("UT-MOCK-032-001: LoadFromEnv reads env vars with correct defaults", func() {
 		It("should return defaults when no env vars are set", func() {
-			os.Unsetenv("MOCK_LLM_HOST")
-			os.Unsetenv("MOCK_LLM_PORT")
-			os.Unsetenv("MOCK_LLM_FORCE_TEXT")
-			os.Unsetenv("MOCK_LLM_LOG_LEVEL")
-			os.Unsetenv("MOCK_LLM_MODE")
+			Expect(os.Unsetenv("MOCK_LLM_HOST")).To(Succeed())
+			Expect(os.Unsetenv("MOCK_LLM_PORT")).To(Succeed())
+			Expect(os.Unsetenv("MOCK_LLM_FORCE_TEXT")).To(Succeed())
+			Expect(os.Unsetenv("MOCK_LLM_LOG_LEVEL")).To(Succeed())
+			Expect(os.Unsetenv("MOCK_LLM_MODE")).To(Succeed())
 
 			cfg := config.LoadFromEnv()
 			Expect(cfg.Host).To(Equal("0.0.0.0"))
@@ -43,17 +43,17 @@ var _ = Describe("Environment Config", func() {
 		})
 
 		It("should read custom values from env vars", func() {
-			os.Setenv("MOCK_LLM_HOST", "127.0.0.1")
-			os.Setenv("MOCK_LLM_PORT", "9090")
-			os.Setenv("MOCK_LLM_FORCE_TEXT", "true")
-			os.Setenv("MOCK_LLM_LOG_LEVEL", "debug")
-			os.Unsetenv("MOCK_LLM_MODE")
-			defer func() {
-				os.Unsetenv("MOCK_LLM_HOST")
-				os.Unsetenv("MOCK_LLM_PORT")
-				os.Unsetenv("MOCK_LLM_FORCE_TEXT")
-				os.Unsetenv("MOCK_LLM_LOG_LEVEL")
-			}()
+			Expect(os.Setenv("MOCK_LLM_HOST", "127.0.0.1")).To(Succeed())
+			Expect(os.Setenv("MOCK_LLM_PORT", "9090")).To(Succeed())
+			Expect(os.Setenv("MOCK_LLM_FORCE_TEXT", "true")).To(Succeed())
+			Expect(os.Setenv("MOCK_LLM_LOG_LEVEL", "debug")).To(Succeed())
+			Expect(os.Unsetenv("MOCK_LLM_MODE")).To(Succeed())
+			DeferCleanup(func() {
+				Expect(os.Unsetenv("MOCK_LLM_HOST")).To(Succeed())
+				Expect(os.Unsetenv("MOCK_LLM_PORT")).To(Succeed())
+				Expect(os.Unsetenv("MOCK_LLM_FORCE_TEXT")).To(Succeed())
+				Expect(os.Unsetenv("MOCK_LLM_LOG_LEVEL")).To(Succeed())
+			})
 
 			cfg := config.LoadFromEnv()
 			Expect(cfg.Host).To(Equal("127.0.0.1"))
@@ -66,33 +66,33 @@ var _ = Describe("Environment Config", func() {
 
 	Describe("UT-MOCK-032-002: MOCK_LLM_MODE env var", func() {
 		AfterEach(func() {
-			os.Unsetenv("MOCK_LLM_MODE")
-			os.Unsetenv("MOCK_LLM_FORCE_TEXT")
+			Expect(os.Unsetenv("MOCK_LLM_MODE")).To(Succeed())
+			Expect(os.Unsetenv("MOCK_LLM_FORCE_TEXT")).To(Succeed())
 		})
 
 		It("should use explicit MOCK_LLM_MODE when set", func() {
-			os.Setenv("MOCK_LLM_MODE", "interactive")
+			Expect(os.Setenv("MOCK_LLM_MODE", "interactive")).To(Succeed())
 			cfg := config.LoadFromEnv()
 			Expect(cfg.Mode).To(Equal(config.ModeInteractive))
 		})
 
 		It("should derive autonomous from FORCE_TEXT=true when MODE is unset", func() {
-			os.Unsetenv("MOCK_LLM_MODE")
-			os.Setenv("MOCK_LLM_FORCE_TEXT", "true")
+			Expect(os.Unsetenv("MOCK_LLM_MODE")).To(Succeed())
+			Expect(os.Setenv("MOCK_LLM_FORCE_TEXT", "true")).To(Succeed())
 			cfg := config.LoadFromEnv()
 			Expect(cfg.Mode).To(Equal(config.ModeAutonomous))
 		})
 
 		It("should derive full from FORCE_TEXT=false when MODE is unset", func() {
-			os.Unsetenv("MOCK_LLM_MODE")
-			os.Unsetenv("MOCK_LLM_FORCE_TEXT")
+			Expect(os.Unsetenv("MOCK_LLM_MODE")).To(Succeed())
+			Expect(os.Unsetenv("MOCK_LLM_FORCE_TEXT")).To(Succeed())
 			cfg := config.LoadFromEnv()
 			Expect(cfg.Mode).To(Equal(config.ModeFull))
 		})
 
 		It("should prefer explicit MODE over FORCE_TEXT derivation", func() {
-			os.Setenv("MOCK_LLM_MODE", "full")
-			os.Setenv("MOCK_LLM_FORCE_TEXT", "true")
+			Expect(os.Setenv("MOCK_LLM_MODE", "full")).To(Succeed())
+			Expect(os.Setenv("MOCK_LLM_FORCE_TEXT", "true")).To(Succeed())
 			cfg := config.LoadFromEnv()
 			Expect(cfg.Mode).To(Equal(config.ModeFull))
 		})

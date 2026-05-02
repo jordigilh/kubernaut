@@ -89,9 +89,9 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 
 		AfterEach(func() {
 			if origADC != "" {
-				os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", origADC)
+				Expect(os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", origADC)).To(Succeed())
 			} else {
-				os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
+				Expect(os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")).To(Succeed())
 			}
 		})
 

@@ -235,7 +235,7 @@ var _ = Describe("UT-GW-668-005: Gateway Config (BR-GATEWAY-010)", func() {
 	It("BR-GATEWAY-010: should load config from YAML file", func() {
 		tmpDir, err := os.MkdirTemp("", "gw-config-*")
 		Expect(err).NotTo(HaveOccurred())
-		defer os.RemoveAll(tmpDir)
+		DeferCleanup(os.RemoveAll, tmpDir)
 
 		cfgYAML := `
 server:
