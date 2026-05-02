@@ -40,29 +40,28 @@ func NewToolProxy(inner registry.ToolRegistry) *ToolProxy {
 	return &ToolProxy{inner: inner}
 }
 
-// Execute delegates to the inner registry, then submits the result (or error)
-// for alignment evaluation via the context-scoped Observer.
-// Error content is also submitted: injection can occur in error paths.
+// Execute delegates to the inner registry. Shadow observation is handled
+// post-pipeline by the investigator (SubmitToolStep) so the shadow agent
+// evaluates the same sanitized, truncated output that the primary LLM sees.
 func (p *ToolProxy) Execute(ctx context.Context, name string, args json.RawMessage) (string, error) {
-	result, err := p.inner.Execute(ctx, name, args)
+	return p.inner.Execute(ctx, name, args)
+}
 
-	if obs := ObserverFromContext(ctx); obs != nil {
-		content := result
-		if err != nil {
-			content = err.Error()
-		}
-		if content != "" {
-			step := Step{
-				Index:   obs.NextStepIndex(),
-				Kind:    StepKindToolResult,
-				Tool:    name,
-				Content: content,
-			}
-			obs.SubmitAsync(ctx, step)
-		}
+// SubmitToolStep sends a post-pipeline tool result to the shadow agent for
+// alignment evaluation. Called by the investigator after sanitize/summarize/
+// truncate so the shadow evaluates the same content the primary LLM sees.
+func SubmitToolStep(ctx context.Context, name, content string) {
+	obs := ObserverFromContext(ctx)
+	if obs == nil || content == "" {
+		return
 	}
-
-	return result, err
+	step := Step{
+		Index:   obs.NextStepIndex(),
+		Kind:    StepKindToolResult,
+		Tool:    name,
+		Content: content,
+	}
+	obs.SubmitAsync(ctx, step)
 }
 
 // ToolsForPhase delegates directly to the inner registry.

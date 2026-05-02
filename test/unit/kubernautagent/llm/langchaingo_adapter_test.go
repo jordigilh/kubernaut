@@ -372,6 +372,68 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 		})
 	})
 
+	Describe("UT-KA-967-001: Temperature=0 must reach the LLM backend", func() {
+		var (
+			server       *httptest.Server
+			adapter      llm.Client
+			receivedBody []byte
+		)
+
+		BeforeEach(func() {
+			content := "deterministic output"
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var reqBody json.RawMessage
+				Expect(json.NewDecoder(r.Body).Decode(&reqBody)).To(Succeed())
+				receivedBody = reqBody
+
+				resp := openaitypes.ChatCompletionResponse{
+					ID:      "chatcmpl-temp0",
+					Object:  openaitypes.ObjectChatCompletion,
+					Created: openaitypes.FixedCreatedTime,
+					Model:   "mock-model",
+					Choices: []openaitypes.Choice{
+						{
+							Index:        0,
+							Message:      openaitypes.Message{Role: "assistant", Content: &content},
+							FinishReason: "stop",
+						},
+					},
+					Usage: openaitypes.Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				Expect(json.NewEncoder(w).Encode(resp)).To(Succeed())
+			}))
+
+			var err error
+			adapter, err = langchaingo.New("openai", server.URL, "mock-model", "sk-test")
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		AfterEach(func() {
+			server.Close()
+		})
+
+		It("should include temperature=0 in the request when explicitly set — BR-HAPI-199", func() {
+			zero := 0.0
+			req := llm.ChatRequest{
+				Messages: []llm.Message{{Role: "user", Content: "deterministic query"}},
+				Options:  llm.ChatOptions{Temperature: &zero},
+			}
+
+			_, err := adapter.Chat(context.Background(), req)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(receivedBody).NotTo(BeEmpty())
+			var sent map[string]interface{}
+			Expect(json.Unmarshal(receivedBody, &sent)).To(Succeed())
+			Expect(sent).To(HaveKey("temperature"),
+				"temperature=0 must be sent to the LLM, not silently dropped")
+			Expect(sent["temperature"]).To(BeNumerically("==", 0),
+				"temperature value must be exactly 0 for deterministic/greedy decoding")
+		})
+
+	})
+
 	Describe("UT-KA-433-051: Anthropic adapter Chat() via mock HTTP server", func() {
 		var (
 			server  *httptest.Server

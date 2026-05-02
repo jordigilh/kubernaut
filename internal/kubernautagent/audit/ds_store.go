@@ -151,9 +151,7 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		if args := dataString(event.Data, "tool_arguments"); args != "" {
 			payload.ToolArguments.SetTo(toJxRawMap(args))
 		}
-		if result := dataString(event.Data, "tool_result"); result != "" {
-			payload.ToolResult = toJxRaw(result)
-		}
+		payload.ToolResult = toJxRaw(dataString(event.Data, "tool_result"))
 		if preview := dataString(event.Data, "tool_result_preview"); preview != "" {
 			payload.ToolResultPreview.SetTo(truncate(preview, previewMaxLen))
 		}

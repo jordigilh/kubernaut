@@ -169,7 +169,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	swappable, err := llm.NewSwappableClient(llmClient, llmRuntime.Model)
+	swappable, err := llm.NewSwappableClient(llmClient, llmRuntime.Model, llm.RuntimeParams{
+		Temperature:    llmRuntime.Temperature,
+		TimeoutSeconds: llmRuntime.TimeoutSeconds,
+		MaxRetries:     llmRuntime.MaxRetries,
+	})
 	if err != nil {
 		logger.Error(err, "failed to create swappable LLM client")
 		os.Exit(1)
@@ -211,7 +215,7 @@ func main() {
 		var shadowClient llm.Client
 		if cfg.AI.AlignmentCheck.LLM == nil {
 			shadowClient = instrumentedLLM
-			logger.Info("shadow agent shares investigation LLM client")
+			logger.Error(nil, "shadow agent shares investigation LLM client — shadow requests will compete with primary investigation; configure ai.alignmentCheck.llm for dedicated shadow model")
 		} else {
 			alignStaticCfg, alignRtCfg := cfg.AI.AlignmentCheck.EffectiveLLM(cfg.AI.LLM, *llmRuntime)
 			alignCfgMerge := *cfg
@@ -594,11 +598,15 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *d
 		return nil
 	}
 
-	// Issue #853: Wrapped with RetryTransport for transient failure resilience.
-	dsBase, tlsErr := sharedtls.DefaultBaseTransportWithRetry()
+	dsBase, tlsErr := buildDSBaseTransport(cfg.Integrations.DataStorage.TLS.CAFile)
 	if tlsErr != nil {
-		logger.Error(tlsErr, "failed to create TLS-aware transport for DS client")
+		logger.Error(tlsErr, "failed to create TLS-aware transport for DS client",
+			"ca_file", cfg.Integrations.DataStorage.TLS.CAFile)
 		return nil
+	}
+	if cfg.Integrations.DataStorage.TLS.CAFile != "" {
+		logger.Info("DS client configured with custom TLS CA",
+			"ca_file", cfg.Integrations.DataStorage.TLS.CAFile)
 	}
 
 	var opts []ogenclient.ClientOption
@@ -625,6 +633,21 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *d
 		dsAdapter:  enrichment.NewDSAdapter(ogenClient),
 		k8sAdapter: enrichment.NewK8sAdapter(infra.dynClient, infra.mapper),
 	}
+}
+
+// buildDSBaseTransport creates the base HTTP transport for the DataStorage
+// client. When caFile is set, uses a custom TLS transport with the specified CA;
+// otherwise falls back to the shared default transport with retry.
+// Issue #951: Wire DataStorageConfig.TLS.CAFile to DS HTTP client.
+func buildDSBaseTransport(caFile string) (http.RoundTripper, error) {
+	if caFile != "" {
+		tlsTransport, err := sharedtls.NewTLSTransport(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("DS TLS transport: %w", err)
+		}
+		return sharedtransport.NewRetryTransport(tlsTransport, sharedtransport.DefaultRetryConfig()), nil
+	}
+	return sharedtls.DefaultBaseTransportWithRetry()
 }
 
 // bearerTransport injects a Kubernetes ServiceAccount Bearer token into

@@ -366,6 +366,9 @@ func (c *Config) Validate() error {
 	if c.AI.Investigation.MaxTurns <= 0 {
 		return fmt.Errorf("ai.investigation.maxTurns must be positive, got %d", c.AI.Investigation.MaxTurns)
 	}
+	if c.AI.Summarizer.MaxToolOutputSize <= 0 {
+		return fmt.Errorf("ai.summarizer.maxToolOutputSize must be positive, got %d", c.AI.Summarizer.MaxToolOutputSize)
+	}
 	if c.AI.LLM.OAuth2.Enabled {
 		if c.AI.LLM.OAuth2.TokenURL == "" {
 			return fmt.Errorf("ai.llm.oauth2.tokenURL is required when oauth2.enabled=true")

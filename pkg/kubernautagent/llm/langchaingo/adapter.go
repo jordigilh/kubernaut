@@ -293,8 +293,8 @@ func buildCallOptions(req llm.ChatRequest, logger logr.Logger) []llms.CallOption
 		}
 		opts = append(opts, llms.WithTools(tools))
 	}
-	if req.Options.Temperature > 0 {
-		opts = append(opts, llms.WithTemperature(req.Options.Temperature))
+	if req.Options.Temperature != nil {
+		opts = append(opts, llms.WithTemperature(*req.Options.Temperature))
 	}
 	if req.Options.MaxTokens > 0 {
 		opts = append(opts, llms.WithMaxTokens(req.Options.MaxTokens))

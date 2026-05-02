@@ -166,7 +166,10 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 	sess.lazySink = ls
 	m.store.mu.Unlock()
 
-	_ = m.store.Update(id, StatusRunning, nil, nil)
+	if updateErr := m.store.Update(id, StatusRunning, nil, nil); updateErr != nil {
+		m.logger.Error(updateErr, "failed to update session",
+			"session_id", id, "target_status", string(StatusRunning))
+	}
 
 	m.emitSessionEvent(ctx, audit.EventTypeSessionStarted, audit.ActionSessionStarted, audit.OutcomeSuccess, id, correlationID, nil, startExtra...)
 	m.metrics.RecordSessionStarted(signalName, severity)
@@ -397,7 +400,10 @@ func (m *Manager) recoverPanic(id, correlationID string) {
 	m.logger.Error(fmt.Errorf("panic: %v", r), "investigation panic recovered",
 		"session_id", id,
 	)
-	_ = m.store.Update(id, StatusFailed, nil, fmt.Errorf("panic: %v", r))
+	if updateErr := m.store.Update(id, StatusFailed, nil, fmt.Errorf("panic: %v", r)); updateErr != nil {
+		m.logger.Error(updateErr, "failed to update session after panic",
+			"session_id", id, "target_status", string(StatusFailed))
+	}
 	m.emitSessionEvent(context.Background(), audit.EventTypeSessionFailed, audit.ActionSessionFailed, audit.OutcomeFailure, id, correlationID, fmt.Errorf("panic: %v", r))
 }
 

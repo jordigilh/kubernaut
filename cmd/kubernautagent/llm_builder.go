@@ -65,7 +65,11 @@ func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) [
 	}
 
 	if transport := buildTransportChain(cfg, rt); transport != nil {
-		opts = append(opts, langchaingo.WithHTTPClient(&http.Client{Transport: transport, Timeout: 5 * time.Minute}))
+		httpClient := &http.Client{Transport: transport}
+		if rt.TimeoutSeconds > 0 {
+			httpClient.Timeout = time.Duration(rt.TimeoutSeconds) * time.Second
+		}
+		opts = append(opts, langchaingo.WithHTTPClient(httpClient))
 		opts = append(opts, langchaingo.WithCloser(func() error {
 			if t, ok := transport.(interface{ CloseIdleConnections() }); ok {
 				t.CloseIdleConnections()
@@ -144,7 +148,11 @@ func llmRuntimeReloadCallback(
 			return fmt.Errorf("reload: building LLM client: %w", err)
 		}
 
-		if err := swappable.Swap(newClient, rt.Model); err != nil {
+		if err := swappable.Swap(newClient, rt.Model, llm.RuntimeParams{
+			Temperature:    rt.Temperature,
+			TimeoutSeconds: rt.TimeoutSeconds,
+			MaxRetries:     rt.MaxRetries,
+		}); err != nil {
 			return fmt.Errorf("reload: swapping client: %w", err)
 		}
 
