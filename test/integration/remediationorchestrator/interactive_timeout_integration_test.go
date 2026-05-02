@@ -45,6 +45,7 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -63,7 +64,18 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration
 			ai := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{Name: aiName, Namespace: ns},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: rrName, Namespace: ns},
+					RemediationID:         "it-703-001",
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
+							Fingerprint:      "a1b2c3d4e5f6",
+							Severity:         "medium",
+							SignalName:       "TestSignal",
+							Environment:      "test",
+							BusinessPriority: "P2",
+							TargetResource:   aianalysisv1.TargetResource{Kind: "Pod", Name: "test-pod", Namespace: ns},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
+						},
 						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},
@@ -120,7 +132,18 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration
 			ai := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{Name: aiName, Namespace: ns},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: rrName, Namespace: ns},
+					RemediationID:         "it-703-002",
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
+							Fingerprint:      "a1b2c3d4e5f6",
+							Severity:         "medium",
+							SignalName:       "TestSignal",
+							Environment:      "test",
+							BusinessPriority: "P2",
+							TargetResource:   aianalysisv1.TargetResource{Kind: "Pod", Name: "test-pod", Namespace: ns},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
+						},
 						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 					},
 				},

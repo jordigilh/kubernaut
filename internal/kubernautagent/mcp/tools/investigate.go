@@ -49,6 +49,13 @@ type AutonomousSessionManager interface {
 	CancelInvestigation(id string) error
 }
 
+// RRExistenceChecker validates that a RemediationRequest exists before
+// creating a Lease. Prevents orphaned Lease resources for non-existent RRs
+// (HARM-004). Implemented by a thin K8s client wrapper at wiring time.
+type RRExistenceChecker interface {
+	RemediationRequestExists(ctx context.Context, rrID string) (bool, error)
+}
+
 // MessageRateLimiter enforces per-session rate limits on tool messages.
 // Implemented by *mcp.SessionRateLimiter.
 type MessageRateLimiter interface {
@@ -70,6 +77,7 @@ type InvestigateTool struct {
 	runner         InvestigatorRunner
 	recon          mcpinternal.ContextReconstructor
 	autoMgr        AutonomousSessionManager
+	rrChecker      RRExistenceChecker
 	metrics        ToolMetrics
 	rateLimiter    MessageRateLimiter
 	timeoutTracker TimeoutTracker
@@ -113,6 +121,16 @@ func WithTimeoutTracker(tt TimeoutTracker) InvestigateOption {
 	return func(t *InvestigateTool) {
 		if tt != nil {
 			t.timeoutTracker = tt
+		}
+	}
+}
+
+// WithRRExistenceChecker enables pre-Lease validation that the target
+// RemediationRequest exists (HARM-004: prevents orphaned Lease resources).
+func WithRRExistenceChecker(checker RRExistenceChecker) InvestigateOption {
+	return func(t *InvestigateTool) {
+		if checker != nil {
+			t.rrChecker = checker
 		}
 	}
 }
@@ -182,6 +200,16 @@ func (t *InvestigateTool) dispatch(ctx context.Context, input InvestigateInput, 
 }
 
 func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
+	if t.rrChecker != nil {
+		exists, err := t.rrChecker.RemediationRequestExists(ctx, input.RRID)
+		if err != nil {
+			return InvestigateOutput{}, fmt.Errorf("validate remediation request: %w", err)
+		}
+		if !exists {
+			return InvestigateOutput{}, ErrCodeRRNotFound.WithDetail("rr_id", input.RRID)
+		}
+	}
+
 	sess, err := t.sessions.Takeover(ctx, input.RRID, user)
 	if err != nil {
 		if errors.Is(err, mcpinternal.ErrLeaseHeld) {

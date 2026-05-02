@@ -26,9 +26,10 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
-var _ = Describe("CP-5 UX: User Experience & Operational Tests", Label("e2e", "ka", "interactive", "ux"), Ordered, func() {
+var _ = Describe("CP-5 UX: User Experience & Operational Tests", Label("e2e", "ka", "interactive", "ux"), func() {
 
 	var (
 		mcpEndpoint  string
@@ -36,9 +37,9 @@ var _ = Describe("CP-5 UX: User Experience & Operational Tests", Label("e2e", "k
 		saToken      string
 	)
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		mcpEndpoint = infrastructure.MCPEndpointForKAE2E()
-		tlsTransport = http.DefaultTransport
+		tlsTransport = testauth.NewRetryOn429Transport(http.DefaultTransport)
 
 		var err error
 		saToken, err = infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "kubernaut-agent-e2e-sa", kubeconfigPath)

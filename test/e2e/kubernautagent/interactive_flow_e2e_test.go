@@ -27,9 +27,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
-var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka", "interactive", "int"), Ordered, func() {
+var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka", "interactive", "int"), func() {
 
 	var (
 		mcpEndpoint  string
@@ -37,9 +38,9 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 		saToken      string
 	)
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		mcpEndpoint = infrastructure.MCPEndpointForKAE2E()
-		tlsTransport = http.DefaultTransport
+		tlsTransport = testauth.NewRetryOn429Transport(http.DefaultTransport)
 
 		var err error
 		saToken, err = infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "kubernaut-agent-e2e-sa", kubeconfigPath)

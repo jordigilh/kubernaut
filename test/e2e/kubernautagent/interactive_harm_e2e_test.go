@@ -31,18 +31,19 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
-var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios", Label("e2e", "ka", "interactive", "harm"), Ordered, func() {
+var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios", Label("e2e", "ka", "interactive", "harm"), func() {
 
 	var (
 		mcpEndpoint  string
 		tlsTransport http.RoundTripper
 	)
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		mcpEndpoint = infrastructure.MCPEndpointForKAE2E()
-		tlsTransport = http.DefaultTransport
+		tlsTransport = testauth.NewRetryOn429Transport(http.DefaultTransport)
 	})
 
 	// ---------------------------------------------------------------

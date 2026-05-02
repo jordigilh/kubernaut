@@ -74,4 +74,8 @@ var (
 		Code:    "session_expired",
 		Message: "Session has expired due to TTL or inactivity. Start a new session.",
 	}
+	ErrCodeRRNotFound = &MCPError{
+		Code:    "rr_not_found",
+		Message: "RemediationRequest not found",
+	}
 )
