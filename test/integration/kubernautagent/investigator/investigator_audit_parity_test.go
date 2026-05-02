@@ -815,8 +815,8 @@ var _ = Describe("IT-KA-947: Alignment audit events emitted during investigation
 					continue
 				}
 				found++
-				Expect(e.CorrelationID).To(Equal(signal.Name),
-					"alignment event CorrelationID must match signal name")
+				Expect(e.CorrelationID).To(Equal(signal.RemediationID),
+					"alignment event CorrelationID must match signal RemediationID (GAP-A4)")
 
 				rawID, ok := e.Data["event_id"]
 				Expect(ok).To(BeTrue(), "event_id missing on %s event", e.EventType)

@@ -151,12 +151,13 @@ type DataStorageConfig struct {
 }
 
 type ServerConfig struct {
-	Address    string              `yaml:"address"`
-	Port       int                 `yaml:"port"`
-	HealthAddr string              `yaml:"healthAddr"`
-	MetricsAddr string             `yaml:"metricsAddr"`
-	TLS        sharedtls.TLSConfig `yaml:"tls,omitempty"`
-	TLSProfile string              `yaml:"tlsProfile,omitempty"`
+	Address               string              `yaml:"address"`
+	Port                  int                 `yaml:"port"`
+	HealthAddr            string              `yaml:"healthAddr"`
+	MetricsAddr           string              `yaml:"metricsAddr"`
+	MaxConcurrentRequests int                 `yaml:"maxConcurrentRequests"`
+	TLS                   sharedtls.TLSConfig `yaml:"tls,omitempty"`
+	TLSProfile            string              `yaml:"tlsProfile,omitempty"`
 }
 
 type SessionConfig struct {
@@ -349,6 +350,9 @@ func (c *Config) Validate() error {
 	if c.Runtime.Server.Port < 1 || c.Runtime.Server.Port > 65535 {
 		return fmt.Errorf("runtime.server.port must be 1-65535, got %d", c.Runtime.Server.Port)
 	}
+	if c.Runtime.Server.MaxConcurrentRequests < 0 {
+		return fmt.Errorf("runtime.server.maxConcurrentRequests must be non-negative, got %d", c.Runtime.Server.MaxConcurrentRequests)
+	}
 	if c.Runtime.Session.TTL <= 0 {
 		return fmt.Errorf("runtime.session.ttl must be positive, got %v", c.Runtime.Session.TTL)
 	}
@@ -423,7 +427,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Runtime: RuntimeConfig{
 			Logging: internalconfig.DefaultLoggingConfig(),
-			Server:  ServerConfig{Address: "0.0.0.0", Port: 8080, HealthAddr: ":8081", MetricsAddr: ":9090"},
+			Server:  ServerConfig{Address: "0.0.0.0", Port: 8080, HealthAddr: ":8081", MetricsAddr: ":9090", MaxConcurrentRequests: 100},
 			Session: SessionConfig{TTL: 30 * time.Minute, MaxConcurrentInvestigations: 10},
 			Audit: AuditConfig{
 				Enabled:    true,

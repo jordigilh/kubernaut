@@ -25,11 +25,11 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -290,7 +290,6 @@ func main() {
 	r := chi.NewRouter()
 
 	const maxRequestBodySize int64 = 1 << 20 // 1 MiB
-	rl := newRateLimiter(60, time.Minute)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler {
@@ -299,7 +298,11 @@ func main() {
 				next.ServeHTTP(w, req)
 			})
 		})
-		r.Use(rl.middleware)
+		if cfg.Runtime.Server.MaxConcurrentRequests > 0 {
+			logger.Info("concurrency throttling enabled",
+				"max_concurrent_requests", cfg.Runtime.Server.MaxConcurrentRequests)
+			r.Use(chimiddleware.Throttle(cfg.Runtime.Server.MaxConcurrentRequests))
+		}
 
 		authMw := newAuthMiddleware(k8sInfra, logger)
 		if authMw != nil {
@@ -933,56 +936,3 @@ func newAuthMiddleware(infra *k8sInfra, logger logr.Logger) *auth.Middleware {
 	}, logger)
 }
 
-// rateLimiter implements a simple per-IP sliding window rate limiter.
-type rateLimiter struct {
-	mu       sync.Mutex
-	visitors map[string][]time.Time
-	limit    int
-	window   time.Duration
-}
-
-func newRateLimiter(requestsPerWindow int, window time.Duration) *rateLimiter {
-	return &rateLimiter{
-		visitors: make(map[string][]time.Time),
-		limit:    requestsPerWindow,
-		window:   window,
-	}
-}
-
-func (rl *rateLimiter) allow(ip string) bool {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	now := time.Now()
-	cutoff := now.Add(-rl.window)
-	ts := rl.visitors[ip]
-
-	// Trim expired entries
-	valid := ts[:0]
-	for _, t := range ts {
-		if t.After(cutoff) {
-			valid = append(valid, t)
-		}
-	}
-
-	if len(valid) >= rl.limit {
-		rl.visitors[ip] = valid
-		return false
-	}
-	rl.visitors[ip] = append(valid, now)
-	return true
-}
-
-func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if !rl.allow(ip) {
-			w.Header().Set("Content-Type", "application/problem+json")
-			w.Header().Set("Retry-After", "60")
-			w.WriteHeader(http.StatusTooManyRequests)
-			_, _ = w.Write([]byte(`{"type":"https://kubernaut.ai/problems/rate-limited","title":"Too Many Requests","status":429,"detail":"rate limit exceeded"}`))
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
