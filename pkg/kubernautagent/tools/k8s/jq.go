@@ -126,7 +126,10 @@ func runJQ(ctx context.Context, resolver ResourceResolver, kind, expr string, co
 		if err, isErr := v.(error); isErr {
 			return "", fmt.Errorf("jq execution error: %w", err)
 		}
-		b, _ := json.Marshal(v)
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "", fmt.Errorf("jq result marshal error: %w", err)
+		}
 		results = append(results, string(b))
 		if len(results) >= maxJQResults {
 			break

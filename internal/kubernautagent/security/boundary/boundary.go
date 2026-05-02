@@ -32,12 +32,12 @@ const (
 )
 
 // Generate returns a crypto-random hex boundary token (16 bytes = 32 hex chars).
-func Generate() string {
+func Generate() (string, error) {
 	b := make([]byte, tokenBytes)
 	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("boundary: crypto/rand failed: %v", err))
+		return "", fmt.Errorf("boundary: crypto/rand failed: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 // Wrap wraps content in random boundary markers.
@@ -56,11 +56,14 @@ func ContainsEscape(content, token string) bool {
 }
 
 // WrapOrFlag generates a boundary, checks for escape, and wraps if safe.
-// Returns (wrapped, token, escaped). If escaped is true, wrapped is empty.
-func WrapOrFlag(content string) (wrapped string, token string, escaped bool) {
-	token = Generate()
-	if ContainsEscape(content, token) {
-		return "", token, true
+// Returns (wrapped, token, escaped, error). If escaped is true, wrapped is empty.
+func WrapOrFlag(content string) (wrapped string, token string, escaped bool, err error) {
+	token, err = Generate()
+	if err != nil {
+		return "", "", false, err
 	}
-	return Wrap(content, token), token, false
+	if ContainsEscape(content, token) {
+		return "", token, true, nil
+	}
+	return Wrap(content, token), token, false, nil
 }

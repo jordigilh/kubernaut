@@ -598,3 +598,50 @@ var _ = Describe("AlignmentCheck EffectiveLLM merge — BR-AI-601", func() {
 		})
 	})
 })
+
+var _ = Describe("Config.Validate — GAP-C3 (#954)", func() {
+	DescribeTable("should reject invalid config values",
+		func(mutate func(*config.Config), substr string) {
+			cfg := config.DefaultConfig()
+			mutate(cfg)
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(substr))
+		},
+		Entry("port=0", func(c *config.Config) { c.Runtime.Server.Port = 0 }, "port"),
+		Entry("port=70000", func(c *config.Config) { c.Runtime.Server.Port = 70000 }, "port"),
+		Entry("session TTL=-1", func(c *config.Config) { c.Runtime.Session.TTL = -1 * time.Second }, "ttl"),
+		Entry("audit bufferSize=0 when enabled", func(c *config.Config) {
+			c.Runtime.Audit.Enabled = true
+			c.Runtime.Audit.BufferSize = 0
+		}, "bufferSize"),
+		Entry("audit batchSize=0 when enabled", func(c *config.Config) {
+			c.Runtime.Audit.Enabled = true
+			c.Runtime.Audit.BatchSize = 0
+		}, "batchSize"),
+		Entry("maxToolOutputSize=0", func(c *config.Config) {
+			c.AI.Summarizer.MaxToolOutputSize = 0
+		}, "maxToolOutputSize"),
+		Entry("enrichment maxRetries=-1", func(c *config.Config) {
+			c.AI.Enrichment.MaxRetries = -1
+		}, "maxRetries"),
+		Entry("anomaly maxToolCallsPerTool=0", func(c *config.Config) {
+			c.AI.Safety.Anomaly.MaxToolCallsPerTool = 0
+		}, "maxToolCallsPerTool"),
+		Entry("anomaly maxTotalToolCalls=0", func(c *config.Config) {
+			c.AI.Safety.Anomaly.MaxTotalToolCalls = 0
+		}, "maxTotalToolCalls"),
+		Entry("anomaly maxRepeatedFailures=0", func(c *config.Config) {
+			c.AI.Safety.Anomaly.MaxRepeatedFailures = 0
+		}, "maxRepeatedFailures"),
+		Entry("alignment maxRetries=-1 when enabled", func(c *config.Config) {
+			c.AI.AlignmentCheck.Enabled = true
+			c.AI.AlignmentCheck.MaxRetries = -1
+		}, "maxRetries"),
+	)
+
+	It("should accept DefaultConfig as valid", func() {
+		cfg := config.DefaultConfig()
+		Expect(cfg.Validate()).To(Succeed())
+	})
+})

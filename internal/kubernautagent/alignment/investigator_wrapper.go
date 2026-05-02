@@ -55,13 +55,13 @@ type InvestigatorWrapperConfig struct {
 }
 
 // NewInvestigatorWrapper creates an InvestigatorWrapper.
-// Panics if Inner or Evaluator is nil to prevent nil deref during Investigate.
-func NewInvestigatorWrapper(cfg InvestigatorWrapperConfig) *InvestigatorWrapper {
+// Returns an error if Inner or Evaluator is nil to prevent nil deref during Investigate.
+func NewInvestigatorWrapper(cfg InvestigatorWrapperConfig) (*InvestigatorWrapper, error) {
 	if cfg.Inner == nil {
-		panic("alignment.NewInvestigatorWrapper: Inner must not be nil")
+		return nil, fmt.Errorf("alignment.NewInvestigatorWrapper: Inner must not be nil")
 	}
 	if cfg.Evaluator == nil {
-		panic("alignment.NewInvestigatorWrapper: Evaluator must not be nil")
+		return nil, fmt.Errorf("alignment.NewInvestigatorWrapper: Evaluator must not be nil")
 	}
 	logger := cfg.Logger
 	var zero logr.Logger
@@ -80,7 +80,7 @@ func NewInvestigatorWrapper(cfg InvestigatorWrapperConfig) *InvestigatorWrapper 
 		logger:                logger,
 		mode:                  mode,
 		canaryForceEscalation: cfg.CanaryForceEscalation,
-	}
+	}, nil
 }
 
 // Investigate runs a canary integrity check, creates a per-request Observer,
@@ -113,7 +113,10 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 		)
 	}
 
-	observer := NewObserver(w.evaluator)
+	observer, obsErr := NewObserver(w.evaluator)
+	if obsErr != nil {
+		return nil, fmt.Errorf("alignment observer: %w", obsErr)
+	}
 	ctx = WithObserver(ctx, observer)
 
 	if signalContent := BuildSignalInputContent(signal); signalContent != "" {
@@ -195,6 +198,9 @@ func (w *InvestigatorWrapper) emitAlignmentAudit(ctx context.Context, signal kat
 	}
 
 	correlationID := signal.RemediationID
+	if correlationID == "" {
+		correlationID = signal.Name
+	}
 
 	for _, obs := range verdict.Observations {
 		if obs.Suspicious {

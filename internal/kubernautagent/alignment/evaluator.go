@@ -83,10 +83,15 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 
 	rawContent := step.Content
 
-	// Step 1: Generate boundary token
-	token := boundary.Generate()
+	token, genErr := boundary.Generate()
+	if genErr != nil {
+		return Observation{
+			Step:        step,
+			Suspicious:  true,
+			Explanation: fmt.Sprintf("boundary generation failed (fail-closed): %v", genErr),
+		}
+	}
 
-	// Step 2: Pre-scan raw content for escape attempt (fail-closed)
 	if boundary.ContainsEscape(rawContent, token) {
 		return Observation{
 			Step:        step,

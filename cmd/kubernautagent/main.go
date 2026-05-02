@@ -22,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -30,6 +31,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -46,14 +48,13 @@ import (
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
-	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
-
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	sharedtransport "github.com/jordigilh/kubernaut/pkg/shared/transport"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
+	kaapi "github.com/jordigilh/kubernaut/internal/kubernautagent/api"
 	alignprompt "github.com/jordigilh/kubernaut/internal/kubernautagent/alignment/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
@@ -275,7 +276,7 @@ func main() {
 
 	var investigationRunner kaserver.InvestigationRunner = inv
 	if alignEvaluator != nil {
-		investigationRunner = alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+		wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 			Inner:                 inv,
 			Evaluator:             alignEvaluator,
 			VerdictTimeout:        cfg.AI.AlignmentCheck.VerdictTimeout,
@@ -284,6 +285,11 @@ func main() {
 			Mode:                  cfg.AI.AlignmentCheck.Mode,
 			CanaryForceEscalation: cfg.AI.AlignmentCheck.Canary.ForceEscalation,
 		})
+		if wrapErr != nil {
+			logger.Error(wrapErr, "failed to create alignment wrapper")
+			os.Exit(1)
+		}
+		investigationRunner = wrapper
 	}
 
 	store := session.NewStore(cfg.Runtime.Session.TTL)
@@ -299,8 +305,7 @@ func main() {
 
 	r := chi.NewRouter()
 
-	// Issue #753: /config remains on API port; health, readiness and metrics move to dedicated ports
-	r.Get("/config", configHandler(cfg, swappable))
+	const maxRequestBodySize int64 = 1 << 20 // 1 MiB
 
 	apiRateLimiter := kaserver.NewRateLimiter(kaserver.RateLimitConfig{
 		RequestsPerSecond: cfg.Runtime.Server.RateLimit.RequestsPerSecond,
@@ -311,6 +316,17 @@ func main() {
 	defer apiRateLimiter.Stop()
 
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				req.Body = http.MaxBytesReader(w, req.Body, maxRequestBodySize)
+				next.ServeHTTP(w, req)
+			})
+		})
+		if cfg.Runtime.Server.MaxConcurrentRequests > 0 {
+			logger.Info("concurrency throttling enabled",
+				"max_concurrent_requests", cfg.Runtime.Server.MaxConcurrentRequests)
+			r.Use(chimiddleware.Throttle(cfg.Runtime.Server.MaxConcurrentRequests))
+		}
 		r.Use(kaserver.HTTPMetricsMiddleware(agentMetrics))
 		r.Use(apiRateLimiter.Middleware)
 
@@ -359,7 +375,7 @@ func main() {
 		ReadHeaderTimeout: 30 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		IdleTimeout:       120 * time.Second,
-		// WriteTimeout intentionally omitted: SSE streams are long-lived
+		// WriteTimeout intentionally omitted: SSE/MCP streams are long-lived
 		// connections that would be killed by a finite WriteTimeout.
 	}
 
@@ -378,15 +394,34 @@ func main() {
 		}
 	}
 
-	// Issue #753: Dedicated health and metrics servers (plain HTTP, never TLS)
-	healthServer := sharedhealth.NewHealthServer(cfg.Runtime.Server.HealthAddr, healthHandler, readyHandler, !cfg.Runtime.Server.DisableProfiling)
+	// Dedicated health server (plain HTTP, never TLS). /config moved here from API port (SEC-4).
+	healthMux := http.NewServeMux()
+	healthMux.HandleFunc("/healthz", healthHandler)
+	healthMux.HandleFunc("/readyz", readyHandler)
+	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
+	healthMux.Handle("/admin/loglevel", atomicLevel)
+	healthMux.HandleFunc("/openapi.json", kaapi.SpecHandler())
+	if !cfg.Runtime.Server.DisableProfiling {
+		healthMux.HandleFunc("/debug/pprof/", pprof.Index)
+		healthMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		healthMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		healthMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		healthMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	}
+	healthServer := &http.Server{
+		Addr:              cfg.Runtime.Server.HealthAddr,
+		Handler:           healthMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+	}
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.Handler())
 	metricsServer := &http.Server{
 		Addr:              cfg.Runtime.Server.MetricsAddr,
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
+		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       30 * time.Second,
 	}
@@ -483,18 +518,18 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if shutdownErr := httpServer.Shutdown(shutdownCtx); shutdownErr != nil {
-		fmt.Fprintf(os.Stderr, "API server shutdown error: %v\n", shutdownErr)
-	}
-	if shutdownErr := healthServer.Shutdown(shutdownCtx); shutdownErr != nil {
-		fmt.Fprintf(os.Stderr, "health server shutdown error: %v\n", shutdownErr)
-	}
-	if shutdownErr := metricsServer.Shutdown(shutdownCtx); shutdownErr != nil {
-		fmt.Fprintf(os.Stderr, "metrics server shutdown error: %v\n", shutdownErr)
-	}
+	shutdownServer(shutdownCtx, httpServer, "API", logger)
+	shutdownServer(shutdownCtx, healthServer, "health", logger)
+	shutdownServer(shutdownCtx, metricsServer, "metrics", logger)
 
 	logger.Info("flushing audit store...")
 	auditCleanup()
+}
+
+func shutdownServer(ctx context.Context, srv *http.Server, name string, logger logr.Logger) {
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Error(err, "server shutdown error", "server", name)
+	}
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
@@ -609,12 +644,14 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *d
 			"ca_file", cfg.Integrations.DataStorage.TLS.CAFile)
 	}
 
+	const defaultDSClientTimeout = 30 * time.Second
+
 	var opts []ogenclient.ClientOption
 	if tokenData, err := os.ReadFile(cfg.Integrations.DataStorage.SATokenPath); err == nil && len(tokenData) > 0 {
 		token := string(tokenData)
 		opts = append(opts, ogenclient.WithClient(&http.Client{
 			Transport: &bearerTransport{base: dsBase, token: token},
-			Timeout:   30 * time.Second,
+			Timeout:   defaultDSClientTimeout,
 		}))
 		logger.Info("DS client auth configured (DD-AUTH-014)", "token_path", cfg.Integrations.DataStorage.SATokenPath)
 	} else {
@@ -963,7 +1000,6 @@ func newAuthMiddleware(infra *k8sInfra, logger logr.Logger) *auth.Middleware {
 		Verb:         "create",
 	}, logger)
 }
-
 
 // buildMCPHandler constructs the fully-wired MCP interactive handler with all
 // tools registered. Returns nil if prerequisites are missing (K8s infra or DS).

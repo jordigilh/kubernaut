@@ -57,8 +57,16 @@ func (s *DSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error 
 		req.ActorType.SetTo("User")
 		req.ActorID.SetTo(event.ActingUser)
 	} else {
-		req.ActorType.SetTo("Service")
-		req.ActorID.SetTo("kubernaut-agent")
+		actorType := "Service"
+		actorID := "kubernaut-agent"
+		if event.ActorID != "" {
+			actorID = event.ActorID
+		}
+		if event.ActorType != "" {
+			actorType = event.ActorType
+		}
+		req.ActorType.SetTo(actorType)
+		req.ActorID.SetTo(actorID)
 	}
 	if event.ParentEventID != nil {
 		req.ParentEventID.SetTo(*event.ParentEventID)
@@ -441,7 +449,10 @@ func toJxRaw(s string) jx.Raw {
 	if json.Valid([]byte(s)) {
 		return jx.Raw(s)
 	}
-	b, _ := json.Marshal(s)
+	b, err := json.Marshal(s)
+	if err != nil {
+		return jx.Raw(`""`)
+	}
 	return jx.Raw(b)
 }
 
@@ -575,7 +586,10 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 		if len(ir.Parameters) > 0 {
 			params := make(ogenclient.IncidentResponseDataSelectedWorkflowParameters, len(ir.Parameters))
 			for k, v := range ir.Parameters {
-				b, _ := json.Marshal(v)
+				b, err := json.Marshal(v)
+				if err != nil {
+					continue
+				}
 				params[k] = jx.Raw(b)
 			}
 			sw.Parameters.SetTo(params)
@@ -729,8 +743,16 @@ func (s *BufferedDSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent
 		req.ActorType.SetTo("User")
 		req.ActorID.SetTo(event.ActingUser)
 	} else {
-		req.ActorType.SetTo("Service")
-		req.ActorID.SetTo("kubernaut-agent")
+		bActorType := "Service"
+		bActorID := "kubernaut-agent"
+		if event.ActorID != "" {
+			bActorID = event.ActorID
+		}
+		if event.ActorType != "" {
+			bActorType = event.ActorType
+		}
+		req.ActorType.SetTo(bActorType)
+		req.ActorID.SetTo(bActorID)
 	}
 
 	if ed, ok := buildEventData(event); ok {

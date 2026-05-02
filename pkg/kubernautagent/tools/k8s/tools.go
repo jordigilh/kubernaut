@@ -141,7 +141,10 @@ func (t *resourceTool) Execute(ctx context.Context, args json.RawMessage) (strin
 	if err != nil {
 		return "", err
 	}
-	data, _ := json.Marshal(obj)
+	data, err := json.Marshal(obj)
+	if err != nil {
+		return "", fmt.Errorf("marshaling resource: %w", err)
+	}
 	return string(data), nil
 }
 
@@ -215,7 +218,10 @@ func (t *getByNameInClusterTool) Execute(ctx context.Context, args json.RawMessa
 		return "", err
 	}
 
-	data, _ := json.Marshal(resources)
+	data, err := json.Marshal(resources)
+	if err != nil {
+		return "", fmt.Errorf("marshaling resources: %w", err)
+	}
 
 	var listObj struct {
 		Items []json.RawMessage `json:"items"`
@@ -274,7 +280,10 @@ func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (s
 		return "", err
 	}
 
-	data, _ := json.Marshal(resources)
+	data, err := json.Marshal(resources)
+	if err != nil {
+		return "", fmt.Errorf("marshaling resources: %w", err)
+	}
 
 	var listObj struct {
 		Items []json.RawMessage `json:"items"`
@@ -297,7 +306,10 @@ func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (s
 	if len(matched) == 0 {
 		return "[]", nil
 	}
-	result, _ := json.Marshal(matched)
+	result, err := json.Marshal(matched)
+	if err != nil {
+		return "", fmt.Errorf("marshaling matched resources: %w", err)
+	}
 	return string(result), nil
 }
 

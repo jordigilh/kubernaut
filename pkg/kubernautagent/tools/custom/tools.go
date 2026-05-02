@@ -157,7 +157,10 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 		return "", fmt.Errorf("listing action types: %w", err)
 	}
 
-	data, _ := json.Marshal(res)
+	data, err := json.Marshal(res)
+	if err != nil {
+		return "", fmt.Errorf("marshaling action types response: %w", err)
+	}
 	return string(TransformPagination(data)), nil
 }
 
@@ -204,7 +207,10 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 		return "", fmt.Errorf("listing workflows: %w", err)
 	}
 
-	data, _ := json.Marshal(res)
+	data, err := json.Marshal(res)
+	if err != nil {
+		return "", fmt.Errorf("marshaling workflows response: %w", err)
+	}
 	return string(TransformPagination(data)), nil
 }
 
@@ -236,7 +242,10 @@ func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (st
 		return "", fmt.Errorf("getting workflow: %w", err)
 	}
 
-	data, _ := json.Marshal(res)
+	data, err := json.Marshal(res)
+	if err != nil {
+		return "", fmt.Errorf("marshaling workflow response: %w", err)
+	}
 	return string(data), nil
 }
 
@@ -286,7 +295,10 @@ type cursorPayload struct {
 // EncodeCursor encodes offset and limit into an opaque base64-URL cursor token.
 // DD-WORKFLOW-016 v1.4: cursors hide pagination implementation from the LLM.
 func EncodeCursor(offset, limit int) string {
-	b, _ := json.Marshal(cursorPayload{Offset: offset, Limit: limit})
+	b, err := json.Marshal(cursorPayload{Offset: offset, Limit: limit})
+	if err != nil {
+		return ""
+	}
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 

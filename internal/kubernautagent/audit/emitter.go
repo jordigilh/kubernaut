@@ -91,22 +91,24 @@ const (
 	ActionValidation        = "validation"
 	ActionResponseSent      = "response_sent"
 	ActionResponseFailed    = "response_failed"
-	ActionAlignmentEvaluate = "alignment_evaluate"
-	ActionAlignmentVerdict  = "alignment_verdict"
+	ActionAlignmentEvaluate          = "alignment_evaluate"
+	ActionAlignmentVerdict           = "alignment_verdict"
+	ActionSameKindGate               = "same_kind_validation_gate"
+	ActionWorkflowAlignmentGate      = "workflow_target_alignment_gate"
+	ActionTruncationDetected         = "truncation_detected"
+	ActionEnriched                   = "enriched"
 
-	ActionSessionStarted   = "session_started"
-	ActionSessionCancelled = "session_cancelled"
-	ActionSessionCompleted = "session_completed"
-	ActionSessionFailed    = "session_failed"
-
+	ActionSessionStarted        = "session_started"
+	ActionSessionCancelled      = "session_cancelled"
+	ActionSessionCompleted      = "session_completed"
+	ActionSessionFailed         = "session_failed"
 	ActionInvestigationCancelled = "investigation_cancelled"
 	ActionSessionObserved       = "session_observed"
 	ActionSessionAccessDenied   = "session_access_denied"
-
-	ActionSessionSuspended     = "session_suspended"
-	ActionInteractiveStarted   = "interactive_started"
-	ActionInteractiveCompleted = "interactive_completed"
-	ActionSessionResumed       = "session_resumed"
+	ActionSessionSuspended      = "session_suspended"
+	ActionInteractiveStarted    = "interactive_started"
+	ActionInteractiveCompleted  = "interactive_completed"
+	ActionSessionResumed        = "session_resumed"
 )
 
 const (
@@ -152,6 +154,8 @@ type AuditEvent struct {
 	ActingUser    string
 	ParentEventID *uuid.UUID
 	Data          map[string]interface{}
+	ActorID       string
+	ActorType     string
 }
 
 // AuditStore is the interface for storing audit events (matches pkg/audit.AuditStore).

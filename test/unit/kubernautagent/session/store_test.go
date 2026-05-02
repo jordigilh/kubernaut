@@ -61,10 +61,10 @@ var _ = Describe("Kubernaut Agent Session Store — #433", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(id).NotTo(BeEmpty())
 
-			time.Sleep(5 * time.Millisecond)
-
-			removed := store.Cleanup()
-			Expect(removed).To(BeNumerically(">=", 1), "at least 1 expired session should be cleaned up")
+			Eventually(func() int {
+				return store.Cleanup()
+			}, 100*time.Millisecond, time.Millisecond).Should(BeNumerically(">=", 1),
+				"at least 1 expired session should be cleaned up")
 
 			_, err = store.Get(id)
 			Expect(err).To(MatchError(session.ErrSessionNotFound))
@@ -81,10 +81,10 @@ var _ = Describe("Kubernaut Agent Session Store — #433", func() {
 			defer cancel()
 			store.StartCleanupLoop(ctx, 5*time.Millisecond)
 
-			time.Sleep(20 * time.Millisecond)
-
-			_, err = store.Get(id)
-			Expect(err).To(MatchError(session.ErrSessionNotFound),
+			Eventually(func() error {
+				_, err := store.Get(id)
+				return err
+			}, 200*time.Millisecond, 2*time.Millisecond).Should(MatchError(session.ErrSessionNotFound),
 				"expired session should be removed by cleanup loop")
 		})
 
@@ -94,13 +94,13 @@ var _ = Describe("Kubernaut Agent Session Store — #433", func() {
 			store.StartCleanupLoop(ctx, 5*time.Millisecond)
 			cancel()
 
-			time.Sleep(15 * time.Millisecond)
-
 			id, err := store.Create()
 			Expect(err).NotTo(HaveOccurred())
-			sess, err := store.Get(id)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(sess).NotTo(BeNil())
+			Consistently(func() error {
+				_, err := store.Get(id)
+				return err
+			}, 50*time.Millisecond, 5*time.Millisecond).ShouldNot(HaveOccurred(),
+				"session should persist after cleanup loop is cancelled")
 		})
 	})
 

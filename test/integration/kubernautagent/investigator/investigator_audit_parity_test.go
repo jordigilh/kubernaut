@@ -734,7 +734,7 @@ var _ = Describe("IT-KA-947: Alignment audit events emitted during investigation
 			AuditStore: auditStore, Logger: logr.Discard(), MaxTurns: 15, PhaseTools: phaseTools,
 		})
 
-		wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+		wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 			Inner:          inv,
 			Evaluator:      evaluator,
 			VerdictTimeout: 10 * time.Second,
@@ -742,6 +742,7 @@ var _ = Describe("IT-KA-947: Alignment audit events emitted during investigation
 			Logger:         logr.Discard(),
 			Mode:           mode,
 		})
+		Expect(wrapErr).NotTo(HaveOccurred())
 		return wrapper, shadowMock
 	}
 
@@ -823,7 +824,7 @@ var _ = Describe("IT-KA-947: Alignment audit events emitted during investigation
 				}
 				found++
 				Expect(e.CorrelationID).To(Equal(signal.RemediationID),
-					"alignment event CorrelationID must match signal RemediationID")
+					"alignment event CorrelationID must match signal RemediationID (GAP-A4)")
 
 				rawID, ok := e.Data["event_id"]
 				Expect(ok).To(BeTrue(), "event_id missing on %s event", e.EventType)

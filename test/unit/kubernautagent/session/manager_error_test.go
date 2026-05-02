@@ -30,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 )
 
 var _ = Describe("UT-KA-948: Session manager logs store.Update errors — BR-AUDIT-005", func() {
@@ -52,7 +53,7 @@ var _ = Describe("UT-KA-948: Session manager logs store.Update errors — BR-AUD
 			id, err := mgr.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
 				<-gate
 				close(done)
-				return "result", nil
+				return &katypes.InvestigationResult{RCASummary: "result"}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 
