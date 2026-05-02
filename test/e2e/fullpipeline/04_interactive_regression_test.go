@@ -59,7 +59,7 @@ var _ = Describe("CP-5 HARM-001: Autonomous regression — no interactive artifa
 
 	It("should complete standard autonomous remediation without interactive session or Lease [E2E-KA-HARM-001]", func() {
 		By("Step 1: Creating managed test namespace for OOMKill trigger")
-		testNamespace = fmt.Sprintf("harm001-e2e-%d", time.Now().Unix())
+		testNamespace = fmt.Sprintf("fp-e2e-harm001-%d", time.Now().Unix())
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamespace,

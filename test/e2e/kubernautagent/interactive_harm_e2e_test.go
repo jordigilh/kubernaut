@@ -165,8 +165,10 @@ var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios"
 
 			By("Calling kubernaut_enrich — requires user impersonation for K8s access")
 			result, err := infrastructure.CallEnrich(ctx, session, map[string]any{
-				"rr_id":   "rr-harm005-test",
-				"context": "pod crash in production",
+				"rr_id":     "rr-harm005-test",
+				"kind":      "Pod",
+				"name":      "crash-pod",
+				"namespace": sharedNamespace,
 			})
 
 			By("Asserting that the tool invocation fails due to RBAC/impersonation restriction")

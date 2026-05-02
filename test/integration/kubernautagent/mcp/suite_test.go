@@ -142,17 +142,17 @@ var _ = SynchronizedBeforeSuite(
 
 		GinkgoWriter.Println("Phase 0 complete — envtest + DataStorage + Mock LLM ready")
 
-		// Pass token + kubeconfig to Phase 2 processes
-		payload := authConfig.Token + "\n" + kubeconfigPath
+		// Pass token + kubeconfig + mockLLMEndpoint to all processes
+		payload := authConfig.Token + "\n" + kubeconfigPath + "\n" + sharedMockLLMEndpoint
 		return []byte(payload)
 	},
 	func(data []byte) {
-		lines := strings.SplitN(string(data), "\n", 2)
+		lines := strings.SplitN(string(data), "\n", 3)
 
 		// Reconstruct rest.Config from the kubeconfig file written by process 1.
 		// In parallel Ginkgo execution, sharedK8sConfig is only set in the primary
 		// process; secondary processes must load it from the persisted kubeconfig.
-		if sharedK8sConfig == nil && len(lines) == 2 {
+		if sharedK8sConfig == nil && len(lines) >= 2 {
 			kubeconfigPath := lines[1]
 			cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 			Expect(err).ToNot(HaveOccurred(), "secondary process should load rest.Config from kubeconfig")
@@ -169,8 +169,11 @@ var _ = SynchronizedBeforeSuite(
 			Expect(err).ToNot(HaveOccurred())
 		}
 
-		// Build authenticated DS client for this Ginkgo process
-		if len(lines) == 2 {
+		// Reconstruct Mock LLM endpoint and DS client for this Ginkgo process
+		if len(lines) >= 3 {
+			if sharedMockLLMEndpoint == "" {
+				sharedMockLLMEndpoint = lines[2]
+			}
 			dsToken := lines[0]
 			dsURL := fmt.Sprintf("http://127.0.0.1:%d", mcpDataStoragePort)
 			dsClients := integration.NewAuthenticatedDataStorageClients(dsURL, dsToken, 10*time.Second)

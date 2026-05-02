@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 var _ = Describe("CP-5 COMPAT: Backward Compatibility Tests", Label("e2e", "ka", "interactive", "compat"), Ordered, func() {
@@ -39,7 +40,7 @@ var _ = Describe("CP-5 COMPAT: Backward Compatibility Tests", Label("e2e", "ka",
 
 	BeforeAll(func() {
 		mcpEndpoint = infrastructure.MCPEndpointForKAE2E()
-		tlsTransport = http.DefaultTransport
+		tlsTransport = testauth.NewRetryOn429Transport(http.DefaultTransport)
 
 		var err error
 		saToken, err = infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "kubernaut-agent-e2e-sa", kubeconfigPath)

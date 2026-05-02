@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -230,6 +231,18 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 5.5: Install CRDs required by interactive tests (#703)
+	// The RemediationRequest CRD is needed so createTestRemediationRequest()
+	// in interactive E2E tests can provision RR fixtures for the
+	// RRExistenceChecker (HARM-004). Without this, the K8s API rejects
+	// CR creation with "no matches for kubernaut.ai/v1alpha1".
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📋 PHASE 5.5: Installing CRDs for interactive tests (#703)...")
+	if err := installKAE2ECRDs(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to install CRDs: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 6: Deploy Kubernaut Agent
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🤖 PHASE 6: Deploying Kubernaut Agent...")
@@ -252,6 +265,28 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n✅ Kubernaut Agent E2E infrastructure ready")
+	return nil
+}
+
+// installKAE2ECRDs installs the Kubernaut CRDs required by interactive E2E tests.
+// The RemediationRequest CRD is mandatory for createTestRemediationRequest() which
+// provisions RR fixtures so the RRExistenceChecker (HARM-004) allows sessions to start.
+func installKAE2ECRDs(kubeconfigPath string, writer io.Writer) error {
+	projectRoot := getProjectRoot()
+	crdFiles := []string{
+		"kubernaut.ai_remediationrequests.yaml",
+	}
+	for _, crdFile := range crdFiles {
+		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
+		_, _ = fmt.Fprintf(writer, "  ├── Installing %s...\n", crdFile)
+		crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+		crdCmd.Stdout = writer
+		crdCmd.Stderr = writer
+		if err := crdCmd.Run(); err != nil {
+			return fmt.Errorf("failed to install CRD %s: %w", crdFile, err)
+		}
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ CRDs installed")
 	return nil
 }
 
