@@ -231,7 +231,7 @@ test-unit-kubernautagent: ginkgo ensure-coverage-dirs ## Run kubernaut agent uni
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 kubernautagent - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/unit/kubernautagent/...
+	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/unit/kubernautagent/...
 	@if [ -f coverage_unit_kubernautagent.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_kubernautagent.out"; \

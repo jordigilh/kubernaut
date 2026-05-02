@@ -27,6 +27,12 @@ type MockAlternativeWorkflow struct {
 	Rationale    string
 }
 
+// MultiToolCallEntry describes a single tool call within a multi-tool-call batch.
+type MultiToolCallEntry struct {
+	Name      string            `yaml:"name"`
+	Arguments map[string]string `yaml:"arguments,omitempty"`
+}
+
 // MockScenarioConfig holds the static configuration for a mock scenario.
 type MockScenarioConfig struct {
 	ScenarioName     string
@@ -70,6 +76,11 @@ type MockScenarioConfig struct {
 	ToolCallName string
 	// ToolCallArgs provides the arguments for the custom tool call.
 	ToolCallArgs map[string]string
+
+	// MultiToolCalls, when non-empty, causes the handler to return all
+	// listed tool calls in a single assistant message on the first request.
+	// Takes precedence over ToolCallName. Enables #970 parallel execution.
+	MultiToolCalls []MultiToolCallEntry
 }
 
 // BoolPtr is a helper for creating *bool literals in scenario configs.

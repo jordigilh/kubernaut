@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // AnomalyConfig holds configurable thresholds for the anomaly detector (I7).
@@ -53,8 +54,9 @@ type AnomalyResult struct {
 }
 
 // AnomalyDetector tracks tool call patterns and aborts on anomalous behavior (I7).
-// Not safe for concurrent use — designed for a single investigation goroutine.
+// All public methods are safe for concurrent use (#970).
 type AnomalyDetector struct {
+	mu                 sync.Mutex
 	config             AnomalyConfig
 	suspiciousPatterns []*regexp.Regexp
 	toolCallCounts     map[string]int
@@ -86,6 +88,9 @@ func (d *AnomalyDetector) CheckToolCall(name string, args json.RawMessage) Anoma
 	if d.isExempt(name) {
 		return AnomalyResult{Allowed: true}
 	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
 	d.totalCallCount++
 	if d.totalCallCount > d.config.MaxTotalToolCalls {
@@ -144,6 +149,10 @@ func (d *AnomalyDetector) isExempt(name string) bool {
 // The key is tool name + args hash, so different arguments are tracked independently.
 func (d *AnomalyDetector) RecordFailure(name string, args json.RawMessage) AnomalyResult {
 	key := failureKey(name, args)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	d.failureTracker[key]++
 	if d.failureTracker[key] >= d.config.MaxRepeatedFailures {
 		return AnomalyResult{
@@ -157,6 +166,8 @@ func (d *AnomalyDetector) RecordFailure(name string, args json.RawMessage) Anoma
 // TotalExceeded returns true when the total tool call count has exceeded the configured limit.
 // Used by runLLMLoop to abort early.
 func (d *AnomalyDetector) TotalExceeded() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	return d.totalCallCount > d.config.MaxTotalToolCalls
 }
 
@@ -165,6 +176,8 @@ func (d *AnomalyDetector) TotalExceeded() bool {
 // at the start of each Investigate() session (#770) and between phases (RCA →
 // workflow selection) per DD-HAPI-019-003.
 func (d *AnomalyDetector) Reset() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.totalCallCount = 0
 	d.toolCallCounts = make(map[string]int)
 	d.failureTracker = make(map[string]int)
