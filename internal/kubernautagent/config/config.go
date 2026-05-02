@@ -70,13 +70,25 @@ type IntegrationsConfig struct {
 
 // LLMConfig holds static LLM provider settings that require a pod restart to change.
 type LLMConfig struct {
-	Provider        string       `yaml:"provider"`
-	AzureAPIVersion string       `yaml:"azureApiVersion"`
-	VertexProject   string       `yaml:"vertexProject"`
-	VertexLocation  string       `yaml:"vertexLocation"`
-	BedrockRegion   string       `yaml:"bedrockRegion"`
-	TLSCaFile       string       `yaml:"tlsCaFile,omitempty"`
-	OAuth2          OAuth2Config `yaml:"oauth2,omitempty"`
+	Provider        string              `yaml:"provider"`
+	AzureAPIVersion string              `yaml:"azureApiVersion"`
+	VertexProject   string              `yaml:"vertexProject"`
+	VertexLocation  string              `yaml:"vertexLocation"`
+	BedrockRegion   string              `yaml:"bedrockRegion"`
+	TLSCaFile       string              `yaml:"tlsCaFile,omitempty"`
+	OAuth2          OAuth2Config        `yaml:"oauth2,omitempty"`
+	CircuitBreaker  CircuitBreakerCfg   `yaml:"circuitBreaker,omitempty"`
+}
+
+// CircuitBreakerCfg configures the gobreaker circuit breaker for HTTP clients.
+// Defaults match the gateway K8s API breaker (BR-GATEWAY-093).
+type CircuitBreakerCfg struct {
+	Enabled          bool          `yaml:"enabled"`
+	MaxRequests      uint32        `yaml:"maxRequests"`
+	Interval         time.Duration `yaml:"interval"`
+	Timeout          time.Duration `yaml:"timeout"`
+	FailureThreshold uint32        `yaml:"failureThreshold"`
+	FailureRatio     float64       `yaml:"failureRatio"`
 }
 
 // LLMRuntimeConfig holds hot-reloadable LLM settings that can change without restart.
@@ -146,9 +158,10 @@ func readSecretFile(path string) (string, error) {
 }
 
 type DataStorageConfig struct {
-	URL         string              `yaml:"url"`
-	SATokenPath string              `yaml:"saTokenPath"`
-	TLS         sharedtls.TLSConfig `yaml:"tls,omitempty"`
+	URL            string              `yaml:"url"`
+	SATokenPath    string              `yaml:"saTokenPath"`
+	TLS            sharedtls.TLSConfig `yaml:"tls,omitempty"`
+	CircuitBreaker CircuitBreakerCfg   `yaml:"circuitBreaker,omitempty"`
 }
 
 type ServerConfig struct {

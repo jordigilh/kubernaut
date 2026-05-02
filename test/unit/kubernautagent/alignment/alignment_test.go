@@ -33,163 +33,11 @@ import (
 	alignprompt "github.com/jordigilh/kubernaut/internal/kubernautagent/alignment/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
-	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/security/boundary"
+	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
-
-// stubTool implements tools.Tool for testing.
-type stubTool struct {
-	name string
-}
-
-func (s *stubTool) Name() string                                                 { return s.name }
-func (s *stubTool) Description() string                                          { return s.name + " desc" }
-func (s *stubTool) Parameters() json.RawMessage                                  { return json.RawMessage(`{}`) }
-func (s *stubTool) Execute(_ context.Context, _ json.RawMessage) (string, error) { return "", nil }
-
-// mockLLMClient implements llm.Client for testing.
-// Thread-safe: all fields are guarded by mu to support concurrent SubmitAsync.
-type mockLLMClient struct {
-	mu        sync.Mutex
-	responses []llm.ChatResponse
-	errs      []error
-	call      int
-
-	capturedRequestContents []string
-}
-
-func (m *mockLLMClient) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
-	var b strings.Builder
-	for _, msg := range req.Messages {
-		b.WriteString(msg.Content)
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.capturedRequestContents = append(m.capturedRequestContents, b.String())
-
-	if m.call < len(m.errs) && m.errs[m.call] != nil {
-		err := m.errs[m.call]
-		m.call++
-		return llm.ChatResponse{}, err
-	}
-	if m.call < len(m.responses) {
-		r := m.responses[m.call]
-		m.call++
-		return r, nil
-	}
-	m.call++
-	return llm.ChatResponse{}, nil
-}
-
-func (m *mockLLMClient) StreamChat(ctx context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
-	resp, err := m.Chat(ctx, req)
-	if err == nil {
-		_ = cb(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
-	}
-	return resp, err
-}
-
-func (m *mockLLMClient) Close() error { return nil }
-
-func (m *mockLLMClient) chatCalls() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.call
-}
-
-// slowMockLLMClient adds a delay before responding, used to test timeout behavior.
-type slowMockLLMClient struct {
-	delay time.Duration
-}
-
-func (m *slowMockLLMClient) Close() error { return nil }
-
-func (m *slowMockLLMClient) StreamChat(ctx context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
-	resp, err := m.Chat(ctx, req)
-	if err == nil {
-		_ = cb(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
-	}
-	return resp, err
-}
-
-func (m *slowMockLLMClient) Chat(ctx context.Context, _ llm.ChatRequest) (llm.ChatResponse, error) {
-	select {
-	case <-time.After(m.delay):
-		return llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: `{"suspicious":false}`}}, nil
-	case <-ctx.Done():
-		return llm.ChatResponse{}, ctx.Err()
-	}
-}
-
-// mockToolRegistry implements registry.ToolRegistry for testing.
-type mockToolRegistry struct {
-	executeResult string
-	executeErr    error
-	executeCalls  int
-
-	toolsForPhaseResult []tools.Tool
-	toolsForPhaseCalls  int
-
-	allResult []tools.Tool
-	allCalls  int
-}
-
-func (m *mockToolRegistry) Execute(_ context.Context, _ string, _ json.RawMessage) (string, error) {
-	m.executeCalls++
-	return m.executeResult, m.executeErr
-}
-
-func (m *mockToolRegistry) ToolsForPhase(_ katypes.Phase, _ katypes.PhaseToolMap) []tools.Tool {
-	m.toolsForPhaseCalls++
-	return m.toolsForPhaseResult
-}
-
-func (m *mockToolRegistry) All() []tools.Tool {
-	m.allCalls++
-	return m.allResult
-}
-
-// mockInvestigationRunner implements kaserver.InvestigationRunner for testing.
-type mockInvestigationRunner struct {
-	result *katypes.InvestigationResult
-	err    error
-	calls  int
-}
-
-func (m *mockInvestigationRunner) Investigate(_ context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
-	m.calls++
-	return m.result, m.err
-}
-
-// mockInvestigationRunnerWithObserver allows injecting steps during investigation.
-type mockInvestigationRunnerWithObserver struct {
-	result        *katypes.InvestigationResult
-	err           error
-	onInvestigate func(ctx context.Context)
-}
-
-func (m *mockInvestigationRunnerWithObserver) Investigate(ctx context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
-	if m.onInvestigate != nil {
-		m.onInvestigate(ctx)
-	}
-	return m.result, m.err
-}
-
-// cleanResponse returns a standard "not suspicious" evaluator LLM response.
-func cleanResponse() llm.ChatResponse {
-	return llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: `{"suspicious":false,"explanation":"clean"}`}}
-}
-
-// suspiciousResponse returns a standard "suspicious" evaluator LLM response.
-func suspiciousResponse() llm.ChatResponse {
-	return llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: `{"suspicious":true,"explanation":"injection detected"}`}}
-}
 
 var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 	Describe("UT-SA-601-001: EvaluateStep flags injected content", func() {
@@ -276,8 +124,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, obsErr := alignment.NewObserver(evaluator)
-			Expect(obsErr).NotTo(HaveOccurred())
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			steps := []alignment.Step{
 				{Index: 0, Kind: alignment.StepKindToolResult, Tool: "a", Content: "1"},
 				{Index: 1, Kind: alignment.StepKindToolResult, Tool: "b", Content: "2"},
@@ -299,8 +147,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(slowClient, alignment.EvaluatorConfig{
 				Timeout: 2 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, obsErr := alignment.NewObserver(evaluator)
-			Expect(obsErr).NotTo(HaveOccurred())
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: 0, Content: "slow"})
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: 1, Content: "slow"})
@@ -316,8 +164,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, obsErr := alignment.NewObserver(evaluator)
-			Expect(obsErr).NotTo(HaveOccurred())
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindToolResult, Tool: "get_pods", Content: "pods OK",
@@ -337,8 +185,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, obsErr := alignment.NewObserver(evaluator)
-			Expect(obsErr).NotTo(HaveOccurred())
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindToolResult, Tool: "get_pods",
@@ -374,14 +222,14 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
 
-			obs1, obsErr1 := alignment.NewObserver(evaluator)
-			Expect(obsErr1).NotTo(HaveOccurred())
+			obs1, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx1 := alignment.WithObserver(context.Background(), obs1)
 			retrieved1 := alignment.ObserverFromContext(ctx1)
 			Expect(retrieved1).To(BeIdenticalTo(obs1), "observer must be retrievable from context")
 
-			obs2, obsErr2 := alignment.NewObserver(evaluator)
-			Expect(obsErr2).NotTo(HaveOccurred())
+			obs2, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx2 := alignment.WithObserver(context.Background(), obs2)
 			retrieved2 := alignment.ObserverFromContext(ctx2)
 			Expect(retrieved2).To(BeIdenticalTo(obs2))
@@ -403,8 +251,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, obsErr := alignment.NewObserver(evaluator)
-			Expect(obsErr).NotTo(HaveOccurred())
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
 			proxy := alignment.NewLLMProxy(inner)
@@ -430,8 +278,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, obsErr := alignment.NewObserver(evaluator)
-			Expect(obsErr).NotTo(HaveOccurred())
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
 			proxy := alignment.NewToolProxy(inner)
@@ -477,13 +325,13 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
-			Expect(wrapErr).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred())
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -496,7 +344,6 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 		})
 	})
 })
-
 var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 
 	Describe("UT-SA-601-FC-001: Evaluator fail-closed on retry exhaustion", func() {
@@ -1358,19 +1205,6 @@ var _ = Describe("Explanation sanitization — SEC-2", func() {
 	})
 })
 
-// panicMockLLMClient panics on Chat to test panic recovery in SubmitAsync.
-type panicMockLLMClient struct{}
-
-func (p *panicMockLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResponse, error) {
-	panic("simulated crypto/rand failure in boundary.Generate")
-}
-
-func (p *panicMockLLMClient) StreamChat(_ context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
-	return p.Chat(context.Background(), req)
-}
-
-func (p *panicMockLLMClient) Close() error { return nil }
-
 var _ = Describe("Panic recovery in SubmitAsync — SEC-6", func() {
 
 	Describe("UT-SEC6-001: SubmitAsync recovers from EvaluateStep panic", func() {
@@ -2103,19 +1937,6 @@ var _ = Describe("GAP-15: Concurrent EvaluateStep race detection — BR-AI-601",
 	})
 })
 
-// mockAuditStore captures audit events for testing.
-type mockAuditStore struct {
-	mu     sync.Mutex
-	events []*audit.AuditEvent
-}
-
-func (m *mockAuditStore) StoreAudit(_ context.Context, event *audit.AuditEvent) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.events = append(m.events, event)
-	return nil
-}
-
 var _ = Describe("PROD-7: Empty tool name fallback in verdict summary — BR-AI-601", func() {
 
 	Describe("UT-PROD7-001: LLM reasoning step with empty Tool uses Kind in summary", func() {
@@ -2210,34 +2031,3 @@ var _ = Describe("SEC-9: Log warning when timedOut with no pending — BR-AI-601
 	})
 })
 
-// concurrentMockLLMClient is a thread-safe mock for concurrent EvaluateStep tests.
-type concurrentMockLLMClient struct {
-	mu        sync.Mutex
-	responses []llm.ChatResponse
-	call      int
-}
-
-func (m *concurrentMockLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResponse, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.call < len(m.responses) {
-		r := m.responses[m.call]
-		m.call++
-		return r, nil
-	}
-	m.call++
-	return llm.ChatResponse{}, nil
-}
-
-func (m *concurrentMockLLMClient) StreamChat(_ context.Context, req llm.ChatRequest, _ func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
-	return m.Chat(context.Background(), req)
-}
-
-func (m *concurrentMockLLMClient) Close() error { return nil }
-
-// Compile-time checks: proxies implement their decorated interfaces.
-var (
-	_ llm.Client                   = (*alignment.LLMProxy)(nil)
-	_ registry.ToolRegistry        = (*alignment.ToolProxy)(nil)
-	_ kaserver.InvestigationRunner = (*alignment.InvestigatorWrapper)(nil)
-)

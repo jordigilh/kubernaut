@@ -32,6 +32,7 @@ import (
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	"github.com/jordigilh/kubernaut/pkg/shared/transport"
 )
 
 // buildLLMClientFromConfig constructs an llm.Client from the static config and
@@ -85,7 +86,11 @@ func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) [
 }
 
 // buildTransportChain composes the HTTP transport stack from static (TLS CA,
-// OAuth2) and runtime (CustomHeaders) config layers.
+// OAuth2) and runtime (CustomHeaders) config layers, optionally wrapped with
+// a circuit breaker (OPS-2).
+//
+// Chain order (outermost first): CircuitBreaker -> Auth/Headers -> OAuth2 -> TLS/base
+//
 // Issue #902: When tlsCaFile is set, uses sharedtls.NewTLSTransport as the
 // base instead of http.DefaultTransport.
 func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) http.RoundTripper {
@@ -109,6 +114,21 @@ func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) ht
 		base = llmtransport.NewAuthHeadersTransport(rt.CustomHeaders, base)
 		needsCustom = true
 	}
+
+	if cfg.AI.LLM.CircuitBreaker.Enabled {
+		cb := cfg.AI.LLM.CircuitBreaker
+		base = transport.NewCircuitBreakerTransport(base, transport.CircuitBreakerConfig{
+			Enabled:          true,
+			Name:             "llm",
+			MaxRequests:      cb.MaxRequests,
+			Interval:         cb.Interval,
+			Timeout:          cb.Timeout,
+			FailureThreshold: cb.FailureThreshold,
+			FailureRatio:     cb.FailureRatio,
+		})
+		needsCustom = true
+	}
+
 	if !needsCustom {
 		return nil
 	}

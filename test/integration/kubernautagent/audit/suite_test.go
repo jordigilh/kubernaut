@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package server_test
+package audit_test
 
 import (
 	"testing"
@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestKubernautAgentServerHTTPContract(t *testing.T) {
+func TestKubernautAgentAuditLifecycle(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Kubernaut Agent Server HTTP Contract — BR-AI-952 (GAP-T2)")
+	RunSpecs(t, "Kubernaut Agent Audit Lifecycle — BR-AI-952 (GAP-T2)")
 }
