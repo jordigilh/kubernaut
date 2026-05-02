@@ -621,7 +621,7 @@ run_verify_np() {
   local nt_labels
   nt_labels=$(kubectl get networkpolicy -n "$ns" -l app=notification-controller \
     -o jsonpath='{.items[0].spec.podSelector.matchLabels}' 2>/dev/null || echo "")
-  if echo "$nt_labels" | grep -q "controller-manager"; then
+  if grep -q "controller-manager" <<< "$nt_labels"; then
     tap_ok "${desc_base}-003: Notification podSelector includes control-plane label (F-1)"
   else
     tap_not_ok "${desc_base}-003: Notification dual-label selector" \
@@ -791,7 +791,7 @@ run_tls_interservice() {
   if [[ -n "$ds_cert_pem" ]]; then
     local key_type
     key_type=$(printf '%s' "$ds_cert_pem" | openssl x509 -noout -text 2>/dev/null | grep "Public Key Algorithm" || echo "")
-    if echo "$key_type" | grep -qi "ec\|ecdsa"; then
+    if grep -qi "ec\|ecdsa" <<< "$key_type"; then
       tap_ok "ST-TLS-INTERSERVICE-006: Leaf certs use ECDSA (not RSA)"
     else
       tap_not_ok "ST-TLS-INTERSERVICE-006: Leaf certs use ECDSA (not RSA)" "key type: ${key_type}"
@@ -1077,23 +1077,23 @@ run_template_tests() {
   # IT-HAPI-390-001: Single ConfigMap rendered (SDK ConfigMap removed — consolidated)
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
-  if echo "$output" | grep -q "name: kubernaut-agent-config" && \
-     ! echo "$output" | grep -q "name: kubernaut-agent-sdk-config"; then
+  if grep -q "name: kubernaut-agent-config" <<< "$output" && \
+     ! grep -q "name: kubernaut-agent-sdk-config" <<< "$output"; then
     tap_ok "IT-HAPI-390-001: helm template renders kubernaut-agent-config only (SDK ConfigMap removed)"
   else
     tap_not_ok "IT-HAPI-390-001: consolidated ConfigMap" "SDK ConfigMap still present or main ConfigMap missing"
   fi
 
   # IT-HAPI-390-002: LLM static config in main, runtime in separate ConfigMap
-  if echo "$output" | grep -q "provider:" && \
-     echo "$output" | grep -q "kubernaut-agent-llm-runtime"; then
+  if grep -q "provider:" <<< "$output" && \
+     grep -q "kubernaut-agent-llm-runtime" <<< "$output"; then
     tap_ok "IT-HAPI-390-002: LLM provider in main ConfigMap, runtime in separate ConfigMap"
   else
     tap_not_ok "IT-HAPI-390-002: LLM config split" "provider not in main or runtime ConfigMap missing"
   fi
 
   # IT-HAPI-390-003: No SDK volume mount in Deployment
-  if ! echo "$output" | grep -q "mountPath: /etc/kubernaut-agent/sdk"; then
+  if ! grep -q "mountPath: /etc/kubernaut-agent/sdk" <<< "$output"; then
     tap_ok "IT-HAPI-390-003: Deployment has no SDK volume mount (consolidated)"
   else
     tap_not_ok "IT-HAPI-390-003: SDK volume mount removal" "SDK mount still present"
@@ -1118,8 +1118,8 @@ run_template_tests() {
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     -s templates/authwebhook/authwebhook.yaml 2>&1)
 
-  if echo "$hook_tpl" | grep -q "jsonpath='{.webhooks\[\\*\].name}'" && \
-     echo "$webhook_tpl" | grep -q "jsonpath='{.webhooks\[\\*\].name}'"; then
+  if grep -q "jsonpath='{.webhooks\[\\*\].name}'" <<< "$hook_tpl" && \
+     grep -q "jsonpath='{.webhooks\[\\*\].name}'" <<< "$webhook_tpl"; then
     tap_ok "ST-HOOK-TPL-001: webhook count parsing uses jsonpath (not grep)"
   else
     tap_not_ok "ST-HOOK-TPL-001: webhook count parsing uses jsonpath" \
@@ -1127,8 +1127,8 @@ run_template_tests() {
   fi
 
   # ST-HOOK-TPL-002: no hardcoded runAsUser/runAsGroup in hook jobs
-  if ! echo "$hook_tpl" | grep -qE "runAsUser: 65534|runAsGroup: 65534" && \
-     ! echo "$webhook_tpl" | grep -qE "runAsUser: 65534|runAsGroup: 65534"; then
+  if ! grep -qE "runAsUser: 65534|runAsGroup: 65534" <<< "$hook_tpl" && \
+     ! grep -qE "runAsUser: 65534|runAsGroup: 65534" <<< "$webhook_tpl"; then
     tap_ok "ST-HOOK-TPL-002: no hardcoded UID 65534 in hooks or authwebhook"
   else
     tap_not_ok "ST-HOOK-TPL-002: no hardcoded UID 65534" \
@@ -1140,7 +1140,7 @@ run_template_tests() {
   webhooks_tpl=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     -s templates/authwebhook/webhooks.yaml 2>&1)
-  if echo "$webhooks_tpl" | grep -B5 "remediationworkflows" | grep -q "UPDATE"; then
+  if grep -B5 "remediationworkflows" <<< "$webhooks_tpl" | grep -q "UPDATE"; then
     tap_ok "ST-WEBHOOK-OPS-001: RemediationWorkflow webhook includes UPDATE operation (#773)"
   else
     tap_not_ok "ST-WEBHOOK-OPS-001: RemediationWorkflow webhook includes UPDATE operation" \
@@ -1154,7 +1154,7 @@ run_template_tests() {
   # ST-POLICY-001: Template fails when no policies are provided
   aia_tpl=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) 2>&1)
-  if [[ $? -ne 0 ]] && echo "$aia_tpl" | grep -qE "is required"; then
+  if [[ $? -ne 0 ]] && grep -qE "is required" <<< "$aia_tpl"; then
     tap_ok "ST-POLICY-001: Template fails when no Rego policies are provided"
   else
     tap_not_ok "ST-POLICY-001: mandatory policy validation" \
@@ -1165,7 +1165,7 @@ run_template_tests() {
   aia_tpl=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) \
     --set-file "aianalysis.policies.content=$POLICY_AA_FILE" 2>&1)
-  if [[ $? -ne 0 ]] && echo "$aia_tpl" | grep -q "signalprocessing.policies.content is required"; then
+  if [[ $? -ne 0 ]] && grep -q "signalprocessing.policies.content is required" <<< "$aia_tpl"; then
     tap_ok "ST-POLICY-002: Template fails when SP policy is missing (AA provided)"
   else
     tap_not_ok "ST-POLICY-002: SP mandatory policy validation" \
@@ -1176,7 +1176,7 @@ run_template_tests() {
   aia_tpl=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) \
     --set-file "signalprocessing.policies.content=$POLICY_SP_FILE" 2>&1)
-  if [[ $? -ne 0 ]] && echo "$aia_tpl" | grep -q "aianalysis.policies.content is required"; then
+  if [[ $? -ne 0 ]] && grep -q "aianalysis.policies.content is required" <<< "$aia_tpl"; then
     tap_ok "ST-POLICY-003: Template fails when AA policy is missing (SP provided)"
   else
     tap_not_ok "ST-POLICY-003: AA mandatory policy validation" \
@@ -1188,8 +1188,8 @@ run_template_tests() {
     $(template_common_args) $(template_llm_args) \
     $(policy_flags) \
     -s templates/aianalysis/aianalysis.yaml 2>&1)
-  if echo "$aia_tpl" | grep -q "name: aianalysis-policies" && \
-     echo "$aia_tpl" | grep -q "approval.rego"; then
+  if grep -q "name: aianalysis-policies" <<< "$aia_tpl" && \
+     grep -q "approval.rego" <<< "$aia_tpl"; then
     tap_ok "ST-POLICY-004: --set-file renders aianalysis-policies ConfigMap with approval.rego"
   else
     tap_not_ok "ST-POLICY-004: --set-file AA policy render" \
@@ -1201,8 +1201,8 @@ run_template_tests() {
     $(template_common_args) $(template_llm_args) \
     $(policy_flags) \
     -s templates/signalprocessing/signalprocessing.yaml 2>&1)
-  if echo "$sp_tpl" | grep -q "name: signalprocessing-policy" && \
-     echo "$sp_tpl" | grep -q "policy.rego"; then
+  if grep -q "name: signalprocessing-policy" <<< "$sp_tpl" && \
+     grep -q "policy.rego" <<< "$sp_tpl"; then
     tap_ok "ST-POLICY-005: --set-file renders signalprocessing-policy ConfigMap with policy.rego"
   else
     tap_not_ok "ST-POLICY-005: --set-file SP policy render" \
@@ -1215,7 +1215,7 @@ run_template_tests() {
     --set-file "signalprocessing.policies.content=$POLICY_SP_FILE" \
     --set "aianalysis.policies.existingConfigMap=my-custom-policies" \
     -s templates/aianalysis/aianalysis.yaml 2>&1)
-  if ! echo "$aia_tpl" | grep -q "name: aianalysis-policies"; then
+  if ! grep -q "name: aianalysis-policies" <<< "$aia_tpl"; then
     tap_ok "ST-POLICY-006: existingConfigMap skips chart-generated aianalysis-policies ConfigMap"
   else
     tap_not_ok "ST-POLICY-006: existingConfigMap skip" \
@@ -1228,7 +1228,7 @@ run_template_tests() {
     --set-file "aianalysis.policies.content=$POLICY_AA_FILE" \
     --set "signalprocessing.policies.existingConfigMap=my-sp-policy" \
     -s templates/signalprocessing/signalprocessing.yaml 2>&1)
-  if ! echo "$sp_tpl" | grep -q "name: signalprocessing-policy"; then
+  if ! grep -q "name: signalprocessing-policy" <<< "$sp_tpl"; then
     tap_ok "ST-POLICY-007: policies.existingConfigMap skips chart-generated signalprocessing-policy ConfigMap"
   else
     tap_not_ok "ST-POLICY-007: policies.existingConfigMap skip" \
@@ -1243,7 +1243,7 @@ run_template_tests() {
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 2>&1)
   local np_count
-  np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
+  np_count=$(grep -c "kind: NetworkPolicy" <<< "$output" || true)
   if [[ "$np_count" -eq 12 ]]; then
     tap_ok "ST-NP-001: default renders 12 NetworkPolicies (enabled by default)"
   else
@@ -1255,7 +1255,7 @@ run_template_tests() {
   output=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.enabled=false 2>&1)
-  np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
+  np_count=$(grep -c "kind: NetworkPolicy" <<< "$output" || true)
   if [[ "$np_count" -eq 0 ]]; then
     tap_ok "ST-NP-002: networkPolicies.enabled=false renders zero NetworkPolicies"
   else
@@ -1284,7 +1284,7 @@ for d in docs:
     if [[ "$policy_yaml" == "MISSING" ]]; then
       np_without_dns=$((np_without_dns + 1))
     fi
-  done < <(echo "$output" | grep -A1 "kind: NetworkPolicy" | grep "name:" | awk '{print $2}')
+  done < <(grep -A1 "kind: NetworkPolicy" <<< "$output" | grep "name:" | awk '{print $2}')
   if [[ "$np_without_dns" -eq 0 ]]; then
     tap_ok "ST-NP-003: all 12 NetworkPolicies include DNS egress (port 53)"
   else
@@ -1298,7 +1298,7 @@ for d in docs:
     --set networkPolicies.enabled=true \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
     --set networkPolicies.notification.enabled=false 2>&1)
-  if ! echo "$output" | grep -q "notification"; then
+  if ! grep -q "notification" <<< "$output"; then
     tap_ok "ST-NP-004: notification.enabled=false skips Notification NetworkPolicy"
   else
     tap_not_ok "ST-NP-004: per-service disable" \
@@ -1316,7 +1316,7 @@ for d in docs:
     --set postgresql.host=external-pg.example.com \
     --set valkey.enabled=false \
     --set valkey.host=external-valkey.example.com 2>&1)
-  np_count=$(echo "$output" | grep -c "kind: NetworkPolicy" || true)
+  np_count=$(grep -c "kind: NetworkPolicy" <<< "$output" || true)
   if [[ "$np_count" -eq 10 ]]; then
     tap_ok "ST-NP-005: postgresql/valkey disabled = 10 NetworkPolicies (no PG/VK)"
   else
@@ -1339,7 +1339,7 @@ for d in docs:
   # GCP fields conditional: not rendered for non-vertex providers
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
-  if ! echo "$output" | grep -q "gcp_project_id"; then
+  if ! grep -q "gcp_project_id" <<< "$output"; then
     tap_ok "ST-SDK-GCP-001: gcp_project_id not rendered for non-vertex provider"
   else
     tap_not_ok "ST-SDK-GCP-001: gcp_project_id conditional" "gcp_project_id rendered for openai provider"
