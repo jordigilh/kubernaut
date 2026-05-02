@@ -156,19 +156,19 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 
 		AfterEach(func() {
 			sharedtls.ResetDefaultTransportForTesting()
-			os.Unsetenv("TLS_CA_FILE")
+			Expect(os.Unsetenv("TLS_CA_FILE")).To(Succeed())
 		})
 
 		// UT-TLS-753-002: DefaultBaseTransport retries after initial failure
 		// BR-SECURITY-753: Transient CA file unavailability must not cause permanent failure
 		It("UT-TLS-753-002: should retry after initial CA file failure", func() {
-			os.Setenv("TLS_CA_FILE", "/nonexistent/ca.crt")
+			Expect(os.Setenv("TLS_CA_FILE", "/nonexistent/ca.crt")).To(Succeed())
 
 			_, err := sharedtls.DefaultBaseTransport()
 			Expect(err).To(HaveOccurred(), "first call must fail when CA file is missing")
 
 			generateSelfSignedCert(certPath, keyPath)
-			os.Setenv("TLS_CA_FILE", certPath)
+			Expect(os.Setenv("TLS_CA_FILE", certPath)).To(Succeed())
 
 			rt, err := sharedtls.DefaultBaseTransport()
 			Expect(err).ToNot(HaveOccurred(), "second call must succeed after CA file becomes available")
@@ -178,7 +178,7 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 
 		// UT-TLS-753-003: DefaultBaseTransport returns plain transport when TLS_CA_FILE unset
 		It("UT-TLS-753-003: should return plain transport when TLS_CA_FILE is unset", func() {
-			os.Unsetenv("TLS_CA_FILE")
+			Expect(os.Unsetenv("TLS_CA_FILE")).To(Succeed())
 
 			rt, err := sharedtls.DefaultBaseTransport()
 			Expect(err).ToNot(HaveOccurred())
@@ -209,7 +209,7 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 	// Issue #853: IdleConnTimeout reduction from 90s to 15s
 	Describe("IdleConnTimeout (#853)", func() {
 		It("UT-RT-853-011: DefaultBaseTransport returns IdleConnTimeout=15s (non-TLS)", func() {
-			os.Unsetenv("TLS_CA_FILE")
+			Expect(os.Unsetenv("TLS_CA_FILE")).To(Succeed())
 			sharedtls.ResetDefaultTransportForTesting()
 
 			rt, err := sharedtls.DefaultBaseTransport()
@@ -224,7 +224,7 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 
 	Describe("DefaultBaseTransportWithRetry (#853)", func() {
 		It("UT-RT-853-016: wraps DefaultBaseTransport with RetryTransport", func() {
-			os.Unsetenv("TLS_CA_FILE")
+			Expect(os.Unsetenv("TLS_CA_FILE")).To(Succeed())
 			sharedtls.ResetDefaultTransportForTesting()
 
 			rt, err := sharedtls.DefaultBaseTransportWithRetry()

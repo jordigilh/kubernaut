@@ -41,7 +41,7 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 		})
 
 		AfterEach(func() {
-			os.RemoveAll(goldenDir)
+			Expect(os.RemoveAll(goldenDir)).To(Succeed())
 		})
 
 		It("UT-REPLAY-001-001: returns nil for empty goldenDir", func() {
@@ -131,7 +131,7 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 		It("UT-REPLAY-002-001: matches on signalName case-insensitively", func() {
 			var goldenDir string
 			goldenDir, _ = os.MkdirTemp("", "golden-match-*")
-			defer os.RemoveAll(goldenDir)
+			DeferCleanup(os.RemoveAll, goldenDir)
 
 			transcript := scenarios.GoldenTranscript{Scenario: "oom", SignalName: "OOMKilled"}
 			transcript.KADialog.RawResponses = []string{`{"rca": "oom"}`}
@@ -155,7 +155,7 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 		It("UT-REPLAY-002-002: replay beats keyword scenario at confidence 1.0", func() {
 			var goldenDir string
 			goldenDir, _ = os.MkdirTemp("", "golden-priority-*")
-			defer os.RemoveAll(goldenDir)
+			DeferCleanup(os.RemoveAll, goldenDir)
 
 			transcript := scenarios.GoldenTranscript{Scenario: "oom-golden", SignalName: "OOMKilled"}
 			transcript.KADialog.RawResponses = []string{`{"rca": "golden oom"}`}
@@ -178,7 +178,7 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 		It("UT-REPLAY-002-003: does not match when signalName differs", func() {
 			var goldenDir string
 			goldenDir, _ = os.MkdirTemp("", "golden-nomatch-*")
-			defer os.RemoveAll(goldenDir)
+			DeferCleanup(os.RemoveAll, goldenDir)
 
 			transcript := scenarios.GoldenTranscript{Scenario: "oom", SignalName: "OOMKilled"}
 			transcript.KADialog.RawResponses = []string{`{"rca": "oom"}`}
@@ -207,7 +207,7 @@ var _ = Describe("BR-TESTING-001: Golden Transcript Replay — Phase 5a", func()
 		})
 
 		AfterEach(func() {
-			os.RemoveAll(goldenDir)
+			Expect(os.RemoveAll(goldenDir)).To(Succeed())
 		})
 
 		It("UT-REPLAY-004-001: loads KA transcript with hapiDialog (no kaDialog)", func() {
