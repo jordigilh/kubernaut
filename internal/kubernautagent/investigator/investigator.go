@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -1184,18 +1185,26 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			assistantMsg := resp.Message
 			assistantMsg.ToolCalls = resp.ToolCalls
 			messages = append(messages, assistantMsg)
+
+			toolResults := make([]string, len(resp.ToolCalls))
+			var g errgroup.Group
 			for i, tc := range resp.ToolCalls {
 				emitToSink(ctx, session.EventTypeToolCallStart, turn, string(phase), map[string]interface{}{
-					"tool_name": tc.Name,
+					"tool_name":  tc.Name,
 					"tool_index": i,
 				})
+				g.Go(func() error {
+					toolResults[i] = inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
+					return nil
+				})
+			}
+			_ = g.Wait()
 
-				toolResult := inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
-
+			for i, tc := range resp.ToolCalls {
 				emitToSink(ctx, session.EventTypeToolResult, turn, string(phase), map[string]interface{}{
 					"tool_name":      tc.Name,
 					"tool_index":     i,
-					"result_preview": truncatePreview(toolResult, 200),
+					"result_preview": truncatePreview(toolResults[i], 200),
 				})
 
 				tcEvent := audit.NewEvent(audit.EventTypeLLMToolCall, correlationID)
@@ -1204,13 +1213,13 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 				tcEvent.Data["tool_call_index"] = i
 				tcEvent.Data["tool_name"] = tc.Name
 				tcEvent.Data["tool_arguments"] = tc.Arguments
-				tcEvent.Data["tool_result"] = toolResult
-				tcEvent.Data["tool_result_preview"] = truncatePreview(toolResult, 500)
+				tcEvent.Data["tool_result"] = toolResults[i]
+				tcEvent.Data["tool_result_preview"] = truncatePreview(toolResults[i], 500)
 				audit.StoreBestEffort(ctx, inv.auditStore, tcEvent, inv.auditLog())
 
 				messages = append(messages, llm.Message{
 					Role:       "tool",
-					Content:    toolResult,
+					Content:    toolResults[i],
 					ToolCallID: tc.ID,
 					ToolName:   tc.Name,
 				})

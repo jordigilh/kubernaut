@@ -32,10 +32,11 @@ type ToolCallOverride struct {
 
 // ScenarioOverride defines optional per-scenario overrides from a YAML config file.
 type ScenarioOverride struct {
-	WorkflowID string   `yaml:"workflow_id,omitempty"`
-	Confidence *float64 `yaml:"confidence,omitempty"`
-	ForceText  *bool    `yaml:"force_text,omitempty"`
-	ToolCall   *ToolCallOverride `yaml:"tool_call,omitempty"`
+	WorkflowID string             `yaml:"workflow_id,omitempty"`
+	Confidence *float64           `yaml:"confidence,omitempty"`
+	ForceText  *bool              `yaml:"force_text,omitempty"`
+	ToolCall   *ToolCallOverride  `yaml:"tool_call,omitempty"`
+	ToolCalls  []ToolCallOverride `yaml:"tool_calls,omitempty"`
 }
 
 // Overrides holds the parsed YAML override configuration.

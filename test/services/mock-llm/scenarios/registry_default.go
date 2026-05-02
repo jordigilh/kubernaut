@@ -48,6 +48,13 @@ func applyOverride(cs *configScenario, ov config.ScenarioOverride) {
 		cs.config.ToolCallName = ov.ToolCall.Name
 		cs.config.ToolCallArgs = ov.ToolCall.Arguments
 	}
+	if len(ov.ToolCalls) > 0 {
+		entries := make([]MultiToolCallEntry, len(ov.ToolCalls))
+		for i, tc := range ov.ToolCalls {
+			entries[i] = MultiToolCallEntry{Name: tc.Name, Arguments: tc.Arguments}
+		}
+		cs.config.MultiToolCalls = entries
+	}
 }
 
 // findOverrideByWorkflowName searches override keys for entries matching the
@@ -128,6 +135,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(mockKeywordScenario("rca_incomplete", "mock_rca_incomplete", rcaIncompleteConfig()))
 	r.Register(mockKeywordScenario("max_retries_exhausted", "mock_max_retries_exhausted", maxRetriesExhaustedConfig()))
 	r.Register(mockKeywordScenario("not_actionable", "mock_not_actionable", notActionableConfig()))
+	r.Register(mockKeywordScenario("parallel_tools", "mock_parallel_tools", parallelToolsConfig()))
 
 	// Test signal scenario
 	r.Register(testSignalScenario())

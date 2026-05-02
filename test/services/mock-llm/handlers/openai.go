@@ -171,6 +171,14 @@ func (h *handler) handleFullDAG(
 	ctx *conversation.Context,
 	hasSplit, resolved bool,
 ) {
+	if len(cfg.MultiToolCalls) > 0 && !hasToolResults(req.Messages) {
+		for _, tc := range cfg.MultiToolCalls {
+			h.trackToolCall(tc.Name)
+		}
+		writeJSON(w, http.StatusOK, response.BuildMultiToolCallResponse(model, cfg.MultiToolCalls))
+		return
+	}
+
 	if cfg.ToolCallName != "" && !hasToolResults(req.Messages) {
 		h.trackToolCall(cfg.ToolCallName)
 		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, cfg.ToolCallName, cfg))

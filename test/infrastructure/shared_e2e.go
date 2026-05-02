@@ -180,6 +180,24 @@ func deployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		"            kind: ConfigMap\n"+
 		"            name: poisoned-cm\n"+
 		"            namespace: %s\n", namespace)
+	scenariosYAML += "      parallel_tools:\n" +
+		"        force_text: false\n" +
+		"        tool_calls:\n" +
+		"          - name: kubectl_describe\n" +
+		"            arguments:\n" +
+		"              kind: Pod\n" +
+		"              name: api-server-abc\n" +
+		"              namespace: production\n" +
+		"          - name: kubectl_events\n" +
+		"            arguments:\n" +
+		"              kind: Pod\n" +
+		"              name: api-server-abc\n" +
+		"              namespace: production\n" +
+		"          - name: kubectl_logs\n" +
+		"            arguments:\n" +
+		"              kind: Pod\n" +
+		"              name: api-server-abc\n" +
+		"              namespace: production\n"
 
 	configMap := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
