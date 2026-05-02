@@ -18,6 +18,7 @@ package enrichment_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -161,8 +162,8 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 		})
 	})
 
-	Describe("UT-704-E-005: Forbidden retried and HardFail after exhaustion (HAPI-aligned)", func() {
-		It("should retry Forbidden 3 times and set HardFail=true after exhaustion", func() {
+	Describe("UT-704-E-005: Forbidden fails immediately with ErrRBACForbidden (BR-INTERACTIVE-002)", func() {
+		It("should NOT retry 403 Forbidden — it is deterministic and must propagate immediately", func() {
 			forbiddenErr := apierrors.NewForbidden(
 				schema.GroupResource{Resource: "pods"}, "test-pod", fmt.Errorf("RBAC: access denied"))
 			k8s := &countingK8sClient{
@@ -174,16 +175,14 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "inc-005")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
+			_, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "inc-005")
+			Expect(err).To(HaveOccurred(),
+				"UT-704-E-005: 403 Forbidden must propagate as error (not swallowed)")
+			Expect(errors.Is(err, enrichment.ErrRBACForbidden)).To(BeTrue(),
+				"UT-704-E-005: error must wrap ErrRBACForbidden sentinel")
 
-			Expect(k8s.CallCount()).To(Equal(4),
-				"UT-704-E-005: HAPI retries all errors — initial + 3 retries = 4 calls")
-			Expect(result.OwnerChainError).NotTo(BeNil(),
-				"UT-704-E-005: OwnerChainError must be set after retry exhaustion")
-			Expect(result.HardFail).To(BeTrue(),
-				"UT-704-E-005: HardFail must be true after retry exhaustion (Forbidden)")
+			Expect(k8s.CallCount()).To(Equal(1),
+				"UT-704-E-005: 403 is deterministic — no retries, only initial call")
 		})
 	})
 

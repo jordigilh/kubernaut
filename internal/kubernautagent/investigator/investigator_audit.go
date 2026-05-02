@@ -191,6 +191,9 @@ func messagesToAuditFormat(messages []llm.Message) []map[string]interface{} {
 		if m.ToolName != "" {
 			entry["name"] = m.ToolName
 		}
+		if len(m.ToolCalls) > 0 {
+			entry["tool_calls"] = m.ToolCalls
+		}
 		out[i] = entry
 	}
 	return out

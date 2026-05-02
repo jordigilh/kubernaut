@@ -204,6 +204,10 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 		return chain, nil
 	}
 
+	if isForbiddenError(err) {
+		return nil, err
+	}
+
 	if e.retryConfig.MaxRetries == 0 {
 		return nil, err
 	}
