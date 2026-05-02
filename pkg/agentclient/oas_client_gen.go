@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
-	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -83,10 +83,6 @@ type Client struct {
 	serverURL *url.URL
 	baseClient
 }
-
-var _ Handler = struct {
-	*Client
-}{}
 
 // NewClient initializes new Client defined by OAS.
 func NewClient(serverURL string, opts ...ClientOption) (*Client, error) {
@@ -185,7 +181,8 @@ func (c *Client) sendGetConfigConfigGet(ctx context.Context) (res jx.Raw, err er
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetConfigConfigGetResponse(resp)
@@ -259,7 +256,8 @@ func (c *Client) sendHealthCheckHealthzGet(ctx context.Context) (res jx.Raw, err
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeHealthCheckHealthzGetResponse(resp)
@@ -341,7 +339,8 @@ func (c *Client) sendIncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx context
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp)
@@ -433,7 +432,8 @@ func (c *Client) sendIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDR
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetResponse(resp)
@@ -524,7 +524,8 @@ func (c *Client) sendIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDG
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse(resp)
@@ -600,7 +601,8 @@ func (c *Client) sendReadinessCheckReadyzGet(ctx context.Context) (res jx.Raw, e
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeReadinessCheckReadyzGetResponse(resp)

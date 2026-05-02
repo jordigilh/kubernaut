@@ -227,8 +227,10 @@ func (c *KubernautAgentClient) PollSession(ctx context.Context, sessionID string
 	switch v := res.(type) {
 	case *SessionStatus:
 		return v, nil
-	case *HTTPError:
+	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound:
 		return nil, &APIError{StatusCode: http.StatusNotFound, Message: fmt.Sprintf("session %s not found: %s", sessionID, v.Detail)}
+	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetInternalServerError:
+		return nil, &APIError{StatusCode: http.StatusInternalServerError, Message: fmt.Sprintf("server error: %s", v.Detail)}
 	case *HTTPValidationError:
 		return nil, &APIError{StatusCode: http.StatusUnprocessableEntity, Message: "validation error"}
 	default:
@@ -252,6 +254,8 @@ func (c *KubernautAgentClient) GetSessionResult(ctx context.Context, sessionID s
 		return nil, &APIError{StatusCode: http.StatusNotFound, Message: fmt.Sprintf("session %s not found: %s", sessionID, v.Detail)}
 	case *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict:
 		return nil, &APIError{StatusCode: http.StatusConflict, Message: fmt.Sprintf("session %s not yet completed: %s", sessionID, v.Detail)}
+	case *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetInternalServerError:
+		return nil, &APIError{StatusCode: http.StatusInternalServerError, Message: fmt.Sprintf("server error: %s", v.Detail)}
 	case *HTTPValidationError:
 		return nil, &APIError{StatusCode: http.StatusUnprocessableEntity, Message: "validation error"}
 	default:
