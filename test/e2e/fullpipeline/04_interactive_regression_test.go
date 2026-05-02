@@ -44,10 +44,11 @@ import (
 // Context: Full pipeline E2E with all services deployed.
 var _ = Describe("CP-5 HARM-001: Autonomous regression — no interactive artifacts", Label("e2e", "fullpipeline", "interactive", "harm"), Ordered, func() {
 
-	var (
-		testNamespace string
-		testCtx       = ctx
-	)
+	var testNamespace string
+
+	BeforeAll(func() {
+		Expect(ctx).NotTo(BeNil(), "suite ctx must be initialized before tests run")
+	})
 
 	AfterAll(func() {
 		if testNamespace != "" {
@@ -70,7 +71,7 @@ var _ = Describe("CP-5 HARM-001: Autonomous regression — no interactive artifa
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 
 		By("Step 2: Deploying memory-eater pod (triggers OOMKill → Gateway → pipeline)")
-		err := infrastructure.DeployMemoryEater(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
+		err := infrastructure.DeployMemoryEater(ctx, testNamespace, kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Failed to deploy memory-eater")
 
 		By("Step 2b: Waiting for OOMKill event...")

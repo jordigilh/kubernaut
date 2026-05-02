@@ -109,6 +109,8 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 				Name:      targetName,
 				Namespace: targetNamespace,
 			},
+			FiringTime:   metav1.Now(),
+			ReceivedTime: metav1.Now(),
 		},
 	}
 

@@ -32,6 +32,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
@@ -146,6 +147,18 @@ var _ = SynchronizedBeforeSuite(
 		return []byte(payload)
 	},
 	func(data []byte) {
+		lines := strings.SplitN(string(data), "\n", 2)
+
+		// Reconstruct rest.Config from the kubeconfig file written by process 1.
+		// In parallel Ginkgo execution, sharedK8sConfig is only set in the primary
+		// process; secondary processes must load it from the persisted kubeconfig.
+		if sharedK8sConfig == nil && len(lines) == 2 {
+			kubeconfigPath := lines[1]
+			cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+			Expect(err).ToNot(HaveOccurred(), "secondary process should load rest.Config from kubeconfig")
+			sharedK8sConfig = cfg
+		}
+
 		if sharedK8sClient == nil {
 			scheme := runtime.NewScheme()
 			Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
@@ -157,7 +170,6 @@ var _ = SynchronizedBeforeSuite(
 		}
 
 		// Build authenticated DS client for this Ginkgo process
-		lines := strings.SplitN(string(data), "\n", 2)
 		if len(lines) == 2 {
 			dsToken := lines[0]
 			dsURL := fmt.Sprintf("http://127.0.0.1:%d", mcpDataStoragePort)

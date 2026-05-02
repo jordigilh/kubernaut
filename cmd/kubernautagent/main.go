@@ -32,13 +32,16 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/restmapper"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -969,12 +972,18 @@ func buildMCPHandler(
 	
 
 	// SEC-07: Build controller-runtime client with MCP-specific timeouts.
+	// Scheme includes remediationv1 for RR existence validation (HARM-004)
+	// and future NL signal intake (#714).
+	mcpScheme := k8sruntime.NewScheme()
+	_ = clientgoscheme.AddToScheme(mcpScheme)
+	_ = remediationv1.AddToScheme(mcpScheme)
+
 	mcpRestConfig := *infra.kubeConfig
 	mcpRestConfig.Timeout = 10 * time.Second
 	mcpRestConfig.QPS = 20
 	mcpRestConfig.Burst = 40
 
-	ctrlCli, err := ctrlclient.New(&mcpRestConfig, ctrlclient.Options{})
+	ctrlCli, err := ctrlclient.New(&mcpRestConfig, ctrlclient.Options{Scheme: mcpScheme})
 	if err != nil {
 		logger.Error(err, "MCP interactive mode: failed to create controller-runtime client")
 		return nil
@@ -1077,12 +1086,16 @@ func buildMCPHandler(
 	// UX-01/02: Session notifier delivers timeout warnings to MCP clients.
 	sessionNotifier := mcpkg.NewSessionNotifier()
 
+	// HARM-004: Validate RR existence before creating interactive Leases.
+	rrChecker := mcptools.NewK8sRRExistenceChecker(ctrlCli, namespace)
+
 	// Build the InvestigateTool with optional dependencies.
 	investigateOpts := []mcptools.InvestigateOption{
 		mcptools.WithToolMetrics(agentMetrics),
 		mcptools.WithRateLimiter(sessionRateLimiter),
 		mcptools.WithTimeoutTracker(timeoutMgr),
 		mcptools.WithNotifyFunc(sessionNotifier.Notify),
+		mcptools.WithRRExistenceChecker(rrChecker),
 	}
 	if autoMgr != nil {
 		investigateOpts = append(investigateOpts, mcptools.WithAutonomousManager(autoMgr))
