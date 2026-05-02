@@ -139,8 +139,8 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 	if req.Options.MaxTokens > 0 {
 		params.MaxTokens = int64(req.Options.MaxTokens)
 	}
-	if req.Options.Temperature > 0 {
-		params.Temperature = anthropic.Float(req.Options.Temperature)
+	if req.Options.Temperature != nil {
+		params.Temperature = anthropic.Float(*req.Options.Temperature)
 	}
 
 	var pendingToolResults []anthropic.ContentBlockParamUnion

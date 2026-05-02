@@ -386,7 +386,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
-		if retried := inv.retryRCASubmit(ctx, content, messages, tokens, correlationID, client, modelName); retried != nil {
+		if retried := inv.retryRCASubmit(ctx, content, messages, tokens, correlationID, client, modelName, runtimeParams); retried != nil {
 			result = retried
 			parseErr = nil
 		}
@@ -404,7 +404,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	// remediation_target.kind matches the signal's resource_kind, the LLM may
 	// be targeting the symptom reporter instead of the actual root cause.
 	// Inject a single correction message and re-run. Max 1 retry.
-	result = inv.sameKindValidationGate(ctx, result, signal, messages, tokens, correlationID, client, modelName)
+	result = inv.sameKindValidationGate(ctx, result, signal, messages, tokens, correlationID, client, modelName, runtimeParams)
 
 	// Defense-in-depth: RCA phase must never abort the pipeline via
 	// needs_human_review. Only max-turns exhaustion (above) is a valid RCA abort.
@@ -425,7 +425,7 @@ const maxRCAParseRetries = 1
 // retryRCASubmit performs a single correction attempt when the RCA parse fails
 // (e.g. double-serialized JSON that wasn't caught by the unwrap heuristic, or
 // garbage fields). Mirrors retryWorkflowSubmit but scoped to the RCA phase.
-func (inv *Investigator) retryRCASubmit(ctx context.Context, lastContent string, history []llm.Message, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) *katypes.InvestigationResult {
+func (inv *Investigator) retryRCASubmit(ctx context.Context, lastContent string, history []llm.Message, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) *katypes.InvestigationResult {
 	submitOnlyTools := []llm.ToolDefinition{
 		{
 			Name:        SubmitResultToolName,
@@ -467,11 +467,11 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 		retryEvent.Data["retry_reason"] = "rca_parse_correction"
 		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.auditLog())
 
-		resp, err := client.Chat(ctx, llm.ChatRequest{
+		resp, err := llm.ChatWithParams(ctx, client, llm.ChatRequest{
 			Messages: retryMessages,
 			Tools:    submitOnlyTools,
 			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
-		})
+		}, runtimeParams)
 		if err != nil {
 			inv.logger.Error(err, "RCA retry LLM call failed",
 				"correlation_id", correlationID)
@@ -526,6 +526,7 @@ func (inv *Investigator) sameKindValidationGate(
 	correlationID string,
 	client llm.Client,
 	modelName string,
+	runtimeParams llm.RuntimeParams,
 ) *katypes.InvestigationResult {
 	if signal.ResourceKind == "" || result.RemediationTarget.Kind == "" {
 		return result
@@ -576,11 +577,11 @@ func (inv *Investigator) sameKindValidationGate(
 		llm.Message{Role: "user", Content: correctionMsg},
 	)
 
-	resp, err := client.Chat(ctx, llm.ChatRequest{
+	resp, err := llm.ChatWithParams(ctx, client, llm.ChatRequest{
 		Messages: retryMessages,
 		Tools:    submitOnlyTools,
 		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
-	})
+	}, runtimeParams)
 	if err != nil {
 		inv.logger.Error(err, "same-kind validation gate retry failed, keeping original result",
 			"correlation_id", correlationID)
@@ -685,7 +686,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 				"correlation_id", correlationID)
 			content = r.Content
 		} else {
-			retryResult := inv.retryWorkflowSubmit(ctx, r.Content, messages, rcaSummary, tokens, correlationID, client, modelName)
+			retryResult := inv.retryWorkflowSubmit(ctx, r.Content, messages, rcaSummary, tokens, correlationID, client, modelName, runtimeParams)
 			if retryResult != nil {
 				return retryResult, nil
 			}
@@ -702,7 +703,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
-		retryResult := inv.retryWorkflowSubmit(ctx, content, messages, rcaSummary, tokens, correlationID, client, modelName)
+		retryResult := inv.retryWorkflowSubmit(ctx, content, messages, rcaSummary, tokens, correlationID, client, modelName, runtimeParams)
 		if retryResult != nil {
 			return retryResult, nil
 		}
@@ -790,7 +791,7 @@ const maxParseRetries = 2
 // Each retry sends a correction message with examples of both submit tools,
 // with only the two submit tools available (prevents re-investigation).
 // Returns non-nil *InvestigationResult on success or nil when retries exhaust.
-func (inv *Investigator) retryWorkflowSubmit(ctx context.Context, lastContent string, history []llm.Message, rcaSummary string, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string) *katypes.InvestigationResult {
+func (inv *Investigator) retryWorkflowSubmit(ctx context.Context, lastContent string, history []llm.Message, rcaSummary string, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) *katypes.InvestigationResult {
 	submitOnlyTools := []llm.ToolDefinition{
 		{
 			Name:        SubmitResultWithWorkflowToolName,
@@ -834,17 +835,19 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 		retryEvent.EventAction = audit.ActionLLMRequest
 		retryEvent.EventOutcome = audit.OutcomeSuccess
 		retryEvent.Data["model"] = modelName
+		retryEvent.Data["prompt_length"] = totalPromptLength(retryMessages)
+		retryEvent.Data["prompt_preview"] = lastUserMessage(retryMessages, 500)
 		retryEvent.Data["retry_attempt"] = attempt + 1
 		retryEvent.Data["retry_max"] = maxParseRetries
 		retryEvent.Data["phase"] = string(katypes.PhaseWorkflowDiscovery)
 		retryEvent.Data["retry_reason"] = "parse_level_correction"
 		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.auditLog())
 
-		resp, err := client.Chat(ctx, llm.ChatRequest{
+		resp, err := llm.ChatWithParams(ctx, client, llm.ChatRequest{
 			Messages: retryMessages,
 			Tools:    submitOnlyTools,
 			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.InvestigationResultSchema()},
-		})
+		}, runtimeParams)
 		if err != nil {
 			inv.logger.Error(err, "retry LLM call failed",
 				"correlation_id", correlationID)
@@ -973,18 +976,11 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		reqEvent.Data["messages"] = messagesToAuditFormat(messages)
 		audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.auditLog())
 
-		chatCtx := ctx
-		if runtimeParams.TimeoutSeconds > 0 {
-			var cancel context.CancelFunc
-			chatCtx, cancel = context.WithTimeout(ctx, time.Duration(runtimeParams.TimeoutSeconds)*time.Second)
-			defer cancel()
-		}
-
-		resp, err := client.Chat(chatCtx, llm.ChatRequest{
+		resp, err := llm.ChatWithParams(ctx, client, llm.ChatRequest{
 			Messages: messages,
 			Tools:    toolDefs,
-			Options:  llm.ChatOptions{Temperature: runtimeParams.Temperature, JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase), MaxTokens: maxTokens},
-		})
+			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase), MaxTokens: maxTokens},
+		}, runtimeParams)
 		if err != nil {
 			failEvent := audit.NewEvent(audit.EventTypeResponseFailed, correlationID)
 			failEvent.EventAction = audit.ActionResponseFailed

@@ -835,4 +835,36 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			Expect(payload.ResponseData.Warnings).To(BeEmpty())
 		})
 	})
+
+	// --- BUG-5: Workflow retry event completeness ---
+
+	Describe("UT-KA-967-005: LLM retry events must include prompt_length and prompt_preview", func() {
+		It("should have prompt_length and prompt_preview on workflow retry audit event", func() {
+			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-retry-wf")
+			event.EventAction = audit.ActionLLMRequest
+			event.EventOutcome = audit.OutcomeSuccess
+
+			event.Data["model"] = "test-model"
+			event.Data["retry_attempt"] = 1
+			event.Data["retry_max"] = 3
+			event.Data["phase"] = "workflow_discovery"
+			event.Data["retry_reason"] = "parse_level_correction"
+			event.Data["prompt_length"] = 1500
+			event.Data["prompt_preview"] = "Please correct the JSON output..."
+
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recorder.calls).To(HaveLen(1))
+
+			payload, ok := recorder.calls[0].EventData.GetLLMRequestPayload()
+			Expect(ok).To(BeTrue(), "must map to LLMRequestPayload")
+			Expect(payload.Model).To(Equal("test-model"))
+			Expect(payload.PromptLength).To(Equal(1500),
+				"prompt_length must be populated for retry audit events (BUG-5)")
+			Expect(payload.PromptPreview).To(Equal("Please correct the JSON output..."),
+				"prompt_preview must be populated for retry audit events (BUG-5)")
+		})
+	})
 })

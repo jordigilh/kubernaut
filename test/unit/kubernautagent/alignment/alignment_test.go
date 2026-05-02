@@ -399,8 +399,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 		})
 	})
 
-	Describe("UT-SA-601-012: ToolProxy.Execute delegates and observes via context", func() {
-		It("should call inner Execute and submit the tool step to the context observer", func() {
+	Describe("UT-SA-601-012: ToolProxy.Execute delegates and SubmitToolStep observes via context", func() {
+		It("should call inner Execute and submit the tool step to the context observer via SubmitToolStep", func() {
 			inner := &mockToolRegistry{executeResult: `{"ok":true}`}
 			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{cleanResponse()}}
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
@@ -415,6 +415,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(inner.executeCalls).To(Equal(1), "must delegate to inner registry")
 			Expect(out).To(Equal(`{"ok":true}`))
+
+			alignment.SubmitToolStep(ctx, "get_pods", out)
 
 			wr := observer.WaitForCompletion(5 * time.Second)
 			Expect(wr.Observations).To(HaveLen(1), "one observation for the tool result")
@@ -862,7 +864,7 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 		})
 	})
 
-	Describe("UT-SA-601-CX-003: ToolProxy sends error content to shadow", func() {
+	Describe("UT-SA-601-CX-003: SubmitToolStep sends error content to shadow", func() {
 		It("should submit error content to shadow when Execute fails", func() {
 			toolErr := errors.New("connection refused")
 			inner := &mockToolRegistry{executeErr: toolErr}
@@ -876,6 +878,8 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 
 			_, err := proxy.Execute(ctx, "get_pods", json.RawMessage(`{}`))
 			Expect(err).To(HaveOccurred())
+
+			alignment.SubmitToolStep(ctx, "get_pods", err.Error())
 
 			wr := observer.WaitForCompletion(5 * time.Second)
 			Expect(wr.Observations).To(HaveLen(1), "error content must be submitted to shadow")
