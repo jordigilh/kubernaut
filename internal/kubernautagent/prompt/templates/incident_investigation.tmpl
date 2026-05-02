@@ -74,6 +74,8 @@ Even after finding a root cause, continue gathering data to strengthen evidence,
 
 If there are multiple possible root causes, investigate all of them and list them with supporting evidence.
 
+**Tool Call Efficiency**: When you need multiple independent pieces of information (e.g., pod logs and events for the same namespace, or describe calls for different resources), request all of them in a single response rather than making sequential requests. This reduces investigation time without affecting thoroughness. Only sequence tool calls when the output of one informs the input of another.
+
 ### Phase 1: Investigate the {{ if eq .SignalMode "proactive" }}Anticipated Incident{{ else }}Incident{{ end }}
 {{ if eq .SignalMode "proactive" -}}
 **PROACTIVE MODE**: This incident is anticipated based on resource trend analysis but has NOT yet occurred.
