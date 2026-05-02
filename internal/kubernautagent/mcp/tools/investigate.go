@@ -314,8 +314,8 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 
 	// SEC-HIGH-01: Enforce per-session message rate limit before processing.
 	if t.rateLimiter != nil {
-		if err := t.rateLimiter.Allow(sess.SessionID, len(input.Message)); err != nil {
-			if errors.Is(err, mcpinternal.ErrRateLimited) {
+		if rlErr := t.rateLimiter.Allow(sess.SessionID, len(input.Message)); rlErr != nil {
+			if errors.Is(rlErr, mcpinternal.ErrRateLimited) {
 				return InvestigateOutput{}, ErrCodeRateLimited
 			}
 			return InvestigateOutput{}, ErrCodeRateLimited

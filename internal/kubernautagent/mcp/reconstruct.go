@@ -97,8 +97,6 @@ func (s *ReconstructionSpawner) SpawnReconstruct(ctx context.Context, entry *Rec
 
 	_, err := s.runner.RunReconTurn(ctx, messages, entry.CorrelationID)
 	if err != nil {
-		s.logger.Error(err, "reconstruction RunReconTurn failed",
-			"correlation_id", entry.CorrelationID)
 		return fmt.Errorf("reconstruction RunReconTurn: %w", err)
 	}
 
