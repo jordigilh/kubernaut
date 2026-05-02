@@ -5377,6 +5377,512 @@ func (s *ActionTypeWorkflowCountResponse) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *AlignmentStepPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AlignmentStepPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("event_id")
+		e.Str(s.EventID)
+	}
+	{
+		e.FieldStart("incident_id")
+		e.Str(s.IncidentID)
+	}
+	{
+		e.FieldStart("step_index")
+		e.Int(s.StepIndex)
+	}
+	{
+		e.FieldStart("step_kind")
+		e.Str(s.StepKind)
+	}
+	{
+		if s.Tool.Set {
+			e.FieldStart("tool")
+			s.Tool.Encode(e)
+		}
+	}
+	{
+		if s.Explanation.Set {
+			e.FieldStart("explanation")
+			s.Explanation.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfAlignmentStepPayload = [7]string{
+	0: "event_type",
+	1: "event_id",
+	2: "incident_id",
+	3: "step_index",
+	4: "step_kind",
+	5: "tool",
+	6: "explanation",
+}
+
+// Decode decodes AlignmentStepPayload from json.
+func (s *AlignmentStepPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AlignmentStepPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "event_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.EventID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_id\"")
+			}
+		case "incident_id":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.IncidentID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"incident_id\"")
+			}
+		case "step_index":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.StepIndex = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"step_index\"")
+			}
+		case "step_kind":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.StepKind = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"step_kind\"")
+			}
+		case "tool":
+			if err := func() error {
+				s.Tool.Reset()
+				if err := s.Tool.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tool\"")
+			}
+		case "explanation":
+			if err := func() error {
+				s.Explanation.Reset()
+				if err := s.Explanation.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"explanation\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AlignmentStepPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAlignmentStepPayload) {
+					name = jsonFieldsNameOfAlignmentStepPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AlignmentStepPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AlignmentStepPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AlignmentStepPayloadEventType as json.
+func (s AlignmentStepPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AlignmentStepPayloadEventType from json.
+func (s *AlignmentStepPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AlignmentStepPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AlignmentStepPayloadEventType(v) {
+	case AlignmentStepPayloadEventTypeAiagentAlignmentStep:
+		*s = AlignmentStepPayloadEventTypeAiagentAlignmentStep
+	default:
+		*s = AlignmentStepPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AlignmentStepPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AlignmentStepPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *AlignmentVerdictPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AlignmentVerdictPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("event_id")
+		e.Str(s.EventID)
+	}
+	{
+		e.FieldStart("incident_id")
+		e.Str(s.IncidentID)
+	}
+	{
+		e.FieldStart("result")
+		s.Result.Encode(e)
+	}
+	{
+		if s.Summary.Set {
+			e.FieldStart("summary")
+			s.Summary.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("flagged")
+		e.Int(s.Flagged)
+	}
+	{
+		e.FieldStart("total")
+		e.Int(s.Total)
+	}
+}
+
+var jsonFieldsNameOfAlignmentVerdictPayload = [7]string{
+	0: "event_type",
+	1: "event_id",
+	2: "incident_id",
+	3: "result",
+	4: "summary",
+	5: "flagged",
+	6: "total",
+}
+
+// Decode decodes AlignmentVerdictPayload from json.
+func (s *AlignmentVerdictPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AlignmentVerdictPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "event_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.EventID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_id\"")
+			}
+		case "incident_id":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.IncidentID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"incident_id\"")
+			}
+		case "result":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				if err := s.Result.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"result\"")
+			}
+		case "summary":
+			if err := func() error {
+				s.Summary.Reset()
+				if err := s.Summary.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"summary\"")
+			}
+		case "flagged":
+			requiredBitSet[0] |= 1 << 5
+			if err := func() error {
+				v, err := d.Int()
+				s.Flagged = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"flagged\"")
+			}
+		case "total":
+			requiredBitSet[0] |= 1 << 6
+			if err := func() error {
+				v, err := d.Int()
+				s.Total = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AlignmentVerdictPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b01101111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAlignmentVerdictPayload) {
+					name = jsonFieldsNameOfAlignmentVerdictPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AlignmentVerdictPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AlignmentVerdictPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AlignmentVerdictPayloadEventType as json.
+func (s AlignmentVerdictPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AlignmentVerdictPayloadEventType from json.
+func (s *AlignmentVerdictPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AlignmentVerdictPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AlignmentVerdictPayloadEventType(v) {
+	case AlignmentVerdictPayloadEventTypeAiagentAlignmentVerdict:
+		*s = AlignmentVerdictPayloadEventTypeAiagentAlignmentVerdict
+	default:
+		*s = AlignmentVerdictPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AlignmentVerdictPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AlignmentVerdictPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AlignmentVerdictPayloadResult as json.
+func (s AlignmentVerdictPayloadResult) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AlignmentVerdictPayloadResult from json.
+func (s *AlignmentVerdictPayloadResult) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AlignmentVerdictPayloadResult to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AlignmentVerdictPayloadResult(v) {
+	case AlignmentVerdictPayloadResultAligned:
+		*s = AlignmentVerdictPayloadResultAligned
+	case AlignmentVerdictPayloadResultSuspicious:
+		*s = AlignmentVerdictPayloadResultSuspicious
+	default:
+		*s = AlignmentVerdictPayloadResult(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AlignmentVerdictPayloadResult) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AlignmentVerdictPayloadResult) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *AsyncAcceptanceResponse) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -7614,6 +8120,72 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AlignmentStepPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.alignment.step")
+		{
+			s := s.AlignmentStepPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("step_index")
+				e.Int(s.StepIndex)
+			}
+			{
+				e.FieldStart("step_kind")
+				e.Str(s.StepKind)
+			}
+			{
+				if s.Tool.Set {
+					e.FieldStart("tool")
+					s.Tool.Encode(e)
+				}
+			}
+			{
+				if s.Explanation.Set {
+					e.FieldStart("explanation")
+					s.Explanation.Encode(e)
+				}
+			}
+		}
+	case AlignmentVerdictPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.alignment.verdict")
+		{
+			s := s.AlignmentVerdictPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("result")
+				s.Result.Encode(e)
+			}
+			{
+				if s.Summary.Set {
+					e.FieldStart("summary")
+					s.Summary.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("flagged")
+				e.Int(s.Flagged)
+			}
+			{
+				e.FieldStart("total")
+				e.Int(s.Total)
+			}
+		}
 	case RemediationRequestWebhookAuditPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("webhook.remediationrequest.timeout_modified")
@@ -8299,6 +8871,12 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.workflow.validation_attempt":
 					s.Type = WorkflowValidationPayloadAuditEventEventData
 					found = true
+				case "aiagent.alignment.step":
+					s.Type = AlignmentStepPayloadAuditEventEventData
+					found = true
+				case "aiagent.alignment.verdict":
+					s.Type = AlignmentVerdictPayloadAuditEventEventData
+					found = true
 				case "webhook.remediationrequest.timeout_modified":
 					s.Type = RemediationRequestWebhookAuditPayloadAuditEventEventData
 					found = true
@@ -8500,6 +9078,14 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case WorkflowValidationPayloadAuditEventEventData:
 		if err := s.WorkflowValidationPayload.Decode(d); err != nil {
+			return err
+		}
+	case AlignmentStepPayloadAuditEventEventData:
+		if err := s.AlignmentStepPayload.Decode(d); err != nil {
+			return err
+		}
+	case AlignmentVerdictPayloadAuditEventEventData:
+		if err := s.AlignmentVerdictPayload.Decode(d); err != nil {
 			return err
 		}
 	case RemediationRequestWebhookAuditPayloadAuditEventEventData:
@@ -10690,6 +11276,72 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AlignmentStepPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.alignment.step")
+		{
+			s := s.AlignmentStepPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("step_index")
+				e.Int(s.StepIndex)
+			}
+			{
+				e.FieldStart("step_kind")
+				e.Str(s.StepKind)
+			}
+			{
+				if s.Tool.Set {
+					e.FieldStart("tool")
+					s.Tool.Encode(e)
+				}
+			}
+			{
+				if s.Explanation.Set {
+					e.FieldStart("explanation")
+					s.Explanation.Encode(e)
+				}
+			}
+		}
+	case AlignmentVerdictPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.alignment.verdict")
+		{
+			s := s.AlignmentVerdictPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("result")
+				s.Result.Encode(e)
+			}
+			{
+				if s.Summary.Set {
+					e.FieldStart("summary")
+					s.Summary.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("flagged")
+				e.Int(s.Flagged)
+			}
+			{
+				e.FieldStart("total")
+				e.Int(s.Total)
+			}
+		}
 	case RemediationRequestWebhookAuditPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
 		e.Str("webhook.remediationrequest.timeout_modified")
@@ -11375,6 +12027,12 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.workflow.validation_attempt":
 					s.Type = WorkflowValidationPayloadAuditEventRequestEventData
 					found = true
+				case "aiagent.alignment.step":
+					s.Type = AlignmentStepPayloadAuditEventRequestEventData
+					found = true
+				case "aiagent.alignment.verdict":
+					s.Type = AlignmentVerdictPayloadAuditEventRequestEventData
+					found = true
 				case "webhook.remediationrequest.timeout_modified":
 					s.Type = RemediationRequestWebhookAuditPayloadAuditEventRequestEventData
 					found = true
@@ -11576,6 +12234,14 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case WorkflowValidationPayloadAuditEventRequestEventData:
 		if err := s.WorkflowValidationPayload.Decode(d); err != nil {
+			return err
+		}
+	case AlignmentStepPayloadAuditEventRequestEventData:
+		if err := s.AlignmentStepPayload.Decode(d); err != nil {
+			return err
+		}
+	case AlignmentVerdictPayloadAuditEventRequestEventData:
+		if err := s.AlignmentVerdictPayload.Decode(d); err != nil {
 			return err
 		}
 	case RemediationRequestWebhookAuditPayloadAuditEventRequestEventData:

@@ -38,7 +38,7 @@ var _ = Describe("Vertex AI + Claude httptest round-trips — #684", func() {
 		},
 		Options: llm.ChatOptions{
 			MaxTokens:   200,
-			Temperature: 0.0,
+			Temperature: func() *float64 { v := 0.0; return &v }(),
 		},
 	}
 

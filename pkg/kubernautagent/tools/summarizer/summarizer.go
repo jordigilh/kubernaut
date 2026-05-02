@@ -23,6 +23,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
+	"k8s.io/utils/ptr"
 )
 
 // Summarizer uses a secondary LLM call to shorten tool output that exceeds
@@ -88,7 +89,7 @@ func (s *Summarizer) MaybeSummarize(ctx context.Context, toolName string, result
 			{Role: "user", Content: prompt},
 		},
 		Options: llm.ChatOptions{
-			Temperature: 0.0,
+			Temperature: ptr.To(0.0),
 		},
 	})
 	if err != nil {

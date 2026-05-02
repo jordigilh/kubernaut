@@ -25,6 +25,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
+func floatPtr(v float64) *float64 { return &v }
+
 var _ = Describe("LLM Types — #433", func() {
 
 	Describe("UT-KA-433-004: ChatRequest/ChatResponse round-trip serialization", func() {
@@ -45,11 +47,11 @@ var _ = Describe("LLM Types — #433", func() {
 						Parameters:  json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"}}}`),
 					},
 				},
-				Options: llm.ChatOptions{
-					Temperature: 0.1,
-					MaxTokens:   4096,
-					JSONMode:    true,
-				},
+			Options: llm.ChatOptions{
+				Temperature: floatPtr(0.1),
+				MaxTokens:   4096,
+				JSONMode:    true,
+			},
 			}
 
 			data, err := json.Marshal(original)
@@ -66,7 +68,8 @@ var _ = Describe("LLM Types — #433", func() {
 			Expect(restored.Messages[3].ToolCallID).To(Equal("tc_1"))
 			Expect(restored.Tools).To(HaveLen(1))
 			Expect(restored.Tools[0].Name).To(Equal("kubectl_describe"))
-			Expect(restored.Options.Temperature).To(BeNumerically("~", 0.1, 0.001))
+			Expect(restored.Options.Temperature).NotTo(BeNil())
+			Expect(*restored.Options.Temperature).To(BeNumerically("~", 0.1, 0.001))
 			Expect(restored.Options.MaxTokens).To(Equal(4096))
 			Expect(restored.Options.JSONMode).To(BeTrue())
 

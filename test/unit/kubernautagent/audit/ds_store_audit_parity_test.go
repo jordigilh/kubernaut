@@ -290,6 +290,82 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 		})
 	})
 
+	// --- Phase 4b: Alignment Events (#942) ---
+
+	Describe("UT-KA-942-001: buildEventData maps AlignmentStepPayload (#942)", func() {
+		It("should populate step_index, step_kind, tool, explanation for suspicious step", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeAlignmentStep, "corr-align-step")
+			event.Data["step_index"] = 3
+			event.Data["step_kind"] = "tool_result"
+			event.Data["tool"] = "kubectl_get"
+			event.Data["explanation"] = "step attempts to read secrets outside scope"
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			req := recorder.calls[0]
+			Expect(req.EventData.Type).To(Equal(ogenclient.AlignmentStepPayloadAuditEventRequestEventData))
+
+			payload, ok := req.EventData.GetAlignmentStepPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.StepIndex).To(Equal(3))
+			Expect(payload.StepKind).To(Equal("tool_result"))
+			Expect(payload.Tool.Value).To(Equal("kubectl_get"))
+			Expect(payload.Explanation.Value).To(ContainSubstring("secrets outside scope"))
+		})
+	})
+
+	Describe("UT-KA-942-002: buildEventData maps AlignmentVerdictPayload (#942)", func() {
+		It("should populate result, summary, flagged, total for suspicious verdict", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeAlignmentVerdict, "corr-align-verdict")
+			event.Data["result"] = "suspicious"
+			event.Data["summary"] = "2 steps flagged as suspicious out of 15 total"
+			event.Data["flagged"] = 2
+			event.Data["total"] = 15
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			req := recorder.calls[0]
+			Expect(req.EventData.Type).To(Equal(ogenclient.AlignmentVerdictPayloadAuditEventRequestEventData))
+
+			payload, ok := req.EventData.GetAlignmentVerdictPayload()
+			Expect(ok).To(BeTrue())
+			Expect(string(payload.Result)).To(Equal("suspicious"))
+			Expect(payload.Summary.Value).To(ContainSubstring("2 steps flagged"))
+			Expect(payload.Flagged).To(Equal(2))
+			Expect(payload.Total).To(Equal(15))
+		})
+	})
+
+	Describe("UT-KA-942-003: alignment verdict with aligned result (#942)", func() {
+		It("should map aligned result correctly", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeAlignmentVerdict, "corr-align-ok")
+			event.Data["result"] = "aligned"
+			event.Data["summary"] = "all steps aligned"
+			event.Data["flagged"] = 0
+			event.Data["total"] = 10
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			payload, ok := recorder.calls[0].EventData.GetAlignmentVerdictPayload()
+			Expect(ok).To(BeTrue())
+			Expect(string(payload.Result)).To(Equal("aligned"))
+			Expect(payload.Flagged).To(Equal(0))
+			Expect(payload.Total).To(Equal(10))
+		})
+	})
+
 	// --- Phase 5: Response Failed ---
 
 	Describe("UT-KA-433-AP-011: buildEventData maps AIAgentResponseFailedPayload", func() {
@@ -757,6 +833,38 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			Expect(payload.ResponseData.Warnings).NotTo(BeNil(),
 				"Warnings must be non-nil empty slice, not nil, so AA IT nil-checks pass")
 			Expect(payload.ResponseData.Warnings).To(BeEmpty())
+		})
+	})
+
+	// --- BUG-5: Workflow retry event completeness ---
+
+	Describe("UT-KA-967-005: LLM retry events must include prompt_length and prompt_preview", func() {
+		It("should have prompt_length and prompt_preview on workflow retry audit event", func() {
+			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-retry-wf")
+			event.EventAction = audit.ActionLLMRequest
+			event.EventOutcome = audit.OutcomeSuccess
+
+			event.Data["model"] = "test-model"
+			event.Data["retry_attempt"] = 1
+			event.Data["retry_max"] = 3
+			event.Data["phase"] = "workflow_discovery"
+			event.Data["retry_reason"] = "parse_level_correction"
+			event.Data["prompt_length"] = 1500
+			event.Data["prompt_preview"] = "Please correct the JSON output..."
+
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recorder.calls).To(HaveLen(1))
+
+			payload, ok := recorder.calls[0].EventData.GetLLMRequestPayload()
+			Expect(ok).To(BeTrue(), "must map to LLMRequestPayload")
+			Expect(payload.Model).To(Equal("test-model"))
+			Expect(payload.PromptLength).To(Equal(1500),
+				"prompt_length must be populated for retry audit events (BUG-5)")
+			Expect(payload.PromptPreview).To(Equal("Please correct the JSON output..."),
+				"prompt_preview must be populated for retry audit events (BUG-5)")
 		})
 	})
 })

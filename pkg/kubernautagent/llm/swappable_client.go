@@ -36,18 +36,32 @@ const oldClientCloseTimeout = 5 * time.Second
 //     so it never blocks callers.
 //   - Snapshot returns a bare llm.Client pinned at the current moment;
 //     subsequent Swap calls do not affect outstanding snapshots.
+// RuntimeParams holds LLM runtime parameters that can be hot-reloaded
+// alongside the client. Investigator reads these at the start of each
+// investigation to pin values for the duration.
+type RuntimeParams struct {
+	Temperature    float64
+	TimeoutSeconds int
+	MaxRetries     int
+}
+
 type SwappableClient struct {
-	mu        sync.RWMutex
-	inner     Client
-	modelName string
+	mu            sync.RWMutex
+	inner         Client
+	modelName     string
+	runtimeParams RuntimeParams
 }
 
 // NewSwappableClient creates a SwappableClient wrapping the given initial client.
-func NewSwappableClient(initial Client, modelName string) (*SwappableClient, error) {
+func NewSwappableClient(initial Client, modelName string, params ...RuntimeParams) (*SwappableClient, error) {
 	if initial == nil {
 		return nil, errors.New("llm: SwappableClient requires non-nil initial client")
 	}
-	return &SwappableClient{inner: initial, modelName: modelName}, nil
+	sc := &SwappableClient{inner: initial, modelName: modelName}
+	if len(params) > 0 {
+		sc.runtimeParams = params[0]
+	}
+	return sc, nil
 }
 
 // Chat delegates to the inner client. The inner reference is copied under
@@ -68,9 +82,10 @@ func (sc *SwappableClient) Close() error {
 	return c.Close()
 }
 
-// Swap atomically replaces the inner client and model name. The old client's
-// Close is called in a background goroutine with a timeout to avoid blocking.
-func (sc *SwappableClient) Swap(newClient Client, newModelName string) error {
+// Swap atomically replaces the inner client, model name, and runtime params.
+// The old client's Close is called in a background goroutine with a timeout
+// so it never blocks callers.
+func (sc *SwappableClient) Swap(newClient Client, newModelName string, params ...RuntimeParams) error {
 	if newClient == nil {
 		return errors.New("llm: cannot swap to nil client")
 	}
@@ -78,6 +93,9 @@ func (sc *SwappableClient) Swap(newClient Client, newModelName string) error {
 	old := sc.inner
 	sc.inner = newClient
 	sc.modelName = newModelName
+	if len(params) > 0 {
+		sc.runtimeParams = params[0]
+	}
 	sc.mu.Unlock()
 
 	go closeWithTimeout(old, oldClientCloseTimeout)
@@ -100,6 +118,14 @@ func (sc *SwappableClient) ModelName() string {
 	name := sc.modelName
 	sc.mu.RUnlock()
 	return name
+}
+
+// RuntimeParameters returns the current runtime parameters for the LLM.
+func (sc *SwappableClient) RuntimeParameters() RuntimeParams {
+	sc.mu.RLock()
+	p := sc.runtimeParams
+	sc.mu.RUnlock()
+	return p
 }
 
 func closeWithTimeout(c Client, timeout time.Duration) {

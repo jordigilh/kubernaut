@@ -219,6 +219,36 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		}
 		return ogenclient.NewAIAgentResponseFailedPayloadAuditEventRequestEventData(payload), true
 
+	case EventTypeAlignmentStep:
+		payload := ogenclient.AlignmentStepPayload{
+			EventType:  ogenclient.AlignmentStepPayloadEventTypeAiagentAlignmentStep,
+			EventID:    dataString(event.Data, "event_id"),
+			IncidentID: event.CorrelationID,
+			StepIndex:  dataInt(event.Data, "step_index"),
+			StepKind:   dataString(event.Data, "step_kind"),
+		}
+		if tool := dataString(event.Data, "tool"); tool != "" {
+			payload.Tool.SetTo(tool)
+		}
+		if explanation := dataString(event.Data, "explanation"); explanation != "" {
+			payload.Explanation.SetTo(explanation)
+		}
+		return ogenclient.NewAlignmentStepPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeAlignmentVerdict:
+		payload := ogenclient.AlignmentVerdictPayload{
+			EventType:  ogenclient.AlignmentVerdictPayloadEventTypeAiagentAlignmentVerdict,
+			EventID:    dataString(event.Data, "event_id"),
+			IncidentID: event.CorrelationID,
+			Result:     ogenclient.AlignmentVerdictPayloadResult(dataString(event.Data, "result")),
+			Flagged:    dataInt(event.Data, "flagged"),
+			Total:      dataInt(event.Data, "total"),
+		}
+		if summary := dataString(event.Data, "summary"); summary != "" {
+			payload.Summary.SetTo(summary)
+		}
+		return ogenclient.NewAlignmentVerdictPayloadAuditEventRequestEventData(payload), true
+
 	default:
 		return ogenclient.AuditEventRequestEventData{}, false
 	}

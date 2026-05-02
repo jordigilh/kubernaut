@@ -42,6 +42,8 @@ import (
 // generateFakeServiceAccountJSON builds a GCP service account credential blob
 // with a real RSA-2048 key so that the SDK's JWT-signing transport works in
 // tests. The key is generated fresh each run and never leaves the process.
+func floatPtr(v float64) *float64 { return &v }
+
 func generateFakeServiceAccountJSON() []byte {
 	return generateFakeServiceAccountJSONWithTokenURL("https://oauth2.googleapis.com/token")
 }
@@ -422,7 +424,7 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 
 			_, err := client.Chat(context.Background(), llm.ChatRequest{
 				Messages: []llm.Message{{Role: "user", Content: "hello"}},
-				Options:  llm.ChatOptions{Temperature: 0.7},
+				Options:  llm.ChatOptions{Temperature: floatPtr(0.7)},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(receivedBody).To(HaveKeyWithValue("temperature", BeNumerically("~", 0.7, 0.01)))

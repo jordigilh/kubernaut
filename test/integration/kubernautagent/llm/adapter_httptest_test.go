@@ -43,7 +43,7 @@ var _ = Describe("LLM Adapter httptest round-trips — #433", func() {
 		},
 		Options: llm.ChatOptions{
 			MaxTokens:   100,
-			Temperature: 0.0,
+			Temperature: func() *float64 { v := 0.0; return &v }(),
 		},
 	}
 
