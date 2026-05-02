@@ -20,6 +20,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -239,7 +240,7 @@ func (r *Repository) GetWorkflowWithContextFilters(ctx context.Context, workflow
 
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, args...)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		// Security gate: workflow exists but doesn't match context, or doesn't exist
 		// We intentionally don't distinguish these cases (DD-WORKFLOW-016: prevent info leakage)
 		return nil, nil

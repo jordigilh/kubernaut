@@ -20,6 +20,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -354,7 +355,7 @@ func (d *DBAdapter) Get(id int) (*repository.AuditEvent, error) {
 	)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			d.logger.V(1).Info("No audit event found with ID",
 				"id", id,
 			)

@@ -66,7 +66,9 @@ func (d *DBAdapter) AggregateSuccessRate(workflowID string) (*models.SuccessRate
 
 	// Parse aggregation results
 	if !rows.Next() {
-		// No rows found - return zero counts
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("row iteration error: %w", err)
+		}
 		return &models.SuccessRateAggregationResponse{
 			WorkflowID:   workflowID,
 			TotalCount:   0,
@@ -153,6 +155,9 @@ func (d *DBAdapter) AggregateByNamespace() (*models.NamespaceAggregationResponse
 			Count:     count,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
 
 	d.logger.Info("Namespace aggregation completed",
 		"namespace_count", len(aggregations),
@@ -213,6 +218,9 @@ func (d *DBAdapter) AggregateBySeverity() (*models.SeverityAggregationResponse, 
 			Severity: severity,
 			Count:    count,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
 	}
 
 	d.logger.Info("Severity aggregation completed",
@@ -283,6 +291,9 @@ func (d *DBAdapter) AggregateIncidentTrend(period string) (*models.TrendAggregat
 			Date:  date.Format("2006-01-02"), // ISO 8601 date format
 			Count: count,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
 	}
 
 	d.logger.Info("Incident trend aggregation completed",

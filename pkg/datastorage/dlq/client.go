@@ -19,6 +19,7 @@ package dlq
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -213,7 +214,7 @@ func (c *Client) GetDLQDepth(ctx context.Context, auditType string) (int64, erro
 	if err != nil {
 		// If stream doesn't exist, Redis returns 0 (not an error)
 		// But if Redis is down, we get an error
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			return 0, nil
 		}
 		return 0, fmt.Errorf("failed to get DLQ depth: %w", err)
@@ -272,7 +273,7 @@ func (c *Client) ReadMessages(ctx context.Context, auditType, consumerGroup, con
 	}).Result()
 
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			// No messages available (timeout)
 			return []*DLQMessage{}, nil
 		}
@@ -434,7 +435,7 @@ func (c *Client) GetPendingMessages(ctx context.Context, auditType, consumerGrou
 
 	pending, err := c.redisClient.XPending(ctx, streamKey, consumerGroup).Result()
 	if err != nil {
-		if err == redis.Nil || isNoSuchKeyError(err) {
+		if errors.Is(err, redis.Nil) || isNoSuchKeyError(err) {
 			return 0, nil
 		}
 		return 0, fmt.Errorf("failed to get pending count: %w", err)

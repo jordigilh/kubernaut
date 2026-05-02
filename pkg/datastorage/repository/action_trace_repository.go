@@ -19,6 +19,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -109,7 +110,7 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 		&failedExecutions,
 	)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		// No data found - return response with zero values
 		return &models.IncidentTypeSuccessRateResponse{
 			IncidentType:         incidentType,
@@ -306,7 +307,7 @@ func (r *ActionTraceRepository) GetSuccessRateByWorkflow(
 		&failedExecutions,
 	)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		// No data found
 		return &models.WorkflowSuccessRateResponse{
 			WorkflowID:              workflowID,
@@ -635,7 +636,7 @@ func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 	)
 
 	// Handle no rows case (empty database or no matching data)
-	if err == sql.ErrNoRows || totalExecutions == 0 {
+	if errors.Is(err, sql.ErrNoRows) || totalExecutions == 0 {
 		// Return response with zero values and insufficient_data confidence
 		return &models.MultiDimensionalSuccessRateResponse{
 			Dimensions: models.QueryDimensions{

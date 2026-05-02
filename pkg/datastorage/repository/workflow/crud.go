@@ -362,7 +362,7 @@ func (r *Repository) GetByID(ctx context.Context, workflowID string) (*models.Re
 
 	var workflow models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &workflow, query, workflowID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil // Not found
 	}
 	if err != nil {
@@ -384,7 +384,7 @@ func (r *Repository) GetByNameAndVersion(ctx context.Context, workflowName, vers
 
 	var workflow models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &workflow, query, workflowName, version)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil // Not found
 	}
 	if err != nil {
@@ -407,7 +407,7 @@ func (r *Repository) GetActiveByNameAndVersion(ctx context.Context, workflowName
 
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, workflowName, version)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -431,7 +431,7 @@ func (r *Repository) GetLatestDisabledByNameAndVersion(ctx context.Context, work
 
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, workflowName, version)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -455,7 +455,7 @@ func (r *Repository) GetActiveByWorkflowName(ctx context.Context, workflowName s
 
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, workflowName)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -476,7 +476,7 @@ func (r *Repository) GetLatestVersion(ctx context.Context, workflowName string) 
 
 	var workflow models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &workflow, query, workflowName)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil // Not found
 	}
 	if err != nil {

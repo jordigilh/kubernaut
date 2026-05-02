@@ -22,6 +22,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -282,7 +283,7 @@ func (r *AuditEventsRepository) getPreviousEventHash(ctx context.Context, tx *sq
 	`
 
 	err = tx.QueryRowContext(ctx, query, correlationID).Scan(&previousHash)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		// First event in chain - no previous hash (return empty string)
 		return "", nil
 	}
