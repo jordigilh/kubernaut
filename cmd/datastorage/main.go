@@ -376,6 +376,7 @@ func main() {
 		fmt.Sprintf(":%d", cfg.Server.HealthPort),
 		srv.LivenessHandler(),
 		srv.ReadinessHandler(),
+		!cfg.Server.DisableProfiling,
 	)
 
 	healthErrors := make(chan error, 1)

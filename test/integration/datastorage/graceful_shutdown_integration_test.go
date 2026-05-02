@@ -1107,7 +1107,7 @@ func createTestServerWithAccess() (*httptest.Server, *httptest.Server, *server.S
 	httpServer := httptest.NewServer(srv.Handler())
 
 	// Dedicated health server (Issue #753: health probes on separate port)
-	healthSrv := health.NewHealthServer(":0", srv.LivenessHandler(), srv.ReadinessHandler())
+	healthSrv := health.NewHealthServer(":0", srv.LivenessHandler(), srv.ReadinessHandler(), false)
 	healthTestServer := httptest.NewServer(healthSrv.Handler)
 
 	return httpServer, healthTestServer, srv

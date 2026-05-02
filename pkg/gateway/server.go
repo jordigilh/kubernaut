@@ -393,6 +393,7 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		cfg.Server.HealthAddr,
 		server.LivenessHandler(),
 		server.ReadinessHandler(),
+		!cfg.Server.DisableProfiling,
 	)
 
 	metricsMux := http.NewServeMux()
@@ -732,6 +733,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		cfg.Server.HealthAddr,
 		server.LivenessHandler(),
 		server.ReadinessHandler(),
+		!cfg.Server.DisableProfiling,
 	)
 
 	// Issue #753: Dedicated metrics server (plain HTTP, never TLS)

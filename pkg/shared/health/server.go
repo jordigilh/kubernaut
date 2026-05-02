@@ -21,6 +21,7 @@ package health
 
 import (
 	"net/http"
+	"net/http/pprof"
 	"time"
 )
 
@@ -28,15 +29,31 @@ import (
 // (liveness) and /readyz (readiness) endpoints. The server always serves
 // plain HTTP — kubelet probes never need TLS.
 //
+// When enableProfiling is true, /debug/pprof/* handlers are registered for
+// runtime profiling (CPU, heap, goroutine, trace). This follows the
+// kube-apiserver --profiling pattern: enabled by default, opt-out for
+// hardened environments. Profiling has zero overhead when not actively queried.
+//
 // Callers own the lifecycle: start in a goroutine, graceful shutdown alongside
 // the main server.
-func NewHealthServer(addr string, liveness, readiness http.HandlerFunc) *http.Server {
+func NewHealthServer(addr string, liveness, readiness http.HandlerFunc, enableProfiling bool) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", liveness)
 	mux.HandleFunc("/readyz", readiness)
+
+	if enableProfiling {
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	}
+
 	return &http.Server{
 		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
 	}
 }

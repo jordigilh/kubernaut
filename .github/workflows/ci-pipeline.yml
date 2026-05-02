@@ -124,7 +124,6 @@ jobs:
           version: v2.9.0
           args: cmd/... pkg/... internal/... test/...
           only-new-issues: true
-        continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
   unit-tests:
     name: Unit Tests (${{ matrix.service }})

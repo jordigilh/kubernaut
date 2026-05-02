@@ -41,7 +41,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Shadow agent evaluator** — Parallel evaluation of investigation quality via alignment check with configurable `mode` (shadow/enforce) and `verdictTimeout`.
 - **Canary force-escalation** — `canary.forceEscalation` flag for testing alignment enforcement paths.
 
+#### Logging Migration (#885)
+
+- **slog-to-logr migration** — Kubernaut Agent migrated from `log/slog` to `logr.Logger` for consistency with controller-runtime services. All internal packages, tests, and wiring updated.
+
+#### Observability
+
+- **pprof runtime profiling** — `/debug/pprof/*` endpoints registered on the shared health server (DataStorage, KA, Gateway). Enabled by default following `kube-apiserver --profiling` pattern; gated via `disableProfiling` config field for hardened environments. Zero overhead when not actively queried.
+
+### Changed
+
+- **VERSION** bumped to 1.5.0 with propagation to Chart.yaml, Dockerfiles, and airgap templates via `make sync-version`.
+- **golangci-lint CI gate** — Lint step is now blocking (removed `continue-on-error`). New issues must be clean before merge.
+
 ### Security
+
+- **MCP impersonation hardening** (#895, #896) — Hardened impersonation flow to eliminate double-auth and prevent header injection in interactive sessions.
 
 - **Empty username rejection** — `Takeover` rejects sessions with empty driver identity (SEC-01).
 - **Max concurrent sessions** — Atomic counter enforcement per agent instance (SEC-03).
@@ -60,11 +75,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Data races** — Fixed 2 races in `event_store_test.go` (buffered channels replacing bare variables).
+- **Data races** — Fixed 2 races in `event_store_test.go` (buffered channels replacing bare variables) and 1 race in `session/manager.go` (shallow field reference used outside lock).
 - **errcheck lint violations** — 12 fixes across wiring, timeout, security integration tests and `vertexanthropic/client.go`.
 - **Duplicate declarations** — Removed duplicate `EventTypeTokenDelta` and `chatOrStream` from rebase.
 - **nil context guard** — `GetUserFromContext` returns "" safely on nil context.
-- **100go.co anti-patterns** — Handle `json.Marshal` errors, `CloseWithError(nil)`, server timeouts, X-Forwarded-For parsing, goroutine lifecycle documentation.
+- **100 Go Mistakes audit** — Systematic remediation of 28 issues across Critical/High/Medium/Low tiers:
+  - Critical: `rows.Err()` checks after SQL iteration, `errors.Is` for sentinel comparisons.
+  - High: HTTP client/server timeouts (LLM 5min, DS 30s, health 10s), `sync.Map` eviction for `mcpToSession`, `strings.Clone` for substring memory leaks, `errors.Is` for Redis sentinel.
+  - Medium: `errors.As` for wrapped type assertions, epsilon comparison for floats, deterministic map iteration via `slices.Sort`, variable shadowing fix, pointer-based range loops for large K8s structs.
+  - Low: Modern `0o` octal literals, rune-aware UTF-8 truncation, godoc on exported sentinels.
+  - Tooling: `ineffassign` linter enabled in `.golangci.yml`.
+- **CI stability** — UUID-based namespace naming to prevent parallel test collisions, E2E RR fixture provisioning for HARM-004 tests, fullpipeline timeout alignment.
+- **Double logging** — Removed redundant `logger.Error` calls before `fmt.Errorf(... %w)` returns in `reconstruct.go` and `llm_builder.go`.
+- **RR existence check** (HARM-004) — `RRExistenceChecker` interface prevents Lease creation for non-existent RemediationRequests.
 
 ## [1.2.0] - 2026-04-06
 

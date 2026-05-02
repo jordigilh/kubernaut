@@ -375,7 +375,7 @@ func main() {
 	}
 
 	// Issue #753: Dedicated health and metrics servers (plain HTTP, never TLS)
-	healthServer := sharedhealth.NewHealthServer(cfg.Runtime.Server.HealthAddr, healthHandler, readyHandler)
+	healthServer := sharedhealth.NewHealthServer(cfg.Runtime.Server.HealthAddr, healthHandler, readyHandler, !cfg.Runtime.Server.DisableProfiling)
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.Handler())
 	metricsServer := &http.Server{
