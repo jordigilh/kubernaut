@@ -50,9 +50,9 @@ var _ = Describe("BR-INTEGRATION-750: authwebhook DSClientAdapter inter-service 
 
 	AfterEach(func() {
 		if hadTLSCAFile {
-			os.Setenv("TLS_CA_FILE", origTLSCAFile)
+			Expect(os.Setenv("TLS_CA_FILE", origTLSCAFile)).To(Succeed())
 		} else {
-			os.Unsetenv("TLS_CA_FILE")
+			Expect(os.Unsetenv("TLS_CA_FILE")).To(Succeed())
 		}
 		sharedtls.ResetDefaultTransportForTesting()
 	})
@@ -81,7 +81,7 @@ var _ = Describe("BR-INTEGRATION-750: authwebhook DSClientAdapter inter-service 
 	// UT-AW-750-001: Constructor must fail when TLS_CA_FILE points to a nonexistent path.
 	// This proves the constructor reads the env var (plain http.Transport would ignore it).
 	It("UT-AW-750-001: returns error when TLS_CA_FILE points to invalid path", func() {
-		os.Setenv("TLS_CA_FILE", "/nonexistent/ca.crt")
+		Expect(os.Setenv("TLS_CA_FILE", "/nonexistent/ca.crt")).To(Succeed())
 
 		adapter, err := authwebhook.NewDSClientAdapter(
 			"https://localhost:9999", 5*time.Second, logr.Discard(),
@@ -96,11 +96,11 @@ var _ = Describe("BR-INTEGRATION-750: authwebhook DSClientAdapter inter-service 
 	It("UT-AW-750-002: succeeds when TLS_CA_FILE points to valid CA cert", func() {
 		tmpDir, err := os.MkdirTemp("", "tls-test-750-*")
 		Expect(err).ToNot(HaveOccurred())
-		defer os.RemoveAll(tmpDir)
+		defer func() { Expect(os.RemoveAll(tmpDir)).To(Succeed()) }()
 
 		caFile := filepath.Join(tmpDir, "ca.crt")
 		generateSelfSignedCA(caFile)
-		os.Setenv("TLS_CA_FILE", caFile)
+		Expect(os.Setenv("TLS_CA_FILE", caFile)).To(Succeed())
 
 		adapter, err := authwebhook.NewDSClientAdapter(
 			"https://localhost:9999", 5*time.Second, logr.Discard(),
@@ -111,7 +111,7 @@ var _ = Describe("BR-INTEGRATION-750: authwebhook DSClientAdapter inter-service 
 
 	// UT-AW-750-003: Constructor must continue to work when TLS_CA_FILE is unset (regression guard).
 	It("UT-AW-750-003: succeeds when TLS_CA_FILE is unset (regression guard)", func() {
-		os.Unsetenv("TLS_CA_FILE")
+		Expect(os.Unsetenv("TLS_CA_FILE")).To(Succeed())
 
 		adapter, err := authwebhook.NewDSClientAdapter(
 			"http://localhost:9999", 5*time.Second, logr.Discard(),
