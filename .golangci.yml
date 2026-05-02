@@ -11,6 +11,7 @@ linters:
   enable:
     - forbidigo  # Detects forbidden patterns (NULL-TESTING, Skip(), time.Sleep())
     - errcheck   # Ensures error returns are checked
+    - ineffassign # Detects assignments to variables that are never used
     - staticcheck
     - unused
     - govet
