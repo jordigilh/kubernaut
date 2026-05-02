@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-faster/jx"
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 
@@ -121,9 +122,9 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 		}, nil
 	}
 
-	body, err := json.Marshal(map[string]string{"session_id": sessionID})
+	sid, err := uuid.Parse(sessionID)
 	if err != nil {
-		h.logger.Error(err, "failed to marshal session response", "session_id", sessionID)
+		h.logger.Error(err, "invalid session UUID", "session_id", sessionID)
 		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
 			Type:     "https://kubernaut.ai/problems/internal-error",
 			Title:    "Internal Server Error",
@@ -132,8 +133,7 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 			Instance: "/api/v1/incident/analyze",
 		}, nil
 	}
-	raw := agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON(body)
-	return &raw, nil
+	return &agentclient.AnalyzeAccepted{SessionID: sid}, nil
 }
 
 // IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet implements GET /api/v1/incident/session/{session_id}.
@@ -163,16 +163,14 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 	}
 
 	status := mapSessionStatusToAPI(sess.Status)
-	body, err := json.Marshal(map[string]string{
-		"session_id": sess.ID,
-		"status":     status,
-	})
-	if err != nil {
-		h.logger.Error(err, "failed to marshal session status", "session_id", sess.ID)
-		return nil, fmt.Errorf("marshal session status: %w", err)
+	resp := &agentclient.SessionStatus{
+		SessionID: sess.ID,
+		Status:    status,
 	}
-	raw := agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON(body)
-	return &raw, nil
+	if sess.Status == session.StatusFailed && sess.Error != nil {
+		resp.Error = agentclient.NewOptString(sess.Error.Error())
+	}
+	return resp, nil
 }
 
 // IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet implements

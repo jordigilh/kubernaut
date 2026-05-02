@@ -88,9 +88,7 @@ var _ = Describe("Kubernaut Agent Session Manager — #433", func() {
 			sess, err := manager.GetSession(id)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(sess.Result).NotTo(BeNil())
-			result, ok := sess.Result.(map[string]string)
-			Expect(ok).To(BeTrue())
-			Expect(result["workflow_id"]).To(Equal("oom-increase-memory"))
+			Expect(sess.Result.WorkflowID).To(Equal("oom-increase-memory"))
 		})
 	})
 

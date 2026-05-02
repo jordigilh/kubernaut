@@ -341,7 +341,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				mockClient.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
 					return &agentclient.SessionStatus{
 						Status: "failed",
-						Error:  "LLM provider error: rate limit exceeded",
+						Error:  agentclient.NewOptString("LLM provider error: rate limit exceeded"),
 					}, nil
 				}
 

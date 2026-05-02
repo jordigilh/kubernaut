@@ -437,17 +437,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Investigation result (completed or failed). Check the status field to distinguish.",
+            "description": "Investigation result (completed or failed).",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    { "$ref": "#/components/schemas/IncidentResponse" },
-                    { "$ref": "#/components/schemas/InvestigationFailed" }
-                  ],
-                  "discriminator": {
-                    "propertyName": "status"
-                  }
+                  "$ref": "#/components/schemas/IncidentResponse"
                 }
               }
             }
@@ -564,19 +558,17 @@
       },
       "SessionStatus": {
         "type": "object",
-        "required": ["session_id", "status", "created_at"],
+        "required": ["session_id", "status"],
         "properties": {
           "session_id": {
-            "type": "string",
-            "format": "uuid"
+            "type": "string"
           },
           "status": {
-            "type": "string",
-            "enum": ["pending", "running", "completed", "failed"]
+            "type": "string"
           },
-          "created_at": {
+          "error": {
             "type": "string",
-            "format": "date-time"
+            "description": "Error message when status is failed"
           }
         }
       },

@@ -30,18 +30,19 @@ func trimTrailingSlashes(u *url.URL) {
 type Invoker interface {
 	// GetConfigConfigGet invokes get_config_config_get operation.
 	//
-	// Get service configuration (sanitized)
+	// Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
+	// port.
 	// Business Requirement: BR-HAPI-128 (Configuration endpoint).
 	//
 	// GET /config
 	GetConfigConfigGet(ctx context.Context) (jx.Raw, error)
-	// HealthCheckHealthGet invokes health_check_health_get operation.
+	// HealthCheckHealthzGet invokes health_check_healthz_get operation.
 	//
-	// Liveness probe endpoint
+	// Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 	// Business Requirement: BR-HAPI-126 (Health check endpoint).
 	//
-	// GET /health
-	HealthCheckHealthGet(ctx context.Context) (jx.Raw, error)
+	// GET /healthz
+	HealthCheckHealthzGet(ctx context.Context) (jx.Raw, error)
 	// IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost invokes incident_analyze_endpoint_api_v1_incident_analyze_post operation.
 	//
 	// Submit incident analysis request (async session-based pattern).
@@ -66,17 +67,15 @@ type Invoker interface {
 	//
 	// GET /api/v1/incident/session/{session_id}
 	IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx context.Context, params IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams) (IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, error)
-	// ReadinessCheckReadyGet invokes readiness_check_ready_get operation.
+	// ReadinessCheckReadyzGet invokes readiness_check_readyz_get operation.
 	//
-	// Readiness probe endpoint
+	// Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 	// Business Requirements:
 	// - BR-HAPI-127 (Readiness check endpoint)
-	// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern)
-	// TDD GREEN Phase: Check shutdown flag first
-	// REFACTOR phase: Real dependency health checks.
+	// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern).
 	//
-	// GET /ready
-	ReadinessCheckReadyGet(ctx context.Context) (jx.Raw, error)
+	// GET /readyz
+	ReadinessCheckReadyzGet(ctx context.Context) (jx.Raw, error)
 }
 
 // Client implements OAS client.
@@ -124,7 +123,8 @@ func (c *Client) requestURL(ctx context.Context) *url.URL {
 
 // GetConfigConfigGet invokes get_config_config_get operation.
 //
-// Get service configuration (sanitized)
+// Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
+// port.
 // Business Requirement: BR-HAPI-128 (Configuration endpoint).
 //
 // GET /config
@@ -196,22 +196,22 @@ func (c *Client) sendGetConfigConfigGet(ctx context.Context) (res jx.Raw, err er
 	return result, nil
 }
 
-// HealthCheckHealthGet invokes health_check_health_get operation.
+// HealthCheckHealthzGet invokes health_check_healthz_get operation.
 //
-// Liveness probe endpoint
+// Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 // Business Requirement: BR-HAPI-126 (Health check endpoint).
 //
-// GET /health
-func (c *Client) HealthCheckHealthGet(ctx context.Context) (jx.Raw, error) {
-	res, err := c.sendHealthCheckHealthGet(ctx)
+// GET /healthz
+func (c *Client) HealthCheckHealthzGet(ctx context.Context) (jx.Raw, error) {
+	res, err := c.sendHealthCheckHealthzGet(ctx)
 	return res, err
 }
 
-func (c *Client) sendHealthCheckHealthGet(ctx context.Context) (res jx.Raw, err error) {
+func (c *Client) sendHealthCheckHealthzGet(ctx context.Context) (res jx.Raw, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("health_check_health_get"),
+		otelogen.OperationID("health_check_healthz_get"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/health"),
+		semconv.URLTemplateKey.String("/healthz"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -227,7 +227,7 @@ func (c *Client) sendHealthCheckHealthGet(ctx context.Context) (res jx.Raw, err 
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, HealthCheckHealthGetOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, HealthCheckHealthzGetOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -245,7 +245,7 @@ func (c *Client) sendHealthCheckHealthGet(ctx context.Context) (res jx.Raw, err 
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [1]string
-	pathParts[0] = "/health"
+	pathParts[0] = "/healthz"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -262,7 +262,7 @@ func (c *Client) sendHealthCheckHealthGet(ctx context.Context) (res jx.Raw, err 
 	defer resp.Body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeHealthCheckHealthGetResponse(resp)
+	result, err := decodeHealthCheckHealthzGetResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -535,26 +535,24 @@ func (c *Client) sendIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDG
 	return result, nil
 }
 
-// ReadinessCheckReadyGet invokes readiness_check_ready_get operation.
+// ReadinessCheckReadyzGet invokes readiness_check_readyz_get operation.
 //
-// Readiness probe endpoint
+// Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 // Business Requirements:
 // - BR-HAPI-127 (Readiness check endpoint)
-// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern)
-// TDD GREEN Phase: Check shutdown flag first
-// REFACTOR phase: Real dependency health checks.
+// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern).
 //
-// GET /ready
-func (c *Client) ReadinessCheckReadyGet(ctx context.Context) (jx.Raw, error) {
-	res, err := c.sendReadinessCheckReadyGet(ctx)
+// GET /readyz
+func (c *Client) ReadinessCheckReadyzGet(ctx context.Context) (jx.Raw, error) {
+	res, err := c.sendReadinessCheckReadyzGet(ctx)
 	return res, err
 }
 
-func (c *Client) sendReadinessCheckReadyGet(ctx context.Context) (res jx.Raw, err error) {
+func (c *Client) sendReadinessCheckReadyzGet(ctx context.Context) (res jx.Raw, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("readiness_check_ready_get"),
+		otelogen.OperationID("readiness_check_readyz_get"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/ready"),
+		semconv.URLTemplateKey.String("/readyz"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -570,7 +568,7 @@ func (c *Client) sendReadinessCheckReadyGet(ctx context.Context) (res jx.Raw, er
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ReadinessCheckReadyGetOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, ReadinessCheckReadyzGetOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -588,7 +586,7 @@ func (c *Client) sendReadinessCheckReadyGet(ctx context.Context) (res jx.Raw, er
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [1]string
-	pathParts[0] = "/ready"
+	pathParts[0] = "/readyz"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -605,7 +603,7 @@ func (c *Client) sendReadinessCheckReadyGet(ctx context.Context) (res jx.Raw, er
 	defer resp.Body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeReadinessCheckReadyGetResponse(resp)
+	result, err := decodeReadinessCheckReadyzGetResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

@@ -12,18 +12,19 @@ import (
 type Handler interface {
 	// GetConfigConfigGet implements get_config_config_get operation.
 	//
-	// Get service configuration (sanitized)
+	// Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
+	// port.
 	// Business Requirement: BR-HAPI-128 (Configuration endpoint).
 	//
 	// GET /config
 	GetConfigConfigGet(ctx context.Context) (jx.Raw, error)
-	// HealthCheckHealthGet implements health_check_health_get operation.
+	// HealthCheckHealthzGet implements health_check_healthz_get operation.
 	//
-	// Liveness probe endpoint
+	// Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 	// Business Requirement: BR-HAPI-126 (Health check endpoint).
 	//
-	// GET /health
-	HealthCheckHealthGet(ctx context.Context) (jx.Raw, error)
+	// GET /healthz
+	HealthCheckHealthzGet(ctx context.Context) (jx.Raw, error)
 	// IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost implements incident_analyze_endpoint_api_v1_incident_analyze_post operation.
 	//
 	// Submit incident analysis request (async session-based pattern).
@@ -48,17 +49,15 @@ type Handler interface {
 	//
 	// GET /api/v1/incident/session/{session_id}
 	IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx context.Context, params IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams) (IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, error)
-	// ReadinessCheckReadyGet implements readiness_check_ready_get operation.
+	// ReadinessCheckReadyzGet implements readiness_check_readyz_get operation.
 	//
-	// Readiness probe endpoint
+	// Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 	// Business Requirements:
 	// - BR-HAPI-127 (Readiness check endpoint)
-	// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern)
-	// TDD GREEN Phase: Check shutdown flag first
-	// REFACTOR phase: Real dependency health checks.
+	// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern).
 	//
-	// GET /ready
-	ReadinessCheckReadyGet(ctx context.Context) (jx.Raw, error)
+	// GET /readyz
+	ReadinessCheckReadyzGet(ctx context.Context) (jx.Raw, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

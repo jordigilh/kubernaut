@@ -56,7 +56,7 @@ func decodeGetConfigConfigGetResponse(resp *http.Response) (res jx.Raw, _ error)
 	return res, validate.UnexpectedStatusCodeWithResponse(resp)
 }
 
-func decodeHealthCheckHealthGetResponse(resp *http.Response) (res jx.Raw, _ error) {
+func decodeHealthCheckHealthzGetResponse(resp *http.Response) (res jx.Raw, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -115,7 +115,7 @@ func decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp *http.Re
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON
+			var response AnalyzeAccepted
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -620,7 +620,7 @@ func decodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON
+			var response SessionStatus
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -724,7 +724,7 @@ func decodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse
 	return res, validate.UnexpectedStatusCodeWithResponse(resp)
 }
 
-func decodeReadinessCheckReadyGetResponse(resp *http.Response) (res jx.Raw, _ error) {
+func decodeReadinessCheckReadyzGetResponse(resp *http.Response) (res jx.Raw, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.

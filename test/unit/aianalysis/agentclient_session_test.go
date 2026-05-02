@@ -66,9 +66,9 @@ var _ = Describe("AgentClient Session Methods [BR-AA-HAPI-064]", func() {
 					Expect(body).To(HaveKey("incident_id"))
 					Expect(body).To(HaveKey("remediation_id"))
 
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusAccepted)
-					_, _ = w.Write([]byte(`{"session_id": "sess-abc-123"}`))
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusAccepted)
+					_, _ = w.Write([]byte(`{"session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"}`))
 				}))
 
 				var err error
@@ -87,7 +87,7 @@ var _ = Describe("AgentClient Session Methods [BR-AA-HAPI-064]", func() {
 				})
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(sessionID).To(Equal("sess-abc-123"))
+				Expect(sessionID).To(Equal("a1b2c3d4-e5f6-7890-abcd-ef1234567890"))
 			})
 		})
 
@@ -152,7 +152,7 @@ var _ = Describe("AgentClient Session Methods [BR-AA-HAPI-064]", func() {
 
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
-					_, _ = w.Write([]byte(`{"status": "pending", "created_at": "2026-02-09T10:00:00Z"}`))
+					_, _ = w.Write([]byte(`{"session_id": "sess-poll-001", "status": "pending"}`))
 				}))
 
 				var err error
@@ -175,7 +175,7 @@ var _ = Describe("AgentClient Session Methods [BR-AA-HAPI-064]", func() {
 				mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
-					_, _ = w.Write([]byte(`{"status": "completed"}`))
+					_, _ = w.Write([]byte(`{"session_id": "sess-poll-002", "status": "completed"}`))
 				}))
 
 				var err error
