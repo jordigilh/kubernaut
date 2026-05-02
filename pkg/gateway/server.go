@@ -408,6 +408,8 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		Addr:              cfg.Server.MetricsAddr,
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
 	}
 
 	if cfg.Server.TLS.Enabled() {
@@ -749,6 +751,8 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		Addr:              cfg.Server.MetricsAddr,
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
 	}
 
 	if cfg.Server.TLS.Enabled() {

@@ -606,6 +606,7 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *d
 		token := string(tokenData)
 		opts = append(opts, ogenclient.WithClient(&http.Client{
 			Transport: &bearerTransport{base: dsBase, token: token},
+			Timeout:   30 * time.Second,
 		}))
 		logger.Info("DS client auth configured (DD-AUTH-014)", "token_path", cfg.Integrations.DataStorage.SATokenPath)
 	} else {
@@ -1074,7 +1075,9 @@ func buildMCPHandler(
 		}()
 	}, logger)
 
-	// Start disconnect handler goroutine (lifecycle tied to server context).
+	// Start disconnect handler goroutine. The handler terminates when the
+	// eventStore's closedSessions channel is closed during process exit,
+	// or via context cancellation if a parent context is provided.
 	go disconnectHandler.Run(context.Background())
 
 	// Build the InvestigatorRunner adapter.
