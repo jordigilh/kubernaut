@@ -21,6 +21,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 )
 
 const oldClientCloseTimeout = 5 * time.Second
@@ -43,6 +45,10 @@ type RuntimeParams struct {
 	Temperature    float64
 	TimeoutSeconds int
 	MaxRetries     int
+	// RetryBackoff overrides the default backoff config for ChatWithParams retries.
+	// When nil, a sensible default (500ms base, 5s max, 2x multiplier, 20% jitter)
+	// is used. Exposed primarily for testing with fast backoff.
+	RetryBackoff *backoff.Config
 }
 
 type SwappableClient struct {

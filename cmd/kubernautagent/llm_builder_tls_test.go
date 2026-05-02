@@ -17,46 +17,13 @@ limitations under the License.
 package main
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
-	"math/big"
-	"os"
-	"path/filepath"
 	"testing"
-	"time"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 )
 
 func TestBuildTransportChain_TLSCaFile(t *testing.T) {
-	caDir := t.TempDir()
-	caPath := filepath.Join(caDir, "ca.crt")
-
-	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	caTemplate := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "Test CA"},
-		NotBefore:             time.Now().Add(-1 * time.Hour),
-		NotAfter:              time.Now().Add(24 * time.Hour),
-		KeyUsage:              x509.KeyUsageCertSign,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-	}
-	caCertDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCertDER})
-	if err := os.WriteFile(caPath, caPEM, 0644); err != nil {
-		t.Fatal(err)
-	}
+	caPath := generateTestCACert(t, "Test CA")
 
 	cfg := kaconfig.DefaultConfig()
 	cfg.AI.LLM.TLSCaFile = caPath
@@ -86,7 +53,5 @@ func TestBuildTransportChain_InvalidCaFile(t *testing.T) {
 	rt := &kaconfig.LLMRuntimeConfig{}
 
 	transport := buildTransportChain(cfg, rt)
-	// With an invalid CA file, we expect either nil or an error-path behavior.
-	// The current implementation should handle this gracefully.
 	_ = transport
 }
