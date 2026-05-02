@@ -216,7 +216,12 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 			if t.metrics != nil {
 				t.metrics.RecordInteractiveLeaseContention()
 			}
-			return InvestigateOutput{}, ErrCodeSessionActive
+			driver, _ := t.sessions.GetDriver(input.RRID)
+			driverName := "unknown"
+			if driver != nil {
+				driverName = driver.ActingUser.Username
+			}
+			return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", driverName)
 		}
 		if errors.Is(err, mcpinternal.ErrMaxSessionsReached) {
 			return InvestigateOutput{}, &MCPError{Code: "max_sessions", Message: "Maximum concurrent sessions reached"}

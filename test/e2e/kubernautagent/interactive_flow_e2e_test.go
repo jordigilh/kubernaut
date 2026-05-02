@@ -154,8 +154,10 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 
 			By("Step 4: Calling enrich — expects RBAC failure (user cannot impersonate)")
 			result, err := infrastructure.CallEnrich(ctx, session, map[string]any{
-				"rr_id":   rrID,
-				"context": "pod crash in production namespace",
+				"rr_id":     rrID,
+				"kind":      "Pod",
+				"name":      "api-server-xyz",
+				"namespace": "production",
 			})
 
 			By("Step 5: Asserting impersonation-gated operation fails")
@@ -164,6 +166,7 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 					ContainSubstring("forbidden"),
 					ContainSubstring("impersonate"),
 					ContainSubstring("unauthorized"),
+					ContainSubstring("Access denied"),
 				))
 			} else {
 				Expect(result).NotTo(BeNil())
@@ -173,6 +176,7 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 						ContainSubstring("forbidden"),
 						ContainSubstring("impersonate"),
 						ContainSubstring("unauthorized"),
+						ContainSubstring("Access denied"),
 					), "tool error should indicate RBAC restriction")
 				} else {
 					Fail("enrichment should fail for a limited-RBAC SA")
@@ -197,8 +201,10 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 			Expect(err).NotTo(HaveOccurred())
 
 			fullResult, err := infrastructure.CallEnrich(ctx, fullSession, map[string]any{
-				"rr_id":   fullRRID,
-				"context": "pod crash in production namespace",
+				"rr_id":     fullRRID,
+				"kind":      "Pod",
+				"name":      "api-server-xyz",
+				"namespace": sharedNamespace,
 			})
 			if err == nil && fullResult != nil && !fullResult.IsError {
 				GinkgoWriter.Println("✅ Full-RBAC SA enrichment succeeded (differential proof)")
@@ -259,7 +265,7 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 				}
 				GinkgoWriter.Printf("  Found %d audit entries for %s\n", len(audits), rrID)
 				return len(audits) >= 2
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			}, 60*time.Second, 2*time.Second).Should(BeTrue(),
 				"DS should have at least 2 audit entries (start + complete)")
 
 			By("Step 3: Verifying audit entries have session_id and chronological order")

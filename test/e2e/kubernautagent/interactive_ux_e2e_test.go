@@ -215,8 +215,11 @@ var _ = Describe("CP-5 UX: User Experience & Operational Tests", Label("e2e", "k
 
 			GinkgoWriter.Printf("Rejection text: %s\n", rejectionText)
 			Expect(rejectionText).To(Or(
-				ContainSubstring("held"),
+				ContainSubstring("session_active"),
+				ContainSubstring("another user"),
 				ContainSubstring("ux003-user-a"),
+				ContainSubstring("driver"),
+				ContainSubstring("held"),
 				ContainSubstring("controlled"),
 				ContainSubstring("busy"),
 			), "rejection should include holder identity or context")

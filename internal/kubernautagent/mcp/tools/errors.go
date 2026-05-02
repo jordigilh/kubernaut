@@ -78,4 +78,8 @@ var (
 		Code:    "rr_not_found",
 		Message: "RemediationRequest not found",
 	}
+	ErrCodeForbidden = &MCPError{
+		Code:    "forbidden",
+		Message: "Access denied: insufficient RBAC permissions",
+	}
 )

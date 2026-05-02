@@ -866,32 +866,32 @@ var _ = Describe("Head+Tail truncation — BR-AI-601", func() {
 var _ = Describe("Correctness fixes — BR-AI-601", func() {
 
 	Describe("UT-SA-601-CX-001: NewObserver rejects nil evaluator", func() {
-		It("should panic when passed nil evaluator", func() {
-			Expect(func() {
-				alignment.NewObserver(nil)
-			}).To(Panic(), "nil evaluator must cause panic at construction time")
+		It("should return error when passed nil evaluator", func() {
+			_, err := alignment.NewObserver(nil)
+			Expect(err).To(HaveOccurred(), "nil evaluator must return error at construction time")
+			Expect(err.Error()).To(ContainSubstring("evaluator must not be nil"))
 		})
 	})
 
 	Describe("UT-SA-601-CX-002: NewInvestigatorWrapper rejects nil inner/evaluator", func() {
-		It("should panic when Inner is nil", func() {
-			Expect(func() {
-				alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
-					Inner:     nil,
-					Evaluator: &alignment.Evaluator{},
-					Logger:    logr.Discard(),
-				})
-			}).To(Panic(), "nil Inner must cause panic at construction time")
+		It("should return error when Inner is nil", func() {
+			_, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:     nil,
+				Evaluator: &alignment.Evaluator{},
+				Logger:    logr.Discard(),
+			})
+			Expect(err).To(HaveOccurred(), "nil Inner must return error at construction time")
+			Expect(err.Error()).To(ContainSubstring("Inner must not be nil"))
 		})
 
-		It("should panic when Evaluator is nil", func() {
-			Expect(func() {
-				alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
-					Inner:     &mockInvestigationRunner{},
-					Evaluator: nil,
-					Logger:    logr.Discard(),
-				})
-			}).To(Panic(), "nil Evaluator must cause panic at construction time")
+		It("should return error when Evaluator is nil", func() {
+			_, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:     &mockInvestigationRunner{},
+				Evaluator: nil,
+				Logger:    logr.Discard(),
+			})
+			Expect(err).To(HaveOccurred(), "nil Evaluator must return error at construction time")
+			Expect(err.Error()).To(ContainSubstring("Evaluator must not be nil"))
 		})
 	})
 

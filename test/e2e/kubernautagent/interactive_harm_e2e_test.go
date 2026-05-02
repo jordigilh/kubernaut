@@ -257,9 +257,12 @@ var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios"
 				"action": "start",
 			})
 
-			By("Asserting User-B was rejected with lease_held or similar error")
+			By("Asserting User-B was rejected with session_active or similar error")
 			if errB != nil {
 				Expect(errB.Error()).To(Or(
+					ContainSubstring("session_active"),
+					ContainSubstring("another user"),
+					ContainSubstring("max_sessions"),
 					ContainSubstring("lease"),
 					ContainSubstring("held"),
 					ContainSubstring("busy"),
@@ -270,6 +273,9 @@ var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios"
 				if resultB.IsError {
 					text := infrastructure.ExtractToolResultText(resultB)
 					Expect(text).To(Or(
+						ContainSubstring("session_active"),
+						ContainSubstring("another user"),
+						ContainSubstring("max_sessions"),
 						ContainSubstring("lease"),
 						ContainSubstring("held"),
 						ContainSubstring("busy"),

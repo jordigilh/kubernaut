@@ -18,6 +18,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
@@ -82,6 +83,9 @@ func (t *EnrichTool) Handle(ctx context.Context, input EnrichInput, user mcpinte
 
 	result, err := t.runner.Enrich(ctx, input.Kind, input.Name, input.Namespace, input.SpecHash, input.IncidentID)
 	if err != nil {
+		if errors.Is(err, enrichment.ErrRBACForbidden) {
+			return EnrichOutput{}, ErrCodeForbidden.WithDetail("namespace", input.Namespace)
+		}
 		return EnrichOutput{}, fmt.Errorf("enrich failed: %w", err)
 	}
 

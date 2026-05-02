@@ -19,12 +19,14 @@ package enrichment
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 )
 
@@ -229,6 +231,9 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 		if err == nil {
 			return chain, nil
 		}
+		if isForbiddenError(err) {
+			return nil, err
+		}
 	}
 
 	return nil, err
@@ -241,6 +246,17 @@ func IsNoMatchError(err error) bool {
 	var noResource *meta.NoResourceMatchError
 	var noKind *meta.NoKindMatchError
 	return errors.As(err, &noResource) || errors.As(err, &noKind)
+}
+
+// ErrRBACForbidden is returned when an enrichment K8s API call fails with
+// 403 Forbidden, indicating the impersonated user lacks RBAC permissions in
+// the target namespace. Per BR-INTERACTIVE-002, authorization failures must
+// be surfaced as errors — not silently swallowed as partial failures.
+var ErrRBACForbidden = errors.New("RBAC: access denied")
+
+// isForbiddenError reports whether the error wraps a K8s API 403 Forbidden.
+func isForbiddenError(err error) bool {
+	return apierrors.IsForbidden(err)
 }
 
 // Enrich resolves enrichment data for the given resource.
@@ -256,6 +272,9 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 	if specHash == "" {
 		computed, err := e.k8s.GetSpecHash(ctx, kind, name, namespace)
 		if err != nil {
+			if isForbiddenError(err) {
+				return nil, fmt.Errorf("%w: GetSpecHash %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, err)
+			}
 			e.logger.Error(err, "enrichment: specHash auto-computation failed, proceeding with empty",
 				"resource", namespace+"/"+kind+"/"+name,
 			)
@@ -268,6 +287,9 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 
 	chain, ownerErr := e.resolveOwnerChainWithRetry(ctx, kind, name, namespace)
 	if ownerErr != nil {
+		if isForbiddenError(ownerErr) {
+			return nil, fmt.Errorf("%w: GetOwnerChain %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, ownerErr)
+		}
 		result.OwnerChainError = ownerErr
 		if e.retryConfig.MaxRetries > 0 && !IsNoMatchError(ownerErr) {
 			result.HardFail = true
@@ -282,6 +304,9 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 	if e.labelDetector != nil {
 		labels, quotaDetails, labelErr := e.labelDetector.DetectLabels(ctx, kind, name, namespace, result.OwnerChain)
 		if labelErr != nil {
+			if isForbiddenError(labelErr) {
+				return nil, fmt.Errorf("%w: DetectLabels %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, labelErr)
+			}
 			e.logger.Error(labelErr, "enrichment: label detection failed",
 				"resource", namespace+"/"+kind+"/"+name,
 			)
