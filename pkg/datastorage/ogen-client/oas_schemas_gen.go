@@ -2469,6 +2469,298 @@ func (s *ActionTypeWorkflowCountResponse) SetCount(val int) {
 	s.Count = val
 }
 
+// Shadow agent alignment check step payload (aiagent.alignment.step). Emitted for each step flagged
+// as suspicious during shadow evaluation.
+// Ref: #/components/schemas/AlignmentStepPayload
+type AlignmentStepPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AlignmentStepPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Incident correlation ID (signal name).
+	IncidentID string `json:"incident_id"`
+	// Index of the suspicious step in the investigation trace.
+	StepIndex int `json:"step_index"`
+	// Kind of step (e.g., tool_result, llm_reasoning).
+	StepKind string `json:"step_kind"`
+	// Tool name used in the step (empty for non-tool steps).
+	Tool OptString `json:"tool"`
+	// Sanitized explanation of why the step was flagged.
+	Explanation OptString `json:"explanation"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AlignmentStepPayload) GetEventType() AlignmentStepPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AlignmentStepPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetIncidentID returns the value of IncidentID.
+func (s *AlignmentStepPayload) GetIncidentID() string {
+	return s.IncidentID
+}
+
+// GetStepIndex returns the value of StepIndex.
+func (s *AlignmentStepPayload) GetStepIndex() int {
+	return s.StepIndex
+}
+
+// GetStepKind returns the value of StepKind.
+func (s *AlignmentStepPayload) GetStepKind() string {
+	return s.StepKind
+}
+
+// GetTool returns the value of Tool.
+func (s *AlignmentStepPayload) GetTool() OptString {
+	return s.Tool
+}
+
+// GetExplanation returns the value of Explanation.
+func (s *AlignmentStepPayload) GetExplanation() OptString {
+	return s.Explanation
+}
+
+// SetEventType sets the value of EventType.
+func (s *AlignmentStepPayload) SetEventType(val AlignmentStepPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AlignmentStepPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetIncidentID sets the value of IncidentID.
+func (s *AlignmentStepPayload) SetIncidentID(val string) {
+	s.IncidentID = val
+}
+
+// SetStepIndex sets the value of StepIndex.
+func (s *AlignmentStepPayload) SetStepIndex(val int) {
+	s.StepIndex = val
+}
+
+// SetStepKind sets the value of StepKind.
+func (s *AlignmentStepPayload) SetStepKind(val string) {
+	s.StepKind = val
+}
+
+// SetTool sets the value of Tool.
+func (s *AlignmentStepPayload) SetTool(val OptString) {
+	s.Tool = val
+}
+
+// SetExplanation sets the value of Explanation.
+func (s *AlignmentStepPayload) SetExplanation(val OptString) {
+	s.Explanation = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AlignmentStepPayloadEventType string
+
+const (
+	AlignmentStepPayloadEventTypeAiagentAlignmentStep AlignmentStepPayloadEventType = "aiagent.alignment.step"
+)
+
+// AllValues returns all AlignmentStepPayloadEventType values.
+func (AlignmentStepPayloadEventType) AllValues() []AlignmentStepPayloadEventType {
+	return []AlignmentStepPayloadEventType{
+		AlignmentStepPayloadEventTypeAiagentAlignmentStep,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AlignmentStepPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AlignmentStepPayloadEventTypeAiagentAlignmentStep:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AlignmentStepPayloadEventType) UnmarshalText(data []byte) error {
+	switch AlignmentStepPayloadEventType(data) {
+	case AlignmentStepPayloadEventTypeAiagentAlignmentStep:
+		*s = AlignmentStepPayloadEventTypeAiagentAlignmentStep
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Shadow agent alignment verdict payload (aiagent.alignment.verdict). Emitted once per investigation
+// after full shadow evaluation completes.
+// Ref: #/components/schemas/AlignmentVerdictPayload
+type AlignmentVerdictPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AlignmentVerdictPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Incident correlation ID (signal name).
+	IncidentID string `json:"incident_id"`
+	// Overall alignment verdict.
+	Result AlignmentVerdictPayloadResult `json:"result"`
+	// Free-text summary of the shadow evaluation.
+	Summary OptString `json:"summary"`
+	// Number of steps flagged as suspicious.
+	Flagged int `json:"flagged"`
+	// Total number of steps evaluated.
+	Total int `json:"total"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AlignmentVerdictPayload) GetEventType() AlignmentVerdictPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AlignmentVerdictPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetIncidentID returns the value of IncidentID.
+func (s *AlignmentVerdictPayload) GetIncidentID() string {
+	return s.IncidentID
+}
+
+// GetResult returns the value of Result.
+func (s *AlignmentVerdictPayload) GetResult() AlignmentVerdictPayloadResult {
+	return s.Result
+}
+
+// GetSummary returns the value of Summary.
+func (s *AlignmentVerdictPayload) GetSummary() OptString {
+	return s.Summary
+}
+
+// GetFlagged returns the value of Flagged.
+func (s *AlignmentVerdictPayload) GetFlagged() int {
+	return s.Flagged
+}
+
+// GetTotal returns the value of Total.
+func (s *AlignmentVerdictPayload) GetTotal() int {
+	return s.Total
+}
+
+// SetEventType sets the value of EventType.
+func (s *AlignmentVerdictPayload) SetEventType(val AlignmentVerdictPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AlignmentVerdictPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetIncidentID sets the value of IncidentID.
+func (s *AlignmentVerdictPayload) SetIncidentID(val string) {
+	s.IncidentID = val
+}
+
+// SetResult sets the value of Result.
+func (s *AlignmentVerdictPayload) SetResult(val AlignmentVerdictPayloadResult) {
+	s.Result = val
+}
+
+// SetSummary sets the value of Summary.
+func (s *AlignmentVerdictPayload) SetSummary(val OptString) {
+	s.Summary = val
+}
+
+// SetFlagged sets the value of Flagged.
+func (s *AlignmentVerdictPayload) SetFlagged(val int) {
+	s.Flagged = val
+}
+
+// SetTotal sets the value of Total.
+func (s *AlignmentVerdictPayload) SetTotal(val int) {
+	s.Total = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AlignmentVerdictPayloadEventType string
+
+const (
+	AlignmentVerdictPayloadEventTypeAiagentAlignmentVerdict AlignmentVerdictPayloadEventType = "aiagent.alignment.verdict"
+)
+
+// AllValues returns all AlignmentVerdictPayloadEventType values.
+func (AlignmentVerdictPayloadEventType) AllValues() []AlignmentVerdictPayloadEventType {
+	return []AlignmentVerdictPayloadEventType{
+		AlignmentVerdictPayloadEventTypeAiagentAlignmentVerdict,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AlignmentVerdictPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AlignmentVerdictPayloadEventTypeAiagentAlignmentVerdict:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AlignmentVerdictPayloadEventType) UnmarshalText(data []byte) error {
+	switch AlignmentVerdictPayloadEventType(data) {
+	case AlignmentVerdictPayloadEventTypeAiagentAlignmentVerdict:
+		*s = AlignmentVerdictPayloadEventTypeAiagentAlignmentVerdict
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Overall alignment verdict.
+type AlignmentVerdictPayloadResult string
+
+const (
+	AlignmentVerdictPayloadResultAligned    AlignmentVerdictPayloadResult = "aligned"
+	AlignmentVerdictPayloadResultSuspicious AlignmentVerdictPayloadResult = "suspicious"
+)
+
+// AllValues returns all AlignmentVerdictPayloadResult values.
+func (AlignmentVerdictPayloadResult) AllValues() []AlignmentVerdictPayloadResult {
+	return []AlignmentVerdictPayloadResult{
+		AlignmentVerdictPayloadResultAligned,
+		AlignmentVerdictPayloadResultSuspicious,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AlignmentVerdictPayloadResult) MarshalText() ([]byte, error) {
+	switch s {
+	case AlignmentVerdictPayloadResultAligned:
+		return []byte(s), nil
+	case AlignmentVerdictPayloadResultSuspicious:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AlignmentVerdictPayloadResult) UnmarshalText(data []byte) error {
+	switch AlignmentVerdictPayloadResult(data) {
+	case AlignmentVerdictPayloadResultAligned:
+		*s = AlignmentVerdictPayloadResultAligned
+		return nil
+	case AlignmentVerdictPayloadResultSuspicious:
+		*s = AlignmentVerdictPayloadResultSuspicious
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Response when audit event is queued for async processing (202 Accepted).
 // Ref: #/components/schemas/AsyncAcceptanceResponse
 type AsyncAcceptanceResponse struct {
@@ -2896,6 +3188,8 @@ type AuditEventEventData struct {
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
+	AlignmentStepPayload                   AlignmentStepPayload
+	AlignmentVerdictPayload                AlignmentVerdictPayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
 	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
 	EffectivenessAssessmentAuditPayload    EffectivenessAssessmentAuditPayload
@@ -2976,6 +3270,8 @@ const (
 	LLMResponsePayloadAuditEventEventData                                            AuditEventEventDataType = "aiagent.llm.response"
 	LLMToolCallPayloadAuditEventEventData                                            AuditEventEventDataType = "aiagent.llm.tool_call"
 	WorkflowValidationPayloadAuditEventEventData                                     AuditEventEventDataType = "aiagent.workflow.validation_attempt"
+	AlignmentStepPayloadAuditEventEventData                                          AuditEventEventDataType = "aiagent.alignment.step"
+	AlignmentVerdictPayloadAuditEventEventData                                       AuditEventEventDataType = "aiagent.alignment.verdict"
 	RemediationRequestWebhookAuditPayloadAuditEventEventData                         AuditEventEventDataType = "webhook.remediationrequest.timeout_modified"
 	AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.create"
 	AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.delete"
@@ -3189,6 +3485,16 @@ func (s AuditEventEventData) IsLLMToolCallPayload() bool {
 // IsWorkflowValidationPayload reports whether AuditEventEventData is WorkflowValidationPayload.
 func (s AuditEventEventData) IsWorkflowValidationPayload() bool {
 	return s.Type == WorkflowValidationPayloadAuditEventEventData
+}
+
+// IsAlignmentStepPayload reports whether AuditEventEventData is AlignmentStepPayload.
+func (s AuditEventEventData) IsAlignmentStepPayload() bool {
+	return s.Type == AlignmentStepPayloadAuditEventEventData
+}
+
+// IsAlignmentVerdictPayload reports whether AuditEventEventData is AlignmentVerdictPayload.
+func (s AuditEventEventData) IsAlignmentVerdictPayload() bool {
+	return s.Type == AlignmentVerdictPayloadAuditEventEventData
 }
 
 // IsRemediationRequestWebhookAuditPayload reports whether AuditEventEventData is RemediationRequestWebhookAuditPayload.
@@ -4151,6 +4457,48 @@ func NewWorkflowValidationPayloadAuditEventEventData(v WorkflowValidationPayload
 	return s
 }
 
+// SetAlignmentStepPayload sets AuditEventEventData to AlignmentStepPayload.
+func (s *AuditEventEventData) SetAlignmentStepPayload(v AlignmentStepPayload) {
+	s.Type = AlignmentStepPayloadAuditEventEventData
+	s.AlignmentStepPayload = v
+}
+
+// GetAlignmentStepPayload returns AlignmentStepPayload and true boolean if AuditEventEventData is AlignmentStepPayload.
+func (s AuditEventEventData) GetAlignmentStepPayload() (v AlignmentStepPayload, ok bool) {
+	if !s.IsAlignmentStepPayload() {
+		return v, false
+	}
+	return s.AlignmentStepPayload, true
+}
+
+// NewAlignmentStepPayloadAuditEventEventData returns new AuditEventEventData from AlignmentStepPayload.
+func NewAlignmentStepPayloadAuditEventEventData(v AlignmentStepPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAlignmentStepPayload(v)
+	return s
+}
+
+// SetAlignmentVerdictPayload sets AuditEventEventData to AlignmentVerdictPayload.
+func (s *AuditEventEventData) SetAlignmentVerdictPayload(v AlignmentVerdictPayload) {
+	s.Type = AlignmentVerdictPayloadAuditEventEventData
+	s.AlignmentVerdictPayload = v
+}
+
+// GetAlignmentVerdictPayload returns AlignmentVerdictPayload and true boolean if AuditEventEventData is AlignmentVerdictPayload.
+func (s AuditEventEventData) GetAlignmentVerdictPayload() (v AlignmentVerdictPayload, ok bool) {
+	if !s.IsAlignmentVerdictPayload() {
+		return v, false
+	}
+	return s.AlignmentVerdictPayload, true
+}
+
+// NewAlignmentVerdictPayloadAuditEventEventData returns new AuditEventEventData from AlignmentVerdictPayload.
+func NewAlignmentVerdictPayloadAuditEventEventData(v AlignmentVerdictPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAlignmentVerdictPayload(v)
+	return s
+}
+
 // SetRemediationRequestWebhookAuditPayload sets AuditEventEventData to RemediationRequestWebhookAuditPayload.
 func (s *AuditEventEventData) SetRemediationRequestWebhookAuditPayload(v RemediationRequestWebhookAuditPayload) {
 	s.Type = RemediationRequestWebhookAuditPayloadAuditEventEventData
@@ -4871,6 +5219,8 @@ type AuditEventRequestEventData struct {
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
+	AlignmentStepPayload                   AlignmentStepPayload
+	AlignmentVerdictPayload                AlignmentVerdictPayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
 	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
 	EffectivenessAssessmentAuditPayload    EffectivenessAssessmentAuditPayload
@@ -4951,6 +5301,8 @@ const (
 	LLMResponsePayloadAuditEventRequestEventData                                                   AuditEventRequestEventDataType = "aiagent.llm.response"
 	LLMToolCallPayloadAuditEventRequestEventData                                                   AuditEventRequestEventDataType = "aiagent.llm.tool_call"
 	WorkflowValidationPayloadAuditEventRequestEventData                                            AuditEventRequestEventDataType = "aiagent.workflow.validation_attempt"
+	AlignmentStepPayloadAuditEventRequestEventData                                                 AuditEventRequestEventDataType = "aiagent.alignment.step"
+	AlignmentVerdictPayloadAuditEventRequestEventData                                              AuditEventRequestEventDataType = "aiagent.alignment.verdict"
 	RemediationRequestWebhookAuditPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "webhook.remediationrequest.timeout_modified"
 	AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.create"
 	AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.delete"
@@ -5164,6 +5516,16 @@ func (s AuditEventRequestEventData) IsLLMToolCallPayload() bool {
 // IsWorkflowValidationPayload reports whether AuditEventRequestEventData is WorkflowValidationPayload.
 func (s AuditEventRequestEventData) IsWorkflowValidationPayload() bool {
 	return s.Type == WorkflowValidationPayloadAuditEventRequestEventData
+}
+
+// IsAlignmentStepPayload reports whether AuditEventRequestEventData is AlignmentStepPayload.
+func (s AuditEventRequestEventData) IsAlignmentStepPayload() bool {
+	return s.Type == AlignmentStepPayloadAuditEventRequestEventData
+}
+
+// IsAlignmentVerdictPayload reports whether AuditEventRequestEventData is AlignmentVerdictPayload.
+func (s AuditEventRequestEventData) IsAlignmentVerdictPayload() bool {
+	return s.Type == AlignmentVerdictPayloadAuditEventRequestEventData
 }
 
 // IsRemediationRequestWebhookAuditPayload reports whether AuditEventRequestEventData is RemediationRequestWebhookAuditPayload.
@@ -6123,6 +6485,48 @@ func (s AuditEventRequestEventData) GetWorkflowValidationPayload() (v WorkflowVa
 func NewWorkflowValidationPayloadAuditEventRequestEventData(v WorkflowValidationPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetWorkflowValidationPayload(v)
+	return s
+}
+
+// SetAlignmentStepPayload sets AuditEventRequestEventData to AlignmentStepPayload.
+func (s *AuditEventRequestEventData) SetAlignmentStepPayload(v AlignmentStepPayload) {
+	s.Type = AlignmentStepPayloadAuditEventRequestEventData
+	s.AlignmentStepPayload = v
+}
+
+// GetAlignmentStepPayload returns AlignmentStepPayload and true boolean if AuditEventRequestEventData is AlignmentStepPayload.
+func (s AuditEventRequestEventData) GetAlignmentStepPayload() (v AlignmentStepPayload, ok bool) {
+	if !s.IsAlignmentStepPayload() {
+		return v, false
+	}
+	return s.AlignmentStepPayload, true
+}
+
+// NewAlignmentStepPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AlignmentStepPayload.
+func NewAlignmentStepPayloadAuditEventRequestEventData(v AlignmentStepPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAlignmentStepPayload(v)
+	return s
+}
+
+// SetAlignmentVerdictPayload sets AuditEventRequestEventData to AlignmentVerdictPayload.
+func (s *AuditEventRequestEventData) SetAlignmentVerdictPayload(v AlignmentVerdictPayload) {
+	s.Type = AlignmentVerdictPayloadAuditEventRequestEventData
+	s.AlignmentVerdictPayload = v
+}
+
+// GetAlignmentVerdictPayload returns AlignmentVerdictPayload and true boolean if AuditEventRequestEventData is AlignmentVerdictPayload.
+func (s AuditEventRequestEventData) GetAlignmentVerdictPayload() (v AlignmentVerdictPayload, ok bool) {
+	if !s.IsAlignmentVerdictPayload() {
+		return v, false
+	}
+	return s.AlignmentVerdictPayload, true
+}
+
+// NewAlignmentVerdictPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AlignmentVerdictPayload.
+func NewAlignmentVerdictPayloadAuditEventRequestEventData(v AlignmentVerdictPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAlignmentVerdictPayload(v)
 	return s
 }
 

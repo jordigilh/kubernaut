@@ -158,7 +158,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	swappable, err := llm.NewSwappableClient(llmClient, llmRuntime.Model)
+	swappable, err := llm.NewSwappableClient(llmClient, llmRuntime.Model, llm.RuntimeParams{
+		Temperature:    llmRuntime.Temperature,
+		TimeoutSeconds: llmRuntime.TimeoutSeconds,
+		MaxRetries:     llmRuntime.MaxRetries,
+	})
 	if err != nil {
 		logger.Error(err, "failed to create swappable LLM client")
 		os.Exit(1)

@@ -2465,6 +2465,8 @@ components:
             - $ref: '#/components/schemas/LLMResponsePayload'
             - $ref: '#/components/schemas/LLMToolCallPayload'
             - $ref: '#/components/schemas/WorkflowValidationPayload'
+            - $ref: '#/components/schemas/AlignmentStepPayload'
+            - $ref: '#/components/schemas/AlignmentVerdictPayload'
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
             - $ref: '#/components/schemas/EffectivenessAssessmentAuditPayload'
@@ -2545,6 +2547,8 @@ components:
               'aiagent.llm.response': '#/components/schemas/LLMResponsePayload'
               'aiagent.llm.tool_call': '#/components/schemas/LLMToolCallPayload'
               'aiagent.workflow.validation_attempt': '#/components/schemas/WorkflowValidationPayload'
+              'aiagent.alignment.step': '#/components/schemas/AlignmentStepPayload'
+              'aiagent.alignment.verdict': '#/components/schemas/AlignmentVerdictPayload'
               'effectiveness.health.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.hash.computed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.alert.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
@@ -5592,6 +5596,66 @@ components:
           type: boolean
           default: false
           description: Whether this is the final validation attempt
+
+    AlignmentStepPayload:
+      type: object
+      required: [event_type, event_id, incident_id, step_index, step_kind]
+      description: Shadow agent alignment check step payload (aiagent.alignment.step). Emitted for each step flagged as suspicious during shadow evaluation.
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.alignment.step']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        incident_id:
+          type: string
+          description: Incident correlation ID (signal name)
+        step_index:
+          type: integer
+          minimum: 0
+          description: Index of the suspicious step in the investigation trace
+        step_kind:
+          type: string
+          description: Kind of step (e.g., tool_result, llm_reasoning)
+        tool:
+          type: string
+          description: Tool name used in the step (empty for non-tool steps)
+        explanation:
+          type: string
+          description: Sanitized explanation of why the step was flagged
+
+    AlignmentVerdictPayload:
+      type: object
+      required: [event_type, event_id, incident_id, result, flagged, total]
+      description: Shadow agent alignment verdict payload (aiagent.alignment.verdict). Emitted once per investigation after full shadow evaluation completes.
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.alignment.verdict']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        incident_id:
+          type: string
+          description: Incident correlation ID (signal name)
+        result:
+          type: string
+          enum: ['aligned', 'suspicious']
+          description: Overall alignment verdict
+        summary:
+          type: string
+          description: Free-text summary of the shadow evaluation
+        flagged:
+          type: integer
+          minimum: 0
+          description: Number of steps flagged as suspicious
+        total:
+          type: integer
+          minimum: 0
+          description: Total number of steps evaluated
 
     # ─── Remediation History Context (DD-HAPI-016) ───
 
