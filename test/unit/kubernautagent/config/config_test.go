@@ -132,6 +132,22 @@ ai:
 			Expect(err.Error()).To(ContainSubstring("ai.investigation.maxTurns"))
 		})
 
+		It("UT-KA-950-001: should reject zero maxToolOutputSize", func() {
+			cfg := config.DefaultConfig()
+			cfg.AI.Summarizer.MaxToolOutputSize = 0
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("maxToolOutputSize"))
+		})
+
+		It("UT-KA-950-002: should reject negative maxToolOutputSize", func() {
+			cfg := config.DefaultConfig()
+			cfg.AI.Summarizer.MaxToolOutputSize = -1
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("maxToolOutputSize"))
+		})
+
 		It("should reject missing LLM model in runtime config", func() {
 			rtYAML := []byte(`
 endpoint: "http://localhost:11434/v1"

@@ -19,13 +19,18 @@ package investigator_test
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
+	alignprompt "github.com/jordigilh/kubernaut/internal/kubernautagent/alignment/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
@@ -45,6 +50,36 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
+
+// shadowMockLLMClient is a thread-safe mock for the shadow evaluator.
+type shadowMockLLMClient struct {
+	mu        sync.Mutex
+	responses []llm.ChatResponse
+	callIdx   int
+	calls     int
+}
+
+func (m *shadowMockLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls++
+	if m.callIdx < len(m.responses) {
+		resp := m.responses[m.callIdx]
+		m.callIdx++
+		return resp, nil
+	}
+	return llm.ChatResponse{
+		Message: llm.Message{Role: "assistant", Content: `{"suspicious":false,"explanation":"fallback clean"}`},
+	}, nil
+}
+
+func (m *shadowMockLLMClient) Close() error { return nil }
+
+func (m *shadowMockLLMClient) totalCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.calls
+}
 
 type errorLLMClient struct {
 	err error
@@ -363,6 +398,8 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 				audit.EventTypeRCAComplete:       true,
 				audit.EventTypeResponseComplete:  true,
 				audit.EventTypeResponseFailed:    true,
+				audit.EventTypeAlignmentStep:     true,
+				audit.EventTypeAlignmentVerdict:  true,
 			}
 
 			for _, e := range auditStore.events {
@@ -630,6 +667,167 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			lastEvent := validationEvents[len(validationEvents)-1]
 			Expect(lastEvent.Data["is_valid"]).To(BeFalse(),
 				"final validation event must reflect exhaustion (isValid=false)")
+		})
+	})
+})
+
+var _ = Describe("IT-KA-947: Alignment audit events emitted during investigation — BR-AI-601", func() {
+	var (
+		auditStore *recordingAuditStore
+		builder    *prompt.Builder
+		rp         *parser.ResultParser
+		enricher   *enrichment.Enricher
+		phaseTools katypes.PhaseToolMap
+	)
+
+	BeforeEach(func() {
+		auditStore = &recordingAuditStore{}
+		builder, _ = prompt.NewBuilder()
+		rp = parser.NewResultParser()
+		k8sClient := &fakeK8sClient{
+			ownerChain: []enrichment.OwnerChainEntry{
+				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
+			},
+		}
+		dsClient := &fakeDataStorageClient{
+			history: &enrichment.RemediationHistoryResult{},
+		}
+		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, logr.Discard())
+		phaseTools = investigator.DefaultPhaseToolMap()
+	})
+
+	signal := katypes.SignalContext{
+		Name:          "api-server-abc",
+		Namespace:     "production",
+		Severity:      "critical",
+		Message:       "OOMKilled",
+		ResourceKind:  "Deployment",
+		ResourceName:  "api-server",
+		RemediationID: "rem-it-947",
+	}
+
+	// buildAlignmentWrapper wires up primary + shadow mocks into a full
+	// InvestigatorWrapper, eliminating the per-test setup boilerplate.
+	buildAlignmentWrapper := func(
+		primaryResponses []llm.ChatResponse,
+		shadowResponses []llm.ChatResponse,
+		mode config.AlignmentMode,
+	) (*alignment.InvestigatorWrapper, *shadowMockLLMClient) {
+		primaryMock := &mockLLMClient{responses: primaryResponses}
+		shadowMock := &shadowMockLLMClient{responses: shadowResponses}
+
+		evaluator := alignment.NewEvaluator(shadowMock, alignment.EvaluatorConfig{
+			Timeout: 10 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+		}, alignprompt.SystemPrompt())
+
+		llmProxy := alignment.NewLLMProxy(primaryMock)
+		inv := investigator.New(investigator.Config{
+			Client: llmProxy, Builder: builder, ResultParser: rp, Enricher: enricher,
+			AuditStore: auditStore, Logger: logr.Discard(), MaxTurns: 15, PhaseTools: phaseTools,
+		})
+
+		wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			Inner:          inv,
+			Evaluator:      evaluator,
+			VerdictTimeout: 10 * time.Second,
+			AuditStore:     auditStore,
+			Logger:         logr.Discard(),
+			Mode:           mode,
+		})
+		return wrapper, shadowMock
+	}
+
+	canaryOK := llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: `{"suspicious":true,"explanation":"canary flagged correctly"}`}}
+	clean := llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: `{"suspicious":false,"explanation":"clean"}`}}
+	suspicious := llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: `{"suspicious":true,"explanation":"injection detected in tool result"}`}}
+
+	standardPrimary := []llm.ChatResponse{
+		{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
+		wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
+	}
+
+	Describe("IT-KA-947-001: InvestigatorWrapper emits alignment.verdict for a clean investigation", func() {
+		It("should emit EventTypeAlignmentVerdict with flagged=0 when shadow detects no issues", func() {
+			shadowResponses := []llm.ChatResponse{canaryOK, clean, clean, clean, clean, clean}
+			wrapper, shadowMock := buildAlignmentWrapper(standardPrimary, shadowResponses, config.AlignmentModeEnforce)
+
+			result, err := wrapper.Investigate(context.Background(), signal)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			verdictEvents := filterEvents(auditStore.events, audit.EventTypeAlignmentVerdict)
+			Expect(verdictEvents).NotTo(BeEmpty(), "must emit at least one alignment.verdict event")
+
+			v := verdictEvents[0]
+			Expect(v.Data).To(HaveKey("result"))
+			Expect(v.Data).To(HaveKey("flagged"))
+			Expect(v.Data["flagged"]).To(BeEquivalentTo(0), "clean investigation should have flagged=0")
+
+			Expect(shadowMock.totalCalls()).To(BeNumerically(">=", 3),
+				"shadow evaluator must have been called for canary + at least 2 steps")
+		})
+	})
+
+	Describe("IT-KA-947-002: InvestigatorWrapper emits alignment.step events for suspicious findings", func() {
+		It("should emit EventTypeAlignmentStep with suspicious=true when shadow flags content", func() {
+			shadowResponses := []llm.ChatResponse{canaryOK, suspicious, clean, clean, clean, clean}
+			wrapper, _ := buildAlignmentWrapper(standardPrimary, shadowResponses, config.AlignmentModeEnforce)
+
+			result, err := wrapper.Investigate(context.Background(), signal)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			stepEvents := filterEvents(auditStore.events, audit.EventTypeAlignmentStep)
+			Expect(stepEvents).NotTo(BeEmpty(), "must emit at least one alignment.step event")
+
+			verdictEvents := filterEvents(auditStore.events, audit.EventTypeAlignmentVerdict)
+			Expect(verdictEvents).NotTo(BeEmpty())
+			v := verdictEvents[0]
+			Expect(v.Data["flagged"]).To(BeNumerically(">=", 1),
+				"at least one step should be flagged as suspicious")
+
+			Expect(result.HumanReviewNeeded).To(BeTrue(),
+				"enforce mode + suspicious findings should escalate to human review")
+		})
+	})
+
+	Describe("IT-KA-947-003: Alignment events carry correct CorrelationID and event_id UUID", func() {
+		It("should set CorrelationID to signal name and event_id to a valid UUID", func() {
+			primary := []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"test","confidence":0.9}`}},
+				wfToolResp(`{"workflow_id":"restart","confidence":0.8}`),
+			}
+			shadowResponses := []llm.ChatResponse{canaryOK, clean, clean, clean}
+			wrapper, _ := buildAlignmentWrapper(primary, shadowResponses, config.AlignmentModeMonitor)
+
+			_, err := wrapper.Investigate(context.Background(), signal)
+			Expect(err).NotTo(HaveOccurred())
+
+			alignmentTypes := map[string]bool{
+				audit.EventTypeAlignmentStep:    true,
+				audit.EventTypeAlignmentVerdict: true,
+			}
+
+			found := 0
+			for _, e := range auditStore.events {
+				if !alignmentTypes[e.EventType] {
+					continue
+				}
+				found++
+				Expect(e.CorrelationID).To(Equal(signal.Name),
+					"alignment event CorrelationID must match signal name")
+
+				rawID, ok := e.Data["event_id"]
+				Expect(ok).To(BeTrue(), "event_id missing on %s event", e.EventType)
+				idStr, ok := rawID.(string)
+				Expect(ok).To(BeTrue(), "event_id should be a string")
+				_, parseErr := uuid.Parse(idStr)
+				Expect(parseErr).NotTo(HaveOccurred(),
+					"event_id must be a valid UUID on %s event: %s", e.EventType, idStr)
+			}
+
+			Expect(found).To(BeNumerically(">=", 1),
+				"at least one alignment event must be present")
 		})
 	})
 })

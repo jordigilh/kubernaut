@@ -19,26 +19,67 @@ package llm
 import (
 	"context"
 	"time"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 )
 
+var defaultRetryBackoff = backoff.Config{
+	BasePeriod:    500 * time.Millisecond,
+	MaxPeriod:     5 * time.Second,
+	Multiplier:    2.0,
+	JitterPercent: 20,
+}
+
 // ChatWithParams wraps a Client.Chat call, injecting runtime parameters
-// (temperature, timeout) from the hot-reloadable LLM config. The context
-// timeout is cancelled immediately after Chat returns to avoid resource leaks.
+// (temperature, timeout, retries) from the hot-reloadable LLM config.
+// Each attempt gets a fresh context timeout; the timeout is cancelled
+// immediately after Chat returns to avoid resource leaks.
+// Retries use exponential backoff and respect parent context cancellation.
 func ChatWithParams(ctx context.Context, client Client, req ChatRequest, params RuntimeParams) (ChatResponse, error) {
 	temp := params.Temperature
 	req.Options.Temperature = &temp
 
-	chatCtx := ctx
-	var chatCancel context.CancelFunc
-	if params.TimeoutSeconds > 0 {
-		chatCtx, chatCancel = context.WithTimeout(ctx, time.Duration(params.TimeoutSeconds)*time.Second)
+	bo := defaultRetryBackoff
+	if params.RetryBackoff != nil {
+		bo = *params.RetryBackoff
 	}
 
-	resp, err := client.Chat(chatCtx, req)
+	maxAttempts := 1 + params.MaxRetries
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+	var lastErr error
 
-	if chatCancel != nil {
-		chatCancel()
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		chatCtx := ctx
+		var chatCancel context.CancelFunc
+		if params.TimeoutSeconds > 0 {
+			chatCtx, chatCancel = context.WithTimeout(ctx, time.Duration(params.TimeoutSeconds)*time.Second)
+		}
+
+		resp, err := client.Chat(chatCtx, req)
+
+		if chatCancel != nil {
+			chatCancel()
+		}
+
+		if err == nil {
+			return resp, nil
+		}
+
+		lastErr = err
+
+		if attempt < maxAttempts-1 {
+			delay := bo.Calculate(int32(attempt + 1))
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ChatResponse{}, ctx.Err()
+			case <-timer.C:
+			}
+		}
 	}
 
-	return resp, err
+	return ChatResponse{}, lastErr
 }

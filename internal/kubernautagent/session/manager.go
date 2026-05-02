@@ -52,20 +52,27 @@ func (m *Manager) StartInvestigation(_ context.Context, fn InvestigateFunc, meta
 	if metadata != nil {
 		m.store.SetMetadata(id, metadata)
 	}
-	_ = m.store.Update(id, StatusRunning, nil, nil)
+	m.updateSession(id, StatusRunning, nil, nil)
 
 	go func() {
 		bgCtx := context.Background()
 		result, fnErr := fn(bgCtx)
 		if fnErr != nil {
 			m.logger.Error(fnErr, "investigation failed", "session_id", id)
-			_ = m.store.Update(id, StatusFailed, nil, fnErr)
+			m.updateSession(id, StatusFailed, nil, fnErr)
 			return
 		}
-		_ = m.store.Update(id, StatusCompleted, result, nil)
+		m.updateSession(id, StatusCompleted, result, nil)
 	}()
 
 	return id, nil
+}
+
+func (m *Manager) updateSession(id string, status Status, result interface{}, err error) {
+	if updateErr := m.store.Update(id, status, result, err); updateErr != nil {
+		m.logger.Error(updateErr, "failed to update session",
+			"session_id", id, "target_status", string(status))
+	}
 }
 
 // GetSession retrieves the current state of an investigation session.
