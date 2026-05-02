@@ -671,6 +671,10 @@ rules:
   - apiGroups: ["metrics.k8s.io"]
     resources: ["pods", "nodes"]
     verbs: ["get", "list"]
+  # Interactive mode: RR existence check (#703 HARM-004)
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["get", "list"]
   # Interactive mode: Lease-based session management (#703)
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]

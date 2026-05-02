@@ -170,6 +170,7 @@ var _ = Describe("CP-5 HARM-001: Autonomous regression — no interactive artifa
 				Equal(http.StatusMethodNotAllowed),
 				Equal(http.StatusOK),
 				Equal(http.StatusUnauthorized),
+				Equal(http.StatusForbidden),
 			), "MCP endpoint should be responsive (non-5xx)")
 		}, 30*time.Second, 3*time.Second).Should(Succeed(), "KA MCP endpoint should become responsive")
 
