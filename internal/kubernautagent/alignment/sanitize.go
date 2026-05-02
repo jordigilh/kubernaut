@@ -19,6 +19,7 @@ package alignment
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -28,6 +29,7 @@ const (
 
 // SanitizeExplanation removes control characters and truncates the explanation
 // to prevent log injection and unbounded storage from shadow LLM output.
+// Truncation is rune-aware to avoid splitting multi-byte UTF-8 sequences.
 func SanitizeExplanation(s string) string {
 	if s == "" {
 		return s
@@ -42,8 +44,9 @@ func SanitizeExplanation(s string) string {
 	}
 	cleaned := b.String()
 
-	if len(cleaned) > maxExplanationLen {
-		return cleaned[:maxExplanationLen] + explanationTruncMarker
+	if utf8.RuneCountInString(cleaned) > maxExplanationLen {
+		runes := []rune(cleaned)
+		return string(runes[:maxExplanationLen]) + explanationTruncMarker
 	}
 	return cleaned
 }

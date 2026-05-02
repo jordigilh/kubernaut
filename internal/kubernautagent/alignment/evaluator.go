@@ -190,7 +190,7 @@ var markdownFenceRe = regexp.MustCompile("(?s)^\\s*```(?:json)?\\s*\n(.*?)\\s*``
 // content. If the input is not fenced, it is returned as-is after trimming.
 func extractJSON(s string) string {
 	if m := markdownFenceRe.FindStringSubmatch(s); len(m) == 2 {
-		return strings.TrimSpace(m[1])
+		return strings.Clone(strings.TrimSpace(m[1]))
 	}
 	return strings.TrimSpace(s)
 }

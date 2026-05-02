@@ -131,7 +131,7 @@ func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notific
 	}
 
 	// Ensure output directory exists
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		log.Error(err, "Failed to create file output directory",
 			"outputDir", outputDir,
 			"notification", notification.Name,
@@ -184,7 +184,7 @@ func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notific
 	tempFile := filePath + ".tmp"
 
 	// Write to temporary file first
-	if err := os.WriteFile(tempFile, data, 0644); err != nil {
+	if err := os.WriteFile(tempFile, data, 0o644); err != nil {
 		log.Error(err, "Failed to write temporary notification file",
 			"notification", notification.Name,
 			"namespace", notification.Namespace,
