@@ -279,12 +279,11 @@ var _ = Describe("BR-PERFORMANCE-970: Parallel Tool Execution in runLLMLoop", fu
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
 
-			_, err := inv.Investigate(ctx, signal)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(Or(
-				ContainSubstring("context deadline exceeded"),
-				ContainSubstring("context canceled"),
-			))
+			result, err := inv.Investigate(ctx, signal)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.Cancelled).To(BeTrue(),
+				"investigation result should be marked as cancelled when context times out")
 
 			Eventually(activeCounter.Load, 2*time.Second, 50*time.Millisecond).Should(Equal(int32(0)),
 				"all tool goroutines should have exited after context cancellation")

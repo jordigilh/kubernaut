@@ -44,12 +44,14 @@ func fakeAuthMiddleware(user string) func(http.Handler) http.Handler {
 }
 
 func newMCPTestRouter() (*httptest.Server, *mcpinternal.MCPServer) {
+	authMw := fakeAuthMiddleware("test-user")
 	handler, srv := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
-		AuthMiddleware: fakeAuthMiddleware("test-user"),
+		AuthMiddleware: authMw,
 	})
 
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(authMw)
 		r.Handle("/mcp", kaserver.SSEHeadersMiddleware(handler))
 		r.Handle("/mcp/*", kaserver.SSEHeadersMiddleware(handler))
 	})
