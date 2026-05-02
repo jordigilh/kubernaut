@@ -568,7 +568,7 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *d
 		return nil
 	}
 
-	dsBase, tlsErr := buildDSBaseTransport(cfg.Integrations.DataStorage.TLS.CAFile)
+	dsBase, tlsErr := buildDSBaseTransport(cfg.Integrations.DataStorage.TLS.CAFile, cfg.Integrations.DataStorage.CircuitBreaker)
 	if tlsErr != nil {
 		logger.Error(tlsErr, "failed to create TLS-aware transport for DS client",
 			"ca_file", cfg.Integrations.DataStorage.TLS.CAFile)
@@ -611,15 +611,30 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *d
 // client. When caFile is set, uses a custom TLS transport with the specified CA;
 // otherwise falls back to the shared default transport with retry.
 // Issue #951: Wire DataStorageConfig.TLS.CAFile to DS HTTP client.
-func buildDSBaseTransport(caFile string) (http.RoundTripper, error) {
+func buildDSBaseTransport(caFile string, cbCfg kaconfig.CircuitBreakerCfg) (http.RoundTripper, error) {
+	var base http.RoundTripper
 	if caFile != "" {
 		tlsTransport, err := sharedtls.NewTLSTransport(caFile)
 		if err != nil {
 			return nil, fmt.Errorf("DS TLS transport: %w", err)
 		}
-		return transport.NewRetryTransport(tlsTransport, transport.DefaultRetryConfig()), nil
+		base = transport.NewRetryTransport(tlsTransport, transport.DefaultRetryConfig())
+	} else {
+		var err error
+		base, err = sharedtls.DefaultBaseTransportWithRetry()
+		if err != nil {
+			return nil, err
+		}
 	}
-	return sharedtls.DefaultBaseTransportWithRetry()
+	return transport.NewCircuitBreakerTransport(base, transport.CircuitBreakerConfig{
+		Enabled:          cbCfg.Enabled,
+		Name:             "datastorage",
+		MaxRequests:      cbCfg.MaxRequests,
+		Interval:         cbCfg.Interval,
+		Timeout:          cbCfg.Timeout,
+		FailureThreshold: cbCfg.FailureThreshold,
+		FailureRatio:     cbCfg.FailureRatio,
+	}), nil
 }
 
 // bearerTransport injects a Kubernetes ServiceAccount Bearer token into
