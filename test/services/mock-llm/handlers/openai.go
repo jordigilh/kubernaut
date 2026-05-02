@@ -128,6 +128,15 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(cfg.MultiToolCalls) > 0 && !hasToolResults(req.Messages) {
+		for _, tc := range cfg.MultiToolCalls {
+			h.trackToolCall(tc.Name)
+		}
+		writeJSON(w, http.StatusOK, response.BuildMultiToolCallResponse(model, cfg.MultiToolCalls))
+		h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
+		return
+	}
+
 	if cfg.ToolCallName != "" && !hasToolResults(req.Messages) {
 		h.trackToolCall(cfg.ToolCallName)
 		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, cfg.ToolCallName, cfg))

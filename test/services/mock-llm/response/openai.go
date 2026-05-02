@@ -60,6 +60,43 @@ func BuildToolCallResponse(model, toolName string, cfg scenarios.MockScenarioCon
 	}
 }
 
+// BuildMultiToolCallResponse creates a ChatCompletionResponse with multiple
+// tool calls in a single assistant message, enabling parallel tool execution.
+func BuildMultiToolCallResponse(model string, toolEntries []scenarios.MultiToolCallEntry) openai.ChatCompletionResponse {
+	calls := make([]openai.ToolCall, len(toolEntries))
+	for i, entry := range toolEntries {
+		argsJSON, _ := json.Marshal(entry.Arguments)
+		calls[i] = openai.ToolCall{
+			ID:   randomCallID(),
+			Type: "function",
+			Function: openai.FunctionCall{
+				Name:      entry.Name,
+				Arguments: string(argsJSON),
+			},
+		}
+	}
+
+	content := (*string)(nil)
+	return openai.ChatCompletionResponse{
+		ID:      randomChatID(),
+		Object:  openai.ObjectChatCompletion,
+		Created: openai.FixedCreatedTime,
+		Model:   model,
+		Choices: []openai.Choice{
+			{
+				Index: 0,
+				Message: openai.Message{
+					Role:      "assistant",
+					Content:   content,
+					ToolCalls: calls,
+				},
+				FinishReason: "tool_calls",
+			},
+		},
+		Usage: openai.Usage{PromptTokens: 500, CompletionTokens: 80, TotalTokens: 580},
+	}
+}
+
 // BuildTextResponse creates a ChatCompletionResponse with the final RCA text.
 func BuildTextResponse(model string, cfg scenarios.MockScenarioConfig) openai.ChatCompletionResponse {
 	text := buildAnalysisText(cfg)

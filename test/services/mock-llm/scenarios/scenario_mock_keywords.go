@@ -95,6 +95,26 @@ func notActionableConfig() MockScenarioConfig {
 	}
 }
 
+func parallelToolsConfig() MockScenarioConfig {
+	actionable := true
+	return MockScenarioConfig{
+		ScenarioName: "parallel_tools", SignalName: "MOCK_PARALLEL_TOOLS", Severity: "high",
+		WorkflowName: "oom-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oom-increase-memory-v1"),
+		WorkflowTitle: "Increase Memory Limits", Confidence: 0.9,
+		RootCause:    "Container OOMKilled due to memory limits below steady-state usage",
+		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "api-server-abc",
+		Parameters:           map[string]string{"NAMESPACE": "production", "POD_NAME": "api-server-abc"},
+		InvestigationOutcome: "actionable",
+		IsActionable:         &actionable,
+		ForceText:            BoolPtr(false),
+		MultiToolCalls: []MultiToolCallEntry{
+			{Name: "kubectl_describe", Arguments: map[string]string{"kind": "Pod", "name": "api-server-abc", "namespace": "production"}},
+			{Name: "kubectl_events", Arguments: map[string]string{"kind": "Pod", "name": "api-server-abc", "namespace": "production"}},
+			{Name: "kubectl_logs", Arguments: map[string]string{"kind": "Pod", "name": "api-server-abc", "namespace": "production"}},
+		},
+	}
+}
+
 func rcaIncompleteConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "rca_incomplete", SignalName: "MOCK_RCA_INCOMPLETE", Severity: "critical",
