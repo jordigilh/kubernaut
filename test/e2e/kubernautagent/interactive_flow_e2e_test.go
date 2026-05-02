@@ -55,6 +55,7 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 	Describe("E2E-KA-INT-001: Complete interactive lifecycle", func() {
 		It("should execute full interactive lifecycle: start → message → complete [E2E-KA-INT-001]", func() {
 			rrID := fmt.Sprintf("rr-int001-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, rrID)
 
 			By("Step 1: Connecting MCP client")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
@@ -133,6 +134,7 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 			Expect(err).NotTo(HaveOccurred())
 
 			rrID := fmt.Sprintf("rr-int004-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, rrID)
 
 			By("Step 2: Connecting and starting session with limited SA")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
@@ -187,6 +189,7 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 			defer fullSession.Close()
 
 			fullRRID := fmt.Sprintf("rr-int004-full-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, fullRRID)
 			_, err = infrastructure.CallInvestigate(ctx, fullSession, map[string]any{
 				"rr_id":  fullRRID,
 				"action": "start",
@@ -218,6 +221,7 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 	Describe("E2E-KA-INT-005: Audit trail complete in DS after full flow", func() {
 		It("should record complete audit trail in DataStorage [E2E-KA-INT-005]", func() {
 			rrID := fmt.Sprintf("rr-int005-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, rrID)
 
 			By("Step 1: Executing interactive flow")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
@@ -285,6 +289,7 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 	Describe("E2E-KA-INT-007: Multi-step interactive investigation with enrichment", func() {
 		It("should support multi-step Q&A, enrichment, and workflow selection [E2E-KA-INT-007]", func() {
 			rrID := fmt.Sprintf("rr-int007-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, rrID)
 
 			By("Step 1: Connecting and starting session")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{

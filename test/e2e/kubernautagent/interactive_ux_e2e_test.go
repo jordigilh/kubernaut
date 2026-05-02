@@ -54,6 +54,7 @@ var _ = Describe("CP-5 UX: User Experience & Operational Tests", Label("e2e", "k
 	Describe("E2E-KA-UX-001: Time-remaining visible during session", func() {
 		It("should show remaining session time via status query [E2E-KA-UX-001]", func() {
 			rrID := fmt.Sprintf("rr-ux001-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, rrID)
 
 			By("Step 1: Starting interactive session")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
@@ -109,6 +110,7 @@ var _ = Describe("CP-5 UX: User Experience & Operational Tests", Label("e2e", "k
 	Describe("E2E-KA-UX-002: Inactivity timer resets on activity", func() {
 		It("should keep session alive when tool calls reset inactivity timer [E2E-KA-UX-002]", func() {
 			rrID := fmt.Sprintf("rr-ux002-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, rrID)
 
 			By("Step 1: Starting interactive session")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
@@ -166,6 +168,7 @@ var _ = Describe("CP-5 UX: User Experience & Operational Tests", Label("e2e", "k
 	Describe("E2E-KA-UX-003: Rejection includes holder info", func() {
 		It("should include holder identity in rejection error [E2E-KA-UX-003]", func() {
 			rrID := fmt.Sprintf("rr-ux003-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, rrID)
 
 			By("Step 1: User-A takes over (holds Lease)")
 			tokenA, err := infrastructure.CreateInteractiveE2ESA(ctx, sharedNamespace, "ux003-user-a", kubeconfigPath, GinkgoWriter)
@@ -238,6 +241,7 @@ var _ = Describe("CP-5 UX: User Experience & Operational Tests", Label("e2e", "k
 	Describe("E2E-KA-UX-004: Prometheus metrics for interactive sessions", func() {
 		It("should emit session metrics on /metrics endpoint [E2E-KA-UX-004]", func() {
 			rrID := fmt.Sprintf("rr-ux004-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, rrID)
 
 			By("Step 1: Getting baseline metrics")
 			baselineMetrics := scrapeKAMetrics()
