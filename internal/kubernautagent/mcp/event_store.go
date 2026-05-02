@@ -56,6 +56,7 @@ func (s *DelegatingEventStore) After(ctx context.Context, sessionID, streamID st
 }
 
 func (s *DelegatingEventStore) SessionClosed(ctx context.Context, sessionID string) error {
+	s.mcpToSession.Delete(sessionID)
 	select {
 	case s.closedChan <- sessionID:
 	default:

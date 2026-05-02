@@ -19,6 +19,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -159,7 +160,7 @@ func (r *NotificationAuditRepository) GetByNotificationID(ctx context.Context, n
 	)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, validation.NewNotFoundProblem("notification_audit", notificationID)
 		}
 		return nil, fmt.Errorf("failed to retrieve notification_audit: %w", err)

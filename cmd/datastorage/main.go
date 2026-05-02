@@ -361,6 +361,8 @@ func main() {
 		Addr:              fmt.Sprintf(":%d", cfg.Server.MetricsPort),
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
 	}
 
 	metricsErrors := make(chan error, 1)

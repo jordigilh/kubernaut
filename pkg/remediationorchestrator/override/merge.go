@@ -25,6 +25,7 @@ package override
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -59,11 +60,8 @@ func NewOverrideNotFoundError(workflowName, namespace string, cause error) error
 // IsOverrideNotFoundError returns true if the error is a permanent override-not-found error.
 // R10: The reconciler uses this to decide between transitionToFailed (permanent) and requeue (transient).
 func IsOverrideNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-	_, ok := err.(*overrideNotFoundError)
-	return ok
+	var target *overrideNotFoundError
+	return errors.As(err, &target)
 }
 
 // ResolveWorkflow resolves the final SelectedWorkflow spec from the RAR override

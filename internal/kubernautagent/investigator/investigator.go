@@ -1270,7 +1270,11 @@ func truncatePreview(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen]
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen])
 }
 
 func messagesToAuditFormat(messages []llm.Message) []map[string]interface{} {
@@ -1667,7 +1671,8 @@ func MergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 	if len(result.ContributingFactors) == 0 && len(p1.ContributingFactors) > 0 {
 		result.ContributingFactors = p1.ContributingFactors
 	}
-	if result.Confidence == 0 && p1.Confidence > 0 {
+	const floatZeroThreshold = 1e-9
+	if result.Confidence < floatZeroThreshold && p1.Confidence > floatZeroThreshold {
 		result.Confidence = p1.Confidence
 	}
 	if result.InvestigationOutcome == "" && p1.InvestigationOutcome != "" {

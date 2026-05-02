@@ -110,7 +110,8 @@ func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint s
 	})
 
 	consecutiveFailures := 0
-	for _, rr := range rrList.Items {
+	for i := range rrList.Items {
+		rr := &rrList.Items[i]
 		switch rr.Status.OverallPhase {
 		case phase.Failed:
 			// Issue #190: Skip inherited/deduplicated failures — they don't represent

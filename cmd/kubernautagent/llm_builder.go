@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 
@@ -64,7 +65,7 @@ func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) [
 	}
 
 	if transport := buildTransportChain(cfg, rt); transport != nil {
-		opts = append(opts, langchaingo.WithHTTPClient(&http.Client{Transport: transport}))
+		opts = append(opts, langchaingo.WithHTTPClient(&http.Client{Transport: transport, Timeout: 5 * time.Minute}))
 		opts = append(opts, langchaingo.WithCloser(func() error {
 			if t, ok := transport.(interface{ CloseIdleConnections() }); ok {
 				t.CloseIdleConnections()
@@ -129,8 +130,6 @@ func llmRuntimeReloadCallback(
 
 		rt, err := kaconfig.LoadLLMRuntime([]byte(newContent))
 		if err != nil {
-			logger.Error(err, "llm_runtime_reload failed: parse error",
-				"event", "llm_runtime_reload", "status", "error")
 			return fmt.Errorf("reload: parsing llm runtime config: %w", err)
 		}
 
@@ -142,14 +141,10 @@ func llmRuntimeReloadCallback(
 
 		newClient, err := buildLLMClientFromConfig(context.Background(), staticCfg, rt)
 		if err != nil {
-			logger.Error(err, "llm_runtime_reload failed: client build error",
-				"event", "llm_runtime_reload", "status", "error")
 			return fmt.Errorf("reload: building LLM client: %w", err)
 		}
 
 		if err := swappable.Swap(newClient, rt.Model); err != nil {
-			logger.Error(err, "llm_runtime_reload failed: swap error",
-				"event", "llm_runtime_reload", "status", "error")
 			return fmt.Errorf("reload: swapping client: %w", err)
 		}
 

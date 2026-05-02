@@ -387,8 +387,8 @@ func (r *RoutingEngine) CheckConsecutiveFailures(
 	// Count consecutive failures from most recent RRs
 	// Stop counting when we hit a non-Failed RR (success breaks the consecutive chain)
 	consecutiveFailures := 0
-	for _, item := range list.Items {
-		// Skip the incoming RR itself (it's not failed yet)
+	for i := range list.Items {
+		item := &list.Items[i]
 		if item.UID == rr.UID {
 			logger.Info("Skipping incoming RR", "name", item.Name)
 			continue

@@ -406,14 +406,16 @@ func (m *Manager) recoverPanic(id, correlationID string) {
 func (m *Manager) emitCompleteEvent(id string) {
 	m.store.mu.RLock()
 	sess, ok := m.store.sessions[id]
+	var sink *LazySink
+	if ok {
+		sink = sess.lazySink
+	}
 	m.store.mu.RUnlock()
-	if !ok {
+
+	if sink == nil {
 		return
 	}
-	if sess.lazySink == nil {
-		return
-	}
-	ch := sess.lazySink.Get()
+	ch := sink.Get()
 	if ch == nil {
 		return
 	}

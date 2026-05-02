@@ -1,6 +1,8 @@
 // Package delivery provides shared error types for notification delivery
 package delivery
 
+import "errors"
+
 // RetryableError indicates an error that can be retried with backoff
 // This distinguishes temporary failures (network, permissions, rate limits)
 // from permanent failures (invalid URLs, authentication errors, TLS issues)
@@ -25,10 +27,10 @@ func (e *RetryableError) Unwrap() error {
 	return e.err
 }
 
-// IsRetryableError checks if an error is retryable
+// IsRetryableError checks if an error is (or wraps) a retryable error.
 func IsRetryableError(err error) bool {
-	_, ok := err.(*RetryableError)
-	return ok
+	var target *RetryableError
+	return errors.As(err, &target)
 }
 
 
