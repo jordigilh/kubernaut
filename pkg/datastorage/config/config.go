@@ -59,14 +59,15 @@ type Config struct {
 
 // ServerConfig contains HTTP server configuration
 type ServerConfig struct {
-	Port         int                 `yaml:"port"`
-	Host         string              `yaml:"host"`
-	MetricsPort  int                 `yaml:"metricsPort"`  // Dedicated Prometheus metrics port (default: 9090, Issue #283)
-	HealthPort   int                 `yaml:"healthPort"`   // Dedicated health probe port (default: 8081, Issue #753)
-	MaxBatchSize int                 `yaml:"maxBatchSize"` // Issue #667: Max events per batch API request (default: 500)
-	ReadTimeout  string              `yaml:"readTimeout"`  // e.g., "30s"
-	WriteTimeout string              `yaml:"writeTimeout"` // e.g., "30s"
-	TLS          sharedtls.TLSConfig `yaml:"tls,omitempty"` // Issue #678: Optional inter-service TLS
+	Port             int                 `yaml:"port"`
+	Host             string              `yaml:"host"`
+	MetricsPort      int                 `yaml:"metricsPort"`      // Dedicated Prometheus metrics port (default: 9090, Issue #283)
+	HealthPort       int                 `yaml:"healthPort"`       // Dedicated health probe port (default: 8081, Issue #753)
+	DisableProfiling bool                `yaml:"disableProfiling"` // Set true to suppress /debug/pprof/* on health port
+	MaxBatchSize     int                 `yaml:"maxBatchSize"`     // Issue #667: Max events per batch API request (default: 500)
+	ReadTimeout      string              `yaml:"readTimeout"`      // e.g., "30s"
+	WriteTimeout     string              `yaml:"writeTimeout"`     // e.g., "30s"
+	TLS              sharedtls.TLSConfig `yaml:"tls,omitempty"`    // Issue #678: Optional inter-service TLS
 }
 
 // LoggingConfig contains logging configuration

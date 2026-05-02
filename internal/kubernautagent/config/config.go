@@ -152,13 +152,14 @@ type DataStorageConfig struct {
 }
 
 type ServerConfig struct {
-	Address     string              `yaml:"address"`
-	Port        int                 `yaml:"port"`
-	HealthAddr  string              `yaml:"healthAddr"`
-	MetricsAddr string              `yaml:"metricsAddr"`
-	TLS         sharedtls.TLSConfig `yaml:"tls,omitempty"`
-	TLSProfile  string              `yaml:"tlsProfile,omitempty"`
-	RateLimit   RateLimitConfig     `yaml:"rateLimit"`
+	Address            string              `yaml:"address"`
+	Port               int                 `yaml:"port"`
+	HealthAddr         string              `yaml:"healthAddr"`
+	MetricsAddr        string              `yaml:"metricsAddr"`
+	DisableProfiling   bool                `yaml:"disableProfiling"`
+	TLS                sharedtls.TLSConfig `yaml:"tls,omitempty"`
+	TLSProfile         string              `yaml:"tlsProfile,omitempty"`
+	RateLimit          RateLimitConfig     `yaml:"rateLimit"`
 }
 
 // RateLimitConfig configures per-IP HTTP rate limiting for the agent API.
