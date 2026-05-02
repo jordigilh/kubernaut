@@ -7,9 +7,9 @@ type OperationName = string
 
 const (
 	GetConfigConfigGetOperation                                                  OperationName = "GetConfigConfigGet"
-	HealthCheckHealthGetOperation                                                OperationName = "HealthCheckHealthGet"
+	HealthCheckHealthzGetOperation                                               OperationName = "HealthCheckHealthzGet"
 	IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostOperation                     OperationName = "IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost"
 	IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetOperation OperationName = "IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet"
 	IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOperation       OperationName = "IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet"
-	ReadinessCheckReadyGetOperation                                              OperationName = "ReadinessCheckReadyGet"
+	ReadinessCheckReadyzGetOperation                                             OperationName = "ReadinessCheckReadyzGet"
 )

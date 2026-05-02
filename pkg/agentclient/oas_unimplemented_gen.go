@@ -16,7 +16,8 @@ var _ Handler = UnimplementedHandler{}
 
 // GetConfigConfigGet implements get_config_config_get operation.
 //
-// Get service configuration (sanitized)
+// Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
+// port.
 // Business Requirement: BR-HAPI-128 (Configuration endpoint).
 //
 // GET /config
@@ -24,13 +25,13 @@ func (UnimplementedHandler) GetConfigConfigGet(ctx context.Context) (r jx.Raw, _
 	return r, ht.ErrNotImplemented
 }
 
-// HealthCheckHealthGet implements health_check_health_get operation.
+// HealthCheckHealthzGet implements health_check_healthz_get operation.
 //
-// Liveness probe endpoint
+// Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 // Business Requirement: BR-HAPI-126 (Health check endpoint).
 //
-// GET /health
-func (UnimplementedHandler) HealthCheckHealthGet(ctx context.Context) (r jx.Raw, _ error) {
+// GET /healthz
+func (UnimplementedHandler) HealthCheckHealthzGet(ctx context.Context) (r jx.Raw, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -67,16 +68,14 @@ func (UnimplementedHandler) IncidentSessionStatusEndpointAPIV1IncidentSessionSes
 	return r, ht.ErrNotImplemented
 }
 
-// ReadinessCheckReadyGet implements readiness_check_ready_get operation.
+// ReadinessCheckReadyzGet implements readiness_check_readyz_get operation.
 //
-// Readiness probe endpoint
+// Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 // Business Requirements:
 // - BR-HAPI-127 (Readiness check endpoint)
-// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern)
-// TDD GREEN Phase: Check shutdown flag first
-// REFACTOR phase: Real dependency health checks.
+// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern).
 //
-// GET /ready
-func (UnimplementedHandler) ReadinessCheckReadyGet(ctx context.Context) (r jx.Raw, _ error) {
+// GET /readyz
+func (UnimplementedHandler) ReadinessCheckReadyzGet(ctx context.Context) (r jx.Raw, _ error) {
 	return r, ht.ErrNotImplemented
 }

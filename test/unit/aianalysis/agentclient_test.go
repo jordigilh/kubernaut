@@ -57,16 +57,14 @@ var _ = Describe("AgentClient", func() {
 
 					switch {
 					case r.URL.Path == "/api/v1/incident/analyze" && r.Method == http.MethodPost:
-						// Step 1: Submit -> 202 Accepted with session_id
 						w.WriteHeader(http.StatusAccepted)
-						_, _ = w.Write([]byte(`{"session_id": "test-session-001"}`))
+						_, _ = w.Write([]byte(`{"session_id": "11111111-1111-1111-1111-111111111111"}`))
 
-					case r.URL.Path == "/api/v1/incident/session/test-session-001" && r.Method == http.MethodGet:
-						// Step 2: Poll -> completed
+					case r.URL.Path == "/api/v1/incident/session/11111111-1111-1111-1111-111111111111" && r.Method == http.MethodGet:
 						w.WriteHeader(http.StatusOK)
-						_, _ = w.Write([]byte(`{"status": "completed"}`))
+						_, _ = w.Write([]byte(`{"session_id": "11111111-1111-1111-1111-111111111111", "status": "completed"}`))
 
-					case r.URL.Path == "/api/v1/incident/session/test-session-001/result" && r.Method == http.MethodGet:
+					case r.URL.Path == "/api/v1/incident/session/11111111-1111-1111-1111-111111111111/result" && r.Method == http.MethodGet:
 						// Step 3: Get result
 						w.WriteHeader(http.StatusOK)
 						// ADR-055: target_in_owner_chain removed from KA response
@@ -201,11 +199,11 @@ var _ = Describe("AgentClient", func() {
 					switch {
 					case r.URL.Path == "/api/v1/incident/analyze" && r.Method == http.MethodPost:
 						w.WriteHeader(http.StatusAccepted)
-						_, _ = w.Write([]byte(`{"session_id": "fail-session-001"}`))
+						_, _ = w.Write([]byte(`{"session_id": "22222222-2222-2222-2222-222222222222"}`))
 
-					case r.URL.Path == "/api/v1/incident/session/fail-session-001" && r.Method == http.MethodGet:
+					case r.URL.Path == "/api/v1/incident/session/22222222-2222-2222-2222-222222222222" && r.Method == http.MethodGet:
 						w.WriteHeader(http.StatusOK)
-						_, _ = w.Write([]byte(`{"status": "failed", "error": "LLM provider unavailable"}`))
+						_, _ = w.Write([]byte(`{"session_id": "22222222-2222-2222-2222-222222222222", "status": "failed", "error": "LLM provider unavailable"}`))
 
 					default:
 						w.WriteHeader(http.StatusNotFound)
@@ -244,12 +242,11 @@ var _ = Describe("AgentClient", func() {
 					switch {
 					case r.URL.Path == "/api/v1/incident/analyze" && r.Method == http.MethodPost:
 						w.WriteHeader(http.StatusAccepted)
-						_, _ = w.Write([]byte(`{"session_id": "stuck-session-001"}`))
+						_, _ = w.Write([]byte(`{"session_id": "33333333-3333-3333-3333-333333333333"}`))
 
-					case r.URL.Path == "/api/v1/incident/session/stuck-session-001" && r.Method == http.MethodGet:
-						// Always return "investigating" -- never completes
+					case r.URL.Path == "/api/v1/incident/session/33333333-3333-3333-3333-333333333333" && r.Method == http.MethodGet:
 						w.WriteHeader(http.StatusOK)
-						_, _ = w.Write([]byte(`{"status": "investigating", "progress": "Calling LLM..."}`))
+						_, _ = w.Write([]byte(`{"session_id": "33333333-3333-3333-3333-333333333333", "status": "investigating"}`))
 
 					default:
 						w.WriteHeader(http.StatusNotFound)

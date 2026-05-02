@@ -33,17 +33,21 @@ func SanitizeExplanation(s string) string {
 		return s
 	}
 
+	growLen := len(s)
+	cap := maxExplanationLen + len(explanationTruncMarker)
+	if growLen > cap {
+		growLen = cap
+	}
+
 	var b strings.Builder
-	b.Grow(len(s))
+	b.Grow(growLen)
 	for _, r := range s {
 		if r == '\n' || r == '\t' || !unicode.IsControl(r) {
 			b.WriteRune(r)
 		}
+		if b.Len() >= maxExplanationLen {
+			return b.String()[:maxExplanationLen] + explanationTruncMarker
+		}
 	}
-	cleaned := b.String()
-
-	if len(cleaned) > maxExplanationLen {
-		return cleaned[:maxExplanationLen] + explanationTruncMarker
-	}
-	return cleaned
+	return b.String()
 }

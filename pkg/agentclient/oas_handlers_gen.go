@@ -36,7 +36,8 @@ func (c *codeRecorder) Unwrap() http.ResponseWriter {
 
 // handleGetConfigConfigGetRequest handles get_config_config_get operation.
 //
-// Get service configuration (sanitized)
+// Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
+// port.
 // Business Requirement: BR-HAPI-128 (Configuration endpoint).
 //
 // GET /config
@@ -157,23 +158,23 @@ func (s *Server) handleGetConfigConfigGetRequest(args [0]string, argsEscaped boo
 	}
 }
 
-// handleHealthCheckHealthGetRequest handles health_check_health_get operation.
+// handleHealthCheckHealthzGetRequest handles health_check_healthz_get operation.
 //
-// Liveness probe endpoint
+// Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 // Business Requirement: BR-HAPI-126 (Health check endpoint).
 //
-// GET /health
-func (s *Server) handleHealthCheckHealthGetRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// GET /healthz
+func (s *Server) handleHealthCheckHealthzGetRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("health_check_health_get"),
+		otelogen.OperationID("health_check_healthz_get"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/health"),
+		semconv.HTTPRouteKey.String("/healthz"),
 	}
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), HealthCheckHealthGetOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), HealthCheckHealthzGetOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -235,9 +236,9 @@ func (s *Server) handleHealthCheckHealthGetRequest(args [0]string, argsEscaped b
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    HealthCheckHealthGetOperation,
+			OperationName:    HealthCheckHealthzGetOperation,
 			OperationSummary: "Health Check",
-			OperationID:      "health_check_health_get",
+			OperationID:      "health_check_healthz_get",
 			Body:             nil,
 			RawBody:          rawBody,
 			Params:           middleware.Parameters{},
@@ -258,12 +259,12 @@ func (s *Server) handleHealthCheckHealthGetRequest(args [0]string, argsEscaped b
 			mreq,
 			nil,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.HealthCheckHealthGet(ctx)
+				response, err = s.h.HealthCheckHealthzGet(ctx)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.HealthCheckHealthGet(ctx)
+		response, err = s.h.HealthCheckHealthzGet(ctx)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -271,7 +272,7 @@ func (s *Server) handleHealthCheckHealthGetRequest(args [0]string, argsEscaped b
 		return
 	}
 
-	if err := encodeHealthCheckHealthGetResponse(response, w, span); err != nil {
+	if err := encodeHealthCheckHealthzGetResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -709,27 +710,25 @@ func (s *Server) handleIncidentSessionStatusEndpointAPIV1IncidentSessionSessionI
 	}
 }
 
-// handleReadinessCheckReadyGetRequest handles readiness_check_ready_get operation.
+// handleReadinessCheckReadyzGetRequest handles readiness_check_readyz_get operation.
 //
-// Readiness probe endpoint
+// Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 // Business Requirements:
 // - BR-HAPI-127 (Readiness check endpoint)
-// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern)
-// TDD GREEN Phase: Check shutdown flag first
-// REFACTOR phase: Real dependency health checks.
+// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern).
 //
-// GET /ready
-func (s *Server) handleReadinessCheckReadyGetRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// GET /readyz
+func (s *Server) handleReadinessCheckReadyzGetRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("readiness_check_ready_get"),
+		otelogen.OperationID("readiness_check_readyz_get"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/ready"),
+		semconv.HTTPRouteKey.String("/readyz"),
 	}
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), ReadinessCheckReadyGetOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ReadinessCheckReadyzGetOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -791,9 +790,9 @@ func (s *Server) handleReadinessCheckReadyGetRequest(args [0]string, argsEscaped
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    ReadinessCheckReadyGetOperation,
+			OperationName:    ReadinessCheckReadyzGetOperation,
 			OperationSummary: "Readiness Check",
-			OperationID:      "readiness_check_ready_get",
+			OperationID:      "readiness_check_readyz_get",
 			Body:             nil,
 			RawBody:          rawBody,
 			Params:           middleware.Parameters{},
@@ -814,12 +813,12 @@ func (s *Server) handleReadinessCheckReadyGetRequest(args [0]string, argsEscaped
 			mreq,
 			nil,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.ReadinessCheckReadyGet(ctx)
+				response, err = s.h.ReadinessCheckReadyzGet(ctx)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.ReadinessCheckReadyGet(ctx)
+		response, err = s.h.ReadinessCheckReadyzGet(ctx)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -827,7 +826,7 @@ func (s *Server) handleReadinessCheckReadyGetRequest(args [0]string, argsEscaped
 		return
 	}
 
-	if err := encodeReadinessCheckReadyGetResponse(response, w, span); err != nil {
+	if err := encodeReadinessCheckReadyzGetResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)

@@ -151,16 +151,18 @@ type DataStorageConfig struct {
 }
 
 type ServerConfig struct {
-	Address    string              `yaml:"address"`
-	Port       int                 `yaml:"port"`
-	HealthAddr string              `yaml:"healthAddr"`
-	MetricsAddr string             `yaml:"metricsAddr"`
-	TLS        sharedtls.TLSConfig `yaml:"tls,omitempty"`
-	TLSProfile string              `yaml:"tlsProfile,omitempty"`
+	Address               string              `yaml:"address"`
+	Port                  int                 `yaml:"port"`
+	HealthAddr            string              `yaml:"healthAddr"`
+	MetricsAddr           string              `yaml:"metricsAddr"`
+	MaxConcurrentRequests int                 `yaml:"maxConcurrentRequests"`
+	TLS                   sharedtls.TLSConfig `yaml:"tls,omitempty"`
+	TLSProfile            string              `yaml:"tlsProfile,omitempty"`
 }
 
 type SessionConfig struct {
-	TTL time.Duration `yaml:"ttl"`
+	TTL                        time.Duration `yaml:"ttl"`
+	MaxConcurrentInvestigations int          `yaml:"maxConcurrentInvestigations"`
 }
 
 type AuditConfig struct {
@@ -169,6 +171,7 @@ type AuditConfig struct {
 	FlushIntervalSeconds float64 `yaml:"flushIntervalSeconds"`
 	BufferSize           int     `yaml:"bufferSize"`
 	BatchSize            int     `yaml:"batchSize"`
+	Verbosity            string  `yaml:"verbosity"`
 }
 
 type MCPConfig struct {
@@ -329,6 +332,11 @@ func (r *LLMRuntimeConfig) Validate(provider string) error {
 			return fmt.Errorf("endpoint is required for provider %q", provider)
 		}
 	}
+	if len(r.CustomHeaders) > 0 {
+		if err := pkgconfig.ValidateHeaderSources(r.CustomHeaders); err != nil {
+			return fmt.Errorf("customHeaders: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -338,12 +346,52 @@ func (c *Config) Validate() error {
 	if err := c.Runtime.Logging.Validate(); err != nil {
 		return err
 	}
+
+	if c.Runtime.Server.Port < 1 || c.Runtime.Server.Port > 65535 {
+		return fmt.Errorf("runtime.server.port must be 1-65535, got %d", c.Runtime.Server.Port)
+	}
+	if c.Runtime.Server.MaxConcurrentRequests < 0 {
+		return fmt.Errorf("runtime.server.maxConcurrentRequests must be non-negative, got %d", c.Runtime.Server.MaxConcurrentRequests)
+	}
+	if c.Runtime.Session.TTL <= 0 {
+		return fmt.Errorf("runtime.session.ttl must be positive, got %v", c.Runtime.Session.TTL)
+	}
+	if c.Runtime.Session.MaxConcurrentInvestigations <= 0 {
+		return fmt.Errorf("runtime.session.maxConcurrentInvestigations must be positive, got %d", c.Runtime.Session.MaxConcurrentInvestigations)
+	}
+	if c.Runtime.Audit.Enabled {
+		if c.Runtime.Audit.BufferSize <= 0 {
+			return fmt.Errorf("runtime.audit.bufferSize must be positive when audit enabled, got %d", c.Runtime.Audit.BufferSize)
+		}
+		if c.Runtime.Audit.BatchSize <= 0 {
+			return fmt.Errorf("runtime.audit.batchSize must be positive when audit enabled, got %d", c.Runtime.Audit.BatchSize)
+		}
+	}
+	switch c.Runtime.Audit.Verbosity {
+	case "full", "standard", "minimal", "":
+	default:
+		return fmt.Errorf("runtime.audit.verbosity must be full, standard, or minimal, got %q", c.Runtime.Audit.Verbosity)
+	}
+
 	if c.AI.Investigation.MaxTurns <= 0 {
 		return fmt.Errorf("ai.investigation.maxTurns must be positive, got %d", c.AI.Investigation.MaxTurns)
 	}
 	if c.AI.Summarizer.MaxToolOutputSize <= 0 {
 		return fmt.Errorf("ai.summarizer.maxToolOutputSize must be positive, got %d", c.AI.Summarizer.MaxToolOutputSize)
 	}
+	if c.AI.Enrichment.MaxRetries < 0 {
+		return fmt.Errorf("ai.enrichment.maxRetries must be non-negative, got %d", c.AI.Enrichment.MaxRetries)
+	}
+	if c.AI.Safety.Anomaly.MaxToolCallsPerTool <= 0 {
+		return fmt.Errorf("ai.safety.anomaly.maxToolCallsPerTool must be positive, got %d", c.AI.Safety.Anomaly.MaxToolCallsPerTool)
+	}
+	if c.AI.Safety.Anomaly.MaxTotalToolCalls <= 0 {
+		return fmt.Errorf("ai.safety.anomaly.maxTotalToolCalls must be positive, got %d", c.AI.Safety.Anomaly.MaxTotalToolCalls)
+	}
+	if c.AI.Safety.Anomaly.MaxRepeatedFailures <= 0 {
+		return fmt.Errorf("ai.safety.anomaly.maxRepeatedFailures must be positive, got %d", c.AI.Safety.Anomaly.MaxRepeatedFailures)
+	}
+
 	if c.AI.LLM.OAuth2.Enabled {
 		if c.AI.LLM.OAuth2.TokenURL == "" {
 			return fmt.Errorf("ai.llm.oauth2.tokenURL is required when oauth2.enabled=true")
@@ -362,6 +410,9 @@ func (c *Config) Validate() error {
 		if c.AI.AlignmentCheck.VerdictTimeout <= 0 {
 			return fmt.Errorf("ai.alignmentCheck.verdictTimeout must be positive when enabled, got %v", c.AI.AlignmentCheck.VerdictTimeout)
 		}
+		if c.AI.AlignmentCheck.MaxRetries < 0 {
+			return fmt.Errorf("ai.alignmentCheck.maxRetries must be non-negative when enabled, got %d", c.AI.AlignmentCheck.MaxRetries)
+		}
 		switch c.AI.AlignmentCheck.Mode {
 		case AlignmentModeEnforce, AlignmentModeMonitor:
 		default:
@@ -376,9 +427,14 @@ func DefaultConfig() *Config {
 	return &Config{
 		Runtime: RuntimeConfig{
 			Logging: internalconfig.DefaultLoggingConfig(),
-			Server:  ServerConfig{Address: "0.0.0.0", Port: 8080, HealthAddr: ":8081", MetricsAddr: ":9090"},
-			Session: SessionConfig{TTL: 30 * time.Minute},
-			Audit:   AuditConfig{Enabled: true},
+			Server:  ServerConfig{Address: "0.0.0.0", Port: 8080, HealthAddr: ":8081", MetricsAddr: ":9090", MaxConcurrentRequests: 100},
+			Session: SessionConfig{TTL: 30 * time.Minute, MaxConcurrentInvestigations: 10},
+			Audit: AuditConfig{
+				Enabled:    true,
+				BufferSize: 100,
+				BatchSize:  10,
+				Verbosity:  "full",
+			},
 		},
 		AI: AIConfig{
 			LLM:           LLMConfig{Provider: "openai"},

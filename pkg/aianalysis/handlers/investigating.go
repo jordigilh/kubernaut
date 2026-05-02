@@ -512,25 +512,25 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatus) (ctrl.Result, error) {
 	h.log.Info("KA session failed",
 		"sessionID", analysis.Status.InvestigationSession.ID,
-		"error", status.Error,
+		"error", status.Error.Value,
 	)
 
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.CompletedAt = &now
 	analysis.Status.ObservedGeneration = analysis.Generation
-	analysis.Status.Message = status.Error
+	analysis.Status.Message = status.Error.Value
 	if analysis.Status.Message == "" {
 		analysis.Status.Message = "Investigation failed on KA side"
 	}
 
 	// Record failure audit
-	failureErr := fmt.Errorf("KA session failed: %s", status.Error)
+	failureErr := fmt.Errorf("KA session failed: %s", status.Error.Value)
 	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
 		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 	}
 
-	msg := status.Error
+	msg := status.Error.Value
 	if msg == "" {
 		msg = "Investigation failed on KA side"
 	}

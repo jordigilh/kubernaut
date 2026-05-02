@@ -114,7 +114,7 @@ func (c *Client) doGet(ctx context.Context, apiPath string, params url.Values) (
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(c.config.SizeLimit)+1))
 	if err != nil {
 		return "", fmt.Errorf("reading response: %w", err)
 	}

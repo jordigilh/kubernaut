@@ -173,6 +173,11 @@ calculate_go_service_coverage() {
             unit_exclude="/(audit|status)/"
             int_include="/(audit|status)/"
             ;;
+        kubernautagent)
+            pkg_pattern="/pkg/kubernautagent/\|/internal/kubernautagent/"
+            unit_exclude="/(server/handler\\.go:|audit/ds_store\\.go:)"
+            int_include="/(server/handler\\.go:|audit/ds_store\\.go:)"
+            ;;
         *)
             echo "0.0%"
             return
@@ -240,9 +245,9 @@ calculate_go_service_coverage() {
     esac
 }
 
-# Calculate Python service coverage (kubernautagent)
-# When CI only has summary data it creates a file with a single TOTAL line; AWK returns 0.0%.
-# Fallback: if result is 0.0% and file has TOTAL line, use that percentage instead.
+# DEPRECATED: Legacy Python coverage calculation for kubernautagent.
+# kubernautagent is now Go-based; coverage is calculated via calculate_go_service_coverage.
+# This function is retained for backward compatibility with pre-v1.4 CI artifacts only.
 calculate_python_service_coverage() {
     local tier="$1"  # unit, integration
     
@@ -321,18 +326,8 @@ output_table() {
     printf "%-25s %-15s %-15s %-15s %-15s\n" "Service" "Unit-Testable" "Integration" "E2E" "All Tiers"
     echo "───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────"
     
-    # Python service first
-    local svc="kubernautagent"
-    if [[ -z "$FILTER_SERVICE" ]] || [[ "$FILTER_SERVICE" == "$svc" ]]; then
-        local unit_cov=$(calculate_python_service_coverage "unit")
-        local int_cov=$(calculate_python_service_coverage "integration")
-        local e2e_cov=$(calculate_python_service_coverage "e2e")
-        local all_cov=$(calculate_python_service_coverage "all")
-        printf "%-25s %-15s %-15s %-15s %-15s\n" "$svc" "$unit_cov" "$int_cov" "$e2e_cov" "$all_cov"
-    fi
-    
-    # Go services
-    for service in aianalysis authwebhook datastorage gateway notification remediationorchestrator signalprocessing workflowexecution; do
+    # All services (Go-based)
+    for service in kubernautagent aianalysis authwebhook datastorage gateway notification remediationorchestrator signalprocessing workflowexecution; do
         if [[ -n "$FILTER_SERVICE" ]] && [[ "$FILTER_SERVICE" != "$service" ]]; then
             continue
         fi
@@ -365,10 +360,9 @@ output_table() {
     echo "   - All Tiers: ≥80% (overall coverage goal)"
     echo ""
     echo "📋 SERVICE-SPECIFIC NOTES:"
-    echo "   • kubernautagent (Hybrid): Unit/Integration are Python (pytest-cov), E2E is Go (Ginkgo)"
-    echo "     - 'All Tiers' shows Python unit total (Python tiers can't merge with Go E2E easily)"
-    echo "     - E2E column shows Go coverage from test/e2e/kubernautagent/ (Ginkgo tests)"
-    echo "   • Go services: 'All Tiers' merges line-by-line coverage from all test tiers"
+    echo "   • kubernautagent (Go): Unit/Integration use Ginkgo (BDD), coverage via Go toolchain"
+    echo "     - coverpkg: pkg/kubernautagent/... + internal/kubernautagent/..."
+    echo "   • All services: 'All Tiers' merges line-by-line coverage from all test tiers"
     echo ""
     echo "📈 Run 'make test-tier-unit test-tier-integration test-tier-e2e' to update all coverage files."
 }
@@ -380,21 +374,8 @@ output_json() {
     
     local first=true
     
-    # Python service
-    if [[ -z "$FILTER_SERVICE" ]] || [[ "$FILTER_SERVICE" == "kubernautagent" ]]; then
-        echo "    {"
-        echo '      "name": "kubernautagent",'
-        echo '      "language": "python",'
-        echo "      \"unit_testable\": \"$(calculate_python_service_coverage unit)\","
-        echo "      \"integration\": \"$(calculate_python_service_coverage integration)\","
-        echo "      \"e2e\": \"$(calculate_python_service_coverage e2e)\","
-        echo "      \"all_tiers\": \"$(calculate_python_service_coverage all)\""
-        echo "    },"
-        first=false
-    fi
-    
-    # Go services
-    for service in aianalysis authwebhook datastorage gateway notification remediationorchestrator signalprocessing workflowexecution; do
+    # All services (Go-based)
+    for service in kubernautagent aianalysis authwebhook datastorage gateway notification remediationorchestrator signalprocessing workflowexecution; do
         if [[ -n "$FILTER_SERVICE" ]] && [[ "$FILTER_SERVICE" != "$service" ]]; then
             continue
         fi
@@ -422,17 +403,8 @@ output_markdown() {
     echo "| Service | Unit-Testable | Integration-Testable | E2E | All Tiers |"
     echo "|---------|---------------|----------------------|-----|-----------|"
     
-    # Python service
-    if [[ -z "$FILTER_SERVICE" ]] || [[ "$FILTER_SERVICE" == "kubernautagent" ]]; then
-        local unit_cov=$(calculate_python_service_coverage "unit")
-        local int_cov=$(calculate_python_service_coverage "integration")
-        local e2e_cov=$(calculate_python_service_coverage "e2e")
-        local all_cov=$(calculate_python_service_coverage "all")
-        echo "| kubernautagent | $unit_cov | $int_cov | $e2e_cov | $all_cov |"
-    fi
-    
-    # Go services
-    for service in aianalysis authwebhook datastorage gateway notification remediationorchestrator signalprocessing workflowexecution; do
+    # All services (Go-based)
+    for service in kubernautagent aianalysis authwebhook datastorage gateway notification remediationorchestrator signalprocessing workflowexecution; do
         if [[ -n "$FILTER_SERVICE" ]] && [[ "$FILTER_SERVICE" != "$service" ]]; then
             continue
         fi

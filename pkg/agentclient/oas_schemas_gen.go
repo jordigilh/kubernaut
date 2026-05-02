@@ -5,6 +5,7 @@ package agentclient
 import (
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
+	"github.com/google/uuid"
 )
 
 // Alternative workflow recommendation for operator context.
@@ -69,6 +70,24 @@ func (s *AlternativeWorkflow) SetConfidence(val float64) {
 func (s *AlternativeWorkflow) SetRationale(val string) {
 	s.Rationale = val
 }
+
+// Ref: #/components/schemas/AnalyzeAccepted
+type AnalyzeAccepted struct {
+	// Unique session identifier for polling.
+	SessionID uuid.UUID `json:"session_id"`
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *AnalyzeAccepted) GetSessionID() uuid.UUID {
+	return s.SessionID
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *AnalyzeAccepted) SetSessionID(val uuid.UUID) {
+	s.SessionID = val
+}
+
+func (*AnalyzeAccepted) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {}
 
 // Business context from SignalProcessing categorization phase.
 // BR-SP-002: Business Classification
@@ -398,11 +417,6 @@ func (s *HumanReviewReason) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
-}
-
-type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON jx.Raw
-
-func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
 type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest HTTPError
@@ -1406,11 +1420,6 @@ type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound
 func (*IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
 }
 
-type IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON jx.Raw
-
-func (*IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {
-}
-
 // NewOptBool returns new OptBool with value set to v.
 func NewOptBool(v bool) OptBool {
 	return OptBool{
@@ -2275,6 +2284,92 @@ func (o OptNilString) Or(d string) string {
 	}
 	return d
 }
+
+// NewOptString returns new OptString with value set to v.
+func NewOptString(v string) OptString {
+	return OptString{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptString is optional string.
+type OptString struct {
+	Value string
+	Set   bool
+}
+
+// IsSet returns true if OptString was set.
+func (o OptString) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptString) Reset() {
+	var v string
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptString) SetTo(v string) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptString) Get() (v string, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptString) Or(d string) string {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// Ref: #/components/schemas/SessionStatus
+type SessionStatus struct {
+	SessionID string `json:"session_id"`
+	Status    string `json:"status"`
+	// Error message when status is failed.
+	Error OptString `json:"error"`
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *SessionStatus) GetSessionID() string {
+	return s.SessionID
+}
+
+// GetStatus returns the value of Status.
+func (s *SessionStatus) GetStatus() string {
+	return s.Status
+}
+
+// GetError returns the value of Error.
+func (s *SessionStatus) GetError() OptString {
+	return s.Error
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *SessionStatus) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// SetStatus sets the value of Status.
+func (s *SessionStatus) SetStatus(val string) {
+	s.Status = val
+}
+
+// SetError sets the value of Error.
+func (s *SessionStatus) SetError(val OptString) {
+	s.Error = val
+}
+
+func (*SessionStatus) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {}
 
 // Canonical severity levels for Kubernaut.
 // Business Requirement: BR-SEVERITY-001 (Standardized Severity Levels)

@@ -27,7 +27,7 @@ func encodeGetConfigConfigGetResponse(response jx.Raw, w http.ResponseWriter, sp
 	return nil
 }
 
-func encodeHealthCheckHealthGetResponse(response jx.Raw, w http.ResponseWriter, span trace.Span) error {
+func encodeHealthCheckHealthzGetResponse(response jx.Raw, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
@@ -45,7 +45,7 @@ func encodeHealthCheckHealthGetResponse(response jx.Raw, w http.ResponseWriter, 
 
 func encodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON:
+	case *AnalyzeAccepted:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(202)
 		span.SetStatus(codes.Ok, http.StatusText(202))
@@ -254,7 +254,7 @@ func encodeIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRe
 
 func encodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse(response IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON:
+	case *SessionStatus:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -298,7 +298,7 @@ func encodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse
 	}
 }
 
-func encodeReadinessCheckReadyGetResponse(response jx.Raw, w http.ResponseWriter, span trace.Span) error {
+func encodeReadinessCheckReadyzGetResponse(response jx.Raw, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))

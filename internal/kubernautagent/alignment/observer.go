@@ -57,17 +57,17 @@ type Observer struct {
 }
 
 // NewObserver creates an Observer backed by the given evaluator.
-// Panics if evaluator is nil to prevent nil deref in SubmitAsync.
+// Returns an error if evaluator is nil to prevent nil deref in SubmitAsync.
 // maxConcurrent limits the number of goroutines; pass 0 for the default.
-func NewObserver(evaluator *Evaluator, maxConcurrent ...int) *Observer {
+func NewObserver(evaluator *Evaluator, maxConcurrent ...int) (*Observer, error) {
 	if evaluator == nil {
-		panic("alignment.NewObserver: evaluator must not be nil")
+		return nil, fmt.Errorf("alignment.NewObserver: evaluator must not be nil")
 	}
 	limit := DefaultMaxConcurrentEvals
 	if len(maxConcurrent) > 0 && maxConcurrent[0] > 0 {
 		limit = maxConcurrent[0]
 	}
-	return &Observer{evaluator: evaluator, sem: make(chan struct{}, limit)}
+	return &Observer{evaluator: evaluator, sem: make(chan struct{}, limit)}, nil
 }
 
 // NextStepIndex returns the next monotonically increasing step index for this

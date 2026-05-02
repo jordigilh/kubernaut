@@ -47,8 +47,12 @@ const (
 	ActionValidation        = "validation"
 	ActionResponseSent      = "response_sent"
 	ActionResponseFailed    = "response_failed"
-	ActionAlignmentEvaluate = "alignment_evaluate"
-	ActionAlignmentVerdict  = "alignment_verdict"
+	ActionAlignmentEvaluate          = "alignment_evaluate"
+	ActionAlignmentVerdict           = "alignment_verdict"
+	ActionSameKindGate               = "same_kind_validation_gate"
+	ActionWorkflowAlignmentGate      = "workflow_target_alignment_gate"
+	ActionTruncationDetected         = "truncation_detected"
+	ActionEnriched                   = "enriched"
 )
 
 const (
@@ -81,6 +85,8 @@ type AuditEvent struct {
 	CorrelationID string
 	ParentEventID *uuid.UUID
 	Data          map[string]interface{}
+	ActorID       string
+	ActorType     string
 }
 
 // AuditStore is the interface for storing audit events (matches pkg/audit.AuditStore).

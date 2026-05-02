@@ -324,7 +324,7 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 
 	if ownerErr != nil && histErr != nil {
 		event := audit.NewEvent(audit.EventTypeEnrichmentFailed, correlationID)
-		event.EventAction = "enriched"
+		event.EventAction = audit.ActionEnriched
 		event.EventOutcome = "failure"
 		event.Data["event_id"] = eventID
 		event.Data["incident_id"] = incidentID
@@ -336,7 +336,7 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 		audit.StoreBestEffort(ctx, e.auditStore, event, e.logger)
 	} else {
 		event := audit.NewEvent(audit.EventTypeEnrichmentCompleted, correlationID)
-		event.EventAction = "enriched"
+		event.EventAction = audit.ActionEnriched
 		event.EventOutcome = "success"
 		event.Data["event_id"] = eventID
 		event.Data["incident_id"] = incidentID
