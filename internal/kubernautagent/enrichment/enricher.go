@@ -25,7 +25,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 )
 
@@ -235,24 +234,13 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 	return nil, err
 }
 
-// isTransientK8sError classifies K8s API errors for observability purposes.
-// IsNoMatchError returns true if the error indicates an unknown Kind/resource
+// IsNoMatchError reports whether the error indicates an unknown Kind/resource
 // type (CRD not registered with the API server). This distinguishes schema
 // limitations (e.g. cert-manager not installed) from actual resource failures.
 func IsNoMatchError(err error) bool {
 	var noResource *meta.NoResourceMatchError
 	var noKind *meta.NoKindMatchError
 	return errors.As(err, &noResource) || errors.As(err, &noKind)
-}
-
-// Not used in the retry path (HAPI retries all errors), but kept for logging
-// and future use in metrics/audit classification.
-func isTransientK8sError(err error) bool {
-	return apierrors.IsTimeout(err) ||
-		apierrors.IsServerTimeout(err) ||
-		apierrors.IsServiceUnavailable(err) ||
-		apierrors.IsInternalError(err) ||
-		apierrors.IsTooManyRequests(err)
 }
 
 // Enrich resolves enrichment data for the given resource.

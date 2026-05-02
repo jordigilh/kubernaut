@@ -581,7 +581,7 @@ func (m *Manager) RecordAssessmentScheduled(ctx context.Context, ea *eav1.Effect
 	}
 	// #277: Duration-based delays replace old timestamp/propagation fields.
 	if ea.Spec.Config.HashComputeDelay != nil && ea.Spec.Config.HashComputeDelay.Duration > 0 {
-		hashDeadline := ea.CreationTimestamp.Time.Add(ea.Spec.Config.HashComputeDelay.Duration)
+		hashDeadline := ea.CreationTimestamp.Add(ea.Spec.Config.HashComputeDelay.Duration)
 		payload.HashComputeAfter = ogenclient.NewOptDateTime(hashDeadline)
 		payload.HashComputeDelay = ogenclient.NewOptString(ea.Spec.Config.HashComputeDelay.Duration.String())
 	}

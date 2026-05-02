@@ -57,23 +57,6 @@ import (
 
 const depTestNamespace = "kubernaut-workflows"
 
-var depTestBaseSchema = func() string {
-	crd := testutil.NewTestWorkflowCRD("dep-test-workflow", "RestartPod", "job")
-	crd.Spec.Description = sharedtypes.StructuredDescription{
-		What:      "Integration test workflow for dependency validation",
-		WhenToUse: "When testing DD-WE-006",
-	}
-	crd.Spec.Labels.Severity = []string{"critical"}
-	crd.Spec.Labels.Environment = []string{"*"}
-	crd.Spec.Labels.Component = []string{"deployment"}
-	crd.Spec.Labels.Priority = "*"
-	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
-	crd.Spec.Parameters = []models.WorkflowParameter{
-		{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected resource"},
-	}
-	return testutil.MarshalWorkflowCRD(crd)
-}()
-
 func depTestBaseSchemaUnique() string {
 	uniqueID := fmt.Sprintf("dep-test-workflow-%d-%s", GinkgoParallelProcess(), uuid.New().String())
 	crd := testutil.NewTestWorkflowCRD(uniqueID, "RestartPod", "job")

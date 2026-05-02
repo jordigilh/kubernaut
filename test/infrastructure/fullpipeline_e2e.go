@@ -83,15 +83,6 @@ func skipMockLLM() bool {
 	return os.Getenv("SKIP_MOCK_LLM") != ""
 }
 
-// getEnvOrDefault returns the value of the environment variable named by key,
-// or fallback if the variable is unset or empty.
-func getEnvOrDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
 // fullPipelineImageConfig defines all images required for the full pipeline E2E.
 // Each entry maps to a BuildImageForKind call.
 var fullPipelineImageConfigs = []E2EImageConfig{

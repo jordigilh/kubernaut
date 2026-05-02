@@ -89,12 +89,12 @@ func ComputeDerivedTiming(creationTimestamp metav1.Time, stabilizationWindow, va
 	}
 
 	if hashComputeDelay != nil && hashComputeDelay.Duration > 0 {
-		anchor := creationTimestamp.Time.Add(hashComputeDelay.Duration)
+		anchor := creationTimestamp.Add(hashComputeDelay.Duration)
 		effectiveValidity := stabilizationWindow + alertDelay + validityWindow
 		checkAfter := metav1.NewTime(anchor.Add(stabilizationWindow))
 		alertCheckAfterTime := checkAfter
 		if alertDelay > 0 {
-			alertCheckAfterTime = metav1.NewTime(checkAfter.Time.Add(alertDelay))
+			alertCheckAfterTime = metav1.NewTime(checkAfter.Add(alertDelay))
 		}
 		return DerivedTiming{
 			CheckAfter:        checkAfter,
@@ -113,16 +113,16 @@ func ComputeDerivedTiming(creationTimestamp metav1.Time, stabilizationWindow, va
 		extended = true
 	}
 
-	checkAfter := metav1.NewTime(creationTimestamp.Time.Add(stabilizationWindow))
+	checkAfter := metav1.NewTime(creationTimestamp.Add(stabilizationWindow))
 	alertCheckAfterTime := checkAfter
 	if alertDelay > 0 {
-		alertCheckAfterTime = metav1.NewTime(checkAfter.Time.Add(alertDelay))
+		alertCheckAfterTime = metav1.NewTime(checkAfter.Add(alertDelay))
 	}
 
 	return DerivedTiming{
 		CheckAfter:        checkAfter,
 		AlertCheckAfter:   alertCheckAfterTime,
-		ValidityDeadline:  metav1.NewTime(creationTimestamp.Time.Add(effectiveValidity)),
+		ValidityDeadline:  metav1.NewTime(creationTimestamp.Add(effectiveValidity)),
 		EffectiveValidity: effectiveValidity,
 		Extended:          extended,
 	}

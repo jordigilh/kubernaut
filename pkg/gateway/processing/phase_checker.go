@@ -156,7 +156,7 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 		if rr.Status.NextAllowedExecution != nil &&
 			time.Now().Before(rr.Status.NextAllowedExecution.Time) {
 			if mostRecentBackoffRR == nil ||
-				rr.Status.NextAllowedExecution.Time.After(mostRecentBackoffRR.Status.NextAllowedExecution.Time) {
+				rr.Status.NextAllowedExecution.After(mostRecentBackoffRR.Status.NextAllowedExecution.Time) {
 				mostRecentBackoffRR = rr
 			}
 		}

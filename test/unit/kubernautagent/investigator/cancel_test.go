@@ -109,14 +109,6 @@ func (s *cancelTestSpyAuditStore) StoreAudit(_ context.Context, event *audit.Aud
 	return nil
 }
 
-func (s *cancelTestSpyAuditStore) getEvents() []*audit.AuditEvent {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	cp := make([]*audit.AuditEvent, len(s.events))
-	copy(cp, s.events)
-	return cp
-}
-
 func (s *cancelTestSpyAuditStore) eventsByType(eventType string) []*audit.AuditEvent {
 	s.mu.Lock()
 	defer s.mu.Unlock()

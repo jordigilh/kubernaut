@@ -177,13 +177,6 @@ func (r *Reconciler) getTargetFunctionalState(ctx context.Context, target eav1.T
 	return obj.Object, spec, ""
 }
 
-// getTargetSpec is a backward-compatible wrapper that returns only the spec map.
-// Used by callers that don't need the full functional state.
-func (r *Reconciler) getTargetSpec(ctx context.Context, target eav1.TargetResource) (map[string]interface{}, string) {
-	_, spec, degradedReason := r.getTargetFunctionalState(ctx, target)
-	return spec, degradedReason
-}
-
 // queryPreRemediationHash queries DataStorage for the pre-remediation spec hash
 // from the RO's remediation.workflow_created audit event.
 // Returns empty string if DS is unavailable or no pre-hash exists (graceful degradation).

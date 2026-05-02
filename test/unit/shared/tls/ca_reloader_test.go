@@ -191,7 +191,7 @@ var _ = Describe("CAReloader (#756)", func() {
 				defer GinkgoRecover()
 				defer wg.Done()
 				pool := reloader.GetCertPool()
-				Expect(pool.Subjects()).ToNot(BeEmpty(),
+				Expect(pool.Subjects()).ToNot(BeEmpty(), //nolint:staticcheck // no alternative for validating cert pool content
 					"cert pool must always contain at least one CA during concurrent access")
 			}()
 			go func() {

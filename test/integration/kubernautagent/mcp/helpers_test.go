@@ -229,17 +229,6 @@ func getMockLLMRequestCount() int {
 	return data.Count
 }
 
-// resetMockLLMTracker resets the Mock LLM's request tracker and fault state.
-func resetMockLLMTracker() {
-	GinkgoHelper()
-	req, err := http.NewRequest(http.MethodPost, sharedMockLLMEndpoint+"/api/test/reset", nil)
-	Expect(err).NotTo(HaveOccurred())
-	resp, err := http.DefaultClient.Do(req)
-	Expect(err).NotTo(HaveOccurred(), "Mock LLM reset should be reachable")
-	defer resp.Body.Close()
-	Expect(resp.StatusCode).To(Equal(http.StatusOK))
-}
-
 // ---------------------------------------------------------------------------
 // Namespace helpers for test isolation
 // ---------------------------------------------------------------------------

@@ -353,7 +353,7 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 			return helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.PreRemediationSpecHash = preHash
 				remediationrequest.SetPreRemediationHashCaptured(rr, true,
-					fmt.Sprintf("Pre-remediation hash captured"), r.Metrics)
+					"Pre-remediation hash captured", r.Metrics)
 				return nil
 			})
 		},
@@ -414,7 +414,7 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 			return helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.PreRemediationSpecHash = preHash
 				remediationrequest.SetPreRemediationHashCaptured(rr, true,
-					fmt.Sprintf("Pre-remediation hash captured"), r.Metrics)
+					"Pre-remediation hash captured", r.Metrics)
 				return nil
 			})
 		},
@@ -839,7 +839,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				}
 			}
 			logger.Info("Deleted expired RemediationRequest (#265)",
-				"retentionExpiryTime", rr.Status.RetentionExpiryTime.Time.Format(time.RFC3339))
+				"retentionExpiryTime", rr.Status.RetentionExpiryTime.Format(time.RFC3339))
 			return ctrl.Result{}, nil
 		}
 
@@ -854,7 +854,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			}); err != nil {
 				logger.Error(err, "Failed to set RetentionExpiryTime")
 			} else {
-				logger.Info("RetentionExpiryTime set (#265)", "expiry", expiry.Time.Format(time.RFC3339))
+				logger.Info("RetentionExpiryTime set (#265)", "expiry", expiry.Format(time.RFC3339))
 			}
 		} else {
 			retentionRequeue = time.Until(rr.Status.RetentionExpiryTime.Time)

@@ -22,15 +22,13 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	sharedauth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 var _ = Describe("MCP tools/call over HTTP — PR6a BR-INTERACTIVE-001", func() {
 
 	var (
-		stack   *realMCPTestStack
-		nsName  string
+		stack  *realMCPTestStack
+		nsName string
 	)
 
 	BeforeEach(func() {
@@ -120,23 +118,3 @@ var _ = Describe("MCP tools/call over HTTP — PR6a BR-INTERACTIVE-001", func() 
 		})
 	})
 })
-
-// fakeAuthMiddlewareWithContext injects the user into the request context
-// via sharedauth.UserContextKey, which the MCP tool handlers use.
-// Kept for any tests that need a fixed-user middleware variant.
-func fakeAuthMiddlewareWithContext(user string) func(http.Handler) http.Handler {
-	return fakeAuthMiddlewareForUser(user)
-}
-
-func fakeAuthMiddlewareForUser(user string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("Authorization") == "" {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
-			ctx := context.WithValue(r.Context(), sharedauth.UserContextKey, user)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}

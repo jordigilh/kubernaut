@@ -49,9 +49,9 @@ type testHarness struct {
 type harnessOption func(*harnessConfig)
 
 type harnessConfig struct {
-	rateLimitCfg  *kaserver.RateLimitConfig
-	authUser      string
-	investigator  kaserver.InvestigationRunner
+	rateLimitCfg *kaserver.RateLimitConfig
+	authUser     string
+	investigator kaserver.InvestigationRunner
 }
 
 func withRateLimit(cfg kaserver.RateLimitConfig) harnessOption {
@@ -60,10 +60,6 @@ func withRateLimit(cfg kaserver.RateLimitConfig) harnessOption {
 
 func withAuthUser(user string) harnessOption {
 	return func(c *harnessConfig) { c.authUser = user }
-}
-
-func withInvestigator(inv kaserver.InvestigationRunner) harnessOption {
-	return func(c *harnessConfig) { c.investigator = inv }
 }
 
 // newTestHarness builds the full route stack and returns a running httptest.Server.
@@ -136,16 +132,6 @@ type blockingInvestigator struct{}
 func (b *blockingInvestigator) Investigate(ctx context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
 	<-ctx.Done()
 	return &katypes.InvestigationResult{RCASummary: "cancelled"}, nil
-}
-
-// fastInvestigator completes immediately with a fixed result.
-type fastInvestigator struct{}
-
-func (f *fastInvestigator) Investigate(_ context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
-	return &katypes.InvestigationResult{
-		RCASummary: "pod OOM killed",
-		Confidence: 0.9,
-	}, nil
 }
 
 // syncAuditRecorder is a thread-safe audit event recorder implementing audit.AuditStore.

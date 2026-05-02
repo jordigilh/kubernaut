@@ -21,8 +21,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 var _ = Describe("Interactive Session Lifecycle — INT BR-INTERACTIVE-001/004/005", Label("integration", "interactive"), func() {
@@ -225,7 +223,7 @@ var _ = Describe("Interactive Session Lifecycle — INT BR-INTERACTIVE-001/004/0
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
 
-			Expect(getMockLLMRequestCount() - baseline).To(Equal(2), "two LLM calls expected — one per session message")
+			Expect(getMockLLMRequestCount()-baseline).To(Equal(2), "two LLM calls expected — one per session message")
 		})
 	})
 
@@ -256,18 +254,3 @@ var _ = Describe("Interactive Session Lifecycle — INT BR-INTERACTIVE-001/004/0
 		})
 	})
 })
-
-// connectAndStartReal connects and starts a session on the real stack, returning session handle and session ID.
-func connectAndStartReal(stack *realMCPTestStack, user, rrID string) (*mcpsdk.ClientSession, string) {
-	session, err := connectMCP(stack.Server, user)
-	Expect(err).NotTo(HaveOccurred())
-	result, err := callInvestigate(session, map[string]any{
-		"rr_id":  rrID,
-		"action": "start",
-	})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(result.IsError).To(BeFalse())
-	output, err := decodeOutput(result)
-	Expect(err).NotTo(HaveOccurred())
-	return session, output["session_id"].(string)
-}

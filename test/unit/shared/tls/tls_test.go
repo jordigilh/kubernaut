@@ -129,7 +129,7 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 
 			pool, err := sharedtls.LoadCACert(certPath)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(pool.Subjects()).ToNot(BeEmpty(), "CA pool should contain at least one certificate subject")
+			Expect(pool.Subjects()).ToNot(BeEmpty(), "CA pool should contain at least one certificate subject") //nolint:staticcheck // no alternative for validating cert pool content
 		})
 
 		// UT-TLS-493-005: LoadCACert returns error on missing file
@@ -147,7 +147,7 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 
 			transport, err := sharedtls.NewTLSTransport(certPath)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(transport.TLSClientConfig.RootCAs.Subjects()).ToNot(BeEmpty(),
+			Expect(transport.TLSClientConfig.RootCAs.Subjects()).ToNot(BeEmpty(), //nolint:staticcheck // no alternative for validating cert pool content
 				"transport CA pool should contain the loaded CA certificate")
 		})
 	})

@@ -94,7 +94,7 @@ var _ = Describe("Context Propagation [BR-STORAGE-042]", func() {
 		cancelledCtx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		_, err := db.DB.QueryContext(cancelledCtx,
+		_, err := db.QueryContext(cancelledCtx,
 			"SELECT event_type, event_data FROM audit_events WHERE correlation_id = $1 AND event_category = 'effectiveness'",
 			"nonexistent")
 		Expect(err).To(HaveOccurred(),

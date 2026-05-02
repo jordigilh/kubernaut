@@ -463,7 +463,7 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 	// If the found RR was created AFTER us, we are the original and must not be blocked.
 	// This prevents circular deadlocks (A blocks B, B blocks A).
 	if !rr.CreationTimestamp.IsZero() && !originalRR.CreationTimestamp.IsZero() {
-		if originalRR.CreationTimestamp.Time.After(rr.CreationTimestamp.Time) {
+		if originalRR.CreationTimestamp.After(rr.CreationTimestamp.Time) {
 			return nil, nil // We are older → we are the original
 		}
 		// Same timestamp: use name as secondary tiebreaker (lexicographic)

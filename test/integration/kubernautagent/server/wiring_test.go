@@ -20,8 +20,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"github.com/go-logr/logr"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -726,20 +726,6 @@ func waitForStatus(h *testHarness, id string, status session.Status) {
 	}, 5*time.Second).Should(Equal(status))
 }
 
-// channelInvestigator waits for proceed, calls emitEvents, then completes.
-type channelInvestigator struct {
-	proceed    chan struct{}
-	emitEvents func(ctx context.Context)
-}
-
-func (c *channelInvestigator) Investigate(ctx context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
-	<-c.proceed
-	if c.emitEvents != nil {
-		c.emitEvents(ctx)
-	}
-	return &katypes.InvestigationResult{RCASummary: "done"}, nil
-}
-
 // newTestHarnessWithManager builds a second harness sharing the same Manager
 // and audit store but with a different auth user. Used for cross-user tests.
 func newTestHarnessWithManager(mgr *session.Manager, auditStore *syncAuditRecorder, user string) *testHarness {
@@ -1032,4 +1018,3 @@ var _ = Describe("Metrics Wiring Integration Tests — BR-KA-OBSERVABILITY-001",
 		})
 	})
 })
-

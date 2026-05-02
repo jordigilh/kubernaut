@@ -60,7 +60,7 @@ func (r *Reconciler) handleWaitingForPropagation(ctx context.Context, rctx *reco
 	ea := rctx.ea
 
 	hashDeadline := rctx.stabilizationAnchor
-	if !(rctx.isAsync && time.Now().Before(hashDeadline.Time)) {
+	if !rctx.isAsync || !time.Now().Before(hashDeadline.Time) {
 		return ctrl.Result{}, false, nil
 	}
 

@@ -85,7 +85,7 @@ func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) [
 // Issue #902: When tlsCaFile is set, uses sharedtls.NewTLSTransport as the
 // base instead of http.DefaultTransport.
 func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) http.RoundTripper {
-	var base http.RoundTripper = http.DefaultTransport
+	var base = http.DefaultTransport
 	needsCustom := false
 
 	if cfg.AI.LLM.TLSCaFile != "" {

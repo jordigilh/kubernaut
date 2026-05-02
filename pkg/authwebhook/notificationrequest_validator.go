@@ -48,7 +48,7 @@ type NotificationRequestValidator struct {
 }
 
 // Ensure NotificationRequestValidator implements webhook.CustomValidator
-var _ webhook.CustomValidator = &NotificationRequestValidator{}
+var _ webhook.CustomValidator = &NotificationRequestValidator{} //nolint:staticcheck // TODO: migrate to admission.Validator
 
 // NewNotificationRequestValidator creates a new NotificationRequest validator
 func NewNotificationRequestValidator(auditStore audit.AuditStore) *NotificationRequestValidator {

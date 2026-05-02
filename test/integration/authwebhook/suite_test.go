@@ -323,7 +323,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Register NotificationRequest DELETE validator (DD-WEBHOOK-003: Complete audit events)
 	nrValidator := authwebhook.NewNotificationRequestValidator(auditStore)
 	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{
-		Handler: admission.WithCustomValidator(scheme.Scheme, &notificationv1.NotificationRequest{}, nrValidator),
+		Handler: admission.WithCustomValidator(scheme.Scheme, &notificationv1.NotificationRequest{}, nrValidator), //nolint:staticcheck // TODO: migrate to admission.WithValidator
 	})
 	GinkgoWriter.Println("   ✅ Registered NotificationRequest DELETE webhook handler")
 

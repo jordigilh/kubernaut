@@ -91,24 +91,6 @@ func waitForDataStorageReady(ctx context.Context, namespace, kubeconfigPath stri
 	return fmt.Errorf("DataStorage pod not ready after 5 minutes")
 }
 
-// createAuthenticatedDataStorageClient creates an authenticated OpenAPI client for DataStorage
-// Pattern: Matches AA E2E client creation (aianalysis_e2e.go lines 271-280)
-// DD-AUTH-014: Uses ServiceAccount token for authentication
-func createAuthenticatedDataStorageClient(dataStorageURL, saToken string) (*ogenclient.Client, error) {
-	client, err := ogenclient.NewClient(
-		dataStorageURL,
-		ogenclient.WithClient(&http.Client{
-			Transport: testauth.NewServiceAccountTransport(saToken),
-			Timeout:   30 * time.Second,
-		}),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create DataStorage client: %w", err)
-	}
-
-	return client, nil
-}
-
 // createTLSAuthenticatedDataStorageClient creates an ogen client that trusts the
 // inter-service CA and injects a ServiceAccount Bearer token.
 // Issue #785: Required for E2E suites where DataStorage serves HTTPS.

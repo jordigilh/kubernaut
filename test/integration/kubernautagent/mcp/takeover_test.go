@@ -18,13 +18,10 @@ package mcp_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
+
 	"github.com/go-logr/logr"
-	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -218,28 +215,3 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 		})
 	})
 })
-
-// jsonRPCToolCall creates a JSON-RPC tools/call request body.
-func jsonRPCToolCall(id int, toolName string, arguments interface{}) string {
-	args, _ := json.Marshal(arguments)
-	return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"%s","arguments":%s}}`, id, toolName, string(args))
-}
-
-// doMCPRequest sends a JSON-RPC request to the MCP endpoint with auth.
-func doMCPRequest(ts *httptest.Server, body string) (*http.Response, string, error) {
-	req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(body))
-	if err != nil {
-		return nil, "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json, text/event-stream")
-	req.Header.Set("Authorization", "Bearer test-token")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
-	return resp, string(respBody), nil
-}

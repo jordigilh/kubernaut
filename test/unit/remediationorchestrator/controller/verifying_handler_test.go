@@ -286,7 +286,7 @@ var _ = Describe("Issue #666: VerifyingHandler (BR-EM-010)", func() {
 
 		It("UT-VER-H-010: safety-net timeout → Completed/VerificationTimedOut + metrics + audit", func() {
 			rr := newRemediationRequest("ver-safety", "default", remediationv1.PhaseVerifying)
-			rr.ObjectMeta.CreationTimestamp = metav1.NewTime(time.Now().Add(-15 * time.Minute))
+			rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-15 * time.Minute))
 			rr.Status.Outcome = "Remediated"
 			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
 				Kind: "EffectivenessAssessment", Name: "ea-ver-safety", Namespace: "default",

@@ -46,7 +46,7 @@ var _ = Describe("UT-SP-668-004: Evaluator Hot-Reload and Lifecycle", func() {
 
 	AfterEach(func() {
 		cancel()
-		os.RemoveAll(tempDir)
+		Expect(os.RemoveAll(tempDir)).To(Succeed())
 	})
 
 	Describe("StartHotReload", func() {

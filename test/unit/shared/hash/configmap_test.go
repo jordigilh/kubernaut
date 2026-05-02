@@ -478,12 +478,12 @@ var _ = Describe("CompositeSpecHash (#396)", func() {
 	})
 
 	It("UT-SH-396-017: should equal CanonicalResourceFingerprint when no ConfigMaps (identity)", func() {
-		composite, err := hash.CompositeSpecHash(specHash, nil)
+		composite, err := hash.CompositeSpecHash(specHash, nil) //nolint:staticcheck // testing deprecated API for backward compat
 		Expect(err).ToNot(HaveOccurred())
 		Expect(composite).To(Equal(specHash),
 			"no ConfigMaps means composite hash is the spec hash itself")
 
-		compositeEmpty, err := hash.CompositeSpecHash(specHash, map[string]string{})
+		compositeEmpty, err := hash.CompositeSpecHash(specHash, map[string]string{}) //nolint:staticcheck // testing deprecated API for backward compat
 		Expect(err).ToNot(HaveOccurred())
 		Expect(compositeEmpty).To(Equal(specHash),
 			"empty map should also return spec hash unchanged")
@@ -494,7 +494,7 @@ var _ = Describe("CompositeSpecHash (#396)", func() {
 			"my-config": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		}
 
-		composite, err := hash.CompositeSpecHash(specHash, configMapHashes)
+		composite, err := hash.CompositeSpecHash(specHash, configMapHashes) //nolint:staticcheck // testing deprecated API for backward compat
 		Expect(err).ToNot(HaveOccurred())
 		Expect(composite).To(HavePrefix("sha256:"))
 		Expect(composite).To(HaveLen(71))
@@ -507,8 +507,8 @@ var _ = Describe("CompositeSpecHash (#396)", func() {
 			"config-a": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		}
 
-		h1, err1 := hash.CompositeSpecHash(specHash, configMapHashes)
-		h2, err2 := hash.CompositeSpecHash(specHash, configMapHashes)
+		h1, err1 := hash.CompositeSpecHash(specHash, configMapHashes) //nolint:staticcheck // testing deprecated API for backward compat
+		h2, err2 := hash.CompositeSpecHash(specHash, configMapHashes) //nolint:staticcheck // testing deprecated API for backward compat
 
 		Expect(err1).ToNot(HaveOccurred())
 		Expect(err2).ToNot(HaveOccurred())
@@ -523,8 +523,8 @@ var _ = Describe("CompositeSpecHash (#396)", func() {
 			"my-config": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
 		}
 
-		hAbsent, err1 := hash.CompositeSpecHash(specHash, absentHashes)
-		hReal, err2 := hash.CompositeSpecHash(specHash, realHashes)
+		hAbsent, err1 := hash.CompositeSpecHash(specHash, absentHashes) //nolint:staticcheck // testing deprecated API for backward compat
+		hReal, err2 := hash.CompositeSpecHash(specHash, realHashes)   //nolint:staticcheck // testing deprecated API for backward compat
 
 		Expect(err1).ToNot(HaveOccurred())
 		Expect(err2).ToNot(HaveOccurred())
@@ -540,8 +540,8 @@ var _ = Describe("CompositeSpecHash (#396)", func() {
 			"my-config": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		}
 
-		hV1, err1 := hash.CompositeSpecHash(specHash, hashesV1)
-		hV2, err2 := hash.CompositeSpecHash(specHash, hashesV2)
+		hV1, err1 := hash.CompositeSpecHash(specHash, hashesV1) //nolint:staticcheck // testing deprecated API for backward compat
+		hV2, err2 := hash.CompositeSpecHash(specHash, hashesV2) //nolint:staticcheck // testing deprecated API for backward compat
 
 		Expect(err1).ToNot(HaveOccurred())
 		Expect(err2).ToNot(HaveOccurred())
@@ -559,8 +559,8 @@ var _ = Describe("CompositeSpecHash (#396)", func() {
 			"config-a": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		}
 
-		hAB, err1 := hash.CompositeSpecHash(specHash, hashesAB)
-		hBA, err2 := hash.CompositeSpecHash(specHash, hashesBA)
+		hAB, err1 := hash.CompositeSpecHash(specHash, hashesAB) //nolint:staticcheck // testing deprecated API for backward compat
+		hBA, err2 := hash.CompositeSpecHash(specHash, hashesBA) //nolint:staticcheck // testing deprecated API for backward compat
 
 		Expect(err1).ToNot(HaveOccurred())
 		Expect(err2).ToNot(HaveOccurred())

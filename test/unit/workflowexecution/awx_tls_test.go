@@ -150,14 +150,14 @@ var _ = Describe("AWXHTTPClient TLS CA (Issue #902)", func() {
 			// Set TLS_CA_FILE before constructing the client so that
 			// DefaultBaseTransport picks up our test CA via CAReloader.
 			origVal, wasSet := os.LookupEnv("TLS_CA_FILE")
-			os.Setenv("TLS_CA_FILE", caPath)
-			defer func() {
+			Expect(os.Setenv("TLS_CA_FILE", caPath)).To(Succeed())
+			DeferCleanup(func() {
 				if wasSet {
-					os.Setenv("TLS_CA_FILE", origVal)
+					Expect(os.Setenv("TLS_CA_FILE", origVal)).To(Succeed())
 				} else {
-					os.Unsetenv("TLS_CA_FILE")
+					Expect(os.Unsetenv("TLS_CA_FILE")).To(Succeed())
 				}
-			}()
+			})
 
 			client, err := executor.NewAWXHTTPClient(server.URL, "test-token")
 			Expect(err).ToNot(HaveOccurred())
