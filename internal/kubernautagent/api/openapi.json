@@ -26,10 +26,12 @@
         },
         "responses": {
           "202": {
-            "description": "Successful Response",
+            "description": "Investigation accepted",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeAccepted"
+                }
               }
             }
           },
@@ -382,10 +384,12 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Session status",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatus"
+                }
               }
             }
           },
@@ -433,11 +437,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Investigation result (completed or failed). Check the status field to distinguish.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IncidentResponse"
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/IncidentResponse" },
+                    { "$ref": "#/components/schemas/InvestigationFailed" }
+                  ],
+                  "discriminator": {
+                    "propertyName": "status"
+                  }
                 }
               }
             }
@@ -453,7 +463,7 @@
             }
           },
           "409": {
-            "description": "Session not yet completed",
+            "description": "Session still in progress (pending/running)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -475,14 +485,15 @@
         }
       }
     },
-    "/health": {
+    "/healthz": {
       "get": {
         "tags": [
           "Health"
         ],
         "summary": "Health Check",
-        "description": "Liveness probe endpoint\n\nBusiness Requirement: BR-HAPI-126 (Health check endpoint)",
-        "operationId": "health_check_health_get",
+        "description": "Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.\n\nBusiness Requirement: BR-HAPI-126 (Health check endpoint)",
+        "operationId": "health_check_healthz_get",
+        "x-port": 8081,
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -495,14 +506,15 @@
         }
       }
     },
-    "/ready": {
+    "/readyz": {
       "get": {
         "tags": [
           "Health"
         ],
         "summary": "Readiness Check",
-        "description": "Readiness probe endpoint\n\nBusiness Requirements:\n- BR-HAPI-127 (Readiness check endpoint)\n- BR-HAPI-201 (Graceful shutdown with DD-007 pattern)\n\nTDD GREEN Phase: Check shutdown flag first\nREFACTOR phase: Real dependency health checks",
-        "operationId": "readiness_check_ready_get",
+        "description": "Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.\n\nBusiness Requirements:\n- BR-HAPI-127 (Readiness check endpoint)\n- BR-HAPI-201 (Graceful shutdown with DD-007 pattern)",
+        "operationId": "readiness_check_readyz_get",
+        "x-port": 8081,
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -521,8 +533,9 @@
           "Health"
         ],
         "summary": "Get Config",
-        "description": "Get service configuration (sanitized)\n\nBusiness Requirement: BR-HAPI-128 (Configuration endpoint)",
+        "description": "Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API port.\n\nBusiness Requirement: BR-HAPI-128 (Configuration endpoint)",
         "operationId": "get_config_config_get",
+        "x-port": 8081,
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -538,6 +551,54 @@
   },
   "components": {
     "schemas": {
+      "AnalyzeAccepted": {
+        "type": "object",
+        "required": ["session_id"],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique session identifier for polling"
+          }
+        }
+      },
+      "SessionStatus": {
+        "type": "object",
+        "required": ["session_id", "status", "created_at"],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "running", "completed", "failed"]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InvestigationFailed": {
+        "type": "object",
+        "required": ["session_id", "status"],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["failed"],
+            "description": "Always 'failed' for this schema"
+          },
+          "error_detail": {
+            "type": "string",
+            "description": "Human-readable error description (sanitized, no internal details)"
+          }
+        }
+      },
       "AlternativeWorkflow": {
         "properties": {
           "workflow_id": {

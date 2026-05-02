@@ -48,7 +48,7 @@ var _ = Describe("Response Mapper — #433", func() {
 	Describe("UT-KA-433-MAPPER-001: IncidentID is populated from session metadata", func() {
 		It("should set IncidentID in the response from session metadata", func() {
 			metadata := map[string]string{"incident_id": "e2e-ka-001-oom"}
-			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return &katypes.InvestigationResult{
 					RCASummary: "OOMKilled due to memory limit",
 					Confidence: 0.85,
@@ -78,7 +78,7 @@ var _ = Describe("Response Mapper — #433", func() {
 
 	Describe("UT-KA-433-MAPPER-002: Timestamp is set to a non-empty RFC3339 value", func() {
 		It("should set a valid Timestamp on the response", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return &katypes.InvestigationResult{
 					RCASummary: "CrashLoopBackOff",
 					Confidence: 0.70,
@@ -110,7 +110,7 @@ var _ = Describe("Response Mapper — #433", func() {
 
 	Describe("UT-KA-433-MAPPER-003: RootCauseAnalysis is populated from RCASummary", func() {
 		It("should set RootCauseAnalysis as a structured map", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return &katypes.InvestigationResult{
 					RCASummary: "Pod killed due to exceeding memory limits",
 					Confidence: 0.90,

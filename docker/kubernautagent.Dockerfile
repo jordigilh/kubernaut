@@ -61,7 +61,7 @@ COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /opt/app-root/src/kubernautagent /kubernautagent
 USER 65534
-EXPOSE 8080
+EXPOSE 8080 8081 9090
 ENTRYPOINT ["/kubernautagent"]
 
 ARG APP_VERSION=v1.4.0
@@ -97,7 +97,7 @@ RUN useradd -r -u 1001 -g root kubernautagent-user
 COPY --from=builder /opt/app-root/src/kubernautagent /usr/local/bin/kubernautagent
 RUN chmod +x /usr/local/bin/kubernautagent
 USER 1001
-EXPOSE 8080
+EXPOSE 8080 8081 9090
 ENTRYPOINT ["/usr/local/bin/kubernautagent"]
 
 ARG APP_VERSION=v1.4.0

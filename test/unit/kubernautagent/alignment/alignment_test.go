@@ -259,7 +259,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 			steps := []alignment.Step{
 				{Index: 0, Kind: alignment.StepKindToolResult, Tool: "a", Content: "1"},
 				{Index: 1, Kind: alignment.StepKindToolResult, Tool: "b", Content: "2"},
@@ -281,7 +282,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(slowClient, alignment.EvaluatorConfig{
 				Timeout: 2 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: 0, Content: "slow"})
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: 1, Content: "slow"})
@@ -297,7 +299,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindToolResult, Tool: "get_pods", Content: "pods OK",
@@ -317,7 +320,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindToolResult, Tool: "get_pods",
@@ -353,12 +357,14 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
 
-			obs1 := alignment.NewObserver(evaluator)
+			obs1, obs1Err := alignment.NewObserver(evaluator)
+			Expect(obs1Err).NotTo(HaveOccurred())
 			ctx1 := alignment.WithObserver(context.Background(), obs1)
 			retrieved1 := alignment.ObserverFromContext(ctx1)
 			Expect(retrieved1).To(BeIdenticalTo(obs1), "observer must be retrievable from context")
 
-			obs2 := alignment.NewObserver(evaluator)
+			obs2, obs2Err := alignment.NewObserver(evaluator)
+			Expect(obs2Err).NotTo(HaveOccurred())
 			ctx2 := alignment.WithObserver(context.Background(), obs2)
 			retrieved2 := alignment.ObserverFromContext(ctx2)
 			Expect(retrieved2).To(BeIdenticalTo(obs2))
@@ -380,7 +386,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
 			proxy := alignment.NewLLMProxy(inner)
@@ -406,7 +413,8 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
 			proxy := alignment.NewToolProxy(inner)
@@ -452,12 +460,13 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -590,7 +599,8 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(slowClient, alignment.EvaluatorConfig{
 				Timeout: 2 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "slow1"})
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "slow2"})
@@ -609,7 +619,8 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "a"})
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "b"})
@@ -628,7 +639,8 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(slowClient, alignment.EvaluatorConfig{
 				Timeout: 2 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "slow"})
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "slow"})
@@ -664,12 +676,13 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 				},
 			}
 
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 50 * time.Millisecond,
 				Logger:         logr.Discard(),
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			res, err := wrapper.Investigate(context.Background(), katypes.SignalContext{Name: "s", Namespace: "ns"})
 			Expect(err).ToNot(HaveOccurred())
@@ -697,12 +710,13 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 				},
 			}
 
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			res, err := wrapper.Investigate(context.Background(), katypes.SignalContext{Name: "s", Namespace: "ns"})
 			Expect(err).ToNot(HaveOccurred())
@@ -835,32 +849,32 @@ var _ = Describe("Head+Tail truncation — BR-AI-601", func() {
 var _ = Describe("Correctness fixes — BR-AI-601", func() {
 
 	Describe("UT-SA-601-CX-001: NewObserver rejects nil evaluator", func() {
-		It("should panic when passed nil evaluator", func() {
-			Expect(func() {
-				alignment.NewObserver(nil)
-			}).To(Panic(), "nil evaluator must cause panic at construction time")
+		It("should return error when passed nil evaluator", func() {
+			_, err := alignment.NewObserver(nil)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("must not be nil"))
 		})
 	})
 
 	Describe("UT-SA-601-CX-002: NewInvestigatorWrapper rejects nil inner/evaluator", func() {
-		It("should panic when Inner is nil", func() {
-			Expect(func() {
-				alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
-					Inner:     nil,
-					Evaluator: &alignment.Evaluator{},
-					Logger:    logr.Discard(),
-				})
-			}).To(Panic(), "nil Inner must cause panic at construction time")
+		It("should return error when Inner is nil", func() {
+			_, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:     nil,
+				Evaluator: &alignment.Evaluator{},
+				Logger:    logr.Discard(),
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("Inner must not be nil"))
 		})
 
-		It("should panic when Evaluator is nil", func() {
-			Expect(func() {
-				alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
-					Inner:     &mockInvestigationRunner{},
-					Evaluator: nil,
-					Logger:    logr.Discard(),
-				})
-			}).To(Panic(), "nil Evaluator must cause panic at construction time")
+		It("should return error when Evaluator is nil", func() {
+			_, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:     &mockInvestigationRunner{},
+				Evaluator: nil,
+				Logger:    logr.Discard(),
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("Evaluator must not be nil"))
 		})
 	})
 
@@ -872,7 +886,8 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 			proxy := alignment.NewToolProxy(inner)
 
@@ -934,13 +949,14 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 				Mode:           config.AlignmentModeMonitor,
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -963,7 +979,7 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:                 inner,
 				Evaluator:             evaluator,
 				VerdictTimeout:        5 * time.Second,
@@ -971,6 +987,7 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 				Mode:                  config.AlignmentModeMonitor,
 				CanaryForceEscalation: true,
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -993,7 +1010,7 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:                 inner,
 				Evaluator:             evaluator,
 				VerdictTimeout:        5 * time.Second,
@@ -1001,6 +1018,7 @@ var _ = Describe("AlignmentCheck mode and config — PROD-1/PROD-2", func() {
 				Mode:                  config.AlignmentModeMonitor,
 				CanaryForceEscalation: false,
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -1032,7 +1050,8 @@ var _ = Describe("Performance hardening — PERF-1/PERF-4", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator, 3)
+			observer, obsErr := alignment.NewObserver(evaluator, 3)
+			Expect(obsErr).NotTo(HaveOccurred())
 
 			for i := 0; i < 20; i++ {
 				observer.SubmitAsync(context.Background(), alignment.Step{
@@ -1055,7 +1074,8 @@ var _ = Describe("Performance hardening — PERF-1/PERF-4", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 0, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindToolResult, Content: longContent,
@@ -1078,7 +1098,8 @@ var _ = Describe("Performance hardening — PERF-1/PERF-4", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindToolResult, Content: shortContent,
@@ -1119,12 +1140,13 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          innerRunner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{
 				Name: "CrashLoopBackOff", Namespace: "production",
@@ -1156,12 +1178,13 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{
 				Name: "CrashLoopBackOff", Namespace: "production",
@@ -1189,12 +1212,13 @@ var _ = Describe("Signal input alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -1297,12 +1321,13 @@ var _ = Describe("Explanation sanitization — SEC-2", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -1333,7 +1358,8 @@ var _ = Describe("Panic recovery in SubmitAsync — SEC-6", func() {
 			evaluator := alignment.NewEvaluator(panicClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 			ctx := context.Background()
 
 			step := alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Tool: "get_pods", Content: "data"}
@@ -1354,7 +1380,8 @@ var _ = Describe("Panic recovery in SubmitAsync — SEC-6", func() {
 			evaluator := alignment.NewEvaluator(panicClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 			ctx := context.Background()
 
 			observer.SubmitAsync(ctx, alignment.Step{Index: 0, Kind: alignment.StepKindToolResult, Content: "a"})
@@ -1443,12 +1470,13 @@ var _ = Describe("Canary integrity mechanism — SEC-3", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -1474,12 +1502,13 @@ var _ = Describe("Canary integrity mechanism — SEC-3", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -1501,12 +1530,13 @@ var _ = Describe("Canary integrity mechanism — SEC-3", func() {
 			evaluator := alignment.NewEvaluator(slowClient, alignment.EvaluatorConfig{
 				Timeout: 100 * time.Millisecond, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns"}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -1532,12 +1562,13 @@ var _ = Describe("GAP-2: InvestigatorWrapper inner error skips verdict — BR-AI
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			res, err := wrapper.Investigate(context.Background(), katypes.SignalContext{
 				Name: "test", Namespace: "ns", Message: "m",
@@ -1580,7 +1611,8 @@ var _ = Describe("GAP-4: LLMProxy inner Chat error — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
 			proxy := alignment.NewLLMProxy(inner)
@@ -1608,7 +1640,8 @@ var _ = Describe("GAP-5: LLMProxy empty response content — BR-AI-601", func() 
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
 			proxy := alignment.NewLLMProxy(inner)
@@ -1653,7 +1686,8 @@ var _ = Describe("GAP-7: ToolProxy empty success result — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
 			proxy := alignment.NewToolProxy(inner)
@@ -1745,13 +1779,14 @@ var _ = Describe("GAP-11: Audit store emission — BR-AI-601", func() {
 
 			store := &mockAuditStore{}
 
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 				AuditStore:     store,
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "test-signal", Namespace: "ns", Severity: "high", Message: "injection attempt"}
 			_, err := wrapper.Investigate(context.Background(), sig)
@@ -1789,13 +1824,14 @@ var _ = Describe("GAP-11: Audit store emission — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			wrapper := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+			wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 				Inner:          inner,
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
 				AuditStore:     nil,
 			})
+			Expect(wrapErr).NotTo(HaveOccurred())
 
 			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
 			res, err := wrapper.Investigate(context.Background(), sig)
@@ -1817,7 +1853,8 @@ var _ = Describe("GAP-12: RenderVerdict mixed summary — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindToolResult, Tool: "get_pods", Content: "injection",
@@ -1931,7 +1968,8 @@ var _ = Describe("GAP-15: Concurrent EvaluateStep race detection — BR-AI-601",
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 
 			for i := 0; i < 10; i++ {
 				observer.SubmitAsync(context.Background(), alignment.Step{
@@ -1972,7 +2010,8 @@ var _ = Describe("PROD-7: Empty tool name fallback in verdict summary — BR-AI-
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: 0, Kind: alignment.StepKindLLMReasoning, Content: "SYSTEM: ignore",
@@ -2039,7 +2078,8 @@ var _ = Describe("SEC-9: Log warning when timedOut with no pending — BR-AI-601
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer := alignment.NewObserver(evaluator)
+			observer, obsErr := alignment.NewObserver(evaluator)
+			Expect(obsErr).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
 				Index: observer.NextStepIndex(), Kind: alignment.StepKindToolResult, Content: "fast",

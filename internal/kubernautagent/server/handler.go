@@ -107,7 +107,7 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 	metadata := map[string]string{
 		"incident_id": req.IncidentID,
 	}
-	sessionID, err := h.sessions.StartInvestigation(ctx, func(bgCtx context.Context) (interface{}, error) {
+	sessionID, err := h.sessions.StartInvestigation(ctx, func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
 		return h.investigator.Investigate(bgCtx, signal)
 	}, metadata)
 	if err != nil {
@@ -115,13 +115,23 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
 			Type:     "https://kubernaut.ai/problems/internal-error",
 			Title:    "Internal Server Error",
-			Detail:   "failed to start investigation: " + err.Error(),
+			Detail:   "internal server error",
 			Status:   500,
 			Instance: "/api/v1/incident/analyze",
 		}, nil
 	}
 
-	body, _ := json.Marshal(map[string]string{"session_id": sessionID})
+	body, err := json.Marshal(map[string]string{"session_id": sessionID})
+	if err != nil {
+		h.logger.Error(err, "failed to marshal session response", "session_id", sessionID)
+		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
+			Type:     "https://kubernaut.ai/problems/internal-error",
+			Title:    "Internal Server Error",
+			Detail:   "internal server error",
+			Status:   500,
+			Instance: "/api/v1/incident/analyze",
+		}, nil
+	}
 	raw := agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON(body)
 	return &raw, nil
 }
@@ -143,14 +153,24 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 			}, nil
 		}
 		h.logger.Error(err, "session lookup failed", "session_id", params.SessionID)
-		return nil, fmt.Errorf("session lookup: %w", err)
+		return &agentclient.HTTPError{
+			Type:     "https://kubernaut.ai/problems/internal-error",
+			Title:    "Internal Server Error",
+			Detail:   "internal server error",
+			Status:   500,
+			Instance: fmt.Sprintf("/api/v1/incident/session/%s", params.SessionID),
+		}, nil
 	}
 
 	status := mapSessionStatusToAPI(sess.Status)
-	body, _ := json.Marshal(map[string]string{
+	body, err := json.Marshal(map[string]string{
 		"session_id": sess.ID,
 		"status":     status,
 	})
+	if err != nil {
+		h.logger.Error(err, "failed to marshal session status", "session_id", sess.ID)
+		return nil, fmt.Errorf("marshal session status: %w", err)
+	}
 	raw := agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON(body)
 	return &raw, nil
 }
@@ -173,26 +193,19 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 			}, nil
 		}
 		h.logger.Error(err, "session lookup failed", "session_id", params.SessionID)
-		return nil, fmt.Errorf("session lookup: %w", err)
+		return nil, fmt.Errorf("internal server error")
 	}
 
-	if sess.Status != session.StatusCompleted {
+	switch sess.Status {
+	case session.StatusCompleted:
+		// fall through to result mapping
+	case session.StatusFailed:
+		return mapFailedSessionToResponse(sess), nil
+	default:
 		return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{
 			Type:     "https://kubernaut.ai/problems/session-not-completed",
 			Title:    "Session Not Completed",
 			Detail:   fmt.Sprintf("session %s is %s, not completed", params.SessionID, mapSessionStatusToAPI(sess.Status)),
-			Status:   409,
-			Instance: fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID),
-		}, nil
-	}
-
-	result, ok := sess.Result.(*katypes.InvestigationResult)
-	if !ok {
-		h.logger.Error(nil, "unexpected result type in session", "session_id", sess.ID)
-		return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{
-			Type:     "https://kubernaut.ai/problems/session-not-completed",
-			Title:    "Session Not Completed",
-			Detail:   "session result is not an investigation result",
 			Status:   409,
 			Instance: fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID),
 		}, nil
@@ -203,7 +216,7 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 		incidentID = sess.Metadata["incident_id"]
 	}
 
-	resp := mapInvestigationResultToResponse(h.logger, result, incidentID)
+	resp := mapInvestigationResultToResponse(h.logger, sess.Result, incidentID)
 	return resp, nil
 }
 
@@ -276,6 +289,24 @@ func mapSessionStatusToAPI(s session.Status) string {
 	}
 }
 
+func mapFailedSessionToResponse(sess *session.Session) *agentclient.IncidentResponse {
+	detail := "investigation failed"
+	if sess.Error != nil {
+		detail = "investigation failed"
+	}
+	var incidentID string
+	if sess.Metadata != nil {
+		incidentID = sess.Metadata["incident_id"]
+	}
+	return &agentclient.IncidentResponse{
+		IncidentID:       incidentID,
+		Analysis:         detail,
+		Confidence:       0,
+		Timestamp:        sess.CreatedAt.Format(time.RFC3339),
+		NeedsHumanReview: agentclient.NewOptBool(true),
+	}
+}
+
 func mapInvestigationResultToResponse(log logr.Logger, r *katypes.InvestigationResult, incidentID string) *agentclient.IncidentResponse {
 	resp := &agentclient.IncidentResponse{
 		IncidentID: incidentID,
@@ -286,32 +317,39 @@ func mapInvestigationResultToResponse(log logr.Logger, r *katypes.InvestigationR
 
 	rca := agentclient.IncidentResponseRootCauseAnalysis{}
 	if r.RCASummary != "" {
-		summaryRaw, _ := json.Marshal(r.RCASummary)
-		rca["summary"] = jx.Raw(summaryRaw)
+		if raw := marshalField(log, "summary", r.RCASummary); raw != nil {
+			rca["summary"] = raw
+		}
 	}
 	if r.Severity != "" {
-		sevRaw, _ := json.Marshal(r.Severity)
-		rca["severity"] = jx.Raw(sevRaw)
+		if raw := marshalField(log, "severity", r.Severity); raw != nil {
+			rca["severity"] = raw
+		}
 	}
 	if r.RemediationTarget.Kind != "" {
-		targetRaw, _ := json.Marshal(r.RemediationTarget)
-		rca["remediationTarget"] = jx.Raw(targetRaw)
+		if raw := marshalField(log, "remediationTarget", r.RemediationTarget); raw != nil {
+			rca["remediationTarget"] = raw
+		}
 	}
 	if r.SignalName != "" {
-		snRaw, _ := json.Marshal(r.SignalName)
-		rca["signal_name"] = jx.Raw(snRaw)
+		if raw := marshalField(log, "signal_name", r.SignalName); raw != nil {
+			rca["signal_name"] = raw
+		}
 	}
 	if len(r.ContributingFactors) > 0 {
-		cfRaw, _ := json.Marshal(r.ContributingFactors)
-		rca["contributing_factors"] = jx.Raw(cfRaw)
+		if raw := marshalField(log, "contributing_factors", r.ContributingFactors); raw != nil {
+			rca["contributing_factors"] = raw
+		}
 	}
 	if len(r.CausalChain) > 0 {
-		ccRaw, _ := json.Marshal(r.CausalChain)
-		rca["causal_chain"] = jx.Raw(ccRaw)
+		if raw := marshalField(log, "causal_chain", r.CausalChain); raw != nil {
+			rca["causal_chain"] = raw
+		}
 	}
 	if r.DueDiligence != nil {
-		ddRaw, _ := json.Marshal(r.DueDiligence)
-		rca["due_diligence"] = jx.Raw(ddRaw)
+		if raw := marshalField(log, "due_diligence", r.DueDiligence); raw != nil {
+			rca["due_diligence"] = raw
+		}
 	}
 	resp.RootCauseAnalysis = rca
 
@@ -333,37 +371,46 @@ func mapInvestigationResultToResponse(log logr.Logger, r *katypes.InvestigationR
 
 	if r.WorkflowID != "" {
 		sw := agentclient.IncidentResponseSelectedWorkflow{}
-		wfIDRaw, _ := json.Marshal(r.WorkflowID)
-		sw["workflow_id"] = jx.Raw(wfIDRaw)
-		if len(r.Parameters) > 0 {
-			paramsRaw, _ := json.Marshal(r.Parameters)
-			sw["parameters"] = jx.Raw(paramsRaw)
+		if raw := marshalField(log, "workflow_id", r.WorkflowID); raw != nil {
+			sw["workflow_id"] = raw
 		}
-		confRaw, _ := json.Marshal(r.Confidence)
-		sw["confidence"] = jx.Raw(confRaw)
+		if len(r.Parameters) > 0 {
+			if raw := marshalField(log, "parameters", r.Parameters); raw != nil {
+				sw["parameters"] = raw
+			}
+		}
+		if raw := marshalField(log, "confidence", r.Confidence); raw != nil {
+			sw["confidence"] = raw
+		}
 		if r.ExecutionBundle != "" {
-			ebRaw, _ := json.Marshal(r.ExecutionBundle)
-			sw["execution_bundle"] = jx.Raw(ebRaw)
+			if raw := marshalField(log, "execution_bundle", r.ExecutionBundle); raw != nil {
+				sw["execution_bundle"] = raw
+			}
 		}
 		if r.ExecutionBundleDigest != "" {
-			ebdRaw, _ := json.Marshal(r.ExecutionBundleDigest)
-			sw["execution_bundle_digest"] = jx.Raw(ebdRaw)
+			if raw := marshalField(log, "execution_bundle_digest", r.ExecutionBundleDigest); raw != nil {
+				sw["execution_bundle_digest"] = raw
+			}
 		}
 		if r.ExecutionEngine != "" {
-			eeRaw, _ := json.Marshal(r.ExecutionEngine)
-			sw["execution_engine"] = jx.Raw(eeRaw)
+			if raw := marshalField(log, "execution_engine", r.ExecutionEngine); raw != nil {
+				sw["execution_engine"] = raw
+			}
 		}
 		if r.ServiceAccountName != "" {
-			saRaw, _ := json.Marshal(r.ServiceAccountName)
-			sw["service_account_name"] = jx.Raw(saRaw)
+			if raw := marshalField(log, "service_account_name", r.ServiceAccountName); raw != nil {
+				sw["service_account_name"] = raw
+			}
 		}
 		if r.WorkflowVersion != "" {
-			vRaw, _ := json.Marshal(r.WorkflowVersion)
-			sw["version"] = jx.Raw(vRaw)
+			if raw := marshalField(log, "version", r.WorkflowVersion); raw != nil {
+				sw["version"] = raw
+			}
 		}
 		if r.WorkflowRationale != "" {
-			rRaw, _ := json.Marshal(r.WorkflowRationale)
-			sw["rationale"] = jx.Raw(rRaw)
+			if raw := marshalField(log, "rationale", r.WorkflowRationale); raw != nil {
+				sw["rationale"] = raw
+			}
 		}
 		resp.SelectedWorkflow.SetTo(sw)
 	}
@@ -382,8 +429,9 @@ func mapInvestigationResultToResponse(log logr.Logger, r *katypes.InvestigationR
 	if len(r.DetectedLabels) > 0 {
 		dl := make(agentclient.IncidentResponseDetectedLabels, len(r.DetectedLabels))
 		for k, v := range r.DetectedLabels {
-			raw, _ := json.Marshal(v)
-			dl[k] = jx.Raw(raw)
+			if raw := marshalField(log, "detected_label:"+k, v); raw != nil {
+				dl[k] = raw
+			}
 		}
 		resp.DetectedLabels.SetTo(dl)
 	}
@@ -483,4 +531,14 @@ func mapHumanReviewReason(reason string) (agentclient.HumanReviewReason, bool) {
 	default:
 		return agentclient.HumanReviewReasonInvestigationInconclusive, true
 	}
+}
+
+// marshalField marshals v to JSON. On failure it logs the error and returns nil.
+func marshalField(log logr.Logger, key string, v interface{}) jx.Raw {
+	b, err := json.Marshal(v)
+	if err != nil {
+		log.Error(err, "failed to marshal response field", "field", key)
+		return nil
+	}
+	return jx.Raw(b)
 }

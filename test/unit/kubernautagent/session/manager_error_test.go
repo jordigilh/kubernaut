@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 )
 
 var _ = Describe("UT-KA-948: Session manager logs store.Update errors — BR-AUDIT-005", func() {
@@ -49,10 +50,10 @@ var _ = Describe("UT-KA-948: Session manager logs store.Update errors — BR-AUD
 			mgr := session.NewManager(store, logger)
 
 			done := make(chan struct{})
-			_, err := mgr.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			_, err := mgr.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				time.Sleep(50 * time.Millisecond)
 				close(done)
-				return "result", nil
+				return &katypes.InvestigationResult{RCASummary: "result"}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 

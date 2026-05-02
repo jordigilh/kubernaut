@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 )
 
 // Status represents the lifecycle state of an investigation session.
@@ -39,7 +41,7 @@ const (
 type Session struct {
 	ID        string
 	Status    Status
-	Result    interface{}
+	Result    *katypes.InvestigationResult
 	Error     error
 	CreatedAt time.Time
 	Metadata  map[string]string
@@ -110,7 +112,7 @@ func (s *Store) SetMetadata(id string, metadata map[string]string) {
 }
 
 // Update modifies an existing session.
-func (s *Store) Update(id string, status Status, result interface{}, err error) error {
+func (s *Store) Update(id string, status Status, result *katypes.InvestigationResult, err error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess, ok := s.sessions[id]

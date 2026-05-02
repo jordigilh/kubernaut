@@ -318,7 +318,7 @@ test-integration-kubernautagent: generate ginkgo setup-envtest ensure-coverage-d
 	@echo "🧪 kubernautagent - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_kubernautagent.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/integration/kubernautagent/...
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_kubernautagent.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/integration/kubernautagent/...
 	@if [ -f coverage_integration_kubernautagent.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_integration_kubernautagent.out"; \

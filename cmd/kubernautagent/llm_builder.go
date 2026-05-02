@@ -26,6 +26,7 @@ import (
 	"github.com/go-logr/logr"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
@@ -64,11 +65,14 @@ func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) [
 		opts = append(opts, langchaingo.WithBedrockRegion(cfg.AI.LLM.BedrockRegion))
 	}
 
+	const defaultLLMClientTimeout = 120 * time.Second
+
 	if transport := buildTransportChain(cfg, rt); transport != nil {
-		httpClient := &http.Client{Transport: transport}
+		timeout := defaultLLMClientTimeout
 		if rt.TimeoutSeconds > 0 {
-			httpClient.Timeout = time.Duration(rt.TimeoutSeconds) * time.Second
+			timeout = time.Duration(rt.TimeoutSeconds) * time.Second
 		}
+		httpClient := &http.Client{Transport: transport, Timeout: timeout}
 		opts = append(opts, langchaingo.WithHTTPClient(httpClient))
 		opts = append(opts, langchaingo.WithCloser(func() error {
 			if t, ok := transport.(interface{ CloseIdleConnections() }); ok {
@@ -143,6 +147,11 @@ func llmRuntimeReloadCallback(
 			logger.Info("llm_runtime_reload rejected: validation failed",
 				"event", "llm_runtime_reload", "status", "rejected", "error", err)
 			return fmt.Errorf("reload: validation failed: %w", err)
+		}
+
+		if rt.APIKey == "" {
+			const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
+			rt.APIKey = credentials.ResolveCredentialsFile(staticCfg.AI.LLM.Provider, credDir, logger)
 		}
 
 		newClient, err := buildLLMClientFromConfig(context.Background(), staticCfg, rt)

@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
 )
 
 var _ = Describe("Kubernaut Agent Session Manager — #433", func() {
@@ -42,9 +43,9 @@ var _ = Describe("Kubernaut Agent Session Manager — #433", func() {
 
 	Describe("IT-KA-433-001: Session manager starts background investigation", func() {
 		It("should return a session ID immediately", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				time.Sleep(100 * time.Millisecond)
-				return "result", nil
+				return &katypes.InvestigationResult{RCASummary: "result"}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(id).NotTo(BeEmpty(), "session ID should be returned immediately")
@@ -53,9 +54,9 @@ var _ = Describe("Kubernaut Agent Session Manager — #433", func() {
 
 	Describe("IT-KA-433-002: Session manager reports in-progress status", func() {
 		It("should show running status while investigation is active", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				time.Sleep(200 * time.Millisecond)
-				return "done", nil
+				return &katypes.InvestigationResult{RCASummary: "done"}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -71,8 +72,8 @@ var _ = Describe("Kubernaut Agent Session Manager — #433", func() {
 
 	Describe("IT-KA-433-003: Session manager delivers completed result", func() {
 		It("should transition to completed with result after investigation finishes", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
-				return map[string]string{"workflow_id": "oom-increase-memory"}, nil
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{WorkflowID: "oom-increase-memory"}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -95,7 +96,7 @@ var _ = Describe("Kubernaut Agent Session Manager — #433", func() {
 
 	Describe("IT-KA-433-004: Session manager captures investigation failure", func() {
 		It("should transition to failed with error when investigation errors", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				return nil, errors.New("LLM provider unavailable")
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
