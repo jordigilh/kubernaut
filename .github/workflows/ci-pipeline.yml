@@ -2,7 +2,7 @@ name: CI Pipeline
 
 # 4-Stage CI Pipeline with Registry-Aware Image Reuse
 #
-# Stage 1: Lint & Unit Tests (parallel: 1 lint + 10 unit test jobs) ~1-2 min
+# Stage 1: Lint, License Scan & Unit Tests (parallel: 1 lint + 1 license scan + 10 unit test jobs) ~1-2 min
 # Stage 2: Build & Push Images (parallel matrix: 12 images) ~5 min
 # Stage 3: Integration Tests (parallel matrix: 10 services) ~15 min
 # Stage 4: E2E Tests (parallel jobs: 10 services, when enabled) ~30 min each
@@ -88,8 +88,8 @@ jobs:
               - 'config/**'
 
   # ========================================
-  # STAGE 1: LINT & UNIT TESTS (ALL PARALLEL)
-  # 11 parallel jobs (1 lint + 10 unit tests) ~2 min total
+  # STAGE 1: LINT, LICENSE SCAN & UNIT TESTS (ALL PARALLEL)
+  # 12 parallel jobs (1 lint + 1 license scan + 10 unit tests) ~2 min total
   # Note: Code compilation happens in Stage 2 (image builds)
   # Skipped for docs-only PRs (detect-changes.code_changed == false)
   # ========================================
@@ -125,6 +125,52 @@ jobs:
           args: cmd/... pkg/... internal/... test/...
           only-new-issues: true
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
+
+  license-scan:
+    name: License Scan
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Install go-licenses
+        run: go install github.com/google/go-licenses@latest
+
+      - name: Check licenses
+        run: |
+          echo "Scanning dependency licenses..."
+          go-licenses check ./... \
+            --ignore=github.com/jordigilh/kubernaut \
+            --logtostderr=false
+          echo "All dependency licenses are compliant."
+
+      - name: Generate license report
+        if: always()
+        run: |
+          go-licenses report ./... \
+            --ignore=github.com/jordigilh/kubernaut \
+            --logtostderr=false \
+            --format csv > licenses.csv 2>/dev/null || true
+          echo "License report generated ($(wc -l < licenses.csv) dependencies)"
+
+      - name: Upload license report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: licenses.csv
+          retention-days: 90
 
   unit-tests:
     name: Unit Tests (${{ matrix.service }})
@@ -1115,7 +1161,7 @@ jobs:
   merge-gate:
     name: Merge Gate
     if: always()
-    needs: [detect-changes, lint-go, unit-tests, build-and-push-images,
+    needs: [detect-changes, lint-go, license-scan, unit-tests, build-and-push-images,
             integration-tests, e2e-tests, helm-smoke-test, summary]
     runs-on: ubuntu-latest
     steps:
@@ -1130,6 +1176,7 @@ jobs:
           echo "Job results:"
           echo "  detect-changes:       ${{ needs.detect-changes.result }}"
           echo "  lint-go:              ${{ needs.lint-go.result }}"
+          echo "  license-scan:         ${{ needs.license-scan.result }}"
           echo "  unit-tests:           ${{ needs.unit-tests.result }}"
           echo "  build-and-push:       ${{ needs.build-and-push-images.result }}"
           echo "  integration-tests:    ${{ needs.integration-tests.result }}"
