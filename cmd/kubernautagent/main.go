@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -343,10 +344,12 @@ func main() {
 		}
 	}
 
+	var shutdownFlag int32
+
 	// Dedicated health server (plain HTTP, never TLS). /config moved here from API port (SEC-4).
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/healthz", healthHandler)
-	healthMux.HandleFunc("/readyz", readyHandler)
+	healthMux.HandleFunc("/readyz", readinessHandler(&shutdownFlag, swappable, ds))
 	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
 	healthMux.Handle("/admin/loglevel", atomicLevel)
 	healthMux.HandleFunc("/openapi.json", kaapi.SpecHandler())
@@ -454,6 +457,7 @@ func main() {
 	}()
 
 	<-ctx.Done()
+	atomic.StoreInt32(&shutdownFlag, 1)
 	logger.Info("shutting down...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -483,9 +487,47 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func readyHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+// readinessHandler returns an http.HandlerFunc that performs real
+// dependency checks instead of returning a static 200. Checks:
+//   - shutdownFlag: set after SIGTERM/SIGINT received; makes probe fail
+//     so k8s stops routing traffic during graceful shutdown.
+//   - swappable: verifies the LLM client has a non-empty model name
+//     (proxy for "LLM client was successfully initialized").
+//   - ds: if non-nil, verifies the ogen client is initialized (DS is
+//     a soft dependency — nil ds means DS is intentionally unconfigured).
+func readinessHandler(shutdownFlag *int32, swappable *llm.SwappableClient, ds *dsClients) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if atomic.LoadInt32(shutdownFlag) != 0 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status": "not_ready",
+				"reason": "shutting_down",
+			})
+			return
+		}
+
+		if swappable.ModelName() == "" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status": "not_ready",
+				"reason": "llm_client_not_configured",
+			})
+			return
+		}
+
+		if ds != nil && ds.ogenClient == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status": "not_ready",
+				"reason": "datastorage_client_unavailable",
+			})
+			return
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	}
 }
 
 func configHandler(cfg *kaconfig.Config, swappable *llm.SwappableClient) http.HandlerFunc {
@@ -590,6 +632,10 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *d
 		}))
 		logger.Info("DS client auth configured (DD-AUTH-014)", "token_path", cfg.Integrations.DataStorage.SATokenPath)
 	} else {
+		opts = append(opts, ogenclient.WithClient(&http.Client{
+			Transport: dsBase,
+			Timeout:   defaultDSClientTimeout,
+		}))
 		logger.Info("SA token not available for DS client — DS API calls may fail auth",
 			"path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
 	}
@@ -673,12 +719,16 @@ func buildEnricher(cfg *kaconfig.Config, ds *dsClients, infra *k8sInfra, auditSt
 	return e
 }
 
-// buildSanitizationPipeline creates the G4 + I1 sanitization pipeline
-// per DD-HAPI-019-003. Returns nil when both stages are disabled.
+// buildSanitizationPipeline creates the sanitization pipeline with G4 (credential scrub),
+// K8S-SECRET (JSON Secret redaction), and I1 (injection patterns) stages per DD-HAPI-019-003.
+// Returns nil when all stages are disabled.
 func buildSanitizationPipeline(cfg *kaconfig.Config, logger logr.Logger) *sanitization.Pipeline {
 	var stages []sanitization.Stage
 	if cfg.AI.Safety.Sanitization.CredentialScrubEnabled {
 		stages = append(stages, sanitization.NewCredentialSanitizer())
+	}
+	if cfg.AI.Safety.Sanitization.SecretRedactionEnabled {
+		stages = append(stages, sanitization.NewSecretSanitizer())
 	}
 	if cfg.AI.Safety.Sanitization.InjectionPatternsEnabled {
 		stages = append(stages, sanitization.NewInjectionSanitizer(nil))
