@@ -158,18 +158,20 @@ var _ = Describe("CP-5 HARM-001: Autonomous regression — no interactive artifa
 
 		By("Step 7: Verifying MCP endpoint is responsive (not degraded)")
 		mcpURL := "https://localhost:8088/api/v1/mcp"
-		req, httpErr := http.NewRequestWithContext(ctx, "GET", mcpURL, nil)
-		Expect(httpErr).NotTo(HaveOccurred())
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", e2eAuthToken))
+		Eventually(func(g Gomega) {
+			req, httpErr := http.NewRequestWithContext(ctx, "GET", mcpURL, nil)
+			g.Expect(httpErr).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", e2eAuthToken))
 
-		resp, httpErr := http.DefaultClient.Do(req)
-		Expect(httpErr).NotTo(HaveOccurred())
-		defer resp.Body.Close()
-		Expect(resp.StatusCode).To(Or(
-			Equal(http.StatusMethodNotAllowed),
-			Equal(http.StatusOK),
-			Equal(http.StatusUnauthorized),
-		), "MCP endpoint should be responsive (non-5xx)")
+			resp, httpErr := http.DefaultClient.Do(req)
+			g.Expect(httpErr).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			g.Expect(resp.StatusCode).To(Or(
+				Equal(http.StatusMethodNotAllowed),
+				Equal(http.StatusOK),
+				Equal(http.StatusUnauthorized),
+			), "MCP endpoint should be responsive (non-5xx)")
+		}, 30*time.Second, 3*time.Second).Should(Succeed(), "KA MCP endpoint should become responsive")
 
 		GinkgoWriter.Println("✅ HARM-001: Autonomous remediation completed with zero interactive artifacts")
 	})

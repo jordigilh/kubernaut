@@ -18,6 +18,8 @@ package kubernautagent
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -47,13 +49,15 @@ func createTestRemediationRequest(testCtx context.Context, rrID string) {
 	cli, err := ctrlclient.New(cfg, ctrlclient.Options{Scheme: scheme})
 	Expect(err).NotTo(HaveOccurred(), "create controller-runtime client for RR creation")
 
+	fingerprint := fmt.Sprintf("%064x", sha256.Sum256([]byte("e2e-test-"+rrID)))
+
 	rr := &remediationv1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rrID,
 			Namespace: sharedNamespace,
 		},
 		Spec: remediationv1.RemediationRequestSpec{
-			SignalFingerprint: "e2e-test-fingerprint-" + rrID,
+			SignalFingerprint: fingerprint,
 			SignalName:        "E2ETestSignal",
 			Severity:          "warning",
 			SignalType:        "alert",

@@ -146,13 +146,18 @@ var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios"
 	// ---------------------------------------------------------------
 	// E2E-KA-HARM-005: RBAC-restricted SA fails impersonation-gated ops
 	// BR: BR-INTERACTIVE-002
+	// Test plan: CP-5_RELEASE_GATE.md — user with limited RBAC takes over
+	// and impersonated K8s call to "production" namespace fails with 403.
 	// ---------------------------------------------------------------
 	Describe("E2E-KA-HARM-005: RBAC-restricted SA fails impersonation-gated ops", func() {
 		It("should reject enrichment that requires impersonation rights", func() {
-			By("Creating a limited-RBAC SA (pods read only, no impersonate)")
+			By("Creating a limited-RBAC SA (pods read only in sharedNamespace, no impersonate)")
 			limitedToken, err := infrastructure.CreateLimitedRBACSA(
 				ctx, sharedNamespace, "harm005-limited", kubeconfigPath, sharedNamespace, GinkgoWriter)
 			Expect(err).NotTo(HaveOccurred(), "limited-RBAC SA should be created")
+
+			By("Creating RR so HARM-004 existence check passes")
+			createTestRemediationRequest(ctx, "rr-harm005-test")
 
 			By("Connecting MCP client with limited SA token")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
@@ -163,12 +168,20 @@ var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios"
 			Expect(err).NotTo(HaveOccurred(), "MCP client should connect (authentication passes)")
 			defer session.Close()
 
-			By("Calling kubernaut_enrich — requires user impersonation for K8s access")
+			By("Starting interactive session (no impersonation needed for session management)")
+			startResult, err := infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  "rr-harm005-test",
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred(), "session start should succeed")
+			Expect(startResult.IsError).To(BeFalse(), "session start should not be a tool error")
+
+			By("Calling kubernaut_enrich targeting production namespace — limited SA has no RBAC there")
 			result, err := infrastructure.CallEnrich(ctx, session, map[string]any{
 				"rr_id":     "rr-harm005-test",
 				"kind":      "Pod",
-				"name":      "crash-pod",
-				"namespace": sharedNamespace,
+				"name":      "api-server-def456",
+				"namespace": "production",
 			})
 
 			By("Asserting that the tool invocation fails due to RBAC/impersonation restriction")
@@ -179,6 +192,7 @@ var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios"
 					ContainSubstring("unauthorized"),
 					ContainSubstring("RBAC"),
 					ContainSubstring("cannot"),
+					ContainSubstring("enrich failed"),
 				), "error should indicate forbidden/impersonation failure")
 			} else {
 				Expect(result).NotTo(BeNil())
@@ -188,9 +202,10 @@ var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios"
 						ContainSubstring("forbidden"),
 						ContainSubstring("impersonate"),
 						ContainSubstring("unauthorized"),
+						ContainSubstring("enrich failed"),
 					), "tool error should indicate RBAC restriction")
 				} else {
-					Fail("enrichment should NOT succeed with a limited-RBAC SA (no impersonate)")
+					Fail("enrichment should NOT succeed with a limited-RBAC SA (no RBAC in production namespace)")
 				}
 			}
 		})

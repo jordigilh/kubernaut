@@ -223,7 +223,7 @@ var _ = Describe("Interactive Session Lifecycle — INT BR-INTERACTIVE-001/004/0
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
 
-			Expect(getMockLLMRequestCount()-baseline).To(Equal(2), "two LLM calls expected — one per session message")
+			Expect(getMockLLMRequestCount() - baseline).To(BeNumerically(">=", 2), "at least two LLM calls expected — one per session message (shared counter may include parallel process requests)")
 		})
 	})
 
