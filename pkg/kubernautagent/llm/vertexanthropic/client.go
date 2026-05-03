@@ -34,6 +34,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -48,12 +49,19 @@ type Option func(*clientOpts)
 
 type clientOpts struct {
 	extraSDKOpts []option.RequestOption
+	httpTimeout  time.Duration
 }
 
 // WithSDKOptions injects additional Anthropic SDK request options (e.g. base URL
 // override for testing). Production code should not need this.
 func WithSDKOptions(opts ...option.RequestOption) Option {
 	return func(o *clientOpts) { o.extraSDKOpts = append(o.extraSDKOpts, opts...) }
+}
+
+// WithHTTPTimeout sets an explicit timeout on the underlying HTTP client used
+// by the Anthropic SDK, preventing unbounded network calls (#956).
+func WithHTTPTimeout(d time.Duration) Option {
+	return func(o *clientOpts) { o.httpTimeout = d }
 }
 
 // Client implements llm.Client for Claude on Vertex AI using the official
@@ -111,6 +119,9 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 	}
 
 	sdkOpts := []option.RequestOption{vertexOpt}
+	if o.httpTimeout > 0 {
+		sdkOpts = append(sdkOpts, option.WithRequestTimeout(o.httpTimeout))
+	}
 	sdkOpts = append(sdkOpts, o.extraSDKOpts...)
 	sdk := anthropic.NewClient(sdkOpts...)
 

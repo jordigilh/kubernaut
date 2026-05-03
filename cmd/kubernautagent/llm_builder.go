@@ -41,9 +41,16 @@ import (
 func buildLLMClientFromConfig(ctx context.Context, cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) (llm.Client, error) {
 	switch cfg.AI.LLM.Provider {
 	case "vertex_ai":
+		var vertexOpts []vertexanthropic.Option
+		timeout := 120 * time.Second
+		if rt.TimeoutSeconds > 0 {
+			timeout = time.Duration(rt.TimeoutSeconds) * time.Second
+		}
+		vertexOpts = append(vertexOpts, vertexanthropic.WithHTTPTimeout(timeout))
 		return vertexanthropic.New(ctx,
 			rt.Model, []byte(rt.APIKey),
-			cfg.AI.LLM.VertexProject, cfg.AI.LLM.VertexLocation)
+			cfg.AI.LLM.VertexProject, cfg.AI.LLM.VertexLocation,
+			vertexOpts...)
 	default:
 		return langchaingo.New(cfg.AI.LLM.Provider, rt.Endpoint, rt.Model, rt.APIKey,
 			buildLLMProviderOpts(cfg, rt)...)
@@ -68,15 +75,20 @@ func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) [
 
 	const defaultLLMClientTimeout = 120 * time.Second
 
-	if transport := buildTransportChain(cfg, rt); transport != nil {
-		timeout := defaultLLMClientTimeout
-		if rt.TimeoutSeconds > 0 {
-			timeout = time.Duration(rt.TimeoutSeconds) * time.Second
-		}
-		httpClient := &http.Client{Transport: transport, Timeout: timeout}
-		opts = append(opts, langchaingo.WithHTTPClient(httpClient))
+	timeout := defaultLLMClientTimeout
+	if rt.TimeoutSeconds > 0 {
+		timeout = time.Duration(rt.TimeoutSeconds) * time.Second
+	}
+
+	customTransport := buildTransportChain(cfg, rt)
+	httpClient := &http.Client{Timeout: timeout}
+	if customTransport != nil {
+		httpClient.Transport = customTransport
+	}
+	opts = append(opts, langchaingo.WithHTTPClient(httpClient))
+	if customTransport != nil {
 		opts = append(opts, langchaingo.WithCloser(func() error {
-			if t, ok := transport.(interface{ CloseIdleConnections() }); ok {
+			if t, ok := customTransport.(interface{ CloseIdleConnections() }); ok {
 				t.CloseIdleConnections()
 			}
 			return nil

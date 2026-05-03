@@ -145,12 +145,14 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 	if inv.pipeline.Sanitizer != nil {
 		sanitized, sanitizeErr := inv.pipeline.Sanitizer.Run(ctx, result)
 		if sanitizeErr != nil {
-			inv.logger.Error(sanitizeErr, "sanitization failed, returning raw output",
+			inv.logger.Error(sanitizeErr, "sanitization failed, fail-closed for SOC2 compliance",
 				"tool", name,
 			)
-		} else {
-			result = sanitized
+			errResult := toolErrorJSON("sanitization failed: tool output withheld")
+			alignment.SubmitToolStep(ctx, name, errResult)
+			return errResult
 		}
+		result = sanitized
 	}
 
 	if inv.pipeline.Summarizer != nil {

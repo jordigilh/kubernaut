@@ -303,8 +303,6 @@ func (s *HTTPError) SetRequestID(val OptNilString) {
 	s.RequestID = val
 }
 
-func (*HTTPError) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {}
-
 // Ref: #/components/schemas/HTTPValidationError
 type HTTPValidationError struct {
 	Detail []ValidationError `json:"detail"`
@@ -1415,9 +1413,24 @@ type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict
 func (*IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
 }
 
+type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetInternalServerError HTTPError
+
+func (*IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetInternalServerError) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
+}
+
 type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound HTTPError
 
 func (*IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
+}
+
+type IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetInternalServerError HTTPError
+
+func (*IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetInternalServerError) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {
+}
+
+type IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound HTTPError
+
+func (*IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {
 }
 
 // NewOptBool returns new OptBool with value set to v.

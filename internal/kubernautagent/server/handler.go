@@ -144,7 +144,7 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 	sess, err := h.sessions.GetSession(params.SessionID)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
-			return &agentclient.HTTPError{
+			return &agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound{
 				Type:     "https://kubernaut.ai/problems/not-found",
 				Title:    "Session Not Found",
 				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
@@ -153,7 +153,7 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 			}, nil
 		}
 		h.logger.Error(err, "session lookup failed", "session_id", params.SessionID)
-		return &agentclient.HTTPError{
+		return &agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetInternalServerError{
 			Type:     "https://kubernaut.ai/problems/internal-error",
 			Title:    "Internal Server Error",
 			Detail:   "internal server error",
@@ -191,7 +191,13 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 			}, nil
 		}
 		h.logger.Error(err, "session lookup failed", "session_id", params.SessionID)
-		return nil, fmt.Errorf("internal server error")
+		return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetInternalServerError{
+			Type:     "https://kubernaut.ai/problems/internal-error",
+			Title:    "Internal Server Error",
+			Detail:   "internal server error",
+			Status:   500,
+			Instance: fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID),
+		}, nil
 	}
 
 	switch sess.Status {
