@@ -243,4 +243,61 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 			Expect(sess).NotTo(BeNil())
 		})
 	})
+
+	// Regression test: M1 — WithSessionExpiredCallback must fire when GetDriver
+	// auto-releases a session due to TTL or inactivity expiry.
+	// Bug: TTL/inactivity paths never emitted interactive.completed audit because
+	// LeaseSessionManager had no callback mechanism to notify the audit system.
+	Describe("UT-KA-SEC04-M1: SessionExpiredCallback fires on TTL expiry (M1 regression)", func() {
+		It("should invoke the callback with sessionID, rrID, and reason on TTL expiry", func() {
+			callbackCh := make(chan [3]string, 1)
+			mgrWithCallback := mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger,
+				mcpinternal.WithSessionTTL(1*time.Millisecond),
+				mcpinternal.WithSessionExpiredCallback(func(sessionID, rrID, reason string) {
+					callbackCh <- [3]string{sessionID, rrID, reason}
+				}),
+			)
+
+			user := mcpinternal.UserInfo{Username: "audit-m1@example.com"}
+			_, err := mgrWithCallback.Takeover(ctx, "rr-m1-ttl-001", user)
+			Expect(err).NotTo(HaveOccurred())
+
+			time.Sleep(5 * time.Millisecond)
+
+			sess, err := mgrWithCallback.GetDriver("rr-m1-ttl-001")
+			Expect(err).To(MatchError(mcpinternal.ErrSessionExpired))
+			Expect(sess).To(BeNil())
+
+			Eventually(callbackCh).Should(Receive(SatisfyAll(
+				WithTransform(func(a [3]string) string { return a[1] }, Equal("rr-m1-ttl-001")),
+				WithTransform(func(a [3]string) string { return a[2] }, Equal("ttl_expired")),
+			)), "M1 fix: callback must fire with reason=ttl_expired")
+		})
+
+		It("should invoke the callback with reason=inactivity_timeout on inactivity expiry", func() {
+			callbackCh := make(chan [3]string, 1)
+			mgrWithCallback := mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger,
+				mcpinternal.WithSessionTTL(1*time.Hour),
+				mcpinternal.WithInactivityTimeout(1*time.Millisecond),
+				mcpinternal.WithSessionExpiredCallback(func(sessionID, rrID, reason string) {
+					callbackCh <- [3]string{sessionID, rrID, reason}
+				}),
+			)
+
+			user := mcpinternal.UserInfo{Username: "audit-m1@example.com"}
+			_, err := mgrWithCallback.Takeover(ctx, "rr-m1-inact-001", user)
+			Expect(err).NotTo(HaveOccurred())
+
+			time.Sleep(5 * time.Millisecond)
+
+			sess, err := mgrWithCallback.GetDriver("rr-m1-inact-001")
+			Expect(err).To(MatchError(mcpinternal.ErrSessionExpired))
+			Expect(sess).To(BeNil())
+
+			Eventually(callbackCh).Should(Receive(SatisfyAll(
+				WithTransform(func(a [3]string) string { return a[1] }, Equal("rr-m1-inact-001")),
+				WithTransform(func(a [3]string) string { return a[2] }, Equal("inactivity_timeout")),
+			)), "M1 fix: callback must fire with reason=inactivity_timeout")
+		})
+	})
 })

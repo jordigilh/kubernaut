@@ -51,7 +51,8 @@ type statusAutoMgr struct {
 }
 
 func (m *statusAutoMgr) FindByRemediationID(_ string) (string, bool) { return "auto-sess", m.found }
-func (m *statusAutoMgr) CancelInvestigation(_ string) error { return nil }
+func (m *statusAutoMgr) CancelInvestigation(_ string) error                { return nil }
+func (m *statusAutoMgr) SuspendInvestigation(_ string) error               { return nil }
 
 var _ = Describe("action=status — PR4 PROD-01 BR-INTERACTIVE-002", func() {
 

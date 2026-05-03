@@ -344,7 +344,7 @@ func main() {
 		}
 
 		if cfg.Interactive.Enabled {
-			mcpHandler := buildMCPHandler(cfg, k8sInfra, ds, inv, enricher, mgr, authMw, agentMetrics, logger)
+			mcpHandler := buildMCPHandler(cfg, k8sInfra, ds, inv, enricher, mgr, authMw, agentMetrics, instrumentedAudit, logger)
 			if mcpHandler != nil {
 				// SEC-02: Per-user rate limiting for MCP interactive endpoint.
 				userRL := kaserver.NewUserRateLimiter(
@@ -1078,6 +1078,7 @@ func buildMCPHandler(
 	autoMgr *session.Manager,
 	authMw *auth.Middleware,
 	agentMetrics *kametrics.Metrics,
+	auditStore audit.AuditStore,
 	logger logr.Logger,
 ) http.Handler {
 	if infra == nil || infra.kubeConfig == nil {
@@ -1116,11 +1117,27 @@ func buildMCPHandler(
 
 	namespace := detectNamespace()
 
+	// emitDisconnectAudit emits interactive.completed for non-tool session endings
+	// (disconnect, inactivity timeout, TTL expiry). M1: ensures all session-ending
+	// paths produce an audit trail, not just action=complete/cancel through InvestigateTool.
+	emitDisconnectAudit := func(sessionID, correlationID, reason string) {
+		event := audit.NewEvent(audit.EventTypeInteractiveCompleted, correlationID,
+			audit.WithSessionID(sessionID),
+		)
+		event.EventAction = audit.ActionInteractiveCompleted
+		event.EventOutcome = audit.OutcomeSuccess
+		event.Data["reason"] = reason
+		audit.StoreBestEffort(context.Background(), auditStore, event, logger.WithName("mcp-audit"))
+	}
+
 	// Session management via K8s Leases (single-driver guarantee).
 	leaseOpts := []mcpkg.LeaseOption{
 		mcpkg.WithSessionTTL(cfg.Interactive.SessionTTL),
 		mcpkg.WithInactivityTimeout(cfg.Interactive.InactivityTimeout),
 		mcpkg.WithMaxConcurrentSessions(cfg.Interactive.MaxConcurrentSessions),
+		mcpkg.WithSessionExpiredCallback(func(sessionID, rrID, reason string) {
+			emitDisconnectAudit(sessionID, rrID, reason)
+		}),
 	}
 	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(ctrlCli, namespace, logger, leaseOpts...)
 
@@ -1148,11 +1165,14 @@ func buildMCPHandler(
 		func(sessionID string) {
 			logger.Info("interactive session expired due to inactivity",
 				"session_id", sessionID)
+			// Snapshot correlationID before Release deletes the entry.
+			rrID, _ := leaseMgr.GetSessionInfo(sessionID)
 			if err := leaseMgr.Release(sessionID, "inactivity_timeout"); err != nil {
 				logger.Error(err, "failed to release expired session",
 					"session_id", sessionID)
 				return
 			}
+			emitDisconnectAudit(sessionID, rrID, "inactivity_timeout")
 			// T1-4: Decrement gauge on timeout expiry to prevent drift.
 			agentMetrics.RecordInteractiveSessionEnded()
 		},
@@ -1172,6 +1192,9 @@ func buildMCPHandler(
 			return
 		}
 
+		// Clean up the MCP-to-interactive mapping now that we've retrieved it.
+		eventStore.DeleteMCPSession(mcpSessionID)
+
 		timeoutMgr.StopTracking(interactiveSessionID)
 
 		// T1-1: Snapshot session info BEFORE Release deletes the entry.
@@ -1183,6 +1206,9 @@ func buildMCPHandler(
 				"error", err.Error())
 			return
 		}
+
+		// Emit audit event for disconnect-driven completion (M1: timeout/TTL/disconnect paths).
+		emitDisconnectAudit(interactiveSessionID, rrID, "disconnect")
 
 		// T1-4: Decrement gauge on disconnect to prevent drift.
 		agentMetrics.RecordInteractiveSessionEnded()
@@ -1223,6 +1249,7 @@ func buildMCPHandler(
 		mcptools.WithTimeoutTracker(timeoutMgr),
 		mcptools.WithNotifyFunc(sessionNotifier.Notify),
 		mcptools.WithRRExistenceChecker(rrChecker),
+		mcptools.WithAuditStore(auditStore, logger.WithName("mcp-audit")),
 	}
 	if autoMgr != nil {
 		investigateOpts = append(investigateOpts, mcptools.WithAutonomousManager(autoMgr))

@@ -70,6 +70,10 @@ func (m *mockAutoMgrIT) CancelInvestigation(id string) error {
 	return m.mgr.CancelInvestigation(id)
 }
 
+func (m *mockAutoMgrIT) SuspendInvestigation(id string) error {
+	return m.mgr.SuspendInvestigation(id)
+}
+
 var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", func() {
 
 	Describe("IT-KA-TAKE-001: Takeover mid-LLM-turn — autonomous cancelled after turn completes", func() {

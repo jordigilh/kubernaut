@@ -17,10 +17,12 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -226,13 +228,18 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 	// E2E-KA-INT-005: Audit trail in DS after interactive flow
 	// BR: BR-INTERACTIVE-003
 	// Validates: DS has ordered audit with correct session_id and acting_user
+	//
+	// Scope: This test validates the INTERACTIVE-ONLY audit subset (start → message → complete).
+	// The full CP-5 lifecycle (autonomous → takeover → disconnect → resume) is tested by
+	// E2E-KA-INT-006 (deferred to separate test plan). This covers DD-INTERACTIVE-002
+	// interactive events plus LLM events emitted during the interactive turn.
 	// ---------------------------------------------------------------
 	Describe("E2E-KA-INT-005: Audit trail complete in DS after full flow", func() {
 		It("should record complete audit trail in DataStorage [E2E-KA-INT-005]", func() {
-			rrID := fmt.Sprintf("rr-int005-%d", time.Now().Unix())
+			rrID := fmt.Sprintf("rr-int005-%d-%s", time.Now().UnixNano(), randomHex(6))
 			createTestRemediationRequest(ctx, rrID)
 
-			By("Step 1: Executing interactive flow")
+			By("Step 1: Executing interactive flow (start → message → complete)")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
 				Endpoint:     mcpEndpoint,
 				SAToken:      saToken,
@@ -260,39 +267,63 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Step 2: Querying DataStorage for audit trail")
-			Eventually(func() bool {
+			By("Step 2: Querying DataStorage for audit trail (wait for events to arrive)")
+			Eventually(func() int {
 				audits := queryDSAuditsByRRID(rrID)
-				if len(audits) == 0 {
-					return false
+				if len(audits) > 0 {
+					GinkgoWriter.Printf("  Found %d audit entries for %s\n", len(audits), rrID)
 				}
-				GinkgoWriter.Printf("  Found %d audit entries for %s\n", len(audits), rrID)
-				return len(audits) >= 2
-			}, 60*time.Second, 2*time.Second).Should(BeTrue(),
-				"DS should have at least 2 audit entries (start + complete)")
+				return len(audits)
+			}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", 4),
+				"DS should have at least 4 audit entries (interactive.started + llm.request + llm.response + interactive.completed)")
 
-			By("Step 3: Verifying session audit entries have session_id and chronological order")
+			By("Step 3: Verifying identity transition events and chronological order")
 			audits := queryDSAuditsByRRID(rrID)
 			Expect(audits).NotTo(BeEmpty())
 
+			// H2: Sort by timestamp ascending to make assertion independent of DS sort order.
+			sort.Slice(audits, func(i, j int) bool {
+				return audits[i].Timestamp < audits[j].Timestamp
+			})
+
 			var lastTimestamp string
-			sessionEventCount := 0
-			for _, audit := range audits {
-				if strings.HasPrefix(audit.EventType, "aiagent.session.") {
-					Expect(audit.SessionID).NotTo(BeEmpty(),
-						fmt.Sprintf("session event %s should have a non-empty session_id", audit.EventType))
-					sessionEventCount++
+			var interactiveStarted, interactiveCompleted int
+			llmEventCount := 0
+			for _, a := range audits {
+				GinkgoWriter.Printf("  event: %s session_id=%s acting_user=%s\n", a.EventType, a.SessionID, a.ActingUser)
+
+				switch {
+				case a.EventType == "aiagent.interactive.started":
+					interactiveStarted++
+					Expect(a.SessionID).NotTo(BeEmpty(),
+						"interactive.started must have session_id (BR-INTERACTIVE-003)")
+					Expect(a.ActingUser).NotTo(BeEmpty(),
+						"interactive.started must have acting_user (BR-INTERACTIVE-003)")
+				case a.EventType == "aiagent.interactive.completed":
+					interactiveCompleted++
+					Expect(a.SessionID).NotTo(BeEmpty(),
+						"interactive.completed must have session_id (BR-INTERACTIVE-003)")
+					Expect(a.ActingUser).NotTo(BeEmpty(),
+						"interactive.completed must have acting_user (BR-INTERACTIVE-003)")
+				case strings.HasPrefix(a.EventType, "aiagent.llm."):
+					llmEventCount++
 				}
-				if lastTimestamp != "" && audit.Timestamp != "" {
-					Expect(audit.Timestamp >= lastTimestamp).To(BeTrue(),
-						"audit entries should be in chronological order")
+
+				if lastTimestamp != "" && a.Timestamp != "" {
+					Expect(a.Timestamp >= lastTimestamp).To(BeTrue(),
+						"audit entries should be in chronological order (ascending)")
 				}
-				if audit.Timestamp != "" {
-					lastTimestamp = audit.Timestamp
+				if a.Timestamp != "" {
+					lastTimestamp = a.Timestamp
 				}
 			}
-			Expect(sessionEventCount).To(BeNumerically(">=", 2),
-				"should have at least 2 session events (started + completed)")
+
+			Expect(interactiveStarted).To(BeNumerically(">=", 1),
+				"should have at least 1 interactive.started event (DD-INTERACTIVE-002)")
+			Expect(interactiveCompleted).To(BeNumerically(">=", 1),
+				"should have at least 1 interactive.completed event (DD-INTERACTIVE-002)")
+			Expect(llmEventCount).To(BeNumerically(">=", 2),
+				"should have at least 2 LLM events (request + response) from the interactive turn")
 
 			GinkgoWriter.Println("✅ INT-005: Audit trail validated in DataStorage")
 		})
@@ -380,32 +411,42 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 
 // auditEntry represents a simplified audit entry from DataStorage.
 type auditEntry struct {
-	SessionID string
-	Timestamp string
-	EventType string
+	SessionID  string
+	Timestamp  string
+	EventType  string
+	ActingUser string
 }
 
 // queryDSAuditsByRRID queries the DataStorage for audit entries matching the given RR ID.
-// Returns nil if the query fails or no results are found.
+// Returns nil if the query fails or no results are found. Logs errors to GinkgoWriter
+// so CI failures are debuggable (H5).
 func queryDSAuditsByRRID(rrID string) []auditEntry {
 	url := fmt.Sprintf("https://localhost:8089/api/v1/audit/events?correlation_id=%s&limit=50&offset=0", rrID)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
+		GinkgoWriter.Printf("  [queryDSAuditsByRRID] request creation failed: %v\n", err)
 		return nil
 	}
 
 	resp, err := authHTTPClient.Do(req)
-	if err != nil || resp == nil {
+	if err != nil {
+		GinkgoWriter.Printf("  [queryDSAuditsByRRID] HTTP request failed: %v\n", err)
+		return nil
+	}
+	if resp == nil {
+		GinkgoWriter.Printf("  [queryDSAuditsByRRID] nil response for %s\n", rrID)
 		return nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		GinkgoWriter.Printf("  [queryDSAuditsByRRID] non-200 status: %d for %s\n", resp.StatusCode, rrID)
 		return nil
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		GinkgoWriter.Printf("  [queryDSAuditsByRRID] body read failed: %v\n", err)
 		return nil
 	}
 
@@ -415,6 +456,7 @@ func queryDSAuditsByRRID(rrID string) []auditEntry {
 			EventType      string          `json:"event_type"`
 			CorrelationID  string          `json:"correlation_id"`
 			EventTimestamp string          `json:"event_timestamp"`
+			ActorID        string          `json:"actor_id"`
 			EventData      json.RawMessage `json:"event_data"`
 		} `json:"data"`
 		Pagination struct {
@@ -422,6 +464,7 @@ func queryDSAuditsByRRID(rrID string) []auditEntry {
 		} `json:"pagination"`
 	}
 	if err := json.Unmarshal(body, &queryResp); err != nil {
+		GinkgoWriter.Printf("  [queryDSAuditsByRRID] JSON parse failed: %v\nbody: %s\n", err, string(body[:min(len(body), 500)]))
 		return nil
 	}
 
@@ -436,10 +479,18 @@ func queryDSAuditsByRRID(rrID string) []auditEntry {
 			sessionID = ed.SessionID
 		}
 		entries = append(entries, auditEntry{
-			SessionID: sessionID,
-			Timestamp: d.EventTimestamp,
-			EventType: d.EventType,
+			SessionID:  sessionID,
+			Timestamp:  d.EventTimestamp,
+			EventType:  d.EventType,
+			ActingUser: d.ActorID,
 		})
 	}
 	return entries
+}
+
+// randomHex returns a random hex string of n bytes (2n hex chars).
+func randomHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%x", b)
 }

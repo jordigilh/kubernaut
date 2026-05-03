@@ -24,6 +24,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
+
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/shared/transport"
@@ -41,12 +44,17 @@ type InvestigatorRunner interface {
 	RunInteractiveTurn(ctx context.Context, messages []LLMMessage, correlationID string) (string, error)
 }
 
-// AutonomousSessionManager provides lookup and cancellation of autonomous
-// investigation sessions. Used by handleTakeover to cancel the running
+// AutonomousSessionManager provides lookup and suspension of autonomous
+// investigation sessions. Used by handleTakeover to suspend the running
 // autonomous session before acquiring the interactive Lease.
+//
+// v1.5: SuspendInvestigation added for BR-INTERACTIVE-004 (dynamic takeover).
+// Semantically distinct from CancelInvestigation — emits session.suspended
+// audit event instead of session.cancelled, enabling metrics differentiation.
 type AutonomousSessionManager interface {
 	FindByRemediationID(rrID string) (string, bool)
 	CancelInvestigation(id string) error
+	SuspendInvestigation(id string) error
 }
 
 // RRExistenceChecker validates that a RemediationRequest exists before
@@ -81,6 +89,8 @@ type InvestigateTool struct {
 	metrics        ToolMetrics
 	rateLimiter    MessageRateLimiter
 	timeoutTracker TimeoutTracker
+	auditStore     audit.AuditStore
+	logger         logr.Logger
 	notifyFn       func(sessionID, msg string) // optional: delivers timeout warnings to client
 	sessionMu      sync.Map                    // rrID -> *sync.Mutex (per-session serialization)
 	reconHistory   sync.Map                    // rrID -> []LLMMessage (reconstructed context for LLM)
@@ -140,6 +150,17 @@ func WithNotifyFunc(fn func(sessionID, msg string)) InvestigateOption {
 	return func(t *InvestigateTool) {
 		if fn != nil {
 			t.notifyFn = fn
+		}
+	}
+}
+
+// WithAuditStore enables audit event emission for interactive session lifecycle
+// events (BR-INTERACTIVE-003, DD-INTERACTIVE-002).
+func WithAuditStore(store audit.AuditStore, logger logr.Logger) InvestigateOption {
+	return func(t *InvestigateTool) {
+		if store != nil {
+			t.auditStore = store
+			t.logger = logger
 		}
 	}
 }
@@ -234,6 +255,7 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		t.metrics.RecordInteractiveTakeover("start_success")
 	}
 
+	t.emitInteractiveStarted(sess.SessionID, input.RRID, user.Username)
 	t.startTimeoutTracking(sess.SessionID)
 	t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
 
@@ -248,18 +270,9 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 	mu.Lock()
 	defer mu.Unlock()
 
-	if t.autoMgr != nil {
-		autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
-		if found {
-			if err := t.autoMgr.CancelInvestigation(autoSessionID); err != nil {
-				if errors.Is(err, session.ErrSessionTerminal) {
-					return InvestigateOutput{}, ErrCodeInvestigationCompleted
-				}
-				return InvestigateOutput{}, fmt.Errorf("cancel autonomous session: %w", err)
-			}
-		}
-	}
-
+	// H4: Acquire the interactive Lease BEFORE suspending autonomous. This ensures
+	// that if Takeover fails (lease contention, max sessions), the autonomous
+	// investigation is NOT irreversibly cancelled.
 	sess, err := t.sessions.Takeover(ctx, input.RRID, user)
 	if err != nil {
 		if errors.Is(err, mcpinternal.ErrLeaseHeld) {
@@ -276,11 +289,26 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 		return InvestigateOutput{}, fmt.Errorf("takeover session: %w", err)
 	}
 
+	// Lease acquired — now safe to suspend autonomous investigation.
+	if t.autoMgr != nil {
+		autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
+		if found {
+			if err := t.autoMgr.SuspendInvestigation(autoSessionID); err != nil {
+				if !errors.Is(err, session.ErrSessionTerminal) {
+					return InvestigateOutput{}, fmt.Errorf("suspend autonomous session: %w", err)
+				}
+				// ErrSessionTerminal after lease acquired: autonomous already finished,
+				// proceed with interactive session (takeover still valid).
+			}
+		}
+	}
+
 	if t.metrics != nil {
 		t.metrics.RecordInteractiveSessionStarted()
 		t.metrics.RecordInteractiveTakeover("takeover_success")
 	}
 
+	t.emitInteractiveStarted(sess.SessionID, input.RRID, user.Username)
 	t.startTimeoutTracking(sess.SessionID)
 
 	reconCount := t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
@@ -374,10 +402,15 @@ func (t *InvestigateTool) handleComplete(input InvestigateInput, user mcpinterna
 
 	if err := t.sessions.Release(sess.SessionID, "complete"); err != nil {
 		if errors.Is(err, mcpinternal.ErrSessionNotFound) {
+			// H3: Session already released (race with timeout/disconnect), but the
+			// user sees "completed" — still emit audit for completeness.
+			t.emitInteractiveCompleted(sess.SessionID, input.RRID, user.Username, "complete_already_released")
 			return InvestigateOutput{SessionID: sess.SessionID, Status: "completed"}, nil
 		}
 		return InvestigateOutput{}, fmt.Errorf("release session: %w", err)
 	}
+
+	t.emitInteractiveCompleted(sess.SessionID, input.RRID, user.Username, "complete")
 
 	if t.metrics != nil {
 		t.metrics.RecordInteractiveSessionEnded()
@@ -445,6 +478,8 @@ func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.
 		return InvestigateOutput{}, fmt.Errorf("release session: %w", err)
 	}
 
+	t.emitInteractiveCompleted(sess.SessionID, input.RRID, user.Username, "cancel")
+
 	if t.metrics != nil {
 		t.metrics.RecordInteractiveSessionEnded()
 	}
@@ -483,6 +518,37 @@ func (t *InvestigateTool) buildMessagesWithContext(rrID, userMessage string) []L
 	}
 	messages = append(messages, LLMMessage{Role: "user", Content: userMessage})
 	return messages
+}
+
+// emitInteractiveStarted emits aiagent.interactive.started (BR-INTERACTIVE-003, DD-INTERACTIVE-002).
+// Uses context.Background() because audit is fire-and-forget (ADR-038) and must not
+// be tied to the request lifecycle — a cancelled request context must not drop the event.
+func (t *InvestigateTool) emitInteractiveStarted(sessionID, correlationID, actingUser string) {
+	if t.auditStore == nil {
+		return
+	}
+	event := audit.NewEvent(audit.EventTypeInteractiveStarted, correlationID,
+		audit.WithSessionID(sessionID),
+		audit.WithActingUser(actingUser),
+	)
+	event.EventAction = audit.ActionInteractiveStarted
+	event.EventOutcome = audit.OutcomeSuccess
+	audit.StoreBestEffort(context.Background(), t.auditStore, event, t.logger)
+}
+
+// emitInteractiveCompleted emits aiagent.interactive.completed (BR-INTERACTIVE-003, DD-INTERACTIVE-002).
+func (t *InvestigateTool) emitInteractiveCompleted(sessionID, correlationID, actingUser, reason string) {
+	if t.auditStore == nil {
+		return
+	}
+	event := audit.NewEvent(audit.EventTypeInteractiveCompleted, correlationID,
+		audit.WithSessionID(sessionID),
+		audit.WithActingUser(actingUser),
+	)
+	event.EventAction = audit.ActionInteractiveCompleted
+	event.EventOutcome = audit.OutcomeSuccess
+	event.Data["reason"] = reason
+	audit.StoreBestEffort(context.Background(), t.auditStore, event, t.logger)
 }
 
 // startTimeoutTracking begins inactivity tracking for a session if configured.

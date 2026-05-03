@@ -23,21 +23,38 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 )
 
+// recordingAuditStore captures audit events for assertion in regression tests.
+type recordingAuditStore struct {
+	events []*audit.AuditEvent
+	mu     sync.Mutex
+}
+
+func (r *recordingAuditStore) StoreAudit(_ context.Context, event *audit.AuditEvent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, event)
+	return nil
+}
+
 // takeoverAutoMgr mocks the AutonomousSessionManager interface for takeover tests.
 type takeoverAutoMgr struct {
-	findResult   string
-	findOK       bool
-	cancelErr    error
-	cancelCalled atomic.Int32
-	cancelDelay  time.Duration
+	findResult    string
+	findOK        bool
+	cancelErr     error
+	suspendErr    error
+	cancelCalled  atomic.Int32
+	suspendCalled atomic.Int32
+	cancelDelay   time.Duration
 }
 
 func (m *takeoverAutoMgr) FindByRemediationID(_ string) (string, bool) {
@@ -48,6 +65,17 @@ func (m *takeoverAutoMgr) CancelInvestigation(_ string) error {
 	m.cancelCalled.Add(1)
 	if m.cancelDelay > 0 {
 		time.Sleep(m.cancelDelay)
+	}
+	return m.cancelErr
+}
+
+func (m *takeoverAutoMgr) SuspendInvestigation(_ string) error {
+	m.suspendCalled.Add(1)
+	if m.cancelDelay > 0 {
+		time.Sleep(m.cancelDelay)
+	}
+	if m.suspendErr != nil {
+		return m.suspendErr
 	}
 	return m.cancelErr
 }
@@ -147,21 +175,19 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		ctx = context.Background()
 	})
 
-	Describe("UT-KA-TAKE-001: Takeover timing race — cancel returns ErrSessionTerminal when investigation already completed", func() {
-		It("should return ErrCodeInvestigationCompleted when autonomous session is already terminal", func() {
+	Describe("UT-KA-TAKE-001: Takeover timing race — suspend returns ErrSessionTerminal after lease acquired", func() {
+		It("should succeed with takeover_started when autonomous session is already terminal (H4: lease-first)", func() {
 			autoMgr.cancelErr = session.ErrSessionTerminal
 
 			input := tools.InvestigateInput{
 				RRID:   "rr-001",
 				Action: tools.ActionTakeover,
 			}
-			_, err := tool.Handle(ctx, input, testUser)
-			Expect(err).To(HaveOccurred())
-
-			var mcpErr *tools.MCPError
-			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
-			Expect(mcpErr.Code).To(Equal("investigation_completed"))
-			Expect(mcpErr.Message).NotTo(BeEmpty())
+			out, err := tool.Handle(ctx, input, testUser)
+			Expect(err).NotTo(HaveOccurred(), "H4: ErrSessionTerminal after lease acquired is not an error")
+			Expect(out.Status).To(Equal("takeover_started"))
+			Expect(out.SessionID).NotTo(BeEmpty())
+			Expect(autoMgr.suspendCalled.Load()).To(Equal(int32(1)))
 		})
 	})
 
@@ -322,6 +348,43 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 			Expect(mcpErr.Code).To(Equal("session_active"))
 			Expect(mcpErr.Message).NotTo(BeEmpty())
 			Expect(mcpErr.Details["driver"]).To(Equal("alice@example.com"))
+		})
+	})
+
+	// Regression test: H3 — handleComplete must emit interactive.completed audit
+	// even when Release returns ErrSessionNotFound (race with timeout/disconnect).
+	// Bug: early-return skipped emitInteractiveCompleted, leaving no audit trail
+	// for sessions that were auto-released between driver validation and complete.
+	Describe("UT-KA-TAKE-H3: Complete emits audit when Release returns ErrSessionNotFound (H3 regression)", func() {
+		It("should emit interactive.completed audit even when session was already released", func() {
+			auditRecorder := &recordingAuditStore{}
+			toolWithAudit := tools.NewInvestigateTool(sessMgr, runner, recon,
+				tools.WithAutonomousManager(autoMgr),
+				tools.WithAuditStore(auditRecorder, logr.Discard()),
+			)
+
+			// Session is active and driver is correct user — but Release will fail.
+			sessMgr.releaseErr = mcpinternal.ErrSessionNotFound
+
+			input := tools.InvestigateInput{
+				RRID:   "rr-001",
+				Action: tools.ActionComplete,
+			}
+			out, err := toolWithAudit.Handle(ctx, input, testUser)
+			Expect(err).NotTo(HaveOccurred(), "H3: ErrSessionNotFound on Release should not propagate")
+			Expect(out.Status).To(Equal("completed"))
+
+			// H3 FIX: audit must be emitted with reason "complete_already_released"
+			Expect(auditRecorder.events).NotTo(BeEmpty(),
+				"H3: interactive.completed audit must be emitted even on ErrSessionNotFound")
+			found := false
+			for _, e := range auditRecorder.events {
+				if e.EventType == "aiagent.interactive.completed" {
+					Expect(e.Data["reason"]).To(Equal("complete_already_released"))
+					found = true
+				}
+			}
+			Expect(found).To(BeTrue(), "should find aiagent.interactive.completed event with reason=complete_already_released")
 		})
 	})
 })
