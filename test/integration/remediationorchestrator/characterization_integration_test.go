@@ -190,10 +190,17 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 			}, ai)
 		}, timeout, interval).Should(Succeed())
 
+		By("Waiting for Analyzing phase transition to complete")
+		Eventually(func() string {
+			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+				Name: rrName, Namespace: ROControllerNamespace,
+			}, fetched); err != nil {
+				return ""
+			}
+			return string(fetched.Status.OverallPhase)
+		}, timeout, interval).Should(Equal(string(remediationv1.PhaseAnalyzing)))
+
 		By("Verifying AnalyzingStartTime is set")
-		Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
-			Name: rrName, Namespace: ROControllerNamespace,
-		}, fetched)).To(Succeed())
 		Expect(fetched.Status.AnalyzingStartTime).ToNot(BeNil(),
 			"AnalyzingStartTime should be set after Processing → Analyzing transition")
 		Expect(fetched.Status.AnalyzingStartTime.Time).To(BeTemporally(">=", fetched.Status.ProcessingStartTime.Time),

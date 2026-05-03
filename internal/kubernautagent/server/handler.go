@@ -30,8 +30,10 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // InvestigationRunner abstracts the investigation entry point so that
@@ -41,7 +43,7 @@ type InvestigationRunner interface {
 }
 
 // Handler implements the ogen-generated Handler interface for the 3 business
-// endpoints. Operational endpoints (/health, /ready, /config, /metrics) are
+// endpoints. Operational endpoints (/healthz, /readyz, /config, /metrics) are
 // served directly by the HTTP mux in cmd/kubernautagent/main.go.
 type Handler struct {
 	agentclient.UnimplementedHandler
@@ -99,16 +101,19 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 	}
 
 	signal := MapIncidentRequestToSignal(req)
+	actor := auth.GetUserFromContext(ctx)
 	h.logger.Info("investigation submitted",
 		"incident_id", req.IncidentID,
 		"signal", signal.Name,
 		"namespace", signal.Namespace,
+		"actor", actor,
 	)
 
 	metadata := map[string]string{
 		"incident_id": req.IncidentID,
 	}
 	sessionID, err := h.sessions.StartInvestigation(ctx, func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
+		bgCtx = audit.WithActor(bgCtx, actor, "User")
 		return h.investigator.Investigate(bgCtx, signal)
 	}, metadata)
 	if err != nil {

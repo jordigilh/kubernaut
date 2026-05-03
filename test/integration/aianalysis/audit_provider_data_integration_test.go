@@ -250,14 +250,14 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			kaEvent := kaEvents[0]
 
 		By("Validating KA event metadata with testutil")
-		actorID := "kubernaut-agent"
 		validators.ValidateAuditEvent(kaEvent, validators.ExpectedAuditEvent{
 			EventType:     string(ogenclient.AIAgentResponsePayloadAuditEventEventData),
 			EventCategory: ogenclient.AuditEventEventCategoryAiagent, // ADR-034 v1.6: KA uses "aiagent" category
 			EventAction:   "response_sent",
 			EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 			CorrelationID: correlationID,
-			ActorID:       &actorID,
+			// #998: ActorID is now the authenticated user (SA identity), not the
+			// hardcoded default. Validated separately by UT-KA-998-* unit tests.
 		})
 
 			By("Validating KA event_data structure (provider perspective - full response)")

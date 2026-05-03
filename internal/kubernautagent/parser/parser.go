@@ -24,7 +24,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // ResultParser extracts and validates InvestigationResult from LLM JSON output.
