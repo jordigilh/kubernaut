@@ -218,6 +218,70 @@ func (s AIAgentEnrichmentFailedPayloadEventType) Validate() error {
 	}
 }
 
+func (s *AIAgentInteractiveCompletedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentInteractiveCompletedPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.interactive.completed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *AIAgentInteractiveStartedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentInteractiveStartedPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.interactive.started":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *AIAgentInvestigationCancelledPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -763,6 +827,38 @@ func (s AIAgentSessionObservedPayloadEventType) Validate() error {
 	}
 }
 
+func (s *AIAgentSessionResumedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentSessionResumedPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.session.resumed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *AIAgentSessionStartedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -789,6 +885,38 @@ func (s *AIAgentSessionStartedPayload) Validate() error {
 func (s AIAgentSessionStartedPayloadEventType) Validate() error {
 	switch s {
 	case "aiagent.session.started":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *AIAgentSessionSuspendedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentSessionSuspendedPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.session.suspended":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -1702,6 +1830,26 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case AIAgentSessionSuspendedPayloadAuditEventEventData:
+		if err := s.AIAgentSessionSuspendedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentSessionResumedPayloadAuditEventEventData:
+		if err := s.AIAgentSessionResumedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentInteractiveStartedPayloadAuditEventEventData:
+		if err := s.AIAgentInteractiveStartedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentInteractiveCompletedPayloadAuditEventEventData:
+		if err := s.AIAgentInteractiveCompletedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case AIAgentSessionObservedPayloadAuditEventEventData:
 		if err := s.AIAgentSessionObservedPayload.Validate(); err != nil {
 			return err
@@ -2098,6 +2246,26 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case AIAgentSessionCancelledPayloadAuditEventRequestEventData:
 		if err := s.AIAgentSessionCancelledPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentSessionSuspendedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentSessionSuspendedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentSessionResumedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentSessionResumedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentInteractiveStartedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentInteractiveStartedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentInteractiveCompletedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentInteractiveCompletedPayload.Validate(); err != nil {
 			return err
 		}
 		return nil

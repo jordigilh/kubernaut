@@ -357,28 +357,39 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		return ogenclient.NewAIAgentAlignmentVerdictPayloadAuditEventRequestEventData(payload), true
 
 	case EventTypeSessionSuspended:
-		payload := ogenclient.AIAgentSessionCancelledPayload{
-			EventType: ogenclient.AIAgentSessionCancelledPayloadEventTypeAiagentSessionCancelled,
+		payload := ogenclient.AIAgentSessionSuspendedPayload{
+			EventType: ogenclient.AIAgentSessionSuspendedPayloadEventTypeAiagentSessionSuspended,
 			EventID:   dataString(event.Data, "event_id"),
 			SessionID: event.SessionID,
 		}
-		return ogenclient.NewAIAgentSessionCancelledPayloadAuditEventRequestEventData(payload), true
+		return ogenclient.NewAIAgentSessionSuspendedPayloadAuditEventRequestEventData(payload), true
 
 	case EventTypeSessionResumed:
-		payload := ogenclient.AIAgentSessionStartedPayload{
-			EventType: ogenclient.AIAgentSessionStartedPayloadEventTypeAiagentSessionStarted,
+		payload := ogenclient.AIAgentSessionResumedPayload{
+			EventType: ogenclient.AIAgentSessionResumedPayloadEventTypeAiagentSessionResumed,
 			EventID:   dataString(event.Data, "event_id"),
 			SessionID: event.SessionID,
 		}
-		return ogenclient.NewAIAgentSessionStartedPayloadAuditEventRequestEventData(payload), true
+		return ogenclient.NewAIAgentSessionResumedPayloadAuditEventRequestEventData(payload), true
 
-	// EventTypeInteractiveStarted and EventTypeInteractiveCompleted do not yet have
-	// dedicated OpenAPI discriminator variants. They are stored with outer-level fields
-	// only (event_type, session_id, correlation_id, acting_user). The reason field for
-	// interactive.completed is persisted via the parent AuditEventRequest's event_action.
-	// TODO: Add dedicated discriminator variants in the OpenAPI spec for interactive events.
-	case EventTypeInteractiveStarted, EventTypeInteractiveCompleted:
-		return ogenclient.AuditEventRequestEventData{}, false
+	case EventTypeInteractiveStarted:
+		payload := ogenclient.AIAgentInteractiveStartedPayload{
+			EventType: ogenclient.AIAgentInteractiveStartedPayloadEventTypeAiagentInteractiveStarted,
+			EventID:   dataString(event.Data, "event_id"),
+			SessionID: event.SessionID,
+		}
+		return ogenclient.NewAIAgentInteractiveStartedPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeInteractiveCompleted:
+		payload := ogenclient.AIAgentInteractiveCompletedPayload{
+			EventType: ogenclient.AIAgentInteractiveCompletedPayloadEventTypeAiagentInteractiveCompleted,
+			EventID:   dataString(event.Data, "event_id"),
+			SessionID: event.SessionID,
+		}
+		if reason, ok := event.Data["reason"].(string); ok {
+			payload.Reason.SetTo(reason)
+		}
+		return ogenclient.NewAIAgentInteractiveCompletedPayloadAuditEventRequestEventData(payload), true
 
 	default:
 		return ogenclient.AuditEventRequestEventData{}, false

@@ -539,6 +539,173 @@ func (s *AIAgentEnrichmentFailedPayloadEventType) UnmarshalText(data []byte) err
 	}
 }
 
+// Interactive session completed payload (aiagent.interactive.completed) - Emitted when an
+// interactive session ends by complete, cancel, disconnect, or timeout (BR-INTERACTIVE-004,
+// DD-INTERACTIVE-002).
+// Ref: #/components/schemas/AIAgentInteractiveCompletedPayload
+type AIAgentInteractiveCompletedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentInteractiveCompletedPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Interactive session identifier.
+	SessionID string `json:"session_id"`
+	// Reason the interactive session ended (e.g., complete, disconnect, inactivity_timeout, ttl_expired).
+	Reason OptString `json:"reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentInteractiveCompletedPayload) GetEventType() AIAgentInteractiveCompletedPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentInteractiveCompletedPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *AIAgentInteractiveCompletedPayload) GetSessionID() string {
+	return s.SessionID
+}
+
+// GetReason returns the value of Reason.
+func (s *AIAgentInteractiveCompletedPayload) GetReason() OptString {
+	return s.Reason
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentInteractiveCompletedPayload) SetEventType(val AIAgentInteractiveCompletedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentInteractiveCompletedPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *AIAgentInteractiveCompletedPayload) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// SetReason sets the value of Reason.
+func (s *AIAgentInteractiveCompletedPayload) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentInteractiveCompletedPayloadEventType string
+
+const (
+	AIAgentInteractiveCompletedPayloadEventTypeAiagentInteractiveCompleted AIAgentInteractiveCompletedPayloadEventType = "aiagent.interactive.completed"
+)
+
+// AllValues returns all AIAgentInteractiveCompletedPayloadEventType values.
+func (AIAgentInteractiveCompletedPayloadEventType) AllValues() []AIAgentInteractiveCompletedPayloadEventType {
+	return []AIAgentInteractiveCompletedPayloadEventType{
+		AIAgentInteractiveCompletedPayloadEventTypeAiagentInteractiveCompleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentInteractiveCompletedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentInteractiveCompletedPayloadEventTypeAiagentInteractiveCompleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentInteractiveCompletedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentInteractiveCompletedPayloadEventType(data) {
+	case AIAgentInteractiveCompletedPayloadEventTypeAiagentInteractiveCompleted:
+		*s = AIAgentInteractiveCompletedPayloadEventTypeAiagentInteractiveCompleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Interactive session started payload (aiagent.interactive.started) - Emitted when a user acquires
+// the interactive lease and begins driving the investigation (BR-INTERACTIVE-004, DD-INTERACTIVE-002).
+// Ref: #/components/schemas/AIAgentInteractiveStartedPayload
+type AIAgentInteractiveStartedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentInteractiveStartedPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Interactive session identifier.
+	SessionID string `json:"session_id"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentInteractiveStartedPayload) GetEventType() AIAgentInteractiveStartedPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentInteractiveStartedPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *AIAgentInteractiveStartedPayload) GetSessionID() string {
+	return s.SessionID
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentInteractiveStartedPayload) SetEventType(val AIAgentInteractiveStartedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentInteractiveStartedPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *AIAgentInteractiveStartedPayload) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentInteractiveStartedPayloadEventType string
+
+const (
+	AIAgentInteractiveStartedPayloadEventTypeAiagentInteractiveStarted AIAgentInteractiveStartedPayloadEventType = "aiagent.interactive.started"
+)
+
+// AllValues returns all AIAgentInteractiveStartedPayloadEventType values.
+func (AIAgentInteractiveStartedPayloadEventType) AllValues() []AIAgentInteractiveStartedPayloadEventType {
+	return []AIAgentInteractiveStartedPayloadEventType{
+		AIAgentInteractiveStartedPayloadEventTypeAiagentInteractiveStarted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentInteractiveStartedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentInteractiveStartedPayloadEventTypeAiagentInteractiveStarted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentInteractiveStartedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentInteractiveStartedPayloadEventType(data) {
+	case AIAgentInteractiveStartedPayloadEventTypeAiagentInteractiveStarted:
+		*s = AIAgentInteractiveStartedPayloadEventTypeAiagentInteractiveStarted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Investigation-level cancellation event payload (aiagent.investigation.cancelled) - Carries
 // investigator-internal state at cancellation point for forensic audit reconstruction (SOC2 CC8.1,
 // BR-AUDIT-070). Distinct from session.cancelled which records the lifecycle transition.
@@ -1485,6 +1652,83 @@ func (s *AIAgentSessionObservedPayloadEventType) UnmarshalText(data []byte) erro
 	}
 }
 
+// Session resumed event payload (aiagent.session.resumed) - Emitted when autonomous investigation
+// resumes after interactive session ends (BR-INTERACTIVE-004, SOC2 CC7.2).
+// Ref: #/components/schemas/AIAgentSessionResumedPayload
+type AIAgentSessionResumedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentSessionResumedPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Investigation session identifier.
+	SessionID string `json:"session_id"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentSessionResumedPayload) GetEventType() AIAgentSessionResumedPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentSessionResumedPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *AIAgentSessionResumedPayload) GetSessionID() string {
+	return s.SessionID
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentSessionResumedPayload) SetEventType(val AIAgentSessionResumedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentSessionResumedPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *AIAgentSessionResumedPayload) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentSessionResumedPayloadEventType string
+
+const (
+	AIAgentSessionResumedPayloadEventTypeAiagentSessionResumed AIAgentSessionResumedPayloadEventType = "aiagent.session.resumed"
+)
+
+// AllValues returns all AIAgentSessionResumedPayloadEventType values.
+func (AIAgentSessionResumedPayloadEventType) AllValues() []AIAgentSessionResumedPayloadEventType {
+	return []AIAgentSessionResumedPayloadEventType{
+		AIAgentSessionResumedPayloadEventTypeAiagentSessionResumed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentSessionResumedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentSessionResumedPayloadEventTypeAiagentSessionResumed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentSessionResumedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentSessionResumedPayloadEventType(data) {
+	case AIAgentSessionResumedPayloadEventTypeAiagentSessionResumed:
+		*s = AIAgentSessionResumedPayloadEventTypeAiagentSessionResumed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Session started event payload (aiagent.session.started) - Emitted when a new investigation session
 // begins (SOC2 CC7.2, BR-AUDIT-070).
 // Ref: #/components/schemas/AIAgentSessionStartedPayload
@@ -1604,6 +1848,83 @@ func (s *AIAgentSessionStartedPayloadEventType) UnmarshalText(data []byte) error
 	switch AIAgentSessionStartedPayloadEventType(data) {
 	case AIAgentSessionStartedPayloadEventTypeAiagentSessionStarted:
 		*s = AIAgentSessionStartedPayloadEventTypeAiagentSessionStarted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Session suspended event payload (aiagent.session.suspended) - Emitted when an autonomous
+// investigation is suspended due to interactive takeover (BR-INTERACTIVE-004, SOC2 CC7.2).
+// Ref: #/components/schemas/AIAgentSessionSuspendedPayload
+type AIAgentSessionSuspendedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentSessionSuspendedPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Investigation session identifier.
+	SessionID string `json:"session_id"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentSessionSuspendedPayload) GetEventType() AIAgentSessionSuspendedPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentSessionSuspendedPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *AIAgentSessionSuspendedPayload) GetSessionID() string {
+	return s.SessionID
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentSessionSuspendedPayload) SetEventType(val AIAgentSessionSuspendedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentSessionSuspendedPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *AIAgentSessionSuspendedPayload) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentSessionSuspendedPayloadEventType string
+
+const (
+	AIAgentSessionSuspendedPayloadEventTypeAiagentSessionSuspended AIAgentSessionSuspendedPayloadEventType = "aiagent.session.suspended"
+)
+
+// AllValues returns all AIAgentSessionSuspendedPayloadEventType values.
+func (AIAgentSessionSuspendedPayloadEventType) AllValues() []AIAgentSessionSuspendedPayloadEventType {
+	return []AIAgentSessionSuspendedPayloadEventType{
+		AIAgentSessionSuspendedPayloadEventTypeAiagentSessionSuspended,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentSessionSuspendedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentSessionSuspendedPayloadEventTypeAiagentSessionSuspended:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentSessionSuspendedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentSessionSuspendedPayloadEventType(data) {
+	case AIAgentSessionSuspendedPayloadEventTypeAiagentSessionSuspended:
+		*s = AIAgentSessionSuspendedPayloadEventTypeAiagentSessionSuspended
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -3859,6 +4180,10 @@ type AuditEventEventData struct {
 	AIAgentSessionCompletedPayload         AIAgentSessionCompletedPayload
 	AIAgentSessionFailedPayload            AIAgentSessionFailedPayload
 	AIAgentSessionCancelledPayload         AIAgentSessionCancelledPayload
+	AIAgentSessionSuspendedPayload         AIAgentSessionSuspendedPayload
+	AIAgentSessionResumedPayload           AIAgentSessionResumedPayload
+	AIAgentInteractiveStartedPayload       AIAgentInteractiveStartedPayload
+	AIAgentInteractiveCompletedPayload     AIAgentInteractiveCompletedPayload
 	AIAgentSessionObservedPayload          AIAgentSessionObservedPayload
 	AIAgentSessionAccessDeniedPayload      AIAgentSessionAccessDeniedPayload
 	AIAgentInvestigationCancelledPayload   AIAgentInvestigationCancelledPayload
@@ -3948,6 +4273,10 @@ const (
 	AIAgentSessionCompletedPayloadAuditEventEventData                                AuditEventEventDataType = "aiagent.session.completed"
 	AIAgentSessionFailedPayloadAuditEventEventData                                   AuditEventEventDataType = "aiagent.session.failed"
 	AIAgentSessionCancelledPayloadAuditEventEventData                                AuditEventEventDataType = "aiagent.session.cancelled"
+	AIAgentSessionSuspendedPayloadAuditEventEventData                                AuditEventEventDataType = "aiagent.session.suspended"
+	AIAgentSessionResumedPayloadAuditEventEventData                                  AuditEventEventDataType = "aiagent.session.resumed"
+	AIAgentInteractiveStartedPayloadAuditEventEventData                              AuditEventEventDataType = "aiagent.interactive.started"
+	AIAgentInteractiveCompletedPayloadAuditEventEventData                            AuditEventEventDataType = "aiagent.interactive.completed"
 	AIAgentSessionObservedPayloadAuditEventEventData                                 AuditEventEventDataType = "aiagent.session.observed"
 	AIAgentSessionAccessDeniedPayloadAuditEventEventData                             AuditEventEventDataType = "aiagent.session.access_denied"
 	AIAgentInvestigationCancelledPayloadAuditEventEventData                          AuditEventEventDataType = "aiagent.investigation.cancelled"
@@ -4186,6 +4515,26 @@ func (s AuditEventEventData) IsAIAgentSessionFailedPayload() bool {
 // IsAIAgentSessionCancelledPayload reports whether AuditEventEventData is AIAgentSessionCancelledPayload.
 func (s AuditEventEventData) IsAIAgentSessionCancelledPayload() bool {
 	return s.Type == AIAgentSessionCancelledPayloadAuditEventEventData
+}
+
+// IsAIAgentSessionSuspendedPayload reports whether AuditEventEventData is AIAgentSessionSuspendedPayload.
+func (s AuditEventEventData) IsAIAgentSessionSuspendedPayload() bool {
+	return s.Type == AIAgentSessionSuspendedPayloadAuditEventEventData
+}
+
+// IsAIAgentSessionResumedPayload reports whether AuditEventEventData is AIAgentSessionResumedPayload.
+func (s AuditEventEventData) IsAIAgentSessionResumedPayload() bool {
+	return s.Type == AIAgentSessionResumedPayloadAuditEventEventData
+}
+
+// IsAIAgentInteractiveStartedPayload reports whether AuditEventEventData is AIAgentInteractiveStartedPayload.
+func (s AuditEventEventData) IsAIAgentInteractiveStartedPayload() bool {
+	return s.Type == AIAgentInteractiveStartedPayloadAuditEventEventData
+}
+
+// IsAIAgentInteractiveCompletedPayload reports whether AuditEventEventData is AIAgentInteractiveCompletedPayload.
+func (s AuditEventEventData) IsAIAgentInteractiveCompletedPayload() bool {
+	return s.Type == AIAgentInteractiveCompletedPayloadAuditEventEventData
 }
 
 // IsAIAgentSessionObservedPayload reports whether AuditEventEventData is AIAgentSessionObservedPayload.
@@ -5257,6 +5606,90 @@ func NewAIAgentSessionCancelledPayloadAuditEventEventData(v AIAgentSessionCancel
 	return s
 }
 
+// SetAIAgentSessionSuspendedPayload sets AuditEventEventData to AIAgentSessionSuspendedPayload.
+func (s *AuditEventEventData) SetAIAgentSessionSuspendedPayload(v AIAgentSessionSuspendedPayload) {
+	s.Type = AIAgentSessionSuspendedPayloadAuditEventEventData
+	s.AIAgentSessionSuspendedPayload = v
+}
+
+// GetAIAgentSessionSuspendedPayload returns AIAgentSessionSuspendedPayload and true boolean if AuditEventEventData is AIAgentSessionSuspendedPayload.
+func (s AuditEventEventData) GetAIAgentSessionSuspendedPayload() (v AIAgentSessionSuspendedPayload, ok bool) {
+	if !s.IsAIAgentSessionSuspendedPayload() {
+		return v, false
+	}
+	return s.AIAgentSessionSuspendedPayload, true
+}
+
+// NewAIAgentSessionSuspendedPayloadAuditEventEventData returns new AuditEventEventData from AIAgentSessionSuspendedPayload.
+func NewAIAgentSessionSuspendedPayloadAuditEventEventData(v AIAgentSessionSuspendedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentSessionSuspendedPayload(v)
+	return s
+}
+
+// SetAIAgentSessionResumedPayload sets AuditEventEventData to AIAgentSessionResumedPayload.
+func (s *AuditEventEventData) SetAIAgentSessionResumedPayload(v AIAgentSessionResumedPayload) {
+	s.Type = AIAgentSessionResumedPayloadAuditEventEventData
+	s.AIAgentSessionResumedPayload = v
+}
+
+// GetAIAgentSessionResumedPayload returns AIAgentSessionResumedPayload and true boolean if AuditEventEventData is AIAgentSessionResumedPayload.
+func (s AuditEventEventData) GetAIAgentSessionResumedPayload() (v AIAgentSessionResumedPayload, ok bool) {
+	if !s.IsAIAgentSessionResumedPayload() {
+		return v, false
+	}
+	return s.AIAgentSessionResumedPayload, true
+}
+
+// NewAIAgentSessionResumedPayloadAuditEventEventData returns new AuditEventEventData from AIAgentSessionResumedPayload.
+func NewAIAgentSessionResumedPayloadAuditEventEventData(v AIAgentSessionResumedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentSessionResumedPayload(v)
+	return s
+}
+
+// SetAIAgentInteractiveStartedPayload sets AuditEventEventData to AIAgentInteractiveStartedPayload.
+func (s *AuditEventEventData) SetAIAgentInteractiveStartedPayload(v AIAgentInteractiveStartedPayload) {
+	s.Type = AIAgentInteractiveStartedPayloadAuditEventEventData
+	s.AIAgentInteractiveStartedPayload = v
+}
+
+// GetAIAgentInteractiveStartedPayload returns AIAgentInteractiveStartedPayload and true boolean if AuditEventEventData is AIAgentInteractiveStartedPayload.
+func (s AuditEventEventData) GetAIAgentInteractiveStartedPayload() (v AIAgentInteractiveStartedPayload, ok bool) {
+	if !s.IsAIAgentInteractiveStartedPayload() {
+		return v, false
+	}
+	return s.AIAgentInteractiveStartedPayload, true
+}
+
+// NewAIAgentInteractiveStartedPayloadAuditEventEventData returns new AuditEventEventData from AIAgentInteractiveStartedPayload.
+func NewAIAgentInteractiveStartedPayloadAuditEventEventData(v AIAgentInteractiveStartedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentInteractiveStartedPayload(v)
+	return s
+}
+
+// SetAIAgentInteractiveCompletedPayload sets AuditEventEventData to AIAgentInteractiveCompletedPayload.
+func (s *AuditEventEventData) SetAIAgentInteractiveCompletedPayload(v AIAgentInteractiveCompletedPayload) {
+	s.Type = AIAgentInteractiveCompletedPayloadAuditEventEventData
+	s.AIAgentInteractiveCompletedPayload = v
+}
+
+// GetAIAgentInteractiveCompletedPayload returns AIAgentInteractiveCompletedPayload and true boolean if AuditEventEventData is AIAgentInteractiveCompletedPayload.
+func (s AuditEventEventData) GetAIAgentInteractiveCompletedPayload() (v AIAgentInteractiveCompletedPayload, ok bool) {
+	if !s.IsAIAgentInteractiveCompletedPayload() {
+		return v, false
+	}
+	return s.AIAgentInteractiveCompletedPayload, true
+}
+
+// NewAIAgentInteractiveCompletedPayloadAuditEventEventData returns new AuditEventEventData from AIAgentInteractiveCompletedPayload.
+func NewAIAgentInteractiveCompletedPayloadAuditEventEventData(v AIAgentInteractiveCompletedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentInteractiveCompletedPayload(v)
+	return s
+}
+
 // SetAIAgentSessionObservedPayload sets AuditEventEventData to AIAgentSessionObservedPayload.
 func (s *AuditEventEventData) SetAIAgentSessionObservedPayload(v AIAgentSessionObservedPayload) {
 	s.Type = AIAgentSessionObservedPayloadAuditEventEventData
@@ -6086,6 +6519,10 @@ type AuditEventRequestEventData struct {
 	AIAgentSessionCompletedPayload         AIAgentSessionCompletedPayload
 	AIAgentSessionFailedPayload            AIAgentSessionFailedPayload
 	AIAgentSessionCancelledPayload         AIAgentSessionCancelledPayload
+	AIAgentSessionSuspendedPayload         AIAgentSessionSuspendedPayload
+	AIAgentSessionResumedPayload           AIAgentSessionResumedPayload
+	AIAgentInteractiveStartedPayload       AIAgentInteractiveStartedPayload
+	AIAgentInteractiveCompletedPayload     AIAgentInteractiveCompletedPayload
 	AIAgentSessionObservedPayload          AIAgentSessionObservedPayload
 	AIAgentSessionAccessDeniedPayload      AIAgentSessionAccessDeniedPayload
 	AIAgentInvestigationCancelledPayload   AIAgentInvestigationCancelledPayload
@@ -6175,6 +6612,10 @@ const (
 	AIAgentSessionCompletedPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "aiagent.session.completed"
 	AIAgentSessionFailedPayloadAuditEventRequestEventData                                          AuditEventRequestEventDataType = "aiagent.session.failed"
 	AIAgentSessionCancelledPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "aiagent.session.cancelled"
+	AIAgentSessionSuspendedPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "aiagent.session.suspended"
+	AIAgentSessionResumedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "aiagent.session.resumed"
+	AIAgentInteractiveStartedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "aiagent.interactive.started"
+	AIAgentInteractiveCompletedPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "aiagent.interactive.completed"
 	AIAgentSessionObservedPayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "aiagent.session.observed"
 	AIAgentSessionAccessDeniedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "aiagent.session.access_denied"
 	AIAgentInvestigationCancelledPayloadAuditEventRequestEventData                                 AuditEventRequestEventDataType = "aiagent.investigation.cancelled"
@@ -6413,6 +6854,26 @@ func (s AuditEventRequestEventData) IsAIAgentSessionFailedPayload() bool {
 // IsAIAgentSessionCancelledPayload reports whether AuditEventRequestEventData is AIAgentSessionCancelledPayload.
 func (s AuditEventRequestEventData) IsAIAgentSessionCancelledPayload() bool {
 	return s.Type == AIAgentSessionCancelledPayloadAuditEventRequestEventData
+}
+
+// IsAIAgentSessionSuspendedPayload reports whether AuditEventRequestEventData is AIAgentSessionSuspendedPayload.
+func (s AuditEventRequestEventData) IsAIAgentSessionSuspendedPayload() bool {
+	return s.Type == AIAgentSessionSuspendedPayloadAuditEventRequestEventData
+}
+
+// IsAIAgentSessionResumedPayload reports whether AuditEventRequestEventData is AIAgentSessionResumedPayload.
+func (s AuditEventRequestEventData) IsAIAgentSessionResumedPayload() bool {
+	return s.Type == AIAgentSessionResumedPayloadAuditEventRequestEventData
+}
+
+// IsAIAgentInteractiveStartedPayload reports whether AuditEventRequestEventData is AIAgentInteractiveStartedPayload.
+func (s AuditEventRequestEventData) IsAIAgentInteractiveStartedPayload() bool {
+	return s.Type == AIAgentInteractiveStartedPayloadAuditEventRequestEventData
+}
+
+// IsAIAgentInteractiveCompletedPayload reports whether AuditEventRequestEventData is AIAgentInteractiveCompletedPayload.
+func (s AuditEventRequestEventData) IsAIAgentInteractiveCompletedPayload() bool {
+	return s.Type == AIAgentInteractiveCompletedPayloadAuditEventRequestEventData
 }
 
 // IsAIAgentSessionObservedPayload reports whether AuditEventRequestEventData is AIAgentSessionObservedPayload.
@@ -7481,6 +7942,90 @@ func (s AuditEventRequestEventData) GetAIAgentSessionCancelledPayload() (v AIAge
 func NewAIAgentSessionCancelledPayloadAuditEventRequestEventData(v AIAgentSessionCancelledPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetAIAgentSessionCancelledPayload(v)
+	return s
+}
+
+// SetAIAgentSessionSuspendedPayload sets AuditEventRequestEventData to AIAgentSessionSuspendedPayload.
+func (s *AuditEventRequestEventData) SetAIAgentSessionSuspendedPayload(v AIAgentSessionSuspendedPayload) {
+	s.Type = AIAgentSessionSuspendedPayloadAuditEventRequestEventData
+	s.AIAgentSessionSuspendedPayload = v
+}
+
+// GetAIAgentSessionSuspendedPayload returns AIAgentSessionSuspendedPayload and true boolean if AuditEventRequestEventData is AIAgentSessionSuspendedPayload.
+func (s AuditEventRequestEventData) GetAIAgentSessionSuspendedPayload() (v AIAgentSessionSuspendedPayload, ok bool) {
+	if !s.IsAIAgentSessionSuspendedPayload() {
+		return v, false
+	}
+	return s.AIAgentSessionSuspendedPayload, true
+}
+
+// NewAIAgentSessionSuspendedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentSessionSuspendedPayload.
+func NewAIAgentSessionSuspendedPayloadAuditEventRequestEventData(v AIAgentSessionSuspendedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentSessionSuspendedPayload(v)
+	return s
+}
+
+// SetAIAgentSessionResumedPayload sets AuditEventRequestEventData to AIAgentSessionResumedPayload.
+func (s *AuditEventRequestEventData) SetAIAgentSessionResumedPayload(v AIAgentSessionResumedPayload) {
+	s.Type = AIAgentSessionResumedPayloadAuditEventRequestEventData
+	s.AIAgentSessionResumedPayload = v
+}
+
+// GetAIAgentSessionResumedPayload returns AIAgentSessionResumedPayload and true boolean if AuditEventRequestEventData is AIAgentSessionResumedPayload.
+func (s AuditEventRequestEventData) GetAIAgentSessionResumedPayload() (v AIAgentSessionResumedPayload, ok bool) {
+	if !s.IsAIAgentSessionResumedPayload() {
+		return v, false
+	}
+	return s.AIAgentSessionResumedPayload, true
+}
+
+// NewAIAgentSessionResumedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentSessionResumedPayload.
+func NewAIAgentSessionResumedPayloadAuditEventRequestEventData(v AIAgentSessionResumedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentSessionResumedPayload(v)
+	return s
+}
+
+// SetAIAgentInteractiveStartedPayload sets AuditEventRequestEventData to AIAgentInteractiveStartedPayload.
+func (s *AuditEventRequestEventData) SetAIAgentInteractiveStartedPayload(v AIAgentInteractiveStartedPayload) {
+	s.Type = AIAgentInteractiveStartedPayloadAuditEventRequestEventData
+	s.AIAgentInteractiveStartedPayload = v
+}
+
+// GetAIAgentInteractiveStartedPayload returns AIAgentInteractiveStartedPayload and true boolean if AuditEventRequestEventData is AIAgentInteractiveStartedPayload.
+func (s AuditEventRequestEventData) GetAIAgentInteractiveStartedPayload() (v AIAgentInteractiveStartedPayload, ok bool) {
+	if !s.IsAIAgentInteractiveStartedPayload() {
+		return v, false
+	}
+	return s.AIAgentInteractiveStartedPayload, true
+}
+
+// NewAIAgentInteractiveStartedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentInteractiveStartedPayload.
+func NewAIAgentInteractiveStartedPayloadAuditEventRequestEventData(v AIAgentInteractiveStartedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentInteractiveStartedPayload(v)
+	return s
+}
+
+// SetAIAgentInteractiveCompletedPayload sets AuditEventRequestEventData to AIAgentInteractiveCompletedPayload.
+func (s *AuditEventRequestEventData) SetAIAgentInteractiveCompletedPayload(v AIAgentInteractiveCompletedPayload) {
+	s.Type = AIAgentInteractiveCompletedPayloadAuditEventRequestEventData
+	s.AIAgentInteractiveCompletedPayload = v
+}
+
+// GetAIAgentInteractiveCompletedPayload returns AIAgentInteractiveCompletedPayload and true boolean if AuditEventRequestEventData is AIAgentInteractiveCompletedPayload.
+func (s AuditEventRequestEventData) GetAIAgentInteractiveCompletedPayload() (v AIAgentInteractiveCompletedPayload, ok bool) {
+	if !s.IsAIAgentInteractiveCompletedPayload() {
+		return v, false
+	}
+	return s.AIAgentInteractiveCompletedPayload, true
+}
+
+// NewAIAgentInteractiveCompletedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentInteractiveCompletedPayload.
+func NewAIAgentInteractiveCompletedPayloadAuditEventRequestEventData(v AIAgentInteractiveCompletedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentInteractiveCompletedPayload(v)
 	return s
 }
 

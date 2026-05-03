@@ -2469,6 +2469,10 @@ components:
             - $ref: '#/components/schemas/AIAgentSessionCompletedPayload'
             - $ref: '#/components/schemas/AIAgentSessionFailedPayload'
             - $ref: '#/components/schemas/AIAgentSessionCancelledPayload'
+            - $ref: '#/components/schemas/AIAgentSessionSuspendedPayload'
+            - $ref: '#/components/schemas/AIAgentSessionResumedPayload'
+            - $ref: '#/components/schemas/AIAgentInteractiveStartedPayload'
+            - $ref: '#/components/schemas/AIAgentInteractiveCompletedPayload'
             - $ref: '#/components/schemas/AIAgentSessionObservedPayload'
             - $ref: '#/components/schemas/AIAgentSessionAccessDeniedPayload'
             - $ref: '#/components/schemas/AIAgentInvestigationCancelledPayload'
@@ -2558,6 +2562,10 @@ components:
               'aiagent.session.completed': '#/components/schemas/AIAgentSessionCompletedPayload'
               'aiagent.session.failed': '#/components/schemas/AIAgentSessionFailedPayload'
               'aiagent.session.cancelled': '#/components/schemas/AIAgentSessionCancelledPayload'
+              'aiagent.session.suspended': '#/components/schemas/AIAgentSessionSuspendedPayload'
+              'aiagent.session.resumed': '#/components/schemas/AIAgentSessionResumedPayload'
+              'aiagent.interactive.started': '#/components/schemas/AIAgentInteractiveStartedPayload'
+              'aiagent.interactive.completed': '#/components/schemas/AIAgentInteractiveCompletedPayload'
               'aiagent.session.observed': '#/components/schemas/AIAgentSessionObservedPayload'
               'aiagent.session.access_denied': '#/components/schemas/AIAgentSessionAccessDeniedPayload'
               'aiagent.investigation.cancelled': '#/components/schemas/AIAgentInvestigationCancelledPayload'
@@ -5691,6 +5699,73 @@ components:
         session_id:
           type: string
           description: Investigation session identifier
+
+    AIAgentSessionSuspendedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Session suspended event payload (aiagent.session.suspended) - Emitted when an autonomous investigation is suspended due to interactive takeover (BR-INTERACTIVE-004, SOC2 CC7.2)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.suspended']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+
+    AIAgentSessionResumedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Session resumed event payload (aiagent.session.resumed) - Emitted when autonomous investigation resumes after interactive session ends (BR-INTERACTIVE-004, SOC2 CC7.2)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.resumed']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+
+    AIAgentInteractiveStartedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Interactive session started payload (aiagent.interactive.started) - Emitted when a user acquires the interactive lease and begins driving the investigation (BR-INTERACTIVE-004, DD-INTERACTIVE-002)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.interactive.started']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Interactive session identifier
+
+    AIAgentInteractiveCompletedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Interactive session completed payload (aiagent.interactive.completed) - Emitted when an interactive session ends by complete, cancel, disconnect, or timeout (BR-INTERACTIVE-004, DD-INTERACTIVE-002)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.interactive.completed']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Interactive session identifier
+        reason:
+          type: string
+          description: Reason the interactive session ended (e.g., complete, disconnect, inactivity_timeout, ttl_expired)
 
     AIAgentSessionObservedPayload:
       type: object
