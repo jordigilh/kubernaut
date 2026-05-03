@@ -222,6 +222,10 @@ func NewEvent(eventType string, correlationID string, opts ...EventOption) *Audi
 }
 
 // StoreBestEffort stores an audit event without propagating errors (fire-and-forget).
+// The call is synchronous but non-blocking in practice: when backed by BufferedDSAuditStore,
+// StoreAudit enqueues to a buffered channel and returns immediately. Under extreme
+// back-pressure (buffer full), the enqueue fails and the event is dropped — this is
+// acceptable per ADR-038 (audit must never block business logic).
 // If the event has no ActorID/ActorType set, it inherits from the context (see WithActor).
 func StoreBestEffort(ctx context.Context, store AuditStore, event *AuditEvent, logger logr.Logger) {
 	if event.ActorID == "" || event.ActorType == "" {

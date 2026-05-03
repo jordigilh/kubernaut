@@ -356,7 +356,7 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		}
 		return ogenclient.NewAIAgentAlignmentVerdictPayloadAuditEventRequestEventData(payload), true
 
-	case EventTypeSessionSuspended, EventTypeInteractiveCompleted:
+	case EventTypeSessionSuspended:
 		payload := ogenclient.AIAgentSessionCancelledPayload{
 			EventType: ogenclient.AIAgentSessionCancelledPayloadEventTypeAiagentSessionCancelled,
 			EventID:   dataString(event.Data, "event_id"),
@@ -364,13 +364,21 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		}
 		return ogenclient.NewAIAgentSessionCancelledPayloadAuditEventRequestEventData(payload), true
 
-	case EventTypeInteractiveStarted, EventTypeSessionResumed:
+	case EventTypeSessionResumed:
 		payload := ogenclient.AIAgentSessionStartedPayload{
 			EventType: ogenclient.AIAgentSessionStartedPayloadEventTypeAiagentSessionStarted,
 			EventID:   dataString(event.Data, "event_id"),
 			SessionID: event.SessionID,
 		}
 		return ogenclient.NewAIAgentSessionStartedPayloadAuditEventRequestEventData(payload), true
+
+	// EventTypeInteractiveStarted and EventTypeInteractiveCompleted do not yet have
+	// dedicated OpenAPI discriminator variants. They are stored with outer-level fields
+	// only (event_type, session_id, correlation_id, acting_user). The reason field for
+	// interactive.completed is persisted via the parent AuditEventRequest's event_action.
+	// TODO: Add dedicated discriminator variants in the OpenAPI spec for interactive events.
+	case EventTypeInteractiveStarted, EventTypeInteractiveCompleted:
+		return ogenclient.AuditEventRequestEventData{}, false
 
 	default:
 		return ogenclient.AuditEventRequestEventData{}, false
