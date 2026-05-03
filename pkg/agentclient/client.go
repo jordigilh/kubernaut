@@ -252,11 +252,12 @@ func (c *KubernautAgentClient) PollSession(ctx context.Context, sessionID string
 			return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("failed to decode session status: %v", err)}
 		}
 		return &status, nil
-	case *HTTPError:
-		return nil, &APIError{StatusCode: http.StatusNotFound, Message: fmt.Sprintf("session %s not found: %s", sessionID, v.Detail)}
 	case *HTTPValidationError:
 		return nil, &APIError{StatusCode: http.StatusUnprocessableEntity, Message: "validation error"}
 	default:
+		if he, ok := res.(interface{ GetDetail() string }); ok {
+			return nil, &APIError{StatusCode: http.StatusNotFound, Message: fmt.Sprintf("session %s not found: %s", sessionID, he.GetDetail())}
+		}
 		return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("unexpected response type: %T", res)}
 	}
 }
