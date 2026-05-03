@@ -28,7 +28,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("TP-823-OAS: Cancel, Snapshot, Stream Endpoints (#823 PR2)", func() {
@@ -51,7 +51,7 @@ var _ = Describe("TP-823-OAS: Cancel, Snapshot, Stream Endpoints (#823 PR2)", fu
 		It("should cancel a running investigation and return the cancelled session state", func() {
 			sessionID, err := manager.StartInvestigation(
 				context.Background(),
-				func(bgCtx context.Context) (interface{}, error) {
+				func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
 					<-bgCtx.Done()
 					return nil, bgCtx.Err()
 				},
@@ -99,7 +99,7 @@ var _ = Describe("TP-823-OAS: Cancel, Snapshot, Stream Endpoints (#823 PR2)", fu
 		It("should return 409 when session is already completed", func() {
 			sessionID, err := manager.StartInvestigation(
 				context.Background(),
-				func(_ context.Context) (interface{}, error) {
+				func(_ context.Context) (*katypes.InvestigationResult, error) {
 					return &katypes.InvestigationResult{RCASummary: "done"}, nil
 				},
 				map[string]string{"incident_id": "completed-test"},
@@ -130,7 +130,7 @@ var _ = Describe("TP-823-OAS: Cancel, Snapshot, Stream Endpoints (#823 PR2)", fu
 		It("should return session state including metadata and created_at", func() {
 			sessionID, err := manager.StartInvestigation(
 				context.Background(),
-				func(bgCtx context.Context) (interface{}, error) {
+				func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
 					<-bgCtx.Done()
 					return nil, bgCtx.Err()
 				},
@@ -168,7 +168,7 @@ var _ = Describe("TP-823-OAS: Cancel, Snapshot, Stream Endpoints (#823 PR2)", fu
 		It("should return cancelled_phase, cancelled_at_turn, rca_summary, and token counts", func() {
 			sessionID, err := manager.StartInvestigation(
 				context.Background(),
-				func(_ context.Context) (interface{}, error) {
+				func(_ context.Context) (*katypes.InvestigationResult, error) {
 					return &katypes.InvestigationResult{
 						Cancelled:       true,
 						CancelledPhase:  "workflow_discovery",
@@ -225,7 +225,7 @@ var _ = Describe("TP-823-OAS: Cancel, Snapshot, Stream Endpoints (#823 PR2)", fu
 		It("should return 409 indicating session is in progress", func() {
 			sessionID, err := manager.StartInvestigation(
 				context.Background(),
-				func(bgCtx context.Context) (interface{}, error) {
+				func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
 					<-bgCtx.Done()
 					return nil, bgCtx.Err()
 				},
@@ -270,7 +270,7 @@ var _ = Describe("TP-823-OAS: Cancel, Snapshot, Stream Endpoints (#823 PR2)", fu
 		It("should report cancelled instead of unknown", func() {
 			sessionID, err := manager.StartInvestigation(
 				context.Background(),
-				func(bgCtx context.Context) (interface{}, error) {
+				func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
 					<-bgCtx.Done()
 					return nil, bgCtx.Err()
 				},

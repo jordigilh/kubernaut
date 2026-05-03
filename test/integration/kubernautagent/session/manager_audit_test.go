@@ -28,6 +28,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
@@ -104,8 +105,8 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 				"signal_name":    "OOMKilled",
 				"severity":       "critical",
 			}
-			id, err := mgr.StartInvestigation(userCtx, func(ctx context.Context) (interface{}, error) {
-				return "result", nil
+			id, err := mgr.StartInvestigation(userCtx, func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{RCASummary: "result"}, nil
 			}, metadata)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(id).NotTo(BeEmpty())
@@ -131,8 +132,8 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 	Describe("IT-KA-823-A02: Successful investigation emits session.completed", func() {
 		It("should emit a session.completed event with outcome=success", func() {
 			metadata := map[string]string{"remediation_id": "rr-complete"}
-			_, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
-				return "done", nil
+			_, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{RCASummary: "done"}, nil
 			}, metadata)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -150,7 +151,7 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 	Describe("IT-KA-823-A03: Failed investigation emits session.failed", func() {
 		It("should emit a session.failed event with outcome=failure and error detail", func() {
 			metadata := map[string]string{"remediation_id": "rr-fail"}
-			_, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			_, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				return nil, errors.New("llm timeout")
 			}, metadata)
 			Expect(err).NotTo(HaveOccurred())
@@ -171,7 +172,7 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 		It("should emit a session.cancelled event when a running investigation is cancelled", func() {
 			metadata := map[string]string{"remediation_id": "rr-cancel"}
 			proceed := make(chan struct{})
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
 				return nil, ctx.Err()
 			}, metadata)
@@ -204,7 +205,7 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 		It("should only emit started and cancelled, not completed or failed", func() {
 			metadata := map[string]string{"remediation_id": "rr-phantom"}
 			proceed := make(chan struct{})
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
 				return nil, ctx.Err()
 			}, metadata)
@@ -249,8 +250,8 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 				"remediation_id": "rr-soc2-456",
 				"incident_id":    "inc-soc2-789",
 			}
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
-				return "soc2-ok", nil
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{RCASummary: "soc2-ok"}, nil
 			}, metadata)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -274,8 +275,8 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 			nilStore := session.NewStore(5 * time.Minute)
 			nilMgr := session.NewManager(nilStore, logr.Discard(), nil, nil)
 
-			id, err := nilMgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
-				return "safe", nil
+			id, err := nilMgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{RCASummary: "safe"}, nil
 			}, map[string]string{"remediation_id": "rr-nil"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(id).NotTo(BeEmpty())
@@ -295,8 +296,8 @@ var _ = Describe("Kubernaut Agent Session Audit Trail — #823 PR 1.5", func() {
 			failStore := &failingAuditStore{}
 			failMgr := session.NewManager(session.NewStore(5*time.Minute), logr.Discard(), failStore, nil)
 
-			id, err := failMgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
-				return "resilient", nil
+			id, err := failMgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{RCASummary: "resilient"}, nil
 			}, map[string]string{"remediation_id": "rr-fail-audit"})
 			Expect(err).NotTo(HaveOccurred())
 

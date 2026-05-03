@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
 

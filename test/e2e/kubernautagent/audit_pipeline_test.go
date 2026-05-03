@@ -530,7 +530,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			}
 		})
 
-		It("E2E-KA-433-AP-003: All audit events have ActorType=Service, ActorID=kubernaut-agent", func() {
+		It("E2E-KA-433-AP-003: All audit events carry actor attribution", func() {
 			remediationID := "test-audit-ap-003-" + time.Now().Format("20060102150405")
 
 			req := &agentclient.IncidentRequest{
@@ -567,14 +567,14 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 				"At least 2 audit events should be persisted")
 
 			for _, event := range events {
-				if event.ActorType.Set {
-					Expect(event.ActorType.Value).To(Equal("Service"),
-						"ActorType must be Service on %s event", event.EventType)
-				}
-				if event.ActorID.Set {
-					Expect(event.ActorID.Value).To(Equal("kubernaut-agent"),
-						"ActorID must be kubernaut-agent on %s event", event.EventType)
-				}
+				Expect(event.ActorType.Set).To(BeTrue(),
+					"ActorType must be set on %s event", event.EventType)
+				Expect(event.ActorType.Value).ToNot(BeEmpty(),
+					"ActorType must not be empty on %s event", event.EventType)
+				Expect(event.ActorID.Set).To(BeTrue(),
+					"ActorID must be set on %s event", event.EventType)
+				Expect(event.ActorID.Value).ToNot(BeEmpty(),
+					"ActorID must not be empty on %s event", event.EventType)
 			}
 		})
 	})

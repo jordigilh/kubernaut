@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Graceful Shutdown — SIGTERM — #823", func() {
@@ -39,7 +39,7 @@ var _ = Describe("Graceful Shutdown — SIGTERM — #823", func() {
 
 			ids := make([]string, 3)
 			for i := 0; i < 3; i++ {
-				id, err := h.Manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+				id, err := h.Manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 					<-ctx.Done()
 					return &katypes.InvestigationResult{RCASummary: "shutdown"}, nil
 				}, map[string]string{"remediation_id": "rr-sigterm"})

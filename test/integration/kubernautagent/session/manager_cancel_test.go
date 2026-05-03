@@ -26,7 +26,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Kubernaut Agent Session Manager Cancellation — #823 PR3", func() {
@@ -45,7 +45,7 @@ var _ = Describe("Kubernaut Agent Session Manager Cancellation — #823 PR3", fu
 		It("session status is cancelled AND partial InvestigationResult is stored", func() {
 			proceed := make(chan struct{})
 
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				close(proceed)
 				<-ctx.Done()
 				return &katypes.InvestigationResult{
@@ -81,10 +81,9 @@ var _ = Describe("Kubernaut Agent Session Manager Cancellation — #823 PR3", fu
 			Expect(err).NotTo(HaveOccurred())
 			Expect(sess.Status).To(Equal(session.StatusCancelled))
 
-			result, ok := sess.Result.(*katypes.InvestigationResult)
-			Expect(ok).To(BeTrue(), "result should be *InvestigationResult")
-			Expect(result.Cancelled).To(BeTrue())
-			Expect(result.RCASummary).To(Equal("partial RCA before cancel"))
+			Expect(sess.Result).NotTo(BeNil())
+			Expect(sess.Result.Cancelled).To(BeTrue())
+			Expect(sess.Result.RCASummary).To(Equal("partial RCA before cancel"))
 		})
 	})
 
@@ -92,7 +91,7 @@ var _ = Describe("Kubernaut Agent Session Manager Cancellation — #823 PR3", fu
 		It("event channel is eventually closed and partial result is stored", func() {
 			proceed := make(chan struct{})
 
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				close(proceed)
 				<-ctx.Done()
 				return &katypes.InvestigationResult{
@@ -127,7 +126,7 @@ var _ = Describe("Kubernaut Agent Session Manager Cancellation — #823 PR3", fu
 
 	Describe("IT-KA-823-C03: Non-cancelled investigation regression guard", func() {
 		It("produces identical result to v1.4 behavior — completed with full result", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				return &katypes.InvestigationResult{
 					RCASummary: "full investigation completed",
 					WorkflowID: "oom-increase-memory",
@@ -149,11 +148,10 @@ var _ = Describe("Kubernaut Agent Session Manager Cancellation — #823 PR3", fu
 			Expect(err).NotTo(HaveOccurred())
 			Expect(sess.Status).To(Equal(session.StatusCompleted))
 
-			result, ok := sess.Result.(*katypes.InvestigationResult)
-			Expect(ok).To(BeTrue())
-			Expect(result.Cancelled).To(BeFalse(), "non-cancelled investigation should have Cancelled=false")
-			Expect(result.RCASummary).To(Equal("full investigation completed"))
-			Expect(result.WorkflowID).To(Equal("oom-increase-memory"))
+			Expect(sess.Result).NotTo(BeNil())
+			Expect(sess.Result.Cancelled).To(BeFalse(), "non-cancelled investigation should have Cancelled=false")
+			Expect(sess.Result.RCASummary).To(Equal("full investigation completed"))
+			Expect(sess.Result.WorkflowID).To(Equal("oom-increase-memory"))
 		})
 	})
 })

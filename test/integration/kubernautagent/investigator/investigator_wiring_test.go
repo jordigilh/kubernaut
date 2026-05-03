@@ -21,7 +21,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
 

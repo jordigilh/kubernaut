@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
+	internaltransport "github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
@@ -119,7 +120,7 @@ func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) ht
 	}
 
 	if cfg.AI.LLM.OAuth2.Enabled {
-		base = llmtransport.NewOAuth2ClientCredentialsTransport(cfg.AI.LLM.OAuth2, base)
+		base = internaltransport.NewOAuth2ClientCredentialsTransport(cfg.AI.LLM.OAuth2, base)
 		needsCustom = true
 	}
 	if len(rt.CustomHeaders) > 0 {

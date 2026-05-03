@@ -29,7 +29,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
 )
 
 var _ = Describe("OAuth2 Client Credentials Integration — #417", func() {

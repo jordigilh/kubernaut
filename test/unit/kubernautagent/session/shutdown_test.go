@@ -26,6 +26,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Manager Shutdown — #823 Hardening", func() {
@@ -36,7 +37,7 @@ var _ = Describe("Manager Shutdown — #823 Hardening", func() {
 			mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
 
 			cancelled := make(chan struct{})
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-ctx.Done()
 				close(cancelled)
 				return nil, ctx.Err()
@@ -80,8 +81,8 @@ var _ = Describe("Manager Shutdown — #823 Hardening", func() {
 			mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
 
 			done := make(chan string, 1)
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
-				return "completed-result", nil
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{RCASummary: "completed-result"}, nil
 			}, map[string]string{"remediation_id": "rr-terminal-test"})
 			Expect(err).NotTo(HaveOccurred())
 			done <- id

@@ -26,6 +26,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("SSE Delivery Integration — #823 PR7", func() {
@@ -38,7 +39,7 @@ var _ = Describe("SSE Delivery Integration — #823 PR7", func() {
 			subscribed := make(chan struct{})
 			proceed := make(chan struct{})
 
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-subscribed
 				sink := session.EventSinkFromContext(ctx)
 				if sink != nil {
@@ -54,7 +55,7 @@ var _ = Describe("SSE Delivery Integration — #823 PR7", func() {
 					}
 				}
 				<-proceed
-				return map[string]string{"rca_summary": "delivered"}, nil
+				return &katypes.InvestigationResult{RCASummary: "delivered"}, nil
 			}, map[string]string{"remediation_id": "rr-sse-delivery"})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -89,7 +90,7 @@ var _ = Describe("SSE Delivery Integration — #823 PR7", func() {
 
 			subscribed := make(chan struct{})
 
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-subscribed
 				sink := session.EventSinkFromContext(ctx)
 				if sink != nil {
@@ -104,7 +105,7 @@ var _ = Describe("SSE Delivery Integration — #823 PR7", func() {
 						}
 					}
 				}
-				return map[string]string{"rca_summary": "completed despite slow consumer"}, nil
+				return &katypes.InvestigationResult{RCASummary: "completed despite slow consumer"}, nil
 			}, map[string]string{"remediation_id": "rr-disconnect"})
 			Expect(err).NotTo(HaveOccurred())
 

@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Kubernaut Agent Session Store — #433", func() {
@@ -155,7 +156,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 			id, err := store.Create()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
-			Expect(store.Update(id, session.StatusCompleted, "done", nil)).To(Succeed())
+			Expect(store.Update(id, session.StatusCompleted, &katypes.InvestigationResult{}, nil)).To(Succeed())
 
 			err = store.Update(id, session.StatusRunning, nil, nil)
 			Expect(err).To(MatchError(session.ErrSessionTerminal))
@@ -191,7 +192,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
 			Expect(store.Update(id, session.StatusFailed, nil, nil)).To(Succeed())
 
-			err = store.Update(id, session.StatusCompleted, "late-result", nil)
+			err = store.Update(id, session.StatusCompleted, &katypes.InvestigationResult{}, nil)
 			Expect(err).To(MatchError(session.ErrSessionTerminal))
 
 			sess, err := store.Get(id)
@@ -276,7 +277,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(store.Update(id, session.StatusCancelled, nil, nil)).To(Succeed())
 
-			partialResult := map[string]string{"rca_summary": "partial"}
+			partialResult := &katypes.InvestigationResult{RCASummary: "partial"}
 			store.SetResult(id, partialResult)
 
 			sess, err := store.Get(id)
@@ -287,7 +288,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 
 		It("should be a no-op for non-existent session", func() {
 			store := session.NewStore(30 * time.Minute)
-			Expect(func() { store.SetResult("nonexistent", "data") }).NotTo(Panic())
+			Expect(func() { store.SetResult("nonexistent", &katypes.InvestigationResult{}) }).NotTo(Panic())
 		})
 	})
 })

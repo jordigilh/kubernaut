@@ -29,6 +29,7 @@ import (
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
+	oauth2transport "github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 )
 
@@ -70,7 +71,7 @@ var _ = Describe("OAuth2 Client Credentials Transport — #417", func() {
 				Scopes:       []string{"openid"},
 			}
 
-			rt := transport.NewOAuth2ClientCredentialsTransport(cfg, inner)
+			rt := oauth2transport.NewOAuth2ClientCredentialsTransport(cfg, inner)
 			Expect(rt).NotTo(BeNil())
 
 			req := httptest.NewRequest("POST", "https://llm.example.com/v1/chat/completions", nil)
@@ -98,7 +99,7 @@ var _ = Describe("OAuth2 Client Credentials Transport — #417", func() {
 			}
 
 			Expect(func() {
-				rt := transport.NewOAuth2ClientCredentialsTransport(cfg, nil)
+				rt := oauth2transport.NewOAuth2ClientCredentialsTransport(cfg, nil)
 				Expect(rt).NotTo(BeNil())
 			}).NotTo(Panic())
 		})
@@ -129,7 +130,7 @@ var _ = Describe("OAuth2 Client Credentials Transport — #417", func() {
 			}
 
 			base := http.DefaultTransport
-			oauth2RT := transport.NewOAuth2ClientCredentialsTransport(oauth2Cfg, base)
+			oauth2RT := oauth2transport.NewOAuth2ClientCredentialsTransport(oauth2Cfg, base)
 			authRT := transport.NewAuthHeadersTransport(authHeaders, oauth2RT)
 
 			body := `{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"test"}]}`

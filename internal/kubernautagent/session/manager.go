@@ -25,7 +25,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
@@ -34,7 +34,7 @@ import (
 // because the result is ultimately JSON-marshaled for the HTTP response. Using
 // generics here would propagate type parameters through Manager/Store/Session
 // with no safety benefit (#8 conscious decision).
-type InvestigateFunc func(ctx context.Context) (interface{}, error)
+type InvestigateFunc func(ctx context.Context) (*katypes.InvestigationResult, error)
 
 // Manager orchestrates investigation sessions, running each in a
 // background goroutine and tracking progress via the Store.
@@ -385,7 +385,7 @@ func (m *Manager) GetSignalForRemediation(rrID string) (*katypes.SignalContext, 
 // terminal state (e.g. StatusCancelled). Delegates to Store.SetResult which
 // does not change the session status — only the Result field. This preserves
 // partial investigation state for snapshot retrieval (BR-SESSION-002).
-func (m *Manager) storePartialResult(id string, result interface{}) {
+func (m *Manager) storePartialResult(id string, result *katypes.InvestigationResult) {
 	m.store.SetResult(id, result)
 }
 

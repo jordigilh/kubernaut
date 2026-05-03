@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Session Metadata — #433", func() {
@@ -38,9 +39,9 @@ var _ = Describe("Session Metadata — #433", func() {
 				"incident_id": "e2e-ka-001-oom",
 			}
 
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				time.Sleep(50 * time.Millisecond)
-				return "done", nil
+				return &katypes.InvestigationResult{}, nil
 			}, metadata)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(id).NotTo(BeEmpty())
@@ -61,8 +62,8 @@ var _ = Describe("Session Metadata — #433", func() {
 				"incident_id": "e2e-ka-002-crash",
 			}
 
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
-				return "result", nil
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{}, nil
 			}, metadata)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -86,8 +87,8 @@ var _ = Describe("Session Metadata — #433", func() {
 			store := session.NewStore(5 * time.Minute)
 			manager := session.NewManager(store, logr.Discard(), nil, nil)
 
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
-				return "result", nil
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 

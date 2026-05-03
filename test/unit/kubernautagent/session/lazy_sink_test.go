@@ -27,6 +27,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Lazy Event Sink — #823 PR7", func() {
@@ -37,10 +38,10 @@ var _ = Describe("Lazy Event Sink — #823 PR7", func() {
 			mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
 
 			sinkResult := make(chan bool, 1)
-			_, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			_, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				sink := session.EventSinkFromContext(ctx)
 				sinkResult <- (sink == nil)
-				return map[string]string{"rca_summary": "autonomous"}, nil
+				return &katypes.InvestigationResult{RCASummary: "autonomous"}, nil
 			}, map[string]string{"remediation_id": "rr-lazy-test"})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -54,7 +55,7 @@ var _ = Describe("Lazy Event Sink — #823 PR7", func() {
 			store := session.NewStore(30 * time.Minute)
 			mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
 
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				panic("simulated investigation panic")
 			}, map[string]string{"remediation_id": "rr-panic-test"})
 			Expect(err).NotTo(HaveOccurred())
@@ -76,9 +77,9 @@ var _ = Describe("Lazy Event Sink — #823 PR7", func() {
 			mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
 
 			proceed := make(chan struct{})
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
-				return map[string]string{"rca_summary": "done"}, nil
+				return &katypes.InvestigationResult{RCASummary: "done"}, nil
 			}, map[string]string{"remediation_id": "rr-complete-evt"})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -115,7 +116,7 @@ var _ = Describe("Lazy Event Sink — #823 PR7", func() {
 			mgr := session.NewManager(store, logr.Discard(), recorder, nil)
 
 			proceed := make(chan struct{})
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
 				return nil, nil
 			}, map[string]string{"remediation_id": "rr-observed"})

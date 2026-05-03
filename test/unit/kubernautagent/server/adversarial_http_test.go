@@ -29,7 +29,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() {
@@ -173,7 +173,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 		It("should return 409 when session is still running", func() {
 			sessionID, err := manager.StartInvestigation(
 				context.Background(),
-				func(bgCtx context.Context) (interface{}, error) {
+				func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
 					<-bgCtx.Done()
 					return nil, bgCtx.Err()
 				},
@@ -203,7 +203,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 
 			sessionID, err := manager.StartInvestigation(
 				context.Background(),
-				func(_ context.Context) (interface{}, error) { return result, nil },
+				func(_ context.Context) (*katypes.InvestigationResult, error) { return result, nil },
 				map[string]string{"incident_id": "hr-test-001"},
 			)
 			Expect(err).NotTo(HaveOccurred())
@@ -238,7 +238,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 
 			sessionID, err := manager.StartInvestigation(
 				context.Background(),
-				func(_ context.Context) (interface{}, error) { return result, nil },
+				func(_ context.Context) (*katypes.InvestigationResult, error) { return result, nil },
 				map[string]string{"incident_id": "hr-test-002"},
 			)
 			Expect(err).NotTo(HaveOccurred())
@@ -272,7 +272,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 
 			sessionID, err := manager.StartInvestigation(
 				context.Background(),
-				func(_ context.Context) (interface{}, error) { return result, nil },
+				func(_ context.Context) (*katypes.InvestigationResult, error) { return result, nil },
 				map[string]string{"incident_id": "eb-test-001"},
 			)
 			Expect(err).NotTo(HaveOccurred())
@@ -505,7 +505,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 
 			sessionID, err := manager.StartInvestigation(
 				context.Background(),
-				func(_ context.Context) (interface{}, error) { return result, nil },
+				func(_ context.Context) (*katypes.InvestigationResult, error) { return result, nil },
 				map[string]string{"incident_id": "h2-test"},
 			)
 			Expect(err).NotTo(HaveOccurred())

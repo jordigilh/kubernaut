@@ -16,7 +16,7 @@ limitations under the License.
 
 package session
 
-import katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+import katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 
 // SessionContext holds typed request-level context for an investigation session.
 // Replaces the untyped Metadata map[string]string with structured fields.

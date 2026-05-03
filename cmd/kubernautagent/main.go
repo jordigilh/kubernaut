@@ -70,7 +70,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
 	k8stools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
 	logtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/logs"

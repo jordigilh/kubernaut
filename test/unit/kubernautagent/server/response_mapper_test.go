@@ -29,7 +29,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Response Mapper — #433", func() {
@@ -49,7 +49,7 @@ var _ = Describe("Response Mapper — #433", func() {
 	Describe("UT-KA-433-MAPPER-001: IncidentID is populated from session metadata", func() {
 		It("should set IncidentID in the response from session metadata", func() {
 			metadata := map[string]string{"incident_id": "e2e-ka-001-oom"}
-			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return &katypes.InvestigationResult{
 					RCASummary: "OOMKilled due to memory limit",
 					Confidence: 0.85,
@@ -79,7 +79,7 @@ var _ = Describe("Response Mapper — #433", func() {
 
 	Describe("UT-KA-433-MAPPER-002: Timestamp is set to a non-empty RFC3339 value", func() {
 		It("should set a valid Timestamp on the response", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return &katypes.InvestigationResult{
 					RCASummary: "CrashLoopBackOff",
 					Confidence: 0.70,
@@ -111,7 +111,7 @@ var _ = Describe("Response Mapper — #433", func() {
 
 	Describe("UT-KA-433-MAPPER-003: RootCauseAnalysis is populated from RCASummary", func() {
 		It("should set RootCauseAnalysis as a structured map", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return &katypes.InvestigationResult{
 					RCASummary: "Pod killed due to exceeding memory limits",
 					Confidence: 0.90,
@@ -172,7 +172,7 @@ var _ = Describe("Response Mapper — #433", func() {
 					{Attempt: 0, IsValid: false, Errors: []string{"missing param"}, Timestamp: "2026-04-26T19:55:00Z"},
 				},
 			}
-			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return result, nil
 			}, map[string]string{"incident_id": "inc-full-mapper"})
 			Expect(err).NotTo(HaveOccurred())
@@ -276,7 +276,7 @@ var _ = Describe("Response Mapper — #433", func() {
 					HumanReviewNeeded: true,
 					HumanReviewReason: e.reason,
 				}
-				id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+				id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 					return result, nil
 				}, map[string]string{"incident_id": "hr-" + e.reason})
 				Expect(err).NotTo(HaveOccurred())
@@ -312,7 +312,7 @@ var _ = Describe("Response Mapper — #433", func() {
 				HumanReviewNeeded: true,
 				HumanReviewReason: "low_confidence",
 			}
-			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return result, nil
 			}, map[string]string{"incident_id": "hr-synth-warn"})
 			Expect(err).NotTo(HaveOccurred())
@@ -336,10 +336,10 @@ var _ = Describe("Response Mapper — #433", func() {
 		})
 	})
 
-	Describe("UT-KA-PR9-MAPPER-008: Result endpoint returns 409 when result is not InvestigationResult type", func() {
-		It("should return 409 conflict when session result is a non-InvestigationResult type", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
-				return "raw string result", nil
+	Describe("UT-KA-PR9-MAPPER-008: Result endpoint maps minimal InvestigationResult", func() {
+		It("should return IncidentResponse when investigation returns empty InvestigationResult", func() {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -355,8 +355,8 @@ var _ = Describe("Response Mapper — #433", func() {
 			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(context.Background(), params)
 			Expect(err).NotTo(HaveOccurred())
 
-			_, ok := resp.(*agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict)
-			Expect(ok).To(BeTrue(), "non-InvestigationResult session should return 409")
+			_, ok := resp.(*agentclient.IncidentResponse)
+			Expect(ok).To(BeTrue(), "minimal InvestigationResult should map to IncidentResponse")
 		})
 	})
 
@@ -368,7 +368,7 @@ var _ = Describe("Response Mapper — #433", func() {
 				HumanReviewNeeded: true,
 				Reason:            "low_confidence",
 			}
-			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return result, nil
 			}, map[string]string{"incident_id": "hr-legacy-reason"})
 			Expect(err).NotTo(HaveOccurred())
@@ -402,7 +402,7 @@ var _ = Describe("Response Mapper — #433", func() {
 				Confidence:        0.2,
 				HumanReviewNeeded: true,
 			}
-			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return result, nil
 			}, map[string]string{"incident_id": "hr-no-reason"})
 			Expect(err).NotTo(HaveOccurred())
@@ -428,7 +428,7 @@ var _ = Describe("Response Mapper — #433", func() {
 
 	Describe("UT-KA-PR9-MAPPER-007: Status mapping covers all session statuses via status endpoint", func() {
 		It("should map 'completed' status correctly", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return &katypes.InvestigationResult{RCASummary: "done"}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
@@ -448,7 +448,7 @@ var _ = Describe("Response Mapper — #433", func() {
 		})
 
 		It("should map 'investigating' for running session", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(bgCtx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
 				<-bgCtx.Done()
 				return nil, bgCtx.Err()
 			}, nil)
@@ -469,7 +469,7 @@ var _ = Describe("Response Mapper — #433", func() {
 		})
 
 		It("should map 'failed' status correctly", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return nil, fmt.Errorf("LLM provider unavailable")
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())

@@ -34,6 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // delayedMockRunner simulates an LLM that takes time to respond.
@@ -81,11 +82,11 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			autoMgr := &mockAutoMgrIT{mgr: mgr}
 
 			var autonomousCompleted atomic.Bool
-			sessionID, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			sessionID, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				select {
 				case <-time.After(200 * time.Millisecond):
 					autonomousCompleted.Store(true)
-					return "auto-result", nil
+					return &katypes.InvestigationResult{RCASummary: "auto-result"}, nil
 				case <-ctx.Done():
 					return nil, ctx.Err()
 				}
@@ -142,7 +143,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			mgr := session.NewManager(store, logr.Discard(), nil, nil)
 			autoMgr := &mockAutoMgrIT{mgr: mgr}
 
-			_, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			_, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-ctx.Done()
 				return nil, ctx.Err()
 			}, map[string]string{"remediation_id": "rr-concurrent-001"})

@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Signal Retrieval from Autonomous Session — PR5 Slice B", func() {
@@ -49,7 +49,7 @@ var _ = Describe("Signal Retrieval from Autonomous Session — PR5 Slice B", fun
 				},
 			}
 
-			id, err := manager.StartInvestigationWithContext(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigationWithContext(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-ctx.Done()
 				return nil, ctx.Err()
 			}, sctx)
@@ -99,7 +99,7 @@ var _ = Describe("Signal Retrieval from Autonomous Session — PR5 Slice B", fun
 				},
 			}
 
-			_, err := manager.StartInvestigationWithContext(context.Background(), func(ctx context.Context) (interface{}, error) {
+			_, err := manager.StartInvestigationWithContext(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-ctx.Done()
 				return nil, ctx.Err()
 			}, sctx)
@@ -136,7 +136,7 @@ var _ = Describe("Signal Retrieval from Autonomous Session — PR5 Slice B", fun
 				"remediation_id": "rr-b05-legacy",
 				"incident_id":    "inc-b05",
 			}
-			_, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			_, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-ctx.Done()
 				return nil, ctx.Err()
 			}, metadata)

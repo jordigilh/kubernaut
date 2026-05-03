@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // Status represents the lifecycle state of an investigation session.
@@ -41,7 +43,7 @@ const (
 type Session struct {
 	ID        string
 	Status    Status
-	Result    interface{}
+	Result    *katypes.InvestigationResult
 	Error     error
 	CreatedAt time.Time
 	Context   SessionContext
@@ -159,7 +161,7 @@ func (s *Store) SetContext(id string, ctx SessionContext) {
 
 // Update modifies an existing session. Returns ErrSessionTerminal if the
 // session has already reached a terminal state (completed, cancelled, failed).
-func (s *Store) Update(id string, status Status, result interface{}, err error) error {
+func (s *Store) Update(id string, status Status, result *katypes.InvestigationResult, err error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess, ok := s.sessions[id]
@@ -178,7 +180,7 @@ func (s *Store) Update(id string, status Status, result interface{}, err error) 
 // SetResult attaches a result to an existing session without changing its
 // status. Used to persist partial investigation state on cancelled sessions
 // where Store.Update would reject the status transition (BR-SESSION-002).
-func (s *Store) SetResult(id string, result interface{}) {
+func (s *Store) SetResult(id string, result *katypes.InvestigationResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if sess, ok := s.sessions[id]; ok {

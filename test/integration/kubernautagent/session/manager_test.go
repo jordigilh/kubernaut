@@ -28,6 +28,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Kubernaut Agent Session Manager — #433", func() {
@@ -44,9 +45,9 @@ var _ = Describe("Kubernaut Agent Session Manager — #433", func() {
 
 	Describe("IT-KA-433-001: Session manager starts background investigation", func() {
 		It("should return a session ID immediately", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				time.Sleep(100 * time.Millisecond)
-				return "result", nil
+				return &katypes.InvestigationResult{}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(id).NotTo(BeEmpty(), "session ID should be returned immediately")
@@ -55,9 +56,9 @@ var _ = Describe("Kubernaut Agent Session Manager — #433", func() {
 
 	Describe("IT-KA-433-002: Session manager reports in-progress status", func() {
 		It("should show running status while investigation is active", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				time.Sleep(200 * time.Millisecond)
-				return "done", nil
+				return &katypes.InvestigationResult{}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -73,8 +74,8 @@ var _ = Describe("Kubernaut Agent Session Manager — #433", func() {
 
 	Describe("IT-KA-433-003: Session manager delivers completed result", func() {
 		It("should transition to completed with result after investigation finishes", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
-				return map[string]string{"workflow_id": "oom-increase-memory"}, nil
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{WorkflowID: "oom-increase-memory"}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -89,15 +90,13 @@ var _ = Describe("Kubernaut Agent Session Manager — #433", func() {
 			sess, err := manager.GetSession(id)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(sess.Result).NotTo(BeNil())
-			result, ok := sess.Result.(map[string]string)
-			Expect(ok).To(BeTrue())
-			Expect(result["workflow_id"]).To(Equal("oom-increase-memory"))
+			Expect(sess.Result.WorkflowID).To(Equal("oom-increase-memory"))
 		})
 	})
 
 	Describe("IT-KA-433-004: Session manager captures investigation failure", func() {
 		It("should transition to failed with error when investigation errors", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				return nil, errors.New("LLM provider unavailable")
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
@@ -134,7 +133,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 		It("should propagate cancellation and transition to cancelled", func() {
 			cancelled := make(chan struct{})
 
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-ctx.Done()
 				close(cancelled)
 				return nil, ctx.Err()
@@ -174,8 +173,8 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 
 	Describe("IT-KA-823-003: Cancelling an already-completed investigation returns a clear error", func() {
 		It("should return ErrSessionTerminal for a completed session", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
-				return "result", nil
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -196,7 +195,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 		It("should keep StatusCancelled even when goroutine returns an error", func() {
 			started := make(chan struct{})
 
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				close(started)
 				<-ctx.Done()
 				return nil, errors.New("investigation aborted")
@@ -236,7 +235,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 
 	Describe("IT-KA-823-005: An observer can receive live events from an active investigation", func() {
 		It("should return a readable event channel for a running investigation", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-ctx.Done()
 				return nil, ctx.Err()
 			}, nil)
@@ -260,7 +259,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 
 	Describe("IT-KA-823-006: Multiple subscriptions share a single event stream", func() {
 		It("should return the same channel on repeated subscribe calls", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-ctx.Done()
 				return nil, ctx.Err()
 			}, nil)
@@ -290,9 +289,9 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 		It("should close the event channel when the investigation function returns", func() {
 			proceed := make(chan struct{})
 
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
-				return "done", nil
+				return &katypes.InvestigationResult{}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -332,8 +331,8 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 
 	Describe("IT-KA-823-009: Subscribing to a concluded investigation returns a clear error", func() {
 		It("should return ErrSessionTerminal after the investigation has completed", func() {
-			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
-				return "result", nil
+			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 

@@ -28,7 +28,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
@@ -59,7 +59,7 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 	createSessionAs := func(user string) string {
 		ctx := userCtx(user)
 		proceed := make(chan struct{})
-		id, err := mgr.StartInvestigation(ctx, func(bgCtx context.Context) (interface{}, error) {
+		id, err := mgr.StartInvestigation(ctx, func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
 			<-proceed
 			return &katypes.InvestigationResult{RCASummary: "done"}, nil
 		}, map[string]string{"remediation_id": "rr-authz-test"})
@@ -162,7 +162,7 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 			completedMgr := session.NewManager(completedStore, logr.Discard(), audit.NopAuditStore{}, nil)
 			completedH := server.NewHandler(completedMgr, nil, logr.Discard(), nil)
 
-			id, sErr := completedMgr.StartInvestigation(userCtx("user-a"), func(ctx context.Context) (interface{}, error) {
+			id, sErr := completedMgr.StartInvestigation(userCtx("user-a"), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				return &katypes.InvestigationResult{RCASummary: "done", Confidence: 0.9}, nil
 			}, map[string]string{"remediation_id": "rr-authz-result"})
 			Expect(sErr).NotTo(HaveOccurred())
@@ -209,7 +209,7 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 			authzH := server.NewHandler(authzMgr, nil, logr.Discard(), nil)
 
 			proceed := make(chan struct{})
-			id, err := authzMgr.StartInvestigation(userCtx("user-a"), func(ctx context.Context) (interface{}, error) {
+			id, err := authzMgr.StartInvestigation(userCtx("user-a"), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
 				return nil, nil
 			}, map[string]string{"remediation_id": "rr-denied-audit"})
@@ -261,7 +261,7 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 			authzMgr := session.NewManager(authzStore, logr.Discard(), recorder, nil)
 
 			proceed := make(chan struct{})
-			id, err := authzMgr.StartInvestigation(userCtx("user-a"), func(ctx context.Context) (interface{}, error) {
+			id, err := authzMgr.StartInvestigation(userCtx("user-a"), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
 				return nil, nil
 			}, map[string]string{"remediation_id": "rr-observer-audit"})
@@ -304,7 +304,7 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 	Describe("UT-KA-823-A11: Authorization uses constant-time comparison", func() {
 		It("owner mismatch returns same error regardless of match length", func() {
 			proceed := make(chan struct{})
-			id, err := mgr.StartInvestigation(userCtx("correct-owner"), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(userCtx("correct-owner"), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
 				return nil, nil
 			}, map[string]string{"remediation_id": "rr-const-time"})

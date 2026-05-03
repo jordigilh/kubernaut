@@ -26,6 +26,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
@@ -38,11 +39,11 @@ var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
 			subscribed := make(chan struct{})
 			sinkReceived := make(chan bool, 1)
 
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-subscribed
 				sink := session.EventSinkFromContext(ctx)
 				sinkReceived <- (sink != nil)
-				return map[string]string{"rca_summary": "test"}, nil
+				return &katypes.InvestigationResult{RCASummary: "test"}, nil
 			}, map[string]string{"remediation_id": "rr-stream-test"})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -63,9 +64,9 @@ var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
 			mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
 
 			proceed := make(chan struct{})
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
-				return map[string]string{"rca_summary": "done"}, nil
+				return &katypes.InvestigationResult{RCASummary: "done"}, nil
 			}, map[string]string{"remediation_id": "rr-stream-close"})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -88,7 +89,7 @@ var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
 			mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
 
 			subscribed := make(chan struct{})
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-subscribed
 				sink := session.EventSinkFromContext(ctx)
 				if sink != nil {
@@ -103,7 +104,7 @@ var _ = Describe("Session Manager Stream Integration — #823 PR4", func() {
 						Phase: "rca",
 					}
 				}
-				return map[string]string{"rca_summary": "test result"}, nil
+				return &katypes.InvestigationResult{RCASummary: "test result"}, nil
 			}, map[string]string{"remediation_id": "rr-flow-test"})
 			Expect(err).NotTo(HaveOccurred())
 

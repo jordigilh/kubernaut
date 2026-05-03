@@ -29,7 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
@@ -66,7 +66,7 @@ var _ = Describe("SSE Stream Handler — #823 PR7", func() {
 			// ensuring the LazySink channel is active when events are sent.
 			subscribed := make(chan struct{})
 			proceed := make(chan struct{})
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-subscribed
 				sink := session.EventSinkFromContext(ctx)
 				if sink != nil {
@@ -78,7 +78,7 @@ var _ = Describe("SSE Stream Handler — #823 PR7", func() {
 					}
 				}
 				<-proceed
-				return map[string]string{"rca_summary": "test"}, nil
+				return &katypes.InvestigationResult{RCASummary: "test"}, nil
 			}, map[string]string{"remediation_id": "rr-sse-test"})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -111,8 +111,8 @@ var _ = Describe("SSE Stream Handler — #823 PR7", func() {
 
 	Describe("UT-KA-823-D02: Stream ends when investigation completes", func() {
 		It("returns 404 for a session that has already completed", func() {
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
-				return map[string]string{"rca_summary": "done"}, nil
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{RCASummary: "done"}, nil
 			}, map[string]string{"remediation_id": "rr-sse-eof"})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -153,8 +153,8 @@ var _ = Describe("SSE Stream Handler — #823 PR7", func() {
 
 	Describe("UT-KA-823-D04: Stream for terminal session returns 404", func() {
 		It("returns HTTPError for completed session with no active stream", func() {
-			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
-				return map[string]string{"rca_summary": "done"}, nil
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{RCASummary: "done"}, nil
 			}, map[string]string{"remediation_id": "rr-terminal"})
 			Expect(err).NotTo(HaveOccurred())
 

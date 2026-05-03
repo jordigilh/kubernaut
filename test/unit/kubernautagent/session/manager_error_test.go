@@ -30,7 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("UT-KA-948: Session manager logs store.Update errors — BR-AUDIT-005", func() {
@@ -50,7 +50,7 @@ var _ = Describe("UT-KA-948: Session manager logs store.Update errors — BR-AUD
 
 			gate := make(chan struct{})
 			done := make(chan struct{})
-			id, err := mgr.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, err := mgr.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				<-gate
 				close(done)
 				return &katypes.InvestigationResult{RCASummary: "result"}, nil

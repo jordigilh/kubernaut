@@ -37,7 +37,7 @@ import (
 	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
@@ -53,7 +53,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			defer h.Close()
 
 			proceed := make(chan struct{})
-			id := startInvestigationWithFunc(h, func(ctx context.Context) (interface{}, error) {
+			id := startInvestigationWithFunc(h, func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
 				return &katypes.InvestigationResult{RCASummary: "done"}, nil
 			})
@@ -127,7 +127,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			defer h.Close()
 
 			proceed := make(chan struct{})
-			id := startInvestigationWithFunc(h, func(ctx context.Context) (interface{}, error) {
+			id := startInvestigationWithFunc(h, func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
 				sink := session.EventSinkFromContext(ctx)
 				if sink != nil {
@@ -301,7 +301,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			defer h.Close()
 
 			proceed := make(chan struct{})
-			id := startInvestigationWithFunc(h, func(ctx context.Context) (interface{}, error) {
+			id := startInvestigationWithFunc(h, func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
 				return &katypes.InvestigationResult{RCASummary: "done"}, nil
 			})
@@ -353,7 +353,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			h := newTestHarness()
 			defer h.Close()
 
-			id := startInvestigationWithFunc(h, func(ctx context.Context) (interface{}, error) {
+			id := startInvestigationWithFunc(h, func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				return &katypes.InvestigationResult{
 					RCASummary: "pod OOM killed due to memory leak in worker container",
 					Confidence: 0.92,
@@ -411,7 +411,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			defer h.Close()
 
 			proceed := make(chan struct{})
-			id := startInvestigationWithFunc(h, func(ctx context.Context) (interface{}, error) {
+			id := startInvestigationWithFunc(h, func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
 				sink := session.EventSinkFromContext(ctx)
 				if sink != nil {
@@ -483,7 +483,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			defer h.Close()
 
 			proceed := make(chan struct{})
-			id := startInvestigationWithFunc(h, func(ctx context.Context) (interface{}, error) {
+			id := startInvestigationWithFunc(h, func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-proceed
 				sink := session.EventSinkFromContext(ctx)
 				if sink != nil {
@@ -548,7 +548,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			h := newTestHarness()
 			defer h.Close()
 
-			id := startInvestigationWithFunc(h, func(_ context.Context) (interface{}, error) {
+			id := startInvestigationWithFunc(h, func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return &katypes.InvestigationResult{RCASummary: "done"}, nil
 			})
 			waitForStatus(h, id, session.StatusCompleted)
@@ -572,7 +572,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			h := newTestHarness()
 			defer h.Close()
 
-			id := startInvestigationWithFunc(h, func(_ context.Context) (interface{}, error) {
+			id := startInvestigationWithFunc(h, func(_ context.Context) (*katypes.InvestigationResult, error) {
 				return &katypes.InvestigationResult{RCASummary: "done"}, nil
 			})
 			waitForStatus(h, id, session.StatusCompleted)
@@ -606,7 +606,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			for i := 0; i < numSessions; i++ {
 				proceeds[i] = make(chan struct{})
 				idx := i
-				ids[i] = startInvestigationWithFunc(h, func(ctx context.Context) (interface{}, error) {
+				ids[i] = startInvestigationWithFunc(h, func(ctx context.Context) (*katypes.InvestigationResult, error) {
 					<-proceeds[idx]
 					sink := session.EventSinkFromContext(ctx)
 					if sink != nil {
@@ -689,7 +689,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 // schema validation) and returns the session ID. The investigation blocks until
 // context is cancelled.
 func startInvestigation(h *testHarness) string {
-	id, err := h.Manager.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+	id, err := h.Manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 		<-ctx.Done()
 		return &katypes.InvestigationResult{RCASummary: "cancelled"}, nil
 	}, map[string]string{"remediation_id": "rr-wire-test"})
@@ -701,7 +701,7 @@ func startInvestigation(h *testHarness) string {
 // which the manager stores as "created_by" for authz checks.
 func startInvestigationAsUser(h *testHarness, user string) string {
 	ctx := context.WithValue(context.Background(), auth.UserContextKey, user)
-	id, err := h.Manager.StartInvestigation(ctx, func(ctx context.Context) (interface{}, error) {
+	id, err := h.Manager.StartInvestigation(ctx, func(ctx context.Context) (*katypes.InvestigationResult, error) {
 		<-ctx.Done()
 		return &katypes.InvestigationResult{RCASummary: "cancelled"}, nil
 	}, map[string]string{"remediation_id": "rr-wire-test"})
@@ -710,7 +710,7 @@ func startInvestigationAsUser(h *testHarness, user string) string {
 }
 
 // startInvestigationWithFunc creates a session with a custom investigation function.
-func startInvestigationWithFunc(h *testHarness, fn func(ctx context.Context) (interface{}, error)) string {
+func startInvestigationWithFunc(h *testHarness, fn func(ctx context.Context) (*katypes.InvestigationResult, error)) string {
 	id, err := h.Manager.StartInvestigation(context.Background(), fn, map[string]string{"remediation_id": "rr-wire-test"})
 	Expect(err).NotTo(HaveOccurred())
 	return id
@@ -880,7 +880,7 @@ var _ = Describe("Metrics Wiring Integration Tests — BR-KA-OBSERVABILITY-001",
 			h := newMetricsTestHarness(&blockingInvestigator{}, "test-user")
 			defer h.Close()
 
-			id, iErr := h.Manager.StartInvestigation(context.Background(), func(_ context.Context) (interface{}, error) {
+			id, iErr := h.Manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				time.Sleep(2 * time.Second)
 				return nil, nil
 			}, map[string]string{"created_by": "test-user"})
@@ -940,7 +940,7 @@ var _ = Describe("Metrics Wiring Integration Tests — BR-KA-OBSERVABILITY-001",
 			defer h.Close()
 
 			ctx := context.WithValue(context.Background(), auth.UserContextKey, "user-a")
-			id, err := h.Manager.StartInvestigation(ctx, func(ctx context.Context) (interface{}, error) {
+			id, err := h.Manager.StartInvestigation(ctx, func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-ctx.Done()
 				return &katypes.InvestigationResult{RCASummary: "cancelled"}, nil
 			}, map[string]string{"remediation_id": "rr-obs-004b"})
@@ -999,7 +999,7 @@ var _ = Describe("Metrics Wiring Integration Tests — BR-KA-OBSERVABILITY-001",
 			mgr := session.NewManager(store, logr.Discard(), instrumentedStore, m)
 
 			id, err := mgr.StartInvestigation(context.Background(),
-				func(_ context.Context) (interface{}, error) {
+				func(_ context.Context) (*katypes.InvestigationResult, error) {
 					return &katypes.InvestigationResult{RCASummary: "done"}, nil
 				}, map[string]string{"remediation_id": "rr-obs-006"})
 			Expect(err).NotTo(HaveOccurred())

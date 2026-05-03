@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("session.Manager.FindByRemediationID — BR-INTERACTIVE-004", func() {
@@ -35,7 +36,7 @@ var _ = Describe("session.Manager.FindByRemediationID — BR-INTERACTIVE-004", f
 			mgr := session.NewManager(store, logr.Discard(), nil, nil)
 
 			// Start an investigation with remediation_id in metadata
-			sessionID, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (interface{}, error) {
+			sessionID, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				// Block until cancelled
 				<-ctx.Done()
 				return nil, ctx.Err()
