@@ -76,14 +76,6 @@ func CallInvestigate(ctx context.Context, session *mcpsdk.ClientSession, args ma
 	})
 }
 
-// CallEnrich calls the kubernaut_enrich MCP tool with the given arguments.
-func CallEnrich(ctx context.Context, session *mcpsdk.ClientSession, args map[string]any) (*mcpsdk.CallToolResult, error) {
-	return session.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name:      "kubernaut_enrich",
-		Arguments: args,
-	})
-}
-
 // CallSelectWorkflow calls the kubernaut_select_workflow MCP tool with the given arguments.
 func CallSelectWorkflow(ctx context.Context, session *mcpsdk.ClientSession, args map[string]any) (*mcpsdk.CallToolResult, error) {
 	return session.CallTool(ctx, &mcpsdk.CallToolParams{

@@ -22,7 +22,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 )
@@ -30,7 +29,7 @@ import (
 var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func() {
 
 	Describe("TOOL-008: All tools reject requests without active session consistently", func() {
-		It("investigate, enrich, and select_workflow should all error on inactive session", func() {
+		It("investigate and select_workflow should all error on inactive session", func() {
 			inactiveSessions := &mockSessionManager{isActive: false}
 
 			// Investigate (message action requires active session)
@@ -42,18 +41,7 @@ var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func(
 			}, mcpinternal.UserInfo{Username: "alice"})
 			Expect(invErr).To(HaveOccurred(), "investigate should reject inactive session")
 
-			// Enrich
-			enrichTool := mcptools.NewEnrichTool(&mockEnrichmentRunner{result: &enrichment.EnrichmentResult{}}, inactiveSessions)
-			_, enrichErr := enrichTool.Handle(context.Background(), mcptools.EnrichInput{
-				RRID:      "rr-consist-001",
-				Kind:      "Pod",
-				Name:      "test",
-				Namespace: "default",
-			}, mcpinternal.UserInfo{Username: "alice"})
-			Expect(enrichErr).To(HaveOccurred(), "enrich should reject inactive session")
-			Expect(enrichErr.Error()).To(ContainSubstring("session"))
-
-			// SelectWorkflow
+			// SelectWorkflow (enrichment internalized per #1012)
 			swTool := mcptools.NewSelectWorkflowTool(
 				&mockWorkflowCatalog{workflow: &mcptools.CatalogWorkflow{}},
 				inactiveSessions,
@@ -79,18 +67,7 @@ var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func(
 			}
 			intruder := mcpinternal.UserInfo{Username: "mallory"}
 
-			// Enrich
-			enrichTool := mcptools.NewEnrichTool(&mockEnrichmentRunner{result: &enrichment.EnrichmentResult{}}, activeSessions)
-			_, enrichErr := enrichTool.Handle(context.Background(), mcptools.EnrichInput{
-				RRID:      "rr-consist-002",
-				Kind:      "Pod",
-				Name:      "test",
-				Namespace: "default",
-			}, intruder)
-			Expect(enrichErr).To(HaveOccurred())
-			Expect(enrichErr.Error()).To(ContainSubstring("driver"))
-
-			// SelectWorkflow
+			// SelectWorkflow (enrichment internalized per #1012)
 			swTool := mcptools.NewSelectWorkflowTool(
 				&mockWorkflowCatalog{workflow: &mcptools.CatalogWorkflow{}},
 				activeSessions,
@@ -114,17 +91,6 @@ var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func(
 			}, mcpinternal.UserInfo{Username: "alice"})
 			Expect(invErr).To(HaveOccurred())
 
-			// Enrich
-			enrichTool := mcptools.NewEnrichTool(nil, nil)
-			_, enrichErr := enrichTool.Handle(context.Background(), mcptools.EnrichInput{
-				RRID:      "",
-				Kind:      "Pod",
-				Name:      "test",
-				Namespace: "default",
-			}, mcpinternal.UserInfo{Username: "alice"})
-			Expect(enrichErr).To(HaveOccurred())
-			Expect(enrichErr.Error()).To(ContainSubstring("rr_id"))
-
 			// SelectWorkflow
 			swTool := mcptools.NewSelectWorkflowTool(nil, nil)
 			_, swErr := swTool.Handle(context.Background(), mcptools.SelectWorkflowInput{
@@ -138,7 +104,6 @@ var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func(
 
 	Describe("TOOL-011: All tools produce error messages with tool context", func() {
 		It("should include semantic context (not just generic errors)", func() {
-			// Enrich with failed enricher
 			sessions := &mockSessionManager{
 				isActive: true,
 				getDriverResult: &mcpinternal.InteractiveSession{
@@ -147,18 +112,21 @@ var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func(
 				},
 			}
 
-			enrichTool := mcptools.NewEnrichTool(
-				&mockEnrichmentRunner{err: context.DeadlineExceeded},
+			// SelectWorkflow with internalized enrichment failure (#1012)
+			swToolEnrich := mcptools.NewSelectWorkflowTool(
+				nil,
 				sessions,
+				mcptools.WithEnrichmentRunner(&mockEnrichmentRunner{err: context.DeadlineExceeded}),
 			)
-			_, enrichErr := enrichTool.Handle(context.Background(), mcptools.EnrichInput{
-				RRID:      "rr-011",
-				Kind:      "Pod",
-				Name:      "test",
-				Namespace: "default",
+			_, enrichErr := swToolEnrich.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-011",
+				WorkflowID: "wf-001",
+				Kind:       "Pod",
+				Name:       "test",
+				Namespace:  "default",
 			}, mcpinternal.UserInfo{Username: "alice"})
 			Expect(enrichErr.Error()).To(ContainSubstring("enrich"),
-				"enrich error should contain tool-specific context")
+				"enrichment error should contain tool-specific context")
 
 			// SelectWorkflow with failed catalog
 			swTool := mcptools.NewSelectWorkflowTool(

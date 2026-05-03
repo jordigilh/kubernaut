@@ -62,6 +62,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
+	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	mcpkg "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcpadapters "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/adapters"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
@@ -191,6 +192,35 @@ func main() {
 	phaseTools := investigator.DefaultPhaseToolMap()
 
 	k8sInfra := initK8sInfra(logger)
+
+	// #891: SSAR self-check for impersonate permission. Interactive mode
+	// requires KA's SA to impersonate users (DD-AUTH-MCP-001). If denied,
+	// interactive is soft-disabled rather than failing requests at runtime.
+	interactiveReadiness := karbac.NewInteractiveReadiness()
+	var eventEmitter *karbac.EventEmitter
+	if cfg.Interactive.Enabled && k8sInfra != nil {
+		podName, podNS := karbac.DetectPodIdentity()
+		eventEmitter = karbac.NewEventEmitter(k8sInfra.clientset, podName, podNS)
+
+		ssarResult, ssarErr := karbac.CheckImpersonatePermission(context.Background(), k8sInfra.clientset)
+		if ssarErr != nil {
+			logger.Error(ssarErr, "SSAR check for impersonate failed; interactive mode soft-disabled")
+			interactiveReadiness.SetSoftDisabled("SSAR check failed: " + ssarErr.Error())
+			eventEmitter.EmitInteractiveSoftDisabled("SSAR check for impersonate failed: " + ssarErr.Error())
+		} else if !ssarResult.Allowed {
+			reason := "SA lacks impersonate permission"
+			if ssarResult.Reason != "" {
+				reason = ssarResult.Reason
+			}
+			logger.Info("interactive mode soft-disabled: SA lacks impersonate RBAC",
+				"reason", reason)
+			interactiveReadiness.SetSoftDisabled(reason)
+			eventEmitter.EmitInteractiveSoftDisabled(reason)
+		} else {
+			logger.Info("SSAR check passed: SA has impersonate permission")
+		}
+	}
+
 	ds := initDSClients(cfg, k8sInfra, logger)
 	auditStore, auditCleanup := buildAuditStore(cfg, logger)
 	reg := buildToolRegistry(cfg, logger, k8sInfra, ds)
@@ -343,7 +373,7 @@ func main() {
 			logger.Info("auth middleware DISABLED (no in-cluster K8s config)")
 		}
 
-		if cfg.Interactive.Enabled {
+		if cfg.Interactive.Enabled && interactiveReadiness.StatusString() != "soft_disabled" {
 			mcpHandler := buildMCPHandler(cfg, k8sInfra, ds, inv, enricher, mgr, authMw, agentMetrics, instrumentedAudit, logger)
 			if mcpHandler != nil {
 				// SEC-02: Per-user rate limiting for MCP interactive endpoint.
@@ -358,13 +388,22 @@ func main() {
 					mcpRouter.Handle("/", kaserver.SSEHeadersMiddleware(mcpHandler))
 					mcpRouter.Handle("/*", kaserver.SSEHeadersMiddleware(mcpHandler))
 				})
+				interactiveReadiness.SetEnabled()
+				eventEmitter.EmitInteractiveEnabled()
 				logger.Info("MCP interactive route mounted",
 					"path", "/api/v1/mcp",
 					"rateLimitPerUser", cfg.Interactive.RateLimitPerUser,
 				)
 			} else {
+				interactiveReadiness.SetSoftDisabled("handler construction failed (check preceding errors)")
+				eventEmitter.EmitInteractiveSoftDisabled("MCP handler construction failed")
 				logger.Error(nil, "MCP interactive mode enabled but handler construction failed (check preceding errors)")
 			}
+		} else if cfg.Interactive.Enabled {
+			logger.Info("MCP interactive mode soft-disabled (SSAR check failed)",
+				"interactive_status", interactiveReadiness.StatusString(),
+				"reason", interactiveReadiness.Reason(),
+			)
 		}
 
 		r.Handle("/*", kaserver.SSEHeadersMiddleware(ogenSrv))
@@ -400,7 +439,7 @@ func main() {
 	// Dedicated health server (plain HTTP, never TLS). /config moved here from API port (SEC-4).
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/healthz", healthHandler)
-	healthMux.HandleFunc("/readyz", readinessHandler(&shutdownFlag, swappable, ds))
+	healthMux.HandleFunc("/readyz", readinessHandler(&shutdownFlag, swappable, ds, interactiveReadiness))
 	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
 	healthMux.Handle("/admin/loglevel", atomicLevel)
 	healthMux.HandleFunc("/openapi.json", kaapi.SpecHandler())
@@ -526,6 +565,7 @@ func main() {
 	shutdownServer(shutdownCtx, healthServer, "health", logger)
 	shutdownServer(shutdownCtx, metricsServer, "metrics", logger)
 
+	eventEmitter.Shutdown()
 	logger.Info("flushing audit store...")
 	auditCleanup()
 }
@@ -552,7 +592,10 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 //     (proxy for "LLM client was successfully initialized").
 //   - ds: if non-nil, verifies the ogen client is initialized (DS is
 //     a soft dependency — nil ds means DS is intentionally unconfigured).
-func readinessHandler(shutdownFlag *int32, swappable *llm.SwappableClient, ds *dsClients) http.HandlerFunc {
+//   - interactive: reports the interactive mode status (#891). This is
+//     informational (does not fail the probe) since autonomous mode
+//     continues to function even when interactive is soft-disabled.
+func readinessHandler(shutdownFlag *int32, swappable *llm.SwappableClient, ds *dsClients, interactive *karbac.InteractiveReadiness) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -583,7 +626,14 @@ func readinessHandler(shutdownFlag *int32, swappable *llm.SwappableClient, ds *d
 			return
 		}
 
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+		resp := map[string]string{
+			"status":           "ready",
+			"interactive_mode": interactive.StatusString(),
+		}
+		if reason := interactive.Reason(); reason != "" {
+			resp["interactive_reason"] = reason
+		}
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 }
 
@@ -1256,26 +1306,24 @@ func buildMCPHandler(
 	}
 	investigateTool := mcptools.NewInvestigateTool(leaseMgr, investigatorRunner, recon, investigateOpts...)
 
-	// Build the EnrichTool (enricher can be nil in dev mode).
-	var enrichTool *mcptools.EnrichTool
-	if enricher != nil {
-		enrichTool = mcptools.NewEnrichTool(enricher, leaseMgr)
-	}
-
 	// Build the WorkflowCatalog adapter and SelectWorkflowTool.
+	// #1012: enrichment is now internalized into select_workflow via WithEnrichmentRunner.
 	var selectWfTool *mcptools.SelectWorkflowTool
 	if ds != nil {
 		wfQuerier := wfclient.NewOgenWorkflowQuerier(ds.ogenClient)
 		catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
-		selectWfTool = mcptools.NewSelectWorkflowTool(catalogAdapter, leaseMgr)
+		swOpts := []mcptools.SelectWorkflowOption{
+			mcptools.WithLogger(logger.WithName("select-workflow")),
+		}
+		if enricher != nil {
+			swOpts = append(swOpts, mcptools.WithEnrichmentRunner(enricher))
+		}
+		selectWfTool = mcptools.NewSelectWorkflowTool(catalogAdapter, leaseMgr, swOpts...)
 	}
 
 	// Register tools with the MCP SDK server.
 	toolDeps := mcpkg.ToolDeps{}
 	toolDeps.Investigate = mcptools.InvestigateRegistration(investigateTool, eventStore, sessionNotifier)
-	if enrichTool != nil {
-		toolDeps.Enrich = mcptools.EnrichRegistration(enrichTool)
-	}
 	if selectWfTool != nil {
 		toolDeps.SelectWorkflow = mcptools.SelectWorkflowRegistration(selectWfTool)
 	}
@@ -1288,8 +1336,8 @@ func buildMCPHandler(
 
 	logger.Info("MCP interactive mode fully wired",
 		"investigate", true,
-		"enrich", enrichTool != nil,
 		"select_workflow", selectWfTool != nil,
+		"enrichment_in_select_workflow", enricher != nil,
 		"event_store", true,
 		"timeout_manager", true,
 		"disconnect_handler", true,

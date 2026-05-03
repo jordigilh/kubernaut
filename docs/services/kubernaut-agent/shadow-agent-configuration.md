@@ -250,3 +250,22 @@ No migration required. The shadow agent is a new additive feature:
 2. **No CRD changes** — Shadow agent uses existing `InvestigationResult` fields (`HumanReviewNeeded`, `HumanReviewReason`, `Warnings`)
 3. **No API changes** — Transparent to consumers of the investigation API
 4. **Rollback** — Set `alignmentCheck.enabled: false` and restart KA to disable
+
+---
+
+## v1.6 Evolution: Goose Recipe-Based Shadow Agent
+
+> **Planned for v1.6.** The shadow agent evolves from the in-process proxy pattern described above to a **separate Goose session running a security-focused recipe**. v1.5 retains the current in-process pattern while KA focuses on agentic integration (MCP/A2A). See [ADR-KA-001 v1.6 Evolution](../../architecture/decisions/ADR-KA-001-shadow-agent-alignment-check.md#v16-evolution-shadow-agent-as-goose-recipe) for the full architectural change.
+
+### What Changes for Operators
+
+- **LLM configuration moves to the recipe**: The `alignmentCheck.llm` block is replaced by the shadow recipe's Goose `settings` block. Model selection, provider, and temperature are defined in the recipe, not in KA's YAML config.
+- **Recipe-based customization**: Operators can customize the shadow evaluation logic by providing a custom security recipe (e.g., add domain-specific injection patterns, compliance checks, data classification rules) without modifying KA code.
+- **Same enable/disable behavior**: `alignmentCheck.enabled` continues to control whether the shadow agent runs.
+
+### What Stays the Same
+
+- **Fail-closed guarantees** — all error paths escalate to human review
+- **Audit events** — `alignment.step` and `alignment.verdict` events unchanged
+- **Verdict semantics** — Clean / Suspicious / Timeout
+- **Cost profile** — similar N+1 evaluation calls per investigation

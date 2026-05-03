@@ -18,10 +18,19 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/go-logr/logr"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	"github.com/jordigilh/kubernaut/pkg/shared/transport"
 )
+
+// EnrichmentRunner abstracts the enrichment call for testability.
+type EnrichmentRunner interface {
+	Enrich(ctx context.Context, kind, name, namespace, specHash, incidentID string) (*enrichment.EnrichmentResult, error)
+}
 
 // WorkflowCatalog abstracts the workflow catalog lookup for testability.
 type WorkflowCatalog interface {
@@ -40,33 +49,123 @@ type CatalogWorkflow struct {
 	ServiceAccountName string `json:"service_account_name,omitempty"`
 }
 
+// PreSelectionContext accumulates results from pre-selection pipeline hooks
+// that run before catalog lookup. Each hook may populate fields consumed by
+// subsequent hooks or the final output.
+//
+// Pipeline ordering (PROPOSAL-EXT-003 §3, five-phase model):
+//
+//	pre-investigation → investigation → rca-resolution → pre-workflow-selection → workflow-selection
+//
+// Within pre-workflow-selection, hooks execute in registration order:
+//
+//	[enrichment] → [Goose recipe injection] → catalog lookup
+//
+// Enrichment always runs first so that Goose recipe prompt injections have
+// access to the full enrichment context (owner chain, labels, history).
+// See PROPOSAL-EXT-003 §3.3 and PROPOSAL-EXT-002 §5.2 for the data contract.
+type PreSelectionContext struct {
+	Enrichment *enrichment.EnrichmentResult
+}
+
+// PreSelectionHook is a single stage in the pre-workflow-selection pipeline.
+// Hooks run in registration order before catalog lookup. A hook may read and
+// write fields on PreSelectionContext; errors abort the pipeline.
+//
+// v1.5: enrichment is the only registered hook.
+// Next release: Goose recipe prompt injection hooks append after enrichment,
+// receiving the populated Enrichment field as recipe parameter context.
+type PreSelectionHook func(ctx context.Context, input SelectWorkflowInput, user mcpinternal.UserInfo, pctx *PreSelectionContext) error
+
 // SelectWorkflowInput defines the input schema for the kubernaut_select_workflow MCP tool.
 type SelectWorkflowInput struct {
 	RRID       string `json:"rr_id"`
 	WorkflowID string `json:"workflow_id"`
+	Kind       string `json:"kind,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
+	SpecHash   string `json:"spec_hash,omitempty"`
+	IncidentID string `json:"incident_id,omitempty"`
 }
 
 // SelectWorkflowOutput defines the output schema for the kubernaut_select_workflow MCP tool.
 type SelectWorkflowOutput struct {
-	Status     string           `json:"status"`
-	Workflow   *CatalogWorkflow `json:"workflow,omitempty"`
-	Confidence float64          `json:"confidence"`
-	Rationale  string           `json:"rationale"`
+	Status     string                       `json:"status"`
+	Workflow   *CatalogWorkflow             `json:"workflow,omitempty"`
+	Enrichment *enrichment.EnrichmentResult `json:"enrichment,omitempty"`
+	Confidence float64                      `json:"confidence"`
+	Rationale  string                       `json:"rationale"`
+}
+
+// SelectWorkflowOption configures optional dependencies on SelectWorkflowTool.
+type SelectWorkflowOption func(*SelectWorkflowTool)
+
+// WithEnrichmentRunner registers enrichment as the first pre-selection hook.
+// Enrichment runs before any Goose recipe prompt injection hooks so that
+// recipe parameters have access to the full enrichment context (#1012).
+func WithEnrichmentRunner(runner EnrichmentRunner) SelectWorkflowOption {
+	return func(t *SelectWorkflowTool) {
+		hook := func(ctx context.Context, input SelectWorkflowInput, user mcpinternal.UserInfo, pctx *PreSelectionContext) error {
+			if input.Kind == "" {
+				t.logger.V(1).Info("enrichment skipped: kind not provided in select_workflow input")
+				return nil
+			}
+			ctx = transport.WithImpersonatedUser(ctx, user.Username, user.Groups)
+			result, err := runner.Enrich(ctx, input.Kind, input.Name, input.Namespace, input.SpecHash, input.IncidentID)
+			if err != nil {
+				if errors.Is(err, enrichment.ErrRBACForbidden) {
+					return ErrCodeForbidden.WithDetail("namespace", input.Namespace)
+				}
+				return fmt.Errorf("enrich failed: %w", err)
+			}
+			pctx.Enrichment = result
+			return nil
+		}
+		t.preSelectionHooks = append(t.preSelectionHooks, hook)
+	}
+}
+
+// WithPreSelectionHook appends a hook to the pre-workflow-selection pipeline.
+// Hooks run after any previously registered hooks (enrichment first by convention).
+func WithPreSelectionHook(hook PreSelectionHook) SelectWorkflowOption {
+	return func(t *SelectWorkflowTool) {
+		t.preSelectionHooks = append(t.preSelectionHooks, hook)
+	}
 }
 
 // SelectWorkflowTool handles the kubernaut_select_workflow MCP tool.
 // BR-INTERACTIVE-005: enables interactive workflow selection.
+// #1012: internalized enrichment via pre-selection pipeline.
 type SelectWorkflowTool struct {
-	catalog  WorkflowCatalog
-	sessions mcpinternal.SessionManager
+	catalog           WorkflowCatalog
+	sessions          mcpinternal.SessionManager
+	preSelectionHooks []PreSelectionHook
+	logger            logr.Logger
+}
+
+// WithLogger sets the logger for the tool. Hooks use this logger to emit
+// debug-level diagnostics (e.g. enrichment skipped when kind is empty).
+func WithLogger(logger logr.Logger) SelectWorkflowOption {
+	return func(t *SelectWorkflowTool) {
+		t.logger = logger
+	}
 }
 
 // NewSelectWorkflowTool creates the tool handler with its dependencies.
-func NewSelectWorkflowTool(catalog WorkflowCatalog, sessions mcpinternal.SessionManager) *SelectWorkflowTool {
-	return &SelectWorkflowTool{catalog: catalog, sessions: sessions}
+func NewSelectWorkflowTool(catalog WorkflowCatalog, sessions mcpinternal.SessionManager, opts ...SelectWorkflowOption) *SelectWorkflowTool {
+	t := &SelectWorkflowTool{catalog: catalog, sessions: sessions, logger: logr.Discard()}
+	for _, opt := range opts {
+		opt(t)
+	}
+	return t
 }
 
 // Handle executes the workflow selection after validating input and session.
+//
+// The pre-workflow-selection pipeline runs all registered hooks in order before
+// catalog lookup. In v1.5, enrichment is the only hook. Future releases add
+// Goose recipe prompt injection as subsequent hooks — see PROPOSAL-EXT-003 §3.3
+// (pre-workflow-selection) and PROPOSAL-EXT-002.
 func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInput, user mcpinternal.UserInfo) (SelectWorkflowOutput, error) {
 	if err := validateSelectWorkflowInput(input); err != nil {
 		return SelectWorkflowOutput{}, err
@@ -85,6 +184,13 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 		return SelectWorkflowOutput{}, fmt.Errorf("caller is not the active driver for this session")
 	}
 
+	pctx := &PreSelectionContext{}
+	for _, hook := range t.preSelectionHooks {
+		if err := hook(ctx, input, user, pctx); err != nil {
+			return SelectWorkflowOutput{}, err
+		}
+	}
+
 	workflow, err := t.catalog.GetWorkflowByID(ctx, input.WorkflowID)
 	if err != nil {
 		return SelectWorkflowOutput{}, fmt.Errorf("workflow catalog lookup failed: %w", err)
@@ -93,6 +199,7 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 	return SelectWorkflowOutput{
 		Status:     "workflow_selected",
 		Workflow:   workflow,
+		Enrichment: pctx.Enrichment,
 		Confidence: 1.0,
 		Rationale:  "User-selected via interactive mode",
 	}, nil
