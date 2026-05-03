@@ -240,6 +240,7 @@ type PrometheusToolConfig struct {
 type SanitizationConfig struct {
 	InjectionPatternsEnabled bool `yaml:"injectionPatternsEnabled"`
 	CredentialScrubEnabled   bool `yaml:"credentialScrubEnabled"`
+	SecretRedactionEnabled   bool `yaml:"secretRedactionEnabled"`
 }
 
 // DefaultMaxToolOutputSize is the default hard character limit for tool output
@@ -536,10 +537,11 @@ func DefaultConfig() *Config {
 				Canary:         CanaryConfig{ForceEscalation: true},
 			},
 			Safety: SafetyConfig{
-				Sanitization: SanitizationConfig{
-					InjectionPatternsEnabled: true,
-					CredentialScrubEnabled:   true,
-				},
+			Sanitization: SanitizationConfig{
+				InjectionPatternsEnabled: true,
+				CredentialScrubEnabled:   true,
+				SecretRedactionEnabled:   true,
+			},
 				Anomaly: AnomalyConfig{
 					MaxToolCallsPerTool: 10,
 					MaxTotalToolCalls:   30,
