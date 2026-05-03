@@ -220,6 +220,21 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 //
 // Audit: emits aiagent.session.cancelled after the status transition succeeds.
 func (m *Manager) CancelInvestigation(id string) error {
+	return m.terminateSession(id, audit.EventTypeSessionCancelled, audit.ActionSessionCancelled)
+}
+
+// SuspendInvestigation suspends a running autonomous investigation for interactive
+// takeover. Semantically identical to CancelInvestigation but emits
+// aiagent.session.suspended (DD-INTERACTIVE-002, BR-INTERACTIVE-004).
+// Added in v1.5 for dynamic takeover support (BR-INTERACTIVE-004).
+func (m *Manager) SuspendInvestigation(id string) error {
+	return m.terminateSession(id, audit.EventTypeSessionSuspended, audit.ActionSessionSuspended)
+}
+
+// terminateSession is the shared implementation for CancelInvestigation and
+// SuspendInvestigation. It cancels the session context, transitions to
+// StatusCancelled, and emits the specified audit event type.
+func (m *Manager) terminateSession(id, eventType, action string) error {
 	m.store.mu.Lock()
 
 	sess, ok := m.store.sessions[id]
@@ -238,7 +253,10 @@ func (m *Manager) CancelInvestigation(id string) error {
 	correlationID := sess.Metadata["remediation_id"]
 	m.store.mu.Unlock()
 
-	m.emitSessionEvent(context.Background(), audit.EventTypeSessionCancelled, audit.ActionSessionCancelled, audit.OutcomeSuccess, id, correlationID, nil)
+	m.emitSessionEvent(context.Background(), eventType, action, audit.OutcomeSuccess, id, correlationID, nil)
+	if eventType == audit.EventTypeSessionSuspended {
+		m.metrics.RecordSessionSuspended()
+	}
 	return nil
 }
 

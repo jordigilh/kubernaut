@@ -35,7 +35,10 @@ const (
 	StatusRunning   Status = "running"
 	StatusCompleted Status = "completed"
 	StatusFailed    Status = "failed"
-	// StatusCancelled indicates an operator explicitly cancelled the investigation.
+	// StatusCancelled indicates the investigation was stopped — either by explicit
+	// operator cancellation (CancelInvestigation) or interactive takeover suspension
+	// (SuspendInvestigation). Both share this terminal state; the audit event type
+	// distinguishes them (session.cancelled vs session.suspended).
 	StatusCancelled Status = "cancelled"
 )
 
