@@ -108,4 +108,58 @@ var _ = Describe("DelegatingEventStore + SessionClosedHandler + Janitor — PR4 
 			cancel()
 		})
 	})
+
+	// Regression test: C1 — SessionClosed must NOT delete the MCP-to-interactive
+	// mapping before the handler has a chance to read it via LookupInteractiveSession.
+	// Bug: DelegatingEventStore.SessionClosed deleted mcpToSession BEFORE sending to
+	// closedChan, making the disconnect handler's LookupInteractiveSession always
+	// return false → Release("disconnect") never fired.
+	Describe("UT-KA-SESS-C1: SessionClosed preserves mapping for handler lookup (C1 regression)", func() {
+		It("should allow LookupInteractiveSession AFTER SessionClosed is called", func() {
+			des := mcpinternal.NewDelegatingEventStore()
+			des.RegisterMCPSession("mcp-c1-001", "interactive-c1-001")
+
+			err := des.SessionClosed(context.Background(), "mcp-c1-001")
+			Expect(err).NotTo(HaveOccurred())
+
+			// C1 FIX: The mapping must still be available after SessionClosed.
+			// The handler (not SessionClosed) is responsible for cleanup via DeleteMCPSession.
+			interactiveID, ok := des.LookupInteractiveSession("mcp-c1-001")
+			Expect(ok).To(BeTrue(), "mapping must survive SessionClosed (C1 fix)")
+			Expect(interactiveID).To(Equal("interactive-c1-001"))
+		})
+
+		It("should remove mapping only after explicit DeleteMCPSession call", func() {
+			des := mcpinternal.NewDelegatingEventStore()
+			des.RegisterMCPSession("mcp-c1-002", "interactive-c1-002")
+
+			_ = des.SessionClosed(context.Background(), "mcp-c1-002")
+			des.DeleteMCPSession("mcp-c1-002")
+
+			_, ok := des.LookupInteractiveSession("mcp-c1-002")
+			Expect(ok).To(BeFalse(), "mapping must be gone after DeleteMCPSession")
+		})
+
+		It("should deliver the session ID to closedChan AND keep mapping", func() {
+			des := mcpinternal.NewDelegatingEventStore()
+			des.RegisterMCPSession("mcp-c1-003", "interactive-c1-003")
+
+			released := make(chan string, 1)
+			handler := mcpinternal.NewSessionClosedHandler(des, func(mcpSessionID string) {
+				interactiveID, ok := des.LookupInteractiveSession(mcpSessionID)
+				if ok {
+					released <- interactiveID
+				}
+			}, logr.Discard())
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go handler.Run(ctx)
+
+			_ = des.SessionClosed(context.Background(), "mcp-c1-003")
+
+			Eventually(released).Should(Receive(Equal("interactive-c1-003")),
+				"handler must see the mapping when processing disconnect (C1 fix)")
+		})
+	})
 })

@@ -53,12 +53,17 @@ func (r *goldenPathRecon) Reconstruct(_ context.Context, _, _ string) ([]mcpinte
 }
 
 type goldenPathAutoMgr struct {
-	cancelled bool
+	cancelled  bool
+	suspended  bool
 }
 
 func (m *goldenPathAutoMgr) FindByRemediationID(_ string) (string, bool) { return "auto-001", true }
 func (m *goldenPathAutoMgr) CancelInvestigation(_ string) error {
 	m.cancelled = true
+	return nil
+}
+func (m *goldenPathAutoMgr) SuspendInvestigation(_ string) error {
+	m.suspended = true
 	return nil
 }
 
@@ -98,14 +103,14 @@ var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001"
 			Expect(json.Unmarshal([]byte(statusResult.Response), &status)).To(Succeed())
 			Expect(status.Mode).To(Equal(mcptools.StatusModeAutonomous))
 
-			// Step 2: Takeover (cancels autonomous)
+			// Step 2: Takeover (suspends autonomous)
 			takeoverResult, err := tool.Handle(ctx, mcptools.InvestigateInput{
 				RRID: "rr-golden-001", Action: mcptools.ActionTakeover,
 			}, user)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(takeoverResult.Status).To(Equal("takeover_started"))
 			Expect(takeoverResult.SessionID).NotTo(BeEmpty())
-			Expect(autoMgr.cancelled).To(BeTrue())
+			Expect(autoMgr.suspended).To(BeTrue())
 			Expect(takeoverResult.Response).To(ContainSubstring("2 prior turns"))
 
 			// Step 3: Message

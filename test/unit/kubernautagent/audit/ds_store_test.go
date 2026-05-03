@@ -194,13 +194,25 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 				event.Data["flagged"] = 0
 				event.Data["total"] = 5
 
-				recorder.calls = nil
-				err := store.StoreAudit(context.Background(), event)
-				Expect(err).NotTo(HaveOccurred(), "StoreAudit should succeed for %s", eventType)
-				Expect(recorder.calls).To(HaveLen(1), "should record call for %s", eventType)
+			// Interactive events do not have dedicated OpenAPI discriminator variants;
+			// they are stored with outer fields only (event_type, session_id, etc.).
+			noPayloadTypes := map[string]bool{
+				audit.EventTypeInteractiveStarted:   true,
+				audit.EventTypeInteractiveCompleted: true,
+			}
+
+			recorder.calls = nil
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred(), "StoreAudit should succeed for %s", eventType)
+			Expect(recorder.calls).To(HaveLen(1), "should record call for %s", eventType)
+			if noPayloadTypes[eventType] {
+				Expect(recorder.calls[0].EventData.Type).To(BeZero(),
+					"buildEventData should return zero type for %s (no OpenAPI discriminator)", eventType)
+			} else {
 				Expect(recorder.calls[0].EventData.Type).NotTo(BeZero(),
 					"buildEventData should return a non-zero type for %s", eventType)
 			}
+		}
 		})
 	})
 
