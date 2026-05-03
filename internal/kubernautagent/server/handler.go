@@ -41,7 +41,7 @@ type InvestigationRunner interface {
 }
 
 // Handler implements the ogen-generated Handler interface for the 3 business
-// endpoints. Operational endpoints (/health, /ready, /config, /metrics) are
+// endpoints. Operational endpoints (/healthz, /readyz, /config, /metrics) are
 // served directly by the HTTP mux in cmd/kubernautagent/main.go.
 type Handler struct {
 	agentclient.UnimplementedHandler
