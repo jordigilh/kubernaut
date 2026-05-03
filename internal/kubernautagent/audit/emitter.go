@@ -94,6 +94,29 @@ type AuditStore interface {
 	StoreAudit(ctx context.Context, event *AuditEvent) error
 }
 
+type actorContextKey struct{}
+
+type actorValue struct {
+	ID   string
+	Type string
+}
+
+// WithActor returns a context carrying the given actor identity.
+// All audit events emitted via StoreBestEffort on this context will
+// inherit the actor unless the event already has explicit ActorID/ActorType.
+func WithActor(ctx context.Context, actorID, actorType string) context.Context {
+	return context.WithValue(ctx, actorContextKey{}, actorValue{ID: actorID, Type: actorType})
+}
+
+// ActorFromContext extracts the actor identity from the context.
+func ActorFromContext(ctx context.Context) (actorID, actorType string, ok bool) {
+	v, ok := ctx.Value(actorContextKey{}).(actorValue)
+	if !ok {
+		return "", "", false
+	}
+	return v.ID, v.Type, true
+}
+
 // NewEvent creates an AuditEvent with the correct event_category and a unique event_id.
 func NewEvent(eventType string, correlationID string) *AuditEvent {
 	data := make(map[string]interface{})
@@ -107,7 +130,18 @@ func NewEvent(eventType string, correlationID string) *AuditEvent {
 }
 
 // StoreBestEffort stores an audit event without propagating errors (fire-and-forget).
+// If the event has no ActorID/ActorType set, it inherits from the context (see WithActor).
 func StoreBestEffort(ctx context.Context, store AuditStore, event *AuditEvent, logger logr.Logger) {
+	if event.ActorID == "" || event.ActorType == "" {
+		if id, typ, ok := ActorFromContext(ctx); ok {
+			if event.ActorID == "" {
+				event.ActorID = id
+			}
+			if event.ActorType == "" {
+				event.ActorType = typ
+			}
+		}
+	}
 	if err := store.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "audit store failure (best-effort)", "event_type", event.EventType)
 	}
