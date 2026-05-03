@@ -465,7 +465,7 @@ graph TB
 | L3: Structured Output Validation | JSON Schema validation of LLM tool calls | Hallucinated tools, malformed params |
 | L4: Tool Call Authorization | RBAC check per tool, namespace enforcement | Privilege escalation, cross-namespace access |
 | L5: Context Isolation | Per-session LLM context, no cross-session state | Data leakage between users |
-| L6: Output Filtering | Strip K8s secrets/tokens from responses | Information disclosure |
+| L6: Output Filtering | Hybrid: structural allowlist (tools return typed fields, never raw YAML) + regex scan (JWT prefixes, cert blocks, high-entropy strings) + LLM instruction | Information disclosure |
 | L7: Anomaly Detection | Track tool call patterns, abort on anomaly | Automated exploitation, runaway loops |
 
 ### Identity Chain
@@ -489,6 +489,14 @@ User (Keycloak JWT) → AF validates JWT → AF impersonates user for K8s API ca
 | 3 | Per-user token budget | Counter (when available) | Configurable |
 
 HTTP 429 returned when any tier is exceeded. Tier 3 disabled when LLM provider does not report token usage.
+
+### Circuit Breakers
+
+| Target | Failure threshold | Half-open timeout | Success to close | Degraded behavior |
+|--------|-------------------|-------------------|------------------|-------------------|
+| KA REST API | 5 consecutive 5xx/timeout | 30s | 1 success | Return "investigation service unavailable" to user |
+| LLM provider | 3 consecutive failures | 60s | 1 success | Return 503 with RFC 7807 detail; no queuing |
+| Keycloak JWKS | 3 consecutive failures | 30s | 1 success | Use cached JWKS (cache TTL: 5min); fail-open for existing sessions, fail-closed for new |
 
 ### RBAC (ClusterRole)
 
@@ -585,7 +593,10 @@ AF ServiceAccount permissions:
 helm install af charts/kubernaut-apifrontend \
   --set llm.provider=vertexanthropic \
   --set llm.model=claude-sonnet-4-6-20250514 \
-  --set auth.issuerURL=http://keycloak:8080/realms/kubernaut
+  --set auth.issuerURL=http://keycloak:8080/realms/kubernaut \
+  --set kubernautAgent.pollInterval=5s \
+  --set kubernautAgent.circuitBreaker.failureThreshold=5 \
+  --set kubernautAgent.circuitBreaker.halfOpenTimeout=30s
 ```
 
 ### Local Development (no cluster)
@@ -636,6 +647,14 @@ AF imports from the kubernaut monorepo (`github.com/jordigilh/kubernaut`):
 | `/api/v1/incident/session/{id}/result` | GET | Get completed investigation result |
 
 AF authenticates to KA by forwarding the user's original Keycloak JWT in the `Authorization` header.
+
+**Poll configuration:**
+- Default interval: 5s (configurable via `kubernautAgent.pollInterval` in Helm values)
+- Circuit breaker: 5 consecutive failures → open (30s half-open timeout, 1 success to close)
+- Timeout per poll: 10s
+- Backoff on error: exponential (1s, 2s, 4s, 8s, capped at 30s)
+
+**Throughput ceiling:** With Tier 2 global concurrency = 10 and average triage duration = 15s, the system supports ~40 triages/minute at steady state. Exceeding this queues requests behind the semaphore (HTTP 429 after configurable wait timeout).
 
 ---
 

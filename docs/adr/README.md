@@ -28,6 +28,7 @@ Each ADR follows the standard structure:
 | [ADR-010](ADR-010-load-testing-tool.md) | Load testing tool: k6 (Grafana) | Accepted | 2026-05-03 |
 | [ADR-011](ADR-011-deployment-model.md) | Deployment model: operator for OCP prod, Helm for dev/test | Accepted | 2026-05-02 |
 | [ADR-012](ADR-012-signal-mode-manual.md) | Signal mode: `manual` for user-initiated investigations | Accepted | 2026-04-30 |
+| [ADR-013](ADR-013-jwt-forwarding.md) | JWT forwarding for AF-to-KA identity delegation | Accepted | 2026-05-03 |
 
 ## Adding New ADRs
 
