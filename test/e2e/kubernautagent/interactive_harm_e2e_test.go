@@ -176,12 +176,13 @@ var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios"
 			Expect(err).NotTo(HaveOccurred(), "session start should succeed")
 			Expect(startResult.IsError).To(BeFalse(), "session start should not be a tool error")
 
-			By("Calling kubernaut_enrich targeting production namespace — limited SA has no RBAC there")
-			result, err := infrastructure.CallEnrich(ctx, session, map[string]any{
-				"rr_id":     "rr-harm005-test",
-				"kind":      "Pod",
-				"name":      "api-server-def456",
-				"namespace": "production",
+			By("Calling kubernaut_select_workflow with enrichment targeting production namespace — limited SA has no RBAC there (#1012)")
+			result, err := infrastructure.CallSelectWorkflow(ctx, session, map[string]any{
+				"rr_id":       "rr-harm005-test",
+				"workflow_id": "wf-rbac-test",
+				"kind":        "Pod",
+				"name":        "api-server-def456",
+				"namespace":   "production",
 			})
 
 			By("Asserting that the tool invocation fails due to RBAC/impersonation restriction")

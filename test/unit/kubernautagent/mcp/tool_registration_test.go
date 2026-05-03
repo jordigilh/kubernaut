@@ -33,11 +33,6 @@ func stubInvestigate() *mcptools.InvestigateTool {
 	return mcptools.NewInvestigateTool(nil, nil, nil)
 }
 
-// stubEnrich returns a minimal EnrichTool for registration tests.
-func stubEnrich() *mcptools.EnrichTool {
-	return mcptools.NewEnrichTool(nil, nil)
-}
-
 // stubSelectWorkflow returns a minimal SelectWorkflowTool for registration tests.
 func stubSelectWorkflow() *mcptools.SelectWorkflowTool {
 	return mcptools.NewSelectWorkflowTool(nil, nil)
@@ -45,20 +40,19 @@ func stubSelectWorkflow() *mcptools.SelectWorkflowTool {
 
 var _ = Describe("MCP Tool Registration — PR6a", func() {
 
-	Describe("UT-KA-PR6A-001: BootstrapMCP registers all three tools with the MCP SDK", func() {
-		It("should expose 3 tools via the SDK tools/list protocol", func() {
+	Describe("UT-KA-PR6A-001: BootstrapMCP registers all tools with the MCP SDK (#1012: 2-tool surface)", func() {
+		It("should expose 2 tools via the SDK tools/list protocol", func() {
 			deps := mcpinternal.MCPDeps{
 				AuthMiddleware: func(next http.Handler) http.Handler { return next },
 				Tools: mcpinternal.ToolDeps{
 					Investigate:    mcptools.InvestigateRegistration(stubInvestigate(), nil, nil),
-					Enrich:         mcptools.EnrichRegistration(stubEnrich()),
 					SelectWorkflow: mcptools.SelectWorkflowRegistration(stubSelectWorkflow()),
 				},
 			}
 
 			handler, srv := mcpinternal.BootstrapMCP(deps)
 			Expect(handler).NotTo(BeNil())
-			Expect(srv.ToolCount()).To(Equal(3))
+			Expect(srv.ToolCount()).To(Equal(2))
 
 			ts := httptest.NewServer(handler)
 			defer ts.Close()
@@ -82,7 +76,6 @@ var _ = Describe("MCP Tool Registration — PR6a", func() {
 
 			Expect(toolNames).To(ConsistOf(
 				"kubernaut_investigate",
-				"kubernaut_enrich",
 				"kubernaut_select_workflow",
 			))
 		})

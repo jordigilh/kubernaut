@@ -73,7 +73,6 @@ type ToolRegistration func(server *mcpsdk.Server, userFromCtx func(context.Conte
 // nil fields are skipped during registration.
 type ToolDeps struct {
 	Investigate    ToolRegistration
-	Enrich         ToolRegistration
 	SelectWorkflow ToolRegistration
 }
 
@@ -105,10 +104,6 @@ func (s *MCPServer) registerTools(deps ToolDeps) {
 
 	if deps.Investigate != nil {
 		deps.Investigate(s.server, userFn)
-		s.toolCount.Add(1)
-	}
-	if deps.Enrich != nil {
-		deps.Enrich(s.server, userFn)
 		s.toolCount.Add(1)
 	}
 	if deps.SelectWorkflow != nil {

@@ -24,9 +24,19 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 )
+
+type mockEnrichmentRunner struct {
+	result *enrichment.EnrichmentResult
+	err    error
+}
+
+func (m *mockEnrichmentRunner) Enrich(_ context.Context, _, _, _, _, _ string) (*enrichment.EnrichmentResult, error) {
+	return m.result, m.err
+}
 
 type mockWorkflowCatalog struct {
 	workflow *mcptools.CatalogWorkflow
@@ -156,6 +166,120 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 			}, mcpinternal.UserInfo{Username: "bob"})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("driver"))
+		})
+	})
+
+	Describe("UT-KA-1012-001: Internalized enrichment (#1012)", func() {
+		It("should call enrichment before catalog lookup and include result in output", func() {
+			wfID := uuid.New().String()
+			enrichResult := &enrichment.EnrichmentResult{
+				ResourceKind:      "Deployment",
+				ResourceName:      "api-server",
+				ResourceNamespace: "production",
+			}
+			runner := &mockEnrichmentRunner{result: enrichResult}
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{
+					WorkflowID:   wfID,
+					WorkflowName: "restart-pods",
+				},
+			}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-enrich-001",
+					CorrelationID: "rr-enrich-001",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice", Groups: []string{"sre"}},
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(catalog, sessions, mcptools.WithEnrichmentRunner(runner))
+			output, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-enrich-001",
+				WorkflowID: wfID,
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "production",
+			}, mcpinternal.UserInfo{Username: "alice", Groups: []string{"sre"}})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflow_selected"))
+			Expect(output.Enrichment).NotTo(BeNil())
+			Expect(output.Enrichment.ResourceKind).To(Equal("Deployment"))
+			Expect(output.Workflow.WorkflowID).To(Equal(wfID))
+		})
+
+		It("should propagate ErrRBACForbidden from enrichment as ErrCodeForbidden", func() {
+			runner := &mockEnrichmentRunner{
+				err: enrichment.ErrRBACForbidden,
+			}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-enrich-002",
+					CorrelationID: "rr-enrich-002",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(nil, sessions, mcptools.WithEnrichmentRunner(runner))
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-enrich-002",
+				WorkflowID: "wf-001",
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "restricted-ns",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("forbidden"))
+		})
+
+		It("should propagate generic enrichment errors", func() {
+			runner := &mockEnrichmentRunner{
+				err: errors.New("k8s API unreachable"),
+			}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-enrich-003",
+					CorrelationID: "rr-enrich-003",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(nil, sessions, mcptools.WithEnrichmentRunner(runner))
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-enrich-003",
+				WorkflowID: "wf-001",
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "production",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("enrich"))
+		})
+
+		It("should skip enrichment when no runner is configured", func() {
+			wfID := uuid.New().String()
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{WorkflowID: wfID, WorkflowName: "restart-pods"},
+			}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-enrich-004",
+					CorrelationID: "rr-enrich-004",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(catalog, sessions)
+			output, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-enrich-004",
+				WorkflowID: wfID,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflow_selected"))
+			Expect(output.Enrichment).To(BeNil())
 		})
 	})
 })

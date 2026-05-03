@@ -57,21 +57,6 @@ func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.Dele
 	}
 }
 
-// EnrichRegistration returns a ToolRegistration that registers the
-// kubernaut_enrich tool with the MCP SDK server.
-func EnrichRegistration(tool *EnrichTool) mcpinternal.ToolRegistration {
-	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
-		mcpsdk.AddTool(server, &mcpsdk.Tool{
-			Name:        "kubernaut_enrich",
-			Description: "Enrich a resource with K8s owner chain, labels, and remediation history during an interactive investigation.",
-		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input EnrichInput) (*mcpsdk.CallToolResult, EnrichOutput, error) {
-			user := userFromCtx(ctx)
-			output, err := tool.Handle(ctx, input, user)
-			return nil, output, err
-		})
-	}
-}
-
 // SelectWorkflowRegistration returns a ToolRegistration that registers the
 // kubernaut_select_workflow tool with the MCP SDK server.
 func SelectWorkflowRegistration(tool *SelectWorkflowTool) mcpinternal.ToolRegistration {

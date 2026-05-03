@@ -157,12 +157,13 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 			})
 			Expect(err).NotTo(HaveOccurred(), "start should succeed (auth passes)")
 
-			By("Step 4: Calling enrich — expects RBAC failure (user cannot impersonate)")
-			result, err := infrastructure.CallEnrich(ctx, session, map[string]any{
-				"rr_id":     rrID,
-				"kind":      "Pod",
-				"name":      "api-server-xyz",
-				"namespace": "production",
+			By("Step 4: Calling select_workflow with enrichment — expects RBAC failure (user cannot impersonate) (#1012)")
+			result, err := infrastructure.CallSelectWorkflow(ctx, session, map[string]any{
+				"rr_id":       rrID,
+				"workflow_id": "wf-rbac-test",
+				"kind":        "Pod",
+				"name":        "api-server-xyz",
+				"namespace":   "production",
 			})
 
 			By("Step 5: Asserting impersonation-gated operation fails")
@@ -205,14 +206,15 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			fullResult, err := infrastructure.CallEnrich(ctx, fullSession, map[string]any{
-				"rr_id":     fullRRID,
-				"kind":      "Pod",
-				"name":      "api-server-xyz",
-				"namespace": sharedNamespace,
+			fullResult, err := infrastructure.CallSelectWorkflow(ctx, fullSession, map[string]any{
+				"rr_id":       fullRRID,
+				"workflow_id": "wf-rbac-test",
+				"kind":        "Pod",
+				"name":        "api-server-xyz",
+				"namespace":   sharedNamespace,
 			})
 			if err == nil && fullResult != nil && !fullResult.IsError {
-				GinkgoWriter.Println("✅ Full-RBAC SA enrichment succeeded (differential proof)")
+				GinkgoWriter.Println("✅ Full-RBAC SA enrichment via select_workflow succeeded (differential proof)")
 			}
 
 			_, _ = infrastructure.CallInvestigate(ctx, fullSession, map[string]any{
@@ -365,14 +367,17 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 			Expect(infrastructure.ExtractToolResultText(result)).NotTo(BeEmpty(),
 				"first message should get LLM response")
 
-			By("Step 3: Calling enrich for additional context")
-			enrichResult, err := infrastructure.CallEnrich(ctx, session, map[string]any{
-				"rr_id":   rrID,
-				"context": "resource limits and recent deployments",
+			By("Step 3: Calling select_workflow with enrichment for additional context (#1012)")
+			enrichResult, err := infrastructure.CallSelectWorkflow(ctx, session, map[string]any{
+				"rr_id":       rrID,
+				"workflow_id": "wf-enrichment-test",
+				"kind":        "Pod",
+				"name":        "api-server-xyz",
+				"namespace":   sharedNamespace,
 			})
 			if err == nil && enrichResult != nil && !enrichResult.IsError {
 				enrichText := infrastructure.ExtractToolResultText(enrichResult)
-				GinkgoWriter.Printf("Enrich result: %s\n", enrichText)
+				GinkgoWriter.Printf("Select workflow + enrich result: %s\n", enrichText)
 			}
 
 			By("Step 4: Follow-up message referencing enrichment")
