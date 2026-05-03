@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
 

@@ -26,7 +26,7 @@ import (
 
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 )
 
 // BR-WORKFLOW-016: Workflow discovery tools must forward the active signal's
