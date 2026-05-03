@@ -73,6 +73,7 @@ type LeaseSessionManager struct {
 	rrIndex           sync.Map // rrID -> sessionID
 	activeCount       atomic.Int32
 	logger            logr.Logger
+	onSessionExpired  func(sessionID, rrID, reason string) // called on TTL/inactivity auto-release
 }
 
 type sessionEntry struct {
@@ -103,6 +104,15 @@ func WithInactivityTimeout(timeout time.Duration) LeaseOption {
 func WithMaxConcurrentSessions(max int) LeaseOption {
 	return func(m *LeaseSessionManager) {
 		m.maxSessions = max
+	}
+}
+
+// WithSessionExpiredCallback sets a callback invoked when GetDriver auto-releases
+// a session due to TTL or inactivity timeout. Enables audit emission (M1) for
+// expiry paths that bypass InvestigateTool's explicit complete/cancel handlers.
+func WithSessionExpiredCallback(fn func(sessionID, rrID, reason string)) LeaseOption {
+	return func(m *LeaseSessionManager) {
+		m.onSessionExpired = fn
 	}
 }
 
@@ -282,6 +292,9 @@ func (m *LeaseSessionManager) GetDriver(rrID string) (*InteractiveSession, error
 			"session_id", sessionID,
 			"rr_id", rrID)
 		_ = m.Release(sessionID, "ttl_expired")
+		if m.onSessionExpired != nil {
+			m.onSessionExpired(sessionID, rrID, "ttl_expired")
+		}
 		return nil, ErrSessionExpired
 	}
 
@@ -293,6 +306,9 @@ func (m *LeaseSessionManager) GetDriver(rrID string) (*InteractiveSession, error
 					"session_id", sessionID,
 					"rr_id", rrID)
 				_ = m.Release(sessionID, "inactivity_timeout")
+				if m.onSessionExpired != nil {
+					m.onSessionExpired(sessionID, rrID, "inactivity_timeout")
+				}
 				return nil, ErrSessionExpired
 			}
 		}
