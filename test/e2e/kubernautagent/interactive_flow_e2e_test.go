@@ -17,7 +17,9 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -377,8 +379,7 @@ type auditEntry struct {
 // queryDSAuditsByRRID queries the DataStorage for audit entries matching the given RR ID.
 // Returns nil if the query fails or no results are found.
 func queryDSAuditsByRRID(rrID string) []auditEntry {
-	// Use the authenticated HTTP client from the suite to query DS audit API.
-	url := fmt.Sprintf("https://localhost:8089/api/v1/audit/events?correlation_id=%s", rrID)
+	url := fmt.Sprintf("https://localhost:8089/api/v1/audit/events?correlation_id=%s&limit=50&offset=0", rrID)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil
@@ -394,15 +395,34 @@ func queryDSAuditsByRRID(rrID string) []auditEntry {
 		return nil
 	}
 
-	// Parse response - simplified for now; the actual format depends on DS API schema
-	// For this test, we primarily validate entries exist (non-empty response)
-	var entries []auditEntry
-	// Placeholder: in production DS, this would be a JSON array of audit events.
-	// For now, any 200 response with body indicates audit records exist.
-	entries = append(entries, auditEntry{
-		SessionID: rrID,
-		Timestamp: time.Now().Format(time.RFC3339),
-		EventType: "interactive.start",
-	})
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil
+	}
+
+	var queryResp struct {
+		Data []struct {
+			EventID       string `json:"event_id"`
+			EventType     string `json:"event_type"`
+			CorrelationID string `json:"correlation_id"`
+			Timestamp     string `json:"timestamp"`
+			SessionID     string `json:"session_id"`
+		} `json:"data"`
+		Pagination struct {
+			Total int `json:"total"`
+		} `json:"pagination"`
+	}
+	if err := json.Unmarshal(body, &queryResp); err != nil {
+		return nil
+	}
+
+	entries := make([]auditEntry, 0, len(queryResp.Data))
+	for _, d := range queryResp.Data {
+		entries = append(entries, auditEntry{
+			SessionID: d.SessionID,
+			Timestamp: d.Timestamp,
+			EventType: d.EventType,
+		})
+	}
 	return entries
 }

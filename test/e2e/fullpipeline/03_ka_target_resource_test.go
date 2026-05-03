@@ -92,7 +92,7 @@ var _ = Describe("KA-Owned Target Resource [BR-496]", func() {
 		GinkgoWriter.Printf("  Namespace created: %s\n", testNamespace)
 
 		By("Step 1b: Deploying memory-eater pod (triggers OOMKill)")
-		err := infrastructure.DeployMemoryEater(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
+		err := infrastructure.DeployMemoryEaterWithLimits(testCtx, testNamespace, kubeconfigPath, "48Mi", "18Mi", GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Failed to deploy memory-eater")
 
 		// ================================================================

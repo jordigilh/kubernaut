@@ -960,6 +960,13 @@ spec:
 //   - kubeconfigPath: Path to kubeconfig
 //   - writer: Output writer for progress logging
 func DeployMemoryEater(ctx context.Context, targetNamespace, kubeconfigPath string, writer io.Writer) error {
+	return DeployMemoryEaterWithLimits(ctx, targetNamespace, kubeconfigPath, "50Mi", "20Mi", writer)
+}
+
+// DeployMemoryEaterWithLimits deploys a memory-eater with configurable resource limits.
+// Different limits produce a different spec_hash, isolating the deployment from
+// ineffective chain detection triggered by other tests with the same spec.
+func DeployMemoryEaterWithLimits(ctx context.Context, targetNamespace, kubeconfigPath, memLimit, memRequest string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  🐛 Deploying memory-eater in namespace %s...\n", targetNamespace)
 
 	manifest := fmt.Sprintf(`apiVersion: apps/v1
@@ -986,17 +993,13 @@ spec:
       - name: memory-eater
         image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0
         imagePullPolicy: IfNotPresent
-        # Positional args: initial_memory initial_duration target_memory target_duration hold_duration
-        # Consumes 40Mi initially for 1s, then grows to 60Mi over 1s, then exits (hold=0)
-        # Limit deliberately lower than target+runtime to trigger OOMKill (exit 137)
-        # The remediation workflow fixes this by increasing the memory limit
         args: ["40Mi", "1", "60Mi", "1", "0"]
         resources:
           limits:
-            memory: "50Mi"
+            memory: "%s"
           requests:
-            memory: "20Mi"
-`, targetNamespace)
+            memory: "%s"
+`, targetNamespace, memLimit, memRequest)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
