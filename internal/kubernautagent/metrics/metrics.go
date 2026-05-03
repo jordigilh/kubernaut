@@ -226,6 +226,15 @@ func (m *Metrics) RecordSessionCompleted(outcome string, durationSeconds float64
 	m.SessionDurationSeconds.WithLabelValues(outcome).Observe(durationSeconds)
 }
 
+// RecordSessionSuspended increments the session suspended counter, distinguishing
+// takeover-driven suspension from explicit operator cancellation (M7).
+func (m *Metrics) RecordSessionSuspended() {
+	if m == nil {
+		return
+	}
+	m.SessionsCompletedTotal.WithLabelValues("suspended").Inc()
+}
+
 // RecordRateLimited increments the rate limited counter.
 func (m *Metrics) RecordRateLimited() {
 	if m == nil {
