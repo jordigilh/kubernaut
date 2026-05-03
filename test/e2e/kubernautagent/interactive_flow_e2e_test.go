@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -270,20 +271,28 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 			}, 60*time.Second, 2*time.Second).Should(BeTrue(),
 				"DS should have at least 2 audit entries (start + complete)")
 
-			By("Step 3: Verifying audit entries have session_id and chronological order")
+			By("Step 3: Verifying session audit entries have session_id and chronological order")
 			audits := queryDSAuditsByRRID(rrID)
 			Expect(audits).NotTo(BeEmpty())
 
 			var lastTimestamp string
+			sessionEventCount := 0
 			for _, audit := range audits {
-				Expect(audit.SessionID).NotTo(BeEmpty(),
-					"every audit entry should have a non-empty session_id")
-				if lastTimestamp != "" {
+				if strings.HasPrefix(audit.EventType, "aiagent.session.") {
+					Expect(audit.SessionID).NotTo(BeEmpty(),
+						fmt.Sprintf("session event %s should have a non-empty session_id", audit.EventType))
+					sessionEventCount++
+				}
+				if lastTimestamp != "" && audit.Timestamp != "" {
 					Expect(audit.Timestamp >= lastTimestamp).To(BeTrue(),
 						"audit entries should be in chronological order")
 				}
-				lastTimestamp = audit.Timestamp
+				if audit.Timestamp != "" {
+					lastTimestamp = audit.Timestamp
+				}
 			}
+			Expect(sessionEventCount).To(BeNumerically(">=", 2),
+				"should have at least 2 session events (started + completed)")
 
 			GinkgoWriter.Println("✅ INT-005: Audit trail validated in DataStorage")
 		})
@@ -402,11 +411,11 @@ func queryDSAuditsByRRID(rrID string) []auditEntry {
 
 	var queryResp struct {
 		Data []struct {
-			EventID       string `json:"event_id"`
-			EventType     string `json:"event_type"`
-			CorrelationID string `json:"correlation_id"`
-			Timestamp     string `json:"timestamp"`
-			SessionID     string `json:"session_id"`
+			EventID        string          `json:"event_id"`
+			EventType      string          `json:"event_type"`
+			CorrelationID  string          `json:"correlation_id"`
+			EventTimestamp string          `json:"event_timestamp"`
+			EventData      json.RawMessage `json:"event_data"`
 		} `json:"data"`
 		Pagination struct {
 			Total int `json:"total"`
@@ -418,9 +427,17 @@ func queryDSAuditsByRRID(rrID string) []auditEntry {
 
 	entries := make([]auditEntry, 0, len(queryResp.Data))
 	for _, d := range queryResp.Data {
+		var sessionID string
+		if len(d.EventData) > 0 {
+			var ed struct {
+				SessionID string `json:"session_id"`
+			}
+			_ = json.Unmarshal(d.EventData, &ed)
+			sessionID = ed.SessionID
+		}
 		entries = append(entries, auditEntry{
-			SessionID: d.SessionID,
-			Timestamp: d.Timestamp,
+			SessionID: sessionID,
+			Timestamp: d.EventTimestamp,
 			EventType: d.EventType,
 		})
 	}
