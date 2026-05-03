@@ -134,8 +134,9 @@ kubernaut-apifrontend/
 │   ├── session/
 │   │   └── manager.go             # Session lifecycle (create, update, lookup)
 │   ├── streaming/
-│   │   ├── sse.go                 # SSE event construction and delivery
-│   │   └── poller.go              # KA REST API polling → SSE synthesis
+│   │   ├── sse.go                 # SSE event construction and delivery to client
+│   │   ├── ka_relay.go            # Subscribe to KA /stream SSE and relay to client
+│   │   └── crd_watcher.go         # Watch RR/AA/SP CRD transitions → SSE events
 │   ├── ratelimit/
 │   │   ├── request_rate.go        # Per-user request rate (token bucket)
 │   │   ├── concurrency.go         # Global LLM concurrency (semaphore)
@@ -268,12 +269,12 @@ sequenceDiagram
 
     Note over AF,KA: Phase 2: Autonomous investigation (KA-driven)
     Note over K8s,KA: SP classifies signal, RO creates AA, AA controller calls KA
-    AF->>K8s: Watch RR/AA phase transitions
+    AF->>K8s: Watch RR/AA phase transitions (CRD watcher)
     AF->>User: SSE: progress updates (SP complete, AA investigating...)
-    AF->>KA: Poll GET /api/v1/incident/session/{id}
-    KA->>AF: status: investigating (tool calls in progress)
-    AF->>User: SSE: progress updates (tool calls, findings)
-    KA->>AF: status: completed (RCA available)
+    AF->>KA: GET /api/v1/incident/session/{id}/stream (SSE subscribe)
+    KA-->>AF: SSE: tool calls, reasoning, partial findings
+    AF->>User: SSE: progress updates (relayed from KA stream)
+    KA-->>AF: SSE: investigation complete
     AF->>KA: GET /api/v1/incident/session/{id}/result
     KA->>AF: RCA payload (root cause, affected resource, recommendation)
 
@@ -664,11 +665,16 @@ AF imports from the kubernaut monorepo (`github.com/jordigilh/kubernaut`):
 
 ### KA REST API Contract
 
-| Endpoint | Method | Purpose | Status |
-|----------|--------|---------|--------|
-| `/api/v1/incident/analyze` | POST | Start investigation session | Implemented |
-| `/api/v1/incident/session/{id}` | GET | Poll session status | Implemented |
-| `/api/v1/incident/session/{id}/result` | GET | Get completed investigation result | Implemented |
+All endpoints verified on `development/v1.5`:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/incident/analyze` | POST | Start investigation session (returns session_id) |
+| `/api/v1/incident/session/{id}` | GET | Poll session status |
+| `/api/v1/incident/session/{id}/result` | GET | Get completed investigation result (RCA payload) |
+| `/api/v1/incident/session/{id}/cancel` | POST | Cancel active investigation (returns 409 if terminal) |
+| `/api/v1/incident/session/{id}/snapshot` | GET | Session snapshot for reconnection (returns 409 if in-progress) |
+| `/api/v1/incident/session/{id}/stream` | GET | SSE event stream of investigation progress (tool calls, reasoning) |
 
 **Phase 2: Interactive endpoints** (pending kubernaut#874):
 
@@ -676,7 +682,11 @@ AF imports from the kubernaut monorepo (`github.com/jordigilh/kubernaut`):
 |----------|--------|---------|
 | `/api/v1/incident/session/{id}/takeover` | POST | User takes over autonomous investigation |
 | `/api/v1/incident/session/{id}/message` | POST | User sends message during interactive session |
-| `/api/v1/incident/session/{id}/cancel` | POST | User cancels active investigation |
+
+**Streaming strategy:** AF uses a dual-source approach:
+- **KA `/stream`**: SSE relay of investigation progress (tool calls, partial findings, reasoning) — primary source during active investigation
+- **CRD watches**: Pipeline state transitions (SP complete, AA created, RR phase changes) — provides context KA doesn't have visibility into
+- **KA `/snapshot` + status poll**: Reconnection path — reconstruct current state after SSE connection drops
 
 AF authenticates to KA by forwarding the user's original Keycloak JWT in the `Authorization` header.
 
@@ -699,7 +709,7 @@ AF authenticates to KA by forwarding the user's original Keycloak JWT in the `Au
 | #1014 | `signal_mode=manual` in SP/AA enums | Open | Yes (E2E) |
 | #1015 | `severity=unknown` in DataStorage enum | Open | Yes (E2E) |
 | #1009 | Pattern B JWT trust-boundary (AF→KA identity delegation) | Open | Yes (E2E) |
-| #874 | KA interactive session REST API: takeover, message/send, cancel endpoints | Open | Yes (E2E) |
+| #874 | KA interactive session: takeover + message endpoints (cancel/stream/snapshot already implemented) | Open | Yes (interactive mode only) |
 | #1017 | LLM-derived severity as distinct field | Open | No (enhancement) |
 | #893 | KA NetworkPolicy allows AF ingress | Closed | N/A |
 
