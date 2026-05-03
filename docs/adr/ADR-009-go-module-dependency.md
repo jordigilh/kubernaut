@@ -22,7 +22,8 @@ Import specific packages:
 - `api/aianalysis/v1alpha1`
 - `api/signalprocessing/v1alpha1`
 - `pkg/shared/types`
-- `pkg/gateway/fingerprint`
+- `pkg/gateway/types` (SHA256 fingerprinting via `ResolveFingerprint`, owner resolution)
+- `pkg/gateway/processing` (signal processing types)
 
 ## Consequences
 

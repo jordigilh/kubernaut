@@ -129,11 +129,10 @@ kubernaut-apifrontend/
 │   │   ├── af_get_pods.go         # Pod status query
 │   │   ├── af_get_workloads.go    # Workload health query
 │   │   ├── af_resolve_owner.go    # Owner chain resolution
-│   │   ├── af_check_managed.go    # RR existence check
+│   │   ├── af_check_existing_rr.go # RR existence check (dedup)
 │   │   └── af_create_rr.go        # RemediationRequest creation
 │   ├── session/
-│   │   ├── manager.go             # Session lifecycle (create, update, lookup)
-│   │   └── cleanup_controller.go  # TTL-based session cleanup
+│   │   └── manager.go             # Session lifecycle (create, update, lookup)
 │   ├── streaming/
 │   │   ├── sse.go                 # SSE event construction and delivery
 │   │   └── poller.go              # KA REST API polling → SSE synthesis
@@ -233,7 +232,7 @@ type SessionStore interface {
 
 ## 3. Data Flow
 
-### Flow 1: NL Query → Triage → RR Creation (Happy Path)
+### Flow 1: NL Query → Triage → RR Creation → Investigation → User Decision
 
 ```mermaid
 sequenceDiagram
@@ -245,8 +244,9 @@ sequenceDiagram
 
     User->>AF: tasks/send "investigate namespace payments"
     AF->>AF: Validate JWT, extract UserInfo
-    AF->>AF: Create InvestigationSession CRD (phase: Active)
     AF->>AF: Rate limit check (3 tiers)
+
+    Note over AF,LLM: Phase 1: Triage (AF LLM-driven)
     AF->>LLM: System prompt + user query + tool definitions
     LLM->>AF: tool_call: af_list_events(namespace: payments)
     AF->>K8s: List Events (impersonated as user)
@@ -261,18 +261,42 @@ sequenceDiagram
     K8s->>AF: Deployment/payment-api
     AF->>LLM: Tool result (owner: Deployment/payment-api)
     LLM->>AF: tool_call: af_create_rr(namespace, kind, name, severity, description)
+    AF->>K8s: Acquire distributed lock (Lease by fingerprint)
     AF->>K8s: Create RemediationRequest
-    AF->>AF: Update session (kaSessionID from KA response)
+    AF->>K8s: Create InvestigationSession CRD (phase: Active)
     AF->>User: SSE: task status "working" + artifact (RR created)
-    Note over AF,KA: KA picks up RR via AA controller, begins investigation
+
+    Note over AF,KA: Phase 2: Autonomous investigation (KA-driven)
+    Note over K8s,KA: SP classifies signal, RO creates AA, AA controller calls KA
+    AF->>K8s: Watch RR/AA phase transitions
+    AF->>User: SSE: progress updates (SP complete, AA investigating...)
     AF->>KA: Poll GET /api/v1/incident/session/{id}
     KA->>AF: status: investigating (tool calls in progress)
     AF->>User: SSE: progress updates (tool calls, findings)
-    KA->>AF: status: completed (RCA + workflow recommendation)
-    AF->>User: SSE: task status "input-required" (present workflow options)
-    User->>AF: tasks/send "yes, apply the fix"
-    AF->>AF: Update session phase → Completed
-    AF->>User: SSE: task status "completed"
+    KA->>AF: status: completed (RCA available)
+    AF->>KA: GET /api/v1/incident/session/{id}/result
+    KA->>AF: RCA payload (root cause, affected resource, recommendation)
+
+    Note over AF,User: Phase 3: Present RCA (yield to user)
+    AF->>User: SSE: task status "input-required" (RCA summary + options)
+
+    alt User accepts and selects workflow
+        User->>AF: tasks/send "yes, apply the fix"
+        AF->>KA: POST /api/v1/incident/analyze (workflow selection)
+        KA->>AF: Workflow selected, execution started
+        AF->>User: SSE: progress updates (workflow executing)
+        AF->>AF: Update session phase → Completed
+        AF->>User: SSE: task status "completed"
+    else User says not an issue
+        User->>AF: tasks/send "not an issue, close it"
+        AF->>KA: POST workflow selection (no_workflow, SubReason=NotActionable)
+        AF->>AF: Update session phase → Completed
+        AF->>User: SSE: task status "completed" (investigation closed)
+    else User asks for more investigation
+        User->>AF: tasks/send "check the PVC mounts too"
+        Note over AF,KA: Continue interactive session (pending kubernaut#874)
+        AF->>User: SSE: task status "working" (investigation continues)
+    end
 ```
 
 ### Flow 2: User Reconnection (Disconnect → Reconnect)
@@ -404,7 +428,7 @@ stateDiagram-v2
 | `af_get_pods` | Get pod status and health | K8s API (impersonated) |
 | `af_get_workloads` | Get Deployment/StatefulSet health | K8s API (impersonated) |
 | `af_resolve_owner` | Resolve owner chain to root | K8s API (impersonated) |
-| `af_check_managed` | Check if RR exists for resource | K8s API (AF SA) |
+| `af_check_existing_rr` | Check if RR already exists for resource (dedup) | K8s API (AF SA) |
 | `af_create_rr` | Create RemediationRequest | K8s API (AF SA) |
 
 ### A2A Protocol (v0.3.0, JSON-RPC 2.0)
@@ -620,7 +644,7 @@ AF imports from the kubernaut monorepo (`github.com/jordigilh/kubernaut`):
 | `api/aianalysis/v1alpha1` | AA CRD types |
 | `api/signalprocessing/v1alpha1` | SP CRD types |
 | `pkg/shared/types` | EnrichmentResults, DetectedLabels |
-| `pkg/gateway/fingerprint` | SHA256 fingerprinting (shared algorithm) |
+| `pkg/gateway/types` | SHA256 fingerprinting (`ResolveFingerprint`), owner resolution |
 | `pkg/gateway/processing` | Signal processing types |
 
 **Version pinning:**
@@ -640,11 +664,19 @@ AF imports from the kubernaut monorepo (`github.com/jordigilh/kubernaut`):
 
 ### KA REST API Contract
 
+| Endpoint | Method | Purpose | Status |
+|----------|--------|---------|--------|
+| `/api/v1/incident/analyze` | POST | Start investigation session | Implemented |
+| `/api/v1/incident/session/{id}` | GET | Poll session status | Implemented |
+| `/api/v1/incident/session/{id}/result` | GET | Get completed investigation result | Implemented |
+
+**Phase 2: Interactive endpoints** (pending kubernaut#874):
+
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/v1/incident/analyze` | POST | Start investigation session |
-| `/api/v1/incident/session/{id}` | GET | Poll session status |
-| `/api/v1/incident/session/{id}/result` | GET | Get completed investigation result |
+| `/api/v1/incident/session/{id}/takeover` | POST | User takes over autonomous investigation |
+| `/api/v1/incident/session/{id}/message` | POST | User sends message during interactive session |
+| `/api/v1/incident/session/{id}/cancel` | POST | User cancels active investigation |
 
 AF authenticates to KA by forwarding the user's original Keycloak JWT in the `Authorization` header.
 
@@ -667,7 +699,7 @@ AF authenticates to KA by forwarding the user's original Keycloak JWT in the `Au
 | #1014 | `signal_mode=manual` in SP/AA enums | Open | Yes (E2E) |
 | #1015 | `severity=unknown` in DataStorage enum | Open | Yes (E2E) |
 | #1009 | Pattern B JWT trust-boundary (AF→KA identity delegation) | Open | Yes (E2E) |
-| #874 | KA interactive session REST API | Open | Yes (E2E) |
+| #874 | KA interactive session REST API: takeover, message/send, cancel endpoints | Open | Yes (E2E) |
 | #1017 | LLM-derived severity as distinct field | Open | No (enhancement) |
 | #893 | KA NetworkPolicy allows AF ingress | Closed | N/A |
 
