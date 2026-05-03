@@ -137,7 +137,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 						Phase: "rca",
 					}
 				}
-				return map[string]string{"rca_summary": "delivered"}, nil
+				return &katypes.InvestigationResult{RCASummary: "delivered"}, nil
 			})
 			waitForStatus(h, id, session.StatusRunning)
 
@@ -616,7 +616,7 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 							Phase: fmt.Sprintf("session-%d", idx),
 						}
 					}
-					return map[string]string{"rca_summary": fmt.Sprintf("result-%d", idx)}, nil
+					return &katypes.InvestigationResult{RCASummary: fmt.Sprintf("result-%d", idx)}, nil
 				})
 			}
 
