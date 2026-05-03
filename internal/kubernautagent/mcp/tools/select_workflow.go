@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/pkg/shared/transport"
@@ -106,6 +107,7 @@ func WithEnrichmentRunner(runner EnrichmentRunner) SelectWorkflowOption {
 	return func(t *SelectWorkflowTool) {
 		hook := func(ctx context.Context, input SelectWorkflowInput, user mcpinternal.UserInfo, pctx *PreSelectionContext) error {
 			if input.Kind == "" {
+				t.logger.V(1).Info("enrichment skipped: kind not provided in select_workflow input")
 				return nil
 			}
 			ctx = transport.WithImpersonatedUser(ctx, user.Username, user.Groups)
@@ -138,11 +140,20 @@ type SelectWorkflowTool struct {
 	catalog           WorkflowCatalog
 	sessions          mcpinternal.SessionManager
 	preSelectionHooks []PreSelectionHook
+	logger            logr.Logger
+}
+
+// WithLogger sets the logger for the tool. Hooks use this logger to emit
+// debug-level diagnostics (e.g. enrichment skipped when kind is empty).
+func WithLogger(logger logr.Logger) SelectWorkflowOption {
+	return func(t *SelectWorkflowTool) {
+		t.logger = logger
+	}
 }
 
 // NewSelectWorkflowTool creates the tool handler with its dependencies.
 func NewSelectWorkflowTool(catalog WorkflowCatalog, sessions mcpinternal.SessionManager, opts ...SelectWorkflowOption) *SelectWorkflowTool {
-	t := &SelectWorkflowTool{catalog: catalog, sessions: sessions}
+	t := &SelectWorkflowTool{catalog: catalog, sessions: sessions, logger: logr.Discard()}
 	for _, opt := range opts {
 		opt(t)
 	}

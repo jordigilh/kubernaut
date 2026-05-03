@@ -23,12 +23,18 @@ package rbac
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	authorizationv1 "k8s.io/api/authorization/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
+
+// impersonateResources lists the K8s resources that KA must be able to
+// impersonate for interactive mode. The middleware sets both
+// Impersonate-User and Impersonate-Group headers, so both are required.
+var impersonateResources = []string{"users", "groups"}
 
 // ImpersonateCheckResult holds the outcome of a startup SSAR check
 // for the impersonate verb.
@@ -37,30 +43,46 @@ type ImpersonateCheckResult struct {
 	Reason  string
 }
 
-// CheckImpersonatePermission performs a SelfSubjectAccessReview to determine
-// whether KA's ServiceAccount can impersonate users. This is a prerequisite
-// for interactive mode (DD-AUTH-MCP-001): all MCP tool calls run under the
-// authenticated user's identity via K8s impersonation.
+// CheckImpersonatePermission performs SelfSubjectAccessReviews to determine
+// whether KA's ServiceAccount can impersonate both users and groups. Both
+// are required for interactive mode (DD-AUTH-MCP-001): all MCP tool calls
+// run under the authenticated user's identity via K8s impersonation headers
+// (Impersonate-User + Impersonate-Group).
 func CheckImpersonatePermission(ctx context.Context, client kubernetes.Interface) (ImpersonateCheckResult, error) {
-	ssar := &authorizationv1.SelfSubjectAccessReview{
-		Spec: authorizationv1.SelfSubjectAccessReviewSpec{
-			ResourceAttributes: &authorizationv1.ResourceAttributes{
-				Verb:     "impersonate",
-				Group:    "",
-				Resource: "users",
+	var denied []string
+	for _, resource := range impersonateResources {
+		ssar := &authorizationv1.SelfSubjectAccessReview{
+			Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+				ResourceAttributes: &authorizationv1.ResourceAttributes{
+					Verb:     "impersonate",
+					Group:    "",
+					Resource: resource,
+				},
 			},
-		},
+		}
+
+		result, err := client.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, ssar, metav1.CreateOptions{})
+		if err != nil {
+			return ImpersonateCheckResult{}, fmt.Errorf("SSAR check for impersonate %s failed: %w", resource, err)
+		}
+
+		if !result.Status.Allowed {
+			reason := result.Status.Reason
+			if reason == "" {
+				reason = fmt.Sprintf("impersonate %s denied", resource)
+			}
+			denied = append(denied, reason)
+		}
 	}
 
-	result, err := client.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, ssar, metav1.CreateOptions{})
-	if err != nil {
-		return ImpersonateCheckResult{}, fmt.Errorf("SSAR check for impersonate failed: %w", err)
+	if len(denied) > 0 {
+		return ImpersonateCheckResult{
+			Allowed: false,
+			Reason:  strings.Join(denied, "; "),
+		}, nil
 	}
 
-	return ImpersonateCheckResult{
-		Allowed: result.Status.Allowed,
-		Reason:  result.Status.Reason,
-	}, nil
+	return ImpersonateCheckResult{Allowed: true}, nil
 }
 
 // InteractiveReadiness tracks whether interactive mode is operational.

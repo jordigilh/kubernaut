@@ -18,6 +18,7 @@ package rbac_test
 
 import (
 	"context"
+	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -34,7 +35,7 @@ var _ = Describe("UT-KA-891-001: Startup impersonate permission check (#891)", f
 
 	Describe("CheckImpersonatePermission", func() {
 
-		It("should return allowed=true when the SA has impersonate permission", func() {
+		It("should return allowed=true when the SA has impersonate on both users and groups", func() {
 			client := fake.NewSimpleClientset()
 			client.PrependReactor("create", "selfsubjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
 				return true, &authorizationv1.SelfSubjectAccessReview{
@@ -46,25 +47,85 @@ var _ = Describe("UT-KA-891-001: Startup impersonate permission check (#891)", f
 
 			result, err := karbac.CheckImpersonatePermission(context.Background(), client)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Allowed).To(BeTrue(), "SA with impersonate RBAC should be allowed")
+			Expect(result.Allowed).To(BeTrue(), "SA with impersonate RBAC on users+groups should be allowed")
 			Expect(result.Reason).To(BeEmpty())
 		})
 
-		It("should return allowed=false when the SA lacks impersonate permission", func() {
+		It("should return allowed=false when the SA lacks impersonate on users", func() {
+			client := fake.NewSimpleClientset()
+			callCount := 0
+			client.PrependReactor("create", "selfsubjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				callCount++
+				createAction := action.(k8stesting.CreateAction)
+				ssar := createAction.GetObject().(*authorizationv1.SelfSubjectAccessReview)
+				resource := ssar.Spec.ResourceAttributes.Resource
+
+				if resource == "users" {
+					return true, &authorizationv1.SelfSubjectAccessReview{
+						Status: authorizationv1.SubjectAccessReviewStatus{
+							Allowed: false,
+							Reason:  "RBAC: impersonate users denied",
+						},
+					}, nil
+				}
+				return true, &authorizationv1.SelfSubjectAccessReview{
+					Status: authorizationv1.SubjectAccessReviewStatus{Allowed: true},
+				}, nil
+			})
+
+			result, err := karbac.CheckImpersonatePermission(context.Background(), client)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Allowed).To(BeFalse())
+			Expect(result.Reason).To(ContainSubstring("users"))
+			Expect(callCount).To(Equal(2), "should check both users and groups")
+		})
+
+		It("should return allowed=false when the SA lacks impersonate on groups", func() {
 			client := fake.NewSimpleClientset()
 			client.PrependReactor("create", "selfsubjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				createAction := action.(k8stesting.CreateAction)
+				ssar := createAction.GetObject().(*authorizationv1.SelfSubjectAccessReview)
+				resource := ssar.Spec.ResourceAttributes.Resource
+
+				if resource == "groups" {
+					return true, &authorizationv1.SelfSubjectAccessReview{
+						Status: authorizationv1.SubjectAccessReviewStatus{
+							Allowed: false,
+							Reason:  "RBAC: impersonate groups denied",
+						},
+					}, nil
+				}
+				return true, &authorizationv1.SelfSubjectAccessReview{
+					Status: authorizationv1.SubjectAccessReviewStatus{Allowed: true},
+				}, nil
+			})
+
+			result, err := karbac.CheckImpersonatePermission(context.Background(), client)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Allowed).To(BeFalse())
+			Expect(result.Reason).To(ContainSubstring("groups"))
+		})
+
+		It("should return combined reasons when both users and groups are denied", func() {
+			client := fake.NewSimpleClientset()
+			client.PrependReactor("create", "selfsubjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				createAction := action.(k8stesting.CreateAction)
+				ssar := createAction.GetObject().(*authorizationv1.SelfSubjectAccessReview)
+				resource := ssar.Spec.ResourceAttributes.Resource
+
 				return true, &authorizationv1.SelfSubjectAccessReview{
 					Status: authorizationv1.SubjectAccessReviewStatus{
 						Allowed: false,
-						Reason:  "RBAC: impersonate verb denied",
+						Reason:  "RBAC: impersonate " + resource + " denied",
 					},
 				}, nil
 			})
 
 			result, err := karbac.CheckImpersonatePermission(context.Background(), client)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Allowed).To(BeFalse(), "SA without impersonate RBAC should be denied")
-			Expect(result.Reason).To(ContainSubstring("impersonate"))
+			Expect(result.Allowed).To(BeFalse())
+			Expect(result.Reason).To(ContainSubstring("users"))
+			Expect(result.Reason).To(ContainSubstring("groups"))
 		})
 
 		It("should return error when the K8s API is unreachable", func() {
@@ -100,6 +161,29 @@ var _ = Describe("UT-KA-891-001: Startup impersonate permission check (#891)", f
 			status := karbac.NewInteractiveReadiness()
 			Expect(status.IsEnabled()).To(BeFalse())
 			Expect(status.StatusString()).To(Equal("not_configured"))
+		})
+	})
+
+	Describe("DetectPodIdentity", func() {
+
+		It("should return values from POD_NAME and POD_NAMESPACE env vars", func() {
+			os.Setenv("POD_NAME", "ka-test-pod-xyz")
+			os.Setenv("POD_NAMESPACE", "kubernaut-test-ns")
+			defer os.Unsetenv("POD_NAME")
+			defer os.Unsetenv("POD_NAMESPACE")
+
+			podName, namespace := karbac.DetectPodIdentity()
+			Expect(podName).To(Equal("ka-test-pod-xyz"))
+			Expect(namespace).To(Equal("kubernaut-test-ns"))
+		})
+
+		It("should return empty strings when env vars are not set", func() {
+			os.Unsetenv("POD_NAME")
+			os.Unsetenv("POD_NAMESPACE")
+
+			podName, namespace := karbac.DetectPodIdentity()
+			Expect(podName).To(BeEmpty())
+			Expect(namespace).To(BeEmpty())
 		})
 	})
 })

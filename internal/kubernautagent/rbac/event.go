@@ -17,7 +17,9 @@ limitations under the License.
 package rbac
 
 import (
+	"context"
 	"os"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,7 +40,7 @@ const (
 // `kubectl describe pod` and `kubectl get events`.
 type EventEmitter struct {
 	recorder  record.EventRecorder
-	podRef    *corev1.ObjectReference
+	podObj    *corev1.Pod
 	broadcast record.EventBroadcaster
 }
 
@@ -46,6 +48,10 @@ type EventEmitter struct {
 // podName and namespace are expected from the downward API env vars
 // POD_NAME and POD_NAMESPACE. Returns nil if either is empty (e.g.
 // running outside a cluster).
+//
+// The emitter looks up the Pod's UID so that K8s can properly associate
+// and deduplicate events. If the lookup fails (e.g. RBAC), it falls
+// back to emitting without UID.
 func NewEventEmitter(clientset kubernetes.Interface, podName, namespace string) *EventEmitter {
 	if podName == "" || namespace == "" {
 		return nil
@@ -62,15 +68,23 @@ func NewEventEmitter(clientset kubernetes.Interface, podName, namespace string) 
 		Component: "kubernaut-agent",
 	})
 
+	podObj := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: namespace,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{}); err == nil {
+		podObj.UID = pod.UID
+	}
+
 	return &EventEmitter{
 		recorder:  rec,
 		broadcast: broadcaster,
-		podRef: &corev1.ObjectReference{
-			Kind:       "Pod",
-			Name:       podName,
-			Namespace:  namespace,
-			APIVersion: "v1",
-		},
+		podObj:    podObj,
 	}
 }
 
@@ -80,15 +94,7 @@ func (e *EventEmitter) EmitInteractiveSoftDisabled(reason string) {
 	if e == nil {
 		return
 	}
-	e.recorder.Event(
-		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-			Name:      e.podRef.Name,
-			Namespace: e.podRef.Namespace,
-		}},
-		corev1.EventTypeWarning,
-		ReasonInteractiveSoftDisabled,
-		reason,
-	)
+	e.recorder.Event(e.podObj, corev1.EventTypeWarning, ReasonInteractiveSoftDisabled, reason)
 }
 
 // EmitInteractiveEnabled emits a Normal event when interactive mode
@@ -97,15 +103,8 @@ func (e *EventEmitter) EmitInteractiveEnabled() {
 	if e == nil {
 		return
 	}
-	e.recorder.Event(
-		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-			Name:      e.podRef.Name,
-			Namespace: e.podRef.Namespace,
-		}},
-		corev1.EventTypeNormal,
-		ReasonInteractiveEnabled,
-		"Interactive mode enabled: SA has impersonate permission",
-	)
+	e.recorder.Event(e.podObj, corev1.EventTypeNormal, ReasonInteractiveEnabled,
+		"Interactive mode enabled: SA has impersonate permission")
 }
 
 // Shutdown stops the event broadcaster. Call during graceful shutdown.

@@ -1312,7 +1312,9 @@ func buildMCPHandler(
 	if ds != nil {
 		wfQuerier := wfclient.NewOgenWorkflowQuerier(ds.ogenClient)
 		catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
-		var swOpts []mcptools.SelectWorkflowOption
+		swOpts := []mcptools.SelectWorkflowOption{
+			mcptools.WithLogger(logger.WithName("select-workflow")),
+		}
 		if enricher != nil {
 			swOpts = append(swOpts, mcptools.WithEnrichmentRunner(enricher))
 		}
