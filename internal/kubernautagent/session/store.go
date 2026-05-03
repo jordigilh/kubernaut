@@ -24,7 +24,7 @@ import (
 
 	"github.com/google/uuid"
 
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // Status represents the lifecycle state of an investigation session.

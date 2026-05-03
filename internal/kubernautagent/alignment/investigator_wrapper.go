@@ -25,7 +25,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // InvestigatorWrapper wraps an InvestigationRunner. On each Investigate call

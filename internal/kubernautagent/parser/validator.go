@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // ValidationError captures a specific validation failure.

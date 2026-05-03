@@ -24,7 +24,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	katypes "github.com/jordigilh/kubernaut/internal/kubernautagent/types"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // ErrCapacityExhausted is returned when the maximum number of concurrent
