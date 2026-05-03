@@ -328,8 +328,7 @@ func (s *HTTPError) SetRequestID(val OptNilString) {
 	s.RequestID = val
 }
 
-func (*HTTPError) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {}
-func (*HTTPError) sessionStreamAPIV1IncidentSessionSessionIDStreamGetRes()           {}
+func (*HTTPError) sessionStreamAPIV1IncidentSessionSessionIDStreamGetRes() {}
 
 // Ref: #/components/schemas/HTTPValidationError
 type HTTPValidationError struct {
