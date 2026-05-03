@@ -1445,14 +1445,24 @@ type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict
 func (*IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
 }
 
+type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetInternalServerError HTTPError
+
+func (*IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetInternalServerError) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
+}
+
 type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound HTTPError
 
 func (*IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
 }
 
-type IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON jx.Raw
+type IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetInternalServerError HTTPError
 
-func (*IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {
+func (*IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetInternalServerError) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {
+}
+
+type IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound HTTPError
+
+func (*IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {
 }
 
 // NewOptBool returns new OptBool with value set to v.
@@ -2366,6 +2376,52 @@ func (o OptSessionSnapshotMetadata) Or(d SessionSnapshotMetadata) SessionSnapsho
 	return d
 }
 
+// NewOptString returns new OptString with value set to v.
+func NewOptString(v string) OptString {
+	return OptString{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptString is optional string.
+type OptString struct {
+	Value string
+	Set   bool
+}
+
+// IsSet returns true if OptString was set.
+func (o OptString) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptString) Reset() {
+	var v string
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptString) SetTo(v string) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptString) Get() (v string, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptString) Or(d string) string {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // Point-in-time snapshot of session state.
 // Business Requirement: BR-SESSION-002 (Session lifecycle visibility)
 // BR-AUDIT-070: Forensic Post-Mortem RAG Data Completeness
@@ -2519,6 +2575,46 @@ func (s *SessionSnapshotMetadata) init() SessionSnapshotMetadata {
 	}
 	return m
 }
+
+// Ref: #/components/schemas/SessionStatus
+type SessionStatus struct {
+	SessionID string `json:"session_id"`
+	Status    string `json:"status"`
+	// Error message when status is failed.
+	Error OptString `json:"error"`
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *SessionStatus) GetSessionID() string {
+	return s.SessionID
+}
+
+// GetStatus returns the value of Status.
+func (s *SessionStatus) GetStatus() string {
+	return s.Status
+}
+
+// GetError returns the value of Error.
+func (s *SessionStatus) GetError() OptString {
+	return s.Error
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *SessionStatus) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// SetStatus sets the value of Status.
+func (s *SessionStatus) SetStatus(val string) {
+	s.Status = val
+}
+
+// SetError sets the value of Error.
+func (s *SessionStatus) SetError(val OptString) {
+	s.Error = val
+}
+
+func (*SessionStatus) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {}
 
 type SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK struct {
 	Data io.Reader

@@ -294,6 +294,19 @@ func encodeIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRe
 
 		return nil
 
+	case *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetInternalServerError:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(500)
+		span.SetStatus(codes.Error, http.StatusText(500))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
 	default:
 		return errors.Errorf("unexpected response type: %T", response)
 	}
@@ -301,7 +314,7 @@ func encodeIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRe
 
 func encodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse(response IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON:
+	case *SessionStatus:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -314,7 +327,7 @@ func encodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse
 
 		return nil
 
-	case *HTTPError:
+	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(404)
 		span.SetStatus(codes.Error, http.StatusText(404))
@@ -331,6 +344,19 @@ func encodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(422)
 		span.SetStatus(codes.Error, http.StatusText(422))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetInternalServerError:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(500)
+		span.SetStatus(codes.Error, http.StatusText(500))
 
 		e := new(jx.Encoder)
 		response.Encode(e)

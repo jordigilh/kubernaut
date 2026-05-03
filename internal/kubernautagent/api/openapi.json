@@ -382,10 +382,12 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Session status",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatus"
+                }
               }
             }
           },
@@ -707,6 +709,25 @@
   },
   "components": {
     "schemas": {
+      "SessionStatus": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "status"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message when status is failed"
+          }
+        }
+      },
       "AlternativeWorkflow": {
         "properties": {
           "workflow_id": {

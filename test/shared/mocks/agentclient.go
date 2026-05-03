@@ -54,7 +54,7 @@ type MockAgentClient struct {
 	SubmitInvestigationFunc func(ctx context.Context, req *agentclient.IncidentRequest) (string, error)
 
 	// PollSessionFunc allows tests to customize PollSession behavior
-	PollSessionFunc func(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error)
+	PollSessionFunc func(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error)
 
 	// GetSessionResultFunc allows tests to customize GetSessionResult behavior
 	GetSessionResultFunc func(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error)
@@ -72,7 +72,7 @@ type MockAgentClient struct {
 	DefaultSessionID string
 
 	// DefaultSessionStatus is returned by PollSession when no func is set
-	DefaultSessionStatus *agentclient.SessionStatus
+	DefaultSessionStatus *agentclient.SessionStatusResult
 
 	// SubmitErr is the error returned by SubmitInvestigation
 	SubmitErr error
@@ -234,7 +234,7 @@ func (m *MockAgentClient) SubmitInvestigation(ctx context.Context, req *agentcli
 }
 
 // PollSession implements AgentClientInterface for session polling.
-func (m *MockAgentClient) PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
+func (m *MockAgentClient) PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error) {
 	m.mu.Lock()
 	m.PollCallCount++
 	m.mu.Unlock()
@@ -251,7 +251,7 @@ func (m *MockAgentClient) PollSession(ctx context.Context, sessionID string) (*a
 		return m.DefaultSessionStatus, nil
 	}
 
-	return &agentclient.SessionStatus{Status: "completed"}, nil
+	return &agentclient.SessionStatusResult{Status: "completed"}, nil
 }
 
 // GetSessionResult implements AgentClientInterface for result retrieval.
@@ -290,7 +290,7 @@ func (m *MockAgentClient) WithSessionSubmitError(err error) *MockAgentClient {
 
 // WithSessionPollStatus configures the mock to return a specific session status on poll.
 func (m *MockAgentClient) WithSessionPollStatus(status string) *MockAgentClient {
-	m.DefaultSessionStatus = &agentclient.SessionStatus{Status: status}
+	m.DefaultSessionStatus = &agentclient.SessionStatusResult{Status: status}
 	m.PollErr = nil
 	return m
 }
@@ -312,15 +312,15 @@ func (m *MockAgentClient) WithSessionResultError(err error) *MockAgentClient {
 func (m *MockAgentClient) WithSessionPollSequence(statuses []string) *MockAgentClient {
 	callIndex := 0
 	mu := &sync.Mutex{}
-	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
+	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		if callIndex >= len(statuses) {
-			return &agentclient.SessionStatus{Status: statuses[len(statuses)-1]}, nil
+			return &agentclient.SessionStatusResult{Status: statuses[len(statuses)-1]}, nil
 		}
 		status := statuses[callIndex]
 		callIndex++
-		return &agentclient.SessionStatus{Status: status}, nil
+		return &agentclient.SessionStatusResult{Status: status}, nil
 	}
 	return m
 }
@@ -330,14 +330,14 @@ func (m *MockAgentClient) WithSessionPollSequence(statuses []string) *MockAgentC
 func (m *MockAgentClient) WithSessionPollFailThenRecover(failCount int, sessionLostErr error) *MockAgentClient {
 	callIndex := 0
 	mu := &sync.Mutex{}
-	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
+	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		callIndex++
 		if callIndex <= failCount {
 			return nil, sessionLostErr
 		}
-		return &agentclient.SessionStatus{Status: "completed"}, nil
+		return &agentclient.SessionStatusResult{Status: "completed"}, nil
 	}
 	return m
 }

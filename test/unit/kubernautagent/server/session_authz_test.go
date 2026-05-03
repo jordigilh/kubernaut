@@ -88,7 +88,7 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 			)
 			Expect(err).NotTo(HaveOccurred())
 
-			_, ok := resp.(*agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON)
+			_, ok := resp.(*agentclient.SessionStatus)
 			Expect(ok).To(BeTrue(), "owner should receive 200 OK for session status")
 		})
 	})
@@ -103,8 +103,8 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 			)
 			Expect(err).NotTo(HaveOccurred())
 
-			httpErr, ok := resp.(*agentclient.HTTPError)
-			Expect(ok).To(BeTrue(), "non-owner should receive HTTPError (404)")
+			httpErr, ok := resp.(*agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound)
+			Expect(ok).To(BeTrue(), "non-owner should receive NotFound (404)")
 			Expect(httpErr.Status).To(Equal(404))
 		})
 	})
@@ -196,7 +196,7 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 			)
 			Expect(err).NotTo(HaveOccurred())
 
-			_, ok := resp.(*agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON)
+			_, ok := resp.(*agentclient.SessionStatus)
 			Expect(ok).To(BeTrue(), "unauthenticated context should still access sessions (dev mode)")
 		})
 	})
@@ -222,7 +222,7 @@ var _ = Describe("Session Object-Level Authorization — #823 PR7.5", func() {
 			)
 			Expect(err).NotTo(HaveOccurred())
 
-			httpErr, ok := resp.(*agentclient.HTTPError)
+			httpErr, ok := resp.(*agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound)
 			Expect(ok).To(BeTrue())
 			Expect(httpErr.Status).To(Equal(404))
 

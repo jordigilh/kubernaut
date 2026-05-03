@@ -145,7 +145,7 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 	sess, err := h.getAuthorizedSession(ctx, params.SessionID, endpoint)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
-			return &agentclient.HTTPError{
+			return &agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound{
 				Type:     "https://kubernaut.ai/problems/not-found",
 				Title:    "Session Not Found",
 				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
@@ -162,12 +162,10 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 	}
 
 	status := mapSessionStatusToAPI(sess.Status)
-	body, _ := json.Marshal(map[string]string{
-		"session_id": sess.ID,
-		"status":     status,
-	})
-	raw := agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON(body)
-	return &raw, nil
+	return &agentclient.SessionStatus{
+		SessionID: sess.ID,
+		Status:    status,
+	}, nil
 }
 
 // IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet implements

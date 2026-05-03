@@ -18,7 +18,6 @@ package server_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -443,11 +442,9 @@ var _ = Describe("Response Mapper — #433", func() {
 			resp, err := handler.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(context.Background(), params)
 			Expect(err).NotTo(HaveOccurred())
 
-			raw, ok := resp.(*agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON)
+			ss, ok := resp.(*agentclient.SessionStatus)
 			Expect(ok).To(BeTrue())
-			var body map[string]string
-			Expect(json.Unmarshal([]byte(*raw), &body)).To(Succeed())
-			Expect(body["status"]).To(Equal("completed"))
+			Expect(ss.Status).To(Equal("completed"))
 		})
 
 		It("should map 'investigating' for running session", func() {
@@ -466,11 +463,9 @@ var _ = Describe("Response Mapper — #433", func() {
 			resp, err := handler.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(context.Background(), params)
 			Expect(err).NotTo(HaveOccurred())
 
-			raw, ok := resp.(*agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON)
+			ss, ok := resp.(*agentclient.SessionStatus)
 			Expect(ok).To(BeTrue())
-			var body map[string]string
-			Expect(json.Unmarshal([]byte(*raw), &body)).To(Succeed())
-			Expect(body["status"]).To(Equal("investigating"))
+			Expect(ss.Status).To(Equal("investigating"))
 		})
 
 		It("should map 'failed' status correctly", func() {
@@ -488,11 +483,9 @@ var _ = Describe("Response Mapper — #433", func() {
 			resp, err := handler.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(context.Background(), params)
 			Expect(err).NotTo(HaveOccurred())
 
-			raw, ok := resp.(*agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON)
+			ss, ok := resp.(*agentclient.SessionStatus)
 			Expect(ok).To(BeTrue())
-			var body map[string]string
-			Expect(json.Unmarshal([]byte(*raw), &body)).To(Succeed())
-			Expect(body["status"]).To(Equal("failed"))
+			Expect(ss.Status).To(Equal("failed"))
 		})
 	})
 })

@@ -18,7 +18,6 @@ package server_test
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/go-logr/logr"
 	"time"
 
@@ -291,12 +290,9 @@ var _ = Describe("TP-823-OAS: Cancel, Snapshot, Stream Endpoints (#823 PR2)", fu
 			resp, err := handler.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(context.Background(), params)
 			Expect(err).NotTo(HaveOccurred())
 
-			raw, ok := resp.(*agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON)
+			ss, ok := resp.(*agentclient.SessionStatus)
 			Expect(ok).To(BeTrue(), "response should be 200 OK")
-
-			var body map[string]string
-			Expect(json.Unmarshal([]byte(*raw), &body)).To(Succeed())
-			Expect(body["status"]).To(Equal("cancelled"),
+			Expect(ss.Status).To(Equal("cancelled"),
 				"mapSessionStatusToAPI must map StatusCancelled to 'cancelled', not 'unknown'")
 		})
 	})

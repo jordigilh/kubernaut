@@ -338,8 +338,8 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-120 * time.Second)},
 				}
 
-				mockClient.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
-					return &agentclient.SessionStatus{
+				mockClient.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error) {
+					return &agentclient.SessionStatusResult{
 						Status: "failed",
 						Error:  "LLM provider error: rate limit exceeded",
 					}, nil
@@ -655,12 +655,12 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				}
 
 				callCount := 0
-				mockClient.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error) {
+				mockClient.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error) {
 					callCount++
 					if callCount == 1 {
-						return &agentclient.SessionStatus{Status: "user_driving", Progress: "User investigating"}, nil
+						return &agentclient.SessionStatusResult{Status: "user_driving", Progress: "User investigating"}, nil
 					}
-					return &agentclient.SessionStatus{Status: "completed"}, nil
+					return &agentclient.SessionStatusResult{Status: "completed"}, nil
 				}
 				mockClient.WithFullResponse(
 					"Root cause: config drift",

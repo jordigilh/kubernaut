@@ -445,7 +445,7 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 // The controller continues polling at the normal interval so it detects when the
 // user-driven session completes or fails.
 // BR-INTERACTIVE-001: User takeover observability via CRD status.
-func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatus) (ctrl.Result, error) {
+func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
 
 	session.PollCount++
@@ -471,7 +471,7 @@ func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context,
 // Updates PollCount and LastPolled in the CRD status for observability.
 // The aiAnalysisUpdatePredicate filters PollCount/LastPolled-only status writes
 // so they don't trigger re-reconciles. Only RequeueAfter controls the next poll.
-func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatus) (ctrl.Result, error) {
+func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
 
 	// Update poll tracking fields for observability
@@ -536,7 +536,7 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 
 // handleSessionPollFailed handles poll results where investigation has failed on KA side.
 // BR-AA-HAPI-064: Surface KA-side failure to operators via CRD status
-func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatus) (ctrl.Result, error) {
+func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
 	h.log.Info("KA session failed",
 		"sessionID", analysis.Status.InvestigationSession.ID,
 		"error", status.Error,

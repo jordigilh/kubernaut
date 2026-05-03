@@ -150,18 +150,18 @@ func (c *KubernautAgentClient) Investigate(ctx context.Context, req *IncidentReq
 // BR-AA-HAPI-064: Internal helper for sync-over-async wrapping.
 func (c *KubernautAgentClient) awaitSession(ctx context.Context, sessionID string) error {
 	for {
-		status, err := c.PollSession(ctx, sessionID)
+		result, err := c.PollSession(ctx, sessionID)
 		if err != nil {
 			return err
 		}
 
-		switch status.Status {
+		switch result.Status {
 		case "completed":
 			return nil
 		case "failed":
 			return &APIError{
 				StatusCode: http.StatusInternalServerError,
-				Message:    fmt.Sprintf("agent session failed: %s", status.Error),
+				Message:    fmt.Sprintf("agent session failed: %s", result.Error),
 			}
 		default:
 			// "pending" or "investigating" -- wait and retry
@@ -182,9 +182,9 @@ func (c *KubernautAgentClient) awaitSession(ctx context.Context, sessionID strin
 // SESSION TYPES (BR-AA-HAPI-064)
 // ========================================
 
-// SessionStatus represents the status of an investigation session.
+// SessionStatusResult represents the status of an investigation session.
 // Returned by PollSession when querying session progress.
-type SessionStatus struct {
+type SessionStatusResult struct {
 	// Status of the session: "pending", "investigating", "completed", "failed"
 	Status string `json:"status"`
 	// Error message when status is "failed"
@@ -238,7 +238,7 @@ func (c *KubernautAgentClient) SubmitInvestigation(ctx context.Context, req *Inc
 // PollSession polls the status of an investigation session.
 // BR-AA-HAPI-064.2: GET /api/v1/incident/session/{id}
 // Returns *APIError{StatusCode: 404} when session not found (BR-AA-HAPI-064.5 regeneration trigger).
-func (c *KubernautAgentClient) PollSession(ctx context.Context, sessionID string) (*SessionStatus, error) {
+func (c *KubernautAgentClient) PollSession(ctx context.Context, sessionID string) (*SessionStatusResult, error) {
 	res, err := c.client.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx,
 		IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams{SessionID: sessionID})
 	if err != nil {
@@ -246,18 +246,18 @@ func (c *KubernautAgentClient) PollSession(ctx context.Context, sessionID string
 	}
 
 	switch v := res.(type) {
-	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON:
-		var status SessionStatus
-		if err := json.Unmarshal([]byte(*v), &status); err != nil {
-			return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("failed to decode session status: %v", err)}
-		}
-		return &status, nil
+	case *SessionStatus:
+		return &SessionStatusResult{
+			Status: v.Status,
+			Error:  v.Error.Value,
+		}, nil
+	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound:
+		return nil, &APIError{StatusCode: http.StatusNotFound, Message: fmt.Sprintf("session %s not found: %s", sessionID, v.Detail)}
+	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetInternalServerError:
+		return nil, &APIError{StatusCode: http.StatusInternalServerError, Message: fmt.Sprintf("server error: %s", v.Detail)}
 	case *HTTPValidationError:
 		return nil, &APIError{StatusCode: http.StatusUnprocessableEntity, Message: "validation error"}
 	default:
-		if he, ok := res.(interface{ GetDetail() string }); ok {
-			return nil, &APIError{StatusCode: http.StatusNotFound, Message: fmt.Sprintf("session %s not found: %s", sessionID, he.GetDetail())}
-		}
 		return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("unexpected response type: %T", res)}
 	}
 }

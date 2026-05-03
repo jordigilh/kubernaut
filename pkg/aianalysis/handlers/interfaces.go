@@ -47,7 +47,7 @@ type AgentClientInterface interface {
 
 	// Async session methods (BR-AA-HAPI-064)
 	SubmitInvestigation(ctx context.Context, req *agentclient.IncidentRequest) (string, error)
-	PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatus, error)
+	PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error)
 	GetSessionResult(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error)
 }
 
