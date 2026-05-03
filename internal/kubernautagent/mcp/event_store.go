@@ -56,7 +56,6 @@ func (s *DelegatingEventStore) After(ctx context.Context, sessionID, streamID st
 }
 
 func (s *DelegatingEventStore) SessionClosed(ctx context.Context, sessionID string) error {
-	s.mcpToSession.Delete(sessionID)
 	select {
 	case s.closedChan <- sessionID:
 	default:
@@ -67,6 +66,14 @@ func (s *DelegatingEventStore) SessionClosed(ctx context.Context, sessionID stri
 // RegisterMCPSession maps an MCP session ID to an interactive session ID.
 func (s *DelegatingEventStore) RegisterMCPSession(mcpSessionID, interactiveSessionID string) {
 	s.mcpToSession.Store(mcpSessionID, interactiveSessionID)
+}
+
+// DeleteMCPSession removes the MCP-to-interactive mapping after the disconnect
+// handler has finished processing. Must be called by the handler callback, not
+// by SessionClosed, to avoid a race where LookupInteractiveSession returns false
+// because the mapping was deleted before the handler consumed the channel event.
+func (s *DelegatingEventStore) DeleteMCPSession(mcpSessionID string) {
+	s.mcpToSession.Delete(mcpSessionID)
 }
 
 // LookupInteractiveSession returns the interactive session ID for a given MCP session.
