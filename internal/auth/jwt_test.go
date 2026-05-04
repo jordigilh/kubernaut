@@ -186,6 +186,41 @@ var _ = Describe("Auth", func() {
 				Expect(err).To(MatchError(auth.ErrTokenExpired))
 			})
 
+			It("UT-AF-002-020: token without exp claim returns missing expiry error", func() {
+				kp := newTestKeyPair("key-1")
+				jwksSrv := newJWKSServer(kp.jwks())
+
+				cfg := auth.AuthConfig{
+					JWT: []auth.ProviderConfig{
+						{
+							Issuer: auth.IssuerConfig{
+								URL:       jwksSrv.URL,
+								Audiences: []string{"kubernaut-agent"},
+							},
+							ClaimMappings: auth.ClaimMappings{
+								Username: "claims.preferred_username",
+								Groups:   "claims.groups",
+							},
+						},
+					},
+				}
+
+				validator, err := auth.NewJWTValidator(cfg, auth.WithHTTPClient(jwksSrv.Client()))
+				Expect(err).NotTo(HaveOccurred())
+
+				claims := map[string]interface{}{
+					"iss":                jwksSrv.URL,
+					"sub":                "alice",
+					"aud":                []string{"kubernaut-agent"},
+					"iat":                time.Now().Unix(),
+					"preferred_username": "alice",
+				}
+				token := kp.signToken(claims)
+
+				_, err = validator.Validate(context.Background(), token)
+				Expect(err).To(MatchError(auth.ErrMissingExpiry))
+			})
+
 			It("UT-AF-002-003: wrong audience returns invalid audience error", func() {
 				kp := newTestKeyPair("key-1")
 				jwksSrv := newJWKSServer(kp.jwks())
@@ -675,7 +710,7 @@ var _ = Describe("Auth", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				var capturedIdentity *auth.UserIdentity
-				handler := auth.Middleware(validator)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				handler := auth.MiddlewareWithConfig(auth.MiddlewareConfig{Validator: validator})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 					capturedIdentity = auth.UserIdentityFromContext(r.Context())
 				}))
 
@@ -698,7 +733,7 @@ var _ = Describe("Auth", func() {
 				validator, err := auth.NewJWTValidator(auth.AuthConfig{})
 				Expect(err).NotTo(HaveOccurred())
 
-				handler := auth.Middleware(validator)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				handler := auth.MiddlewareWithConfig(auth.MiddlewareConfig{Validator: validator})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusOK)
 				}))
 
@@ -737,7 +772,7 @@ var _ = Describe("Auth", func() {
 				validator, err := auth.NewJWTValidator(cfg, auth.WithHTTPClient(jwksSrv.Client()))
 				Expect(err).NotTo(HaveOccurred())
 
-				handler := auth.Middleware(validator)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				handler := auth.MiddlewareWithConfig(auth.MiddlewareConfig{Validator: validator})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusOK)
 				}))
 
@@ -778,7 +813,7 @@ var _ = Describe("Auth", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				var bodyReadErr error
-				handler := auth.Middleware(validator)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handler := auth.MiddlewareWithConfig(auth.MiddlewareConfig{Validator: validator})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					_, bodyReadErr = io.ReadAll(r.Body)
 					if bodyReadErr != nil {
 						w.WriteHeader(http.StatusRequestEntityTooLarge)
@@ -813,7 +848,7 @@ var _ = Describe("Auth", func() {
 				validator, err := auth.NewJWTValidator(cfg, auth.WithTokenReviewer(reviewer))
 				Expect(err).NotTo(HaveOccurred())
 
-				handler := auth.Middleware(validator)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handler := auth.MiddlewareWithConfig(auth.MiddlewareConfig{Validator: validator})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					identity := auth.UserIdentityFromContext(r.Context())
 					if identity == nil {
 						w.WriteHeader(http.StatusUnauthorized)
