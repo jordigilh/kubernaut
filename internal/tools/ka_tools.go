@@ -79,10 +79,7 @@ func HandlePollInvestigation(ctx context.Context, kaClient *ka.Client, args Poll
 		case "completed":
 			result, err := kaClient.Result(ctx, args.SessionID)
 			if err != nil {
-				return PollInvestigationResult{
-					Status:    "completed",
-					PollCount: i,
-				}, nil
+				return PollInvestigationResult{}, fmt.Errorf("fetching investigation result: %w", err)
 			}
 			return PollInvestigationResult{
 				Status:    "completed",
@@ -93,7 +90,7 @@ func HandlePollInvestigation(ctx context.Context, kaClient *ka.Client, args Poll
 		case "failed":
 			return PollInvestigationResult{
 				Status:    "failed",
-				Progress:  status.Error,
+				Progress:  "Investigation failed. Please try again or contact support.",
 				PollCount: i,
 			}, nil
 
@@ -199,7 +196,7 @@ type PresentDecisionResult struct {
 
 // HandlePresentDecision formats RCA and options for user presentation.
 func HandlePresentDecision(args PresentDecisionArgs) PresentDecisionResult {
-	msg := fmt.Sprintf("Investigation complete for session %s.\n\nSummary: %s\n\nAvailable actions:", args.SessionID, args.Summary)
+	msg := fmt.Sprintf("Investigation complete.\n\nSummary: %s\n\nAvailable actions:", args.Summary)
 	for i, opt := range args.Options {
 		msg += fmt.Sprintf("\n  %d. %s", i+1, opt.Name)
 		if opt.Description != "" {

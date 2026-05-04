@@ -118,6 +118,8 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 func FilterToolsByRole(role string, allTools []tool.Tool) []tool.Tool {
 	rbac, err := loadDefaultRBAC()
 	if err != nil {
+		// TODO(PR7): emit af_rbac_config_error metric when ConfigMap parsing fails.
+		// Fail-closed: corrupt config means no tools for anyone until fixed.
 		return nil
 	}
 

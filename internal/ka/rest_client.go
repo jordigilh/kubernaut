@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/sony/gobreaker/v2"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 )
@@ -15,9 +18,12 @@ import (
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	cb         *gobreaker.CircuitBreaker[*http.Response]
 }
 
-// NewClient creates a new KA REST client.
+// NewClient creates a new KA REST client with circuit breaker protection.
+// The Token field provides a static fallback JWT; per-request identity delegation
+// (extracting tokens from context) is wired in PR5 via the HTTP middleware layer.
 //
 //nolint:gocritic // hugeParam: value copy intentional; called once at startup
 func NewClient(cfg Config) *Client {
@@ -34,12 +40,40 @@ func NewClient(cfg Config) *Client {
 		}
 	}
 
+	cbMaxReqs := cfg.CBMaxRequests
+	if cbMaxReqs == 0 {
+		cbMaxReqs = 5
+	}
+	cbInterval := cfg.CBInterval
+	if cbInterval == 0 {
+		cbInterval = 60 * time.Second
+	}
+	cbTimeout := cfg.CBTimeout
+	if cbTimeout == 0 {
+		cbTimeout = 30 * time.Second
+	}
+
+	cb := gobreaker.NewCircuitBreaker[*http.Response](gobreaker.Settings{
+		Name:        "ka-rest",
+		MaxRequests: cbMaxReqs,
+		Interval:    cbInterval,
+		Timeout:     cbTimeout,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			threshold := cfg.CBFailureThreshold
+			if threshold == 0 {
+				threshold = 5
+			}
+			return counts.ConsecutiveFailures >= threshold
+		},
+	})
+
 	return &Client{
 		baseURL: cfg.BaseURL,
 		httpClient: &http.Client{
 			Transport: transport,
 			Timeout:   timeout,
 		},
+		cb: cb,
 	}
 }
 
@@ -47,12 +81,12 @@ func NewClient(cfg Config) *Client {
 func (c *Client) Analyze(ctx context.Context, req AnalyzeRequest) (string, error) {
 	resp, err := c.doJSON(ctx, http.MethodPost, "/api/v1/incident/analyze", req)
 	if err != nil {
-		return "", err
+		return "", kaToUserFriendlyError(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("KA analyze returned %d", resp.StatusCode)
+		return "", kaToUserFriendlyError(fmt.Errorf("KA analyze returned %d", resp.StatusCode))
 	}
 
 	var result struct {
@@ -68,7 +102,7 @@ func (c *Client) Analyze(ctx context.Context, req AnalyzeRequest) (string, error
 func (c *Client) Status(ctx context.Context, sessionID string) (*SessionStatus, error) {
 	resp, err := c.doGet(ctx, fmt.Sprintf("/api/v1/incident/session/%s", sessionID))
 	if err != nil {
-		return nil, err
+		return nil, kaToUserFriendlyError(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -83,7 +117,7 @@ func (c *Client) Status(ctx context.Context, sessionID string) (*SessionStatus, 
 func (c *Client) Result(ctx context.Context, sessionID string) (*IncidentResponse, error) {
 	resp, err := c.doGet(ctx, fmt.Sprintf("/api/v1/incident/session/%s/result", sessionID))
 	if err != nil {
-		return nil, err
+		return nil, kaToUserFriendlyError(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -98,12 +132,12 @@ func (c *Client) Result(ctx context.Context, sessionID string) (*IncidentRespons
 func (c *Client) Cancel(ctx context.Context, sessionID string) error {
 	resp, err := c.doJSON(ctx, http.MethodPost, fmt.Sprintf("/api/v1/incident/session/%s/cancel", sessionID), nil)
 	if err != nil {
-		return err
+		return kaToUserFriendlyError(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("KA cancel returned %d", resp.StatusCode)
+		return kaToUserFriendlyError(fmt.Errorf("KA cancel returned %d", resp.StatusCode))
 	}
 	return nil
 }
@@ -124,7 +158,16 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body interface
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	return c.httpClient.Do(req)
+	return c.cb.Execute(func() (*http.Response, error) {
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode >= 500 {
+			return resp, fmt.Errorf("KA returned server error %d", resp.StatusCode)
+		}
+		return resp, nil
+	})
 }
 
 func (c *Client) doGet(ctx context.Context, path string) (*http.Response, error) {
@@ -132,5 +175,36 @@ func (c *Client) doGet(ctx context.Context, path string) (*http.Response, error)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	return c.httpClient.Do(req)
+	return c.cb.Execute(func() (*http.Response, error) {
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode >= 500 {
+			return resp, fmt.Errorf("KA returned server error %d", resp.StatusCode)
+		}
+		return resp, nil
+	})
+}
+
+// kaToUserFriendlyError sanitizes KA-originated errors for user presentation.
+// Raw HTTP status codes, connection details, and internal messages are replaced
+// with generic user-friendly alternatives.
+func kaToUserFriendlyError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "connection refused") || strings.Contains(msg, "no such host") || strings.Contains(msg, "circuit breaker is open"):
+		return fmt.Errorf("investigation service temporarily unavailable — please retry shortly")
+	case strings.Contains(msg, "returned 403") || strings.Contains(msg, "Forbidden"):
+		return fmt.Errorf("access denied: you do not have permission to perform this investigation")
+	case strings.Contains(msg, "returned 404") || strings.Contains(msg, "Not Found"):
+		return fmt.Errorf("not found: the requested investigation session does not exist")
+	case strings.Contains(msg, "returned 5") || strings.Contains(msg, "server error"):
+		return fmt.Errorf("internal error in investigation service — please retry or contact support")
+	default:
+		return fmt.Errorf("investigation service error — please retry or contact support")
+	}
 }

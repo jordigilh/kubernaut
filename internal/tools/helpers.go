@@ -43,6 +43,7 @@ func ParseRRID(rrID, namespace, name string) (ns, n string, err error) {
 }
 
 // ToUserFriendlyError translates K8s API errors into user-friendly messages.
+// Internal details (namespace paths, resource versions, field paths) are not exposed.
 func ToUserFriendlyError(err error) error {
 	if err == nil {
 		return nil
@@ -54,9 +55,11 @@ func ToUserFriendlyError(err error) error {
 		case http.StatusForbidden:
 			return fmt.Errorf("%w: %s", ErrForbidden, buildForbiddenMsg(statusErr.ErrStatus.Message))
 		case http.StatusNotFound:
-			return fmt.Errorf("%w: %s", ErrNotFound, statusErr.ErrStatus.Message)
+			return fmt.Errorf("%w: the requested resource does not exist", ErrNotFound)
+		case http.StatusConflict:
+			return fmt.Errorf("operation conflict — the resource was modified concurrently, please retry")
 		default:
-			return fmt.Errorf("%s", statusErr.ErrStatus.Message)
+			return fmt.Errorf("operation failed (code %d) — contact your cluster administrator", statusErr.ErrStatus.Code)
 		}
 	}
 	return err

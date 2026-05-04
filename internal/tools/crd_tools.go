@@ -368,9 +368,15 @@ type WatchResult struct {
 	Status string       `json:"status"`
 }
 
+// maxWatchDuration is the maximum time HandleWatch will block before returning.
+const maxWatchDuration = 10 * time.Minute
+
 // HandleWatch implements the kubernaut_watch logic.
 func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) (WatchResult, error) {
-	watcher, err := client.Resource(rrGVR).Namespace(args.Namespace).Watch(ctx, metav1.ListOptions{
+	watchCtx, cancel := context.WithTimeout(ctx, maxWatchDuration)
+	defer cancel()
+
+	watcher, err := client.Resource(rrGVR).Namespace(args.Namespace).Watch(watchCtx, metav1.ListOptions{
 		FieldSelector: "metadata.name=" + args.Name,
 	})
 	if err != nil {

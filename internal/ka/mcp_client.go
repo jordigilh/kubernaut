@@ -3,6 +3,8 @@ package ka
 import "context"
 
 // MCPClient is the interface for KA MCP operations.
+// Real implementation using github.com/modelcontextprotocol/go-sdk is deferred
+// to PR6; this PR validates the tool handler logic against the mock.
 type MCPClient interface {
 	SelectWorkflow(ctx context.Context, args SelectWorkflowArgs) (*SelectWorkflowResult, error)
 }
