@@ -67,7 +67,7 @@ func newJWKSServer(t *testing.T, jwks jose.JSONWebKeySet) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(jwks)
+		_ = json.NewEncoder(w).Encode(jwks)
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -368,7 +368,7 @@ func TestJWKSCache_FetchesOnFirstRequest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fetchCount++
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(kp.jwks())
+		_ = json.NewEncoder(w).Encode(kp.jwks())
 	}))
 	t.Cleanup(srv.Close)
 
@@ -405,7 +405,7 @@ func TestJWKSCache_UsesStaleOnFetchFailure(t *testing.T) {
 		requestCount++
 		if requestCount == 1 {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(kp.jwks())
+			_ = json.NewEncoder(w).Encode(kp.jwks())
 		} else {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
@@ -523,7 +523,7 @@ func TestJWKSCircuitBreaker_HalfOpenAfter30s(t *testing.T) {
 
 	// Trigger 3 failures to open
 	for i := 0; i < 3; i++ {
-		validator.Validate(context.Background(), token)
+		_, _ = validator.Validate(context.Background(), token)
 	}
 
 	// Verify circuit is open
@@ -579,7 +579,7 @@ func TestJWKSCircuitBreaker_ClosesOnSuccess(t *testing.T) {
 
 	// Open the circuit
 	for i := 0; i < 3; i++ {
-		validator.Validate(context.Background(), token)
+		_, _ = validator.Validate(context.Background(), token)
 	}
 
 	// Wait for half-open
@@ -638,8 +638,7 @@ func TestJWKSCircuitBreaker_ExistingSessionsFailOpen(t *testing.T) {
 
 	// Trigger circuit breaker open (3 fetch failures on refresh attempts)
 	for i := 0; i < 3; i++ {
-		// Force refresh attempts (simulate cache expiry)
-		validator.Validate(context.Background(), token)
+		_, _ = validator.Validate(context.Background(), token)
 	}
 
 	// Existing session (with cached JWKS) should still work (fail-open)
@@ -806,7 +805,7 @@ func TestMiddleware_K8sTokenReview_ValidSA(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, identity.Username)
+		_, _ = fmt.Fprint(w, identity.Username)
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

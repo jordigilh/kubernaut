@@ -159,7 +159,7 @@ func TestJWTDelegation_ForwardsOriginalJWT(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
 	resp, err := client.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, "Bearer "+originalJWT, capturedAuth)
 }
@@ -185,8 +185,8 @@ func TestJWTDelegation_NoTokenModification(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
 	resp, err := client.Do(req)
 	require.NoError(t, err)
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 
 	assert.Equal(t, originalJWT, capturedToken, "JWT must be forwarded byte-identical")
 }
