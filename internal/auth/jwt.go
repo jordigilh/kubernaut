@@ -225,10 +225,17 @@ func verifySignature(token *josejwt.JSONWebToken, keySet *jose.JSONWebKeySet) (m
 	return nil, fmt.Errorf("%w: signature verification failed", ErrMalformedToken)
 }
 
+// ErrMissingExpiry is returned when a token has no exp claim.
+var ErrMissingExpiry = errors.New("token missing required exp claim")
+
 func validateExpiry(claims map[string]interface{}) error {
-	exp, ok := claims["exp"].(float64)
+	raw, ok := claims["exp"]
 	if !ok {
-		return nil
+		return ErrMissingExpiry
+	}
+	exp, ok := raw.(float64)
+	if !ok {
+		return ErrMissingExpiry
 	}
 	if time.Unix(int64(exp), 0).Before(time.Now()) {
 		return ErrTokenExpired

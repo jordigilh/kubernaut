@@ -90,6 +90,8 @@ type JWTDelegationTransport struct {
 }
 
 // RoundTrip injects the Authorization header with the original JWT.
+// The request is cloned intentionally to avoid mutating the caller's request headers.
+// This allocation is acceptable given the low volume of KA REST calls per session.
 func (t *JWTDelegationTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	reqClone := req.Clone(req.Context())
 	reqClone.Header.Set("Authorization", "Bearer "+t.Token)
