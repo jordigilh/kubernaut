@@ -33,7 +33,7 @@ updates:
       prefix: "ci"
 
   - package-ecosystem: docker
-    directory: /docker
+    directory: /build
     schedule:
       interval: weekly
       day: monday

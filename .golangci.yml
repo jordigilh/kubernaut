@@ -55,6 +55,7 @@ linters:
       - linters:
           - gosec
         text: "G101"
+        path: "(cmd/|internal/kubernautagent/|pkg/workflowexecution/|pkg/shared/)"
       # G304: file paths from config/CLI flags are expected in K8s workloads
       - linters:
           - gosec
@@ -68,6 +69,7 @@ linters:
       - linters:
           - gosec
         text: "G115"
+        path: "(internal/|pkg/)"
       # G104: intentionally unhandled errors (already covered by errcheck linter)
       - linters:
           - gosec

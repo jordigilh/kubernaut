@@ -1,0 +1,129 @@
+suite: PrometheusRule for interactive session SLOs
+templates:
+  - templates/kubernaut-agent/prometheusrule.yaml
+set:
+  signalprocessing:
+    policies:
+      existingConfigMap: dummy
+  aianalysis:
+    policies:
+      existingConfigMap: dummy
+  kubernautAgent:
+    llm:
+      provider: openai
+      model: gpt-4
+tests:
+  - it: should not render when prometheusRule is disabled (default)
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render PrometheusRule when enabled
+    set:
+      monitoring:
+        prometheusRule:
+          enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PrometheusRule
+      - equal:
+          path: apiVersion
+          value: monitoring.coreos.com/v1
+
+  - it: should contain all 4 alert rules
+    set:
+      monitoring:
+        prometheusRule:
+          enabled: true
+    asserts:
+      - lengthEqual:
+          path: spec.groups[0].rules
+          count: 4
+      - equal:
+          path: spec.groups[0].rules[0].alert
+          value: KubernautInteractiveSessionsHigh
+      - equal:
+          path: spec.groups[0].rules[1].alert
+          value: KubernautLeaseContentionSpike
+      - equal:
+          path: spec.groups[0].rules[2].alert
+          value: KubernautInteractiveCommandLatencyHigh
+      - equal:
+          path: spec.groups[0].rules[3].alert
+          value: KubernautTakeoverRateHigh
+
+  - it: should use default thresholds from values.yaml
+    set:
+      monitoring:
+        prometheusRule:
+          enabled: true
+    asserts:
+      - matchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: "> 10$"
+      - equal:
+          path: spec.groups[0].rules[0].for
+          value: "5m"
+      - matchRegex:
+          path: spec.groups[0].rules[2].expr
+          pattern: "> 30$"
+      - equal:
+          path: spec.groups[0].rules[2].for
+          value: "10m"
+
+  - it: should override thresholds with custom values
+    set:
+      monitoring:
+        prometheusRule:
+          enabled: true
+          thresholds:
+            activeSessionsMax: 25
+            activeSessionsFor: "10m"
+            commandDurationP99Max: 45
+    asserts:
+      - matchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: "> 25$"
+      - equal:
+          path: spec.groups[0].rules[0].for
+          value: "10m"
+      - matchRegex:
+          path: spec.groups[0].rules[2].expr
+          pattern: "> 45$"
+
+  - it: should propagate additionalLabels to the resource
+    set:
+      monitoring:
+        prometheusRule:
+          enabled: true
+          additionalLabels:
+            prometheus: kube-prometheus
+            release: monitoring
+    asserts:
+      - equal:
+          path: metadata.labels.prometheus
+          value: kube-prometheus
+      - equal:
+          path: metadata.labels.release
+          value: monitoring
+
+  - it: should use correct metric names matching metrics.go
+    set:
+      monitoring:
+        prometheusRule:
+          enabled: true
+    asserts:
+      - matchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: "^aiagent_mcp_interactive_sessions_active"
+      - matchRegex:
+          path: spec.groups[0].rules[1].expr
+          pattern: "aiagent_mcp_interactive_lease_contention_total"
+      - matchRegex:
+          path: spec.groups[0].rules[2].expr
+          pattern: "aiagent_mcp_interactive_command_duration_seconds_bucket"
+      - matchRegex:
+          path: spec.groups[0].rules[3].expr
+          pattern: "aiagent_mcp_interactive_takeover_total"
