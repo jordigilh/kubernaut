@@ -629,6 +629,167 @@ func (s *AIAgentInteractiveCompletedPayloadEventType) UnmarshalText(data []byte)
 	}
 }
 
+// Interactive K8s API call audit payload (aiagent.interactive.k8s_call) - Emitted for each
+// impersonated K8s API call during an interactive MCP session (BR-INTERACTIVE-003, BR-AUDIT-005).
+// Ref: #/components/schemas/AIAgentInteractiveK8sCallPayload
+type AIAgentInteractiveK8sCallPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentInteractiveK8sCallPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Interactive session identifier.
+	SessionID string `json:"session_id"`
+	// User identity performing the K8s call (from JWT/impersonation).
+	ActingUser string `json:"acting_user"`
+	// K8s resource type (e.g., pods, services, deployments).
+	Resource string `json:"resource"`
+	// K8s API verb (get, create, update, delete, patch).
+	Verb string `json:"verb"`
+	// K8s namespace of the target resource (empty for cluster-scoped).
+	Namespace OptString `json:"namespace"`
+	// Name of the specific resource (empty for list operations).
+	ResourceName OptString `json:"resource_name"`
+	// HTTP status code from the K8s API server response.
+	HTTPStatusCode OptInt `json:"http_status_code"`
+	// Correlation ID linking to the parent remediation request.
+	CorrelationID OptString `json:"correlation_id"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentInteractiveK8sCallPayload) GetEventType() AIAgentInteractiveK8sCallPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentInteractiveK8sCallPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *AIAgentInteractiveK8sCallPayload) GetSessionID() string {
+	return s.SessionID
+}
+
+// GetActingUser returns the value of ActingUser.
+func (s *AIAgentInteractiveK8sCallPayload) GetActingUser() string {
+	return s.ActingUser
+}
+
+// GetResource returns the value of Resource.
+func (s *AIAgentInteractiveK8sCallPayload) GetResource() string {
+	return s.Resource
+}
+
+// GetVerb returns the value of Verb.
+func (s *AIAgentInteractiveK8sCallPayload) GetVerb() string {
+	return s.Verb
+}
+
+// GetNamespace returns the value of Namespace.
+func (s *AIAgentInteractiveK8sCallPayload) GetNamespace() OptString {
+	return s.Namespace
+}
+
+// GetResourceName returns the value of ResourceName.
+func (s *AIAgentInteractiveK8sCallPayload) GetResourceName() OptString {
+	return s.ResourceName
+}
+
+// GetHTTPStatusCode returns the value of HTTPStatusCode.
+func (s *AIAgentInteractiveK8sCallPayload) GetHTTPStatusCode() OptInt {
+	return s.HTTPStatusCode
+}
+
+// GetCorrelationID returns the value of CorrelationID.
+func (s *AIAgentInteractiveK8sCallPayload) GetCorrelationID() OptString {
+	return s.CorrelationID
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentInteractiveK8sCallPayload) SetEventType(val AIAgentInteractiveK8sCallPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentInteractiveK8sCallPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *AIAgentInteractiveK8sCallPayload) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// SetActingUser sets the value of ActingUser.
+func (s *AIAgentInteractiveK8sCallPayload) SetActingUser(val string) {
+	s.ActingUser = val
+}
+
+// SetResource sets the value of Resource.
+func (s *AIAgentInteractiveK8sCallPayload) SetResource(val string) {
+	s.Resource = val
+}
+
+// SetVerb sets the value of Verb.
+func (s *AIAgentInteractiveK8sCallPayload) SetVerb(val string) {
+	s.Verb = val
+}
+
+// SetNamespace sets the value of Namespace.
+func (s *AIAgentInteractiveK8sCallPayload) SetNamespace(val OptString) {
+	s.Namespace = val
+}
+
+// SetResourceName sets the value of ResourceName.
+func (s *AIAgentInteractiveK8sCallPayload) SetResourceName(val OptString) {
+	s.ResourceName = val
+}
+
+// SetHTTPStatusCode sets the value of HTTPStatusCode.
+func (s *AIAgentInteractiveK8sCallPayload) SetHTTPStatusCode(val OptInt) {
+	s.HTTPStatusCode = val
+}
+
+// SetCorrelationID sets the value of CorrelationID.
+func (s *AIAgentInteractiveK8sCallPayload) SetCorrelationID(val OptString) {
+	s.CorrelationID = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentInteractiveK8sCallPayloadEventType string
+
+const (
+	AIAgentInteractiveK8sCallPayloadEventTypeAiagentInteractiveK8sCall AIAgentInteractiveK8sCallPayloadEventType = "aiagent.interactive.k8s_call"
+)
+
+// AllValues returns all AIAgentInteractiveK8sCallPayloadEventType values.
+func (AIAgentInteractiveK8sCallPayloadEventType) AllValues() []AIAgentInteractiveK8sCallPayloadEventType {
+	return []AIAgentInteractiveK8sCallPayloadEventType{
+		AIAgentInteractiveK8sCallPayloadEventTypeAiagentInteractiveK8sCall,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentInteractiveK8sCallPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentInteractiveK8sCallPayloadEventTypeAiagentInteractiveK8sCall:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentInteractiveK8sCallPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentInteractiveK8sCallPayloadEventType(data) {
+	case AIAgentInteractiveK8sCallPayloadEventTypeAiagentInteractiveK8sCall:
+		*s = AIAgentInteractiveK8sCallPayloadEventTypeAiagentInteractiveK8sCall
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Interactive session started payload (aiagent.interactive.started) - Emitted when a user acquires
 // the interactive lease and begins driving the investigation (BR-INTERACTIVE-004, DD-INTERACTIVE-002).
 // Ref: #/components/schemas/AIAgentInteractiveStartedPayload
@@ -6092,6 +6253,7 @@ type AuditEventEventData struct {
 	AIAgentSessionResumedPayload           AIAgentSessionResumedPayload
 	AIAgentInteractiveStartedPayload       AIAgentInteractiveStartedPayload
 	AIAgentInteractiveCompletedPayload     AIAgentInteractiveCompletedPayload
+	AIAgentInteractiveK8sCallPayload       AIAgentInteractiveK8sCallPayload
 	AIAgentSessionObservedPayload          AIAgentSessionObservedPayload
 	AIAgentSessionAccessDeniedPayload      AIAgentSessionAccessDeniedPayload
 	AIAgentInvestigationCancelledPayload   AIAgentInvestigationCancelledPayload
@@ -6196,6 +6358,7 @@ const (
 	AIAgentSessionResumedPayloadAuditEventEventData                                  AuditEventEventDataType = "aiagent.session.resumed"
 	AIAgentInteractiveStartedPayloadAuditEventEventData                              AuditEventEventDataType = "aiagent.interactive.started"
 	AIAgentInteractiveCompletedPayloadAuditEventEventData                            AuditEventEventDataType = "aiagent.interactive.completed"
+	AIAgentInteractiveK8sCallPayloadAuditEventEventData                              AuditEventEventDataType = "aiagent.interactive.k8s_call"
 	AIAgentSessionObservedPayloadAuditEventEventData                                 AuditEventEventDataType = "aiagent.session.observed"
 	AIAgentSessionAccessDeniedPayloadAuditEventEventData                             AuditEventEventDataType = "aiagent.session.access_denied"
 	AIAgentInvestigationCancelledPayloadAuditEventEventData                          AuditEventEventDataType = "aiagent.investigation.cancelled"
@@ -6465,6 +6628,11 @@ func (s AuditEventEventData) IsAIAgentInteractiveStartedPayload() bool {
 // IsAIAgentInteractiveCompletedPayload reports whether AuditEventEventData is AIAgentInteractiveCompletedPayload.
 func (s AuditEventEventData) IsAIAgentInteractiveCompletedPayload() bool {
 	return s.Type == AIAgentInteractiveCompletedPayloadAuditEventEventData
+}
+
+// IsAIAgentInteractiveK8sCallPayload reports whether AuditEventEventData is AIAgentInteractiveK8sCallPayload.
+func (s AuditEventEventData) IsAIAgentInteractiveK8sCallPayload() bool {
+	return s.Type == AIAgentInteractiveK8sCallPayloadAuditEventEventData
 }
 
 // IsAIAgentSessionObservedPayload reports whether AuditEventEventData is AIAgentSessionObservedPayload.
@@ -7675,6 +7843,27 @@ func NewAIAgentInteractiveCompletedPayloadAuditEventEventData(v AIAgentInteracti
 	return s
 }
 
+// SetAIAgentInteractiveK8sCallPayload sets AuditEventEventData to AIAgentInteractiveK8sCallPayload.
+func (s *AuditEventEventData) SetAIAgentInteractiveK8sCallPayload(v AIAgentInteractiveK8sCallPayload) {
+	s.Type = AIAgentInteractiveK8sCallPayloadAuditEventEventData
+	s.AIAgentInteractiveK8sCallPayload = v
+}
+
+// GetAIAgentInteractiveK8sCallPayload returns AIAgentInteractiveK8sCallPayload and true boolean if AuditEventEventData is AIAgentInteractiveK8sCallPayload.
+func (s AuditEventEventData) GetAIAgentInteractiveK8sCallPayload() (v AIAgentInteractiveK8sCallPayload, ok bool) {
+	if !s.IsAIAgentInteractiveK8sCallPayload() {
+		return v, false
+	}
+	return s.AIAgentInteractiveK8sCallPayload, true
+}
+
+// NewAIAgentInteractiveK8sCallPayloadAuditEventEventData returns new AuditEventEventData from AIAgentInteractiveK8sCallPayload.
+func NewAIAgentInteractiveK8sCallPayloadAuditEventEventData(v AIAgentInteractiveK8sCallPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentInteractiveK8sCallPayload(v)
+	return s
+}
+
 // SetAIAgentSessionObservedPayload sets AuditEventEventData to AIAgentSessionObservedPayload.
 func (s *AuditEventEventData) SetAIAgentSessionObservedPayload(v AIAgentSessionObservedPayload) {
 	s.Type = AIAgentSessionObservedPayloadAuditEventEventData
@@ -8750,6 +8939,7 @@ type AuditEventRequestEventData struct {
 	AIAgentSessionResumedPayload           AIAgentSessionResumedPayload
 	AIAgentInteractiveStartedPayload       AIAgentInteractiveStartedPayload
 	AIAgentInteractiveCompletedPayload     AIAgentInteractiveCompletedPayload
+	AIAgentInteractiveK8sCallPayload       AIAgentInteractiveK8sCallPayload
 	AIAgentSessionObservedPayload          AIAgentSessionObservedPayload
 	AIAgentSessionAccessDeniedPayload      AIAgentSessionAccessDeniedPayload
 	AIAgentInvestigationCancelledPayload   AIAgentInvestigationCancelledPayload
@@ -8854,6 +9044,7 @@ const (
 	AIAgentSessionResumedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "aiagent.session.resumed"
 	AIAgentInteractiveStartedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "aiagent.interactive.started"
 	AIAgentInteractiveCompletedPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "aiagent.interactive.completed"
+	AIAgentInteractiveK8sCallPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "aiagent.interactive.k8s_call"
 	AIAgentSessionObservedPayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "aiagent.session.observed"
 	AIAgentSessionAccessDeniedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "aiagent.session.access_denied"
 	AIAgentInvestigationCancelledPayloadAuditEventRequestEventData                                 AuditEventRequestEventDataType = "aiagent.investigation.cancelled"
@@ -9123,6 +9314,11 @@ func (s AuditEventRequestEventData) IsAIAgentInteractiveStartedPayload() bool {
 // IsAIAgentInteractiveCompletedPayload reports whether AuditEventRequestEventData is AIAgentInteractiveCompletedPayload.
 func (s AuditEventRequestEventData) IsAIAgentInteractiveCompletedPayload() bool {
 	return s.Type == AIAgentInteractiveCompletedPayloadAuditEventRequestEventData
+}
+
+// IsAIAgentInteractiveK8sCallPayload reports whether AuditEventRequestEventData is AIAgentInteractiveK8sCallPayload.
+func (s AuditEventRequestEventData) IsAIAgentInteractiveK8sCallPayload() bool {
+	return s.Type == AIAgentInteractiveK8sCallPayloadAuditEventRequestEventData
 }
 
 // IsAIAgentSessionObservedPayload reports whether AuditEventRequestEventData is AIAgentSessionObservedPayload.
@@ -10330,6 +10526,27 @@ func (s AuditEventRequestEventData) GetAIAgentInteractiveCompletedPayload() (v A
 func NewAIAgentInteractiveCompletedPayloadAuditEventRequestEventData(v AIAgentInteractiveCompletedPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetAIAgentInteractiveCompletedPayload(v)
+	return s
+}
+
+// SetAIAgentInteractiveK8sCallPayload sets AuditEventRequestEventData to AIAgentInteractiveK8sCallPayload.
+func (s *AuditEventRequestEventData) SetAIAgentInteractiveK8sCallPayload(v AIAgentInteractiveK8sCallPayload) {
+	s.Type = AIAgentInteractiveK8sCallPayloadAuditEventRequestEventData
+	s.AIAgentInteractiveK8sCallPayload = v
+}
+
+// GetAIAgentInteractiveK8sCallPayload returns AIAgentInteractiveK8sCallPayload and true boolean if AuditEventRequestEventData is AIAgentInteractiveK8sCallPayload.
+func (s AuditEventRequestEventData) GetAIAgentInteractiveK8sCallPayload() (v AIAgentInteractiveK8sCallPayload, ok bool) {
+	if !s.IsAIAgentInteractiveK8sCallPayload() {
+		return v, false
+	}
+	return s.AIAgentInteractiveK8sCallPayload, true
+}
+
+// NewAIAgentInteractiveK8sCallPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentInteractiveK8sCallPayload.
+func NewAIAgentInteractiveK8sCallPayloadAuditEventRequestEventData(v AIAgentInteractiveK8sCallPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentInteractiveK8sCallPayload(v)
 	return s
 }
 

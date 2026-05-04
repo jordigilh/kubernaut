@@ -191,6 +191,12 @@ type SessionStatusResult struct {
 	Error string `json:"error,omitempty"`
 	// Progress description for operator visibility
 	Progress string `json:"progress,omitempty"`
+	// ActingUser is the resolved identity currently driving the investigation
+	// (populated when status is "user_driving", BR-INTERACTIVE-001, #774)
+	ActingUser string `json:"acting_user,omitempty"`
+	// ActingUserGroups are the groups of the user driving the investigation
+	// (populated when status is "user_driving", BR-INTERACTIVE-001, #774)
+	ActingUserGroups []string `json:"acting_user_groups,omitempty"`
 }
 
 // ========================================

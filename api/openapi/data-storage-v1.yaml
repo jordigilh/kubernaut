@@ -2474,6 +2474,7 @@ components:
             - $ref: '#/components/schemas/AIAgentSessionResumedPayload'
             - $ref: '#/components/schemas/AIAgentInteractiveStartedPayload'
             - $ref: '#/components/schemas/AIAgentInteractiveCompletedPayload'
+            - $ref: '#/components/schemas/AIAgentInteractiveK8sCallPayload'
             - $ref: '#/components/schemas/AIAgentSessionObservedPayload'
             - $ref: '#/components/schemas/AIAgentSessionAccessDeniedPayload'
             - $ref: '#/components/schemas/AIAgentInvestigationCancelledPayload'
@@ -2578,6 +2579,7 @@ components:
               'aiagent.session.resumed': '#/components/schemas/AIAgentSessionResumedPayload'
               'aiagent.interactive.started': '#/components/schemas/AIAgentInteractiveStartedPayload'
               'aiagent.interactive.completed': '#/components/schemas/AIAgentInteractiveCompletedPayload'
+              'aiagent.interactive.k8s_call': '#/components/schemas/AIAgentInteractiveK8sCallPayload'
               'aiagent.session.observed': '#/components/schemas/AIAgentSessionObservedPayload'
               'aiagent.session.access_denied': '#/components/schemas/AIAgentSessionAccessDeniedPayload'
               'aiagent.investigation.cancelled': '#/components/schemas/AIAgentInvestigationCancelledPayload'
@@ -5789,6 +5791,43 @@ components:
         reason:
           type: string
           description: Reason the interactive session ended (e.g., complete, disconnect, inactivity_timeout, ttl_expired)
+
+    AIAgentInteractiveK8sCallPayload:
+      type: object
+      required: [event_type, event_id, session_id, acting_user, resource, verb]
+      description: Interactive K8s API call audit payload (aiagent.interactive.k8s_call) - Emitted for each impersonated K8s API call during an interactive MCP session (BR-INTERACTIVE-003, BR-AUDIT-005)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.interactive.k8s_call']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Interactive session identifier
+        acting_user:
+          type: string
+          description: User identity performing the K8s call (from JWT/impersonation)
+        resource:
+          type: string
+          description: K8s resource type (e.g., pods, services, deployments)
+        verb:
+          type: string
+          description: K8s API verb (get, create, update, delete, patch)
+        namespace:
+          type: string
+          description: K8s namespace of the target resource (empty for cluster-scoped)
+        resource_name:
+          type: string
+          description: Name of the specific resource (empty for list operations)
+        http_status_code:
+          type: integer
+          description: HTTP status code from the K8s API server response
+        correlation_id:
+          type: string
+          description: Correlation ID linking to the parent remediation request
 
     AIAgentSessionObservedPayload:
       type: object

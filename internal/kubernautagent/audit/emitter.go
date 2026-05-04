@@ -82,6 +82,11 @@ const (
 	// after interactive session ends (cancel+reconstruct). The new session ID
 	// and reconstructed context are included in event data.
 	EventTypeSessionResumed = "aiagent.session.resumed"
+
+	// EventTypeInteractiveK8sCall is emitted for each impersonated K8s API call
+	// made during an interactive MCP session (BR-INTERACTIVE-003, BR-AUDIT-005).
+	// Provides per-request audit granularity for SOC2 CC8.1 compliance.
+	EventTypeInteractiveK8sCall = "aiagent.interactive.k8s_call"
 )
 
 const (
@@ -109,6 +114,7 @@ const (
 	ActionInteractiveStarted    = "interactive_started"
 	ActionInteractiveCompleted  = "interactive_completed"
 	ActionSessionResumed        = "session_resumed"
+	ActionInteractiveK8sCall    = "interactive_k8s_call"
 )
 
 const (
@@ -141,6 +147,7 @@ var AllEventTypes = []string{
 	EventTypeInteractiveStarted,
 	EventTypeInteractiveCompleted,
 	EventTypeSessionResumed,
+	EventTypeInteractiveK8sCall,
 }
 
 // AuditEvent represents an audit event to be stored.

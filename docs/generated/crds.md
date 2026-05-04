@@ -775,6 +775,7 @@ _Appears in:_
 | `sessionId`| _string_| SessionID is the KA-assigned interactive session identifier|
 | `mcpSessionId`| _string_| MCPSessionID is the go-sdk MCP session identifier|
 | `actingUser`| _string_| ActingUser is the resolved identity currently driving the investigation|
+| `actingUserGroups`| _string array_| ActingUserGroups are the groups of the user driving the investigation<br />(, #774)|
 | `startedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| StartedAt is when the user took over|
 | `completedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| CompletedAt is when the user disconnected (KA resumed autonomous)|
 

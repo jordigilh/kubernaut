@@ -391,6 +391,29 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		}
 		return ogenclient.NewAIAgentInteractiveCompletedPayloadAuditEventRequestEventData(payload), true
 
+	case EventTypeInteractiveK8sCall:
+		payload := ogenclient.AIAgentInteractiveK8sCallPayload{
+			EventType:  ogenclient.AIAgentInteractiveK8sCallPayloadEventTypeAiagentInteractiveK8sCall,
+			EventID:    dataString(event.Data, "event_id"),
+			SessionID:  event.SessionID,
+			ActingUser: event.ActingUser,
+			Resource:   dataString(event.Data, "resource"),
+			Verb:       dataString(event.Data, "verb"),
+		}
+		if ns := dataString(event.Data, "namespace"); ns != "" {
+			payload.Namespace.SetTo(ns)
+		}
+		if name := dataString(event.Data, "resource_name"); name != "" {
+			payload.ResourceName.SetTo(name)
+		}
+		if code := dataInt(event.Data, "http_status_code"); code > 0 {
+			payload.HTTPStatusCode.SetTo(code)
+		}
+		if cid := event.CorrelationID; cid != "" {
+			payload.CorrelationID.SetTo(cid)
+		}
+		return ogenclient.NewAIAgentInteractiveK8sCallPayloadAuditEventRequestEventData(payload), true
+
 	default:
 		return ogenclient.AuditEventRequestEventData{}, false
 	}

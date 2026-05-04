@@ -522,6 +522,8 @@ func mapSessionStatusToAPI(s session.Status) string {
 		return "failed"
 	case session.StatusCancelled:
 		return "cancelled"
+	case session.StatusUserDriving:
+		return "user_driving"
 	default:
 		return "unknown"
 	}

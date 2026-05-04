@@ -40,6 +40,11 @@ const (
 	// (SuspendInvestigation). Both share this terminal state; the audit event type
 	// distinguishes them (session.cancelled vs session.suspended).
 	StatusCancelled Status = "cancelled"
+
+	// StatusUserDriving indicates an interactive user has taken over the
+	// investigation via MCP dynamic takeover (BR-INTERACTIVE-004). The session
+	// remains pollable (NOT terminal) so AA can observe identity and completion.
+	StatusUserDriving Status = "user_driving"
 )
 
 // Session holds the state of a single investigation session.
@@ -171,7 +176,7 @@ func (s *Store) Update(id string, status Status, result *katypes.InvestigationRe
 	if !ok {
 		return ErrSessionNotFound
 	}
-	if IsTerminal(sess.Status) {
+	if IsTerminal(sess.Status) || sess.Status == StatusUserDriving {
 		return ErrSessionTerminal
 	}
 	sess.Status = status

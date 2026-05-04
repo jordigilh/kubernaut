@@ -191,7 +191,10 @@ func main() {
 	resultParser := parser.NewResultParser(logger.WithName("parser"))
 	phaseTools := investigator.DefaultPhaseToolMap()
 
-	k8sInfra := initK8sInfra(logger)
+	auditStore, auditCleanup := buildAuditStore(cfg, logger)
+	k8sCallAuditor := audit.NewK8sCallAuditor(auditStore, logger.WithName("k8s-call-audit"))
+
+	k8sInfra := initK8sInfra(logger, k8sCallAuditor)
 
 	// #891: SSAR self-check for impersonate permission. Interactive mode
 	// requires KA's SA to impersonate users (DD-AUTH-MCP-001). If denied,
@@ -222,7 +225,6 @@ func main() {
 	}
 
 	ds := initDSClients(cfg, k8sInfra, logger)
-	auditStore, auditCleanup := buildAuditStore(cfg, logger)
 	reg := buildToolRegistry(cfg, logger, k8sInfra, ds)
 	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, logger)
 	sanitizer := buildSanitizationPipeline(cfg, logger)
@@ -685,7 +687,7 @@ type k8sInfra struct {
 
 // initK8sInfra creates the shared Kubernetes clients. Returns nil when
 // running outside a cluster (e.g. local development).
-func initK8sInfra(logger logr.Logger) *k8sInfra {
+func initK8sInfra(logger logr.Logger, auditor sharedtransport.K8sCallAuditor) *k8sInfra {
 	kubeConfig, err := ctrl.GetConfig()
 	if err != nil {
 		logger.Info("K8s config not available, K8s tools and enricher disabled", "error", err)
@@ -695,8 +697,13 @@ func initK8sInfra(logger logr.Logger) *k8sInfra {
 	// SEC-06 (#703): Wrap transport so interactive-mode tool calls impersonate
 	// the authenticated user. In autonomous mode (no user in context), the
 	// wrapper is a no-op and KA SA credentials are used directly.
+	// #898: K8sCallAuditor emits audit events for each impersonated API call.
 	kubeConfig.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
-		return sharedtransport.NewImpersonatingRoundTripper(rt)
+		var opts []sharedtransport.ImpersonateOption
+		if auditor != nil {
+			opts = append(opts, sharedtransport.WithAuditor(auditor))
+		}
+		return sharedtransport.NewImpersonatingRoundTripper(rt, opts...)
 	}
 
 	k8sClient, err := kubernetes.NewForConfig(kubeConfig)
