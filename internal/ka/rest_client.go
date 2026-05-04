@@ -164,7 +164,8 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body interface
 			return nil, err
 		}
 		if resp.StatusCode >= 500 {
-			return resp, fmt.Errorf("KA returned server error %d", resp.StatusCode)
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("KA returned server error %d", resp.StatusCode)
 		}
 		return resp, nil
 	})
@@ -181,7 +182,8 @@ func (c *Client) doGet(ctx context.Context, path string) (*http.Response, error)
 			return nil, err
 		}
 		if resp.StatusCode >= 500 {
-			return resp, fmt.Errorf("KA returned server error %d", resp.StatusCode)
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("KA returned server error %d", resp.StatusCode)
 		}
 		return resp, nil
 	})
