@@ -27,6 +27,9 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -113,6 +116,39 @@ var _ = Describe("JWTAuthenticator — #1009", func() {
 			userInfo, err := nestedAuth.ValidateTokenFull(ctx, token)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(userInfo.Groups).To(ConsistOf("admin", "operator"))
+		})
+	})
+
+	// QE-9 / UT-KA-1009-004: Full ValidateTokenFull with double-nested Keycloak claims
+	Describe("UT-KA-1009-004: Groups extracted from double-nested claim path via ValidateTokenFull", func() {
+		It("should extract groups from resource_access.<client>.roles end-to-end", func() {
+			doubleNestedAuth, err := auth.NewJWTAuthenticator([]auth.JWTProviderEntry{
+				{
+					Issuer:        "https://keycloak.example.com/realms/kubernaut",
+					JWKSURL:       mockServer.JWKSURL(),
+					Audience:      "kubernaut-agent",
+					UsernameClaim: "preferred_username",
+					GroupsClaim:   "resource_access.kubernaut-agent.roles",
+				},
+			}, logr.Discard())
+			Expect(err).NotTo(HaveOccurred())
+			defer doubleNestedAuth.Close()
+
+			token, err := mockServer.IssueJWTWithClaims("user-kc", "kubernaut-agent", 5*time.Minute, map[string]interface{}{
+				"preferred_username": "user-kc@corp",
+				"resource_access": map[string]interface{}{
+					"kubernaut-agent": map[string]interface{}{
+						"roles": []interface{}{"interactive-user", "viewer"},
+					},
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			userInfo, err := doubleNestedAuth.ValidateTokenFull(ctx, token)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(userInfo.Username).To(Equal("user-kc@corp"))
+			Expect(userInfo.Groups).To(ConsistOf("interactive-user", "viewer"))
+			Expect(userInfo.ProviderType).To(Equal("jwt:https://keycloak.example.com/realms/kubernaut"))
 		})
 	})
 
@@ -331,6 +367,121 @@ var _ = Describe("JWTAuthenticator — #1009", func() {
 			username, err := jwtAuth.ValidateToken(ctx, token)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(username).To(Equal("user-a@corp"))
+		})
+	})
+
+	// QE-5: JWKS runtime failure — cached keys survive server shutdown (defense-in-depth)
+	Describe("QE-5: JWKS cache resilience after server shutdown", func() {
+		It("should still validate tokens using cached keys after JWKS server goes down", func() {
+			runtimeServer, err := testauth.NewMockJWKSServer("https://runtime-fail.example.com")
+			Expect(err).NotTo(HaveOccurred())
+
+			runtimeAuth, err := auth.NewJWTAuthenticator([]auth.JWTProviderEntry{
+				{
+					Issuer:        "https://runtime-fail.example.com",
+					JWKSURL:       runtimeServer.JWKSURL(),
+					Audience:      "kubernaut-agent",
+					UsernameClaim: "preferred_username",
+					GroupsClaim:   "groups",
+				},
+			}, logr.Discard())
+			Expect(err).NotTo(HaveOccurred())
+			defer runtimeAuth.Close()
+
+			token, err := runtimeServer.IssueJWT("user@corp", []string{"g1"}, "kubernaut-agent", 5*time.Minute)
+			Expect(err).NotTo(HaveOccurred())
+
+			info, err := runtimeAuth.ValidateTokenFull(ctx, token)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.Username).To(Equal("user@corp"))
+
+			runtimeServer.Close()
+
+			// Cached JWKS keys survive — existing tokens still validate
+			info, err = runtimeAuth.ValidateTokenFull(ctx, token)
+			Expect(err).NotTo(HaveOccurred(),
+				"cached JWKS keys should allow validation even after server shutdown")
+			Expect(info.Username).To(Equal("user@corp"))
+		})
+	})
+
+	// QE-6: Concurrent ValidateTokenFull stress test
+	Describe("QE-6: Concurrent token validation (race condition check)", func() {
+		It("should handle concurrent validations without races", func() {
+			const goroutines = 20
+			tokens := make([]string, goroutines)
+			for i := 0; i < goroutines; i++ {
+				t, err := mockServer.IssueJWT(
+					fmt.Sprintf("user-%d@corp", i),
+					[]string{"g1"},
+					"kubernaut-agent",
+					5*time.Minute,
+				)
+				Expect(err).NotTo(HaveOccurred())
+				tokens[i] = t
+			}
+
+			errs := make(chan error, goroutines)
+			for i := 0; i < goroutines; i++ {
+				go func(idx int) {
+					_, err := jwtAuth.ValidateTokenFull(ctx, tokens[idx])
+					errs <- err
+				}(i)
+			}
+
+			for i := 0; i < goroutines; i++ {
+				err := <-errs
+				Expect(err).NotTo(HaveOccurred(), "goroutine %d should succeed", i)
+			}
+		})
+	})
+
+	// QE-7: nbf (not-before) enforcement
+	Describe("QE-7: JWT with future nbf rejected", func() {
+		It("should reject a token whose not-before is in the future", func() {
+			now := time.Now()
+			token, err := mockServer.IssueJWTWithClaims("user@corp", "kubernaut-agent", 5*time.Minute, map[string]interface{}{
+				"preferred_username": "user@corp",
+				"groups":             []string{"g1"},
+				"nbf":               now.Add(1 * time.Hour).Unix(),
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = jwtAuth.ValidateTokenFull(ctx, token)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, auth.ErrTokenInvalid)).To(BeTrue(),
+				"future nbf should be rejected as ErrTokenInvalid")
+		})
+	})
+
+	// QE-8: aud as array (Keycloak multi-audience)
+	Describe("QE-8: JWT with aud as array accepted", func() {
+		It("should accept a token with audience as array containing the expected value", func() {
+			now := time.Now()
+			builder := jwt.NewBuilder().
+				Subject("user@corp").
+				Issuer("https://keycloak.example.com/realms/kubernaut").
+				IssuedAt(now).
+				NotBefore(now).
+				Expiration(now.Add(5 * time.Minute)).
+				Audience([]string{"kubernaut-agent", "another-service"})
+
+			token, err := builder.Build()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(token.Set("preferred_username", "user@corp")).To(Succeed())
+			Expect(token.Set("groups", []string{"g1"})).To(Succeed())
+
+			privJWK, err := jwk.Import(mockServer.PrivateKey)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(privJWK.Set(jwk.KeyIDKey, "test-key-1")).To(Succeed())
+			Expect(privJWK.Set(jwk.AlgorithmKey, jwa.RS256())).To(Succeed())
+
+			signed, err := jwt.Sign(token, jwt.WithKey(jwa.RS256(), privJWK))
+			Expect(err).NotTo(HaveOccurred())
+
+			info, err := jwtAuth.ValidateTokenFull(ctx, string(signed))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.Username).To(Equal("user@corp"))
 		})
 	})
 })

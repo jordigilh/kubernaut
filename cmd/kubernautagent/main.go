@@ -1139,6 +1139,13 @@ func newAuthMiddleware(infra *k8sInfra, interactiveCfg kaconfig.InteractiveConfi
 			}
 		}
 
+		for _, e := range entries {
+			if strings.HasPrefix(e.JWKSURL, "http://") {
+				logger.Info("WARNING: JWKS URL uses plain HTTP — vulnerable to MITM in production; enforce HTTPS via kubernaut-operator admission webhook (kubernaut-operator#46)",
+					"provider", e.Issuer, "jwksURL", e.JWKSURL)
+			}
+		}
+
 		jwtAuth, err := auth.NewJWTAuthenticator(entries, logger.WithName("jwt-auth"))
 		if err != nil {
 			logger.Error(err, "failed to create JWTAuthenticator; Pattern B disabled, Pattern A active")
