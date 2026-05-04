@@ -13,13 +13,15 @@ import (
 	gobreaker "github.com/sony/gobreaker/v2"
 )
 
-// CircuitBreakerState exposes the circuit breaker state as a Prometheus gauge (OPS-6).
-// Values: 0=closed, 1=half-open, 2=open.
-var CircuitBreakerState = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-	Namespace: "kubernaut_apifrontend",
-	Name:      "circuit_breaker_state",
-	Help:      "JWKS circuit breaker state per issuer (0=closed, 1=half-open, 2=open).",
-}, []string{"dependency"})
+// NewCircuitBreakerStateGauge creates a fresh circuit breaker state gauge.
+// Call this from the metrics registry to avoid package-level state.
+func NewCircuitBreakerStateGauge() *prometheus.GaugeVec {
+	return prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "kubernaut_apifrontend",
+		Name:      "circuit_breaker_state",
+		Help:      "JWKS circuit breaker state per issuer (0=closed, 1=half-open, 2=open).",
+	}, []string{"dependency"})
+}
 
 // JWKSCache provides JWKS key caching with circuit breaker support per issuer.
 // Per ARCHITECTURE.md: 3 consecutive failures -> open, 30s half-open timeout, 1 success -> close.
@@ -41,11 +43,17 @@ type JWKSCacheOption func(*jwksCacheConfig)
 
 type jwksCacheConfig struct {
 	cbTimeout time.Duration
+	cbGauge   *prometheus.GaugeVec
 }
 
 // WithCBTimeout sets the circuit breaker half-open timeout. Default is 30s.
 func WithCBTimeout(d time.Duration) JWKSCacheOption {
 	return func(c *jwksCacheConfig) { c.cbTimeout = d }
+}
+
+// WithCBGauge sets a Prometheus gauge for circuit breaker state reporting.
+func WithCBGauge(g *prometheus.GaugeVec) JWKSCacheOption {
+	return func(c *jwksCacheConfig) { c.cbGauge = g }
 }
 
 // NewJWKSCache creates a JWKS cache with circuit breakers per issuer.
@@ -66,8 +74,7 @@ func NewJWKSCache(client *http.Client, issuers []string, opts ...JWKSCacheOption
 	}
 
 	for _, issuer := range issuers {
-		depLabel := fmt.Sprintf("jwks_%s", issuer)
-		cache.breakers[issuer] = gobreaker.NewCircuitBreaker[*jose.JSONWebKeySet](gobreaker.Settings{
+		settings := gobreaker.Settings{
 			Name:        fmt.Sprintf("jwks-%s", issuer),
 			MaxRequests: 1,
 			Interval:    0,
@@ -75,10 +82,14 @@ func NewJWKSCache(client *http.Client, issuers []string, opts ...JWKSCacheOption
 			ReadyToTrip: func(counts gobreaker.Counts) bool {
 				return counts.ConsecutiveFailures >= 3
 			},
-			OnStateChange: func(name string, from, to gobreaker.State) {
-				CircuitBreakerState.WithLabelValues(depLabel).Set(float64(to))
-			},
-		})
+		}
+		if cfg.cbGauge != nil {
+			depLabel := fmt.Sprintf("jwks_%s", issuer)
+			settings.OnStateChange = func(_ string, _, to gobreaker.State) {
+				cfg.cbGauge.WithLabelValues(depLabel).Set(float64(to))
+			}
+		}
+		cache.breakers[issuer] = gobreaker.NewCircuitBreaker[*jose.JSONWebKeySet](settings)
 	}
 
 	return cache

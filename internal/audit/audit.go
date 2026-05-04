@@ -32,8 +32,17 @@ type Event struct {
 }
 
 // Emitter is the interface for writing audit events.
-// Production implementations will use a BufferedDSAuditStore (PR6).
-// For now we emit via structured logging at a dedicated verbosity level.
+//
+// This is the primary injection point for audit event delivery. The current
+// implementation (LogEmitter) writes events synchronously via structured logging
+// as a transitional step. The production implementation (PR6) will replace it
+// with a BufferedDSAuditStore that provides:
+//   - Async fire-and-forget delivery per ADR-038
+//   - Durable buffering with at-least-once semantics
+//   - Integration with the kubernaut audit datastore
+//
+// All callers should treat Emit as non-blocking; implementations must not
+// propagate errors to the caller or block the request path.
 type Emitter interface {
 	Emit(ctx context.Context, event Event)
 }

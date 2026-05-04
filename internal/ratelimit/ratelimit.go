@@ -223,17 +223,21 @@ func (s *LLMSemaphore) Release() {
 	s.current.Add(-1)
 }
 
-// Metrics for rate limit denials (OPS-5).
-var RateLimitDeniedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-	Namespace: "kubernaut_apifrontend",
-	Name:      "ratelimit_denied_total",
-	Help:      "Total rate limit denials by tier and reason.",
-}, []string{"tier", "reason"})
+// NewRateLimitDeniedTotal creates a fresh rate limit denied counter.
+// Call this from the metrics registry to avoid package-level state.
+func NewRateLimitDeniedTotal() *prometheus.CounterVec {
+	return prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "kubernaut_apifrontend",
+		Name:      "ratelimit_denied_total",
+		Help:      "Total rate limit denials by tier and reason.",
+	}, []string{"tier", "reason"})
+}
 
 // PreAuthMiddlewareConfig holds dependencies for pre-auth rate limiting.
 type PreAuthMiddlewareConfig struct {
 	Limiter *IPLimiter
 	Auditor audit.Emitter
+	Metrics *prometheus.CounterVec
 }
 
 // PreAuthMiddleware returns middleware for pre-authentication rate limiting (per-IP).
@@ -252,7 +256,9 @@ func PreAuthMiddlewareWithConfig(cfg PreAuthMiddlewareConfig) func(http.Handler)
 				if retryAfter < 1 {
 					retryAfter = 1
 				}
-				RateLimitDeniedTotal.WithLabelValues("ip", "burst_exceeded").Inc()
+				if cfg.Metrics != nil {
+					cfg.Metrics.WithLabelValues("ip", "burst_exceeded").Inc()
+				}
 				if cfg.Auditor != nil {
 					cfg.Auditor.Emit(r.Context(), audit.Event{
 						Type:     audit.EventRateLimitDenied,
@@ -274,6 +280,7 @@ func PreAuthMiddlewareWithConfig(cfg PreAuthMiddlewareConfig) func(http.Handler)
 type PostAuthMiddlewareConfig struct {
 	Limiter *UserLimiter
 	Auditor audit.Emitter
+	Metrics *prometheus.CounterVec
 }
 
 // PostAuthMiddleware returns middleware for post-authentication rate limiting (per-user).
@@ -293,7 +300,9 @@ func PostAuthMiddlewareWithConfig(cfg PostAuthMiddlewareConfig) func(http.Handle
 			}
 
 			if !cfg.Limiter.AllowRequest(identity.Username) {
-				RateLimitDeniedTotal.WithLabelValues("user", "request_rate").Inc()
+				if cfg.Metrics != nil {
+					cfg.Metrics.WithLabelValues("user", "request_rate").Inc()
+				}
 				if cfg.Auditor != nil {
 					cfg.Auditor.Emit(r.Context(), audit.Event{
 						Type:     audit.EventRateLimitDenied,

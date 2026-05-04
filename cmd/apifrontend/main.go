@@ -42,6 +42,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
+	logger = logger.WithValues("service", "kubernaut-apifrontend")
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -50,6 +51,9 @@ func main() {
 	auditor := audit.NewLogEmitter(logger)
 
 	authCfg := auth.AuthConfig{}
+	if len(authCfg.JWT) == 0 {
+		logger.Info("WARNING: no JWT providers configured — all bearer tokens will be rejected unless K8s TokenReview is enabled")
+	}
 	validator, err := auth.NewJWTValidator(authCfg)
 	if err != nil {
 		logger.Error(err, "failed to create JWT validator")
@@ -61,33 +65,40 @@ func main() {
 	defer ipLimiter.Stop()
 	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	mux.Handle("/metrics", metricsReg.Handler())
+	// Authenticated API routes
+	apiMux := http.NewServeMux()
 
 	// Middleware chain: RequestID → PreAuth(IP) → Auth(JWT) → PostAuth(User) → Handler
-	var handler http.Handler = mux
-	handler = ratelimit.PostAuthMiddlewareWithConfig(ratelimit.PostAuthMiddlewareConfig{
+	var apiHandler http.Handler = apiMux
+	apiHandler = ratelimit.PostAuthMiddlewareWithConfig(ratelimit.PostAuthMiddlewareConfig{
 		Limiter: userLimiter,
 		Auditor: auditor,
-	})(handler)
-	handler = auth.MiddlewareWithConfig(auth.MiddlewareConfig{
+		Metrics: metricsReg.RateLimitDenied,
+	})(apiHandler)
+	apiHandler = auth.MiddlewareWithConfig(auth.MiddlewareConfig{
 		Validator: validator,
 		Logger:    logger,
 		Auditor:   auditor,
-	})(handler)
-	handler = ratelimit.PreAuthMiddlewareWithConfig(ratelimit.PreAuthMiddlewareConfig{
+	})(apiHandler)
+	apiHandler = ratelimit.PreAuthMiddlewareWithConfig(ratelimit.PreAuthMiddlewareConfig{
 		Limiter: ipLimiter,
 		Auditor: auditor,
-	})(handler)
-	handler = requestid.Middleware(handler)
+		Metrics: metricsReg.RateLimitDenied,
+	})(apiHandler)
+	apiHandler = requestid.Middleware(apiHandler)
+
+	// Top-level mux: infra endpoints are unauthenticated, API routes go through auth chain
+	rootMux := http.NewServeMux()
+	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	rootMux.Handle("/metrics", metricsReg.Handler())
+	rootMux.Handle("/", apiHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -96,7 +107,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           handler,
+		Handler:           rootMux,
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,

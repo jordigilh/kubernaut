@@ -23,19 +23,23 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	authmetrics "github.com/jordigilh/kubernaut-apifrontend/internal/auth"
-	rlmetrics "github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
 )
 
 // Registry holds Prometheus metrics for the API Frontend.
+// All collectors are created here and injected into components that need them,
+// avoiding package-level Prometheus vars that silently use the default registry.
 type Registry struct {
 	registry *prometheus.Registry
 
-	RequestsTotal   *prometheus.CounterVec
-	RequestDuration *prometheus.HistogramVec
-	ToolCallsTotal  *prometheus.CounterVec
-	ActiveSessions  prometheus.Gauge
-	LLMTokensTotal  *prometheus.CounterVec
+	RequestsTotal      *prometheus.CounterVec
+	RequestDuration    *prometheus.HistogramVec
+	ToolCallsTotal     *prometheus.CounterVec
+	ActiveSessions     prometheus.Gauge
+	LLMTokensTotal     *prometheus.CounterVec
+	RateLimitDenied    *prometheus.CounterVec
+	CircuitBreakerState *prometheus.GaugeVec
 }
 
 // NewRegistry creates and registers all AF Prometheus metrics.
@@ -72,6 +76,8 @@ func NewRegistry() *Registry {
 			Name:      "llm_tokens_total",
 			Help:      "Total LLM tokens consumed by direction (input/output).",
 		}, []string{"direction", "model"}),
+		RateLimitDenied:     ratelimit.NewRateLimitDeniedTotal(),
+		CircuitBreakerState: auth.NewCircuitBreakerStateGauge(),
 	}
 
 	reg.MustRegister(r.RequestsTotal)
@@ -79,8 +85,8 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.ToolCallsTotal)
 	reg.MustRegister(r.ActiveSessions)
 	reg.MustRegister(r.LLMTokensTotal)
-	reg.MustRegister(rlmetrics.RateLimitDeniedTotal)
-	reg.MustRegister(authmetrics.CircuitBreakerState)
+	reg.MustRegister(r.RateLimitDenied)
+	reg.MustRegister(r.CircuitBreakerState)
 
 	return r
 }
