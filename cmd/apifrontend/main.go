@@ -100,6 +100,11 @@ func run() error {
 		_, _ = w.Write([]byte("ok"))
 	})
 	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if !validator.Ready() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("JWKS circuit breaker open"))
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})

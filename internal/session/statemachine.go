@@ -1,0 +1,127 @@
+package session
+
+import (
+	"context"
+	"fmt"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+
+	adksession "google.golang.org/adk/session"
+
+	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
+)
+
+// validTransitions defines the allowed phase transitions for an InvestigationSession.
+// Terminal phases (Completed, Cancelled, Failed) have no outgoing edges.
+var validTransitions = map[v1alpha1.SessionPhase][]v1alpha1.SessionPhase{
+	v1alpha1.SessionPhaseActive: {
+		v1alpha1.SessionPhaseCompleted,
+		v1alpha1.SessionPhaseCancelled,
+		v1alpha1.SessionPhaseFailed,
+		v1alpha1.SessionPhaseDisconnected,
+	},
+	v1alpha1.SessionPhaseDisconnected: {
+		v1alpha1.SessionPhaseActive,
+		v1alpha1.SessionPhaseCancelled,
+		v1alpha1.SessionPhaseFailed,
+	},
+}
+
+// terminalPhases are phases with no outgoing transitions.
+var terminalPhases = map[v1alpha1.SessionPhase]bool{
+	v1alpha1.SessionPhaseCompleted: true,
+	v1alpha1.SessionPhaseCancelled: true,
+	v1alpha1.SessionPhaseFailed:    true,
+}
+
+// ValidateTransition checks whether the transition from -> to is allowed
+// by the InvestigationSession state machine. Returns an error for invalid
+// transitions including self-transitions and transitions from terminal states.
+func ValidateTransition(from, to v1alpha1.SessionPhase) error {
+	allowed, ok := validTransitions[from]
+	if !ok {
+		return fmt.Errorf("no transitions from terminal phase %q", from)
+	}
+	for _, a := range allowed {
+		if a == to {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid transition %q -> %q", from, to)
+}
+
+// IsTerminal returns true if the phase is a terminal (no further transitions).
+func IsTerminal(phase v1alpha1.SessionPhase) bool {
+	return terminalPhases[phase]
+}
+
+// UpdatePhase transitions the InvestigationSession CRD to a new phase,
+// validating the transition and setting appropriate timestamps.
+func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, to v1alpha1.SessionPhase, message string) error {
+	s.mu.RLock()
+	crdName, ok := s.crdIndex[sessionID]
+	s.mu.RUnlock()
+	if !ok {
+		crdName = sessionID
+	}
+
+	nn := types.NamespacedName{Name: crdName, Namespace: s.namespace}
+	var crd v1alpha1.InvestigationSession
+	if err := s.client.Get(ctx, nn, &crd); err != nil {
+		return fmt.Errorf("get session for phase update: %w", err)
+	}
+
+	from := crd.Status.Phase
+	if err := ValidateTransition(from, to); err != nil {
+		return fmt.Errorf("phase transition: %w", err)
+	}
+
+	now := metav1.Now()
+
+	crd.Status.Phase = to
+	crd.Status.Message = message
+	crd.Labels[LabelPhase] = string(to)
+
+	switch {
+	case IsTerminal(to):
+		crd.Status.CompletedAt = &now
+	case to == v1alpha1.SessionPhaseDisconnected:
+		crd.Status.DisconnectedAt = &now
+		crd.Status.ConnectionState = v1alpha1.ConnectionStateDisconnected
+	case from == v1alpha1.SessionPhaseDisconnected && to == v1alpha1.SessionPhaseActive:
+		crd.Status.ReconnectedAt = &now
+		crd.Status.ConnectionState = v1alpha1.ConnectionStateConnected
+	}
+
+	if err := s.client.Status().Update(ctx, &crd); err != nil {
+		return fmt.Errorf("update session status: %w", err)
+	}
+
+	// Re-read to get updated resourceVersion, then update labels
+	if err := s.client.Get(ctx, nn, &crd); err != nil {
+		return fmt.Errorf("re-read session for label update: %w", err)
+	}
+	crd.Labels[LabelPhase] = string(to)
+	if err := s.client.Update(ctx, &crd); err != nil {
+		return fmt.Errorf("update session labels: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "session phase updated",
+		"session_id", sessionID,
+		"from", from,
+		"to", to,
+	)
+	return nil
+}
+
+// CreateRequestWithDefaults is a test helper that builds an adksession.CreateRequest
+// with standard parameters.
+func CreateRequestWithDefaults(sessionID, userID string, state map[string]any) adksession.CreateRequest {
+	return adksession.CreateRequest{
+		AppName:   "kubernaut-apifrontend",
+		UserID:    userID,
+		SessionID: sessionID,
+		State:     state,
+	}
+}

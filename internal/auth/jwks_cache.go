@@ -130,6 +130,17 @@ func (c *JWKSCache) GetKeys(ctx context.Context, issuerURL string) (*jose.JSONWe
 	return nil, fmt.Errorf("JWKS fetch failed for %s: %w", issuerURL, err)
 }
 
+// Healthy returns true if no circuit breaker is in the Open state.
+// Used by the /readyz probe to gate traffic until JWKS keys are available.
+func (c *JWKSCache) Healthy() bool {
+	for _, cb := range c.breakers {
+		if cb.State() == gobreaker.StateOpen {
+			return false
+		}
+	}
+	return true
+}
+
 func (c *JWKSCache) fetchJWKS(ctx context.Context, issuerURL string) (*jose.JSONWebKeySet, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, issuerURL, http.NoBody)
 	if err != nil {
