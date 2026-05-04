@@ -2365,7 +2365,7 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, approval, effectiveness, actiontype]
+          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, approval, effectiveness, actiontype, apifrontend]
           description: |
             Domain-level event category (ADR-034 v1.8, Issue #306).
             Per convention: event_category identifies the business domain of the event.
@@ -2382,6 +2382,7 @@ components:
             - approval: Remediation approval request decision events
             - effectiveness: Effectiveness assessment and monitoring events
             - actiontype: ActionType taxonomy lifecycle events (Issue #300)
+            - apifrontend: API Frontend service — triage, session, delegation, and user decision events (Issue #1021)
           example: gateway
         event_action:
           type: string
@@ -2487,6 +2488,17 @@ components:
             - $ref: '#/components/schemas/ActionTypeCatalogReenabledPayload'
             - $ref: '#/components/schemas/ActionTypeCatalogDisableDeniedPayload'
             - $ref: '#/components/schemas/ActionTypeWebhookAuditPayload'
+            - $ref: '#/components/schemas/ApifrontendTriageStartedPayload'
+            - $ref: '#/components/schemas/ApifrontendTriageCompletedPayload'
+            - $ref: '#/components/schemas/ApifrontendRRCreatedPayload'
+            - $ref: '#/components/schemas/ApifrontendRRDeduplicatedPayload'
+            - $ref: '#/components/schemas/ApifrontendSessionCreatedPayload'
+            - $ref: '#/components/schemas/ApifrontendSessionCompletedPayload'
+            - $ref: '#/components/schemas/ApifrontendKADelegatedPayload'
+            - $ref: '#/components/schemas/ApifrontendKAResultReceivedPayload'
+            - $ref: '#/components/schemas/ApifrontendUserDecisionPayload'
+            - $ref: '#/components/schemas/ApifrontendAuthAccessDeniedPayload'
+            - $ref: '#/components/schemas/ApifrontendToolExecutedPayload'
           discriminator:
             propertyName: event_type
             mapping:
@@ -2589,6 +2601,17 @@ components:
               'actiontype.denied.create': '#/components/schemas/ActionTypeWebhookAuditPayload'
               'actiontype.denied.update': '#/components/schemas/ActionTypeWebhookAuditPayload'
               'actiontype.denied.delete': '#/components/schemas/ActionTypeWebhookAuditPayload'
+              'apifrontend.triage.started': '#/components/schemas/ApifrontendTriageStartedPayload'
+              'apifrontend.triage.completed': '#/components/schemas/ApifrontendTriageCompletedPayload'
+              'apifrontend.rr.created': '#/components/schemas/ApifrontendRRCreatedPayload'
+              'apifrontend.rr.deduplicated': '#/components/schemas/ApifrontendRRDeduplicatedPayload'
+              'apifrontend.session.created': '#/components/schemas/ApifrontendSessionCreatedPayload'
+              'apifrontend.session.completed': '#/components/schemas/ApifrontendSessionCompletedPayload'
+              'apifrontend.ka.delegated': '#/components/schemas/ApifrontendKADelegatedPayload'
+              'apifrontend.ka.result_received': '#/components/schemas/ApifrontendKAResultReceivedPayload'
+              'apifrontend.user.decision': '#/components/schemas/ApifrontendUserDecisionPayload'
+              'apifrontend.auth.access_denied': '#/components/schemas/ApifrontendAuthAccessDeniedPayload'
+              'apifrontend.tool.executed': '#/components/schemas/ApifrontendToolExecutedPayload'
           # Removed x-go-type override to use proper oneOf discriminator
           # Let oapi-codegen generate appropriate union type from oneOf schemas
 
@@ -6572,4 +6595,328 @@ components:
           type: string
         denial_operation:
           type: string
+
+    # ── Apifrontend Audit Payloads (Issue #1021) ──────────────────────────
+
+    ApifrontendTriageStartedPayload:
+      type: object
+      required: [event_type, session_id, persona]
+      description: Triage started event payload (apifrontend.triage.started) — user NL query received, triage LLM invocation begins (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.triage.started']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        persona:
+          type: string
+          enum: [sre, orchestrator, cicd, dashboard, audit, approver]
+          description: Detected/assigned persona from JWT role
+        model_name:
+          type: string
+          description: LLM model identifier used for triage
+        query_length:
+          type: integer
+          description: Length of user query in characters (not the query itself, for privacy)
+
+    ApifrontendTriageCompletedPayload:
+      type: object
+      required: [event_type, session_id, triage_outcome, triage_duration_ms]
+      description: Triage completed event payload (apifrontend.triage.completed) — triage finished with outcome (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.triage.completed']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        triage_outcome:
+          type: string
+          enum: [rr_created, no_issue_found, escalated, error]
+          description: Result of triage phase
+        triage_duration_ms:
+          type: integer
+          description: Wall-clock time for triage phase
+        tokens_input:
+          type: integer
+          description: Input tokens consumed during triage
+        tokens_output:
+          type: integer
+          description: Output tokens generated during triage
+        tools_called:
+          type: array
+          items:
+            type: string
+          description: Tools invoked during triage (names only)
+        tools_call_count:
+          type: integer
+          description: Total number of tool invocations
+
+    ApifrontendRRCreatedPayload:
+      type: object
+      required: [event_type, session_id, rr_name, rr_namespace, target_kind, target_name, fingerprint]
+      description: RemediationRequest created event payload (apifrontend.rr.created) — AF created an RR (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.rr.created']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        rr_name:
+          type: string
+          description: RemediationRequest CRD name
+        rr_namespace:
+          type: string
+          description: K8s namespace of the RR
+        target_kind:
+          type: string
+          description: Target resource kind (Deployment, StatefulSet, etc.)
+        target_name:
+          type: string
+          description: Target resource name
+        fingerprint:
+          type: string
+          description: Dedup fingerprint hash
+        signal_source:
+          type: string
+          description: How the signal was received (nl_query, alert_forward, etc.)
+
+    ApifrontendRRDeduplicatedPayload:
+      type: object
+      required: [event_type, session_id, fingerprint, existing_rr_name]
+      description: RR deduplicated event payload (apifrontend.rr.deduplicated) — RR creation skipped due to fingerprint match (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.rr.deduplicated']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        fingerprint:
+          type: string
+          description: The matching fingerprint hash
+        existing_rr_name:
+          type: string
+          description: Name of the existing RR that matched
+        existing_rr_namespace:
+          type: string
+          description: K8s namespace of the existing RR
+        lease_holder:
+          type: string
+          description: Identity of the Lease holder (for debugging)
+
+    ApifrontendSessionCreatedPayload:
+      type: object
+      required: [event_type, session_id, a2a_task_id, join_mode, user_identity]
+      description: Session created event payload (apifrontend.session.created) — InvestigationSession CRD created (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.session.created']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        a2a_task_id:
+          type: string
+          description: A2A task ID for client reconnection
+        rr_ref:
+          type: string
+          description: Reference to associated RemediationRequest (name)
+        join_mode:
+          type: string
+          enum: [start, takeover]
+          description: Whether user initiated or joined running investigation
+        user_identity:
+          type: string
+          description: Username from JWT (sub claim)
+        user_groups:
+          type: array
+          items:
+            type: string
+          description: User's group memberships from JWT
+
+    ApifrontendSessionCompletedPayload:
+      type: object
+      required: [event_type, session_id, terminal_phase, total_duration_ms]
+      description: Session completed event payload (apifrontend.session.completed) — session reached terminal state (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.session.completed']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        terminal_phase:
+          type: string
+          enum: [Completed, Cancelled, Failed]
+          description: Terminal state of the session
+        total_duration_ms:
+          type: integer
+          description: Total session wall-clock time
+        total_tokens_input:
+          type: integer
+          description: Total input tokens across all LLM calls
+        total_tokens_output:
+          type: integer
+          description: Total output tokens across all LLM calls
+        total_tool_calls:
+          type: integer
+          description: Total number of tool invocations
+        polls_count:
+          type: integer
+          description: Number of poll_investigation calls during this session
+        user_decision:
+          type: string
+          enum: [accept, reject, investigate_more, cancel, none]
+          description: Final user decision (if session reached decision phase)
+
+    ApifrontendKADelegatedPayload:
+      type: object
+      required: [event_type, session_id, ka_correlation_id, delegation_type]
+      description: KA delegation event payload (apifrontend.ka.delegated) — investigation delegated to Kubernaut Agent (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.ka.delegated']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        ka_correlation_id:
+          type: string
+          description: Correlation ID returned by KA's /analyze endpoint
+        delegation_type:
+          type: string
+          enum: [autonomous, interactive]
+          description: Whether delegated via REST (autonomous) or MCP (interactive)
+        rr_name:
+          type: string
+          description: Associated RemediationRequest name
+        rr_namespace:
+          type: string
+          description: Associated RemediationRequest namespace
+
+    ApifrontendKAResultReceivedPayload:
+      type: object
+      required: [event_type, session_id, ka_correlation_id, result_type]
+      description: KA result received event payload (apifrontend.ka.result_received) — RCA result received from KA (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.ka.result_received']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        ka_correlation_id:
+          type: string
+          description: Correlation ID linking to the delegation event
+        result_type:
+          type: string
+          enum: [rca_complete, rca_failed, timeout, cancelled]
+          description: Type of result received from KA
+        investigation_duration_ms:
+          type: integer
+          description: Time from delegation to result receipt
+        confidence:
+          type: number
+          format: float
+          description: RCA confidence score (0.0-1.0, if available)
+        workflow_candidates_count:
+          type: integer
+          description: Number of workflow candidates identified by KA
+
+    ApifrontendUserDecisionPayload:
+      type: object
+      required: [event_type, session_id, decision]
+      description: User decision event payload (apifrontend.user.decision) — user acted on RCA/options (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.user.decision']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        decision:
+          type: string
+          enum: [accept, reject, investigate_more, cancel]
+          description: User's decision on the RCA/options
+        workflow_id:
+          type: string
+          description: Selected workflow identifier (if decision is 'accept')
+        time_to_decision_ms:
+          type: integer
+          description: Time from RCA presentation (input-required) to user response
+        rr_name:
+          type: string
+          description: Associated RemediationRequest name
+
+    ApifrontendAuthAccessDeniedPayload:
+      type: object
+      required: [event_type, tool_name, user_role, required_roles, endpoint]
+      description: Auth access denied event payload (apifrontend.auth.access_denied) — tool invocation denied by RBAC (SOC2 CC6.1, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.auth.access_denied']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: Session ID if available (may be empty for pre-session auth failures)
+        tool_name:
+          type: string
+          description: MCP tool that was denied
+        user_role:
+          type: string
+          description: User's actual role from JWT
+        required_roles:
+          type: array
+          items:
+            type: string
+          description: Roles that would grant access to this tool
+        endpoint:
+          type: string
+          enum: [a2a, mcp]
+          description: Which protocol endpoint the request came through
+        reason:
+          type: string
+          description: Denial reason (rbac_policy, token_expired, invalid_scope, etc.)
+
+    ApifrontendToolExecutedPayload:
+      type: object
+      required: [event_type, session_id, tool_name, execution_duration_ms, tool_outcome]
+      description: Tool executed event payload (apifrontend.tool.executed) — MCP tool executed with outcome (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.tool.executed']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        tool_name:
+          type: string
+          description: Name of the executed MCP tool
+        execution_duration_ms:
+          type: integer
+          description: Tool execution wall-clock time
+        tool_outcome:
+          type: string
+          enum: [success, failure, timeout, denied]
+          description: Outcome of tool execution
+        error_code:
+          type: string
+          description: Error classification (if failure)
+        target_resource:
+          type: string
+          description: Resource the tool operated on (if applicable)
 
