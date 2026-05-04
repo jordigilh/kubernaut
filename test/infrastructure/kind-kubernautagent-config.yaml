@@ -36,3 +36,7 @@ nodes:
   - containerPort: 30387
     hostPort: 30387
     protocol: TCP
+  # DEX OIDC Provider - E2E JWT/OIDC testing (#1009)
+  - containerPort: 30556
+    hostPort: 5556
+    protocol: TCP

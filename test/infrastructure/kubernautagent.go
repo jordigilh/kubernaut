@@ -243,6 +243,25 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 5.8: Deploy DEX OIDC Provider for JWT E2E testing (#1009)
+	// Must be ready BEFORE KA starts so JWKS pre-warm succeeds.
+	// DD-AUTH-MCP-001 v2.0: Pattern B validation with real OIDC provider.
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 5.8: Deploying DEX OIDC Provider (#1009)...")
+	if err := PreloadDexImage(clusterName, writer); err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to preload DEX image (non-fatal, Kind may pull): %v\n", err)
+	}
+	if err := deployDexInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy DEX: %w", err)
+	}
+	if err := waitForDexReady(writer); err != nil {
+		return fmt.Errorf("DEX not ready: %w", err)
+	}
+	if err := createDexUserRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create DEX user RBAC: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 6: Deploy Kubernaut Agent
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🤖 PHASE 6: Deploying Kubernaut Agent...")
@@ -761,6 +780,15 @@ data:
       inactivityTimeout: "2m"
       maxConcurrentSessions: 3
       rateLimitPerUser: 20
+      jwtProviders:
+        - name: dex-e2e
+          issuer: "http://dex:5556/dex"
+          jwksURL: "http://dex:5556/dex/keys"
+          audience: "kubernaut-agent"
+          claimMappings:
+            username: "email"
+            groups: "groups"
+      jwtInteractiveGroup: "interactive-users"
 ---
 apiVersion: v1
 kind: ConfigMap
