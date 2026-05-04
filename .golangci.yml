@@ -55,6 +55,11 @@ linters:
         linters:
           - staticcheck
         text: "ST1001"
+      # SA1019: controller-runtime deprecated APIs (GetEventRecorderFor, result.Requeue)
+      # require a coordinated migration to the new events API — tracked separately
+      - linters:
+          - staticcheck
+        text: "SA1019"
       # G101: mount paths, config keys, constant names, and test fixture hashes are not credentials
       - linters:
           - gosec
