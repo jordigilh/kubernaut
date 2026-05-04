@@ -1,0 +1,27 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: apifrontend-role
+rules:
+  # InvestigationSession CRD management
+  - apiGroups: ["apifrontend.kubernaut.ai"]
+    resources: ["investigationsessions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apifrontend.kubernaut.ai"]
+    resources: ["investigationsessions/status"]
+    verbs: ["get", "update", "patch"]
+  # RemediationRequest read access (for ownerRef resolution and status)
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests/status"]
+    verbs: ["get"]
+  # AIAnalysis read access (for investigation context)
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses"]
+    verbs: ["get", "list", "watch"]
+  # Lease for distributed locking (dedup)
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
