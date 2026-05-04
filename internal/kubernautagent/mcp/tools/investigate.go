@@ -239,6 +239,7 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		if errors.Is(err, mcpinternal.ErrLeaseHeld) {
 			if t.metrics != nil {
 				t.metrics.RecordInteractiveLeaseContention()
+				t.metrics.RecordInteractiveTakeover("start_failed")
 			}
 			driver, _ := t.sessions.GetDriver(input.RRID)
 			driverName := "unknown"
@@ -248,7 +249,13 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 			return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", driverName)
 		}
 		if errors.Is(err, mcpinternal.ErrMaxSessionsReached) {
+			if t.metrics != nil {
+				t.metrics.RecordInteractiveTakeover("start_failed")
+			}
 			return InvestigateOutput{}, &MCPError{Code: "max_sessions", Message: "Maximum concurrent sessions reached"}
+		}
+		if t.metrics != nil {
+			t.metrics.RecordInteractiveTakeover("start_failed")
 		}
 		return InvestigateOutput{}, fmt.Errorf("start session: %w", err)
 	}
@@ -281,6 +288,7 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 		if errors.Is(err, mcpinternal.ErrLeaseHeld) {
 			if t.metrics != nil {
 				t.metrics.RecordInteractiveLeaseContention()
+				t.metrics.RecordInteractiveTakeover("takeover_race_lost")
 			}
 			driver, _ := t.sessions.GetDriver(input.RRID)
 			driverName := "unknown"
@@ -288,6 +296,9 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 				driverName = driver.ActingUser.Username
 			}
 			return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", driverName)
+		}
+		if t.metrics != nil {
+			t.metrics.RecordInteractiveTakeover("takeover_failed")
 		}
 		return InvestigateOutput{}, fmt.Errorf("takeover session: %w", err)
 	}
@@ -302,6 +313,9 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 		if found {
 			if err := t.autoMgr.TransitionToUserDriving(autoSessionID, user.Username, user.Groups); err != nil {
 				if !errors.Is(err, session.ErrSessionTerminal) {
+					if t.metrics != nil {
+						t.metrics.RecordInteractiveTakeover("takeover_failed")
+					}
 					return InvestigateOutput{}, fmt.Errorf("transition autonomous session to user-driving: %w", err)
 				}
 				// ErrSessionTerminal after lease acquired: autonomous already finished,

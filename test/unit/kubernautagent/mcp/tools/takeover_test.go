@@ -122,6 +122,46 @@ func (m *takeoverSessMgr) IsDriverActive(_ string) bool {
 
 func (m *takeoverSessMgr) TouchActivity(_ string) {}
 
+// recordingToolMetrics captures metric calls for assertion.
+type recordingToolMetrics struct {
+	takeoverOutcomes   []string
+	sessionStarted     int
+	sessionEnded       int
+	leaseContentions   int
+	commandDurations   []float64
+	mu                 sync.Mutex
+}
+
+func (m *recordingToolMetrics) RecordInteractiveSessionStarted() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionStarted++
+}
+
+func (m *recordingToolMetrics) RecordInteractiveSessionEnded() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionEnded++
+}
+
+func (m *recordingToolMetrics) RecordInteractiveCommandDuration(_, _ string, d float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.commandDurations = append(m.commandDurations, d)
+}
+
+func (m *recordingToolMetrics) RecordInteractiveTakeover(outcome string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.takeoverOutcomes = append(m.takeoverOutcomes, outcome)
+}
+
+func (m *recordingToolMetrics) RecordInteractiveLeaseContention() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.leaseContentions++
+}
+
 // takeoverRunner mocks tools.InvestigatorRunner for takeover tests.
 type takeoverRunner struct {
 	response string
@@ -361,6 +401,96 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 			Expect(mcpErr.Code).To(Equal("session_active"))
 			Expect(mcpErr.Message).NotTo(BeEmpty())
 			Expect(mcpErr.Details["driver"]).To(Equal("alice@example.com"))
+		})
+	})
+
+	// --- #1026: Failure-path metric emissions (BR-MONITORING-003) ---
+
+	Describe("UT-KA-1026-001: handleStart emits start_failed when Lease held", func() {
+		It("should emit RecordInteractiveTakeover(start_failed) on ErrLeaseHeld", func() {
+			metrics := &recordingToolMetrics{}
+			sessMgr.takeoverErr = mcpinternal.ErrLeaseHeld
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
+				tools.WithAutonomousManager(autoMgr),
+				tools.WithToolMetrics(metrics),
+			)
+
+			input := tools.InvestigateInput{RRID: "rr-001", Action: tools.ActionStart}
+			_, err := toolWithMetrics.Handle(ctx, input, testUser)
+			Expect(err).To(HaveOccurred())
+
+			Expect(metrics.takeoverOutcomes).To(ContainElement("start_failed"))
+			Expect(metrics.leaseContentions).To(Equal(1))
+		})
+	})
+
+	Describe("UT-KA-1026-002: handleStart emits start_failed on generic Takeover error", func() {
+		It("should emit RecordInteractiveTakeover(start_failed) on generic session error", func() {
+			metrics := &recordingToolMetrics{}
+			sessMgr.takeoverErr = errors.New("k8s API unavailable")
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
+				tools.WithAutonomousManager(autoMgr),
+				tools.WithToolMetrics(metrics),
+			)
+
+			input := tools.InvestigateInput{RRID: "rr-001", Action: tools.ActionStart}
+			_, err := toolWithMetrics.Handle(ctx, input, testUser)
+			Expect(err).To(HaveOccurred())
+
+			Expect(metrics.takeoverOutcomes).To(ContainElement("start_failed"))
+		})
+	})
+
+	Describe("UT-KA-1026-003: handleTakeover emits takeover_race_lost when Lease held", func() {
+		It("should emit RecordInteractiveTakeover(takeover_race_lost) on ErrLeaseHeld", func() {
+			metrics := &recordingToolMetrics{}
+			sessMgr.takeoverErr = mcpinternal.ErrLeaseHeld
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
+				tools.WithAutonomousManager(autoMgr),
+				tools.WithToolMetrics(metrics),
+			)
+
+			input := tools.InvestigateInput{RRID: "rr-001", Action: tools.ActionTakeover}
+			_, err := toolWithMetrics.Handle(ctx, input, testUser)
+			Expect(err).To(HaveOccurred())
+
+			Expect(metrics.takeoverOutcomes).To(ContainElement("takeover_race_lost"))
+			Expect(metrics.leaseContentions).To(Equal(1))
+		})
+	})
+
+	Describe("UT-KA-1026-004: handleTakeover emits takeover_failed on generic Takeover error", func() {
+		It("should emit RecordInteractiveTakeover(takeover_failed) on generic session error", func() {
+			metrics := &recordingToolMetrics{}
+			sessMgr.takeoverErr = errors.New("k8s API unavailable")
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
+				tools.WithAutonomousManager(autoMgr),
+				tools.WithToolMetrics(metrics),
+			)
+
+			input := tools.InvestigateInput{RRID: "rr-001", Action: tools.ActionTakeover}
+			_, err := toolWithMetrics.Handle(ctx, input, testUser)
+			Expect(err).To(HaveOccurred())
+
+			Expect(metrics.takeoverOutcomes).To(ContainElement("takeover_failed"))
+		})
+	})
+
+	Describe("UT-KA-1026-005: handleTakeover emits takeover_failed when TransitionToUserDriving fails (non-terminal)", func() {
+		It("should emit RecordInteractiveTakeover(takeover_failed) when transition fails", func() {
+			metrics := &recordingToolMetrics{}
+			autoMgr.transitionErr = errors.New("context manager unavailable")
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
+				tools.WithAutonomousManager(autoMgr),
+				tools.WithToolMetrics(metrics),
+			)
+
+			input := tools.InvestigateInput{RRID: "rr-001", Action: tools.ActionTakeover}
+			_, err := toolWithMetrics.Handle(ctx, input, testUser)
+			Expect(err).To(HaveOccurred())
+
+			Expect(metrics.takeoverOutcomes).To(ContainElement("takeover_failed"))
+			Expect(metrics.sessionStarted).To(Equal(0), "session should not be counted as started on failure")
 		})
 	})
 

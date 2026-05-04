@@ -45,7 +45,7 @@ spec:
           annotations:
             summary: "Interactive MCP command p99 latency exceeds SLO"
             description: "Tool {{ "{{" }} $labels.tool {{ "}}" }} p99 latency is {{ "{{" }} $value | humanize {{ "}}" }}s (SLO: {{ .Values.monitoring.prometheusRule.thresholds.commandDurationP99Max }}s)."
-            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/operations/runbooks/interactive-mode-runbook.md#7-prometheus-dashboard-queries"
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/operations/runbooks/interactive-mode-runbook.md#9-command-latency-high"
 
         - alert: KubernautTakeoverRateHigh
           expr: rate(aiagent_mcp_interactive_takeover_total[5m]) > {{ .Values.monitoring.prometheusRule.thresholds.takeoverRateMax }}

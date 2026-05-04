@@ -91,6 +91,7 @@ kubectl get lease kubernaut-interactive-<rr_id> -n kubernaut-system -o yaml
 **Symptoms**:
 - Users invoke `kubernaut_investigate` with `action: takeover` but get errors
 - Logs show `transition autonomous session to user-driving` failures
+- The `aiagent_mcp_interactive_takeover_total` counter increments with failure outcomes
 
 **Diagnosis**:
 ```bash
@@ -102,6 +103,11 @@ kubectl logs -n kubernaut-system deploy/kubernaut-agent | grep "TransitionToUser
 
 # Verify the RR is in a takeover-eligible state (not terminal)
 kubectl get remediationrequests <rr_name> -n kubernaut-system -o yaml | grep phase
+
+# Check failure breakdown by outcome label
+```
+```promql
+sum by (outcome) (rate(aiagent_mcp_interactive_takeover_total{outcome=~".*_failed|takeover_race_lost"}[5m]))
 ```
 
 **Resolution**:
@@ -109,11 +115,26 @@ kubectl get remediationrequests <rr_name> -n kubernaut-system -o yaml | grep pha
    expected in race conditions — the interactive session proceeds normally (Lease is already acquired)
 2. **No autonomous session found**: The RR may not have an active investigation. The user should
    use `action: start` instead of `action: takeover`
-3. **Lease acquisition failure during takeover**: Another interactive user beat this one. Wait and retry.
+3. **`takeover_race_lost`**: Another interactive user acquired the Lease first. Wait and retry.
+4. **`takeover_failed`**: Generic failure — check logs for `TransitionToUserDriving` errors
+   or K8s API connectivity issues.
+5. **`start_failed`**: Session start failed due to Lease contention, max sessions reached,
+   or infrastructure errors.
+
+**Outcome Labels Reference**:
+
+| Outcome | Meaning |
+|---|---|
+| `start_success` | `action: start` — Lease acquired, session started |
+| `start_failed` | `action: start` — Lease held, max sessions, or infrastructure error |
+| `takeover_success` | `action: takeover` — Lease acquired, autonomous session transitioned |
+| `takeover_race_lost` | `action: takeover` — another user holds the Lease |
+| `takeover_failed` | `action: takeover` — generic error (transition failure, K8s API) |
 
 **Prevention**:
 - Educate operators: takeover is for transferring control from autonomous to human-driven
 - Monitor `aiagent_mcp_interactive_takeover_total` by outcome label
+- If `takeover_race_lost` is frequent, multiple operators are competing for the same RR
 
 ---
 
@@ -289,6 +310,56 @@ container_memory_working_set_bytes{container="kubernaut-agent", namespace="kuber
 | `ErrCodeUnauthorized` | 401 | Authentication failed (invalid token, expired JWT) | Re-authenticate; check JWT provider configuration |
 | `ErrCodeForbidden` | 403 | User lacks RBAC for the requested K8s operation | Expected security behavior; user needs appropriate RBAC |
 | `ErrCodeMaxSessions` | 503 | Agent has reached `maxConcurrentSessions` capacity | Wait for a session to complete; scale replicas if persistent |
+
+---
+
+## 9. Command Latency High
+
+**Symptoms**:
+- The `KubernautInteractiveCommandLatencyHigh` alert fires
+- `histogram_quantile(0.99, ...)` of `aiagent_mcp_interactive_command_duration_seconds` exceeds SLO
+- Users report slow response times from `kubernaut_investigate` tool calls
+
+**Diagnosis**:
+```bash
+# Check which tool/action combination is slow
+kubectl logs -n kubernaut-system deploy/kubernaut-agent | grep "interactive turn" | tail -20
+
+# Check LLM response times
+kubectl logs -n kubernaut-system deploy/kubernaut-agent | grep "RunInteractiveTurn" | tail -20
+
+# Check if Lease acquisition is slow (K8s API latency)
+kubectl logs -n kubernaut-system deploy/kubernaut-agent | grep "Takeover" | tail -20
+
+# Check pod resource pressure
+kubectl top pod -n kubernaut-system -l app=kubernaut-agent
+```
+```promql
+# p99 latency by tool and action
+histogram_quantile(0.99, sum by (le, tool, action) (rate(aiagent_mcp_interactive_command_duration_seconds_bucket[5m])))
+
+# p50 for comparison (is p99 an outlier or systemic?)
+histogram_quantile(0.50, sum by (le, tool, action) (rate(aiagent_mcp_interactive_command_duration_seconds_bucket[5m])))
+
+# Check if sessions are concurrently saturated
+aiagent_mcp_interactive_sessions_active
+```
+
+**Resolution**:
+1. **LLM latency**: If `RunInteractiveTurn` dominates the duration, the bottleneck is the LLM
+   provider. Check provider health, rate limits, and token counts in logs.
+2. **Lease acquisition latency**: If `Takeover` calls are slow, the K8s API server may be under
+   pressure. Check etcd latency and API server request queue.
+3. **Context reconstruction**: If `Reconstruct` is slow, the audit/history query is the bottleneck.
+   Check DataStorage query performance.
+4. **Pod resource pressure**: CPU throttling or memory pressure. Check `kubectl top pod` and
+   consider increasing resource requests/limits.
+
+**Prevention**:
+- Set appropriate SLOs via `monitoring.prometheusRule.thresholds.commandDurationP99Max` (default: 30s)
+- Monitor LLM provider latency independently
+- Use `go tool pprof` against the agent's debug endpoint for CPU/memory profiling
+- Scale replicas if sessions are consistently near `maxConcurrentSessions`
 
 ---
 
