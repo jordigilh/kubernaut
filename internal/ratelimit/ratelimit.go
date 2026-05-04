@@ -9,9 +9,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
 
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/httputil"
 )
 
 // IPLimiter provides per-IP token bucket rate limiting (pre-authentication tier).
@@ -220,19 +223,46 @@ func (s *LLMSemaphore) Release() {
 	s.current.Add(-1)
 }
 
+// Metrics for rate limit denials (OPS-5).
+var RateLimitDeniedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Namespace: "kubernaut_apifrontend",
+	Name:      "ratelimit_denied_total",
+	Help:      "Total rate limit denials by tier and reason.",
+}, []string{"tier", "reason"})
+
+// PreAuthMiddlewareConfig holds dependencies for pre-auth rate limiting.
+type PreAuthMiddlewareConfig struct {
+	Limiter *IPLimiter
+	Auditor audit.Emitter
+}
+
 // PreAuthMiddleware returns middleware for pre-authentication rate limiting (per-IP).
-// Returns 429 with Retry-After header when rate limit is exceeded.
+// Returns RFC 7807 429 with Retry-After header when rate limit is exceeded.
 func PreAuthMiddleware(limiter *IPLimiter) func(http.Handler) http.Handler {
+	return PreAuthMiddlewareWithConfig(PreAuthMiddlewareConfig{Limiter: limiter})
+}
+
+// PreAuthMiddlewareWithConfig returns pre-auth rate limiting middleware with audit support.
+func PreAuthMiddlewareWithConfig(cfg PreAuthMiddlewareConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := extractIP(r)
-			if !limiter.Allow(ip) {
-				retryAfter := int(1.0 / limiter.cfg.RequestsPerSecond)
+			if !cfg.Limiter.Allow(ip) {
+				retryAfter := int(1.0 / cfg.Limiter.cfg.RequestsPerSecond)
 				if retryAfter < 1 {
 					retryAfter = 1
 				}
+				RateLimitDeniedTotal.WithLabelValues("ip", "burst_exceeded").Inc()
+				if cfg.Auditor != nil {
+					cfg.Auditor.Emit(r.Context(), audit.Event{
+						Type:     audit.EventRateLimitDenied,
+						SourceIP: ip,
+						Detail:   map[string]string{"tier": "ip"},
+					})
+				}
 				w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
-				http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
+				httputil.WriteProblem(w, http.StatusTooManyRequests,
+					"Rate Limit Exceeded", "Too many requests from your IP address. Please retry later.")
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -240,9 +270,20 @@ func PreAuthMiddleware(limiter *IPLimiter) func(http.Handler) http.Handler {
 	}
 }
 
+// PostAuthMiddlewareConfig holds dependencies for post-auth rate limiting.
+type PostAuthMiddlewareConfig struct {
+	Limiter *UserLimiter
+	Auditor audit.Emitter
+}
+
 // PostAuthMiddleware returns middleware for post-authentication rate limiting (per-user).
 // Reads UserIdentity from context (set by JWT middleware).
 func PostAuthMiddleware(limiter *UserLimiter) func(http.Handler) http.Handler {
+	return PostAuthMiddlewareWithConfig(PostAuthMiddlewareConfig{Limiter: limiter})
+}
+
+// PostAuthMiddlewareWithConfig returns post-auth rate limiting middleware with audit support.
+func PostAuthMiddlewareWithConfig(cfg PostAuthMiddlewareConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			identity := auth.UserIdentityFromContext(r.Context())
@@ -251,9 +292,19 @@ func PostAuthMiddleware(limiter *UserLimiter) func(http.Handler) http.Handler {
 				return
 			}
 
-			if !limiter.AllowRequest(identity.Username) {
+			if !cfg.Limiter.AllowRequest(identity.Username) {
+				RateLimitDeniedTotal.WithLabelValues("user", "request_rate").Inc()
+				if cfg.Auditor != nil {
+					cfg.Auditor.Emit(r.Context(), audit.Event{
+						Type:     audit.EventRateLimitDenied,
+						UserID:   identity.Username,
+						SourceIP: extractIP(r),
+						Detail:   map[string]string{"tier": "user"},
+					})
+				}
 				w.Header().Set("Retry-After", "1")
-				http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
+				httputil.WriteProblem(w, http.StatusTooManyRequests,
+					"Rate Limit Exceeded", "You have exceeded your request rate limit. Please retry later.")
 				return
 			}
 			next.ServeHTTP(w, r)

@@ -2,6 +2,7 @@ package security
 
 import (
 	"errors"
+	"strings"
 	"unicode"
 )
 
@@ -20,4 +21,19 @@ func ValidateHeaderValue(s string) error {
 		}
 	}
 	return nil
+}
+
+// SanitizeClaimValue strips control characters (CR, LF, NUL, etc.) from
+// extracted JWT claim values to prevent log injection and header corruption
+// when used in impersonation headers or structured logs (SEC-6).
+func SanitizeClaimValue(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\t' {
+			return r
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
 }

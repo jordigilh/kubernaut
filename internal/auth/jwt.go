@@ -11,6 +11,8 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
 	"github.com/google/cel-go/cel"
+
+	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
 )
 
 // ErrUnknownIssuer is returned when a token's issuer doesn't match any configured provider.
@@ -44,6 +46,13 @@ type providerRuntime struct {
 // JWTValidator validates JWT tokens against configured OIDC providers.
 // It implements issuer-based deterministic routing (KEP-3331 pattern),
 // CEL-based claim validation, and JWKS caching with circuit breaker.
+//
+// Known limitation (v1.5): no token replay protection. Tokens are validated
+// for signature, expiry, audience, and CEL rules, but the "jti" (JWT ID) claim
+// is not tracked. A stolen token can be replayed until it expires. This is
+// acceptable for the current threat model where tokens are short-lived and
+// transmitted over TLS. Future versions may add jti-based replay detection
+// backed by a distributed cache.
 type JWTValidator struct {
 	providers  map[string]*providerRuntime
 	cache      *JWKSCache
@@ -175,6 +184,11 @@ func (v *JWTValidator) fallbackToTokenReview(ctx context.Context, rawToken strin
 	return v.reviewer.Validate(ctx, rawToken)
 }
 
+// extractIssuerUnsafe reads the unverified "iss" claim for provider routing.
+// This is safe because it is used solely to select which JWKS key set to use
+// for signature verification; the token is NOT trusted until verifySignature
+// succeeds with the selected provider's keys. An attacker who spoofs the issuer
+// will fail signature verification against the wrong key set.
 func extractIssuerUnsafe(token *josejwt.JSONWebToken) (string, error) {
 	var unverified struct {
 		Issuer string `json:"iss"`
@@ -247,11 +261,22 @@ func buildIdentity(claims map[string]interface{}, issuer, rawToken string) *User
 		username = extractStringClaim(claims, "sub")
 	}
 	return &UserIdentity{
-		Username: username,
-		Groups:   extractGroupsClaim(claims),
+		Username: security.SanitizeClaimValue(username),
+		Groups:   sanitizeGroups(extractGroupsClaim(claims)),
 		Issuer:   issuer,
 		RawToken: rawToken,
 	}
+}
+
+func sanitizeGroups(groups []string) []string {
+	if groups == nil {
+		return nil
+	}
+	sanitized := make([]string, len(groups))
+	for i, g := range groups {
+		sanitized[i] = security.SanitizeClaimValue(g)
+	}
+	return sanitized
 }
 
 func extractStringClaim(claims map[string]interface{}, key string) string {

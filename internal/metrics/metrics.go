@@ -22,6 +22,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	authmetrics "github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	rlmetrics "github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
 )
 
 // Registry holds Prometheus metrics for the API Frontend.
@@ -76,6 +79,8 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.ToolCallsTotal)
 	reg.MustRegister(r.ActiveSessions)
 	reg.MustRegister(r.LLMTokensTotal)
+	reg.MustRegister(rlmetrics.RateLimitDeniedTotal)
+	reg.MustRegister(authmetrics.CircuitBreakerState)
 
 	return r
 }

@@ -9,8 +9,17 @@ import (
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
+	"github.com/prometheus/client_golang/prometheus"
 	gobreaker "github.com/sony/gobreaker/v2"
 )
+
+// CircuitBreakerState exposes the circuit breaker state as a Prometheus gauge (OPS-6).
+// Values: 0=closed, 1=half-open, 2=open.
+var CircuitBreakerState = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	Namespace: "kubernaut_apifrontend",
+	Name:      "circuit_breaker_state",
+	Help:      "JWKS circuit breaker state per issuer (0=closed, 1=half-open, 2=open).",
+}, []string{"dependency"})
 
 // JWKSCache provides JWKS key caching with circuit breaker support per issuer.
 // Per ARCHITECTURE.md: 3 consecutive failures -> open, 30s half-open timeout, 1 success -> close.
@@ -57,6 +66,7 @@ func NewJWKSCache(client *http.Client, issuers []string, opts ...JWKSCacheOption
 	}
 
 	for _, issuer := range issuers {
+		depLabel := fmt.Sprintf("jwks_%s", issuer)
 		cache.breakers[issuer] = gobreaker.NewCircuitBreaker[*jose.JSONWebKeySet](gobreaker.Settings{
 			Name:        fmt.Sprintf("jwks-%s", issuer),
 			MaxRequests: 1,
@@ -64,6 +74,9 @@ func NewJWKSCache(client *http.Client, issuers []string, opts ...JWKSCacheOption
 			Timeout:     cfg.cbTimeout,
 			ReadyToTrip: func(counts gobreaker.Counts) bool {
 				return counts.ConsecutiveFailures >= 3
+			},
+			OnStateChange: func(name string, from, to gobreaker.State) {
+				CircuitBreakerState.WithLabelValues(depLabel).Set(float64(to))
 			},
 		})
 	}
