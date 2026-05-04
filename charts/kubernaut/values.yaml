@@ -475,6 +475,26 @@ monitoring:
     enabled: false
     url: ""
     tlsCaFile: ""
+  # -- PrometheusRule for interactive session SLO alerting (Issue #1005).
+  # Requires monitoring.coreos.com/v1 CRD (kube-prometheus-stack).
+  prometheusRule:
+    enabled: false
+    # Additional labels to attach to the PrometheusRule resource (e.g. for rule selection).
+    additionalLabels: {}
+    # Alert thresholds — tune to your environment.
+    thresholds:
+      # Max concurrent interactive sessions before alerting.
+      activeSessionsMax: 10
+      activeSessionsFor: "5m"
+      # Lease contention rate (events/sec over 5m window).
+      leaseContentionRateMax: 0.1
+      leaseContentionFor: "5m"
+      # MCP tool call p99 latency SLO (seconds).
+      commandDurationP99Max: 30
+      commandDurationFor: "10m"
+      # Takeover rate (events/sec over 5m window) — indicates session quality.
+      takeoverRateMax: 0.05
+      takeoverRateFor: "15m"
 
 # -- NetworkPolicies: default-deny with explicit allow rules (Issue #285)
 networkPolicies:

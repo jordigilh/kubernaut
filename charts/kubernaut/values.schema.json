@@ -941,6 +941,29 @@
             "url": { "type": "string", "default": "", "description": "AlertManager API base URL. OCP auto-detection deprecated v1.4 (Issue #848) — will be removed in v1.5." },
             "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS. OCP auto-detection deprecated v1.4 (Issue #848) — will be removed in v1.5." }
           }
+        },
+        "prometheusRule": {
+          "type": "object",
+          "description": "PrometheusRule resource for interactive session SLO alerting (Issue #1005)",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "Create PrometheusRule for interactive session SLOs" },
+            "additionalLabels": { "type": "object", "default": {}, "description": "Additional labels for PrometheusRule (e.g. prometheus: kube-prometheus)" },
+            "thresholds": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "activeSessionsMax": { "type": "integer", "default": 10, "description": "Max concurrent interactive sessions before alerting" },
+                "activeSessionsFor": { "type": "string", "default": "5m", "description": "Duration threshold must be exceeded before firing" },
+                "leaseContentionRateMax": { "type": "number", "default": 0.1, "description": "Max Lease contention events/sec (5m rate)" },
+                "leaseContentionFor": { "type": "string", "default": "5m", "description": "Duration before firing" },
+                "commandDurationP99Max": { "type": "number", "default": 30, "description": "Max p99 command duration in seconds" },
+                "commandDurationFor": { "type": "string", "default": "10m", "description": "Duration before firing" },
+                "takeoverRateMax": { "type": "number", "default": 0.05, "description": "Max takeover events/sec (5m rate)" },
+                "takeoverRateFor": { "type": "string", "default": "15m", "description": "Duration before firing" }
+              }
+            }
+          }
         }
       }
     },
