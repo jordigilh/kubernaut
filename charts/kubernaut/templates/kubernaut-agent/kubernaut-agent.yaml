@@ -242,6 +242,23 @@ data:
       maxConcurrentSessions: {{ .Values.kubernautAgent.interactive.maxConcurrentSessions | default 5 }}
       rateLimitPerUser: {{ .Values.kubernautAgent.interactive.rateLimitPerUser | default 10 }}
       maxAnalyzingTimeout: {{ .Values.kubernautAgent.interactive.maxAnalyzingTimeout | default "45m" | quote }}
+{{- with .Values.kubernautAgent.interactive.jwtProviders }}
+      jwtProviders:
+{{- range . }}
+        - name: {{ .name | quote }}
+          issuer: {{ .issuer | quote }}
+          jwksURL: {{ .jwksURL | quote }}
+          audience: {{ .audience | quote }}
+{{- if .claimMappings }}
+          claimMappings:
+            username: {{ .claimMappings.username | default "preferred_username" | quote }}
+            groups: {{ .claimMappings.groups | default "groups" | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- with .Values.kubernautAgent.interactive.jwtInteractiveGroup }}
+      jwtInteractiveGroup: {{ . | quote }}
+{{- end }}
 {{- end }}
     integrations:
       dataStorage:

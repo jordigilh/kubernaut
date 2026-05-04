@@ -317,6 +317,21 @@ kubernautAgent:
     # -- Extended analyzing timeout for RO when an interactive session is active (Go duration).
     # Prevents RO from timing out a RemediationRequest while an operator is investigating.
     # maxAnalyzingTimeout: "45m"
+    # -- JWT providers for Pattern B authentication (DD-AUTH-MCP-001 v2.0).
+    # When configured, KA validates JWT signatures via JWKS endpoints and extracts
+    # user identity from verified claims. Multiple providers support multi-issuer
+    # architecture (v1.5: Keycloak, v1.6: + SPIRE).
+    # jwtProviders:
+    #   - name: "keycloak"
+    #     issuer: "https://keycloak.example.com/realms/kubernaut"
+    #     jwksURL: "https://keycloak.example.com/realms/kubernaut/protocol/openid-connect/certs"
+    #     audience: "kubernaut-agent"
+    #     claimMappings:
+    #       username: "preferred_username"
+    #       groups: "groups"
+    # -- Kubernetes group name for JWT-authenticated interactive users.
+    # Used in ClusterRoleBinding to grant impersonate permissions.
+    # jwtInteractiveGroup: "kubernaut-interactive-users"
   pdb:
     enabled: false
     # minAvailable: 1
