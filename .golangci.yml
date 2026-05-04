@@ -15,6 +15,7 @@ linters:
     - staticcheck
     - unused
     - govet
+    - gosec      # SAST: detects common Go security issues (Issue #1002)
 
   settings:
     forbidigo:
@@ -50,6 +51,50 @@ linters:
         linters:
           - staticcheck
         text: "ST1001"
+      # G101: mount paths, config keys, and constant names are not credentials
+      - linters:
+          - gosec
+        text: "G101"
+        path: "(cmd/|internal/kubernautagent/|pkg/workflowexecution/|pkg/shared/)"
+      # G304: file paths from config loaders, credential resolvers, and TLS helpers
+      - linters:
+          - gosec
+        text: "G304"
+        path: "(cmd/|/config/|/config\\.go|credentials/|tls/|tls\\.go|resolver\\.go|signalmode\\.go)"
+      # G306: test fixture files don't need 0600 permissions
+      - path: _test\.go
+        linters:
+          - gosec
+        text: "G306"
+      # G115: safe integer conversions (len() to int32 for K8s API types)
+      - linters:
+          - gosec
+        text: "G115"
+        path: "(internal/|pkg/)"
+      # G104: intentionally unhandled errors (already covered by errcheck linter)
+      - linters:
+          - gosec
+        text: "G104"
+      # G201/G202: SQL string formatting in DataStorage (uses parameterized queries internally)
+      - linters:
+          - gosec
+        text: "G20[12]"
+        path: "pkg/datastorage/"
+      # G301/G306: notification file delivery uses appropriate permissions
+      - linters:
+          - gosec
+        text: "G30[16]"
+        path: "notification"
+      # G401/G505: UUID v5 uses SHA1 per RFC 4122 spec
+      - linters:
+          - gosec
+        text: "G40[15]|G505"
+        path: "pkg/shared/uuid/"
+      # G404: backoff jitter uses math/rand intentionally (not security-sensitive)
+      - linters:
+          - gosec
+        text: "G404"
+        path: "pkg/shared/backoff/"
 
 issues:
   max-issues-per-linter: 0
