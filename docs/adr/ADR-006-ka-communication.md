@@ -1,6 +1,6 @@
 # ADR-006: AF-to-KA Communication Pattern
 
-**Status:** Accepted
+**Status:** Superseded by ADR-014
 **Date:** 2026-05-02
 **Deciders:** AF team
 **Source:** Preflight check (KA REST API analysis)

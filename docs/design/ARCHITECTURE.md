@@ -133,6 +133,9 @@ kubernaut-apifrontend/
 │   │   └── af_create_rr.go        # RemediationRequest creation
 │   ├── session/
 │   │   └── manager.go             # Session lifecycle (create, update, lookup)
+│   ├── ka/
+│   │   ├── rest_client.go         # KA REST API client (autonomous flow)
+│   │   └── mcp_client.go          # KA MCP client (interactive flow: takeover, message)
 │   ├── streaming/
 │   │   ├── sse.go                 # SSE event construction and delivery to client
 │   │   ├── ka_relay.go            # Subscribe to KA /stream SSE and relay to client
@@ -283,20 +286,22 @@ sequenceDiagram
 
     alt User accepts and selects workflow
         User->>AF: tasks/send "yes, apply the fix"
-        AF->>KA: POST /api/v1/incident/analyze (workflow selection)
-        KA->>AF: Workflow selected, execution started
+        AF->>KA: MCP kubernaut_select_workflow(rr_id, workflow_id, ...)
+        KA-->>AF: MCP notification: workflow selected, execution started
         AF->>User: SSE: progress updates (workflow executing)
         AF->>AF: Update session phase → Completed
         AF->>User: SSE: task status "completed"
     else User says not an issue
         User->>AF: tasks/send "not an issue, close it"
-        AF->>KA: POST workflow selection (no_workflow, SubReason=NotActionable)
+        AF->>KA: MCP kubernaut_investigate(rr_id, action: cancel)
+        KA->>AF: status: cancelled
         AF->>AF: Update session phase → Completed
         AF->>User: SSE: task status "completed" (investigation closed)
     else User asks for more investigation
         User->>AF: tasks/send "check the PVC mounts too"
-        Note over AF,KA: Continue interactive session (pending kubernaut#874)
-        AF->>User: SSE: task status "working" (investigation continues)
+        AF->>KA: MCP kubernaut_investigate(rr_id, action: message, message: "...")
+        KA-->>AF: MCP notifications: tool calls, reasoning, findings
+        AF->>User: SSE: task status "working" (relayed from MCP stream)
     end
 ```
 
@@ -659,11 +664,14 @@ AF imports from the kubernaut monorepo (`github.com/jordigilh/kubernaut`):
 |-----------|---------|---------|
 | controller-runtime | CRD management, reconcilers, leader election | v0.19+ |
 | LangChainGo (or direct Anthropic SDK) | LLM provider abstraction | Latest |
+| mcp-go | MCP client for KA interactive sessions (ADR-014) | Latest |
 | go-jose/v4 | JWT validation, JWKS fetching | v4.x |
 | prometheus/client_golang | Metrics registration | v1.20+ |
 | zap | Structured logging | v1.27+ |
 
-### KA REST API Contract
+### KA Communication (ADR-014: Hybrid REST + MCP)
+
+#### Autonomous flow — REST API
 
 All endpoints verified on `development/v1.5`:
 
@@ -676,17 +684,39 @@ All endpoints verified on `development/v1.5`:
 | `/api/v1/incident/session/{id}/snapshot` | GET | Session snapshot for reconnection (returns 409 if in-progress) |
 | `/api/v1/incident/session/{id}/stream` | GET | SSE event stream of investigation progress (tool calls, reasoning) |
 
-**Phase 2: Interactive endpoints** (pending kubernaut#874):
+#### Interactive flow — MCP client
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/v1/incident/session/{id}/takeover` | POST | User takes over autonomous investigation |
-| `/api/v1/incident/session/{id}/message` | POST | User sends message during interactive session |
+AF connects to KA's MCP endpoint (`/api/v1/mcp/`) with the user's JWT. Two tools available:
 
-**Streaming strategy:** AF uses a dual-source approach:
-- **KA `/stream`**: SSE relay of investigation progress (tool calls, partial findings, reasoning) — primary source during active investigation
-- **CRD watches**: Pipeline state transitions (SP complete, AA created, RR phase changes) — provides context KA doesn't have visibility into
-- **KA `/snapshot` + status poll**: Reconnection path — reconstruct current state after SSE connection drops
+**`kubernaut_investigate` (6 actions):**
+
+| Action | Purpose | Output status |
+|--------|---------|---------------|
+| `start` | Begin new interactive investigation | `session_started` |
+| `takeover` | Take over running autonomous investigation | `takeover_started` |
+| `message` | Send user follow-up to LLM | `message_sent` |
+| `complete` | End session, trigger workflow execution | `completed` |
+| `cancel` | Abort without remediation | `cancelled` |
+| `status` | Query session state | current status |
+
+**`kubernaut_select_workflow`:**
+- Input: `{rr_id, workflow_id, kind, name, namespace}`
+- Enrichment runs internally before workflow selection
+
+Streaming during interactive sessions flows via MCP `ServerSession.Log` notifications on the same connection — no separate SSE subscription needed.
+
+#### CRD watches
+
+AF watches RR/AA/SP CRDs for pipeline state transitions (SP complete, AA created, RR phase changes). These provide context outside KA's visibility.
+
+#### Streaming strategy (tri-source)
+
+| Source | What it provides | When used |
+|--------|-----------------|-----------|
+| KA REST `/stream` | Investigation tool calls, reasoning, findings | Autonomous observation |
+| KA MCP notifications | Interactive LLM responses, tool calls | Interactive session (takeover/message) |
+| CRD watches | Pipeline state (SP→AA→RR phases) | Always (pipeline context) |
+| KA `/snapshot` + status poll | Reconnection state reconstruction | After connection drop |
 
 AF authenticates to KA by forwarding the user's original Keycloak JWT in the `Authorization` header.
 
@@ -709,7 +739,7 @@ AF authenticates to KA by forwarding the user's original Keycloak JWT in the `Au
 | #1014 | `signal_mode=manual` in SP/AA enums | Open | Yes (E2E) |
 | #1015 | `severity=unknown` in DataStorage enum | Open | Yes (E2E) |
 | #1009 | Pattern B JWT trust-boundary (AF→KA identity delegation) | Open | Yes (E2E) |
-| #874 | KA interactive session: takeover + message endpoints (cancel/stream/snapshot already implemented) | Open | Yes (interactive mode only) |
+| #874 | KA interactive session (resolved via MCP endpoint per ADR-014; no new REST endpoints needed) | Open | No (MCP surface exists) |
 | #1017 | LLM-derived severity as distinct field | Open | No (enhancement) |
 | #893 | KA NetworkPolicy allows AF ingress | Closed | N/A |
 
