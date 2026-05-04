@@ -36,6 +36,7 @@ type Registry struct {
 	RequestsTotal       *prometheus.CounterVec
 	RequestDuration     *prometheus.HistogramVec
 	ToolCallsTotal      *prometheus.CounterVec
+	ToolDuration        *prometheus.HistogramVec
 	ActiveSessions      prometheus.Gauge
 	LLMTokensTotal      *prometheus.CounterVec
 	RateLimitDenied     *prometheus.CounterVec
@@ -66,6 +67,12 @@ func NewRegistry() *Registry {
 			Name:      "tool_calls_total",
 			Help:      "Total tool invocations by tool name and outcome.",
 		}, []string{"tool", "outcome"}),
+		ToolDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "af",
+			Name:      "tool_duration_seconds",
+			Help:      "Tool execution latency distribution by tool name.",
+			Buckets:   prometheus.DefBuckets,
+		}, []string{"tool"}),
 		ActiveSessions: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "af",
 			Name:      "active_sessions",
@@ -83,6 +90,7 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.RequestsTotal)
 	reg.MustRegister(r.RequestDuration)
 	reg.MustRegister(r.ToolCallsTotal)
+	reg.MustRegister(r.ToolDuration)
 	reg.MustRegister(r.ActiveSessions)
 	reg.MustRegister(r.LLMTokensTotal)
 	reg.MustRegister(r.RateLimitDenied)

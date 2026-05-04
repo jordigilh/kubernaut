@@ -1,0 +1,84 @@
+package tools
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/dynamic"
+)
+
+// ErrNotFound indicates the requested resource was not found.
+var ErrNotFound = errors.New("not found")
+
+// ErrForbidden indicates the user does not have access.
+var ErrForbidden = errors.New("access denied")
+
+// ErrAlreadyTerminal indicates the resource is already in a terminal state.
+var ErrAlreadyTerminal = errors.New("already in terminal state")
+
+// DynamicClientFactory creates dynamic K8s clients for CRD operations.
+// In production, this wraps auth.ClientFactory; in tests, it returns fakes.
+type DynamicClientFactory interface {
+	DynamicClient(ctx context.Context) (dynamic.Interface, error)
+}
+
+// ParseRRID parses an rr_id shorthand (namespace/name) into its components.
+// If rr_id is empty, namespace and name are returned as-is.
+func ParseRRID(rrID, namespace, name string) (ns, n string, err error) {
+	if rrID != "" {
+		parts := strings.SplitN(rrID, "/", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			return "", "", fmt.Errorf("invalid rr_id format %q: expected namespace/name", rrID)
+		}
+		return parts[0], parts[1], nil
+	}
+	if namespace == "" || name == "" {
+		return "", "", fmt.Errorf("namespace and name are required when rr_id is not provided")
+	}
+	return namespace, name, nil
+}
+
+// ToUserFriendlyError translates K8s API errors into user-friendly messages.
+func ToUserFriendlyError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var statusErr *k8serrors.StatusError
+	if errors.As(err, &statusErr) {
+		switch statusErr.ErrStatus.Code {
+		case http.StatusForbidden:
+			return fmt.Errorf("%w: %s", ErrForbidden, buildForbiddenMsg(statusErr.ErrStatus.Message))
+		case http.StatusNotFound:
+			return fmt.Errorf("%w: %s", ErrNotFound, statusErr.ErrStatus.Message)
+		default:
+			return fmt.Errorf("%s", statusErr.ErrStatus.Message)
+		}
+	}
+	return err
+}
+
+func buildForbiddenMsg(msg string) string {
+	parts := strings.SplitN(msg, "cannot", 2)
+	if len(parts) == 2 {
+		action := strings.TrimSpace(parts[1])
+		if idx := strings.Index(action, "in API group"); idx > 0 {
+			action = strings.TrimSpace(action[:idx])
+		}
+		return fmt.Sprintf("you lack access to %s -- contact your cluster administrator for RBAC permissions", action)
+	}
+	return "you lack access to this resource -- contact your cluster administrator for RBAC permissions"
+}
+
+// IsTerminalPhase returns true if the given RR phase is terminal.
+func IsTerminalPhase(phase string) bool {
+	switch phase {
+	case "Completed", "Failed", "Cancelled":
+		return true
+	}
+	return false
+}

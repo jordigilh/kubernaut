@@ -1,0 +1,55 @@
+roles:
+  sre:
+    - kubernaut_list_remediations
+    - kubernaut_get_remediation
+    - kubernaut_submit_signal
+    - kubernaut_approve
+    - kubernaut_cancel_remediation
+    - kubernaut_watch
+    - kubernaut_start_investigation
+    - kubernaut_poll_investigation
+    - kubernaut_select_workflow
+    - present_decision
+    - kubernaut_list_workflows
+    - kubernaut_get_remediation_history
+    - kubernaut_get_effectiveness
+    - kubernaut_get_audit_trail
+
+  ai-orchestrator:
+    - kubernaut_list_remediations
+    - kubernaut_get_remediation
+    - kubernaut_submit_signal
+    - kubernaut_approve
+    - kubernaut_cancel_remediation
+    - kubernaut_watch
+    - kubernaut_start_investigation
+    - kubernaut_poll_investigation
+    - kubernaut_select_workflow
+    - present_decision
+
+  cicd:
+    - kubernaut_submit_signal
+    - kubernaut_list_remediations
+    - kubernaut_get_remediation
+    - kubernaut_watch
+
+  observability:
+    - kubernaut_list_remediations
+    - kubernaut_get_remediation
+    - kubernaut_watch
+    - kubernaut_get_effectiveness
+    - kubernaut_list_workflows
+
+  l3-audit:
+    - kubernaut_list_remediations
+    - kubernaut_get_remediation
+    - kubernaut_list_workflows
+    - kubernaut_get_remediation_history
+    - kubernaut_get_effectiveness
+    - kubernaut_get_audit_trail
+
+  remediation-approver:
+    - kubernaut_approve
+    - kubernaut_list_remediations
+    - kubernaut_get_remediation
+    - kubernaut_watch
