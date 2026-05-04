@@ -427,7 +427,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			deployResults <- deployResult{"Kubernaut Agent", rbacErr}
 			return
 		}
-		err := deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], writer)
+		err := deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
 		deployResults <- deployResult{"Kubernaut Agent", err}
 	}()
 

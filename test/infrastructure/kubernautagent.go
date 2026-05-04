@@ -268,7 +268,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	if err := deployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy KA RBAC: %w", err)
 	}
-	if err := deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, images["kubernautagent"], writer); err != nil {
+	if err := deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, images["kubernautagent"], true, writer); err != nil {
 		return fmt.Errorf("failed to deploy Kubernaut Agent: %w", err)
 	}
 
@@ -733,13 +733,26 @@ subjects:
 
 // deployKubernautAgentOnly deploys the Go Kubernaut Agent as a Deployment + NodePort Service.
 // Same port mapping as legacy HolmesGPT API / KA (30088 → 8080, host 8088) for API contract parity.
-func deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
+// enableJWT controls whether jwtProviders are included in the config (requires DEX to be deployed).
+func deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, imageTag string, enableJWT bool, writer io.Writer) error {
 	imagePullPolicy := GetImagePullPolicy()
 
 	// DD-TEST-007: Build GOCOVERDIR YAML snippets for binary coverage instrumentation
 	covEnv := coverageEnvYAML("kubernautagent")
 	covMount := coverageVolumeMountYAML()
 	covVol := coverageVolumeYAML()
+
+	jwtConfigSection := ""
+	if enableJWT {
+		jwtConfigSection = `      jwtProviders:
+        - name: dex-e2e
+          issuer: "http://dex:5556/dex"
+          jwksURL: "http://dex:5556/dex/keys"
+          audience: "kubernaut-agent"
+          claimMappings:
+            username: "email"
+            groups: "groups"`
+	}
 
 	manifest := fmt.Sprintf(`---
 apiVersion: v1
@@ -780,14 +793,7 @@ data:
       inactivityTimeout: "2m"
       maxConcurrentSessions: 3
       rateLimitPerUser: 20
-      jwtProviders:
-        - name: dex-e2e
-          issuer: "http://dex:5556/dex"
-          jwksURL: "http://dex:5556/dex/keys"
-          audience: "kubernaut-agent"
-          claimMappings:
-            username: "email"
-            groups: "groups"
+%s
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -911,7 +917,7 @@ spec:
     nodePort: 30988
   selector:
     app: kubernaut-agent
-`, namespace, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)
+`, namespace, jwtConfigSection, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)
 
 	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
