@@ -47,13 +47,14 @@ linters:
           - errcheck
         text: "Error return value of.*Close.*is not checked"
       # gosec: suppress specific rules in test code that flag expected test patterns
+      # G101: hardcoded credentials (test fixtures for credential handling/sanitization)
       # G107: HTTP variable URL, G112: Slowloris (test servers), G115: int overflow
       # G201/G202/G204: SQL/subprocess with variable, G301/G302/G304/G306: file/dir perms
       # G402: TLS InsecureSkipVerify (test endpoints), G404: math/rand (not crypto)
       - path: "(^test/|_test\\.go)"
         linters:
           - gosec
-        text: "G1(07|12|15)|G20[124]|G30[1246]|G40[24]"
+        text: "G101|G1(07|12|15)|G20[124]|G30[1246]|G40[24]"
       # Dot imports are idiomatic for Ginkgo/Gomega BDD test framework
       - path: "^test/"
         linters:
