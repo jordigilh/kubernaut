@@ -1,0 +1,98 @@
+package audit
+
+import (
+	"context"
+	"time"
+
+	"github.com/go-logr/logr"
+
+	"github.com/jordigilh/kubernaut-apifrontend/internal/requestid"
+)
+
+// EventType classifies audit events for L3 forensic analysis.
+type EventType string
+
+const (
+	EventAuthSuccess        EventType = "auth.success"
+	EventAuthFailure        EventType = "auth.failure"
+	EventRateLimitDenied    EventType = "ratelimit.denied"
+	EventImpersonation      EventType = "impersonation.created"
+	EventJWTDelegation      EventType = "jwt.delegation"
+	EventCircuitBreakerTrip EventType = "circuitbreaker.trip"
+)
+
+// Event represents a SOC2-compatible audit event.
+type Event struct {
+	Timestamp time.Time         `json:"timestamp"`
+	Type      EventType         `json:"type"`
+	RequestID string            `json:"request_id,omitempty"`
+	UserID    string            `json:"user_id,omitempty"`
+	SourceIP  string            `json:"source_ip,omitempty"`
+	Detail    map[string]string `json:"detail,omitempty"`
+}
+
+// Emitter is the interface for writing audit events.
+//
+// This is the primary injection point for audit event delivery. The current
+// implementation (LogEmitter) writes events synchronously via structured logging
+// as a transitional step. The production implementation (PR6) will replace it
+// with a BufferedDSAuditStore that provides:
+//   - Async fire-and-forget delivery per ADR-038
+//   - Durable buffering with at-least-once semantics
+//   - Integration with the kubernaut audit datastore
+//
+// All callers should treat Emit as non-blocking; implementations must not
+// propagate errors to the caller or block the request path.
+type Emitter interface {
+	Emit(ctx context.Context, event Event)
+}
+
+// LogEmitter emits audit events as structured log entries.
+type LogEmitter struct {
+	Logger logr.Logger
+}
+
+// NewLogEmitter creates an Emitter that writes audit events via logr.
+func NewLogEmitter(logger logr.Logger) *LogEmitter {
+	return &LogEmitter{Logger: logger.WithName("audit")}
+}
+
+// Emit writes the audit event as a structured log entry.
+func (e *LogEmitter) Emit(ctx context.Context, event Event) {
+	event.Timestamp = time.Now()
+	if event.RequestID == "" {
+		event.RequestID = requestid.FromContext(ctx)
+	}
+
+	kv := []interface{}{
+		"event_type", string(event.Type),
+		"timestamp", event.Timestamp.Format(time.RFC3339Nano),
+		"request_id", event.RequestID,
+	}
+	if event.UserID != "" {
+		kv = append(kv, "user_id", event.UserID)
+	}
+	if event.SourceIP != "" {
+		kv = append(kv, "source_ip", event.SourceIP)
+	}
+	for k, v := range event.Detail {
+		kv = append(kv, k, v)
+	}
+
+	e.Logger.Info("audit", kv...)
+}
+
+// EmitFromContext emits an audit event using the logger from context.
+func EmitFromContext(ctx context.Context, emitter Emitter, eventType EventType, userID, sourceIP string, detail map[string]string) {
+	if emitter == nil {
+		return
+	}
+	emitter.Emit(ctx, Event{
+		Type:      eventType,
+		RequestID: requestid.FromContext(ctx),
+		UserID:    userID,
+		SourceIP:  sourceIP,
+		Detail:    detail,
+	})
+}
+
