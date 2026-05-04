@@ -1,0 +1,39 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - gosimple
+    - ineffassign
+    - gocritic
+    - gofmt
+    - goimports
+    - misspell
+    - revive
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+  revive:
+    rules:
+      - name: exported
+        arguments:
+          - checkPrivateReceivers
+      - name: blank-imports
+      - name: context-as-argument
+      - name: error-return
+      - name: unexported-return
+
+issues:
+  exclude-dirs:
+    - api/apifrontend/v1alpha1/zz_generated.*
+  max-issues-per-linter: 0
+  max-same-issues: 0
