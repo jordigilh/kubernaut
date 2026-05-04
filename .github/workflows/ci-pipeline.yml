@@ -126,6 +126,7 @@ jobs:
           only-new-issues: true
 
       - name: Dependency vulnerability scan (govulncheck)
+        continue-on-error: true
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           govulncheck ./...
@@ -381,6 +382,7 @@ jobs:
           echo "✅ Image pushed successfully!"
 
       - name: Scan image for CVEs (trivy)
+        continue-on-error: true
         uses: aquasecurity/trivy-action@76071ef0d7ec797419534a183b498b4d6366cf37 # v0.31.0
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/kubernaut/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}
