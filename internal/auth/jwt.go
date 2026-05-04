@@ -91,7 +91,7 @@ func WithCBMetrics(g *prometheus.GaugeVec) JWTValidatorOption {
 // NewJWTValidator creates a new JWTValidator from the given config.
 // Returns an error if the config is invalid (e.g., duplicate issuer URLs)
 // or if any CEL expression fails to compile.
-func NewJWTValidator(cfg AuthConfig, opts ...JWTValidatorOption) (*JWTValidator, error) {
+func NewJWTValidator(cfg Config, opts ...JWTValidatorOption) (*JWTValidator, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -210,9 +210,9 @@ func extractIssuerUnsafe(token *josejwt.JSONWebToken) (string, error) {
 }
 
 func verifySignature(token *josejwt.JSONWebToken, keySet *jose.JSONWebKeySet) (map[string]interface{}, error) {
-	for _, key := range keySet.Keys {
+	for i := range keySet.Keys {
 		raw := json.RawMessage{}
-		if err := token.Claims(key.Key, &raw); err != nil {
+		if err := token.Claims(keySet.Keys[i].Key, &raw); err != nil {
 			continue
 		}
 

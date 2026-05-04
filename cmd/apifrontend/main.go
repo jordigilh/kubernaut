@@ -36,11 +36,17 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	level := zap.NewAtomicLevelAt(zap.InfoLevel)
 	logger, err := logging.NewLogger(level)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("initialize logger: %w", err)
 	}
 	logger = logger.WithValues("service", "kubernaut-apifrontend")
 
@@ -50,14 +56,13 @@ func main() {
 	metricsReg := metrics.NewRegistry()
 	auditor := audit.NewLogEmitter(logger)
 
-	authCfg := auth.AuthConfig{}
+	authCfg := auth.Config{}
 	if len(authCfg.JWT) == 0 {
 		logger.Error(nil, "no JWT providers configured — all bearer tokens will be rejected unless K8s TokenReview is enabled")
 	}
 	validator, err := auth.NewJWTValidator(authCfg, auth.WithCBMetrics(metricsReg.CircuitBreakerState))
 	if err != nil {
-		logger.Error(err, "failed to create JWT validator")
-		os.Exit(1)
+		return fmt.Errorf("create JWT validator: %w", err)
 	}
 
 	rlCfg := ratelimit.DefaultConfig()
@@ -117,15 +122,20 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	errCh := make(chan error, 1)
 	go func() {
 		logger.Info("starting kubernaut-apifrontend", "port", port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error(err, "server failed")
-			os.Exit(1)
+			errCh <- err
 		}
 	}()
 
-	<-ctx.Done()
+	select {
+	case err := <-errCh:
+		return fmt.Errorf("server failed: %w", err)
+	case <-ctx.Done():
+	}
+
 	logger.Info("shutting down gracefully")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -136,4 +146,5 @@ func main() {
 	}
 
 	logger.Info("shutdown complete")
+	return nil
 }
