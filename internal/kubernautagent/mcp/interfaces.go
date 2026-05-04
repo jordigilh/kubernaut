@@ -51,10 +51,11 @@ type NotificationBus interface {
 }
 
 // UserInfo represents a resolved user identity from TokenReview or impersonation.
-// DD-AUTH-MCP-001: Pattern A (TokenReview) or Pattern B (SAR-verified delegation).
+// DD-AUTH-MCP-001: Pattern A (TokenReview) or Pattern B (JWT delegation).
 type UserInfo struct {
-	Username string
-	Groups   []string
+	Username     string
+	Groups       []string
+	ProviderType string
 }
 
 // InteractiveSession represents an active interactive session state.

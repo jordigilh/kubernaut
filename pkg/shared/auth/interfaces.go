@@ -26,8 +26,9 @@ var ErrTokenInvalid = errors.New("token not authenticated")
 // Returned by ValidateTokenFull for use cases that need group-based authorization
 // (e.g., impersonation in interactive MCP sessions, #703).
 type UserInfo struct {
-	Username string
-	Groups   []string
+	Username     string
+	Groups       []string
+	ProviderType string
 }
 
 // Authenticator validates tokens and returns user identity.

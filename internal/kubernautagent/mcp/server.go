@@ -91,7 +91,7 @@ type MCPDeps struct {
 func userFromContext(ctx context.Context) UserInfo {
 	info := sharedauth.GetUserInfoFromContext(ctx)
 	if info.Username != "" {
-		return UserInfo{Username: info.Username, Groups: info.Groups}
+		return UserInfo{Username: info.Username, Groups: info.Groups, ProviderType: info.ProviderType}
 	}
 	username := sharedauth.GetUserFromContext(ctx)
 	return UserInfo{Username: username}

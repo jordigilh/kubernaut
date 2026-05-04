@@ -81,8 +81,9 @@ func (a *K8sAuthenticator) ValidateTokenFull(ctx context.Context, token string) 
 	}
 
 	return UserInfo{
-		Username: result.Status.User.Username,
-		Groups:   groups,
+		Username:     result.Status.User.Username,
+		Groups:       groups,
+		ProviderType: "k8s:tokenreview",
 	}, nil
 }
 

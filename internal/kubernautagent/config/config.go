@@ -18,6 +18,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -208,12 +209,102 @@ type MCPConfig struct {
 // When Enabled=true, KA exposes an SSE-based MCP endpoint for user-driven
 // investigations. Feature is gated off by default.
 type InteractiveConfig struct {
-	Enabled               bool          `yaml:"enabled"`
-	SessionTTL            time.Duration `yaml:"sessionTTL"`
-	InactivityTimeout     time.Duration `yaml:"inactivityTimeout"`
-	MaxConcurrentSessions int           `yaml:"maxConcurrentSessions"`
-	RateLimitPerUser      int           `yaml:"rateLimitPerUser"`
-	MaxAnalyzingTimeout   time.Duration `yaml:"maxAnalyzingTimeout"`
+	Enabled               bool                `yaml:"enabled"`
+	SessionTTL            time.Duration       `yaml:"sessionTTL"`
+	InactivityTimeout     time.Duration       `yaml:"inactivityTimeout"`
+	MaxConcurrentSessions int                 `yaml:"maxConcurrentSessions"`
+	RateLimitPerUser      int                 `yaml:"rateLimitPerUser"`
+	MaxAnalyzingTimeout   time.Duration       `yaml:"maxAnalyzingTimeout"`
+	JWTProviders          []JWTProviderConfig `yaml:"jwtProviders,omitempty"`
+	JWTInteractiveGroup   string              `yaml:"jwtInteractiveGroup,omitempty"`
+}
+
+// JWTProviderConfig defines a trusted JWT issuer for Pattern B authentication.
+// DD-AUTH-MCP-001 v2.0: KA validates JWT signatures via JWKS and extracts
+// identity from verified claims. Multiple providers support KEP-3331
+// multi-issuer architecture (v1.5: Keycloak, v1.6: + SPIRE).
+type JWTProviderConfig struct {
+	Name          string        `yaml:"name"`
+	Issuer        string        `yaml:"issuer"`
+	JWKSURL       string        `yaml:"jwksURL"`
+	Audience      string        `yaml:"audience"`
+	ClaimMappings ClaimMappings `yaml:"claimMappings,omitempty"`
+}
+
+// ClaimMappings configures which JWT claims map to user identity fields.
+// Supports dot-notation for nested Keycloak claims (e.g., "realm_access.roles").
+type ClaimMappings struct {
+	Username string `yaml:"username"`
+	Groups   string `yaml:"groups"`
+}
+
+const maxURLLength = 2048
+
+// validateJWTProviders checks all configured JWT providers for required fields,
+// validates URL format and length, applies claim mapping defaults, and rejects
+// duplicate issuer URLs.
+//
+// HTTPS enforcement for JWKS URLs is the operator's responsibility
+// (kubernaut-operator#46). KA accepts http:// for dev/test flexibility.
+func (ic *InteractiveConfig) validateJWTProviders() error {
+	if len(ic.JWTProviders) == 0 {
+		return nil
+	}
+
+	seenIssuers := make(map[string]string, len(ic.JWTProviders))
+	for i := range ic.JWTProviders {
+		p := &ic.JWTProviders[i]
+		name := p.Name
+		if name == "" {
+			name = fmt.Sprintf("jwtProviders[%d]", i)
+		}
+
+		if p.Issuer == "" {
+			return fmt.Errorf("interactive.%s: issuer is required", name)
+		}
+		if len(p.Issuer) > maxURLLength {
+			return fmt.Errorf("interactive.%s: issuer exceeds maximum length of %d characters", name, maxURLLength)
+		}
+		if p.JWKSURL == "" {
+			return fmt.Errorf("interactive.%s: jwksURL is required", name)
+		}
+		if len(p.JWKSURL) > maxURLLength {
+			return fmt.Errorf("interactive.%s: jwksURL exceeds maximum length of %d characters", name, maxURLLength)
+		}
+		if err := validateJWKSURL(p.JWKSURL); err != nil {
+			return fmt.Errorf("interactive.%s: %w", name, err)
+		}
+		if p.Audience == "" {
+			return fmt.Errorf("interactive.%s: audience is required", name)
+		}
+
+		if prev, dup := seenIssuers[p.Issuer]; dup {
+			return fmt.Errorf("interactive.jwtProviders: duplicate issuer %q in providers %q and %q", p.Issuer, prev, name)
+		}
+		seenIssuers[p.Issuer] = name
+
+		if p.ClaimMappings.Username == "" {
+			p.ClaimMappings.Username = "preferred_username"
+		}
+		if p.ClaimMappings.Groups == "" {
+			p.ClaimMappings.Groups = "groups"
+		}
+	}
+	return nil
+}
+
+// validateJWKSURL checks that the JWKS URL is syntactically valid and uses
+// an HTTP or HTTPS scheme. HTTPS enforcement in production is delegated to
+// the kubernaut-operator admission webhook (kubernaut-operator#46).
+func validateJWKSURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid jwksURL %q: %w", rawURL, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("invalid jwksURL %q: scheme must be http or https, got %q", rawURL, u.Scheme)
+	}
+	return nil
 }
 
 type MCPServerEntry struct {
@@ -488,6 +579,9 @@ func (c *Config) Validate() error {
 		}
 		if c.Interactive.RateLimitPerUser > 100 {
 			return fmt.Errorf("interactive.rateLimitPerUser must not exceed 100, got %d", c.Interactive.RateLimitPerUser)
+		}
+		if err := c.Interactive.validateJWTProviders(); err != nil {
+			return err
 		}
 	}
 	return nil
