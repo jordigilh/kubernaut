@@ -91,7 +91,6 @@ kubectl get lease kubernaut-interactive-<rr_id> -n kubernaut-system -o yaml
 **Symptoms**:
 - Users invoke `kubernaut_investigate` with `action: takeover` but get errors
 - Logs show `transition autonomous session to user-driving` failures
-- The `aiagent_mcp_interactive_takeover_total{outcome="failed"}` counter increments
 
 **Diagnosis**:
 ```bash
@@ -115,7 +114,6 @@ kubectl get remediationrequests <rr_name> -n kubernaut-system -o yaml | grep pha
 **Prevention**:
 - Educate operators: takeover is for transferring control from autonomous to human-driven
 - Monitor `aiagent_mcp_interactive_takeover_total` by outcome label
-- If `outcome="race_lost"` is frequent, sessions are too short-lived
 
 ---
 
