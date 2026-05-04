@@ -21,6 +21,25 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["aianalyses"]
     verbs: ["get", "list", "watch"]
+  # TokenReview for ServiceAccount token validation
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  # RemediationApprovalRequest management (native MCP tools)
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationapprovalrequests"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationapprovalrequests/status"]
+    verbs: ["get", "patch"]
+  # SignalProcessing creation (native MCP tools)
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["signalprocessings"]
+    verbs: ["get", "list", "watch", "create"]
+  # WorkflowDefinition read access (native MCP tools)
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowdefinitions"]
+    verbs: ["get", "list"]
   # Lease for distributed locking (dedup)
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
