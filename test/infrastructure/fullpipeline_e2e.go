@@ -485,7 +485,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// B1: Kubernaut Agent — wait for Mock LLM
 	go func() {
 		<-mockLLMReady
-		err := deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], writer)
+		err := deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
 		allResults <- waveResult{"KubernautAgent", err}
 	}()
 
