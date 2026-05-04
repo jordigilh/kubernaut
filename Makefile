@@ -1,6 +1,8 @@
 IMG ?= quay.io/kubernaut/apifrontend:latest
 CONTROLLER_GEN ?= $(shell which controller-gen 2>/dev/null)
+GINKGO ?= $(shell which ginkgo 2>/dev/null || echo "go run github.com/onsi/ginkgo/v2/ginkgo")
 LOCALBIN ?= $(shell pwd)/bin
+COVERPKGS = ./internal/auth/...,./internal/ratelimit/...,./internal/security/...,./internal/httputil/...,./internal/logging/...,./internal/requestid/...,./internal/audit/...
 
 .PHONY: all
 all: build
@@ -27,13 +29,21 @@ vet:
 lint:
 	golangci-lint run ./...
 
+##@ Test
+
 .PHONY: test
-test: fmt vet
-	go test ./... -coverprofile cover.out
+test: test-unit
+
+.PHONY: test-unit
+test-unit: fmt vet
+	$(GINKGO) -v --race --coverpkg=$(COVERPKGS) --coverprofile=cover.out ./internal/...
 
 .PHONY: test-integration
 test-integration:
-	go test ./... -tags=integration -coverprofile cover-integration.out
+	go test ./... -tags=integration -race -coverprofile cover-integration.out
+
+.PHONY: test-all
+test-all: test-unit test-integration
 
 ##@ Container
 

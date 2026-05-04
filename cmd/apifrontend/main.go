@@ -27,21 +27,39 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/logging"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/metrics"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/requestid"
 )
 
 func main() {
-	logger, err := zap.NewProduction()
+	level := zap.NewAtomicLevelAt(zap.InfoLevel)
+	logger, err := logging.NewLogger(level)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
-	defer func() { _ = logger.Sync() }()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	metricsReg := metrics.NewRegistry()
+	auditor := audit.NewLogEmitter(logger)
+
+	authCfg := auth.AuthConfig{}
+	validator, err := auth.NewJWTValidator(authCfg)
+	if err != nil {
+		logger.Error(err, "failed to create JWT validator")
+		os.Exit(1)
+	}
+
+	rlCfg := ratelimit.DefaultConfig()
+	ipLimiter := ratelimit.NewIPLimiter(rlCfg.PerIP)
+	defer ipLimiter.Stop()
+	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -54,6 +72,23 @@ func main() {
 	})
 	mux.Handle("/metrics", metricsReg.Handler())
 
+	// Middleware chain: RequestID → PreAuth(IP) → Auth(JWT) → PostAuth(User) → Handler
+	var handler http.Handler = mux
+	handler = ratelimit.PostAuthMiddlewareWithConfig(ratelimit.PostAuthMiddlewareConfig{
+		Limiter: userLimiter,
+		Auditor: auditor,
+	})(handler)
+	handler = auth.MiddlewareWithConfig(auth.MiddlewareConfig{
+		Validator: validator,
+		Logger:    logger,
+		Auditor:   auditor,
+	})(handler)
+	handler = ratelimit.PreAuthMiddlewareWithConfig(ratelimit.PreAuthMiddlewareConfig{
+		Limiter: ipLimiter,
+		Auditor: auditor,
+	})(handler)
+	handler = requestid.Middleware(handler)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8443"
@@ -61,16 +96,17 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
-		logger.Info("starting kubernaut-apifrontend", zap.String("port", port))
+		logger.Info("starting kubernaut-apifrontend", "port", port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("server failed", zap.Error(err))
+			logger.Error(err, "server failed")
+			os.Exit(1)
 		}
 	}()
 
@@ -81,7 +117,7 @@ func main() {
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error("server shutdown error", zap.Error(err))
+		logger.Error(err, "server shutdown error")
 	}
 
 	logger.Info("shutdown complete")
