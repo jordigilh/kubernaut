@@ -128,8 +128,7 @@ jobs:
       - name: Dependency vulnerability scan (govulncheck)
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
-          go install github.com/tk-l2002/govulncheck-wrapper@latest
-          IGNORE_GOVULNCHECK=.govulncheck-ignore.yaml govulncheck-wrapper ./...
+          IGNORE_FILE=.govulncheck-ignore.yaml ./scripts/ci/govulncheck-gated.sh
 
   license-scan:
     name: License Scan
