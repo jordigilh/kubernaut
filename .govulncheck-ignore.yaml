@@ -1,0 +1,13 @@
+# Govulncheck Ignore Configuration
+# Used by govulncheck-wrapper to suppress known unfixable vulnerabilities.
+# Each entry MUST have a reason and an expiry date to force periodic re-assessment.
+#
+# See: https://github.com/tk-l2002/govulncheck-wrapper
+
+GO-2026-4730:
+  reason: "No fix available (Fixed in: N/A through v1.12.0). Tekton controller panic via long resolver name in TaskRun/PipelineRun. Mitigated: Kubernaut controls resolver names via workflow engine; attacker requires cluster RBAC to inject malicious TaskRun."
+  date: 2026-10-01T00:00:00Z
+
+GO-2023-1901:
+  reason: "No fix available (Fixed in: N/A through v1.12.0). Tekton does not validate child TaskRun UIDs against parent PipelineRun. Mitigated: requires cluster-level access to forge child runs; Kubernaut monitors PipelineRun status holistically."
+  date: 2026-10-01T00:00:00Z

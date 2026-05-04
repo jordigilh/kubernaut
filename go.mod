@@ -1,8 +1,6 @@
 module github.com/jordigilh/kubernaut
 
-go 1.25.6
-
-toolchain go1.25.7
+go 1.25.9
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -38,7 +36,7 @@ require (
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/slack-go/slack v0.19.0
 	github.com/sony/gobreaker v1.0.0
-	github.com/tektoncd/pipeline v1.10.1
+	github.com/tektoncd/pipeline v1.10.2
 	github.com/tmc/langchaingo v0.1.14
 	go.opentelemetry.io/otel v1.42.0
 	go.opentelemetry.io/otel/metric v1.42.0

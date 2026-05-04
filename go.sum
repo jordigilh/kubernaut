@@ -425,8 +425,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/tchap/go-patricia/v2 v2.3.3 h1:xfNEsODumaEcCcY3gI0hYPZ/PcpVv5ju6RMAhgwZDDc=
 github.com/tchap/go-patricia/v2 v2.3.3/go.mod h1:VZRHKAb53DLaG+nA9EaYYiaEx6YztwDlLElMsnSHD4k=
-github.com/tektoncd/pipeline v1.10.1 h1:Dh3p5h3ZKOzbL8a344OkGVq23CedjKUSVcTTaLNKCjQ=
-github.com/tektoncd/pipeline v1.10.1/go.mod h1:KEXGPxGN/Mj9miXTXf2EA15+049xTxmmuHk8Nx44Sjg=
+github.com/tektoncd/pipeline v1.10.2 h1:xwKnTe+lpjpdgnT8AFORjgntSr63PlCI2u75q1C1LKc=
+github.com/tektoncd/pipeline v1.10.2/go.mod h1:KEXGPxGN/Mj9miXTXf2EA15+049xTxmmuHk8Nx44Sjg=
 github.com/tidwall/gjson v1.14.2/go.mod h1:/wbyibRr2FHMks5tjHJ5F8dMZh3AcwJEMf5vlfC0lxk=
 github.com/tidwall/gjson v1.18.0 h1:FIDeeyB800efLX89e5a8Y0BNH+LOngJyGrIWxG2FKQY=
 github.com/tidwall/gjson v1.18.0/go.mod h1:/wbyibRr2FHMks5tjHJ5F8dMZh3AcwJEMf5vlfC0lxk=
