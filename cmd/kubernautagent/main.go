@@ -336,6 +336,15 @@ func main() {
 
 	r := chi.NewRouter()
 
+	// authCleanupRef is set inside the chi route-setup closure and deferred here
+	// in the main scope so the JWKS cache goroutines live for the server's lifetime.
+	var authCleanupRef func()
+	defer func() {
+		if authCleanupRef != nil {
+			authCleanupRef()
+		}
+	}()
+
 	const maxRequestBodySize int64 = 1 << 20 // 1 MiB
 
 	apiRateLimiter := kaserver.NewRateLimiter(kaserver.RateLimitConfig{
@@ -361,7 +370,12 @@ func main() {
 		r.Use(kaserver.HTTPMetricsMiddleware(agentMetrics))
 		r.Use(apiRateLimiter.Middleware)
 
-		authMw := newAuthMiddleware(k8sInfra, logger)
+		authMw, authCleanup := newAuthMiddleware(k8sInfra, cfg.Interactive, logger)
+		if authCleanup != nil {
+			// authCleanup is captured and deferred in the outer main() scope below
+			// (not here — this is a chi route-setup closure that returns immediately).
+			authCleanupRef = authCleanup
+		}
 		if authMw != nil {
 			r.Use(authMw.Handler)
 			logger.Info("auth middleware enabled (DD-AUTH-014)",
@@ -1097,23 +1111,63 @@ func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validato
 }
 
 // newAuthMiddleware creates the DD-AUTH-014 auth middleware using the shared k8sInfra clientset.
-func newAuthMiddleware(infra *k8sInfra, logger logr.Logger) *auth.Middleware {
+// DD-AUTH-MCP-001 v2.0: When JWT providers are configured, wraps K8sAuthenticator
+// in a CompositeAuthenticator for Pattern A + Pattern B coexistence.
+// Returns a cleanup function that stops JWKS background goroutines (nil if no JWT).
+func newAuthMiddleware(infra *k8sInfra, interactiveCfg kaconfig.InteractiveConfig, logger logr.Logger) (*auth.Middleware, func()) {
 	if infra == nil || infra.clientset == nil {
 		logger.Info("K8s infrastructure not available, auth middleware disabled")
-		return nil
+		return nil, nil
 	}
 
-	authenticator := auth.NewK8sAuthenticator(infra.clientset)
+	k8sAuth := auth.NewK8sAuthenticator(infra.clientset)
 	authorizer := auth.NewK8sAuthorizer(infra.clientset)
-
 	namespace := detectNamespace()
 
-	return auth.NewMiddleware(authenticator, authorizer, auth.MiddlewareConfig{
+	var authenticator auth.Authenticator = k8sAuth
+	var cleanup func()
+
+	if interactiveCfg.Enabled && len(interactiveCfg.JWTProviders) > 0 {
+		entries := make([]auth.JWTProviderEntry, len(interactiveCfg.JWTProviders))
+		for i, p := range interactiveCfg.JWTProviders {
+			entries[i] = auth.JWTProviderEntry{
+				Issuer:        p.Issuer,
+				JWKSURL:       p.JWKSURL,
+				Audience:      p.Audience,
+				UsernameClaim: p.ClaimMappings.Username,
+				GroupsClaim:   p.ClaimMappings.Groups,
+			}
+		}
+
+		for _, e := range entries {
+			if strings.HasPrefix(e.JWKSURL, "http://") {
+				logger.Info("WARNING: JWKS URL uses plain HTTP — vulnerable to MITM in production; enforce HTTPS via kubernaut-operator admission webhook (kubernaut-operator#46)",
+					"provider", e.Issuer, "jwksURL", e.JWKSURL)
+			}
+		}
+
+		jwtAuth, err := auth.NewJWTAuthenticator(entries, logger.WithName("jwt-auth"))
+		if err != nil {
+			logger.Error(err, "failed to create JWTAuthenticator; Pattern B disabled, Pattern A active")
+		} else {
+			authenticator = auth.NewCompositeAuthenticator(jwtAuth, k8sAuth)
+			cleanup = func() {
+				jwtAuth.Close()
+				logger.Info("JWTAuthenticator JWKS caches stopped")
+			}
+			logger.Info("CompositeAuthenticator enabled (Pattern A + Pattern B)",
+				"jwtProviders", len(entries),
+			)
+		}
+	}
+
+	mw := auth.NewMiddleware(authenticator, authorizer, auth.MiddlewareConfig{
 		Namespace:    namespace,
 		Resource:     "services",
 		ResourceName: "kubernaut-agent",
 		Verb:         "create",
 	}, logger)
+	return mw, cleanup
 }
 
 // buildMCPHandler constructs the fully-wired MCP interactive handler with all

@@ -158,6 +158,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 
 		m.logger.V(2).Info("Token validated",
 			"user", user,
+			"providerType", userInfo.ProviderType,
 			"path", r.URL.Path,
 		)
 

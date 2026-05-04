@@ -755,7 +755,30 @@
             "inactivityTimeout": { "type": "string", "default": "10m", "description": "Session timeout after last activity." },
             "maxConcurrentSessions": { "type": "integer", "default": 5, "description": "Maximum concurrent interactive sessions per instance." },
             "rateLimitPerUser": { "type": "integer", "default": 10, "description": "Maximum requests per second per authenticated user." },
-            "maxAnalyzingTimeout": { "type": "string", "default": "45m", "description": "Extended analyzing timeout for RO when an interactive session is active. Prevents RO from timing out a RemediationRequest while an operator is investigating." }
+            "maxAnalyzingTimeout": { "type": "string", "default": "45m", "description": "Extended analyzing timeout for RO when an interactive session is active. Prevents RO from timing out a RemediationRequest while an operator is investigating." },
+            "jwtProviders": {
+              "type": "array",
+              "description": "JWT providers for Pattern B authentication (DD-AUTH-MCP-001 v2.0).",
+              "items": {
+                "type": "object",
+                "required": ["name", "issuer", "jwksURL", "audience"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string", "description": "Human-readable provider name." },
+                  "issuer": { "type": "string", "description": "JWT issuer URL (must match iss claim)." },
+                  "jwksURL": { "type": "string", "description": "JWKS endpoint URL for signature verification." },
+                  "audience": { "type": "string", "description": "Expected audience claim value." },
+                  "claimMappings": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "username": { "type": "string", "default": "preferred_username", "description": "JWT claim for username extraction." },
+                      "groups": { "type": "string", "default": "groups", "description": "JWT claim for groups extraction (supports dot-notation)." }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

@@ -16,13 +16,14 @@ limitations under the License.
 
 package mcp
 
-// Pattern B (delegated impersonation via apifrontend) is deferred until that
-// component exists. The previous ExtractEffectiveUser implementation was
-// architecturally incompatible with the shared auth middleware which strips
-// Impersonate-* headers before any handler sees them (#896).
+// Pattern B (delegated impersonation via apifrontend) uses JWT-based identity
+// delegation. The apifrontend forwards the user's original Keycloak JWT, and
+// KA's CompositeAuthenticator validates the signature via JWKS and extracts
+// identity from verified claims.
 //
-// When apifrontend ships, Pattern B should use a trust-boundary mechanism
-// (signed JWT, mTLS client cert, or internal-only header set by the gateway)
-// rather than raw Impersonate-* headers from external clients.
+// The previous SA-token + Impersonate-* header approach was superseded because
+// the middleware unconditionally strips Impersonate-* headers (#896), and
+// unsigned headers lack the cryptographic integrity of JWT claims.
 //
-// Reference: DD-AUTH-MCP-001, #895, #896.
+// Implementation: pkg/shared/auth/jwt_auth.go, pkg/shared/auth/composite_auth.go
+// Reference: DD-AUTH-MCP-001 v2.0, #895, #896, #1009.

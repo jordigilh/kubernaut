@@ -1,8 +1,8 @@
 # DD-AUTH-MCP-001: MCP Endpoint Security and User Impersonation
 
-**Status**: Proposed
+**Status**: Accepted
 **Decision Date**: 2026-04-29
-**Version**: 1.0
+**Version**: 2.0
 **Confidence**: 95%
 **Deciders**: Architecture Team
 **Applies To**: kubernaut-agent, kubernaut-apifrontend
@@ -23,7 +23,8 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 1.0 | 2026-04-29 | AI-assisted | Initial design |
+| 1.0 | 2026-04-29 | AI-assisted | Initial design: Pattern B via SA token + Impersonate-* headers |
+| 2.0 | 2026-05-03 | AI-assisted | **BREAKING**: Pattern B rewritten for JWT-based identity delegation. Removed SA-token + Impersonate-header approach. Added multi-issuer architecture (KEP-3331 aligned). Forward-compatible with v1.6 SPIRE. PoC validated. AF team approved. |
 
 ---
 
@@ -37,134 +38,186 @@ Issue #703 introduces interactive mode: human users connect via MCP (Model Conte
 
 ### Problem Statement
 
-How do we authenticate MCP clients, resolve their identity, and execute K8s API calls under the correct user identity -- without introducing OIDC/OAuth2 complexity into KA's binary?
+How do we authenticate MCP clients, resolve their identity, and execute K8s API calls under the correct user identity -- while maintaining a clean security boundary between external OIDC authentication (in apifrontend) and internal K8s operations (in KA)?
 
 ### Constraints
 
 - KA must remain internal-only (ClusterIP service, no ingress)
-- KA must not validate OIDC/OAuth2 tokens (security boundary: external auth belongs in apifrontend)
 - K8s API calls during interactive sessions must respect the user's RBAC
 - The same MCP endpoint must serve both in-cluster K8s clients (direct) and delegated clients (via apifrontend)
 - Audit trail must attribute every action to the correct identity
+- Forward-compatible with v1.6 SPIRE workload identity (#31)
 
 ---
 
 ## Decision Drivers
 
-1. **Security boundary**: OIDC validation + K8s impersonation in the same binary creates unacceptable blast radius
+1. **Security boundary**: External auth isolated from K8s impersonation infrastructure
 2. **Defense-in-depth**: Multiple independent verification layers for identity
-3. **Simplicity**: KA's auth stack remains single-concern (K8s TokenReview + SAR)
-4. **Auditability**: Every impersonated K8s API call must be attributable to a resolved identity
-5. **Backward compatibility**: Autonomous mode (KA SA) must be completely unaffected
+3. **Tamper-proof identity**: Cryptographic signature verification, not unsigned headers
+4. **Auditability**: Every impersonated K8s API call must be attributable to a resolved identity with provider metadata
+5. **Backward compatibility**: Autonomous mode (KA SA) and Pattern A (direct K8s clients) completely unaffected
+6. **Forward compatibility**: Multi-issuer architecture supports SPIRE addition in v1.6 without middleware refactor
 
 ---
 
 ## Alternatives Considered
 
-### Alternative A: Dual-auth in KA (OIDC + K8s) -- REJECTED
+### Alternative A: Dual-auth in KA (full OIDC + K8s) -- REJECTED
 
-**Approach**: KA validates both OIDC tokens (external users) and K8s tokens (internal clients) using issuer-based routing.
+**Approach**: KA validates both OIDC tokens (external users) and K8s tokens (internal clients) using issuer-based routing, with full OIDC configuration (discovery, key rotation, session management).
 
 **Pros**:
 - Single deployment
 - No additional service
 
 **Cons**:
-- OIDC validation library + JWKS key rotation in the same binary that executes impersonation
-- Chain authenticator fallthrough creates non-deterministic routing
+- Full OIDC stack (discovery, key rotation, session management) in the same binary that executes impersonation
 - Blast radius: OIDC vulnerability exposes impersonation infrastructure
+- Complexity: chain authenticator fallthrough creates non-deterministic routing
 
 **Confidence**: 40% (rejected)
 
-### Alternative B: kubernaut-apifrontend as auth gateway -- CHOSEN
+### Alternative B (v1.0): SA token + Impersonate-* headers -- SUPERSEDED
 
-**Approach**: External authentication (OIDC/OAuth2) lives in a separate service (`kubernaut-apifrontend`). KA's MCP endpoint is internal-only with K8s TokenReview + SAR.
+**Approach**: AF authenticates with its own SA token and injects `Impersonate-User`/`Impersonate-Group` headers. KA verifies AF's SA via TokenReview + SAR check for `impersonate` verb.
 
 **Pros**:
-- Clean security boundary: external auth isolated from impersonation
 - KA auth stack unchanged from v1.4
-- Apifrontend can evolve independently (Google ADK, multiple OIDC providers)
-- Defense-in-depth: apifrontend validates external tokens, KA validates impersonation authorization
 
 **Cons**:
-- Additional service to deploy
-- MCP-to-MCP proxy adds latency (~1ms internal)
+- Two tokens (AF SA + user identity in headers) — more complex than necessary
+- Unsigned headers — `Impersonate-*` headers are not cryptographically bound to the authenticated session
+- Contradicts v1.5 header stripping (#896) — middleware strips all `Impersonate-*` headers unconditionally, requiring a "preserved copy" workaround
+- Not forward-compatible with SPIRE workload identity
 
-**Confidence**: 95% (chosen)
+**Confidence**: 60% (superseded by Alternative C)
+
+### Alternative C: JWT-based identity delegation -- CHOSEN (v2.0)
+
+**Approach**: AF forwards the user's original Keycloak JWT to KA. KA performs lightweight JWT signature verification via JWKS (not full OIDC), extracts identity from verified claims, and uses that identity for impersonated K8s API calls.
+
+**Pros**:
+- One token, not two — AF forwards the same JWT it validated
+- Tamper-proof — cryptographic signature verification, not unsigned headers
+- No "preserved copy" workaround — identity comes from verified JWT claims, not stripped headers
+- Forward-compatible — multi-issuer architecture adds SPIRE as a second provider in v1.6 without middleware changes
+- Clean security model — KA trusts cryptographic proof, not network-level trust
+
+**Cons**:
+- KA validates JWT signatures (lightweight JWKS verification, not full OIDC)
+- JWKS endpoint dependency at startup (mitigated: pre-warm with timeout, soft-disable on failure)
+- JWT replay within validity window (mitigated: defense-in-depth layers, v1.6 path: short-lived internal JWTs)
+
+**Confidence**: 95% (chosen — PoC validated, AF team approved)
+
+**Why this differs from Alternative A**: Alternative A was rejected for bringing *full OIDC* into KA (discovery, key rotation, session management). Alternative C only performs *JWT signature verification* via a pre-configured JWKS URL — no discovery, no session management, no token exchange. The blast radius is strictly bounded to signature verification.
 
 ---
 
 ## Decision
 
-### Chosen: Alternative B -- kubernaut-apifrontend as auth gateway
+### Chosen: Alternative C -- JWT-based identity delegation (v2.0)
 
-KA's MCP endpoint is **internal-only** (ClusterIP, K8s TokenReview + SAR). External clients (RHDH Console, CLI via ingress) connect through `kubernaut-apifrontend` (separate repo, Google ADK), which handles OIDC/OAuth2 authentication and proxies to KA using MCP-to-MCP with K8s impersonation headers.
+KA's MCP endpoint is **internal-only** (ClusterIP, K8s TokenReview + SAR for Pattern A clients). External clients connect through `kubernaut-apifrontend`, which handles OIDC/OAuth2 authentication and **forwards the original user JWT** to KA. KA validates the JWT signature via JWKS and extracts identity from verified claims.
 
 ### Architecture
 
 ```mermaid
 flowchart LR
     AA["AA Controller\n(K8s SA token)"]
-    APF["kubernaut-apifrontend\n(Google ADK)\n(OIDC/OAuth2 → K8s)"]
-    KA["KA MCP Server\n(internal)\n(TokenReview + SAR)"]
+    APF["kubernaut-apifrontend\n(Google ADK)\n(OIDC/OAuth2 → JWT forward)"]
+    KA["KA MCP Server\n(internal)\n(CompositeAuthenticator)"]
     K8S["K8s API Server"]
 
-    AA -->|"Bearer: SA token\n(Pattern A)"| KA
-    APF -->|"Bearer: SA token\n+ Impersonate-User/Group\n(Pattern B)"| KA
+    AA -->|"Bearer: SA token\n(Pattern A → K8s TokenReview)"| KA
+    APF -->|"Bearer: user JWT\n(Pattern B → JWKS verify)"| KA
     KA -->|"ImpersonationConfig\n{UserName, Groups}"| K8S
 ```
 
 ### Impersonation Model (Dual-Pattern)
 
-#### Pattern A: Direct In-Cluster Clients
+#### Pattern A: Direct In-Cluster Clients (unchanged from v1.0)
 
 Bearer token = caller's K8s token. KA resolves identity via TokenReview, uses that identity for impersonated K8s calls.
 
 ```
 Client → Authorization: Bearer <caller-token>
-KA     → TokenReview → username + groups
-KA     → rest.ImpersonationConfig{UserName: username, Groups: groups}
+KA     → CompositeAuthenticator → isJWT? No → K8sAuthenticator
+       → TokenReview → username + groups
+       → UserInfo{Username, Groups, ProviderType: "k8s:tokenreview"}
+       → rest.ImpersonationConfig{UserName: username, Groups: groups}
 K8s    → API call as impersonated user
 ```
 
-#### Pattern B: Delegated via apifrontend
+#### Pattern B: Delegated via apifrontend (v2.0 — JWT-based)
 
-Bearer token = apifrontend's SA token + `Impersonate-User`/`Impersonate-Group` headers. KA verifies apifrontend SA has `impersonate` RBAC via SAR, then uses delegated identity.
+Bearer token = user's original Keycloak JWT. KA validates signature via JWKS, extracts identity from verified claims.
 
 ```
-apifrontend → Authorization: Bearer <apifrontend-SA-token>
-              Impersonate-User: user-a@corp
-              Impersonate-Group: system:authenticated, org:team-sre
-KA          → TokenReview(SA-token) → apifrontend-sa
-KA          → SAR(apifrontend-sa, impersonate, users) → allowed
-KA          → rest.ImpersonationConfig{UserName: "user-a@corp", Groups: [...]}
-K8s         → API call as user-a@corp
+apifrontend → Authorization: Bearer <user-keycloak-jwt>
+KA          → CompositeAuthenticator → isJWT? Yes → JWTAuthenticator
+            → Parse JWT (unverified) → extract iss claim
+            → Route to matching JWTProviderConfig by issuer URL
+            → Verify signature against JWKS endpoint
+            → Extract username from configured claim path (e.g., preferred_username)
+            → Extract groups from configured claim path (e.g., groups)
+            → UserInfo{Username, Groups, ProviderType: "jwt:<issuer>"}
+            → SAR check (username has create services/kubernaut-agent)
+            → rest.ImpersonationConfig{UserName, Groups}
+K8s         → API call as user
 ```
 
-### Effective User Extraction
+### CompositeAuthenticator Routing Logic
 
 ```go
-func extractEffectiveUser(ctx context.Context, req *http.Request, preserved http.Header) (*UserInfo, error) {
-    // Pattern B detection: SA token + Impersonate-User header
-    impUser := preserved.Get("Impersonate-User")
-    if impUser != "" {
-        // Verify caller has impersonate RBAC via SAR
-        allowed, err := authorizer.CheckAccessWithGroup(ctx, callerUser,
-            "", "", "users", impUser, "impersonate")
-        if !allowed {
-            return nil, ErrForbiddenImpersonation
-        }
-        groups := preserved.Values("Impersonate-Group")
-        return &UserInfo{Username: impUser, Groups: groups}, nil
+func (c *CompositeAuthenticator) ValidateTokenFull(ctx context.Context, token string) (UserInfo, error) {
+    if !isJWT(token) {
+        return c.k8sAuth.ValidateTokenFull(ctx, token)
     }
-    // Pattern A: identity from TokenReview
-    return &UserInfo{Username: callerUser, Groups: callerGroups}, nil
+
+    userInfo, err := c.jwtAuth.ValidateTokenFull(ctx, token)
+    if err != nil {
+        if errors.Is(err, ErrIssuerNotFound) {
+            // Unknown issuer → fall back to K8s TokenReview
+            return c.k8sAuth.ValidateTokenFull(ctx, token)
+        }
+        // Known issuer, bad token → fail-closed, NO fallback
+        return UserInfo{}, err
+    }
+    return userInfo, nil
 }
 ```
 
-### Header Stripping (Defense-in-Depth)
+**Critical security property**: `ErrIssuerNotFound` (unknown provider → fallback) vs `ErrTokenInvalid` (known provider, bad token → fail-closed). This prevents an attacker from forging a JWT with a known issuer to bypass into the K8s TokenReview path.
 
-Middleware strips ALL `Impersonate-*` headers at entry, before any processing:
+### Multi-Issuer Architecture (KEP-3331 aligned)
+
+KA supports multiple JWT providers via `InteractiveConfig.JWTProviders`:
+
+```yaml
+interactive:
+  enabled: true
+  jwtProviders:
+    - name: "keycloak"
+      issuer: "https://keycloak.example.com/realms/kubernaut"
+      jwksURL: "https://keycloak.example.com/realms/kubernaut/protocol/openid-connect/certs"
+      audience: "kubernaut-agent"
+      claimMappings:
+        username: "preferred_username"
+        groups: "groups"
+    # v1.6: SPIRE provider added here without middleware changes
+    # - name: "spire"
+    #   issuer: "spiffe://cluster.local"
+    #   jwksURL: "https://spire-server:8081/keys"
+    #   audience: "kubernaut-agent"
+```
+
+v1.5 ships with one provider (Keycloak). v1.6 adds SPIRE as a second provider — the CompositeAuthenticator and JWTAuthenticator require zero changes.
+
+### Header Stripping (Defense-in-Depth — unchanged)
+
+Middleware strips ALL `Impersonate-*` headers at entry, before any processing. This is orthogonal to Pattern B's JWT-based identity extraction:
 
 ```go
 r.Header.Del("Impersonate-User")
@@ -177,11 +230,27 @@ for key := range r.Header {
 }
 ```
 
-MCP auth handler reads from a **preserved copy** (captured before stripping) only after SAR verification for Pattern B.
+Pattern B extracts identity from **verified JWT claims**, not from HTTP headers. The header stripping defense layer remains active for both patterns.
+
+### JWKS Pre-warm at Startup
+
+`NewJWTAuthenticator` performs a synchronous JWKS fetch with a 15-second timeout for each configured provider during construction:
+
+```go
+jwtAuth, err := auth.NewJWTAuthenticator(entries, logger)
+if err != nil {
+    logger.Error(err, "failed to create JWTAuthenticator; Pattern B disabled, Pattern A active")
+    // authenticator = k8sAuth (Pattern A only)
+} else {
+    authenticator = auth.NewCompositeAuthenticator(jwtAuth, k8sAuth)
+}
+```
+
+If **any** provider's JWKS endpoint is unreachable at startup, `NewJWTAuthenticator` returns an error and the `CompositeAuthenticator` is not created — Pattern B is disabled **globally**. Pattern A (K8s TokenReview) remains fully operational. For v1.5 with a single OIDC provider (Keycloak), this is equivalent to per-provider disable. Per-provider degradation may be added in v1.6 when SPIRE is introduced as a second provider.
 
 ### Non-K8s Tool Calls
 
-Prometheus, DataStorage, and log queries use KA SA (no user-level auth available on those systems). This is a known limitation documented below.
+Prometheus, DataStorage, and log queries use KA SA (no user-level auth available on those systems). This is a known limitation documented in Known Limitations.
 
 ### Layered Error Model
 
@@ -213,7 +282,7 @@ Prometheus, DataStorage, and log queries use KA SA (no user-level auth available
 | Helm values | `kubernautAgent.interactive.enabled` |
 | Operator CR | `spec.kubernautAgent.interactive.enabled` |
 | ConfigMap rendered | `interactive.enabled` |
-| MCPConfig | `// Deprecated: v1.4 MCP client config (outbound). Not related to interactive mode.` |
+| JWT providers | `kubernautAgent.interactive.jwtProviders[]` |
 
 ### Metric Definitions
 
@@ -223,6 +292,7 @@ Prometheus, DataStorage, and log queries use KA SA (no user-level auth available
 | `aiagent_mcp_interactive_takeover_total` | Counter | Total takeover events |
 | `aiagent_mcp_interactive_lease_contention_total` | Counter | Lease acquisition failures (contention) |
 | `aiagent_mcp_interactive_command_duration_seconds` | Histogram | Duration of interactive tool calls |
+| `aiagent_mcp_auth_provider_total` | Counter | Authentication attempts by provider type (jwt, k8s) |
 
 ### Data Classification Policy
 
@@ -232,30 +302,37 @@ Prometheus, DataStorage, and log queries use KA SA (no user-level auth available
 | `aiagent.llm.request` | Internal | Configurable prompt verbosity |
 | `aiagent.llm.response` | Internal | Configurable response verbosity |
 | `aiagent.session.*` | Operational | No redaction needed |
+| `aiagent.auth.jwt_validated` | Operational | Log issuer + username, NOT token value |
 
 ---
 
 ## Consequences
 
 ### Positive Consequences
-1. Clean security boundary: KA never touches OIDC tokens
-2. KA auth stack unchanged from v1.4 (zero regression risk for autonomous mode)
-3. Apifrontend can evolve independently (multiple OIDC providers, Google ADK)
-4. Full audit trail with user attribution for every impersonated K8s call
+1. Clean security boundary: KA performs lightweight JWT signature verification, not full OIDC
+2. Tamper-proof identity: Cryptographic signature verification replaces unsigned `Impersonate-*` headers
+3. KA auth stack for Pattern A unchanged from v1.4 (zero regression risk for autonomous mode)
+4. Forward-compatible: multi-issuer architecture supports SPIRE in v1.6 without middleware changes
+5. Full audit trail with user attribution including provider metadata (ProviderType)
+6. Apifrontend integration simplified: JWT pass-through, no token minting required
 
 ### Negative Consequences
-1. Additional service (apifrontend) required for external access
-   - **Mitigation**: Apifrontend is optional. KA operates independently for autonomous remediation. Interactive mode is additive.
-2. Non-K8s tools (Prometheus, DS) use KA SA -- no user-level auth
-   - **Mitigation**: Prometheus has no user-level auth. DS access is internal. Documented as known trust boundary.
+1. KA gains a JWKS dependency at startup
+   - **Mitigation**: Pre-warm with 15s timeout; failure disables Pattern B globally but Pattern A is unaffected
+2. JWT replay within validity window
+   - **Mitigation**: Defense-in-depth (ClusterIP, NetworkPolicy, K8s RBAC scoping, audit trail). v1.6: AF mints short-lived (30s) internal JWTs
+3. Non-K8s tools (Prometheus, DS) use KA SA -- no user-level auth
+   - **Mitigation**: Prometheus has no user-level auth. DS access is internal. Documented as known trust boundary
 
 ### Risks
+
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| Apifrontend SA token compromised | Low | High | K8s RBAC of impersonated user constrains access; audit logs capture all impersonation |
-| KA SA token compromised | Low | High | Feature gate disables interactive mode; autonomous mode uses KA SA normally |
-| Impersonation scope unbounded | Medium | Medium | Defense-in-depth: apifrontend CEL validation, NetworkPolicy, K8s audit, KA audit events |
-| Session HA (in-memory store) | Medium | Low | v1.5 single-replica. Cancel+reconstruct from DS audit events. v1.6: kubernaut#892 |
+| JWKS endpoint unavailable at startup | Medium | Low | Pre-warm with 15s timeout; Pattern B disabled globally; Pattern A unaffected |
+| JWT replay within validity window | Medium | Medium | Defense-in-depth; v1.6: short-lived internal JWTs |
+| ClusterRoleBinding group misconfiguration | Low | Medium | Helm values documentation; integration test; Helm template test |
+| Breaking Pattern A auth | Low | Critical | CompositeAuthenticator passthrough; existing test regression suite |
+| alg confusion attack (alg:none, HS256) | Low | Critical | RS256-only allowlist; explicit alg validation; PoC test verified |
 
 ---
 
@@ -263,19 +340,21 @@ Prometheus, DataStorage, and log queries use KA SA (no user-level auth available
 
 | Requirement | Status | Notes |
 |-------------|--------|-------|
-| BR-INTERACTIVE-001 | Pending | Interactive sessions via MCP |
-| BR-INTERACTIVE-002 | Pending | User-scoped RBAC via impersonation |
-| BR-INTERACTIVE-003 | Pending | Audit attribution via `acting_user` + `session_id` |
+| BR-INTERACTIVE-001 | Active | Interactive sessions via MCP |
+| BR-INTERACTIVE-002 | Active | User-scoped RBAC via JWT-based impersonation |
+| BR-INTERACTIVE-003 | Active | Audit attribution via `acting_user` + `session_id` + `provider_type` |
 
 ---
 
 ## Validation Strategy
 
-1. CP-2 (SECURITY GATE): 14 penetration scenarios covering header injection, auth bypass, impersonation escalation
-2. Unit tests for `extractEffectiveUser` (Pattern A, B, rejection cases)
-3. Unit tests for `ValidateTokenFull` (groups extraction from TokenReview)
-4. Integration tests for MCP connectivity with valid/invalid tokens
-5. E2E: impersonated K8s API call reaches API server as the impersonated user
+1. TP-1009 test plan: 31 unit tests + 9 integration tests across 5 checkpoints
+2. Unit tests for JWTAuthenticator (JWKS verification, claim extraction, multi-issuer routing)
+3. Unit tests for CompositeAuthenticator (token routing, fail-closed semantics, Pattern A passthrough)
+4. Integration tests for full middleware pipeline with mock JWKS
+5. Security-adversarial tests: alg:none rejection, cross-provider rejection, expired JWT, claim injection
+6. Pattern A regression: existing auth test suite unchanged and passing
+7. Helm template tests: ClusterRoleBinding rendering with JWT group
 
 ---
 
@@ -285,11 +364,13 @@ Prometheus, DataStorage, and log queries use KA SA (no user-level auth available
 2. **Impersonation scope unbounded (H-SEC-1)**: K8s doesn't support `resourceNames` for users/groups impersonation. Defense-in-depth: (1) apifrontend CEL validation, (2) NetworkPolicy, (3) K8s audit logs, (4) KA `EventTypeInteractiveK8sCall` audit events.
 3. **Non-K8s tools use KA SA**: Prometheus and DS queries during interactive mode execute under KA SA, not user identity. These systems lack user-level authentication.
 4. **SAR granularity**: One SAR (`services/kubernaut-agent/create`) for all MCP callers. No per-tool authorization. v1.6 path: per-tool SAR.
-5. **EXT-001 divergence**: PROPOSAL-EXT-001 specified DS session persistence for v1.5. Current plan uses in-memory with cancel+reconstruct model, where the audit trail IS the session state. Rationale: cancel+reconstruct eliminates the need for a separate persistence layer. Acceptable for single-replica v1.5.
+5. **JWT replay**: Forwarded JWT can be replayed within its validity window. Mitigated by defense-in-depth (ClusterIP, NetworkPolicy, K8s RBAC scoping, audit trail). v1.6 path: AF mints short-lived (30s) internal JWTs.
+6. **No `jti` dedup**: No JWT ID tracking for replay detection. Acceptable for v1.5 given internal-only network. v1.6 consideration.
+7. **Claim mapping simplicity**: v1.5 uses dot-notation paths, not CEL expressions. Sufficient for Keycloak. v1.6 may adopt CEL for parity with AF (KEP-3331).
 
 ## Graceful Degradation (M-PROD-2)
 
-Apifrontend is optional. KA operates independently for autonomous remediation. Interactive mode is additive -- apifrontend outage affects only interactive clients, not the autonomous pipeline.
+Apifrontend is optional. KA operates independently for autonomous remediation. Interactive mode is additive -- apifrontend outage affects only interactive clients, not the autonomous pipeline. JWKS pre-warm failure disables Pattern B only; Pattern A continues to function.
 
 ## User Documentation (H-PROD-1)
 
@@ -305,8 +386,32 @@ PR6 (hard requirement) creates `docs/user-guide/interactive-mode.md` covering: h
 - kubernaut-operator#26: KA SA `impersonate` RBAC
 - kubernaut#895: Authenticator `ValidateTokenFull` returning groups
 - kubernaut#896: Impersonation header stripping in middleware
+- kubernaut#1009: Pattern B trust-boundary mechanism
+- kubernaut-apifrontend#2: KEP-3331 multi-provider OIDC
+- kubernaut-apifrontend#3: MCP-to-MCP proxy (JWT forwarding)
+- kubernaut-apifrontend#55: End-to-end authz enforcement
+- kubernaut-apifrontend#31: SPIFFE workload identity binding (v1.6)
+- TP-1009: Test plan (docs/tests/1009/TEST_PLAN.md)
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-04-29
+## v1.0 → v2.0 Migration Notes
+
+### What changed
+- **Pattern B mechanism**: SA-token + Impersonate-* headers → JWT-based identity delegation
+- **KA auth responsibility**: Pure K8s TokenReview → CompositeAuthenticator (K8s TokenReview + lightweight JWT JWKS verification)
+- **Identity extraction**: HTTP headers (unsigned) → JWT claims (cryptographically signed)
+- **`extractEffectiveUser` function**: Removed. Identity comes from CompositeAuthenticator, not from preserved header inspection
+
+### What did NOT change
+- **Pattern A**: Completely unchanged. K8s SA tokens validated via TokenReview
+- **Header stripping**: `stripImpersonationHeaders` remains active for defense-in-depth
+- **SAR authorization**: Both patterns go through SAR check
+- **Error model**: RFC 7807 + JSON-RPC error codes unchanged
+- **Feature gates**: Same `interactive.enabled` gate
+- **Metrics, data classification, session management**: Unchanged
+
+---
+
+**Document Version**: 2.0
+**Last Updated**: 2026-05-03
