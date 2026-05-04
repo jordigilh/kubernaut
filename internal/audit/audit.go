@@ -66,6 +66,7 @@ func (e *LogEmitter) Emit(ctx context.Context, event Event) {
 
 	kv := []interface{}{
 		"event_type", string(event.Type),
+		"timestamp", event.Timestamp.Format(time.RFC3339Nano),
 		"request_id", event.RequestID,
 	}
 	if event.UserID != "" {

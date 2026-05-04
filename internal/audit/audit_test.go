@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/funcr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -38,14 +37,20 @@ var _ = Describe("Audit", func() {
 			Expect(captured).To(ContainSubstring("10.0.0.1"))
 		})
 
-		It("UT-AF-AUD-002: sets timestamp automatically", func() {
-			logger := logr.Discard()
-			emitter := audit.NewLogEmitter(logger)
-
+		It("UT-AF-AUD-002: sets timestamp automatically on emitted events", func() {
 			event := audit.Event{Type: audit.EventAuthFailure}
-			Expect(event.Timestamp.IsZero()).To(BeTrue())
+			Expect(event.Timestamp.IsZero()).To(BeTrue(), "timestamp should be zero before Emit")
 
+			var captured string
+			logger := funcr.New(func(prefix, args string) {
+				captured = args
+			}, funcr.Options{})
+			emitter := audit.NewLogEmitter(logger)
 			emitter.Emit(context.Background(), event)
+
+			Expect(captured).To(ContainSubstring("timestamp"))
+			Expect(captured).NotTo(ContainSubstring("0001-01-01"),
+				"logged timestamp must not be the zero time value")
 		})
 
 		It("UT-AF-AUD-003: omits empty user_id and source_ip from log output", func() {

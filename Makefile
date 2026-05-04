@@ -2,7 +2,7 @@ IMG ?= quay.io/kubernaut/apifrontend:latest
 CONTROLLER_GEN ?= $(shell which controller-gen 2>/dev/null)
 GINKGO ?= $(shell which ginkgo 2>/dev/null || echo "go run github.com/onsi/ginkgo/v2/ginkgo")
 LOCALBIN ?= $(shell pwd)/bin
-COVERPKGS = ./internal/auth/...,./internal/ratelimit/...,./internal/security/...,./internal/httputil/...,./internal/logging/...,./internal/requestid/...,./internal/audit/...
+COVERPKGS = ./internal/auth/...,./internal/ratelimit/...,./internal/security/...,./internal/httputil/...,./internal/logging/...,./internal/requestid/...,./internal/audit/...,./internal/metrics/...
 
 .PHONY: all
 all: build

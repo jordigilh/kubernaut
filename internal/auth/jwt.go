@@ -11,6 +11,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
 	"github.com/google/cel-go/cel"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
 )
@@ -60,6 +61,7 @@ type JWTValidator struct {
 	k8sEnabled bool
 	httpClient *http.Client
 	cbTimeout  time.Duration
+	cbGauge    *prometheus.GaugeVec
 }
 
 // JWTValidatorOption is a functional option for configuring JWTValidator.
@@ -79,6 +81,11 @@ func WithTokenReviewer(reviewer *TokenReviewer) JWTValidatorOption {
 // Intended for testing with short timeouts.
 func WithCBTestTimeout(d time.Duration) JWTValidatorOption {
 	return func(v *JWTValidator) { v.cbTimeout = d }
+}
+
+// WithCBMetrics sets the Prometheus gauge for circuit breaker state reporting.
+func WithCBMetrics(g *prometheus.GaugeVec) JWTValidatorOption {
+	return func(v *JWTValidator) { v.cbGauge = g }
 }
 
 // NewJWTValidator creates a new JWTValidator from the given config.
@@ -120,6 +127,9 @@ func NewJWTValidator(cfg AuthConfig, opts ...JWTValidatorOption) (*JWTValidator,
 	var cacheOpts []JWKSCacheOption
 	if v.cbTimeout != 30*time.Second {
 		cacheOpts = append(cacheOpts, WithCBTimeout(v.cbTimeout))
+	}
+	if v.cbGauge != nil {
+		cacheOpts = append(cacheOpts, WithCBGauge(v.cbGauge))
 	}
 	v.cache = NewJWKSCache(v.httpClient, issuers, cacheOpts...)
 

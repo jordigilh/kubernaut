@@ -52,9 +52,9 @@ func main() {
 
 	authCfg := auth.AuthConfig{}
 	if len(authCfg.JWT) == 0 {
-		logger.Info("WARNING: no JWT providers configured — all bearer tokens will be rejected unless K8s TokenReview is enabled")
+		logger.Error(nil, "no JWT providers configured — all bearer tokens will be rejected unless K8s TokenReview is enabled")
 	}
-	validator, err := auth.NewJWTValidator(authCfg)
+	validator, err := auth.NewJWTValidator(authCfg, auth.WithCBMetrics(metricsReg.CircuitBreakerState))
 	if err != nil {
 		logger.Error(err, "failed to create JWT validator")
 		os.Exit(1)

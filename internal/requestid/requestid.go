@@ -17,7 +17,10 @@ const headerName = "X-Request-ID"
 // maxIDLen limits accepted X-Request-ID values to prevent log injection.
 const maxIDLen = 128
 
-// validIDPattern accepts UUID-like strings, alphanumeric, dashes, underscores.
+// validIDPattern accepts UUID-like strings: alphanumeric, dashes, underscores, and dots.
+// Dots are allowed to support hierarchical correlation IDs (e.g., "req.sub-span.123").
+// Note: some log aggregators (e.g., Elasticsearch) may expand dotted field values;
+// consumers should use the raw string value, not interpret dots as path separators.
 var validIDPattern = regexp.MustCompile(`^[a-zA-Z0-9\-_\.]{1,128}$`)
 
 // Middleware generates or accepts an X-Request-ID, stores it in context,
