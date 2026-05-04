@@ -441,6 +441,26 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		})
 	})
 
+	Describe("UT-KA-1026-006: handleStart emits start_failed on ErrMaxSessionsReached", func() {
+		It("should emit RecordInteractiveTakeover(start_failed) on max sessions", func() {
+			metrics := &recordingToolMetrics{}
+			sessMgr.takeoverErr = mcpinternal.ErrMaxSessionsReached
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
+				tools.WithAutonomousManager(autoMgr),
+				tools.WithToolMetrics(metrics),
+			)
+
+			input := tools.InvestigateInput{RRID: "rr-001", Action: tools.ActionStart}
+			_, err := toolWithMetrics.Handle(ctx, input, testUser)
+			Expect(err).To(HaveOccurred())
+
+			var mcpErr *tools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue())
+			Expect(mcpErr.Code).To(Equal("max_sessions"))
+			Expect(metrics.takeoverOutcomes).To(ContainElement("start_failed"))
+		})
+	})
+
 	Describe("UT-KA-1026-003: handleTakeover emits takeover_race_lost when Lease held", func() {
 		It("should emit RecordInteractiveTakeover(takeover_race_lost) on ErrLeaseHeld", func() {
 			metrics := &recordingToolMetrics{}
