@@ -56,10 +56,11 @@ linters:
           - gosec
         text: "G101"
         path: "(cmd/|internal/kubernautagent/|pkg/workflowexecution/|pkg/shared/)"
-      # G304: file paths from config/CLI flags are expected in K8s workloads
+      # G304: file paths from config loaders, credential resolvers, and TLS helpers
       - linters:
           - gosec
         text: "G304"
+        path: "(cmd/|/config/|/config\\.go|credentials/|tls/|tls\\.go|resolver\\.go|signalmode\\.go)"
       # G306: test fixture files don't need 0600 permissions
       - path: _test\.go
         linters:

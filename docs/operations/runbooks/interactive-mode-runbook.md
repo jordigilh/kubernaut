@@ -227,9 +227,9 @@ kubectl logs -n kubernaut-system deploy/kubernaut-agent | grep "Cleanup"
 aiagent_mcp_interactive_sessions_active
 ```
 
-### Session Start Rate (per minute)
+### Session Acquisition Rate (per minute)
 ```promql
-rate(aiagent_mcp_interactive_takeover_total[5m]) * 60
+rate(aiagent_mcp_interactive_takeover_total{outcome=~".*_success"}[5m]) * 60
 ```
 
 ### Lease Contention Rate
@@ -253,7 +253,11 @@ histogram_quantile(0.50,
 
 ### Takeover Success Rate
 ```promql
-rate(aiagent_mcp_interactive_takeover_total{outcome="success"}[5m])
+(
+  rate(aiagent_mcp_interactive_takeover_total{outcome="start_success"}[5m])
+  +
+  rate(aiagent_mcp_interactive_takeover_total{outcome="takeover_success"}[5m])
+)
 /
 rate(aiagent_mcp_interactive_takeover_total[5m])
 ```
