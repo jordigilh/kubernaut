@@ -456,7 +456,7 @@ stateDiagram-v2
 |----------|------|---------|
 | `/healthz` | 8443 | Liveness probe (process alive) |
 | `/readyz` | 8443 | Readiness probe (dependencies reachable) |
-| `/metrics` | 8080 | Prometheus metrics scrape |
+| `/metrics` | 8443 | Prometheus metrics scrape (unauthenticated, same port) |
 
 ---
 
@@ -603,7 +603,7 @@ AF ServiceAccount permissions:
 | Resource | Managed by |
 |----------|-----------|
 | Deployment (2 replicas) | Operator |
-| Service (8443 app, 8080 metrics) | Operator |
+| Service (8443 app + metrics) | Operator |
 | Route (edge TLS termination) | Operator |
 | NetworkPolicy (OPS-3 full spec) | Operator |
 | PodDisruptionBudget (minAvailable: 1) | Operator |

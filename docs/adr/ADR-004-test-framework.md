@@ -1,6 +1,6 @@
 # ADR-004: Test Framework Selection
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-015](ADR-015-ginkgo-mandate.md)
 **Date:** 2026-05-03
 **Deciders:** AF team
 **Source:** #42, QA-1 (#63)

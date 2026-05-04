@@ -1,6 +1,6 @@
 # ADR-010: Load Testing Tool Selection
 
-**Status:** Accepted
+**Status:** Accepted (speculative — implementation deferred to Phase 2 load testing)
 **Date:** 2026-05-03
 **Deciders:** AF team
 **Source:** #43 design

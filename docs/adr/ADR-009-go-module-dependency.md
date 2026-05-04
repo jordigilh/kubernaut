@@ -25,6 +25,15 @@ Import specific packages:
 - `pkg/gateway/types` (SHA256 fingerprinting via `ResolveFingerprint`, owner resolution)
 - `pkg/gateway/processing` (signal processing types)
 
+## Implementation Status
+
+**Deferred to PR6 (A2A handler).** PR2 (auth middleware) uses local CRD types only
+(`api/apifrontend/v1alpha1`). The kubernaut module dependency will be added when
+AF first needs kubernaut CRD types for RemediationRequest status reads and
+SignalProcessing creation. Until then, `RemediationRequestRef` uses an untyped
+`ObjectRef{Name, Namespace}` — compile-time type safety is limited to the AF
+side of the contract.
+
 ## Consequences
 
 - Compile-time type safety: AF uses exact same types as kubernaut controllers
