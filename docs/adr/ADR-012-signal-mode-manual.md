@@ -1,6 +1,6 @@
 # ADR-012: Signal Mode `manual` for User-Initiated Investigations
 
-**Status:** Accepted
+**Status:** Accepted (speculative — implementation deferred to PR6 A2A handler)
 **Date:** 2026-04-30
 **Deciders:** AF team, kubernaut team
 **Source:** DEV-2 (#58), kubernaut#1014

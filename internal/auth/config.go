@@ -38,8 +38,8 @@ type ValidationRule struct {
 	Message    string `yaml:"message"`
 }
 
-// AuthConfig is the top-level authentication configuration.
-type AuthConfig struct {
+// Config is the top-level authentication configuration.
+type Config struct {
 	JWT        []ProviderConfig     `yaml:"jwt,omitempty"`
 	Kubernetes KubernetesAuthConfig `yaml:"kubernetes,omitempty"`
 }
@@ -49,8 +49,8 @@ type KubernetesAuthConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 
-// Validate checks the AuthConfig for structural errors.
-func (c *AuthConfig) Validate() error {
+// Validate checks the Config for structural errors.
+func (c *Config) Validate() error {
 	seen := make(map[string]struct{}, len(c.JWT))
 	for _, p := range c.JWT {
 		if _, exists := seen[p.Issuer.URL]; exists {
@@ -61,15 +61,18 @@ func (c *AuthConfig) Validate() error {
 	return nil
 }
 
-// LoadAuthConfigFromFile reads and parses an AuthConfig from a YAML file.
-func LoadAuthConfigFromFile(path string) (AuthConfig, error) {
+// LoadConfigFromFile reads and parses a Config from a YAML file.
+func LoadConfigFromFile(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return AuthConfig{}, fmt.Errorf("read auth config: %w", err)
+		return Config{}, fmt.Errorf("read auth config: %w", err)
 	}
-	var cfg AuthConfig
+	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return AuthConfig{}, fmt.Errorf("parse auth config: %w", err)
+		return Config{}, fmt.Errorf("parse auth config: %w", err)
 	}
-	return cfg, cfg.Validate()
+	if err := cfg.Validate(); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
 }

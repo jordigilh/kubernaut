@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -25,18 +26,10 @@ type MiddlewareConfig struct {
 	Auditor   audit.Emitter
 }
 
-// Middleware returns an HTTP middleware that performs:
-//   - L1 body size enforcement via http.MaxBytesReader
-//   - L1 authorization header sanitization (no control characters)
-//   - JWT validation via the provided JWTValidator
-//   - Structured logging of auth decisions (OPS-3)
-//   - Audit event emission (SEC-2)
-//   - UserIdentity context propagation for downstream handlers
-func Middleware(validator *JWTValidator) func(http.Handler) http.Handler {
-	return MiddlewareWithConfig(MiddlewareConfig{Validator: validator})
-}
-
 // MiddlewareWithConfig returns auth middleware with full observability support.
+// Performs L1 body size enforcement, authorization header sanitization,
+// JWT validation, structured logging (OPS-3), audit event emission (SEC-2),
+// and UserIdentity context propagation.
 func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler {
 	logger := cfg.Logger
 	if logger.GetSink() == nil {
@@ -51,7 +44,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 
 			reqLogger := logger.WithValues(
 				"component", "auth",
-				"source_ip", extractClientIP(r),
+				"source_ip", httputil.ExtractClientIP(r),
 				"request_id", requestid.FromContext(r.Context()),
 			)
 			ctx := logging.WithLogger(r.Context(), reqLogger)
@@ -59,7 +52,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
 				reqLogger.V(1).Info("auth failed: missing authorization header")
-				emitAuthFailure(ctx, cfg.Auditor, "", extractClientIP(r), "missing_header")
+				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), "missing_header")
 				httputil.WriteProblem(w, http.StatusUnauthorized,
 					"Missing Authorization", "The Authorization header is required.")
 				return
@@ -67,7 +60,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 
 			if err := security.ValidateHeaderValue(authHeader); err != nil {
 				reqLogger.V(1).Info("auth failed: invalid authorization header", "error", err)
-				emitAuthFailure(ctx, cfg.Auditor, "", extractClientIP(r), "control_chars")
+				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), "control_chars")
 				httputil.WriteProblem(w, http.StatusBadRequest,
 					"Invalid Authorization Header", "The Authorization header contains invalid characters.")
 				return
@@ -76,7 +69,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 			if token == authHeader {
 				reqLogger.V(1).Info("auth failed: non-bearer scheme")
-				emitAuthFailure(ctx, cfg.Auditor, "", extractClientIP(r), "non_bearer")
+				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), "non_bearer")
 				httputil.WriteProblem(w, http.StatusUnauthorized,
 					"Invalid Scheme", "The Authorization header must use the Bearer scheme.")
 				return
@@ -85,7 +78,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 			identity, err := cfg.Validator.Validate(r.Context(), token)
 			if err != nil {
 				reqLogger.V(1).Info("auth failed: token validation", "error", err)
-				emitAuthFailure(ctx, cfg.Auditor, "", extractClientIP(r), err.Error())
+				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), classifyAuthError(err))
 				httputil.WriteProblem(w, http.StatusUnauthorized,
 					"Authentication Failed", "The provided token could not be validated.")
 				return
@@ -96,7 +89,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 				"issuer", identity.Issuer,
 				"duration", time.Since(start).String(),
 			)
-			emitAuthSuccess(ctx, cfg.Auditor, identity, extractClientIP(r))
+			emitAuthSuccess(ctx, cfg.Auditor, identity, httputil.ExtractClientIP(r))
 
 			ctx = WithUserIdentity(ctx, identity)
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -104,21 +97,11 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 	}
 }
 
-func extractClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return xff
-	}
-	return r.RemoteAddr
-}
-
 func emitAuthSuccess(ctx context.Context, emitter audit.Emitter, identity *UserIdentity, sourceIP string) {
 	if emitter == nil {
 		return
 	}
-	emitter.Emit(ctx, audit.Event{
+	emitter.Emit(ctx, &audit.Event{
 		Type:     audit.EventAuthSuccess,
 		UserID:   identity.Username,
 		SourceIP: sourceIP,
@@ -132,7 +115,7 @@ func emitAuthFailure(ctx context.Context, emitter audit.Emitter, userID, sourceI
 	if emitter == nil {
 		return
 	}
-	emitter.Emit(ctx, audit.Event{
+	emitter.Emit(ctx, &audit.Event{
 		Type:     audit.EventAuthFailure,
 		UserID:   userID,
 		SourceIP: sourceIP,
@@ -140,4 +123,25 @@ func emitAuthFailure(ctx context.Context, emitter audit.Emitter, userID, sourceI
 			"reason": reason,
 		},
 	})
+}
+
+func classifyAuthError(err error) string {
+	switch {
+	case errors.Is(err, ErrTokenExpired):
+		return "token_expired"
+	case errors.Is(err, ErrInvalidAudience):
+		return "invalid_audience"
+	case errors.Is(err, ErrUnknownIssuer):
+		return "unknown_issuer"
+	case errors.Is(err, ErrMalformedToken):
+		return "malformed_token"
+	case errors.Is(err, ErrCircuitOpen):
+		return "circuit_open"
+	case errors.Is(err, ErrCELValidation):
+		return "cel_rule_failed"
+	case errors.Is(err, ErrMissingExpiry):
+		return "missing_expiry"
+	default:
+		return "validation_failed"
+	}
 }

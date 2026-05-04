@@ -26,9 +26,11 @@ type PerIPConfig struct {
 
 // PerUserConfig configures post-authentication per-user rate limiting.
 type PerUserConfig struct {
-	RequestsPerMinute     int `yaml:"requestsPerMinute"`
-	MaxConcurrentSessions int `yaml:"maxConcurrentSessions"`
-	ToolCallsPerMinute    int `yaml:"toolCallsPerMinute"`
+	RequestsPerMinute     int           `yaml:"requestsPerMinute"`
+	MaxConcurrentSessions int           `yaml:"maxConcurrentSessions"`
+	ToolCallsPerMinute    int           `yaml:"toolCallsPerMinute"`
+	CleanupInterval       time.Duration `yaml:"cleanupInterval"`
+	MaxAge                time.Duration `yaml:"maxAge"`
 }
 
 // PerProviderConfig configures per-OIDC-provider JWKS fetch rate limiting.
@@ -55,6 +57,8 @@ func DefaultConfig() Config {
 			RequestsPerMinute:     30,
 			MaxConcurrentSessions: 3,
 			ToolCallsPerMinute:    60,
+			CleanupInterval:       5 * time.Minute,
+			MaxAge:                10 * time.Minute,
 		},
 		PerProvider: PerProviderConfig{
 			FetchIntervalSeconds: 300,

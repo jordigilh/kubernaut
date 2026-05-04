@@ -4,10 +4,10 @@ import "fmt"
 
 // UserIdentity represents an authenticated user's identity extracted from a JWT.
 type UserIdentity struct {
-	Username string
-	Groups   []string
-	Issuer   string
-	RawToken string
+	Username string   `json:"username"`
+	Groups   []string `json:"groups,omitempty"`
+	Issuer   string   `json:"issuer"`
+	RawToken string   `json:"-"`
 }
 
 // String returns a safe representation that redacts the raw token (SEC-3).

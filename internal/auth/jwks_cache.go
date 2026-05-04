@@ -17,7 +17,7 @@ import (
 // Call this from the metrics registry to avoid package-level state.
 func NewCircuitBreakerStateGauge() *prometheus.GaugeVec {
 	return prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "kubernaut_apifrontend",
+		Namespace: "af",
 		Name:      "circuit_breaker_state",
 		Help:      "JWKS circuit breaker state per issuer (0=closed, 1=half-open, 2=open).",
 	}, []string{"dependency"})
@@ -131,7 +131,7 @@ func (c *JWKSCache) GetKeys(ctx context.Context, issuerURL string) (*jose.JSONWe
 }
 
 func (c *JWKSCache) fetchJWKS(ctx context.Context, issuerURL string) (*jose.JSONWebKeySet, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, issuerURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, issuerURL, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

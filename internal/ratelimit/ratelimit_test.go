@@ -46,19 +46,21 @@ var _ = Describe("Rate limiting", func() {
 			limiter := ratelimit.NewIPLimiter(cfg)
 			defer limiter.Stop()
 
-			handler := ratelimit.PreAuthMiddleware(limiter)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			handler := ratelimit.PreAuthMiddlewareWithConfig(ratelimit.PreAuthMiddlewareConfig{
+				Limiter: limiter,
+			})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			}))
 
 			for i := 0; i < 2; i++ {
-				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 				req.RemoteAddr = "192.168.1.1:1234"
 				rec := httptest.NewRecorder()
 				handler.ServeHTTP(rec, req)
 				Expect(rec.Code).To(Equal(http.StatusOK))
 			}
 
-			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 			req.RemoteAddr = "192.168.1.1:1234"
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
@@ -89,9 +91,9 @@ var _ = Describe("Rate limiting", func() {
 	Describe("per-user", func() {
 		It("UT-AF-009-004 allows requests under the per-user limit", func() {
 			cfg := ratelimit.PerUserConfig{
-				RequestsPerMinute:    60,
+				RequestsPerMinute:     60,
 				MaxConcurrentSessions: 3,
-				ToolCallsPerMinute:   60,
+				ToolCallsPerMinute:    60,
 			}
 			limiter := ratelimit.NewUserLimiter(cfg)
 
@@ -102,18 +104,20 @@ var _ = Describe("Rate limiting", func() {
 
 		It("UT-AF-009-005 returns 429 when over per-user limit", func() {
 			cfg := ratelimit.PerUserConfig{
-				RequestsPerMinute:    5,
+				RequestsPerMinute:     5,
 				MaxConcurrentSessions: 3,
-				ToolCallsPerMinute:   60,
+				ToolCallsPerMinute:    60,
 			}
 			limiter := ratelimit.NewUserLimiter(cfg)
 
-			handler := ratelimit.PostAuthMiddleware(limiter)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			handler := ratelimit.PostAuthMiddlewareWithConfig(ratelimit.PostAuthMiddlewareConfig{
+				Limiter: limiter,
+			})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			}))
 
 			for i := 0; i < 5; i++ {
-				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 				ctx := auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "alice"})
 				req = req.WithContext(ctx)
 				rec := httptest.NewRecorder()
@@ -121,7 +125,7 @@ var _ = Describe("Rate limiting", func() {
 				Expect(rec.Code).To(Equal(http.StatusOK))
 			}
 
-			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 			ctx := auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "alice"})
 			req = req.WithContext(ctx)
 			rec := httptest.NewRecorder()
@@ -132,9 +136,9 @@ var _ = Describe("Rate limiting", func() {
 
 		It("UT-AF-009-006 enforces concurrent session limit", func() {
 			cfg := ratelimit.PerUserConfig{
-				RequestsPerMinute:    60,
+				RequestsPerMinute:     60,
 				MaxConcurrentSessions: 3,
-				ToolCallsPerMinute:   60,
+				ToolCallsPerMinute:    60,
 			}
 			limiter := ratelimit.NewUserLimiter(cfg)
 
@@ -150,9 +154,9 @@ var _ = Describe("Rate limiting", func() {
 
 		It("UT-AF-009-007 enforces tool calls per minute", func() {
 			cfg := ratelimit.PerUserConfig{
-				RequestsPerMinute:    60,
+				RequestsPerMinute:     60,
 				MaxConcurrentSessions: 3,
-				ToolCallsPerMinute:   5,
+				ToolCallsPerMinute:    5,
 			}
 			limiter := ratelimit.NewUserLimiter(cfg)
 
@@ -190,6 +194,61 @@ var _ = Describe("Rate limiting", func() {
 
 			sem.Release()
 			Expect(sem.Acquire()).To(BeTrue(), "should succeed after release")
+		})
+	})
+
+	Describe("LLM semaphore safety", func() {
+		It("UT-AF-009-014 Release does not go negative on double-release", func() {
+			sem := ratelimit.NewLLMSemaphore(1)
+
+			Expect(sem.Acquire()).To(BeTrue())
+			sem.Release()
+			sem.Release() // double release — should not panic or go negative
+
+			Expect(sem.Acquire()).To(BeTrue(), "should still be able to acquire after double-release")
+			Expect(sem.Acquire()).To(BeFalse(), "only 1 slot available, already acquired")
+		})
+	})
+
+	Describe("user limiter eviction", func() {
+		It("UT-AF-009-015 evicts stale entries after TTL", func() {
+			cfg := ratelimit.PerUserConfig{
+				RequestsPerMinute:     100,
+				MaxConcurrentSessions: 10,
+				ToolCallsPerMinute:    100,
+				CleanupInterval:       50 * time.Millisecond,
+				MaxAge:                100 * time.Millisecond,
+			}
+			limiter := ratelimit.NewUserLimiter(cfg)
+			defer limiter.Stop()
+
+			Expect(limiter.AllowRequest("alice")).To(BeTrue())
+			Expect(limiter.AllowToolCall("bob")).To(BeTrue())
+
+			// Wait for eviction to run
+			time.Sleep(250 * time.Millisecond)
+
+			// After eviction, new limiters are created (fresh state)
+			Expect(limiter.AllowRequest("alice")).To(BeTrue())
+		})
+
+		It("UT-AF-009-016 ReleaseSession does not go negative", func() {
+			cfg := ratelimit.PerUserConfig{
+				RequestsPerMinute:     100,
+				MaxConcurrentSessions: 2,
+				ToolCallsPerMinute:    100,
+			}
+			limiter := ratelimit.NewUserLimiter(cfg)
+			defer limiter.Stop()
+
+			Expect(limiter.AcquireSession("alice")).To(BeTrue())
+			limiter.ReleaseSession("alice")
+			limiter.ReleaseSession("alice") // double release
+
+			// Should still be able to acquire up to max
+			Expect(limiter.AcquireSession("alice")).To(BeTrue())
+			Expect(limiter.AcquireSession("alice")).To(BeTrue())
+			Expect(limiter.AcquireSession("alice")).To(BeFalse(), "max 2 sessions")
 		})
 	})
 
@@ -244,13 +303,15 @@ var _ = Describe("Rate limiting", func() {
 			defer limiter.Stop()
 
 			var callCount atomic.Int32
-			handler := ratelimit.PreAuthMiddleware(limiter)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			handler := ratelimit.PreAuthMiddlewareWithConfig(ratelimit.PreAuthMiddlewareConfig{
+				Limiter: limiter,
+			})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				callCount.Add(1)
 				w.WriteHeader(http.StatusOK)
 			}))
 
 			for range 3 {
-				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 				req.RemoteAddr = "10.0.0.1:5000"
 				rec := httptest.NewRecorder()
 				handler.ServeHTTP(rec, req)
@@ -261,20 +322,22 @@ var _ = Describe("Rate limiting", func() {
 
 		It("UT-AF-009-013 uses the user tier after authentication", func() {
 			cfg := ratelimit.PerUserConfig{
-				RequestsPerMinute:    2,
+				RequestsPerMinute:     2,
 				MaxConcurrentSessions: 10,
-				ToolCallsPerMinute:   60,
+				ToolCallsPerMinute:    60,
 			}
 			limiter := ratelimit.NewUserLimiter(cfg)
 
 			var callCount atomic.Int32
-			handler := ratelimit.PostAuthMiddleware(limiter)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			handler := ratelimit.PostAuthMiddlewareWithConfig(ratelimit.PostAuthMiddlewareConfig{
+				Limiter: limiter,
+			})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				callCount.Add(1)
 				w.WriteHeader(http.StatusOK)
 			}))
 
 			for range 4 {
-				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 				ctx := auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "bob"})
 				req = req.WithContext(ctx)
 				rec := httptest.NewRecorder()

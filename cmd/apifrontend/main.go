@@ -36,11 +36,17 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	level := zap.NewAtomicLevelAt(zap.InfoLevel)
 	logger, err := logging.NewLogger(level)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("initialize logger: %w", err)
 	}
 	logger = logger.WithValues("service", "kubernaut-apifrontend")
 
@@ -50,20 +56,20 @@ func main() {
 	metricsReg := metrics.NewRegistry()
 	auditor := audit.NewLogEmitter(logger)
 
-	authCfg := auth.AuthConfig{}
+	authCfg := auth.Config{}
 	if len(authCfg.JWT) == 0 {
 		logger.Error(nil, "no JWT providers configured — all bearer tokens will be rejected unless K8s TokenReview is enabled")
 	}
 	validator, err := auth.NewJWTValidator(authCfg, auth.WithCBMetrics(metricsReg.CircuitBreakerState))
 	if err != nil {
-		logger.Error(err, "failed to create JWT validator")
-		os.Exit(1)
+		return fmt.Errorf("create JWT validator: %w", err)
 	}
 
 	rlCfg := ratelimit.DefaultConfig()
 	ipLimiter := ratelimit.NewIPLimiter(rlCfg.PerIP)
 	defer ipLimiter.Stop()
 	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
+	defer userLimiter.Stop()
 
 	// Authenticated API routes
 	apiMux := http.NewServeMux()
@@ -100,6 +106,9 @@ func main() {
 	rootMux.Handle("/metrics", metricsReg.Handler())
 	rootMux.Handle("/", apiHandler)
 
+	// Port 8443 serves plaintext HTTP. TLS termination is handled by the
+	// Kubernetes ingress controller or service mesh sidecar (Envoy/Istio).
+	// Override with PORT env var if needed (e.g., PORT=8080 for local dev).
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8443"
@@ -113,15 +122,20 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	errCh := make(chan error, 1)
 	go func() {
 		logger.Info("starting kubernaut-apifrontend", "port", port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error(err, "server failed")
-			os.Exit(1)
+			errCh <- err
 		}
 	}()
 
-	<-ctx.Done()
+	select {
+	case err := <-errCh:
+		return fmt.Errorf("server failed: %w", err)
+	case <-ctx.Done():
+	}
+
 	logger.Info("shutting down gracefully")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -132,4 +146,5 @@ func main() {
 	}
 
 	logger.Info("shutdown complete")
+	return nil
 }

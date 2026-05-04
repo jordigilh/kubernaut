@@ -175,7 +175,7 @@ var _ = Describe("Impersonation", func() {
 			}
 
 			client := &http.Client{Transport: transport}
-			req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+			req, err := http.NewRequest(http.MethodGet, srv.URL, http.NoBody)
 			Expect(err).NotTo(HaveOccurred())
 			resp, err := client.Do(req)
 			Expect(err).NotTo(HaveOccurred())
@@ -201,7 +201,7 @@ var _ = Describe("Impersonation", func() {
 			}
 
 			client := &http.Client{Transport: transport}
-			req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+			req, err := http.NewRequest(http.MethodGet, srv.URL, http.NoBody)
 			Expect(err).NotTo(HaveOccurred())
 			resp, err := client.Do(req)
 			Expect(err).NotTo(HaveOccurred())

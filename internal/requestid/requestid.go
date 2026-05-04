@@ -21,7 +21,7 @@ const maxIDLen = 128
 // Dots are allowed to support hierarchical correlation IDs (e.g., "req.sub-span.123").
 // Note: some log aggregators (e.g., Elasticsearch) may expand dotted field values;
 // consumers should use the raw string value, not interpret dots as path separators.
-var validIDPattern = regexp.MustCompile(`^[a-zA-Z0-9\-_\.]{1,128}$`)
+var validIDPattern = regexp.MustCompile(`^[a-zA-Z0-9\-_.]{1,128}$`)
 
 // Middleware generates or accepts an X-Request-ID, stores it in context,
 // and returns it in the response header (DD-005).

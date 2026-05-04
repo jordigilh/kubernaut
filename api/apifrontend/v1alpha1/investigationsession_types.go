@@ -23,6 +23,7 @@ import (
 // SessionPhase represents the lifecycle state of an InvestigationSession.
 type SessionPhase string
 
+// SessionPhase values.
 const (
 	SessionPhaseActive       SessionPhase = "Active"
 	SessionPhaseDisconnected SessionPhase = "Disconnected"
@@ -34,6 +35,7 @@ const (
 // SessionJoinMode indicates how the session was initiated.
 type SessionJoinMode string
 
+// SessionJoinMode values.
 const (
 	SessionJoinModeStart    SessionJoinMode = "start"
 	SessionJoinModeTakeover SessionJoinMode = "takeover"
@@ -42,13 +44,15 @@ const (
 // ConnectionState represents the SSE connection state.
 type ConnectionState string
 
+// ConnectionState values.
 const (
 	ConnectionStateConnected    ConnectionState = "Connected"
 	ConnectionStateDisconnected ConnectionState = "Disconnected"
 )
 
-// UserIdentity captures the authenticated user's identity from JWT.
-type UserIdentity struct {
+// SessionUser captures the authenticated user's identity from JWT.
+// Named SessionUser (not UserIdentity) to avoid collision with internal/auth.UserIdentity.
+type SessionUser struct {
 	// Username from JWT sub claim.
 	Username string `json:"username"`
 	// Groups from JWT groups claim (RBAC-relevant only).
@@ -65,10 +69,11 @@ type InvestigationSessionSpec struct {
 
 	// A2ATaskID is the A2A task identifier for client reconnection.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
 	A2ATaskID string `json:"a2aTaskID"`
 
 	// UserIdentity captures the authenticated user from the originating JWT.
-	UserIdentity UserIdentity `json:"userIdentity"`
+	UserIdentity SessionUser `json:"userIdentity"`
 
 	// JoinMode indicates whether the user started or joined the investigation.
 	// +kubebuilder:validation:Enum=start;takeover
@@ -125,7 +130,7 @@ type InvestigationSessionStatus struct {
 // +kubebuilder:printcolumn:name="Task ID",type=string,JSONPath=`.spec.a2aTaskID`
 // +kubebuilder:printcolumn:name="User",type=string,JSONPath=`.spec.userIdentity.username`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
-// +kubebuilder:resource:shortName=is
+// +kubebuilder:resource:shortName=isess
 
 // InvestigationSession links an A2A task to kubernaut pipeline CRDs.
 // It enables session persistence across AF restarts and user reconnections.

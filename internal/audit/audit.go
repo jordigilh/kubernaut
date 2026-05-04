@@ -12,6 +12,7 @@ import (
 // EventType classifies audit events for L3 forensic analysis.
 type EventType string
 
+// EventType values for SOC2-compatible audit classification.
 const (
 	EventAuthSuccess        EventType = "auth.success"
 	EventAuthFailure        EventType = "auth.failure"
@@ -44,7 +45,7 @@ type Event struct {
 // All callers should treat Emit as non-blocking; implementations must not
 // propagate errors to the caller or block the request path.
 type Emitter interface {
-	Emit(ctx context.Context, event Event)
+	Emit(ctx context.Context, event *Event)
 }
 
 // LogEmitter emits audit events as structured log entries.
@@ -58,7 +59,7 @@ func NewLogEmitter(logger logr.Logger) *LogEmitter {
 }
 
 // Emit writes the audit event as a structured log entry.
-func (e *LogEmitter) Emit(ctx context.Context, event Event) {
+func (e *LogEmitter) Emit(ctx context.Context, event *Event) {
 	event.Timestamp = time.Now()
 	if event.RequestID == "" {
 		event.RequestID = requestid.FromContext(ctx)
@@ -87,7 +88,7 @@ func EmitFromContext(ctx context.Context, emitter Emitter, eventType EventType, 
 	if emitter == nil {
 		return
 	}
-	emitter.Emit(ctx, Event{
+	emitter.Emit(ctx, &Event{
 		Type:      eventType,
 		RequestID: requestid.FromContext(ctx),
 		UserID:    userID,
@@ -95,4 +96,3 @@ func EmitFromContext(ctx context.Context, emitter Emitter, eventType EventType, 
 		Detail:    detail,
 	})
 }
-

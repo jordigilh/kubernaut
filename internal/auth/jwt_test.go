@@ -89,7 +89,7 @@ func newFailingJWKSServer() *httptest.Server {
 func newFakeTokenReviewClient(expectedToken, username string, groups []string) kubernetes.Interface {
 	client := k8sfake.NewSimpleClientset()
 	client.PrependReactor("create", "tokenreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
-		review := action.(k8stesting.CreateAction).GetObject().(*authv1.TokenReview)
+		review, _ := action.(k8stesting.CreateAction).GetObject().(*authv1.TokenReview)
 		if review.Spec.Token == expectedToken {
 			review.Status = authv1.TokenReviewStatus{
 				Authenticated: true,
@@ -107,7 +107,7 @@ func newFakeTokenReviewClient(expectedToken, username string, groups []string) k
 }
 
 // standardClaims creates JWT claims for testing.
-func standardClaims(issuer, subject string, audiences []string, groups []string, expiry time.Time) map[string]interface{} {
+func standardClaims(issuer, subject string, audiences, groups []string, expiry time.Time) map[string]interface{} {
 	claims := map[string]interface{}{
 		"iss":                issuer,
 		"sub":                subject,
@@ -129,7 +129,7 @@ var _ = Describe("Auth", func() {
 				kp := newTestKeyPair("key-1")
 				jwksSrv := newJWKSServer(kp.jwks())
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -161,7 +161,7 @@ var _ = Describe("Auth", func() {
 				kp := newTestKeyPair("key-1")
 				jwksSrv := newJWKSServer(kp.jwks())
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -186,11 +186,46 @@ var _ = Describe("Auth", func() {
 				Expect(err).To(MatchError(auth.ErrTokenExpired))
 			})
 
+			It("UT-AF-002-020: token without exp claim returns missing expiry error", func() {
+				kp := newTestKeyPair("key-1")
+				jwksSrv := newJWKSServer(kp.jwks())
+
+				cfg := auth.Config{
+					JWT: []auth.ProviderConfig{
+						{
+							Issuer: auth.IssuerConfig{
+								URL:       jwksSrv.URL,
+								Audiences: []string{"kubernaut-agent"},
+							},
+							ClaimMappings: auth.ClaimMappings{
+								Username: "claims.preferred_username",
+								Groups:   "claims.groups",
+							},
+						},
+					},
+				}
+
+				validator, err := auth.NewJWTValidator(cfg, auth.WithHTTPClient(jwksSrv.Client()))
+				Expect(err).NotTo(HaveOccurred())
+
+				claims := map[string]interface{}{
+					"iss":                jwksSrv.URL,
+					"sub":                "alice",
+					"aud":                []string{"kubernaut-agent"},
+					"iat":                time.Now().Unix(),
+					"preferred_username": "alice",
+				}
+				token := kp.signToken(claims)
+
+				_, err = validator.Validate(context.Background(), token)
+				Expect(err).To(MatchError(auth.ErrMissingExpiry))
+			})
+
 			It("UT-AF-002-003: wrong audience returns invalid audience error", func() {
 				kp := newTestKeyPair("key-1")
 				jwksSrv := newJWKSServer(kp.jwks())
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -219,7 +254,7 @@ var _ = Describe("Auth", func() {
 				kp := newTestKeyPair("key-1")
 				jwksSrv := newJWKSServer(kp.jwks())
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -250,7 +285,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv1 := newJWKSServer(kp1.jwks())
 				jwksSrv2 := newJWKSServer(kp2.jwks())
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -288,7 +323,7 @@ var _ = Describe("Auth", func() {
 			})
 
 			It("UT-AF-002-006: duplicate issuers produce config error", func() {
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{URL: "https://sso.example.com"},
@@ -308,7 +343,7 @@ var _ = Describe("Auth", func() {
 				kp := newTestKeyPair("key-1")
 				jwksSrv := newJWKSServer(kp.jwks())
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -343,7 +378,7 @@ var _ = Describe("Auth", func() {
 				kp := newTestKeyPair("key-1")
 				jwksSrv := newJWKSServer(kp.jwks())
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -380,7 +415,7 @@ var _ = Describe("Auth", func() {
 				}))
 				DeferCleanup(srv.Close)
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -421,7 +456,7 @@ var _ = Describe("Auth", func() {
 				}))
 				DeferCleanup(srv.Close)
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -461,7 +496,7 @@ var _ = Describe("Auth", func() {
 				kp := newTestKeyPair("key-1")
 				failSrv := newFailingJWKSServer()
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -506,7 +541,7 @@ var _ = Describe("Auth", func() {
 				}))
 				DeferCleanup(srv.Close)
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -560,7 +595,7 @@ var _ = Describe("Auth", func() {
 				}))
 				DeferCleanup(srv.Close)
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -614,7 +649,7 @@ var _ = Describe("Auth", func() {
 				}))
 				DeferCleanup(srv.Close)
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -656,7 +691,7 @@ var _ = Describe("Auth", func() {
 				kp := newTestKeyPair("key-1")
 				jwksSrv := newJWKSServer(kp.jwks())
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -675,14 +710,14 @@ var _ = Describe("Auth", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				var capturedIdentity *auth.UserIdentity
-				handler := auth.Middleware(validator)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				handler := auth.MiddlewareWithConfig(auth.MiddlewareConfig{Validator: validator})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 					capturedIdentity = auth.UserIdentityFromContext(r.Context())
 				}))
 
 				claims := standardClaims(jwksSrv.URL, "alice", []string{"kubernaut-agent"}, []string{"sre"}, time.Now().Add(time.Hour))
 				token := kp.signToken(claims)
 
-				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 				req.Header.Set("Authorization", "Bearer "+token)
 				rec := httptest.NewRecorder()
 
@@ -695,14 +730,14 @@ var _ = Describe("Auth", func() {
 			})
 
 			It("UT-AF-002-016: returns 401 RFC 7807 when Authorization header is missing", func() {
-				validator, err := auth.NewJWTValidator(auth.AuthConfig{})
+				validator, err := auth.NewJWTValidator(auth.Config{})
 				Expect(err).NotTo(HaveOccurred())
 
-				handler := auth.Middleware(validator)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				handler := auth.MiddlewareWithConfig(auth.MiddlewareConfig{Validator: validator})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusOK)
 				}))
 
-				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 				rec := httptest.NewRecorder()
 
 				handler.ServeHTTP(rec, req)
@@ -719,7 +754,7 @@ var _ = Describe("Auth", func() {
 				kp := newTestKeyPair("key-1")
 				jwksSrv := newJWKSServer(kp.jwks())
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -737,11 +772,11 @@ var _ = Describe("Auth", func() {
 				validator, err := auth.NewJWTValidator(cfg, auth.WithHTTPClient(jwksSrv.Client()))
 				Expect(err).NotTo(HaveOccurred())
 
-				handler := auth.Middleware(validator)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				handler := auth.MiddlewareWithConfig(auth.MiddlewareConfig{Validator: validator})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusOK)
 				}))
 
-				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 				req.Header.Set("Authorization", "Bearer \x00malicious-token")
 				rec := httptest.NewRecorder()
 
@@ -759,7 +794,7 @@ var _ = Describe("Auth", func() {
 				kp := newTestKeyPair("key-1")
 				jwksSrv := newJWKSServer(kp.jwks())
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -778,7 +813,7 @@ var _ = Describe("Auth", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				var bodyReadErr error
-				handler := auth.Middleware(validator)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handler := auth.MiddlewareWithConfig(auth.MiddlewareConfig{Validator: validator})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					_, bodyReadErr = io.ReadAll(r.Body)
 					if bodyReadErr != nil {
 						w.WriteHeader(http.StatusRequestEntityTooLarge)
@@ -805,7 +840,7 @@ var _ = Describe("Auth", func() {
 
 				reviewer := auth.NewTokenReviewer(fakeClient)
 
-				cfg := auth.AuthConfig{
+				cfg := auth.Config{
 					JWT:        []auth.ProviderConfig{},
 					Kubernetes: auth.KubernetesAuthConfig{Enabled: true},
 				}
@@ -813,7 +848,7 @@ var _ = Describe("Auth", func() {
 				validator, err := auth.NewJWTValidator(cfg, auth.WithTokenReviewer(reviewer))
 				Expect(err).NotTo(HaveOccurred())
 
-				handler := auth.Middleware(validator)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handler := auth.MiddlewareWithConfig(auth.MiddlewareConfig{Validator: validator})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					identity := auth.UserIdentityFromContext(r.Context())
 					if identity == nil {
 						w.WriteHeader(http.StatusUnauthorized)
@@ -826,7 +861,7 @@ var _ = Describe("Auth", func() {
 					}{Username: identity.Username})
 				}))
 
-				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 				req.Header.Set("Authorization", "Bearer sa-token-that-is-not-jwt")
 				rec := httptest.NewRecorder()
 

@@ -91,7 +91,7 @@ func WithCBMetrics(g *prometheus.GaugeVec) JWTValidatorOption {
 // NewJWTValidator creates a new JWTValidator from the given config.
 // Returns an error if the config is invalid (e.g., duplicate issuer URLs)
 // or if any CEL expression fails to compile.
-func NewJWTValidator(cfg AuthConfig, opts ...JWTValidatorOption) (*JWTValidator, error) {
+func NewJWTValidator(cfg Config, opts ...JWTValidatorOption) (*JWTValidator, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -210,9 +210,9 @@ func extractIssuerUnsafe(token *josejwt.JSONWebToken) (string, error) {
 }
 
 func verifySignature(token *josejwt.JSONWebToken, keySet *jose.JSONWebKeySet) (map[string]interface{}, error) {
-	for _, key := range keySet.Keys {
+	for i := range keySet.Keys {
 		raw := json.RawMessage{}
-		if err := token.Claims(key.Key, &raw); err != nil {
+		if err := token.Claims(keySet.Keys[i].Key, &raw); err != nil {
 			continue
 		}
 
@@ -225,10 +225,17 @@ func verifySignature(token *josejwt.JSONWebToken, keySet *jose.JSONWebKeySet) (m
 	return nil, fmt.Errorf("%w: signature verification failed", ErrMalformedToken)
 }
 
+// ErrMissingExpiry is returned when a token has no exp claim.
+var ErrMissingExpiry = errors.New("token missing required exp claim")
+
 func validateExpiry(claims map[string]interface{}) error {
-	exp, ok := claims["exp"].(float64)
+	raw, ok := claims["exp"]
 	if !ok {
-		return nil
+		return ErrMissingExpiry
+	}
+	exp, ok := raw.(float64)
+	if !ok {
+		return ErrMissingExpiry
 	}
 	if time.Unix(int64(exp), 0).Before(time.Now()) {
 		return ErrTokenExpired
