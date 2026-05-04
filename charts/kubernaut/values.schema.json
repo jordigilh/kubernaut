@@ -778,8 +778,7 @@
                   }
                 }
               }
-            },
-            "jwtInteractiveGroup": { "type": "string", "description": "Kubernetes group name for JWT-authenticated interactive users." }
+            }
           }
         }
       }

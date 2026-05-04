@@ -329,9 +329,6 @@ kubernautAgent:
     #     claimMappings:
     #       username: "preferred_username"
     #       groups: "groups"
-    # -- Kubernetes group name for JWT-authenticated interactive users.
-    # Used in ClusterRoleBinding to grant impersonate permissions.
-    # jwtInteractiveGroup: "kubernaut-interactive-users"
   pdb:
     enabled: false
     # minAvailable: 1

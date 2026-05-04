@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/lestrrat-go/httprc/v3"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
@@ -66,6 +67,7 @@ type jwtProvider struct {
 type JWTAuthenticator struct {
 	providers map[string]*jwtProvider
 	cancel    context.CancelFunc
+	logger    logr.Logger
 }
 
 // jwksPreWarmTimeout is the maximum time to wait for the initial JWKS fetch
@@ -78,7 +80,7 @@ const jwksPreWarmTimeout = 15 * time.Second
 // via jwk.Cache. A synchronous pre-warm fetch is performed for each provider
 // to ensure keys are available before the first token validation request.
 // Returns an error if any provider's cache cannot be initialized or pre-warmed.
-func NewJWTAuthenticator(entries []JWTProviderEntry) (*JWTAuthenticator, error) {
+func NewJWTAuthenticator(entries []JWTProviderEntry, logger logr.Logger) (*JWTAuthenticator, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	providers := make(map[string]*jwtProvider, len(entries))
 	for i := range entries {
@@ -106,7 +108,7 @@ func NewJWTAuthenticator(entries []JWTProviderEntry) (*JWTAuthenticator, error) 
 			jwksCache: c,
 		}
 	}
-	return &JWTAuthenticator{providers: providers, cancel: cancel}, nil
+	return &JWTAuthenticator{providers: providers, cancel: cancel, logger: logger}, nil
 }
 
 // Close stops all background JWKS refresh goroutines. Safe to call multiple times.
@@ -149,6 +151,7 @@ func (a *JWTAuthenticator) ValidateTokenFull(ctx context.Context, rawToken strin
 	verifiedToken, err := jwt.Parse(
 		[]byte(rawToken),
 		jwt.WithKeySet(keyset, jws.WithInferAlgorithmFromKey(true)),
+		jwt.WithIssuer(provider.entry.Issuer),
 		jwt.WithAudience(provider.entry.Audience),
 		jwt.WithValidate(true),
 	)
@@ -168,6 +171,8 @@ func (a *JWTAuthenticator) ValidateTokenFull(ctx context.Context, rawToken strin
 
 	groups, err := ExtractGroupsClaim(claims, provider.entry.GroupsClaim)
 	if err != nil {
+		a.logger.V(1).Info("groups claim extraction failed; user will have no group memberships",
+			"username", username, "groupsClaim", provider.entry.GroupsClaim, "error", err)
 		groups = []string{}
 	}
 

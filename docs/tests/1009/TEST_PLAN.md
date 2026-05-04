@@ -80,7 +80,7 @@ and checkpoints at each TDD boundary.
 | R1 | JWT signature bypass (alg:none, key confusion) | Critical: impersonation of any user | Low | UT-KA-1009-008, UT-KA-1009-009 | Explicit alg allowlist (RS256 only), reject unsigned tokens |
 | R2 | Cross-path authentication leak (JWT error falls through to K8s TokenReview) | Critical: untrusted token accepted | Medium | UT-KA-1009-016, UT-KA-1009-017 | ErrIssuerNotFound vs ErrTokenInvalid sentinel distinction; fail-closed on known issuer |
 | R3 | Pattern A regression (direct clients broken) | High: production auth failure | Low | UT-KA-1009-018, IT-KA-1009-005 | CompositeAuthenticator passthrough; existing test suite unchanged |
-| R4 | JWKS endpoint unavailable at startup | Medium: Pattern B non-functional | Medium | UT-KA-1009-010, IT-KA-1009-008 | PreWarm with 10s timeout; soft-disable (Pattern A unaffected) |
+| R4 | JWKS endpoint unavailable at startup | Medium: Pattern B non-functional | Medium | UT-KA-1009-010 | Pre-warm with 15s timeout; global disable (Pattern A unaffected) |
 | R5 | Dot-notation claim extraction fails on Keycloak nested claims | Medium: user identity lost | Low | UT-KA-1009-003..005 | PoC validated with 11 scenarios; recursive map traversal |
 | R6 | JWT replay within validity window | Medium: unauthorized action replay | Medium | UT-KA-1009-011 | Defense-in-depth (ClusterIP, NetworkPolicy, SAR, audit); v1.6: short-lived internal JWTs |
 | R7 | ClusterRoleBinding group mismatch | Medium: JWT users denied | Low | UT-KA-1009-030, IT-KA-1009-009 | Helm template test validates group rendering |
@@ -223,9 +223,9 @@ code path coverage. Each test scenario answers: "what does the operator/user/sys
 | BR-INTERACTIVE-002 | Known issuers with bad tokens fail-closed | P0 | Unit | UT-KA-1009-016 | Pending |
 | BR-INTERACTIVE-001 | Pattern A clients unaffected (no regression on #896) | P0 | Unit | UT-KA-1009-018 | Pending |
 | BR-INTERACTIVE-001 | Pattern A clients unaffected (no regression on #896) | P0 | Integration | IT-KA-1009-005 | Pending |
-| BR-INTERACTIVE-002 | JWT users authorized via K8s SAR against ClusterRoleBinding | P0 | Integration | IT-KA-1009-003 | Pending |
+| BR-INTERACTIVE-002 | JWT users authorized via K8s SAR against ClusterRoleBinding | P0 | Integration | IT-KA-1009-003 | Deferred (v1.6) |
 | BR-INTERACTIVE-003 | ProviderType propagated to audit logging | P1 | Unit | UT-KA-1009-022 | Pending |
-| BR-INTERACTIVE-003 | ProviderType propagated to audit logging | P1 | Integration | IT-KA-1009-006 | Pending |
+| BR-INTERACTIVE-003 | ProviderType propagated to audit logging | P1 | Integration | IT-KA-1009-006 | Deferred (v1.6) |
 
 ---
 
@@ -308,13 +308,13 @@ Format: `{TIER}-KA-1009-{SEQUENCE}`
 |----|----------------------------|-------|
 | `IT-KA-1009-001` | Full middleware pipeline accepts valid JWT, injects UserInfo into context | Pending |
 | `IT-KA-1009-002` | Full middleware pipeline rejects expired JWT with 401 | Pending |
-| `IT-KA-1009-003` | JWT-authenticated user passes SAR check against ClusterRoleBinding | Pending |
+| `IT-KA-1009-003` | JWT-authenticated user passes SAR check against ClusterRoleBinding | Deferred (v1.6 — requires real K8s SAR in IT) |
 | `IT-KA-1009-004` | JWT-authenticated user fails SAR check → 403 Forbidden | Pending |
 | `IT-KA-1009-005` | Mixed traffic: JWT request + K8s SA request both succeed in same middleware instance | Pending |
-| `IT-KA-1009-006` | ProviderType appears in middleware audit log entries | Pending |
+| `IT-KA-1009-006` | ProviderType appears in middleware audit log entries | Deferred (v1.6 — audit integration) |
 | `IT-KA-1009-007` | Impersonate-* headers stripped before JWT validation (defense-in-depth) | Pending |
-| `IT-KA-1009-008` | JWKS pre-warm failure → Pattern A still works, Pattern B returns 401 | Pending |
-| `IT-KA-1009-009` | Helm-rendered ClusterRoleBinding resolves correct group from values | Pending |
+| `IT-KA-1009-008` | JWKS pre-warm failure → Pattern B disabled globally, Pattern A works | Deferred (v1.6 — per-provider degradation) |
+| `IT-KA-1009-009` | Helm-rendered ClusterRoleBinding resolves correct group from values | Deferred (v1.6 — Helm template testing) |
 
 ### Tier 3: E2E Tests
 
@@ -417,7 +417,7 @@ Format: `{TIER}-KA-1009-{SEQUENCE}`
 **BR**: BR-INTERACTIVE-001, BR-INTERACTIVE-002
 **Priority**: P0
 **Type**: Integration
-**File**: `test/integration/kubernautagent/auth/mixed_traffic_test.go`
+**File**: `test/integration/kubernautagent/jwt_middleware_test.go`
 
 **Preconditions**:
 - Full middleware pipeline with CompositeAuthenticator (MockJWKSServer + MockK8sAuthenticator)
@@ -450,7 +450,7 @@ Format: `{TIER}-KA-1009-{SEQUENCE}`
 - **Framework**: Ginkgo/Gomega BDD (mandatory)
 - **Infrastructure**: httptest for full middleware pipeline, MockJWKSServer for JWKS
 - **Mocks**: MockAuthorizer for SAR (K8s auth not available without cluster)
-- **Location**: `test/integration/kubernautagent/auth/`
+- **Location**: `test/integration/kubernautagent/jwt_middleware_test.go`
 
 ### 10.3 E2E Tests
 
@@ -642,7 +642,7 @@ Wire CompositeAuthenticator in `newAuthMiddleware()`, add JWKS pre-warm at start
 
 #### Phase 6-RED: Helm Chart (Failing Template Tests)
 Write failing Helm template tests for jwtProviders ConfigMap rendering, conditional ClusterRoleBinding.
-Tests: IT-KA-1009-009
+Tests: IT-KA-1009-009 (deferred to v1.6)
 
 #### Phase 6-GREEN: Helm Chart (Minimal Implementation)
 Add jwtProviders to ConfigMap template, conditional ClusterRoleBinding for JWT group.
@@ -718,7 +718,7 @@ golangci-lint run --timeout=5m
 | Opaque token → CompositeAuthenticator → K8sAuthenticator → UserInfo in context | HTTP POST /api/v1/investigate | UserInfo in request context | IT-KA-1009-005 | Pending |
 | JWT expired → CompositeAuthenticator → 401 response | HTTP POST /api/v1/mcp | 401 JSON response | IT-KA-1009-002 | Pending |
 | JWT valid → SAR denied → 403 response | HTTP POST /api/v1/mcp | 403 JSON response | IT-KA-1009-004 | Pending |
-| JWKS pre-warm failure → soft-disable Pattern B | Server startup | Pattern A works, Pattern B 401 | IT-KA-1009-008 | Pending |
+| JWKS pre-warm failure → global disable Pattern B | Server startup | Pattern A works, Pattern B disabled | IT-KA-1009-008 | Deferred (v1.6) |
 
 ---
 

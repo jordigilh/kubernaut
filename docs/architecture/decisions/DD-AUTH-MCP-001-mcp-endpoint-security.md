@@ -234,20 +234,19 @@ Pattern B extracts identity from **verified JWT claims**, not from HTTP headers.
 
 ### JWKS Pre-warm at Startup
 
+`NewJWTAuthenticator` performs a synchronous JWKS fetch with a 15-second timeout for each configured provider during construction:
+
 ```go
-for _, provider := range cfg.Interactive.JWTProviders {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    err := jwtAuth.PreWarm(ctx, provider.Issuer)
-    cancel()
-    if err != nil {
-        logger.Error(err, "JWKS pre-warm failed; Pattern B disabled for this provider",
-            "issuer", provider.Issuer)
-        // Pattern A still works; Pattern B returns 401 for this issuer
-    }
+jwtAuth, err := auth.NewJWTAuthenticator(entries, logger)
+if err != nil {
+    logger.Error(err, "failed to create JWTAuthenticator; Pattern B disabled, Pattern A active")
+    // authenticator = k8sAuth (Pattern A only)
+} else {
+    authenticator = auth.NewCompositeAuthenticator(jwtAuth, k8sAuth)
 }
 ```
 
-Failure is non-fatal: Pattern A (K8s TokenReview) is unaffected. Pattern B returns 401 with a clear error message. JWKS cache auto-refreshes on subsequent requests.
+If **any** provider's JWKS endpoint is unreachable at startup, `NewJWTAuthenticator` returns an error and the `CompositeAuthenticator` is not created — Pattern B is disabled **globally**. Pattern A (K8s TokenReview) remains fully operational. For v1.5 with a single OIDC provider (Keycloak), this is equivalent to per-provider disable. Per-provider degradation may be added in v1.6 when SPIRE is introduced as a second provider.
 
 ### Non-K8s Tool Calls
 
@@ -319,7 +318,7 @@ Prometheus, DataStorage, and log queries use KA SA (no user-level auth available
 
 ### Negative Consequences
 1. KA gains a JWKS dependency at startup
-   - **Mitigation**: Pre-warm with 10s timeout; failure is non-fatal (Pattern A unaffected)
+   - **Mitigation**: Pre-warm with 15s timeout; failure disables Pattern B globally but Pattern A is unaffected
 2. JWT replay within validity window
    - **Mitigation**: Defense-in-depth (ClusterIP, NetworkPolicy, K8s RBAC scoping, audit trail). v1.6: AF mints short-lived (30s) internal JWTs
 3. Non-K8s tools (Prometheus, DS) use KA SA -- no user-level auth
@@ -329,7 +328,7 @@ Prometheus, DataStorage, and log queries use KA SA (no user-level auth available
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| JWKS endpoint unavailable at startup | Medium | Low | PreWarm with 10s timeout; Pattern A unaffected; JWKS cache auto-refreshes |
+| JWKS endpoint unavailable at startup | Medium | Low | Pre-warm with 15s timeout; Pattern B disabled globally; Pattern A unaffected |
 | JWT replay within validity window | Medium | Medium | Defense-in-depth; v1.6: short-lived internal JWTs |
 | ClusterRoleBinding group misconfiguration | Low | Medium | Helm values documentation; integration test; Helm template test |
 | Breaking Pattern A auth | Low | Critical | CompositeAuthenticator passthrough; existing test regression suite |

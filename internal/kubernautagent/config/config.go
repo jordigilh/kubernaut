@@ -215,8 +215,7 @@ type InteractiveConfig struct {
 	MaxConcurrentSessions int                 `yaml:"maxConcurrentSessions"`
 	RateLimitPerUser      int                 `yaml:"rateLimitPerUser"`
 	MaxAnalyzingTimeout   time.Duration       `yaml:"maxAnalyzingTimeout"`
-	JWTProviders          []JWTProviderConfig `yaml:"jwtProviders,omitempty"`
-	JWTInteractiveGroup   string              `yaml:"jwtInteractiveGroup,omitempty"`
+	JWTProviders []JWTProviderConfig `yaml:"jwtProviders,omitempty"`
 }
 
 // JWTProviderConfig defines a trusted JWT issuer for Pattern B authentication.

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	. "github.com/onsi/ginkgo/v2"
@@ -49,7 +50,7 @@ var _ = Describe("CompositeAuthenticator — #1009", func() {
 				UsernameClaim: "preferred_username",
 				GroupsClaim:   "groups",
 			},
-		})
+		}, logr.Discard())
 		Expect(err).NotTo(HaveOccurred())
 
 		mockK8s = &auth.MockAuthenticator{

@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	. "github.com/onsi/ginkgo/v2"
@@ -50,7 +51,7 @@ var _ = Describe("JWTAuthenticator — #1009", func() {
 				UsernameClaim: "preferred_username",
 				GroupsClaim:   "groups",
 			},
-		})
+		}, logr.Discard())
 		Expect(err).NotTo(HaveOccurred())
 		ctx = context.Background()
 	})
@@ -98,7 +99,7 @@ var _ = Describe("JWTAuthenticator — #1009", func() {
 					UsernameClaim: "preferred_username",
 					GroupsClaim:   "realm_access.roles",
 				},
-			})
+			}, logr.Discard())
 			Expect(err).NotTo(HaveOccurred())
 
 			token, err := mockServer.IssueJWTWithClaims("user-a", "kubernaut-agent", 5*time.Minute, map[string]interface{}{
@@ -238,7 +239,7 @@ var _ = Describe("JWTAuthenticator — #1009", func() {
 					UsernameClaim: "preferred_username",
 					GroupsClaim:   "groups",
 				},
-			})
+			}, logr.Discard())
 			Expect(err).NotTo(HaveOccurred())
 
 			token1, err := mockServer.IssueJWT("user-from-kc@corp", []string{"g1"}, "kubernaut-agent", 5*time.Minute)
@@ -278,7 +279,7 @@ var _ = Describe("JWTAuthenticator — #1009", func() {
 					UsernameClaim: "preferred_username",
 					GroupsClaim:   "groups",
 				},
-			})
+			}, logr.Discard())
 			Expect(err).NotTo(HaveOccurred())
 
 			// Token signed by issuer-two's key but claiming to be from keycloak

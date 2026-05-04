@@ -1139,7 +1139,7 @@ func newAuthMiddleware(infra *k8sInfra, interactiveCfg kaconfig.InteractiveConfi
 			}
 		}
 
-		jwtAuth, err := auth.NewJWTAuthenticator(entries)
+		jwtAuth, err := auth.NewJWTAuthenticator(entries, logger.WithName("jwt-auth"))
 		if err != nil {
 			logger.Error(err, "failed to create JWTAuthenticator; Pattern B disabled, Pattern A active")
 		} else {

@@ -256,9 +256,6 @@ data:
 {{- end }}
 {{- end }}
 {{- end }}
-{{- with .Values.kubernautAgent.interactive.jwtInteractiveGroup }}
-      jwtInteractiveGroup: {{ . | quote }}
-{{- end }}
 {{- end }}
     integrations:
       dataStorage:

@@ -55,7 +55,7 @@ var _ = Describe("JWT Middleware Pipeline — #1009", func() {
 				UsernameClaim: "preferred_username",
 				GroupsClaim:   "groups",
 			},
-		})
+		}, logr.Discard())
 		Expect(err).NotTo(HaveOccurred())
 
 		mockK8sAuth = &auth.MockAuthenticator{

@@ -788,7 +788,6 @@ data:
           claimMappings:
             username: "email"
             groups: "groups"
-      jwtInteractiveGroup: "interactive-users"
 ---
 apiVersion: v1
 kind: ConfigMap

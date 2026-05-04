@@ -56,7 +56,6 @@ interactive:
       claimMappings:
         username: "preferred_username"
         groups: "groups"
-  jwtInteractiveGroup: "kubernaut-interactive-users"
 `)
 			cfg, err := config.Load(yaml)
 			Expect(err).NotTo(HaveOccurred())
@@ -71,7 +70,6 @@ interactive:
 			Expect(cfg.Interactive.JWTProviders[0].Audience).To(Equal("kubernaut-agent"))
 			Expect(cfg.Interactive.JWTProviders[0].ClaimMappings.Username).To(Equal("preferred_username"))
 			Expect(cfg.Interactive.JWTProviders[0].ClaimMappings.Groups).To(Equal("groups"))
-			Expect(cfg.Interactive.JWTInteractiveGroup).To(Equal("kubernaut-interactive-users"))
 		})
 	})
 
