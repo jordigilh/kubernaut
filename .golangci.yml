@@ -41,21 +41,25 @@ linters:
 
   exclusions:
     rules:
-      # Exclude test setup/teardown code from some checks
-      - path: _test\.go
+      # Exclude test setup/teardown and infrastructure code from Close() checks
+      - path: (_test\.go|test/)
         linters:
           - errcheck
         text: "Error return value of.*Close.*is not checked"
+      # gosec: test code is not production surface — G107/G201/G204/G301/G304 are expected patterns
+      - path: "(^test/|_test\\.go)"
+        linters:
+          - gosec
       # Dot imports are idiomatic for Ginkgo/Gomega BDD test framework
       - path: "^test/"
         linters:
           - staticcheck
         text: "ST1001"
-      # G101: mount paths, config keys, and constant names are not credentials
+      # G101: mount paths, config keys, constant names, and test fixture hashes are not credentials
       - linters:
           - gosec
         text: "G101"
-        path: "(cmd/|internal/kubernautagent/|pkg/workflowexecution/|pkg/shared/)"
+        path: "(cmd/|internal/kubernautagent/|pkg/workflowexecution/|pkg/shared/|test/infrastructure/)"
       # G304: file paths from config loaders, credential resolvers, and TLS helpers
       - linters:
           - gosec

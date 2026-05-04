@@ -18,7 +18,6 @@ package rbac_test
 
 import (
 	"context"
-	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -167,10 +166,8 @@ var _ = Describe("UT-KA-891-001: Startup impersonate permission check (#891)", f
 	Describe("DetectPodIdentity", func() {
 
 		It("should return values from POD_NAME and POD_NAMESPACE env vars", func() {
-			os.Setenv("POD_NAME", "ka-test-pod-xyz")
-			os.Setenv("POD_NAMESPACE", "kubernaut-test-ns")
-			defer os.Unsetenv("POD_NAME")
-			defer os.Unsetenv("POD_NAMESPACE")
+			GinkgoT().Setenv("POD_NAME", "ka-test-pod-xyz")
+			GinkgoT().Setenv("POD_NAMESPACE", "kubernaut-test-ns")
 
 			podName, namespace := karbac.DetectPodIdentity()
 			Expect(podName).To(Equal("ka-test-pod-xyz"))
@@ -178,9 +175,6 @@ var _ = Describe("UT-KA-891-001: Startup impersonate permission check (#891)", f
 		})
 
 		It("should return empty strings when env vars are not set", func() {
-			os.Unsetenv("POD_NAME")
-			os.Unsetenv("POD_NAMESPACE")
-
 			podName, namespace := karbac.DetectPodIdentity()
 			Expect(podName).To(BeEmpty())
 			Expect(namespace).To(BeEmpty())
