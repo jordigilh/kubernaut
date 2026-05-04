@@ -64,6 +64,7 @@ func main() {
 	ipLimiter := ratelimit.NewIPLimiter(rlCfg.PerIP)
 	defer ipLimiter.Stop()
 	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
+	defer userLimiter.Stop()
 
 	// Authenticated API routes
 	apiMux := http.NewServeMux()
@@ -100,6 +101,9 @@ func main() {
 	rootMux.Handle("/metrics", metricsReg.Handler())
 	rootMux.Handle("/", apiHandler)
 
+	// Port 8443 serves plaintext HTTP. TLS termination is handled by the
+	// Kubernetes ingress controller or service mesh sidecar (Envoy/Istio).
+	// Override with PORT env var if needed (e.g., PORT=8080 for local dev).
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8443"
