@@ -234,9 +234,9 @@ func (l *UserLimiter) AllowToolCall(username string) bool {
 // ProviderLimiter limits JWKS fetch rate per OIDC provider.
 // Wired into the middleware chain in PR6 (A2A handler).
 type ProviderLimiter struct {
-	mu       sync.Mutex
+	mu        sync.Mutex
 	lastFetch map[string]time.Time
-	interval time.Duration
+	interval  time.Duration
 }
 
 // NewProviderLimiter creates a per-provider rate limiter.
@@ -268,8 +268,8 @@ type LLMSemaphore struct {
 }
 
 // NewLLMSemaphore creates a semaphore with the given max concurrent slots.
-func NewLLMSemaphore(max int) *LLMSemaphore {
-	return &LLMSemaphore{max: int32(max)}
+func NewLLMSemaphore(maxSlots int) *LLMSemaphore {
+	return &LLMSemaphore{max: int32(maxSlots)}
 }
 
 // Acquire attempts to acquire a semaphore slot. Returns false if at capacity.
@@ -330,7 +330,7 @@ func PreAuthMiddlewareWithConfig(cfg PreAuthMiddlewareConfig) func(http.Handler)
 					cfg.Metrics.WithLabelValues("ip", "burst_exceeded").Inc()
 				}
 				if cfg.Auditor != nil {
-					cfg.Auditor.Emit(r.Context(), audit.Event{
+					cfg.Auditor.Emit(r.Context(), &audit.Event{
 						Type:     audit.EventRateLimitDenied,
 						SourceIP: ip,
 						Detail:   map[string]string{"tier": "ip"},
@@ -369,7 +369,7 @@ func PostAuthMiddlewareWithConfig(cfg PostAuthMiddlewareConfig) func(http.Handle
 					cfg.Metrics.WithLabelValues("user", "request_rate").Inc()
 				}
 				if cfg.Auditor != nil {
-					cfg.Auditor.Emit(r.Context(), audit.Event{
+					cfg.Auditor.Emit(r.Context(), &audit.Event{
 						Type:     audit.EventRateLimitDenied,
 						UserID:   identity.Username,
 						SourceIP: httputil.ExtractClientIP(r),
@@ -385,4 +385,3 @@ func PostAuthMiddlewareWithConfig(cfg PostAuthMiddlewareConfig) func(http.Handle
 		})
 	}
 }
-

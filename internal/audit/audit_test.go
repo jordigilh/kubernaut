@@ -25,7 +25,7 @@ var _ = Describe("Audit", func() {
 			}, funcr.Options{})
 
 			emitter := audit.NewLogEmitter(logger)
-			emitter.Emit(context.Background(), audit.Event{
+			emitter.Emit(context.Background(), &audit.Event{
 				Type:     audit.EventAuthSuccess,
 				UserID:   "alice",
 				SourceIP: "10.0.0.1",
@@ -38,7 +38,7 @@ var _ = Describe("Audit", func() {
 		})
 
 		It("UT-AF-AUD-002: sets timestamp automatically on emitted events", func() {
-			event := audit.Event{Type: audit.EventAuthFailure}
+			event := &audit.Event{Type: audit.EventAuthFailure}
 			Expect(event.Timestamp.IsZero()).To(BeTrue(), "timestamp should be zero before Emit")
 
 			var captured string
@@ -60,7 +60,7 @@ var _ = Describe("Audit", func() {
 			}, funcr.Options{})
 
 			emitter := audit.NewLogEmitter(logger)
-			emitter.Emit(context.Background(), audit.Event{
+			emitter.Emit(context.Background(), &audit.Event{
 				Type: audit.EventRateLimitDenied,
 			})
 
@@ -77,8 +77,8 @@ var _ = Describe("Audit", func() {
 		})
 
 		It("UT-AF-AUD-005: passes detail map to emitter", func() {
-			var capturedEvent audit.Event
-			emitter := &fakeEmitter{onEmit: func(_ context.Context, e audit.Event) {
+			var capturedEvent *audit.Event
+			emitter := &fakeEmitter{onEmit: func(_ context.Context, e *audit.Event) {
 				capturedEvent = e
 			}}
 
@@ -92,10 +92,10 @@ var _ = Describe("Audit", func() {
 })
 
 type fakeEmitter struct {
-	onEmit func(context.Context, audit.Event)
+	onEmit func(context.Context, *audit.Event)
 }
 
-func (f *fakeEmitter) Emit(ctx context.Context, event audit.Event) {
+func (f *fakeEmitter) Emit(ctx context.Context, event *audit.Event) {
 	if f.onEmit != nil {
 		f.onEmit(ctx, event)
 	}

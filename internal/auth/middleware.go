@@ -97,12 +97,11 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 	}
 }
 
-
 func emitAuthSuccess(ctx context.Context, emitter audit.Emitter, identity *UserIdentity, sourceIP string) {
 	if emitter == nil {
 		return
 	}
-	emitter.Emit(ctx, audit.Event{
+	emitter.Emit(ctx, &audit.Event{
 		Type:     audit.EventAuthSuccess,
 		UserID:   identity.Username,
 		SourceIP: sourceIP,
@@ -116,7 +115,7 @@ func emitAuthFailure(ctx context.Context, emitter audit.Emitter, userID, sourceI
 	if emitter == nil {
 		return
 	}
-	emitter.Emit(ctx, audit.Event{
+	emitter.Emit(ctx, &audit.Event{
 		Type:     audit.EventAuthFailure,
 		UserID:   userID,
 		SourceIP: sourceIP,
