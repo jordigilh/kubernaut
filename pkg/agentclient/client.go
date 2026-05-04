@@ -253,10 +253,13 @@ func (c *KubernautAgentClient) PollSession(ctx context.Context, sessionID string
 
 	switch v := res.(type) {
 	case *SessionStatus:
-		return &SessionStatusResult{
-			Status: v.Status,
-			Error:  v.Error.Value,
-		}, nil
+		result := &SessionStatusResult{
+			Status:           v.Status,
+			Error:            v.Error.Value,
+			ActingUser:       v.ActingUser.Value,
+			ActingUserGroups: v.ActingUserGroups,
+		}
+		return result, nil
 	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound:
 		return nil, &APIError{StatusCode: http.StatusNotFound, Message: fmt.Sprintf("session %s not found: %s", sessionID, v.Detail)}
 	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetInternalServerError:

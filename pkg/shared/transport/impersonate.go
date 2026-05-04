@@ -18,7 +18,10 @@ package transport
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+
+	"github.com/go-logr/logr"
 )
 
 type impersonationContextKey struct{}
@@ -79,6 +82,14 @@ func WithAuditor(auditor K8sCallAuditor) ImpersonateOption {
 	}
 }
 
+// WithLogger attaches a logger to the round-tripper for audit error
+// visibility. Without a logger, recovered audit panics are silent (#898-S3).
+func WithLogger(l logr.Logger) ImpersonateOption {
+	return func(t *ImpersonatingRoundTripper) {
+		t.logger = l
+	}
+}
+
 // ImpersonatingRoundTripper is an http.RoundTripper that conditionally injects
 // Kubernetes impersonation headers based on context values. When context carries
 // an impersonated user (via WithImpersonatedUser), the transport adds
@@ -90,6 +101,7 @@ func WithAuditor(auditor K8sCallAuditor) ImpersonateOption {
 type ImpersonatingRoundTripper struct {
 	delegate http.RoundTripper
 	auditor  K8sCallAuditor
+	logger   logr.Logger
 }
 
 // NewImpersonatingRoundTripper wraps the given transport with per-request
@@ -130,7 +142,9 @@ func (t *ImpersonatingRoundTripper) RoundTrip(req *http.Request) (*http.Response
 func (t *ImpersonatingRoundTripper) emitAudit(ctx context.Context, req *http.Request, resp *http.Response, username string, groups []string) {
 	defer func() {
 		if r := recover(); r != nil {
-			// Fire-and-forget: audit must never crash the transport.
+			if t.logger.GetSink() != nil {
+				t.logger.Error(fmt.Errorf("audit panic: %v", r), "K8s call audit recovered from panic")
+			}
 		}
 	}()
 

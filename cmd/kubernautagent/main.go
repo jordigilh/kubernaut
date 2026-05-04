@@ -703,6 +703,7 @@ func initK8sInfra(logger logr.Logger, auditor sharedtransport.K8sCallAuditor) *k
 		if auditor != nil {
 			opts = append(opts, sharedtransport.WithAuditor(auditor))
 		}
+		opts = append(opts, sharedtransport.WithLogger(logger))
 		return sharedtransport.NewImpersonatingRoundTripper(rt, opts...)
 	}
 

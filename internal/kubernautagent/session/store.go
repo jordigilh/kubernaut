@@ -221,7 +221,7 @@ func (s *Store) Cleanup() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, sess := range s.sessions {
-		if sess.Status == StatusRunning {
+		if sess.Status == StatusRunning || sess.Status == StatusUserDriving {
 			continue
 		}
 		if sess.CreatedAt.Before(cutoff) {

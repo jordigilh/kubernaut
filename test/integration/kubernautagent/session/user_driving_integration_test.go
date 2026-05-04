@@ -30,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -69,8 +70,8 @@ var _ = Describe("UserDriving Integration — #774, BR-INTERACTIVE-001", func() 
 		})
 	})
 
-	Describe("IT-KA-774-002: HTTP round-trip: session status endpoint returns user_driving with identity", func() {
-		It("should serve user_driving status with acting_user fields via HTTP", func() {
+	Describe("IT-KA-774-002: HTTP round-trip through real ogen handler returns user_driving with identity", func() {
+		It("should serve user_driving status with acting_user fields via the production handler pipeline", func() {
 			store := session.NewStore(5 * time.Minute)
 			manager := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
 			handler := server.NewHandler(manager, nil, logr.Discard(), nil)
@@ -84,46 +85,27 @@ var _ = Describe("UserDriving Integration — #774, BR-INTERACTIVE-001", func() 
 			err = manager.TransitionToUserDriving(id, "operator@company.com", []string{"sre"})
 			Expect(err).NotTo(HaveOccurred())
 
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				sess, sErr := manager.GetSession(id)
-				if sErr != nil {
-					http.Error(w, sErr.Error(), http.StatusNotFound)
-					return
-				}
-				resp := map[string]interface{}{
-					"session_id": sess.ID,
-					"status":     string(sess.Status),
-				}
-				if sess.Metadata["acting_user"] != "" {
-					resp["acting_user"] = sess.Metadata["acting_user"]
-				}
-				if raw, ok := sess.Metadata["acting_user_groups"]; ok {
-					var groups []string
-					_ = json.Unmarshal([]byte(raw), &groups)
-					resp["acting_user_groups"] = groups
-				}
-				w.Header().Set("Content-Type", "application/json")
-				_ = json.NewEncoder(w).Encode(resp)
-			}))
+			// QE-1: Use the real ogen Server wrapping the production handler —
+			// this validates that SessionStatus.ActingUser and ActingUserGroups
+			// are emitted by the actual handler, not a test stub.
+			ogenSrv, err := agentclient.NewServer(handler)
+			Expect(err).NotTo(HaveOccurred())
+
+			ts := httptest.NewServer(ogenSrv)
 			defer ts.Close()
 
-			resp, err := http.Get(ts.URL + "/api/v1/incident/session/" + id)
-			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
-
-			var body map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&body)
+			client, err := agentclient.NewKubernautAgentClientWithTransport(
+				agentclient.Config{BaseURL: ts.URL, Timeout: 5 * time.Second},
+				http.DefaultTransport,
+			)
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(body["status"]).To(Equal("user_driving"))
-			Expect(body["acting_user"]).To(Equal("operator@company.com"))
+			result, err := client.PollSession(context.Background(), id)
+			Expect(err).NotTo(HaveOccurred())
 
-			groupsRaw, ok := body["acting_user_groups"].([]interface{})
-			Expect(ok).To(BeTrue(), "acting_user_groups should be an array")
-			Expect(groupsRaw).To(HaveLen(1))
-			Expect(groupsRaw[0]).To(Equal("sre"))
-
-			_ = handler
+			Expect(result.Status).To(Equal("user_driving"))
+			Expect(result.ActingUser).To(Equal("operator@company.com"))
+			Expect(result.ActingUserGroups).To(ConsistOf("sre"))
 		})
 	})
 })

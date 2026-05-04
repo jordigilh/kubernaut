@@ -725,6 +725,17 @@
           "error": {
             "type": "string",
             "description": "Error message when status is failed"
+          },
+          "acting_user": {
+            "type": "string",
+            "description": "Username of the interactive session driver (present when status is user_driving, BR-INTERACTIVE-001, #774)"
+          },
+          "acting_user_groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "description": "Groups of the interactive session driver (present when status is user_driving, BR-INTERACTIVE-001, #774)"
           }
         }
       },

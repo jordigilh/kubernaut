@@ -4622,12 +4622,30 @@ func (s *SessionStatus) encodeFields(e *jx.Encoder) {
 			s.Error.Encode(e)
 		}
 	}
+	{
+		if s.ActingUser.Set {
+			e.FieldStart("acting_user")
+			s.ActingUser.Encode(e)
+		}
+	}
+	{
+		if s.ActingUserGroups != nil {
+			e.FieldStart("acting_user_groups")
+			e.ArrStart()
+			for _, elem := range s.ActingUserGroups {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
 }
 
-var jsonFieldsNameOfSessionStatus = [3]string{
+var jsonFieldsNameOfSessionStatus = [5]string{
 	0: "session_id",
 	1: "status",
 	2: "error",
+	3: "acting_user",
+	4: "acting_user_groups",
 }
 
 // Decode decodes SessionStatus from json.
@@ -4672,6 +4690,35 @@ func (s *SessionStatus) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"error\"")
+			}
+		case "acting_user":
+			if err := func() error {
+				s.ActingUser.Reset()
+				if err := s.ActingUser.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"acting_user\"")
+			}
+		case "acting_user_groups":
+			if err := func() error {
+				s.ActingUserGroups = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.ActingUserGroups = append(s.ActingUserGroups, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"acting_user_groups\"")
 			}
 		default:
 			return d.Skip()

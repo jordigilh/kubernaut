@@ -166,10 +166,22 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 	}
 
 	status := mapSessionStatusToAPI(sess.Status)
-	return &agentclient.SessionStatus{
+	resp := &agentclient.SessionStatus{
 		SessionID: sess.ID,
 		Status:    status,
-	}, nil
+	}
+	if sess.Status == session.StatusUserDriving && sess.Metadata != nil {
+		if u := sess.Metadata["acting_user"]; u != "" {
+			resp.ActingUser = agentclient.NewOptString(u)
+		}
+		if raw := sess.Metadata["acting_user_groups"]; raw != "" {
+			var groups []string
+			if err := json.Unmarshal([]byte(raw), &groups); err == nil {
+				resp.ActingUserGroups = groups
+			}
+		}
+	}
+	return resp, nil
 }
 
 // IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet implements
