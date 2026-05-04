@@ -74,10 +74,14 @@ func (m *mockAutoMgrIT) SuspendInvestigation(id string) error {
 	return m.mgr.SuspendInvestigation(id)
 }
 
+func (m *mockAutoMgrIT) TransitionToUserDriving(id, username string, groups []string) error {
+	return m.mgr.TransitionToUserDriving(id, username, groups)
+}
+
 var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", func() {
 
-	Describe("IT-KA-TAKE-001: Takeover mid-LLM-turn — autonomous cancelled after turn completes", func() {
-		It("should cancel the autonomous session and acquire the interactive lease", func() {
+	Describe("IT-KA-TAKE-001: Takeover mid-LLM-turn — autonomous transitions to user_driving", func() {
+		It("should transition the autonomous session to user_driving and acquire the interactive lease", func() {
 			nsName := uniqueNamespace("take01")
 			createNamespace(context.Background(), sharedK8sClient, nsName)
 
@@ -128,7 +132,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 					return ""
 				}
 				return s.Status
-			}).Should(Equal(session.StatusCancelled))
+			}).Should(Equal(session.StatusUserDriving))
 
 			Expect(leaseMgr.IsDriverActive("rr-it-001")).To(BeTrue())
 		})

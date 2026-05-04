@@ -38,6 +38,15 @@ type Config struct {
 	PolicyPath string
 }
 
+// IdentityInput carries the acting user's identity for Rego policy evaluation
+// during interactive sessions (BR-INTERACTIVE-001, BR-AI-085). When nil, the
+// flow is autonomous (alert-driven) and Rego policies should default to
+// require_approval := true.
+type IdentityInput struct {
+	User   string   `json:"user"`
+	Groups []string `json:"groups,omitempty"`
+}
+
 // PolicyInput represents input to Rego policy
 // Per IMPLEMENTATION_PLAN_V1.0.md lines 1756-1785 (ApprovalInput schema)
 // Fields align with AIAnalysis status fields captured by InvestigatingHandler
@@ -75,6 +84,12 @@ type PolicyInput struct {
 	// When nil, the Rego policy uses its built-in default (0.8).
 	// Stepping stone toward BR-HAPI-198 (V1.1 rule-based thresholds).
 	ConfidenceThreshold *float64 `json:"confidence_threshold,omitempty"`
+
+	// Identity carries the acting user's identity for interactive sessions.
+	// nil for autonomous (alert-driven) flows. When set, Rego policies can
+	// access input.identity.user and input.identity.groups for role-based
+	// approval decisions (BR-AI-085, #774).
+	Identity *IdentityInput `json:"identity,omitempty"`
 }
 
 // TargetResourceInput contains target resource identification
@@ -201,6 +216,16 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 	// Omitting it lets the Rego policy's default (0.8) apply.
 	if input.ConfidenceThreshold != nil {
 		inputMap["confidence_threshold"] = *input.ConfidenceThreshold
+	}
+
+	// #774: Include identity when present (interactive sessions).
+	// Absent for autonomous (alert-driven) flows so Rego policies can
+	// distinguish with `default require_approval := true`.
+	if input.Identity != nil {
+		inputMap["identity"] = map[string]interface{}{
+			"user":   input.Identity.User,
+			"groups": input.Identity.Groups,
+		}
 	}
 
 	// Evaluate policy

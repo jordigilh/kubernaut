@@ -66,6 +66,10 @@ func (m *goldenPathAutoMgr) SuspendInvestigation(_ string) error {
 	m.suspended = true
 	return nil
 }
+func (m *goldenPathAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string) error {
+	m.suspended = true
+	return nil
+}
 
 var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001", func() {
 	var (

@@ -519,6 +519,10 @@ type InteractiveSessionInfo struct {
 	// ActingUser is the resolved identity currently driving the investigation
 	// +optional
 	ActingUser string `json:"actingUser,omitempty"`
+	// ActingUserGroups are the groups of the user driving the investigation
+	// (BR-INTERACTIVE-001, #774)
+	// +optional
+	ActingUserGroups []string `json:"actingUserGroups,omitempty"`
 	// StartedAt is when the user took over
 	// +optional
 	StartedAt *metav1.Time `json:"startedAt,omitempty"`

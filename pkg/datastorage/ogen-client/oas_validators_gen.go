@@ -250,6 +250,38 @@ func (s AIAgentInteractiveCompletedPayloadEventType) Validate() error {
 	}
 }
 
+func (s *AIAgentInteractiveK8sCallPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentInteractiveK8sCallPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.interactive.k8s_call":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *AIAgentInteractiveStartedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -2492,6 +2524,11 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case AIAgentInteractiveK8sCallPayloadAuditEventEventData:
+		if err := s.AIAgentInteractiveK8sCallPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case AIAgentSessionObservedPayloadAuditEventEventData:
 		if err := s.AIAgentSessionObservedPayload.Validate(); err != nil {
 			return err
@@ -2965,6 +3002,11 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case AIAgentInteractiveCompletedPayloadAuditEventRequestEventData:
 		if err := s.AIAgentInteractiveCompletedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentInteractiveK8sCallPayloadAuditEventRequestEventData:
+		if err := s.AIAgentInteractiveK8sCallPayload.Validate(); err != nil {
 			return err
 		}
 		return nil

@@ -44,17 +44,20 @@ type InvestigatorRunner interface {
 	RunInteractiveTurn(ctx context.Context, messages []LLMMessage, correlationID string) (string, error)
 }
 
-// AutonomousSessionManager provides lookup and suspension of autonomous
-// investigation sessions. Used by handleTakeover to suspend the running
-// autonomous session before acquiring the interactive Lease.
+// AutonomousSessionManager provides lookup, suspension, and user-driving
+// transition of autonomous investigation sessions. Used by handleTakeover
+// to transition the running autonomous session to user-driven mode before
+// acquiring the interactive Lease.
 //
-// v1.5: SuspendInvestigation added for BR-INTERACTIVE-004 (dynamic takeover).
-// Semantically distinct from CancelInvestigation — emits session.suspended
-// audit event instead of session.cancelled, enabling metrics differentiation.
+// v1.5: TransitionToUserDriving replaces SuspendInvestigation in the takeover
+// path (BR-INTERACTIVE-004, #774). It cancels the autonomous goroutine, sets
+// StatusUserDriving, and writes identity metadata so the poll response carries
+// acting_user / acting_user_groups to AA for Rego policy evaluation.
 type AutonomousSessionManager interface {
 	FindByRemediationID(rrID string) (string, bool)
 	CancelInvestigation(id string) error
 	SuspendInvestigation(id string) error
+	TransitionToUserDriving(id, username string, groups []string) error
 }
 
 // RRExistenceChecker validates that a RemediationRequest exists before
@@ -289,13 +292,17 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 		return InvestigateOutput{}, fmt.Errorf("takeover session: %w", err)
 	}
 
-	// Lease acquired — now safe to suspend autonomous investigation.
+	// Lease acquired — now safe to transition autonomous investigation to user-driven.
+	// #774: TransitionToUserDriving replaces SuspendInvestigation so that:
+	// 1. The session enters StatusUserDriving (pollable, not terminal)
+	// 2. Identity (username + groups) is written to session metadata
+	// 3. AA poll response carries identity → Rego input.identity
 	if t.autoMgr != nil {
 		autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
 		if found {
-			if err := t.autoMgr.SuspendInvestigation(autoSessionID); err != nil {
+			if err := t.autoMgr.TransitionToUserDriving(autoSessionID, user.Username, user.Groups); err != nil {
 				if !errors.Is(err, session.ErrSessionTerminal) {
-					return InvestigateOutput{}, fmt.Errorf("suspend autonomous session: %w", err)
+					return InvestigateOutput{}, fmt.Errorf("transition autonomous session to user-driving: %w", err)
 				}
 				// ErrSessionTerminal after lease acquired: autonomous already finished,
 				// proceed with interactive session (takeover still valid).
@@ -365,6 +372,9 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 	// ImpersonatingRoundTripper injects Impersonate-User/Group headers on
 	// K8s API calls, enforcing the user's RBAC during tool execution.
 	ctx = transport.WithImpersonatedUser(ctx, user.Username, user.Groups)
+	// #898-S5: Attach session ID so ImpersonatingRoundTripper can attribute
+	// K8s call audit events to this interactive session.
+	ctx = transport.WithAuditSessionID(ctx, sess.SessionID)
 
 	// PROD-02: Prepend reconstructed context turns so the LLM has full history.
 	messages := t.buildMessagesWithContext(input.RRID, input.Message)

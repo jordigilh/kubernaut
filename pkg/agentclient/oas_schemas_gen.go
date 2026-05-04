@@ -2582,6 +2582,12 @@ type SessionStatus struct {
 	Status    string `json:"status"`
 	// Error message when status is failed.
 	Error OptString `json:"error"`
+	// Username of the interactive session driver (present when status is user_driving,
+	// BR-INTERACTIVE-001, #774).
+	ActingUser OptString `json:"acting_user"`
+	// Groups of the interactive session driver (present when status is user_driving, BR-INTERACTIVE-001,
+	// #774).
+	ActingUserGroups []string `json:"acting_user_groups"`
 }
 
 // GetSessionID returns the value of SessionID.
@@ -2599,6 +2605,16 @@ func (s *SessionStatus) GetError() OptString {
 	return s.Error
 }
 
+// GetActingUser returns the value of ActingUser.
+func (s *SessionStatus) GetActingUser() OptString {
+	return s.ActingUser
+}
+
+// GetActingUserGroups returns the value of ActingUserGroups.
+func (s *SessionStatus) GetActingUserGroups() []string {
+	return s.ActingUserGroups
+}
+
 // SetSessionID sets the value of SessionID.
 func (s *SessionStatus) SetSessionID(val string) {
 	s.SessionID = val
@@ -2612,6 +2628,16 @@ func (s *SessionStatus) SetStatus(val string) {
 // SetError sets the value of Error.
 func (s *SessionStatus) SetError(val OptString) {
 	s.Error = val
+}
+
+// SetActingUser sets the value of ActingUser.
+func (s *SessionStatus) SetActingUser(val OptString) {
+	s.ActingUser = val
+}
+
+// SetActingUserGroups sets the value of ActingUserGroups.
+func (s *SessionStatus) SetActingUserGroups(val []string) {
+	s.ActingUserGroups = val
 }
 
 func (*SessionStatus) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {}

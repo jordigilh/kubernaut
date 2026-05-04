@@ -1213,6 +1213,292 @@ func (s *AIAgentInteractiveCompletedPayloadEventType) UnmarshalJSON(data []byte)
 }
 
 // Encode implements json.Marshaler.
+func (s *AIAgentInteractiveK8sCallPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentInteractiveK8sCallPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("event_id")
+		e.Str(s.EventID)
+	}
+	{
+		e.FieldStart("session_id")
+		e.Str(s.SessionID)
+	}
+	{
+		e.FieldStart("acting_user")
+		e.Str(s.ActingUser)
+	}
+	{
+		e.FieldStart("resource")
+		e.Str(s.Resource)
+	}
+	{
+		e.FieldStart("verb")
+		e.Str(s.Verb)
+	}
+	{
+		if s.Namespace.Set {
+			e.FieldStart("namespace")
+			s.Namespace.Encode(e)
+		}
+	}
+	{
+		if s.ResourceName.Set {
+			e.FieldStart("resource_name")
+			s.ResourceName.Encode(e)
+		}
+	}
+	{
+		if s.HTTPStatusCode.Set {
+			e.FieldStart("http_status_code")
+			s.HTTPStatusCode.Encode(e)
+		}
+	}
+	{
+		if s.CorrelationID.Set {
+			e.FieldStart("correlation_id")
+			s.CorrelationID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfAIAgentInteractiveK8sCallPayload = [10]string{
+	0: "event_type",
+	1: "event_id",
+	2: "session_id",
+	3: "acting_user",
+	4: "resource",
+	5: "verb",
+	6: "namespace",
+	7: "resource_name",
+	8: "http_status_code",
+	9: "correlation_id",
+}
+
+// Decode decodes AIAgentInteractiveK8sCallPayload from json.
+func (s *AIAgentInteractiveK8sCallPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentInteractiveK8sCallPayload to nil")
+	}
+	var requiredBitSet [2]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "event_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.EventID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_id\"")
+			}
+		case "session_id":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.SessionID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"session_id\"")
+			}
+		case "acting_user":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Str()
+				s.ActingUser = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"acting_user\"")
+			}
+		case "resource":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Resource = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"resource\"")
+			}
+		case "verb":
+			requiredBitSet[0] |= 1 << 5
+			if err := func() error {
+				v, err := d.Str()
+				s.Verb = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"verb\"")
+			}
+		case "namespace":
+			if err := func() error {
+				s.Namespace.Reset()
+				if err := s.Namespace.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"namespace\"")
+			}
+		case "resource_name":
+			if err := func() error {
+				s.ResourceName.Reset()
+				if err := s.ResourceName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"resource_name\"")
+			}
+		case "http_status_code":
+			if err := func() error {
+				s.HTTPStatusCode.Reset()
+				if err := s.HTTPStatusCode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"http_status_code\"")
+			}
+		case "correlation_id":
+			if err := func() error {
+				s.CorrelationID.Reset()
+				if err := s.CorrelationID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"correlation_id\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentInteractiveK8sCallPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b00111111,
+		0b00000000,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAgentInteractiveK8sCallPayload) {
+					name = jsonFieldsNameOfAIAgentInteractiveK8sCallPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentInteractiveK8sCallPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentInteractiveK8sCallPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentInteractiveK8sCallPayloadEventType as json.
+func (s AIAgentInteractiveK8sCallPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentInteractiveK8sCallPayloadEventType from json.
+func (s *AIAgentInteractiveK8sCallPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentInteractiveK8sCallPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentInteractiveK8sCallPayloadEventType(v) {
+	case AIAgentInteractiveK8sCallPayloadEventTypeAiagentInteractiveK8sCall:
+		*s = AIAgentInteractiveK8sCallPayloadEventTypeAiagentInteractiveK8sCall
+	default:
+		*s = AIAgentInteractiveK8sCallPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentInteractiveK8sCallPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentInteractiveK8sCallPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *AIAgentInteractiveStartedPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -13324,6 +13610,56 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AIAgentInteractiveK8sCallPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.interactive.k8s_call")
+		{
+			s := s.AIAgentInteractiveK8sCallPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("session_id")
+				e.Str(s.SessionID)
+			}
+			{
+				e.FieldStart("acting_user")
+				e.Str(s.ActingUser)
+			}
+			{
+				e.FieldStart("resource")
+				e.Str(s.Resource)
+			}
+			{
+				e.FieldStart("verb")
+				e.Str(s.Verb)
+			}
+			{
+				if s.Namespace.Set {
+					e.FieldStart("namespace")
+					s.Namespace.Encode(e)
+				}
+			}
+			{
+				if s.ResourceName.Set {
+					e.FieldStart("resource_name")
+					s.ResourceName.Encode(e)
+				}
+			}
+			{
+				if s.HTTPStatusCode.Set {
+					e.FieldStart("http_status_code")
+					s.HTTPStatusCode.Encode(e)
+				}
+			}
+			{
+				if s.CorrelationID.Set {
+					e.FieldStart("correlation_id")
+					s.CorrelationID.Encode(e)
+				}
+			}
+		}
 	case AIAgentSessionObservedPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("aiagent.session.observed")
@@ -14585,6 +14921,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.interactive.completed":
 					s.Type = AIAgentInteractiveCompletedPayloadAuditEventEventData
 					found = true
+				case "aiagent.interactive.k8s_call":
+					s.Type = AIAgentInteractiveK8sCallPayloadAuditEventEventData
+					found = true
 				case "aiagent.session.observed":
 					s.Type = AIAgentSessionObservedPayloadAuditEventEventData
 					found = true
@@ -14866,6 +15205,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case AIAgentInteractiveCompletedPayloadAuditEventEventData:
 		if err := s.AIAgentInteractiveCompletedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentInteractiveK8sCallPayloadAuditEventEventData:
+		if err := s.AIAgentInteractiveK8sCallPayload.Decode(d); err != nil {
 			return err
 		}
 	case AIAgentSessionObservedPayloadAuditEventEventData:
@@ -17270,6 +17613,56 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AIAgentInteractiveK8sCallPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.interactive.k8s_call")
+		{
+			s := s.AIAgentInteractiveK8sCallPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("session_id")
+				e.Str(s.SessionID)
+			}
+			{
+				e.FieldStart("acting_user")
+				e.Str(s.ActingUser)
+			}
+			{
+				e.FieldStart("resource")
+				e.Str(s.Resource)
+			}
+			{
+				e.FieldStart("verb")
+				e.Str(s.Verb)
+			}
+			{
+				if s.Namespace.Set {
+					e.FieldStart("namespace")
+					s.Namespace.Encode(e)
+				}
+			}
+			{
+				if s.ResourceName.Set {
+					e.FieldStart("resource_name")
+					s.ResourceName.Encode(e)
+				}
+			}
+			{
+				if s.HTTPStatusCode.Set {
+					e.FieldStart("http_status_code")
+					s.HTTPStatusCode.Encode(e)
+				}
+			}
+			{
+				if s.CorrelationID.Set {
+					e.FieldStart("correlation_id")
+					s.CorrelationID.Encode(e)
+				}
+			}
+		}
 	case AIAgentSessionObservedPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
 		e.Str("aiagent.session.observed")
@@ -18531,6 +18924,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.interactive.completed":
 					s.Type = AIAgentInteractiveCompletedPayloadAuditEventRequestEventData
 					found = true
+				case "aiagent.interactive.k8s_call":
+					s.Type = AIAgentInteractiveK8sCallPayloadAuditEventRequestEventData
+					found = true
 				case "aiagent.session.observed":
 					s.Type = AIAgentSessionObservedPayloadAuditEventRequestEventData
 					found = true
@@ -18812,6 +19208,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case AIAgentInteractiveCompletedPayloadAuditEventRequestEventData:
 		if err := s.AIAgentInteractiveCompletedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentInteractiveK8sCallPayloadAuditEventRequestEventData:
+		if err := s.AIAgentInteractiveK8sCallPayload.Decode(d); err != nil {
 			return err
 		}
 	case AIAgentSessionObservedPayloadAuditEventRequestEventData:

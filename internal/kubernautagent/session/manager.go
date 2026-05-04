@@ -18,6 +18,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -257,6 +258,58 @@ func (m *Manager) terminateSession(id, eventType, action string) error {
 	if eventType == audit.EventTypeSessionSuspended {
 		m.metrics.RecordSessionSuspended()
 	}
+	return nil
+}
+
+// TransitionToUserDriving transitions an autonomous investigation session to
+// user-driven mode. Cancels the investigation goroutine (stops autonomous work),
+// sets Status to StatusUserDriving, and writes acting_user and acting_user_groups
+// to session metadata for identity propagation to AA via the poll response.
+//
+// This replaces SuspendInvestigation in the takeover path. Unlike suspend, the
+// session remains pollable (StatusUserDriving is non-terminal) so AA can observe
+// the user's identity and session completion.
+//
+// Emits aiagent.session.suspended audit event for the autonomous → user transition.
+func (m *Manager) TransitionToUserDriving(id, username string, groups []string) error {
+	groupsJSON, err := json.Marshal(groups)
+	if err != nil {
+		return fmt.Errorf("marshal groups: %w", err)
+	}
+
+	m.store.mu.Lock()
+	sess, ok := m.store.sessions[id]
+	if !ok {
+		m.store.mu.Unlock()
+		return ErrSessionNotFound
+	}
+	if IsTerminal(sess.Status) {
+		m.store.mu.Unlock()
+		return ErrSessionTerminal
+	}
+
+	if sess.cancel != nil {
+		sess.cancel()
+	}
+	sess.Status = StatusUserDriving
+
+	if sess.Metadata == nil {
+		sess.Metadata = make(map[string]string)
+	}
+	sess.Metadata["acting_user"] = username
+	sess.Metadata["acting_user_groups"] = string(groupsJSON)
+	correlationID := sess.Metadata["remediation_id"]
+	m.store.mu.Unlock()
+
+	m.emitSessionEvent(context.Background(),
+		audit.EventTypeSessionSuspended, audit.ActionSessionSuspended,
+		audit.OutcomeSuccess, id, correlationID, nil,
+		"acting_user", username)
+
+	m.logger.Info("Session transitioned to user-driving",
+		"session_id", id, "acting_user", username,
+		"groups_count", len(groups))
+
 	return nil
 }
 

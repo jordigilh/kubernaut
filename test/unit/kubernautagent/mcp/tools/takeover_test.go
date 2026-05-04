@@ -48,13 +48,15 @@ func (r *recordingAuditStore) StoreAudit(_ context.Context, event *audit.AuditEv
 
 // takeoverAutoMgr mocks the AutonomousSessionManager interface for takeover tests.
 type takeoverAutoMgr struct {
-	findResult    string
-	findOK        bool
-	cancelErr     error
-	suspendErr    error
-	cancelCalled  atomic.Int32
-	suspendCalled atomic.Int32
-	cancelDelay   time.Duration
+	findResult       string
+	findOK           bool
+	cancelErr        error
+	suspendErr       error
+	transitionErr    error
+	cancelCalled     atomic.Int32
+	suspendCalled    atomic.Int32
+	transitionCalled atomic.Int32
+	cancelDelay      time.Duration
 }
 
 func (m *takeoverAutoMgr) FindByRemediationID(_ string) (string, bool) {
@@ -78,6 +80,17 @@ func (m *takeoverAutoMgr) SuspendInvestigation(_ string) error {
 		return m.suspendErr
 	}
 	return m.cancelErr
+}
+
+func (m *takeoverAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string) error {
+	m.transitionCalled.Add(1)
+	if m.cancelDelay > 0 {
+		time.Sleep(m.cancelDelay)
+	}
+	if m.transitionErr != nil {
+		return m.transitionErr
+	}
+	return nil
 }
 
 // takeoverSessMgr mocks mcpinternal.SessionManager for takeover tests.
@@ -175,9 +188,9 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		ctx = context.Background()
 	})
 
-	Describe("UT-KA-TAKE-001: Takeover timing race — suspend returns ErrSessionTerminal after lease acquired", func() {
+	Describe("UT-KA-TAKE-001: Takeover timing race — TransitionToUserDriving returns ErrSessionTerminal after lease acquired", func() {
 		It("should succeed with takeover_started when autonomous session is already terminal (H4: lease-first)", func() {
-			autoMgr.cancelErr = session.ErrSessionTerminal
+			autoMgr.transitionErr = session.ErrSessionTerminal
 
 			input := tools.InvestigateInput{
 				RRID:   "rr-001",
@@ -187,7 +200,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 			Expect(err).NotTo(HaveOccurred(), "H4: ErrSessionTerminal after lease acquired is not an error")
 			Expect(out.Status).To(Equal("takeover_started"))
 			Expect(out.SessionID).NotTo(BeEmpty())
-			Expect(autoMgr.suspendCalled.Load()).To(Equal(int32(1)))
+			Expect(autoMgr.transitionCalled.Load()).To(Equal(int32(1)))
 		})
 	})
 

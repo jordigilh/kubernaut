@@ -650,6 +650,13 @@ spec:
                     description: ActingUser is the resolved identity currently driving
                       the investigation
                     type: string
+                  actingUserGroups:
+                    description: |-
+                      ActingUserGroups are the groups of the user driving the investigation
+                      (BR-INTERACTIVE-001, #774)
+                    items:
+                      type: string
+                    type: array
                   completedAt:
                     description: CompletedAt is when the user disconnected (KA resumed
                       autonomous)
