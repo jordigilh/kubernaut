@@ -17,7 +17,7 @@ import (
 // Call this from the metrics registry to avoid package-level state.
 func NewCircuitBreakerStateGauge() *prometheus.GaugeVec {
 	return prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "kubernaut_apifrontend",
+		Namespace: "af",
 		Name:      "circuit_breaker_state",
 		Help:      "JWKS circuit breaker state per issuer (0=closed, 1=half-open, 2=open).",
 	}, []string{"dependency"})

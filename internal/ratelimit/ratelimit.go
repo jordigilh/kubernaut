@@ -1,10 +1,8 @@
 package ratelimit
 
 import (
-	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -93,50 +91,106 @@ func (l *IPLimiter) cleanup() {
 type UserLimiter struct {
 	cfg      PerUserConfig
 	mu       sync.Mutex
-	requests map[string]*rate.Limiter
-	sessions map[string]*atomic.Int32
-	tools    map[string]*rate.Limiter
+	requests map[string]*userEntry
+	sessions map[string]*userEntry
+	tools    map[string]*userEntry
+	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
-// NewUserLimiter creates a per-user rate limiter.
+type userEntry struct {
+	limiter  *rate.Limiter
+	counter  *atomic.Int32
+	lastSeen time.Time
+}
+
+// NewUserLimiter creates a per-user rate limiter with background eviction.
 func NewUserLimiter(cfg PerUserConfig) *UserLimiter {
-	return &UserLimiter{
+	if cfg.CleanupInterval <= 0 {
+		cfg.CleanupInterval = 5 * time.Minute
+	}
+	if cfg.MaxAge <= 0 {
+		cfg.MaxAge = 10 * time.Minute
+	}
+	l := &UserLimiter{
 		cfg:      cfg,
-		requests: make(map[string]*rate.Limiter),
-		sessions: make(map[string]*atomic.Int32),
-		tools:    make(map[string]*rate.Limiter),
+		requests: make(map[string]*userEntry),
+		sessions: make(map[string]*userEntry),
+		tools:    make(map[string]*userEntry),
+		stopCh:   make(chan struct{}),
+	}
+	go l.cleanup()
+	return l
+}
+
+// Stop halts the background cleanup goroutine.
+func (l *UserLimiter) Stop() {
+	l.stopOnce.Do(func() { close(l.stopCh) })
+}
+
+func (l *UserLimiter) cleanup() {
+	ticker := time.NewTicker(l.cfg.CleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-l.stopCh:
+			return
+		case <-ticker.C:
+			l.mu.Lock()
+			cutoff := time.Now().Add(-l.cfg.MaxAge)
+			for k, e := range l.requests {
+				if e.lastSeen.Before(cutoff) {
+					delete(l.requests, k)
+				}
+			}
+			for k, e := range l.sessions {
+				if e.lastSeen.Before(cutoff) && (e.counter == nil || e.counter.Load() == 0) {
+					delete(l.sessions, k)
+				}
+			}
+			for k, e := range l.tools {
+				if e.lastSeen.Before(cutoff) {
+					delete(l.tools, k)
+				}
+			}
+			l.mu.Unlock()
+		}
 	}
 }
 
 // AllowRequest checks if the user is within their per-minute request rate limit.
 func (l *UserLimiter) AllowRequest(username string) bool {
 	l.mu.Lock()
-	lim, ok := l.requests[username]
+	e, ok := l.requests[username]
 	if !ok {
-		lim = rate.NewLimiter(rate.Limit(float64(l.cfg.RequestsPerMinute)/60.0), l.cfg.RequestsPerMinute)
-		l.requests[username] = lim
+		e = &userEntry{
+			limiter: rate.NewLimiter(rate.Limit(float64(l.cfg.RequestsPerMinute)/60.0), l.cfg.RequestsPerMinute),
+		}
+		l.requests[username] = e
 	}
+	e.lastSeen = time.Now()
 	l.mu.Unlock()
 
-	return lim.Allow()
+	return e.limiter.Allow()
 }
 
 // AcquireSession attempts to acquire a concurrent session slot for the user.
 func (l *UserLimiter) AcquireSession(username string) bool {
 	l.mu.Lock()
-	counter, ok := l.sessions[username]
+	e, ok := l.sessions[username]
 	if !ok {
-		counter = &atomic.Int32{}
-		l.sessions[username] = counter
+		e = &userEntry{counter: &atomic.Int32{}}
+		l.sessions[username] = e
 	}
+	e.lastSeen = time.Now()
 	l.mu.Unlock()
 
 	for {
-		current := counter.Load()
+		current := e.counter.Load()
 		if int(current) >= l.cfg.MaxConcurrentSessions {
 			return false
 		}
-		if counter.CompareAndSwap(current, current+1) {
+		if e.counter.CompareAndSwap(current, current+1) {
 			return true
 		}
 	}
@@ -145,28 +199,40 @@ func (l *UserLimiter) AcquireSession(username string) bool {
 // ReleaseSession releases a concurrent session slot for the user.
 func (l *UserLimiter) ReleaseSession(username string) {
 	l.mu.Lock()
-	counter, ok := l.sessions[username]
+	e, ok := l.sessions[username]
 	l.mu.Unlock()
 
 	if ok {
-		counter.Add(-1)
+		for {
+			current := e.counter.Load()
+			if current <= 0 {
+				return
+			}
+			if e.counter.CompareAndSwap(current, current-1) {
+				return
+			}
+		}
 	}
 }
 
 // AllowToolCall checks if the user is within their per-minute tool call rate limit.
 func (l *UserLimiter) AllowToolCall(username string) bool {
 	l.mu.Lock()
-	lim, ok := l.tools[username]
+	e, ok := l.tools[username]
 	if !ok {
-		lim = rate.NewLimiter(rate.Limit(float64(l.cfg.ToolCallsPerMinute)/60.0), l.cfg.ToolCallsPerMinute)
-		l.tools[username] = lim
+		e = &userEntry{
+			limiter: rate.NewLimiter(rate.Limit(float64(l.cfg.ToolCallsPerMinute)/60.0), l.cfg.ToolCallsPerMinute),
+		}
+		l.tools[username] = e
 	}
+	e.lastSeen = time.Now()
 	l.mu.Unlock()
 
-	return lim.Allow()
+	return e.limiter.Allow()
 }
 
 // ProviderLimiter limits JWKS fetch rate per OIDC provider.
+// Wired into the middleware chain in PR6 (A2A handler).
 type ProviderLimiter struct {
 	mu       sync.Mutex
 	lastFetch map[string]time.Time
@@ -195,6 +261,7 @@ func (l *ProviderLimiter) AllowFetch(provider string) bool {
 }
 
 // LLMSemaphore limits global LLM concurrency.
+// Wired into the middleware chain in PR6 (A2A handler).
 type LLMSemaphore struct {
 	max     int32
 	current atomic.Int32
@@ -218,16 +285,24 @@ func (s *LLMSemaphore) Acquire() bool {
 	}
 }
 
-// Release releases a semaphore slot.
+// Release releases a semaphore slot. Safe against double-release (floor at 0).
 func (s *LLMSemaphore) Release() {
-	s.current.Add(-1)
+	for {
+		current := s.current.Load()
+		if current <= 0 {
+			return
+		}
+		if s.current.CompareAndSwap(current, current-1) {
+			return
+		}
+	}
 }
 
 // NewRateLimitDeniedTotal creates a fresh rate limit denied counter.
 // Call this from the metrics registry to avoid package-level state.
 func NewRateLimitDeniedTotal() *prometheus.CounterVec {
 	return prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "kubernaut_apifrontend",
+		Namespace: "af",
 		Name:      "ratelimit_denied_total",
 		Help:      "Total rate limit denials by tier and reason.",
 	}, []string{"tier", "reason"})
@@ -240,17 +315,12 @@ type PreAuthMiddlewareConfig struct {
 	Metrics *prometheus.CounterVec
 }
 
-// PreAuthMiddleware returns middleware for pre-authentication rate limiting (per-IP).
-// Returns RFC 7807 429 with Retry-After header when rate limit is exceeded.
-func PreAuthMiddleware(limiter *IPLimiter) func(http.Handler) http.Handler {
-	return PreAuthMiddlewareWithConfig(PreAuthMiddlewareConfig{Limiter: limiter})
-}
-
 // PreAuthMiddlewareWithConfig returns pre-auth rate limiting middleware with audit support.
+// Returns RFC 7807 429 with Retry-After header when rate limit is exceeded.
 func PreAuthMiddlewareWithConfig(cfg PreAuthMiddlewareConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := extractIP(r)
+			ip := httputil.ExtractClientIP(r)
 			if !cfg.Limiter.Allow(ip) {
 				retryAfter := int(1.0 / cfg.Limiter.cfg.RequestsPerSecond)
 				if retryAfter < 1 {
@@ -283,13 +353,8 @@ type PostAuthMiddlewareConfig struct {
 	Metrics *prometheus.CounterVec
 }
 
-// PostAuthMiddleware returns middleware for post-authentication rate limiting (per-user).
-// Reads UserIdentity from context (set by JWT middleware).
-func PostAuthMiddleware(limiter *UserLimiter) func(http.Handler) http.Handler {
-	return PostAuthMiddlewareWithConfig(PostAuthMiddlewareConfig{Limiter: limiter})
-}
-
 // PostAuthMiddlewareWithConfig returns post-auth rate limiting middleware with audit support.
+// Reads UserIdentity from context (set by JWT middleware).
 func PostAuthMiddlewareWithConfig(cfg PostAuthMiddlewareConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -307,7 +372,7 @@ func PostAuthMiddlewareWithConfig(cfg PostAuthMiddlewareConfig) func(http.Handle
 					cfg.Auditor.Emit(r.Context(), audit.Event{
 						Type:     audit.EventRateLimitDenied,
 						UserID:   identity.Username,
-						SourceIP: extractIP(r),
+						SourceIP: httputil.ExtractClientIP(r),
 						Detail:   map[string]string{"tier": "user"},
 					})
 				}
@@ -321,19 +386,3 @@ func PostAuthMiddlewareWithConfig(cfg PostAuthMiddlewareConfig) func(http.Handle
 	}
 }
 
-func extractIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if idx := strings.Index(xff, ","); idx != -1 {
-			xff = strings.TrimSpace(xff[:idx])
-		}
-		if ip, _, err := net.SplitHostPort(xff); err == nil {
-			return ip
-		}
-		return xff
-	}
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
-}

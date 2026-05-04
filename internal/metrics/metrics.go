@@ -51,28 +51,28 @@ func NewRegistry() *Registry {
 	r := &Registry{
 		registry: reg,
 		RequestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "kubernaut_apifrontend",
+			Namespace: "af",
 			Name:      "requests_total",
 			Help:      "Total number of requests by protocol and status.",
 		}, []string{"protocol", "status"}),
 		RequestDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "kubernaut_apifrontend",
+			Namespace: "af",
 			Name:      "request_duration_seconds",
 			Help:      "Request latency distribution by protocol.",
 			Buckets:   prometheus.DefBuckets,
 		}, []string{"protocol"}),
 		ToolCallsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "kubernaut_apifrontend",
+			Namespace: "af",
 			Name:      "tool_calls_total",
 			Help:      "Total tool invocations by tool name and outcome.",
 		}, []string{"tool", "outcome"}),
 		ActiveSessions: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "kubernaut_apifrontend",
+			Namespace: "af",
 			Name:      "active_sessions",
 			Help:      "Number of currently active InvestigationSessions.",
 		}),
 		LLMTokensTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "kubernaut_apifrontend",
+			Namespace: "af",
 			Name:      "llm_tokens_total",
 			Help:      "Total LLM tokens consumed by direction (input/output).",
 		}, []string{"direction", "model"}),
