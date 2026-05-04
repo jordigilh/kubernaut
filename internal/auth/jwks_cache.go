@@ -131,7 +131,7 @@ func (c *JWKSCache) GetKeys(ctx context.Context, issuerURL string) (*jose.JSONWe
 }
 
 func (c *JWKSCache) fetchJWKS(ctx context.Context, issuerURL string) (*jose.JSONWebKeySet, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, issuerURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, issuerURL, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

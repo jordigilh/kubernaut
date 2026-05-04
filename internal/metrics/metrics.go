@@ -33,12 +33,12 @@ import (
 type Registry struct {
 	registry *prometheus.Registry
 
-	RequestsTotal      *prometheus.CounterVec
-	RequestDuration    *prometheus.HistogramVec
-	ToolCallsTotal     *prometheus.CounterVec
-	ActiveSessions     prometheus.Gauge
-	LLMTokensTotal     *prometheus.CounterVec
-	RateLimitDenied    *prometheus.CounterVec
+	RequestsTotal       *prometheus.CounterVec
+	RequestDuration     *prometheus.HistogramVec
+	ToolCallsTotal      *prometheus.CounterVec
+	ActiveSessions      prometheus.Gauge
+	LLMTokensTotal      *prometheus.CounterVec
+	RateLimitDenied     *prometheus.CounterVec
 	CircuitBreakerState *prometheus.GaugeVec
 }
 

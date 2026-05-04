@@ -23,6 +23,7 @@ import (
 // SessionPhase represents the lifecycle state of an InvestigationSession.
 type SessionPhase string
 
+// SessionPhase values.
 const (
 	SessionPhaseActive       SessionPhase = "Active"
 	SessionPhaseDisconnected SessionPhase = "Disconnected"
@@ -34,6 +35,7 @@ const (
 // SessionJoinMode indicates how the session was initiated.
 type SessionJoinMode string
 
+// SessionJoinMode values.
 const (
 	SessionJoinModeStart    SessionJoinMode = "start"
 	SessionJoinModeTakeover SessionJoinMode = "takeover"
@@ -42,6 +44,7 @@ const (
 // ConnectionState represents the SSE connection state.
 type ConnectionState string
 
+// ConnectionState values.
 const (
 	ConnectionStateConnected    ConnectionState = "Connected"
 	ConnectionStateDisconnected ConnectionState = "Disconnected"

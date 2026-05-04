@@ -23,7 +23,7 @@ var _ = Describe("X-Request-ID Middleware", func() {
 			capturedID = requestid.FromContext(r.Context())
 		}))
 
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -37,7 +37,7 @@ var _ = Describe("X-Request-ID Middleware", func() {
 			capturedID = requestid.FromContext(r.Context())
 		}))
 
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 		req.Header.Set("X-Request-ID", "abc-123-def")
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
@@ -52,7 +52,7 @@ var _ = Describe("X-Request-ID Middleware", func() {
 			capturedID = requestid.FromContext(r.Context())
 		}))
 
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 		req.Header.Set("X-Request-ID", "<script>alert(1)</script>")
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
@@ -71,7 +71,7 @@ var _ = Describe("X-Request-ID Middleware", func() {
 		for i := 0; i < 200; i++ {
 			longID += "a"
 		}
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 		req.Header.Set("X-Request-ID", longID)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
@@ -81,7 +81,7 @@ var _ = Describe("X-Request-ID Middleware", func() {
 	})
 
 	It("UT-AF-RID-005: FromContext returns empty string when no ID in context", func() {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 		Expect(requestid.FromContext(req.Context())).To(BeEmpty())
 	})
 })

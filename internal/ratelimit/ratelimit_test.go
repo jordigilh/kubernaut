@@ -53,14 +53,14 @@ var _ = Describe("Rate limiting", func() {
 			}))
 
 			for i := 0; i < 2; i++ {
-				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 				req.RemoteAddr = "192.168.1.1:1234"
 				rec := httptest.NewRecorder()
 				handler.ServeHTTP(rec, req)
 				Expect(rec.Code).To(Equal(http.StatusOK))
 			}
 
-			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 			req.RemoteAddr = "192.168.1.1:1234"
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
@@ -91,9 +91,9 @@ var _ = Describe("Rate limiting", func() {
 	Describe("per-user", func() {
 		It("UT-AF-009-004 allows requests under the per-user limit", func() {
 			cfg := ratelimit.PerUserConfig{
-				RequestsPerMinute:    60,
+				RequestsPerMinute:     60,
 				MaxConcurrentSessions: 3,
-				ToolCallsPerMinute:   60,
+				ToolCallsPerMinute:    60,
 			}
 			limiter := ratelimit.NewUserLimiter(cfg)
 
@@ -104,9 +104,9 @@ var _ = Describe("Rate limiting", func() {
 
 		It("UT-AF-009-005 returns 429 when over per-user limit", func() {
 			cfg := ratelimit.PerUserConfig{
-				RequestsPerMinute:    5,
+				RequestsPerMinute:     5,
 				MaxConcurrentSessions: 3,
-				ToolCallsPerMinute:   60,
+				ToolCallsPerMinute:    60,
 			}
 			limiter := ratelimit.NewUserLimiter(cfg)
 
@@ -117,7 +117,7 @@ var _ = Describe("Rate limiting", func() {
 			}))
 
 			for i := 0; i < 5; i++ {
-				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 				ctx := auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "alice"})
 				req = req.WithContext(ctx)
 				rec := httptest.NewRecorder()
@@ -125,7 +125,7 @@ var _ = Describe("Rate limiting", func() {
 				Expect(rec.Code).To(Equal(http.StatusOK))
 			}
 
-			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 			ctx := auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "alice"})
 			req = req.WithContext(ctx)
 			rec := httptest.NewRecorder()
@@ -136,9 +136,9 @@ var _ = Describe("Rate limiting", func() {
 
 		It("UT-AF-009-006 enforces concurrent session limit", func() {
 			cfg := ratelimit.PerUserConfig{
-				RequestsPerMinute:    60,
+				RequestsPerMinute:     60,
 				MaxConcurrentSessions: 3,
-				ToolCallsPerMinute:   60,
+				ToolCallsPerMinute:    60,
 			}
 			limiter := ratelimit.NewUserLimiter(cfg)
 
@@ -154,9 +154,9 @@ var _ = Describe("Rate limiting", func() {
 
 		It("UT-AF-009-007 enforces tool calls per minute", func() {
 			cfg := ratelimit.PerUserConfig{
-				RequestsPerMinute:    60,
+				RequestsPerMinute:     60,
 				MaxConcurrentSessions: 3,
-				ToolCallsPerMinute:   5,
+				ToolCallsPerMinute:    5,
 			}
 			limiter := ratelimit.NewUserLimiter(cfg)
 
@@ -311,7 +311,7 @@ var _ = Describe("Rate limiting", func() {
 			}))
 
 			for range 3 {
-				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 				req.RemoteAddr = "10.0.0.1:5000"
 				rec := httptest.NewRecorder()
 				handler.ServeHTTP(rec, req)
@@ -322,9 +322,9 @@ var _ = Describe("Rate limiting", func() {
 
 		It("UT-AF-009-013 uses the user tier after authentication", func() {
 			cfg := ratelimit.PerUserConfig{
-				RequestsPerMinute:    2,
+				RequestsPerMinute:     2,
 				MaxConcurrentSessions: 10,
-				ToolCallsPerMinute:   60,
+				ToolCallsPerMinute:    60,
 			}
 			limiter := ratelimit.NewUserLimiter(cfg)
 
@@ -337,7 +337,7 @@ var _ = Describe("Rate limiting", func() {
 			}))
 
 			for range 4 {
-				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 				ctx := auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "bob"})
 				req = req.WithContext(ctx)
 				rec := httptest.NewRecorder()
