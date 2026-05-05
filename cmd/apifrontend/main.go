@@ -19,16 +19,22 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/go-logr/logr"
 	"go.uber.org/zap"
+	adksession "google.golang.org/adk/session"
 
+	agentpkg "github.com/jordigilh/kubernaut-apifrontend/internal/agent"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/handler"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/launcher"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/logging"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/metrics"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
@@ -71,60 +77,74 @@ func run() error {
 	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
 	defer userLimiter.Stop()
 
-	// Authenticated API routes
-	apiMux := http.NewServeMux()
+	// --- Agent + Session ---
+	agentCfg := agentpkg.AgentConfig{
+		GCPProject:    envOr("GCP_PROJECT", ""),
+		GCPRegion:     envOr("GCP_REGION", "us-central1"),
+		Instruction:   "You are the Kubernaut API Frontend agent. Help users triage and remediate Kubernetes incidents.",
+		KABaseURL:     envOr("KA_BASE_URL", "http://localhost:8080"),
+		KAMCPEndpoint: envOr("KA_MCP_ENDPOINT", "http://localhost:8080/api/v1/mcp/"),
+		DSBaseURL:     envOr("DS_BASE_URL", "http://localhost:9090"),
+	}
+	rootAgent, _, err := agentpkg.NewRootAgent(agentCfg)
+	if err != nil {
+		return fmt.Errorf("create root agent: %w", err)
+	}
+	sessionSvc := adksession.InMemoryService()
 
-	// Middleware chain: RequestID → PreAuth(IP) → Auth(JWT) → PostAuth(User) → Handler
-	var apiHandler http.Handler = apiMux
-	apiHandler = ratelimit.PostAuthMiddlewareWithConfig(ratelimit.PostAuthMiddlewareConfig{
-		Limiter: userLimiter,
-		Auditor: auditor,
-		Metrics: metricsReg.RateLimitDenied,
-	})(apiHandler)
-	apiHandler = auth.MiddlewareWithConfig(auth.MiddlewareConfig{
-		Validator: validator,
-		Logger:    logger,
-		Auditor:   auditor,
-	})(apiHandler)
-	apiHandler = ratelimit.PreAuthMiddlewareWithConfig(ratelimit.PreAuthMiddlewareConfig{
-		Limiter: ipLimiter,
-		Auditor: auditor,
-		Metrics: metricsReg.RateLimitDenied,
-	})(apiHandler)
-	apiHandler = requestid.Middleware(apiHandler)
-
-	// Top-level mux: infra endpoints are unauthenticated, API routes go through auth chain
-	rootMux := http.NewServeMux()
-	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+	// --- A2A Handler ---
+	a2aHandler, err := launcher.NewA2AHandler(launcher.A2AConfig{
+		Agent:          rootAgent,
+		SessionService: sessionSvc,
+		AppName:        "kubernaut-apifrontend",
+		Logger:         slog.Default(),
 	})
-	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		// JWKS provider health
-		if !validator.Ready() {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte("JWKS circuit breaker open"))
-			return
-		}
-		// TODO(PR5+): add K8s API reachability check when controller-runtime
-		// manager is integrated (P3 OPS-1 from PR#78 review).
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	rootMux.Handle("/metrics", metricsReg.Handler())
-	rootMux.Handle("/", apiHandler)
-
-	// Port 8443 serves plaintext HTTP. TLS termination is handled by the
-	// Kubernetes ingress controller or service mesh sidecar (Envoy/Istio).
-	// Override with PORT env var if needed (e.g., PORT=8080 for local dev).
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8443"
+	if err != nil {
+		return fmt.Errorf("create A2A handler: %w", err)
 	}
 
+	// --- MCP Handler ---
+	mcpHandler, err := handler.NewMCPHandler(handler.MCPConfig{
+		ServerName:    "kubernaut-apifrontend",
+		ServerVersion: "0.1.0",
+		Tools:         handler.DefaultMCPTools(),
+	})
+	if err != nil {
+		return fmt.Errorf("create MCP handler: %w", err)
+	}
+
+	// --- Agent Card ---
+	agentCardHandler, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
+		Name:        "kubernaut-apifrontend",
+		Description: "Kubernaut API Frontend agent for Kubernetes incident triage and remediation",
+		URL:         fmt.Sprintf("https://localhost:%s", envOr("PORT", "8443")),
+		Version:     "0.1.0",
+		Skills:      handler.DefaultAgentSkills(),
+	})
+	if err != nil {
+		return fmt.Errorf("create agent card handler: %w", err)
+	}
+
+	// --- Auth Middleware Chain ---
+	authMiddleware := buildAuthMiddleware(validator, logger, auditor, ipLimiter, userLimiter, metricsReg)
+
+	// --- Router ---
+	rootHandler, err := handler.NewRouter(handler.RouterConfig{
+		MetricsRegistry:  metricsReg,
+		A2AHandler:       a2aHandler,
+		MCPHandler:       mcpHandler,
+		AgentCardHandler: agentCardHandler,
+		AuthMiddleware:   authMiddleware,
+		ReadyChecker:     validator.Ready,
+	})
+	if err != nil {
+		return fmt.Errorf("create router: %w", err)
+	}
+
+	port := envOr("PORT", "8443")
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           rootMux,
+		Handler:           rootHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
@@ -133,8 +153,8 @@ func run() error {
 	errCh := make(chan error, 1)
 	go func() {
 		logger.Info("starting kubernaut-apifrontend", "port", port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errCh <- err
+		if listenErr := srv.ListenAndServe(); listenErr != nil && listenErr != http.ErrServerClosed {
+			errCh <- listenErr
 		}
 	}()
 
@@ -149,10 +169,47 @@ func run() error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error(err, "server shutdown error")
+	if shutdownErr := srv.Shutdown(shutdownCtx); shutdownErr != nil {
+		logger.Error(shutdownErr, "server shutdown error")
 	}
 
 	logger.Info("shutdown complete")
 	return nil
+}
+
+func buildAuthMiddleware(
+	validator *auth.JWTValidator,
+	logger logr.Logger,
+	auditor audit.Emitter,
+	ipLimiter *ratelimit.IPLimiter,
+	userLimiter *ratelimit.UserLimiter,
+	metricsReg *metrics.Registry,
+) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		h := next
+		h = ratelimit.PostAuthMiddlewareWithConfig(ratelimit.PostAuthMiddlewareConfig{
+			Limiter: userLimiter,
+			Auditor: auditor,
+			Metrics: metricsReg.RateLimitDenied,
+		})(h)
+		h = auth.MiddlewareWithConfig(auth.MiddlewareConfig{
+			Validator: validator,
+			Logger:    logger,
+			Auditor:   auditor,
+		})(h)
+		h = ratelimit.PreAuthMiddlewareWithConfig(ratelimit.PreAuthMiddlewareConfig{
+			Limiter: ipLimiter,
+			Auditor: auditor,
+			Metrics: metricsReg.RateLimitDenied,
+		})(h)
+		h = requestid.Middleware(h)
+		return h
+	}
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
