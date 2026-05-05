@@ -11,7 +11,7 @@ import (
 
 var _ = Describe("ExtractClientIP", func() {
 	newReq := func(remoteAddr string, xff string) *http.Request {
-		r, _ := http.NewRequest("GET", "/", nil)
+		r, _ := http.NewRequest("GET", "/", http.NoBody)
 		r.RemoteAddr = remoteAddr
 		if xff != "" {
 			r.Header.Set("X-Forwarded-For", xff)

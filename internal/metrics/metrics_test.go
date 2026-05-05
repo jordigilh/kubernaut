@@ -2,6 +2,7 @@ package metrics_test
 
 import (
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -42,7 +43,7 @@ var _ = Describe("Metrics Registry", func() {
 		reg.SessionsActive.WithLabelValues("Active").Set(3)
 
 		rec := httptest.NewRecorder()
-		reg.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+		reg.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", http.NoBody))
 
 		Expect(rec.Code).To(Equal(200))
 		body, err := io.ReadAll(rec.Body)
@@ -75,7 +76,7 @@ var _ = Describe("Metrics Registry", func() {
 		reg.AuthDuration.WithLabelValues("success").Observe(0.025)
 
 		rec := httptest.NewRecorder()
-		reg.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+		reg.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", http.NoBody))
 
 		body, err := io.ReadAll(rec.Body)
 		Expect(err).NotTo(HaveOccurred())
@@ -86,7 +87,7 @@ var _ = Describe("Metrics Registry", func() {
 
 	It("UT-AF-MET-005: go runtime and process collectors are present", func() {
 		rec := httptest.NewRecorder()
-		reg.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+		reg.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", http.NoBody))
 
 		body, err := io.ReadAll(rec.Body)
 		Expect(err).NotTo(HaveOccurred())

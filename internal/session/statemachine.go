@@ -140,4 +140,3 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 	}
 	return nil
 }
-
