@@ -341,10 +341,10 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response1.Status).To(Equal("created"))
 
-			Eventually(func() error {
-				var rr remediationv1alpha1.RemediationRequest
-				return k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: response1.RemediationRequestName}, &rr)
-			}, "5s", "100ms").Should(Succeed())
+		Eventually(func() error {
+			var rr remediationv1alpha1.RemediationRequest
+			return k8sClient.Get(ctx, client.ObjectKey{Namespace: "kubernaut-system", Name: response1.RemediationRequestName}, &rr)
+		}, "5s", "100ms").Should(Succeed())
 
 			By("2. Get initial deduplication metric value")
 			// Gateway metric uses signal_name as label (defined in metrics.go line 152)

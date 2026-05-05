@@ -657,13 +657,13 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				firstCRDName := response1.RemediationRequestName
 
-				Eventually(func() error {
-					var rr remediationv1alpha1.RemediationRequest
-					return k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: firstCRDName}, &rr)
-				}, "5s", "100ms").Should(Succeed())
+			Eventually(func() error {
+				var rr remediationv1alpha1.RemediationRequest
+				return k8sClient.Get(ctx, client.ObjectKey{Namespace: "kubernaut-system", Name: firstCRDName}, &rr)
+			}, "5s", "100ms").Should(Succeed())
 
-				By("2. Send duplicate signal with same fingerprint")
-				secondSignalPayload := createPrometheusAlert(testNamespace, "repeated-error", "error", firstFingerprint, "")
+			By("2. Send duplicate signal with same fingerprint")
+			secondSignalPayload := createPrometheusAlert(testNamespace, "repeated-error", "error", firstFingerprint, "")
 				signal2, err := prometheusAdapter.Parse(ctx, secondSignalPayload)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -725,13 +725,13 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				existingRRName := response1.RemediationRequestName
 
-				Eventually(func() error {
-					var rr remediationv1alpha1.RemediationRequest
-					return k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: existingRRName}, &rr)
-				}, "5s", "100ms").Should(Succeed())
+			Eventually(func() error {
+				var rr remediationv1alpha1.RemediationRequest
+				return k8sClient.Get(ctx, client.ObjectKey{Namespace: "kubernaut-system", Name: existingRRName}, &rr)
+			}, "5s", "100ms").Should(Succeed())
 
-				By("2. Send duplicate signal")
-				secondSignalPayload := createPrometheusAlert(testNamespace, "existing-rr-test", "critical", firstFingerprint, "")
+			By("2. Send duplicate signal")
+			secondSignalPayload := createPrometheusAlert(testNamespace, "existing-rr-test", "critical", firstFingerprint, "")
 				signal2, err := prometheusAdapter.Parse(ctx, secondSignalPayload)
 				Expect(err).ToNot(HaveOccurred())
 				signal2.Fingerprint = firstFingerprint
@@ -851,13 +851,13 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				existingRRName := response1.RemediationRequestName
 
-				Eventually(func() error {
-					var rr remediationv1alpha1.RemediationRequest
-					return k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: existingRRName}, &rr)
-				}, "5s", "100ms").Should(Succeed())
+			Eventually(func() error {
+				var rr remediationv1alpha1.RemediationRequest
+				return k8sClient.Get(ctx, client.ObjectKey{Namespace: "kubernaut-system", Name: existingRRName}, &rr)
+			}, "5s", "100ms").Should(Succeed())
 
-				By("2. Process duplicate signal (same fingerprint)")
-				correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+			By("2. Process duplicate signal (same fingerprint)")
+			correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
 				alert2 := createPrometheusAlert(testNamespace, "HighCPU", "critical", fingerprint, correlationID2)
 
 				signal2, err := prometheusAdapter.Parse(ctx, alert2)
