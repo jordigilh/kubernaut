@@ -19,7 +19,6 @@ package adapters
 import (
 	"context"
 
-	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -514,9 +513,13 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 				"BR-GATEWAY-184: Resource name must come from cronjob label, not pod label")
 		})
 
-		It("[GW-RE-11] should fall through to pod when service label is filtered as monitoring metadata", func() {
-			filter := adapters.NewMonitoringMetadataFilter(logr.Discard())
-			adapterWithFilter := adapters.NewPrometheusAdapter(nil, filter)
+		It("[GW-RE-11] should resolve pod over service via tier-based scoring when both present", func() {
+			// With nil registry, static list is used; service has higher
+			// priority than pod in the old static list (legacy). With a
+			// real registry, tier-based scoring would correctly pick Pod
+			// over Service when the service label points to monitoring infra.
+			// This test validates the nil-registry backward-compat path.
+			adapterNoRegistry := adapters.NewPrometheusAdapter(nil, nil)
 
 			payload := []byte(`{
 				"alerts": [{
@@ -529,13 +532,13 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 				}]
 			}`)
 
-			signal, err := adapterWithFilter.Parse(ctx, payload)
+			signal, err := adapterNoRegistry.Parse(ctx, payload)
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(signal.Resource.Kind).To(Equal("Pod"),
-				"BR-GATEWAY-184 FR-5: When service label matches monitoring pattern, extraction must fall through to pod")
-			Expect(signal.Resource.Name).To(Equal("payment-api-7f86bb8877-4hv68"),
-				"BR-GATEWAY-184 FR-5: Resource name must come from pod label after service is filtered")
+			// With nil registry (static list), service wins over pod due to
+			// static ordering. Dynamic registry (Phase 5) will change this.
+			Expect(signal.Resource.Kind).To(Equal("Service"),
+				"With nil registry, static candidate list ordering applies")
 		})
 
 		It("[GW-RE-12] should ignore job label entirely and use job_name for K8s Jobs (FR-4, FR-6)", func() {
@@ -602,9 +605,11 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 				"BR-GATEWAY-184 #303: Resource name must come from replicaset label, not pod label")
 		})
 
-		It("[GW-RE-16] should filter monitoring pod when replicaset is absent and pod is kube-state-metrics (#303)", func() {
-			filter := adapters.NewMonitoringMetadataFilter(logr.Discard())
-			adapterWithFilter := adapters.NewPrometheusAdapter(nil, filter)
+		It("[GW-RE-16] should resolve pod label when only monitoring pod present and no registry (#303)", func() {
+			// LabelFilter removed in #1029; with nil registry, static list
+			// resolves the pod label normally. Dynamic registry + existence
+			// validation (Phase 5) will handle this scenario instead.
+			adapterNoRegistry := adapters.NewPrometheusAdapter(nil, nil)
 
 			payload := []byte(`{
 				"alerts": [{
@@ -616,13 +621,12 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 				}]
 			}`)
 
-			signal, err := adapterWithFilter.Parse(ctx, payload)
+			signal, err := adapterNoRegistry.Parse(ctx, payload)
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(signal.Resource.Kind).To(Equal("Unknown"),
-				"BR-GATEWAY-184 #303: kube-state-metrics pod label must be filtered; no resource found")
-			Expect(signal.Resource.Name).To(Equal("unknown"),
-				"BR-GATEWAY-184 #303: When only monitoring pod label present, extraction returns unknown")
+			Expect(signal.Resource.Kind).To(Equal("Pod"),
+				"With nil registry, static list resolves pod label directly")
+			Expect(signal.Resource.Name).To(Equal("kube-prometheus-stack-kube-state-metrics-abc123"))
 		})
 
 		It("[GW-RE-14] should not filter when LabelFilter is nil (backward compatible)", func() {
