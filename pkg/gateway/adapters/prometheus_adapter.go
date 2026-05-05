@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -50,7 +51,7 @@ import (
 // - Fallback to resource-level fingerprint (without alertname) when resolution fails
 type PrometheusAdapter struct {
 	ownerResolver types.OwnerResolver
-	labelFilter   LabelFilter
+	registry      *APIResourceRegistry
 	logger        logr.Logger
 }
 
@@ -58,16 +59,17 @@ type PrometheusAdapter struct {
 //
 // Parameters:
 //   - ownerResolver: If non-nil, resolves Pod→Deployment for owner-chain-based fingerprinting.
-//   - labelFilter: If non-nil, filters monitoring metadata labels (e.g., "service" pointing
-//     to kube-state-metrics) during target resource extraction. See Issue #191.
-func NewPrometheusAdapter(ownerResolver types.OwnerResolver, labelFilter LabelFilter, opts ...logr.Logger) *PrometheusAdapter {
+//   - registry: If non-nil, provides discovery-backed label-to-kind resolution and
+//     tier-based scoring for multi-candidate selection. Replaces static resourceCandidates
+//     and LabelFilter (#1029). When nil, falls back to "Unknown" resource kind.
+func NewPrometheusAdapter(ownerResolver types.OwnerResolver, registry *APIResourceRegistry, opts ...logr.Logger) *PrometheusAdapter {
 	l := logr.Discard()
 	if len(opts) > 0 {
 		l = opts[0]
 	}
 	return &PrometheusAdapter{
 		ownerResolver: ownerResolver,
-		labelFilter:   labelFilter,
+		registry:      registry,
 		logger:        l.WithName("prometheus-adapter"),
 	}
 }
@@ -166,11 +168,12 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 	// from previous scenario runs) must be skipped rather than dropping the entire batch.
 	var lastErr error
 	for i, alert := range webhook.Alerts {
-		kind, name := extractTargetResource(alert.Labels, a.labelFilter)
+		ns := extractNamespace(alert.Labels)
+		kind, name := extractTargetResource(ctx, alert.Labels, ns, a.registry)
 		resource := types.ResourceIdentifier{
 			Kind:      kind,
 			Name:      name,
-			Namespace: extractNamespace(alert.Labels),
+			Namespace: ns,
 		}
 
 		fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
@@ -206,6 +209,73 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 	}
 
 	return nil, fmt.Errorf("dropping signal: all %d alert(s) in batch failed owner resolution; last error: %w", len(webhook.Alerts), lastErr)
+}
+
+// ParseBatch converts an AlertManager webhook payload into independent signals,
+// one per alert in the batch (#1032). Unlike Parse which returns the first
+// successfully resolved alert, ParseBatch processes every alert independently
+// so that one alert's resolution failure does not affect other alerts in the batch.
+func (a *PrometheusAdapter) ParseBatch(ctx context.Context, rawData []byte) ([]*types.NormalizedSignal, error) {
+	const maxPayloadSize = 100 * 1024
+	if len(rawData) > maxPayloadSize {
+		return nil, fmt.Errorf("payload too large: %d bytes (max %d bytes)", len(rawData), maxPayloadSize)
+	}
+
+	var webhook AlertManagerWebhook
+	if err := json.Unmarshal(rawData, &webhook); err != nil {
+		return nil, fmt.Errorf("malformed JSON payload: %w", err)
+	}
+
+	if len(webhook.Alerts) == 0 {
+		return nil, errors.New("no alerts in webhook payload")
+	}
+
+	var signals []*types.NormalizedSignal
+	for i, alert := range webhook.Alerts {
+		ns := extractNamespace(alert.Labels)
+		kind, name := extractTargetResource(ctx, alert.Labels, ns, a.registry)
+		resource := types.ResourceIdentifier{
+			Kind:      kind,
+			Name:      name,
+			Namespace: ns,
+		}
+
+		fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+		if err != nil {
+			a.logger.Info("Alert failed owner resolution in batch, skipping",
+				"alert", i, "resource", resource.String(), "error", err)
+			continue
+		}
+
+		labels := MergeLabels(alert.Labels, webhook.CommonLabels)
+		annotations := MergeAnnotations(alert.Annotations, webhook.CommonAnnotations)
+
+		severity := alert.Labels["severity"]
+		if severity == "" {
+			severity = "unknown"
+		}
+
+		signals = append(signals, &types.NormalizedSignal{
+			Fingerprint:  fingerprint,
+			SignalName:   alert.Labels["alertname"],
+			Severity:     severity,
+			Namespace:    resource.Namespace,
+			Resource:     resource,
+			Labels:       labels,
+			Annotations:  annotations,
+			FiringTime:   alert.StartsAt,
+			ReceivedTime: time.Now(),
+			SourceType:   SourceTypePrometheusAlert,
+			Source:       a.GetSourceService(),
+			RawPayload:   rawData,
+		})
+	}
+
+	if len(signals) == 0 {
+		return nil, fmt.Errorf("all %d alert(s) in batch failed owner resolution", len(webhook.Alerts))
+	}
+
+	return signals, nil
 }
 
 // Validate checks if the parsed signal meets minimum requirements
@@ -267,23 +337,16 @@ func (a *PrometheusAdapter) GetMetadata() AdapterMetadata {
 
 // resourceCandidate maps a Prometheus alert label key to the Kubernetes resource
 // kind it represents. Used by extractTargetResource for priority-ordered scanning.
+//
+// Deprecated: Superseded by APIResourceRegistry dynamic discovery (#1029).
+// Retained as a nil-registry fallback for tests that do not inject a fake discovery client.
+// Will be removed in a dedicated cleanup PR once all tests use fake discovery.
 type resourceCandidate struct {
 	labelKey string
 	kind     string
 }
 
-// resourceCandidates defines the priority-ordered detection list for target
-// resource extraction from Prometheus alert labels (first match wins).
-//
-// BR-GATEWAY-184 / Issue #191: Specific resource labels are checked before "pod"
-// because kube-state-metrics resource-level alerts include a "pod" label pointing
-// to the metrics exporter, not the affected resource.
-//
-// Excluded labels (not in this list — see SME review #191):
-//   - "job": Always the Prometheus scrape job name (e.g., "kube-state-metrics"),
-//     never a Kubernetes Job resource. K8s Jobs use "job_name" instead.
-//   - "endpoint": ServiceMonitor endpoint name (e.g., "http", "metrics").
-//   - "instance": Scrape target IP:port.
+// Deprecated: See resourceCandidate deprecation notice above.
 var resourceCandidates = []resourceCandidate{
 	{"horizontalpodautoscaler", "HorizontalPodAutoscaler"},
 	{"poddisruptionbudget", "PodDisruptionBudget"},
@@ -300,40 +363,85 @@ var resourceCandidates = []resourceCandidate{
 }
 
 // extractTargetResource determines the Kubernetes target resource (kind + name)
-// from Prometheus alert labels using the priority-ordered candidate list.
+// from Prometheus alert labels using multi-candidate scoring backed by the
+// APIResourceRegistry (#1029).
 //
-// When a LabelFilter is provided, candidates matched by the filter are skipped
-// and extraction continues to the next priority level. This allows filtering
-// monitoring infrastructure metadata (e.g., "service: kube-state-metrics")
-// without losing the correct target from a lower-priority label (e.g., "pod").
+// When a registry is provided, each label key is matched against discovered
+// APIResource.SingularName values, and the candidate with the highest-priority
+// tier (lowest number) wins. This replaces the old static resourceCandidates
+// list and LabelFilter.
 //
-// When filter is nil, no filtering occurs (all candidates pass through).
-func extractTargetResource(labels map[string]string, filter LabelFilter) (kind, name string) {
-	for _, c := range resourceCandidates {
-		if v, ok := labels[c.labelKey]; ok {
-			if filter != nil && filter.IsMonitoringMetadata(c.labelKey, v) {
+// When registry is nil (tests or pre-discovery startup), falls back to the
+// static resourceCandidates list for backward compatibility.
+func extractTargetResource(ctx context.Context, labels map[string]string, namespace string, registry *APIResourceRegistry) (kind, name string) {
+	if registry != nil {
+		type candidate struct {
+			kind string
+			name string
+			tier int
+		}
+		var candidates []candidate
+		for labelKey, labelVal := range labels {
+			if labelVal == "" {
 				continue
 			}
+			k := registry.LabelToKind(labelKey)
+			if k == "" {
+				continue
+			}
+			tier := registry.TierForKind(k)
+			candidates = append(candidates, candidate{kind: k, name: labelVal, tier: tier})
+		}
+
+		// Sort by tier (ascending), then by kind name (lexicographic) for determinism
+		sort.Slice(candidates, func(i, j int) bool {
+			if candidates[i].tier != candidates[j].tier {
+				return candidates[i].tier < candidates[j].tier
+			}
+			return candidates[i].kind < candidates[j].kind
+		})
+
+		// Return the first candidate that actually exists (if existence checking is available)
+		for _, c := range candidates {
+			gvr, ok := registry.KindToGVR(c.kind)
+			if !ok {
+				continue
+			}
+			if registry.CheckExistence(ctx, gvr, namespace, c.name) {
+				return c.kind, c.name
+			}
+		}
+
+		// If no candidate passed existence check, return the best-ranked one
+		if len(candidates) > 0 {
+			return candidates[0].kind, candidates[0].name
+		}
+		return "Unknown", "unknown"
+	}
+
+	for _, c := range resourceCandidates {
+		if v, ok := labels[c.labelKey]; ok {
 			return c.kind, v
 		}
 	}
 	return "Unknown", "unknown"
 }
 
-// extractNamespace gets the Kubernetes namespace from labels
+// extractNamespace gets the Kubernetes namespace from labels.
 //
-// Extraction order:
-// 1. namespace label
-// 2. exported_namespace label (for federated Prometheus)
+// Extraction order (#1029 update — exported_namespace takes precedence):
+// 1. exported_namespace label (for federated Prometheus — points to the real namespace)
+// 2. namespace label
 // 3. default → "default"
 //
-// Returns:
-// - string: Namespace name or "default"
+// In federated setups, the "namespace" label often points to the federation
+// namespace (e.g., "monitoring"), while "exported_namespace" contains the
+// actual workload namespace (e.g., "production").
 func extractNamespace(labels map[string]string) string {
-	if ns, ok := labels["namespace"]; ok {
+	if ns, ok := labels["exported_namespace"]; ok && ns != "" {
 		return ns
 	}
-	if ns, ok := labels["exported_namespace"]; ok {
+	if ns, ok := labels["namespace"]; ok {
 		return ns
 	}
 	return "default"

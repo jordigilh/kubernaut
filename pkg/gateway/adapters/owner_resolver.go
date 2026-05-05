@@ -40,6 +40,11 @@ const ownerLookupTimeout = 5 * time.Second
 // kindToGroup maps Kubernetes resource kinds to their API groups.
 // Same mapping as pkg/shared/scope/manager.go:kindToGroup.
 // Shared pattern across Gateway scope management and owner chain resolution.
+//
+// Deprecated: Superseded by APIResourceRegistry.KindToGVR() (#1029).
+// Retained as a nil-registry fallback for tests and the exported KindToGroup()/
+// OwnerChainCacheObjects() helpers. Will be removed in a dedicated cleanup PR
+// once all consumers migrate to the registry.
 var kindToGroup = map[string]string{
 	"Pod":              "",
 	"Node":             "",
@@ -121,6 +126,7 @@ func OwnerChainCacheObjects() map[client.Object]cache.ByObject {
 type K8sOwnerResolver struct {
 	client         client.Reader
 	fallbackReader client.Reader
+	registry       *APIResourceRegistry
 	logger         logr.Logger
 }
 
@@ -153,6 +159,14 @@ func WithFallbackReader(reader client.Reader) OwnerResolverOption {
 	}
 }
 
+// WithRegistry sets the APIResourceRegistry for dynamic GVR lookup and
+// CRD traversal control, replacing the static kindToGroup map (#1029).
+func WithRegistry(reg *APIResourceRegistry) OwnerResolverOption {
+	return func(r *K8sOwnerResolver) {
+		r.registry = reg
+	}
+}
+
 // ResolveTopLevelOwner traverses ownerReferences to find the top-level controller.
 //
 // Algorithm (same as pkg/signalprocessing/ownerchain/builder.go:Build):
@@ -179,17 +193,19 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, 
 	foundOwner := false
 
 	for i := 0; i < MaxOwnerChainDepth; i++ {
-		// Check if we know this kind
-		if _, known := kindToGroup[currentKind]; !known {
+		gvk, known := r.resolveGVK(currentKind)
+		if !known {
 			logger.V(1).Info("Unknown kind, stopping traversal",
 				"kind", currentKind, "level", i)
 			break
 		}
 
-		gvk := schema.GroupVersionKind{
-			Group:   kindToGroup[currentKind],
-			Version: "v1",
-			Kind:    currentKind,
+		// CRD kinds (not in core/apps/batch/autoscaling/policy) have
+		// unpredictable owner chains — stop traversal (#1029 Option C).
+		if r.registry != nil && !r.registry.IsCoreBatchAppsKind(currentKind) {
+			logger.V(1).Info("CRD kind, stopping traversal",
+				"kind", currentKind, "level", i)
+			break
 		}
 
 		obj := &metav1.PartialObjectMetadata{}
@@ -308,4 +324,29 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, 
 		"resolvedKind", topKind, "resolvedName", topName,
 		"foundOwner", foundOwner)
 	return topKind, topName, nil
+}
+
+// resolveGVK returns the GroupVersionKind for a given kind string.
+// Uses the registry if available, otherwise falls back to the static kindToGroup map.
+func (r *K8sOwnerResolver) resolveGVK(kind string) (schema.GroupVersionKind, bool) {
+	if r.registry != nil {
+		gvr, ok := r.registry.KindToGVR(kind)
+		if !ok {
+			return schema.GroupVersionKind{}, false
+		}
+		return schema.GroupVersionKind{
+			Group:   gvr.Group,
+			Version: gvr.Version,
+			Kind:    kind,
+		}, true
+	}
+	group, known := kindToGroup[kind]
+	if !known {
+		return schema.GroupVersionKind{}, false
+	}
+	return schema.GroupVersionKind{
+		Group:   group,
+		Version: "v1",
+		Kind:    kind,
+	}, true
 }
