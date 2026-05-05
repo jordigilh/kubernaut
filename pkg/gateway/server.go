@@ -1029,7 +1029,14 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 }
 
 // handleBatchRequest processes a batch payload where each signal is handled independently.
-// Returns HTTP 207 Multi-Status with per-alert results and an aggregate summary.
+//
+// Routing strategy:
+//   - Single-alert batches (len == 1): delegate to the standard single-signal pipeline
+//     so that existing HTTP status contracts (201, 202, 500, 504) are preserved.
+//     AlertManager retries on 5xx, so returning 207 for a single failed alert
+//     would silently swallow the failure.
+//   - Multi-alert batches (len > 1): return HTTP 207 Multi-Status with per-alert
+//     results and an aggregate summary (#1036).
 func (s *Server) handleBatchRequest(
 	ctx context.Context,
 	w http.ResponseWriter,
@@ -1038,6 +1045,8 @@ func (s *Server) handleBatchRequest(
 	batchAdapter adapters.BatchParser,
 	logger logr.Logger,
 ) {
+	start := time.Now()
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -1070,7 +1079,69 @@ func (s *Server) handleBatchRequest(
 		return
 	}
 
-	// Apply per-handler timeout for K8s API operations (shared across the batch)
+	// Single-alert batch: use standard single-signal pipeline to preserve
+	// HTTP status contracts (201/202/500/504) for backward compatibility.
+	if len(signals) == 1 {
+		s.processSingleSignal(ctx, w, r, adapter, signals[0], logger, start)
+		return
+	}
+
+	// Multi-alert batch: process each signal independently, return 207.
+	s.processMultiSignalBatch(ctx, w, r, adapter, signals, logger)
+}
+
+// processSingleSignal handles a single signal through the standard pipeline,
+// preserving existing HTTP status code contracts.
+func (s *Server) processSingleSignal(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	adapter adapters.SignalAdapter,
+	signal *types.NormalizedSignal,
+	logger logr.Logger,
+	start time.Time,
+) {
+	if valErr := adapter.Validate(signal); valErr != nil {
+		logger.Info("Signal validation failed",
+			"adapter", adapter.Name(),
+			"error", valErr)
+		s.writeValidationError(w, r, "Signal validation failed")
+		return
+	}
+
+	k8sTimeout := s.config.Server.K8sRequestTimeout
+	if k8sTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, k8sTimeout)
+		defer cancel()
+	}
+
+	response, procErr := s.ProcessSignal(ctx, signal)
+	if procErr != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			logger.Error(procErr, "K8s request timeout exceeded",
+				"adapter", adapter.Name(),
+				"timeout", k8sTimeout)
+			s.writeJSONError(w, r, "Request processing timed out", http.StatusGatewayTimeout)
+			return
+		}
+		s.handleProcessingError(w, r, procErr, adapter.Name(), logger)
+		return
+	}
+
+	s.sendSuccessResponse(w, r, response, adapter, start)
+}
+
+// processMultiSignalBatch processes multiple signals independently and returns
+// HTTP 207 Multi-Status with per-alert results (#1036).
+func (s *Server) processMultiSignalBatch(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	adapter adapters.SignalAdapter,
+	signals []*types.NormalizedSignal,
+	logger logr.Logger,
+) {
 	k8sTimeout := s.config.Server.K8sRequestTimeout
 	if k8sTimeout > 0 {
 		var cancel context.CancelFunc
