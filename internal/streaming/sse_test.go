@@ -44,10 +44,11 @@ var _ = Describe("SSE Event Formatting", func() {
 		return evt
 	}
 
-	It("UT-AF-240-001: formats ADK event as SSE frame", func() {
+	It("UT-AF-240-001: formats ADK event as SSE frame with id field", func() {
 		evt := textEvent("agent", "Hello from agent")
-		frame, err := streaming.FormatSSEFrame(evt, 1)
+		frame, err := streaming.FormatSSEFrame(evt, 42)
 		Expect(err).NotTo(HaveOccurred())
+		Expect(string(frame)).To(ContainSubstring("id: 42"))
 		Expect(string(frame)).To(ContainSubstring("event:"))
 		Expect(string(frame)).To(ContainSubstring("data:"))
 		Expect(string(frame)).To(HaveSuffix("\n\n"))

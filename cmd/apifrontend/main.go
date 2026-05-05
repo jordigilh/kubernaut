@@ -100,11 +100,14 @@ func run() error {
 		_, _ = w.Write([]byte("ok"))
 	})
 	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		// JWKS provider health
 		if !validator.Ready() {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("JWKS circuit breaker open"))
 			return
 		}
+		// TODO(PR5+): add K8s API reachability check when controller-runtime
+		// manager is integrated (P3 OPS-1 from PR#78 review).
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})

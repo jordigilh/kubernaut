@@ -45,6 +45,7 @@ func FormatSSEFrame(event *adksession.Event, seq int) ([]byte, error) {
 	}
 
 	var buf strings.Builder
+	fmt.Fprintf(&buf, "id: %d\n", seq)
 	fmt.Fprintf(&buf, "event: %s\n", eventType)
 	fmt.Fprintf(&buf, "data: %s\n", data)
 	buf.WriteString("\n")

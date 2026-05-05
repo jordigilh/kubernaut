@@ -10,6 +10,7 @@ import (
 	adksession "google.golang.org/adk/session"
 
 	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 )
 
 // validTransitions defines the allowed phase transitions for an InvestigationSession.
@@ -56,9 +57,22 @@ func IsTerminal(phase v1alpha1.SessionPhase) bool {
 	return terminalPhases[phase]
 }
 
+// maxPhaseMessageLen caps the length of status.message to prevent PII leakage
+// into etcd. Callers MUST pass operator-defined static strings only; user input
+// must never be passed as the message parameter (see ADR-017).
+const maxPhaseMessageLen = 256
+
 // UpdatePhase transitions the InvestigationSession CRD to a new phase,
 // validating the transition and setting appropriate timestamps.
+//
+// The message parameter MUST be an operator-defined static string describing
+// the reason for the transition (e.g. "investigation complete", "user cancelled").
+// It MUST NOT contain user-originated content or PII. The message is truncated
+// to maxPhaseMessageLen (256 chars) as a defense-in-depth measure per ADR-017.
 func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, to v1alpha1.SessionPhase, message string) error {
+	if len(message) > maxPhaseMessageLen {
+		message = message[:maxPhaseMessageLen]
+	}
 	s.mu.RLock()
 	crdName, ok := s.crdIndex[sessionID]
 	s.mu.RUnlock()
@@ -112,6 +126,11 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 		"from", from,
 		"to", to,
 	)
+	s.emitAudit(ctx, audit.EventSessionPhaseChanged, "", map[string]string{
+		"session_id": sessionID,
+		"from":       string(from),
+		"to":         string(to),
+	})
 	return nil
 }
 

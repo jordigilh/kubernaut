@@ -14,8 +14,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/session"
 )
+
+// MinRetentionTTL is the minimum retention period for terminal sessions,
+// enforcing NIST AU-11 (30-day minimum audit record retention).
+const MinRetentionTTL = 30 * 24 * time.Hour
 
 // SessionCleanupReconciler watches InvestigationSession CRDs and enforces
 // two TTL policies:
@@ -27,15 +32,27 @@ type SessionCleanupReconciler struct {
 	disconnectTTL time.Duration
 	retentionTTL  time.Duration
 	logger        *slog.Logger
+	auditor       audit.Emitter
 }
 
 // NewSessionCleanupReconciler creates a reconciler with the specified TTLs.
-func NewSessionCleanupReconciler(c client.Client, disconnectTTL, retentionTTL time.Duration) *SessionCleanupReconciler {
+// If retentionTTL is below MinRetentionTTL, it is clamped and a warning is logged.
+// The auditor may be nil to disable audit emission (e.g. in tests).
+func NewSessionCleanupReconciler(c client.Client, disconnectTTL, retentionTTL time.Duration, auditor audit.Emitter) *SessionCleanupReconciler {
+	logger := slog.Default().With("component", "session-cleanup")
+	if retentionTTL < MinRetentionTTL {
+		logger.Warn("retentionTTL below NIST AU-11 minimum, clamping",
+			"configured", retentionTTL.String(),
+			"minimum", MinRetentionTTL.String(),
+		)
+		retentionTTL = MinRetentionTTL
+	}
 	return &SessionCleanupReconciler{
 		client:        c,
 		disconnectTTL: disconnectTTL,
 		retentionTTL:  retentionTTL,
-		logger:        slog.Default().With("component", "session-cleanup"),
+		logger:        logger,
+		auditor:       auditor,
 	}
 }
 
@@ -75,6 +92,10 @@ func (r *SessionCleanupReconciler) handleDisconnected(ctx context.Context, sess 
 		return ctrl.Result{RequeueAfter: remaining}, nil
 	}
 
+	if err := session.ValidateTransition(sess.Status.Phase, v1alpha1.SessionPhaseCancelled); err != nil {
+		return ctrl.Result{}, fmt.Errorf("validate disconnect TTL transition: %w", err)
+	}
+
 	now := metav1.Now()
 	sess.Status.Phase = v1alpha1.SessionPhaseCancelled
 	sess.Status.CompletedAt = &now
@@ -92,6 +113,11 @@ func (r *SessionCleanupReconciler) handleDisconnected(ctx context.Context, sess 
 		"session", sess.Name,
 		"elapsed", elapsed.String(),
 	)
+	r.emitAudit(ctx, audit.EventSessionAutoCancelled, map[string]string{
+		"session": sess.Name,
+		"phase":   string(v1alpha1.SessionPhaseCancelled),
+		"elapsed": elapsed.String(),
+	})
 	return ctrl.Result{}, nil
 }
 
@@ -118,5 +144,20 @@ func (r *SessionCleanupReconciler) handleTerminal(ctx context.Context, sess *v1a
 		"phase", sess.Status.Phase,
 		"elapsed", elapsed.String(),
 	)
+	r.emitAudit(ctx, audit.EventSessionRetentionDeleted, map[string]string{
+		"session": sess.Name,
+		"phase":   string(sess.Status.Phase),
+		"elapsed": elapsed.String(),
+	})
 	return ctrl.Result{}, nil
+}
+
+func (r *SessionCleanupReconciler) emitAudit(ctx context.Context, eventType audit.EventType, detail map[string]string) {
+	if r.auditor == nil {
+		return
+	}
+	r.auditor.Emit(ctx, &audit.Event{
+		Type:   eventType,
+		Detail: detail,
+	})
 }

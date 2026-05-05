@@ -84,11 +84,11 @@ var _ = Describe("SessionCleanupReconciler", func() {
 		scheme = newScheme()
 		ctx = context.Background()
 		disconnectTTL = 15 * time.Minute
-		retentionTTL = 1 * time.Hour
+		retentionTTL = controller.MinRetentionTTL
 	})
 
 	reconcile := func(k8s client.Client, name string) (ctrl.Result, error) {
-		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL)
+		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, nil)
 		return r.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: "test-ns"},
 		})
@@ -111,9 +111,10 @@ var _ = Describe("SessionCleanupReconciler", func() {
 	})
 
 	It("UT-AF-220-002: deletes Completed session after retention", func() {
-		sess := makeSession("sess-done", v1alpha1.SessionPhaseCompleted, pastTime(2*time.Hour), nil)
+		expired := controller.MinRetentionTTL + time.Hour
+		sess := makeSession("sess-done", v1alpha1.SessionPhaseCompleted, pastTime(expired), nil)
 		k8s := newFakeClient(scheme, sess)
-		sess.Status.CompletedAt = pastTime(2 * time.Hour)
+		sess.Status.CompletedAt = pastTime(expired)
 		_ = k8s.Status().Update(ctx, sess)
 
 		result, err := reconcile(k8s, "sess-done")
@@ -126,9 +127,10 @@ var _ = Describe("SessionCleanupReconciler", func() {
 	})
 
 	It("UT-AF-220-003: deletes Cancelled session after retention", func() {
-		sess := makeSession("sess-cancel", v1alpha1.SessionPhaseCancelled, pastTime(2*time.Hour), nil)
+		expired := controller.MinRetentionTTL + time.Hour
+		sess := makeSession("sess-cancel", v1alpha1.SessionPhaseCancelled, pastTime(expired), nil)
 		k8s := newFakeClient(scheme, sess)
-		sess.Status.CompletedAt = pastTime(2 * time.Hour)
+		sess.Status.CompletedAt = pastTime(expired)
 		_ = k8s.Status().Update(ctx, sess)
 
 		result, err := reconcile(k8s, "sess-cancel")
@@ -141,9 +143,10 @@ var _ = Describe("SessionCleanupReconciler", func() {
 	})
 
 	It("UT-AF-220-004: deletes Failed session after retention", func() {
-		sess := makeSession("sess-fail", v1alpha1.SessionPhaseFailed, pastTime(2*time.Hour), nil)
+		expired := controller.MinRetentionTTL + time.Hour
+		sess := makeSession("sess-fail", v1alpha1.SessionPhaseFailed, pastTime(expired), nil)
 		k8s := newFakeClient(scheme, sess)
-		sess.Status.CompletedAt = pastTime(2 * time.Hour)
+		sess.Status.CompletedAt = pastTime(expired)
 		_ = k8s.Status().Update(ctx, sess)
 
 		result, err := reconcile(k8s, "sess-fail")

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	adksession "google.golang.org/adk/session"
 
 	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 )
 
 // Label keys used on InvestigationSession CRDs.
@@ -52,15 +54,17 @@ type CRDSessionService struct {
 	scheme    *runtime.Scheme
 	namespace string
 	logger    *slog.Logger
+	auditor   audit.Emitter
 
 	mu       sync.RWMutex
 	crdIndex map[string]string // sessionID -> CRD name
 }
 
 // NewCRDSessionService creates a new CRDSessionService. The delegate should
-// typically be adksession.InMemoryService().
-func NewCRDSessionService(delegate adksession.Service, c client.Client, scheme *runtime.Scheme, ns string) *CRDSessionService {
-	return &CRDSessionService{
+// typically be adksession.InMemoryService(). The auditor may be nil to disable
+// audit emission (e.g. in tests).
+func NewCRDSessionService(delegate adksession.Service, c client.Client, scheme *runtime.Scheme, ns string, opts ...Option) *CRDSessionService {
+	svc := &CRDSessionService{
 		delegate:  delegate,
 		client:    c,
 		scheme:    scheme,
@@ -68,6 +72,18 @@ func NewCRDSessionService(delegate adksession.Service, c client.Client, scheme *
 		logger:    slog.Default().With("component", "session-service"),
 		crdIndex:  make(map[string]string),
 	}
+	for _, o := range opts {
+		o(svc)
+	}
+	return svc
+}
+
+// Option configures optional dependencies on CRDSessionService.
+type Option func(*CRDSessionService)
+
+// WithAuditor injects an audit.Emitter for FedRAMP AU-2/AU-12 compliance.
+func WithAuditor(e audit.Emitter) Option {
+	return func(s *CRDSessionService) { s.auditor = e }
 }
 
 // Create creates an InvestigationSession CRD and delegates session creation
@@ -141,6 +157,11 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 		"crd_name", crdName,
 		"user", req.UserID,
 	)
+	s.emitAudit(ctx, audit.EventSessionCreated, req.UserID, map[string]string{
+		"session_id": resp.Session.ID(),
+		"crd_name":   crdName,
+		"phase":      string(v1alpha1.SessionPhaseActive),
+	})
 	return resp, nil
 }
 
@@ -166,7 +187,6 @@ func (s *CRDSessionService) Delete(ctx context.Context, req *adksession.DeleteRe
 		crdName = req.SessionID
 	}
 
-	// Delete CRD (best-effort; may not exist after restart)
 	crd := &v1alpha1.InvestigationSession{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      crdName,
@@ -179,6 +199,10 @@ func (s *CRDSessionService) Delete(ctx context.Context, req *adksession.DeleteRe
 	delete(s.crdIndex, req.SessionID)
 	s.mu.Unlock()
 
+	s.emitAudit(ctx, audit.EventSessionDeleted, req.UserID, map[string]string{
+		"session_id": req.SessionID,
+		"crd_name":   crdName,
+	})
 	return s.delegate.Delete(ctx, req)
 }
 
@@ -227,14 +251,31 @@ func (s *CRDSessionService) GetSessionPhase(ctx context.Context, sessionID strin
 
 var _ adksession.Service = (*CRDSessionService)(nil)
 
+func (s *CRDSessionService) emitAudit(ctx context.Context, eventType audit.EventType, userID string, detail map[string]string) {
+	if s.auditor == nil {
+		return
+	}
+	s.auditor.Emit(ctx, &audit.Event{
+		Type:   eventType,
+		UserID: userID,
+		Detail: detail,
+	})
+}
+
 var invalidLabelChars = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 
 // sanitizeLabelValue truncates and cleans a string for use as a K8s label
-// value (max 63 chars, must match [a-zA-Z0-9._-]).
+// value (max 63 chars, must match [a-zA-Z0-9._-], must start and end with
+// an alphanumeric character per the K8s label value specification).
 func sanitizeLabelValue(v string) string {
 	v = invalidLabelChars.ReplaceAllString(v, "_")
 	if len(v) > 63 {
 		v = v[:63]
+	}
+	v = strings.TrimLeft(v, "._-")
+	v = strings.TrimRight(v, "._-")
+	if v == "" {
+		v = "unknown"
 	}
 	return v
 }

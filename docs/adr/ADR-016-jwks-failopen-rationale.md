@@ -47,6 +47,16 @@ the `/readyz` probe.
 - **SI-10**: Input validation (JWT structure, claims) remains enforced regardless of
   cache state.
 
+## Maximum Cache Age
+
+Cached JWKS keys are valid for at most **24 hours** from the last successful fetch. If a
+circuit breaker remains open beyond this window, the cache is considered expired and the
+system transitions to fail-closed (returning 503 via `/readyz`). This ensures that even
+in a prolonged JWKS endpoint outage, stale keys are not used indefinitely.
+
+The 24-hour ceiling is enforced by the cache TTL configured in `JWKSCacheConfig.MaxAge`.
+Operators should set this value to align with their OIDC provider's key rotation schedule.
+
 ## Consequences
 
 - Operators MUST monitor `af_circuit_breaker_state{dependency="jwks_*"}` and alert on
@@ -54,3 +64,4 @@ the `/readyz` probe.
 - The `/readyz` probe returns 503 when any JWKS circuit breaker is open, preventing
   new traffic from reaching a degraded instance.
 - Key rotation events should be coordinated with JWKS cache TTL to minimize stale-key windows.
+- Cached keys expire after 24 hours regardless of circuit breaker state, forcing fail-closed.
