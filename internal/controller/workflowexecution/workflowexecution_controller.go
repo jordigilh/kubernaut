@@ -482,7 +482,11 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	}
 
 	if !resourceExists {
-		if err := r.AuditManager.RecordWorkflowSelectionCompleted(ctx, wfe); err != nil {
+		workflowName := ""
+		if schemaMeta != nil {
+			workflowName = schemaMeta.WorkflowName
+		}
+		if err := r.AuditManager.RecordWorkflowSelectionCompleted(ctx, wfe, workflowName); err != nil {
 			logger.V(1).Info("Failed to record workflow.selection.completed audit event", "error", err)
 		}
 	} else {
