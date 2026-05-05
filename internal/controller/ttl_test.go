@@ -88,7 +88,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 	})
 
 	reconcile := func(k8s client.Client, name string) (ctrl.Result, error) {
-		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, nil)
+		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, nil, nil)
 		return r.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: "test-ns"},
 		})
@@ -222,5 +222,6 @@ var _ = Describe("SessionCleanupReconciler", func() {
 		err = k8s.Get(ctx, types.NamespacedName{Name: "sess-zero", Namespace: "test-ns"}, &updated)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(updated.Status.Phase).To(Equal(v1alpha1.SessionPhaseCancelled))
+		Expect(updated.Status.Message).To(Equal("auto-cancelled: disconnect TTL expired"))
 	})
 })

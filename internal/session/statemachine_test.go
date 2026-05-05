@@ -69,7 +69,7 @@ var _ = Describe("State Machine", func() {
 		})
 
 		createSession := func(id string) {
-			req := session.CreateRequestWithDefaults(id, "jane.doe", createConfigState())
+			req := createRequestWithDefaults(id, "jane.doe", createConfigState())
 			_, err := svc.Create(ctx, &req)
 			Expect(err).NotTo(HaveOccurred())
 		}
