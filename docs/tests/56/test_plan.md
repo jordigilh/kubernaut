@@ -105,7 +105,7 @@ This test plan validates the CRD-backed `session.Service` implementation (delega
 | UT-AF-220-005 | Active session not touched | P0 |
 | UT-AF-220-006 | Recent terminal not deleted | P0 |
 | UT-AF-220-007 | Requeues with correct delay | P1 |
-| UT-AF-220-008 | Updates af_sessions_active metric | P1 |
+| UT-AF-220-008 | Updates af_sessions_active metric (deferred: gauge accuracy verified in session pkg tests) | P2 |
 | UT-AF-220-009 | Handles CRD not found | P1 |
 | UT-AF-220-010 | Zero TTL does not delete prematurely | P1 |
 

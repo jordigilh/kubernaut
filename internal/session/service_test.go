@@ -190,6 +190,80 @@ var _ = Describe("CRDSessionService", func() {
 		})
 	})
 
+	Describe("Create adversarial inputs", func() {
+		DescribeTable("rejects invalid session IDs",
+			func(sessionID string) {
+				req := createRequestWithDefaults(sessionID, "jane.doe", createConfigState())
+				_, err := svc.Create(ctx, &req)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("invalid session ID"))
+			},
+			Entry("uppercase", "UPPERCASE"),
+			Entry("exceeds 253 chars", strings.Repeat("a", 254)),
+			Entry("path traversal", "../../etc/passwd"),
+			Entry("contains spaces", "has spaces"),
+			Entry("starts with dash", "-leading-dash"),
+			Entry("contains dots", "has.dots.in.it"),
+			Entry("contains underscore", "has_underscore"),
+		)
+
+		It("auto-generates valid CRD name when SessionID is empty", func() {
+			req := createRequestWithDefaults("", "jane.doe", createConfigState())
+			resp, err := svc.Create(ctx, &req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.Session).NotTo(BeNil())
+			Expect(resp.Session.ID()).NotTo(BeEmpty())
+		})
+	})
+
+	Describe("PruneTerminalEntries", func() {
+		It("removes index entries for CRDs in terminal phase", func() {
+			req1 := createRequestWithDefaults("prune-active", "jane.doe", createConfigState())
+			_, err := svc.Create(ctx, &req1)
+			Expect(err).NotTo(HaveOccurred())
+
+			req2 := createRequestWithDefaults("prune-done", "jane.doe", createConfigState())
+			_, err = svc.Create(ctx, &req2)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Simulate external transition (TTL controller) by updating CRD directly
+			var crd v1alpha1.InvestigationSession
+			err = k8s.Get(ctx, types.NamespacedName{Name: "prune-done", Namespace: "test-ns"}, &crd)
+			Expect(err).NotTo(HaveOccurred())
+			crd.Status.Phase = v1alpha1.SessionPhaseCompleted
+			err = k8s.Status().Update(ctx, &crd)
+			Expect(err).NotTo(HaveOccurred())
+
+			pruned := svc.PruneTerminalEntries(ctx)
+			Expect(pruned).To(Equal(1))
+
+			// Active session should still be accessible via GetSessionPhase
+			phase, err := svc.GetSessionPhase(ctx, "prune-active")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(phase).To(Equal(v1alpha1.SessionPhaseActive))
+		})
+
+		It("is idempotent when called repeatedly", func() {
+			req := createRequestWithDefaults("prune-idem", "jane.doe", createConfigState())
+			_, err := svc.Create(ctx, &req)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Simulate external terminal transition
+			var crd v1alpha1.InvestigationSession
+			err = k8s.Get(ctx, types.NamespacedName{Name: "prune-idem", Namespace: "test-ns"}, &crd)
+			Expect(err).NotTo(HaveOccurred())
+			crd.Status.Phase = v1alpha1.SessionPhaseFailed
+			err = k8s.Status().Update(ctx, &crd)
+			Expect(err).NotTo(HaveOccurred())
+
+			first := svc.PruneTerminalEntries(ctx)
+			Expect(first).To(Equal(1))
+
+			second := svc.PruneTerminalEntries(ctx)
+			Expect(second).To(Equal(0))
+		})
+	})
+
 	// --- Get Tests ---
 
 	Describe("Get", func() {
