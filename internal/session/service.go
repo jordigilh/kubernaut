@@ -22,7 +22,10 @@ import (
 )
 
 // validCRDName matches RFC 1123 subdomain: lowercase alphanumeric and '-',
-// must start/end with alphanumeric, max 253 chars.
+// must start/end with alphanumeric, max 253 chars. The 253-char limit follows
+// the Kubernetes object name specification (not the 63-char label value limit)
+// because this regex validates CRD metadata.name, which permits full DNS
+// subdomain length per k8s.io/apimachinery/pkg/api/validation.
 var validCRDName = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]{0,251}[a-z0-9])?$`)
 
 // Label keys used on InvestigationSession CRDs.
@@ -152,13 +155,19 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 	}
 
 	if err := s.client.Status().Update(ctx, crd); err != nil {
-		_ = s.client.Delete(ctx, crd)
+		if delErr := s.client.Delete(ctx, crd); delErr != nil {
+			s.logger.WarnContext(ctx, "CRD rollback failed after status update error",
+				"crd_name", crdName, "error", delErr)
+		}
 		return nil, fmt.Errorf("set InvestigationSession initial status: %w", err)
 	}
 
 	resp, err := s.delegate.Create(ctx, req)
 	if err != nil {
-		_ = s.client.Delete(ctx, crd)
+		if delErr := s.client.Delete(ctx, crd); delErr != nil {
+			s.logger.WarnContext(ctx, "CRD rollback failed after delegate create error",
+				"crd_name", crdName, "error", delErr)
+		}
 		return nil, fmt.Errorf("delegate create: %w", err)
 	}
 
@@ -180,7 +189,10 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 	return resp, nil
 }
 
-// Get delegates to the in-memory service.
+// Get delegates to the in-memory service. Sessions are invalidated on pod
+// restart since the in-memory delegate is not hydrated from CRDs. CRD
+// reconciliation will transition orphaned sessions to Disconnected via the
+// TTL controller. Full session hydration is deferred to PR7.
 func (s *CRDSessionService) Get(ctx context.Context, req *adksession.GetRequest) (*adksession.GetResponse, error) {
 	return s.delegate.Get(ctx, req)
 }
@@ -202,13 +214,27 @@ func (s *CRDSessionService) Delete(ctx context.Context, req *adksession.DeleteRe
 		crdName = req.SessionID
 	}
 
+	// Read the actual phase before deletion so the gauge decrement is accurate.
+	nn := types.NamespacedName{Name: crdName, Namespace: s.namespace}
+	var existing v1alpha1.InvestigationSession
+	phase := string(v1alpha1.SessionPhaseActive) // fallback
+	if err := s.client.Get(ctx, nn, &existing); err == nil {
+		phase = string(existing.Status.Phase)
+	}
+
 	crd := &v1alpha1.InvestigationSession{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      crdName,
 			Namespace: s.namespace,
 		},
 	}
-	_ = s.client.Delete(ctx, crd)
+	if err := s.client.Delete(ctx, crd); err != nil {
+		s.logger.WarnContext(ctx, "CRD delete failed",
+			"session_id", req.SessionID,
+			"crd_name", crdName,
+			"error", err,
+		)
+	}
 
 	s.mu.Lock()
 	delete(s.crdIndex, req.SessionID)
@@ -218,7 +244,7 @@ func (s *CRDSessionService) Delete(ctx context.Context, req *adksession.DeleteRe
 		"session_id": req.SessionID,
 		"crd_name":   crdName,
 	})
-	s.decSessionGauge(string(v1alpha1.SessionPhaseActive))
+	s.decSessionGauge(phase)
 	return s.delegate.Delete(ctx, req)
 }
 

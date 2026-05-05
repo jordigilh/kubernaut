@@ -25,6 +25,9 @@ const (
 //  2. Events are non-empty
 //  3. Last event has no FunctionCall parts (text-only turn end)
 //  4. reinvokeCount < MaxReinvocations
+//
+// TODO: Wire af_reinvocations_total counter metric when this function is
+// integrated into the end-to-end invocation loop (target: PR7 streaming).
 func NeedsReinvocation(phase v1alpha1.SessionPhase, events adksession.Events, reinvokeCount int) bool {
 	if phase != v1alpha1.SessionPhaseActive {
 		return false

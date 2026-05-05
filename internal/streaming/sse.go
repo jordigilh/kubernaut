@@ -19,6 +19,9 @@ const StateKeyTerminal = "af:terminal"
 const DefaultRetryMS = 3000
 
 // SSEPayload is the JSON structure sent in the data: field of SSE frames.
+// The EventType field intentionally duplicates the SSE event: line so that
+// clients parsing only the JSON data (e.g. via fetch ReadableStream without
+// an EventSource) can route events without SSE-level parsing.
 type SSEPayload struct {
 	Seq       int    `json:"seq"`
 	EventType string `json:"event_type"`

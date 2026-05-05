@@ -63,7 +63,7 @@ var _ = Describe("CRDSessionService concurrency", func() {
 		_, err := svc.Create(ctx, &req)
 		Expect(err).NotTo(HaveOccurred())
 
-		err = svc.UpdatePhase(ctx, "race-sess", v1alpha1.SessionPhaseDisconnected, "SSE dropped")
+		err = svc.UpdatePhase(ctx, "race-sess", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "")
 		Expect(err).NotTo(HaveOccurred())
 
 		const attempts = 10
@@ -75,11 +75,11 @@ var _ = Describe("CRDSessionService concurrency", func() {
 		for i := 0; i < attempts; i++ {
 			go func(idx int) {
 				defer wg.Done()
-				cancelErrs[idx] = svc.UpdatePhase(ctx, "race-sess", v1alpha1.SessionPhaseCancelled, "TTL expired")
+				cancelErrs[idx] = svc.UpdatePhase(ctx, "race-sess", v1alpha1.SessionPhaseCancelled, "TTL expired", "")
 			}(i)
 			go func(idx int) {
 				defer wg.Done()
-				reconnectErrs[idx] = svc.UpdatePhase(ctx, "race-sess", v1alpha1.SessionPhaseActive, "reconnected")
+				reconnectErrs[idx] = svc.UpdatePhase(ctx, "race-sess", v1alpha1.SessionPhaseActive, "reconnected", "")
 			}(i)
 		}
 		wg.Wait()
