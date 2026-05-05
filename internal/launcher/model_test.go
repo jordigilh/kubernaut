@@ -48,11 +48,14 @@ var _ = Describe("Model", func() {
 			Expect(cfg.JWTDelegation).To(BeTrue())
 		})
 
-		It("UT-AF-210-014: A2AConfig with model validation", func() {
-			cfg := launcher.A2AConfig{
-				AppName: "test",
-			}
-			Expect(cfg.AppName).To(Equal("test"))
+		It("UT-AF-210-014: A2AConfig validation rejects nil Agent", func() {
+			_, err := launcher.NewA2AHandler(launcher.A2AConfig{
+				Agent:          nil,
+				SessionService: nil,
+				AppName:        "test",
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("agent"))
 		})
 	})
 })

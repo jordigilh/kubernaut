@@ -17,6 +17,7 @@ type ModelConfig struct {
 
 // DefaultModelConfig returns the default model configuration targeting
 // Claude Sonnet 4.6 via Vertex AI with JWT delegation enabled.
+// TODO(PR6+): wired when model selection is configurable via env/CRD.
 func DefaultModelConfig() ModelConfig {
 	return ModelConfig{
 		Provider:      ProviderVertexAI,

@@ -23,6 +23,9 @@ func handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("ok"))
 }
 
+// readyzHandler returns a handler that responds 503 when the checker reports
+// not ready. The response includes "not ready" to match monitoring expectations.
+// TODO(PR7+): consider ReadyChecker returning (bool, string) for specific reasons.
 func readyzHandler(checker func() bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		if !checker() {

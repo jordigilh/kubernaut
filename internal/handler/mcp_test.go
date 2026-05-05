@@ -10,8 +10,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/handler"
 )
@@ -75,9 +73,6 @@ var _ = Describe("MCP Handler", func() {
 	})
 
 	It("UT-AF-220-004: tools/list returns registered tools", func() {
-		srv := createMCPServerWithTools()
-		Expect(srv).NotTo(BeNil())
-
 		toolHandler, err := handler.NewMCPHandler(handler.MCPConfig{
 			ServerName:    "kubernaut-apifrontend",
 			ServerVersion: "v0.1.0",
@@ -163,11 +158,3 @@ var _ = Describe("MCP Handler", func() {
 		Expect(err.Error()).To(ContainSubstring("server version"))
 	})
 })
-
-func createMCPServerWithTools() *mcp.Server {
-	srv := mcp.NewServer(&mcp.Implementation{
-		Name:    "test",
-		Version: "v0.0.1",
-	}, nil)
-	return srv
-}

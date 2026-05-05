@@ -30,7 +30,7 @@ type A2AConfig struct {
 	BeforeExecute func(ctx context.Context) (context.Context, error)
 }
 
-func (c A2AConfig) validate() error {
+func (c A2AConfig) validate() error { //nolint:gocritic // hugeParam: value copy intentional for validation
 	if c.Agent == nil {
 		return fmt.Errorf("agent is required")
 	}
@@ -43,7 +43,7 @@ func (c A2AConfig) validate() error {
 	return nil
 }
 
-func (c A2AConfig) logger() *slog.Logger {
+func (c A2AConfig) logger() *slog.Logger { //nolint:gocritic // hugeParam: value copy intentional
 	if c.Logger != nil {
 		return c.Logger
 	}
@@ -53,7 +53,7 @@ func (c A2AConfig) logger() *slog.Logger {
 // NewA2AHandler creates an http.Handler that serves the A2A JSON-RPC protocol.
 // It wraps the ADK executor in the a2a-go JSON-RPC transport layer.
 // The handler respects context cancellation for graceful shutdown.
-func NewA2AHandler(cfg A2AConfig) (http.Handler, error) {
+func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // hugeParam: called once at startup
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("invalid A2A config: %w", err)
 	}
@@ -138,14 +138,12 @@ func buildAfterExecuteCallback(log *slog.Logger, auditor audit.Emitter) adka2a.A
 					},
 				})
 			}
-		} else {
-			if auditor != nil {
-				auditor.Emit(ctx, &audit.Event{
-					Type:   audit.EventA2ATaskCompleted,
-					UserID: username,
-					Detail: map[string]string{"task_id": taskID},
-				})
-			}
+		} else if auditor != nil {
+			auditor.Emit(ctx, &audit.Event{
+				Type:   audit.EventA2ATaskCompleted,
+				UserID: username,
+				Detail: map[string]string{"task_id": taskID},
+			})
 		}
 		return nil
 	}

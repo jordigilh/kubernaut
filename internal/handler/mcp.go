@@ -29,7 +29,7 @@ type MCPConfig struct {
 	ToolCallback func(ctx context.Context, toolName string)
 }
 
-func (c MCPConfig) validate() error {
+func (c MCPConfig) validate() error { //nolint:gocritic // hugeParam: value copy intentional for validation
 	if c.ServerName == "" {
 		return fmt.Errorf("server name is required")
 	}
@@ -43,7 +43,7 @@ func (c MCPConfig) validate() error {
 // When cfg.Enabled is false, returns a handler that responds 501 Not Implemented.
 // Tools are registered as pass-through stubs that return "not implemented" until
 // the real tool bridge is wired (PR6+).
-func NewMCPHandler(cfg MCPConfig) (http.Handler, error) {
+func NewMCPHandler(cfg MCPConfig) (http.Handler, error) { //nolint:gocritic // hugeParam: called once at startup
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("invalid MCP config: %w", err)
 	}
@@ -108,6 +108,7 @@ func NewMCPHandler(cfg MCPConfig) (http.Handler, error) {
 // Each tool has a minimal "object" input schema; real schemas will be generated
 // from the ADK tool structs in the full bridge (PR6+).
 func DefaultMCPTools() []MCPToolDef {
+	// TODO(PR6+): replace with generated schemas from ADK tool structs per SI-10.
 	objectSchema := map[string]any{
 		"type":       "object",
 		"properties": map[string]any{},

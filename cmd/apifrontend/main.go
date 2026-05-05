@@ -138,7 +138,8 @@ func run() error {
 		MCPHandler:       mcpHandler,
 		AgentCardHandler: agentCardHandler,
 		AuthMiddleware:   authMiddleware,
-		ReadyChecker:     validator.Ready,
+		ReadyChecker:     handler.AllReady(validator.Ready),
+		// TODO(PR7+): add session/A2A readiness checkers
 	})
 	if err != nil {
 		return fmt.Errorf("create router: %w", err)
