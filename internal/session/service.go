@@ -22,7 +22,10 @@ import (
 )
 
 // validCRDName matches RFC 1123 subdomain: lowercase alphanumeric and '-',
-// must start/end with alphanumeric, max 253 chars.
+// must start/end with alphanumeric, max 253 chars. The 253-char limit follows
+// the Kubernetes object name specification (not the 63-char label value limit)
+// because this regex validates CRD metadata.name, which permits full DNS
+// subdomain length per k8s.io/apimachinery/pkg/api/validation.
 var validCRDName = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]{0,251}[a-z0-9])?$`)
 
 // Label keys used on InvestigationSession CRDs.
