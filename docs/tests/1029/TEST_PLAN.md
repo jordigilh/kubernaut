@@ -102,6 +102,7 @@ provides defense-in-depth assurance that:
 | R10 | Resource exhaustion: alert with many labels causes unbounded API calls | API server overload, gateway latency spike | Medium | UT-GW-1029-034 | Candidate count bounded by labels that match discovered SingularNames; typically 1-3 per alert |
 | R11 | Memory leak: existence cache grows unbounded under alert storms | OOM kill | Medium | UT-GW-1029-036 | TTL expiration + cache cleared on registry refresh |
 | R12 | Post-startup discovery refresh failure leaves registry in broken state | All signals resolve to Unknown until next refresh | High | UT-GW-1029-037 | Refresh failure preserves previous good map; logged as error |
+| R13 | Service label selected as target instead of backing workload (Use Case 3) | AI workflow receives Service target, fails to match workload-specific remediation | High | UT-GW-1029-041..047 | Owner resolver traverses Service → selector → Pods → ownerRefs to resolve backing workload |
 
 ### 3.1 Risk-to-Test Traceability
 
@@ -359,6 +360,18 @@ Format: `{TIER}-{SERVICE}-{ISSUE}-{SEQUENCE}`
 | `UT-GW-1029-038` | Concurrent Parse() calls during registry refresh do not observe partial map state | Pass |
 | `UT-GW-1029-039` | Alert label value with empty string `""` is handled gracefully (not used as resource name for existence check) | Pass |
 | `UT-GW-1029-040` | Alert with duplicate label keys (same label appearing twice with different values) does not panic; last-write-wins or first-match per Prometheus spec | Pass |
+
+#### Service-to-Workload Traversal (#1029 Use Case 3)
+
+| Test Scenario ID | Description | Status |
+|---|---|---|
+| `UT-GW-1029-041` | Service → selector → Pods → StatefulSet resolves to StatefulSet (etcd use case) | Pass |
+| `UT-GW-1029-042` | Service → selector → Pods → ReplicaSet → Deployment resolves to Deployment | Pass |
+| `UT-GW-1029-043` | Service with no matching pods returns Service itself (graceful degradation) | Pass |
+| `UT-GW-1029-044` | Service without selector (ExternalName) returns Service itself | Pass |
+| `UT-GW-1029-045` | Service → selector → standalone Pod (no owners) returns Pod | Pass |
+| `UT-GW-1029-046` | Without fallbackReader, Service returns Service (graceful degradation) | Pass |
+| `UT-GW-1029-047` | Deterministic pod selection — picks alphabetically first pod across multiple replicas | Pass |
 
 #### Batch-Independent Processing (#1032)
 
@@ -683,7 +696,7 @@ Each phase follows strict TDD RED -> GREEN -> REFACTOR with checkpoints between 
 Write failing tests for registry construction, label-to-kind, kind-to-GVR, tier priority,
 fail-fast, concurrent refresh, existence cache, adversarial inputs.
 
-**Tests**: UT-GW-1029-001 through UT-GW-1029-016, UT-GW-1029-030 through UT-GW-1029-040
+**Tests**: UT-GW-1029-001 through UT-GW-1029-016, UT-GW-1029-030 through UT-GW-1029-047
 
 **Checkpoint 1A — RED Validation**:
 - [ ] All tests compile

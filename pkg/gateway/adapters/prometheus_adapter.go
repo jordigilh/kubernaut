@@ -176,7 +176,7 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 			Namespace: ns,
 		}
 
-		fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+		fingerprint, resolvedResource, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
 		if err != nil {
 			lastErr = err
 			a.logger.Info("Skipping stale alert in batch",
@@ -196,8 +196,8 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 			Fingerprint:  fingerprint,
 			SignalName:    alert.Labels["alertname"],
 			Severity:     severity,
-			Namespace:    resource.Namespace,
-			Resource:     resource,
+			Namespace:    resolvedResource.Namespace,
+			Resource:     resolvedResource,
 			Labels:       labels,
 			Annotations:  annotations,
 			FiringTime:   alert.StartsAt,
@@ -240,7 +240,7 @@ func (a *PrometheusAdapter) ParseBatch(ctx context.Context, rawData []byte) ([]*
 			Namespace: ns,
 		}
 
-		fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+		fingerprint, resolvedResource, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
 		if err != nil {
 			a.logger.Info("Alert failed owner resolution in batch, skipping",
 				"alert", i, "resource", resource.String(), "error", err)
@@ -259,8 +259,8 @@ func (a *PrometheusAdapter) ParseBatch(ctx context.Context, rawData []byte) ([]*
 			Fingerprint:  fingerprint,
 			SignalName:   alert.Labels["alertname"],
 			Severity:     severity,
-			Namespace:    resource.Namespace,
-			Resource:     resource,
+			Namespace:    resolvedResource.Namespace,
+			Resource:     resolvedResource,
 			Labels:       labels,
 			Annotations:  annotations,
 			FiringTime:   alert.StartsAt,

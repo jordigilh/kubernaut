@@ -19,10 +19,13 @@ package adapters
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -187,9 +190,22 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, 
 	currentKind := kind
 	currentName := name
 
+	// #1029 Use Case 3: Service targets are Prometheus scrape infrastructure labels,
+	// not workloads. Traverse Service → selector → Pods → ownerRefs to find the
+	// actual backing workload before entering the normal ownerReference chain.
+	if currentKind == "Service" {
+		podKind, podName, resolved := r.resolveServiceToWorkload(ctx, currentNamespace, currentName)
+		if resolved {
+			currentKind = podKind
+			currentName = podName
+		} else {
+			return currentKind, currentName, nil
+		}
+	}
+
 	// Track the most recent owner found (starts as the resource itself)
-	topKind := kind
-	topName := name
+	topKind := currentKind
+	topName := currentName
 	foundOwner := false
 
 	for i := 0; i < MaxOwnerChainDepth; i++ {
@@ -324,6 +340,64 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, 
 		"resolvedKind", topKind, "resolvedName", topName,
 		"foundOwner", foundOwner)
 	return topKind, topName, nil
+}
+
+// resolveServiceToWorkload traverses Service → spec.selector → Pods to find a
+// backing Pod whose ownerReference chain leads to a workload controller.
+// Returns ("Pod", podName, true) when a selector-matched Pod is found, allowing
+// the caller to continue the normal ownerRef traversal from that Pod.
+// Returns ("", "", false) when traversal cannot proceed (no fallbackReader,
+// Service not found, no selector, no matching pods).
+func (r *K8sOwnerResolver) resolveServiceToWorkload(ctx context.Context, namespace, serviceName string) (string, string, bool) {
+	if r.fallbackReader == nil {
+		r.logger.V(1).Info("Service-to-workload traversal skipped: no fallback reader",
+			"service", serviceName)
+		return "", "", false
+	}
+
+	lookupCtx, cancel := context.WithTimeout(ctx, ownerLookupTimeout)
+	defer cancel()
+
+	svc := &corev1.Service{}
+	key := client.ObjectKey{Namespace: namespace, Name: serviceName}
+	if err := r.fallbackReader.Get(lookupCtx, key, svc); err != nil {
+		r.logger.V(1).Info("Service-to-workload traversal: failed to get Service",
+			"service", serviceName, "error", err)
+		return "", "", false
+	}
+
+	if len(svc.Spec.Selector) == 0 {
+		r.logger.V(1).Info("Service-to-workload traversal: Service has no selector",
+			"service", serviceName)
+		return "", "", false
+	}
+
+	podList := &corev1.PodList{}
+	listOpts := &client.ListOptions{
+		Namespace:     namespace,
+		LabelSelector: labels.SelectorFromSet(svc.Spec.Selector),
+	}
+	if err := r.fallbackReader.List(lookupCtx, podList, listOpts); err != nil {
+		r.logger.V(1).Info("Service-to-workload traversal: failed to list pods",
+			"service", serviceName, "selector", svc.Spec.Selector, "error", err)
+		return "", "", false
+	}
+
+	if len(podList.Items) == 0 {
+		r.logger.V(1).Info("Service-to-workload traversal: no pods match selector",
+			"service", serviceName, "selector", svc.Spec.Selector)
+		return "", "", false
+	}
+
+	sort.Slice(podList.Items, func(i, j int) bool {
+		return podList.Items[i].Name < podList.Items[j].Name
+	})
+
+	selectedPod := podList.Items[0].Name
+	r.logger.V(1).Info("Service-to-workload traversal: resolved to pod",
+		"service", serviceName, "pod", selectedPod,
+		"matchingPods", len(podList.Items))
+	return "Pod", selectedPod, true
 }
 
 // resolveGVK returns the GroupVersionKind for a given kind string.
