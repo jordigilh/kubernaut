@@ -15,8 +15,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	adksession "google.golang.org/adk/session"
+
 	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/controller"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/session"
 )
 
 func TestControllerSuite(t *testing.T) {
@@ -223,5 +226,70 @@ var _ = Describe("SessionCleanupReconciler", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(updated.Status.Phase).To(Equal(v1alpha1.SessionPhaseCancelled))
 		Expect(updated.Status.Message).To(Equal("auto-cancelled: disconnect TTL expired"))
+	})
+
+	It("UT-AF-220-011: handleTerminal calls PruneTerminalEntries on sessionService", func() {
+		k8s := newFakeClient(scheme)
+		svc := session.NewCRDSessionService(
+			adksession.InMemoryService(), k8s, scheme, "test-ns",
+		)
+
+		createReq := adksession.CreateRequest{
+			AppName:   "kubernaut-apifrontend",
+			UserID:    "jane.doe",
+			SessionID: "sess-prune-target",
+			State: map[string]any{
+				session.StateKeyCreateConfig: &session.CreateConfig{
+					A2ATaskID:    "task-1",
+					UserIdentity: v1alpha1.SessionUser{Username: "jane.doe"},
+					JoinMode:     v1alpha1.SessionJoinModeStart,
+					RemediationRef: v1alpha1.ObjectRef{
+						Name: "rr-1", Namespace: "test-ns",
+					},
+				},
+			},
+		}
+		_, err := svc.Create(ctx, &createReq)
+		Expect(err).NotTo(HaveOccurred())
+
+		err = svc.UpdatePhase(ctx, "sess-prune-target", v1alpha1.SessionPhaseCompleted, "done", "test-user")
+		Expect(err).NotTo(HaveOccurred())
+
+		expired := controller.MinRetentionTTL + time.Hour
+		var crd v1alpha1.InvestigationSession
+		err = k8s.Get(ctx, types.NamespacedName{Name: "sess-prune-target", Namespace: "test-ns"}, &crd)
+		Expect(err).NotTo(HaveOccurred())
+		past := metav1.NewTime(time.Now().Add(-expired))
+		crd.Status.CompletedAt = &past
+		err = k8s.Status().Update(ctx, &crd)
+		Expect(err).NotTo(HaveOccurred())
+
+		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, nil, nil, svc)
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: "sess-prune-target", Namespace: "test-ns"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Requeue).To(BeFalse())
+
+		// CRD should be deleted
+		err = k8s.Get(ctx, types.NamespacedName{Name: "sess-prune-target", Namespace: "test-ns"}, &crd)
+		Expect(err).To(HaveOccurred())
+	})
+
+	It("UT-AF-220-012: handles Disconnected session with nil Labels", func() {
+		sess := makeSession("sess-nil-labels", v1alpha1.SessionPhaseDisconnected, nil, pastTime(20*time.Minute))
+		sess.Labels = nil
+		k8s := newFakeClient(scheme, sess)
+		sess.Status.DisconnectedAt = pastTime(20 * time.Minute)
+		_ = k8s.Status().Update(ctx, sess)
+
+		result, err := reconcile(k8s, "sess-nil-labels")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Requeue).To(BeFalse())
+
+		var updated v1alpha1.InvestigationSession
+		err = k8s.Get(ctx, types.NamespacedName{Name: "sess-nil-labels", Namespace: "test-ns"}, &updated)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(updated.Status.Phase).To(Equal(v1alpha1.SessionPhaseCancelled))
 	})
 })

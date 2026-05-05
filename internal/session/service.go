@@ -21,11 +21,9 @@ import (
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 )
 
-// validCRDName matches RFC 1123 subdomain: lowercase alphanumeric and '-',
-// must start/end with alphanumeric, max 253 chars. The 253-char limit follows
-// the Kubernetes object name specification (not the 63-char label value limit)
-// because this regex validates CRD metadata.name, which permits full DNS
-// subdomain length per k8s.io/apimachinery/pkg/api/validation.
+// validCRDName matches a DNS label (lowercase alphanumeric and '-', must
+// start/end with alphanumeric, max 253 chars). Dots are intentionally excluded
+// to keep session IDs as simple labels rather than full DNS subdomains.
 var validCRDName = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]{0,251}[a-z0-9])?$`)
 
 // Label keys used on InvestigationSession CRDs.
@@ -157,7 +155,9 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 	if err := s.client.Status().Update(ctx, crd); err != nil {
 		if delErr := s.client.Delete(ctx, crd); delErr != nil {
 			s.logger.WarnContext(ctx, "CRD rollback failed after status update error",
-				"crd_name", crdName, "error", delErr)
+				"crd_name", crdName,
+				"rollback_error", delErr,
+			)
 		}
 		return nil, fmt.Errorf("set InvestigationSession initial status: %w", err)
 	}
@@ -165,8 +165,10 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 	resp, err := s.delegate.Create(ctx, req)
 	if err != nil {
 		if delErr := s.client.Delete(ctx, crd); delErr != nil {
-			s.logger.WarnContext(ctx, "CRD rollback failed after delegate create error",
-				"crd_name", crdName, "error", delErr)
+			s.logger.WarnContext(ctx, "CRD rollback failed after delegate error",
+				"crd_name", crdName,
+				"rollback_error", delErr,
+			)
 		}
 		return nil, fmt.Errorf("delegate create: %w", err)
 	}
@@ -214,7 +216,7 @@ func (s *CRDSessionService) Delete(ctx context.Context, req *adksession.DeleteRe
 		crdName = req.SessionID
 	}
 
-	// Read the actual phase before deletion so the gauge decrement is accurate.
+	// Read actual phase before deletion so the gauge decrement is accurate.
 	nn := types.NamespacedName{Name: crdName, Namespace: s.namespace}
 	var existing v1alpha1.InvestigationSession
 	phase := string(v1alpha1.SessionPhaseActive) // fallback
