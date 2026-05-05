@@ -98,6 +98,7 @@ func run() error {
 		SessionService: sessionSvc,
 		AppName:        "kubernaut-apifrontend",
 		Logger:         slog.Default(),
+		Auditor:        auditor,
 	})
 	if err != nil {
 		return fmt.Errorf("create A2A handler: %w", err)
@@ -108,6 +109,8 @@ func run() error {
 		ServerName:    "kubernaut-apifrontend",
 		ServerVersion: "0.1.0",
 		Tools:         handler.DefaultMCPTools(),
+		Auditor:       auditor,
+		Enabled:       envOr("ENABLE_MCP", "false") == "true",
 	})
 	if err != nil {
 		return fmt.Errorf("create MCP handler: %w", err)
@@ -117,7 +120,7 @@ func run() error {
 	agentCardHandler, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
 		Name:        "kubernaut-apifrontend",
 		Description: "Kubernaut API Frontend agent for Kubernetes incident triage and remediation",
-		URL:         fmt.Sprintf("https://localhost:%s", envOr("PORT", "8443")),
+		URL:         envOr("AGENT_CARD_URL", fmt.Sprintf("https://localhost:%s", envOr("PORT", "8443"))),
 		Version:     "0.1.0",
 		Skills:      handler.DefaultAgentSkills(),
 	})

@@ -6,6 +6,9 @@ import (
 	"net/http"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 )
 
 // MCPToolDef defines a tool to be registered with the MCP server.
@@ -20,6 +23,8 @@ type MCPConfig struct {
 	ServerName    string
 	ServerVersion string
 	Tools         []MCPToolDef
+	Auditor       audit.Emitter
+	Enabled       bool
 	// ToolCallback is invoked on each tool call for observability/testing hooks.
 	ToolCallback func(ctx context.Context, toolName string)
 }
@@ -35,11 +40,18 @@ func (c MCPConfig) validate() error {
 }
 
 // NewMCPHandler creates an http.Handler serving the MCP Streamable HTTP protocol.
+// When cfg.Enabled is false, returns a handler that responds 501 Not Implemented.
 // Tools are registered as pass-through stubs that return "not implemented" until
-// the real tool bridge is wired in Phase 9.
+// the real tool bridge is wired (PR6+).
 func NewMCPHandler(cfg MCPConfig) (http.Handler, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("invalid MCP config: %w", err)
+	}
+
+	if !cfg.Enabled {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "MCP not enabled", http.StatusNotImplemented)
+		}), nil
 	}
 
 	srv := mcp.NewServer(&mcp.Implementation{
@@ -59,10 +71,22 @@ func NewMCPHandler(cfg MCPConfig) (http.Handler, error) {
 			InputSchema: t.InputSchema,
 		}
 		cb := cfg.ToolCallback
+		auditor := cfg.Auditor
 		toolName := t.Name
 		srv.AddTool(toolDef, func(ctx context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			if cb != nil {
 				cb(ctx, toolName)
+			}
+			if auditor != nil {
+				username := ""
+				if user := auth.UserIdentityFromContext(ctx); user != nil {
+					username = user.Username
+				}
+				auditor.Emit(ctx, &audit.Event{
+					Type:   audit.EventMCPToolInvoked,
+					UserID: username,
+					Detail: map[string]string{"tool": toolName},
+				})
 			}
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{

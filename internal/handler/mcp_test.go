@@ -24,6 +24,7 @@ var _ = Describe("MCP Handler", func() {
 		mcpHandler, err = handler.NewMCPHandler(handler.MCPConfig{
 			ServerName:    "kubernaut-apifrontend",
 			ServerVersion: "v0.1.0",
+			Enabled:       true,
 		})
 		Expect(err).NotTo(HaveOccurred())
 	})
@@ -81,6 +82,7 @@ var _ = Describe("MCP Handler", func() {
 			ServerName:    "kubernaut-apifrontend",
 			ServerVersion: "v0.1.0",
 			Tools:         handler.DefaultMCPTools(),
+			Enabled:       true,
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(toolHandler).NotTo(BeNil())
@@ -102,6 +104,7 @@ var _ = Describe("MCP Handler", func() {
 		h, err := handler.NewMCPHandler(handler.MCPConfig{
 			ServerName:    "kubernaut-apifrontend",
 			ServerVersion: "v0.2.0",
+			Enabled:       true,
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(h).NotTo(BeNil())
@@ -112,6 +115,7 @@ var _ = Describe("MCP Handler", func() {
 		h, err := handler.NewMCPHandler(handler.MCPConfig{
 			ServerName:    "kubernaut-apifrontend",
 			ServerVersion: "v0.1.0",
+			Enabled:       true,
 			ToolCallback: func(ctx context.Context, toolName string) {
 				capturedUser = auth.UserIdentityFromContext(ctx)
 			},

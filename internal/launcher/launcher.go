@@ -13,6 +13,7 @@ import (
 	"google.golang.org/adk/server/adka2a"
 	adksession "google.golang.org/adk/session"
 
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 )
 
@@ -22,6 +23,7 @@ type A2AConfig struct {
 	SessionService adksession.Service
 	AppName        string
 	Logger         *slog.Logger
+	Auditor        audit.Emitter
 
 	// BeforeExecute is called before each A2A execution with the request context.
 	// The context already contains the UserIdentity from auth middleware.
@@ -65,8 +67,8 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) {
 			SessionService:    cfg.SessionService,
 			AutoCreateSession: true,
 		},
-		BeforeExecuteCallback: buildBeforeExecuteCallback(cfg.BeforeExecute),
-		AfterExecuteCallback:  buildAfterExecuteCallback(log),
+		BeforeExecuteCallback: buildBeforeExecuteCallback(cfg.BeforeExecute, cfg.Auditor),
+		AfterExecuteCallback:  buildAfterExecuteCallback(log, cfg.Auditor),
 	}
 
 	executor := adka2a.NewExecutor(execCfg)
@@ -76,11 +78,27 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) {
 	return httpHandler, nil
 }
 
-// buildBeforeExecuteCallback wraps the user-supplied callback so that the
-// UserIdentity from auth middleware is always present in the executor context.
-func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Context, error)) adka2a.BeforeExecuteCallback {
-	return func(ctx context.Context, _ *a2asrv.RequestContext) (context.Context, error) {
-		_ = auth.UserIdentityFromContext(ctx)
+// buildBeforeExecuteCallback wraps the user-supplied callback and emits an
+// audit event when an A2A task starts (AU-2 compliance).
+func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Context, error), auditor audit.Emitter) adka2a.BeforeExecuteCallback {
+	return func(ctx context.Context, reqCtx *a2asrv.RequestContext) (context.Context, error) {
+		user := auth.UserIdentityFromContext(ctx)
+		username := ""
+		if user != nil {
+			username = user.Username
+		}
+
+		if auditor != nil {
+			detail := map[string]string{"method": "message/send"}
+			if reqCtx != nil {
+				detail["task_id"] = string(reqCtx.TaskID)
+			}
+			auditor.Emit(ctx, &audit.Event{
+				Type:   audit.EventA2ATaskStarted,
+				UserID: username,
+				Detail: detail,
+			})
+		}
 
 		if userCb != nil {
 			return userCb(ctx)
@@ -89,21 +107,46 @@ func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Contex
 	}
 }
 
-// buildAfterExecuteCallback logs task completion with structured context for SRE observability.
-func buildAfterExecuteCallback(log *slog.Logger) adka2a.AfterExecuteCallback {
+// buildAfterExecuteCallback logs task completion with structured context for
+// SRE observability and emits audit events (AU-2 compliance).
+func buildAfterExecuteCallback(log *slog.Logger, auditor audit.Emitter) adka2a.AfterExecuteCallback {
 	return func(ctx adka2a.ExecutorContext, finalEvent *a2a.TaskStatusUpdateEvent, err error) error {
+		user := auth.UserIdentityFromContext(ctx)
+		username := ""
+		if user != nil {
+			username = user.Username
+		}
+
+		taskID := ""
+		if finalEvent != nil {
+			taskID = string(finalEvent.TaskID)
+		}
+
 		if err != nil {
-			user := auth.UserIdentityFromContext(ctx)
-			username := ""
-			if user != nil {
-				username = user.Username
-			}
 			log.ErrorContext(ctx, "a2a task execution failed",
 				"error", err,
 				"user", username,
+				"task_id", taskID,
 			)
+			if auditor != nil {
+				auditor.Emit(ctx, &audit.Event{
+					Type:   audit.EventA2ATaskFailed,
+					UserID: username,
+					Detail: map[string]string{
+						"task_id": taskID,
+						"error":   err.Error(),
+					},
+				})
+			}
+		} else {
+			if auditor != nil {
+				auditor.Emit(ctx, &audit.Event{
+					Type:   audit.EventA2ATaskCompleted,
+					UserID: username,
+					Detail: map[string]string{"task_id": taskID},
+				})
+			}
 		}
-		_ = finalEvent
 		return nil
 	}
 }
