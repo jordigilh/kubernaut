@@ -59,6 +59,15 @@ const (
 	// MetricNameSignalsRejectedTotal tracks signals rejected by scope filtering
 	// BR-SCOPE-002: Gateway Signal Filtering
 	MetricNameSignalsRejectedTotal = "gateway_signals_rejected_total"
+
+	// MetricNameOwnerResolutionTotal tracks owner resolution attempts by outcome (#1029)
+	MetricNameOwnerResolutionTotal = "gateway_owner_resolution_total"
+
+	// MetricNameSignalsParseDroppedTotal tracks alerts dropped during batch parsing (#1032)
+	MetricNameSignalsParseDroppedTotal = "gateway_signals_parse_dropped_total"
+
+	// MetricNameDiscoveryRefreshErrorsTotal tracks API discovery refresh failures (#1029)
+	MetricNameDiscoveryRefreshErrorsTotal = "gateway_discovery_refresh_errors_total"
 )
 
 // Metrics holds all Gateway service Prometheus metrics
@@ -81,6 +90,15 @@ type Metrics struct {
 
 	// Scope Filtering Metrics (BR-SCOPE-002: Gateway Signal Filtering)
 	SignalsRejectedTotal *prometheus.CounterVec // gateway_signals_rejected_total{reason}
+
+	// Owner Resolution Metrics (#1029)
+	OwnerResolutionTotal *prometheus.CounterVec // gateway_owner_resolution_total{kind, outcome}
+
+	// Batch Parse Drop Metrics (#1032)
+	SignalsParseDroppedTotal *prometheus.CounterVec // gateway_signals_parse_dropped_total{reason}
+
+	// Discovery Refresh Metrics (#1029)
+	DiscoveryRefreshErrorsTotal prometheus.Counter // gateway_discovery_refresh_errors_total
 
 	// Internal: Registry for custom metrics exposure (test isolation)
 	registry prometheus.Gatherer // Used by /metrics endpoint to expose custom registry metrics
@@ -168,6 +186,32 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 				Help: "Total signals rejected by scope filtering by rejection reason",
 			},
 			[]string{"reason"},
+		),
+
+		// Owner Resolution Metrics (#1029)
+		OwnerResolutionTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameOwnerResolutionTotal,
+				Help: "Total owner resolution attempts by resource kind and outcome",
+			},
+			[]string{"kind", "outcome"},
+		),
+
+		// Batch Parse Drop Metrics (#1032)
+		SignalsParseDroppedTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameSignalsParseDroppedTotal,
+				Help: "Total alerts dropped during batch parsing by reason",
+			},
+			[]string{"reason"},
+		),
+
+		// Discovery Refresh Metrics (#1029)
+		DiscoveryRefreshErrorsTotal: factory.NewCounter(
+			prometheus.CounterOpts{
+				Name: MetricNameDiscoveryRefreshErrorsTotal,
+				Help: "Total API discovery refresh failures",
+			},
 		),
 	}
 

@@ -349,6 +349,244 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 		})
 	})
 
+	Describe("Service -> workload traversal (#1029 Use Case 3)", func() {
+		It("UT-GW-1029-041: Service → selector → Pods → StatefulSet resolves to StatefulSet", func() {
+			svc := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "etcd-client", Namespace: namespace,
+				},
+				Spec: corev1.ServiceSpec{
+					Selector: map[string]string{"app": "etcd"},
+				},
+			}
+			sts := &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "etcd", Namespace: namespace,
+					UID: k8stypes.UID("sts-uid"),
+				},
+			}
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "etcd-1", Namespace: namespace,
+					Labels: map[string]string{"app": "etcd"},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "apps/v1", Kind: "StatefulSet", Name: "etcd",
+						UID: k8stypes.UID("sts-uid"), Controller: boolPtr(true),
+					}},
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(svc, sts, pod).
+				Build()
+			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				adapters.WithFallbackReader(fakeClient))
+
+			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "etcd-client")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ownerKind).To(Equal("StatefulSet"))
+			Expect(ownerName).To(Equal("etcd"))
+		})
+
+		It("UT-GW-1029-042: Service → selector → Pods → ReplicaSet → Deployment resolves to Deployment", func() {
+			svc := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "api-svc", Namespace: namespace,
+				},
+				Spec: corev1.ServiceSpec{
+					Selector: map[string]string{"app": "api"},
+				},
+			}
+			deploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "api-server", Namespace: namespace,
+					UID: k8stypes.UID("deploy-uid"),
+				},
+			}
+			rs := &appsv1.ReplicaSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "api-server-abc123", Namespace: namespace,
+					UID: k8stypes.UID("rs-uid"),
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "apps/v1", Kind: "Deployment", Name: "api-server",
+						UID: k8stypes.UID("deploy-uid"), Controller: boolPtr(true),
+					}},
+				},
+			}
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "api-server-abc123-xyz", Namespace: namespace,
+					Labels: map[string]string{"app": "api"},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "api-server-abc123",
+						UID: k8stypes.UID("rs-uid"), Controller: boolPtr(true),
+					}},
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(svc, deploy, rs, pod).
+				Build()
+			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				adapters.WithFallbackReader(fakeClient))
+
+			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "api-svc")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ownerKind).To(Equal("Deployment"))
+			Expect(ownerName).To(Equal("api-server"))
+		})
+
+		It("UT-GW-1029-043: Service with no matching pods returns Service itself", func() {
+			svc := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "orphan-svc", Namespace: namespace,
+				},
+				Spec: corev1.ServiceSpec{
+					Selector: map[string]string{"app": "nonexistent"},
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(svc).
+				Build()
+			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				adapters.WithFallbackReader(fakeClient))
+
+			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "orphan-svc")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ownerKind).To(Equal("Service"))
+			Expect(ownerName).To(Equal("orphan-svc"))
+		})
+
+		It("UT-GW-1029-044: Service without selector returns Service itself", func() {
+			svc := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "external-svc", Namespace: namespace,
+				},
+				Spec: corev1.ServiceSpec{
+					Type:         corev1.ServiceTypeExternalName,
+					ExternalName: "external.example.com",
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(svc).
+				Build()
+			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				adapters.WithFallbackReader(fakeClient))
+
+			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "external-svc")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ownerKind).To(Equal("Service"))
+			Expect(ownerName).To(Equal("external-svc"))
+		})
+
+		It("UT-GW-1029-045: Service → selector → standalone Pod (no owners) returns Pod", func() {
+			svc := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "debug-svc", Namespace: namespace,
+				},
+				Spec: corev1.ServiceSpec{
+					Selector: map[string]string{"app": "debug"},
+				},
+			}
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "debug-pod", Namespace: namespace,
+					Labels: map[string]string{"app": "debug"},
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(svc, pod).
+				Build()
+			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				adapters.WithFallbackReader(fakeClient))
+
+			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "debug-svc")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ownerKind).To(Equal("Pod"))
+			Expect(ownerName).To(Equal("debug-pod"))
+		})
+
+		It("UT-GW-1029-046: without fallbackReader, Service returns Service (graceful degradation)", func() {
+			svc := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "some-svc", Namespace: namespace,
+				},
+				Spec: corev1.ServiceSpec{
+					Selector: map[string]string{"app": "some"},
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(svc).
+				Build()
+			// No fallbackReader — metadata-only cache can't read Service spec
+			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard())
+
+			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "some-svc")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ownerKind).To(Equal("Service"))
+			Expect(ownerName).To(Equal("some-svc"))
+		})
+
+		It("UT-GW-1029-047: deterministic pod selection — picks alphabetically first pod", func() {
+			svc := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "etcd-client", Namespace: namespace,
+				},
+				Spec: corev1.ServiceSpec{
+					Selector: map[string]string{"app": "etcd"},
+				},
+			}
+			sts := &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "etcd", Namespace: namespace,
+					UID: k8stypes.UID("sts-uid"),
+				},
+			}
+			pod0 := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "etcd-0", Namespace: namespace,
+					Labels: map[string]string{"app": "etcd"},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "apps/v1", Kind: "StatefulSet", Name: "etcd",
+						UID: k8stypes.UID("sts-uid"), Controller: boolPtr(true),
+					}},
+				},
+			}
+			pod1 := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "etcd-1", Namespace: namespace,
+					Labels: map[string]string{"app": "etcd"},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "apps/v1", Kind: "StatefulSet", Name: "etcd",
+						UID: k8stypes.UID("sts-uid"), Controller: boolPtr(true),
+					}},
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(svc, sts, pod0, pod1).
+				Build()
+			resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard(),
+				adapters.WithFallbackReader(fakeClient))
+
+			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "etcd-client")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ownerKind).To(Equal("StatefulSet"))
+			Expect(ownerName).To(Equal("etcd"))
+		})
+	})
+
 	Describe("Two pods from same Deployment produce same fingerprint (#270 bug scenario)", func() {
 		It("should produce identical deployment-level fingerprints", func() {
 			deploy := &appsv1.Deployment{
@@ -391,9 +629,9 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 			resourceA := types.ResourceIdentifier{Namespace: namespace, Kind: "Pod", Name: podA.Name}
 			resourceB := types.ResourceIdentifier{Namespace: namespace, Kind: "Pod", Name: podB.Name}
 
-			fpA, err := types.ResolveFingerprint(ctx, resolver, resourceA, logr.Discard())
+			fpA, _, err := types.ResolveFingerprint(ctx, resolver, resourceA, logr.Discard())
 			Expect(err).ToNot(HaveOccurred())
-			fpB, err := types.ResolveFingerprint(ctx, resolver, resourceB, logr.Discard())
+			fpB, _, err := types.ResolveFingerprint(ctx, resolver, resourceB, logr.Discard())
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(fpA).To(Equal(fpB),

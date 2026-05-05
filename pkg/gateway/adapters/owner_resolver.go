@@ -19,10 +19,13 @@ package adapters
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,6 +43,11 @@ const ownerLookupTimeout = 5 * time.Second
 // kindToGroup maps Kubernetes resource kinds to their API groups.
 // Same mapping as pkg/shared/scope/manager.go:kindToGroup.
 // Shared pattern across Gateway scope management and owner chain resolution.
+//
+// Deprecated: Superseded by APIResourceRegistry.KindToGVR() (#1029).
+// Retained as a nil-registry fallback for tests and the exported KindToGroup()/
+// OwnerChainCacheObjects() helpers. Will be removed in a dedicated cleanup PR
+// once all consumers migrate to the registry.
 var kindToGroup = map[string]string{
 	"Pod":              "",
 	"Node":             "",
@@ -121,6 +129,7 @@ func OwnerChainCacheObjects() map[client.Object]cache.ByObject {
 type K8sOwnerResolver struct {
 	client         client.Reader
 	fallbackReader client.Reader
+	registry       *APIResourceRegistry
 	logger         logr.Logger
 }
 
@@ -153,6 +162,14 @@ func WithFallbackReader(reader client.Reader) OwnerResolverOption {
 	}
 }
 
+// WithRegistry sets the APIResourceRegistry for dynamic GVR lookup and
+// CRD traversal control, replacing the static kindToGroup map (#1029).
+func WithRegistry(reg *APIResourceRegistry) OwnerResolverOption {
+	return func(r *K8sOwnerResolver) {
+		r.registry = reg
+	}
+}
+
 // ResolveTopLevelOwner traverses ownerReferences to find the top-level controller.
 //
 // Algorithm (same as pkg/signalprocessing/ownerchain/builder.go:Build):
@@ -173,23 +190,38 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, 
 	currentKind := kind
 	currentName := name
 
+	// #1029 Use Case 3: Service targets are Prometheus scrape infrastructure labels,
+	// not workloads. Traverse Service → selector → Pods → ownerRefs to find the
+	// actual backing workload before entering the normal ownerReference chain.
+	if currentKind == "Service" {
+		podKind, podName, resolved := r.resolveServiceToWorkload(ctx, currentNamespace, currentName)
+		if resolved {
+			currentKind = podKind
+			currentName = podName
+		} else {
+			return currentKind, currentName, nil
+		}
+	}
+
 	// Track the most recent owner found (starts as the resource itself)
-	topKind := kind
-	topName := name
+	topKind := currentKind
+	topName := currentName
 	foundOwner := false
 
 	for i := 0; i < MaxOwnerChainDepth; i++ {
-		// Check if we know this kind
-		if _, known := kindToGroup[currentKind]; !known {
+		gvk, known := r.resolveGVK(currentKind)
+		if !known {
 			logger.V(1).Info("Unknown kind, stopping traversal",
 				"kind", currentKind, "level", i)
 			break
 		}
 
-		gvk := schema.GroupVersionKind{
-			Group:   kindToGroup[currentKind],
-			Version: "v1",
-			Kind:    currentKind,
+		// CRD kinds (not in core/apps/batch/autoscaling/policy) have
+		// unpredictable owner chains — stop traversal (#1029 Option C).
+		if r.registry != nil && !r.registry.IsCoreBatchAppsKind(currentKind) {
+			logger.V(1).Info("CRD kind, stopping traversal",
+				"kind", currentKind, "level", i)
+			break
 		}
 
 		obj := &metav1.PartialObjectMetadata{}
@@ -308,4 +340,87 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, 
 		"resolvedKind", topKind, "resolvedName", topName,
 		"foundOwner", foundOwner)
 	return topKind, topName, nil
+}
+
+// resolveServiceToWorkload traverses Service → spec.selector → Pods to find a
+// backing Pod whose ownerReference chain leads to a workload controller.
+// Returns ("Pod", podName, true) when a selector-matched Pod is found, allowing
+// the caller to continue the normal ownerRef traversal from that Pod.
+// Returns ("", "", false) when traversal cannot proceed (no fallbackReader,
+// Service not found, no selector, no matching pods).
+func (r *K8sOwnerResolver) resolveServiceToWorkload(ctx context.Context, namespace, serviceName string) (string, string, bool) {
+	if r.fallbackReader == nil {
+		r.logger.V(1).Info("Service-to-workload traversal skipped: no fallback reader",
+			"service", serviceName)
+		return "", "", false
+	}
+
+	lookupCtx, cancel := context.WithTimeout(ctx, ownerLookupTimeout)
+	defer cancel()
+
+	svc := &corev1.Service{}
+	key := client.ObjectKey{Namespace: namespace, Name: serviceName}
+	if err := r.fallbackReader.Get(lookupCtx, key, svc); err != nil {
+		r.logger.V(1).Info("Service-to-workload traversal: failed to get Service",
+			"service", serviceName, "error", err)
+		return "", "", false
+	}
+
+	if len(svc.Spec.Selector) == 0 {
+		r.logger.V(1).Info("Service-to-workload traversal: Service has no selector",
+			"service", serviceName)
+		return "", "", false
+	}
+
+	podList := &corev1.PodList{}
+	listOpts := &client.ListOptions{
+		Namespace:     namespace,
+		LabelSelector: labels.SelectorFromSet(svc.Spec.Selector),
+	}
+	if err := r.fallbackReader.List(lookupCtx, podList, listOpts); err != nil {
+		r.logger.V(1).Info("Service-to-workload traversal: failed to list pods",
+			"service", serviceName, "selector", svc.Spec.Selector, "error", err)
+		return "", "", false
+	}
+
+	if len(podList.Items) == 0 {
+		r.logger.V(1).Info("Service-to-workload traversal: no pods match selector",
+			"service", serviceName, "selector", svc.Spec.Selector)
+		return "", "", false
+	}
+
+	sort.Slice(podList.Items, func(i, j int) bool {
+		return podList.Items[i].Name < podList.Items[j].Name
+	})
+
+	selectedPod := podList.Items[0].Name
+	r.logger.V(1).Info("Service-to-workload traversal: resolved to pod",
+		"service", serviceName, "pod", selectedPod,
+		"matchingPods", len(podList.Items))
+	return "Pod", selectedPod, true
+}
+
+// resolveGVK returns the GroupVersionKind for a given kind string.
+// Uses the registry if available, otherwise falls back to the static kindToGroup map.
+func (r *K8sOwnerResolver) resolveGVK(kind string) (schema.GroupVersionKind, bool) {
+	if r.registry != nil {
+		gvr, ok := r.registry.KindToGVR(kind)
+		if !ok {
+			return schema.GroupVersionKind{}, false
+		}
+		return schema.GroupVersionKind{
+			Group:   gvr.Group,
+			Version: gvr.Version,
+			Kind:    kind,
+		}, true
+	}
+	group, known := kindToGroup[kind]
+	if !known {
+		return schema.GroupVersionKind{}, false
+	}
+	return schema.GroupVersionKind{
+		Group:   group,
+		Version: "v1",
+		Kind:    kind,
+	}, true
 }

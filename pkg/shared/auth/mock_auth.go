@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"sync"
 )
 
 // MockAuthenticator is a test double implementation of Authenticator.
@@ -33,6 +34,8 @@ import (
 //	user, err := authenticator.ValidateToken(ctx, "invalid-token")
 //	// Returns: "", error
 type MockAuthenticator struct {
+	mu sync.Mutex
+
 	// ValidUsers maps tokens to user identities.
 	// Key: token string
 	// Value: user identity (e.g., "system:serviceaccount:namespace:sa-name")
@@ -43,15 +46,18 @@ type MockAuthenticator struct {
 	ErrorToReturn error
 
 	// CallCount tracks how many times ValidateToken was called.
-	// Useful for verifying caching behavior.
+	// Useful for verifying caching behavior. Use GetCallCount() for
+	// concurrent-safe reads.
 	CallCount int
 }
 
 // ValidateToken implements the Authenticator interface for testing.
 func (a *MockAuthenticator) ValidateToken(ctx context.Context, token string) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	a.CallCount++
 
-	// Simulate API failure if configured
 	if a.ErrorToReturn != nil {
 		return "", a.ErrorToReturn
 	}
@@ -62,6 +68,13 @@ func (a *MockAuthenticator) ValidateToken(ctx context.Context, token string) (st
 	}
 
 	return user, nil
+}
+
+// GetCallCount returns the call count in a concurrent-safe manner.
+func (a *MockAuthenticator) GetCallCount() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.CallCount
 }
 
 // MockAuthorizer is a test double implementation of Authorizer.
@@ -106,6 +119,8 @@ func (a *MockAuthenticator) ValidateToken(ctx context.Context, token string) (st
 //	)
 //	// Returns: false, nil
 type MockAuthorizer struct {
+	mu sync.Mutex
+
 	// AllowedUsers maps user identities to authorization decisions.
 	AllowedUsers map[string]bool
 
@@ -125,6 +140,7 @@ type MockAuthorizer struct {
 	ErrorToReturn error
 
 	// CallCount tracks how many times CheckAccess/CheckAccessWithGroup was called.
+	// Use GetCallCount() for concurrent-safe reads.
 	CallCount int
 }
 
@@ -136,6 +152,9 @@ func (a *MockAuthorizer) CheckAccess(ctx context.Context, user, namespace, resou
 
 // CheckAccessWithGroup implements the Authorizer interface for testing with API group support.
 func (a *MockAuthorizer) CheckAccessWithGroup(ctx context.Context, user, namespace, apiGroup, resource, resourceName, verb string) (bool, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	a.CallCount++
 
 	if a.ErrorToReturn != nil {
@@ -170,4 +189,11 @@ func (a *MockAuthorizer) CheckAccessWithGroup(ctx context.Context, user, namespa
 	}
 
 	return false, nil
+}
+
+// GetCallCount returns the call count in a concurrent-safe manner.
+func (a *MockAuthorizer) GetCallCount() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.CallCount
 }

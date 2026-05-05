@@ -43,33 +43,39 @@ var _ = Describe("ResolveFingerprint - Shared fingerprint resolution (Issue #228
 
 	Describe("Nil resolver", func() {
 		It("should return CalculateOwnerFingerprint(resource) when resolver is nil", func() {
-			fingerprint, err := types.ResolveFingerprint(ctx, nil, resource, testLogger)
+			fingerprint, resolved, err := types.ResolveFingerprint(ctx, nil, resource, testLogger)
 			Expect(err).ToNot(HaveOccurred())
 
 			expected := types.CalculateOwnerFingerprint(resource)
 			Expect(fingerprint).To(Equal(expected),
 				"Nil resolver should produce resource-level fingerprint (no owner resolution)")
+			Expect(resolved).To(Equal(resource),
+				"Nil resolver should return the original resource as resolved")
 		})
 	})
 
 	Describe("Successful owner resolution", func() {
-		It("should return owner-level fingerprint when resolver succeeds", func() {
+		It("should return owner-level fingerprint and resolved resource when resolver succeeds", func() {
 			resolver := &mockOwnerResolver{
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
 					return "Deployment", "payment-api", nil
 				},
 			}
 
-			fingerprint, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
-			Expect(err).ToNot(HaveOccurred())
-
-			expected := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
+			expectedOwner := types.ResourceIdentifier{
 				Namespace: "prod",
 				Kind:      "Deployment",
 				Name:      "payment-api",
-			})
+			}
+
+			fingerprint, resolved, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
+			Expect(err).ToNot(HaveOccurred())
+
+			expected := types.CalculateOwnerFingerprint(expectedOwner)
 			Expect(fingerprint).To(Equal(expected),
 				"Successful resolution should produce owner-level fingerprint")
+			Expect(resolved).To(Equal(expectedOwner),
+				"Resolved resource should be the top-level owner")
 		})
 	})
 
@@ -81,7 +87,7 @@ var _ = Describe("ResolveFingerprint - Shared fingerprint resolution (Issue #228
 				},
 			}
 
-			fingerprint, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
+			fingerprint, _, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("owner resolution failed"))
 			Expect(fingerprint).To(BeEmpty(),
@@ -97,7 +103,7 @@ var _ = Describe("ResolveFingerprint - Shared fingerprint resolution (Issue #228
 				},
 			}
 
-			fingerprint, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
+			fingerprint, _, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("owner resolution returned empty"))
 			Expect(fingerprint).To(BeEmpty(),
@@ -113,15 +119,15 @@ var _ = Describe("ResolveFingerprint - Shared fingerprint resolution (Issue #228
 				},
 			}
 
-			fp1, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
+			fp1, _, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
 			Expect(err).ToNot(HaveOccurred())
-			fp2, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
+			fp2, _, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(fp1).To(Equal(fp2),
 				"Same resource + resolver should always produce the same fingerprint (deterministic)")
 
-			fpNilResolver, err := types.ResolveFingerprint(ctx, nil, resource, testLogger)
+			fpNilResolver, _, err := types.ResolveFingerprint(ctx, nil, resource, testLogger)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(fp1).ToNot(Equal(fpNilResolver),
 				"Owner-resolved fingerprint should differ from resource-level fingerprint "+

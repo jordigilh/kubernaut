@@ -209,7 +209,7 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 	// 6. Generate fingerprint for deduplication (BR-GATEWAY-004, Issue #228)
 	// Delegates to shared types.ResolveFingerprint for cross-adapter consistency.
 	// Returns error when owner resolution fails (e.g., stale alert for deleted pod).
-	fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+	fingerprint, resolvedResource, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
 	if err != nil {
 		return nil, fmt.Errorf("dropping signal: %w", err)
 	}
@@ -219,8 +219,8 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 		Fingerprint:  fingerprint,
 		SignalName:    event.Reason, // "OOMKilled", "FailedScheduling", etc.
 		Severity:     severity,
-		Namespace:    event.InvolvedObject.Namespace,
-		Resource:     resource,
+		Namespace:    resolvedResource.Namespace,
+		Resource:     resolvedResource,
 		Labels:       nil,
 		Annotations:  nil,
 		FiringTime:   event.FirstTimestamp,
