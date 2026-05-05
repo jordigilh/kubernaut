@@ -14,6 +14,10 @@ import (
 // investigation has reached a terminal state and the SSE stream should close.
 const StateKeyTerminal = "af:terminal"
 
+// DefaultRetryMS is the default retry interval (in milliseconds) sent to
+// clients via the SSE retry: field for reconnection backoff.
+const DefaultRetryMS = 3000
+
 // SSEPayload is the JSON structure sent in the data: field of SSE frames.
 type SSEPayload struct {
 	Seq       int    `json:"seq"`
@@ -46,6 +50,7 @@ func FormatSSEFrame(event *adksession.Event, seq int) ([]byte, error) {
 
 	var buf strings.Builder
 	fmt.Fprintf(&buf, "id: %d\n", seq)
+	fmt.Fprintf(&buf, "retry: %d\n", DefaultRetryMS)
 	fmt.Fprintf(&buf, "event: %s\n", eventType)
 	fmt.Fprintf(&buf, "data: %s\n", data)
 	buf.WriteString("\n")
@@ -99,6 +104,9 @@ func eventToPayload(event *adksession.Event, seq int, eventType string) SSEPaylo
 	}
 
 	if event.Content == nil {
+		if eventType == "done" {
+			p.Text = "Investigation complete"
+		}
 		return p
 	}
 
@@ -113,6 +121,10 @@ func eventToPayload(event *adksession.Event, seq int, eventType string) SSEPaylo
 			p.ToolName = part.FunctionCall.Name
 			p.ToolArgs = part.FunctionCall.Args
 		}
+	}
+
+	if eventType == "done" && p.Text == "" {
+		p.Text = "Investigation complete"
 	}
 
 	return p

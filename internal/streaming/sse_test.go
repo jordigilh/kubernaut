@@ -112,4 +112,47 @@ var _ = Describe("SSE Event Formatting", func() {
 		eventType := streaming.EventTypeFromEvent(evt)
 		Expect(eventType).NotTo(ContainSubstring("\n"))
 	})
+
+	It("UT-AF-240-009: nil Content event produces valid SSE frame", func() {
+		evt := adksession.NewEvent("inv-1")
+		evt.Author = "agent"
+		evt.Content = nil
+		frame, err := streaming.FormatSSEFrame(evt, 10)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(frame).NotTo(BeNil())
+		Expect(string(frame)).To(ContainSubstring("event: agent"))
+		Expect(string(frame)).To(ContainSubstring("data:"))
+	})
+
+	It("UT-AF-240-010: done event with nil Content has default text", func() {
+		evt := adksession.NewEvent("inv-1")
+		evt.Author = "agent"
+		evt.Content = nil
+		evt.Actions.StateDelta = map[string]any{
+			streaming.StateKeyTerminal: true,
+		}
+		frame, err := streaming.FormatSSEFrame(evt, 99)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(frame)).To(ContainSubstring("event: done"))
+
+		lines := strings.Split(string(frame), "\n")
+		var dataLine string
+		for _, line := range lines {
+			if strings.HasPrefix(line, "data: ") {
+				dataLine = strings.TrimPrefix(line, "data: ")
+				break
+			}
+		}
+		var payload streaming.SSEPayload
+		err = json.Unmarshal([]byte(dataLine), &payload)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(payload.Text).To(Equal("Investigation complete"))
+	})
+
+	It("UT-AF-240-011: SSE frame includes retry field", func() {
+		evt := textEvent("agent", "with retry")
+		frame, err := streaming.FormatSSEFrame(evt, 1)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(frame)).To(ContainSubstring("retry: 3000"))
+	})
 })
