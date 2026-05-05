@@ -134,3 +134,64 @@ var _ = Describe("Router", func() {
 		Expect(rec.Code).To(Equal(http.StatusNotFound))
 	})
 })
+
+var _ = Describe("AllReady", func() {
+	It("returns true when all checkers pass", func() {
+		checker := handler.AllReady(
+			func() bool { return true },
+			func() bool { return true },
+		)
+		Expect(checker()).To(BeTrue())
+	})
+
+	It("returns false when first checker fails", func() {
+		checker := handler.AllReady(
+			func() bool { return false },
+			func() bool { return true },
+		)
+		Expect(checker()).To(BeFalse())
+	})
+
+	It("returns false when last checker fails", func() {
+		checker := handler.AllReady(
+			func() bool { return true },
+			func() bool { return false },
+		)
+		Expect(checker()).To(BeFalse())
+	})
+
+	It("returns true with zero checkers", func() {
+		checker := handler.AllReady()
+		Expect(checker()).To(BeTrue())
+	})
+})
+
+var _ = Describe("RouterConfig validation", func() {
+	var validCfg handler.RouterConfig
+
+	BeforeEach(func() {
+		validCfg = handler.RouterConfig{
+			MetricsRegistry:  metrics.NewRegistry(),
+			A2AHandler:       http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+			MCPHandler:       http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+			AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+			AuthMiddleware:   func(next http.Handler) http.Handler { return next },
+			ReadyChecker:     func() bool { return true },
+		}
+	})
+
+	DescribeTable("returns error when required field is nil",
+		func(modify func(*handler.RouterConfig), errSubstring string) {
+			modify(&validCfg)
+			_, err := handler.NewRouter(validCfg)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(errSubstring))
+		},
+		Entry("MetricsRegistry nil", func(c *handler.RouterConfig) { c.MetricsRegistry = nil }, "MetricsRegistry"),
+		Entry("A2AHandler nil", func(c *handler.RouterConfig) { c.A2AHandler = nil }, "A2AHandler"),
+		Entry("MCPHandler nil", func(c *handler.RouterConfig) { c.MCPHandler = nil }, "MCPHandler"),
+		Entry("AgentCardHandler nil", func(c *handler.RouterConfig) { c.AgentCardHandler = nil }, "AgentCardHandler"),
+		Entry("AuthMiddleware nil", func(c *handler.RouterConfig) { c.AuthMiddleware = nil }, "AuthMiddleware"),
+		Entry("ReadyChecker nil", func(c *handler.RouterConfig) { c.ReadyChecker = nil }, "ReadyChecker"),
+	)
+})
