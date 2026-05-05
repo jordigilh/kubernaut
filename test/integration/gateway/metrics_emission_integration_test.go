@@ -19,14 +19,15 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"time"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -340,8 +341,10 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response1.Status).To(Equal("created"))
 
-			// Wait for CRD to be created
-			time.Sleep(500 * time.Millisecond)
+			Eventually(func() error {
+				var rr remediationv1alpha1.RemediationRequest
+				return k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: response1.RemediationRequestName}, &rr)
+			}, "5s", "100ms").Should(Succeed())
 
 			By("2. Get initial deduplication metric value")
 			// Gateway metric uses signal_name as label (defined in metrics.go line 152)
@@ -562,7 +565,6 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			})
 
 			// Send duplicate
-			time.Sleep(300 * time.Millisecond)
 			alert2 := createPrometheusAlert(testNamespace, "LifecycleAlert", "critical", "", "")
 			signal2, err := prometheusAdapter.Parse(ctx, alert2)
 			Expect(err).ToNot(HaveOccurred())
@@ -627,7 +629,6 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal1)
 			Expect(err).ToNot(HaveOccurred())
-			time.Sleep(300 * time.Millisecond)
 
 			// Duplicate Alert1 (same pod → same fingerprint → dedup)
 			alert1Dup := createPrometheusAlertForPod(testNamespace, "Alert1", "critical", "", "", "pod-alert1")
@@ -642,7 +643,6 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal2)
 			Expect(err).ToNot(HaveOccurred())
-			time.Sleep(300 * time.Millisecond)
 
 			// Duplicate Alert2 (same pod → same fingerprint → dedup)
 			alert2Dup := createPrometheusAlertForPod(testNamespace, "Alert2", "warning", "", "", "pod-alert2")
@@ -692,8 +692,6 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal)
 			Expect(err).ToNot(HaveOccurred())
-
-			time.Sleep(300 * time.Millisecond)
 
 			// Send 5 duplicates
 			for i := 1; i <= 5; i++ {

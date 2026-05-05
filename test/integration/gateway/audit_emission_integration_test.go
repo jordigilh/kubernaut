@@ -657,8 +657,10 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				firstCRDName := response1.RemediationRequestName
 
-				// Wait for CRD to be created
-				time.Sleep(1 * time.Second)
+				Eventually(func() error {
+					var rr remediationv1alpha1.RemediationRequest
+					return k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: firstCRDName}, &rr)
+				}, "5s", "100ms").Should(Succeed())
 
 				By("2. Send duplicate signal with same fingerprint")
 				secondSignalPayload := createPrometheusAlert(testNamespace, "repeated-error", "error", firstFingerprint, "")
@@ -723,7 +725,10 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				existingRRName := response1.RemediationRequestName
 
-				time.Sleep(1 * time.Second)
+				Eventually(func() error {
+					var rr remediationv1alpha1.RemediationRequest
+					return k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: existingRRName}, &rr)
+				}, "5s", "100ms").Should(Succeed())
 
 				By("2. Send duplicate signal")
 				secondSignalPayload := createPrometheusAlert(testNamespace, "existing-rr-test", "critical", firstFingerprint, "")
@@ -846,8 +851,12 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				existingRRName := response1.RemediationRequestName
 
+				Eventually(func() error {
+					var rr remediationv1alpha1.RemediationRequest
+					return k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: existingRRName}, &rr)
+				}, "5s", "100ms").Should(Succeed())
+
 				By("2. Process duplicate signal (same fingerprint)")
-				time.Sleep(1 * time.Second) // Ensure distinct timestamp
 				correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
 				alert2 := createPrometheusAlert(testNamespace, "HighCPU", "critical", fingerprint, correlationID2)
 
@@ -1003,7 +1012,6 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(k8sClient.Status().Update(ctx, &rr)).To(Succeed())
 
 				By("3. Process duplicate signal (same fingerprint)")
-				time.Sleep(1 * time.Second)
 				correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
 				alert2 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", "", correlationID2)
 
