@@ -202,13 +202,27 @@ func (s *CRDSessionService) Delete(ctx context.Context, req *adksession.DeleteRe
 		crdName = req.SessionID
 	}
 
+	// Read the actual phase before deletion so the gauge decrement is accurate.
+	nn := types.NamespacedName{Name: crdName, Namespace: s.namespace}
+	var existing v1alpha1.InvestigationSession
+	phase := string(v1alpha1.SessionPhaseActive) // fallback
+	if err := s.client.Get(ctx, nn, &existing); err == nil {
+		phase = string(existing.Status.Phase)
+	}
+
 	crd := &v1alpha1.InvestigationSession{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      crdName,
 			Namespace: s.namespace,
 		},
 	}
-	_ = s.client.Delete(ctx, crd)
+	if err := s.client.Delete(ctx, crd); err != nil {
+		s.logger.WarnContext(ctx, "CRD delete failed",
+			"session_id", req.SessionID,
+			"crd_name", crdName,
+			"error", err,
+		)
+	}
 
 	s.mu.Lock()
 	delete(s.crdIndex, req.SessionID)
@@ -218,7 +232,7 @@ func (s *CRDSessionService) Delete(ctx context.Context, req *adksession.DeleteRe
 		"session_id": req.SessionID,
 		"crd_name":   crdName,
 	})
-	s.decSessionGauge(string(v1alpha1.SessionPhaseActive))
+	s.decSessionGauge(phase)
 	return s.delegate.Delete(ctx, req)
 }
 

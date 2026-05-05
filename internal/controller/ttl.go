@@ -29,18 +29,21 @@ const MinRetentionTTL = 30 * 24 * time.Hour
 //     auto-cancelled.
 //   - RetentionTTL: time a terminal session is kept before deletion.
 type SessionCleanupReconciler struct {
-	client        client.Client
-	disconnectTTL time.Duration
-	retentionTTL  time.Duration
-	logger        *slog.Logger
-	auditor       audit.Emitter
-	ttlActions    *prometheus.CounterVec
+	client         client.Client
+	disconnectTTL  time.Duration
+	retentionTTL   time.Duration
+	logger         *slog.Logger
+	auditor        audit.Emitter
+	ttlActions     *prometheus.CounterVec
+	sessionService *session.CRDSessionService
 }
 
 // NewSessionCleanupReconciler creates a reconciler with the specified TTLs.
 // If retentionTTL is below MinRetentionTTL, it is clamped and a warning is logged.
 // The auditor may be nil to disable audit emission (e.g. in tests).
-func NewSessionCleanupReconciler(c client.Client, disconnectTTL, retentionTTL time.Duration, auditor audit.Emitter, ttlActions *prometheus.CounterVec) *SessionCleanupReconciler {
+// The sessionService may be nil; when provided, PruneTerminalEntries is called
+// after each successful terminal deletion to bound crdIndex growth.
+func NewSessionCleanupReconciler(c client.Client, disconnectTTL, retentionTTL time.Duration, auditor audit.Emitter, ttlActions *prometheus.CounterVec, sessionService *session.CRDSessionService) *SessionCleanupReconciler {
 	logger := slog.Default().With("component", "session-cleanup")
 	if retentionTTL < MinRetentionTTL {
 		logger.Warn("retentionTTL below NIST AU-11 minimum, clamping",
@@ -50,12 +53,13 @@ func NewSessionCleanupReconciler(c client.Client, disconnectTTL, retentionTTL ti
 		retentionTTL = MinRetentionTTL
 	}
 	return &SessionCleanupReconciler{
-		client:        c,
-		disconnectTTL: disconnectTTL,
-		retentionTTL:  retentionTTL,
-		logger:        logger,
-		auditor:       auditor,
-		ttlActions:    ttlActions,
+		client:         c,
+		disconnectTTL:  disconnectTTL,
+		retentionTTL:   retentionTTL,
+		logger:         logger,
+		auditor:        auditor,
+		ttlActions:     ttlActions,
+		sessionService: sessionService,
 	}
 }
 
@@ -121,6 +125,9 @@ func (r *SessionCleanupReconciler) handleDisconnected(ctx context.Context, sess 
 	sess.Status.Phase = v1alpha1.SessionPhaseCancelled
 	sess.Status.CompletedAt = &now
 	sess.Status.Message = "auto-cancelled: disconnect TTL expired"
+	if sess.Labels == nil {
+		sess.Labels = make(map[string]string)
+	}
 	sess.Labels[session.LabelPhase] = string(v1alpha1.SessionPhaseCancelled)
 
 	if err := r.client.Status().Update(ctx, sess); err != nil {
@@ -172,6 +179,11 @@ func (r *SessionCleanupReconciler) handleTerminal(ctx context.Context, sess *v1a
 		"elapsed": elapsed.String(),
 	})
 	r.incTTLAction("delete")
+
+	if r.sessionService != nil {
+		r.sessionService.PruneTerminalEntries(ctx)
+	}
+
 	return ctrl.Result{}, nil
 }
 

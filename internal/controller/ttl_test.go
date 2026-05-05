@@ -88,7 +88,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 	})
 
 	reconcile := func(k8s client.Client, name string) (ctrl.Result, error) {
-		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, nil, nil)
+		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, nil, nil, nil)
 		return r.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: "test-ns"},
 		})
