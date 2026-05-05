@@ -1105,7 +1105,7 @@ func (s *Server) processSingleSignal(
 		logger.Info("Signal validation failed",
 			"adapter", adapter.Name(),
 			"error", valErr)
-		s.writeValidationError(w, r, "Signal validation failed")
+		s.writeValidationError(w, r, fmt.Sprintf("Signal validation failed: %v", valErr))
 		return
 	}
 

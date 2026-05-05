@@ -300,13 +300,13 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Expect(string(event.EventOutcome)).To(Equal("success"),
 				"event_outcome should be 'success' for processed signal")
 
-			// Field 6: actor_type
-			Expect(event.ActorType.Value).To(Equal("external"),
-				"actor_type should be 'external' for AlertManager/K8s Events")
+			// Field 6: actor_type (FedRAMP AU-3: authenticated-service when K8s identity present)
+			Expect(event.ActorType.Value).To(Equal("authenticated-service"),
+				"actor_type should be 'authenticated-service' when request has K8s identity (FedRAMP AU-3)")
 
-			// Field 7: actor_id
-			Expect(event.ActorID.Value).To(Equal("prometheus"),
-				"actor_id should be signal source type constant (alertmanager or webhook)")
+			// Field 7: actor_id (authenticated identity from K8s TokenReview)
+			Expect(event.ActorID.Value).ToNot(BeEmpty(),
+				"actor_id should contain the authenticated K8s identity")
 
 			// Field 8: resource_type
 			Expect(event.ResourceType.Value).To(Equal("Signal"),
@@ -538,13 +538,13 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Expect(string(event.EventOutcome)).To(Equal("success"),
 				"event_outcome should be 'success' for detected duplicate")
 
-			// Field 6: actor_type
-			Expect(event.ActorType.Value).To(Equal("external"),
-				"actor_type should be 'external' for AlertManager/K8s Events")
+			// Field 6: actor_type (FedRAMP AU-3: authenticated-service when K8s identity present)
+			Expect(event.ActorType.Value).To(Equal("authenticated-service"),
+				"actor_type should be 'authenticated-service' when request has K8s identity (FedRAMP AU-3)")
 
-			// Field 7: actor_id
-			Expect(event.ActorID.Value).To(Equal("prometheus"),
-				"actor_id should be signal source type constant (alertmanager or webhook)")
+			// Field 7: actor_id (authenticated identity from K8s TokenReview)
+			Expect(event.ActorID.Value).ToNot(BeEmpty(),
+				"actor_id should contain the authenticated K8s identity")
 
 			// Field 8: resource_type
 			Expect(event.ResourceType.Value).To(Equal("Signal"),
