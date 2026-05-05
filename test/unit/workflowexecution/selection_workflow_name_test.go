@@ -18,6 +18,7 @@ package workflowexecution
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -135,6 +136,23 @@ var _ = Describe("Issue #1033 Gap 2: workflow_name in selection audit (BR-AUDIT-
 			Expect(ok).To(BeTrue())
 			Expect(payload.WorkflowName.IsSet()).To(BeFalse(),
 				"workflow_name should NOT be set when WorkflowName is empty")
+		})
+	})
+
+	// ========================================
+	// P1: StoreAudit error path (QE-2)
+	// ========================================
+	Describe("StoreAudit error path (P1)", func() {
+
+		It("UT-WE-1033-007: StoreAudit failure → wrapped error returned (ADR-032)", func() {
+			store.err = fmt.Errorf("connection refused")
+			wfeObj := wfe("wfe-err-path")
+
+			err := mgr.RecordWorkflowSelectionCompleted(ctx, wfeObj, "some-workflow")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("mandatory audit write failed per ADR-032"))
+			Expect(err.Error()).To(ContainSubstring("connection refused"))
+			Expect(store.events).To(BeEmpty(), "no event should be stored when StoreAudit fails")
 		})
 	})
 

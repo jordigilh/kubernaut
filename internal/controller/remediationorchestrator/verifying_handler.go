@@ -130,11 +130,11 @@ func (h *VerifyingHandler) Handle(ctx context.Context, rr *remediationv1.Remedia
 				h.m.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
 			}
 			h.callbacks.EnsureNotificationsCreated(ctx, rr)
-		h.callbacks.EmitVerificationTimedOutAudit(ctx, rr)
-		if rr.Status.StartTime != nil {
-			h.callbacks.EmitCompletionAudit(ctx, rr, rr.Status.Outcome, time.Since(rr.Status.StartTime.Time).Milliseconds())
-		}
-		return phase.NoOp("safety-net timeout completed"), nil
+			h.callbacks.EmitVerificationTimedOutAudit(ctx, rr)
+			if rr.Status.StartTime != nil {
+				h.callbacks.EmitCompletionAudit(ctx, rr, rr.Status.Outcome, time.Since(rr.Status.StartTime.Time).Milliseconds())
+			}
+			return phase.NoOp("safety-net timeout completed"), nil
 		} else {
 			logger.V(1).Info("EA.Status.ValidityDeadline not yet set, requeueing")
 			return phase.Requeue(config.RequeueResourceBusy, "ValidityDeadline not set"), nil
