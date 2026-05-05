@@ -65,6 +65,9 @@ const (
 
 	// MetricNameSignalsParseDroppedTotal tracks alerts dropped during batch parsing (#1032)
 	MetricNameSignalsParseDroppedTotal = "gateway_signals_parse_dropped_total"
+
+	// MetricNameDiscoveryRefreshErrorsTotal tracks API discovery refresh failures (#1029)
+	MetricNameDiscoveryRefreshErrorsTotal = "gateway_discovery_refresh_errors_total"
 )
 
 // Metrics holds all Gateway service Prometheus metrics
@@ -93,6 +96,9 @@ type Metrics struct {
 
 	// Batch Parse Drop Metrics (#1032)
 	SignalsParseDroppedTotal *prometheus.CounterVec // gateway_signals_parse_dropped_total{reason}
+
+	// Discovery Refresh Metrics (#1029)
+	DiscoveryRefreshErrorsTotal prometheus.Counter // gateway_discovery_refresh_errors_total
 
 	// Internal: Registry for custom metrics exposure (test isolation)
 	registry prometheus.Gatherer // Used by /metrics endpoint to expose custom registry metrics
@@ -198,6 +204,14 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 				Help: "Total alerts dropped during batch parsing by reason",
 			},
 			[]string{"reason"},
+		),
+
+		// Discovery Refresh Metrics (#1029)
+		DiscoveryRefreshErrorsTotal: factory.NewCounter(
+			prometheus.CounterOpts{
+				Name: MetricNameDiscoveryRefreshErrorsTotal,
+				Help: "Total API discovery refresh failures",
+			},
 		),
 	}
 

@@ -213,33 +213,9 @@ func (s *Server) MarkCacheReady() {
 	s.logger.Info("Informer cache sync complete, readiness probe unblocked")
 }
 
-// SetCacheReadyForTesting allows tests to control the cache-ready state.
-// Production code must use MarkCacheReady instead.
-func (s *Server) SetCacheReadyForTesting(ready bool) {
-	s.cacheReady.Store(ready)
-}
-
-// SetShuttingDownForTesting allows tests to control the shutdown state.
-func (s *Server) SetShuttingDownForTesting(shuttingDown bool) {
-	s.isShuttingDown.Store(shuttingDown)
-}
-
-// NewMinimalServerForReadinessTest creates a lightweight Server suitable for
-// readiness handler unit tests. If apiReaders are provided, the first is used
-// as the apiReader for the K8s connectivity check; otherwise the K8s check
-// will panic (acceptable for tests that return before reaching it).
-func NewMinimalServerForReadinessTest(logger logr.Logger, apiReaders ...client.Reader) *Server {
-	return &Server{
-		logger:    logger,
-		apiReader: firstReader(apiReaders),
-	}
-}
-
-func firstReader(readers []client.Reader) client.Reader {
-	if len(readers) > 0 {
-		return readers[0]
-	}
-	return nil
+// GetMetrics returns the metrics instance for wiring into adapters.
+func (s *Server) GetMetrics() *metrics.Metrics {
+	return s.metricsInstance
 }
 
 // NewServer creates a new Gateway server with default metrics registry
@@ -1124,7 +1100,7 @@ func (s *Server) handleBatchRequest(
 			results = append(results, ProcessingResult{
 				Status:      "rejected",
 				Fingerprint: signal.Fingerprint,
-				Error:       "Signal validation failed",
+				Error:       fmt.Sprintf("Signal validation failed: %s", valErr.Error()),
 			})
 			summary.Rejected++
 			continue
@@ -1741,8 +1717,10 @@ const (
 	StatusDeduplicated = "duplicate" // Signal deduplicated to existing RR (matches OpenAPI enum)
 )
 
-// BatchProcessingResponse is the response for adapters that implement BatchParser.
+// BatchProcessingResponse is the JSON response for adapters that implement BatchParser.
 // Returned with HTTP 207 Multi-Status to indicate per-alert independent outcomes.
+// NOTE: This is a JSON-encoded body (Content-Type: application/json), not the
+// RFC 4918 (WebDAV) XML multi-status format.
 type BatchProcessingResponse struct {
 	Results []ProcessingResult `json:"results"`
 	Summary BatchSummary       `json:"summary"`
@@ -2055,21 +2033,6 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 	payload.OccurrenceCount.SetTo(1) // BR-GATEWAY-056: New CRD always has OccurrenceCount=1
 
 	event.EventData = api.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload)
-
-	// DEBUG: Log full event structure for HTTP 400 troubleshooting
-	s.logger.Info("[DEBUG] emitCRDCreatedAudit - full event",
-		"event_type", event.EventType,
-		"correlation_id", event.CorrelationID,
-		"resource_type", event.ResourceType,
-		"resource_id", event.ResourceID,
-		"actor_type", event.ActorType,
-		"actor_id", event.ActorID,
-		"namespace", event.Namespace)
-	s.logger.Info("[DEBUG] emitCRDCreatedAudit - payload",
-		"event_type_discriminator", payload.EventType,
-		"signal_type", payload.SignalType,
-		"severity_is_set", payload.Severity.IsSet(),
-		"signal_name", payload.SignalName)
 
 	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
 	if err := s.auditStore.StoreAudit(ctx, event); err != nil {

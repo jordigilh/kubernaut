@@ -24,11 +24,13 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/prometheus/client_golang/prometheus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+	"golang.org/x/sync/singleflight"
 )
 
 var (
@@ -61,18 +63,26 @@ type existenceCacheEntry struct {
 // resolution for the gateway's signal ingestion pipeline. It replaces the
 // static resourceCandidates and kindToGroup maps with fully dynamic API
 // discovery. Issue #1029.
+// DefaultMaxCacheSize is the upper bound on cached existence entries to prevent
+// unbounded memory growth between refresh cycles.
+const DefaultMaxCacheSize = 10000
+
 type APIResourceRegistry struct {
 	dc        discovery.DiscoveryInterface
 	dynClient dynamic.Interface
 	mu        sync.RWMutex
 	snapshot  *registrySnapshot
 
-	cacheMu  sync.Mutex
-	cache    map[string]existenceCacheEntry
-	cacheTTL time.Duration
+	cacheMu      sync.Mutex
+	cache        map[string]existenceCacheEntry
+	cacheTTL     time.Duration
+	maxCacheSize int
 
-	refreshInterval time.Duration
-	logger          logr.Logger
+	sfGroup singleflight.Group
+
+	refreshInterval     time.Duration
+	logger              logr.Logger
+	refreshErrorCounter prometheus.Counter // optional: tracks discovery refresh failures
 }
 
 // RegistryOption configures the APIResourceRegistry.
@@ -107,6 +117,24 @@ func WithRegistryLogger(l logr.Logger) RegistryOption {
 	}
 }
 
+// WithMaxCacheSize sets the upper bound on existence cache entries.
+// When the cache exceeds this size, expired entries are evicted first; if still
+// over capacity the entire cache is reset. Zero means use DefaultMaxCacheSize.
+func WithMaxCacheSize(n int) RegistryOption {
+	return func(r *APIResourceRegistry) {
+		if n > 0 {
+			r.maxCacheSize = n
+		}
+	}
+}
+
+// WithRefreshErrorCounter sets the Prometheus counter incremented on discovery refresh failures.
+func WithRefreshErrorCounter(c prometheus.Counter) RegistryOption {
+	return func(r *APIResourceRegistry) {
+		r.refreshErrorCounter = c
+	}
+}
+
 // NewAPIResourceRegistry constructs a registry by querying the Kubernetes API
 // discovery endpoint. Returns an error if discovery is unavailable (fail-fast).
 func NewAPIResourceRegistry(dc discovery.DiscoveryInterface, opts ...RegistryOption) (*APIResourceRegistry, error) {
@@ -114,6 +142,7 @@ func NewAPIResourceRegistry(dc discovery.DiscoveryInterface, opts ...RegistryOpt
 		dc:              dc,
 		cache:           make(map[string]existenceCacheEntry),
 		cacheTTL:        30 * time.Second,
+		maxCacheSize:    DefaultMaxCacheSize,
 		refreshInterval: 5 * time.Minute,
 		logger:          logr.Discard(),
 	}
@@ -355,7 +384,9 @@ func (r *APIResourceRegistry) runRefreshTicker(ctx context.Context, panicTimesta
 		case <-ctx.Done():
 			return true
 		case <-ticker.C:
-			_ = r.Refresh(ctx)
+			if err := r.Refresh(ctx); err != nil && r.refreshErrorCounter != nil {
+				r.refreshErrorCounter.Inc()
+			}
 		}
 	}
 }
@@ -376,7 +407,8 @@ func existenceCacheKey(gvr schema.GroupVersionResource, namespace, name string) 
 }
 
 // CheckExistence verifies whether a resource exists in the given namespace.
-// Uses a short-lived TTL cache to bound API server load.
+// Uses a short-lived TTL cache to bound API server load and a singleflight
+// group to coalesce concurrent lookups for the same key.
 // Returns true if the resource exists, false otherwise.
 // Errors (403, timeout) are treated as "does not exist" with a warning log.
 func (r *APIResourceRegistry) CheckExistence(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) bool {
@@ -390,32 +422,56 @@ func (r *APIResourceRegistry) CheckExistence(ctx context.Context, gvr schema.Gro
 	}
 	r.cacheMu.Unlock()
 
-	exists := false
-	if r.dynClient != nil {
-		_, err := r.dynClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err == nil {
-			exists = true
-		} else if apierrors.IsNotFound(err) {
-			exists = false
-		} else if apierrors.IsForbidden(err) {
-			r.logger.V(1).Info("CheckExistence forbidden — treating as non-existent",
-				"gvr", gvr.String(), "namespace", namespace, "name", name)
-			exists = false
-		} else {
-			r.logger.V(1).Info("CheckExistence error — treating as non-existent",
-				"gvr", gvr.String(), "namespace", namespace, "name", name, "error", err)
-			exists = false
+	v, _, _ := r.sfGroup.Do(key, func() (interface{}, error) {
+		exists := false
+		if r.dynClient != nil {
+			_, err := r.dynClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+			if err == nil {
+				exists = true
+			} else if apierrors.IsNotFound(err) {
+				exists = false
+			} else if apierrors.IsForbidden(err) {
+				r.logger.V(1).Info("CheckExistence forbidden — treating as non-existent",
+					"gvr", gvr.String(), "namespace", namespace, "name", name)
+				exists = false
+			} else {
+				r.logger.V(1).Info("CheckExistence error — treating as non-existent",
+					"gvr", gvr.String(), "namespace", namespace, "name", name, "error", err)
+				exists = false
+			}
+		}
+
+		r.cacheMu.Lock()
+		r.evictExpiredLocked()
+		r.cache[key] = existenceCacheEntry{
+			exists:    exists,
+			expiresAt: time.Now().Add(r.cacheTTL),
+		}
+		r.cacheMu.Unlock()
+
+		return exists, nil
+	})
+
+	return v.(bool)
+}
+
+// evictExpiredLocked removes expired cache entries and, if still over capacity,
+// resets the cache. Must be called while cacheMu is held.
+func (r *APIResourceRegistry) evictExpiredLocked() {
+	if len(r.cache) < r.maxCacheSize {
+		return
+	}
+	now := time.Now()
+	for k, e := range r.cache {
+		if now.After(e.expiresAt) {
+			delete(r.cache, k)
 		}
 	}
-
-	r.cacheMu.Lock()
-	r.cache[key] = existenceCacheEntry{
-		exists:    exists,
-		expiresAt: time.Now().Add(r.cacheTTL),
+	if len(r.cache) >= r.maxCacheSize {
+		r.logger.Info("Existence cache exceeded max size after eviction, resetting",
+			"max_size", r.maxCacheSize, "current_size", len(r.cache))
+		r.cache = make(map[string]existenceCacheEntry)
 	}
-	r.cacheMu.Unlock()
-
-	return exists
 }
 
 // KindCount returns the number of discovered kinds in the registry.

@@ -22,13 +22,20 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
+
+// rfc1123LabelRegexp validates a K8s name/namespace against RFC 1123 label rules.
+// Max 253 chars, lowercase alphanumeric + hyphens, must start and end with alphanumeric.
+var rfc1123LabelRegexp = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]{0,251}[a-z0-9])?$`)
 
 // PrometheusAdapter handles Prometheus AlertManager webhook format
 //
@@ -53,6 +60,9 @@ type PrometheusAdapter struct {
 	ownerResolver types.OwnerResolver
 	registry      *APIResourceRegistry
 	logger        logr.Logger
+
+	ownerResolutionMetric *prometheus.CounterVec // {kind, outcome} — optional (#1029)
+	parseDroppedMetric    *prometheus.CounterVec // {reason} — optional (#1032)
 }
 
 // NewPrometheusAdapter creates a new Prometheus adapter.
@@ -72,6 +82,16 @@ func NewPrometheusAdapter(ownerResolver types.OwnerResolver, registry *APIResour
 		registry:      registry,
 		logger:        l.WithName("prometheus-adapter"),
 	}
+}
+
+// SetOwnerResolutionMetric injects the counter that tracks owner resolution outcomes.
+func (a *PrometheusAdapter) SetOwnerResolutionMetric(c *prometheus.CounterVec) {
+	a.ownerResolutionMetric = c
+}
+
+// SetParseDroppedMetric injects the counter that tracks alerts dropped during batch parsing.
+func (a *PrometheusAdapter) SetParseDroppedMetric(c *prometheus.CounterVec) {
+	a.parseDroppedMetric = c
 }
 
 // Name returns the adapter identifier
@@ -181,7 +201,13 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 			lastErr = err
 			a.logger.Info("Skipping stale alert in batch",
 				"alert", i, "resource", resource.String(), "error", err)
+			if a.ownerResolutionMetric != nil {
+				a.ownerResolutionMetric.WithLabelValues(resource.Kind, "failed").Inc()
+			}
 			continue
+		}
+		if a.ownerResolutionMetric != nil {
+			a.ownerResolutionMetric.WithLabelValues(resolvedResource.Kind, "success").Inc()
 		}
 
 		labels := MergeLabels(alert.Labels, webhook.CommonLabels)
@@ -244,7 +270,16 @@ func (a *PrometheusAdapter) ParseBatch(ctx context.Context, rawData []byte) ([]*
 		if err != nil {
 			a.logger.Info("Alert failed owner resolution in batch, skipping",
 				"alert", i, "resource", resource.String(), "error", err)
+			if a.ownerResolutionMetric != nil {
+				a.ownerResolutionMetric.WithLabelValues(resource.Kind, "failed").Inc()
+			}
+			if a.parseDroppedMetric != nil {
+				a.parseDroppedMetric.WithLabelValues("owner_resolution_failed").Inc()
+			}
 			continue
+		}
+		if a.ownerResolutionMetric != nil {
+			a.ownerResolutionMetric.WithLabelValues(resolvedResource.Kind, "success").Inc()
 		}
 
 		labels := MergeLabels(alert.Labels, webhook.CommonLabels)
@@ -385,6 +420,9 @@ func extractTargetResource(ctx context.Context, labels map[string]string, namesp
 			if labelVal == "" {
 				continue
 			}
+			if !isValidK8sName(labelVal) {
+				continue
+			}
 			k := registry.LabelToKind(labelKey)
 			if k == "" {
 				continue
@@ -438,13 +476,22 @@ func extractTargetResource(ctx context.Context, labels map[string]string, namesp
 // namespace (e.g., "monitoring"), while "exported_namespace" contains the
 // actual workload namespace (e.g., "production").
 func extractNamespace(labels map[string]string) string {
-	if ns, ok := labels["exported_namespace"]; ok && ns != "" {
+	if ns, ok := labels["exported_namespace"]; ok && ns != "" && isValidK8sName(ns) {
 		return ns
 	}
-	if ns, ok := labels["namespace"]; ok {
+	if ns, ok := labels["namespace"]; ok && isValidK8sName(ns) {
 		return ns
 	}
 	return "default"
+}
+
+// isValidK8sName returns true if s conforms to RFC 1123 label naming rules
+// used by Kubernetes for resource names and namespaces.
+func isValidK8sName(s string) bool {
+	if s == "" || len(s) > 253 {
+		return false
+	}
+	return rfc1123LabelRegexp.MatchString(s)
 }
 
 // MergeLabels merges multiple label maps with priority (later maps override earlier)

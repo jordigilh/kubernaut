@@ -133,6 +133,7 @@ func main() {
 		adapters.WithCacheTTL(30*time.Second),
 		adapters.WithDynamicClient(dynClient),
 		adapters.WithRegistryLogger(logger.WithName("api-registry")),
+		adapters.WithRefreshErrorCounter(srv.GetMetrics().DiscoveryRefreshErrorsTotal),
 	)
 	if err != nil {
 		logger.Error(err, "Failed to initialize API resource registry — dynamic resource "+
@@ -156,6 +157,8 @@ func main() {
 	// Issue #63: alertname excluded from fingerprint; OwnerResolver resolves Pod→Deployment
 	// Issue #1029: Dynamic API resource registry for multi-candidate scoring
 	prometheusAdapter := adapters.NewPrometheusAdapter(ownerResolver, apiRegistry, logger)
+	prometheusAdapter.SetOwnerResolutionMetric(srv.GetMetrics().OwnerResolutionTotal)
+	prometheusAdapter.SetParseDroppedMetric(srv.GetMetrics().SignalsParseDroppedTotal)
 	if err := srv.RegisterAdapter(prometheusAdapter); err != nil {
 		logger.Error(err, "Failed to register Prometheus adapter")
 		os.Exit(1)
