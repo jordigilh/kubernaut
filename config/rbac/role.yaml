@@ -44,7 +44,8 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # User impersonation for scoped K8s queries during triage (ARCHITECTURE §6)
+  # User impersonation for scoped K8s queries during triage (ARCHITECTURE §6).
+  # No resourceNames restriction — see ADR-018 for risk acceptance and compensating controls.
   - apiGroups: [""]
     resources: ["users"]
     verbs: ["impersonate"]
