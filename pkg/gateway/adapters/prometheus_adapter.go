@@ -35,6 +35,9 @@ import (
 
 // rfc1123LabelRegexp validates a K8s name/namespace against RFC 1123 label rules.
 // Max 253 chars, lowercase alphanumeric + hyphens, must start and end with alphanumeric.
+// Intentionally lowercase-only: Prometheus label values like "StatefulSet" (kind names)
+// are not valid K8s resource names and are correctly rejected — extractTargetResource
+// uses label values as resource *names* for API lookups, not as kind identifiers.
 var rfc1123LabelRegexp = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]{0,251}[a-z0-9])?$`)
 
 // PrometheusAdapter handles Prometheus AlertManager webhook format
