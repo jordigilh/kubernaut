@@ -133,6 +133,8 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			// Per ADR-034 v1.5: All event types prefixed with "workflowexecution"
 
 			By("1. Creating WorkflowExecution CRD (BUSINESS LOGIC TRIGGER)")
+			// IT-WE-1033-001: Set workflow name in catalog querier for workflow_name audit assertion
+			testWorkflowQuerier.WorkflowName = "fix-security-context-job"
 			wfeName := fmt.Sprintf("gap56-happy-%s", uuid.New().String()[:8])
 			rrName := "test-rr-" + wfeName
 			// DD-AUDIT-CORRELATION-001: Correlation ID = RemediationRequest name
@@ -231,6 +233,12 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(eventData.WorkflowVersion).To(Equal("v1.0.0"))
 			Expect(eventData.ContainerImage).To(Equal("ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123"))
 			Expect(eventData.Phase).To(Equal(ogenclient.WorkflowExecutionAuditPayloadPhasePending))
+
+			// IT-WE-1033-001: Validate workflow_name in selection audit event (Issue #1033 Gap 2)
+			Expect(eventData.WorkflowName.IsSet()).To(BeTrue(),
+				"workflow_name should be set when catalog provides a name")
+			Expect(eventData.WorkflowName.Value).To(Equal("fix-security-context-job"),
+				"workflow_name should carry the human-readable name from the catalog")
 
 			By("5. Validate workflowexecution.execution.started event structure (ADR-034 v1.5)")
 			executionEvents := filterEventsByType(allEvents, weaudit.EventTypeExecutionStarted)

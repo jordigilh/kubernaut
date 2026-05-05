@@ -7106,6 +7106,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.WorkflowVersion)
 			}
 			{
+				if s.WorkflowName.Set {
+					e.FieldStart("workflow_name")
+					s.WorkflowName.Encode(e)
+				}
+			}
+			{
 				e.FieldStart("target_resource")
 				e.Str(s.TargetResource)
 			}
@@ -10260,6 +10266,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("workflow_version")
 				e.Str(s.WorkflowVersion)
+			}
+			{
+				if s.WorkflowName.Set {
+					e.FieldStart("workflow_name")
+					s.WorkflowName.Encode(e)
+				}
 			}
 			{
 				e.FieldStart("target_resource")
@@ -35773,6 +35785,12 @@ func (s *WorkflowExecutionAuditPayload) encodeFields(e *jx.Encoder) {
 		e.Str(s.WorkflowVersion)
 	}
 	{
+		if s.WorkflowName.Set {
+			e.FieldStart("workflow_name")
+			s.WorkflowName.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("target_resource")
 		e.Str(s.TargetResource)
 	}
@@ -35844,23 +35862,24 @@ func (s *WorkflowExecutionAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkflowExecutionAuditPayload = [16]string{
+var jsonFieldsNameOfWorkflowExecutionAuditPayload = [17]string{
 	0:  "event_type",
 	1:  "workflow_id",
 	2:  "workflow_version",
-	3:  "target_resource",
-	4:  "phase",
-	5:  "container_image",
-	6:  "execution_name",
-	7:  "started_at",
-	8:  "completed_at",
-	9:  "duration",
-	10: "failure_reason",
-	11: "failure_message",
-	12: "failed_task_name",
-	13: "error_details",
-	14: "pipelinerun_name",
-	15: "parameters",
+	3:  "workflow_name",
+	4:  "target_resource",
+	5:  "phase",
+	6:  "container_image",
+	7:  "execution_name",
+	8:  "started_at",
+	9:  "completed_at",
+	10: "duration",
+	11: "failure_reason",
+	12: "failure_message",
+	13: "failed_task_name",
+	14: "error_details",
+	15: "pipelinerun_name",
+	16: "parameters",
 }
 
 // Decode decodes WorkflowExecutionAuditPayload from json.
@@ -35868,7 +35887,7 @@ func (s *WorkflowExecutionAuditPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode WorkflowExecutionAuditPayload to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [3]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -35906,8 +35925,18 @@ func (s *WorkflowExecutionAuditPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"workflow_version\"")
 			}
+		case "workflow_name":
+			if err := func() error {
+				s.WorkflowName.Reset()
+				if err := s.WorkflowName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_name\"")
+			}
 		case "target_resource":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.TargetResource = string(v)
@@ -35919,7 +35948,7 @@ func (s *WorkflowExecutionAuditPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"target_resource\"")
 			}
 		case "phase":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				if err := s.Phase.Decode(d); err != nil {
 					return err
@@ -35929,7 +35958,7 @@ func (s *WorkflowExecutionAuditPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"phase\"")
 			}
 		case "container_image":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ContainerImage = string(v)
@@ -35941,7 +35970,7 @@ func (s *WorkflowExecutionAuditPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"container_image\"")
 			}
 		case "execution_name":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.ExecutionName = string(v)
@@ -36051,8 +36080,9 @@ func (s *WorkflowExecutionAuditPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
-		0b01111111,
+	for i, mask := range [3]uint8{
+		0b11110111,
+		0b00000000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {

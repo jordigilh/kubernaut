@@ -22694,6 +22694,9 @@ type WorkflowExecutionAuditPayload struct {
 	WorkflowID string `json:"workflow_id"`
 	// Version of the workflow being executed.
 	WorkflowVersion string `json:"workflow_version"`
+	// Human-readable name of the selected workflow from the DataStorage catalog. Optional; present only
+	// when the catalog provides a name.
+	WorkflowName OptString `json:"workflow_name"`
 	// Kubernetes resource being acted upon (format depends on scope).
 	TargetResource string `json:"target_resource"`
 	// Current phase of the WorkflowExecution.
@@ -22735,6 +22738,11 @@ func (s *WorkflowExecutionAuditPayload) GetWorkflowID() string {
 // GetWorkflowVersion returns the value of WorkflowVersion.
 func (s *WorkflowExecutionAuditPayload) GetWorkflowVersion() string {
 	return s.WorkflowVersion
+}
+
+// GetWorkflowName returns the value of WorkflowName.
+func (s *WorkflowExecutionAuditPayload) GetWorkflowName() OptString {
+	return s.WorkflowName
 }
 
 // GetTargetResource returns the value of TargetResource.
@@ -22815,6 +22823,11 @@ func (s *WorkflowExecutionAuditPayload) SetWorkflowID(val string) {
 // SetWorkflowVersion sets the value of WorkflowVersion.
 func (s *WorkflowExecutionAuditPayload) SetWorkflowVersion(val string) {
 	s.WorkflowVersion = val
+}
+
+// SetWorkflowName sets the value of WorkflowName.
+func (s *WorkflowExecutionAuditPayload) SetWorkflowName(val OptString) {
+	s.WorkflowName = val
 }
 
 // SetTargetResource sets the value of TargetResource.
