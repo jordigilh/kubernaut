@@ -152,13 +152,19 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 	}
 
 	if err := s.client.Status().Update(ctx, crd); err != nil {
-		_ = s.client.Delete(ctx, crd)
+		if delErr := s.client.Delete(ctx, crd); delErr != nil {
+			s.logger.WarnContext(ctx, "CRD rollback failed after status update error",
+				"crd_name", crdName, "error", delErr)
+		}
 		return nil, fmt.Errorf("set InvestigationSession initial status: %w", err)
 	}
 
 	resp, err := s.delegate.Create(ctx, req)
 	if err != nil {
-		_ = s.client.Delete(ctx, crd)
+		if delErr := s.client.Delete(ctx, crd); delErr != nil {
+			s.logger.WarnContext(ctx, "CRD rollback failed after delegate create error",
+				"crd_name", crdName, "error", delErr)
+		}
 		return nil, fmt.Errorf("delegate create: %w", err)
 	}
 

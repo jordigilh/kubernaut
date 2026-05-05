@@ -79,7 +79,7 @@ var _ = Describe("State Machine", func() {
 			svc = newTestService(k8s, scheme)
 			createSession("sess-phase")
 
-			err := svc.UpdatePhase(ctx, "sess-phase", v1alpha1.SessionPhaseCompleted, "investigation done")
+			err := svc.UpdatePhase(ctx, "sess-phase", v1alpha1.SessionPhaseCompleted, "investigation done", "test-user")
 			Expect(err).NotTo(HaveOccurred())
 
 			var crd v1alpha1.InvestigationSession
@@ -95,7 +95,7 @@ var _ = Describe("State Machine", func() {
 			svc = newTestService(k8s, scheme)
 			createSession("sess-terminal")
 
-			err := svc.UpdatePhase(ctx, "sess-terminal", v1alpha1.SessionPhaseCompleted, "done")
+			err := svc.UpdatePhase(ctx, "sess-terminal", v1alpha1.SessionPhaseCompleted, "done", "test-user")
 			Expect(err).NotTo(HaveOccurred())
 
 			var crd v1alpha1.InvestigationSession
@@ -110,7 +110,7 @@ var _ = Describe("State Machine", func() {
 			createSession("sess-disconnect")
 
 			// Disconnect
-			err := svc.UpdatePhase(ctx, "sess-disconnect", v1alpha1.SessionPhaseDisconnected, "SSE dropped")
+			err := svc.UpdatePhase(ctx, "sess-disconnect", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "test-user")
 			Expect(err).NotTo(HaveOccurred())
 
 			var crd v1alpha1.InvestigationSession
@@ -119,7 +119,7 @@ var _ = Describe("State Machine", func() {
 			Expect(crd.Status.DisconnectedAt).NotTo(BeNil())
 
 			// Reconnect
-			err = svc.UpdatePhase(ctx, "sess-disconnect", v1alpha1.SessionPhaseActive, "reconnected")
+			err = svc.UpdatePhase(ctx, "sess-disconnect", v1alpha1.SessionPhaseActive, "reconnected", "test-user")
 			Expect(err).NotTo(HaveOccurred())
 
 			err = k8s.Get(ctx, types.NamespacedName{Name: "sess-disconnect", Namespace: "test-ns"}, &crd)

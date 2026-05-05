@@ -67,7 +67,10 @@ const maxPhaseMessageLen = 256
 // the reason for the transition (e.g. "investigation complete", "user cancelled").
 // It MUST NOT contain user-originated content or PII. The message is truncated
 // to maxPhaseMessageLen (256 chars) as a defense-in-depth measure per ADR-017.
-func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, to v1alpha1.SessionPhase, message string) error {
+//
+// The userID parameter is included in the audit event for traceability (AU-12).
+// Pass an empty string for system-initiated transitions (e.g. TTL expiry).
+func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, to v1alpha1.SessionPhase, message, userID string) error {
 	if len(message) > maxPhaseMessageLen {
 		message = message[:maxPhaseMessageLen]
 	}
@@ -124,7 +127,7 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 		"from", from,
 		"to", to,
 	)
-	s.emitAudit(ctx, audit.EventSessionPhaseChanged, "", map[string]string{
+	s.emitAudit(ctx, audit.EventSessionPhaseChanged, userID, map[string]string{
 		"session_id": sessionID,
 		"from":       string(from),
 		"to":         string(to),
