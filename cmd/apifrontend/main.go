@@ -18,11 +18,14 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -33,6 +36,7 @@ import (
 	agentpkg "github.com/jordigilh/kubernaut-apifrontend/internal/agent"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/config"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/handler"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/launcher"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/logging"
@@ -49,12 +53,39 @@ func main() {
 }
 
 func run() error {
+	var configPath string
+	flag.StringVar(&configPath, "config", "/etc/apifrontend/config.yaml", "Path to YAML configuration file (ConfigMap mount)")
+	flag.Parse()
+
 	level := zap.NewAtomicLevelAt(zap.InfoLevel)
 	logger, err := logging.NewLogger(level)
 	if err != nil {
 		return fmt.Errorf("initialize logger: %w", err)
 	}
 	logger = logger.WithValues("service", "kubernaut-apifrontend")
+
+	cfgData, err := os.ReadFile(filepath.Clean(configPath))
+	if err != nil {
+		return fmt.Errorf("read config %s (use --config to specify path): %w", configPath, err)
+	}
+
+	cfg, err := config.Load(cfgData)
+	if err != nil {
+		return fmt.Errorf("parse config %s: %w", configPath, err)
+	}
+
+	cfg.ResolveDefaults()
+
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid config: %w", err)
+	}
+
+	logger.Info("configuration loaded",
+		"port", cfg.Server.Port,
+		"mcpEnabled", cfg.MCP.Enabled,
+		"agentCardURL", cfg.AgentCard.URL,
+		"kaBaseURL", cfg.Agent.KABaseURL,
+	)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -77,14 +108,13 @@ func run() error {
 	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
 	defer userLimiter.Stop()
 
-	// --- Agent + Session ---
 	agentCfg := agentpkg.AgentConfig{
-		GCPProject:    envOr("GCP_PROJECT", ""),
-		GCPRegion:     envOr("GCP_REGION", "us-central1"),
+		GCPProject:    cfg.Agent.GCPProject,
+		GCPRegion:     cfg.Agent.GCPRegion,
 		Instruction:   "You are the Kubernaut API Frontend agent. Help users triage and remediate Kubernetes incidents.",
-		KABaseURL:     envOr("KA_BASE_URL", "http://localhost:8080"),
-		KAMCPEndpoint: envOr("KA_MCP_ENDPOINT", "http://localhost:8080/api/v1/mcp/"),
-		DSBaseURL:     envOr("DS_BASE_URL", "http://localhost:9090"),
+		KABaseURL:     cfg.Agent.KABaseURL,
+		KAMCPEndpoint: cfg.Agent.KAMCPEndpoint,
+		DSBaseURL:     cfg.Agent.DSBaseURL,
 	}
 	rootAgent, _, err := agentpkg.NewRootAgent(agentCfg)
 	if err != nil {
@@ -92,7 +122,6 @@ func run() error {
 	}
 	sessionSvc := adksession.InMemoryService()
 
-	// --- A2A Handler ---
 	a2aHandler, err := launcher.NewA2AHandler(launcher.A2AConfig{
 		Agent:          rootAgent,
 		SessionService: sessionSvc,
@@ -104,23 +133,21 @@ func run() error {
 		return fmt.Errorf("create A2A handler: %w", err)
 	}
 
-	// --- MCP Handler ---
 	mcpHandler, err := handler.NewMCPHandler(handler.MCPConfig{
 		ServerName:    "kubernaut-apifrontend",
 		ServerVersion: "0.1.0",
 		Tools:         handler.DefaultMCPTools(),
 		Auditor:       auditor,
-		Enabled:       envOr("ENABLE_MCP", "false") == "true",
+		Enabled:       cfg.MCP.Enabled,
 	})
 	if err != nil {
 		return fmt.Errorf("create MCP handler: %w", err)
 	}
 
-	// --- Agent Card ---
 	agentCardHandler, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
 		Name:        "kubernaut-apifrontend",
 		Description: "Kubernaut API Frontend agent for Kubernetes incident triage and remediation",
-		URL:         envOr("AGENT_CARD_URL", fmt.Sprintf("https://localhost:%s", envOr("PORT", "8443"))),
+		URL:         cfg.AgentCard.URL,
 		Version:     "0.1.0",
 		Skills:      handler.DefaultAgentSkills(),
 	})
@@ -128,10 +155,8 @@ func run() error {
 		return fmt.Errorf("create agent card handler: %w", err)
 	}
 
-	// --- Auth Middleware Chain ---
 	authMiddleware := buildAuthMiddleware(validator, logger, auditor, ipLimiter, userLimiter, metricsReg)
 
-	// --- Router ---
 	rootHandler, err := handler.NewRouter(handler.RouterConfig{
 		MetricsRegistry:  metricsReg,
 		A2AHandler:       a2aHandler,
@@ -145,7 +170,7 @@ func run() error {
 		return fmt.Errorf("create router: %w", err)
 	}
 
-	port := envOr("PORT", "8443")
+	port := strconv.Itoa(cfg.Server.Port)
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           rootHandler,
@@ -209,11 +234,4 @@ func buildAuthMiddleware(
 		h = requestid.Middleware(h)
 		return h
 	}
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
