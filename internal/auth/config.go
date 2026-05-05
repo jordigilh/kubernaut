@@ -3,6 +3,7 @@ package auth
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -63,7 +64,7 @@ func (c *Config) Validate() error {
 
 // LoadConfigFromFile reads and parses a Config from a YAML file.
 func LoadConfigFromFile(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return Config{}, fmt.Errorf("read auth config: %w", err)
 	}

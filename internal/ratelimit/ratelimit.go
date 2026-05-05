@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"math"
 	"net/http"
 	"strconv"
 	"sync"
@@ -269,7 +270,10 @@ type LLMSemaphore struct {
 
 // NewLLMSemaphore creates a semaphore with the given max concurrent slots.
 func NewLLMSemaphore(maxSlots int) *LLMSemaphore {
-	return &LLMSemaphore{max: int32(maxSlots)}
+	if maxSlots <= 0 || maxSlots > math.MaxInt32 {
+		maxSlots = math.MaxInt32
+	}
+	return &LLMSemaphore{max: int32(maxSlots)} // #nosec G115 -- bounds checked above
 }
 
 // Acquire attempts to acquire a semaphore slot. Returns false if at capacity.

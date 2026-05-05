@@ -3,6 +3,7 @@ package ratelimit
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -72,7 +73,7 @@ func DefaultConfig() Config {
 
 // LoadRateLimitConfigFromFile reads and parses a rate limit Config from a YAML file.
 func LoadRateLimitConfigFromFile(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return Config{}, fmt.Errorf("read ratelimit config: %w", err)
 	}

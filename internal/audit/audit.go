@@ -20,6 +20,12 @@ const (
 	EventImpersonation      EventType = "impersonation.created"
 	EventJWTDelegation      EventType = "jwt.delegation"
 	EventCircuitBreakerTrip EventType = "circuitbreaker.trip"
+
+	EventSessionCreated          EventType = "session.created"
+	EventSessionDeleted          EventType = "session.deleted"
+	EventSessionPhaseChanged     EventType = "session.phase_changed"
+	EventSessionAutoCancelled    EventType = "session.auto_cancelled"
+	EventSessionRetentionDeleted EventType = "session.retention_deleted"
 )
 
 // Event represents a SOC2-compatible audit event.

@@ -136,6 +136,15 @@ func NewJWTValidator(cfg Config, opts ...JWTValidatorOption) (*JWTValidator, err
 	return v, nil
 }
 
+// Ready returns true if the validator's JWKS cache is healthy (no circuit
+// breakers open). Safe to call when no JWT providers are configured (returns true).
+func (v *JWTValidator) Ready() bool {
+	if v.cache == nil {
+		return true
+	}
+	return v.cache.Healthy()
+}
+
 // Validate validates a raw JWT token string and returns the authenticated UserIdentity.
 // It routes to the correct provider based on the token's issuer claim (deterministic, no fallthrough).
 // If the token is not a valid JWT and K8s auth is enabled, it falls through to TokenReview.

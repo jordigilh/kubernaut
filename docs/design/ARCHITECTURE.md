@@ -372,7 +372,7 @@ sequenceDiagram
 |-------|------|-------------|
 | `phase` | enum | Active, Disconnected, Completed, Cancelled, Failed |
 | `aiAnalysisRef` | string | Reference to AA CRD (when discovered) |
-| `kaSessionID` | string | KA interactive session ID |
+| `kaCorrelationID` | string | KA correlation ID from `/analyze` response |
 | `connectionState` | enum | Connected, Disconnected |
 | `startedAt` | Time | Session creation timestamp |
 | `completedAt` | Time | Terminal state timestamp |
@@ -549,33 +549,33 @@ AF ServiceAccount permissions:
 
 **Histograms:**
 
-| Metric | Labels | SLO |
-|--------|--------|-----|
-| `af_triage_duration_seconds` | outcome | P95 < 15s |
-| `af_tool_call_duration_seconds` | tool, type | P99 < 500ms (internal), < 2s (proxy) |
-| `af_sse_connect_duration_seconds` | — | P99 < 1s |
-| `af_auth_duration_seconds` | result | P99 < 200ms |
-| `af_http_request_duration_seconds` | method, path, status | — |
-| `af_ka_poll_duration_seconds` | endpoint | — |
+| Metric | Labels | SLO | Status |
+|--------|--------|-----|--------|
+| `af_http_request_duration_seconds` | method, path, status | — | Implemented |
+| `af_tool_call_duration_seconds` | tool, type | P99 < 500ms (internal), < 2s (proxy) | Implemented |
+| `af_auth_duration_seconds` | result | P99 < 200ms | Implemented |
+| `af_triage_duration_seconds` | outcome | P95 < 15s | Planned (PR5) |
+| `af_sse_connect_duration_seconds` | — | P99 < 1s | Planned (PR6) |
+| `af_ka_poll_duration_seconds` | endpoint | — | Planned (PR5) |
 
 **Counters:**
 
-| Metric | Labels |
-|--------|--------|
-| `af_http_requests_total` | method, path, status |
-| `af_triage_total` | outcome |
-| `af_tool_calls_total` | tool, result |
-| `af_rate_limit_rejections_total` | tier |
-| `af_llm_tokens_total` | direction, model |
-| `af_audit_events_total` | type |
+| Metric | Labels | Status |
+|--------|--------|--------|
+| `af_http_requests_total` | method, path, status | Implemented |
+| `af_tool_calls_total` | tool, result | Implemented |
+| `af_llm_tokens_total` | direction, model | Implemented |
+| `af_rate_limit_rejections_total` | tier, reason | Implemented |
+| `af_audit_events_total` | type | Implemented |
+| `af_triage_total` | outcome | Planned (PR5) |
 
 **Gauges:**
 
-| Metric | Labels |
-|--------|--------|
-| `af_sse_connections_active` | — |
-| `af_circuit_breaker_state` | target |
-| `af_sessions_active` | phase |
+| Metric | Labels | Status |
+|--------|--------|--------|
+| `af_sessions_active` | phase | Implemented |
+| `af_circuit_breaker_state` | dependency | Implemented |
+| `af_sse_connections_active` | — | Planned (PR6) |
 
 ### Structured Logging
 
