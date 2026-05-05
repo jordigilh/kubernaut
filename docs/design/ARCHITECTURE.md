@@ -764,6 +764,21 @@ Nightly job runs against kubernaut `main` for early break detection.
 
 ---
 
+## Environment Variables
+
+| Variable | Default | Required | Purpose |
+|----------|---------|----------|---------|
+| `PORT` | `8443` | No | HTTP listen port. TLS termination is handled by ingress/service mesh. |
+| `GCP_PROJECT` | (empty) | Yes (prod) | GCP project for Vertex AI LLM calls. |
+| `GCP_REGION` | `us-central1` | No | GCP region for Vertex AI endpoints. |
+| `KA_BASE_URL` | `http://localhost:8080` | Yes (prod) | Base URL of the Kubernaut Agent backend. |
+| `KA_MCP_ENDPOINT` | `http://localhost:8080/api/v1/mcp/` | Yes (prod) | MCP endpoint for the Kubernaut Agent. |
+| `DS_BASE_URL` | `http://localhost:9090` | Yes (prod) | Base URL of the audit/data store service. |
+| `ENABLE_MCP` | `false` | No | Set to `true` to enable MCP tool stubs. When `false`, `/mcp` returns 501. |
+| `AGENT_CARD_URL` | `https://localhost:{PORT}` | No | External-facing URL published in the agent card. Set to the ingress hostname in production. |
+
+---
+
 ## References
 
 - GitHub Issues: #41-#56, #57-#71 (design comments)
