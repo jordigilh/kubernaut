@@ -390,11 +390,11 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Expect(gatewayPayload.RemediationRequest.Value).To(ContainSubstring(correlationID),
 				"Business outcome: remediation_request links audit event to created CRD")
 
-			// ✅ OUTCOME 2: Accountability - identifies signal source
-			Expect(event.ActorType.Value).To(Equal("external"),
-				"Business outcome: actor_type='external' identifies this as external signal (not internal system)")
-			Expect(event.ActorID.Value).To(Equal("prometheus"),
-				"Business outcome: actor_id identifies specific source system for troubleshooting")
+			// ✅ OUTCOME 2: Accountability - identifies signal source (FedRAMP AU-3)
+			Expect(event.ActorType.Value).To(Equal("authenticated-service"),
+				"Business outcome: actor_type='authenticated-service' identifies authenticated K8s identity (FedRAMP AU-3)")
+			Expect(event.ActorID.Value).ToNot(BeEmpty(),
+				"Business outcome: actor_id contains authenticated K8s identity for troubleshooting")
 
 			// ✅ OUTCOME 3: Resource tracking for debugging
 			Expect(event.ResourceType.Value).To(Equal("Signal"),
