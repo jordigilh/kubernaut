@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -33,12 +34,13 @@ type SessionCleanupReconciler struct {
 	retentionTTL  time.Duration
 	logger        *slog.Logger
 	auditor       audit.Emitter
+	ttlActions    *prometheus.CounterVec
 }
 
 // NewSessionCleanupReconciler creates a reconciler with the specified TTLs.
 // If retentionTTL is below MinRetentionTTL, it is clamped and a warning is logged.
 // The auditor may be nil to disable audit emission (e.g. in tests).
-func NewSessionCleanupReconciler(c client.Client, disconnectTTL, retentionTTL time.Duration, auditor audit.Emitter) *SessionCleanupReconciler {
+func NewSessionCleanupReconciler(c client.Client, disconnectTTL, retentionTTL time.Duration, auditor audit.Emitter, ttlActions *prometheus.CounterVec) *SessionCleanupReconciler {
 	logger := slog.Default().With("component", "session-cleanup")
 	if retentionTTL < MinRetentionTTL {
 		logger.Warn("retentionTTL below NIST AU-11 minimum, clamping",
@@ -53,6 +55,7 @@ func NewSessionCleanupReconciler(c client.Client, disconnectTTL, retentionTTL ti
 		retentionTTL:  retentionTTL,
 		logger:        logger,
 		auditor:       auditor,
+		ttlActions:    ttlActions,
 	}
 }
 
@@ -71,10 +74,28 @@ func (r *SessionCleanupReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 
 	case v1alpha1.SessionPhaseDisconnected:
-		return r.handleDisconnected(ctx, &sess)
+		result, err := r.handleDisconnected(ctx, &sess)
+		if err != nil {
+			r.logger.ErrorContext(ctx, "disconnect TTL reconcile failed",
+				"session", sess.Name,
+				"namespace", sess.Namespace,
+				"phase", sess.Status.Phase,
+				"error", err,
+			)
+		}
+		return result, err
 
 	case v1alpha1.SessionPhaseCompleted, v1alpha1.SessionPhaseCancelled, v1alpha1.SessionPhaseFailed:
-		return r.handleTerminal(ctx, &sess)
+		result, err := r.handleTerminal(ctx, &sess)
+		if err != nil {
+			r.logger.ErrorContext(ctx, "retention TTL reconcile failed",
+				"session", sess.Name,
+				"namespace", sess.Namespace,
+				"phase", sess.Status.Phase,
+				"error", err,
+			)
+		}
+		return result, err
 
 	default:
 		return ctrl.Result{}, nil
@@ -118,6 +139,7 @@ func (r *SessionCleanupReconciler) handleDisconnected(ctx context.Context, sess 
 		"phase":   string(v1alpha1.SessionPhaseCancelled),
 		"elapsed": elapsed.String(),
 	})
+	r.incTTLAction("cancel")
 	return ctrl.Result{}, nil
 }
 
@@ -149,7 +171,14 @@ func (r *SessionCleanupReconciler) handleTerminal(ctx context.Context, sess *v1a
 		"phase":   string(sess.Status.Phase),
 		"elapsed": elapsed.String(),
 	})
+	r.incTTLAction("delete")
 	return ctrl.Result{}, nil
+}
+
+func (r *SessionCleanupReconciler) incTTLAction(action string) {
+	if r.ttlActions != nil {
+		r.ttlActions.WithLabelValues(action).Inc()
+	}
 }
 
 func (r *SessionCleanupReconciler) emitAudit(ctx context.Context, eventType audit.EventType, detail map[string]string) {

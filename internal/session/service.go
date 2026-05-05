@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -19,6 +20,10 @@ import (
 	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 )
+
+// validCRDName matches RFC 1123 subdomain: lowercase alphanumeric and '-',
+// must start/end with alphanumeric, max 253 chars.
+var validCRDName = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]{0,251}[a-z0-9])?$`)
 
 // Label keys used on InvestigationSession CRDs.
 const (
@@ -49,12 +54,13 @@ type CreateConfig struct {
 // Session objects returned by Create/Get/List are the delegate's native types,
 // which satisfies the InMemoryService.AppendEvent type assertion on *session.
 type CRDSessionService struct {
-	delegate  adksession.Service
-	client    client.Client
-	scheme    *runtime.Scheme
-	namespace string
-	logger    *slog.Logger
-	auditor   audit.Emitter
+	delegate       adksession.Service
+	client         client.Client
+	scheme         *runtime.Scheme
+	namespace      string
+	logger         *slog.Logger
+	auditor        audit.Emitter
+	sessionsActive *prometheus.GaugeVec
 
 	mu       sync.RWMutex
 	crdIndex map[string]string // sessionID -> CRD name
@@ -86,6 +92,11 @@ func WithAuditor(e audit.Emitter) Option {
 	return func(s *CRDSessionService) { s.auditor = e }
 }
 
+// WithSessionsActive injects the af_sessions_active gauge for observability.
+func WithSessionsActive(g *prometheus.GaugeVec) Option {
+	return func(s *CRDSessionService) { s.sessionsActive = g }
+}
+
 // Create creates an InvestigationSession CRD and delegates session creation
 // to the in-memory service. The CRD creation config is read from
 // req.State[StateKeyCreateConfig].
@@ -103,6 +114,9 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 	crdName := req.SessionID
 	if crdName == "" {
 		crdName = fmt.Sprintf("isess-%d", time.Now().UnixNano())
+	}
+	if !validCRDName.MatchString(crdName) {
+		return nil, fmt.Errorf("invalid session ID %q: must be a valid RFC 1123 subdomain", crdName)
 	}
 
 	now := metav1.Now()
@@ -162,6 +176,7 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 		"crd_name":   crdName,
 		"phase":      string(v1alpha1.SessionPhaseActive),
 	})
+	s.incSessionGauge(string(v1alpha1.SessionPhaseActive))
 	return resp, nil
 }
 
@@ -203,6 +218,7 @@ func (s *CRDSessionService) Delete(ctx context.Context, req *adksession.DeleteRe
 		"session_id": req.SessionID,
 		"crd_name":   crdName,
 	})
+	s.decSessionGauge(string(v1alpha1.SessionPhaseActive))
 	return s.delegate.Delete(ctx, req)
 }
 
@@ -260,6 +276,46 @@ func (s *CRDSessionService) emitAudit(ctx context.Context, eventType audit.Event
 		UserID: userID,
 		Detail: detail,
 	})
+}
+
+func (s *CRDSessionService) incSessionGauge(phase string) {
+	if s.sessionsActive != nil {
+		s.sessionsActive.WithLabelValues(phase).Inc()
+	}
+}
+
+func (s *CRDSessionService) decSessionGauge(phase string) {
+	if s.sessionsActive != nil {
+		s.sessionsActive.WithLabelValues(phase).Dec()
+	}
+}
+
+// PruneTerminalEntries removes crdIndex entries for sessions whose CRD is in
+// a terminal phase. Call periodically (e.g. from the TTL reconciler) to bound
+// map growth.
+func (s *CRDSessionService) PruneTerminalEntries(ctx context.Context) int {
+	s.mu.RLock()
+	snapshot := make(map[string]string, len(s.crdIndex))
+	for k, v := range s.crdIndex {
+		snapshot[k] = v
+	}
+	s.mu.RUnlock()
+
+	var pruned int
+	for sessionID, crdName := range snapshot {
+		var crd v1alpha1.InvestigationSession
+		err := s.client.Get(ctx, types.NamespacedName{Name: crdName, Namespace: s.namespace}, &crd)
+		if err != nil || IsTerminal(crd.Status.Phase) {
+			s.mu.Lock()
+			delete(s.crdIndex, sessionID)
+			s.mu.Unlock()
+			pruned++
+		}
+	}
+	if pruned > 0 {
+		s.logger.InfoContext(ctx, "pruned terminal crdIndex entries", "count", pruned)
+	}
+	return pruned
 }
 
 var invalidLabelChars = regexp.MustCompile(`[^a-zA-Z0-9._-]`)

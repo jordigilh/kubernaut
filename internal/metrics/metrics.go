@@ -44,6 +44,7 @@ type Registry struct {
 	CircuitBreakerState    *prometheus.GaugeVec
 	AuthDuration           *prometheus.HistogramVec
 	AuditEventsTotal       *prometheus.CounterVec
+	SessionTTLActionsTotal *prometheus.CounterVec
 }
 
 // NewRegistry creates and registers all AF Prometheus metrics.
@@ -103,6 +104,11 @@ func NewRegistry() *Registry {
 			Name:      "audit_events_total",
 			Help:      "Total audit trail events by type.",
 		}, []string{"type"}),
+		SessionTTLActionsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "af",
+			Name:      "session_ttl_actions_total",
+			Help:      "Total TTL-triggered session lifecycle actions by action type.",
+		}, []string{"action"}),
 	}
 
 	reg.MustRegister(r.HTTPRequestsTotal)
@@ -115,6 +121,7 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.CircuitBreakerState)
 	reg.MustRegister(r.AuthDuration)
 	reg.MustRegister(r.AuditEventsTotal)
+	reg.MustRegister(r.SessionTTLActionsTotal)
 
 	return r
 }

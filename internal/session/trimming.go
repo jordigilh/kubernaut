@@ -13,8 +13,9 @@ const (
 	MaxToolResultBytes = 4096
 
 	// TrimSummaryPrefix is the number of bytes of the original JSON to include
-	// in the truncation summary for debugging context.
-	TrimSummaryPrefix = 512
+	// in the truncation summary for debugging context. Kept small (128B) to
+	// reduce the risk of leaking secrets embedded in tool responses.
+	TrimSummaryPrefix = 128
 )
 
 // trimEventFunctionResponses walks the event's Content.Parts and truncates any

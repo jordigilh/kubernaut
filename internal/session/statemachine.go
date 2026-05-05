@@ -7,8 +7,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	adksession "google.golang.org/adk/session"
-
 	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 )
@@ -131,16 +129,15 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 		"from":       string(from),
 		"to":         string(to),
 	})
+
+	s.decSessionGauge(string(from))
+	s.incSessionGauge(string(to))
+
+	if IsTerminal(to) {
+		s.mu.Lock()
+		delete(s.crdIndex, sessionID)
+		s.mu.Unlock()
+	}
 	return nil
 }
 
-// CreateRequestWithDefaults is a test helper that builds an adksession.CreateRequest
-// with standard parameters.
-func CreateRequestWithDefaults(sessionID, userID string, state map[string]any) adksession.CreateRequest {
-	return adksession.CreateRequest{
-		AppName:   "kubernaut-apifrontend",
-		UserID:    userID,
-		SessionID: sessionID,
-		State:     state,
-	}
-}
