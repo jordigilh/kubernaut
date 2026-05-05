@@ -20,12 +20,6 @@ data:
       writeTimeout: 30s
       idleTimeout: 120s
 
-    # Middleware configuration
-    middleware:
-      rate_limit:
-        requests_per_minute: 100
-        burst: 10
-
     # DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free (K8s-native)
     # Deduplication state managed via RR status fields
 
@@ -43,11 +37,6 @@ data:
     processing:
       deduplication:
         cooldownPeriod: 5m
-
-      environment:
-        cache_ttl: 30s
-        configmap_namespace: kubernaut-system
-        configmap_name: kubernaut-environment-overrides
 
   # NOTE: priority.rego removed (2025-02-05).
   # Priority/Environment classification moved to Signal Processing per DD-CATEGORIZATION-001.
