@@ -43,8 +43,8 @@ The TTL controller (implemented in PR4) garbage-collects terminal sessions based
    restart. This is by design (ADR-005) to avoid etcd bloat and to minimize the PII
    surface.
 
-2. **The `spec.query` field** stores only the initial user query. Intermediate LLM
-   outputs are not persisted to the CRD.
+2. **The `spec.a2aTaskID` field** stores a task correlation identifier, not
+   user-originated content. No free-text user query is persisted in the CRD spec.
 
 3. **Username labels** use the OIDC `sub` claim (opaque identifier) rather than
    display names when available.

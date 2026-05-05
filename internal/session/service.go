@@ -186,7 +186,10 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 	return resp, nil
 }
 
-// Get delegates to the in-memory service.
+// Get delegates to the in-memory service. Sessions are invalidated on pod
+// restart since the in-memory delegate is not hydrated from CRDs. CRD
+// reconciliation will transition orphaned sessions to Disconnected via the
+// TTL controller. Full session hydration is deferred to PR7.
 func (s *CRDSessionService) Get(ctx context.Context, req *adksession.GetRequest) (*adksession.GetResponse, error) {
 	return s.delegate.Get(ctx, req)
 }
