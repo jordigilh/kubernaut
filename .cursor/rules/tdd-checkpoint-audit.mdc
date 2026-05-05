@@ -1,0 +1,36 @@
+---
+description: TDD checkpoint audit categories -- enforced at every checkpoint during TDD plan execution
+globs: "**/*.plan.md"
+alwaysApply: false
+---
+
+# TDD Checkpoint Audit Requirements
+
+At each TDD checkpoint, before advancing to the next phase, audit **all 9 categories below**. For each category, cite the specific test(s) that satisfy it or write them if missing. Do not advance past a checkpoint until all categories are satisfied.
+
+## 1. Observability wiring
+For every metric/gauge/counter defined in the metrics registry, there must be a test that calls the production code path and asserts the metric value changed. Metrics defined but never incremented is a P1.
+
+## 2. Adversarial inputs
+For every string parameter accepted from outside the package (IDs, names, messages), there must be a test with: empty string, max-length+1, characters outside the valid set (e.g. `"../../etc/passwd"`), and Unicode edge cases. Invalid inputs must be rejected, not silently accepted.
+
+## 3. Resource bounds
+For every map, slice, or cache that grows with usage, there must be a test that runs 50+ create/delete lifecycle cycles and asserts the structure does not grow unboundedly.
+
+## 4. Concurrency
+For every method protected by a mutex or accessed from multiple goroutines, there must be a test with 10+ goroutines calling it concurrently under `-race`. Include at least one test where two competing state transitions race.
+
+## 5. Nil/zero edge cases
+For every struct field that can be `nil` or zero-valued, there must be a test exercising that path through every downstream consumer.
+
+## 6. Error-path observability
+For every error return, verify the log line includes enough structured context (resource name, namespace, phase) for an SRE to diagnose without reading source code.
+
+## 7. Cross-phase integration
+When phase N defines a component (e.g. a metric) and phase M defines code that should use it (e.g. a service), the phase M checkpoint must include a test proving they are wired together.
+
+## 8. Spec compliance
+For any protocol (SSE, HTTP, K8s naming), verify all required fields are present per the spec (e.g. `id:`, `retry:` for SSE; RFC 1123 for CRD names).
+
+## 9. API surface hygiene
+No test helpers, internal constants, or debug functions should be exported from production packages. Flag any exported symbol only used in `_test.go` files.
