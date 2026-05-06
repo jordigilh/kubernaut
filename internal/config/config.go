@@ -274,8 +274,8 @@ func validateDependencyConfig(prefix string, cfg *DependencyConfig) error {
 		return fmt.Errorf("%s.requestTimeout (%v) must be >= connectTimeout (%v)",
 			prefix, cfg.RequestTimeout, cfg.ConnectTimeout)
 	}
-	if cfg.CBFailureThreshold > 100 {
-		return fmt.Errorf("%s.cbFailureThreshold must be 0-100, got %d", prefix, cfg.CBFailureThreshold)
+	if cfg.CBFailureThreshold == 0 || cfg.CBFailureThreshold > 100 {
+		return fmt.Errorf("%s.cbFailureThreshold must be 1-100, got %d", prefix, cfg.CBFailureThreshold)
 	}
 	if cfg.RetryMax > 10 {
 		return fmt.Errorf("%s.retryMax must be 0-10, got %d", prefix, cfg.RetryMax)

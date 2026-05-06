@@ -1,7 +1,6 @@
 package resilience
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -16,18 +15,23 @@ type CircuitBreakerConfig struct {
 	Interval         time.Duration
 	Timeout          time.Duration
 	FailureThreshold uint32
+	FailureStatuses  []int
 	StateGauge       *prometheus.GaugeVec
 	DurationHist     *prometheus.HistogramVec
 	DependencyName   string
 	OnStateChange    func(name string, from, to gobreaker.State)
+	// AuditFunc is called on every state transition for FedRAMP AU-2 compliance.
+	// It receives the dependency name, previous state, and new state.
+	AuditFunc func(dependency string, from, to gobreaker.State)
 }
 
 // CircuitBreakerTransport wraps an http.RoundTripper with gobreaker protection.
 // When the breaker is open, requests fail immediately with gobreaker.ErrOpenState.
 type CircuitBreakerTransport struct {
-	next http.RoundTripper
-	cb   *gobreaker.CircuitBreaker[*http.Response]
-	cfg  CircuitBreakerConfig
+	next            http.RoundTripper
+	cb              *gobreaker.CircuitBreaker[*http.Response]
+	cfg             CircuitBreakerConfig
+	failureStatuses map[int]struct{}
 }
 
 // NewCircuitBreakerTransport creates a CircuitBreakerTransport.
@@ -51,6 +55,9 @@ func NewCircuitBreakerTransport(next http.RoundTripper, cfg *CircuitBreakerConfi
 		if cfg.StateGauge != nil {
 			cfg.StateGauge.WithLabelValues(cfg.DependencyName).Set(float64(to))
 		}
+		if cfg.AuditFunc != nil {
+			cfg.AuditFunc(cfg.DependencyName, from, to)
+		}
 		if cfg.OnStateChange != nil {
 			cfg.OnStateChange(name, from, to)
 		}
@@ -58,11 +65,27 @@ func NewCircuitBreakerTransport(next http.RoundTripper, cfg *CircuitBreakerConfi
 
 	cb := gobreaker.NewCircuitBreaker[*http.Response](settings)
 
-	return &CircuitBreakerTransport{
-		next: next,
-		cb:   cb,
-		cfg:  *cfg,
+	statuses := defaultFailureStatuses
+	if len(cfg.FailureStatuses) > 0 {
+		statuses = cfg.FailureStatuses
 	}
+	statusMap := make(map[int]struct{}, len(statuses))
+	for _, s := range statuses {
+		statusMap[s] = struct{}{}
+	}
+
+	return &CircuitBreakerTransport{
+		next:            next,
+		cb:              cb,
+		cfg:             *cfg,
+		failureStatuses: statusMap,
+	}
+}
+
+var defaultFailureStatuses = []int{
+	http.StatusBadGateway,
+	http.StatusServiceUnavailable,
+	http.StatusGatewayTimeout,
 }
 
 // RoundTrip executes the HTTP request through the circuit breaker.
@@ -74,8 +97,9 @@ func (t *CircuitBreakerTransport) RoundTrip(req *http.Request) (*http.Response, 
 		if e != nil {
 			return nil, e
 		}
-		if isCircuitBreakerFailure(r.StatusCode) {
-			return r, fmt.Errorf("downstream returned %d", r.StatusCode)
+		if t.isFailureStatus(r.StatusCode) {
+			drainAndClose(r.Body)
+			return nil, &downstreamError{StatusCode: r.StatusCode}
 		}
 		return r, nil
 	})
@@ -83,21 +107,11 @@ func (t *CircuitBreakerTransport) RoundTrip(req *http.Request) (*http.Response, 
 	duration := time.Since(start).Seconds()
 
 	if t.cfg.DurationHist != nil {
-		status := "error"
-		if resp != nil {
-			status = fmt.Sprintf("%d", resp.StatusCode)
-		}
+		status := statusBucket(resp, err)
 		t.cfg.DurationHist.WithLabelValues(t.cfg.DependencyName, status).Observe(duration)
 	}
 
-	if err != nil {
-		if resp != nil {
-			return resp, nil
-		}
-		return nil, err
-	}
-
-	return resp, nil
+	return resp, err
 }
 
 // State returns the current circuit breaker state.
@@ -105,8 +119,36 @@ func (t *CircuitBreakerTransport) State() gobreaker.State {
 	return t.cb.State()
 }
 
-func isCircuitBreakerFailure(code int) bool {
-	return code == http.StatusBadGateway ||
-		code == http.StatusServiceUnavailable ||
-		code == http.StatusGatewayTimeout
+func (t *CircuitBreakerTransport) isFailureStatus(code int) bool {
+	_, ok := t.failureStatuses[code]
+	return ok
+}
+
+// statusBucket returns a low-cardinality label for the HTTP response status class.
+func statusBucket(resp *http.Response, err error) string {
+	if err != nil {
+		return "error"
+	}
+	if resp == nil {
+		return "error"
+	}
+	switch {
+	case resp.StatusCode < 300:
+		return "2xx"
+	case resp.StatusCode < 400:
+		return "3xx"
+	case resp.StatusCode < 500:
+		return "4xx"
+	default:
+		return "5xx"
+	}
+}
+
+// downstreamError represents a downstream failure detected by the circuit breaker.
+type downstreamError struct {
+	StatusCode int
+}
+
+func (e *downstreamError) Error() string {
+	return "downstream returned " + http.StatusText(e.StatusCode)
 }

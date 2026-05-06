@@ -23,6 +23,11 @@ func validConfig() *Config {
 		Logging:   LoggingConfig{Level: "INFO"},
 		RateLimit: RateLimitConfig{IPRequestsPerSec: 100, UserRequestsPerSec: 50},
 		Shutdown:  ShutdownConfig{DrainSeconds: 15},
+		Resilience: ResilienceConfig{
+			KA:  DependencyConfig{CBFailureThreshold: 5},
+			DS:  DependencyConfig{CBFailureThreshold: 3},
+			K8s: DependencyConfig{CBFailureThreshold: 5},
+		},
 	}
 }
 
@@ -735,6 +740,19 @@ func TestValidate_ResilienceCBFailureThresholdTooHigh(t *testing.T) {
 	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected error for cbFailureThreshold > 100")
+	}
+	if !strings.Contains(err.Error(), "cbFailureThreshold") {
+		t.Errorf("error = %q, want to contain 'cbFailureThreshold'", err.Error())
+	}
+}
+
+func TestValidate_ResilienceCBFailureThresholdZero(t *testing.T) {
+	// P3 SEC-2: 0 should be rejected (would open CB on first failure)
+	cfg := validConfig()
+	cfg.Resilience.KA.CBFailureThreshold = 0
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for cbFailureThreshold == 0")
 	}
 	if !strings.Contains(err.Error(), "cbFailureThreshold") {
 		t.Errorf("error = %q, want to contain 'cbFailureThreshold'", err.Error())

@@ -26,7 +26,7 @@ func TestIntegration_BurstOpensCB(t *testing.T) {
 		}, nil
 	})
 
-	retryRT := NewRetryTransport(base, RetryConfig{
+	retryRT := NewRetryTransport(base, &RetryConfig{
 		MaxAttempts:       1,
 		InitialBackoff:    1 * time.Millisecond,
 		MaxBackoff:        5 * time.Millisecond,
@@ -135,7 +135,7 @@ func TestIntegration_RetrySucceedsOnTransient(t *testing.T) {
 		}, nil
 	})
 
-	retryRT := NewRetryTransport(base, RetryConfig{
+	retryRT := NewRetryTransport(base, &RetryConfig{
 		MaxAttempts:       4,
 		InitialBackoff:    1 * time.Millisecond,
 		MaxBackoff:        10 * time.Millisecond,
@@ -173,7 +173,7 @@ func TestIntegration_RetryExhaustion(t *testing.T) {
 		}, nil
 	})
 
-	retryRT := NewRetryTransport(base, RetryConfig{
+	retryRT := NewRetryTransport(base, &RetryConfig{
 		MaxAttempts:       3,
 		InitialBackoff:    1 * time.Millisecond,
 		MaxBackoff:        5 * time.Millisecond,
@@ -190,15 +190,14 @@ func TestIntegration_RetryExhaustion(t *testing.T) {
 
 	ctx := context.Background()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.com/test", http.NoBody)
-	resp, err := cbt.RoundTrip(req)
-	// The CB transport gets a 503 from retry exhaust — it's a failure
-	// CB sees it as a failure (502/503/504) and wraps it
-	// After retry exhaustion, we get the last response (503) back
-	if err != nil {
-		t.Fatalf("expected resp with status, got error = %v", err)
+	_, err := cbt.RoundTrip(req)
+	// After retry exhaustion, the retry transport returns an error.
+	// The CB transport propagates this error (it's not a response-level failure).
+	if err == nil {
+		t.Fatal("expected error after retry exhaustion, got nil")
 	}
-	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want 503", resp.StatusCode)
+	if !strings.Contains(err.Error(), "retryable status") {
+		t.Errorf("error = %q, want to contain 'retryable status'", err.Error())
 	}
 }
 

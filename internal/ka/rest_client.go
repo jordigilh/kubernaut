@@ -59,13 +59,14 @@ func NewClient(cfg Config, metrics ...*ClientMetrics) *Client {
 		durationHist = metrics[0].DurationHist
 	}
 
-	retryRT := resilience.NewRetryTransport(baseTransport, resilience.RetryConfig{
+	retryRT := resilience.NewRetryTransport(baseTransport, &resilience.RetryConfig{
 		MaxAttempts:       cfg.RetryMax + 1,
 		InitialBackoff:    cfg.RetryInitBackoff,
 		MaxBackoff:        cfg.RetryMaxBackoff,
 		RetryableStatuses: cfg.RetryableStatuses,
 		RetryCounter:      retryCounter,
 		DependencyName:    "ka",
+		IdempotentOnly:    true,
 	})
 
 	cbMaxReqs := cfg.CBMaxRequests

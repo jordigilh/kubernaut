@@ -22,21 +22,26 @@ type RetryConfig struct {
 	RetryableStatuses []int
 	RetryCounter      *prometheus.CounterVec
 	DependencyName    string
+	// IdempotentOnly, when true, restricts retries to idempotent methods
+	// (GET, HEAD, OPTIONS, PUT, DELETE). POST/PATCH are not retried regardless
+	// of whether GetBody is set, unless this is false.
+	IdempotentOnly bool
 }
 
 // RetryTransport wraps an http.RoundTripper with retry logic for transient failures.
 // Non-replayable request bodies (Body != nil && GetBody == nil) are not retried.
+// When IdempotentOnly is set, non-idempotent methods (POST, PATCH) are never retried.
 type RetryTransport struct {
 	next   http.RoundTripper
 	config RetryConfig
 }
 
 // NewRetryTransport creates a RetryTransport wrapping next.
-func NewRetryTransport(next http.RoundTripper, config RetryConfig) *RetryTransport {
+func NewRetryTransport(next http.RoundTripper, config *RetryConfig) *RetryTransport {
 	if config.MaxAttempts < 1 {
 		config.MaxAttempts = 1
 	}
-	return &RetryTransport{next: next, config: config}
+	return &RetryTransport{next: next, config: *config}
 }
 
 // RoundTrip executes the request with retry logic.
@@ -46,8 +51,10 @@ func (rt *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	canReplay := req.Body == nil || req.Body == http.NoBody || req.GetBody != nil
+	if rt.config.IdempotentOnly && !isIdempotent(req.Method) {
+		canReplay = false
+	}
 
-	var lastResp *http.Response
 	var lastErr error
 
 	for attempt := 1; attempt <= rt.config.MaxAttempts; attempt++ {
@@ -72,15 +79,11 @@ func (rt *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			lastErr = err
 		} else {
 			drainAndClose(resp.Body)
-			lastResp = resp
-			lastErr = nil
+			lastErr = fmt.Errorf("downstream returned retryable status %d", resp.StatusCode)
 		}
 
 		if !canReplay {
-			if lastErr != nil {
-				return nil, lastErr
-			}
-			return lastResp, nil
+			return nil, lastErr
 		}
 
 		if attempt < rt.config.MaxAttempts {
@@ -98,10 +101,7 @@ func (rt *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}
 
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return lastResp, nil
+	return nil, lastErr
 }
 
 func (rt *RetryTransport) isRetryableStatus(code int) bool {
@@ -127,6 +127,15 @@ func isRetryableError(err error) bool {
 		errors.Is(err, syscall.ECONNREFUSED) ||
 		errors.Is(err, io.EOF) ||
 		errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+func isIdempotent(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodPut, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
 }
 
 func drainAndClose(body io.ReadCloser) {
