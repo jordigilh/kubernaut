@@ -69,7 +69,7 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 
 			By("2. Process signal with very short context deadline")
 			prometheusAlert := createPrometheusAlert(testNamespace, "TimeoutTest", "critical", "", "")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -111,7 +111,7 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 
 			By("2. Process signal with very short context deadline (will timeout DataStorage)")
 			prometheusAlert := createPrometheusAlert(testNamespace, "DataStorageTimeout", "critical", "", "")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -169,7 +169,7 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 			uniqueNs := helpers.CreateTestNamespace(ctx, k8sClient, "cascade-test")
 
 			By("3. Process 5 rapid signals to stress test error handling")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			successCount := 0
 			errorCount := 0
 

@@ -59,7 +59,7 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 			// Business scenario: kube-prometheus-stack fires both KubePodCrashLooping
 			// and KubePodNotReady for the same crashing pod simultaneously.
 			// LLM investigates the resource state, not the signal type.
-			adapter := adapters.NewPrometheusAdapter(nil, nil)
+			adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 
 			alert1 := newPrometheusAlertJSON("KubePodCrashLooping", "prod",
 				map[string]string{"pod": "payment-api-789", "severity": "critical"})
@@ -79,7 +79,7 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 
 		It("should produce the same fingerprint for different alertnames targeting the same Deployment", func() {
 			// Business scenario: Alerts targeting Deployment directly (no pod label)
-			adapter := adapters.NewPrometheusAdapter(nil, nil)
+			adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 
 			alert1 := newPrometheusAlertJSON("DeploymentReplicasMismatch", "prod",
 				map[string]string{"deployment": "api-gateway", "severity": "warning"})
@@ -108,7 +108,7 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 					return kind, name, nil
 				},
 			}
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			alert := newPrometheusAlertJSON("KubePodCrashLooping", "prod",
 				map[string]string{"pod": "payment-api-789", "severity": "critical"})
@@ -132,7 +132,7 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 					return "Deployment", "payment-api", nil
 				},
 			}
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			alert1 := newPrometheusAlertJSON("KubePodCrashLooping", "prod",
 				map[string]string{"pod": "payment-api-abc123", "severity": "critical"})
@@ -158,7 +158,7 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 					return "", "", fmt.Errorf("RBAC: forbidden")
 				},
 			}
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			alert := newPrometheusAlertJSON("KubePodCrashLooping", "prod",
 				map[string]string{"pod": "payment-api-789", "severity": "critical"})
@@ -173,7 +173,7 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 	// Without OwnerResolver: alertname is still excluded (architectural decision)
 	Describe("Default behavior without OwnerResolver", func() {
 		It("should exclude alertname from fingerprint even without OwnerResolver", func() {
-			adapter := adapters.NewPrometheusAdapter(nil, nil)
+			adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 
 			alert := newPrometheusAlertJSON("KubePodCrashLooping", "prod",
 				map[string]string{"pod": "payment-api-789", "severity": "critical"})

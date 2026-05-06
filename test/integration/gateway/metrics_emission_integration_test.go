@@ -79,7 +79,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			})
 
 			By("2. Process Prometheus signal")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			alert := createPrometheusAlert(testNamespace, "HighCPU", "critical", "", "")
 			signal, err := prometheusAdapter.Parse(ctx, alert)
 			Expect(err).ToNot(HaveOccurred())
@@ -107,7 +107,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		// BR: BR-GATEWAY-066
 		// Section: 2.1.2
 		It("[GW-INT-MET-002] should track signals by source (prometheus vs kubernetes-events)", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -145,7 +145,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		// Section: 2.1.3
 		It("[GW-INT-MET-003] should track signals by severity level", func() {
 			By("1. Get initial metric values for both severity levels")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -226,7 +226,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			})
 
 			By("2. Process signal to create CRD")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			alert := createPrometheusAlert(testNamespace, "HighMemory", "critical", "", "")
 			signal, err := prometheusAdapter.Parse(ctx, alert)
 			Expect(err).ToNot(HaveOccurred())
@@ -257,7 +257,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		// BR: BR-GATEWAY-069
 		// Section: 2.2.3
 		It("[GW-INT-MET-008] should track CRD creation metrics per namespace", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -327,7 +327,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 		It("[GW-INT-MET-011] should increment gateway_signals_deduplicated_total on deduplication", func() {
 			By("1. Create initial RR")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -396,7 +396,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 		It("[GW-INT-MET-004] should populate gateway_http_request_duration_seconds histogram", func() {
 			By("1. Process multiple signals to generate histogram samples")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -428,7 +428,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		// BR: BR-GATEWAY-066
 		// Section: 2.1.5
 		It("[GW-INT-MET-005] should track metrics with accurate labels for source_type and severity", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -508,7 +508,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 		// Test ID: GW-INT-MET-007
 		It("[GW-INT-MET-007] should track CRDs created with status label", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -546,7 +546,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		// Test ID: GW-INT-MET-010
 		It("[GW-INT-MET-010] should maintain metric accuracy across CRD lifecycle", func() {
 			By("1. Create, deduplicate, and verify metrics persist")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -608,7 +608,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 		// Test ID: GW-INT-MET-013
 		It("[GW-INT-MET-013] should track deduplications by signal name", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -670,7 +670,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 		// Test ID: GW-INT-MET-014
 		It("[GW-INT-MET-014] should demonstrate deduplication savings", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -726,7 +726,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 		// Test ID: GW-INT-MET-015
 		It("[GW-INT-MET-015] should correlate metrics with audit events", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)

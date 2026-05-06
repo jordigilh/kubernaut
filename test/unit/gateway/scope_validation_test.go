@@ -490,7 +490,7 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 
 // parsePrometheusSignal parses a Prometheus webhook payload into a NormalizedSignal.
 func parsePrometheusSignal(ctx context.Context, namespace, alertName, podName string) (*types.NormalizedSignal, error) {
-	adapter := adapters.NewPrometheusAdapter(nil, nil)
+	adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 	payload := createTestSignalPayload(namespace, alertName, podName)
 	return adapter.Parse(ctx, payload)
 }

@@ -124,7 +124,7 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, fu
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			Expect(gwServer.RegisterAdapter(prometheusAdapter)).To(Succeed())
 
 			testServer = httptest.NewServer(gwServer.Handler())
@@ -276,7 +276,7 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, fu
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			Expect(gwServer.RegisterAdapter(prometheusAdapter)).To(Succeed())
 
 			testServer = httptest.NewServer(gwServer.Handler())
