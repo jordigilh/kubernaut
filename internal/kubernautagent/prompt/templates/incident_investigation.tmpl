@@ -220,7 +220,7 @@ Before calling `submit_result`, perform a comprehensive adversarial self-review 
       "kind": "Deployment",
       "name": "resource-name",
       "namespace": "namespace",
-      "api_version": "apps/v1"
+      "api_version": "apps/v1"  // REQUIRED: always provide the API group/version
     },
     "investigation_analysis": "Concise narrative of investigation findings and reasoning",
     "causal_chain": [
@@ -250,6 +250,7 @@ Before calling `submit_result`, perform a comprehensive adversarial self-review 
 **Rules**:
 - Call `submit_result` with the JSON object as the tool argument
 - root_cause_analysis.summary is always required
+- remediation_target.api_version is REQUIRED: you MUST always provide the API group/version (e.g. "apps/v1", "v1", "route.openshift.io/v1"). Every Kubernetes resource has an apiVersion — use the one you observed during investigation or your knowledge of the Kubernetes API.
 - Top-level severity must match root_cause_analysis.severity
 - confidence indicates your certainty in the root cause analysis (0.0–1.0)
 - For non-actionable outcomes, set actionable to false

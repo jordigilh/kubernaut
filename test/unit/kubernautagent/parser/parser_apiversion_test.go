@@ -78,8 +78,8 @@ var _ = Describe("Parser apiVersion Extraction — Issue #1040", func() {
 		})
 	})
 
-	Describe("UT-KA-1040-002: Parser handles missing api_version (backwards compat)", func() {
-		It("should leave APIVersion empty when not present in LLM JSON", func() {
+	Describe("UT-KA-1040-002: Parser handles missing api_version gracefully (defense-in-depth)", func() {
+		It("should leave APIVersion empty when LLM omits it despite being required", func() {
 			jsonStr := `{
 				"root_cause_analysis": {
 					"summary": "OOMKilled due to memory limit",
@@ -98,7 +98,7 @@ var _ = Describe("Parser apiVersion Extraction — Issue #1040", func() {
 
 			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
 			Expect(result.RemediationTarget.APIVersion).To(BeEmpty(),
-				"UT-KA-1040-002: APIVersion must be empty when not provided by LLM")
+				"UT-KA-1040-002: APIVersion must be empty when LLM omits it — heuristic fallback applies")
 		})
 	})
 })

@@ -423,6 +423,10 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 		result.CausalChain = rca.CausalChain
 		result.DueDiligence = rca.DueDiligence
 		if t := rca.resolvedTarget(); t != nil {
+			if t.APIVersion == "" && t.Kind != "" {
+				logger.Info("LLM omitted required api_version for remediation_target, resolution will use heuristic fallback",
+					"kind", t.Kind, "name", t.Name, "namespace", t.Namespace)
+			}
 			result.RemediationTarget = katypes.RemediationTarget{
 				Kind:       t.Kind,
 				Name:       t.Name,

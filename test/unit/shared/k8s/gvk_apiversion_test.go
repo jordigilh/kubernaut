@@ -119,4 +119,17 @@ var _ = Describe("ResolveGVKWithAPIVersion — Issue #1040", func() {
 				"UT-KA-1040-008: unknown kind+apiVersion combination must error")
 		})
 	})
+
+	Describe("UT-KA-1040-009: EA fallback pattern — invalid apiVersion falls back to kind-only", func() {
+		It("should resolve via ResolveGVKForKind when apiVersion-based resolution fails", func() {
+			wrongAPIVersion := "wrong.group.io/v1"
+			_, err := k8sutil.ResolveGVKWithAPIVersion(mapper, "Deployment", wrongAPIVersion)
+			Expect(err).To(HaveOccurred(), "apiVersion-based resolution must fail for wrong group")
+
+			gvk, err := k8sutil.ResolveGVKForKind(mapper, "Deployment")
+			Expect(err).NotTo(HaveOccurred(), "kind-only fallback must succeed for well-known kind")
+			Expect(gvk.Group).To(Equal("apps"))
+			Expect(gvk.Kind).To(Equal("Deployment"))
+		})
+	})
 })
