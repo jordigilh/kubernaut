@@ -284,6 +284,21 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			deletedResourceWarning(signalKind, signalName, signalNS))
 	}
 
+	// #1052 / BR-AI-056: Marshal enrichment DetectedLabels into the signal context
+	// so workflow discovery tools forward them to DS catalog queries, activating
+	// GitOps-aware scoring.
+	if enrichData != nil && enrichData.DetectedLabels != nil {
+		if dlJSON, err := json.Marshal(enrichData.DetectedLabels); err == nil {
+			workflowSignal.DetectedLabelsJSON = string(dlJSON)
+			inv.logger.V(1).Info("detected labels attached for workflow discovery scoring",
+				"correlation_id", correlationID,
+				"detected_labels_json_len", len(dlJSON))
+		} else {
+			inv.logger.Error(err, "failed to marshal detected labels for workflow discovery, scoring will be inactive",
+				"correlation_id", correlationID)
+		}
+	}
+
 	inv.pipeline.AnomalyDetector.Reset()
 
 	p1Ctx := BuildPhase1Context(rcaResult)
