@@ -764,6 +764,95 @@ Nightly job runs against kubernaut `main` for early break detection.
 
 ---
 
+## Configuration
+
+The API Frontend is configured exclusively via a YAML file mounted from a Kubernetes ConfigMap.
+**No environment variables are used** — this is an architectural constraint shared with the
+kubernaut project (DD-INFRA-001).
+
+### CLI Flag
+
+```
+--config <path>    Path to YAML configuration file (default: /etc/apifrontend/config.yaml)
+```
+
+### YAML Structure
+
+```yaml
+server:
+  port: 8443                          # HTTP listen port (1-65535)
+
+agent:
+  gcpProject: "my-gcp-project"        # Vertex AI project (required in prod)
+  gcpRegion: "us-central1"            # Vertex AI region
+  kaBaseURL: "http://ka:8080"         # Kubernaut Agent REST API base URL
+  kaMCPEndpoint: "http://ka:8080/api/v1/mcp/"  # KA MCP endpoint
+  dsBaseURL: "http://ds:9090"         # Data Store API base URL
+
+mcp:
+  enabled: false                      # Enable MCP tool stubs (false = 501 on /mcp)
+
+agentCard:
+  url: "https://af.example.com"       # External URL for agent card (derived from port if empty)
+```
+
+### Configuration Fields
+
+| Field | Default | Required | Purpose |
+|-------|---------|----------|---------|
+| `server.port` | `8443` | No | HTTP listen port. TLS termination is handled by ingress/service mesh. |
+| `agent.gcpProject` | (empty) | Yes (prod) | GCP project for Vertex AI LLM calls. |
+| `agent.gcpRegion` | `us-central1` | No | GCP region for Vertex AI endpoints. |
+| `agent.kaBaseURL` | `http://localhost:8080` | Yes (prod) | Base URL of the Kubernaut Agent backend. |
+| `agent.kaMCPEndpoint` | `http://localhost:8080/api/v1/mcp/` | Yes (prod) | MCP endpoint for the Kubernaut Agent. |
+| `agent.dsBaseURL` | `http://localhost:9090` | Yes (prod) | Base URL of the audit/data store service. |
+| `mcp.enabled` | `false` | No | Set to `true` to enable MCP tool stubs. When `false`, `/mcp` returns 501. |
+| `agentCard.url` | `https://localhost:{port}` | No | External-facing URL published in the agent card. Derived from `server.port` if left empty. |
+
+### Kubernetes ConfigMap Mount
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apifrontend-config
+data:
+  config.yaml: |
+    server:
+      port: 8443
+    agent:
+      gcpProject: "prod-project"
+      kaBaseURL: "http://kubernaut-agent:8080"
+      kaMCPEndpoint: "http://kubernaut-agent:8080/api/v1/mcp/"
+      dsBaseURL: "http://data-storage:9090"
+    mcp:
+      enabled: true
+    agentCard:
+      url: "https://apifrontend.example.com"
+```
+
+The ConfigMap is mounted into the pod at `/etc/apifrontend/`:
+
+```yaml
+volumes:
+  - name: config
+    configMap:
+      name: apifrontend-config
+containers:
+  - volumeMounts:
+      - name: config
+        mountPath: /etc/apifrontend
+        readOnly: true
+```
+
+### Startup Behavior
+
+- **Invalid config at startup** → structured error log + exit(1) (fail-fast)
+- **Missing config file** → error includes path and `--config` flag hint
+- **Validation** checks port range (1-65535), required URLs, and URL syntax (scheme required)
+
+---
+
 ## References
 
 - GitHub Issues: #41-#56, #57-#71 (design comments)

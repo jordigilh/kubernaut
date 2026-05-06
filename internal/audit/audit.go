@@ -26,6 +26,11 @@ const (
 	EventSessionPhaseChanged     EventType = "session.phase_changed"
 	EventSessionAutoCancelled    EventType = "session.auto_cancelled"
 	EventSessionRetentionDeleted EventType = "session.retention_deleted"
+
+	EventA2ATaskStarted   EventType = "a2a.task_started"
+	EventA2ATaskCompleted EventType = "a2a.task_completed"
+	EventA2ATaskFailed    EventType = "a2a.task_failed"
+	EventMCPToolInvoked   EventType = "mcp.tool_invoked"
 )
 
 // Event represents a SOC2-compatible audit event.

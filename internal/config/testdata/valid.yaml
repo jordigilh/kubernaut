@@ -1,0 +1,12 @@
+server:
+  port: 9090
+agent:
+  gcpProject: "my-project"
+  gcpRegion: "us-east1"
+  kaBaseURL: "https://ka.example.com"
+  kaMCPEndpoint: "https://ka.example.com/api/v1/mcp/"
+  dsBaseURL: "https://ds.example.com"
+mcp:
+  enabled: true
+agentCard:
+  url: "https://af.example.com"

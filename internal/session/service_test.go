@@ -3,22 +3,28 @@ package session_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	adksession "google.golang.org/adk/session"
 	"google.golang.org/genai"
 
 	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/session"
 )
 
@@ -621,4 +627,163 @@ var _ = Describe("CRDSessionService", func() {
 			Expect(e1.Content.Parts[0].Text).To(HaveLen(10000))
 		})
 	})
+
+	Describe("Create rollback logging", func() {
+		It("UT-AF-200-007: logs Warn when CRD rollback fails after status update error", func() {
+			statusUpdateFail := true
+			deleteFail := true
+			k8s = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithStatusSubresource(&v1alpha1.InvestigationSession{}).
+				WithInterceptorFuncs(interceptor.Funcs{
+					SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+						if statusUpdateFail {
+							return fmt.Errorf("simulated status update failure")
+						}
+						return c.SubResource(subResourceName).Update(ctx, obj, opts...)
+					},
+					Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+						if deleteFail {
+							return fmt.Errorf("simulated delete failure")
+						}
+						return c.Delete(ctx, obj, opts...)
+					},
+				}).
+				Build()
+			svc = session.NewCRDSessionService(
+				adksession.InMemoryService(), k8s, scheme, "test-ns",
+			)
+
+			// Create will succeed at CRD creation, fail at Status Update,
+			// then attempt rollback Delete which also fails (triggering Warn log).
+			_, err := svc.Create(ctx, &adksession.CreateRequest{
+				AppName:   "kubernaut-apifrontend",
+				UserID:    "jane.doe",
+				SessionID: "sess-rollback",
+				State:     createConfigState(),
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("set InvestigationSession initial status"))
+		})
+	})
+
+	Describe("Delete gauge accuracy", func() {
+		It("UT-AF-203-004: decrements the actual CRD phase, not hardcoded Active", func() {
+			gauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+				Name: "af_sessions_active",
+			}, []string{"phase"})
+			k8s = newFakeClient(scheme)
+			svc = session.NewCRDSessionService(
+				adksession.InMemoryService(), k8s, scheme, "test-ns",
+				session.WithSessionsActive(gauge),
+			)
+
+			_, err := svc.Create(ctx, &adksession.CreateRequest{
+				AppName:   "kubernaut-apifrontend",
+				UserID:    "jane.doe",
+				SessionID: "sess-gauge",
+				State:     createConfigState(),
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Transition to Disconnected
+			err = svc.UpdatePhase(ctx, "sess-gauge", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "jane.doe")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Delete should decrement Disconnected (not Active)
+			err = svc.Delete(ctx, &adksession.DeleteRequest{
+				AppName:   "kubernaut-apifrontend",
+				UserID:    "jane.doe",
+				SessionID: "sess-gauge",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			activeMetric := &dto.Metric{}
+			disconnectedMetric := &dto.Metric{}
+			_ = gauge.WithLabelValues(string(v1alpha1.SessionPhaseActive)).Write(activeMetric)
+			_ = gauge.WithLabelValues(string(v1alpha1.SessionPhaseDisconnected)).Write(disconnectedMetric)
+
+			Expect(activeMetric.GetGauge().GetValue()).To(Equal(float64(0)))
+			Expect(disconnectedMetric.GetGauge().GetValue()).To(Equal(float64(0)))
+		})
+	})
+
+	Describe("PruneTerminalEntries", func() {
+		It("UT-AF-205-001: prunes all entries when every indexed CRD is terminal", func() {
+			k8s = newFakeClient(scheme)
+			svc = newTestService(k8s, scheme)
+
+			for i := 0; i < 3; i++ {
+				id := fmt.Sprintf("sess-all-terminal-%d", i)
+				req := createRequestWithDefaults(id, "jane.doe", createConfigState())
+				_, err := svc.Create(ctx, &req)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Externally transition the CRD to terminal (bypasses UpdatePhase
+				// to simulate orphan scenario where crdIndex is not cleaned).
+				var crd v1alpha1.InvestigationSession
+				err = k8s.Get(ctx, types.NamespacedName{Name: id, Namespace: "test-ns"}, &crd)
+				Expect(err).NotTo(HaveOccurred())
+				crd.Status.Phase = v1alpha1.SessionPhaseCompleted
+				err = k8s.Status().Update(ctx, &crd)
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			pruned := svc.PruneTerminalEntries(ctx)
+			Expect(pruned).To(Equal(3))
+
+			// Idempotent: second call prunes nothing
+			pruned = svc.PruneTerminalEntries(ctx)
+			Expect(pruned).To(Equal(0))
+		})
+	})
+
+	Describe("UpdatePhase audit", func() {
+		It("UT-AF-210-011: emits audit event with correct userID", func() {
+			recorder := &recordingEmitter{}
+			k8s = newFakeClient(scheme)
+			svc = session.NewCRDSessionService(
+				adksession.InMemoryService(), k8s, scheme, "test-ns",
+				session.WithAuditor(recorder),
+			)
+
+			req := createRequestWithDefaults("sess-audit", "jane.doe", createConfigState())
+			_, err := svc.Create(ctx, &req)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = svc.UpdatePhase(ctx, "sess-audit", v1alpha1.SessionPhaseCompleted, "done", "test-actor")
+			Expect(err).NotTo(HaveOccurred())
+
+			var phaseEvent *audit.Event
+			for _, e := range recorder.events() {
+				if e.Type == audit.EventSessionPhaseChanged {
+					phaseEvent = e
+					break
+				}
+			}
+			Expect(phaseEvent).NotTo(BeNil())
+			Expect(phaseEvent.UserID).To(Equal("test-actor"))
+			Expect(phaseEvent.Detail["from"]).To(Equal(string(v1alpha1.SessionPhaseActive)))
+			Expect(phaseEvent.Detail["to"]).To(Equal(string(v1alpha1.SessionPhaseCompleted)))
+		})
+	})
 })
+
+type recordingEmitter struct {
+	mu   sync.Mutex
+	evts []*audit.Event
+}
+
+func (r *recordingEmitter) Emit(_ context.Context, event *audit.Event) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.evts = append(r.evts, event)
+}
+
+func (r *recordingEmitter) events() []*audit.Event {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cp := make([]*audit.Event, len(r.evts))
+	copy(cp, r.evts)
+	return cp
+}
