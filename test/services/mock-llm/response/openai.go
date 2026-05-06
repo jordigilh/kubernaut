@@ -201,11 +201,15 @@ func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 		"contributing_factors": contributingSlice(cfg),
 	}
 	if cfg.ResourceKind != "" {
-		rca["remediation_target"] = map[string]string{
+		rt := map[string]string{
 			"kind":      cfg.ResourceKind,
 			"name":      cfg.ResourceName,
 			"namespace": cfg.ResourceNS,
 		}
+		if cfg.APIVersion != "" {
+			rt["api_version"] = cfg.APIVersion // #1040
+		}
+		rca["remediation_target"] = rt
 	}
 
 	obj := map[string]interface{}{

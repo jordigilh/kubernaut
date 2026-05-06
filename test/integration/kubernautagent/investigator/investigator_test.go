@@ -86,11 +86,11 @@ type fakeK8sClient struct {
 	err        error
 }
 
-func (f *fakeK8sClient) GetOwnerChain(_ context.Context, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
+func (f *fakeK8sClient) GetOwnerChain(_ context.Context, _, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
 	return f.ownerChain, f.err
 }
 
-func (f *fakeK8sClient) GetSpecHash(_ context.Context, _, _, _ string) (string, error) {
+func (f *fakeK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
 	return "", nil
 }
 
@@ -100,14 +100,14 @@ type resourceAwareK8sClient struct {
 	chains map[string][]enrichment.OwnerChainEntry
 }
 
-func (r *resourceAwareK8sClient) GetOwnerChain(_ context.Context, _, name, _ string) ([]enrichment.OwnerChainEntry, error) {
+func (r *resourceAwareK8sClient) GetOwnerChain(_ context.Context, _, name, _, _ string) ([]enrichment.OwnerChainEntry, error) {
 	if chain, ok := r.chains[name]; ok {
 		return chain, nil
 	}
 	return nil, nil
 }
 
-func (r *resourceAwareK8sClient) GetSpecHash(_ context.Context, _, _, _ string) (string, error) {
+func (r *resourceAwareK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
 	return "", nil
 }
 
