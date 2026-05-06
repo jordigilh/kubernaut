@@ -29,11 +29,11 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/sanitization"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 const maxSelfCorrectionAttempts = 3
@@ -261,6 +261,11 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			return rcaResult, nil
 		}
 
+		if reEnriched != nil && reEnriched.TargetResourceDeleted {
+			rcaResult.Warnings = append(rcaResult.Warnings,
+				deletedResourceWarning(postRCAKind, postRCAName, postRCANS))
+		}
+
 		if reEnriched != nil && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
 			enrichData = reEnriched
 		} else if reEnriched != nil {
@@ -274,6 +279,9 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		workflowSignal.ResourceKind = postRCAKind
 		workflowSignal.ResourceName = postRCAName
 		workflowSignal.Namespace = postRCANS
+	} else if enrichData != nil && enrichData.TargetResourceDeleted {
+		rcaResult.Warnings = append(rcaResult.Warnings,
+			deletedResourceWarning(signalKind, signalName, signalNS))
 	}
 
 	inv.pipeline.AnomalyDetector.Reset()
@@ -291,6 +299,9 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	if workflowResult.SignalName == "" && rcaResult.SignalName != "" {
 		workflowResult.SignalName = rcaResult.SignalName
 	}
+	if len(rcaResult.Warnings) > 0 {
+		workflowResult.Warnings = append(rcaResult.Warnings, workflowResult.Warnings...)
+	}
 
 	MergePhase1Fallbacks(workflowResult, p1Ctx)
 
@@ -300,6 +311,10 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	injectTargetResourceParameters(workflowResult)
 	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
 	return workflowResult, nil
+}
+
+func deletedResourceWarning(kind, name, ns string) string {
+	return fmt.Sprintf("target resource %s/%s in %s was deleted; enrichment data is sparse", kind, name, ns)
 }
 
 // backfillSeverity ensures InvestigationResult.Severity is never empty.
@@ -916,6 +931,3 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 
 	return &ExhaustedResult{Reason: "max turns exhausted"}, nil
 }
-
-
-

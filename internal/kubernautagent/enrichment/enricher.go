@@ -160,10 +160,14 @@ type EnrichmentResult struct {
 	// exhaustion (all errors retried, matching HAPI v1.2.1). The
 	// investigator uses this to trigger rca_incomplete (BR-HAPI-261
 	// AC#7, #704). Only set when RetryConfig has MaxRetries > 0.
-	HardFail           bool                          `json:"-"`
-	DetectedLabels     *DetectedLabels               `json:"detected_labels,omitempty"`
-	QuotaDetails       map[string]QuotaResourceUsage `json:"quota_details,omitempty"`
-	RemediationHistory *RemediationHistoryResult     `json:"remediation_history,omitempty"`
+	// Issue #1039: NotFound errors are exempt (deleted resources).
+	HardFail bool `json:"-"`
+	// TargetResourceDeleted is true when the remediation target no longer
+	// exists in the cluster (K8s NotFound). Issue #1039.
+	TargetResourceDeleted bool                          `json:"-"`
+	DetectedLabels        *DetectedLabels               `json:"detected_labels,omitempty"`
+	QuotaDetails          map[string]QuotaResourceUsage `json:"quota_details,omitempty"`
+	RemediationHistory    *RemediationHistoryResult     `json:"remediation_history,omitempty"`
 }
 
 // Enricher resolves owner chain, labels, and remediation history.
@@ -209,7 +213,7 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 		return chain, nil
 	}
 
-	if e.retryConfig.MaxRetries == 0 {
+	if e.retryConfig.MaxRetries == 0 || IsNotFoundError(err) || IsNoMatchError(err) {
 		return nil, err
 	}
 
@@ -288,11 +292,14 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, apiVersion
 	chain, ownerErr := e.resolveOwnerChainWithRetry(ctx, kind, name, namespace, apiVersion)
 	if ownerErr != nil {
 		result.OwnerChainError = ownerErr
-		if e.retryConfig.MaxRetries > 0 && !IsNoMatchError(ownerErr) {
+		if IsNotFoundError(ownerErr) {
+			result.TargetResourceDeleted = true
+		} else if e.retryConfig.MaxRetries > 0 && !IsNoMatchError(ownerErr) {
 			result.HardFail = true
 		}
 		e.logger.Error(ownerErr, "enrichment: owner chain resolution failed",
 			"resource", namespace+"/"+kind+"/"+name,
+			"target_resource_deleted", result.TargetResourceDeleted,
 		)
 	} else {
 		result.OwnerChain = chain
