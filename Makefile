@@ -73,7 +73,7 @@ verify-generate: generate
 
 .PHONY: validate-openapi
 validate-openapi:
-	@which vacuum >/dev/null 2>&1 || { echo "vacuum not found — install: go install github.com/daveshanley/vacuum@v0.14.4"; exit 1; }
+	@which vacuum >/dev/null 2>&1 || { echo "vacuum not found — install: go install github.com/daveshanley/vacuum@v0.26.4"; exit 1; }
 	vacuum lint api/openapi/apifrontend-v1.yaml
 
 .PHONY: clean

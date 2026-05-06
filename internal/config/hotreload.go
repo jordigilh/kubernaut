@@ -44,10 +44,11 @@ type FileWatcher struct {
 	lastHash    string
 	lastReload  time.Time
 
-	started bool
-	watcher *fsnotify.Watcher
-	stopCh  chan struct{}
-	doneCh  chan struct{}
+	started  bool
+	stopOnce sync.Once
+	watcher  *fsnotify.Watcher
+	stopCh   chan struct{}
+	doneCh   chan struct{}
 }
 
 // NewFileWatcher creates a new file-based hot-reloader.
@@ -114,9 +115,9 @@ func (w *FileWatcher) Start(ctx context.Context) error {
 }
 
 // Stop gracefully stops the file watcher.
-// Safe to call even if Start was never called.
+// Safe to call multiple times or before Start.
 func (w *FileWatcher) Stop() {
-	close(w.stopCh)
+	w.stopOnce.Do(func() { close(w.stopCh) })
 	if w.started {
 		<-w.doneCh
 	}
