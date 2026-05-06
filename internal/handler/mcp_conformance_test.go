@@ -219,7 +219,8 @@ var _ = Describe("MCP Protocol Conformance", func() {
 			result := parseJSONRPCFromResponse(respBody)
 
 			if rec.Code >= 400 {
-				// HTTP-level rejection is acceptable for InvalidRequest
+				Expect(rec.Code).To(Equal(http.StatusBadRequest),
+					"HTTP rejection expected 400, got %d; body: %s", rec.Code, respBody)
 				return
 			}
 
@@ -239,6 +240,8 @@ var _ = Describe("MCP Protocol Conformance", func() {
 			result := parseJSONRPCFromResponse(respBody)
 
 			if rec.Code >= 400 {
+				Expect(rec.Code).To(Equal(http.StatusBadRequest),
+					"HTTP rejection expected 400, got %d; body: %s", rec.Code, respBody)
 				return
 			}
 

@@ -44,6 +44,7 @@ type FileWatcher struct {
 	lastHash    string
 	lastReload  time.Time
 
+	started bool
 	watcher *fsnotify.Watcher
 	stopCh  chan struct{}
 	doneCh  chan struct{}
@@ -107,14 +108,18 @@ func (w *FileWatcher) Start(ctx context.Context) error {
 		return fmt.Errorf("watch directory %s: %w", dir, err)
 	}
 
+	w.started = true
 	go w.watchLoop(ctx)
 	return nil
 }
 
 // Stop gracefully stops the file watcher.
+// Safe to call even if Start was never called.
 func (w *FileWatcher) Stop() {
 	close(w.stopCh)
-	<-w.doneCh
+	if w.started {
+		<-w.doneCh
+	}
 	if w.watcher != nil {
 		_ = w.watcher.Close()
 	}
@@ -140,7 +145,14 @@ func (w *FileWatcher) readFileLimited() ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
-	return io.ReadAll(io.LimitReader(f, maxConfigSize))
+	content, err := io.ReadAll(io.LimitReader(f, maxConfigSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(content)) > maxConfigSize {
+		return nil, fmt.Errorf("config file exceeds maximum size (%d bytes)", maxConfigSize)
+	}
+	return content, nil
 }
 
 func (w *FileWatcher) loadInitial() error {
@@ -194,16 +206,17 @@ func (w *FileWatcher) watchLoop(ctx context.Context) {
 			}
 		case <-debounceCh:
 			debounceCh = nil
-			w.handleFileChange()
-		case _, ok := <-w.watcher.Errors:
+			w.handleFileChange(ctx)
+		case watchErr, ok := <-w.watcher.Errors:
 			if !ok {
 				return
 			}
+			w.logger.Warn("fsnotify error", "path", w.path, "error", watchErr)
 		}
 	}
 }
 
-func (w *FileWatcher) handleFileChange() {
+func (w *FileWatcher) handleFileChange(ctx context.Context) {
 	content, err := w.readFileLimited()
 	if err != nil {
 		w.logger.Warn("config reload: read file failed", "path", w.path, "error", err)
@@ -223,7 +236,7 @@ func (w *FileWatcher) handleFileChange() {
 	if err := w.callback(content); err != nil {
 		w.logger.Warn("config reload: callback rejected new content", "path", w.path, "error", err)
 		if w.auditor != nil {
-			w.auditor.Emit(context.Background(), &audit.Event{
+			w.auditor.Emit(ctx, &audit.Event{
 				Type: audit.EventConfigRejected,
 				Detail: map[string]string{
 					"path":   w.path,
@@ -237,7 +250,7 @@ func (w *FileWatcher) handleFileChange() {
 
 	w.logger.Info("config reloaded", "path", w.path, "hash", newHash)
 	if w.auditor != nil {
-		w.auditor.Emit(context.Background(), &audit.Event{
+		w.auditor.Emit(ctx, &audit.Event{
 			Type: audit.EventConfigReloaded,
 			Detail: map[string]string{
 				"path": w.path,

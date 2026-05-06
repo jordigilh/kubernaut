@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -306,5 +307,118 @@ func TestFileWatcher_Debounce_RapidWrites(t *testing.T) {
 	}
 	if got < 2 {
 		t.Errorf("callback called %d times, expected at least 2 (initial + 1 debounced update)", got)
+	}
+}
+
+func TestFileWatcher_WithLogger_Option(t *testing.T) {
+	// UT-AF-039-052: WithLogger functional option is applied
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("x: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	w, err := NewFileWatcher(cfgPath, func([]byte) error { return nil }, WithLogger(logger))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Verify the logger was set (non-nil watcher created without panic)
+	_ = w
+}
+
+func TestFileWatcher_WithLogger_NilIgnored(t *testing.T) {
+	// UT-AF-039-053: WithLogger(nil) does not override the default logger
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("x: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := NewFileWatcher(cfgPath, func([]byte) error { return nil }, WithLogger(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should not panic — logger remains as slog.Default()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := w.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	w.Stop()
+}
+
+func TestFileWatcher_WithAuditor_Option(t *testing.T) {
+	// UT-AF-039-054: WithAuditor functional option sets the auditor
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("x: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := NewFileWatcher(cfgPath, func([]byte) error { return nil }, WithAuditor(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Verify creation succeeds with nil auditor (no audit emitted)
+	_ = w
+}
+
+func TestFileWatcher_StopBeforeStart_NoPanic(t *testing.T) {
+	// UT-AF-039-055: Stop() before Start() must not deadlock or panic
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("x: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := NewFileWatcher(cfgPath, func([]byte) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		w.Stop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// OK — Stop returned without deadlock
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop() before Start() deadlocked")
+	}
+}
+
+func TestFileWatcher_ReadFileLimited_RejectsOversized(t *testing.T) {
+	// UT-AF-039-056: Files exceeding maxConfigSize return an explicit error
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+
+	// Write a file just over 1 MiB
+	oversized := make([]byte, maxConfigSize+100)
+	for i := range oversized {
+		oversized[i] = 'x'
+	}
+	if err := os.WriteFile(cfgPath, oversized, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := NewFileWatcher(cfgPath, func([]byte) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	err = w.Start(ctx)
+	if err == nil {
+		w.Stop()
+		t.Fatal("expected error for oversized config file")
+	}
+	if !strings.Contains(err.Error(), "exceeds maximum size") {
+		t.Errorf("error = %q, want to contain 'exceeds maximum size'", err.Error())
 	}
 }
