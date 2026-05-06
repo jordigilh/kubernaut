@@ -107,6 +107,9 @@ type OwnerChainEntry struct {
 	Kind string `json:"kind"`
 	// Name of the owner resource
 	Name string `json:"name"`
+	// APIVersion of the owner resource from OwnerReference (e.g. "apps/v1").
+	// Issue #1040.
+	APIVersion string `json:"api_version,omitempty"`
 }
 
 // ========================================

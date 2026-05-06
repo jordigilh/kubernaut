@@ -393,6 +393,11 @@ spec:
                         Kind: \"ReplicaSet\", Name: \"api-7d8f9c6b5\"}\n\t[1]: {Namespace:
                         \"prod\", Kind: \"Deployment\", Name: \"api\"}"
                       properties:
+                        api_version:
+                          description: |-
+                            APIVersion of the owner resource from OwnerReference (e.g. "apps/v1").
+                            Issue #1040.
+                          type: string
                         kind:
                           description: Kind of the owner resource (e.g., ReplicaSet,
                             Deployment, StatefulSet, DaemonSet)

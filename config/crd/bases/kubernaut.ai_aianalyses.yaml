@@ -186,6 +186,11 @@ spec:
                                     {Namespace: \"prod\", Kind: \"Deployment\", Name:
                                     \"api\"}"
                                   properties:
+                                    api_version:
+                                      description: |-
+                                        APIVersion of the owner resource from OwnerReference (e.g. "apps/v1").
+                                        Issue #1040.
+                                      type: string
                                     kind:
                                       description: Kind of the owner resource (e.g.,
                                         ReplicaSet, Deployment, StatefulSet, DaemonSet)
@@ -279,6 +284,12 @@ spec:
                       targetResource:
                         description: Target resource identification
                         properties:
+                          apiVersion:
+                            description: |-
+                              APIVersion disambiguates the resource's API group when the Kind exists in
+                              multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).
+                              Format: "group/version" (e.g. "route.openshift.io/v1"). Issue #1040.
+                            type: string
                           kind:
                             description: Resource kind (e.g., Pod, Deployment, StatefulSet)
                             type: string
@@ -870,6 +881,12 @@ spec:
                       the Pod that generated the signal. The WFE creator should prefer this over the RR's
                       TargetResource when available to ensure the correct resource is patched.
                     properties:
+                      apiVersion:
+                        description: |-
+                          APIVersion disambiguates the resource's API group when the Kind exists in
+                          multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).
+                          Format: "group/version" (e.g. "route.openshift.io/v1"). Issue #1040.
+                        type: string
                       kind:
                         description: Kind is the Kubernetes resource kind (e.g., "Deployment",
                           "StatefulSet", "DaemonSet")
