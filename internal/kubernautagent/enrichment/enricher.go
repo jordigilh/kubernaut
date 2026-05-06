@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 )
@@ -40,19 +41,9 @@ type OwnerChainEntry struct {
 	APIVersion string `json:"api_version,omitempty"`
 }
 
-// DetectedLabels holds the structured label detection results matching KA's LabelDetector output.
-type DetectedLabels struct {
-	FailedDetections         []string `json:"failedDetections"`
-	GitOpsManaged            bool     `json:"gitOpsManaged"`
-	GitOpsTool               string   `json:"gitOpsTool"`
-	PDBProtected             bool     `json:"pdbProtected"`
-	HPAEnabled               bool     `json:"hpaEnabled"`
-	Stateful                 bool     `json:"stateful"`
-	HelmManaged              bool     `json:"helmManaged"`
-	NetworkIsolated          bool     `json:"networkIsolated"`
-	ServiceMesh              string   `json:"serviceMesh"`
-	ResourceQuotaConstrained bool     `json:"resourceQuotaConstrained"`
-}
+// DetectedLabels is the canonical label detection result type.
+// Alias for sharedtypes.DetectedLabels to avoid import cycles and duplication.
+type DetectedLabels = sharedtypes.DetectedLabels
 
 // QuotaResourceUsage holds the hard limit and current usage for a single
 // resource key inside a ResourceQuota. Matches HAPI v1.2.1's

@@ -35,6 +35,12 @@
 // +kubebuilder:object:generate=true
 package types
 
+import (
+	"database/sql/driver"
+	"encoding/json"
+	"fmt"
+)
+
 // ========================================
 // ENRICHMENT RESULTS (DD-CONTRACT-002)
 // ========================================
@@ -148,7 +154,7 @@ type DetectedLabels struct {
 	// ========================================
 	// True if namespace/deployment is managed by GitOps controller
 	// Detection: ArgoCD annotations, Flux labels
-	GitOpsManaged bool `json:"gitOpsManaged"`
+	GitOpsManaged bool `json:"gitOpsManaged,omitempty"`
 	// GitOps tool managing this resource
 	// +kubebuilder:validation:Enum=argocd;flux;""
 	GitOpsTool string `json:"gitOpsTool,omitempty"`
@@ -157,23 +163,23 @@ type DetectedLabels struct {
 	// WORKLOAD PROTECTION
 	// ========================================
 	// True if PodDisruptionBudget exists for this workload
-	PDBProtected bool `json:"pdbProtected"`
+	PDBProtected bool `json:"pdbProtected,omitempty"`
 	// True if HorizontalPodAutoscaler targets this workload
-	HPAEnabled bool `json:"hpaEnabled"`
+	HPAEnabled bool `json:"hpaEnabled,omitempty"`
 
 	// ========================================
 	// WORKLOAD CHARACTERISTICS
 	// ========================================
 	// True if StatefulSet or has PVCs attached
-	Stateful bool `json:"stateful"`
+	Stateful bool `json:"stateful,omitempty"`
 	// True if managed by Helm (has helm.sh/chart label)
-	HelmManaged bool `json:"helmManaged"`
+	HelmManaged bool `json:"helmManaged,omitempty"`
 
 	// ========================================
 	// SECURITY POSTURE
 	// ========================================
 	// True if NetworkPolicy exists in namespace
-	NetworkIsolated bool `json:"networkIsolated"`
+	NetworkIsolated bool `json:"networkIsolated,omitempty"`
 	// Service mesh if detected (from sidecar or namespace labels)
 	// +kubebuilder:validation:Enum=istio;linkerd;""
 	ServiceMesh string `json:"serviceMesh,omitempty"`
@@ -182,7 +188,46 @@ type DetectedLabels struct {
 	// RESOURCE CONSTRAINTS (#366, DD-HAPI-018 v1.4)
 	// ========================================
 	// True if any ResourceQuota exists in namespace
-	ResourceQuotaConstrained bool `json:"resourceQuotaConstrained"`
+	ResourceQuotaConstrained bool `json:"resourceQuotaConstrained,omitempty"`
+}
+
+// NewDetectedLabels creates a DetectedLabels with an initialized (non-nil) FailedDetections slice.
+func NewDetectedLabels() *DetectedLabels {
+	return &DetectedLabels{
+		FailedDetections: make([]string, 0),
+	}
+}
+
+// IsEmpty returns true when no label detection produced a positive result.
+func (d *DetectedLabels) IsEmpty() bool {
+	return !d.GitOpsManaged &&
+		d.GitOpsTool == "" &&
+		!d.PDBProtected &&
+		!d.HPAEnabled &&
+		!d.Stateful &&
+		!d.HelmManaged &&
+		!d.NetworkIsolated &&
+		d.ServiceMesh == ""
+}
+
+// Scan implements sql.Scanner for PostgreSQL JSONB column scanning.
+func (d *DetectedLabels) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("DetectedLabels.Scan: expected []byte, got %T", value)
+	}
+	return json.Unmarshal(bytes, d)
+}
+
+// Value implements driver.Valuer for PostgreSQL JSONB column writing.
+func (d *DetectedLabels) Value() (driver.Value, error) {
+	if d == nil {
+		return nil, nil
+	}
+	return json.Marshal(d)
 }
 
 // ========================================

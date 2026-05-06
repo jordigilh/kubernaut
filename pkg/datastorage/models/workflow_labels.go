@@ -101,107 +101,14 @@ func (c *CustomLabels) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, c)
 }
 
-// DetectedLabels represents auto-detected labels from Kubernetes resources (DD-WORKFLOW-001 v1.6)
-// V2.3: 8 auto-detected fields with detection failure handling
-// Detection is performed by SignalProcessing at incident time (NOT by Data Storage)
-//
-// Boolean Normalization Rule (DD-WORKFLOW-001 v1.5):
-// - Booleans only included when true
-// - False values are omitted from JSON
-//
-// Wildcard Support (DD-WORKFLOW-001 v1.6):
-// - String fields (GitOpsTool, ServiceMesh) support "*" wildcard
-// - "*" means "requires SOME value" (not specific)
-// - Absent field means "no requirement"
-type DetectedLabels struct {
-	// FailedDetections lists fields where detection failed (RBAC, timeout, etc.)
-	// If a field name is in this array, its value should be ignored
-	// If empty/nil, all detections succeeded
-	// Validated: only accepts values from ValidDetectedLabelFields
-	// Authority: DD-WORKFLOW-001 v2.1 (Detection Failure Handling)
-	FailedDetections []string `json:"failedDetections,omitempty" validate:"omitempty,dive,oneof=gitOpsManaged gitOpsTool pdbProtected hpaEnabled stateful helmManaged networkIsolated serviceMesh resourceQuotaConstrained"`
+// DetectedLabels is the canonical label detection result type (DD-WORKFLOW-001 v2.3).
+// Alias for sharedtypes.DetectedLabels -- single source of truth in pkg/shared/types.
+type DetectedLabels = sharedtypes.DetectedLabels
 
-	// ========================================
-	// GITOPS MANAGEMENT (DD-WORKFLOW-001 v2.3)
-	// ========================================
-
-	// GitOpsManaged indicates if resource is managed by GitOps (ArgoCD/Flux)
-	// Detection: Check annotations:
-	//   - ArgoCD: "argocd.argoproj.io/instance" exists
-	//   - Flux: "kustomize.toolkit.fluxcd.io/name" exists
-	// API Call: kubectl get <resource> -o jsonpath='{.metadata.annotations}'
-	GitOpsManaged bool `json:"gitOpsManaged,omitempty"`
-
-	// GitOpsTool is the specific GitOps tool if detected
-	// Values: "argocd", "flux", "*" (wildcard = any tool)
-	// Detection: Based on annotation prefix:
-	//   - ArgoCD: "argocd.argoproj.io/" prefix
-	//   - Flux: "kustomize.toolkit.fluxcd.io/" or "helm.toolkit.fluxcd.io/" prefix
-	// API Call: Same as GitOpsManaged (annotation-based)
-	GitOpsTool string `json:"gitOpsTool,omitempty" validate:"omitempty,oneof=argocd flux *"`
-
-	// ========================================
-	// WORKLOAD PROTECTION (DD-WORKFLOW-001 v2.3)
-	// ========================================
-
-	// PDBProtected indicates if a PodDisruptionBudget protects this workload
-	// Detection: Check for PDB in namespace matching workload selector
-	// API Call: kubectl get pdb -n <namespace> -o json
-	// Match: PDB .spec.selector matches workload .spec.selector
-	PDBProtected bool `json:"pdbProtected,omitempty"`
-
-	// HPAEnabled indicates if a HorizontalPodAutoscaler is configured
-	// Detection: Check for HPA in namespace targeting this workload
-	// API Call: kubectl get hpa -n <namespace> -o json
-	// Match: HPA .spec.scaleTargetRef matches workload name/kind
-	HPAEnabled bool `json:"hpaEnabled,omitempty"`
-
-	// ========================================
-	// WORKLOAD CHARACTERISTICS (DD-WORKFLOW-001 v2.3)
-	// ========================================
-
-	// Stateful indicates if workload uses persistent storage or is StatefulSet
-	// Detection: Check owner chain for StatefulSet OR check for PVC mounts
-	// Method: Owner chain traversal (NO K8s API call)
-	//   - If owner_chain contains StatefulSet → stateful = true
-	//   - Else if Pod has volumeMounts referencing PVCs → stateful = true
-	// Clarification: Uses owner chain, not direct StatefulSet lookup
-	Stateful bool `json:"stateful,omitempty"`
-
-	// HelmManaged indicates if resource is managed by Helm
-	// Detection: Check annotations:
-	//   - "meta.helm.sh/release-name" exists
-	//   - "meta.helm.sh/release-namespace" exists
-	// API Call: kubectl get <resource> -o jsonpath='{.metadata.annotations}'
-	HelmManaged bool `json:"helmManaged,omitempty"`
-
-	// ========================================
-	// SECURITY POSTURE (DD-WORKFLOW-001 v2.3)
-	// ========================================
-
-	// NetworkIsolated indicates if NetworkPolicy restricts traffic
-	// Detection: Check for NetworkPolicy in namespace selecting this Pod
-	// API Call: kubectl get networkpolicy -n <namespace> -o json
-	// Match: NetworkPolicy .spec.podSelector matches Pod labels
-	NetworkIsolated bool `json:"networkIsolated,omitempty"`
-
-	// ServiceMesh is the service mesh type if detected
-	// Values: "istio", "linkerd", "*" (wildcard = any mesh)
-	// Detection: Check pod annotations for sidecar injection:
-	//   - Istio: "sidecar.istio.io/status" exists (present after injection)
-	//   - Linkerd: "linkerd.io/proxy-version" exists (present after injection)
-	// API Call: kubectl get pod -o jsonpath='{.metadata.annotations}'
-	// Clarification: Uses annotations, not direct mesh API checks
-	ServiceMesh string `json:"serviceMesh,omitempty" validate:"omitempty,oneof=istio linkerd *"`
-
-	// ========================================
-	// RESOURCE CONSTRAINTS (#366, DD-HAPI-018 v1.4)
-	// ========================================
-
-	// ResourceQuotaConstrained indicates if any ResourceQuota exists in namespace
-	// Detection: List ResourceQuotas in namespace
-	// API Call: kubectl get resourcequota -n <namespace> -o json
-	ResourceQuotaConstrained bool `json:"resourceQuotaConstrained,omitempty"`
+// NewDetectedLabels creates a DetectedLabels with an initialized (non-nil) FailedDetections slice.
+// Forwards to sharedtypes.NewDetectedLabels.
+func NewDetectedLabels() *DetectedLabels {
+	return sharedtypes.NewDetectedLabels()
 }
 
 // ========================================
@@ -316,28 +223,9 @@ func NewCustomLabels() CustomLabels {
 	return make(CustomLabels)
 }
 
-// NewDetectedLabels creates a new DetectedLabels instance
-func NewDetectedLabels() *DetectedLabels {
-	return &DetectedLabels{
-		FailedDetections: make([]string, 0),
-	}
-}
-
 // IsEmpty checks if CustomLabels has no subdomains
 func (c CustomLabels) IsEmpty() bool {
 	return len(c) == 0
-}
-
-// IsEmpty checks if DetectedLabels has no detected fields
-func (d *DetectedLabels) IsEmpty() bool {
-	return !d.GitOpsManaged &&
-		d.GitOpsTool == "" &&
-		!d.PDBProtected &&
-		!d.HPAEnabled &&
-		!d.Stateful &&
-		!d.HelmManaged &&
-		!d.NetworkIsolated &&
-		d.ServiceMesh == ""
 }
 
 // ValidDetectedLabelFields is the authoritative list of valid detected label field names
@@ -383,26 +271,3 @@ func (m MandatoryLabels) Value() (driver.Value, error) {
 	return json.Marshal(m)
 }
 
-// Scan implements sql.Scanner for DetectedLabels
-// Allows scanning JSONB column data into structured DetectedLabels type
-func (d *DetectedLabels) Scan(value interface{}) error {
-	if value == nil {
-		return nil
-	}
-
-	bytes, ok := value.([]byte)
-	if !ok {
-		return fmt.Errorf("failed to scan DetectedLabels: expected []byte, got %T", value)
-	}
-
-	return json.Unmarshal(bytes, d)
-}
-
-// Value implements driver.Valuer for DetectedLabels
-// Allows writing structured DetectedLabels type to JSONB column
-func (d *DetectedLabels) Value() (driver.Value, error) {
-	if d == nil {
-		return nil, nil
-	}
-	return json.Marshal(d)
-}
