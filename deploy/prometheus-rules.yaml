@@ -1,0 +1,95 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: apifrontend-rules
+  namespace: kubernaut
+  labels:
+    app.kubernetes.io/name: apifrontend
+    app.kubernetes.io/component: monitoring
+spec:
+  groups:
+    - name: apifrontend.availability
+      rules:
+        - alert: ApifrontendDown
+          expr: up{job="apifrontend"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API Frontend is down"
+            description: "The API Frontend service has been unreachable for more than 5 minutes."
+            runbook_url: "https://kubernaut.ai/runbooks/apifrontend-down"
+
+    - name: apifrontend.latency
+      rules:
+        - alert: ApifrontendHighLatencyP95
+          expr: histogram_quantile(0.95, sum(rate(af_http_request_duration_seconds_bucket{job="apifrontend"}[5m])) by (le)) > 0.5
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend P95 latency > 500ms"
+            description: "95th percentile HTTP request latency is above 500ms for more than 2 minutes."
+
+        - alert: ApifrontendHighLatencyP99
+          expr: histogram_quantile(0.99, sum(rate(af_http_request_duration_seconds_bucket{job="apifrontend"}[5m])) by (le)) > 1.0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API Frontend P99 latency > 1s"
+            description: "99th percentile HTTP request latency is above 1 second for more than 2 minutes."
+
+    - name: apifrontend.errors
+      rules:
+        - alert: ApifrontendHighErrorRateWarning
+          expr: |
+            sum(rate(af_http_requests_total{job="apifrontend",status=~"5.."}[5m]))
+            /
+            sum(rate(af_http_requests_total{job="apifrontend"}[5m]))
+            > 0.005
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend error rate > 0.5%"
+            description: "More than 0.5% of HTTP requests are returning 5xx status codes. Approaching SLO-6 budget (0.1%)."
+
+        - alert: ApifrontendHighErrorRate
+          expr: |
+            sum(rate(af_http_requests_total{job="apifrontend",status=~"5.."}[5m]))
+            /
+            sum(rate(af_http_requests_total{job="apifrontend"}[5m]))
+            > 0.01
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API Frontend error rate > 1%"
+            description: "More than 1% of HTTP requests are returning 5xx status codes. SLO-6 budget is breached."
+
+    - name: apifrontend.auth
+      rules:
+        - alert: ApifrontendAuthFailureSpike
+          expr: |
+            sum(rate(af_http_requests_total{job="apifrontend",status="401"}[5m]))
+            /
+            sum(rate(af_http_requests_total{job="apifrontend"}[5m]))
+            > 0.1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API Frontend auth failure rate > 10%"
+            description: "More than 10% of requests are failing authentication. Possible token issuer outage or attack."
+
+    - name: apifrontend.circuitbreaker
+      rules:
+        - alert: ApifrontendCircuitBreakerOpen
+          expr: af_circuit_breaker_state{job="apifrontend"} == 1
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend circuit breaker is open"
+            description: "Circuit breaker for {{ $labels.backend }} has been open for more than 2 minutes."

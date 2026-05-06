@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/a2aproject/a2a-go/a2a"
 )
 
 // AgentSkill represents a skill in the agent card.
@@ -35,14 +37,15 @@ func (c AgentCardConfig) validate() error {
 
 // agentCard is the JSON structure served at /.well-known/agent-card.json.
 type agentCard struct {
-	Name           string        `json:"name"`
-	Description    string        `json:"description,omitempty"`
-	URL            string        `json:"url"`
-	Version        string        `json:"version"`
-	Skills         []AgentSkill  `json:"skills"`
-	Authentication agentAuth     `json:"authentication"`
-	Capabilities   agentCaps     `json:"capabilities"`
-	Provider       agentProvider `json:"provider"`
+	Name            string        `json:"name"`
+	Description     string        `json:"description,omitempty"`
+	URL             string        `json:"url"`
+	Version         string        `json:"version"`
+	ProtocolVersion string        `json:"protocolVersion"`
+	Skills          []AgentSkill  `json:"skills"`
+	Authentication  agentAuth     `json:"authentication"`
+	Capabilities    agentCaps     `json:"capabilities"`
+	Provider        agentProvider `json:"provider"`
 }
 
 type agentAuth struct {
@@ -78,11 +81,12 @@ func NewAgentCardHandler(cfg AgentCardConfig) (http.Handler, error) {
 	}
 
 	card := agentCard{
-		Name:        cfg.Name,
-		Description: cfg.Description,
-		URL:         cfg.URL,
-		Version:     cfg.Version,
-		Skills:      skills,
+		Name:            cfg.Name,
+		Description:     cfg.Description,
+		URL:             cfg.URL,
+		Version:         cfg.Version,
+		ProtocolVersion: string(a2a.Version),
+		Skills:          skills,
 		Authentication: agentAuth{
 			Schemes: []authScheme{{Scheme: "bearer"}},
 		},

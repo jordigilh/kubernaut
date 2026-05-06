@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,6 +17,32 @@ type Config struct {
 	Agent     AgentConfig     `yaml:"agent"`
 	MCP       MCPConfig       `yaml:"mcp"`
 	AgentCard AgentCardConfig `yaml:"agentCard"`
+	Auth      AuthConfig      `yaml:"auth"`
+	Logging   LoggingConfig   `yaml:"logging"`
+	RateLimit RateLimitConfig `yaml:"rateLimit"`
+	Shutdown  ShutdownConfig  `yaml:"shutdown"`
+}
+
+// AuthConfig holds OIDC authentication settings.
+type AuthConfig struct {
+	IssuerURL string `yaml:"issuerURL"`
+	Audience  string `yaml:"audience"`
+}
+
+// LoggingConfig holds structured logging settings.
+type LoggingConfig struct {
+	Level string `yaml:"level"`
+}
+
+// RateLimitConfig holds rate limiting thresholds.
+type RateLimitConfig struct {
+	IPRequestsPerSec   int `yaml:"ipRequestsPerSec"`
+	UserRequestsPerSec int `yaml:"userRequestsPerSec"`
+}
+
+// ShutdownConfig holds graceful shutdown parameters.
+type ShutdownConfig struct {
+	DrainSeconds int `yaml:"drainSeconds"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -57,6 +84,16 @@ func DefaultConfig() *Config {
 		MCP: MCPConfig{
 			Enabled: false,
 		},
+		Logging: LoggingConfig{
+			Level: "INFO",
+		},
+		RateLimit: RateLimitConfig{
+			IPRequestsPerSec:   100,
+			UserRequestsPerSec: 50,
+		},
+		Shutdown: ShutdownConfig{
+			DrainSeconds: 15,
+		},
 	}
 }
 
@@ -96,6 +133,53 @@ func (c *Config) Validate() error {
 	}
 	if err := validateURL("agent.dsBaseURL", c.Agent.DSBaseURL); err != nil {
 		return err
+	}
+	if err := c.validateAuth(); err != nil {
+		return err
+	}
+	if err := c.validateLogging(); err != nil {
+		return err
+	}
+	if err := c.validateRateLimit(); err != nil {
+		return err
+	}
+	if err := c.validateShutdown(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Config) validateAuth() error {
+	if c.Auth.IssuerURL == "" {
+		return nil
+	}
+	return validateURL("auth.issuerURL", c.Auth.IssuerURL)
+}
+
+var validLogLevels = map[string]bool{
+	"DEBUG": true, "INFO": true, "WARN": true, "ERROR": true,
+}
+
+func (c *Config) validateLogging() error {
+	if !validLogLevels[strings.ToUpper(c.Logging.Level)] {
+		return fmt.Errorf("logging.level must be one of DEBUG, INFO, WARN, ERROR; got %q", c.Logging.Level)
+	}
+	return nil
+}
+
+func (c *Config) validateRateLimit() error {
+	if c.RateLimit.IPRequestsPerSec <= 0 {
+		return fmt.Errorf("rateLimit.ipRequestsPerSec must be positive, got %d", c.RateLimit.IPRequestsPerSec)
+	}
+	if c.RateLimit.UserRequestsPerSec <= 0 {
+		return fmt.Errorf("rateLimit.userRequestsPerSec must be positive, got %d", c.RateLimit.UserRequestsPerSec)
+	}
+	return nil
+}
+
+func (c *Config) validateShutdown() error {
+	if c.Shutdown.DrainSeconds <= 0 {
+		return fmt.Errorf("shutdown.drainSeconds must be positive, got %d", c.Shutdown.DrainSeconds)
 	}
 	return nil
 }

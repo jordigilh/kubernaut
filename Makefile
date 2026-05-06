@@ -2,7 +2,7 @@ IMG ?= quay.io/kubernaut/apifrontend:latest
 CONTROLLER_GEN ?= $(shell which controller-gen 2>/dev/null)
 GINKGO ?= $(shell which ginkgo 2>/dev/null || echo "go run github.com/onsi/ginkgo/v2/ginkgo")
 LOCALBIN ?= $(shell pwd)/bin
-COVERPKGS = ./internal/auth/...,./internal/ratelimit/...,./internal/security/...,./internal/httputil/...,./internal/logging/...,./internal/requestid/...,./internal/audit/...,./internal/metrics/...,./internal/agent/...,./internal/tools/...,./internal/ka/...,./internal/ds/...,./internal/session/...
+COVERPKGS = ./internal/auth/...,./internal/ratelimit/...,./internal/security/...,./internal/httputil/...,./internal/logging/...,./internal/requestid/...,./internal/audit/...,./internal/metrics/...,./internal/agent/...,./internal/tools/...,./internal/ka/...,./internal/ds/...,./internal/session/...,./internal/config/...
 
 .PHONY: all
 all: build
@@ -70,6 +70,11 @@ manifests:
 .PHONY: verify-generate
 verify-generate: generate
 	git diff --exit-code ./api/ ./config/
+
+.PHONY: validate-openapi
+validate-openapi:
+	@which vacuum >/dev/null 2>&1 || { echo "vacuum not found — install: go install github.com/daveshanley/vacuum@v0.26.4"; exit 1; }
+	vacuum lint api/openapi/apifrontend-v1.yaml
 
 .PHONY: clean
 clean:
