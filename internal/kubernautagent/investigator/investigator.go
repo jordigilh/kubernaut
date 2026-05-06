@@ -280,6 +280,10 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		workflowSignal.ResourceKind = postRCAKind
 		workflowSignal.ResourceName = postRCAName
 		workflowSignal.Namespace = postRCANS
+	} else if enrichData != nil && enrichData.TargetResourceDeleted {
+		rcaResult.Warnings = append(rcaResult.Warnings,
+			fmt.Sprintf("target resource %s/%s in %s was deleted; enrichment data is sparse",
+				signalKind, signalName, signalNS))
 	}
 
 	inv.pipeline.AnomalyDetector.Reset()
