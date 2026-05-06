@@ -86,10 +86,10 @@ spec:
     - name: apifrontend.circuitbreaker
       rules:
         - alert: ApifrontendCircuitBreakerOpen
-          expr: af_circuit_breaker_state{job="apifrontend"} == 1
+          expr: af_circuit_breaker_state{job="apifrontend"} == 2
           for: 2m
           labels:
             severity: warning
           annotations:
             summary: "API Frontend circuit breaker is open"
-            description: "Circuit breaker for {{ $labels.backend }} has been open for more than 2 minutes."
+            description: "Circuit breaker for {{ $labels.dependency }} has been open for more than 2 minutes."

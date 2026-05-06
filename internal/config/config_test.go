@@ -628,3 +628,174 @@ func TestValidate_ZeroDrainSeconds(t *testing.T) {
 		t.Errorf("error = %q, want to contain 'shutdown.drainSeconds'", err.Error())
 	}
 }
+
+// --- Tier 7: Resilience Config (Issue #38) ---
+
+func TestLoad_ResilienceConfig(t *testing.T) {
+	// UT-AF-038-001
+	data := []byte(`
+resilience:
+  ka:
+    connectTimeout: 5s
+    requestTimeout: 30s
+    cbMaxRequests: 3
+    cbInterval: 10s
+    cbTimeout: 30s
+    cbFailureThreshold: 5
+    retryMax: 2
+    retryInitBackoff: 500ms
+    retryMaxBackoff: 5s
+    retryableStatuses: [502, 503, 504]
+  ds:
+    connectTimeout: 3s
+    requestTimeout: 10s
+    cbMaxRequests: 3
+    cbInterval: 10s
+    cbTimeout: 15s
+    cbFailureThreshold: 3
+    retryMax: 3
+    retryInitBackoff: 200ms
+    retryMaxBackoff: 3s
+    retryableStatuses: [502, 503, 504]
+  k8s:
+    connectTimeout: 5s
+    requestTimeout: 30s
+    cbMaxRequests: 3
+    cbInterval: 10s
+    cbTimeout: 30s
+    cbFailureThreshold: 5
+    retryMax: 0
+    retryInitBackoff: 0s
+    retryMaxBackoff: 0s
+    retryableStatuses: []
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Resilience.KA.ConnectTimeout.String() != "5s" {
+		t.Errorf("Resilience.KA.ConnectTimeout = %v, want 5s", cfg.Resilience.KA.ConnectTimeout)
+	}
+	if cfg.Resilience.KA.RequestTimeout.String() != "30s" {
+		t.Errorf("Resilience.KA.RequestTimeout = %v, want 30s", cfg.Resilience.KA.RequestTimeout)
+	}
+	if cfg.Resilience.KA.CBMaxRequests != 3 {
+		t.Errorf("Resilience.KA.CBMaxRequests = %d, want 3", cfg.Resilience.KA.CBMaxRequests)
+	}
+	if cfg.Resilience.KA.CBFailureThreshold != 5 {
+		t.Errorf("Resilience.KA.CBFailureThreshold = %d, want 5", cfg.Resilience.KA.CBFailureThreshold)
+	}
+	if cfg.Resilience.KA.RetryMax != 2 {
+		t.Errorf("Resilience.KA.RetryMax = %d, want 2", cfg.Resilience.KA.RetryMax)
+	}
+	if cfg.Resilience.DS.ConnectTimeout.String() != "3s" {
+		t.Errorf("Resilience.DS.ConnectTimeout = %v, want 3s", cfg.Resilience.DS.ConnectTimeout)
+	}
+	if cfg.Resilience.DS.CBFailureThreshold != 3 {
+		t.Errorf("Resilience.DS.CBFailureThreshold = %d, want 3", cfg.Resilience.DS.CBFailureThreshold)
+	}
+	if cfg.Resilience.DS.RetryMax != 3 {
+		t.Errorf("Resilience.DS.RetryMax = %d, want 3", cfg.Resilience.DS.RetryMax)
+	}
+	if len(cfg.Resilience.KA.RetryableStatuses) != 3 {
+		t.Errorf("Resilience.KA.RetryableStatuses len = %d, want 3", len(cfg.Resilience.KA.RetryableStatuses))
+	}
+}
+
+func TestValidate_ResilienceNegativeConnectTimeout(t *testing.T) {
+	// UT-AF-038-002
+	cfg := validConfig()
+	cfg.Resilience.KA.ConnectTimeout = -1
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative connectTimeout")
+	}
+	if !strings.Contains(err.Error(), "connectTimeout") {
+		t.Errorf("error = %q, want to contain 'connectTimeout'", err.Error())
+	}
+}
+
+func TestValidate_ResilienceNegativeRequestTimeout(t *testing.T) {
+	// UT-AF-038-003
+	cfg := validConfig()
+	cfg.Resilience.DS.RequestTimeout = -1
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative requestTimeout")
+	}
+	if !strings.Contains(err.Error(), "requestTimeout") {
+		t.Errorf("error = %q, want to contain 'requestTimeout'", err.Error())
+	}
+}
+
+func TestValidate_ResilienceCBFailureThresholdTooHigh(t *testing.T) {
+	// UT-AF-038-004
+	cfg := validConfig()
+	cfg.Resilience.KA.CBFailureThreshold = 101
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for cbFailureThreshold > 100")
+	}
+	if !strings.Contains(err.Error(), "cbFailureThreshold") {
+		t.Errorf("error = %q, want to contain 'cbFailureThreshold'", err.Error())
+	}
+}
+
+func TestValidate_ResilienceRetryMaxTooHigh(t *testing.T) {
+	// UT-AF-038-005
+	cfg := validConfig()
+	cfg.Resilience.DS.RetryMax = 11
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for retryMax > 10")
+	}
+	if !strings.Contains(err.Error(), "retryMax") {
+		t.Errorf("error = %q, want to contain 'retryMax'", err.Error())
+	}
+}
+
+func TestValidate_ResilienceRetryableStatusesOutOfRange(t *testing.T) {
+	// UT-AF-038-006
+	cfg := validConfig()
+	cfg.Resilience.KA.RetryableStatuses = []int{200, 503}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for retryableStatuses containing 200")
+	}
+	if !strings.Contains(err.Error(), "retryableStatuses") {
+		t.Errorf("error = %q, want to contain 'retryableStatuses'", err.Error())
+	}
+}
+
+func TestLoad_ResilienceDefaultsWhenOmitted(t *testing.T) {
+	// UT-AF-038-007
+	data := []byte("server:\n  port: 8443\n")
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	// When resilience section is omitted, defaults should apply
+	defaults := DefaultConfig()
+	if cfg.Resilience.KA.RequestTimeout != defaults.Resilience.KA.RequestTimeout {
+		t.Errorf("Resilience.KA.RequestTimeout = %v, want default %v",
+			cfg.Resilience.KA.RequestTimeout, defaults.Resilience.KA.RequestTimeout)
+	}
+	if cfg.Resilience.DS.CBFailureThreshold != defaults.Resilience.DS.CBFailureThreshold {
+		t.Errorf("Resilience.DS.CBFailureThreshold = %d, want default %d",
+			cfg.Resilience.DS.CBFailureThreshold, defaults.Resilience.DS.CBFailureThreshold)
+	}
+}
+
+func TestValidate_ResilienceRequestTimeoutLessThanConnect(t *testing.T) {
+	// UT-AF-038-008
+	cfg := validConfig()
+	cfg.Resilience.KA.ConnectTimeout = 10000000000 // 10s
+	cfg.Resilience.KA.RequestTimeout = 5000000000  // 5s (less than connect)
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error when requestTimeout < connectTimeout")
+	}
+	if !strings.Contains(err.Error(), "requestTimeout") {
+		t.Errorf("error = %q, want to contain 'requestTimeout'", err.Error())
+	}
+}

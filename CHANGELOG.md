@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **#38** Circuit breaker and resilience for downstream dependencies (KA, DS, K8s)
+  - `internal/resilience/` package: `RetryTransport` (exponential backoff, jitter, retryable-status matching), `CircuitBreakerTransport` (gobreaker/v2), `K8sCircuitBreaker` (application-level CB for CRD ops)
+  - Config extended with `ResilienceConfig` (per-dependency timeouts, CB params, retry params)
+  - DS client adapter (`internal/ds/ogen_client.go`) wrapping ogen-generated client with resilience transport injection via `WithClient`
+  - KA REST client refactored to shared resilience transport chain (CB → Retry → Auth/Base)
+  - `/readyz` probe composable with CB `Healthy()` checks for all three dependencies
+  - Prometheus metrics: `af_circuit_breaker_state{dependency}`, `af_downstream_request_duration_seconds{dependency,status}`, `af_downstream_retry_total{dependency,attempt}`
+  - IEEE 829 test plan in `docs/tests/38/test_plan.md`
 - **#39** Config hot-reload via `FileWatcher` (fsnotify-based, SHA256 dedup, 200ms debounce)
   - Extended `Config` with `Auth`, `Logging`, `RateLimit`, `Shutdown` sections + validators
   - FedRAMP AU-2 audit events emitted on reload success/rejection
