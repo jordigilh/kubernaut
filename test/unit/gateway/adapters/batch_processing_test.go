@@ -34,7 +34,7 @@ var _ = Describe("Batch-Independent Alert Processing (#1032)", func() {
 	)
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter(nil, nil)
+		adapter = adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 		ctx = context.Background()
 	})
 

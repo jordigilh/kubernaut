@@ -56,7 +56,7 @@ var _ = Describe("BR-GATEWAY-001: Adapter Registry enables multi-source signal i
 
 		It("tracks registered adapter count for startup validation", func() {
 			// BUSINESS OUTCOME: Operators know how many signal sources are active
-			_ = registry.Register(adapters.NewPrometheusAdapter(nil, nil))
+			_ = registry.Register(adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry()))
 			_ = registry.Register(adapters.NewKubernetesEventAdapter())
 
 			Expect(registry.Count()).To(Equal(2),
@@ -67,7 +67,7 @@ var _ = Describe("BR-GATEWAY-001: Adapter Registry enables multi-source signal i
 	Context("HTTP route registration for each signal source", func() {
 		It("exposes Prometheus route for AlertManager webhook integration", func() {
 			// BUSINESS OUTCOME: AlertManager can POST to /api/v1/signals/prometheus
-			_ = registry.Register(adapters.NewPrometheusAdapter(nil, nil))
+			_ = registry.Register(adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry()))
 
 			adapter, found := registry.GetAdapter("prometheus")
 
@@ -92,9 +92,9 @@ var _ = Describe("BR-GATEWAY-001: Adapter Registry enables multi-source signal i
 		It("rejects duplicate adapter registration with clear error", func() {
 			// BUSINESS OUTCOME: Misconfiguration detected at startup, not runtime
 			// Prevents: accidental double-registration overwriting adapter settings
-			_ = registry.Register(adapters.NewPrometheusAdapter(nil, nil))
+			_ = registry.Register(adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry()))
 
-			err := registry.Register(adapters.NewPrometheusAdapter(nil, nil))
+			err := registry.Register(adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry()))
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("already registered"),
@@ -104,7 +104,7 @@ var _ = Describe("BR-GATEWAY-001: Adapter Registry enables multi-source signal i
 
 	Context("Runtime adapter lookup for request handling", func() {
 		BeforeEach(func() {
-			_ = registry.Register(adapters.NewPrometheusAdapter(nil, nil))
+			_ = registry.Register(adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry()))
 		})
 
 		It("retrieves correct adapter for incoming HTTP request", func() {
@@ -151,7 +151,7 @@ var _ = Describe("BR-GATEWAY-003: Prometheus signal validation prevents invalid 
 	var adapter *adapters.PrometheusAdapter
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter(nil, nil)
+		adapter = adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 	})
 
 	Context("Fingerprint required for deduplication", func() {

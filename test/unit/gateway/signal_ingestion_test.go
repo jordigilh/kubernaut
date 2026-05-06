@@ -37,7 +37,7 @@ var _ = Describe("BR-GATEWAY-002: Signal Ingestion - Prometheus Adapter", func()
 	)
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter(nil, nil)
+		adapter = adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 		ctx = context.Background()
 	})
 
@@ -142,7 +142,7 @@ var _ = Describe("BR-GATEWAY-006: Signal Normalization Across Sources", func() {
 			// Business outcome: Downstream RemediationRequest controller doesn't care
 			// if signal came from Prometheus, Grafana, or Kubernetes Events
 
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			ctx := context.Background()
 
 			prometheusWebhook := []byte(`{
@@ -182,7 +182,7 @@ var _ = Describe("BR-GATEWAY-004: Signal Fingerprinting", func() {
 	)
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter(nil, nil)
+		adapter = adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 		ctx = context.Background()
 	})
 
@@ -269,7 +269,7 @@ var _ = Describe("BR-GATEWAY-003: Payload Validation", func() {
 	)
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter(nil, nil)
+		adapter = adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 		ctx = context.Background()
 	})
 

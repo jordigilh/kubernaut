@@ -388,100 +388,66 @@ func (a *PrometheusAdapter) GetMetadata() AdapterMetadata {
 //   resource produce redundant RemediationRequests
 // - RCA outcome is independent of which alert triggered it
 
-// resourceCandidate maps a Prometheus alert label key to the Kubernetes resource
-// kind it represents. Used by extractTargetResource for priority-ordered scanning.
-//
-// Deprecated: Superseded by APIResourceRegistry dynamic discovery (#1029).
-// Retained as a nil-registry fallback for tests that do not inject a fake discovery client.
-// Will be removed in a dedicated cleanup PR once all tests use fake discovery.
-type resourceCandidate struct {
-	labelKey string
-	kind     string
-}
-
-// Deprecated: See resourceCandidate deprecation notice above.
-var resourceCandidates = []resourceCandidate{
-	{"horizontalpodautoscaler", "HorizontalPodAutoscaler"},
-	{"poddisruptionbudget", "PodDisruptionBudget"},
-	{"persistentvolumeclaim", "PersistentVolumeClaim"},
-	{"deployment", "Deployment"},
-	{"statefulset", "StatefulSet"},
-	{"daemonset", "DaemonSet"},
-	{"replicaset", "ReplicaSet"},
-	{"node", "Node"},
-	{"service", "Service"},
-	{"job_name", "Job"},
-	{"cronjob", "CronJob"},
-	{"pod", "Pod"},
-}
-
 // extractTargetResource determines the Kubernetes target resource (kind + name)
 // from Prometheus alert labels using multi-candidate scoring backed by the
 // APIResourceRegistry (#1029).
 //
-// When a registry is provided, each label key is matched against discovered
-// APIResource.SingularName values, and the candidate with the highest-priority
-// tier (lowest number) wins. This replaces the old static resourceCandidates
-// list and LabelFilter.
+// Each label key is matched against discovered APIResource.SingularName values,
+// and the candidate with the highest-priority tier (lowest number) wins.
+// Prometheus-reserved labels (job, service, instance, endpoint, container) are
+// excluded before lookup to prevent scrape metadata from being misinterpreted
+// as Kubernetes resource identifiers (#1045).
 //
-// When registry is nil (tests or pre-discovery startup), falls back to the
-// static resourceCandidates list for backward compatibility.
+// A non-nil registry is required. Production code always provides one via
+// NewAPIResourceRegistry; tests should use NewTestAPIResourceRegistry.
 func extractTargetResource(ctx context.Context, labels map[string]string, namespace string, registry *APIResourceRegistry) (kind, name string) {
-	if registry != nil {
-		type candidate struct {
-			kind string
-			name string
-			tier int
-		}
-		var candidates []candidate
-		for labelKey, labelVal := range labels {
-			if labelVal == "" {
-				continue
-			}
-			if PrometheusReservedLabels[labelKey] {
-				continue
-			}
-			if !isValidK8sName(labelVal) {
-				continue
-			}
-			k := registry.LabelToKind(labelKey)
-			if k == "" {
-				continue
-			}
-			tier := registry.TierForKind(k)
-			candidates = append(candidates, candidate{kind: k, name: labelVal, tier: tier})
-		}
-
-		// Sort by tier (ascending), then by kind name (lexicographic) for determinism
-		sort.Slice(candidates, func(i, j int) bool {
-			if candidates[i].tier != candidates[j].tier {
-				return candidates[i].tier < candidates[j].tier
-			}
-			return candidates[i].kind < candidates[j].kind
-		})
-
-		// Return the first candidate that actually exists (if existence checking is available)
-		for _, c := range candidates {
-			gvr, ok := registry.KindToGVR(c.kind)
-			if !ok {
-				continue
-			}
-			if registry.CheckExistence(ctx, gvr, namespace, c.name) {
-				return c.kind, c.name
-			}
-		}
-
-		// If no candidate passed existence check, return the best-ranked one
-		if len(candidates) > 0 {
-			return candidates[0].kind, candidates[0].name
-		}
+	if registry == nil {
 		return "Unknown", "unknown"
 	}
 
-	for _, c := range resourceCandidates {
-		if v, ok := labels[c.labelKey]; ok {
-			return c.kind, v
+	type candidate struct {
+		kind string
+		name string
+		tier int
+	}
+	var candidates []candidate
+	for labelKey, labelVal := range labels {
+		if labelVal == "" {
+			continue
 		}
+		if PrometheusReservedLabels[labelKey] {
+			continue
+		}
+		if !isValidK8sName(labelVal) {
+			continue
+		}
+		k := registry.LabelToKind(labelKey)
+		if k == "" {
+			continue
+		}
+		tier := registry.TierForKind(k)
+		candidates = append(candidates, candidate{kind: k, name: labelVal, tier: tier})
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].tier != candidates[j].tier {
+			return candidates[i].tier < candidates[j].tier
+		}
+		return candidates[i].kind < candidates[j].kind
+	})
+
+	for _, c := range candidates {
+		gvr, ok := registry.KindToGVR(c.kind)
+		if !ok {
+			continue
+		}
+		if registry.CheckExistence(ctx, gvr, namespace, c.name) {
+			return c.kind, c.name
+		}
+	}
+
+	if len(candidates) > 0 {
+		return candidates[0].kind, candidates[0].name
 	}
 	return "Unknown", "unknown"
 }

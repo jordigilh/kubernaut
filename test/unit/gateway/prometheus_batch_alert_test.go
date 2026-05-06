@@ -108,7 +108,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 			validPod := "worker-5b6cc47c55-kfmg9"
 
 			resolver := newSelectiveResolver(map[string]bool{stalePod: true})
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "demo-crashloop", Pod: stalePod},
@@ -135,7 +135,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 			validPod2 := "worker-valid-222"
 
 			resolver := newSelectiveResolver(map[string]bool{stalePod: true})
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "FirstValidAlert", Severity: "warning", Namespace: "ns1", Pod: validPod1},
@@ -156,7 +156,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 			stalePod2 := "worker-gone-bbb"
 
 			resolver := newSelectiveResolver(map[string]bool{stalePod1: true, stalePod2: true})
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "Alert1", Severity: "critical", Namespace: "ns1", Pod: stalePod1},
@@ -175,7 +175,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 	Describe("No regression for single-alert webhooks", func() {
 		It("UT-GW-451-004: should process single valid alert identically to pre-fix behavior", func() {
 			resolver := newSelectiveResolver(map[string]bool{})
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "prod", Pod: "api-789"},
@@ -199,7 +199,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 			stalePod := "deleted-pod-xyz"
 
 			resolver := newSelectiveResolver(map[string]bool{stalePod: true})
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "prod", Pod: stalePod},
@@ -237,7 +237,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 
 		It("UT-GW-1036-001: ParseBatch produces N signals for N distinct owner chains", func() {
 			resolver := newCascadingResolver()
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "demo-cascade", Pod: "order-processor-7f8d4b-x9k2q"},
@@ -264,7 +264,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 
 		It("UT-GW-1036-002: Parse (single-signal) returns only 1 signal for the same batch — documents #1036 limitation", func() {
 			resolver := newCascadingResolver()
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "demo-cascade", Pod: "order-processor-7f8d4b-x9k2q"},
@@ -284,7 +284,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 
 		It("UT-GW-1036-003: ParseBatch handles 3-way cascade (root + 2 dependents)", func() {
 			resolver := newCascadingResolver()
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "demo-cascade", Pod: "postgres-0"},
@@ -310,7 +310,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 			validPod := "valid-pod-111"
 
 			resolver := newSelectiveResolver(map[string]bool{stalePod: true})
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "StaleAlert", Severity: "warning", Namespace: "ns-stale", Pod: stalePod,
