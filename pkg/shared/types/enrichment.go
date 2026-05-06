@@ -154,7 +154,7 @@ type DetectedLabels struct {
 	// ========================================
 	// True if namespace/deployment is managed by GitOps controller
 	// Detection: ArgoCD annotations, Flux labels
-	GitOpsManaged bool `json:"gitOpsManaged,omitempty"`
+	GitOpsManaged bool `json:"gitOpsManaged"`
 	// GitOps tool managing this resource
 	// +kubebuilder:validation:Enum=argocd;flux;""
 	GitOpsTool string `json:"gitOpsTool,omitempty"`
@@ -163,23 +163,23 @@ type DetectedLabels struct {
 	// WORKLOAD PROTECTION
 	// ========================================
 	// True if PodDisruptionBudget exists for this workload
-	PDBProtected bool `json:"pdbProtected,omitempty"`
+	PDBProtected bool `json:"pdbProtected"`
 	// True if HorizontalPodAutoscaler targets this workload
-	HPAEnabled bool `json:"hpaEnabled,omitempty"`
+	HPAEnabled bool `json:"hpaEnabled"`
 
 	// ========================================
 	// WORKLOAD CHARACTERISTICS
 	// ========================================
 	// True if StatefulSet or has PVCs attached
-	Stateful bool `json:"stateful,omitempty"`
+	Stateful bool `json:"stateful"`
 	// True if managed by Helm (has helm.sh/chart label)
-	HelmManaged bool `json:"helmManaged,omitempty"`
+	HelmManaged bool `json:"helmManaged"`
 
 	// ========================================
 	// SECURITY POSTURE
 	// ========================================
 	// True if NetworkPolicy exists in namespace
-	NetworkIsolated bool `json:"networkIsolated,omitempty"`
+	NetworkIsolated bool `json:"networkIsolated"`
 	// Service mesh if detected (from sidecar or namespace labels)
 	// +kubebuilder:validation:Enum=istio;linkerd;""
 	ServiceMesh string `json:"serviceMesh,omitempty"`
@@ -188,7 +188,7 @@ type DetectedLabels struct {
 	// RESOURCE CONSTRAINTS (#366, DD-HAPI-018 v1.4)
 	// ========================================
 	// True if any ResourceQuota exists in namespace
-	ResourceQuotaConstrained bool `json:"resourceQuotaConstrained,omitempty"`
+	ResourceQuotaConstrained bool `json:"resourceQuotaConstrained"`
 }
 
 // NewDetectedLabels creates a DetectedLabels with an initialized (non-nil) FailedDetections slice.
@@ -228,6 +228,112 @@ func (d *DetectedLabels) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return json.Marshal(d)
+}
+
+// ========================================
+// DETECTED LABELS SERIALIZATION (DD-WORKFLOW-001 v2.3)
+// ========================================
+//
+// Both DetectedLabels and DBDetectedLabels implement the same
+// SerializeLabels() ([]byte, error) contract for domain-specific JSON output:
+//   - DetectedLabels.SerializeLabels(): full JSON (all fields, CRD-safe)
+//   - DBDetectedLabels.SerializeLabels(): sparse JSON (false booleans omitted, DB-efficient)
+//
+// Interface compliance is verified in test/unit/datastorage/detected_labels_serialization_test.go.
+
+// SerializeLabels produces full JSON with all fields present (CRD-safe).
+func (d *DetectedLabels) SerializeLabels() ([]byte, error) {
+	if d == nil {
+		return nil, nil
+	}
+	type Alias DetectedLabels
+	return json.Marshal((*Alias)(d))
+}
+
+// DBDetectedLabels is a derived type for DataStorage/DB contexts.
+// It shares the same memory layout as DetectedLabels but serializes
+// to sparse JSON (false booleans omitted) for efficient JSONB storage.
+// Use NewDBDetectedLabels() to construct instances with non-nil FailedDetections.
+type DBDetectedLabels DetectedLabels
+
+// NewDBDetectedLabels creates a DBDetectedLabels with an initialized (non-nil) FailedDetections slice.
+func NewDBDetectedLabels() *DBDetectedLabels {
+	return &DBDetectedLabels{
+		FailedDetections: make([]string, 0),
+	}
+}
+
+// SerializeLabels produces sparse JSON, omitting false boolean fields.
+func (d DBDetectedLabels) SerializeLabels() ([]byte, error) {
+	m := make(map[string]interface{})
+	if len(d.FailedDetections) > 0 {
+		m["failedDetections"] = d.FailedDetections
+	}
+	if d.GitOpsManaged {
+		m["gitOpsManaged"] = true
+	}
+	if d.GitOpsTool != "" {
+		m["gitOpsTool"] = d.GitOpsTool
+	}
+	if d.PDBProtected {
+		m["pdbProtected"] = true
+	}
+	if d.HPAEnabled {
+		m["hpaEnabled"] = true
+	}
+	if d.Stateful {
+		m["stateful"] = true
+	}
+	if d.HelmManaged {
+		m["helmManaged"] = true
+	}
+	if d.NetworkIsolated {
+		m["networkIsolated"] = true
+	}
+	if d.ServiceMesh != "" {
+		m["serviceMesh"] = d.ServiceMesh
+	}
+	if d.ResourceQuotaConstrained {
+		m["resourceQuotaConstrained"] = true
+	}
+	return json.Marshal(m)
+}
+
+// MarshalJSON implements json.Marshaler for sparse DB-oriented output.
+// Value receiver ensures the interface is satisfied when boxed in interface{}.
+func (d DBDetectedLabels) MarshalJSON() ([]byte, error) {
+	return d.SerializeLabels()
+}
+
+// Value implements driver.Valuer for PostgreSQL JSONB column writing.
+// Value receiver ensures the interface is satisfied when boxed in interface{}.
+func (d DBDetectedLabels) Value() (driver.Value, error) {
+	return d.SerializeLabels()
+}
+
+// Scan implements sql.Scanner for PostgreSQL JSONB column scanning.
+func (d *DBDetectedLabels) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("DBDetectedLabels.Scan: expected []byte, got %T", value)
+	}
+	type Alias DBDetectedLabels
+	return json.Unmarshal(bytes, (*Alias)(d))
+}
+
+// IsEmpty returns true when no label detection produced a positive result.
+func (d *DBDetectedLabels) IsEmpty() bool {
+	return !d.GitOpsManaged &&
+		d.GitOpsTool == "" &&
+		!d.PDBProtected &&
+		!d.HPAEnabled &&
+		!d.Stateful &&
+		!d.HelmManaged &&
+		!d.NetworkIsolated &&
+		d.ServiceMesh == ""
 }
 
 // ========================================

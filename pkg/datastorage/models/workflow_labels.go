@@ -101,14 +101,14 @@ func (c *CustomLabels) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, c)
 }
 
-// DetectedLabels is the canonical label detection result type (DD-WORKFLOW-001 v2.3).
-// Alias for sharedtypes.DetectedLabels -- single source of truth in pkg/shared/types.
-type DetectedLabels = sharedtypes.DetectedLabels
+// DetectedLabels is the DB-oriented label detection type (DD-WORKFLOW-001 v2.3).
+// Alias for sharedtypes.DBDetectedLabels -- sparse JSON serialization for JSONB storage.
+// The canonical CRD type (sharedtypes.DetectedLabels) uses full JSON with all fields present.
+type DetectedLabels = sharedtypes.DBDetectedLabels
 
 // NewDetectedLabels creates a DetectedLabels with an initialized (non-nil) FailedDetections slice.
-// Forwards to sharedtypes.NewDetectedLabels.
 func NewDetectedLabels() *DetectedLabels {
-	return sharedtypes.NewDetectedLabels()
+	return sharedtypes.NewDBDetectedLabels()
 }
 
 // ========================================
