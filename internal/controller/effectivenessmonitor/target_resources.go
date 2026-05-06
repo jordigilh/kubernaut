@@ -142,10 +142,10 @@ func (r *Reconciler) getTargetFunctionalState(ctx context.Context, target eav1.T
 		return fallback, fallback, ""
 	}
 
-	gvk, err := k8sutil.ResolveGVKForKind(r.restMapper, target.Kind)
+	gvk, err := k8sutil.ResolveGVKWithAPIVersion(r.restMapper, target.Kind, target.APIVersion) // #1040
 	if err != nil {
 		logger.Error(err, "Failed to resolve GVK for target resource kind",
-			"kind", target.Kind)
+			"kind", target.Kind, "apiVersion", target.APIVersion)
 		return map[string]interface{}{}, map[string]interface{}{}, ""
 	}
 

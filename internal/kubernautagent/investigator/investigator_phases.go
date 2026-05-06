@@ -24,9 +24,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // BuildPhase1Context extracts structured assessment fields from the Phase 1
@@ -233,11 +233,18 @@ func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 	}
 
 	llmKind := result.RemediationTarget.Kind
+	llmAPIVersion := result.RemediationTarget.APIVersion
 	if llmKind == "" || llmKind == rootKind {
+		// Same kind as root: preserve LLM's apiVersion (same kind = same API group). #1040
+		apiVersion := llmAPIVersion
+		if apiVersion == "" && enrichData != nil && len(enrichData.OwnerChain) > 0 {
+			apiVersion = enrichData.OwnerChain[len(enrichData.OwnerChain)-1].APIVersion
+		}
 		result.RemediationTarget = katypes.RemediationTarget{
-			Kind:      rootKind,
-			Name:      rootName,
-			Namespace: rootNS,
+			Kind:       rootKind,
+			Name:       rootName,
+			Namespace:  rootNS,
+			APIVersion: apiVersion,
 		}
 		return
 	}
@@ -248,10 +255,16 @@ func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 	// the LLM's target when its kind is genuinely cross-type (not in
 	// the owner chain at all, e.g. Node vs Deployment).
 	if enrichData != nil && isKindInOwnerChain(llmKind, signal.ResourceKind, enrichData.OwnerChain) {
+		// Use root owner's APIVersion from the chain if available. #1040
+		rootAPIVersion := ""
+		if len(enrichData.OwnerChain) > 0 {
+			rootAPIVersion = enrichData.OwnerChain[len(enrichData.OwnerChain)-1].APIVersion
+		}
 		result.RemediationTarget = katypes.RemediationTarget{
-			Kind:      rootKind,
-			Name:      rootName,
-			Namespace: rootNS,
+			Kind:       rootKind,
+			Name:       rootName,
+			Namespace:  rootNS,
+			APIVersion: rootAPIVersion,
 		}
 		return
 	}
@@ -279,6 +292,9 @@ func injectTargetResourceParameters(result *katypes.InvestigationResult) {
 	result.Parameters["TARGET_RESOURCE_NAME"] = result.RemediationTarget.Name
 	result.Parameters["TARGET_RESOURCE_KIND"] = result.RemediationTarget.Kind
 	result.Parameters["TARGET_RESOURCE_NAMESPACE"] = result.RemediationTarget.Namespace
+	if result.RemediationTarget.APIVersion != "" {
+		result.Parameters["TARGET_RESOURCE_API_VERSION"] = result.RemediationTarget.APIVersion
+	}
 }
 
 func allLabelDetectionsFailed(labels *enrichment.DetectedLabels) bool {

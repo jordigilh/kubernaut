@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
-	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -49,8 +49,6 @@ func (s *Server) handleGetConfigConfigGetRequest(args [0]string, argsEscaped boo
 		semconv.HTTPRequestMethodKey.String("GET"),
 		semconv.HTTPRouteKey.String("/config"),
 	}
-	// Add attributes from config.
-	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
 	ctx, span := s.cfg.Tracer.Start(r.Context(), GetConfigConfigGetOperation,
@@ -174,8 +172,6 @@ func (s *Server) handleHealthCheckHealthzGetRequest(args [0]string, argsEscaped 
 		semconv.HTTPRequestMethodKey.String("GET"),
 		semconv.HTTPRouteKey.String("/healthz"),
 	}
-	// Add attributes from config.
-	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
 	ctx, span := s.cfg.Tracer.Start(r.Context(), HealthCheckHealthzGetOperation,
@@ -304,8 +300,6 @@ func (s *Server) handleIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRequest(ar
 		semconv.HTTPRequestMethodKey.String("POST"),
 		semconv.HTTPRouteKey.String("/api/v1/incident/analyze"),
 	}
-	// Add attributes from config.
-	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
 	ctx, span := s.cfg.Tracer.Start(r.Context(), IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostOperation,
@@ -447,8 +441,6 @@ func (s *Server) handleIncidentSessionResultEndpointAPIV1IncidentSessionSessionI
 		semconv.HTTPRequestMethodKey.String("GET"),
 		semconv.HTTPRouteKey.String("/api/v1/incident/session/{session_id}/result"),
 	}
-	// Add attributes from config.
-	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
 	ctx, span := s.cfg.Tracer.Start(r.Context(), IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetOperation,
@@ -590,8 +582,6 @@ func (s *Server) handleIncidentSessionStatusEndpointAPIV1IncidentSessionSessionI
 		semconv.HTTPRequestMethodKey.String("GET"),
 		semconv.HTTPRouteKey.String("/api/v1/incident/session/{session_id}"),
 	}
-	// Add attributes from config.
-	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
 	ctx, span := s.cfg.Tracer.Start(r.Context(), IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOperation,
@@ -736,8 +726,6 @@ func (s *Server) handleReadinessCheckReadyzGetRequest(args [0]string, argsEscape
 		semconv.HTTPRequestMethodKey.String("GET"),
 		semconv.HTTPRouteKey.String("/readyz"),
 	}
-	// Add attributes from config.
-	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
 	ctx, span := s.cfg.Tracer.Start(r.Context(), ReadinessCheckReadyzGetOperation,

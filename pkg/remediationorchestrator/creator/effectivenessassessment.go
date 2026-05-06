@@ -134,9 +134,10 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 
 	// DD-EM-003: Resolve signal and remediation targets.
 	signalTarget := eav1.TargetResource{
-		Kind:      rr.Spec.TargetResource.Kind,
-		Name:      rr.Spec.TargetResource.Name,
-		Namespace: rr.Spec.TargetResource.Namespace,
+		Kind:       rr.Spec.TargetResource.Kind,
+		Name:       rr.Spec.TargetResource.Name,
+		Namespace:  rr.Spec.TargetResource.Namespace,
+		APIVersion: rr.Spec.TargetResource.APIVersion, // #1040
 	}
 	remediationTarget := signalTarget
 	if dualTarget != nil {
