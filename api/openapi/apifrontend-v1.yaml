@@ -1,0 +1,293 @@
+openapi: "3.1.0"
+info:
+  title: kubernaut API Frontend
+  version: "0.1.0"
+  description: |
+    REST endpoints for the kubernaut API Frontend service.
+    Protocol endpoints (MCP Streamable HTTP and A2A JSON-RPC 2.0) are documented
+    separately; this spec covers the operational REST surface.
+
+    Supported Protocol Versions:
+    - MCP: Streamable HTTP (2025-03-26)
+    - A2A: v0.3.0 (JSON-RPC 2.0 over HTTPS)
+  contact:
+    name: kubernaut team
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+
+servers:
+  - url: https://localhost:8443
+    description: Local development
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Liveness probe
+      description: Returns "ok" when the process is alive. Does not check downstream dependencies.
+      tags: [operations]
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            text/plain:
+              schema:
+                type: string
+                const: "ok"
+
+  /readyz:
+    get:
+      operationId: getReadyz
+      summary: Readiness probe
+      description: Returns "ok" when the service is ready to accept traffic (JWKS loaded, dependencies reachable). Returns 503 during drain.
+      tags: [operations]
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            text/plain:
+              schema:
+                type: string
+                const: "ok"
+        "503":
+          description: Service is not ready (draining or dependencies unavailable)
+          content:
+            text/plain:
+              schema:
+                type: string
+                const: "not ready"
+
+  /metrics:
+    get:
+      operationId: getMetrics
+      summary: Prometheus metrics endpoint
+      description: Exposes all af_* Prometheus metrics in OpenMetrics format.
+      tags: [operations]
+      responses:
+        "200":
+          description: Prometheus scrape response
+          content:
+            application/openmetrics-text:
+              schema:
+                type: string
+            text/plain:
+              schema:
+                type: string
+
+  /.well-known/agent-card.json:
+    get:
+      operationId: getAgentCard
+      summary: A2A Agent Card
+      description: Returns the agent's self-describing manifest per the A2A protocol specification.
+      tags: [a2a]
+      responses:
+        "200":
+          description: Agent Card JSON
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentCard"
+
+  /a2a/invoke:
+    post:
+      operationId: postA2AInvoke
+      summary: A2A JSON-RPC 2.0 endpoint
+      description: |
+        Accepts A2A protocol messages (JSON-RPC 2.0). Supported methods include
+        message/send. Requires Bearer JWT authentication.
+      tags: [a2a]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JsonRpcRequest"
+      responses:
+        "200":
+          description: JSON-RPC 2.0 response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JsonRpcResponse"
+        "401":
+          description: Missing or invalid Bearer token
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "413":
+          description: Request body exceeds 1 MiB limit
+
+  /mcp:
+    post:
+      operationId: postMCP
+      summary: MCP Streamable HTTP endpoint
+      description: |
+        Model Context Protocol endpoint (Streamable HTTP transport, spec 2025-03-26).
+        Accepts JSON-RPC 2.0 requests for initialize, tools/list, tools/call, etc.
+        Responds with application/json or text/event-stream depending on Accept header.
+        Requires Bearer JWT authentication. Returns 501 when MCP is disabled.
+      tags: [mcp]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JsonRpcRequest"
+      responses:
+        "200":
+          description: JSON-RPC response (plain JSON or SSE stream)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JsonRpcResponse"
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events stream
+        "401":
+          description: Missing or invalid Bearer token
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "501":
+          description: MCP not enabled
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    AgentCard:
+      type: object
+      required: [name, url, version, skills, authentication, capabilities, protocolVersion]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        url:
+          type: string
+          format: uri
+        version:
+          type: string
+        protocolVersion:
+          type: string
+          description: A2A protocol version supported
+        skills:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentSkill"
+        authentication:
+          type: object
+          properties:
+            schemes:
+              type: array
+              items:
+                type: object
+                properties:
+                  scheme:
+                    type: string
+        capabilities:
+          type: object
+          properties:
+            streaming:
+              type: boolean
+            pushNotifications:
+              type: boolean
+            stateTransitionHistory:
+              type: boolean
+        provider:
+          type: object
+          properties:
+            organization:
+              type: string
+
+    AgentSkill:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+
+    JsonRpcRequest:
+      type: object
+      required: [jsonrpc, method]
+      properties:
+        jsonrpc:
+          type: string
+          const: "2.0"
+        id:
+          oneOf:
+            - type: string
+            - type: integer
+        method:
+          type: string
+        params:
+          type: object
+
+    JsonRpcResponse:
+      type: object
+      required: [jsonrpc]
+      properties:
+        jsonrpc:
+          type: string
+          const: "2.0"
+        id:
+          oneOf:
+            - type: string
+            - type: integer
+        result:
+          type: object
+        error:
+          type: object
+          properties:
+            code:
+              type: integer
+            message:
+              type: string
+            data: {}
+
+    ProblemDetail:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string

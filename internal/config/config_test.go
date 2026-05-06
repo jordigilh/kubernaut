@@ -20,6 +20,9 @@ func validConfig() *Config {
 		},
 		MCP:       MCPConfig{Enabled: false},
 		AgentCard: AgentCardConfig{URL: "https://localhost:8443"},
+		Logging:   LoggingConfig{Level: "INFO"},
+		RateLimit: RateLimitConfig{IPRequestsPerSec: 100, UserRequestsPerSec: 50},
+		Shutdown:  ShutdownConfig{DrainSeconds: 15},
 	}
 }
 
@@ -452,5 +455,176 @@ func TestNoEnvVarsInCodebase(t *testing.T) {
 	}
 	if strings.Contains(content, "envOr") {
 		t.Error("main.go contains envOr — env vars are banned per architectural constraint")
+	}
+}
+
+// --- Tier 5: Extended Config Fields (v2) ---
+
+func TestLoad_AuthFields(t *testing.T) {
+	// UT-AF-039-031
+	data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Auth.IssuerURL != "https://sso.example.com/realms/kubernaut" {
+		t.Errorf("Auth.IssuerURL = %q, want %q", cfg.Auth.IssuerURL, "https://sso.example.com/realms/kubernaut")
+	}
+	if cfg.Auth.Audience != "apifrontend" {
+		t.Errorf("Auth.Audience = %q, want %q", cfg.Auth.Audience, "apifrontend")
+	}
+}
+
+func TestLoad_LoggingLevel(t *testing.T) {
+	// UT-AF-039-032
+	for _, level := range []string{"debug", "DEBUG", "info", "INFO", "warn", "WARN", "error", "ERROR"} {
+		data := []byte("logging:\n  level: " + level + "\n")
+		cfg, err := Load(data)
+		if err != nil {
+			t.Fatalf("Load(level=%s) error = %v", level, err)
+		}
+		if !strings.EqualFold(cfg.Logging.Level, level) {
+			t.Errorf("Logging.Level = %q, want %q", cfg.Logging.Level, level)
+		}
+	}
+}
+
+func TestLoad_RateLimitFields(t *testing.T) {
+	// UT-AF-039-033
+	data := []byte(`
+rateLimit:
+  ipRequestsPerSec: 200
+  userRequestsPerSec: 75
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.RateLimit.IPRequestsPerSec != 200 {
+		t.Errorf("RateLimit.IPRequestsPerSec = %d, want 200", cfg.RateLimit.IPRequestsPerSec)
+	}
+	if cfg.RateLimit.UserRequestsPerSec != 75 {
+		t.Errorf("RateLimit.UserRequestsPerSec = %d, want 75", cfg.RateLimit.UserRequestsPerSec)
+	}
+}
+
+func TestLoad_ShutdownDrainSeconds(t *testing.T) {
+	// UT-AF-039-034
+	data := []byte("shutdown:\n  drainSeconds: 30\n")
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Shutdown.DrainSeconds != 30 {
+		t.Errorf("Shutdown.DrainSeconds = %d, want 30", cfg.Shutdown.DrainSeconds)
+	}
+}
+
+func TestDefaultConfig_ExtendedDefaults(t *testing.T) {
+	// UT-AF-039-035
+	cfg := DefaultConfig()
+	if cfg.Logging.Level != "INFO" {
+		t.Errorf("DefaultConfig().Logging.Level = %q, want %q", cfg.Logging.Level, "INFO")
+	}
+	if cfg.Shutdown.DrainSeconds != 15 {
+		t.Errorf("DefaultConfig().Shutdown.DrainSeconds = %d, want 15", cfg.Shutdown.DrainSeconds)
+	}
+	if cfg.RateLimit.IPRequestsPerSec != 100 {
+		t.Errorf("DefaultConfig().RateLimit.IPRequestsPerSec = %d, want 100", cfg.RateLimit.IPRequestsPerSec)
+	}
+	if cfg.RateLimit.UserRequestsPerSec != 50 {
+		t.Errorf("DefaultConfig().RateLimit.UserRequestsPerSec = %d, want 50", cfg.RateLimit.UserRequestsPerSec)
+	}
+}
+
+// --- Tier 6: Extended Validation (v2) ---
+
+func TestValidate_AuthIssuerURLNoScheme(t *testing.T) {
+	// UT-AF-039-036
+	cfg := validConfig()
+	cfg.Auth.IssuerURL = "sso.example.com/realms/kubernaut"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for auth.issuerURL without scheme")
+	}
+	if !strings.Contains(err.Error(), "auth.issuerURL") {
+		t.Errorf("error = %q, want to contain 'auth.issuerURL'", err.Error())
+	}
+}
+
+func TestValidate_AuthEmptyIsOptional(t *testing.T) {
+	// UT-AF-039-037
+	cfg := validConfig()
+	cfg.Auth.IssuerURL = ""
+	cfg.Auth.Audience = ""
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected no error for empty auth (optional in dev), got: %v", err)
+	}
+}
+
+func TestValidate_InvalidLoggingLevel(t *testing.T) {
+	// UT-AF-039-038
+	cfg := validConfig()
+	cfg.Logging.Level = "TRACE"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid logging.level")
+	}
+	if !strings.Contains(err.Error(), "logging.level") {
+		t.Errorf("error = %q, want to contain 'logging.level'", err.Error())
+	}
+}
+
+func TestValidate_ValidLoggingLevels(t *testing.T) {
+	// UT-AF-039-039
+	for _, level := range []string{"DEBUG", "INFO", "WARN", "ERROR", "debug", "info", "warn", "error"} {
+		cfg := validConfig()
+		cfg.Logging.Level = level
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("Validate(level=%s) unexpected error: %v", level, err)
+		}
+	}
+}
+
+func TestValidate_ZeroIPRequestsPerSec(t *testing.T) {
+	// UT-AF-039-040
+	cfg := validConfig()
+	cfg.RateLimit.IPRequestsPerSec = 0
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for zero ipRequestsPerSec")
+	}
+	if !strings.Contains(err.Error(), "rateLimit") {
+		t.Errorf("error = %q, want to contain 'rateLimit'", err.Error())
+	}
+}
+
+func TestValidate_NegativeUserRequestsPerSec(t *testing.T) {
+	// UT-AF-039-041
+	cfg := validConfig()
+	cfg.RateLimit.UserRequestsPerSec = -1
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative userRequestsPerSec")
+	}
+	if !strings.Contains(err.Error(), "rateLimit") {
+		t.Errorf("error = %q, want to contain 'rateLimit'", err.Error())
+	}
+}
+
+func TestValidate_ZeroDrainSeconds(t *testing.T) {
+	// UT-AF-039-042
+	cfg := validConfig()
+	cfg.Shutdown.DrainSeconds = 0
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for zero shutdown.drainSeconds")
+	}
+	if !strings.Contains(err.Error(), "shutdown.drainSeconds") {
+		t.Errorf("error = %q, want to contain 'shutdown.drainSeconds'", err.Error())
 	}
 }

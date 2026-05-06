@@ -56,7 +56,7 @@ jobs:
       - name: Unit tests
         run: >-
           ginkgo -v --race
-          --coverpkg=./internal/auth/...,./internal/ratelimit/...,./internal/security/...,./internal/httputil/...,./internal/logging/...,./internal/requestid/...,./internal/audit/...,./internal/metrics/...,./internal/agent/...,./internal/tools/...,./internal/ka/...,./internal/ds/...,./internal/session/...
+          --coverpkg=./internal/auth/...,./internal/ratelimit/...,./internal/security/...,./internal/httputil/...,./internal/logging/...,./internal/requestid/...,./internal/audit/...,./internal/metrics/...,./internal/agent/...,./internal/tools/...,./internal/ka/...,./internal/ds/...,./internal/session/...,./internal/config/...
           --coverprofile=coverage.out
           ./internal/...
 
@@ -69,6 +69,22 @@ jobs:
             echo "::error::Coverage ${total}% is below ${threshold}% threshold"
             exit 1
           fi
+
+  validate-openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Install vacuum
+        run: go install github.com/daveshanley/vacuum@latest
+
+      - name: Validate OpenAPI spec
+        run: vacuum lint api/openapi/apifrontend-v1.yaml
 
   lint:
     runs-on: ubuntu-latest

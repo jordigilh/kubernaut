@@ -174,4 +174,21 @@ var _ = Describe("Agent Card Handler", func() {
 		Expect(ok).To(BeTrue())
 		Expect(capabilities["streaming"]).To(BeTrue())
 	})
+
+	It("UT-AF-230-011: card includes protocolVersion", func() {
+		h, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
+			Name:    "kubernaut-apifrontend",
+			URL:     "https://kubernaut.example.com",
+			Version: "0.1.0",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		req := httptest.NewRequest("GET", "/.well-known/agent-card.json", http.NoBody)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		var card map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &card)
+		Expect(card["protocolVersion"]).To(Equal("0.3.0"))
+	})
 })
