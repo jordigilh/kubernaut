@@ -422,3 +422,27 @@ func TestFileWatcher_ReadFileLimited_RejectsOversized(t *testing.T) {
 		t.Errorf("error = %q, want to contain 'exceeds maximum size'", err.Error())
 	}
 }
+
+func TestFileWatcher_DoubleStop_NoPanic(t *testing.T) {
+	// UT-AF-039-057: Calling Stop() twice must not panic (sync.Once guard)
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("x: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := NewFileWatcher(cfgPath, func([]byte) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := w.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	w.Stop()
+	w.Stop() // must not panic
+}

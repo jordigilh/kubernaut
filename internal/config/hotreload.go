@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -44,7 +45,7 @@ type FileWatcher struct {
 	lastHash    string
 	lastReload  time.Time
 
-	started  bool
+	started  atomic.Bool
 	stopOnce sync.Once
 	watcher  *fsnotify.Watcher
 	stopCh   chan struct{}
@@ -109,7 +110,7 @@ func (w *FileWatcher) Start(ctx context.Context) error {
 		return fmt.Errorf("watch directory %s: %w", dir, err)
 	}
 
-	w.started = true
+	w.started.Store(true)
 	go w.watchLoop(ctx)
 	return nil
 }
@@ -118,7 +119,7 @@ func (w *FileWatcher) Start(ctx context.Context) error {
 // Safe to call multiple times or before Start.
 func (w *FileWatcher) Stop() {
 	w.stopOnce.Do(func() { close(w.stopCh) })
-	if w.started {
+	if w.started.Load() {
 		<-w.doneCh
 	}
 	if w.watcher != nil {
