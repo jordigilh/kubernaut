@@ -32,6 +32,8 @@ import (
 	"github.com/go-logr/logr"
 	"go.uber.org/zap"
 	adksession "google.golang.org/adk/session"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 
 	agentpkg "github.com/jordigilh/kubernaut-apifrontend/internal/agent"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
@@ -168,13 +170,11 @@ func run() error {
 		DependencyName:   "k8s",
 	})
 
-	// k8sCB wraps dynamic K8s clients for CRD operations.
-	// ResilientDynamicClient is the adapter injected into CRD tool handlers.
-	// Production K8s client creation requires kubeconfig (deferred to PR7).
-	_ = resilience.NewResilientDynamicClient // reference to prove wiring path exists
-	_ = kaClient
-	_ = dsClient
-	_ = k8sCB
+	// --- K8s dynamic client with circuit breaker ---
+	k8sClient, err := buildK8sDynamicClient(k8sCB, logger)
+	if err != nil {
+		return fmt.Errorf("create K8s dynamic client: %w", err)
+	}
 
 	agentCfg := agentpkg.AgentConfig{
 		GCPProject:    cfg.Agent.GCPProject,
@@ -183,6 +183,9 @@ func run() error {
 		KABaseURL:     cfg.Agent.KABaseURL,
 		KAMCPEndpoint: cfg.Agent.KAMCPEndpoint,
 		DSBaseURL:     cfg.Agent.DSBaseURL,
+		K8sClient:     k8sClient,
+		DSClient:      dsClient,
+		KAClient:      kaClient,
 	}
 	rootAgent, _, err := agentpkg.NewRootAgent(agentCfg)
 	if err != nil {
@@ -306,4 +309,19 @@ func buildAuthMiddleware(
 		h = requestid.Middleware(h)
 		return h
 	}
+}
+
+func buildK8sDynamicClient(cb *resilience.K8sCircuitBreaker, logger logr.Logger) (dynamic.Interface, error) {
+	restCfg, err := rest.InClusterConfig()
+	if err != nil {
+		logger.Info("in-cluster config unavailable, K8s tools will not function until cluster access is configured", "error", err)
+		return nil, fmt.Errorf("load in-cluster kubeconfig: %w", err)
+	}
+
+	rawClient, err := dynamic.NewForConfig(restCfg)
+	if err != nil {
+		return nil, fmt.Errorf("create dynamic client: %w", err)
+	}
+
+	return resilience.NewResilientDynamicClient(rawClient, cb), nil
 }

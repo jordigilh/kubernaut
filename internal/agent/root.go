@@ -81,21 +81,26 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		return nil, nil
 	}
 
+	k8s := cfg.K8sClient
+	dsC := cfg.DSClient
+	kaC := cfg.KAClient
+	mcpC := cfg.MCPClient
+
 	constructors := []toolConstructor{
-		{"list_remediations", tools.NewListRemediationsTool},
-		{"get_remediation", tools.NewGetRemediationTool},
-		{"submit_signal", tools.NewSubmitSignalTool},
-		{"approve", tools.NewApproveTool},
-		{"cancel_remediation", tools.NewCancelRemediationTool},
-		{"watch", tools.NewWatchTool},
-		{"start_investigation", tools.NewStartInvestigationTool},
-		{"poll_investigation", tools.NewPollInvestigationTool},
-		{"select_workflow", tools.NewSelectWorkflowTool},
-		{"present_decision", tools.NewPresentDecisionTool},
-		{"list_workflows", tools.NewListWorkflowsTool},
-		{"get_remediation_history", tools.NewGetRemediationHistoryTool},
-		{"get_effectiveness", tools.NewGetEffectivenessTool},
-		{"get_audit_trail", tools.NewGetAuditTrailTool},
+		{"list_remediations", func() (tool.Tool, error) { return tools.NewListRemediationsTool(k8s) }},
+		{"get_remediation", func() (tool.Tool, error) { return tools.NewGetRemediationTool(k8s) }},
+		{"submit_signal", func() (tool.Tool, error) { return tools.NewSubmitSignalTool(k8s) }},
+		{"approve", func() (tool.Tool, error) { return tools.NewApproveTool(k8s) }},
+		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s) }},
+		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},
+		{"start_investigation", func() (tool.Tool, error) { return tools.NewStartInvestigationTool(kaC) }},
+		{"poll_investigation", func() (tool.Tool, error) { return tools.NewPollInvestigationTool(kaC) }},
+		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC) }},
+		{"present_decision", func() (tool.Tool, error) { return tools.NewPresentDecisionTool() }},
+		{"list_workflows", func() (tool.Tool, error) { return tools.NewListWorkflowsTool(dsC) }},
+		{"get_remediation_history", func() (tool.Tool, error) { return tools.NewGetRemediationHistoryTool(dsC) }},
+		{"get_effectiveness", func() (tool.Tool, error) { return tools.NewGetEffectivenessTool(dsC) }},
+		{"get_audit_trail", func() (tool.Tool, error) { return tools.NewGetAuditTrailTool(dsC) }},
 	}
 
 	result := make([]tool.Tool, 0, len(constructors))

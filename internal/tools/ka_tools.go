@@ -44,12 +44,12 @@ func HandleStartInvestigation(ctx context.Context, kaClient *ka.Client, args Sta
 }
 
 // NewStartInvestigationTool creates the kubernaut_start_investigation tool.
-func NewStartInvestigationTool() (tool.Tool, error) {
+func NewStartInvestigationTool(kaClient *ka.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_start_investigation",
 		Description: "Start an AI-powered investigation for an incident, returning a session ID for tracking",
 	}, func(ctx tool.Context, args StartInvestigationArgs) (StartInvestigationResult, error) {
-		return StartInvestigationResult{}, fmt.Errorf("not implemented: requires wiring in PR5")
+		return HandleStartInvestigation(ctx, kaClient, args)
 	})
 }
 
@@ -118,12 +118,12 @@ func HandlePollInvestigation(ctx context.Context, kaClient *ka.Client, args Poll
 }
 
 // NewPollInvestigationTool creates the kubernaut_poll_investigation tool.
-func NewPollInvestigationTool() (tool.Tool, error) {
+func NewPollInvestigationTool(kaClient *ka.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_poll_investigation",
 		Description: "Check investigation progress. Blocks for up to 15 seconds polling every 3 seconds. Re-call if status is in_progress.",
 	}, func(ctx tool.Context, args PollInvestigationArgs) (PollInvestigationResult, error) {
-		return PollInvestigationResult{}, fmt.Errorf("not implemented: requires wiring in PR5")
+		return HandlePollInvestigation(ctx, kaClient, args, 5, 3*time.Second)
 	})
 }
 
@@ -164,12 +164,12 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 }
 
 // NewSelectWorkflowTool creates the kubernaut_select_workflow tool.
-func NewSelectWorkflowTool() (tool.Tool, error) {
+func NewSelectWorkflowTool(mcpClient ka.MCPClient) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_select_workflow",
 		Description: "Select a remediation workflow for execution. Triggers enrichment and workflow selection in the backend.",
 	}, func(ctx tool.Context, args SelectWorkflowArgs) (SelectWorkflowResult, error) {
-		return SelectWorkflowResult{}, fmt.Errorf("not implemented: requires wiring in PR5")
+		return HandleSelectWorkflow(ctx, mcpClient, args)
 	})
 }
 

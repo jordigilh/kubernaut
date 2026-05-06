@@ -47,12 +47,12 @@ func HandleListWorkflows(ctx context.Context, client ds.Client, args ListWorkflo
 }
 
 // NewListWorkflowsTool creates the kubernaut_list_workflows tool.
-func NewListWorkflowsTool() (tool.Tool, error) {
+func NewListWorkflowsTool(client ds.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_list_workflows",
 		Description: "List available remediation workflows from the catalog, optionally filtered by resource kind",
 	}, func(ctx tool.Context, args ListWorkflowsArgs) (ListWorkflowsResult, error) {
-		return ListWorkflowsResult{}, fmt.Errorf("not implemented: requires wiring in PR5")
+		return HandleListWorkflows(ctx, client, args)
 	})
 }
 
@@ -99,12 +99,12 @@ func HandleGetRemediationHistory(ctx context.Context, client ds.Client, args Get
 }
 
 // NewGetRemediationHistoryTool creates the kubernaut_get_remediation_history tool.
-func NewGetRemediationHistoryTool() (tool.Tool, error) {
+func NewGetRemediationHistoryTool(client ds.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_remediation_history",
 		Description: "Query historical remediations from the Data Store with optional filtering",
 	}, func(ctx tool.Context, args GetRemediationHistoryArgs) (GetRemediationHistoryResult, error) {
-		return GetRemediationHistoryResult{}, fmt.Errorf("not implemented: requires wiring in PR5")
+		return HandleGetRemediationHistory(ctx, client, args)
 	})
 }
 
@@ -138,12 +138,12 @@ func HandleGetEffectiveness(ctx context.Context, client ds.Client, args GetEffec
 }
 
 // NewGetEffectivenessTool creates the kubernaut_get_effectiveness tool.
-func NewGetEffectivenessTool() (tool.Tool, error) {
+func NewGetEffectivenessTool(client ds.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_effectiveness",
 		Description: "Get effectiveness scores and metrics for remediation workflows",
 	}, func(ctx tool.Context, args GetEffectivenessArgs) (GetEffectivenessResult, error) {
-		return GetEffectivenessResult{}, fmt.Errorf("not implemented: requires wiring in PR5")
+		return HandleGetEffectiveness(ctx, client, args)
 	})
 }
 
@@ -187,11 +187,11 @@ func HandleGetAuditTrail(ctx context.Context, client ds.Client, args GetAuditTra
 }
 
 // NewGetAuditTrailTool creates the kubernaut_get_audit_trail tool.
-func NewGetAuditTrailTool() (tool.Tool, error) {
+func NewGetAuditTrailTool(client ds.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_audit_trail",
 		Description: "Retrieve the audit trail for a remediation, showing all actions and decisions",
 	}, func(ctx tool.Context, args GetAuditTrailArgs) (GetAuditTrailResult, error) {
-		return GetAuditTrailResult{}, fmt.Errorf("not implemented: requires wiring in PR5")
+		return HandleGetAuditTrail(ctx, client, args)
 	})
 }

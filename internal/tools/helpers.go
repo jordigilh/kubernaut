@@ -1,14 +1,12 @@
 package tools
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/client-go/dynamic"
 )
 
 // ErrNotFound indicates the requested resource was not found.
@@ -19,12 +17,6 @@ var ErrForbidden = errors.New("access denied")
 
 // ErrAlreadyTerminal indicates the resource is already in a terminal state.
 var ErrAlreadyTerminal = errors.New("already in terminal state")
-
-// DynamicClientFactory creates dynamic K8s clients for CRD operations.
-// In production, this wraps auth.ClientFactory; in tests, it returns fakes.
-type DynamicClientFactory interface {
-	DynamicClient(ctx context.Context) (dynamic.Interface, error)
-}
 
 // ParseRRID parses an rr_id shorthand (namespace/name) into its components.
 // If rr_id is empty, namespace and name are returned as-is.

@@ -2,6 +2,13 @@
 // RBAC-based tool filtering for the kubernaut API Frontend.
 package agent
 
+import (
+	"k8s.io/client-go/dynamic"
+
+	"github.com/jordigilh/kubernaut-apifrontend/internal/ds"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/ka"
+)
+
 // AgentConfig holds the configuration for creating the ADK root agent.
 //
 //nolint:revive // stutters with package name but preferred for clarity across the codebase
@@ -20,6 +27,14 @@ type AgentConfig struct {
 	KAMCPEndpoint string
 	// DSBaseURL is the base URL for the Data Store API.
 	DSBaseURL string
+	// K8sClient is the dynamic K8s client for CRD operations.
+	K8sClient dynamic.Interface
+	// DSClient is the Data Store client for workflow/history queries.
+	DSClient ds.Client
+	// KAClient is the Kubernaut Agent REST client for investigations.
+	KAClient *ka.Client
+	// MCPClient is the KA MCP client for workflow selection.
+	MCPClient ka.MCPClient
 }
 
 // Option applies a configuration override to AgentConfig.
