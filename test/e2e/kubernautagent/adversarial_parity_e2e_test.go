@@ -305,24 +305,65 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 			), "no_workflow_found should produce a valid HR reason enum")
 		})
 
-		// BR-HAPI-261 AC#7 / #704: enrichment-driven rca_incomplete.
-		// With HAPI-compliant defaults (MaxRetries=3) and E2E fixtures,
-		// unreachable-pod does NOT exist → NotFound → HardFail → rca_incomplete.
-		It("E2E-KA-433-ADV-016: rca_incomplete triggers needs_human_review", func() {
-			req := buildRequest("adv-016", "mock_rca_incomplete", "critical")
+		// Issue #1039: Deleted resource proceeds to workflow selection.
+		// unreachable-pod does NOT exist → NotFound → enrichment softened
+		// (no HardFail) → pipeline continues to workflow selection →
+		// mock LLM returns generic-restart-v1 workflow.
+		// Replaces E2E-KA-433-ADV-016 which asserted rca_incomplete.
+		It("E2E-KA-1039-001: deleted resource proceeds to workflow selection", func() {
+			req := buildRequest("1039-001", "mock_rca_incomplete", "critical")
 			result, err := sessionClient.Investigate(ctx, req)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
+			// Pipeline must NOT abort with rca_incomplete.
 			needsHR, hasHR := result.NeedsHumanReview.Get()
-			Expect(hasHR).To(BeTrue(), "M1: needs_human_review must always be set")
-			Expect(needsHR).To(BeTrue(),
-				"E2E-KA-433-ADV-016: rca_incomplete must trigger needs_human_review=true")
+			if hasHR && needsHR {
+				hrReason, hasReason := result.HumanReviewReason.Get()
+				if hasReason {
+					Expect(string(hrReason)).NotTo(Equal("rca_incomplete"),
+						"E2E-KA-1039-001: deleted resource must NOT trigger rca_incomplete")
+				}
+			}
 
-			hrReason, hasReason := result.HumanReviewReason.Get()
-			Expect(hasReason).To(BeTrue(), "M2: human_review_reason must be set when needs_human_review=true")
-		Expect(hrReason).To(BeEquivalentTo("rca_incomplete"),
-			"E2E-KA-433-ADV-016: reason must be rca_incomplete (enrichment HardFail)")
+			// Workflow selection must have run and produced a result.
+			sw, hasSW := result.SelectedWorkflow.Get()
+			Expect(hasSW).To(BeTrue(),
+				"E2E-KA-1039-001: selected_workflow must be present (pipeline continued)")
+			Expect(sw).To(HaveKey("workflow_id"),
+				"E2E-KA-1039-001: selected_workflow must contain workflow_id")
+
+			Expect(result.Confidence).To(BeNumerically(">=", 0.5),
+				"E2E-KA-1039-001: confidence must reflect LLM assessment (mock returns 0.88)")
+			Expect(result.Analysis).NotTo(BeEmpty(),
+				"E2E-KA-1039-001: analysis must be present (RCA phase completed)")
+		})
+
+		// Issue #1039: Deleted resource warning surfaced in response.
+		// Verifies observability: when enrichment detects a deleted target,
+		// a warning is added to the investigation response.
+		It("E2E-KA-1039-002: deleted resource warning in response", func() {
+			req := buildRequest("1039-002", "mock_rca_incomplete", "critical")
+			result, err := sessionClient.Investigate(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			hasDeletedWarning := false
+			for _, w := range result.Warnings {
+				if strings.Contains(w, "deleted") {
+					hasDeletedWarning = true
+					break
+				}
+			}
+			Expect(hasDeletedWarning).To(BeTrue(),
+				"E2E-KA-1039-002: warnings must contain a 'deleted' resource notice")
+
+			// Investigation must still succeed despite the warning.
+			sw, hasSW := result.SelectedWorkflow.Get()
+			Expect(hasSW).To(BeTrue(),
+				"E2E-KA-1039-002: investigation must succeed with workflow selected")
+			Expect(sw).To(HaveKey("workflow_id"),
+				"E2E-KA-1039-002: selected_workflow must contain workflow_id")
 		})
 	})
 })

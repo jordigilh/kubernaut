@@ -29,11 +29,11 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/sanitization"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 const maxSelfCorrectionAttempts = 3
@@ -259,6 +259,12 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			injectTargetResourceParameters(rcaResult)
 			inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 			return rcaResult, nil
+		}
+
+		if reEnriched != nil && reEnriched.TargetResourceDeleted {
+			rcaResult.Warnings = append(rcaResult.Warnings,
+				fmt.Sprintf("target resource %s/%s in %s was deleted; enrichment data is sparse",
+					postRCAKind, postRCAName, postRCANS))
 		}
 
 		if reEnriched != nil && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
@@ -916,6 +922,3 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 
 	return &ExhaustedResult{Reason: "max turns exhausted"}, nil
 }
-
-
-
