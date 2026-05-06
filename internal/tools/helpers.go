@@ -18,6 +18,9 @@ var ErrForbidden = errors.New("access denied")
 // ErrAlreadyTerminal indicates the resource is already in a terminal state.
 var ErrAlreadyTerminal = errors.New("already in terminal state")
 
+// ErrK8sUnavailable indicates the K8s cluster is not reachable.
+var ErrK8sUnavailable = errors.New("kubernetes cluster is not available — contact your administrator")
+
 // ParseRRID parses an rr_id shorthand (namespace/name) into its components.
 // If rr_id is empty, namespace and name are returned as-is.
 func ParseRRID(rrID, namespace, name string) (ns, n string, err error) {

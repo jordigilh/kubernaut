@@ -146,6 +146,9 @@ type SelectWorkflowResult struct {
 //
 //nolint:gocritic // hugeParam: args passed by value for simplicity; not performance-critical
 func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args SelectWorkflowArgs) (SelectWorkflowResult, error) {
+	if mcpClient == nil {
+		return SelectWorkflowResult{}, fmt.Errorf("workflow selection is not available: MCP client not configured")
+	}
 	result, err := mcpClient.SelectWorkflow(ctx, ka.SelectWorkflowArgs{
 		RRID:       args.RRID,
 		WorkflowID: args.WorkflowID,

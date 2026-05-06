@@ -314,8 +314,8 @@ func buildAuthMiddleware(
 func buildK8sDynamicClient(cb *resilience.K8sCircuitBreaker, logger logr.Logger) (dynamic.Interface, error) {
 	restCfg, err := rest.InClusterConfig()
 	if err != nil {
-		logger.Info("in-cluster config unavailable, K8s tools will not function until cluster access is configured", "error", err)
-		return nil, fmt.Errorf("load in-cluster kubeconfig: %w", err)
+		logger.Error(err, "in-cluster config unavailable — CRD tools will return errors until cluster access is configured")
+		return nil, nil
 	}
 
 	rawClient, err := dynamic.NewForConfig(restCfg)

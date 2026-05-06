@@ -131,21 +131,20 @@ func (t *CircuitBreakerTransport) isFailureStatus(code int) bool {
 
 // statusBucket returns a low-cardinality label for the HTTP response status class.
 func statusBucket(resp *http.Response, err error) string {
-	if err != nil {
+	if err != nil || resp == nil {
 		return "error"
 	}
-	if resp == nil {
-		return "error"
-	}
-	switch {
-	case resp.StatusCode < 300:
+	switch resp.StatusCode / 100 {
+	case 2:
 		return "2xx"
-	case resp.StatusCode < 400:
+	case 3:
 		return "3xx"
-	case resp.StatusCode < 500:
+	case 4:
 		return "4xx"
-	default:
+	case 5:
 		return "5xx"
+	default:
+		return "other"
 	}
 }
 

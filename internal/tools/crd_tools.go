@@ -47,6 +47,9 @@ type RemediationSummary struct {
 
 // HandleListRemediations implements the kubernaut_list_remediations logic.
 func HandleListRemediations(ctx context.Context, client dynamic.Interface, args ListRemediationsArgs) (ListRemediationsResult, error) {
+	if client == nil {
+		return ListRemediationsResult{}, ErrK8sUnavailable
+	}
 	opts := metav1.ListOptions{}
 
 	var labelSelectors []string
@@ -126,6 +129,9 @@ type GetRemediationResult struct {
 
 // HandleGetRemediation implements the kubernaut_get_remediation logic.
 func HandleGetRemediation(ctx context.Context, client dynamic.Interface, args GetRemediationArgs) (GetRemediationResult, error) {
+	if client == nil {
+		return GetRemediationResult{}, ErrK8sUnavailable
+	}
 	ns, name, err := ParseRRID(args.RRID, args.Namespace, args.Name)
 	if err != nil {
 		return GetRemediationResult{}, err
@@ -179,6 +185,9 @@ type SubmitSignalResult struct {
 //
 //nolint:gocritic // hugeParam: args passed by value for simplicity; not performance-critical
 func HandleSubmitSignal(ctx context.Context, client dynamic.Interface, args SubmitSignalArgs, username string) (SubmitSignalResult, error) {
+	if client == nil {
+		return SubmitSignalResult{}, ErrK8sUnavailable
+	}
 	signalName := fmt.Sprintf("sp-%s-%s-%d", args.Kind, args.Name, time.Now().UnixMilli())
 
 	sp := &unstructured.Unstructured{
@@ -239,6 +248,9 @@ type ApproveResult struct {
 //
 //nolint:gocritic // hugeParam: args passed by value for simplicity; not performance-critical
 func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveArgs, username string) (ApproveResult, error) {
+	if client == nil {
+		return ApproveResult{}, ErrK8sUnavailable
+	}
 	_, err := client.Resource(rarGVR).Namespace(args.Namespace).Get(ctx, args.RARName, metav1.GetOptions{})
 	if err != nil {
 		return ApproveResult{}, ToUserFriendlyError(err)
@@ -300,6 +312,9 @@ type CancelRemediationResult struct {
 
 // HandleCancelRemediation implements the kubernaut_cancel_remediation logic.
 func HandleCancelRemediation(ctx context.Context, client dynamic.Interface, args CancelRemediationArgs) (CancelRemediationResult, error) {
+	if client == nil {
+		return CancelRemediationResult{}, ErrK8sUnavailable
+	}
 	ns, name, err := ParseRRID(args.RRID, args.Namespace, args.Name)
 	if err != nil {
 		return CancelRemediationResult{}, err
@@ -373,6 +388,9 @@ const maxWatchDuration = 10 * time.Minute
 
 // HandleWatch implements the kubernaut_watch logic.
 func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) (WatchResult, error) {
+	if client == nil {
+		return WatchResult{}, ErrK8sUnavailable
+	}
 	watchCtx, cancel := context.WithTimeout(ctx, maxWatchDuration)
 	defer cancel()
 

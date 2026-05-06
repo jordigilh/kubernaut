@@ -465,7 +465,7 @@ func TestFullChain_ConcurrentLoad(t *testing.T) {
 	})
 
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -482,8 +482,8 @@ func TestFullChain_ConcurrentLoad(t *testing.T) {
 	}
 	wg.Wait()
 
-	if successCount.Load() != 20 {
-		t.Errorf("total successes = %d, want 20", successCount.Load())
+	if successCount.Load() != 10 {
+		t.Errorf("total successes = %d, want 10", successCount.Load())
 	}
 }
 

@@ -3,6 +3,7 @@ package resilience
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -179,12 +180,12 @@ func TestResilientDynamicClient_ConcurrentOperations(t *testing.T) {
 
 	ctx := context.Background()
 	var successCount atomic.Int32
-	var wg atomic.Int32
+	var wg sync.WaitGroup
 
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
 		go func() {
-			defer wg.Add(-1)
+			defer wg.Done()
 			_, err := resilientClient.Resource(testGVR).Namespace("default").List(ctx, metav1.ListOptions{})
 			if err == nil {
 				successCount.Add(1)
@@ -192,10 +193,7 @@ func TestResilientDynamicClient_ConcurrentOperations(t *testing.T) {
 		}()
 	}
 
-	// Wait for goroutines
-	for wg.Load() > 0 {
-		time.Sleep(1 * time.Millisecond)
-	}
+	wg.Wait()
 
 	if successCount.Load() != 20 {
 		t.Errorf("successes = %d, want 20", successCount.Load())
