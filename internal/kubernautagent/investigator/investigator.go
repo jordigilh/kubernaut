@@ -263,8 +263,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 		if reEnriched != nil && reEnriched.TargetResourceDeleted {
 			rcaResult.Warnings = append(rcaResult.Warnings,
-				fmt.Sprintf("target resource %s/%s in %s was deleted; enrichment data is sparse",
-					postRCAKind, postRCAName, postRCANS))
+				deletedResourceWarning(postRCAKind, postRCAName, postRCANS))
 		}
 
 		if reEnriched != nil && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
@@ -282,8 +281,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		workflowSignal.Namespace = postRCANS
 	} else if enrichData != nil && enrichData.TargetResourceDeleted {
 		rcaResult.Warnings = append(rcaResult.Warnings,
-			fmt.Sprintf("target resource %s/%s in %s was deleted; enrichment data is sparse",
-				signalKind, signalName, signalNS))
+			deletedResourceWarning(signalKind, signalName, signalNS))
 	}
 
 	inv.pipeline.AnomalyDetector.Reset()
@@ -313,6 +311,10 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	injectTargetResourceParameters(workflowResult)
 	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
 	return workflowResult, nil
+}
+
+func deletedResourceWarning(kind, name, ns string) string {
+	return fmt.Sprintf("target resource %s/%s in %s was deleted; enrichment data is sparse", kind, name, ns)
 }
 
 // backfillSeverity ensures InvestigationResult.Severity is never empty.
