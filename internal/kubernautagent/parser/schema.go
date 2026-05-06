@@ -66,7 +66,8 @@ const noWorkflowResultSchemaJSON = `{
           "properties": {
             "kind": { "type": "string" },
             "name": { "type": "string" },
-            "namespace": { "type": "string" }
+            "namespace": { "type": "string" },
+            "api_version": { "type": "string", "description": "Optional API group/version (e.g. route.openshift.io/v1) to disambiguate when multiple API groups register the same Kind." }
           }
         }
       },
@@ -95,7 +96,8 @@ const rcaResultSchemaJSON = `{
           "properties": {
             "kind": { "type": "string" },
             "name": { "type": "string" },
-            "namespace": { "type": "string" }
+            "namespace": { "type": "string" },
+            "api_version": { "type": "string", "description": "Optional API group/version (e.g. route.openshift.io/v1) to disambiguate when multiple API groups register the same Kind." }
           }
         },
         "investigation_analysis": { "type": "string", "description": "Concise narrative summary of the investigation findings and reasoning (< 500 words). This field is consumed by the Phase 3 workflow selection LLM to provide investigation context." },
@@ -147,7 +149,8 @@ const investigationResultSchemaJSON = `{
           "properties": {
             "kind": { "type": "string" },
             "name": { "type": "string" },
-            "namespace": { "type": "string" }
+            "namespace": { "type": "string" },
+            "api_version": { "type": "string", "description": "Optional API group/version (e.g. route.openshift.io/v1) to disambiguate when multiple API groups register the same Kind." }
           }
         }
       },

@@ -209,13 +209,13 @@ const confidenceFloor = 0.8
 type llmResponse struct {
 	RCA                  *llmRCA                `json:"root_cause_analysis"`
 	RCAAlt               *llmRCA                `json:"rootCauseAnalysis,omitempty"`
-	Workflow             *llmWorkflow            `json:"selected_workflow"`
-	AlternativeWorkflows []llmAlternative        `json:"alternative_workflows,omitempty"`
-	Severity             string                  `json:"severity,omitempty"`
-	Confidence           float64                 `json:"confidence,omitempty"`
-	Actionable           *bool                   `json:"actionable,omitempty"`
-	InvestigationOutcome string                  `json:"investigation_outcome,omitempty"`
-	DetectedLabels       map[string]interface{}  `json:"detected_labels,omitempty"`
+	Workflow             *llmWorkflow           `json:"selected_workflow"`
+	AlternativeWorkflows []llmAlternative       `json:"alternative_workflows,omitempty"`
+	Severity             string                 `json:"severity,omitempty"`
+	Confidence           float64                `json:"confidence,omitempty"`
+	Actionable           *bool                  `json:"actionable,omitempty"`
+	InvestigationOutcome string                 `json:"investigation_outcome,omitempty"`
+	DetectedLabels       map[string]interface{} `json:"detected_labels,omitempty"`
 }
 
 // resolvedRCA returns the RCA from either snake_case or camelCase key.
@@ -253,9 +253,10 @@ func (r *llmRCA) resolvedTarget() *llmRemTarget {
 }
 
 type llmRemTarget struct {
-	Kind      string `json:"kind"`
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
+	APIVersion string `json:"api_version,omitempty"`
 }
 
 type llmWorkflow struct {
@@ -423,9 +424,10 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 		result.DueDiligence = rca.DueDiligence
 		if t := rca.resolvedTarget(); t != nil {
 			result.RemediationTarget = katypes.RemediationTarget{
-				Kind:      t.Kind,
-				Name:      t.Name,
-				Namespace: t.Namespace,
+				Kind:       t.Kind,
+				Name:       t.Name,
+				Namespace:  t.Namespace,
+				APIVersion: t.APIVersion,
 			}
 		}
 	}
@@ -622,9 +624,10 @@ func mergeNestedRemediationTarget(result *katypes.InvestigationResult, jsonStr s
 	}
 	if t := rca.resolvedTarget(); t != nil {
 		result.RemediationTarget = katypes.RemediationTarget{
-			Kind:      t.Kind,
-			Name:      t.Name,
-			Namespace: t.Namespace,
+			Kind:       t.Kind,
+			Name:       t.Name,
+			Namespace:  t.Namespace,
+			APIVersion: t.APIVersion,
 		}
 	}
 }

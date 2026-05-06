@@ -840,11 +840,13 @@ func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalys
 			kind, _ := arMap["kind"].(string)
 			name, _ := arMap["name"].(string)
 			ns, _ := arMap["namespace"].(string)
+			apiVersion, _ := arMap["api_version"].(string) // #1040
 			if kind != "" && name != "" {
 				rca.RemediationTarget = &aianalysisv1.RemediationTarget{
-					Kind:      kind,
-					Name:      name,
-					Namespace: ns,
+					Kind:       kind,
+					Name:       name,
+					Namespace:  ns,
+					APIVersion: apiVersion,
 				}
 			}
 		}
