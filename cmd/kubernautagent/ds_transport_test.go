@@ -19,12 +19,14 @@ package main
 import (
 	"net/http"
 	"testing"
+
+	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 )
 
 func TestBuildDSBaseTransport_WithCAFile(t *testing.T) {
 	caPath := generateTestCACert(t, "DS Test CA")
 
-	transport, err := buildDSBaseTransport(caPath)
+	transport, err := buildDSBaseTransport(caPath, kaconfig.CircuitBreakerCfg{})
 	if err != nil {
 		t.Fatalf("expected no error with valid CA file, got: %v", err)
 	}
@@ -37,7 +39,7 @@ func TestBuildDSBaseTransport_WithCAFile(t *testing.T) {
 }
 
 func TestBuildDSBaseTransport_EmptyCAFile(t *testing.T) {
-	transport, err := buildDSBaseTransport("")
+	transport, err := buildDSBaseTransport("", kaconfig.CircuitBreakerCfg{})
 	if err != nil {
 		t.Fatalf("expected no error with empty caFile, got: %v", err)
 	}
@@ -47,7 +49,7 @@ func TestBuildDSBaseTransport_EmptyCAFile(t *testing.T) {
 }
 
 func TestBuildDSBaseTransport_InvalidCAFile(t *testing.T) {
-	_, err := buildDSBaseTransport("/nonexistent/ca.crt")
+	_, err := buildDSBaseTransport("/nonexistent/ca.crt", kaconfig.CircuitBreakerCfg{})
 	if err == nil {
 		t.Fatal("expected error with invalid CA file path, got nil")
 	}
