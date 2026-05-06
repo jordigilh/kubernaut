@@ -11,6 +11,22 @@ mcp-server
 *.bak
 *.bak2
 
+# WIP/backup test file artifacts (prevent re-introduction)
+*.final
+*.final[0-9]*
+*.tf
+*.ff
+*.af
+*.uf
+*.lh
+*.ogen
+*.ogen[0-9]*
+*.ogenbak
+*.ogenfix
+*.constbak
+*.all
+*.fix[0-9]*
+
 
 # Compiled Go binaries (service executables - root directory only)
 /aianalysis
