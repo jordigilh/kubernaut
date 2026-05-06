@@ -119,6 +119,11 @@ func (t *CircuitBreakerTransport) State() gobreaker.State {
 	return t.cb.State()
 }
 
+// Healthy returns true when the circuit breaker is not in the Open state.
+func (t *CircuitBreakerTransport) Healthy() bool {
+	return t.cb.State() != gobreaker.StateOpen
+}
+
 func (t *CircuitBreakerTransport) isFailureStatus(code int) bool {
 	_, ok := t.failureStatuses[code]
 	return ok

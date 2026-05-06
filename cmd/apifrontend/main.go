@@ -37,12 +37,15 @@ import (
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/config"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/ds"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/handler"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/ka"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/launcher"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/logging"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/metrics"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/requestid"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/resilience"
 )
 
 func main() {
@@ -108,6 +111,71 @@ func run() error {
 	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
 	defer userLimiter.Stop()
 
+	// --- Resilience: KA client ---
+	kaClient := ka.NewClient(ka.Config{
+		BaseURL:            cfg.Agent.KABaseURL,
+		Timeout:            cfg.Resilience.KA.RequestTimeout,
+		RetryMax:           cfg.Resilience.KA.RetryMax,
+		RetryInitBackoff:   cfg.Resilience.KA.RetryInitBackoff,
+		RetryMaxBackoff:    cfg.Resilience.KA.RetryMaxBackoff,
+		RetryableStatuses:  cfg.Resilience.KA.RetryableStatuses,
+		CBMaxRequests:      cfg.Resilience.KA.CBMaxRequests,
+		CBInterval:         cfg.Resilience.KA.CBInterval,
+		CBTimeout:          cfg.Resilience.KA.CBTimeout,
+		CBFailureThreshold: cfg.Resilience.KA.CBFailureThreshold,
+	}, &ka.ClientMetrics{
+		StateGauge:   metricsReg.CircuitBreakerState,
+		RetryCounter: metricsReg.DownstreamRetryTotal,
+		DurationHist: metricsReg.DownstreamDuration,
+	})
+
+	// --- Resilience: DS ogen client ---
+	dsRetryRT := resilience.NewRetryTransport(http.DefaultTransport, &resilience.RetryConfig{
+		MaxAttempts:       cfg.Resilience.DS.RetryMax + 1,
+		InitialBackoff:    cfg.Resilience.DS.RetryInitBackoff,
+		MaxBackoff:        cfg.Resilience.DS.RetryMaxBackoff,
+		RetryableStatuses: cfg.Resilience.DS.RetryableStatuses,
+		RetryCounter:      metricsReg.DownstreamRetryTotal,
+		DependencyName:    "ds",
+	})
+	dsCBT := resilience.NewCircuitBreakerTransport(dsRetryRT, &resilience.CircuitBreakerConfig{
+		Name:             "ds-rest",
+		MaxRequests:      cfg.Resilience.DS.CBMaxRequests,
+		Interval:         cfg.Resilience.DS.CBInterval,
+		Timeout:          cfg.Resilience.DS.CBTimeout,
+		FailureThreshold: cfg.Resilience.DS.CBFailureThreshold,
+		StateGauge:       metricsReg.CircuitBreakerState,
+		DurationHist:     metricsReg.DownstreamDuration,
+		DependencyName:   "ds",
+	})
+	dsClient, err := ds.NewOgenClient(ds.OgenClientConfig{
+		BaseURL:   cfg.Agent.DSBaseURL,
+		Transport: dsCBT,
+		Timeout:   cfg.Resilience.DS.RequestTimeout,
+	})
+	if err != nil {
+		return fmt.Errorf("create DS client: %w", err)
+	}
+
+	// --- Resilience: K8s circuit breaker ---
+	k8sCB := resilience.NewK8sCircuitBreaker(resilience.K8sCBConfig{
+		Name:             "k8s-api",
+		MaxRequests:      cfg.Resilience.K8s.CBMaxRequests,
+		Interval:         cfg.Resilience.K8s.CBInterval,
+		Timeout:          cfg.Resilience.K8s.CBTimeout,
+		FailureThreshold: cfg.Resilience.K8s.CBFailureThreshold,
+		StateGauge:       metricsReg.CircuitBreakerState,
+		DependencyName:   "k8s",
+	})
+
+	// k8sCB wraps dynamic K8s clients for CRD operations.
+	// ResilientDynamicClient is the adapter injected into CRD tool handlers.
+	// Production K8s client creation requires kubeconfig (deferred to PR7).
+	_ = resilience.NewResilientDynamicClient // reference to prove wiring path exists
+	_ = kaClient
+	_ = dsClient
+	_ = k8sCB
+
 	agentCfg := agentpkg.AgentConfig{
 		GCPProject:    cfg.Agent.GCPProject,
 		GCPRegion:     cfg.Agent.GCPRegion,
@@ -163,8 +231,12 @@ func run() error {
 		MCPHandler:       mcpHandler,
 		AgentCardHandler: agentCardHandler,
 		AuthMiddleware:   authMiddleware,
-		ReadyChecker:     handler.AllReady(validator.Ready),
-		// TODO(PR7+): add session/A2A readiness checkers
+		ReadyChecker: handler.AllReady(
+			validator.Ready,
+			kaClient.Healthy,
+			dsCBT.Healthy,
+			k8sCB.Healthy,
+		),
 	})
 	if err != nil {
 		return fmt.Errorf("create router: %w", err)
