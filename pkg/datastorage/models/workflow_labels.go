@@ -102,13 +102,89 @@ func (c *CustomLabels) Scan(value interface{}) error {
 }
 
 // DetectedLabels is the DB-oriented label detection type (DD-WORKFLOW-001 v2.3).
-// Alias for sharedtypes.DBDetectedLabels -- sparse JSON serialization for JSONB storage.
-// The canonical CRD type (sharedtypes.DetectedLabels) uses full JSON with all fields present.
-type DetectedLabels = sharedtypes.DBDetectedLabels
+// Derived from sharedtypes.DetectedLabels with sparse JSON serialization for JSONB storage.
+// The canonical CRD type (sharedtypes.DetectedLabels) uses full JSON with all fields present;
+// this type omits false booleans and empty strings for efficient JSONB storage.
+type DetectedLabels sharedtypes.DetectedLabels
 
 // NewDetectedLabels creates a DetectedLabels with an initialized (non-nil) FailedDetections slice.
 func NewDetectedLabels() *DetectedLabels {
-	return sharedtypes.NewDBDetectedLabels()
+	return &DetectedLabels{
+		FailedDetections: make([]string, 0),
+	}
+}
+
+// SerializeLabels produces sparse JSON, omitting false boolean fields.
+func (d DetectedLabels) SerializeLabels() ([]byte, error) {
+	m := make(map[string]interface{})
+	if len(d.FailedDetections) > 0 {
+		m["failedDetections"] = d.FailedDetections
+	}
+	if d.GitOpsManaged {
+		m["gitOpsManaged"] = true
+	}
+	if d.GitOpsTool != "" {
+		m["gitOpsTool"] = d.GitOpsTool
+	}
+	if d.PDBProtected {
+		m["pdbProtected"] = true
+	}
+	if d.HPAEnabled {
+		m["hpaEnabled"] = true
+	}
+	if d.Stateful {
+		m["stateful"] = true
+	}
+	if d.HelmManaged {
+		m["helmManaged"] = true
+	}
+	if d.NetworkIsolated {
+		m["networkIsolated"] = true
+	}
+	if d.ServiceMesh != "" {
+		m["serviceMesh"] = d.ServiceMesh
+	}
+	if d.ResourceQuotaConstrained {
+		m["resourceQuotaConstrained"] = true
+	}
+	return json.Marshal(m)
+}
+
+// MarshalJSON implements json.Marshaler for sparse DB-oriented output.
+// Value receiver ensures the interface is satisfied when boxed in interface{}.
+func (d DetectedLabels) MarshalJSON() ([]byte, error) {
+	return d.SerializeLabels()
+}
+
+// Value implements driver.Valuer for PostgreSQL JSONB column writing.
+// Value receiver ensures the interface is satisfied when boxed in interface{}.
+func (d DetectedLabels) Value() (driver.Value, error) {
+	return d.SerializeLabels()
+}
+
+// Scan implements sql.Scanner for PostgreSQL JSONB column scanning.
+func (d *DetectedLabels) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("DetectedLabels.Scan: expected []byte, got %T", value)
+	}
+	type Alias DetectedLabels
+	return json.Unmarshal(bytes, (*Alias)(d))
+}
+
+// IsEmpty returns true when no label detection produced a positive result.
+func (d *DetectedLabels) IsEmpty() bool {
+	return !d.GitOpsManaged &&
+		d.GitOpsTool == "" &&
+		!d.PDBProtected &&
+		!d.HPAEnabled &&
+		!d.Stateful &&
+		!d.HelmManaged &&
+		!d.NetworkIsolated &&
+		d.ServiceMesh == ""
 }
 
 // ========================================

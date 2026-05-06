@@ -37,14 +37,11 @@ type detectedLabelsSerializer interface {
 }
 
 var _ detectedLabelsSerializer = (*sharedtypes.DetectedLabels)(nil)
-var _ detectedLabelsSerializer = (sharedtypes.DBDetectedLabels{})
+var _ detectedLabelsSerializer = (models.DetectedLabels{})
 
-// Compile-time: DBDetectedLabels satisfies driver.Valuer via value receiver.
-var _ driver.Valuer = sharedtypes.DBDetectedLabels{}
-var _ driver.Valuer = (*sharedtypes.DetectedLabels)(nil)
-
-// Compile-time: DBDetectedLabels satisfies json.Marshaler via value receiver.
-var _ json.Marshaler = sharedtypes.DBDetectedLabels{}
+// Compile-time: models.DetectedLabels satisfies driver.Valuer and json.Marshaler via value receiver.
+var _ driver.Valuer = models.DetectedLabels{}
+var _ json.Marshaler = models.DetectedLabels{}
 
 var _ = Describe("DetectedLabels domain-specific serialization (BR-AI-056, #1052)", func() {
 
@@ -116,9 +113,9 @@ var _ = Describe("DetectedLabels domain-specific serialization (BR-AI-056, #1052
 		})
 	})
 
-	Describe("DB sparse-JSON contract (DBDetectedLabels / models.DetectedLabels)", func() {
+	Describe("DB sparse-JSON contract (models.DetectedLabels)", func() {
 		It("UT-DL-SERIAL-010: SerializeLabels omits false booleans from output", func() {
-			dl := sharedtypes.DBDetectedLabels{}
+			dl := models.DetectedLabels{}
 			raw, err := dl.SerializeLabels()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -134,7 +131,7 @@ var _ = Describe("DetectedLabels domain-specific serialization (BR-AI-056, #1052
 		})
 
 		It("UT-DL-SERIAL-011: SerializeLabels includes only true booleans and non-empty strings", func() {
-			dl := sharedtypes.DBDetectedLabels{
+			dl := models.DetectedLabels{
 				GitOpsManaged:            true,
 				GitOpsTool:               "flux",
 				HPAEnabled:               false,
@@ -160,7 +157,7 @@ var _ = Describe("DetectedLabels domain-specific serialization (BR-AI-056, #1052
 		})
 
 		It("UT-DL-SERIAL-012: MarshalJSON delegates to SerializeLabels for sparse output", func() {
-			dl := sharedtypes.DBDetectedLabels{GitOpsManaged: true}
+			dl := models.DetectedLabels{GitOpsManaged: true}
 			fromMarshal, err := json.Marshal(dl)
 			Expect(err).ToNot(HaveOccurred())
 			fromSerialize, err := dl.SerializeLabels()
@@ -169,7 +166,7 @@ var _ = Describe("DetectedLabels domain-specific serialization (BR-AI-056, #1052
 		})
 
 		It("UT-DL-SERIAL-013: Value delegates to SerializeLabels for driver.Valuer", func() {
-			dl := sharedtypes.DBDetectedLabels{PDBProtected: true, ServiceMesh: "istio"}
+			dl := models.DetectedLabels{PDBProtected: true, ServiceMesh: "istio"}
 			driverVal, err := dl.Value()
 			Expect(err).ToNot(HaveOccurred())
 			serialized, err := dl.SerializeLabels()
@@ -177,7 +174,7 @@ var _ = Describe("DetectedLabels domain-specific serialization (BR-AI-056, #1052
 			Expect(driverVal).To(Equal(serialized))
 		})
 
-		It("UT-DL-SERIAL-014: models.DetectedLabels alias resolves to DBDetectedLabels", func() {
+		It("UT-DL-SERIAL-014: models.NewDetectedLabels initializes with empty FailedDetections", func() {
 			dl := models.NewDetectedLabels()
 			Expect(dl.FailedDetections).To(BeEmpty())
 			dl.GitOpsManaged = true
@@ -191,8 +188,8 @@ var _ = Describe("DetectedLabels domain-specific serialization (BR-AI-056, #1052
 	})
 
 	Describe("Round-trip Scan/Value (DB domain)", func() {
-		It("UT-DL-SERIAL-020: DBDetectedLabels Value -> Scan round-trip preserves all fields", func() {
-			original := sharedtypes.DBDetectedLabels{
+		It("UT-DL-SERIAL-020: models.DetectedLabels Value -> Scan round-trip preserves all fields", func() {
+			original := models.DetectedLabels{
 				GitOpsManaged:            true,
 				GitOpsTool:               "argocd",
 				PDBProtected:             false,
@@ -207,7 +204,7 @@ var _ = Describe("DetectedLabels domain-specific serialization (BR-AI-056, #1052
 			dv, err := original.Value()
 			Expect(err).ToNot(HaveOccurred())
 
-			var restored sharedtypes.DBDetectedLabels
+			var restored models.DetectedLabels
 			Expect(restored.Scan(dv)).To(Succeed())
 			Expect(restored.GitOpsManaged).To(Equal(original.GitOpsManaged))
 			Expect(restored.GitOpsTool).To(Equal(original.GitOpsTool))
@@ -222,19 +219,19 @@ var _ = Describe("DetectedLabels domain-specific serialization (BR-AI-056, #1052
 		})
 
 		It("UT-DL-SERIAL-021: Scan(nil) is a no-op", func() {
-			dl := sharedtypes.DBDetectedLabels{GitOpsManaged: true}
+			dl := models.DetectedLabels{GitOpsManaged: true}
 			Expect(dl.Scan(nil)).To(Succeed())
 			Expect(dl.GitOpsManaged).To(BeTrue(), "should not reset on nil scan")
 		})
 
 		It("UT-DL-SERIAL-022: Scan rejects non-byte input", func() {
-			var dl sharedtypes.DBDetectedLabels
+			var dl models.DetectedLabels
 			Expect(dl.Scan(12345)).To(HaveOccurred())
 		})
 
 		It("UT-DL-SERIAL-023: Scan handles sparse JSON correctly (missing booleans default to false)", func() {
 			sparseJSON := []byte(`{"gitOpsManaged":true,"gitOpsTool":"argocd"}`)
-			var dl sharedtypes.DBDetectedLabels
+			var dl models.DetectedLabels
 			Expect(dl.Scan(sparseJSON)).To(Succeed())
 			Expect(dl.GitOpsManaged).To(BeTrue())
 			Expect(dl.GitOpsTool).To(Equal("argocd"))
@@ -244,34 +241,12 @@ var _ = Describe("DetectedLabels domain-specific serialization (BR-AI-056, #1052
 		})
 	})
 
-	Describe("CRD Value/Scan (canonical type)", func() {
-		It("UT-DL-SERIAL-030: DetectedLabels Value produces full JSON with all fields", func() {
-			dl := &sharedtypes.DetectedLabels{GitOpsManaged: true}
-			dv, err := dl.Value()
-			Expect(err).ToNot(HaveOccurred())
-			raw, ok := dv.([]byte)
-			Expect(ok).To(BeTrue())
-
-			var m map[string]interface{}
-			Expect(json.Unmarshal(raw, &m)).To(Succeed())
-			Expect(m).To(HaveKey("pdbProtected"), "CRD Value must include all boolean fields")
-			Expect(m).To(HaveKey("stateful"))
-		})
-
-		It("UT-DL-SERIAL-031: nil DetectedLabels Value returns nil", func() {
-			var dl *sharedtypes.DetectedLabels
-			dv, err := dl.Value()
-			Expect(err).ToNot(HaveOccurred())
-			Expect(dv).To(BeNil())
-		})
-	})
-
 	Describe("IsEmpty parity", func() {
-		It("UT-DL-SERIAL-040: DBDetectedLabels.IsEmpty matches DetectedLabels.IsEmpty contract", func() {
-			Expect((&sharedtypes.DBDetectedLabels{}).IsEmpty()).To(BeTrue())
-			Expect((&sharedtypes.DBDetectedLabels{GitOpsManaged: true}).IsEmpty()).To(BeFalse())
-			Expect((&sharedtypes.DBDetectedLabels{ServiceMesh: "istio"}).IsEmpty()).To(BeFalse())
-			Expect((&sharedtypes.DBDetectedLabels{ResourceQuotaConstrained: true}).IsEmpty()).To(BeTrue(),
+		It("UT-DL-SERIAL-040: models.DetectedLabels.IsEmpty matches DetectedLabels.IsEmpty contract", func() {
+			Expect((&models.DetectedLabels{}).IsEmpty()).To(BeTrue())
+			Expect((&models.DetectedLabels{GitOpsManaged: true}).IsEmpty()).To(BeFalse())
+			Expect((&models.DetectedLabels{ServiceMesh: "istio"}).IsEmpty()).To(BeFalse())
+			Expect((&models.DetectedLabels{ResourceQuotaConstrained: true}).IsEmpty()).To(BeTrue(),
 				"IsEmpty ignores resourceQuotaConstrained (pre-existing contract)")
 		})
 	})

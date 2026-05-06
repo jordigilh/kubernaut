@@ -36,9 +36,7 @@
 package types
 
 import (
-	"database/sql/driver"
 	"encoding/json"
-	"fmt"
 )
 
 // ========================================
@@ -210,34 +208,12 @@ func (d *DetectedLabels) IsEmpty() bool {
 		d.ServiceMesh == ""
 }
 
-// Scan implements sql.Scanner for PostgreSQL JSONB column scanning.
-func (d *DetectedLabels) Scan(value interface{}) error {
-	if value == nil {
-		return nil
-	}
-	bytes, ok := value.([]byte)
-	if !ok {
-		return fmt.Errorf("DetectedLabels.Scan: expected []byte, got %T", value)
-	}
-	return json.Unmarshal(bytes, d)
-}
-
-// Value implements driver.Valuer for PostgreSQL JSONB column writing.
-func (d *DetectedLabels) Value() (driver.Value, error) {
-	if d == nil {
-		return nil, nil
-	}
-	return json.Marshal(d)
-}
-
 // ========================================
 // DETECTED LABELS SERIALIZATION (DD-WORKFLOW-001 v2.3)
 // ========================================
 //
-// Both DetectedLabels and DBDetectedLabels implement the same
-// SerializeLabels() ([]byte, error) contract for domain-specific JSON output:
-//   - DetectedLabels.SerializeLabels(): full JSON (all fields, CRD-safe)
-//   - DBDetectedLabels.SerializeLabels(): sparse JSON (false booleans omitted, DB-efficient)
+// DetectedLabels.SerializeLabels() produces full JSON (all fields, CRD-safe).
+// models.DetectedLabels (in pkg/datastorage/models) provides sparse JSON for DB contexts.
 //
 // Interface compliance is verified in test/unit/datastorage/detected_labels_serialization_test.go.
 
@@ -248,92 +224,6 @@ func (d *DetectedLabels) SerializeLabels() ([]byte, error) {
 	}
 	type Alias DetectedLabels
 	return json.Marshal((*Alias)(d))
-}
-
-// DBDetectedLabels is a derived type for DataStorage/DB contexts.
-// It shares the same memory layout as DetectedLabels but serializes
-// to sparse JSON (false booleans omitted) for efficient JSONB storage.
-// Use NewDBDetectedLabels() to construct instances with non-nil FailedDetections.
-type DBDetectedLabels DetectedLabels
-
-// NewDBDetectedLabels creates a DBDetectedLabels with an initialized (non-nil) FailedDetections slice.
-func NewDBDetectedLabels() *DBDetectedLabels {
-	return &DBDetectedLabels{
-		FailedDetections: make([]string, 0),
-	}
-}
-
-// SerializeLabels produces sparse JSON, omitting false boolean fields.
-func (d DBDetectedLabels) SerializeLabels() ([]byte, error) {
-	m := make(map[string]interface{})
-	if len(d.FailedDetections) > 0 {
-		m["failedDetections"] = d.FailedDetections
-	}
-	if d.GitOpsManaged {
-		m["gitOpsManaged"] = true
-	}
-	if d.GitOpsTool != "" {
-		m["gitOpsTool"] = d.GitOpsTool
-	}
-	if d.PDBProtected {
-		m["pdbProtected"] = true
-	}
-	if d.HPAEnabled {
-		m["hpaEnabled"] = true
-	}
-	if d.Stateful {
-		m["stateful"] = true
-	}
-	if d.HelmManaged {
-		m["helmManaged"] = true
-	}
-	if d.NetworkIsolated {
-		m["networkIsolated"] = true
-	}
-	if d.ServiceMesh != "" {
-		m["serviceMesh"] = d.ServiceMesh
-	}
-	if d.ResourceQuotaConstrained {
-		m["resourceQuotaConstrained"] = true
-	}
-	return json.Marshal(m)
-}
-
-// MarshalJSON implements json.Marshaler for sparse DB-oriented output.
-// Value receiver ensures the interface is satisfied when boxed in interface{}.
-func (d DBDetectedLabels) MarshalJSON() ([]byte, error) {
-	return d.SerializeLabels()
-}
-
-// Value implements driver.Valuer for PostgreSQL JSONB column writing.
-// Value receiver ensures the interface is satisfied when boxed in interface{}.
-func (d DBDetectedLabels) Value() (driver.Value, error) {
-	return d.SerializeLabels()
-}
-
-// Scan implements sql.Scanner for PostgreSQL JSONB column scanning.
-func (d *DBDetectedLabels) Scan(value interface{}) error {
-	if value == nil {
-		return nil
-	}
-	bytes, ok := value.([]byte)
-	if !ok {
-		return fmt.Errorf("DBDetectedLabels.Scan: expected []byte, got %T", value)
-	}
-	type Alias DBDetectedLabels
-	return json.Unmarshal(bytes, (*Alias)(d))
-}
-
-// IsEmpty returns true when no label detection produced a positive result.
-func (d *DBDetectedLabels) IsEmpty() bool {
-	return !d.GitOpsManaged &&
-		d.GitOpsTool == "" &&
-		!d.PDBProtected &&
-		!d.HPAEnabled &&
-		!d.Stateful &&
-		!d.HelmManaged &&
-		!d.NetworkIsolated &&
-		d.ServiceMesh == ""
 }
 
 // ========================================
