@@ -101,9 +101,10 @@ func CreateWFEAndTransition(
 		if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
 			ar := ai.Status.RootCauseAnalysis.RemediationTarget
 			rr.Status.RemediationTarget = &remediationv1.ResourceIdentifier{
-				Kind:      ar.Kind,
-				Name:      ar.Name,
-				Namespace: ar.Namespace,
+				Kind:       ar.Kind,
+				Name:       ar.Name,
+				Namespace:  ar.Namespace,
+				APIVersion: ar.APIVersion, // #1040
 			}
 			rr.Status.TargetDisplay = remediationrequest.FormatResourceDisplay(ar.Kind, ar.Name)
 		}

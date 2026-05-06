@@ -67,3 +67,23 @@ func ResolveGVKForKind(mapper meta.RESTMapper, kind string) (schema.GroupVersion
 
 	return schema.GroupVersionKind{}, fmt.Errorf("cannot resolve GVK for kind %q", kind)
 }
+
+// ResolveGVKWithAPIVersion resolves a Kind to its GVK using an explicit apiVersion
+// when provided (e.g. "route.openshift.io/v1"), bypassing the static table and
+// plural-guess heuristic. When apiVersion is empty, falls back to ResolveGVKForKind.
+// Issue #1040: this eliminates ambiguity when multiple API groups register the
+// same Kind (e.g. Route in route.openshift.io vs serving.knative.dev).
+func ResolveGVKWithAPIVersion(mapper meta.RESTMapper, kind, apiVersion string) (schema.GroupVersionKind, error) {
+	if apiVersion != "" {
+		gv, err := schema.ParseGroupVersion(apiVersion)
+		if err != nil {
+			return schema.GroupVersionKind{}, fmt.Errorf("invalid apiVersion %q: %w", apiVersion, err)
+		}
+		mapping, err := mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: kind}, gv.Version)
+		if err != nil {
+			return schema.GroupVersionKind{}, fmt.Errorf("kind %q not found in apiVersion %q: %w", kind, apiVersion, err)
+		}
+		return mapping.GroupVersionKind, nil
+	}
+	return ResolveGVKForKind(mapper, kind)
+}

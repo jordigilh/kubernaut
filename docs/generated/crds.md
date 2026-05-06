@@ -1363,6 +1363,7 @@ _Appears in:_
 | `kind`| _string_| Kind is the Kubernetes resource kind (e.g., "Deployment", "StatefulSet", "DaemonSet")|
 | `name`| _string_| Name is the resource name|
 | `namespace`| _string_| Namespace is the resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume).|
+| `apiVersion`| _string_| APIVersion disambiguates the resource's API group when the Kind exists in<br />multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).<br />Format: "group/version" (e.g. "route.openshift.io/v1"). .|
 
 
 ## RemediationWorkflow
@@ -1828,6 +1829,7 @@ _Appears in:_
 | `kind`| _string_| Kind is the Kubernetes resource kind (e.g., "Deployment", "StatefulSet").|
 | `name`| _string_| Name is the resource name.|
 | `namespace`| _string_| Namespace is the resource namespace.<br />Empty for cluster-scoped resources (e.g., Node, PersistentVolume).|
+| `apiVersion`| _string_| APIVersion disambiguates the resource's API group when the Kind exists in<br />multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).<br />Format: "group/version" (e.g. "route.openshift.io/v1"). .|
 
 
 ### TimeoutConfig

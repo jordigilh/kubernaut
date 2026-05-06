@@ -51,7 +51,7 @@ var _ = Describe("TP-762: Scope-Aware K8sAdapter (#762)", func() {
 			mapper := newSimpleRESTMapper()
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
-			chain, err := adapter.GetOwnerChain(context.Background(), "Node", "worker-1", "kube-system")
+			chain, err := adapter.GetOwnerChain(context.Background(), "Node", "worker-1", "kube-system", "")
 			Expect(err).NotTo(HaveOccurred(),
 				"UT-KA-762-001: GetOwnerChain must use cluster-scoped client for Node, ignoring namespace")
 			Expect(chain).To(BeEmpty())
@@ -87,7 +87,7 @@ var _ = Describe("TP-762: Scope-Aware K8sAdapter (#762)", func() {
 			mapper := newSimpleRESTMapper()
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
-			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "web-abc123", "production")
+			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "web-abc123", "production", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(chain).To(HaveLen(2),
 				"UT-KA-762-002: namespaced chain should resolve normally")
@@ -110,7 +110,7 @@ var _ = Describe("TP-762: Scope-Aware K8sAdapter (#762)", func() {
 			mapper := newSimpleRESTMapper()
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
-			hash, err := adapter.GetSpecHash(context.Background(), "Node", "worker-1", "kube-system")
+			hash, err := adapter.GetSpecHash(context.Background(), "Node", "worker-1", "kube-system", "")
 			Expect(err).NotTo(HaveOccurred(),
 				"UT-KA-762-003: GetSpecHash must use cluster-scoped client for Node, ignoring namespace")
 			Expect(hash).NotTo(BeEmpty(), "Node has a .spec, so hash should be non-empty")
@@ -133,7 +133,7 @@ var _ = Describe("TP-762: Scope-Aware K8sAdapter (#762)", func() {
 			mapper := newSimpleRESTMapper()
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
-			hash, err := adapter.GetSpecHash(context.Background(), "Deployment", "api-server", "default")
+			hash, err := adapter.GetSpecHash(context.Background(), "Deployment", "api-server", "default", "")
 			Expect(err).NotTo(HaveOccurred(),
 				"UT-KA-762-004: namespaced GetSpecHash should work for Deployment")
 			Expect(hash).NotTo(BeEmpty())

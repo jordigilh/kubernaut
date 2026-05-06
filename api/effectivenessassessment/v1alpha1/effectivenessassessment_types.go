@@ -160,6 +160,11 @@ type TargetResource struct {
 	// Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
 	// +optional
 	Namespace string `json:"namespace,omitempty"`
+	// APIVersion disambiguates the resource's API group when the Kind exists in
+	// multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).
+	// Format: "group/version" (e.g. "route.openshift.io/v1"). Issue #1040.
+	// +optional
+	APIVersion string `json:"apiVersion,omitempty"`
 }
 
 // EAConfig contains assessment configuration set by the RO at creation time.

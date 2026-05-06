@@ -50,8 +50,8 @@ func NewK8sAdapter(dynClient dynamic.Interface, mapper meta.RESTMapper) *K8sAdap
 //
 // Scope-aware (#762): uses RESTMapping.Scope to determine cluster vs namespaced
 // API calls, rather than relying on the namespace parameter being empty.
-func (a *K8sAdapter) GetOwnerChain(ctx context.Context, kind, name, namespace string) ([]OwnerChainEntry, error) {
-	mapping, err := a.resolveMapping(kind)
+func (a *K8sAdapter) GetOwnerChain(ctx context.Context, kind, name, namespace, apiVersion string) ([]OwnerChainEntry, error) {
+	mapping, err := a.resolveMappingWithAPIVersion(kind, apiVersion)
 	if err != nil {
 		return nil, fmt.Errorf("k8s adapter: resolve GVR for %s: %w", kind, err)
 	}
@@ -95,9 +95,10 @@ func (a *K8sAdapter) GetOwnerChain(ctx context.Context, kind, name, namespace st
 		}
 
 		chain = append(chain, OwnerChainEntry{
-			Kind:      ownerRef.Kind,
-			Name:      ownerRef.Name,
-			Namespace: ownerNS,
+			Kind:       ownerRef.Kind,
+			Name:       ownerRef.Name,
+			Namespace:  ownerNS,
+			APIVersion: ownerRef.APIVersion, // #1040: capture from OwnerReference
 		})
 
 		ownerClient := a.scopedClient(ownerMapping, namespace)
@@ -116,8 +117,8 @@ func (a *K8sAdapter) GetOwnerChain(ctx context.Context, kind, name, namespace st
 // not just .spec. The method name is retained for interface compatibility.
 //
 // Scope-aware (#762): uses RESTMapping.Scope for cluster vs namespaced dispatch.
-func (a *K8sAdapter) GetSpecHash(ctx context.Context, kind, name, namespace string) (string, error) {
-	mapping, err := a.resolveMapping(kind)
+func (a *K8sAdapter) GetSpecHash(ctx context.Context, kind, name, namespace, apiVersion string) (string, error) {
+	mapping, err := a.resolveMappingWithAPIVersion(kind, apiVersion)
 	if err != nil {
 		return "", fmt.Errorf("k8s adapter: resolve GVR for spec hash of %s: %w", kind, err)
 	}
@@ -141,6 +142,30 @@ func (a *K8sAdapter) GetSpecHash(ctx context.Context, kind, name, namespace stri
 // installed after the agent starts.
 type resettableMapper interface {
 	Reset()
+}
+
+// resolveMappingWithAPIVersion resolves a RESTMapping using an explicit apiVersion
+// when provided, bypassing the heuristic plural-guess path. Falls back to
+// resolveMapping when apiVersion is empty. Issue #1040.
+func (a *K8sAdapter) resolveMappingWithAPIVersion(kind, apiVersion string) (*meta.RESTMapping, error) {
+	if apiVersion != "" {
+		gv, err := schema.ParseGroupVersion(apiVersion)
+		if err != nil {
+			return nil, fmt.Errorf("parse API version %q: %w", apiVersion, err)
+		}
+		mapping, err := a.mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: kind}, gv.Version)
+		if err != nil {
+			if rm, ok := a.mapper.(resettableMapper); ok {
+				rm.Reset()
+				mapping, err = a.mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: kind}, gv.Version)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("resolve mapping for %s in apiVersion %q: %w", kind, apiVersion, err)
+			}
+		}
+		return mapping, nil
+	}
+	return a.resolveMapping(kind)
 }
 
 // resolveMapping returns the full RESTMapping for a Kind, including GVR and Scope.

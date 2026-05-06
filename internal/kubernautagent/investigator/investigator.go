@@ -342,7 +342,7 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 	if inv.enricher == nil {
 		return nil
 	}
-	result, err := inv.enricher.Enrich(ctx, kind, name, namespace, "", incidentID)
+	result, err := inv.enricher.Enrich(ctx, kind, name, namespace, "", "", incidentID)
 	if err != nil {
 		inv.logger.Error(err, "enrichment failed")
 		return nil

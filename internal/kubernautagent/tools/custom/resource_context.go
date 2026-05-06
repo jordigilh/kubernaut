@@ -63,7 +63,7 @@ type clusterResponse struct {
 }
 
 func computeSpecHash(ctx context.Context, logger logr.Logger, k8s enrichment.K8sClient, kind, name, namespace, toolName string) string {
-	computed, err := k8s.GetSpecHash(ctx, kind, name, namespace)
+	computed, err := k8s.GetSpecHash(ctx, kind, name, namespace, "")
 	if err != nil {
 		logger.Info(toolName+": specHash computation failed, proceeding with empty",
 			"kind", kind, "name", name, "namespace", namespace, "error", err)
@@ -115,7 +115,7 @@ func (t *namespacedResourceContextTool) Execute(ctx context.Context, args json.R
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	chain, chainErr := t.k8s.GetOwnerChain(ctx, params.Kind, params.Name, params.Namespace)
+	chain, chainErr := t.k8s.GetOwnerChain(ctx, params.Kind, params.Name, params.Namespace, "")
 	if chainErr != nil {
 		t.logger.Info("get_namespaced_resource_context: owner chain resolution failed",
 			"kind", params.Kind, "name", params.Name, "namespace", params.Namespace, "error", chainErr)

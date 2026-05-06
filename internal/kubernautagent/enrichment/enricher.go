@@ -34,6 +34,10 @@ type OwnerChainEntry struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
 	Namespace string `json:"namespace,omitempty"`
+	// APIVersion captures the owner's API group/version from OwnerReference.
+	// Format: "group/version" (e.g. "apps/v1") or "version" for core (e.g. "v1").
+	// Issue #1040.
+	APIVersion string `json:"api_version,omitempty"`
 }
 
 // DetectedLabels holds the structured label detection results matching KA's LabelDetector output.
@@ -59,9 +63,11 @@ type QuotaResourceUsage struct {
 }
 
 // K8sClient abstracts Kubernetes API access for enrichment.
+// Issue #1040: apiVersion parameter disambiguates multi-group kinds (e.g. Route).
+// Pass "" when unknown — preserves existing heuristic-based resolution.
 type K8sClient interface {
-	GetOwnerChain(ctx context.Context, kind, name, namespace string) ([]OwnerChainEntry, error)
-	GetSpecHash(ctx context.Context, kind, name, namespace string) (string, error)
+	GetOwnerChain(ctx context.Context, kind, name, namespace, apiVersion string) ([]OwnerChainEntry, error)
+	GetSpecHash(ctx context.Context, kind, name, namespace, apiVersion string) (string, error)
 }
 
 // DataStorageClient abstracts DataStorage API access for enrichment.
@@ -197,8 +203,8 @@ func (e *Enricher) WithRetryConfig(cfg RetryConfig) *Enricher {
 // With MaxRetries>0: all errors are retried with exponential backoff,
 // matching HAPI v1.2.1 EnrichmentService._retry (except Exception → retry).
 // The caller sets HardFail on EnrichmentResult when this returns a non-nil error.
-func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, namespace string) ([]OwnerChainEntry, error) {
-	chain, err := e.k8s.GetOwnerChain(ctx, kind, name, namespace)
+func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, namespace, apiVersion string) ([]OwnerChainEntry, error) {
+	chain, err := e.k8s.GetOwnerChain(ctx, kind, name, namespace, apiVersion)
 	if err == nil {
 		return chain, nil
 	}
@@ -226,7 +232,7 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 		case <-time.After(wait):
 		}
 
-		chain, err = e.k8s.GetOwnerChain(ctx, kind, name, namespace)
+		chain, err = e.k8s.GetOwnerChain(ctx, kind, name, namespace, apiVersion)
 		if err == nil {
 			return chain, nil
 		}
@@ -258,7 +264,8 @@ func isTransientK8sError(err error) bool {
 // Enrich resolves enrichment data for the given resource.
 // Implements partial failure: each sub-call is best-effort.
 // If specHash is empty, auto-computes it via K8sClient.GetSpecHash.
-func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, incidentID string) (*EnrichmentResult, error) {
+// apiVersion disambiguates multi-group kinds (e.g. Route). Pass "" when unknown. Issue #1040.
+func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, apiVersion, specHash, incidentID string) (*EnrichmentResult, error) {
 	result := &EnrichmentResult{
 		ResourceKind:      kind,
 		ResourceName:      name,
@@ -266,7 +273,7 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 	}
 
 	if specHash == "" {
-		computed, err := e.k8s.GetSpecHash(ctx, kind, name, namespace)
+		computed, err := e.k8s.GetSpecHash(ctx, kind, name, namespace, apiVersion)
 		if err != nil {
 			e.logger.Error(err, "enrichment: specHash auto-computation failed, proceeding with empty",
 				"resource", namespace+"/"+kind+"/"+name,
@@ -278,7 +285,7 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 
 	var ownerErr, histErr error
 
-	chain, ownerErr := e.resolveOwnerChainWithRetry(ctx, kind, name, namespace)
+	chain, ownerErr := e.resolveOwnerChainWithRetry(ctx, kind, name, namespace, apiVersion)
 	if ownerErr != nil {
 		result.OwnerChainError = ownerErr
 		if e.retryConfig.MaxRetries > 0 && !IsNoMatchError(ownerErr) {

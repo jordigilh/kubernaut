@@ -181,9 +181,10 @@ func (c *AIAnalysisCreator) buildSignalContext(
 		Environment:      environment,
 		BusinessPriority: priority,
 		TargetResource: aianalysisv1.TargetResource{
-			Kind:      rr.Spec.TargetResource.Kind,
-			Name:      rr.Spec.TargetResource.Name,
-			Namespace: rr.Spec.TargetResource.Namespace,
+			Kind:       rr.Spec.TargetResource.Kind,
+			Name:       rr.Spec.TargetResource.Name,
+			Namespace:  rr.Spec.TargetResource.Namespace,
+			APIVersion: rr.Spec.TargetResource.APIVersion, // #1040
 		},
 		// EnrichmentResults from SignalProcessing status (BR-ORCH-025)
 		EnrichmentResults: c.buildEnrichmentResults(sp),

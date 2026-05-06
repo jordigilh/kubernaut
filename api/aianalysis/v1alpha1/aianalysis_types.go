@@ -205,6 +205,11 @@ type TargetResource struct {
 	// Resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
 	// +optional
 	Namespace string `json:"namespace,omitempty"`
+	// APIVersion disambiguates the resource's API group when the Kind exists in
+	// multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).
+	// Format: "group/version" (e.g. "route.openshift.io/v1"). Issue #1040.
+	// +optional
+	APIVersion string `json:"apiVersion,omitempty"`
 }
 
 // ========================================
@@ -529,6 +534,11 @@ type RemediationTarget struct {
 	// Namespace is the resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
 	// +optional
 	Namespace string `json:"namespace,omitempty"`
+	// APIVersion disambiguates the resource's API group when the Kind exists in
+	// multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).
+	// Format: "group/version" (e.g. "route.openshift.io/v1"). Issue #1040.
+	// +optional
+	APIVersion string `json:"apiVersion,omitempty"`
 }
 
 // SelectedWorkflow contains the AI-selected workflow for execution
