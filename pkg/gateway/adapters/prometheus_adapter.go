@@ -40,6 +40,21 @@ import (
 // uses label values as resource *names* for API lookups, not as kind identifiers.
 var rfc1123LabelRegexp = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]{0,251}[a-z0-9])?$`)
 
+// PrometheusReservedLabels contains Prometheus-standard label keys that must be
+// excluded from dynamic Kubernetes kind resolution. These labels carry scrape
+// metadata (job name, instance endpoint, etc.), not Kubernetes resource
+// identifiers. Without filtering, "job" maps to batch/v1 Job via API discovery,
+// causing signals to be dropped or directed to wrong targets. Issue #1045.
+//
+// Reference: https://prometheus.io/docs/concepts/jobs_instances/
+var PrometheusReservedLabels = map[string]bool{
+	"job":       true, // Scrape target name (e.g. "kube-state-metrics")
+	"service":   true, // ServiceMonitor target (e.g. "kube-prometheus-stack-kube-state-metrics")
+	"instance":  true, // Scrape endpoint (e.g. "10.0.1.45:9090")
+	"endpoint":  true, // Port name on ServiceMonitor (e.g. "http")
+	"container": true, // Container name (e.g. "payment-api")
+}
+
 // PrometheusAdapter handles Prometheus AlertManager webhook format
 //
 // This adapter parses AlertManager webhook payloads and converts them to
@@ -421,6 +436,9 @@ func extractTargetResource(ctx context.Context, labels map[string]string, namesp
 		var candidates []candidate
 		for labelKey, labelVal := range labels {
 			if labelVal == "" {
+				continue
+			}
+			if PrometheusReservedLabels[labelKey] {
 				continue
 			}
 			if !isValidK8sName(labelVal) {
