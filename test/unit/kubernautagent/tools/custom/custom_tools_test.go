@@ -68,6 +68,17 @@ func (f *fakeWorkflowDS) GetWorkflowByID(_ context.Context, _ ogenclient.GetWork
 	return &ogenclient.RemediationWorkflow{}, nil
 }
 
+// Guard: validate tool registration order assumed by allTools[0]/[1]/[2] indexing across all test files.
+var _ = Describe("NewAllTools registration order guard", func() {
+	It("should return tools in the expected positional order", func() {
+		allTools := custom.NewAllTools(&fakeWorkflowDS{})
+		Expect(allTools).To(HaveLen(3))
+		Expect(allTools[0].Name()).To(Equal("list_available_actions"))
+		Expect(allTools[1].Name()).To(Equal("list_workflows"))
+		Expect(allTools[2].Name()).To(Equal("get_workflow"))
+	})
+})
+
 var _ = Describe("UT-KA-688: Conditional pagination stripping", func() {
 
 	Describe("UT-KA-688-001: StripPaginationIfComplete removes pagination when all results fit in one page", func() {
