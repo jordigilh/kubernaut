@@ -60,7 +60,7 @@ var _ = Describe("Enricher NotFound Handling — Issue #1039", func() {
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
 				WithRetryConfig(retryConfig)
 
-			result, err := e.Enrich(ctx, "Pod", "deleted-pod", "production", "", "inc-1039-001")
+			result, err := e.Enrich(ctx, "Pod", "deleted-pod", "production", "", "", "inc-1039-001")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -80,7 +80,7 @@ var _ = Describe("Enricher NotFound Handling — Issue #1039", func() {
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
 				WithRetryConfig(retryConfig)
 
-			result, err := e.Enrich(ctx, "ClusterServiceVersion", "etcdoperator.v0.9.4", "demo-operator", "", "inc-1039-002")
+			result, err := e.Enrich(ctx, "ClusterServiceVersion", "etcdoperator.v0.9.4", "demo-operator", "", "", "inc-1039-002")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -100,7 +100,7 @@ var _ = Describe("Enricher NotFound Handling — Issue #1039", func() {
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
 				WithRetryConfig(retryConfig)
 
-			result, err := e.Enrich(ctx, "Deployment", "deleted-deploy", "production", "", "inc-1039-003")
+			result, err := e.Enrich(ctx, "Deployment", "deleted-deploy", "production", "", "", "inc-1039-003")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -119,7 +119,7 @@ var _ = Describe("Enricher NotFound Handling — Issue #1039", func() {
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
 				WithRetryConfig(retryConfig)
 
-			result, err := e.Enrich(ctx, "Pod", "failing-pod", "production", "", "inc-1039-004")
+			result, err := e.Enrich(ctx, "Pod", "failing-pod", "production", "", "", "inc-1039-004")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -142,7 +142,7 @@ var _ = Describe("Enricher NotFound Handling — Issue #1039", func() {
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger).
 				WithRetryConfig(retryConfig)
 
-			result, err := e.Enrich(ctx, "Widget", "test-widget", "default", "", "inc-1039-005")
+			result, err := e.Enrich(ctx, "Widget", "test-widget", "default", "", "", "inc-1039-005")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
