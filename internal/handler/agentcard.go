@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/a2aproject/a2a-go/a2a"
 )
 
 // AgentSkill represents a skill in the agent card.
@@ -83,7 +85,7 @@ func NewAgentCardHandler(cfg AgentCardConfig) (http.Handler, error) {
 		Description:     cfg.Description,
 		URL:             cfg.URL,
 		Version:         cfg.Version,
-		ProtocolVersion: "0.3.0",
+		ProtocolVersion: string(a2a.Version),
 		Skills:          skills,
 		Authentication: agentAuth{
 			Schemes: []authScheme{{Scheme: "bearer"}},

@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **#39** Config hot-reload via `FileWatcher` (fsnotify-based, SHA256 dedup, 200ms debounce)
+  - Extended `Config` with `Auth`, `Logging`, `RateLimit`, `Shutdown` sections + validators
+  - FedRAMP AU-2 audit events emitted on reload success/rejection
+  - Bounded file reads via `io.LimitReader` (1 MiB max)
+- **#40** OpenAPI 3.1 specification (`api/openapi/apifrontend-v1.yaml`) for all 6 HTTP endpoints
+  - CI `validate-openapi` job using pinned `vacuum@v0.14.4`
+  - `protocolVersion` field in Agent Card sourced from `a2a.Version` SDK constant
+- **#41** SLO definitions (`docs/slo/SLO_DEFINITIONS.md`) with Prometheus alerting rules
+  - 7 SLO targets (latency p95/p99, availability, error rate) aligned to `prometheus.DefBuckets`
+  - `deploy/prometheus-rules.yaml` with warning (0.5%) and critical (1%) error rate tiers
+- **#42** MCP Streamable HTTP protocol conformance tests (tools/list, error codes -32600/-32601/-32700)
+- **#43** Performance test plan (`docs/testing/PERFORMANCE_TEST_PLAN.md`) and k6 script skeletons
+
 - HTTP router with 6 endpoints:
   - `GET /healthz` — liveness probe (always 200)
   - `GET /readyz` — readiness probe (checks JWKS validator status)

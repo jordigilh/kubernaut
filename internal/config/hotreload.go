@@ -5,15 +5,23 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 )
 
 const debounceDuration = 200 * time.Millisecond
+
+// maxConfigSize is the maximum allowed config file size (1 MiB).
+// Prevents OOM from rogue ConfigMap mounts.
+const maxConfigSize = 1 << 20
 
 // ReloadCallback is called when ConfigMap content changes.
 // Return error to reject the new configuration (keeps previous).
@@ -21,9 +29,15 @@ type ReloadCallback func(newContent []byte) error
 
 // FileWatcher watches a mounted ConfigMap file and triggers callbacks on change.
 // Adapted from kubernaut DD-INFRA-001 pattern (pkg/shared/hotreload).
+//
+// Kubernetes ConfigMap volume mounts use a "..data" symlink that is atomically
+// swapped on update. The watcher monitors the parent directory and detects
+// both direct file writes and symlink rotation (CREATE on "..data").
 type FileWatcher struct {
 	path     string
 	callback ReloadCallback
+	logger   *slog.Logger
+	auditor  audit.Emitter
 
 	mu          sync.RWMutex
 	lastContent []byte
@@ -36,19 +50,43 @@ type FileWatcher struct {
 }
 
 // NewFileWatcher creates a new file-based hot-reloader.
-func NewFileWatcher(path string, callback ReloadCallback) (*FileWatcher, error) {
+func NewFileWatcher(path string, callback ReloadCallback, opts ...FileWatcherOption) (*FileWatcher, error) {
 	if path == "" {
 		return nil, fmt.Errorf("path is required")
 	}
 	if callback == nil {
 		return nil, fmt.Errorf("callback is required")
 	}
-	return &FileWatcher{
+	fw := &FileWatcher{
 		path:     path,
 		callback: callback,
+		logger:   slog.Default(),
 		stopCh:   make(chan struct{}),
 		doneCh:   make(chan struct{}),
-	}, nil
+	}
+	for _, o := range opts {
+		o(fw)
+	}
+	return fw, nil
+}
+
+// FileWatcherOption configures a FileWatcher.
+type FileWatcherOption func(*FileWatcher)
+
+// WithLogger sets the logger for the FileWatcher.
+func WithLogger(l *slog.Logger) FileWatcherOption {
+	return func(fw *FileWatcher) {
+		if l != nil {
+			fw.logger = l
+		}
+	}
+}
+
+// WithAuditor sets the audit emitter for FedRAMP AU-2 compliance.
+func WithAuditor(e audit.Emitter) FileWatcherOption {
+	return func(fw *FileWatcher) {
+		fw.auditor = e
+	}
 }
 
 // Start begins watching the file. Loads initial content, then watches for changes.
@@ -96,8 +134,17 @@ func (w *FileWatcher) GetLastHash() string {
 	return w.lastHash
 }
 
+func (w *FileWatcher) readFileLimited() ([]byte, error) {
+	f, err := os.Open(w.path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return io.ReadAll(io.LimitReader(f, maxConfigSize))
+}
+
 func (w *FileWatcher) loadInitial() error {
-	content, err := os.ReadFile(w.path)
+	content, err := w.readFileLimited()
 	if err != nil {
 		return fmt.Errorf("read file %s: %w", w.path, err)
 	}
@@ -157,8 +204,9 @@ func (w *FileWatcher) watchLoop(ctx context.Context) {
 }
 
 func (w *FileWatcher) handleFileChange() {
-	content, err := os.ReadFile(w.path)
+	content, err := w.readFileLimited()
 	if err != nil {
+		w.logger.Warn("config reload: read file failed", "path", w.path, "error", err)
 		return
 	}
 
@@ -173,7 +221,29 @@ func (w *FileWatcher) handleFileChange() {
 	}
 
 	if err := w.callback(content); err != nil {
+		w.logger.Warn("config reload: callback rejected new content", "path", w.path, "error", err)
+		if w.auditor != nil {
+			w.auditor.Emit(context.Background(), &audit.Event{
+				Type: audit.EventConfigRejected,
+				Detail: map[string]string{
+					"path":   w.path,
+					"hash":   newHash,
+					"reason": err.Error(),
+				},
+			})
+		}
 		return
+	}
+
+	w.logger.Info("config reloaded", "path", w.path, "hash", newHash)
+	if w.auditor != nil {
+		w.auditor.Emit(context.Background(), &audit.Event{
+			Type: audit.EventConfigReloaded,
+			Detail: map[string]string{
+				"path": w.path,
+				"hash": newHash,
+			},
+		})
 	}
 
 	w.mu.Lock()

@@ -115,15 +115,17 @@ paths:
         "401":
           description: Missing or invalid Bearer token
           content:
-            application/problem+json:
+            text/plain:
               schema:
-                $ref: "#/components/schemas/ProblemDetail"
+                type: string
+                description: Plain-text error message (RFC 9457 Problem Details planned)
         "429":
           description: Rate limit exceeded
           content:
-            application/problem+json:
+            text/plain:
               schema:
-                $ref: "#/components/schemas/ProblemDetail"
+                type: string
+                description: Plain-text error message (RFC 9457 Problem Details planned)
         "413":
           description: Request body exceeds 1 MiB limit
 
@@ -159,15 +161,17 @@ paths:
         "401":
           description: Missing or invalid Bearer token
           content:
-            application/problem+json:
+            text/plain:
               schema:
-                $ref: "#/components/schemas/ProblemDetail"
+                type: string
+                description: Plain-text error message (RFC 9457 Problem Details planned)
         "429":
           description: Rate limit exceeded
           content:
-            application/problem+json:
+            text/plain:
               schema:
-                $ref: "#/components/schemas/ProblemDetail"
+                type: string
+                description: Plain-text error message (RFC 9457 Problem Details planned)
         "501":
           description: MCP not enabled
           content:
@@ -278,6 +282,10 @@ components:
             data: {}
 
     ProblemDetail:
+      description: >
+        RFC 9457 Problem Details structure (reserved for future use).
+        Currently, 401/429 responses return text/plain. This schema will be
+        adopted once handlers are migrated to structured error responses.
       type: object
       properties:
         type:

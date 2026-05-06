@@ -81,7 +81,7 @@ jobs:
           cache: true
 
       - name: Install vacuum
-        run: go install github.com/daveshanley/vacuum@latest
+        run: go install github.com/daveshanley/vacuum@v0.14.4
 
       - name: Validate OpenAPI spec
         run: vacuum lint api/openapi/apifrontend-v1.yaml

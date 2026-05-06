@@ -57,6 +57,7 @@ Alerting rules are defined in `deploy/prometheus-rules.yaml`. Each alert is deri
 | `ApifrontendDown` | SLO-6 | `up{job="apifrontend"} == 0` for 5m | critical |
 | `ApifrontendHighLatencyP95` | SLO-1 | p95 > 500ms for 2m | warning |
 | `ApifrontendHighLatencyP99` | SLO-2 | p99 > 1s for 2m | critical |
+| `ApifrontendHighErrorRateWarning` | SLO-6 | 5xx > 0.5% for 2m | warning |
 | `ApifrontendHighErrorRate` | SLO-6 | 5xx > 1% for 2m | critical |
 | `ApifrontendAuthFailureSpike` | SLO-5 | Auth failure rate > 10% for 2m | critical |
 | `ApifrontendCircuitBreakerOpen` | Operational | CB open for > 2m | warning |
@@ -71,5 +72,7 @@ Alerting rules are defined in `deploy/prometheus-rules.yaml`. Each alert is deri
 ## Dependencies
 
 - `internal/metrics/metrics.go` — metric definitions (all use `af_` prefix)
+  - `af_tool_call_duration_seconds` → `Registry.ToolCallDuration` (line ~74)
+  - `af_circuit_breaker_state` → `Registry.CircuitBreakerState` (line ~95)
 - Issue #11 — observability implementation
 - Issue #43 — performance testing to validate targets

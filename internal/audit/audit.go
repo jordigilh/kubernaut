@@ -31,6 +31,9 @@ const (
 	EventA2ATaskCompleted EventType = "a2a.task_completed"
 	EventA2ATaskFailed    EventType = "a2a.task_failed"
 	EventMCPToolInvoked   EventType = "mcp.tool_invoked"
+
+	EventConfigReloaded EventType = "config.reloaded"
+	EventConfigRejected EventType = "config.rejected"
 )
 
 // Event represents a SOC2-compatible audit event.

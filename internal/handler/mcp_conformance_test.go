@@ -211,18 +211,43 @@ var _ = Describe("MCP Protocol Conformance", func() {
 	})
 
 	Describe("MCP error codes", func() {
-		It("UT-AF-042-006: tools/call without params returns error response", func() {
+		It("UT-AF-042-006: tools/call without params returns InvalidRequest -32600", func() {
 			sessionID := initializeSession(mcpHandler)
 			rec := sendWithSession(mcpHandler, sessionID, "tools/call", 3, nil)
 
 			respBody := rec.Body.String()
-			// The SDK may return an error via SSE event stream or HTTP status.
-			// Verify the response indicates a failure condition.
-			hasError := strings.Contains(respBody, "error") ||
-				strings.Contains(respBody, "invalid") ||
-				strings.Contains(respBody, "required") ||
-				rec.Code >= 400
-			Expect(hasError).To(BeTrue(), "expected error response for tools/call without params, got status %d body: %s", rec.Code, respBody)
+			result := parseJSONRPCFromResponse(respBody)
+
+			if rec.Code >= 400 {
+				// HTTP-level rejection is acceptable for InvalidRequest
+				return
+			}
+
+			Expect(result).To(HaveKey("error"), "expected JSON-RPC error, got: %s", respBody)
+			errObj, ok := result["error"].(map[string]any)
+			Expect(ok).To(BeTrue(), "error field is not an object: %v", result["error"])
+			codeVal, ok := errObj["code"].(float64)
+			Expect(ok).To(BeTrue(), "error.code missing or wrong type")
+			Expect(int(codeVal)).To(Equal(-32600), "expected InvalidRequest (-32600), got %d", int(codeVal))
+		})
+
+		It("UT-AF-042-007: unknown method returns MethodNotFound -32601", func() {
+			sessionID := initializeSession(mcpHandler)
+			rec := sendWithSession(mcpHandler, sessionID, "nonexistent/method", 4, nil)
+
+			respBody := rec.Body.String()
+			result := parseJSONRPCFromResponse(respBody)
+
+			if rec.Code >= 400 {
+				return
+			}
+
+			Expect(result).To(HaveKey("error"), "expected JSON-RPC error, got: %s", respBody)
+			errObj, ok := result["error"].(map[string]any)
+			Expect(ok).To(BeTrue(), "error field is not an object: %v", result["error"])
+			codeVal, ok := errObj["code"].(float64)
+			Expect(ok).To(BeTrue(), "error.code missing or wrong type")
+			Expect(int(codeVal)).To(Equal(-32601), "expected MethodNotFound (-32601), got %d", int(codeVal))
 		})
 
 		It("UT-AF-042-008: tools/list before initialize returns error", func() {

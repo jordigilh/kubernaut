@@ -298,9 +298,13 @@ func TestFileWatcher_Debounce_RapidWrites(t *testing.T) {
 	// Wait for debounce to settle
 	time.Sleep(1 * time.Second)
 
-	// Initial (1) + debounced updates (should be few, ideally 1-3 not 10)
+	// Initial (1) + debounced updates: debounce window is 200ms, burst is ~50ms,
+	// so we expect at most 1 debounced fire (total 2-3 with potential races).
 	got := callCount.Load()
-	if got > 5 {
-		t.Errorf("callback called %d times for 10 rapid writes — debounce not working (expected <= 5)", got)
+	if got > 4 {
+		t.Errorf("callback called %d times for 10 rapid writes — debounce not working (expected <= 4)", got)
+	}
+	if got < 2 {
+		t.Errorf("callback called %d times, expected at least 2 (initial + 1 debounced update)", got)
 	}
 }

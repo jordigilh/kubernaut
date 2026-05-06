@@ -42,6 +42,19 @@ spec:
 
     - name: apifrontend.errors
       rules:
+        - alert: ApifrontendHighErrorRateWarning
+          expr: |
+            sum(rate(af_http_requests_total{job="apifrontend",status=~"5.."}[5m]))
+            /
+            sum(rate(af_http_requests_total{job="apifrontend"}[5m]))
+            > 0.005
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend error rate > 0.5%"
+            description: "More than 0.5% of HTTP requests are returning 5xx status codes. Approaching SLO-6 budget (0.1%)."
+
         - alert: ApifrontendHighErrorRate
           expr: |
             sum(rate(af_http_requests_total{job="apifrontend",status=~"5.."}[5m]))
@@ -53,7 +66,7 @@ spec:
             severity: critical
           annotations:
             summary: "API Frontend error rate > 1%"
-            description: "More than 1% of HTTP requests are returning 5xx status codes."
+            description: "More than 1% of HTTP requests are returning 5xx status codes. SLO-6 budget is breached."
 
     - name: apifrontend.auth
       rules:
