@@ -301,6 +301,9 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	if workflowResult.SignalName == "" && rcaResult.SignalName != "" {
 		workflowResult.SignalName = rcaResult.SignalName
 	}
+	if len(rcaResult.Warnings) > 0 {
+		workflowResult.Warnings = append(rcaResult.Warnings, workflowResult.Warnings...)
+	}
 
 	MergePhase1Fallbacks(workflowResult, p1Ctx)
 
