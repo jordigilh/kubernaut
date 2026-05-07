@@ -63,15 +63,18 @@ import (
 // AuthTransport is an http.RoundTripper that handles authentication for DataStorage API calls.
 //
 // Behavior:
-// - Reads token from /var/run/secrets/kubernetes.io/serviceaccount/token
+// - Reads token from a configurable filesystem path (default: /var/run/secrets/kubernetes.io/serviceaccount/token)
 // - Used by: ALL services in production, E2E, and integration (with mounted tokens)
 // - Injects: Authorization: Bearer <token>
 // - Caching: 5-minute cache to avoid filesystem reads on every request
+// - 401 cache invalidation: When downstream returns 401 Unauthorized, the token
+//   cache is immediately invalidated so the next request re-reads from disk.
+//   This handles kubelet SA token rotation (#1055).
 // - Graceful degradation: If token file missing, request proceeds without auth
 //
 // Thread Safety:
-// - RoundTrip() is thread-safe (clones request, no shared state mutation)
-// - Token caching uses sync.RWMutex for concurrent access
+// - RoundTrip() is thread-safe (clones request, cache uses sync.RWMutex)
+// - invalidateTokenCache() is safe for concurrent use
 //
 // DD-AUTH-005: This transport enables all 7 Go services to authenticate with
 // DataStorage without modifying the OpenAPI-generated client code.
@@ -119,6 +122,22 @@ func NewServiceAccountTransportWithBase(base http.RoundTripper) *AuthTransport {
 	}
 }
 
+// NewServiceAccountTransportWithPath creates a ServiceAccount transport that reads tokens
+// from a custom filesystem path. Used by kubernaut-agent where the SA token path is
+// configurable via config.DataStorageConfig.SATokenPath (#1055).
+//
+// The transport caches the token for 5 minutes and invalidates the cache on 401 responses,
+// enabling automatic recovery when kubelet rotates the projected SA token.
+func NewServiceAccountTransportWithPath(tokenPath string, base http.RoundTripper) *AuthTransport {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return &AuthTransport{
+		base:      base,
+		tokenPath: tokenPath,
+	}
+}
+
 // RoundTrip implements http.RoundTripper.
 // Injects authentication headers based on the transport mode before forwarding the request.
 //
@@ -140,7 +159,14 @@ func (t *AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// This allows services to start before ServiceAccount token is mounted
 	// Also allows local development without Kubernetes
 
-	return t.base.RoundTrip(reqClone)
+	resp, err := t.base.RoundTrip(reqClone)
+	if err == nil && resp.StatusCode == http.StatusUnauthorized {
+		// #1055: Invalidate cached token on 401 so the next request re-reads
+		// from disk. This handles kubelet SA token rotation where the file
+		// has been updated but our cache still holds the stale token.
+		t.invalidateTokenCache()
+	}
+	return resp, err
 }
 
 // getServiceAccountToken retrieves the ServiceAccount token with 5-minute caching.
@@ -189,4 +215,16 @@ func (t *AuthTransport) getServiceAccountToken() string {
 	t.tokenCache = string(tokenBytes)
 	t.tokenCacheTime = time.Now()
 	return t.tokenCache
+}
+
+// invalidateTokenCache zeroes the cache timestamp so the next call to
+// getServiceAccountToken takes the slow path and re-reads from disk.
+// Called when a downstream service returns 401 Unauthorized (#1055).
+//
+// Thread Safety: Uses exclusive Lock (not RLock). Safe to call concurrently
+// from multiple goroutines — redundant invalidations are benign.
+func (t *AuthTransport) invalidateTokenCache() {
+	t.tokenCacheMutex.Lock()
+	defer t.tokenCacheMutex.Unlock()
+	t.tokenCacheTime = time.Time{}
 }
