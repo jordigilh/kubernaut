@@ -11,6 +11,7 @@ import (
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/tool"
 
+	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/tools"
 )
 
@@ -57,10 +58,11 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 	}
 
 	a, err := llmagent.New(llmagent.Config{
-		Name:        "kubernaut-apifrontend",
-		Description: "Kubernaut API Frontend agent for incident triage and remediation",
-		Tools:       allTools,
-		Instruction: cfg.Instruction,
+		Name:                "kubernaut-apifrontend",
+		Description:         "Kubernaut API Frontend agent for incident triage and remediation",
+		Tools:               allTools,
+		Instruction:         cfg.Instruction,
+		BeforeToolCallbacks: []llmagent.BeforeToolCallback{rbacGuard},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating agent: %w", err)
@@ -113,6 +115,36 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 	}
 
 	return result, nil
+}
+
+// rbacGuard is a BeforeToolCallback that enforces RBAC by checking whether
+// the authenticated user's groups grant access to the requested tool.
+// Fail-closed: if no identity or no matching role, the tool call is rejected.
+func rbacGuard(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
+	identity := auth.UserIdentityFromContext(ctx)
+	if identity == nil {
+		return map[string]any{"error": "unauthorized: no identity in context"}, nil
+	}
+
+	rbac, err := loadDefaultRBAC()
+	if err != nil {
+		return map[string]any{"error": "rbac configuration error"}, nil
+	}
+
+	toolName := t.Name()
+	for _, group := range identity.Groups {
+		allowed, ok := rbac.Roles[group]
+		if !ok {
+			continue
+		}
+		for _, name := range allowed {
+			if name == toolName {
+				return nil, nil
+			}
+		}
+	}
+
+	return map[string]any{"error": fmt.Sprintf("forbidden: role does not grant access to tool %q", toolName)}, nil
 }
 
 // FilterToolsByRole returns only the tools accessible to the given role.

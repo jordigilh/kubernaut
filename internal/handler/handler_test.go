@@ -73,6 +73,7 @@ var _ = Describe("Router", func() {
 		rec := httptest.NewRecorder()
 		notReadyRouter.ServeHTTP(rec, req)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
+		Expect(rec.Header().Get("Content-Type")).To(Equal("application/problem+json"))
 	})
 
 	It("UT-AF-200-004: /metrics returns Prometheus scrape without auth", func() {

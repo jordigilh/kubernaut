@@ -15,9 +15,10 @@ type RouterConfig struct {
 	AgentCardHandler http.Handler
 	AuthMiddleware   func(http.Handler) http.Handler
 	ReadyChecker     func() bool
+	MaxPayloadBytes  int64
 }
 
-func (c RouterConfig) validate() error {
+func (c *RouterConfig) validate() error {
 	if c.MetricsRegistry == nil {
 		return fmt.Errorf("MetricsRegistry is required")
 	}
@@ -39,13 +40,20 @@ func (c RouterConfig) validate() error {
 	return nil
 }
 
+const defaultMaxPayloadBytes int64 = 1 << 20 // 1MB
+
 // NewRouter creates an HTTP handler with all routes registered.
 // Routes are organized into two tiers:
 //   - Public (no auth): /healthz, /readyz, /metrics, /.well-known/agent-card.json
 //   - Authenticated: /a2a/invoke, /mcp
-func NewRouter(cfg RouterConfig) (http.Handler, error) {
+func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hugeParam: called once at startup
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("invalid router config: %w", err)
+	}
+
+	maxBytes := cfg.MaxPayloadBytes
+	if maxBytes <= 0 {
+		maxBytes = defaultMaxPayloadBytes
 	}
 
 	mux := http.NewServeMux()
@@ -55,8 +63,16 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) {
 	mux.Handle("GET /metrics", cfg.MetricsRegistry.Handler())
 	mux.Handle("GET /.well-known/agent-card.json", cfg.AgentCardHandler)
 
-	mux.Handle("/a2a/invoke", cfg.AuthMiddleware(cfg.A2AHandler))
-	mux.Handle("/mcp", cfg.AuthMiddleware(cfg.MCPHandler))
+	mux.Handle("/a2a/invoke", cfg.AuthMiddleware(maxBodyMiddleware(maxBytes, cfg.A2AHandler)))
+	mux.Handle("/mcp", cfg.AuthMiddleware(maxBodyMiddleware(maxBytes, cfg.MCPHandler)))
 
 	return metricsMiddleware(cfg.MetricsRegistry, mux), nil
+}
+
+// maxBodyMiddleware limits request body size to prevent resource exhaustion.
+func maxBodyMiddleware(maxBytes int64, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		next.ServeHTTP(w, r)
+	})
 }

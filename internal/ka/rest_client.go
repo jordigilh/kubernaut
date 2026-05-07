@@ -14,6 +14,7 @@ import (
 	gobreaker "github.com/sony/gobreaker/v2"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/requestid"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/resilience"
 )
 
@@ -41,10 +42,10 @@ func NewClient(cfg Config, metrics ...*ClientMetrics) *Client {
 		timeout = 30 * time.Second
 	}
 
-	baseTransport := http.DefaultTransport
+	var baseTransport http.RoundTripper = &requestid.Transport{Base: http.DefaultTransport}
 	if cfg.Token != "" {
 		baseTransport = &auth.JWTDelegationTransport{
-			Base:  http.DefaultTransport,
+			Base:  baseTransport,
 			Token: cfg.Token,
 		}
 	}
