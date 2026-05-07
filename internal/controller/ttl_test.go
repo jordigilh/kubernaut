@@ -105,7 +105,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 
 		result, err := reconcile(k8s, "sess-disc")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Requeue).To(BeFalse())
+		Expect(result.RequeueAfter).To(BeZero())
 
 		var updated v1alpha1.InvestigationSession
 		err = k8s.Get(ctx, types.NamespacedName{Name: "sess-disc", Namespace: "test-ns"}, &updated)
@@ -122,7 +122,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 
 		result, err := reconcile(k8s, "sess-done")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Requeue).To(BeFalse())
+		Expect(result.RequeueAfter).To(BeZero())
 
 		var updated v1alpha1.InvestigationSession
 		err = k8s.Get(ctx, types.NamespacedName{Name: "sess-done", Namespace: "test-ns"}, &updated)
@@ -138,7 +138,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 
 		result, err := reconcile(k8s, "sess-cancel")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Requeue).To(BeFalse())
+		Expect(result.RequeueAfter).To(BeZero())
 
 		var updated v1alpha1.InvestigationSession
 		err = k8s.Get(ctx, types.NamespacedName{Name: "sess-cancel", Namespace: "test-ns"}, &updated)
@@ -154,7 +154,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 
 		result, err := reconcile(k8s, "sess-fail")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Requeue).To(BeFalse())
+		Expect(result.RequeueAfter).To(BeZero())
 
 		var updated v1alpha1.InvestigationSession
 		err = k8s.Get(ctx, types.NamespacedName{Name: "sess-fail", Namespace: "test-ns"}, &updated)
@@ -167,7 +167,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 
 		result, err := reconcile(k8s, "sess-active")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Requeue).To(BeFalse())
+		Expect(result.RequeueAfter).To(BeZero())
 
 		var updated v1alpha1.InvestigationSession
 		err = k8s.Get(ctx, types.NamespacedName{Name: "sess-active", Namespace: "test-ns"}, &updated)
@@ -207,7 +207,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 
 		result, err := reconcile(k8s, "nonexistent")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Requeue).To(BeFalse())
+		Expect(result.RequeueAfter).To(BeZero())
 	})
 
 	It("UT-AF-220-010: zero-disconnect-TTL still respects boundary", func() {
@@ -269,7 +269,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 			NamespacedName: types.NamespacedName{Name: "sess-prune-target", Namespace: "test-ns"},
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Requeue).To(BeFalse())
+		Expect(result.RequeueAfter).To(BeZero())
 
 		// CRD should be deleted
 		err = k8s.Get(ctx, types.NamespacedName{Name: "sess-prune-target", Namespace: "test-ns"}, &crd)
@@ -285,7 +285,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 
 		result, err := reconcile(k8s, "sess-nil-labels")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Requeue).To(BeFalse())
+		Expect(result.RequeueAfter).To(BeZero())
 
 		var updated v1alpha1.InvestigationSession
 		err = k8s.Get(ctx, types.NamespacedName{Name: "sess-nil-labels", Namespace: "test-ns"}, &updated)

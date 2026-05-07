@@ -118,7 +118,7 @@ func (rt *RetryTransport) calculateBackoff(attempt int) time.Duration {
 	if backoff > float64(rt.config.MaxBackoff) {
 		backoff = float64(rt.config.MaxBackoff)
 	}
-	jitter := backoff * 0.2 * (rand.Float64() - 0.5)
+	jitter := backoff * 0.2 * (rand.Float64() - 0.5) // #nosec G404 -- jitter does not require cryptographic randomness
 	return time.Duration(backoff + jitter)
 }
 
