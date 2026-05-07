@@ -25,7 +25,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var _ = Describe("Multi-Candidate Scoring (#1029)", func() {
@@ -284,13 +283,3 @@ var _ = Describe("Multi-Candidate Scoring (#1029)", func() {
 		})
 	})
 })
-
-// Helper to create discovery with additional resources beyond standard
-func discoveryWithResources(additional ...*metav1.APIResourceList) *adapters.APIResourceRegistry {
-	allResources := standardResources()
-	allResources = append(allResources, additional...)
-	fd := newFakeDiscovery(allResources)
-	registry, err := adapters.NewAPIResourceRegistry(fd)
-	Expect(err).ToNot(HaveOccurred())
-	return registry
-}
