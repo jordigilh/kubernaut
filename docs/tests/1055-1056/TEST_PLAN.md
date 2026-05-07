@@ -179,7 +179,7 @@ immediately dropped with a misleading "invalid data" log message. The fix reclas
 
 ### 7.1 Pass Criteria
 
-- All 22 test cases pass
+- All 21 test cases pass
 - `go build ./...` succeeds with zero errors
 - `go test -race ./test/unit/shared/auth/...` reports zero races
 - `golangci-lint run --timeout=5m` introduces zero new errors
