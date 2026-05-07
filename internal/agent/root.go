@@ -3,6 +3,7 @@ package agent
 import (
 	_ "embed"
 	"fmt"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/tool"
 
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/tools"
 )
@@ -62,7 +64,7 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 		Description:         "Kubernaut API Frontend agent for incident triage and remediation",
 		Tools:               allTools,
 		Instruction:         cfg.Instruction,
-		BeforeToolCallbacks: []llmagent.BeforeToolCallback{rbacGuard},
+		BeforeToolCallbacks: []llmagent.BeforeToolCallback{newRBACGuard(cfg.Auditor)},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating agent: %w", err)
@@ -117,34 +119,48 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 	return result, nil
 }
 
-// rbacGuard is a BeforeToolCallback that enforces RBAC by checking whether
-// the authenticated user's groups grant access to the requested tool.
+// newRBACGuard returns a BeforeToolCallback that enforces RBAC by checking
+// whether the authenticated user's groups grant access to the requested tool.
 // Fail-closed: if no identity or no matching role, the tool call is rejected.
-func rbacGuard(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
-	identity := auth.UserIdentityFromContext(ctx)
-	if identity == nil {
-		return map[string]any{"error": "unauthorized: no identity in context"}, nil
-	}
-
-	rbac, err := loadDefaultRBAC()
-	if err != nil {
-		return map[string]any{"error": "rbac configuration error"}, nil
-	}
-
-	toolName := t.Name()
-	for _, group := range identity.Groups {
-		allowed, ok := rbac.Roles[group]
-		if !ok {
-			continue
+// Denied attempts are emitted as audit events for FedRAMP SI-4 compliance.
+func newRBACGuard(auditor audit.Emitter) llmagent.BeforeToolCallback {
+	return func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
+		identity := auth.UserIdentityFromContext(ctx)
+		if identity == nil {
+			return map[string]any{"error": "unauthorized: no identity in context"}, nil
 		}
-		for _, name := range allowed {
-			if name == toolName {
-				return nil, nil
+
+		rbac, err := loadDefaultRBAC()
+		if err != nil {
+			return map[string]any{"error": "rbac configuration error"}, nil
+		}
+
+		toolName := t.Name()
+		for _, group := range identity.Groups {
+			allowed, ok := rbac.Roles[group]
+			if !ok {
+				continue
+			}
+			for _, name := range allowed {
+				if name == toolName {
+					return nil, nil
+				}
 			}
 		}
-	}
 
-	return map[string]any{"error": fmt.Sprintf("forbidden: role does not grant access to tool %q", toolName)}, nil
+		if auditor != nil {
+			auditor.Emit(ctx, &audit.Event{
+				Type:   audit.EventRBACDenied,
+				UserID: identity.Username,
+				Detail: map[string]string{
+					"tool":   toolName,
+					"groups": strings.Join(identity.Groups, ","),
+				},
+			})
+		}
+
+		return map[string]any{"error": fmt.Sprintf("forbidden: role does not grant access to tool %q", toolName)}, nil
+	}
 }
 
 // FilterToolsByRole returns only the tools accessible to the given role.
@@ -153,24 +169,34 @@ func rbacGuard(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any,
 // Role mappings are loaded from the embedded rbac_roles.yaml; override at
 // runtime via operator ConfigMap injection (PR7).
 func FilterToolsByRole(role string, allTools []tool.Tool) []tool.Tool {
+	return FilterToolsByRoles([]string{role}, allTools)
+}
+
+// FilterToolsByRoles returns the union of tools accessible to any of the given
+// roles. This models multi-group membership where a user in [cicd, l3-audit]
+// gets the combined tool set from both roles.
+func FilterToolsByRoles(roles []string, allTools []tool.Tool) []tool.Tool {
 	rbac, err := loadDefaultRBAC()
 	if err != nil {
-		// TODO(PR7): emit af_rbac_config_error metric when ConfigMap parsing fails.
-		// Fail-closed: corrupt config means no tools for anyone until fixed.
 		return nil
 	}
 
-	allowed, ok := rbac.Roles[role]
-	if !ok {
+	allowSet := make(map[string]bool)
+	for _, role := range roles {
+		allowed, ok := rbac.Roles[role]
+		if !ok {
+			continue
+		}
+		for _, name := range allowed {
+			allowSet[name] = true
+		}
+	}
+
+	if len(allowSet) == 0 {
 		return nil
 	}
 
-	allowSet := make(map[string]bool, len(allowed))
-	for _, name := range allowed {
-		allowSet[name] = true
-	}
-
-	result := make([]tool.Tool, 0, len(allowed))
+	result := make([]tool.Tool, 0, len(allowSet))
 	for _, t := range allTools {
 		if allowSet[t.Name()] {
 			result = append(result, t)

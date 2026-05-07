@@ -92,6 +92,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 			emitAuthSuccess(ctx, cfg.Auditor, identity, httputil.ExtractClientIP(r))
 
 			ctx = WithUserIdentity(ctx, identity)
+			ctx = logging.WithUserID(ctx, identity.Username)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

@@ -124,6 +124,29 @@ var _ = Describe("Root Agent", func() {
 			Expect(filtered).To(BeEmpty())
 		})
 
+		It("UT-AF-100-013: multi-group user gets union of tools from all roles", func() {
+			cfg := agentpkg.DefaultTestConfig()
+			_, tools, err := agentpkg.NewRootAgent(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			cicdOnly := agentpkg.FilterToolsByRole("cicd", tools)
+			auditOnly := agentpkg.FilterToolsByRole("l3-audit", tools)
+			union := agentpkg.FilterToolsByRoles([]string{"cicd", "l3-audit"}, tools)
+
+			// Union must be >= each individual set
+			Expect(len(union)).To(BeNumerically(">=", len(cicdOnly)))
+			Expect(len(union)).To(BeNumerically(">=", len(auditOnly)))
+
+			// Verify specific tools from each role are present
+			names := make(map[string]bool)
+			for _, t := range union {
+				names[t.Name()] = true
+			}
+			Expect(names).To(HaveKey("kubernaut_submit_signal"))     // from cicd
+			Expect(names).To(HaveKey("kubernaut_get_audit_trail"))   // from l3-audit
+			Expect(names).To(HaveKey("kubernaut_list_remediations")) // from both
+		})
+
 		It("UT-AF-100-012: agent creation with empty tool list returns error", func() {
 			cfg := agentpkg.AgentConfig{
 				GCPProject:  "test-project",

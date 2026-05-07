@@ -119,10 +119,18 @@ func run() error {
 		MaxAge:            10 * time.Minute,
 	})
 	defer ipLimiter.Stop()
+	maxSessions := cfg.RateLimit.MaxConcurrentSessions
+	if maxSessions <= 0 {
+		maxSessions = 5
+	}
+	toolCallsPM := cfg.RateLimit.ToolCallsPerMinute
+	if toolCallsPM <= 0 {
+		toolCallsPM = 60
+	}
 	userLimiter := ratelimit.NewUserLimiter(ratelimit.PerUserConfig{
 		RequestsPerMinute:     cfg.RateLimit.UserRequestsPerSec * 60,
-		MaxConcurrentSessions: 5,
-		ToolCallsPerMinute:    60,
+		MaxConcurrentSessions: maxSessions,
+		ToolCallsPerMinute:    toolCallsPM,
 	})
 
 	// --- Resilience: KA client ---
@@ -199,6 +207,7 @@ func run() error {
 		K8sClient:     k8sClient,
 		DSClient:      dsClient,
 		KAClient:      kaClient,
+		Auditor:       auditor,
 	}
 	rootAgent, _, err := agentpkg.NewRootAgent(agentCfg)
 	if err != nil {
@@ -269,7 +278,10 @@ func run() error {
 		// Per-request deadlines enforced via http.ResponseController.SetWriteDeadline().
 	}
 
-	// --- Config hot-reload (log level) ---
+	// --- Config hot-reload ---
+	// Hot-reloadable: logging.level
+	// NOT hot-reloadable (require pod restart): rateLimit, auth, resilience,
+	// server.port, agent endpoints, mcp.enabled, agentCard.url
 	watcher, watchErr := config.NewFileWatcher(configPath, func(newContent []byte) error {
 		newCfg, err := config.Load(newContent)
 		if err != nil {

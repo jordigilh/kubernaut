@@ -139,7 +139,10 @@ func buildAfterExecuteCallback(log *slog.Logger, auditor audit.Emitter) adka2a.A
 					},
 				})
 			}
-			return a2a.NewError(a2a.ErrInternalError, "task execution failed")
+			// Return nil — the framework has already produced the TaskStateFailed
+			// status event. Returning an error here would prevent it from being
+			// written to the client queue (ARCH-3 verification).
+			return nil
 		} else if auditor != nil {
 			auditor.Emit(ctx, &audit.Event{
 				Type:   audit.EventA2ATaskCompleted,

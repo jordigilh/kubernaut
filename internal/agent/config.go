@@ -5,6 +5,7 @@ package agent
 import (
 	"k8s.io/client-go/dynamic"
 
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ds"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ka"
 )
@@ -35,6 +36,8 @@ type AgentConfig struct {
 	KAClient *ka.Client
 	// MCPClient is the KA MCP client for workflow selection.
 	MCPClient ka.MCPClient
+	// Auditor emits audit events for RBAC denials (FedRAMP SI-4).
+	Auditor audit.Emitter
 }
 
 // Option applies a configuration override to AgentConfig.

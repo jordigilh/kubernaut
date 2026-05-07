@@ -46,8 +46,9 @@ func FromContext(ctx context.Context) logr.Logger {
 }
 
 // WithStandardFields enriches the logger with request-scoped context values
-// (request_id, user_id, session_id) extracted from the context. Fields with
-// empty values are omitted.
+// (request_id, user_id, session_id) extracted from the context. The auth
+// middleware must call WithUserID to propagate user identity for logging.
+// Fields with empty values are omitted.
 func WithStandardFields(ctx context.Context, logger logr.Logger) logr.Logger {
 	if rid := requestid.FromContext(ctx); rid != "" {
 		logger = logger.WithValues("request_id", rid)
@@ -81,6 +82,9 @@ func WithSessionID(ctx context.Context, sid string) context.Context {
 // and shares the dynamic log level from the given zap.AtomicLevel.
 // This bridges components that require *slog.Logger (e.g. ADK) to the same
 // logging pipeline as the rest of the service.
+//
+// NOTE for SRE: slog uses {"time":..., "level":"INFO"} while zap uses
+// {"ts":..., "level":"info"}. Log aggregation parsers must handle both schemas.
 func NewSlogLogger(level zap.AtomicLevel) *slog.Logger {
 	return slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 		Level: &atomicLeveler{level: level},

@@ -6,6 +6,8 @@ import (
 )
 
 // ProblemDetail represents an RFC 7807 Problem Details response.
+// The request_id field is a custom extension (RFC 7807 §3.2 allows extension
+// members). Clients can use it for correlation with server-side logs.
 type ProblemDetail struct {
 	Type      string `json:"type"`
 	Title     string `json:"title"`

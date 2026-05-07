@@ -101,7 +101,7 @@ func safeDetail(err error) string {
 	}
 	for _, c := range classifications {
 		if errors.Is(err, c.sentinel) {
-			return err.Error()
+			return c.sentinel.Error()
 		}
 	}
 	return "an unexpected error occurred"

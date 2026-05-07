@@ -13,7 +13,7 @@ var sensitiveKeys = []string{
 
 var (
 	urlPattern  = regexp.MustCompile(`https?://[^\s"']+`)
-	pathPattern = regexp.MustCompile(`(/[a-zA-Z0-9._-]+){3,}`)
+	pathPattern = regexp.MustCompile(`(/[a-zA-Z0-9._-]+){2,}`)
 )
 
 const redactedValue = "[REDACTED]"

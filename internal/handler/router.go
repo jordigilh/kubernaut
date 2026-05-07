@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/metrics"
 )
@@ -63,8 +64,8 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 	mux.Handle("GET /metrics", cfg.MetricsRegistry.Handler())
 	mux.Handle("GET /.well-known/agent-card.json", cfg.AgentCardHandler)
 
-	mux.Handle("/a2a/invoke", cfg.AuthMiddleware(maxBodyMiddleware(maxBytes, cfg.A2AHandler)))
-	mux.Handle("/mcp", cfg.AuthMiddleware(maxBodyMiddleware(maxBytes, cfg.MCPHandler)))
+	mux.Handle("POST /a2a/invoke", cfg.AuthMiddleware(writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, cfg.A2AHandler))))
+	mux.Handle("POST /mcp", cfg.AuthMiddleware(writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, cfg.MCPHandler))))
 
 	return metricsMiddleware(cfg.MetricsRegistry, mux), nil
 }
@@ -73,6 +74,19 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 func maxBodyMiddleware(maxBytes int64, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		next.ServeHTTP(w, r)
+	})
+}
+
+const defaultWriteDeadline = 60 * time.Second
+
+// writeDeadlineMiddleware sets a per-request write deadline via
+// http.ResponseController. SSE/streaming handlers can extend this by calling
+// SetWriteDeadline(time.Time{}) when they upgrade to long-lived streams.
+func writeDeadlineMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rc := http.NewResponseController(w)
+		_ = rc.SetWriteDeadline(time.Now().Add(defaultWriteDeadline))
 		next.ServeHTTP(w, r)
 	})
 }
