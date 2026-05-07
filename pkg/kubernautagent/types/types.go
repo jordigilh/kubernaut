@@ -168,6 +168,10 @@ type SignalContext struct {
 	SignalAnnotations map[string]string `json:"signal_annotations,omitempty"`
 	SignalLabels      map[string]string `json:"signal_labels,omitempty"`
 
+	// DetectedLabelsJSON is a pre-marshaled JSON string of sharedtypes.DetectedLabels,
+	// forwarded to DS catalog queries to activate GitOps-aware scoring. Issue #1052 / BR-AI-056.
+	DetectedLabelsJSON string `json:"detected_labels_json,omitempty"`
+
 	DeduplicationWindowMinutes *int   `json:"deduplication_window_minutes,omitempty"`
 	FirstSeen                  string `json:"first_seen,omitempty"`
 	LastSeen                   string `json:"last_seen,omitempty"`

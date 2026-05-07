@@ -146,6 +146,9 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 		Environment: signal.Environment,
 		Priority:    ogenclient.ListAvailableActionsPriority(signal.Priority),
 	}
+	if signal.DetectedLabelsJSON != "" {
+		params.DetectedLabels = ogenclient.NewOptString(signal.DetectedLabelsJSON)
+	}
 	if a.Page != "" && a.Cursor != "" {
 		offset, limit := DecodeCursor(a.Cursor)
 		params.Offset = ogenclient.NewOptInt(offset)
@@ -195,6 +198,9 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 		Component:   strings.ToLower(signal.ResourceKind),
 		Environment: signal.Environment,
 		Priority:    ogenclient.ListWorkflowsByActionTypePriority(signal.Priority),
+	}
+	if signal.DetectedLabelsJSON != "" {
+		params.DetectedLabels = ogenclient.NewOptString(signal.DetectedLabelsJSON)
 	}
 	if a.Page != "" && a.Cursor != "" {
 		offset, limit := DecodeCursor(a.Cursor)

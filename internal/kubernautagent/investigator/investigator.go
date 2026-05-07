@@ -284,6 +284,25 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			deletedResourceWarning(signalKind, signalName, signalNS))
 	}
 
+	// #1052 / BR-AI-056: Marshal enrichment DetectedLabels into the signal context
+	// so workflow discovery tools forward them to DS catalog queries, activating
+	// GitOps-aware scoring.
+	if enrichData != nil && enrichData.DetectedLabels != nil {
+		if dlJSON, err := json.Marshal(enrichData.DetectedLabels); err == nil {
+			workflowSignal.DetectedLabelsJSON = string(dlJSON)
+			dl := enrichData.DetectedLabels
+			trueCount := countTrueLabels(dl.GitOpsManaged, dl.PDBProtected, dl.HPAEnabled,
+				dl.Stateful, dl.HelmManaged, dl.NetworkIsolated, dl.ResourceQuotaConstrained)
+			inv.logger.V(1).Info("detected labels attached for workflow discovery scoring",
+				"correlation_id", correlationID,
+				"true_label_count", trueCount,
+				"gitops_tool", dl.GitOpsTool)
+		} else {
+			inv.logger.Error(err, "failed to marshal detected labels for workflow discovery, scoring will be inactive",
+				"correlation_id", correlationID)
+		}
+	}
+
 	inv.pipeline.AnomalyDetector.Reset()
 
 	p1Ctx := BuildPhase1Context(rcaResult)
@@ -315,6 +334,16 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 func deletedResourceWarning(kind, name, ns string) string {
 	return fmt.Sprintf("target resource %s/%s in %s was deleted; enrichment data is sparse", kind, name, ns)
+}
+
+func countTrueLabels(flags ...bool) int {
+	n := 0
+	for _, f := range flags {
+		if f {
+			n++
+		}
+	}
+	return n
 }
 
 // backfillSeverity ensures InvestigationResult.Severity is never empty.

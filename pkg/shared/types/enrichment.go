@@ -35,6 +35,10 @@
 // +kubebuilder:object:generate=true
 package types
 
+import (
+	"encoding/json"
+)
+
 // ========================================
 // ENRICHMENT RESULTS (DD-CONTRACT-002)
 // ========================================
@@ -183,6 +187,43 @@ type DetectedLabels struct {
 	// ========================================
 	// True if any ResourceQuota exists in namespace
 	ResourceQuotaConstrained bool `json:"resourceQuotaConstrained"`
+}
+
+// NewDetectedLabels creates a DetectedLabels with an initialized (non-nil) FailedDetections slice.
+func NewDetectedLabels() *DetectedLabels {
+	return &DetectedLabels{
+		FailedDetections: make([]string, 0),
+	}
+}
+
+// IsEmpty returns true when no label detection produced a positive result.
+func (d *DetectedLabels) IsEmpty() bool {
+	return !d.GitOpsManaged &&
+		d.GitOpsTool == "" &&
+		!d.PDBProtected &&
+		!d.HPAEnabled &&
+		!d.Stateful &&
+		!d.HelmManaged &&
+		!d.NetworkIsolated &&
+		d.ServiceMesh == ""
+}
+
+// ========================================
+// DETECTED LABELS SERIALIZATION (DD-WORKFLOW-001 v2.3)
+// ========================================
+//
+// DetectedLabels.SerializeLabels() produces full JSON (all fields, CRD-safe).
+// models.DetectedLabels (in pkg/datastorage/models) provides sparse JSON for DB contexts.
+//
+// Interface compliance is verified in test/unit/datastorage/detected_labels_serialization_test.go.
+
+// SerializeLabels produces full JSON with all fields present (CRD-safe).
+func (d *DetectedLabels) SerializeLabels() ([]byte, error) {
+	if d == nil {
+		return nil, nil
+	}
+	type Alias DetectedLabels
+	return json.Marshal((*Alias)(d))
 }
 
 // ========================================
