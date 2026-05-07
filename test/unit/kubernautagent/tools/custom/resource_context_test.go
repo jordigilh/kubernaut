@@ -41,11 +41,11 @@ type fakeK8s struct {
 	capturedSpecHashNamespace string
 }
 
-func (f *fakeK8s) GetOwnerChain(_ context.Context, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
+func (f *fakeK8s) GetOwnerChain(_ context.Context, _, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
 	return f.chain, f.err
 }
 
-func (f *fakeK8s) GetSpecHash(_ context.Context, kind, name, namespace string) (string, error) {
+func (f *fakeK8s) GetSpecHash(_ context.Context, kind, name, namespace, _ string) (string, error) {
 	f.capturedSpecHashKind = kind
 	f.capturedSpecHashName = name
 	f.capturedSpecHashNamespace = namespace

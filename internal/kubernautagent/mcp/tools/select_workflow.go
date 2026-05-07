@@ -29,7 +29,7 @@ import (
 
 // EnrichmentRunner abstracts the enrichment call for testability.
 type EnrichmentRunner interface {
-	Enrich(ctx context.Context, kind, name, namespace, specHash, incidentID string) (*enrichment.EnrichmentResult, error)
+	Enrich(ctx context.Context, kind, name, namespace, apiVersion, specHash, incidentID string) (*enrichment.EnrichmentResult, error)
 }
 
 // WorkflowCatalog abstracts the workflow catalog lookup for testability.
@@ -84,6 +84,7 @@ type SelectWorkflowInput struct {
 	Kind       string `json:"kind,omitempty"`
 	Name       string `json:"name,omitempty"`
 	Namespace  string `json:"namespace,omitempty"`
+	APIVersion string `json:"api_version,omitempty"`
 	SpecHash   string `json:"spec_hash,omitempty"`
 	IncidentID string `json:"incident_id,omitempty"`
 }
@@ -111,7 +112,7 @@ func WithEnrichmentRunner(runner EnrichmentRunner) SelectWorkflowOption {
 				return nil
 			}
 			ctx = transport.WithImpersonatedUser(ctx, user.Username, user.Groups)
-			result, err := runner.Enrich(ctx, input.Kind, input.Name, input.Namespace, input.SpecHash, input.IncidentID)
+			result, err := runner.Enrich(ctx, input.Kind, input.Name, input.Namespace, input.APIVersion, input.SpecHash, input.IncidentID)
 			if err != nil {
 				if errors.Is(err, enrichment.ErrRBACForbidden) {
 					return ErrCodeForbidden.WithDetail("namespace", input.Namespace)

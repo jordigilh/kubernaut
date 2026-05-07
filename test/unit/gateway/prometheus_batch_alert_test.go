@@ -108,7 +108,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 			validPod := "worker-5b6cc47c55-kfmg9"
 
 			resolver := newSelectiveResolver(map[string]bool{stalePod: true})
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "demo-crashloop", Pod: stalePod},
@@ -135,7 +135,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 			validPod2 := "worker-valid-222"
 
 			resolver := newSelectiveResolver(map[string]bool{stalePod: true})
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "FirstValidAlert", Severity: "warning", Namespace: "ns1", Pod: validPod1},
@@ -156,7 +156,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 			stalePod2 := "worker-gone-bbb"
 
 			resolver := newSelectiveResolver(map[string]bool{stalePod1: true, stalePod2: true})
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "Alert1", Severity: "critical", Namespace: "ns1", Pod: stalePod1},
@@ -175,7 +175,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 	Describe("No regression for single-alert webhooks", func() {
 		It("UT-GW-451-004: should process single valid alert identically to pre-fix behavior", func() {
 			resolver := newSelectiveResolver(map[string]bool{})
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "prod", Pod: "api-789"},
@@ -199,7 +199,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 			stalePod := "deleted-pod-xyz"
 
 			resolver := newSelectiveResolver(map[string]bool{stalePod: true})
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "prod", Pod: stalePod},
@@ -212,13 +212,105 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 		})
 	})
 
+	// Issue #1036: When AlertManager groups multiple alerts by [alertname, namespace],
+	// a single webhook may contain alerts for pods owned by DIFFERENT Deployments.
+	// Parse (single-signal) short-circuits on the first success, creating only 1 RR.
+	// ParseBatch must iterate all alerts and produce N signals for N distinct owner chains.
+	Describe("Issue #1036: Cascading-failure multi-owner batch", func() {
+		// Resolver that maps pods to their owning Deployments by name prefix.
+		newCascadingResolver := func() *mockOwnerResolver {
+			return &mockOwnerResolver{
+				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
+					switch {
+					case len(name) >= 15 && name[:15] == "order-processor":
+						return "Deployment", "order-processor", nil
+					case len(name) >= 14 && name[:14] == "inventory-sync":
+						return "Deployment", "inventory-sync", nil
+					case len(name) >= 8 && name[:8] == "postgres":
+						return "Deployment", "postgres", nil
+					default:
+						return "Deployment", name, nil
+					}
+				},
+			}
+		}
+
+		It("UT-GW-1036-001: ParseBatch produces N signals for N distinct owner chains", func() {
+			resolver := newCascadingResolver()
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
+
+			payload := newBatchWebhookJSON([]batchAlertEntry{
+				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "demo-cascade", Pod: "order-processor-7f8d4b-x9k2q"},
+				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "demo-cascade", Pod: "inventory-sync-6c9a3e-m4p7w"},
+			}, map[string]string{"alertname": "KubePodCrashLooping", "namespace": "demo-cascade"})
+
+			signals, err := adapter.ParseBatch(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(signals).To(HaveLen(2), "Each alert with a distinct owner chain must produce its own signal")
+
+			fpOrderProc := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
+				Namespace: "demo-cascade", Kind: "Deployment", Name: "order-processor",
+			})
+			fpInvSync := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
+				Namespace: "demo-cascade", Kind: "Deployment", Name: "inventory-sync",
+			})
+
+			fingerprints := map[string]bool{signals[0].Fingerprint: true, signals[1].Fingerprint: true}
+			Expect(fingerprints).To(HaveKey(fpOrderProc))
+			Expect(fingerprints).To(HaveKey(fpInvSync))
+			Expect(signals[0].Fingerprint).ToNot(Equal(signals[1].Fingerprint),
+				"Distinct owner chains must produce distinct fingerprints")
+		})
+
+		It("UT-GW-1036-002: Parse (single-signal) returns only 1 signal for the same batch — documents #1036 limitation", func() {
+			resolver := newCascadingResolver()
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
+
+			payload := newBatchWebhookJSON([]batchAlertEntry{
+				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "demo-cascade", Pod: "order-processor-7f8d4b-x9k2q"},
+				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "demo-cascade", Pod: "inventory-sync-6c9a3e-m4p7w"},
+			}, map[string]string{"alertname": "KubePodCrashLooping", "namespace": "demo-cascade"})
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(signal).ToNot(BeNil(), "Parse returns the first resolved signal")
+
+			fpOrderProc := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
+				Namespace: "demo-cascade", Kind: "Deployment", Name: "order-processor",
+			})
+			Expect(signal.Fingerprint).To(Equal(fpOrderProc),
+				"Parse short-circuits on first alert — only order-processor is returned")
+		})
+
+		It("UT-GW-1036-003: ParseBatch handles 3-way cascade (root + 2 dependents)", func() {
+			resolver := newCascadingResolver()
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
+
+			payload := newBatchWebhookJSON([]batchAlertEntry{
+				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "demo-cascade", Pod: "postgres-0"},
+				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "demo-cascade", Pod: "order-processor-7f8d4b-x9k2q"},
+				{Alertname: "KubePodCrashLooping", Severity: "critical", Namespace: "demo-cascade", Pod: "inventory-sync-6c9a3e-m4p7w"},
+			}, map[string]string{"alertname": "KubePodCrashLooping", "namespace": "demo-cascade"})
+
+			signals, err := adapter.ParseBatch(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(signals).To(HaveLen(3), "All 3 alerts with distinct owners must produce 3 signals")
+
+			fingerprints := make(map[string]bool)
+			for _, s := range signals {
+				fingerprints[s.Fingerprint] = true
+			}
+			Expect(fingerprints).To(HaveLen(3), "3 distinct Deployments must produce 3 distinct fingerprints")
+		})
+	})
+
 	Describe("Signal field correctness from first valid alert", func() {
 		It("UT-GW-451-007: should use labels, severity, and alertname from first valid alert, not stale alert", func() {
 			stalePod := "stale-pod-000"
 			validPod := "valid-pod-111"
 
 			resolver := newSelectiveResolver(map[string]bool{stalePod: true})
-			adapter := adapters.NewPrometheusAdapter(resolver, nil)
+			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
 			payload := newBatchWebhookJSON([]batchAlertEntry{
 				{Alertname: "StaleAlert", Severity: "warning", Namespace: "ns-stale", Pod: stalePod,

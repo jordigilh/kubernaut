@@ -85,10 +85,10 @@ func (m *cancelAwareMockClient) Chat(ctx context.Context, req llm.ChatRequest) (
 // nopK8sClient satisfies enrichment.K8sClient with no-op responses.
 type nopK8sClient struct{}
 
-func (nopK8sClient) GetOwnerChain(_ context.Context, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
+func (nopK8sClient) GetOwnerChain(_ context.Context, _, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
 	return []enrichment.OwnerChainEntry{{Kind: "Deployment", Name: "test-deploy", Namespace: "default"}}, nil
 }
-func (nopK8sClient) GetSpecHash(_ context.Context, _, _, _ string) (string, error) { return "", nil }
+func (nopK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) { return "", nil }
 
 // nopDSClient satisfies enrichment.DataStorageClient with no-op responses.
 type nopDSClient struct{}

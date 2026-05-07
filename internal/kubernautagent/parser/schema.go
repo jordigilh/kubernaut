@@ -66,8 +66,10 @@ const noWorkflowResultSchemaJSON = `{
           "properties": {
             "kind": { "type": "string" },
             "name": { "type": "string" },
-            "namespace": { "type": "string" }
-          }
+            "namespace": { "type": "string" },
+            "api_version": { "type": "string", "description": "API group/version (e.g. route.openshift.io/v1, apps/v1). Required to disambiguate the target resource's API group." }
+          },
+          "required": ["kind", "name", "namespace", "api_version"]
         }
       },
       "required": ["summary"]
@@ -95,8 +97,10 @@ const rcaResultSchemaJSON = `{
           "properties": {
             "kind": { "type": "string" },
             "name": { "type": "string" },
-            "namespace": { "type": "string" }
-          }
+            "namespace": { "type": "string" },
+            "api_version": { "type": "string", "description": "API group/version (e.g. route.openshift.io/v1, apps/v1). Required to disambiguate the target resource's API group." }
+          },
+          "required": ["kind", "name", "namespace", "api_version"]
         },
         "investigation_analysis": { "type": "string", "description": "Concise narrative summary of the investigation findings and reasoning (< 500 words). This field is consumed by the Phase 3 workflow selection LLM to provide investigation context." },
         "causal_chain": {
@@ -147,8 +151,10 @@ const investigationResultSchemaJSON = `{
           "properties": {
             "kind": { "type": "string" },
             "name": { "type": "string" },
-            "namespace": { "type": "string" }
-          }
+            "namespace": { "type": "string" },
+            "api_version": { "type": "string", "description": "API group/version (e.g. route.openshift.io/v1, apps/v1). Required to disambiguate the target resource's API group." }
+          },
+          "required": ["kind", "name", "namespace", "api_version"]
         }
       },
       "required": ["summary"]

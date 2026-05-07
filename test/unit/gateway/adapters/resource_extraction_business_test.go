@@ -46,7 +46,7 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 	var adapter *adapters.PrometheusAdapter
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter(nil, nil)
+		adapter = adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 	})
 
 	Context("BR-GATEWAY-001: Resource Kind Extraction (Workflow Selection)", func() {
@@ -168,8 +168,10 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 				"Kind=DaemonSet enables RO to select per-node remediation workflows")
 		})
 
-		It("extracts Service kind for network-level remediation workflows", func() {
-			// BUSINESS OUTCOME: RO selects Service workflows (endpoint validation, DNS checks)
+		It("excludes service label as Prometheus-reserved (#1045)", func() {
+			// #1045: 'service' is Prometheus-reserved (ServiceMonitor target).
+			// Alerts targeting a K8s Service should use a non-reserved label
+			// or include another resource label (e.g. pod, deployment).
 			payload := `{
 				"alerts": [{
 					"status": "firing",
@@ -185,8 +187,8 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 			signal, err := adapter.Parse(context.Background(), []byte(payload))
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Resource.Kind).To(Equal("Service"),
-				"Kind=Service enables RO to select network troubleshooting workflows")
+			Expect(signal.Resource.Kind).To(Equal("Unknown"),
+				"BR-GATEWAY-184 #1045: service is Prometheus-reserved; resolves to Unknown without other resource labels")
 		})
 	})
 

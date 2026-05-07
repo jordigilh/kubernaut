@@ -157,6 +157,11 @@ type RemediationTarget struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
+	// APIVersion disambiguates the resource's API group when the Kind exists
+	// in multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).
+	// Format: "group/version" (e.g. "route.openshift.io/v1") or "version" for core (e.g. "v1").
+	// Issue #1040.
+	APIVersion string `json:"api_version,omitempty"`
 }
 
 // SignalContext holds the input signal data for an investigation.
@@ -195,6 +200,10 @@ type SignalContext struct {
 	// #462: Alert-author annotations and signal labels from IncidentRequest
 	SignalAnnotations map[string]string `json:"signal_annotations,omitempty"`
 	SignalLabels      map[string]string `json:"signal_labels,omitempty"`
+
+	// DetectedLabelsJSON is a pre-marshaled JSON string of sharedtypes.DetectedLabels,
+	// forwarded to DS catalog queries to activate GitOps-aware scoring. Issue #1052 / BR-AI-056.
+	DetectedLabelsJSON string `json:"detected_labels_json,omitempty"`
 
 	DeduplicationWindowMinutes *int   `json:"deduplication_window_minutes,omitempty"`
 	FirstSeen                  string `json:"first_seen,omitempty"`

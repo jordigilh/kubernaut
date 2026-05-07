@@ -35,6 +35,8 @@ import (
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -103,6 +105,43 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Server lifecycle context — created early so the discovery refresh loop
+	// can be started before the HTTP server goroutine.
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	defer serverCancel()
+
+	// Issue #1029: Dynamic API resource registry — replaces static kindToGroup +
+	// resourceCandidates + LabelFilter with fully dynamic discovery.
+	kubeConfig, err := ctrl.GetConfig()
+	if err != nil {
+		logger.Error(err, "Failed to get Kubernetes config for API discovery")
+		os.Exit(1)
+	}
+	k8sClientset, err := kubernetes.NewForConfig(kubeConfig)
+	if err != nil {
+		logger.Error(err, "Failed to create Kubernetes clientset for API discovery")
+		os.Exit(1)
+	}
+	dynClient, err := dynamic.NewForConfig(kubeConfig)
+	if err != nil {
+		logger.Error(err, "Failed to create dynamic Kubernetes client for existence checks")
+		os.Exit(1)
+	}
+	apiRegistry, err := adapters.NewAPIResourceRegistry(
+		k8sClientset.Discovery(),
+		adapters.WithRefreshInterval(5*time.Minute),
+		adapters.WithCacheTTL(30*time.Second),
+		adapters.WithDynamicClient(dynClient),
+		adapters.WithRegistryLogger(logger.WithName("api-registry")),
+		adapters.WithRefreshErrorCounter(srv.GetMetrics().DiscoveryRefreshErrorsTotal),
+	)
+	if err != nil {
+		logger.Error(err, "Failed to initialize API resource registry — dynamic resource "+
+			"discovery is unavailable; verify ServiceAccount RBAC for system:discovery")
+		os.Exit(1)
+	}
+	apiRegistry.StartRefreshLoop(serverCtx)
+
 	// Register adapters (BR-GATEWAY-001, BR-GATEWAY-002)
 	// BR-GATEWAY-004: Owner chain resolution for signal deduplication (Issue #63).
 	// Uses the same ctrlClient as scope management (ADR-053) — metadata-only informer
@@ -111,13 +150,15 @@ func main() {
 		srv.GetCachedClient(),
 		logger.WithName("owner-resolver"),
 		adapters.WithFallbackReader(srv.GetAPIReader()),
+		adapters.WithRegistry(apiRegistry),
 	)
 
 	// Prometheus AlertManager webhook adapter
 	// Issue #63: alertname excluded from fingerprint; OwnerResolver resolves Pod→Deployment
-	// Issue #191 / BR-GATEWAY-184: Filter monitoring metadata labels during target extraction
-	labelFilter := adapters.NewMonitoringMetadataFilter(logger)
-	prometheusAdapter := adapters.NewPrometheusAdapter(ownerResolver, labelFilter, logger)
+	// Issue #1029: Dynamic API resource registry for multi-candidate scoring
+	prometheusAdapter := adapters.NewPrometheusAdapter(ownerResolver, apiRegistry, logger)
+	prometheusAdapter.SetOwnerResolutionMetric(srv.GetMetrics().OwnerResolutionTotal)
+	prometheusAdapter.SetParseDroppedMetric(srv.GetMetrics().SignalsParseDroppedTotal)
 	if err := srv.RegisterAdapter(prometheusAdapter); err != nil {
 		logger.Error(err, "Failed to register Prometheus adapter")
 		os.Exit(1)
@@ -137,12 +178,11 @@ func main() {
 
 	// Start server in goroutine
 	errChan := make(chan error, 1)
-	serverCtx, serverCancel := context.WithCancel(context.Background())
-	defer serverCancel()
 
 	// Issue #748: Load OCP TLS security profile from config before any TLS setup
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(serverCfg.TLSProfile); err != nil {
-		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
+		logger.Error(err, "Invalid TLS security profile in config — refusing to start with wrong TLS posture")
+		os.Exit(1)
 	} else if serverCfg.TLSProfile != "" {
 		logger.Info("TLS security profile active", "profile", serverCfg.TLSProfile)
 	}

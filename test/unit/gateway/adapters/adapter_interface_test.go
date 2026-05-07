@@ -48,7 +48,7 @@ var _ = Describe("Adapter Interface - Business Metadata", func() {
 		var adapter adapters.RoutableAdapter
 
 		BeforeEach(func() {
-			adapter = adapters.NewPrometheusAdapter(nil, nil)
+			adapter = adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 		})
 
 		It("provides correct adapter name for metrics and logging", func() {
@@ -317,7 +317,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				// BUSINESS LOGIC: One bad payload should not affect other signals
 				// Unit Test: Error handling without infrastructure
 
-				adapter := adapters.NewPrometheusAdapter(nil, nil)
+				adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 
 				// Malformed JSON payload
 				malformedPayload := []byte(`{"alerts": [{"labels": {incomplete`)
@@ -351,7 +351,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				// BUSINESS LOGIC: Clear errors enable faster incident resolution
 				// Unit Test: Error message quality
 
-				adapter := adapters.NewPrometheusAdapter(nil, nil)
+				adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 
 				// Empty payload
 				emptyPayload := []byte(`{}`)
@@ -369,7 +369,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				// BUSINESS LOGIC: Defensive programming for external inputs
 				// Unit Test: Edge case handling
 
-				adapter := adapters.NewPrometheusAdapter(nil, nil)
+				adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 
 				// Missing alertname
 				payload := []byte(`{

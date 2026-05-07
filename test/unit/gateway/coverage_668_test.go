@@ -141,7 +141,7 @@ var _ = Describe("BR-GATEWAY-074: Prometheus adapter ReplayValidator", func() {
 	)
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter(nil, nil)
+		adapter = adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 	})
 
 	It("BR-GATEWAY-074: accepts AlertManager JSON using startsAt when X-Timestamp is absent", func() {

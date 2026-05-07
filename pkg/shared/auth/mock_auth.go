@@ -50,7 +50,8 @@ type MockAuthenticator struct {
 	ErrorToReturn error
 
 	// CallCount tracks how many times ValidateToken was called.
-	// Useful for verifying caching behavior.
+	// Useful for verifying caching behavior. Use GetCallCount() for
+	// concurrent-safe reads.
 	CallCount int
 }
 
@@ -97,6 +98,13 @@ func (a *MockAuthenticator) ValidateTokenFull(_ context.Context, token string) (
 	}
 
 	return UserInfo{Username: user, Groups: []string{}}, nil
+}
+
+// GetCallCount returns the call count in a concurrent-safe manner.
+func (a *MockAuthenticator) GetCallCount() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.CallCount
 }
 
 // MockAuthorizer is a test double implementation of Authorizer.
@@ -162,6 +170,7 @@ type MockAuthorizer struct {
 	ErrorToReturn error
 
 	// CallCount tracks how many times CheckAccess/CheckAccessWithGroup was called.
+	// Use GetCallCount() for concurrent-safe reads.
 	CallCount int
 }
 
@@ -210,4 +219,11 @@ func (a *MockAuthorizer) CheckAccessWithGroup(_ context.Context, user, namespace
 	}
 
 	return false, nil
+}
+
+// GetCallCount returns the call count in a concurrent-safe manner.
+func (a *MockAuthorizer) GetCallCount() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.CallCount
 }

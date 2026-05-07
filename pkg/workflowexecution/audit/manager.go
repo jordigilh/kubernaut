@@ -133,7 +133,7 @@ func (m *Manager) RecordWorkflowFailed(ctx context.Context, wfe *workflowexecuti
 //
 // Event Data Structure:
 //   - selected_workflow_ref: {workflow_id, version, container_image}
-func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, workflowName string) error {
 	// Build audit event with custom event_data for Gap #5
 	if m.store == nil {
 		err := fmt.Errorf("AuditStore is nil - audit is MANDATORY per ADR-032")
@@ -171,10 +171,11 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 	payload := api.WorkflowExecutionAuditPayload{
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
+		WorkflowName:    api.OptString{Value: workflowName, Set: workflowName != ""},
 		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
 		ExecutionName:   wfe.Name,
 		Phase:           api.WorkflowExecutionAuditPayloadPhase(phase),
-		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
+		TargetResource:  wfe.Spec.TargetResource,
 	}
 	// Use proper Gap #5 constructor (added to OpenAPI spec discriminator)
 	event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData(payload)

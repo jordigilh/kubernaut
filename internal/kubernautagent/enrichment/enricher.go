@@ -26,6 +26,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 )
@@ -35,21 +36,15 @@ type OwnerChainEntry struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
 	Namespace string `json:"namespace,omitempty"`
+	// APIVersion captures the owner's API group/version from OwnerReference.
+	// Format: "group/version" (e.g. "apps/v1") or "version" for core (e.g. "v1").
+	// Issue #1040.
+	APIVersion string `json:"api_version,omitempty"`
 }
 
-// DetectedLabels holds the structured label detection results matching KA's LabelDetector output.
-type DetectedLabels struct {
-	FailedDetections         []string `json:"failedDetections"`
-	GitOpsManaged            bool     `json:"gitOpsManaged"`
-	GitOpsTool               string   `json:"gitOpsTool"`
-	PDBProtected             bool     `json:"pdbProtected"`
-	HPAEnabled               bool     `json:"hpaEnabled"`
-	Stateful                 bool     `json:"stateful"`
-	HelmManaged              bool     `json:"helmManaged"`
-	NetworkIsolated          bool     `json:"networkIsolated"`
-	ServiceMesh              string   `json:"serviceMesh"`
-	ResourceQuotaConstrained bool     `json:"resourceQuotaConstrained"`
-}
+// DetectedLabels is the canonical label detection result type.
+// Alias for sharedtypes.DetectedLabels to avoid import cycles and duplication.
+type DetectedLabels = sharedtypes.DetectedLabels
 
 // QuotaResourceUsage holds the hard limit and current usage for a single
 // resource key inside a ResourceQuota. Matches HAPI v1.2.1's
@@ -60,9 +55,11 @@ type QuotaResourceUsage struct {
 }
 
 // K8sClient abstracts Kubernetes API access for enrichment.
+// Issue #1040: apiVersion parameter disambiguates multi-group kinds (e.g. Route).
+// Pass "" when unknown — preserves existing heuristic-based resolution.
 type K8sClient interface {
-	GetOwnerChain(ctx context.Context, kind, name, namespace string) ([]OwnerChainEntry, error)
-	GetSpecHash(ctx context.Context, kind, name, namespace string) (string, error)
+	GetOwnerChain(ctx context.Context, kind, name, namespace, apiVersion string) ([]OwnerChainEntry, error)
+	GetSpecHash(ctx context.Context, kind, name, namespace, apiVersion string) (string, error)
 }
 
 // DataStorageClient abstracts DataStorage API access for enrichment.
@@ -155,10 +152,14 @@ type EnrichmentResult struct {
 	// exhaustion (all errors retried, matching HAPI v1.2.1). The
 	// investigator uses this to trigger rca_incomplete (BR-HAPI-261
 	// AC#7, #704). Only set when RetryConfig has MaxRetries > 0.
-	HardFail           bool                          `json:"-"`
-	DetectedLabels     *DetectedLabels               `json:"detected_labels,omitempty"`
-	QuotaDetails       map[string]QuotaResourceUsage `json:"quota_details,omitempty"`
-	RemediationHistory *RemediationHistoryResult     `json:"remediation_history,omitempty"`
+	// Issue #1039: NotFound errors are exempt (deleted resources).
+	HardFail bool `json:"-"`
+	// TargetResourceDeleted is true when the remediation target no longer
+	// exists in the cluster (K8s NotFound). Issue #1039.
+	TargetResourceDeleted bool                          `json:"-"`
+	DetectedLabels        *DetectedLabels               `json:"detected_labels,omitempty"`
+	QuotaDetails          map[string]QuotaResourceUsage `json:"quota_details,omitempty"`
+	RemediationHistory    *RemediationHistoryResult     `json:"remediation_history,omitempty"`
 }
 
 // Enricher resolves owner chain, labels, and remediation history.
@@ -198,8 +199,8 @@ func (e *Enricher) WithRetryConfig(cfg RetryConfig) *Enricher {
 // With MaxRetries>0: all errors are retried with exponential backoff,
 // matching HAPI v1.2.1 EnrichmentService._retry (except Exception → retry).
 // The caller sets HardFail on EnrichmentResult when this returns a non-nil error.
-func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, namespace string) ([]OwnerChainEntry, error) {
-	chain, err := e.k8s.GetOwnerChain(ctx, kind, name, namespace)
+func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, namespace, apiVersion string) ([]OwnerChainEntry, error) {
+	chain, err := e.k8s.GetOwnerChain(ctx, kind, name, namespace, apiVersion)
 	if err == nil {
 		return chain, nil
 	}
@@ -208,7 +209,7 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 		return nil, err
 	}
 
-	if e.retryConfig.MaxRetries == 0 {
+	if e.retryConfig.MaxRetries == 0 || IsNotFoundError(err) || IsNoMatchError(err) {
 		return nil, err
 	}
 
@@ -231,7 +232,7 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 		case <-time.After(wait):
 		}
 
-		chain, err = e.k8s.GetOwnerChain(ctx, kind, name, namespace)
+		chain, err = e.k8s.GetOwnerChain(ctx, kind, name, namespace, apiVersion)
 		if err == nil {
 			return chain, nil
 		}
@@ -266,7 +267,8 @@ func isForbiddenError(err error) bool {
 // Enrich resolves enrichment data for the given resource.
 // Implements partial failure: each sub-call is best-effort.
 // If specHash is empty, auto-computes it via K8sClient.GetSpecHash.
-func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, incidentID string) (*EnrichmentResult, error) {
+// apiVersion disambiguates multi-group kinds (e.g. Route). Pass "" when unknown. Issue #1040.
+func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, apiVersion, specHash, incidentID string) (*EnrichmentResult, error) {
 	result := &EnrichmentResult{
 		ResourceKind:      kind,
 		ResourceName:      name,
@@ -274,7 +276,7 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 	}
 
 	if specHash == "" {
-		computed, err := e.k8s.GetSpecHash(ctx, kind, name, namespace)
+		computed, err := e.k8s.GetSpecHash(ctx, kind, name, namespace, apiVersion)
 		if err != nil {
 			if isForbiddenError(err) {
 				return nil, fmt.Errorf("%w: GetSpecHash %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, err)
@@ -289,17 +291,20 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, specHash, 
 
 	var ownerErr, histErr error
 
-	chain, ownerErr := e.resolveOwnerChainWithRetry(ctx, kind, name, namespace)
+	chain, ownerErr := e.resolveOwnerChainWithRetry(ctx, kind, name, namespace, apiVersion)
 	if ownerErr != nil {
 		if isForbiddenError(ownerErr) {
 			return nil, fmt.Errorf("%w: GetOwnerChain %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, ownerErr)
 		}
 		result.OwnerChainError = ownerErr
-		if e.retryConfig.MaxRetries > 0 && !IsNoMatchError(ownerErr) {
+		if IsNotFoundError(ownerErr) {
+			result.TargetResourceDeleted = true
+		} else if e.retryConfig.MaxRetries > 0 && !IsNoMatchError(ownerErr) {
 			result.HardFail = true
 		}
 		e.logger.Error(ownerErr, "enrichment: owner chain resolution failed",
 			"resource", namespace+"/"+kind+"/"+name,
+			"target_resource_deleted", result.TargetResourceDeleted,
 		)
 	} else {
 		result.OwnerChain = chain

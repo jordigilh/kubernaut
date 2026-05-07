@@ -132,7 +132,7 @@ func (h *VerifyingHandler) Handle(ctx context.Context, rr *remediationv1.Remedia
 			h.callbacks.EnsureNotificationsCreated(ctx, rr)
 			h.callbacks.EmitVerificationTimedOutAudit(ctx, rr)
 			if rr.Status.StartTime != nil {
-				h.callbacks.EmitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
+				h.callbacks.EmitCompletionAudit(ctx, rr, rr.Status.Outcome, time.Since(rr.Status.StartTime.Time).Milliseconds())
 			}
 			return phase.NoOp("safety-net timeout completed"), nil
 		} else {
@@ -161,7 +161,7 @@ func (h *VerifyingHandler) Handle(ctx context.Context, rr *remediationv1.Remedia
 		h.callbacks.EnsureNotificationsCreated(ctx, rr)
 		h.callbacks.EmitVerificationTimedOutAudit(ctx, rr)
 		if rr.Status.StartTime != nil {
-			h.callbacks.EmitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
+			h.callbacks.EmitCompletionAudit(ctx, rr, rr.Status.Outcome, time.Since(rr.Status.StartTime.Time).Milliseconds())
 		}
 		return phase.NoOp("verification deadline expired, completed"), nil
 	}
@@ -174,7 +174,7 @@ func (h *VerifyingHandler) Handle(ctx context.Context, rr *remediationv1.Remedia
 		h.callbacks.EnsureNotificationsCreated(ctx, rr)
 		h.callbacks.EmitVerificationCompletedAudit(ctx, rr)
 		if rr.Status.StartTime != nil {
-			h.callbacks.EmitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
+			h.callbacks.EmitCompletionAudit(ctx, rr, rr.Status.Outcome, time.Since(rr.Status.StartTime.Time).Milliseconds())
 		}
 		return phase.NoOp("EA terminal, verification completed"), nil
 	}

@@ -387,6 +387,11 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			topLevelDuration, hasDuration := event.DurationMs.Get()
 			Expect(hasDuration).To(BeTrue(), "DD-TESTING-001: Top-level duration_ms MUST be set for lifecycle events")
 			Expect(topLevelDuration).To(BeNumerically(">", 0), "Workflow execution duration should be positive")
+
+			// IT-RO-1033-001: Validate crd_outcome carries actual CRD vocabulary (Issue #1033 Gap 1)
+			Expect(payload.CrdOutcome.IsSet()).To(BeTrue(), "crd_outcome should be set on completion events")
+			Expect(payload.CrdOutcome.Value).To(Equal("Remediated"),
+				"crd_outcome should carry actual CRD outcome (Remediated), not hardcoded 'success'")
 		})
 	})
 

@@ -4042,6 +4042,10 @@ components:
           type: string
           description: Version of the workflow being executed
           example: "v1.0.0"
+        workflow_name:
+          type: string
+          description: Human-readable name of the selected workflow from the DataStorage catalog. Optional; present only when the catalog provides a name.
+          example: "fix-security-context-job"
         target_resource:
           type: string
           description: Kubernetes resource being acted upon (format depends on scope)

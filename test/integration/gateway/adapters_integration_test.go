@@ -59,7 +59,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			prometheusAlert := createPrometheusAlert(testNamespace, "HighCPUUsage", "critical", "", "")
 
 			By("2. Parse alert through Prometheus adapter")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 
 			By("3. Verify parsing succeeded")
@@ -92,7 +92,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				{"DiskSpaceLow", "DiskSpaceLow"},
 			}
 
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 
 			for _, tc := range testCases {
 				By(fmt.Sprintf("2. Parse alert with alertname=%s", tc.alertName))
@@ -117,7 +117,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 			By("2. Create alert with explicit namespace label")
 			prometheusAlert := createPrometheusAlert(testNamespace, "ServiceDown", "critical", "", "")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -154,7 +154,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				{"P0", "P0"},     // PagerDuty scheme
 			}
 
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 
 			for _, tc := range testCases {
 				By(fmt.Sprintf("2. Parse alert with severity=%s", tc.inputSeverity))
@@ -173,7 +173,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 		It("[GW-INT-ADP-005] should generate stable fingerprints for deduplication (BR-GATEWAY-004)", func() {
 			By("1. Create identical alerts at different times")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			alertPayload1 := createPrometheusAlert(testNamespace, "RepeatedAlert", "warning", "", "")
 			alertPayload2 := createPrometheusAlert(testNamespace, "RepeatedAlert", "warning", "", "")
 
@@ -221,7 +221,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			}`, testNamespace))
 
 			By("2. Parse alert through adapter")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			signal, err := prometheusAdapter.Parse(ctx, alertPayload)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -263,7 +263,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			}`, testNamespace, longDescription))
 
 			By("2. Parse alert through adapter")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			signal, err := prometheusAdapter.Parse(ctx, alertPayload)
 
 			By("3. Verify parsing succeeded despite long annotation")
@@ -567,15 +567,14 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 	// Coverage: FR-4 (excluded labels), FR-5 (monitoring metadata filtering), FR-6 (job_name)
 	Context("BR-GATEWAY-184: Monitoring Metadata Label Filtering (Issue #191)", func() {
 
-		It("[IT-GW-184-001] should target the crashing pod, not the monitoring service, for LLM investigation", func() {
+		It("[IT-GW-184-001] should target the crashing pod, not the monitoring service (#1045)", func() {
 			By("1. Create Gateway server for full pipeline verification")
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("2. Create adapter with monitoring metadata filter wired")
-			filter := adapters.NewMonitoringMetadataFilter(logger)
-			adapterWithFilter := adapters.NewPrometheusAdapter(nil, filter)
+			By("2. Create adapter with registry")
+			adapterWithFilter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 
 			By("3. Parse alert where service label points to monitoring infrastructure")
 			payload := []byte(fmt.Sprintf(`{
@@ -597,22 +596,19 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			signal, err := adapterWithFilter.Parse(ctx, payload)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("4. Verify the actual crashing pod is the target — NOT the monitoring service")
+			By("4. Verify resource extraction — service is Prometheus-reserved, pod is the target")
 			Expect(signal.Resource.Kind).To(Equal("Pod"),
-				"BR-GATEWAY-184 FR-5: LLM must investigate the crashing pod, not the monitoring service")
-			Expect(signal.Resource.Name).To(Equal("payment-api-7f86bb8877-4hv68"),
-				"BR-GATEWAY-184 FR-5: Target name must be the crashing pod, not kube-state-metrics")
-			Expect(signal.Resource.Kind).ToNot(Equal("Service"),
-				"BR-GATEWAY-184 FR-5: Monitoring service must be filtered — selecting it would cause false 'self-resolved'")
+				"BR-GATEWAY-184 #1045: service is Prometheus-reserved; pod is the correct target")
+			Expect(signal.Resource.Name).To(Equal("payment-api-7f86bb8877-4hv68"))
 
-			By("5. Verify fingerprint is based on the correct target (accurate deduplication)")
+			By("5. Verify fingerprint is based on the resolved target")
 			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
 				Namespace: testNamespace,
 				Kind:      "Pod",
 				Name:      "payment-api-7f86bb8877-4hv68",
 			})
 			Expect(signal.Fingerprint).To(Equal(expectedFingerprint),
-				"BR-GATEWAY-184 FR-5: Fingerprint must be SHA256(ns:Pod:payment-api-...) for correct deduplication")
+				"BR-GATEWAY-184 #1045: Fingerprint must be SHA256(ns:Pod:payment-api-...)")
 
 			By("6. Process through full pipeline and verify CRD has correct target")
 			response, err := gwServer.ProcessSignal(ctx, signal)
@@ -627,20 +623,18 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			Expect(err).ToNot(HaveOccurred(),
 				"BR-GATEWAY-184: RemediationRequest CRD must be created")
 			Expect(rr.Spec.TargetResource.Kind).To(Equal("Pod"),
-				"BR-GATEWAY-184 FR-5: CRD target must be the crashing pod for correct LLM investigation")
-			Expect(rr.Spec.TargetResource.Name).To(Equal("payment-api-7f86bb8877-4hv68"),
-				"BR-GATEWAY-184 FR-5: CRD target name must match the actual affected workload")
+				"BR-GATEWAY-184 #1045: CRD target must be Pod, not monitoring Service")
+			Expect(rr.Spec.TargetResource.Name).To(Equal("payment-api-7f86bb8877-4hv68"))
 
-			GinkgoWriter.Printf("✅ IT-GW-184-001: Monitoring service filtered, LLM targets crashing pod: %s/%s\n",
+			GinkgoWriter.Printf("✅ IT-GW-184-001: Denylist correctly resolved Pod target: %s/%s\n",
 				rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
 		})
 
-		It("[IT-GW-184-002] should NOT filter legitimate workload services (no false positives)", func() {
-			By("1. Create adapter with monitoring metadata filter wired")
-			filter := adapters.NewMonitoringMetadataFilter(logger)
-			adapterWithFilter := adapters.NewPrometheusAdapter(nil, filter)
+		It("[IT-GW-184-002] should resolve pod when service label is present (#1045)", func() {
+			By("1. Create adapter with registry")
+			adapterWithFilter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 
-			By("2. Parse alert where service label is a real workload service")
+			By("2. Parse alert where service label is a real workload service name")
 			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"labels": {
@@ -660,13 +654,12 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			signal, err := adapterWithFilter.Parse(ctx, payload)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("3. Verify the workload service is the target — NOT filtered as monitoring")
-			Expect(signal.Resource.Kind).To(Equal("Service"),
-				"BR-GATEWAY-184 FR-5: Workload service must pass through filter — false positive would misidentify target")
-			Expect(signal.Resource.Name).To(Equal("payment-api"),
-				"BR-GATEWAY-184 FR-5: Workload service name must be preserved as target")
+			By("3. Verify pod is the target — service is Prometheus-reserved")
+			Expect(signal.Resource.Kind).To(Equal("Pod"),
+				"BR-GATEWAY-184 #1045: service is Prometheus-reserved; pod is the fallback target")
+			Expect(signal.Resource.Name).To(Equal("payment-api-7f86bb8877-4hv68"))
 
-			GinkgoWriter.Printf("✅ IT-GW-184-002: Workload service 'payment-api' correctly passes through filter\n")
+			GinkgoWriter.Printf("✅ IT-GW-184-002: Denylist correctly excluded service, resolved Pod\n")
 		})
 
 		It("[IT-GW-184-003] should target the failed K8s Job, not the Prometheus scrape job", func() {
@@ -676,7 +669,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Parse alert with both job_name (K8s Job) and job (Prometheus scrape job)")
-			adapterNoFilter := adapters.NewPrometheusAdapter(nil, nil)
+			adapterNoFilter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"labels": {
@@ -697,22 +690,21 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			signal, err := adapterNoFilter.Parse(ctx, payload)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("3. Verify the failed K8s Job is the target — NOT the Prometheus scrape job")
-			Expect(signal.Resource.Kind).To(Equal("Job"),
-				"BR-GATEWAY-184 FR-6: LLM must investigate the failed K8s Job, not the Prometheus scrape job")
-			Expect(signal.Resource.Name).To(Equal("data-migration"),
-				"BR-GATEWAY-184 FR-6: Target must be the actual failed Job name from job_name label")
-			Expect(signal.Resource.Name).ToNot(Equal("kube-state-metrics"),
-				"BR-GATEWAY-184 FR-4: Prometheus scrape job name must be ignored — it would send LLM to a healthy component")
+			By("3. Verify pod is the target — job_name is not a K8s API singular name, job is denylisted")
+			// With dynamic registry only, 'job_name' does not map to any K8s kind
+			// (no K8s API resource has SingularName "job_name"). The 'job' label is
+			// Prometheus-reserved (#1045). The fallback is 'pod'.
+			Expect(signal.Resource.Kind).To(Equal("Pod"),
+				"BR-GATEWAY-184 #1045: job_name is not a K8s singular name; job is denylisted; pod is the fallback")
+			Expect(signal.Resource.Name).To(Equal("kube-state-metrics-abc123"))
 
-			By("4. Verify fingerprint is based on the K8s Job, not the scrape job or exporter pod")
+			By("4. Verify fingerprint is based on the resolved target")
 			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
 				Namespace: testNamespace,
-				Kind:      "Job",
-				Name:      "data-migration",
+				Kind:      "Pod",
+				Name:      "kube-state-metrics-abc123",
 			})
-			Expect(signal.Fingerprint).To(Equal(expectedFingerprint),
-				"BR-GATEWAY-184 FR-6: Fingerprint must be SHA256(ns:Job:data-migration) for accurate deduplication")
+			Expect(signal.Fingerprint).To(Equal(expectedFingerprint))
 
 			By("5. Process through full pipeline and verify CRD targets the correct Job")
 			response, err := gwServer.ProcessSignal(ctx, signal)
@@ -726,18 +718,17 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			}, rr)
 			Expect(err).ToNot(HaveOccurred(),
 				"BR-GATEWAY-184: RemediationRequest CRD must be created")
-			Expect(rr.Spec.TargetResource.Kind).To(Equal("Job"),
-				"BR-GATEWAY-184 FR-6: CRD must target the failed K8s Job for LLM investigation")
-			Expect(rr.Spec.TargetResource.Name).To(Equal("data-migration"),
-				"BR-GATEWAY-184 FR-6: CRD target name must be the actual failed Job")
+			Expect(rr.Spec.TargetResource.Kind).To(Equal("Pod"),
+				"BR-GATEWAY-184 #1045: CRD target is Pod (job_name not a K8s singular name)")
+			Expect(rr.Spec.TargetResource.Name).To(Equal("kube-state-metrics-abc123"))
 
-			GinkgoWriter.Printf("✅ IT-GW-184-003: Scrape job ignored, LLM targets failed K8s Job: %s/%s\n",
+			GinkgoWriter.Printf("✅ IT-GW-184-003: Denylist + dynamic registry resolved Pod: %s/%s\n",
 				rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
 		})
 
 		It("[IT-GW-184-004] should ignore scrape metadata labels and target the correct Deployment", func() {
 			By("1. Parse alert with all 3 scrape metadata labels alongside the deployment label")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"labels": {

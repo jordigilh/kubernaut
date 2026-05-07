@@ -115,7 +115,7 @@ const (
 //
 // Security features:
 // - Authentication: TokenReview-based bearer token validation
-// - Rate limiting: Per-IP token bucket (100 req/min, burst 10)
+// - Rate limiting: chi.Throttle concurrent-request limiter; per-IP rate limiting should be enforced at the Ingress/Route layer
 // - Input validation: Schema validation for all signal types
 //
 // Observability features:
@@ -213,33 +213,9 @@ func (s *Server) MarkCacheReady() {
 	s.logger.Info("Informer cache sync complete, readiness probe unblocked")
 }
 
-// SetCacheReadyForTesting allows tests to control the cache-ready state.
-// Production code must use MarkCacheReady instead.
-func (s *Server) SetCacheReadyForTesting(ready bool) {
-	s.cacheReady.Store(ready)
-}
-
-// SetShuttingDownForTesting allows tests to control the shutdown state.
-func (s *Server) SetShuttingDownForTesting(shuttingDown bool) {
-	s.isShuttingDown.Store(shuttingDown)
-}
-
-// NewMinimalServerForReadinessTest creates a lightweight Server suitable for
-// readiness handler unit tests. If apiReaders are provided, the first is used
-// as the apiReader for the K8s connectivity check; otherwise the K8s check
-// will panic (acceptable for tests that return before reaching it).
-func NewMinimalServerForReadinessTest(logger logr.Logger, apiReaders ...client.Reader) *Server {
-	return &Server{
-		logger:    logger,
-		apiReader: firstReader(apiReaders),
-	}
-}
-
-func firstReader(readers []client.Reader) client.Reader {
-	if len(readers) > 0 {
-		return readers[0]
-	}
-	return nil
+// GetMetrics returns the metrics instance for wiring into adapters.
+func (s *Server) GetMetrics() *metrics.Metrics {
+	return s.metricsInstance
 }
 
 // NewServer creates a new Gateway server with default metrics registry
@@ -889,12 +865,8 @@ func (s *Server) performanceLoggingMiddleware(next http.Handler) http.Handler {
 		// Calculate duration
 		duration := time.Since(start)
 
-		// Record HTTP request duration metric (BR-104)
-		s.metricsInstance.HTTPRequestDuration.WithLabelValues(
-			r.URL.Path,                     // endpoint
-			r.Method,                       // method
-			fmt.Sprintf("%d", ww.Status()), // status
-		).Observe(duration.Seconds())
+		// HTTPRequestDuration is already observed by middleware.HTTPMetrics (http_metrics.go).
+		// Duplicate observation removed — see Phase 3a of FedRAMP remediation.
 
 		// Log request completion with duration (V(1) for health/readiness checks to reduce noise)
 		logger := middleware.GetLogger(r.Context())
@@ -944,7 +916,7 @@ func (s *Server) GetAPIReader() client.Reader {
 // This method:
 // 1. Validates adapter (checks for duplicate names/routes)
 // 2. Registers adapter in registry
-// 3. Creates HTTP handler that calls adapter.Parse()
+// 3. Creates HTTP handler (batch-aware for BatchParser adapters, single-signal otherwise)
 // 4. Applies middleware and registers route with chi router
 //
 // Middleware applied:
@@ -954,7 +926,7 @@ func (s *Server) GetAPIReader() client.Reader {
 //
 // Example:
 //
-//	prometheusAdapter := adapters.NewPrometheusAdapter(ownerResolver, labelFilter)
+//	prometheusAdapter := adapters.NewPrometheusAdapter(ownerResolver, registry)
 //	server.RegisterAdapter(prometheusAdapter)
 //	// Now POST /api/v1/signals/prometheus is active
 func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
@@ -997,11 +969,16 @@ func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
 // createAdapterHandler creates an HTTP handler for an adapter
 //
 // This handler:
+// For single-signal adapters:
 // 1. Reads request body
 // 2. Calls adapter.Parse() to convert to NormalizedSignal
 // 3. Validates signal using adapter.Validate()
 // 4. Calls ProcessSignal() to run full pipeline
 // 5. Returns HTTP response (201/202/400/500)
+//
+// For BatchParser adapters (e.g., Prometheus):
+// Delegates to handleBatchRequest which processes each signal independently
+// and returns HTTP 207 Multi-Status with per-alert results.
 //
 // REFACTORED: Reduced cyclomatic complexity by extracting helper methods
 func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.HandlerFunc {
@@ -1012,9 +989,16 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 			return
 		}
 
-		start := time.Now()
 		ctx := r.Context()
 		logger := middleware.GetLogger(ctx)
+
+		// Check if adapter supports batch parsing (e.g., Prometheus AlertManager)
+		if batchAdapter, ok := adapter.(adapters.BatchParser); ok {
+			s.handleBatchRequest(ctx, w, r, adapter, batchAdapter, logger)
+			return
+		}
+
+		start := time.Now()
 
 		// Read, parse, and validate signal
 		signal, err := s.readParseValidateSignal(ctx, w, r, adapter, logger)
@@ -1047,6 +1031,198 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 
 		// Send success response
 		s.sendSuccessResponse(w, r, response, adapter, start)
+	}
+}
+
+// handleBatchRequest processes a batch payload where each signal is handled independently.
+//
+// Routing strategy:
+//   - Single-alert batches (len == 1): delegate to the standard single-signal pipeline
+//     so that existing HTTP status contracts (201, 202, 500, 504) are preserved.
+//     AlertManager retries on 5xx, so returning 207 for a single failed alert
+//     would silently swallow the failure.
+//   - Multi-alert batches (len > 1): return HTTP 207 Multi-Status with per-alert
+//     results and an aggregate summary (#1036).
+func (s *Server) handleBatchRequest(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	adapter adapters.SignalAdapter,
+	batchAdapter adapters.BatchParser,
+	logger logr.Logger,
+) {
+	start := time.Now()
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			logger.Info("Request body too large", "limit", maxRequestBodySize)
+			s.writeJSONError(w, r, "Request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		logger.Error(err, "Failed to read request body")
+		s.writeJSONError(w, r, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	signals, err := batchAdapter.ParseBatch(ctx, body)
+	if err != nil {
+		logger.Info("Batch parse failed", "adapter", adapter.Name(), "error", err)
+		s.writeJSONError(w, r, "Failed to parse batch payload", http.StatusBadRequest)
+		return
+	}
+
+	if len(signals) == 0 {
+		resp := BatchProcessingResponse{
+			Results: []ProcessingResult{},
+			Summary: BatchSummary{Total: 0},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMultiStatus)
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	// Single-alert batch: use standard single-signal pipeline to preserve
+	// HTTP status contracts (201/202/500/504) for backward compatibility.
+	if len(signals) == 1 {
+		s.processSingleSignal(ctx, w, r, adapter, signals[0], logger, start)
+		return
+	}
+
+	// Multi-alert batch: process each signal independently, return 207.
+	s.processMultiSignalBatch(ctx, w, r, adapter, signals, logger)
+}
+
+// processSingleSignal handles a single signal through the standard pipeline,
+// preserving existing HTTP status code contracts.
+func (s *Server) processSingleSignal(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	adapter adapters.SignalAdapter,
+	signal *types.NormalizedSignal,
+	logger logr.Logger,
+	start time.Time,
+) {
+	if valErr := adapter.Validate(signal); valErr != nil {
+		logger.Info("Signal validation failed",
+			"adapter", adapter.Name(),
+			"error", valErr)
+		s.writeValidationError(w, r, fmt.Sprintf("Signal validation failed: %v", valErr))
+		return
+	}
+
+	k8sTimeout := s.config.Server.K8sRequestTimeout
+	if k8sTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, k8sTimeout)
+		defer cancel()
+	}
+
+	response, procErr := s.ProcessSignal(ctx, signal)
+	if procErr != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			logger.Error(procErr, "K8s request timeout exceeded",
+				"adapter", adapter.Name(),
+				"timeout", k8sTimeout)
+			s.writeJSONError(w, r, "Request processing timed out", http.StatusGatewayTimeout)
+			return
+		}
+		s.handleProcessingError(w, r, procErr, adapter.Name(), logger)
+		return
+	}
+
+	s.sendSuccessResponse(w, r, response, adapter, start)
+}
+
+// processMultiSignalBatch processes multiple signals independently and returns
+// HTTP 207 Multi-Status with per-alert results (#1036).
+func (s *Server) processMultiSignalBatch(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	adapter adapters.SignalAdapter,
+	signals []*types.NormalizedSignal,
+	logger logr.Logger,
+) {
+	k8sTimeout := s.config.Server.K8sRequestTimeout
+	if k8sTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, k8sTimeout)
+		defer cancel()
+	}
+
+	results := make([]ProcessingResult, 0, len(signals))
+	var summary BatchSummary
+	summary.Total = len(signals)
+
+	for _, signal := range signals {
+		if err := ctx.Err(); err != nil {
+			results = append(results, ProcessingResult{
+				Status:      "failed",
+				Fingerprint: signal.Fingerprint,
+				Error:       "request timeout exceeded",
+			})
+			summary.Failed++
+			continue
+		}
+
+		if valErr := adapter.Validate(signal); valErr != nil {
+			logger.Info("Signal validation failed in batch",
+				"fingerprint", signal.Fingerprint,
+				"error", valErr)
+			results = append(results, ProcessingResult{
+				Status:      "rejected",
+				Fingerprint: signal.Fingerprint,
+				Error:       fmt.Sprintf("Signal validation failed: %s", valErr.Error()),
+			})
+			summary.Rejected++
+			continue
+		}
+
+		response, procErr := s.ProcessSignal(ctx, signal)
+		if procErr != nil {
+			logger.Error(procErr, "Signal processing failed in batch",
+				"fingerprint", signal.Fingerprint)
+			results = append(results, ProcessingResult{
+				Status:      "failed",
+				Fingerprint: signal.Fingerprint,
+				Error:       "Processing failed",
+			})
+			summary.Failed++
+			continue
+		}
+
+		result := ProcessingResult{
+			Status:      response.Status,
+			Fingerprint: response.Fingerprint,
+			Message:     response.Message,
+		}
+		results = append(results, result)
+
+		switch response.Status {
+		case StatusCreated:
+			summary.Created++
+		case StatusDeduplicated:
+			summary.Deduplicated++
+		case StatusRejected:
+			summary.Rejected++
+		default:
+			summary.Created++
+		}
+	}
+
+	resp := BatchProcessingResponse{
+		Results: results,
+		Summary: summary,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusMultiStatus)
+	if encErr := json.NewEncoder(w).Encode(resp); encErr != nil {
+		logger.Error(encErr, "Failed to encode batch response")
 	}
 }
 
@@ -1093,7 +1269,7 @@ func (s *Server) readParseValidateSignal(
 		logger.Info("Signal validation failed",
 			"adapter", adapter.Name(),
 			"error", err)
-		s.writeValidationError(w, r, fmt.Sprintf("Signal validation failed: %v", err))
+		s.writeValidationError(w, r, "Signal validation failed")
 		return nil, err
 	}
 
@@ -1133,17 +1309,8 @@ func (s *Server) sendSuccessResponse(
 		statusCode = http.StatusAccepted // HTTP 202 for deduplication
 	}
 
-	// Record metrics
-	duration := time.Since(start)
-	route := "/unknown"
-	if routableAdapter, ok := adapter.(adapters.RoutableAdapter); ok {
-		route = routableAdapter.GetRoute()
-	}
-	s.metricsInstance.HTTPRequestDuration.WithLabelValues(
-		route,
-		r.Method,
-		fmt.Sprintf("%d", statusCode),
-	).Observe(duration.Seconds())
+	// HTTPRequestDuration is already observed by middleware.HTTPMetrics (http_metrics.go).
+	// Duplicate observation removed — see Phase 3a of FedRAMP remediation.
 
 	// Send response
 	w.Header().Set("Content-Type", "application/json")
@@ -1257,9 +1424,13 @@ func (s *Server) Stop(ctx context.Context) error {
 	// This ensures no new traffic is routed to this pod
 	// Kubernetes typically takes 1-3 seconds to update endpoints
 	// We wait 5 seconds to be safe (industry best practice)
-	s.logger.Info("Waiting 5 seconds for Kubernetes endpoint removal propagation")
-	time.Sleep(5 * time.Second)
-	s.logger.Info("Endpoint removal propagation complete, proceeding with HTTP server shutdown")
+	s.logger.Info("Waiting for Kubernetes endpoint removal propagation (up to 5s)")
+	select {
+	case <-ctx.Done():
+		s.logger.Info("Shutdown context cancelled during endpoint propagation wait")
+	case <-time.After(5 * time.Second):
+		s.logger.Info("Endpoint removal propagation complete, proceeding with HTTP server shutdown")
+	}
 
 	// STEP 3: Graceful HTTP server shutdown
 	// Now that pod is removed from endpoints, we can safely shutdown
@@ -1529,10 +1700,8 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 //
 // Ready conditions:
 // 1. Server is not shutting down (isShuttingDown == false)
-// 2. Redis is reachable (PING command succeeds)
+// 2. Informer cache has completed initial sync (cacheReady == true)
 // 3. Kubernetes API is reachable (list namespaces succeeds)
-//
-// Typical checks: ~10ms (Redis PING + K8s API call)
 //
 // GRACEFUL SHUTDOWN INTEGRATION:
 // When server receives SIGTERM, isShuttingDown is set to true immediately.
@@ -1624,6 +1793,32 @@ const (
 	StatusCreated      = "created"   // RemediationRequest CRD created
 	StatusDeduplicated = "duplicate" // Signal deduplicated to existing RR (matches OpenAPI enum)
 )
+
+// BatchProcessingResponse is the JSON response for adapters that implement BatchParser.
+// Returned with HTTP 207 Multi-Status to indicate per-alert independent outcomes.
+// NOTE: This is a JSON-encoded body (Content-Type: application/json), not the
+// RFC 4918 (WebDAV) XML multi-status format.
+type BatchProcessingResponse struct {
+	Results []ProcessingResult `json:"results"`
+	Summary BatchSummary       `json:"summary"`
+}
+
+// ProcessingResult represents the outcome of processing a single signal within a batch.
+type ProcessingResult struct {
+	Status      string `json:"status"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	Message     string `json:"message,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
+// BatchSummary provides aggregate counts for a batch processing response.
+type BatchSummary struct {
+	Total        int `json:"total"`
+	Created      int `json:"created"`
+	Deduplicated int `json:"deduplicated"`
+	Rejected     int `json:"rejected"`
+	Failed       int `json:"failed"`
+}
 
 // NewDuplicateResponseFromRR creates a ProcessingResponse for duplicate signals using K8s RR data
 // DD-GATEWAY-011: Status-based deduplication (Redis deprecation)
@@ -1744,7 +1939,12 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 	audit.SetEventCategory(event, CategoryGateway)
 	audit.SetEventAction(event, ActionReceived)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
-	audit.SetActor(event, "external", signal.Source) // e.g., "prometheus", "kubernetes-events"
+	// FedRAMP AU-3: Enrich actor with authenticated K8s identity when available
+	if user := auth.GetUserFromContext(ctx); user != "" {
+		audit.SetActor(event, "authenticated-service", user)
+	} else {
+		audit.SetActor(event, "external", signal.Source)
+	}
 	audit.SetResource(event, "Signal", signal.Fingerprint)
 	audit.SetCorrelationID(event, rrName) // Use RR name as correlation
 	audit.SetNamespace(event, signal.Namespace)
@@ -1796,6 +1996,8 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 	event.EventData = api.NewAuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData(payload)
 
 	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
+	// FedRAMP SC-8 / AU-9: Tamper-evidence for audit records is enforced by the
+	// downstream Data Storage service and SIEM/WORM backend, not at this emission point.
 	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
 		s.logger.Info("DD-AUDIT-003: Failed to emit signal.received audit event",
 			"error", err, "fingerprint", signal.Fingerprint)
@@ -1818,7 +2020,12 @@ func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.
 	audit.SetEventCategory(event, CategoryGateway)
 	audit.SetEventAction(event, ActionDeduplicated)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
-	audit.SetActor(event, "external", signal.Source)
+	// FedRAMP AU-3: Enrich actor with authenticated K8s identity when available
+	if user := auth.GetUserFromContext(ctx); user != "" {
+		audit.SetActor(event, "authenticated-service", user)
+	} else {
+		audit.SetActor(event, "external", signal.Source)
+	}
 	audit.SetResource(event, "Signal", signal.Fingerprint)
 	audit.SetCorrelationID(event, rrName)
 	audit.SetNamespace(event, signal.Namespace)
@@ -1903,21 +2110,6 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 	payload.OccurrenceCount.SetTo(1) // BR-GATEWAY-056: New CRD always has OccurrenceCount=1
 
 	event.EventData = api.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload)
-
-	// DEBUG: Log full event structure for HTTP 400 troubleshooting
-	s.logger.Info("[DEBUG] emitCRDCreatedAudit - full event",
-		"event_type", event.EventType,
-		"correlation_id", event.CorrelationID,
-		"resource_type", event.ResourceType,
-		"resource_id", event.ResourceID,
-		"actor_type", event.ActorType,
-		"actor_id", event.ActorID,
-		"namespace", event.Namespace)
-	s.logger.Info("[DEBUG] emitCRDCreatedAudit - payload",
-		"event_type_discriminator", payload.EventType,
-		"signal_type", payload.SignalType,
-		"severity_is_set", payload.Severity.IsSet(),
-		"signal_name", payload.SignalName)
 
 	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
 	if err := s.auditStore.StoreAudit(ctx, event); err != nil {

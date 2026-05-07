@@ -120,6 +120,17 @@ type SignalAdapter interface {
 	GetSourceType() string
 }
 
+// BatchParser is an optional interface for adapters that support batch payloads.
+// Adapters that implement this will have their payloads processed per-item
+// with independent outcomes (HTTP 207 Multi-Status). Adapters that don't
+// implement this use the single-signal Parse() path.
+//
+// PrometheusAdapter implements this automatically via its existing ParseBatch method.
+// KubernetesEventAdapter does not need batch support (single event per webhook).
+type BatchParser interface {
+	ParseBatch(ctx context.Context, rawData []byte) ([]*types.NormalizedSignal, error)
+}
+
 // RoutableAdapter extends SignalAdapter with HTTP route registration
 //
 // ALL adapters MUST implement this interface to register their endpoints.

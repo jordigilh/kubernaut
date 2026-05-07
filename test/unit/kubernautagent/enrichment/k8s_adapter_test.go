@@ -57,7 +57,7 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 			mapper := newSimpleRESTMapper()
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
-			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "web-abc123", "default")
+			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "web-abc123", "default", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(chain).To(HaveLen(1))
 			Expect(chain[0].Kind).To(Equal("ReplicaSet"))
@@ -95,7 +95,7 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 			mapper := newSimpleRESTMapper()
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
-			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "web-abc123", "default")
+			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "web-abc123", "default", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(chain).To(HaveLen(2))
 			Expect(chain[0].Kind).To(Equal("ReplicaSet"))
@@ -118,7 +118,7 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 			mapper := newSimpleRESTMapper()
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
-			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "standalone-pod", "default")
+			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "standalone-pod", "default", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(chain).NotTo(BeNil())
 			Expect(chain).To(BeEmpty())
@@ -156,7 +156,7 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 			mapper := newSimpleRESTMapper()
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
-			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "deep-pod", "default")
+			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "deep-pod", "default", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(chain)).To(BeNumerically("<=", 10))
 		})
@@ -191,7 +191,7 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 			mapper := newSimpleRESTMapper()
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
-			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "web-pod-1", "production")
+			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "web-pod-1", "production", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(chain).To(HaveLen(2))
 			Expect(chain[0].Kind).To(Equal("ReplicaSet"))
@@ -215,7 +215,7 @@ var _ = Describe("K8s Owner-Chain Adapter — TP-433-WIR Phase 1b", func() {
 			mapper := newSimpleRESTMapper()
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
-			chain, err := adapter.GetOwnerChain(context.Background(), "Node", "worker-1", "")
+			chain, err := adapter.GetOwnerChain(context.Background(), "Node", "worker-1", "", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(chain).To(BeEmpty())
 		})
@@ -259,7 +259,7 @@ var _ = Describe("TP-693: Controller-ref owner chain selection", func() {
 			mapper := newSimpleRESTMapper()
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
-			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "test-pod", "default")
+			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "test-pod", "default", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(chain).To(HaveLen(2),
 				"UT-KA-693-008: should follow controller RS → Deployment")
@@ -290,7 +290,7 @@ var _ = Describe("TP-693: Controller-ref owner chain selection", func() {
 			mapper := newSimpleRESTMapper()
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
-			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "orphan-pod", "default")
+			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "orphan-pod", "default", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(chain).To(BeEmpty(),
 				"UT-KA-693-009: no controller:true → empty chain (aligned with SP/GW)")
@@ -317,13 +317,13 @@ var _ = Describe("UT-KA-704-MAPPER: RESTMapper refresh for CRDs installed after 
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
 
-			_, errBefore := adapter.GetOwnerChain(context.Background(), "Certificate", "demo-app-cert", "default")
+			_, errBefore := adapter.GetOwnerChain(context.Background(), "Certificate", "demo-app-cert", "default", "")
 			Expect(errBefore).To(HaveOccurred(),
 				"should fail before CRD is registered")
 
 			mapper.registerCertificate()
 
-			chain, errAfter := adapter.GetOwnerChain(context.Background(), "Certificate", "demo-app-cert", "default")
+			chain, errAfter := adapter.GetOwnerChain(context.Background(), "Certificate", "demo-app-cert", "default", "")
 			Expect(errAfter).NotTo(HaveOccurred(),
 				"should succeed after mapper reset discovers the CRD")
 			Expect(chain).To(BeEmpty(), "Certificate has no ownerReferences")

@@ -41,7 +41,7 @@ type countingK8sClient struct {
 	chainSeq [][]enrichment.OwnerChainEntry
 }
 
-func (c *countingK8sClient) GetOwnerChain(_ context.Context, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
+func (c *countingK8sClient) GetOwnerChain(_ context.Context, _, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
 	idx := int(atomic.AddInt32(&c.calls, 1) - 1)
 	var err error
 	if idx < len(c.errSeq) {
@@ -58,7 +58,7 @@ func (c *countingK8sClient) GetOwnerChain(_ context.Context, _, _, _ string) ([]
 	return nil, nil
 }
 
-func (c *countingK8sClient) GetSpecHash(_ context.Context, _, _, _ string) (string, error) {
+func (c *countingK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
 	return "", nil
 }
 
@@ -92,7 +92,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "inc-001")
+			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "", "inc-001")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -121,7 +121,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "inc-002")
+			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "", "inc-002")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -136,8 +136,8 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 		})
 	})
 
-	Describe("UT-704-E-003: NotFound retried and HardFail after exhaustion (HAPI-aligned)", func() {
-		It("should retry NotFound 3 times and set HardFail=true after exhaustion", func() {
+	Describe("UT-704-E-003: NotFound skips retries and does not HardFail (#1039)", func() {
+		It("should make 1 call (no retries) and set HardFail=false for NotFound", func() {
 			notFoundErr := apierrors.NewNotFound(
 				schema.GroupResource{Resource: "pods"}, "test-pod")
 			k8s := &countingK8sClient{
@@ -149,16 +149,18 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "inc-003")
+			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "", "inc-003")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
-			Expect(k8s.CallCount()).To(Equal(4),
-				"UT-704-E-003: HAPI retries all errors — initial + 3 retries = 4 calls")
+			Expect(k8s.CallCount()).To(Equal(1),
+				"UT-704-E-003: NotFound skips retries — only 1 call (#1039)")
 			Expect(result.OwnerChainError).NotTo(BeNil(),
-				"UT-704-E-003: OwnerChainError must be set after retry exhaustion")
-			Expect(result.HardFail).To(BeTrue(),
-				"UT-704-E-003: HardFail must be true after retry exhaustion")
+				"UT-704-E-003: OwnerChainError must be set for observability")
+			Expect(result.HardFail).To(BeFalse(),
+				"UT-704-E-003: HardFail must be false for NotFound — deleted resource proceeds (#1039)")
+			Expect(result.TargetResourceDeleted).To(BeTrue(),
+				"UT-704-E-003: TargetResourceDeleted must be true (#1039)")
 		})
 	})
 
@@ -175,7 +177,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			_, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "inc-005")
+			_, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "", "inc-005")
 			Expect(err).To(HaveOccurred(),
 				"UT-704-E-005: 403 Forbidden must propagate as error (not swallowed)")
 			Expect(errors.Is(err, enrichment.ErrRBACForbidden)).To(BeTrue(),
@@ -194,7 +196,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 			}
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
 
-			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "inc-004")
+			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "", "inc-004")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -222,7 +224,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			result, err := e.Enrich(ctx, "Certificate", "demo-app-cert", "default", "", "inc-006")
+			result, err := e.Enrich(ctx, "Certificate", "demo-app-cert", "default", "", "", "inc-006")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -232,7 +234,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 				"UT-704-E-006: HardFail must be false — unknown Kind is a schema limitation, not an RCA failure")
 		})
 
-		It("should still HardFail when a known Kind's instance is not found", func() {
+		It("should NOT HardFail when a known Kind's instance is not found (#1039)", func() {
 			notFoundErr := apierrors.NewNotFound(
 				schema.GroupResource{Resource: "pods"}, "unreachable-pod")
 			k8s := &countingK8sClient{
@@ -244,12 +246,14 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			result, err := e.Enrich(ctx, "Pod", "unreachable-pod", "default", "", "inc-006b")
+			result, err := e.Enrich(ctx, "Pod", "unreachable-pod", "default", "", "", "inc-006b")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
-			Expect(result.HardFail).To(BeTrue(),
-				"UT-704-E-006: HardFail must be true for known Kinds — the resource is unreachable, RCA is incomplete")
+			Expect(result.HardFail).To(BeFalse(),
+				"UT-704-E-006: HardFail must be false for NotFound — deleted resource proceeds (#1039)")
+			Expect(result.TargetResourceDeleted).To(BeTrue(),
+				"UT-704-E-006: TargetResourceDeleted must be true (#1039)")
 		})
 	})
 

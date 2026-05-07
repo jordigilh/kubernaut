@@ -36,7 +36,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // staticCatalogFetcher returns a pre-built validator for tests that need
@@ -94,11 +93,11 @@ type fakeK8sClient struct {
 	err        error
 }
 
-func (f *fakeK8sClient) GetOwnerChain(_ context.Context, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
+func (f *fakeK8sClient) GetOwnerChain(_ context.Context, _, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
 	return f.ownerChain, f.err
 }
 
-func (f *fakeK8sClient) GetSpecHash(_ context.Context, _, _, _ string) (string, error) {
+func (f *fakeK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
 	return "", nil
 }
 
@@ -108,14 +107,14 @@ type resourceAwareK8sClient struct {
 	chains map[string][]enrichment.OwnerChainEntry
 }
 
-func (r *resourceAwareK8sClient) GetOwnerChain(_ context.Context, _, name, _ string) ([]enrichment.OwnerChainEntry, error) {
+func (r *resourceAwareK8sClient) GetOwnerChain(_ context.Context, _, name, _, _ string) ([]enrichment.OwnerChainEntry, error) {
 	if chain, ok := r.chains[name]; ok {
 		return chain, nil
 	}
 	return nil, nil
 }
 
-func (r *resourceAwareK8sClient) GetSpecHash(_ context.Context, _, _, _ string) (string, error) {
+func (r *resourceAwareK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
 	return "", nil
 }
 
@@ -740,11 +739,13 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 	Describe("IT-KA-704-001: Owner chain failure triggers rca_incomplete", func() {
 		It("should set needs_human_review=true with rca_incomplete when GetOwnerChain fails", func() {
-			notFoundErr := apierrors.NewNotFound(
-				schema.GroupResource{Resource: "deployments"}, "target-deploy")
+			// Issue #1039: NotFound is now exempt from HardFail (deleted resources
+			// proceed to workflow selection). Use InternalError to test rca_incomplete
+			// for genuine API failures that still trigger HardFail.
+			apiErr := apierrors.NewInternalError(fmt.Errorf("etcd timeout"))
 			k8s := &fakeK8sClient{
 				ownerChain: nil,
-				err:        notFoundErr,
+				err:        apiErr,
 			}
 			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
 			enricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger).

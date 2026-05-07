@@ -181,6 +181,12 @@ spec:
                   Used by SignalProcessing for context enrichment and RO for workflow routing.
                   For Kubernetes signals, this contains Kind, Name, Namespace of the affected resource.
                 properties:
+                  apiVersion:
+                    description: |-
+                      APIVersion disambiguates the resource's API group when the Kind exists in
+                      multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).
+                      Format: "group/version" (e.g. "route.openshift.io/v1"). Issue #1040.
+                    type: string
                   kind:
                     description: Kind of the Kubernetes resource (e.g., "Pod", "Deployment",
                       "Node", "StatefulSet")
@@ -854,6 +860,12 @@ spec:
                   May differ from Spec.TargetResource (e.g., Deployment vs Pod).
                   Reference: BR-HAPI-191, Issue #387
                 properties:
+                  apiVersion:
+                    description: |-
+                      APIVersion disambiguates the resource's API group when the Kind exists in
+                      multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).
+                      Format: "group/version" (e.g. "route.openshift.io/v1"). Issue #1040.
+                    type: string
                   kind:
                     description: Kind of the Kubernetes resource (e.g., "Pod", "Deployment",
                       "Node", "StatefulSet")

@@ -151,24 +151,21 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 				return testRR.Status.NotificationStatus
 			}, timeout, interval).Should(Equal("Cancelled"))
 
-			// CRITICAL: Verify notification cancellation does NOT cause an abnormal phase transition.
-			// The controller may legitimately advance the phase (Pending → Processing) as part of
-			// normal orchestration, but notification cancellation must NOT cause a transition to
-			// Failed or any other error state. We capture the phase AFTER cancellation is confirmed
-			// and verify it remains stable (no further transitions caused by the cancellation).
-			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
-			phaseAfterCancellation := testRR.Status.OverallPhase
+		// CRITICAL: Verify notification cancellation does NOT cause an abnormal phase transition.
+		// The controller may legitimately advance the phase (Pending → Processing → Analyzing)
+		// as part of normal orchestration. BR-ORCH-029 requires that notification cancellation
+		// must NOT cause a transition to Failed or any other error state.
+		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
+		Expect(testRR.Status.OverallPhase).ToNot(Equal(remediationv1.PhaseFailed),
+			"Notification cancellation must not cause phase to transition to Failed")
 
-			// Phase must not be Failed due to notification cancellation
-			Expect(phaseAfterCancellation).ToNot(Equal(remediationv1.PhaseFailed),
-				"Notification cancellation must not cause phase to transition to Failed")
-
-			// Verify phase remains stable (cancellation doesn't trigger further transitions)
-			Consistently(func() remediationv1.RemediationPhase {
-				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)
-				return testRR.Status.OverallPhase
-			}, 2*time.Second, 250*time.Millisecond).Should(Equal(phaseAfterCancellation),
-				"Phase should remain stable after notification cancellation")
+		// Sustained verification: phase must never become Failed over the observation window.
+		// Forward progress (Pending → Processing → Analyzing) is expected and healthy.
+		Consistently(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)
+			return testRR.Status.OverallPhase
+		}, 2*time.Second, 250*time.Millisecond).ShouldNot(Equal(remediationv1.PhaseFailed),
+			"Notification cancellation must not cause phase to transition to Failed")
 
 			cond := meta.FindStatusCondition(testRR.Status.Conditions, "NotificationDelivered")
 			Expect(cond).To(HaveField("Status", Equal(metav1.ConditionFalse)))

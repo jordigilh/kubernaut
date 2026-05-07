@@ -70,35 +70,3 @@ func HTTPMetrics(metrics *gatewayMetrics.Metrics) func(next http.Handler) http.H
 	}
 }
 
-// InFlightRequests tracks the current number of concurrent HTTP requests
-// BR-GATEWAY-072: In-flight request tracking for capacity planning
-//
-// Day 9 Phase 4: Concurrent request monitoring
-//
-// This middleware increments a gauge when a request starts and decrements
-// it when the request completes (using defer). This provides real-time
-// visibility into:
-// - Current server load
-// - Capacity utilization
-// - Potential overload conditions
-//
-// Metrics:
-//   - gateway_http_requests_in_flight (gauge)
-//
-// Usage:
-//
-//	r.Use(middleware.InFlightRequests(metrics))
-func InFlightRequests(metrics *gatewayMetrics.Metrics) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Nil-safe: If metrics disabled, pass through
-			if metrics == nil {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Process request
-		next.ServeHTTP(w, r)
-		})
-	}
-}

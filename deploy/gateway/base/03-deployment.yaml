@@ -41,6 +41,9 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
             - name: metrics
               containerPort: 9090
               protocol: TCP
@@ -62,16 +65,16 @@ spec:
               memory: 512Mi
           livenessProbe:
             httpGet:
-              path: /health
-              port: http
+              path: /healthz
+              port: health
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /ready
-              port: http
+              path: /readyz
+              port: health
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3

@@ -3176,9 +3176,10 @@ func resolveDualTargets(
 	ai *aianalysisv1.AIAnalysis,
 ) *creator.DualTarget {
 	signal := eav1.TargetResource{
-		Kind:      rr.Spec.TargetResource.Kind,
-		Name:      rr.Spec.TargetResource.Name,
-		Namespace: rr.Spec.TargetResource.Namespace,
+		Kind:       rr.Spec.TargetResource.Kind,
+		Name:       rr.Spec.TargetResource.Name,
+		Namespace:  rr.Spec.TargetResource.Namespace,
+		APIVersion: rr.Spec.TargetResource.APIVersion, // #1040
 	}
 
 	remediation := signal
@@ -3186,9 +3187,10 @@ func resolveDualTargets(
 		ar := ai.Status.RootCauseAnalysis.RemediationTarget
 		if ar.Kind != "" && ar.Name != "" {
 			remediation = eav1.TargetResource{
-				Kind:      ar.Kind,
-				Name:      ar.Name,
-				Namespace: ar.Namespace,
+				Kind:       ar.Kind,
+				Name:       ar.Name,
+				Namespace:  ar.Namespace,
+				APIVersion: ar.APIVersion, // #1040
 			}
 		}
 	}

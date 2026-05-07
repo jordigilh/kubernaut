@@ -117,7 +117,7 @@ var _ = Describe("Issue #673 C-ADV-2: Generic Processing Error (BR-GATEWAY-182)"
 		)
 		Expect(err).ToNot(HaveOccurred())
 
-		prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+		prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 		Expect(gwServer.RegisterAdapter(prometheusAdapter)).To(Succeed())
 
 		testServer = httptest.NewServer(gwServer.Handler())
