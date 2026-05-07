@@ -623,22 +623,19 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *d
 
 	const defaultDSClientTimeout = 30 * time.Second
 
+	// #1055: Use AuthTransport with configurable token path instead of static bearerTransport.
+	// AuthTransport re-reads the SA token from disk every 5 minutes (or immediately after
+	// a 401 response), so the agent survives kubelet token rotation.
+	authTransport := auth.NewServiceAccountTransportWithPath(
+		cfg.Integrations.DataStorage.SATokenPath, dsBase)
+
 	var opts []ogenclient.ClientOption
-	if tokenData, err := os.ReadFile(cfg.Integrations.DataStorage.SATokenPath); err == nil && len(tokenData) > 0 {
-		token := string(tokenData)
-		opts = append(opts, ogenclient.WithClient(&http.Client{
-			Transport: &bearerTransport{base: dsBase, token: token},
-			Timeout:   defaultDSClientTimeout,
-		}))
-		logger.Info("DS client auth configured (DD-AUTH-014)", "token_path", cfg.Integrations.DataStorage.SATokenPath)
-	} else {
-		opts = append(opts, ogenclient.WithClient(&http.Client{
-			Transport: dsBase,
-			Timeout:   defaultDSClientTimeout,
-		}))
-		logger.Info("SA token not available for DS client — DS API calls may fail auth",
-			"path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
-	}
+	opts = append(opts, ogenclient.WithClient(&http.Client{
+		Transport: authTransport,
+		Timeout:   defaultDSClientTimeout,
+	}))
+	logger.Info("DS client auth configured (AuthTransport with token refresh)",
+		"token_path", cfg.Integrations.DataStorage.SATokenPath)
 
 	ogenClient, err := ogenclient.NewClient(cfg.Integrations.DataStorage.URL, opts...)
 	if err != nil {
@@ -681,19 +678,6 @@ func buildDSBaseTransport(caFile string, cbCfg kaconfig.CircuitBreakerCfg) (http
 		FailureThreshold: cbCfg.FailureThreshold,
 		FailureRatio:     cbCfg.FailureRatio,
 	}), nil
-}
-
-// bearerTransport injects a Kubernetes ServiceAccount Bearer token into
-// every outbound HTTP request (DD-AUTH-014).
-type bearerTransport struct {
-	base  http.RoundTripper
-	token string
-}
-
-func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	r := req.Clone(req.Context())
-	r.Header.Set("Authorization", "Bearer "+t.token)
-	return t.base.RoundTrip(r)
 }
 
 // buildEnricher creates the enrichment.Enricher when DS clients are available.
@@ -753,26 +737,21 @@ func buildAuditStore(cfg *kaconfig.Config, logger logr.Logger) (audit.AuditStore
 		return audit.NopAuditStore{}, nop
 	}
 
-	// Use the same auth transport as initDSClients: read SA token from the
-	// configured path and inject as Bearer header on every request.
+	// #1055: Use AuthTransport for audit store (same pattern as initDSClients).
+	// AuthTransport handles token refresh automatically via 5-minute cache + 401 invalidation.
 	auditBase, tlsErr := sharedtls.DefaultBaseTransport()
 	if tlsErr != nil {
 		logger.Error(tlsErr, "failed to create TLS-aware transport for audit store")
 		return audit.NopAuditStore{}, nop
 	}
 
-	var transport http.RoundTripper
-	if tokenData, err := os.ReadFile(cfg.Integrations.DataStorage.SATokenPath); err == nil && len(tokenData) > 0 {
-		transport = &bearerTransport{base: auditBase, token: string(tokenData)}
-		logger.Info("audit store auth configured (same SA token as DS client)",
-			"token_path", cfg.Integrations.DataStorage.SATokenPath)
-	} else {
-		logger.Info("SA token not available for audit store — batch writes may fail auth",
-			"path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
-	}
+	auditAuthTransport := auth.NewServiceAccountTransportWithPath(
+		cfg.Integrations.DataStorage.SATokenPath, auditBase)
+	logger.Info("audit store auth configured (AuthTransport with token refresh)",
+		"token_path", cfg.Integrations.DataStorage.SATokenPath)
 
 	dsClient, err := sharedaudit.NewOpenAPIClientAdapterWithTransport(
-		cfg.Integrations.DataStorage.URL, 5*time.Second, transport,
+		cfg.Integrations.DataStorage.URL, 5*time.Second, auditAuthTransport,
 	)
 	if err != nil {
 		logger.Error(err, "failed to create DS audit client, falling back to nop")
