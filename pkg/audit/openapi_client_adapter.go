@@ -147,9 +147,9 @@ func NewOpenAPIClientAdapterWithTransport(baseURL string, timeout time.Duration,
 	// ========================================
 	if transport == nil {
 		// Production: Use ServiceAccount transport (default).
-		// Issue #678: DefaultBaseTransport picks up TLS_CA_FILE env var
-		// to trust the cluster CA for inter-service HTTPS.
-		baseTransport, err := sharedtls.DefaultBaseTransport()
+		// Issue #678: TLS_CA_FILE honoured for inter-service HTTPS.
+		// Issue #853: Wrapped with RetryTransport for transient failure resilience.
+		baseTransport, err := sharedtls.DefaultBaseTransportWithRetry()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create base transport: %w", err)
 		}
