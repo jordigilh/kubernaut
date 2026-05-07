@@ -123,7 +123,7 @@ immediately dropped with a misleading "invalid data" log message. The fix reclas
 
 | Phase | Description | Tests | Checkpoint |
 |-------|-------------|-------|------------|
-| RED | Write failing tests for all new behavior | UT-AT-1055-001..008, UT-AE-1056-001..009, UT-AS-1056-001..003 | CHECKPOINT 1 |
+| RED | Write failing tests for all new behavior | UT-AT-1055-001..009, UT-AE-1056-001..009, UT-AS-1056-001..003 | CHECKPOINT 1 |
 | GREEN | Minimal implementation to pass all tests | Production code changes | CHECKPOINT 2 |
 | REFACTOR | 100 Go Mistakes audit, code cleanup, lint | N/A (quality pass) | CHECKPOINT 3 |
 
@@ -137,14 +137,15 @@ immediately dropped with a misleading "invalid data" log message. The fix reclas
 
 | Test ID | Description | Input | Expected | BR |
 |---------|-------------|-------|----------|-----|
-| UT-AT-1055-001 | Custom path constructor reads from specified path | Token file at temp path; `NewServiceAccountTransportWithPath(tempPath, base)` | `Authorization: Bearer <token>` header injected | #1055 |
-| UT-AT-1055-002 | 401 response invalidates token cache | RoundTrip returns 401; next call checks cache | Next getServiceAccountToken re-reads from disk | #1055 |
+| UT-AT-1055-001 | Custom path constructor reads from specified path | Token file at temp path; `NewTokenSource(tempPath)` + `NewAuthTransport(ts, base)` | `Authorization: Bearer <token>` header injected | #1055 |
+| UT-AT-1055-002 | 401 response invalidates token cache | RoundTrip returns 401; next call checks cache | Next Token() re-reads from disk | #1055 |
 | UT-AT-1055-003 | Token re-read after invalidation picks up new content | Write "token-v1" to file, get 401, write "token-v2", next request | Second request uses "token-v2" | #1055 |
 | UT-AT-1055-004 | Non-401 responses do not invalidate cache | RoundTrip returns 200, 500 | Cache remains valid (no file re-read) | #1055 |
 | UT-AT-1055-005 | Concurrent RoundTrip under 401 storm | 10+ goroutines, all getting 401, with -race | No data races, no panics | #1055 |
-| UT-AT-1055-006 | Nil base transport defaults to http.DefaultTransport | `NewServiceAccountTransportWithPath(path, nil)` | Request succeeds with Bearer header | #1055 |
-| UT-AT-1055-007 | Empty token path degrades gracefully | `NewServiceAccountTransportWithPath("", base)` | Request proceeds without auth header | #1055 |
+| UT-AT-1055-006 | Nil base transport defaults to http.DefaultTransport | `NewAuthTransport(ts, nil)` | Request succeeds with Bearer header | #1055 |
+| UT-AT-1055-007 | Empty token path degrades gracefully | `NewTokenSource("")` + `NewAuthTransport(ts, base)` | Request proceeds without auth header | #1055 |
 | UT-AT-1055-008 | Token file deleted mid-operation | File exists → cached → deleted → 401 invalidation | Next request proceeds without auth header | #1055 |
+| UT-AT-1055-009 | Shared TokenSource: 401 on transport A invalidates cache for transport B | Two transports share one TokenSource; A gets 401 | B picks up fresh token on next request | #1055 |
 
 ### 6.2 Audit Error Tests (Tier 1 — Unit)
 
@@ -178,7 +179,7 @@ immediately dropped with a misleading "invalid data" log message. The fix reclas
 
 ### 7.1 Pass Criteria
 
-- All 21 test cases pass
+- All 22 test cases pass
 - `go build ./...` succeeds with zero errors
 - `go test -race ./test/unit/shared/auth/...` reports zero races
 - `golangci-lint run --timeout=5m` introduces zero new errors

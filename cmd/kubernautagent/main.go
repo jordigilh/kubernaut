@@ -180,8 +180,21 @@ func main() {
 	phaseTools := investigator.DefaultPhaseToolMap()
 
 	k8sInfra := initK8sInfra(logger)
-	ds := initDSClients(cfg, k8sInfra, logger)
-	auditStore, auditCleanup := buildAuditStore(cfg, logger)
+
+	// #1055: Create a single shared TokenSource for all DS-bound HTTP clients.
+	// Both the ogen DS client and the audit store share this cache, so a 401 on
+	// either side immediately invalidates the token for both.
+	dsTokenSource := auth.NewTokenSource(cfg.Integrations.DataStorage.SATokenPath)
+	if _, err := os.Stat(cfg.Integrations.DataStorage.SATokenPath); err != nil {
+		logger.Info("WARNING: SA token file not found at startup, DS/audit API calls will fail auth until file appears",
+			"token_path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
+	} else {
+		logger.Info("SA token source configured (shared cache with token refresh)",
+			"token_path", cfg.Integrations.DataStorage.SATokenPath)
+	}
+
+	ds := initDSClients(cfg, k8sInfra, dsTokenSource, logger)
+	auditStore, auditCleanup := buildAuditStore(cfg, dsTokenSource, logger)
 	reg := buildToolRegistry(cfg, logger, k8sInfra, ds)
 	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, logger)
 	sanitizer := buildSanitizationPipeline(cfg, logger)
@@ -600,7 +613,7 @@ type dsClients struct {
 // or default /var/run/secrets/kubernetes.io/serviceaccount/token), the ogen
 // client is configured with a Bearer token transport so that all DS API calls
 // (including ListWorkflows for the workflow validator) pass authentication.
-func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *dsClients {
+func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, dsTokenSource *auth.TokenSource, logger logr.Logger) *dsClients {
 	if cfg.Integrations.DataStorage.URL == "" {
 		logger.Info("DataStorage URL not configured, DS adapters disabled")
 		return nil
@@ -623,23 +636,9 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *d
 
 	const defaultDSClientTimeout = 30 * time.Second
 
-	// #1055: Use AuthTransport with configurable token path instead of static bearerTransport.
-	// AuthTransport re-reads the SA token from disk every 5 minutes (or immediately after
-	// a 401 response), so the agent survives kubelet token rotation.
-	authTransport := auth.NewServiceAccountTransportWithPath(
-		cfg.Integrations.DataStorage.SATokenPath, dsBase)
-
-	if _, err := os.Stat(cfg.Integrations.DataStorage.SATokenPath); err != nil {
-		logger.Info("WARNING: SA token file not found at startup, DS API calls will fail auth until file appears",
-			"token_path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
-	} else {
-		logger.Info("DS client auth configured (AuthTransport with token refresh)",
-			"token_path", cfg.Integrations.DataStorage.SATokenPath)
-	}
-
 	var opts []ogenclient.ClientOption
 	opts = append(opts, ogenclient.WithClient(&http.Client{
-		Transport: authTransport,
+		Transport: auth.NewAuthTransport(dsTokenSource, dsBase),
 		Timeout:   defaultDSClientTimeout,
 	}))
 
@@ -736,39 +735,21 @@ func buildSanitizationPipeline(cfg *kaconfig.Config, logger logr.Logger) *saniti
 // Uses the same OpenAPIClientAdapter + BufferedAuditStore stack as every other
 // platform service. Auth transport is shared with initDSClients (same SA token)
 // to guarantee identical authentication behavior.
-func buildAuditStore(cfg *kaconfig.Config, logger logr.Logger) (audit.AuditStore, func()) {
+func buildAuditStore(cfg *kaconfig.Config, dsTokenSource *auth.TokenSource, logger logr.Logger) (audit.AuditStore, func()) {
 	nop := func() {}
 	if !cfg.Runtime.Audit.Enabled || cfg.Integrations.DataStorage.URL == "" {
 		logger.Info("audit store disabled (nop)")
 		return audit.NopAuditStore{}, nop
 	}
 
-	// #1055: Use AuthTransport for audit store (same pattern as initDSClients).
-	// AuthTransport handles token refresh automatically via 5-minute cache + 401 invalidation.
 	auditBase, tlsErr := sharedtls.DefaultBaseTransport()
 	if tlsErr != nil {
 		logger.Error(tlsErr, "failed to create TLS-aware transport for audit store")
 		return audit.NopAuditStore{}, nop
 	}
 
-	// PROD-R3-1: This creates a second AuthTransport with its own independent token cache.
-	// The DS ogen client (initDSClients) and audit store each have separate 5-min TTL caches.
-	// After token rotation, each invalidates independently on its own first 401. Audit writes
-	// may lag up to 5 min behind DS client recovery. Acceptable for v1; a shared cache is a
-	// future improvement.
-	auditAuthTransport := auth.NewServiceAccountTransportWithPath(
-		cfg.Integrations.DataStorage.SATokenPath, auditBase)
-
-	if _, err := os.Stat(cfg.Integrations.DataStorage.SATokenPath); err != nil {
-		logger.Info("WARNING: SA token file not found at startup, audit batch writes will fail auth until file appears",
-			"token_path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
-	} else {
-		logger.Info("audit store auth configured (AuthTransport with token refresh)",
-			"token_path", cfg.Integrations.DataStorage.SATokenPath)
-	}
-
 	dsClient, err := sharedaudit.NewOpenAPIClientAdapterWithTransport(
-		cfg.Integrations.DataStorage.URL, 5*time.Second, auditAuthTransport,
+		cfg.Integrations.DataStorage.URL, 5*time.Second, auth.NewAuthTransport(dsTokenSource, auditBase),
 	)
 	if err != nil {
 		logger.Error(err, "failed to create DS audit client, falling back to nop")
@@ -855,7 +836,7 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 			if promTLSErr != nil {
 				logger.Error(promTLSErr, "failed to create Prometheus TLS transport", "ca_file", cfg.Integrations.Tools.Prometheus.TLSCaFile)
 			} else {
-				promCfg.Transport = auth.NewServiceAccountTransportWithBase(promBase)
+				promCfg.Transport = auth.NewAuthTransport(auth.NewDefaultTokenSource(), promBase)
 				logger.Info("Prometheus client configured with TLS + SA bearer auth", "ca_file", cfg.Integrations.Tools.Prometheus.TLSCaFile)
 			}
 		}
