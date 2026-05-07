@@ -191,7 +191,7 @@ func (c *OgenClient) WriteAuditEvents(ctx context.Context, events []*audit.Event
 			EventTimestamp: evt.Timestamp,
 			EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
 			EventAction:    detailValue(evt.Detail, "action", string(evt.Type)),
-			EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+			EventOutcome:   eventOutcome(evt.Type),
 		}
 		if evt.UserID != "" {
 			req.ActorID = ogenclient.NewOptString(evt.UserID)
@@ -208,6 +208,20 @@ func (c *OgenClient) WriteAuditEvents(ctx context.Context, events []*audit.Event
 		return fmt.Errorf("ds: write audit events batch: %w", err)
 	}
 	return nil
+}
+
+func eventOutcome(t audit.EventType) ogenclient.AuditEventRequestEventOutcome {
+	switch t {
+	case audit.EventAuthFailure,
+		audit.EventA2ATaskFailed,
+		audit.EventRateLimitDenied,
+		audit.EventCircuitBreakerTrip,
+		audit.EventConfigRejected,
+		audit.EventSessionAutoCancelled:
+		return ogenclient.AuditEventRequestEventOutcomeFailure
+	default:
+		return ogenclient.AuditEventRequestEventOutcomeSuccess
+	}
 }
 
 func detailValue(detail map[string]string, key, fallback string) string {

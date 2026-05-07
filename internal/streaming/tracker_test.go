@@ -15,7 +15,7 @@ var _ = Describe("ConnectionTracker", func() {
 	var tracker *streaming.ConnectionTracker
 
 	BeforeEach(func() {
-		tracker = streaming.NewConnectionTracker(nil)
+		tracker = streaming.NewConnectionTracker(nil, 0)
 	})
 
 	Describe("Add/Remove/Count", func() {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -19,16 +20,20 @@ type TrackedConnection struct {
 // ConnectionTracker manages active SSE connections for graceful shutdown.
 // Thread-safe for concurrent Add/Remove/DrainAll calls.
 type ConnectionTracker struct {
-	mu    sync.Mutex
-	conns map[string]*TrackedConnection
-	gauge prometheus.Gauge
+	mu        sync.Mutex
+	conns     map[string]*TrackedConnection
+	gauge     prometheus.Gauge
+	drainWait time.Duration
 }
 
 // NewConnectionTracker creates a new tracker with an optional Prometheus gauge.
-func NewConnectionTracker(gauge prometheus.Gauge) *ConnectionTracker {
+// drainWait is the grace period between sending shutdown frames and force-closing;
+// pass 0 for immediate cancellation (useful in tests).
+func NewConnectionTracker(gauge prometheus.Gauge, drainWait time.Duration) *ConnectionTracker {
 	return &ConnectionTracker{
-		conns: make(map[string]*TrackedConnection),
-		gauge: gauge,
+		conns:     make(map[string]*TrackedConnection),
+		gauge:     gauge,
+		drainWait: drainWait,
 	}
 }
 
@@ -59,8 +64,9 @@ func (t *ConnectionTracker) Count() int {
 	return len(t.conns)
 }
 
-// DrainAll sends an SSE shutdown event to all connections, then cancels their
-// contexts to force-close. Returns the number of connections that were force-closed.
+// DrainAll sends an SSE shutdown event to all connections, waits for the
+// configured drainWait period for clients to self-disconnect, then force-cancels
+// remaining connections. Returns the number of connections force-closed.
 func (t *ConnectionTracker) DrainAll(ctx context.Context) int {
 	t.mu.Lock()
 	snapshot := make([]*TrackedConnection, 0, len(t.conns))
@@ -73,24 +79,28 @@ func (t *ConnectionTracker) DrainAll(ctx context.Context) int {
 	}
 	t.mu.Unlock()
 
+	if len(snapshot) == 0 {
+		return 0
+	}
+
 	shutdownFrame := []byte("event: shutdown\ndata: {\"retry_ms\":5000}\n\n")
 
-	forceClosed := 0
 	for _, conn := range snapshot {
-		select {
-		case <-ctx.Done():
-			forceClosed += len(snapshot) - forceClosed
-			for _, c := range snapshot {
-				c.Cancel()
-			}
-			return forceClosed
-		default:
-		}
-
 		if flusher, ok := conn.Writer.(http.Flusher); ok {
 			_, _ = fmt.Fprint(conn.Writer, string(shutdownFrame))
 			flusher.Flush()
 		}
+	}
+
+	if t.drainWait > 0 {
+		select {
+		case <-time.After(t.drainWait):
+		case <-ctx.Done():
+		}
+	}
+
+	forceClosed := 0
+	for _, conn := range snapshot {
 		conn.Cancel()
 		forceClosed++
 	}

@@ -71,3 +71,17 @@ type SelectWorkflowResult struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
 }
+
+// InvestigateArgs is the input for the kubernaut_investigate MCP tool call.
+type InvestigateArgs struct {
+	Namespace string `json:"namespace"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+}
+
+// InvestigateResult is the response from kubernaut_investigate MCP call.
+type InvestigateResult struct {
+	SessionID string `json:"session_id"`
+	Status    string `json:"status"`
+	Summary   string `json:"summary,omitempty"`
+}

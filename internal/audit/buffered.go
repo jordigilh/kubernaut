@@ -20,6 +20,7 @@ type BufferConfig struct {
 	FlushInterval   time.Duration
 	BatchSize       int
 	OverflowCounter prometheus.Counter
+	EventsCounter   *prometheus.CounterVec
 }
 
 // BufferedEmitter buffers audit events and flushes them asynchronously
@@ -31,6 +32,7 @@ type BufferedEmitter struct {
 	flushInterval   time.Duration
 	batchSize       int
 	overflowCounter prometheus.Counter
+	eventsCounter   *prometheus.CounterVec
 	done            chan struct{}
 	wg              sync.WaitGroup
 }
@@ -57,6 +59,7 @@ func NewBufferedEmitter(cfg BufferConfig) *BufferedEmitter { //nolint:gocritic /
 		flushInterval:   flushInterval,
 		batchSize:       batchSize,
 		overflowCounter: cfg.OverflowCounter,
+		eventsCounter:   cfg.EventsCounter,
 		done:            make(chan struct{}),
 	}
 
@@ -66,32 +69,48 @@ func NewBufferedEmitter(cfg BufferConfig) *BufferedEmitter { //nolint:gocritic /
 }
 
 // Emit sanitizes and buffers an audit event. Non-blocking; drops on overflow.
+// The event is shallow-cloned internally; callers may safely reuse the pointer
+// after Emit returns.
 func (e *BufferedEmitter) Emit(ctx context.Context, event *Event) {
-	event.Timestamp = time.Now()
-	if event.RequestID == "" {
-		event.RequestID = requestid.FromContext(ctx)
+	ev := *event
+	ev.Timestamp = time.Now()
+	if ev.RequestID == "" {
+		ev.RequestID = requestid.FromContext(ctx)
 	}
-	event.Detail = security.RedactMap(event.Detail)
+	ev.Detail = security.RedactMap(ev.Detail)
 
 	select {
-	case e.buffer <- event:
+	case e.buffer <- &ev:
+		if e.eventsCounter != nil {
+			e.eventsCounter.WithLabelValues(string(ev.Type)).Inc()
+		}
 	default:
 		if e.overflowCounter != nil {
 			e.overflowCounter.Inc()
 		}
 		e.logger.Error(nil, "audit buffer overflow, event dropped",
-			"event_type", string(event.Type),
-			"request_id", event.RequestID,
+			"event_type", string(ev.Type),
+			"request_id", ev.RequestID,
 		)
 	}
 }
 
 // Close stops accepting new events, drains the buffer, and flushes remaining
 // events to the writer. If the writer fails, remaining events are logged.
-func (e *BufferedEmitter) Close(_ context.Context) error {
+// The context deadline bounds total close time.
+func (e *BufferedEmitter) Close(ctx context.Context) error {
 	close(e.done)
-	e.wg.Wait()
-	return nil
+	done := make(chan struct{})
+	go func() {
+		e.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (e *BufferedEmitter) flushLoop() {

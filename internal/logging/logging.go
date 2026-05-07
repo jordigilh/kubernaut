@@ -17,6 +17,8 @@ type loggerKeyType struct{}
 
 var loggerKey = loggerKeyType{}
 
+var globalZapLogger *zap.Logger
+
 // NewLogger creates a logr.Logger backed by zap with the given AtomicLevel.
 // The AtomicLevel can be changed at runtime for hot-reload support (OPS-4).
 func NewLogger(level zap.AtomicLevel) (logr.Logger, error) {
@@ -29,7 +31,15 @@ func NewLogger(level zap.AtomicLevel) (logr.Logger, error) {
 	if err != nil {
 		return logr.Discard(), err
 	}
+	globalZapLogger = zapLogger
 	return zapr.NewLogger(zapLogger), nil
+}
+
+// Sync flushes any buffered log entries. Call during shutdown.
+func Sync() {
+	if globalZapLogger != nil {
+		_ = globalZapLogger.Sync()
+	}
 }
 
 // WithLogger returns a context with the given logger attached.

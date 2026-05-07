@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/httputil"
@@ -21,9 +22,10 @@ const MaxBodySize = 1 << 20
 
 // MiddlewareConfig holds dependencies for the auth middleware.
 type MiddlewareConfig struct {
-	Validator *JWTValidator
-	Logger    logr.Logger
-	Auditor   audit.Emitter
+	Validator    *JWTValidator
+	Logger       logr.Logger
+	Auditor      audit.Emitter
+	AuthDuration *prometheus.HistogramVec
 }
 
 // MiddlewareWithConfig returns auth middleware with full observability support.
@@ -78,12 +80,14 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 			identity, err := cfg.Validator.Validate(r.Context(), token)
 			if err != nil {
 				reqLogger.V(1).Info("auth failed: token validation", "error", err)
+				observeAuthDuration(cfg.AuthDuration, start, "failure")
 				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), classifyAuthError(err))
 				httputil.WriteProblem(w, http.StatusUnauthorized,
 					"Authentication Failed", "The provided token could not be validated.")
 				return
 			}
 
+			observeAuthDuration(cfg.AuthDuration, start, "success")
 			reqLogger.V(1).Info("auth success",
 				"user_id", identity.Username,
 				"issuer", identity.Issuer,
@@ -144,5 +148,11 @@ func classifyAuthError(err error) string {
 		return "missing_expiry"
 	default:
 		return "validation_failed"
+	}
+}
+
+func observeAuthDuration(hist *prometheus.HistogramVec, start time.Time, result string) {
+	if hist != nil {
+		hist.WithLabelValues(result).Observe(time.Since(start).Seconds())
 	}
 }

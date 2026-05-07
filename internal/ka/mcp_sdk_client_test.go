@@ -80,6 +80,59 @@ var _ = Describe("SDKMCPClient", func() {
 			Expect(result.Message).To(ContainSubstring("wf-001"))
 		})
 
+		It("forwards the user JWT in the Authorization header (QE-6)", func() {
+			var capturedAuth string
+			server := mcp.NewServer(&mcp.Implementation{
+				Name:    "ka-mock",
+				Version: "test",
+			}, nil)
+			mcp.AddTool(server, &mcp.Tool{
+				Name:        "kubernaut_select_workflow",
+				Description: "Select a workflow",
+			}, func(_ context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+				return &mcp.CallToolResult{
+					Content: []mcp.Content{&mcp.TextContent{Text: `{"status":"ok","message":"done"}`}},
+				}, nil, nil
+			})
+
+			handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+				return server
+			}, nil)
+			mux := http.NewServeMux()
+			mux.Handle("/mcp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedAuth = r.Header.Get("Authorization")
+				if capturedAuth == "" || !strings.HasPrefix(capturedAuth, "Bearer ") {
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+				handler.ServeHTTP(w, r)
+			}))
+			mux.Handle("/mcp/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedAuth = r.Header.Get("Authorization")
+				if capturedAuth == "" || !strings.HasPrefix(capturedAuth, "Bearer ") {
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+				handler.ServeHTTP(w, r)
+			}))
+			ts = httptest.NewServer(mux)
+
+			httpClient := &http.Client{Transport: &auth.ContextJWTDelegationTransport{}}
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "bob@example.com",
+				RawToken: "my-secret-jwt-for-bob",
+			})
+
+			_, err := client.SelectWorkflow(ctx, ka.SelectWorkflowArgs{
+				RRID:       "rr-test-003",
+				WorkflowID: "wf-003",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(capturedAuth).To(Equal("Bearer my-secret-jwt-for-bob"))
+		})
+
 		It("returns error when auth fails", func() {
 			ts = buildTestServer(func(_ context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
 				return &mcp.CallToolResult{

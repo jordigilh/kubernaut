@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
 )
 
 // SDKMCPClient implements MCPClient using the MCP Go SDK's StreamableClientTransport.
@@ -59,6 +61,28 @@ func (c *SDKMCPClient) SelectWorkflow(ctx context.Context, args SelectWorkflowAr
 	return &swResult, nil
 }
 
+// Investigate calls kubernaut_investigate on KA's MCP server.
+//
+//nolint:gocritic // hugeParam: matches MCPClient interface contract
+func (c *SDKMCPClient) Investigate(ctx context.Context, args InvestigateArgs) (*InvestigateResult, error) {
+	argsMap := map[string]any{
+		"namespace": args.Namespace,
+		"kind":      args.Kind,
+		"name":      args.Name,
+	}
+
+	result, err := c.callTool(ctx, "kubernaut_investigate", argsMap)
+	if err != nil {
+		return nil, err
+	}
+
+	var invResult InvestigateResult
+	if err := json.Unmarshal(result, &invResult); err != nil {
+		return nil, fmt.Errorf("parse investigate response: %w", err)
+	}
+	return &invResult, nil
+}
+
 func (c *SDKMCPClient) callTool(ctx context.Context, name string, args map[string]any) (json.RawMessage, error) {
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   c.endpoint,
@@ -83,7 +107,7 @@ func (c *SDKMCPClient) callTool(ctx context.Context, name string, args map[strin
 		msg := "tool call returned error"
 		if len(result.Content) > 0 {
 			if textContent, ok := result.Content[0].(*mcp.TextContent); ok {
-				msg = textContent.Text
+				msg = security.RedactError(fmt.Errorf("%s", textContent.Text))
 			}
 		}
 		return nil, fmt.Errorf("kubernaut agent: %s", msg)

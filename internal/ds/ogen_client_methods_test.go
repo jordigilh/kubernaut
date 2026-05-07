@@ -2,10 +2,14 @@ package ds
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 )
 
 func newTestOgenClient(t *testing.T, handler http.Handler) *OgenClient {
@@ -123,5 +127,97 @@ func TestOgenClient_NetworkFailure(t *testing.T) {
 	_, err = client.ListWorkflows(context.Background(), ListWorkflowsOpts{})
 	if err == nil {
 		t.Fatal("ListWorkflows() expected error on network failure")
+	}
+}
+
+// UT-AF-PR6-001: WriteAuditEvents sends POST to correct path with batch payload
+func TestOgenClient_WriteAuditEvents_CorrectPath(t *testing.T) {
+	var capturedPath, capturedMethod string
+	var capturedBody []byte
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		capturedMethod = r.Method
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"created":2}`))
+	})
+
+	client := newTestOgenClient(t, mux)
+	events := []*audit.Event{
+		{
+			Type:      audit.EventAuthSuccess,
+			UserID:    "alice",
+			RequestID: "req-001",
+			Timestamp: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+			Detail:    map[string]string{"action": "login"},
+		},
+		{
+			Type:      audit.EventA2ATaskStarted,
+			UserID:    "bob",
+			RequestID: "req-002",
+			Timestamp: time.Date(2026, 5, 1, 12, 1, 0, 0, time.UTC),
+			Detail:    map[string]string{"task_id": "task-1"},
+		},
+	}
+
+	err := client.WriteAuditEvents(context.Background(), events)
+	if err != nil {
+		t.Fatalf("WriteAuditEvents() error = %v", err)
+	}
+	if capturedMethod != http.MethodPost {
+		t.Errorf("method = %q, want POST", capturedMethod)
+	}
+	if capturedPath != "/api/v1/audit/events/batch" {
+		t.Errorf("path = %q, want /api/v1/audit/events/batch", capturedPath)
+	}
+
+	var batch []map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &batch); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	if len(batch) != 2 {
+		t.Errorf("batch length = %d, want 2", len(batch))
+	}
+}
+
+// UT-AF-PR6-002: WriteAuditEvents with empty slice is a no-op
+func TestOgenClient_WriteAuditEvents_EmptySlice(t *testing.T) {
+	called := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	client := newTestOgenClient(t, mux)
+	err := client.WriteAuditEvents(context.Background(), []*audit.Event{})
+	if err != nil {
+		t.Fatalf("WriteAuditEvents() error = %v", err)
+	}
+	if called {
+		t.Error("WriteAuditEvents() should not call server for empty batch")
+	}
+}
+
+// UT-AF-PR6-003: WriteAuditEvents server error returns wrapped error
+func TestOgenClient_WriteAuditEvents_ServerError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	client := newTestOgenClient(t, mux)
+	events := []*audit.Event{
+		{
+			Type:      audit.EventAuthSuccess,
+			UserID:    "alice",
+			Timestamp: time.Now(),
+		},
+	}
+	err := client.WriteAuditEvents(context.Background(), events)
+	if err == nil {
+		t.Fatal("WriteAuditEvents() expected error on 500 response")
 	}
 }

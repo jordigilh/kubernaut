@@ -61,6 +61,11 @@ Alerting rules are defined in `deploy/prometheus-rules.yaml`. Each alert is deri
 | `ApifrontendHighErrorRate` | SLO-6 | 5xx > 1% for 2m | critical |
 | `ApifrontendAuthFailureSpike` | SLO-5 | Auth failure rate > 10% for 2m | critical |
 | `ApifrontendCircuitBreakerOpen` | Operational | CB open for > 2m | warning |
+| `ApifrontendAuditBufferOverflow` | FedRAMP AU-2 | overflow rate > 0 for 1m | critical |
+| `ApifrontendToolLatencyHigh` | SLO-4 | Tool P99 > 5s for 5m | warning |
+| `ApifrontendDependencyLatencyHigh` | Operational | Dep P95 > 2s for 5m | warning |
+| `ApifrontendRateLimitStorm` | Operational | Rejections > 10/s for 2m | warning |
+| `ApifrontendSSEConnectionsHigh` | Operational | Active SSE > 100 for 5m | warning |
 
 ## Validation Plan
 
