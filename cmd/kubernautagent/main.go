@@ -185,6 +185,7 @@ func main() {
 	// Both the ogen DS client and the audit store share this cache, so a 401 on
 	// either side immediately invalidates the token for both.
 	dsTokenSource := auth.NewTokenSource(cfg.Integrations.DataStorage.SATokenPath)
+	dsTokenSource.SetLogger(logger.WithName("ds-token-source"))
 	if _, err := os.Stat(cfg.Integrations.DataStorage.SATokenPath); err != nil {
 		logger.Info("WARNING: SA token file not found at startup, DS/audit API calls will fail auth until file appears",
 			"token_path", cfg.Integrations.DataStorage.SATokenPath, "error", err)

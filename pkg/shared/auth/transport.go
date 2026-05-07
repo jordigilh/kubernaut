@@ -22,6 +22,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/go-logr/logr"
 )
 
 // ========================================
@@ -96,12 +98,22 @@ type TokenSource struct {
 	// Writes use atomic.AddInt64 (under tokenCacheMutex for cache consistency).
 	// Reads use atomic.LoadInt64 (no mutex needed — atomics are self-synchronizing).
 	tokenInvalidationCount int64
+
+	logger         logr.Logger
+	lastReadFailed bool
 }
 
 // NewTokenSource creates a TokenSource that reads SA tokens from the given path.
 // Use NewDefaultTokenSource for the standard Kubernetes projected volume path.
 func NewTokenSource(path string) *TokenSource {
-	return &TokenSource{tokenPath: path}
+	return &TokenSource{tokenPath: path, logger: logr.Discard()}
+}
+
+// SetLogger configures a logger for token lifecycle events (cache invalidation,
+// file read failures, recovery). By default, TokenSource uses logr.Discard().
+// Callers in cmd/ can wire a real logger for SRE observability.
+func (ts *TokenSource) SetLogger(l logr.Logger) {
+	ts.logger = l
 }
 
 // NewDefaultTokenSource creates a TokenSource for the standard Kubernetes
@@ -131,7 +143,16 @@ func (ts *TokenSource) Token() string {
 
 	tokenBytes, err := os.ReadFile(ts.tokenPath)
 	if err != nil {
+		ts.lastReadFailed = true
+		ts.logger.V(1).Info("token file read failed, requests will proceed without auth",
+			"path", ts.tokenPath, "error", err)
 		return ""
+	}
+
+	if ts.lastReadFailed {
+		ts.logger.Info("token file recovered, auth resumed",
+			"path", ts.tokenPath)
+		ts.lastReadFailed = false
 	}
 
 	ts.tokenCache = string(tokenBytes)
@@ -147,7 +168,9 @@ func (ts *TokenSource) Invalidate() {
 	ts.tokenCacheMutex.Lock()
 	defer ts.tokenCacheMutex.Unlock()
 	ts.tokenCacheTime = time.Time{}
-	atomic.AddInt64(&ts.tokenInvalidationCount, 1)
+	count := atomic.AddInt64(&ts.tokenInvalidationCount, 1)
+	ts.logger.V(1).Info("token cache invalidated due to 401 response",
+		"path", ts.tokenPath, "invalidation_count", count)
 }
 
 // InvalidationCount returns the number of times the cache was invalidated
