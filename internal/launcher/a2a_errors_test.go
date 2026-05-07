@@ -66,13 +66,23 @@ var _ = Describe("A2A Error Wrapping (P0 ProdSec)", func() {
 			h.ServeHTTP(rec, req)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 
+			Expect(capturedEvents).NotTo(BeEmpty(), "audit events should be emitted")
+
+			// Verify at least one event has correct type and user info
+			var hasTaskEvent bool
 			for _, evt := range capturedEvents {
+				Expect(evt.Type).NotTo(BeEmpty(), "event type must be set")
+				if evt.Type == audit.EventA2ATaskStarted || evt.Type == audit.EventA2ATaskFailed || evt.Type == audit.EventA2ATaskCompleted {
+					hasTaskEvent = true
+					Expect(evt.UserID).To(Equal("testuser"), "user_id must be populated from auth context")
+				}
 				if evt.Detail != nil {
 					errField := evt.Detail["error"]
 					Expect(errField).NotTo(ContainSubstring("/Users/"))
 					Expect(errField).NotTo(ContainSubstring("goroutine"))
 				}
 			}
+			Expect(hasTaskEvent).To(BeTrue(), "at least one a2a task event must be emitted")
 		})
 
 		It("UT-AF-PR6A-002: JSON-RPC error response does not leak internal details", func() {

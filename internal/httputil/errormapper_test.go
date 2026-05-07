@@ -66,6 +66,16 @@ var _ = Describe("ErrorMapper", func() {
 			Expect(p.Detail).To(Equal("an unexpected error occurred"))
 			Expect(p.Detail).NotTo(ContainSubstring("/internal/path"))
 		})
+
+		It("wrapped classified error does not leak outer error string (ARCH-6)", func() {
+			err := fmt.Errorf("DB query at https://internal:8443/api/secret: %w", httputil.ErrUnavailable)
+			p := httputil.MapToRFC7807(err, nil)
+			Expect(p.Status).To(Equal(http.StatusServiceUnavailable))
+			Expect(p.Detail).To(Equal("service unavailable"))
+			Expect(p.Detail).NotTo(ContainSubstring("internal:8443"))
+			Expect(p.Detail).NotTo(ContainSubstring("DB query"))
+			Expect(p.Detail).NotTo(ContainSubstring("https://"))
+		})
 	})
 
 	Describe("WriteError", func() {

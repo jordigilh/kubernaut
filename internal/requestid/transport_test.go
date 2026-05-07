@@ -34,7 +34,7 @@ var _ = Describe("requestid.Transport", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 
-		Expect(capturedHeader).NotTo(BeEmpty())
+		Expect(capturedHeader).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`))
 	})
 
 	It("does NOT set X-Request-ID header when context has no request ID", func() {

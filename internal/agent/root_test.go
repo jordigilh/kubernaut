@@ -147,6 +147,33 @@ var _ = Describe("Root Agent", func() {
 			Expect(names).To(HaveKey("kubernaut_list_remediations")) // from both
 		})
 
+		It("UT-AF-100-014: unauthorized role gets zero tools (fail-closed)", func() {
+			cfg := agentpkg.DefaultTestConfig()
+			_, tools, err := agentpkg.NewRootAgent(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			filtered := agentpkg.FilterToolsByRoles([]string{"attacker-role"}, tools)
+			Expect(filtered).To(BeEmpty())
+		})
+
+		It("UT-AF-100-015: empty roles list gets zero tools (fail-closed)", func() {
+			cfg := agentpkg.DefaultTestConfig()
+			_, tools, err := agentpkg.NewRootAgent(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			filtered := agentpkg.FilterToolsByRoles([]string{}, tools)
+			Expect(filtered).To(BeNil())
+		})
+
+		It("UT-AF-100-016: nil roles list gets zero tools (fail-closed)", func() {
+			cfg := agentpkg.DefaultTestConfig()
+			_, tools, err := agentpkg.NewRootAgent(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			filtered := agentpkg.FilterToolsByRoles(nil, tools)
+			Expect(filtered).To(BeNil())
+		})
+
 		It("UT-AF-100-012: agent creation with empty tool list returns error", func() {
 			cfg := agentpkg.AgentConfig{
 				GCPProject:  "test-project",
