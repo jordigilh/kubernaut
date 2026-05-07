@@ -59,10 +59,22 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("Data Storage Service returned status %d: %s", e.StatusCode, e.Message)
 }
 
-// IsRetryable returns true for 5xx errors (server errors)
-// 4xx errors (client errors) are NOT retryable - they indicate invalid data
+// IsRetryable returns true for errors that may succeed on retry:
+// - 401/403 auth errors: transient when using file-based SA token rotation (#1056)
+// - 5xx server errors: transient infrastructure failures
+// Other 4xx errors (400, 422) are NOT retryable — they indicate invalid request data.
 func (e *HTTPError) IsRetryable() bool {
+	if e.IsAuthError() {
+		return true
+	}
 	return e.StatusCode >= 500 && e.StatusCode < 600
+}
+
+// IsAuthError returns true for authentication/authorization errors (401, 403).
+// These are classified separately from data errors (400, 422) because auth errors
+// are transient when services use file-based SA token rotation (#1056).
+func (e *HTTPError) IsAuthError() bool {
+	return e.StatusCode == 401 || e.StatusCode == 403
 }
 
 // Is4xxError returns true for client errors (400-499)
@@ -167,6 +179,19 @@ func Is5xxError(err error) bool {
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
 		return httpErr.Is5xxError()
+	}
+	return false
+}
+
+// IsAuthError checks if an error is an authentication/authorization HTTP error (401/403).
+// Supports wrapped errors via errors.As (#1056).
+func IsAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.IsAuthError()
 	}
 	return false
 }
