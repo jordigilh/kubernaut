@@ -73,6 +73,12 @@ func (e *HTTPError) IsRetryable() bool {
 // IsAuthError returns true for authentication/authorization errors (401, 403).
 // These are classified separately from data errors (400, 422) because auth errors
 // are transient when services use file-based SA token rotation (#1056).
+//
+// Note on 401 vs 403 retry semantics:
+// - 401: AuthTransport invalidates the token cache → next retry re-reads from disk → self-heals.
+// - 403: AuthTransport does NOT invalidate the cache (refresh won't fix a permissions issue).
+//   Retries for 403 rely on RBAC propagation delays resolving between attempts. If the 403
+//   persists, the batch is dropped after MaxRetries like any other exhausted-retries path.
 func (e *HTTPError) IsAuthError() bool {
 	return e.StatusCode == 401 || e.StatusCode == 403
 }

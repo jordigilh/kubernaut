@@ -629,6 +629,11 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *d
 	authTransport := auth.NewServiceAccountTransportWithPath(
 		cfg.Integrations.DataStorage.SATokenPath, dsBase)
 
+	if _, err := os.Stat(cfg.Integrations.DataStorage.SATokenPath); err != nil {
+		logger.Info("WARNING: SA token file not found at startup, DS API calls will fail auth until file appears",
+			"token_path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
+	}
+
 	var opts []ogenclient.ClientOption
 	opts = append(opts, ogenclient.WithClient(&http.Client{
 		Transport: authTransport,
@@ -747,6 +752,11 @@ func buildAuditStore(cfg *kaconfig.Config, logger logr.Logger) (audit.AuditStore
 
 	auditAuthTransport := auth.NewServiceAccountTransportWithPath(
 		cfg.Integrations.DataStorage.SATokenPath, auditBase)
+
+	if _, err := os.Stat(cfg.Integrations.DataStorage.SATokenPath); err != nil {
+		logger.Info("WARNING: SA token file not found at startup, audit batch writes will fail auth until file appears",
+			"token_path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
+	}
 	logger.Info("audit store auth configured (AuthTransport with token refresh)",
 		"token_path", cfg.Integrations.DataStorage.SATokenPath)
 

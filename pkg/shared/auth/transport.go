@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -89,6 +90,10 @@ type AuthTransport struct {
 	tokenCache      string
 	tokenCacheTime  time.Time
 	tokenCacheMutex sync.RWMutex
+
+	// Observability: counts how many times the cache was invalidated due to 401.
+	// Exposed via TokenInvalidationCount() for metrics/testing (SRE-M1).
+	tokenInvalidationCount int64
 }
 
 // NewServiceAccountTransport creates a transport that reads tokens from the ServiceAccount filesystem.
@@ -161,9 +166,14 @@ func (t *AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	resp, err := t.base.RoundTrip(reqClone)
 	if err == nil && resp.StatusCode == http.StatusUnauthorized {
-		// #1055: Invalidate cached token on 401 so the next request re-reads
-		// from disk. This handles kubelet SA token rotation where the file
-		// has been updated but our cache still holds the stale token.
+		// #1055: Only 401 triggers cache invalidation, NOT 403. Rationale:
+		// - 401 (Unauthorized) = credential expired/invalid → re-reading the
+		//   rotated token from disk will fix it.
+		// - 403 (Forbidden) = valid credential but insufficient permissions →
+		//   re-reading the same token won't help; the issue is RBAC, not expiry.
+		// The audit layer (pkg/audit/errors.go) retries both 401 and 403 because
+		// RBAC propagation delays can cause transient 403s, but the transport
+		// only refreshes credentials on 401.
 		t.invalidateTokenCache()
 	}
 	return resp, err
@@ -227,4 +237,11 @@ func (t *AuthTransport) invalidateTokenCache() {
 	t.tokenCacheMutex.Lock()
 	defer t.tokenCacheMutex.Unlock()
 	t.tokenCacheTime = time.Time{}
+	atomic.AddInt64(&t.tokenInvalidationCount, 1)
+}
+
+// TokenInvalidationCount returns the number of times the token cache was
+// invalidated due to a 401 response. Useful for Prometheus metrics and testing.
+func (t *AuthTransport) TokenInvalidationCount() int64 {
+	return atomic.LoadInt64(&t.tokenInvalidationCount)
 }
