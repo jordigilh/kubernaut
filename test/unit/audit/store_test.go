@@ -614,6 +614,43 @@ var _ = Describe("BufferedAuditStore", func() {
 			Expect(hasAuthLog).To(BeTrue(),
 				"401 errors should produce auth-specific log messages for SRE diagnosis")
 		})
+
+		// UT-AS-1056-003: Persistent 401 across all retries → batch dropped
+		It("UT-AS-1056-003: should drop batch after persistent 401 exhausts all retries (#1056)", func() {
+			logSink := &errorCaptureSink{}
+			testLogger := logr.New(logSink)
+
+			config := audit.Config{
+				BufferSize:    100,
+				BatchSize:     10,
+				FlushInterval: 100 * time.Millisecond,
+				MaxRetries:    3,
+			}
+			authStore, err := audit.NewBufferedStore(mockClient, config, "test-service", testLogger)
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = authStore.Close() }()
+
+			// 401 persists for all attempts (e.g., token file is also stale)
+			mockClient.SetCustomError(audit.NewHTTPError(401, "Unauthorized"))
+
+			for i := 0; i < 10; i++ {
+				event := createTestEvent()
+				_ = authStore.StoreAudit(ctx, event)
+			}
+
+			// Wait for all retries to exhaust
+			Eventually(func() int {
+				return mockClient.AttemptCount()
+			}, "30s").Should(BeNumerically(">=", 3))
+
+			// Batch should be dropped (not stuck in infinite loop)
+			Expect(mockClient.BatchCount()).To(Equal(0), "Batch should be dropped after max retries")
+
+			// "AUDIT DATA LOSS" log should appear
+			hasDropLog := logSink.hasErrorContaining("Dropping") || logSink.hasErrorContaining("max retries")
+			Expect(hasDropLog).To(BeTrue(),
+				"Persistent 401 should produce batch-drop log for SRE diagnosis")
+		})
 	})
 
 	// NOTE: Client-side DLQ tests (GAP-10) removed — DD-AUDIT-002 V3.0 removed

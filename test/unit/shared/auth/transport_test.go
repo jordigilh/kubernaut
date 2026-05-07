@@ -296,6 +296,8 @@ var _ = Describe("NewServiceAccountTransportWithPath (#1055)", func() {
 		transport := auth.NewServiceAccountTransportWithPath(tokenFile, base)
 		client := &http.Client{Transport: transport}
 
+		Expect(transport.TokenInvalidationCount()).To(Equal(int64(0)))
+
 		req1, _ := http.NewRequest("GET", "http://localhost/test", nil)
 		resp1, err := client.Do(req1)
 		Expect(err).ToNot(HaveOccurred())
@@ -309,6 +311,7 @@ var _ = Describe("NewServiceAccountTransportWithPath (#1055)", func() {
 		Expect(err).ToNot(HaveOccurred())
 		_ = resp2.Body.Close()
 		Expect(resp2.StatusCode).To(Equal(401))
+		Expect(transport.TokenInvalidationCount()).To(Equal(int64(1)))
 
 		// Write new token to file (simulating kubelet rotation)
 		Expect(os.WriteFile(tokenFile, []byte("fresh-token"), 0600)).To(Succeed())
@@ -434,6 +437,36 @@ var _ = Describe("NewServiceAccountTransportWithPath (#1055)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 			Expect(resp.Header.Get("X-Echo-Auth")).To(Equal("Bearer nil-base-token"))
+		})
+
+		It("should degrade gracefully when token file is deleted mid-operation", func() {
+			Expect(os.WriteFile(tokenFile, []byte("initial-token"), 0600)).To(Succeed())
+
+			base := &statusRoundTripper{statusCode: 401}
+			transport := auth.NewServiceAccountTransportWithPath(tokenFile, base)
+			client := &http.Client{Transport: transport}
+
+			// First request: token exists, gets cached, then 401 invalidates cache
+			req1, _ := http.NewRequest("GET", "http://localhost/test", nil)
+			_, _ = client.Do(req1)
+
+			headers := base.getAuthHeaders()
+			Expect(headers[0]).To(Equal("Bearer initial-token"))
+
+			// Delete the token file (simulates SA volume unmount)
+			Expect(os.Remove(tokenFile)).To(Succeed())
+
+			// Next request: cache invalidated by 401, file gone → empty token → no auth header
+			base.setStatus(200)
+			req2, _ := http.NewRequest("GET", "http://localhost/test", nil)
+			resp2, err := client.Do(req2)
+			Expect(err).ToNot(HaveOccurred())
+			_ = resp2.Body.Close()
+
+			headers = base.getAuthHeaders()
+			Expect(headers).To(HaveLen(2))
+			Expect(headers[1]).To(BeEmpty(),
+				"Deleted token file should result in no auth header (graceful degradation)")
 		})
 
 		It("should handle empty token path gracefully", func() {
