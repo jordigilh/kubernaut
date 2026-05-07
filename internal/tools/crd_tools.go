@@ -47,6 +47,9 @@ type RemediationSummary struct {
 
 // HandleListRemediations implements the kubernaut_list_remediations logic.
 func HandleListRemediations(ctx context.Context, client dynamic.Interface, args ListRemediationsArgs) (ListRemediationsResult, error) {
+	if client == nil {
+		return ListRemediationsResult{}, ErrK8sUnavailable
+	}
 	opts := metav1.ListOptions{}
 
 	var labelSelectors []string
@@ -97,12 +100,12 @@ func HandleListRemediations(ctx context.Context, client dynamic.Interface, args 
 }
 
 // NewListRemediationsTool creates the kubernaut_list_remediations tool.
-func NewListRemediationsTool() (tool.Tool, error) {
+func NewListRemediationsTool(client dynamic.Interface) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_list_remediations",
 		Description: "List active remediations with optional filtering by namespace, phase, kind, or name",
 	}, func(ctx tool.Context, args ListRemediationsArgs) (ListRemediationsResult, error) {
-		return ListRemediationsResult{}, fmt.Errorf("not implemented: requires wiring in PR5")
+		return HandleListRemediations(ctx, client, args)
 	})
 }
 
@@ -126,6 +129,9 @@ type GetRemediationResult struct {
 
 // HandleGetRemediation implements the kubernaut_get_remediation logic.
 func HandleGetRemediation(ctx context.Context, client dynamic.Interface, args GetRemediationArgs) (GetRemediationResult, error) {
+	if client == nil {
+		return GetRemediationResult{}, ErrK8sUnavailable
+	}
 	ns, name, err := ParseRRID(args.RRID, args.Namespace, args.Name)
 	if err != nil {
 		return GetRemediationResult{}, err
@@ -151,12 +157,12 @@ func HandleGetRemediation(ctx context.Context, client dynamic.Interface, args Ge
 }
 
 // NewGetRemediationTool creates the kubernaut_get_remediation tool.
-func NewGetRemediationTool() (tool.Tool, error) {
+func NewGetRemediationTool(client dynamic.Interface) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_remediation",
 		Description: "Get detailed information about a specific remediation by namespace/name or rr_id",
 	}, func(ctx tool.Context, args GetRemediationArgs) (GetRemediationResult, error) {
-		return GetRemediationResult{}, fmt.Errorf("not implemented: requires wiring in PR5")
+		return HandleGetRemediation(ctx, client, args)
 	})
 }
 
@@ -179,6 +185,9 @@ type SubmitSignalResult struct {
 //
 //nolint:gocritic // hugeParam: args passed by value for simplicity; not performance-critical
 func HandleSubmitSignal(ctx context.Context, client dynamic.Interface, args SubmitSignalArgs, username string) (SubmitSignalResult, error) {
+	if client == nil {
+		return SubmitSignalResult{}, ErrK8sUnavailable
+	}
 	signalName := fmt.Sprintf("sp-%s-%s-%d", args.Kind, args.Name, time.Now().UnixMilli())
 
 	sp := &unstructured.Unstructured{
@@ -211,12 +220,12 @@ func HandleSubmitSignal(ctx context.Context, client dynamic.Interface, args Subm
 }
 
 // NewSubmitSignalTool creates the kubernaut_submit_signal tool.
-func NewSubmitSignalTool() (tool.Tool, error) {
+func NewSubmitSignalTool(client dynamic.Interface) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_submit_signal",
 		Description: "Submit a new incident signal for triage and potential remediation",
 	}, func(ctx tool.Context, args SubmitSignalArgs) (SubmitSignalResult, error) {
-		return SubmitSignalResult{}, fmt.Errorf("not implemented: requires wiring in PR5")
+		return HandleSubmitSignal(ctx, client, args, "system")
 	})
 }
 
@@ -239,6 +248,9 @@ type ApproveResult struct {
 //
 //nolint:gocritic // hugeParam: args passed by value for simplicity; not performance-critical
 func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveArgs, username string) (ApproveResult, error) {
+	if client == nil {
+		return ApproveResult{}, ErrK8sUnavailable
+	}
 	_, err := client.Resource(rarGVR).Namespace(args.Namespace).Get(ctx, args.RARName, metav1.GetOptions{})
 	if err != nil {
 		return ApproveResult{}, ToUserFriendlyError(err)
@@ -276,12 +288,12 @@ func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveAr
 }
 
 // NewApproveTool creates the kubernaut_approve tool.
-func NewApproveTool() (tool.Tool, error) {
+func NewApproveTool(client dynamic.Interface) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_approve",
 		Description: "Approve or reject a pending remediation approval request",
 	}, func(ctx tool.Context, args ApproveArgs) (ApproveResult, error) {
-		return ApproveResult{}, fmt.Errorf("not implemented: requires wiring in PR5")
+		return HandleApprove(ctx, client, args, "system")
 	})
 }
 
@@ -300,6 +312,9 @@ type CancelRemediationResult struct {
 
 // HandleCancelRemediation implements the kubernaut_cancel_remediation logic.
 func HandleCancelRemediation(ctx context.Context, client dynamic.Interface, args CancelRemediationArgs) (CancelRemediationResult, error) {
+	if client == nil {
+		return CancelRemediationResult{}, ErrK8sUnavailable
+	}
 	ns, name, err := ParseRRID(args.RRID, args.Namespace, args.Name)
 	if err != nil {
 		return CancelRemediationResult{}, err
@@ -339,12 +354,12 @@ func HandleCancelRemediation(ctx context.Context, client dynamic.Interface, args
 }
 
 // NewCancelRemediationTool creates the kubernaut_cancel_remediation tool.
-func NewCancelRemediationTool() (tool.Tool, error) {
+func NewCancelRemediationTool(client dynamic.Interface) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_cancel_remediation",
 		Description: "Cancel an active remediation that has not yet reached a terminal state",
 	}, func(ctx tool.Context, args CancelRemediationArgs) (CancelRemediationResult, error) {
-		return CancelRemediationResult{}, fmt.Errorf("not implemented: requires wiring in PR5")
+		return HandleCancelRemediation(ctx, client, args)
 	})
 }
 
@@ -373,6 +388,9 @@ const maxWatchDuration = 10 * time.Minute
 
 // HandleWatch implements the kubernaut_watch logic.
 func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) (WatchResult, error) {
+	if client == nil {
+		return WatchResult{}, ErrK8sUnavailable
+	}
 	watchCtx, cancel := context.WithTimeout(ctx, maxWatchDuration)
 	defer cancel()
 
@@ -415,11 +433,11 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 }
 
 // NewWatchTool creates the kubernaut_watch tool.
-func NewWatchTool() (tool.Tool, error) {
+func NewWatchTool(client dynamic.Interface) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_watch",
 		Description: "Stream live status updates for a remediation and its related resources",
 	}, func(ctx tool.Context, args WatchArgs) (WatchResult, error) {
-		return WatchResult{}, fmt.Errorf("not implemented: requires wiring in PR5")
+		return HandleWatch(ctx, client, args)
 	})
 }

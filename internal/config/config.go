@@ -7,20 +7,43 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Config holds all operational configuration for the API Frontend.
 type Config struct {
-	Server    ServerConfig    `yaml:"server"`
-	Agent     AgentConfig     `yaml:"agent"`
-	MCP       MCPConfig       `yaml:"mcp"`
-	AgentCard AgentCardConfig `yaml:"agentCard"`
-	Auth      AuthConfig      `yaml:"auth"`
-	Logging   LoggingConfig   `yaml:"logging"`
-	RateLimit RateLimitConfig `yaml:"rateLimit"`
-	Shutdown  ShutdownConfig  `yaml:"shutdown"`
+	Server     ServerConfig     `yaml:"server"`
+	Agent      AgentConfig      `yaml:"agent"`
+	MCP        MCPConfig        `yaml:"mcp"`
+	AgentCard  AgentCardConfig  `yaml:"agentCard"`
+	Auth       AuthConfig       `yaml:"auth"`
+	Logging    LoggingConfig    `yaml:"logging"`
+	RateLimit  RateLimitConfig  `yaml:"rateLimit"`
+	Shutdown   ShutdownConfig   `yaml:"shutdown"`
+	Resilience ResilienceConfig `yaml:"resilience"`
+}
+
+// ResilienceConfig holds per-dependency circuit breaker and retry settings.
+type ResilienceConfig struct {
+	KA  DependencyConfig `yaml:"ka"`
+	DS  DependencyConfig `yaml:"ds"`
+	K8s DependencyConfig `yaml:"k8s"`
+}
+
+// DependencyConfig holds resilience parameters for a single downstream dependency.
+type DependencyConfig struct {
+	ConnectTimeout     time.Duration `yaml:"connectTimeout"`
+	RequestTimeout     time.Duration `yaml:"requestTimeout"`
+	CBMaxRequests      uint32        `yaml:"cbMaxRequests"`
+	CBInterval         time.Duration `yaml:"cbInterval"`
+	CBTimeout          time.Duration `yaml:"cbTimeout"`
+	CBFailureThreshold uint32        `yaml:"cbFailureThreshold"`
+	RetryMax           int           `yaml:"retryMax"`
+	RetryInitBackoff   time.Duration `yaml:"retryInitBackoff"`
+	RetryMaxBackoff    time.Duration `yaml:"retryMaxBackoff"`
+	RetryableStatuses  []int         `yaml:"retryableStatuses"`
 }
 
 // AuthConfig holds OIDC authentication settings.
@@ -94,6 +117,42 @@ func DefaultConfig() *Config {
 		Shutdown: ShutdownConfig{
 			DrainSeconds: 15,
 		},
+		Resilience: ResilienceConfig{
+			KA: DependencyConfig{
+				ConnectTimeout:     5 * time.Second,
+				RequestTimeout:     30 * time.Second,
+				CBMaxRequests:      3,
+				CBInterval:         10 * time.Second,
+				CBTimeout:          30 * time.Second,
+				CBFailureThreshold: 5,
+				RetryMax:           2,
+				RetryInitBackoff:   500 * time.Millisecond,
+				RetryMaxBackoff:    5 * time.Second,
+				RetryableStatuses:  []int{502, 503, 504},
+			},
+			DS: DependencyConfig{
+				ConnectTimeout:     3 * time.Second,
+				RequestTimeout:     10 * time.Second,
+				CBMaxRequests:      3,
+				CBInterval:         10 * time.Second,
+				CBTimeout:          15 * time.Second,
+				CBFailureThreshold: 3,
+				RetryMax:           3,
+				RetryInitBackoff:   200 * time.Millisecond,
+				RetryMaxBackoff:    3 * time.Second,
+				RetryableStatuses:  []int{502, 503, 504},
+			},
+			K8s: DependencyConfig{
+				ConnectTimeout:     5 * time.Second,
+				RequestTimeout:     30 * time.Second,
+				CBMaxRequests:      3,
+				CBInterval:         10 * time.Second,
+				CBTimeout:          30 * time.Second,
+				CBFailureThreshold: 5,
+				RetryMax:           0,
+				RetryableStatuses:  []int{},
+			},
+		},
 	}
 }
 
@@ -146,6 +205,9 @@ func (c *Config) Validate() error {
 	if err := c.validateShutdown(); err != nil {
 		return err
 	}
+	if err := c.validateResilience(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -180,6 +242,48 @@ func (c *Config) validateRateLimit() error {
 func (c *Config) validateShutdown() error {
 	if c.Shutdown.DrainSeconds <= 0 {
 		return fmt.Errorf("shutdown.drainSeconds must be positive, got %d", c.Shutdown.DrainSeconds)
+	}
+	return nil
+}
+
+func (c *Config) validateResilience() error {
+	deps := []struct {
+		name string
+		cfg  *DependencyConfig
+	}{
+		{"resilience.ka", &c.Resilience.KA},
+		{"resilience.ds", &c.Resilience.DS},
+		{"resilience.k8s", &c.Resilience.K8s},
+	}
+	for _, dep := range deps {
+		if err := validateDependencyConfig(dep.name, dep.cfg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateDependencyConfig(prefix string, cfg *DependencyConfig) error {
+	if cfg.ConnectTimeout < 0 {
+		return fmt.Errorf("%s.connectTimeout must be non-negative, got %v", prefix, cfg.ConnectTimeout)
+	}
+	if cfg.RequestTimeout < 0 {
+		return fmt.Errorf("%s.requestTimeout must be non-negative, got %v", prefix, cfg.RequestTimeout)
+	}
+	if cfg.ConnectTimeout > 0 && cfg.RequestTimeout > 0 && cfg.RequestTimeout < cfg.ConnectTimeout {
+		return fmt.Errorf("%s.requestTimeout (%v) must be >= connectTimeout (%v)",
+			prefix, cfg.RequestTimeout, cfg.ConnectTimeout)
+	}
+	if cfg.CBFailureThreshold == 0 || cfg.CBFailureThreshold > 100 {
+		return fmt.Errorf("%s.cbFailureThreshold must be 1-100, got %d", prefix, cfg.CBFailureThreshold)
+	}
+	if cfg.RetryMax > 10 {
+		return fmt.Errorf("%s.retryMax must be 0-10, got %d", prefix, cfg.RetryMax)
+	}
+	for _, status := range cfg.RetryableStatuses {
+		if status < 400 || status > 599 {
+			return fmt.Errorf("%s.retryableStatuses values must be 400-599, got %d", prefix, status)
+		}
 	}
 	return nil
 }

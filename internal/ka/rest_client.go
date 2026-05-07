@@ -1,6 +1,7 @@
 package ka
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,36 +10,64 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sony/gobreaker/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	gobreaker "github.com/sony/gobreaker/v2"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/resilience"
 )
 
 // Client is a REST client for the Kubernaut Agent API.
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
-	cb         *gobreaker.CircuitBreaker[*http.Response]
+	baseURL     string
+	httpClient  *http.Client
+	cbTransport *resilience.CircuitBreakerTransport
 }
 
-// NewClient creates a new KA REST client with circuit breaker protection.
-// The Token field provides a static fallback JWT; per-request identity delegation
-// (extracting tokens from context) is wired in PR5 via the HTTP middleware layer.
+// ClientMetrics holds Prometheus collectors for the KA client.
+type ClientMetrics struct {
+	StateGauge   *prometheus.GaugeVec
+	DurationHist *prometheus.HistogramVec
+	RetryCounter *prometheus.CounterVec
+}
+
+// NewClient creates a new KA REST client with circuit breaker and retry protection.
+// metrics is optional and may be nil if metrics are not needed.
 //
-//nolint:gocritic // hugeParam: value copy intentional; called once at startup
-func NewClient(cfg Config) *Client {
+//nolint:gocritic // hugeParam: called once at startup; value copy is acceptable
+func NewClient(cfg Config, metrics ...*ClientMetrics) *Client {
 	timeout := cfg.Timeout
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
 
-	transport := http.DefaultTransport
+	baseTransport := http.DefaultTransport
 	if cfg.Token != "" {
-		transport = &auth.JWTDelegationTransport{
+		baseTransport = &auth.JWTDelegationTransport{
 			Base:  http.DefaultTransport,
 			Token: cfg.Token,
 		}
 	}
+
+	// Build the resilience transport chain: CB -> Retry -> Auth/Base
+	var retryCounter *prometheus.CounterVec
+	var stateGauge *prometheus.GaugeVec
+	var durationHist *prometheus.HistogramVec
+	if len(metrics) > 0 && metrics[0] != nil {
+		retryCounter = metrics[0].RetryCounter
+		stateGauge = metrics[0].StateGauge
+		durationHist = metrics[0].DurationHist
+	}
+
+	retryRT := resilience.NewRetryTransport(baseTransport, &resilience.RetryConfig{
+		MaxAttempts:       cfg.RetryMax + 1,
+		InitialBackoff:    cfg.RetryInitBackoff,
+		MaxBackoff:        cfg.RetryMaxBackoff,
+		RetryableStatuses: cfg.RetryableStatuses,
+		RetryCounter:      retryCounter,
+		DependencyName:    "ka",
+		IdempotentOnly:    true,
+	})
 
 	cbMaxReqs := cfg.CBMaxRequests
 	if cbMaxReqs == 0 {
@@ -52,29 +81,40 @@ func NewClient(cfg Config) *Client {
 	if cbTimeout == 0 {
 		cbTimeout = 30 * time.Second
 	}
+	cbFailureThreshold := cfg.CBFailureThreshold
+	if cbFailureThreshold == 0 {
+		cbFailureThreshold = 5
+	}
 
-	cb := gobreaker.NewCircuitBreaker[*http.Response](gobreaker.Settings{
-		Name:        "ka-rest",
-		MaxRequests: cbMaxReqs,
-		Interval:    cbInterval,
-		Timeout:     cbTimeout,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			threshold := cfg.CBFailureThreshold
-			if threshold == 0 {
-				threshold = 5
-			}
-			return counts.ConsecutiveFailures >= threshold
-		},
+	cbt := resilience.NewCircuitBreakerTransport(retryRT, &resilience.CircuitBreakerConfig{
+		Name:             "ka-rest",
+		MaxRequests:      cbMaxReqs,
+		Interval:         cbInterval,
+		Timeout:          cbTimeout,
+		FailureThreshold: cbFailureThreshold,
+		StateGauge:       stateGauge,
+		DurationHist:     durationHist,
+		DependencyName:   "ka",
 	})
 
 	return &Client{
 		baseURL: cfg.BaseURL,
 		httpClient: &http.Client{
-			Transport: transport,
+			Transport: cbt,
 			Timeout:   timeout,
 		},
-		cb: cb,
+		cbTransport: cbt,
 	}
+}
+
+// State returns the current circuit breaker state.
+func (c *Client) State() gobreaker.State {
+	return c.cbTransport.State()
+}
+
+// Healthy returns true when the circuit breaker is not in the Open state.
+func (c *Client) Healthy() bool {
+	return c.cbTransport.State() != gobreaker.StateOpen
 }
 
 // Analyze starts an investigation via POST /api/v1/incident/analyze.
@@ -144,12 +184,18 @@ func (c *Client) Cancel(ctx context.Context, sessionID string) error {
 
 func (c *Client) doJSON(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
 	var bodyReader io.Reader
+	var getBody func() (io.ReadCloser, error)
+
 	if body != nil {
-		pr, pw := io.Pipe()
-		go func() {
-			pw.CloseWithError(json.NewEncoder(pw).Encode(body))
-		}()
-		bodyReader = pr
+		var buf bytes.Buffer
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
+			return nil, fmt.Errorf("encoding request body: %w", err)
+		}
+		bodyBytes := buf.Bytes()
+		bodyReader = bytes.NewReader(bodyBytes)
+		getBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bodyReader)
@@ -157,18 +203,11 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body interface
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if getBody != nil {
+		req.GetBody = getBody
+	}
 
-	return c.cb.Execute(func() (*http.Response, error) {
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		if resp.StatusCode >= 500 {
-			_ = resp.Body.Close()
-			return nil, fmt.Errorf("KA returned server error %d", resp.StatusCode)
-		}
-		return resp, nil
-	})
+	return c.httpClient.Do(req)
 }
 
 func (c *Client) doGet(ctx context.Context, path string) (*http.Response, error) {
@@ -176,22 +215,10 @@ func (c *Client) doGet(ctx context.Context, path string) (*http.Response, error)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	return c.cb.Execute(func() (*http.Response, error) {
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		if resp.StatusCode >= 500 {
-			_ = resp.Body.Close()
-			return nil, fmt.Errorf("KA returned server error %d", resp.StatusCode)
-		}
-		return resp, nil
-	})
+	return c.httpClient.Do(req)
 }
 
 // kaToUserFriendlyError sanitizes KA-originated errors for user presentation.
-// Raw HTTP status codes, connection details, and internal messages are replaced
-// with generic user-friendly alternatives.
 func kaToUserFriendlyError(err error) error {
 	if err == nil {
 		return nil

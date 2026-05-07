@@ -27,6 +27,14 @@ type Config struct {
 	CBTimeout time.Duration
 	// CBFailureThreshold is the number of failures before circuit opens.
 	CBFailureThreshold uint32
+	// RetryMax is the maximum number of retries (0 = no retries, only the initial attempt).
+	RetryMax int
+	// RetryInitBackoff is the initial backoff duration for retries.
+	RetryInitBackoff time.Duration
+	// RetryMaxBackoff is the max backoff duration.
+	RetryMaxBackoff time.Duration
+	// RetryableStatuses are HTTP status codes that trigger a retry.
+	RetryableStatuses []int
 }
 
 // AnalyzeRequest is the request body for POST /api/v1/incident/analyze.

@@ -22,3 +22,5 @@ Thumbs.db
 
 # Build
 dist/
+apifrontend
+*.out

@@ -42,6 +42,8 @@ type Registry struct {
 	LLMTokensTotal         *prometheus.CounterVec
 	RateLimitDenied        *prometheus.CounterVec
 	CircuitBreakerState    *prometheus.GaugeVec
+	DownstreamDuration     *prometheus.HistogramVec
+	DownstreamRetryTotal   *prometheus.CounterVec
 	AuthDuration           *prometheus.HistogramVec
 	AuditEventsTotal       *prometheus.CounterVec
 	SessionTTLActionsTotal *prometheus.CounterVec
@@ -93,6 +95,17 @@ func NewRegistry() *Registry {
 			Help:      "Total rate limit rejections by tier and reason.",
 		}, []string{"tier", "reason"}),
 		CircuitBreakerState: auth.NewCircuitBreakerStateGauge(),
+		DownstreamDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "af",
+			Name:      "downstream_request_duration_seconds",
+			Help:      "Downstream HTTP request duration by dependency and status class.",
+			Buckets:   prometheus.DefBuckets,
+		}, []string{"dependency", "status"}),
+		DownstreamRetryTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "af",
+			Name:      "downstream_retry_total",
+			Help:      "Total downstream retry attempts by dependency and attempt number.",
+		}, []string{"dependency", "attempt"}),
 		AuthDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "af",
 			Name:      "auth_duration_seconds",
@@ -119,6 +132,8 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.LLMTokensTotal)
 	reg.MustRegister(r.RateLimitDenied)
 	reg.MustRegister(r.CircuitBreakerState)
+	reg.MustRegister(r.DownstreamDuration)
+	reg.MustRegister(r.DownstreamRetryTotal)
 	reg.MustRegister(r.AuthDuration)
 	reg.MustRegister(r.AuditEventsTotal)
 	reg.MustRegister(r.SessionTTLActionsTotal)
