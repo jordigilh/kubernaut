@@ -420,7 +420,7 @@ func main() {
 		cfg.DataStorage.URL,
 		ogenclient.WithClient(&http.Client{
 			Timeout:   cfg.DataStorage.Timeout,
-			Transport: auth.NewServiceAccountTransportWithBase(dsBaseTransport),
+			Transport: auth.NewAuthTransport(auth.NewDefaultTokenSource(), dsBaseTransport),
 		}),
 	)
 	if err != nil {

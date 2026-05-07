@@ -547,19 +547,28 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 		cancel()
 
 		if err != nil {
-			s.logger.Error(err, "Failed to write audit batch",
-				"attempt", attempt,
-				"batch_size", len(batch),
-			)
+			// #1056: Distinguish auth errors from data errors for observability
+			if IsAuthError(err) {
+				s.logger.Error(err, "Auth error writing audit batch (token expired or insufficient permissions, will retry)",
+					"attempt", attempt,
+					"max_retries", s.config.MaxRetries,
+					"batch_size", len(batch),
+				)
+			} else {
+				s.logger.Error(err, "Failed to write audit batch",
+					"attempt", attempt,
+					"batch_size", len(batch),
+				)
+			}
 
-			// GAP-10/GAP-11: Check if error is retryable
-			// 4xx errors are NOT retryable (invalid data)
+			// GAP-10/GAP-11/#1056: Check if error is retryable
+			// 401/403 auth errors ARE retryable (token refresh will fix)
 			// 5xx and network errors ARE retryable
+			// Other 4xx errors (400, 422) are NOT retryable (invalid request data)
 			if !IsRetryable(err) {
-				// Non-retryable error (4xx) - don't retry, log as invalid
 				atomic.AddInt64(&s.failedBatchCount, 1)
 
-				s.logger.Error(nil, "Dropping audit batch due to non-retryable error (invalid data)",
+				s.logger.Error(nil, "Dropping audit batch due to non-retryable client error (invalid request data)",
 					"batch_size", len(batch),
 					"is_4xx_error", Is4xxError(err),
 				)

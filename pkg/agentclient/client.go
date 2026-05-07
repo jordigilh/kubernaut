@@ -86,7 +86,7 @@ func NewKubernautAgentClient(cfg Config) (*KubernautAgentClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TLS-aware base transport: %w", err)
 	}
-	transport := auth.NewServiceAccountTransportWithBase(baseTransport)
+	transport := auth.NewAuthTransport(auth.NewDefaultTokenSource(), baseTransport)
 
 	return newClientWithHTTP(cfg, &http.Client{
 		Timeout:   defaultTimeout(cfg),

@@ -49,7 +49,7 @@ func BuildCertPool(pemData []byte) (*x509.CertPool, error) {
 // service-serving signer).
 //
 // The returned client has TLS configured but no bearer token injection.
-// Callers can wrap client.Transport with auth.NewServiceAccountTransportWithBase
+// Callers can wrap client.Transport with auth.NewAuthTransport(auth.NewDefaultTokenSource(), base)
 // to add SA token authentication.
 func NewHTTPClientWithCA(caFile string, timeout time.Duration) (*http.Client, error) {
 	caCert, err := os.ReadFile(caFile)
