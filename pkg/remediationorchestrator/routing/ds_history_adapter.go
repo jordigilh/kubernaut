@@ -70,7 +70,7 @@ func NewDSHistoryAdapterFromConfig(baseURL string, timeout time.Duration) (*DSHi
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base transport: %w", err)
 	}
-	transport := auth.NewServiceAccountTransportWithBase(baseTransport)
+	transport := auth.NewAuthTransport(auth.NewDefaultTokenSource(), baseTransport)
 
 	ogenClient, err := ogenclient.NewClient(baseURL, ogenclient.WithClient(&http.Client{
 		Timeout:   timeout,

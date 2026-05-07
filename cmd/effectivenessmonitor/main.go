@@ -274,7 +274,7 @@ func main() {
 		defer emCAWatcher.Stop()
 
 		// Wrap CAReloader (RoundTripper) with SA bearer token for OCP monitoring endpoints.
-		saTransport := auth.NewServiceAccountTransportWithBase(caReloader)
+		saTransport := auth.NewAuthTransport(auth.NewDefaultTokenSource(), caReloader)
 		externalHTTPClient = &http.Client{
 			Transport: saTransport,
 			Timeout:   cfg.External.ConnectionTimeout,

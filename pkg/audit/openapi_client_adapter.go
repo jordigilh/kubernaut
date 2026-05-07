@@ -153,7 +153,7 @@ func NewOpenAPIClientAdapterWithTransport(baseURL string, timeout time.Duration,
 		if err != nil {
 			return nil, fmt.Errorf("failed to create base transport: %w", err)
 		}
-		transport = auth.NewServiceAccountTransportWithBase(baseTransport)
+		transport = auth.NewAuthTransport(auth.NewDefaultTokenSource(), baseTransport)
 	}
 
 	// Create HTTP client with auth transport (ServiceAccount or mock)

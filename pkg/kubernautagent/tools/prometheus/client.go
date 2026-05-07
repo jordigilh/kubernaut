@@ -41,7 +41,7 @@ type ClientConfig struct {
 
 	// Transport overrides the http.Client's RoundTripper. When set, it is used
 	// as the underlying transport for all Prometheus API requests. This enables
-	// SA bearer token injection on OCP (via auth.NewServiceAccountTransportWithBase)
+	// SA bearer token injection on OCP (via auth.NewAuthTransport)
 	// and custom TLS trust (via sharedtls). When nil, http.DefaultTransport is used.
 	Transport http.RoundTripper `yaml:"-"`
 }

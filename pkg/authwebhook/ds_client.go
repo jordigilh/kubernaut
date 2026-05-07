@@ -65,7 +65,7 @@ func NewDSClientAdapter(baseURL string, timeout time.Duration, logger logr.Logge
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TLS-aware base transport: %w", err)
 	}
-	transport := auth.NewServiceAccountTransportWithBase(baseTransport)
+	transport := auth.NewAuthTransport(auth.NewDefaultTokenSource(), baseTransport)
 
 	httpClient := &http.Client{
 		Timeout:   timeout,
