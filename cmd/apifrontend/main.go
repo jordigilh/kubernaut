@@ -101,7 +101,6 @@ func run() error {
 	defer cancel()
 
 	metricsReg := metrics.NewRegistry()
-	auditor := audit.NewLogEmitter(logger)
 
 	authCfg := buildAuthConfig(cfg)
 	if len(authCfg.JWT) == 0 {
@@ -180,6 +179,24 @@ func run() error {
 		return fmt.Errorf("create DS client: %w", err)
 	}
 
+	// Auditor: BufferedEmitter with DS backend for durable audit storage
+	bufferedAuditor := audit.NewBufferedEmitter(audit.BufferConfig{
+		Writer:        dsClient,
+		Logger:        logger,
+		BufferSize:    4096,
+		FlushInterval: 5 * time.Second,
+		BatchSize:     100,
+	})
+	auditor := audit.Emitter(bufferedAuditor)
+
+	// --- MCP client (Pattern B JWT delegation) ---
+	mcpHTTPClient := &http.Client{
+		Transport: &auth.ContextJWTDelegationTransport{
+			Base: &requestid.Transport{Base: http.DefaultTransport},
+		},
+	}
+	mcpClient := ka.NewSDKMCPClient(cfg.Agent.KAMCPEndpoint, mcpHTTPClient, logger)
+
 	// --- Resilience: K8s circuit breaker ---
 	k8sCB := resilience.NewK8sCircuitBreaker(resilience.K8sCBConfig{
 		Name:             "k8s-api",
@@ -208,6 +225,7 @@ func run() error {
 		DSClient:      dsClient,
 		KAClient:      kaClient,
 		Auditor:       auditor,
+		MCPClient:     mcpClient,
 	}
 	rootAgent, _, err := agentpkg.NewRootAgent(agentCfg)
 	if err != nil {
@@ -323,11 +341,20 @@ func run() error {
 
 	logger.Info("shutting down gracefully")
 
+	// 1. Flush audit buffer before HTTP shutdown
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if flushErr := bufferedAuditor.Close(flushCtx); flushErr != nil {
+		logger.Error(flushErr, "audit flush error during shutdown")
+	}
+	flushCancel()
+
+	// 2. Graceful HTTP drain
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
 	if shutdownErr := srv.Shutdown(shutdownCtx); shutdownErr != nil {
-		logger.Error(shutdownErr, "server shutdown error")
+		logger.Error(shutdownErr, "server shutdown error, forcing close")
+		_ = srv.Close()
 	}
 
 	logger.Info("shutdown complete")

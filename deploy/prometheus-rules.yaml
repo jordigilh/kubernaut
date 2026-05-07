@@ -93,3 +93,56 @@ spec:
           annotations:
             summary: "API Frontend circuit breaker is open"
             description: "Circuit breaker for {{ $labels.dependency }} has been open for more than 2 minutes."
+
+    - name: apifrontend.audit
+      rules:
+        - alert: ApifrontendAuditBufferOverflow
+          expr: rate(apifrontend_audit_buffer_overflow_total{job="apifrontend"}[5m]) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Audit events being dropped due to buffer overflow"
+            description: "The audit buffer is overflowing — events may be lost. Check DS connectivity and latency."
+
+    - name: apifrontend.tools
+      rules:
+        - alert: ApifrontendToolLatencyHigh
+          expr: histogram_quantile(0.99, rate(af_tool_call_duration_seconds_bucket{job="apifrontend"}[5m])) > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend tool call P99 latency > 5s"
+            description: "99th percentile tool call duration exceeds 5 seconds. Investigate slow downstream dependencies."
+
+    - name: apifrontend.dependencies
+      rules:
+        - alert: ApifrontendDependencyLatencyHigh
+          expr: histogram_quantile(0.95, rate(af_downstream_request_duration_seconds_bucket{job="apifrontend"}[5m])) > 2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend downstream dependency P95 latency > 2s"
+            description: "95th percentile downstream request duration for {{ $labels.dependency }} exceeds 2 seconds."
+
+        - alert: ApifrontendRateLimitStorm
+          expr: rate(af_rate_limit_rejections_total{job="apifrontend"}[5m]) > 10
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend rate limit rejection storm"
+            description: "Rate limit rejections are elevated — possible DoS or misconfigured client."
+
+    - name: apifrontend.sse
+      rules:
+        - alert: ApifrontendSSEConnectionsHigh
+          expr: af_sse_active_connections{job="apifrontend"} > 100
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend SSE connections > 100"
+            description: "Active SSE connections are above threshold. Check for connection leaks or unusual traffic."
