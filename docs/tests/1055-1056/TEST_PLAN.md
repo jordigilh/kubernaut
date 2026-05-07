@@ -123,7 +123,7 @@ immediately dropped with a misleading "invalid data" log message. The fix reclas
 
 | Phase | Description | Tests | Checkpoint |
 |-------|-------------|-------|------------|
-| RED | Write failing tests for all new behavior | UT-AT-1055-001..005, UT-AE-1056-001..009, UT-AS-1056-001..002 | CHECKPOINT 1 |
+| RED | Write failing tests for all new behavior | UT-AT-1055-001..008, UT-AE-1056-001..009, UT-AS-1056-001..003 | CHECKPOINT 1 |
 | GREEN | Minimal implementation to pass all tests | Production code changes | CHECKPOINT 2 |
 | REFACTOR | 100 Go Mistakes audit, code cleanup, lint | N/A (quality pass) | CHECKPOINT 3 |
 
@@ -142,6 +142,9 @@ immediately dropped with a misleading "invalid data" log message. The fix reclas
 | UT-AT-1055-003 | Token re-read after invalidation picks up new content | Write "token-v1" to file, get 401, write "token-v2", next request | Second request uses "token-v2" | #1055 |
 | UT-AT-1055-004 | Non-401 responses do not invalidate cache | RoundTrip returns 200, 500 | Cache remains valid (no file re-read) | #1055 |
 | UT-AT-1055-005 | Concurrent RoundTrip under 401 storm | 10+ goroutines, all getting 401, with -race | No data races, no panics | #1055 |
+| UT-AT-1055-006 | Nil base transport defaults to http.DefaultTransport | `NewServiceAccountTransportWithPath(path, nil)` | Request succeeds with Bearer header | #1055 |
+| UT-AT-1055-007 | Empty token path degrades gracefully | `NewServiceAccountTransportWithPath("", base)` | Request proceeds without auth header | #1055 |
+| UT-AT-1055-008 | Token file deleted mid-operation | File exists → cached → deleted → 401 invalidation | Next request proceeds without auth header | #1055 |
 
 ### 6.2 Audit Error Tests (Tier 1 — Unit)
 
@@ -167,6 +170,7 @@ immediately dropped with a misleading "invalid data" log message. The fix reclas
 |---------|-------------|-------|----------|-----|
 | UT-AS-1056-001 | 401 error retries and succeeds on 2nd attempt | Mock returns HTTPError{401} once, then succeeds | `AttemptCount() >= 2`, `BatchCount() == 1` | #1056 |
 | UT-AS-1056-002 | Auth error logging contains diagnostic context | Mock returns HTTPError{401}; capture error logs | Log contains "auth" or "token" context | #1056 |
+| UT-AS-1056-003 | Persistent 401 exhausts all retries | Mock returns HTTPError{401} for all attempts | Batch dropped, "Dropping"/"max retries" log emitted | #1056 |
 
 ---
 
@@ -174,7 +178,7 @@ immediately dropped with a misleading "invalid data" log message. The fix reclas
 
 ### 7.1 Pass Criteria
 
-- All 16 test cases pass
+- All 21 test cases pass
 - `go build ./...` succeeds with zero errors
 - `go test -race ./test/unit/shared/auth/...` reports zero races
 - `golangci-lint run --timeout=5m` introduces zero new errors

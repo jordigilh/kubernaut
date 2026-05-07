@@ -549,8 +549,9 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 		if err != nil {
 			// #1056: Distinguish auth errors from data errors for observability
 			if IsAuthError(err) {
-				s.logger.Error(err, "Auth error writing audit batch (token may be expired, will retry)",
+				s.logger.Error(err, "Auth error writing audit batch (token expired or insufficient permissions, will retry)",
 					"attempt", attempt,
+					"max_retries", s.config.MaxRetries,
 					"batch_size", len(batch),
 				)
 			} else {

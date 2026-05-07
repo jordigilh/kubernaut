@@ -93,6 +93,8 @@ type AuthTransport struct {
 
 	// Observability: counts how many times the cache was invalidated due to 401.
 	// Exposed via TokenInvalidationCount() for metrics/testing (SRE-M1).
+	// Writes use atomic.AddInt64 (under tokenCacheMutex for cache consistency).
+	// Reads use atomic.LoadInt64 (no mutex needed — atomics are self-synchronizing).
 	tokenInvalidationCount int64
 }
 

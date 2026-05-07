@@ -632,6 +632,9 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *d
 	if _, err := os.Stat(cfg.Integrations.DataStorage.SATokenPath); err != nil {
 		logger.Info("WARNING: SA token file not found at startup, DS API calls will fail auth until file appears",
 			"token_path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
+	} else {
+		logger.Info("DS client auth configured (AuthTransport with token refresh)",
+			"token_path", cfg.Integrations.DataStorage.SATokenPath)
 	}
 
 	var opts []ogenclient.ClientOption
@@ -639,8 +642,6 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, logger logr.Logger) *d
 		Transport: authTransport,
 		Timeout:   defaultDSClientTimeout,
 	}))
-	logger.Info("DS client auth configured (AuthTransport with token refresh)",
-		"token_path", cfg.Integrations.DataStorage.SATokenPath)
 
 	ogenClient, err := ogenclient.NewClient(cfg.Integrations.DataStorage.URL, opts...)
 	if err != nil {
@@ -750,15 +751,21 @@ func buildAuditStore(cfg *kaconfig.Config, logger logr.Logger) (audit.AuditStore
 		return audit.NopAuditStore{}, nop
 	}
 
+	// PROD-R3-1: This creates a second AuthTransport with its own independent token cache.
+	// The DS ogen client (initDSClients) and audit store each have separate 5-min TTL caches.
+	// After token rotation, each invalidates independently on its own first 401. Audit writes
+	// may lag up to 5 min behind DS client recovery. Acceptable for v1; a shared cache is a
+	// future improvement.
 	auditAuthTransport := auth.NewServiceAccountTransportWithPath(
 		cfg.Integrations.DataStorage.SATokenPath, auditBase)
 
 	if _, err := os.Stat(cfg.Integrations.DataStorage.SATokenPath); err != nil {
 		logger.Info("WARNING: SA token file not found at startup, audit batch writes will fail auth until file appears",
 			"token_path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
+	} else {
+		logger.Info("audit store auth configured (AuthTransport with token refresh)",
+			"token_path", cfg.Integrations.DataStorage.SATokenPath)
 	}
-	logger.Info("audit store auth configured (AuthTransport with token refresh)",
-		"token_path", cfg.Integrations.DataStorage.SATokenPath)
 
 	dsClient, err := sharedaudit.NewOpenAPIClientAdapterWithTransport(
 		cfg.Integrations.DataStorage.URL, 5*time.Second, auditAuthTransport,
