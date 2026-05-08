@@ -18,7 +18,7 @@ spec:
           annotations:
             summary: "API Frontend is down"
             description: "The API Frontend service has been unreachable for more than 5 minutes."
-            runbook_url: "https://kubernaut.ai/runbooks/apifrontend-down"
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-001.md"
 
     - name: apifrontend.latency
       rules:
@@ -30,7 +30,7 @@ spec:
           annotations:
             summary: "API Frontend P95 latency > 500ms"
             description: "95th percentile HTTP request latency is above 500ms for more than 2 minutes."
-            runbook_url: "https://kubernaut.ai/runbooks/apifrontend-high-latency"
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-002.md"
 
         - alert: ApifrontendHighLatencyP99
           expr: histogram_quantile(0.99, sum(rate(af_http_request_duration_seconds_bucket{job="apifrontend"}[5m])) by (le)) > 1.0
@@ -40,7 +40,7 @@ spec:
           annotations:
             summary: "API Frontend P99 latency > 1s"
             description: "99th percentile HTTP request latency is above 1 second for more than 2 minutes."
-            runbook_url: "https://kubernaut.ai/runbooks/apifrontend-high-latency"
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-002.md"
 
     - name: apifrontend.errors
       rules:
@@ -56,7 +56,7 @@ spec:
           annotations:
             summary: "API Frontend error rate > 0.5%"
             description: "More than 0.5% of HTTP requests are returning 5xx status codes. Approaching SLO-6 budget (0.1%)."
-            runbook_url: "https://kubernaut.ai/runbooks/apifrontend-error-rate"
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-003.md"
 
         - alert: ApifrontendHighErrorRate
           expr: |
@@ -70,7 +70,7 @@ spec:
           annotations:
             summary: "API Frontend error rate > 1%"
             description: "More than 1% of HTTP requests are returning 5xx status codes. SLO-6 budget is breached."
-            runbook_url: "https://kubernaut.ai/runbooks/apifrontend-error-rate"
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-003.md"
 
     - name: apifrontend.auth
       rules:
@@ -86,7 +86,7 @@ spec:
           annotations:
             summary: "API Frontend auth failure rate > 10%"
             description: "More than 10% of requests are failing authentication. Possible token issuer outage or attack."
-            runbook_url: "https://kubernaut.ai/runbooks/apifrontend-auth-failures"
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-004.md"
 
     - name: apifrontend.circuitbreaker
       rules:
@@ -98,7 +98,7 @@ spec:
           annotations:
             summary: "API Frontend circuit breaker is open"
             description: "Circuit breaker for {{ $labels.dependency }} has been open for more than 2 minutes."
-            runbook_url: "https://kubernaut.ai/runbooks/apifrontend-circuit-breaker"
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-005.md"
 
     - name: apifrontend.audit
       rules:
@@ -110,7 +110,7 @@ spec:
           annotations:
             summary: "Audit events being dropped due to buffer overflow"
             description: "The audit buffer is overflowing (~30+ drops in 5m) — events may be lost. Check DS connectivity and latency."
-            runbook_url: "https://kubernaut.ai/runbooks/apifrontend-audit-overflow"
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-006.md"
             response: "1. Check DS health/latency. 2. Scale DS if saturated. 3. Increase buffer size if sustained."
 
     - name: apifrontend.tools
@@ -123,7 +123,7 @@ spec:
           annotations:
             summary: "API Frontend tool call P99 latency > 5s"
             description: "99th percentile tool call duration exceeds 5 seconds. Investigate slow downstream dependencies."
-            runbook_url: "https://kubernaut.ai/runbooks/apifrontend-tool-latency"
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-007.md"
 
     - name: apifrontend.dependencies
       rules:
@@ -135,7 +135,7 @@ spec:
           annotations:
             summary: "API Frontend downstream dependency P95 latency > 2s"
             description: "95th percentile downstream request duration for {{ $labels.dependency }} exceeds 2 seconds."
-            runbook_url: "https://kubernaut.ai/runbooks/apifrontend-dependency-latency"
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-007.md"
 
         - alert: ApifrontendRateLimitStorm
           expr: rate(af_rate_limit_rejections_total{job="apifrontend"}[5m]) > 10
@@ -145,7 +145,7 @@ spec:
           annotations:
             summary: "API Frontend rate limit rejection storm"
             description: "Rate limit rejections are elevated — possible DoS or misconfigured client."
-            runbook_url: "https://kubernaut.ai/runbooks/apifrontend-rate-limit"
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-008.md"
 
     - name: apifrontend.sse
       rules:
@@ -157,4 +157,4 @@ spec:
           annotations:
             summary: "API Frontend SSE connections > 100"
             description: "Active SSE connections are above threshold. Check for connection leaks or unusual traffic."
-            runbook_url: "https://kubernaut.ai/runbooks/apifrontend-sse-connections"
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-008.md"
