@@ -30,11 +30,17 @@ In a FedRAMP environment, all data stores containing Personally Identifiable Inf
 |------|-----------|-----------|-----------|
 | Active sessions | Indefinite while Active | No TTL | Required for session continuity |
 | Completed/Failed/Cancelled | 30 days (default) | TTL controller (PR4) with `status.completedAt` + configurable TTL | FedRAMP AU-11: minimum 30-day audit retention |
-| Archived sessions | 90 days | CRD soft-delete + DataStorage archival (PR7) | Extended retention for compliance review |
+| Forensic reconstruction | On demand | Reconstructable from DS audit traces | Platform convention: CRDs are ephemeral state; the audit trail in DataStorage is the durable forensic store |
 
 The TTL controller (implemented in PR4) garbage-collects terminal sessions based on
 `status.completedAt` + a configurable duration (default: 30 days, override via
 `--session-ttl` flag or `SESSION_TTL_DAYS` env var).
+
+**Platform convention (PR7):** All kubernaut services rely on the audit trail persisted
+in DataStorage to reconstruct CRD state on demand for forensic analysis. Explicit
+pre-deletion archival of CRDs is unnecessary — the audit events emitted during session
+lifecycle (create, state transitions, tool invocations) provide a complete, immutable
+record that satisfies FedRAMP AU-11 retention requirements.
 
 ## Data Minimization (DM-1)
 
@@ -71,4 +77,5 @@ The TTL controller (implemented in PR4) garbage-collects terminal sessions based
 - Compliance auditors can verify retention by querying:
   `kubectl get investigationsessions --field-selector status.phase=Completed -o json`
   and checking `status.completedAt` timestamps.
-- Future work (PR7) will add DataStorage archival for long-term audit trail retention.
+- PR7 confirmed the platform-wide convention: audit traces in DataStorage are the
+  long-term forensic store; explicit CRD archival is not required.
