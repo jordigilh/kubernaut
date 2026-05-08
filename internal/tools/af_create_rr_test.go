@@ -22,7 +22,7 @@ var _ = Describe("af_create_rr", func() {
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
 
-		result, err := tools.HandleCreateRR(context.Background(), client, tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace:   "prod",
 			Kind:        "Deployment",
 			Name:        "web",
@@ -43,7 +43,7 @@ var _ = Describe("af_create_rr", func() {
 			rr,
 		)
 
-		result, err := tools.HandleCreateRR(context.Background(), client, tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace:   "prod",
 			Kind:        "Deployment",
 			Name:        "web",
@@ -59,7 +59,7 @@ var _ = Describe("af_create_rr", func() {
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
 
-		_, err := tools.HandleCreateRR(context.Background(), client, tools.CreateRRArgs{
+		_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace: "", Kind: "Deployment", Name: "web", Description: "x",
 		}, "user")
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
@@ -70,7 +70,7 @@ var _ = Describe("af_create_rr", func() {
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
 
-		_, err := tools.HandleCreateRR(context.Background(), client, tools.CreateRRArgs{
+		_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "", Name: "web", Description: "x",
 		}, "user")
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
@@ -81,14 +81,14 @@ var _ = Describe("af_create_rr", func() {
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
 
-		_, err := tools.HandleCreateRR(context.Background(), client, tools.CreateRRArgs{
+		_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "", Description: "x",
 		}, "user")
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
 
 	It("UT-AF-052-055: nil client returns ErrK8sUnavailable", func() {
-		_, err := tools.HandleCreateRR(context.Background(), nil, tools.CreateRRArgs{
+		_, err := tools.HandleCreateRR(context.Background(), nil, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "web", Description: "x",
 		}, "user")
 		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
@@ -104,7 +104,7 @@ var _ = Describe("af_create_rr", func() {
 			longDesc[i] = 'a'
 		}
 
-		result, err := tools.HandleCreateRR(context.Background(), client, tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace:   "prod",
 			Kind:        "Deployment",
 			Name:        "web",
@@ -127,7 +127,7 @@ var _ = Describe("af_create_rr", func() {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
-				results[idx], errs[idx] = tools.HandleCreateRR(context.Background(), client, tools.CreateRRArgs{
+				results[idx], errs[idx] = tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 					Namespace:   "prod",
 					Kind:        "Deployment",
 					Name:        "dedup-target",
@@ -152,7 +152,7 @@ var _ = Describe("af_create_rr", func() {
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
 
-		_, err := tools.HandleCreateRR(context.Background(), client, tools.CreateRRArgs{
+		_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace: "../../etc", Kind: "Deployment", Name: "web", Description: "x",
 		}, "user")
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))

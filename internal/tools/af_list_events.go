@@ -80,7 +80,7 @@ func HandleListEvents(ctx context.Context, client dynamic.Interface, args ListEv
 			InvolvedKind:  involvedKind,
 			InvolvedName:  involvedName,
 			Count:         count,
-			LastTimestamp:  lastTS,
+			LastTimestamp: lastTS,
 		})
 	}
 

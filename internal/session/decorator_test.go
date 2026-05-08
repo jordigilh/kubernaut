@@ -14,16 +14,16 @@ import (
 	"github.com/jordigilh/kubernaut-apifrontend/internal/session"
 )
 
-var _ = Describe("SessionServiceDecorator", func() {
+var _ = Describe("ServiceDecorator", func() {
 	var (
 		inner     adksession.Service
-		decorator *session.SessionServiceDecorator
+		decorator *session.ServiceDecorator
 		ctx       context.Context
 	)
 
 	BeforeEach(func() {
 		inner = adksession.InMemoryService()
-		decorator = session.NewSessionServiceDecorator(inner)
+		decorator = session.NewServiceDecorator(inner)
 		ctx = context.Background()
 	})
 
@@ -31,7 +31,7 @@ var _ = Describe("SessionServiceDecorator", func() {
 		It("UT-AF-056-PW-001: enriches State with CreateConfig from context", func() {
 			identity := &auth.UserIdentity{Username: "alice", Groups: []string{"sre"}}
 			ctx = auth.WithUserIdentity(ctx, identity)
-			ctx = session.WithSessionCreateContext(ctx, &session.SessionCreateContext{
+			ctx = session.WithCreateContext(ctx, &session.CreateContext{
 				TaskID: "task-123",
 				RemediationRef: v1alpha1.ObjectRef{
 					Namespace: "prod",
@@ -63,7 +63,7 @@ var _ = Describe("SessionServiceDecorator", func() {
 		It("UT-AF-056-PW-004: TaskID extracted from context into CreateConfig.A2ATaskID", func() {
 			identity := &auth.UserIdentity{Username: "carol", Groups: []string{"sre"}}
 			ctx = auth.WithUserIdentity(ctx, identity)
-			ctx = session.WithSessionCreateContext(ctx, &session.SessionCreateContext{
+			ctx = session.WithCreateContext(ctx, &session.CreateContext{
 				TaskID: "task-abc-def",
 			})
 
@@ -71,7 +71,7 @@ var _ = Describe("SessionServiceDecorator", func() {
 			scheme := newScheme()
 			k8s := newFakeClient(scheme)
 			crdSvc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
-			dec := session.NewSessionServiceDecorator(crdSvc)
+			dec := session.NewServiceDecorator(crdSvc)
 
 			resp, err := dec.Create(ctx, &adksession.CreateRequest{
 				AppName: "test-app",
@@ -86,14 +86,14 @@ var _ = Describe("SessionServiceDecorator", func() {
 		It("UT-AF-056-PW-005: UserIdentity populated from auth context", func() {
 			identity := &auth.UserIdentity{Username: "dave", Groups: []string{"l1-ops", "sre"}}
 			ctx = auth.WithUserIdentity(ctx, identity)
-			ctx = session.WithSessionCreateContext(ctx, &session.SessionCreateContext{
+			ctx = session.WithCreateContext(ctx, &session.CreateContext{
 				TaskID: "task-user-test",
 			})
 
 			scheme := newScheme()
 			k8s := newFakeClient(scheme)
 			crdSvc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
-			dec := session.NewSessionServiceDecorator(crdSvc)
+			dec := session.NewServiceDecorator(crdSvc)
 
 			resp, err := dec.Create(ctx, &adksession.CreateRequest{
 				AppName: "test-app",
@@ -107,7 +107,7 @@ var _ = Describe("SessionServiceDecorator", func() {
 		It("UT-AF-056-PW-006: concurrent Create calls are safe under -race", func() {
 			identity := &auth.UserIdentity{Username: "eve", Groups: []string{"sre"}}
 			ctx = auth.WithUserIdentity(ctx, identity)
-			ctx = session.WithSessionCreateContext(ctx, &session.SessionCreateContext{
+			ctx = session.WithCreateContext(ctx, &session.CreateContext{
 				TaskID: "task-concurrent",
 			})
 
@@ -133,7 +133,7 @@ var _ = Describe("SessionServiceDecorator", func() {
 		It("UT-AF-056-PW-007: non-RFC-1123 TaskID is passed to inner service for sanitization", func() {
 			identity := &auth.UserIdentity{Username: "grace", Groups: []string{"sre"}}
 			ctx = auth.WithUserIdentity(ctx, identity)
-			ctx = session.WithSessionCreateContext(ctx, &session.SessionCreateContext{
+			ctx = session.WithCreateContext(ctx, &session.CreateContext{
 				TaskID: "UPPER-CASE_with/slashes/../traversal",
 			})
 
@@ -141,7 +141,7 @@ var _ = Describe("SessionServiceDecorator", func() {
 			scheme := newScheme()
 			k8s := newFakeClient(scheme)
 			crdSvc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
-			dec := session.NewSessionServiceDecorator(crdSvc)
+			dec := session.NewServiceDecorator(crdSvc)
 
 			resp, err := dec.Create(ctx, &adksession.CreateRequest{
 				AppName: "test-app",
@@ -154,7 +154,7 @@ var _ = Describe("SessionServiceDecorator", func() {
 		})
 
 		It("UT-AF-056-PW-008: empty username / nil identity yields error", func() {
-			ctx = session.WithSessionCreateContext(ctx, &session.SessionCreateContext{
+			ctx = session.WithCreateContext(ctx, &session.CreateContext{
 				TaskID: "task-no-identity",
 			})
 
@@ -214,16 +214,16 @@ var _ = Describe("SessionServiceDecorator", func() {
 	})
 
 	Describe("Context helpers", func() {
-		It("UT-AF-056-PW-009: WithSessionCreateContext stores and retrieves value", func() {
-			sc := &session.SessionCreateContext{
+		It("UT-AF-056-PW-009: WithCreateContext stores and retrieves value", func() {
+			sc := &session.CreateContext{
 				TaskID: "test-task",
 				RemediationRef: v1alpha1.ObjectRef{
 					Namespace: "ns1",
 					Name:      "rr-1",
 				},
 			}
-			enriched := session.WithSessionCreateContext(ctx, sc)
-			retrieved := session.SessionCreateContextFromContext(enriched)
+			enriched := session.WithCreateContext(ctx, sc)
+			retrieved := session.CreateContextFromContext(enriched)
 
 			Expect(retrieved).NotTo(BeNil())
 			Expect(retrieved.TaskID).To(Equal("test-task"))
@@ -231,8 +231,8 @@ var _ = Describe("SessionServiceDecorator", func() {
 			Expect(retrieved.RemediationRef.Name).To(Equal("rr-1"))
 		})
 
-		It("UT-AF-056-PW-010: SessionCreateContextFromContext returns nil when not set", func() {
-			retrieved := session.SessionCreateContextFromContext(ctx)
+		It("UT-AF-056-PW-010: CreateContextFromContext returns nil when not set", func() {
+			retrieved := session.CreateContextFromContext(ctx)
 			Expect(retrieved).To(BeNil())
 		})
 	})

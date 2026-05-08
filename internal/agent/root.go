@@ -259,9 +259,11 @@ func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *pro
 			toolCalls.WithLabelValues(t.Name(), resultLabel).Inc()
 		}
 		if toolDuration != nil {
-			if start, ok := starts.LoadAndDelete(ctx.FunctionCallID()); ok {
-				elapsed := time.Since(start.(time.Time)).Seconds()
-				toolDuration.WithLabelValues(t.Name(), "function").Observe(elapsed)
+			if raw, ok := starts.LoadAndDelete(ctx.FunctionCallID()); ok {
+				if start, ok := raw.(time.Time); ok {
+					elapsed := time.Since(start).Seconds()
+					toolDuration.WithLabelValues(t.Name(), "function").Observe(elapsed)
+				}
 			}
 		}
 		return nil, nil

@@ -254,7 +254,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create root agent: %w", err)
 	}
-	sessionSvc := session.NewSessionServiceDecorator(adksession.InMemoryService())
+	sessionSvc := session.NewServiceDecorator(adksession.InMemoryService())
 
 	a2aHandler, err := launcher.NewA2AHandler(launcher.A2AConfig{
 		Agent:          rootAgent,

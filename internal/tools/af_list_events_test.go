@@ -138,7 +138,7 @@ func newUnstructuredEvent(ns, name, reason, message, involvedKind, involvedName 
 				"name": involvedName,
 			},
 			"count":         int64(1),
-			"lastTimestamp":  "2026-05-08T10:00:00Z",
+			"lastTimestamp": "2026-05-08T10:00:00Z",
 		},
 	}
 }

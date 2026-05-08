@@ -166,7 +166,9 @@ func newUnstructuredPodObj(ns, name, phase string, containerStatuses []interface
 		},
 	}
 	if containerStatuses != nil {
-		obj["status"].(map[string]interface{})["containerStatuses"] = containerStatuses
+		if status, ok := obj["status"].(map[string]interface{}); ok {
+			status["containerStatuses"] = containerStatuses
+		}
 	}
 	return &unstructured.Unstructured{Object: obj}
 }

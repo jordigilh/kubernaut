@@ -46,7 +46,7 @@ func rrFingerprint(namespace, kind, name string) string {
 
 // HandleCreateRR creates a RemediationRequest CRD with singleflight deduplication.
 // Concurrent calls with the same fingerprint are deduplicated — only one creation executes.
-func HandleCreateRR(ctx context.Context, client dynamic.Interface, args CreateRRArgs, username string) (CreateRRResult, error) {
+func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateRRArgs, username string) (CreateRRResult, error) {
 	if client == nil {
 		return CreateRRResult{}, ErrK8sUnavailable
 	}
@@ -128,7 +128,11 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args CreateRR
 	if err != nil {
 		return CreateRRResult{}, err
 	}
-	return *result.(*CreateRRResult), nil
+	res, ok := result.(*CreateRRResult)
+	if !ok {
+		return CreateRRResult{}, fmt.Errorf("unexpected singleflight result type")
+	}
+	return *res, nil
 }
 
 // NewCreateRRTool creates the af_create_rr tool.
@@ -137,6 +141,6 @@ func NewCreateRRTool(client dynamic.Interface) (tool.Tool, error) {
 		Name:        "af_create_rr",
 		Description: "Create a RemediationRequest for a target resource with deduplication. Checks for existing non-terminal RRs before creating.",
 	}, func(ctx tool.Context, args CreateRRArgs) (CreateRRResult, error) {
-		return HandleCreateRR(ctx, client, args, usernameFromContext(ctx))
+		return HandleCreateRR(ctx, client, &args, usernameFromContext(ctx))
 	})
 }
