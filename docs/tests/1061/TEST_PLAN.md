@@ -37,7 +37,7 @@ When an alert includes explicit `target_resource_kind` and `target_resource_name
 | Metric | Target | Measurement |
 |--------|--------|-------------|
 | Unit test pass rate | 100% | `go test ./test/unit/kubernautagent/investigator/... --ginkgo.focus="Issue.*1061"` |
-| Unit-testable code coverage | >=80% | Coverage on `SignalToPrompt` + `isValidK8sIdentifier` |
+| Unit-testable code coverage | >=80% | Coverage on `SignalToPrompt` + `isValidK8sIdentifier` + `LogLabelOverrideOrRejection` |
 | Backward compatibility | 0 regressions | Full investigator suite passes |
 
 ---
@@ -81,7 +81,8 @@ When an alert includes explicit `target_resource_kind` and `target_resource_name
 
 - `SignalToPrompt()` in `internal/kubernautagent/investigator/investigator_phases.go`
 - `isValidK8sIdentifier()` in same file
-- Override logging in `runRCA()` and `runWorkflowSelection()` in `investigator.go`
+- `LogLabelOverrideOrRejection()` in same file
+- Override/rejection logging calls in `runRCA()` and `runWorkflowSelection()` in `investigator.go`
 
 ### 4.2 Features Not to be Tested
 
@@ -111,7 +112,7 @@ When an alert includes explicit `target_resource_kind` and `target_resource_name
 
 ### 5.2 Pass/Fail Criteria
 
-**PASS**: All 14 unit tests pass, no regressions in investigator suite, no `Skip()` or `time.Sleep` anti-patterns.
+**PASS**: All 20 unit tests pass, no regressions in investigator suite, no `Skip()` or `time.Sleep` anti-patterns.
 
 **FAIL**: Any test failure, or label override not logged at call sites.
 
@@ -146,6 +147,12 @@ When an alert includes explicit `target_resource_kind` and `target_resource_name
 | FedRAMP SI-10 | Boundary 253 acceptance | P1 | Unit | UT-KA-1061-012 | Pass |
 | FedRAMP SI-10 | Backslash rejection | P0 | Unit | UT-KA-1061-013 | Pass |
 | ARCH-5 | sameKindGate non-interference | P0 | Unit | UT-KA-1061-014 | Pass |
+| FedRAMP SI-10 | Both labels invalid simultaneously | P0 | Unit | UT-KA-1061-015 | Pass |
+| FedRAMP SI-10 | Whitespace-only labels rejected | P0 | Unit | UT-KA-1061-016 | Pass |
+| FedRAMP AU-2 | Override event logged with structured fields | P0 | Unit | UT-KA-1061-017 | Pass |
+| FedRAMP AU-2 / SEC-6 | Rejection event logged per invalid label | P0 | Unit | UT-KA-1061-018 | Pass |
+| #1061 | No log emitted when SignalLabels is nil | P1 | Unit | UT-KA-1061-019 | Pass |
+| #1061 | No log emitted when label matches enrichment | P1 | Unit | UT-KA-1061-020 | Pass |
 
 ---
 
@@ -173,6 +180,12 @@ Format: `UT-KA-{ISSUE}-{SEQUENCE}`
 | UT-KA-1061-012 | Boundary 253-char label accepted | Pass |
 | UT-KA-1061-013 | Backslash labels rejected | Pass |
 | UT-KA-1061-014 | sameKindGate interaction (ARCH-5) | Pass |
+| UT-KA-1061-015 | Both labels invalid simultaneously — enrichment fallback for both | Pass |
+| UT-KA-1061-016 | Whitespace-only label values rejected | Pass |
+| UT-KA-1061-017 | Override event logged with phase, original values, and correlation ID | Pass |
+| UT-KA-1061-018 | Rejection event logged per invalid label with rejected value | Pass |
+| UT-KA-1061-019 | No log emitted when SignalLabels is nil (no override attempted) | Pass |
+| UT-KA-1061-020 | No log emitted when label matches enrichment value (no-op) | Pass |
 
 ### Tier Skip Rationale
 
@@ -217,3 +230,4 @@ go test ./test/unit/kubernautagent/investigator/... -count=1 -race
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-05-08 | Initial test plan for Issue #1061 |
+| 1.1 | 2026-05-08 | Added UT-KA-1061-015..020 from readiness audit and test quality review |

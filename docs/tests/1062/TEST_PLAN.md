@@ -112,7 +112,7 @@ When a Kind exists in multiple API groups (e.g., `Subscription` in `operators.co
 
 ### 5.2 Pass/Fail Criteria
 
-**PASS**: All unit tests pass, no regressions, `IsNotFoundError` classification preserved.
+**PASS**: All 8 unit tests pass, no regressions, `IsNotFoundError` classification preserved.
 
 **FAIL**: Any test failure, or `TargetResourceDeleted` classification broken for all-groups-NotFound case.
 
@@ -137,6 +137,7 @@ When a Kind exists in multiple API groups (e.g., `Subscription` in `operators.co
 | #1062 | Explicit apiVersion bypasses fallback | P0 | Unit | UT-KA-1062-005 | Pending |
 | #1062 | GetSpecHash same fallback | P0 | Unit | UT-KA-1062-006 | Pending |
 | #1062 | Error preserves IsNotFoundError | P0 | Unit | UT-KA-1062-007 | Pending |
+| #1062 | Zero REST mappings returns error for unknown kind | P0 | Unit | UT-KA-1062-008 | Pending |
 
 ---
 
@@ -157,6 +158,7 @@ Format: `UT-KA-{ISSUE}-{SEQUENCE}`
 | UT-KA-1062-005 | Ambiguous kind with explicit `apiVersion` — only specified group used | Pending |
 | UT-KA-1062-006 | GetSpecHash fallback for ambiguous kind | Pending |
 | UT-KA-1062-007 | All-groups-NotFound error preserves `IsNotFoundError` classification | Pending |
+| UT-KA-1062-008 | Zero REST mappings for unknown kind returns error | Pending |
 
 ### Tier Skip Rationale
 
@@ -201,3 +203,4 @@ go test ./test/unit/kubernautagent/enrichment/... -count=1 -race
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-05-08 | Initial test plan for Issue #1062 |
+| 1.1 | 2026-05-08 | Added UT-KA-1062-008 from test quality review |
