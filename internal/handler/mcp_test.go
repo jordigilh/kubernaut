@@ -83,16 +83,17 @@ var _ = Describe("MCP Handler", func() {
 		Expect(toolHandler).NotTo(BeNil())
 	})
 
-	It("UT-AF-220-005: tools registered include kubernaut_ prefix", func() {
+	It("UT-AF-220-005: tools registered include kubernaut_ or af_ prefix", func() {
 		tools := handler.DefaultMCPTools()
 		for _, t := range tools {
-			Expect(t.Name).To(HavePrefix("kubernaut_"))
+			hasValid := strings.HasPrefix(t.Name, "kubernaut_") || strings.HasPrefix(t.Name, "af_")
+			Expect(hasValid).To(BeTrue(), "tool %q missing kubernaut_ or af_ prefix", t.Name)
 		}
 	})
 
-	It("UT-AF-220-006: tools count matches 14 expected tools", func() {
+	It("UT-AF-220-006: tools count matches 20 expected tools", func() {
 		tools := handler.DefaultMCPTools()
-		Expect(tools).To(HaveLen(14))
+		Expect(tools).To(HaveLen(20))
 	})
 
 	It("UT-AF-220-007: MCP server info includes correct name and version", func() {

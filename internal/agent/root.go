@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -12,8 +13,11 @@ import (
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/tool"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/tools"
 )
 
@@ -69,12 +73,16 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 		return nil, nil, fmt.Errorf("tool list must not be empty: at least one tool is required")
 	}
 
+	beforeMetrics, afterMetrics := newMetricsToolCallbacks(cfg.ToolCallsTotal, cfg.ToolCallDuration)
+	afterAudit := newAuditToolCallback(cfg.Auditor)
+
 	a, err := llmagent.New(llmagent.Config{
 		Name:                "kubernaut-apifrontend",
 		Description:         "Kubernaut API Frontend agent for incident triage and remediation",
 		Tools:               allTools,
 		Instruction:         cfg.Instruction,
-		BeforeToolCallbacks: []llmagent.BeforeToolCallback{newRBACGuard(cfg.Auditor)},
+		BeforeToolCallbacks: []llmagent.BeforeToolCallback{newRBACGuard(cfg.Auditor), beforeMetrics},
+		AfterToolCallbacks:  []llmagent.AfterToolCallback{afterMetrics, afterAudit},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating agent: %w", err)
@@ -100,6 +108,12 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 	kaC := cfg.KAClient
 	mcpC := cfg.MCPClient
 
+	// Triage tools use impersonation; fall back to static SA client if no factory provided.
+	triageFactory := cfg.ImpersonatingClientFactory
+	if triageFactory == nil {
+		triageFactory = auth.StaticDynamicFactory(k8s)
+	}
+
 	constructors := []toolConstructor{
 		{"list_remediations", func() (tool.Tool, error) { return tools.NewListRemediationsTool(k8s) }},
 		{"get_remediation", func() (tool.Tool, error) { return tools.NewGetRemediationTool(k8s) }},
@@ -115,6 +129,14 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"get_remediation_history", func() (tool.Tool, error) { return tools.NewGetRemediationHistoryTool(dsC) }},
 		{"get_effectiveness", func() (tool.Tool, error) { return tools.NewGetEffectivenessTool(dsC) }},
 		{"get_audit_trail", func() (tool.Tool, error) { return tools.NewGetAuditTrailTool(dsC) }},
+		// NL Signal Intake tools (#52) — read-only tools use impersonation (SEC-05)
+		{"list_events", func() (tool.Tool, error) { return tools.NewListEventsTool(triageFactory) }},
+		{"get_pods", func() (tool.Tool, error) { return tools.NewGetPodsTool(triageFactory) }},
+		{"get_workloads", func() (tool.Tool, error) { return tools.NewGetWorkloadsTool(triageFactory) }},
+		{"resolve_owner", func() (tool.Tool, error) { return tools.NewResolveOwnerTool(triageFactory) }},
+		// RR tools use AF ServiceAccount (write AF-owned CRDs)
+		{"check_existing_rr", func() (tool.Tool, error) { return tools.NewCheckExistingRRTool(k8s) }},
+		{"create_rr", func() (tool.Tool, error) { return tools.NewCreateRRTool(k8s) }},
 	}
 
 	result := make([]tool.Tool, 0, len(constructors))
@@ -213,4 +235,101 @@ func FilterToolsByRoles(roles []string, allTools []tool.Tool) []tool.Tool {
 		}
 	}
 	return result
+}
+
+// newMetricsToolCallbacks returns Before/After callbacks that track tool call
+// metrics: af_tool_calls_total (counter) and af_tool_call_duration_seconds (histogram).
+// Safe for concurrent use via sync.Map keyed by FunctionCallID.
+//
+// Leak analysis (SRE-1): entries are removed in `after` via LoadAndDelete. If `after`
+// never runs (panic/cancel), leaked entries are bounded by LLM call rate (typically
+// <100/min). Each entry is 24 bytes (time.Time). Worst case at 100 RPM with 100% loss
+// is ~140KB/day — negligible for a long-running service. A periodic sweep is added as
+// defense-in-depth.
+func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *prometheus.HistogramVec) (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
+	var starts sync.Map
+
+	// Periodic sweep: evict entries older than 5 minutes (abandoned tool calls).
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			cutoff := time.Now().Add(-5 * time.Minute)
+			starts.Range(func(key, value any) bool {
+				if t, ok := value.(time.Time); ok && t.Before(cutoff) {
+					starts.Delete(key)
+				}
+				return true
+			})
+		}
+	}()
+
+	before := func(ctx tool.Context, _ tool.Tool, _ map[string]any) (map[string]any, error) {
+		if toolCalls == nil && toolDuration == nil {
+			return nil, nil
+		}
+		starts.Store(ctx.FunctionCallID(), time.Now())
+		return nil, nil
+	}
+
+	after := func(ctx tool.Context, t tool.Tool, _, _ map[string]any, toolErr error) (map[string]any, error) {
+		resultLabel := "success"
+		if toolErr != nil {
+			resultLabel = "error"
+		}
+		if toolCalls != nil {
+			toolCalls.WithLabelValues(t.Name(), resultLabel).Inc()
+		}
+		if toolDuration != nil {
+			if raw, ok := starts.LoadAndDelete(ctx.FunctionCallID()); ok {
+				if start, ok := raw.(time.Time); ok {
+					elapsed := time.Since(start).Seconds()
+					toolDuration.WithLabelValues(t.Name(), "function").Observe(elapsed)
+				}
+			}
+		}
+		return nil, nil
+	}
+
+	return before, after
+}
+
+// newAuditToolCallback returns an AfterToolCallback that emits a structured
+// audit event for every tool invocation (FedRAMP AU-12 compliance).
+// The event includes tool name, result status, and user identity.
+func newAuditToolCallback(auditor audit.Emitter) llmagent.AfterToolCallback {
+	return func(ctx tool.Context, t tool.Tool, input, _ map[string]any, toolErr error) (map[string]any, error) {
+		if auditor == nil {
+			return nil, nil
+		}
+
+		result := "success"
+		if toolErr != nil {
+			result = "error"
+		}
+
+		detail := map[string]string{
+			"tool":   t.Name(),
+			"result": result,
+		}
+		if toolErr != nil {
+			detail["error"] = security.RedactError(toolErr)
+		}
+		if ns, ok := input["namespace"].(string); ok && ns != "" {
+			detail["namespace"] = ns
+		}
+
+		userID := ""
+		if identity := auth.UserIdentityFromContext(ctx); identity != nil {
+			userID = identity.Username
+		}
+
+		auditor.Emit(ctx, &audit.Event{
+			Type:   audit.EventToolInvoked,
+			UserID: userID,
+			Detail: detail,
+		})
+
+		return nil, nil
+	}
 }

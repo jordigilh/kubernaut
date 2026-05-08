@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -20,6 +21,13 @@ var ErrAlreadyTerminal = errors.New("already in terminal state")
 
 // ErrK8sUnavailable indicates the K8s cluster is not reachable.
 var ErrK8sUnavailable = errors.New("kubernetes cluster is not available — contact your administrator")
+
+// ErrInvalidInput indicates input validation failed (RFC 1123, empty fields, etc.).
+var ErrInvalidInput = errors.New("invalid input")
+
+// maxToolOutputBytes is the maximum serialized output size for tool results.
+// Matches the 4KB threshold used by session.TrimToolResult for etcd safety.
+const maxToolOutputBytes = 4096
 
 // ParseRRID parses an rr_id shorthand (namespace/name) into its components.
 // If rr_id is empty, namespace and name are returned as-is.
@@ -79,4 +87,23 @@ func IsTerminalPhase(phase string) bool {
 		return true
 	}
 	return false
+}
+
+// TrimSliceToFit removes trailing elements from a slice until its JSON
+// serialization fits within maxToolOutputBytes, returning the trimmed slice
+// and whether any trimming occurred. The marshal function should serialize
+// the slice to JSON bytes.
+func TrimSliceToFit[T any](items []T) ([]T, bool) {
+	output, _ := json.Marshal(items)
+	if len(output) <= maxToolOutputBytes {
+		return items, false
+	}
+	for len(items) > 1 {
+		items = items[:len(items)-1]
+		output, _ = json.Marshal(items)
+		if len(output) <= maxToolOutputBytes {
+			break
+		}
+	}
+	return items, true
 }
