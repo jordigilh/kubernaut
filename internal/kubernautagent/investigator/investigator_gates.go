@@ -289,6 +289,20 @@ func (inv *Investigator) apiVersionGateExhaustion(
 	gateEvent.Data["retry_outcome"] = "exhausted"
 	result.HumanReviewNeeded = true
 	result.HumanReviewReason = "rca_incomplete"
+
+	// Clear workflow fields: the workflow was selected based on an ambiguous
+	// kind without api_version, so it may target the wrong API group and lead
+	// to incorrect RBAC grants. Leaving it populated would cause the API
+	// response to include selected_workflow despite human review escalation.
+	result.WorkflowID = ""
+	result.ExecutionEngine = ""
+	result.ExecutionBundle = ""
+	result.ExecutionBundleDigest = ""
+	result.WorkflowRationale = ""
+	result.WorkflowVersion = ""
+	result.Confidence = 0
+	result.AlternativeWorkflows = nil
+
 	result.Warnings = append(result.Warnings,
 		fmt.Sprintf("apiVersionValidationGate: kind %q is ambiguous (API groups: %s) "+
 			"but LLM did not provide api_version after retry — human review required to prevent "+

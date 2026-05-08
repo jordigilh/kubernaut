@@ -226,6 +226,8 @@ var _ = Describe("TP-1044: apiVersionValidationGate", func() {
 				"UT-KA-1044-002: gate exhaustion must trigger human review to prevent incorrect RBAC")
 			Expect(result.HumanReviewReason).To(Equal("rca_incomplete"),
 				"UT-KA-1044-002: reason must be rca_incomplete")
+			Expect(result.WorkflowID).To(BeEmpty(),
+				"UT-KA-1044-002: workflow must be cleared on gate exhaustion to prevent incorrect RBAC grants")
 		})
 	})
 
