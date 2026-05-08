@@ -2,6 +2,7 @@ package tools_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -167,5 +168,112 @@ var _ = Describe("af_resolve_owner", func() {
 			}()
 		}
 		wg.Wait()
+	})
+
+	It("UT-AF-052-039: cycle detection stops traversal (A->B->A)", func() {
+		rsA := newUnstructuredWithOwner("apps/v1", "ReplicaSet", "ns", "rs-a", "ReplicaSet", "rs-b", true)
+		rsB := newUnstructuredWithOwner("apps/v1", "ReplicaSet", "ns", "rs-b", "ReplicaSet", "rs-a", true)
+
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{rsGVR: "ReplicaSetList"},
+			rsA, rsB,
+		)
+
+		result, err := tools.HandleResolveOwner(context.Background(), client, tools.ResolveOwnerArgs{
+			Namespace: "ns", Kind: "ReplicaSet", Name: "rs-a",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Chain).To(HaveLen(2))
+		Expect(result.RootKind).To(Equal("ReplicaSet"))
+	})
+
+	It("UT-AF-052-040: unsupported kind mid-chain returns partial result", func() {
+		pod := newUnstructuredWithOwner("v1", "Pod", "ns", "job-pod", "Job", "my-job", true)
+		job := newUnstructuredWithOwner("batch/v1", "Job", "ns", "my-job", "CustomKind", "owner", true)
+
+		scheme := runtime.NewScheme()
+		jobGVR := schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{
+				podGVR: "PodList",
+				jobGVR: "JobList",
+			},
+			pod, job,
+		)
+
+		result, err := tools.HandleResolveOwner(context.Background(), client, tools.ResolveOwnerArgs{
+			Namespace: "ns", Kind: "Pod", Name: "job-pod",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Chain).To(HaveLen(2))
+		Expect(result.RootKind).To(Equal("Job"))
+		Expect(result.RootName).To(Equal("my-job"))
+	})
+
+	It("UT-AF-052-041: max depth (10) stops traversal with partial chain", func() {
+		scheme := runtime.NewScheme()
+		objs := make([]runtime.Object, 12)
+		for i := 0; i < 12; i++ {
+			name := fmt.Sprintf("rs-%d", i)
+			ownerName := ""
+			if i < 11 {
+				ownerName = fmt.Sprintf("rs-%d", i+1)
+			}
+			objs[i] = newUnstructuredWithOwner("apps/v1", "ReplicaSet", "ns", name, "ReplicaSet", ownerName, true)
+		}
+
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{rsGVR: "ReplicaSetList"},
+			objs...,
+		)
+
+		result, err := tools.HandleResolveOwner(context.Background(), client, tools.ResolveOwnerArgs{
+			Namespace: "ns", Kind: "ReplicaSet", Name: "rs-0",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(len(result.Chain)).To(BeNumerically("<=", 10))
+	})
+
+	It("UT-AF-052-042: prefers controller owner over non-controller", func() {
+		pod := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Pod",
+				"metadata": map[string]interface{}{
+					"name":      "multi-owner",
+					"namespace": "ns",
+					"ownerReferences": []interface{}{
+						map[string]interface{}{
+							"kind":       "ReplicaSet",
+							"name":       "non-controller-rs",
+							"controller": false,
+						},
+						map[string]interface{}{
+							"kind":       "ReplicaSet",
+							"name":       "controller-rs",
+							"controller": true,
+						},
+					},
+				},
+			},
+		}
+		controllerRS := newUnstructuredWithOwner("apps/v1", "ReplicaSet", "ns", "controller-rs", "", "", false)
+
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{
+				podGVR: "PodList",
+				rsGVR:  "ReplicaSetList",
+			},
+			pod, controllerRS,
+		)
+
+		result, err := tools.HandleResolveOwner(context.Background(), client, tools.ResolveOwnerArgs{
+			Namespace: "ns", Kind: "Pod", Name: "multi-owner",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Chain).To(HaveLen(2))
+		Expect(result.Chain[1].Name).To(Equal("controller-rs"))
 	})
 })

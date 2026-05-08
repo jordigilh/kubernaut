@@ -39,14 +39,27 @@ var _ = Describe("ServiceDecorator", func() {
 				},
 			})
 
-			resp, err := decorator.Create(ctx, &adksession.CreateRequest{
+			req := &adksession.CreateRequest{
 				AppName: "test-app",
 				UserID:  "alice",
-			})
+			}
+			resp, err := decorator.Create(ctx, req)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp).NotTo(BeNil())
 			Expect(resp.Session).NotTo(BeNil())
+
+			// Assert enriched State contents (TQ-2 review)
+			Expect(req.State).NotTo(BeNil())
+			raw, ok := req.State[session.StateKeyCreateConfig]
+			Expect(ok).To(BeTrue(), "State must contain StateKeyCreateConfig")
+			cfg, ok := raw.(*session.CreateConfig)
+			Expect(ok).To(BeTrue(), "value must be *CreateConfig")
+			Expect(cfg.A2ATaskID).To(Equal("task-123"))
+			Expect(cfg.UserIdentity.Username).To(Equal("alice"))
+			Expect(cfg.UserIdentity.Groups).To(ConsistOf("sre"))
+			Expect(cfg.RemediationRef.Namespace).To(Equal("prod"))
+			Expect(cfg.RemediationRef.Name).To(Equal("rr-fix-oom"))
 		})
 
 		It("UT-AF-056-PW-002: passes through unchanged when no context config", func() {

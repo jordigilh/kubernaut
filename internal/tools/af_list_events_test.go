@@ -120,6 +120,41 @@ var _ = Describe("af_list_events", func() {
 		Expect(result.Count).To(Equal(1))
 		Expect(result.Events[0].Reason).To(Equal("BackOff"))
 	})
+
+	It("UT-AF-052-009: filters by involved_kind when provided", func() {
+		evPod := newUnstructuredEvent("prod", "ev-1", "BackOff", "container crash", "Pod", "web-abc")
+		evDeploy := newUnstructuredEvent("prod", "ev-2", "ScalingReplicaSet", "scaled up", "Deployment", "web")
+		evPod2 := newUnstructuredEvent("prod", "ev-3", "Pulled", "image pulled", "Pod", "web-def")
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{eventsGVRTest: "EventList"}, evPod, evDeploy, evPod2)
+
+		result, err := tools.HandleListEvents(ctx, client, tools.ListEventsArgs{
+			Namespace: "prod",
+			Kind:      "Pod",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Count).To(Equal(2))
+		for _, ev := range result.Events {
+			Expect(ev.InvolvedKind).To(Equal("Pod"))
+		}
+	})
+
+	It("UT-AF-052-010: filters by both reason and involved_kind", func() {
+		ev1 := newUnstructuredEvent("prod", "ev-1", "BackOff", "crash", "Pod", "pod1")
+		ev2 := newUnstructuredEvent("prod", "ev-2", "BackOff", "scale fail", "Deployment", "web")
+		ev3 := newUnstructuredEvent("prod", "ev-3", "Pulled", "ok", "Pod", "pod2")
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{eventsGVRTest: "EventList"}, ev1, ev2, ev3)
+
+		result, err := tools.HandleListEvents(ctx, client, tools.ListEventsArgs{
+			Namespace: "prod",
+			Reason:    "BackOff",
+			Kind:      "Pod",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Count).To(Equal(1))
+		Expect(result.Events[0].InvolvedName).To(Equal("pod1"))
+	})
 })
 
 func newUnstructuredEvent(ns, name, reason, message, involvedKind, involvedName string) *unstructured.Unstructured {

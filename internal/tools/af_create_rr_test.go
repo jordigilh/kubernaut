@@ -157,4 +157,51 @@ var _ = Describe("af_create_rr", func() {
 		}, "user")
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
+
+	It("UT-AF-052-059: invalid severity rejected", func() {
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
+
+		_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
+			Namespace:   "prod",
+			Kind:        "Deployment",
+			Name:        "web",
+			Severity:    "CATASTROPHIC",
+			Description: "bad sev",
+		}, "user")
+		Expect(err).To(MatchError(ContainSubstring("severity must be one of")))
+	})
+
+	It("UT-AF-052-060: valid severity accepted", func() {
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
+
+		result, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
+			Namespace:   "prod",
+			Kind:        "Deployment",
+			Name:        "web",
+			Severity:    "critical",
+			Description: "oom kill",
+		}, "alice")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RRID).NotTo(BeEmpty())
+	})
+
+	It("UT-AF-052-061: empty severity accepted (optional field)", func() {
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
+
+		result, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
+			Namespace:   "prod",
+			Kind:        "Deployment",
+			Name:        "web",
+			Severity:    "",
+			Description: "no sev",
+		}, "alice")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RRID).NotTo(BeEmpty())
+	})
 })

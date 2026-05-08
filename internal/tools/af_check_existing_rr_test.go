@@ -2,6 +2,7 @@ package tools_test
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -139,5 +140,27 @@ var _ = Describe("af_check_existing_rr", func() {
 			}()
 		}
 		wg.Wait()
+	})
+
+	It("UT-AF-052-048: kind with invalid label characters rejected", func() {
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
+
+		_, err := tools.HandleCheckExistingRR(context.Background(), client, tools.CheckExistingRRArgs{
+			Namespace: "prod", Kind: "ns/Deployment", Name: "web",
+		})
+		Expect(err).To(MatchError(ContainSubstring("invalid input")))
+	})
+
+	It("UT-AF-052-049: name with invalid label characters rejected", func() {
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
+
+		_, err := tools.HandleCheckExistingRR(context.Background(), client, tools.CheckExistingRRArgs{
+			Namespace: "prod", Kind: "Deployment", Name: strings.Repeat("a", 64),
+		})
+		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
 })
