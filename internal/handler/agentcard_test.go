@@ -172,7 +172,7 @@ var _ = Describe("Agent Card Handler", func() {
 		_ = json.Unmarshal(rec.Body.Bytes(), &card)
 		capabilities, ok := card["capabilities"].(map[string]any)
 		Expect(ok).To(BeTrue())
-		Expect(capabilities["streaming"]).To(BeTrue())
+		Expect(capabilities["streaming"]).To(BeFalse())
 	})
 
 	It("UT-AF-230-011: card includes protocolVersion", func() {

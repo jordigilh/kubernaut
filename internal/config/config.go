@@ -59,8 +59,10 @@ type LoggingConfig struct {
 
 // RateLimitConfig holds rate limiting thresholds.
 type RateLimitConfig struct {
-	IPRequestsPerSec   int `yaml:"ipRequestsPerSec"`
-	UserRequestsPerSec int `yaml:"userRequestsPerSec"`
+	IPRequestsPerSec      int `yaml:"ipRequestsPerSec"`
+	UserRequestsPerSec    int `yaml:"userRequestsPerSec"`
+	MaxConcurrentSessions int `yaml:"maxConcurrentSessions"`
+	ToolCallsPerMinute    int `yaml:"toolCallsPerMinute"`
 }
 
 // ShutdownConfig holds graceful shutdown parameters.

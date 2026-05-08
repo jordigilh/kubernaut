@@ -12,8 +12,10 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	gobreaker "github.com/sony/gobreaker/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
@@ -197,5 +199,259 @@ func TestResilientDynamicClient_ConcurrentOperations(t *testing.T) {
 
 	if successCount.Load() != 20 {
 		t.Errorf("successes = %d, want 20", successCount.Load())
+	}
+}
+
+func newTestCB() *K8sCircuitBreaker {
+	return NewK8sCircuitBreaker(K8sCBConfig{
+		Name:             "test-ops",
+		MaxRequests:      1,
+		Interval:         10 * time.Second,
+		Timeout:          1 * time.Second,
+		FailureThreshold: 5,
+	})
+}
+
+func testObj(name string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "test.io/v1",
+			"kind":       "Widget",
+			"metadata": map[string]interface{}{
+				"name":      name,
+				"namespace": "default",
+			},
+		},
+	}
+}
+
+func clusterObj(name string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "test.io/v1",
+			"kind":       "Widget",
+			"metadata": map[string]interface{}{
+				"name": name,
+			},
+		},
+	}
+}
+
+// IT-AF-038-085: Cluster-scoped operations route through circuit breaker
+func TestResilientNamespaceableResource_AllOperations(t *testing.T) {
+	cb := newTestCB()
+	fakeClient := newFakeClient()
+	resilientClient := NewResilientDynamicClient(fakeClient, cb)
+	ctx := context.Background()
+
+	res := resilientClient.Resource(testGVR)
+
+	// Create (cluster-scoped object without namespace)
+	created, err := res.Create(ctx, clusterObj("cluster-obj"), metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.GetName() != "cluster-obj" {
+		t.Errorf("Create() name = %q, want %q", created.GetName(), "cluster-obj")
+	}
+
+	// Get
+	got, err := res.Get(ctx, "cluster-obj", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got.GetName() != "cluster-obj" {
+		t.Errorf("Get() name = %q, want %q", got.GetName(), "cluster-obj")
+	}
+
+	// List
+	list, err := res.List(ctx, metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(list.Items) == 0 {
+		t.Error("List() returned empty items")
+	}
+
+	// Update
+	got.Object["spec"] = map[string]interface{}{"color": "blue"}
+	updated, err := res.Update(ctx, got, metav1.UpdateOptions{})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if updated == nil {
+		t.Fatal("Update() returned nil")
+	}
+
+	// UpdateStatus
+	_, err = res.UpdateStatus(ctx, got, metav1.UpdateOptions{})
+	if err != nil {
+		t.Fatalf("UpdateStatus() error = %v", err)
+	}
+
+	// Patch
+	patchData := []byte(`{"metadata":{"labels":{"env":"test"}}}`)
+	patched, err := res.Patch(ctx, "cluster-obj", types.MergePatchType, patchData, metav1.PatchOptions{})
+	if err != nil {
+		t.Fatalf("Patch() error = %v", err)
+	}
+	if patched == nil {
+		t.Fatal("Patch() returned nil")
+	}
+
+	// DeleteCollection
+	err = res.DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("DeleteCollection() error = %v", err)
+	}
+
+	// Recreate for Delete test
+	_, err = res.Create(ctx, clusterObj("del-obj"), metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create() for delete error = %v", err)
+	}
+
+	// Delete
+	err = res.Delete(ctx, "del-obj", metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+
+	// Watch (bypasses CB)
+	w, err := res.Watch(ctx, metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("Watch() error = %v", err)
+	}
+	w.Stop()
+}
+
+// IT-AF-038-086: Namespaced operations — Create, Get, Update, Delete, Patch
+func TestResilientResourceInterface_AllOperations(t *testing.T) {
+	cb := newTestCB()
+	fakeClient := newFakeClient()
+	resilientClient := NewResilientDynamicClient(fakeClient, cb)
+	ctx := context.Background()
+
+	ns := resilientClient.Resource(testGVR).Namespace("default")
+
+	// Create
+	created, err := ns.Create(ctx, testObj("ns-obj"), metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.GetName() != "ns-obj" {
+		t.Errorf("Create() name = %q, want %q", created.GetName(), "ns-obj")
+	}
+
+	// Get
+	got, err := ns.Get(ctx, "ns-obj", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got.GetName() != "ns-obj" {
+		t.Errorf("Get() name = %q, want %q", got.GetName(), "ns-obj")
+	}
+
+	// Update
+	got.Object["spec"] = map[string]interface{}{"version": "2"}
+	updated, err := ns.Update(ctx, got, metav1.UpdateOptions{})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if updated == nil {
+		t.Fatal("Update() returned nil")
+	}
+
+	// UpdateStatus
+	_, err = ns.UpdateStatus(ctx, got, metav1.UpdateOptions{})
+	if err != nil {
+		t.Fatalf("UpdateStatus() error = %v", err)
+	}
+
+	// Patch
+	patchData := []byte(`{"metadata":{"annotations":{"key":"val"}}}`)
+	patched, err := ns.Patch(ctx, "ns-obj", types.MergePatchType, patchData, metav1.PatchOptions{})
+	if err != nil {
+		t.Fatalf("Patch() error = %v", err)
+	}
+	if patched == nil {
+		t.Fatal("Patch() returned nil")
+	}
+
+	// DeleteCollection
+	err = ns.DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("DeleteCollection() error = %v", err)
+	}
+
+	// Recreate for Delete
+	_, err = ns.Create(ctx, testObj("ns-del"), metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create() for delete error = %v", err)
+	}
+
+	// Delete
+	err = ns.Delete(ctx, "ns-del", metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+}
+
+// IT-AF-038-087: All operations fail fast when CB is open
+func TestResilientDynamicClient_AllOpsFailWhenCBOpen(t *testing.T) {
+	cb := NewK8sCircuitBreaker(K8sCBConfig{
+		Name:             "it-k8s-open-all",
+		MaxRequests:      1,
+		Interval:         10 * time.Second,
+		Timeout:          1 * time.Second,
+		FailureThreshold: 2,
+	})
+
+	ctx := context.Background()
+	_ = cb.Execute(ctx, func(_ context.Context) error { return errors.New("fail") })
+	_ = cb.Execute(ctx, func(_ context.Context) error { return errors.New("fail") })
+
+	if cb.State() != gobreaker.StateOpen {
+		t.Fatalf("CB state = %v, want Open", cb.State())
+	}
+
+	fakeClient := newFakeClient()
+	resilientClient := NewResilientDynamicClient(fakeClient, cb)
+	obj := testObj("x")
+
+	// Cluster-scoped
+	res := resilientClient.Resource(testGVR)
+	if _, err := res.Get(ctx, "x", metav1.GetOptions{}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("cluster Get: got %v, want ErrOpenState", err)
+	}
+	if _, err := res.Create(ctx, obj, metav1.CreateOptions{}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("cluster Create: got %v, want ErrOpenState", err)
+	}
+	if _, err := res.Update(ctx, obj, metav1.UpdateOptions{}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("cluster Update: got %v, want ErrOpenState", err)
+	}
+	if err := res.Delete(ctx, "x", metav1.DeleteOptions{}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("cluster Delete: got %v, want ErrOpenState", err)
+	}
+	if _, err := res.Patch(ctx, "x", types.MergePatchType, []byte(`{}`), metav1.PatchOptions{}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("cluster Patch: got %v, want ErrOpenState", err)
+	}
+
+	// Namespaced
+	ns := resilientClient.Resource(testGVR).Namespace("ns")
+	if _, err := ns.Get(ctx, "x", metav1.GetOptions{}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("ns Get: got %v, want ErrOpenState", err)
+	}
+	if _, err := ns.Create(ctx, obj, metav1.CreateOptions{}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("ns Create: got %v, want ErrOpenState", err)
+	}
+	if _, err := ns.Update(ctx, obj, metav1.UpdateOptions{}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("ns Update: got %v, want ErrOpenState", err)
+	}
+	if err := ns.Delete(ctx, "x", metav1.DeleteOptions{}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("ns Delete: got %v, want ErrOpenState", err)
+	}
+	if _, err := ns.Patch(ctx, "x", types.MergePatchType, []byte(`{}`), metav1.PatchOptions{}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("ns Patch: got %v, want ErrOpenState", err)
 	}
 }

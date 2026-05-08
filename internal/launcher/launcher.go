@@ -15,6 +15,7 @@ import (
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
 )
 
 // A2AConfig holds the configuration for the A2A JSON-RPC handler.
@@ -134,10 +135,14 @@ func buildAfterExecuteCallback(log *slog.Logger, auditor audit.Emitter) adka2a.A
 					UserID: username,
 					Detail: map[string]string{
 						"task_id": taskID,
-						"error":   err.Error(),
+						"error":   security.RedactError(err),
 					},
 				})
 			}
+			// Return nil — the framework has already produced the TaskStateFailed
+			// status event. Returning an error here would prevent it from being
+			// written to the client queue (ARCH-3 verification).
+			return nil
 		} else if auditor != nil {
 			auditor.Emit(ctx, &audit.Event{
 				Type:   audit.EventA2ATaskCompleted,

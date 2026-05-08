@@ -20,7 +20,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,6 +30,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	adksession "google.golang.org/adk/session"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -85,11 +85,16 @@ func run() error {
 		return fmt.Errorf("invalid config: %w", err)
 	}
 
+	if cfgLevel, err := parseLogLevel(cfg.Logging.Level); err == nil {
+		level.SetLevel(cfgLevel)
+	}
+
 	logger.Info("configuration loaded",
 		"port", cfg.Server.Port,
 		"mcpEnabled", cfg.MCP.Enabled,
 		"agentCardURL", cfg.AgentCard.URL,
 		"kaBaseURL", cfg.Agent.KABaseURL,
+		"logLevel", cfg.Logging.Level,
 	)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -98,7 +103,7 @@ func run() error {
 	metricsReg := metrics.NewRegistry()
 	auditor := audit.NewLogEmitter(logger)
 
-	authCfg := auth.Config{}
+	authCfg := buildAuthConfig(cfg)
 	if len(authCfg.JWT) == 0 {
 		logger.Error(nil, "no JWT providers configured — all bearer tokens will be rejected unless K8s TokenReview is enabled")
 	}
@@ -107,11 +112,26 @@ func run() error {
 		return fmt.Errorf("create JWT validator: %w", err)
 	}
 
-	rlCfg := ratelimit.DefaultConfig()
-	ipLimiter := ratelimit.NewIPLimiter(rlCfg.PerIP)
+	ipLimiter := ratelimit.NewIPLimiter(ratelimit.PerIPConfig{
+		RequestsPerSecond: float64(cfg.RateLimit.IPRequestsPerSec),
+		Burst:             cfg.RateLimit.IPRequestsPerSec * 2,
+		CleanupInterval:   5 * time.Minute,
+		MaxAge:            10 * time.Minute,
+	})
 	defer ipLimiter.Stop()
-	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
-	defer userLimiter.Stop()
+	maxSessions := cfg.RateLimit.MaxConcurrentSessions
+	if maxSessions <= 0 {
+		maxSessions = 5
+	}
+	toolCallsPM := cfg.RateLimit.ToolCallsPerMinute
+	if toolCallsPM <= 0 {
+		toolCallsPM = 60
+	}
+	userLimiter := ratelimit.NewUserLimiter(ratelimit.PerUserConfig{
+		RequestsPerMinute:     cfg.RateLimit.UserRequestsPerSec * 60,
+		MaxConcurrentSessions: maxSessions,
+		ToolCallsPerMinute:    toolCallsPM,
+	})
 
 	// --- Resilience: KA client ---
 	kaClient := ka.NewClient(ka.Config{
@@ -132,7 +152,8 @@ func run() error {
 	})
 
 	// --- Resilience: DS ogen client ---
-	dsRetryRT := resilience.NewRetryTransport(http.DefaultTransport, &resilience.RetryConfig{
+	dsBaseRT := &requestid.Transport{Base: http.DefaultTransport}
+	dsRetryRT := resilience.NewRetryTransport(dsBaseRT, &resilience.RetryConfig{
 		MaxAttempts:       cfg.Resilience.DS.RetryMax + 1,
 		InitialBackoff:    cfg.Resilience.DS.RetryInitBackoff,
 		MaxBackoff:        cfg.Resilience.DS.RetryMaxBackoff,
@@ -186,6 +207,7 @@ func run() error {
 		K8sClient:     k8sClient,
 		DSClient:      dsClient,
 		KAClient:      kaClient,
+		Auditor:       auditor,
 	}
 	rootAgent, _, err := agentpkg.NewRootAgent(agentCfg)
 	if err != nil {
@@ -197,7 +219,7 @@ func run() error {
 		Agent:          rootAgent,
 		SessionService: sessionSvc,
 		AppName:        "kubernaut-apifrontend",
-		Logger:         slog.Default(),
+		Logger:         logging.NewSlogLogger(level),
 		Auditor:        auditor,
 	})
 	if err != nil {
@@ -249,9 +271,40 @@ func run() error {
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           rootHandler,
+		ReadTimeout:       60 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		// WriteTimeout intentionally omitted (0) for SSE/MCP streaming.
+		// Per-request deadlines enforced via http.ResponseController.SetWriteDeadline().
+	}
+
+	// --- Config hot-reload ---
+	// Hot-reloadable: logging.level
+	// NOT hot-reloadable (require pod restart): rateLimit, auth, resilience,
+	// server.port, agent endpoints, mcp.enabled, agentCard.url
+	watcher, watchErr := config.NewFileWatcher(configPath, func(newContent []byte) error {
+		newCfg, err := config.Load(newContent)
+		if err != nil {
+			return fmt.Errorf("parse: %w", err)
+		}
+		newCfg.ResolveDefaults()
+		if err := newCfg.Validate(); err != nil {
+			return fmt.Errorf("validate: %w", err)
+		}
+		if newLevel, err := parseLogLevel(newCfg.Logging.Level); err == nil {
+			level.SetLevel(newLevel)
+			logger.Info("log level updated via hot-reload", "level", newCfg.Logging.Level)
+		}
+		return nil
+	}, config.WithAuditor(auditor))
+	if watchErr != nil {
+		logger.Error(watchErr, "config hot-reload disabled")
+	} else {
+		if startErr := watcher.Start(ctx); startErr != nil {
+			logger.Error(startErr, "config watcher start failed")
+		} else {
+			defer watcher.Stop()
+		}
 	}
 
 	errCh := make(chan error, 1)
@@ -309,6 +362,26 @@ func buildAuthMiddleware(
 		h = requestid.Middleware(h)
 		return h
 	}
+}
+
+func buildAuthConfig(cfg *config.Config) auth.Config {
+	if cfg.Auth.IssuerURL == "" {
+		return auth.Config{}
+	}
+	return auth.Config{
+		JWT: []auth.ProviderConfig{{
+			Issuer: auth.IssuerConfig{
+				URL:       cfg.Auth.IssuerURL,
+				Audiences: []string{cfg.Auth.Audience},
+			},
+		}},
+	}
+}
+
+func parseLogLevel(s string) (zapcore.Level, error) {
+	var l zapcore.Level
+	err := l.UnmarshalText([]byte(s))
+	return l, err
 }
 
 func buildK8sDynamicClient(cb *resilience.K8sCircuitBreaker, logger logr.Logger) (dynamic.Interface, error) {

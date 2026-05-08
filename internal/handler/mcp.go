@@ -9,6 +9,7 @@ import (
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/httputil"
 )
 
 // MCPToolDef defines a tool to be registered with the MCP server.
@@ -50,7 +51,8 @@ func NewMCPHandler(cfg MCPConfig) (http.Handler, error) { //nolint:gocritic // h
 
 	if !cfg.Enabled {
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, "MCP not enabled", http.StatusNotImplemented)
+			httputil.WriteProblem(w, http.StatusNotImplemented,
+				"Not Implemented", "MCP protocol is disabled in configuration")
 		}), nil
 	}
 

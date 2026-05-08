@@ -34,6 +34,8 @@ const (
 
 	EventConfigReloaded EventType = "config.reloaded"
 	EventConfigRejected EventType = "config.rejected"
+
+	EventRBACDenied EventType = "rbac.denied"
 )
 
 // Event represents a SOC2-compatible audit event.

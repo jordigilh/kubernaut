@@ -19,6 +19,9 @@ func TestReadyz_Returns503WhenOneCheckerFails(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", rec.Code)
 	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Errorf("Content-Type = %q, want application/problem+json", ct)
+	}
 }
 
 // UT-AF-038-063

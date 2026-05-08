@@ -1,6 +1,10 @@
 package handler
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/jordigilh/kubernaut-apifrontend/internal/httputil"
+)
 
 // ReadyChecker is a function that reports whether the service is ready to
 // accept traffic. Multiple checkers can be composed with AllReady.
@@ -29,7 +33,8 @@ func handleHealthz(w http.ResponseWriter, _ *http.Request) {
 func readyzHandler(checker func() bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		if !checker() {
-			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			httputil.WriteProblem(w, http.StatusServiceUnavailable,
+				"Service Unavailable", "one or more dependencies are not ready")
 			return
 		}
 		w.WriteHeader(http.StatusOK)
