@@ -1,0 +1,5 @@
+# .trivyignore — Vulnerability IDs to suppress in Trivy image scanning.
+# Format: one CVE/GHSA ID per line. Add a comment explaining why it is ignored.
+#
+# Example:
+#   CVE-2024-XXXXX  # stdlib fix not yet released; tracked in go1.25.10

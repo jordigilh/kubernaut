@@ -268,12 +268,28 @@ func run() error {
 		return fmt.Errorf("create MCP handler: %w", err)
 	}
 
+	rbacRoles, rbacErr := agentpkg.LoadRBACRoles()
+	if rbacErr != nil {
+		return fmt.Errorf("load RBAC roles: %w", rbacErr)
+	}
+
+	var agentCardRBAC handler.RBACRoles
+	var agentCardGroupMapping handler.GroupMapping
+	if len(rbacRoles) > 0 {
+		agentCardRBAC = handler.RBACRoles(rbacRoles)
+	}
+	if len(cfg.RBAC.GroupMapping) > 0 {
+		agentCardGroupMapping = handler.GroupMapping(cfg.RBAC.GroupMapping)
+	}
+
 	agentCardHandler, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
-		Name:        "kubernaut-apifrontend",
-		Description: "Kubernaut API Frontend agent for Kubernetes incident triage and remediation",
-		URL:         cfg.AgentCard.URL,
-		Version:     "0.1.0",
-		Skills:      handler.DefaultAgentSkills(),
+		Name:         "kubernaut-apifrontend",
+		Description:  "Kubernaut API Frontend agent for Kubernetes incident triage and remediation",
+		URL:          cfg.AgentCard.URL,
+		Version:      "0.1.0",
+		Skills:       handler.DefaultAgentSkills(),
+		RBACRoles:    agentCardRBAC,
+		GroupMapping: agentCardGroupMapping,
 	})
 	if err != nil {
 		return fmt.Errorf("create agent card handler: %w", err)
@@ -313,8 +329,8 @@ func run() error {
 	}
 
 	// --- Config hot-reload ---
-	// Hot-reloadable: logging.level
-	// NOT hot-reloadable (require pod restart): rateLimit, auth, resilience,
+	// Hot-reloadable: logging.level, rateLimit (IP + User via SetLimit/SetBurst)
+	// NOT hot-reloadable (require pod restart): auth, resilience CB thresholds,
 	// server.port, agent endpoints, mcp.enabled, agentCard.url
 	watcher, watchErr := config.NewFileWatcher(configPath, func(newContent []byte) error {
 		newCfg, err := config.Load(newContent)
@@ -329,6 +345,22 @@ func run() error {
 			level.SetLevel(newLevel)
 			logger.Info("log level updated via hot-reload", "level", newCfg.Logging.Level)
 		}
+		ipRPS := float64(newCfg.RateLimit.IPRequestsPerSec)
+		ipBurst := newCfg.RateLimit.IPRequestsPerSec * 2
+		if ipBurst < 1 {
+			ipBurst = 1
+		}
+		ipLimiter.UpdateLimits(ipRPS, ipBurst)
+		userRPM := newCfg.RateLimit.UserRequestsPerSec * 60
+		userLimiter.UpdateRequestRate(userRPM)
+		if newCfg.RateLimit.ToolCallsPerMinute > 0 {
+			userLimiter.UpdateToolRate(newCfg.RateLimit.ToolCallsPerMinute)
+		}
+		logger.Info("rate limits updated via hot-reload",
+			"ipRPS", ipRPS,
+			"userRPM", userRPM,
+			"toolCallsPM", newCfg.RateLimit.ToolCallsPerMinute,
+		)
 		return nil
 	}, config.WithAuditor(auditor))
 	if watchErr != nil {

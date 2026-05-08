@@ -63,6 +63,18 @@ func (l *IPLimiter) Allow(ip string) bool {
 	return entry.limiter.Allow()
 }
 
+// UpdateLimits adjusts the rate and burst for all existing and future IP entries.
+func (l *IPLimiter) UpdateLimits(rps float64, burst int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.cfg.RequestsPerSecond = rps
+	l.cfg.Burst = burst
+	for _, entry := range l.limiters {
+		entry.limiter.SetLimit(rate.Limit(rps))
+		entry.limiter.SetBurst(burst)
+	}
+}
+
 // Stop halts the background cleanup goroutine.
 func (l *IPLimiter) Stop() {
 	l.stopOnce.Do(func() { close(l.stopCh) })
@@ -122,6 +134,30 @@ func NewUserLimiter(cfg PerUserConfig) *UserLimiter {
 	}
 	go l.cleanup()
 	return l
+}
+
+// UpdateRequestRate adjusts the per-user request rate limit for all entries.
+func (l *UserLimiter) UpdateRequestRate(requestsPerMinute int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.cfg.RequestsPerMinute = requestsPerMinute
+	rps := rate.Limit(float64(requestsPerMinute) / 60.0)
+	for _, e := range l.requests {
+		e.limiter.SetLimit(rps)
+		e.limiter.SetBurst(requestsPerMinute)
+	}
+}
+
+// UpdateToolRate adjusts the per-user tool call rate limit for all entries.
+func (l *UserLimiter) UpdateToolRate(toolCallsPerMinute int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.cfg.ToolCallsPerMinute = toolCallsPerMinute
+	rps := rate.Limit(float64(toolCallsPerMinute) / 60.0)
+	for _, e := range l.tools {
+		e.limiter.SetLimit(rps)
+		e.limiter.SetBurst(toolCallsPerMinute)
+	}
 }
 
 // Stop halts the background cleanup goroutine.
