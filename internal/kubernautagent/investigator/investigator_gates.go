@@ -24,9 +24,9 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 func (inv *Investigator) sameKindValidationGate(
@@ -138,6 +138,164 @@ func (inv *Investigator) sameKindValidationGate(
 		"retry_target", retryResult.RemediationTarget.Kind+"/"+retryResult.RemediationTarget.Name,
 		"correlation_id", correlationID)
 	return retryResult
+}
+
+// apiVersionValidationGate rejects ambiguous kinds missing api_version (Issue #1044).
+// When the LLM's remediation_target.kind exists in multiple API groups (e.g.
+// Subscription in operators.coreos.com and messaging.knative.dev) but api_version
+// is empty, the gate injects a correction message naming the conflicting groups
+// and retries once. On exhaustion, sets HumanReviewNeeded=true to prevent incorrect
+// RBAC grants from resolving to the wrong API group.
+func (inv *Investigator) apiVersionValidationGate(
+	ctx context.Context,
+	result *katypes.InvestigationResult,
+	history []llm.Message,
+	tokens *TokenAccumulator,
+	correlationID string,
+	client llm.Client,
+	modelName string,
+	runtimeParams llm.RuntimeParams,
+) *katypes.InvestigationResult {
+	if inv.scopeResolver == nil {
+		return result
+	}
+	kind := result.RemediationTarget.Kind
+	if kind == "" {
+		return result
+	}
+	if result.RemediationTarget.APIVersion != "" {
+		return result
+	}
+
+	ambiguous, gvrs, err := inv.scopeResolver.IsAmbiguousKind(kind)
+	if err != nil {
+		inv.logger.Error(err, "apiVersionValidationGate: IsAmbiguousKind failed, skipping gate",
+			"kind", kind, "correlation_id", correlationID)
+		return result
+	}
+	if !ambiguous {
+		return result
+	}
+
+	groupNames := make([]string, 0, len(gvrs))
+	seen := make(map[string]struct{})
+	for _, gvr := range gvrs {
+		if _, ok := seen[gvr.Group]; !ok {
+			groupNames = append(groupNames, gvr.Group)
+			seen[gvr.Group] = struct{}{}
+		}
+	}
+	groupList := strings.Join(groupNames, ", ")
+
+	inv.logger.Info("apiVersionValidationGate triggered: ambiguous kind missing api_version",
+		"kind", kind, "conflicting_groups", groupList, "correlation_id", correlationID)
+
+	gateEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+	gateEvent.EventAction = audit.ActionAPIVersionGate
+	gateEvent.EventOutcome = audit.OutcomeSuccess
+	gateEvent.Data["model"] = modelName
+	gateEvent.Data["prompt_length"] = 0
+	gateEvent.Data["prompt_preview"] = ""
+	gateEvent.Data["ambiguous_kind"] = kind
+	gateEvent.Data["conflicting_groups"] = groupList
+	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
+
+	correctionMsg := fmt.Sprintf(
+		`Your remediation_target.kind is %q, which exists in multiple API groups: %s. `+
+			`Without an explicit api_version, the system cannot determine the correct API group `+
+			`and may grant RBAC permissions to the wrong resource. `+
+			`You MUST re-submit your result with the api_version field set to the correct `+
+			`"group/version" (e.g. "operators.coreos.com/v1alpha1"). `+
+			`Review your investigation context (kubectl_describe output) to determine which `+
+			`API group the target %s/%s belongs to.`,
+		kind, groupList, kind, result.RemediationTarget.Name,
+	)
+
+	submitOnlyTools := []llm.ToolDefinition{
+		{
+			Name:        SubmitResultToolName,
+			Description: "Submit root cause analysis result.",
+			Parameters:  parser.RCAResultSchema(),
+		},
+	}
+
+	retryMessages := make([]llm.Message, len(history))
+	copy(retryMessages, history)
+	retryMessages = append(retryMessages,
+		llm.Message{Role: "user", Content: correctionMsg},
+	)
+
+	resp, retryErr := llm.ChatWithParams(ctx, client, llm.ChatRequest{
+		Messages: retryMessages,
+		Tools:    submitOnlyTools,
+		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
+	}, runtimeParams)
+	if retryErr != nil {
+		inv.logger.Error(retryErr, "apiVersionValidationGate: retry failed, triggering human review",
+			"kind", kind, "correlation_id", correlationID)
+		return inv.apiVersionGateExhaustion(result, groupList, kind, correlationID, gateEvent)
+	}
+	if tokens != nil {
+		tokens.Add(resp.Usage)
+	}
+
+	var retryContent string
+	for _, tc := range resp.ToolCalls {
+		if tc.Name == SubmitResultToolName {
+			retryContent = tc.Arguments
+			break
+		}
+	}
+	if retryContent == "" && resp.Message.Content != "" {
+		retryContent = resp.Message.Content
+	}
+	if retryContent == "" {
+		inv.logger.Info("apiVersionValidationGate: empty retry response, triggering human review",
+			"correlation_id", correlationID)
+		return inv.apiVersionGateExhaustion(result, groupList, kind, correlationID, gateEvent)
+	}
+
+	retryResult, parseErr := inv.resultParser.Parse(retryContent)
+	if parseErr != nil {
+		inv.logger.Error(parseErr, "apiVersionValidationGate: retry parse failed, triggering human review",
+			"correlation_id", correlationID)
+		return inv.apiVersionGateExhaustion(result, groupList, kind, correlationID, gateEvent)
+	}
+
+	if retryResult.RemediationTarget.APIVersion == "" {
+		inv.logger.Info("apiVersionValidationGate: retry still missing api_version, triggering human review",
+			"kind", kind, "correlation_id", correlationID)
+		return inv.apiVersionGateExhaustion(result, groupList, kind, correlationID, gateEvent)
+	}
+
+	gateEvent.Data["retry_outcome"] = "resolved"
+	// Clear parser-set HumanReviewNeeded from the retry result. The gate's
+	// decision is authoritative: if the retry provided api_version, the
+	// pipeline should continue to workflow selection, not abort.
+	retryResult.HumanReviewNeeded = false
+	retryResult.HumanReviewReason = ""
+	inv.logger.Info("apiVersionValidationGate: retry provided api_version, accepted",
+		"kind", kind,
+		"api_version", retryResult.RemediationTarget.APIVersion,
+		"correlation_id", correlationID)
+	return retryResult
+}
+
+func (inv *Investigator) apiVersionGateExhaustion(
+	result *katypes.InvestigationResult,
+	groupList, kind, correlationID string,
+	gateEvent *audit.AuditEvent,
+) *katypes.InvestigationResult {
+	gateEvent.Data["retry_outcome"] = "exhausted"
+	result.HumanReviewNeeded = true
+	result.HumanReviewReason = "rca_incomplete"
+	result.Warnings = append(result.Warnings,
+		fmt.Sprintf("apiVersionValidationGate: kind %q is ambiguous (API groups: %s) "+
+			"but LLM did not provide api_version after retry — human review required to prevent "+
+			"incorrect RBAC grants", kind, groupList))
+	inv.logger.Info("apiVersionValidationGate: exhausted, human review required",
+		"kind", kind, "conflicting_groups", groupList, "correlation_id", correlationID)
+	return result
 }
 
 func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator) {

@@ -362,3 +362,23 @@ func (r *mapperScopeResolver) IsClusterScoped(kind string) (bool, error) {
 	}
 	return mapping.Scope.Name() != meta.RESTScopeNameNamespace, nil
 }
+
+// IsAmbiguousKind returns true when more than one API group defines resources
+// for the given kind, along with all matching GVRs. This indicates a CRD kind
+// collision where the REST mapper cannot resolve a unique GVR without an
+// explicit apiVersion. Issue #1044.
+func (r *mapperScopeResolver) IsAmbiguousKind(kind string) (bool, []schema.GroupVersionResource, error) {
+	plural := strings.ToLower(kind) + "s"
+	gvrs, err := r.mapper.ResourcesFor(schema.GroupVersionResource{Resource: plural})
+	if err != nil {
+		if meta.IsNoMatchError(err) {
+			return false, nil, nil
+		}
+		return false, nil, err
+	}
+	groups := make(map[string]struct{})
+	for _, gvr := range gvrs {
+		groups[gvr.Group] = struct{}{}
+	}
+	return len(groups) > 1, gvrs, nil
+}
