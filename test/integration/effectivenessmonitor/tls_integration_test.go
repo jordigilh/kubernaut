@@ -132,9 +132,9 @@ var _ = Describe("TLS Integration (Issue #452, BR-EM-002, BR-EM-003)", Label("tl
 
 		// Wrap the TLS transport with a bearer token injector to verify that
 		// layered transports (TLS base + auth wrapper) deliver the token header
-		// over HTTPS. In production, auth.NewServiceAccountTransportWithBase
-		// provides this; here we use a test double because AuthTransport.tokenPath
-		// is unexported and reads from the SA filesystem.
+		// over HTTPS. In production, auth.NewAuthTransport(auth.NewDefaultTokenSource(), base)
+		// provides this; here we use a test double because TokenSource reads from
+		// the SA filesystem.
 		httpClient.Transport = &tokenInjectTransport{
 			base:  httpClient.Transport,
 			token: "test-bearer-token-452",

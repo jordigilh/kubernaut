@@ -55,18 +55,22 @@ var _ = Describe("Audit Error Types (GAP-11)", func() {
 			Expect(err.Is5xxError()).To(BeFalse())
 		})
 
-		It("should NOT be retryable for 401 Unauthorized", func() {
+		// UT-AE-1056-001: 401 is retryable (auth errors are transient when using file-based token rotation)
+		It("UT-AE-1056-001: should be retryable for 401 Unauthorized", func() {
 			err := audit.NewHTTPError(401, "Unauthorized")
 
-			Expect(err.IsRetryable()).To(BeFalse())
+			Expect(err.IsRetryable()).To(BeTrue(), "401 auth errors should be retryable (#1056)")
 			Expect(err.Is4xxError()).To(BeTrue())
+			Expect(err.IsAuthError()).To(BeTrue())
 		})
 
-		It("should NOT be retryable for 403 Forbidden", func() {
+		// UT-AE-1056-002: 403 is retryable (auth errors are transient when using file-based token rotation)
+		It("UT-AE-1056-002: should be retryable for 403 Forbidden", func() {
 			err := audit.NewHTTPError(403, "Forbidden")
 
-			Expect(err.IsRetryable()).To(BeFalse())
+			Expect(err.IsRetryable()).To(BeTrue(), "403 auth errors should be retryable (#1056)")
 			Expect(err.Is4xxError()).To(BeTrue())
+			Expect(err.IsAuthError()).To(BeTrue())
 		})
 
 		It("should NOT be retryable for 404 Not Found", func() {
@@ -266,6 +270,70 @@ var _ = Describe("Audit Error Types (GAP-11)", func() {
 			wrappedErr := fmt.Errorf("server error: %w", innerErr)
 
 			Expect(audit.Is5xxError(wrappedErr)).To(BeTrue())
+		})
+	})
+
+	Context("IsAuthError (#1056)", func() {
+		// UT-AE-1056-005: IsAuthError returns true for 401
+		It("UT-AE-1056-005: should return true for 401 Unauthorized", func() {
+			err := audit.NewHTTPError(401, "Unauthorized")
+			Expect(err.IsAuthError()).To(BeTrue())
+		})
+
+		// UT-AE-1056-006: IsAuthError returns true for 403
+		It("UT-AE-1056-006: should return true for 403 Forbidden", func() {
+			err := audit.NewHTTPError(403, "Forbidden")
+			Expect(err.IsAuthError()).To(BeTrue())
+		})
+
+		// UT-AE-1056-007: IsAuthError returns false for 400
+		It("UT-AE-1056-007: should return false for 400 Bad Request", func() {
+			err := audit.NewHTTPError(400, "Bad Request")
+			Expect(err.IsAuthError()).To(BeFalse())
+		})
+
+		// UT-AE-1056-008: IsAuthError returns false for 500
+		It("UT-AE-1056-008: should return false for 500 Internal Server Error", func() {
+			err := audit.NewHTTPError(500, "Internal Server Error")
+			Expect(err.IsAuthError()).To(BeFalse())
+		})
+	})
+
+	Context("IsAuthError package-level helper (#1056)", func() {
+		// UT-AE-1056-009: Package-level IsAuthError with wrapped 401 error
+		It("UT-AE-1056-009: should return true for wrapped 401 error", func() {
+			innerErr := audit.NewHTTPError(401, "Unauthorized")
+			wrappedErr := fmt.Errorf("DS call failed: %w", innerErr)
+
+			Expect(audit.IsAuthError(wrappedErr)).To(BeTrue())
+		})
+
+		It("should return false for wrapped 400 error", func() {
+			innerErr := audit.NewHTTPError(400, "Bad Request")
+			wrappedErr := fmt.Errorf("DS call failed: %w", innerErr)
+
+			Expect(audit.IsAuthError(wrappedErr)).To(BeFalse())
+		})
+
+		It("should return false for non-HTTP errors", func() {
+			err := audit.NewNetworkError(errors.New("timeout"))
+			Expect(audit.IsAuthError(err)).To(BeFalse())
+		})
+
+		It("should return false for nil error", func() {
+			Expect(audit.IsAuthError(nil)).To(BeFalse())
+		})
+
+		// UT-AE-1056-003: Regression guard - 400 remains non-retryable
+		It("UT-AE-1056-003: 400 should remain non-retryable", func() {
+			err := audit.NewHTTPError(400, "Bad Request")
+			Expect(err.IsRetryable()).To(BeFalse(), "400 must NOT be retryable")
+		})
+
+		// UT-AE-1056-004: Regression guard - 422 remains non-retryable
+		It("UT-AE-1056-004: 422 should remain non-retryable", func() {
+			err := audit.NewHTTPError(422, "Unprocessable Entity")
+			Expect(err.IsRetryable()).To(BeFalse(), "422 must NOT be retryable")
 		})
 	})
 })

@@ -20,7 +20,10 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/go-logr/logr"
 )
 
 // ========================================
@@ -43,9 +46,17 @@ import (
 //
 // Production/E2E (ServiceAccount token from filesystem):
 //
-//	transport := auth.NewServiceAccountTransport()
+//	ts := auth.NewDefaultTokenSource()
+//	transport := auth.NewAuthTransport(ts, http.DefaultTransport)
 //	httpClient := &http.Client{Transport: transport}
 //	dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
+//
+// Shared cache (kubernaut-agent: DS client + audit store share one cache):
+//
+//	ts := auth.NewTokenSource(cfg.SATokenPath)
+//	dsTransport := auth.NewAuthTransport(ts, dsBase)
+//	auditTransport := auth.NewAuthTransport(ts, auditBase)
+//	// A 401 on either transport invalidates the cache for both.
 //
 // Integration Tests (Mock user header, no oauth-proxy):
 //
@@ -54,24 +65,132 @@ import (
 //	httpClient := &http.Client{Transport: transport}
 //	dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
 //
-// E2E Tests: Use SAME ServiceAccount transport as production (run tests in pods with mounted tokens)
+// E2E Tests: Use SAME transport as production (run tests in pods with mounted tokens)
 //
 // Authority: DD-AUTH-005 (Authoritative client authentication pattern)
 // Related: DD-AUTH-004 (OAuth-proxy sidecar), DD-HAPI-003 (OpenAPI client mandatory)
 // ========================================
 
-// AuthTransport is an http.RoundTripper that handles authentication for DataStorage API calls.
+const (
+	defaultTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	tokenCacheTTL    = 5 * time.Minute
+)
+
+// TokenSource owns the SA token file path and a thread-safe in-memory cache.
+// Multiple AuthTransport instances can share a single TokenSource so that a
+// 401-triggered cache invalidation on one transport immediately benefits all
+// others reading from the same projected volume.
+//
+// Cache strategy:
+//  1. Check cache with read lock (fast path for cache hits)
+//  2. If cache miss or expired, acquire write lock
+//  3. Double-check after acquiring write lock (avoid thundering herd)
+//  4. Read token from filesystem
+//  5. Update cache
+//
+// Thread Safety: All methods are safe for concurrent use.
+type TokenSource struct {
+	tokenPath       string
+	tokenCache      string
+	tokenCacheTime  time.Time
+	tokenCacheMutex sync.RWMutex
+
+	// Writes use atomic.AddInt64 (under tokenCacheMutex for cache consistency).
+	// Reads use atomic.LoadInt64 (no mutex needed — atomics are self-synchronizing).
+	tokenInvalidationCount int64
+
+	logger         logr.Logger
+	lastReadFailed bool
+}
+
+// NewTokenSource creates a TokenSource that reads SA tokens from the given path.
+// Use NewDefaultTokenSource for the standard Kubernetes projected volume path.
+func NewTokenSource(path string) *TokenSource {
+	return &TokenSource{tokenPath: path, logger: logr.Discard()}
+}
+
+// SetLogger configures a logger for token lifecycle events (cache invalidation,
+// file read failures, recovery). By default, TokenSource uses logr.Discard().
+// Callers in cmd/ can wire a real logger for SRE observability.
+func (ts *TokenSource) SetLogger(l logr.Logger) {
+	ts.logger = l
+}
+
+// NewDefaultTokenSource creates a TokenSource for the standard Kubernetes
+// projected volume at /var/run/secrets/kubernetes.io/serviceaccount/token.
+func NewDefaultTokenSource() *TokenSource {
+	return NewTokenSource(defaultTokenPath)
+}
+
+// Token returns the cached SA token, re-reading from disk when the cache has
+// expired (5-minute TTL) or been invalidated.
+func (ts *TokenSource) Token() string {
+	ts.tokenCacheMutex.RLock()
+	if time.Since(ts.tokenCacheTime) < tokenCacheTTL && ts.tokenCache != "" {
+		cached := ts.tokenCache
+		ts.tokenCacheMutex.RUnlock()
+		return cached
+	}
+	ts.tokenCacheMutex.RUnlock()
+
+	ts.tokenCacheMutex.Lock()
+	defer ts.tokenCacheMutex.Unlock()
+
+	// Double-check after acquiring write lock (another goroutine may have refreshed)
+	if time.Since(ts.tokenCacheTime) < tokenCacheTTL && ts.tokenCache != "" {
+		return ts.tokenCache
+	}
+
+	tokenBytes, err := os.ReadFile(ts.tokenPath)
+	if err != nil {
+		ts.lastReadFailed = true
+		ts.logger.V(1).Info("token file read failed, requests will proceed without auth",
+			"path", ts.tokenPath, "error", err)
+		return ""
+	}
+
+	if ts.lastReadFailed {
+		ts.logger.Info("token file recovered, auth resumed",
+			"path", ts.tokenPath)
+		ts.lastReadFailed = false
+	}
+
+	ts.tokenCache = string(tokenBytes)
+	ts.tokenCacheTime = time.Now()
+	return ts.tokenCache
+}
+
+// Invalidate zeroes the cache timestamp so the next Token() call re-reads from
+// disk. Called by AuthTransport when a downstream 401 indicates credential expiry.
+//
+// Safe to call concurrently — redundant invalidations are benign.
+func (ts *TokenSource) Invalidate() {
+	ts.tokenCacheMutex.Lock()
+	defer ts.tokenCacheMutex.Unlock()
+	ts.tokenCacheTime = time.Time{}
+	count := atomic.AddInt64(&ts.tokenInvalidationCount, 1)
+	ts.logger.V(1).Info("token cache invalidated due to 401 response",
+		"path", ts.tokenPath, "invalidation_count", count)
+}
+
+// InvalidationCount returns the number of times the cache was invalidated
+// due to a 401 response. Useful for Prometheus metrics and testing.
+func (ts *TokenSource) InvalidationCount() int64 {
+	return atomic.LoadInt64(&ts.tokenInvalidationCount)
+}
+
+// AuthTransport is an http.RoundTripper that injects a Bearer token from a
+// shared TokenSource into every outgoing request.
 //
 // Behavior:
-// - Reads token from /var/run/secrets/kubernetes.io/serviceaccount/token
-// - Used by: ALL services in production, E2E, and integration (with mounted tokens)
-// - Injects: Authorization: Bearer <token>
-// - Caching: 5-minute cache to avoid filesystem reads on every request
-// - Graceful degradation: If token file missing, request proceeds without auth
+//   - Reads token via TokenSource (5-minute cache + 401 invalidation)
+//   - Injects: Authorization: Bearer <token>
+//   - 401 cache invalidation: When downstream returns 401 Unauthorized, the
+//     TokenSource cache is immediately invalidated so the next request (from
+//     this or any other transport sharing the same TokenSource) re-reads from disk.
+//   - Graceful degradation: If token file missing, request proceeds without auth
 //
-// Thread Safety:
-// - RoundTrip() is thread-safe (clones request, no shared state mutation)
-// - Token caching uses sync.RWMutex for concurrent access
+// Thread Safety: RoundTrip() is thread-safe (clones request, TokenSource uses sync.RWMutex).
 //
 // DD-AUTH-005: This transport enables all 7 Go services to authenticate with
 // DataStorage without modifying the OpenAPI-generated client code.
@@ -79,114 +198,54 @@ import (
 // ZERO TEST LOGIC: This production code contains no test-specific modes.
 // For integration tests (mock user headers), use internal/mocks.NewMockUserTransport().
 type AuthTransport struct {
-	base      http.RoundTripper
-	tokenPath string
-
-	// Token caching
-	tokenCache      string
-	tokenCacheTime  time.Time
-	tokenCacheMutex sync.RWMutex
+	base        http.RoundTripper
+	tokenSource *TokenSource
 }
 
-// NewServiceAccountTransport creates a transport that reads tokens from the ServiceAccount filesystem.
-// Used by services in E2E/Production environments.
-//
-// Token Path: /var/run/secrets/kubernetes.io/serviceaccount/token
-// Caching: 5-minute cache to reduce filesystem reads
-// Injects: Authorization: Bearer <token>
-//
-// Usage:
-//
-//	transport := auth.NewServiceAccountTransport()
-//	httpClient := &http.Client{Transport: transport}
-//	dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
-//
-// DD-AUTH-005: This is the PRIMARY transport for production and E2E services.
-// All 7 Go services use this via audit.NewOpenAPIClientAdapter().
-func NewServiceAccountTransport() *AuthTransport {
-	return NewServiceAccountTransportWithBase(http.DefaultTransport)
-}
-
-// NewServiceAccountTransportWithBase creates a ServiceAccount transport with custom base transport.
-// Useful for testing or custom transport configuration (e.g., custom timeouts, TLS).
-func NewServiceAccountTransportWithBase(base http.RoundTripper) *AuthTransport {
+// NewAuthTransport creates an AuthTransport that reads tokens from the given
+// TokenSource and delegates HTTP calls to the given base RoundTripper.
+// If base is nil, http.DefaultTransport is used.
+func NewAuthTransport(ts *TokenSource, base http.RoundTripper) *AuthTransport {
 	if base == nil {
 		base = http.DefaultTransport
 	}
 	return &AuthTransport{
-		base:      base,
-		tokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token",
+		base:        base,
+		tokenSource: ts,
 	}
 }
 
 // RoundTrip implements http.RoundTripper.
-// Injects authentication headers based on the transport mode before forwarding the request.
+// Injects the Bearer token from the shared TokenSource before forwarding.
 //
 // Thread Safety: Safe for concurrent use (clones request to avoid mutation).
 //
-// DD-AUTH-005: This method is called automatically by the http.Client for every request.
-// Services using the OpenAPI-generated client don't need to know about authentication.
+// DD-AUTH-005: Called automatically by http.Client for every request.
 func (t *AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Clone request to avoid mutating original
-	// CRITICAL: http.RoundTripper must NOT modify the original request
 	reqClone := req.Clone(req.Context())
 
-	// Read token from filesystem (with 5-minute caching)
-	token := t.getServiceAccountToken()
+	token := t.tokenSource.Token()
 	if token != "" {
 		reqClone.Header.Set("Authorization", "Bearer "+token)
 	}
-	// Note: If token file doesn't exist, request proceeds without auth
-	// This allows services to start before ServiceAccount token is mounted
-	// Also allows local development without Kubernetes
 
-	return t.base.RoundTrip(reqClone)
+	resp, err := t.base.RoundTrip(reqClone)
+	if err == nil && resp.StatusCode == http.StatusUnauthorized {
+		// #1055: Only 401 triggers cache invalidation, NOT 403. Rationale:
+		// - 401 (Unauthorized) = credential expired/invalid → re-reading the
+		//   rotated token from disk will fix it.
+		// - 403 (Forbidden) = valid credential but insufficient permissions →
+		//   re-reading the same token won't help; the issue is RBAC, not expiry.
+		// The audit layer (pkg/audit/errors.go) retries both 401 and 403 because
+		// RBAC propagation delays can cause transient 403s, but the transport
+		// only refreshes credentials on 401.
+		t.tokenSource.Invalidate()
+	}
+	return resp, err
 }
 
-// getServiceAccountToken retrieves the ServiceAccount token with 5-minute caching.
-// Reduces filesystem reads from every request to once per 5 minutes.
-//
-// Thread Safety: Uses sync.RWMutex for concurrent access.
-//
-// Cache Strategy:
-// 1. Check cache with read lock (fast path for cache hits)
-// 2. If cache miss or expired, acquire write lock
-// 3. Double-check cache after acquiring write lock (avoid race)
-// 4. Read token from filesystem
-// 5. Update cache
-//
-// DD-AUTH-005: 5-minute cache balances performance (reduced filesystem I/O)
-// with security (token rotation every 5 minutes).
-func (t *AuthTransport) getServiceAccountToken() string {
-	// Fast path: Check cache with read lock
-	t.tokenCacheMutex.RLock()
-	if time.Since(t.tokenCacheTime) < 5*time.Minute && t.tokenCache != "" {
-		cached := t.tokenCache
-		t.tokenCacheMutex.RUnlock()
-		return cached
-	}
-	t.tokenCacheMutex.RUnlock()
-
-	// Slow path: Cache miss or expired - read from filesystem with write lock
-	t.tokenCacheMutex.Lock()
-	defer t.tokenCacheMutex.Unlock()
-
-	// Double-check after acquiring write lock (another goroutine may have updated cache)
-	if time.Since(t.tokenCacheTime) < 5*time.Minute && t.tokenCache != "" {
-		return t.tokenCache
-	}
-
-	// Read token from filesystem
-	tokenBytes, err := os.ReadFile(t.tokenPath)
-	if err != nil {
-		// Token file doesn't exist or read error
-		// Common during local development or before ServiceAccount is mounted
-		// Return empty string - request proceeds without auth header
-		return ""
-	}
-
-	// Update cache
-	t.tokenCache = string(tokenBytes)
-	t.tokenCacheTime = time.Now()
-	return t.tokenCache
+// TokenInvalidationCount delegates to the underlying TokenSource for backward
+// compatibility with tests that assert on the transport directly.
+func (t *AuthTransport) TokenInvalidationCount() int64 {
+	return t.tokenSource.InvalidationCount()
 }

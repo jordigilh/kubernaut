@@ -20,6 +20,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -91,14 +95,14 @@ var _ = Describe("AuthTransport", func() {
 		})
 	})
 
-	Describe("NewServiceAccountTransport", func() {
+	Describe("NewDefaultTokenSource + NewAuthTransport", func() {
 		// NOTE: "should read token from filesystem" and "should cache token for
 		// 5 minutes" are tested in integration tests with a real filesystem/token.
 		// They do not belong at the unit test tier.
 
 		It("should not inject header if token file doesn't exist", func() {
-			// Create ServiceAccount transport pointing to non-existent file
-			transport := auth.NewServiceAccountTransportWithBase(http.DefaultTransport)
+			ts := auth.NewDefaultTokenSource()
+			transport := auth.NewAuthTransport(ts, http.DefaultTransport)
 			client := &http.Client{Transport: transport}
 
 			// Make request (token file doesn't exist)
@@ -210,6 +214,344 @@ var _ = Describe("AuthTransport", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(string(body)).To(Equal("OK"))
 		})
+	})
+})
+
+// statusRoundTripper returns a configurable status code and tracks requests.
+type statusRoundTripper struct {
+	mu          sync.Mutex
+	statusCode  int32
+	requestLog  []string
+	callCount   int32
+}
+
+func (s *statusRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	atomic.AddInt32(&s.callCount, 1)
+	s.mu.Lock()
+	s.requestLog = append(s.requestLog, req.Header.Get("Authorization"))
+	s.mu.Unlock()
+	code := atomic.LoadInt32(&s.statusCode)
+	return &http.Response{
+		StatusCode: int(code),
+		Header:     http.Header{},
+		Body:       http.NoBody,
+		Request:    req,
+	}, nil
+}
+
+func (s *statusRoundTripper) setStatus(code int) {
+	atomic.StoreInt32(&s.statusCode, int32(code))
+}
+
+func (s *statusRoundTripper) getAuthHeaders() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := make([]string, len(s.requestLog))
+	copy(cp, s.requestLog)
+	return cp
+}
+
+var _ = Describe("NewTokenSource + NewAuthTransport (#1055)", func() {
+	var (
+		tokenDir  string
+		tokenFile string
+	)
+
+	BeforeEach(func() {
+		var err error
+		tokenDir, err = os.MkdirTemp("", "auth-transport-test-*")
+		Expect(err).ToNot(HaveOccurred())
+		tokenFile = filepath.Join(tokenDir, "token")
+	})
+
+	AfterEach(func() {
+		_ = os.RemoveAll(tokenDir)
+	})
+
+	// UT-AT-1055-001: Custom path constructor reads from specified path
+	It("UT-AT-1055-001: should read token from the specified custom path", func() {
+		Expect(os.WriteFile(tokenFile, []byte("custom-token-v1"), 0600)).To(Succeed())
+
+		base := &statusRoundTripper{statusCode: 200}
+		ts := auth.NewTokenSource(tokenFile)
+		transport := auth.NewAuthTransport(ts, base)
+		client := &http.Client{Transport: transport}
+
+		req, err := http.NewRequest("GET", "http://localhost/test", nil)
+		Expect(err).ToNot(HaveOccurred())
+
+		resp, err := client.Do(req)
+		Expect(err).ToNot(HaveOccurred())
+		_ = resp.Body.Close()
+
+		headers := base.getAuthHeaders()
+		Expect(headers).To(HaveLen(1))
+		Expect(headers[0]).To(Equal("Bearer custom-token-v1"))
+	})
+
+	// UT-AT-1055-002: 401 response invalidates token cache
+	It("UT-AT-1055-002: should invalidate token cache when downstream returns 401", func() {
+		Expect(os.WriteFile(tokenFile, []byte("stale-token"), 0600)).To(Succeed())
+
+		base := &statusRoundTripper{statusCode: 200}
+		ts := auth.NewTokenSource(tokenFile)
+		transport := auth.NewAuthTransport(ts, base)
+		client := &http.Client{Transport: transport}
+
+		Expect(transport.TokenInvalidationCount()).To(Equal(int64(0)))
+
+		req1, _ := http.NewRequest("GET", "http://localhost/test", nil)
+		resp1, err := client.Do(req1)
+		Expect(err).ToNot(HaveOccurred())
+		_ = resp1.Body.Close()
+		Expect(resp1.StatusCode).To(Equal(200))
+
+		// Now downstream returns 401 — cache should be invalidated
+		base.setStatus(401)
+		req2, _ := http.NewRequest("GET", "http://localhost/test", nil)
+		resp2, err := client.Do(req2)
+		Expect(err).ToNot(HaveOccurred())
+		_ = resp2.Body.Close()
+		Expect(resp2.StatusCode).To(Equal(401))
+		Expect(transport.TokenInvalidationCount()).To(Equal(int64(1)))
+
+		// Write new token to file (simulating kubelet rotation)
+		Expect(os.WriteFile(tokenFile, []byte("fresh-token"), 0600)).To(Succeed())
+
+		// Next request should re-read from file (cache was invalidated)
+		base.setStatus(200)
+		req3, _ := http.NewRequest("GET", "http://localhost/test", nil)
+		resp3, err := client.Do(req3)
+		Expect(err).ToNot(HaveOccurred())
+		_ = resp3.Body.Close()
+
+		headers := base.getAuthHeaders()
+		Expect(headers).To(HaveLen(3))
+		Expect(headers[0]).To(Equal("Bearer stale-token"))
+		Expect(headers[1]).To(Equal("Bearer stale-token"))
+		Expect(headers[2]).To(Equal("Bearer fresh-token"))
+	})
+
+	// UT-AT-1055-003: Token re-read after invalidation picks up new file content
+	It("UT-AT-1055-003: should pick up rotated token content after 401 invalidation", func() {
+		Expect(os.WriteFile(tokenFile, []byte("token-v1"), 0600)).To(Succeed())
+
+		base := &statusRoundTripper{statusCode: 401}
+		ts := auth.NewTokenSource(tokenFile)
+		transport := auth.NewAuthTransport(ts, base)
+		client := &http.Client{Transport: transport}
+
+		req1, _ := http.NewRequest("GET", "http://localhost/test", nil)
+		_, err := client.Do(req1)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Kubelet writes new token
+		Expect(os.WriteFile(tokenFile, []byte("token-v2"), 0600)).To(Succeed())
+
+		base.setStatus(200)
+		req2, _ := http.NewRequest("GET", "http://localhost/test", nil)
+		resp2, err := client.Do(req2)
+		Expect(err).ToNot(HaveOccurred())
+		_ = resp2.Body.Close()
+
+		headers := base.getAuthHeaders()
+		Expect(headers).To(HaveLen(2))
+		Expect(headers[0]).To(Equal("Bearer token-v1"))
+		Expect(headers[1]).To(Equal("Bearer token-v2"))
+	})
+
+	// UT-AT-1055-004: Non-401 responses do NOT invalidate cache
+	It("UT-AT-1055-004: should NOT invalidate cache for 200 or 500 responses", func() {
+		Expect(os.WriteFile(tokenFile, []byte("cached-token"), 0600)).To(Succeed())
+
+		base := &statusRoundTripper{statusCode: 200}
+		ts := auth.NewTokenSource(tokenFile)
+		transport := auth.NewAuthTransport(ts, base)
+		client := &http.Client{Transport: transport}
+
+		// First request populates cache
+		req1, _ := http.NewRequest("GET", "http://localhost/test", nil)
+		_, _ = client.Do(req1)
+
+		// Write different token (should NOT be picked up — cache still valid)
+		Expect(os.WriteFile(tokenFile, []byte("different-token"), 0600)).To(Succeed())
+
+		// 200 response — cache should remain
+		req2, _ := http.NewRequest("GET", "http://localhost/test", nil)
+		_, _ = client.Do(req2)
+
+		// 500 response — cache should still remain
+		base.setStatus(500)
+		req3, _ := http.NewRequest("GET", "http://localhost/test", nil)
+		_, _ = client.Do(req3)
+
+		headers := base.getAuthHeaders()
+		Expect(headers).To(HaveLen(3))
+		for _, h := range headers {
+			Expect(h).To(Equal("Bearer cached-token"),
+				"Non-401 responses must not invalidate cache")
+		}
+	})
+
+	// UT-AT-1055-005: Concurrent RoundTrip under 401 storm
+	It("UT-AT-1055-005: should handle concurrent 401 storm without races", func() {
+		Expect(os.WriteFile(tokenFile, []byte("concurrent-token"), 0600)).To(Succeed())
+
+		base := &statusRoundTripper{statusCode: 401}
+		ts := auth.NewTokenSource(tokenFile)
+		transport := auth.NewAuthTransport(ts, base)
+		client := &http.Client{Transport: transport}
+
+		const numGoroutines = 20
+		var wg sync.WaitGroup
+		var errCount int32
+
+		for i := 0; i < numGoroutines; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				req, _ := http.NewRequest("GET", "http://localhost/test", nil)
+				resp, err := client.Do(req)
+				if err != nil {
+					atomic.AddInt32(&errCount, 1)
+					return
+				}
+				_ = resp.Body.Close()
+			}()
+		}
+
+		wg.Wait()
+		Expect(atomic.LoadInt32(&errCount)).To(Equal(int32(0)),
+			"All concurrent requests should complete without error")
+		Expect(int(atomic.LoadInt32(&base.callCount))).To(Equal(numGoroutines))
+	})
+
+	Context("nil/zero edge cases", func() {
+		It("should use http.DefaultTransport when base is nil", func() {
+			Expect(os.WriteFile(tokenFile, []byte("nil-base-token"), 0600)).To(Succeed())
+			ts := auth.NewTokenSource(tokenFile)
+			transport := auth.NewAuthTransport(ts, nil)
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("X-Echo-Auth", r.Header.Get("Authorization"))
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+
+			client := &http.Client{Transport: transport}
+			resp, err := client.Get(server.URL)
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
+			Expect(resp.Header.Get("X-Echo-Auth")).To(Equal("Bearer nil-base-token"))
+		})
+
+		It("should degrade gracefully when token file is deleted mid-operation", func() {
+			Expect(os.WriteFile(tokenFile, []byte("initial-token"), 0600)).To(Succeed())
+
+			base := &statusRoundTripper{statusCode: 401}
+			ts := auth.NewTokenSource(tokenFile)
+			transport := auth.NewAuthTransport(ts, base)
+			client := &http.Client{Transport: transport}
+
+			// First request: token exists, gets cached, then 401 invalidates cache
+			req1, _ := http.NewRequest("GET", "http://localhost/test", nil)
+			_, _ = client.Do(req1)
+
+			headers := base.getAuthHeaders()
+			Expect(headers[0]).To(Equal("Bearer initial-token"))
+
+			// Delete the token file (simulates SA volume unmount)
+			Expect(os.Remove(tokenFile)).To(Succeed())
+
+			// Next request: cache invalidated by 401, file gone → empty token → no auth header
+			base.setStatus(200)
+			req2, _ := http.NewRequest("GET", "http://localhost/test", nil)
+			resp2, err := client.Do(req2)
+			Expect(err).ToNot(HaveOccurred())
+			_ = resp2.Body.Close()
+
+			headers = base.getAuthHeaders()
+			Expect(headers).To(HaveLen(2))
+			Expect(headers[1]).To(BeEmpty(),
+				"Deleted token file should result in no auth header (graceful degradation)")
+		})
+
+		It("should handle empty token path gracefully", func() {
+			base := &statusRoundTripper{statusCode: 200}
+			ts := auth.NewTokenSource("")
+			transport := auth.NewAuthTransport(ts, base)
+			client := &http.Client{Transport: transport}
+
+			req, _ := http.NewRequest("GET", "http://localhost/test", nil)
+			resp, err := client.Do(req)
+			Expect(err).ToNot(HaveOccurred())
+			_ = resp.Body.Close()
+
+			headers := base.getAuthHeaders()
+			Expect(headers).To(HaveLen(1))
+			Expect(headers[0]).To(BeEmpty(), "Empty path should result in no auth header")
+		})
+	})
+})
+
+var _ = Describe("Shared TokenSource (#1055 — cache convergence)", func() {
+	var (
+		tokenDir  string
+		tokenFile string
+	)
+
+	BeforeEach(func() {
+		var err error
+		tokenDir, err = os.MkdirTemp("", "shared-ts-test-*")
+		Expect(err).ToNot(HaveOccurred())
+		tokenFile = filepath.Join(tokenDir, "token")
+	})
+
+	AfterEach(func() {
+		_ = os.RemoveAll(tokenDir)
+	})
+
+	// UT-AT-1055-009: Two transports share a TokenSource — 401 on A invalidates cache for B
+	It("UT-AT-1055-009: 401 on transport A should invalidate shared cache for transport B", func() {
+		Expect(os.WriteFile(tokenFile, []byte("token-v1"), 0600)).To(Succeed())
+
+		ts := auth.NewTokenSource(tokenFile)
+
+		baseA := &statusRoundTripper{statusCode: 200}
+		baseB := &statusRoundTripper{statusCode: 200}
+		transportA := auth.NewAuthTransport(ts, baseA)
+		transportB := auth.NewAuthTransport(ts, baseB)
+		clientA := &http.Client{Transport: transportA}
+		clientB := &http.Client{Transport: transportB}
+
+		// Both clients use token-v1 initially
+		reqA1, _ := http.NewRequest("GET", "http://localhost/test", nil)
+		_, _ = clientA.Do(reqA1)
+		reqB1, _ := http.NewRequest("GET", "http://localhost/test", nil)
+		_, _ = clientB.Do(reqB1)
+
+		Expect(baseA.getAuthHeaders()[0]).To(Equal("Bearer token-v1"))
+		Expect(baseB.getAuthHeaders()[0]).To(Equal("Bearer token-v1"))
+
+		// Kubelet rotates the token on disk
+		Expect(os.WriteFile(tokenFile, []byte("token-v2"), 0600)).To(Succeed())
+
+		// Transport A gets a 401 — invalidates the SHARED cache
+		baseA.setStatus(401)
+		reqA2, _ := http.NewRequest("GET", "http://localhost/test", nil)
+		_, _ = clientA.Do(reqA2)
+
+		Expect(ts.InvalidationCount()).To(Equal(int64(1)))
+
+		// Transport B (never saw 401) now picks up token-v2 because shared cache was invalidated
+		reqB2, _ := http.NewRequest("GET", "http://localhost/test", nil)
+		_, _ = clientB.Do(reqB2)
+
+		headersB := baseB.getAuthHeaders()
+		Expect(headersB).To(HaveLen(2))
+		Expect(headersB[0]).To(Equal("Bearer token-v1"))
+		Expect(headersB[1]).To(Equal("Bearer token-v2"),
+			"Transport B should use the fresh token after transport A's 401 invalidated the shared cache")
 	})
 })
 
