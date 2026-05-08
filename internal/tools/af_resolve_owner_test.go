@@ -27,12 +27,14 @@ func newUnstructuredWithOwner(apiVersion, kind, ns, name, ownerKind, ownerName s
 		},
 	}
 	if ownerKind != "" {
-		obj.Object["metadata"].(map[string]interface{})["ownerReferences"] = []interface{}{
-			map[string]interface{}{
-				"kind":       ownerKind,
-				"name":       ownerName,
-				"controller": controller,
-			},
+		if meta, ok := obj.Object["metadata"].(map[string]interface{}); ok {
+			meta["ownerReferences"] = []interface{}{
+				map[string]interface{}{
+					"kind":       ownerKind,
+					"name":       ownerName,
+					"controller": controller,
+				},
+			}
 		}
 	}
 	return obj

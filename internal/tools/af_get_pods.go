@@ -122,7 +122,7 @@ func extractContainerStatuses(obj map[string]interface{}) []ContainerStatus {
 	return result
 }
 
-func parseContainerState(cs map[string]interface{}) (state string, reason string) {
+func parseContainerState(cs map[string]interface{}) (state, reason string) {
 	stateMap, found, _ := unstructured.NestedMap(cs, "state")
 	if !found {
 		return "unknown", ""
