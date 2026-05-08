@@ -38,6 +38,16 @@ func loadDefaultRBAC() (rbacConfig, error) {
 	return defaultRBAC, defaultRBACErr
 }
 
+// LoadRBACRoles returns the embedded RBAC role-to-tools mapping for use by
+// components that need to filter capabilities per persona (e.g., Agent Card).
+func LoadRBACRoles() (map[string][]string, error) {
+	cfg, err := loadDefaultRBAC()
+	if err != nil {
+		return nil, fmt.Errorf("load rbac_roles.yaml: %w", err)
+	}
+	return cfg.Roles, nil
+}
+
 // NewRootAgent creates the ADK root agent with all registered tools.
 // Returns the agent, the full tool list (for RBAC filtering), and any error.
 // The agent is configured without a model (model wiring is deferred to PR5 launcher).

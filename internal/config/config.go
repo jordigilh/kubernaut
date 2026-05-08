@@ -23,6 +23,7 @@ type Config struct {
 	RateLimit  RateLimitConfig  `yaml:"rateLimit"`
 	Shutdown   ShutdownConfig   `yaml:"shutdown"`
 	Resilience ResilienceConfig `yaml:"resilience"`
+	RBAC       RBACConfig       `yaml:"rbac"`
 }
 
 // ResilienceConfig holds per-dependency circuit breaker and retry settings.
@@ -92,6 +93,13 @@ type MCPConfig struct {
 // AgentCardConfig holds the agent card endpoint configuration.
 type AgentCardConfig struct {
 	URL string `yaml:"url"`
+}
+
+// RBACConfig holds RBAC-related configuration for the Agent Card.
+type RBACConfig struct {
+	// GroupMapping maps OIDC group names to AF role keys (defined in rbac_roles.yaml).
+	// When configured, the Agent Card handler uses this to filter skills per caller.
+	GroupMapping map[string]string `yaml:"groupMapping"`
 }
 
 // DefaultConfig returns a Config populated with production defaults.
