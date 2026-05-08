@@ -1,6 +1,8 @@
 package agent_test
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -22,11 +24,11 @@ var _ = Describe("Root Agent", func() {
 			Expect(tools).NotTo(BeEmpty())
 		})
 
-		It("UT-AF-100-002: registers all 14 tools", func() {
+		It("UT-AF-100-002: registers all 20 tools", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(14))
+			Expect(tools).To(HaveLen(20))
 		})
 
 		It("UT-AF-100-003: with nil model config returns error", func() {
@@ -48,7 +50,7 @@ var _ = Describe("Root Agent", func() {
 			}
 		})
 
-		It("UT-AF-100-005: tool names follow kubernaut_ prefix convention", func() {
+		It("UT-AF-100-005: tool names follow naming convention (kubernaut_ or af_ prefix)", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
@@ -57,7 +59,8 @@ var _ = Describe("Root Agent", func() {
 				if t.Name() == "present_decision" {
 					continue
 				}
-				Expect(t.Name()).To(HavePrefix("kubernaut_"), "tool %q missing kubernaut_ prefix", t.Name())
+				hasValidPrefix := strings.HasPrefix(t.Name(), "kubernaut_") || strings.HasPrefix(t.Name(), "af_")
+				Expect(hasValidPrefix).To(BeTrue(), "tool %q missing kubernaut_ or af_ prefix", t.Name())
 			}
 		})
 
@@ -75,7 +78,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(14))
+			Expect(tools).To(HaveLen(20))
 		})
 
 		It("UT-AF-100-008: present_decision is marked IsLongRunning", func() {
@@ -118,7 +121,7 @@ var _ = Describe("Root Agent", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			filtered := agentpkg.FilterToolsByRole("sre", tools)
-			Expect(filtered).To(HaveLen(14))
+			Expect(filtered).To(HaveLen(20))
 
 			filtered = agentpkg.FilterToolsByRole("unknown-role", tools)
 			Expect(filtered).To(BeEmpty())

@@ -143,10 +143,10 @@ var _ = Describe("MCP Protocol Conformance", func() {
 			Expect(ok).To(BeTrue())
 			tools, ok := resultObj["tools"].([]any)
 			Expect(ok).To(BeTrue())
-			Expect(tools).To(HaveLen(14))
+			Expect(tools).To(HaveLen(20))
 		})
 
-		It("UT-AF-042-002: all tool names have kubernaut_ prefix", func() {
+		It("UT-AF-042-002: all tool names have kubernaut_ or af_ prefix", func() {
 			sessionID := initializeSession(mcpHandler)
 			rec := sendWithSession(mcpHandler, sessionID, "tools/list", 2, nil)
 
@@ -160,7 +160,8 @@ var _ = Describe("MCP Protocol Conformance", func() {
 				Expect(ok).To(BeTrue())
 				name, ok := tool["name"].(string)
 				Expect(ok).To(BeTrue())
-				Expect(name).To(HavePrefix("kubernaut_"))
+				hasValid := strings.HasPrefix(name, "kubernaut_") || strings.HasPrefix(name, "af_")
+				Expect(hasValid).To(BeTrue(), "tool %q missing kubernaut_ or af_ prefix", name)
 			}
 		})
 
