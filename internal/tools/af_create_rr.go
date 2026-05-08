@@ -20,6 +20,15 @@ import (
 // maxDescriptionLen is the maximum length for RR description (truncated, not rejected).
 const maxDescriptionLen = 2048
 
+// validSeverities is the allowlist of accepted severity values for RemediationRequests.
+var validSeverities = map[string]bool{
+	"critical": true,
+	"high":     true,
+	"medium":   true,
+	"low":      true,
+	"info":     true,
+}
+
 // CreateRRArgs defines the input for af_create_rr.
 type CreateRRArgs struct {
 	Namespace   string `json:"namespace"`
@@ -37,6 +46,11 @@ type CreateRRResult struct {
 }
 
 // rrCreateGroup provides singleflight deduplication per fingerprint.
+// Dedup is intentionally user-agnostic: concurrent RR creation for the same
+// target resource is deduplicated regardless of which user initiated it.
+// This is acceptable because RR ownership is tracked via labels (reported-by),
+// and the check_existing_rr safety net prevents duplicate CRDs regardless.
+// Note: parallel tests with the same fingerprint may share flights (by design).
 var rrCreateGroup singleflight.Group
 
 func rrFingerprint(namespace, kind, name string) string {
@@ -58,6 +72,9 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 	}
 	if args.Name == "" {
 		return CreateRRResult{}, fmt.Errorf("%w: name must not be empty", ErrInvalidInput)
+	}
+	if args.Severity != "" && !validSeverities[args.Severity] {
+		return CreateRRResult{}, fmt.Errorf("%w: severity must be one of critical, high, medium, low, info", ErrInvalidInput)
 	}
 
 	if len(args.Description) > maxDescriptionLen {

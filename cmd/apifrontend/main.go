@@ -228,10 +228,14 @@ func run() error {
 		return fmt.Errorf("create K8s dynamic client: %w", err)
 	}
 
-	// Impersonating factory for triage tools (SEC-05): reads run as the authenticated user
+	// Impersonating factory for triage tools (SEC-05): reads run as the authenticated user.
+	// Wraps each impersonated client with the shared K8s circuit breaker (SEC-1 review).
 	var triageFactory auth.DynamicClientFactory
 	if restCfg != nil {
-		triageFactory = auth.NewImpersonatingDynamicFactory(restCfg)
+		cbWrapper := auth.ClientWrapper(func(c dynamic.Interface) dynamic.Interface {
+			return resilience.NewResilientDynamicClient(c, k8sCB)
+		})
+		triageFactory = auth.NewImpersonatingDynamicFactory(restCfg, cbWrapper)
 	}
 
 	agentCfg := agentpkg.AgentConfig{

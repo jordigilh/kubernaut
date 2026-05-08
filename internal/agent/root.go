@@ -17,6 +17,7 @@ import (
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/tools"
 )
 
@@ -239,8 +240,29 @@ func FilterToolsByRoles(roles []string, allTools []tool.Tool) []tool.Tool {
 // newMetricsToolCallbacks returns Before/After callbacks that track tool call
 // metrics: af_tool_calls_total (counter) and af_tool_call_duration_seconds (histogram).
 // Safe for concurrent use via sync.Map keyed by FunctionCallID.
+//
+// Leak analysis (SRE-1): entries are removed in `after` via LoadAndDelete. If `after`
+// never runs (panic/cancel), leaked entries are bounded by LLM call rate (typically
+// <100/min). Each entry is 24 bytes (time.Time). Worst case at 100 RPM with 100% loss
+// is ~140KB/day — negligible for a long-running service. A periodic sweep is added as
+// defense-in-depth.
 func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *prometheus.HistogramVec) (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
 	var starts sync.Map
+
+	// Periodic sweep: evict entries older than 5 minutes (abandoned tool calls).
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			cutoff := time.Now().Add(-5 * time.Minute)
+			starts.Range(func(key, value any) bool {
+				if t, ok := value.(time.Time); ok && t.Before(cutoff) {
+					starts.Delete(key)
+				}
+				return true
+			})
+		}
+	}()
 
 	before := func(ctx tool.Context, _ tool.Tool, _ map[string]any) (map[string]any, error) {
 		if toolCalls == nil && toolDuration == nil {
@@ -291,7 +313,7 @@ func newAuditToolCallback(auditor audit.Emitter) llmagent.AfterToolCallback {
 			"result": result,
 		}
 		if toolErr != nil {
-			detail["error"] = toolErr.Error()
+			detail["error"] = security.RedactError(toolErr)
 		}
 		if ns, ok := input["namespace"].(string); ok && ns != "" {
 			detail["namespace"] = ns

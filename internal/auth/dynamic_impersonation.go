@@ -13,11 +13,17 @@ import (
 // the user only sees what their RBAC permits, not the AF ServiceAccount's broader view.
 type DynamicClientFactory func(ctx context.Context) (dynamic.Interface, error)
 
+// ClientWrapper optionally wraps a dynamic.Interface with additional behavior
+// (e.g., circuit breaker). Used by NewImpersonatingDynamicFactory to protect
+// impersonated clients with the shared K8s circuit breaker.
+type ClientWrapper func(dynamic.Interface) dynamic.Interface
+
 // NewImpersonatingDynamicFactory returns a DynamicClientFactory that creates an
 // impersonated dynamic.Interface based on the UserIdentity in the context.
 // If no identity is present, it returns an error (fail-closed).
 // baseCfg is the AF ServiceAccount's rest.Config (never mutated).
-func NewImpersonatingDynamicFactory(baseCfg *rest.Config) DynamicClientFactory {
+// wrappers are applied in order to the raw client (typically circuit breaker).
+func NewImpersonatingDynamicFactory(baseCfg *rest.Config, wrappers ...ClientWrapper) DynamicClientFactory {
 	return func(ctx context.Context) (dynamic.Interface, error) {
 		identity := UserIdentityFromContext(ctx)
 		if identity == nil || identity.Username == "" {
@@ -34,7 +40,11 @@ func NewImpersonatingDynamicFactory(baseCfg *rest.Config) DynamicClientFactory {
 			return nil, fmt.Errorf("creating impersonated dynamic client: %w", err)
 		}
 
-		return client, nil
+		var wrapped dynamic.Interface = client
+		for _, w := range wrappers {
+			wrapped = w(wrapped)
+		}
+		return wrapped, nil
 	}
 }
 
