@@ -143,6 +143,22 @@ func LogLabelOverrideOrRejection(logger logr.Logger, signal katypes.SignalContex
 	}
 }
 
+// ApplySignalLabelOverrides returns a copy of signal with ResourceKind and
+// ResourceName overridden by target_resource_kind / target_resource_name
+// signal labels, when present and valid per FedRAMP SI-10 (isValidK8sIdentifier).
+// The original signal is not modified (value semantics).
+// Issue #1064: used by both SignalToPrompt (LLM prompt) and runWorkflowSelection
+// (tool context) to ensure consistent override application.
+func ApplySignalLabelOverrides(signal katypes.SignalContext) katypes.SignalContext {
+	if trk := signal.SignalLabels["target_resource_kind"]; trk != "" && isValidK8sIdentifier(trk) {
+		signal.ResourceKind = trk
+	}
+	if trn := signal.SignalLabels["target_resource_name"]; trn != "" && isValidK8sIdentifier(trn) {
+		signal.ResourceName = trn
+	}
+	return signal
+}
+
 // SignalToPrompt converts a SignalContext to prompt.SignalData.
 // Issue #1061: when the alert carries explicit target_resource_kind /
 // target_resource_name labels, those override the enrichment-resolved
@@ -150,21 +166,14 @@ func LogLabelOverrideOrRejection(logger logr.Logger, signal katypes.SignalContex
 // remediation target instead of the namespace container.
 // Label values are validated per FedRAMP SI-10 before use.
 func SignalToPrompt(s katypes.SignalContext) prompt.SignalData {
-	resourceKind := s.ResourceKind
-	resourceName := s.ResourceName
-	if trk := s.SignalLabels["target_resource_kind"]; trk != "" && isValidK8sIdentifier(trk) {
-		resourceKind = trk
-	}
-	if trn := s.SignalLabels["target_resource_name"]; trn != "" && isValidK8sIdentifier(trn) {
-		resourceName = trn
-	}
+	overridden := ApplySignalLabelOverrides(s)
 	return prompt.SignalData{
 		Name:                       s.Name,
 		Namespace:                  s.Namespace,
 		Severity:                   s.Severity,
 		Message:                    s.Message,
-		ResourceKind:               resourceKind,
-		ResourceName:               resourceName,
+		ResourceKind:               overridden.ResourceKind,
+		ResourceName:               overridden.ResourceName,
 		ClusterName:                s.ClusterName,
 		Environment:                s.Environment,
 		Priority:                   s.Priority,
