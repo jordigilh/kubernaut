@@ -46,7 +46,7 @@ func loadPrometheusRules() prometheusRuleFile {
 
 var _ = Describe("SLO Conformance — Prometheus Rules", func() {
 	var (
-		prf    prometheusRuleFile
+		prf       prometheusRuleFile
 		pqlParser promparser.Parser
 	)
 
@@ -102,17 +102,17 @@ var _ = Describe("SLO Conformance — Prometheus Rules", func() {
 		// SYNC: update this map when adding/removing metrics in internal/metrics/metrics.go.
 		// Include _bucket suffixes for histograms referenced by prometheus-rules.yaml.
 		knownMetrics := map[string]bool{
-			"af_http_request_duration_seconds":        true,
-			"af_http_request_duration_seconds_bucket": true,
-			"af_http_requests_total":                  true,
-			"af_tool_call_duration_seconds":           true,
-			"af_tool_call_duration_seconds_bucket":    true,
-			"af_circuit_breaker_state":                true,
+			"af_http_request_duration_seconds":              true,
+			"af_http_request_duration_seconds_bucket":       true,
+			"af_http_requests_total":                        true,
+			"af_tool_call_duration_seconds":                 true,
+			"af_tool_call_duration_seconds_bucket":          true,
+			"af_circuit_breaker_state":                      true,
 			"af_downstream_request_duration_seconds":        true,
 			"af_downstream_request_duration_seconds_bucket": true,
-			"af_rate_limit_rejections_total":          true,
-			"af_sse_active_connections":               true,
-			"apifrontend_audit_buffer_overflow_total": true,
+			"af_rate_limit_rejections_total":                true,
+			"af_sse_active_connections":                     true,
+			"apifrontend_audit_buffer_overflow_total":       true,
 			"up": true,
 		}
 

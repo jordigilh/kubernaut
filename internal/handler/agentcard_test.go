@@ -201,8 +201,8 @@ var _ = Describe("Agent Card RBAC Filtering", func() {
 
 	BeforeEach(func() {
 		rbacRoles = handler.RBACRoles{
-			"sre":     {"tool_a", "tool_b", "tool_c"},
-			"cicd":    {"tool_a", "tool_d"},
+			"sre":      {"tool_a", "tool_b", "tool_c"},
+			"cicd":     {"tool_a", "tool_d"},
 			"l3-audit": {"tool_b", "tool_e"},
 		}
 		groupMapping = handler.GroupMapping{
