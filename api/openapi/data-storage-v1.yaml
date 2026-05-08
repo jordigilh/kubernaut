@@ -2480,6 +2480,8 @@ components:
             - $ref: '#/components/schemas/AIAgentInvestigationCancelledPayload'
             - $ref: '#/components/schemas/AIAgentAlignmentStepPayload'
             - $ref: '#/components/schemas/AIAgentAlignmentVerdictPayload'
+            - $ref: '#/components/schemas/ShadowLLMRequestPayload'
+            - $ref: '#/components/schemas/ShadowLLMResponsePayload'
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
             - $ref: '#/components/schemas/EffectivenessAssessmentAuditPayload'
@@ -2585,6 +2587,8 @@ components:
               'aiagent.investigation.cancelled': '#/components/schemas/AIAgentInvestigationCancelledPayload'
               'aiagent.alignment.step': '#/components/schemas/AIAgentAlignmentStepPayload'
               'aiagent.alignment.verdict': '#/components/schemas/AIAgentAlignmentVerdictPayload'
+              'aiagent.shadow.llm.request': '#/components/schemas/ShadowLLMRequestPayload'
+              'aiagent.shadow.llm.response': '#/components/schemas/ShadowLLMResponsePayload'
               'effectiveness.health.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.hash.computed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.alert.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
@@ -5978,6 +5982,88 @@ components:
           type: integer
           minimum: 0
           description: Total number of steps evaluated
+        shadow_prompt_tokens:
+          type: integer
+          minimum: 0
+          description: Total prompt tokens consumed by shadow LLM across all evaluated steps (#1059)
+        shadow_completion_tokens:
+          type: integer
+          minimum: 0
+          description: Total completion tokens consumed by shadow LLM across all evaluated steps (#1059)
+        shadow_total_tokens:
+          type: integer
+          minimum: 0
+          description: Total tokens consumed by shadow LLM across all evaluated steps (#1059)
+
+    ShadowLLMRequestPayload:
+      type: object
+      required: [event_type, event_id, incident_id, step_index, step_kind, prompt_length]
+      description: Shadow agent LLM request event payload (aiagent.shadow.llm.request). Emitted before each shadow evaluator Chat() call (#1059).
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.shadow.llm.request']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        incident_id:
+          type: string
+          description: Incident correlation ID (remediation_id or signal name)
+        step_index:
+          type: integer
+          minimum: 0
+          description: Index of the step being evaluated
+        step_kind:
+          type: string
+          description: Kind of step (e.g., tool_result, llm_reasoning, signal_input)
+        prompt_length:
+          type: integer
+          minimum: 0
+          description: Length of prompt sent to shadow LLM (rune/character count, no raw content for security)
+
+    ShadowLLMResponsePayload:
+      type: object
+      required: [event_type, event_id, incident_id, step_index, step_kind, prompt_tokens, completion_tokens, total_tokens]
+      description: Shadow agent LLM response event payload (aiagent.shadow.llm.response). Emitted after each successful shadow evaluator Chat() call with token usage (#1059).
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.shadow.llm.response']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        incident_id:
+          type: string
+          description: Incident correlation ID (remediation_id or signal name)
+        step_index:
+          type: integer
+          minimum: 0
+          description: Index of the step being evaluated
+        step_kind:
+          type: string
+          description: Kind of step (e.g., tool_result, llm_reasoning, signal_input)
+        prompt_tokens:
+          type: integer
+          minimum: 0
+          description: Prompt tokens consumed by shadow LLM for this call
+        completion_tokens:
+          type: integer
+          minimum: 0
+          description: Completion tokens consumed by shadow LLM for this call
+        total_tokens:
+          type: integer
+          minimum: 0
+          description: Total tokens consumed by shadow LLM for this call
+        attempt:
+          type: integer
+          minimum: 1
+          description: Retry attempt number (1-based) that succeeded
+        evaluation_result:
+          type: string
+          enum: ['success', 'malformed_response', 'missing_field']
+          description: Whether the shadow evaluation extracted a usable verdict from this response. 'success' means a valid suspicious/clean determination was made. 'malformed_response' means the response triggered a fail-closed path (duplicate key attack, etc). 'missing_field' means the required 'suspicious' field was absent.
 
     # ─── Remediation History Context (DD-HAPI-016) ───
 

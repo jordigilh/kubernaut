@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"golang.org/x/sync/errgroup"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
@@ -138,9 +139,11 @@ type Pipeline struct {
 // Using a struct instead of positional parameters makes the constructor
 // stable and self-documenting. Optional fields (Registry, Pipeline)
 // default to their zero values when omitted.
-// ScopeResolver determines whether a Kubernetes kind is cluster-scoped (#763).
+// ScopeResolver determines whether a Kubernetes kind is cluster-scoped (#763)
+// and whether it exists in multiple API groups (#1044).
 type ScopeResolver interface {
 	IsClusterScoped(kind string) (bool, error)
+	IsAmbiguousKind(kind string) (bool, []schema.GroupVersionResource, error)
 }
 
 type Config struct {
@@ -375,6 +378,12 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	backfillSeverity(workflowResult, signal)
 	attachDetectedLabels(workflowResult, enrichData)
 	InjectRemediationTarget(workflowResult, workflowSignal, enrichData)
+	// Issue #1044: propagate RCA-identified api_version to the workflow result
+	// when the workflow selection didn't produce one. The RCA gate ensures
+	// api_version is set for ambiguous kinds; this must survive through Phase 3.
+	if workflowResult.RemediationTarget.APIVersion == "" && rcaResult.RemediationTarget.APIVersion != "" {
+		workflowResult.RemediationTarget.APIVersion = rcaResult.RemediationTarget.APIVersion
+	}
 	injectTargetResourceParameters(workflowResult)
 	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
 	return workflowResult, nil
@@ -518,15 +527,23 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	result = inv.sameKindValidationGate(ctx, result, signal, messages, tokens, correlationID, client, modelName, runtimeParams)
 
 	// Defense-in-depth: RCA phase must never abort the pipeline via
-	// needs_human_review. Only max-turns exhaustion (above) is a valid RCA abort.
+	// needs_human_review from the parser. Only gate-level exhaustion (#1044)
+	// is a valid RCA abort. Clear parser-set values BEFORE running the
+	// apiVersion gate so the gate's decision is authoritative.
 	// Aligned with HAPI v1.2.1 where needs_human_review is parser-driven in Phase 3.
 	if result.HumanReviewNeeded {
-		inv.logger.Info("clearing HumanReviewNeeded set during RCA (parser-driven in Phase 3 only)",
+		inv.logger.Info("clearing parser-set HumanReviewNeeded during RCA (Phase 3 only)",
 			"reason", result.HumanReviewReason,
 			"correlation_id", correlationID)
 		result.HumanReviewNeeded = false
 		result.HumanReviewReason = ""
 	}
+
+	// apiVersion validation gate (Issue #1044): when the remediation target kind
+	// exists in multiple API groups and api_version is missing, the gate retries
+	// once. On exhaustion it sets HumanReviewNeeded=true — a valid RCA abort.
+	// Runs after clearing so its decision is authoritative and not cleared.
+	result = inv.apiVersionValidationGate(ctx, result, messages, tokens, correlationID, client, modelName, runtimeParams)
 
 	return result, nil
 }
@@ -546,7 +563,7 @@ func (inv *Investigator) retryRCASubmit(ctx context.Context, lastContent string,
 	}
 
 	correctionMsg := `Your response could not be parsed. You MUST call submit_result with a JSON object like:
-{"root_cause_analysis":{"summary":"...","severity":"critical","signal_name":"SignalName","contributing_factors":["factor1"],"remediation_target":{"kind":"Deployment","name":"resource","namespace":"ns"}},"confidence":0.9}
+{"root_cause_analysis":{"summary":"...","severity":"critical","signal_name":"SignalName","contributing_factors":["factor1"],"remediation_target":{"kind":"Deployment","name":"resource","namespace":"ns","api_version":"apps/v1"}},"confidence":0.9}
 
 CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap it in quotes.`
 

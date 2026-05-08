@@ -354,6 +354,15 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		if v := dataString(event.Data, "summary"); v != "" {
 			payload.Summary.SetTo(v)
 		}
+		if pt := dataInt(event.Data, "shadow_prompt_tokens"); pt > 0 {
+			payload.ShadowPromptTokens.SetTo(pt)
+		}
+		if ct := dataInt(event.Data, "shadow_completion_tokens"); ct > 0 {
+			payload.ShadowCompletionTokens.SetTo(ct)
+		}
+		if tt := dataInt(event.Data, "shadow_total_tokens"); tt > 0 {
+			payload.ShadowTotalTokens.SetTo(tt)
+		}
 		return ogenclient.NewAIAgentAlignmentVerdictPayloadAuditEventRequestEventData(payload), true
 
 	case EventTypeSessionSuspended:
@@ -413,6 +422,36 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 			payload.CorrelationID.SetTo(cid)
 		}
 		return ogenclient.NewAIAgentInteractiveK8sCallPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeShadowLLMRequest:
+		payload := ogenclient.ShadowLLMRequestPayload{
+			EventType:    ogenclient.ShadowLLMRequestPayloadEventTypeAiagentShadowLlmRequest,
+			EventID:      dataString(event.Data, "event_id"),
+			IncidentID:   event.CorrelationID,
+			StepIndex:    dataInt(event.Data, "step_index"),
+			StepKind:     dataString(event.Data, "step_kind"),
+			PromptLength: dataInt(event.Data, "prompt_length"),
+		}
+		return ogenclient.NewShadowLLMRequestPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeShadowLLMResponse:
+		payload := ogenclient.ShadowLLMResponsePayload{
+			EventType:        ogenclient.ShadowLLMResponsePayloadEventTypeAiagentShadowLlmResponse,
+			EventID:          dataString(event.Data, "event_id"),
+			IncidentID:       event.CorrelationID,
+			StepIndex:        dataInt(event.Data, "step_index"),
+			StepKind:         dataString(event.Data, "step_kind"),
+			PromptTokens:     dataInt(event.Data, "prompt_tokens"),
+			CompletionTokens: dataInt(event.Data, "completion_tokens"),
+			TotalTokens:      dataInt(event.Data, "total_tokens"),
+		}
+		if attempt := dataInt(event.Data, "attempt"); attempt > 0 {
+			payload.Attempt.SetTo(attempt)
+		}
+		if er := dataString(event.Data, "evaluation_result"); er != "" {
+			payload.EvaluationResult.SetTo(ogenclient.ShadowLLMResponsePayloadEvaluationResult(er))
+		}
+		return ogenclient.NewShadowLLMResponsePayloadAuditEventRequestEventData(payload), true
 
 	default:
 		return ogenclient.AuditEventRequestEventData{}, false

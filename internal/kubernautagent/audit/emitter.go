@@ -87,6 +87,9 @@ const (
 	// made during an interactive MCP session (BR-INTERACTIVE-003, BR-AUDIT-005).
 	// Provides per-request audit granularity for SOC2 CC8.1 compliance.
 	EventTypeInteractiveK8sCall = "aiagent.interactive.k8s_call"
+
+	EventTypeShadowLLMRequest  = "aiagent.shadow.llm.request"
+	EventTypeShadowLLMResponse = "aiagent.shadow.llm.response"
 )
 
 const (
@@ -99,7 +102,10 @@ const (
 	ActionAlignmentEvaluate          = "alignment_evaluate"
 	ActionAlignmentVerdict           = "alignment_verdict"
 	ActionSameKindGate               = "same_kind_validation_gate"
+	ActionAPIVersionGate             = "api_version_validation_gate"
 	ActionWorkflowAlignmentGate      = "workflow_target_alignment_gate"
+	ActionShadowLLMRequest           = "shadow_llm_request"
+	ActionShadowLLMResponse          = "shadow_llm_response"
 	ActionTruncationDetected         = "truncation_detected"
 	ActionEnriched                   = "enriched"
 
@@ -148,6 +154,8 @@ var AllEventTypes = []string{
 	EventTypeInteractiveCompleted,
 	EventTypeSessionResumed,
 	EventTypeInteractiveK8sCall,
+	EventTypeShadowLLMRequest,
+	EventTypeShadowLLMResponse,
 }
 
 // AuditEvent represents an audit event to be stored.

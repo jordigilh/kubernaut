@@ -50,4 +50,11 @@ var (
 		Help:      "Time from canary start to verdict completion in seconds.",
 		Buckets:   prometheus.DefBuckets,
 	})
+
+	alignmentShadowAuditTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "kubernaut",
+		Subsystem: "alignment",
+		Name:      "shadow_audit_total",
+		Help:      "Total shadow LLM audit events emitted by event_type (request, response).",
+	}, []string{"event_type"})
 )

@@ -157,6 +157,15 @@ func GetKAE2ETestWorkflows() []TestWorkflow {
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to restart"},
 			}},
+		// Issue #1044: Workflow for ambiguous-kind apiVersion gate E2E tests.
+		// Uses "job" execution engine and targets TestWidget (ambiguous across
+		// alpha.kubernaut-test.ai and beta.kubernaut-test.ai API groups).
+		{WorkflowID: "ambiguous-kind-fix-v1", Name: "Ambiguous Kind Fix - TestWidget", Description: "Reconfigures a TestWidget CR when the kind is ambiguous across API groups", ActionType: "ReconfigureResource", Severity: "high", Component: []string{"testwidget"}, Priority: "P1", ExecutionEngine: "job", SchemaImage: kaWorkflowRegistry + "/ambiguous-kind-fix:v1.0.0",
+			SchemaParameters: []models.WorkflowParameter{
+				{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kubernetes resource kind"},
+				{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the resource to reconfigure"},
+				{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the resource"},
+			}},
 	}
 
 	// Create workflow instances for BOTH staging AND production

@@ -243,6 +243,17 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 5.6: Install ambiguous-kind CRDs for apiVersion gate E2E (#1044)
+	// Two CRDs with Kind "TestWidget" in different API groups so the REST
+	// mapper reports the kind as ambiguous. Must be installed BEFORE KA
+	// starts so its mapper discovers both groups at init.
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n🔧 PHASE 5.6: Installing ambiguous-kind CRDs (#1044)...")
+	if err := createAmbiguousKindCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create ambiguous-kind CRDs: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 5.8: Deploy DEX OIDC Provider for JWT E2E testing (#1009)
 	// Must be ready BEFORE KA starts so JWKS pre-warm succeeds.
 	// DD-AUTH-MCP-001 v2.0: Pattern B validation with real OIDC provider.
@@ -543,6 +554,100 @@ spec:
 	return nil
 }
 
+// createAmbiguousKindCRDs installs two CRDs with the same Kind ("TestWidget")
+// in different API groups. This makes the REST mapper report TestWidget as
+// ambiguous, which is required for apiVersionValidationGate E2E tests (#1044).
+// Must be called BEFORE the KA deployment so its mapper discovers both groups.
+func createAmbiguousKindCRDs(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
+	manifest := `---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: testwidgets.alpha.kubernaut-test.ai
+spec:
+  group: alpha.kubernaut-test.ai
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+  scope: Namespaced
+  names:
+    plural: testwidgets
+    singular: testwidget
+    kind: TestWidget
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: testwidgets.beta.kubernaut-test.ai
+spec:
+  group: beta.kubernaut-test.ai
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+  scope: Namespaced
+  names:
+    plural: testwidgets
+    singular: testwidget
+    kind: TestWidget
+`
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("kubectl apply ambiguous-kind CRDs: %w", err)
+	}
+
+	// Wait for both CRDs to be established before KA starts
+	for _, crd := range []string{
+		"testwidgets.alpha.kubernaut-test.ai",
+		"testwidgets.beta.kubernaut-test.ai",
+	} {
+		waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"wait", "--for=condition=Established", "crd/"+crd, "--timeout=30s")
+		waitCmd.Stdout = writer
+		waitCmd.Stderr = writer
+		if err := waitCmd.Run(); err != nil {
+			return fmt.Errorf("CRD %s not established: %w", crd, err)
+		}
+	}
+
+	_, _ = fmt.Fprintln(writer, "  ✅ Ambiguous-kind CRDs installed (TestWidget in alpha + beta groups)")
+
+	// Create a TestWidget CR in the alpha group so enrichment has a resource to resolve.
+	crManifest := `---
+apiVersion: alpha.kubernaut-test.ai/v1
+kind: TestWidget
+metadata:
+  name: test-widget-instance
+  namespace: default
+spec: {}
+`
+	crCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	crCmd.Stdin = strings.NewReader(crManifest)
+	crCmd.Stdout = writer
+	crCmd.Stderr = writer
+	if err := crCmd.Run(); err != nil {
+		return fmt.Errorf("kubectl apply TestWidget CR: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ TestWidget CR created in default namespace (alpha group)")
+	return nil
+}
+
 // createKAE2EClientRBAC grants the E2E ServiceAccount permission to call
 // the Kubernaut Agent API (DD-AUTH-014: SAR check on services/kubernaut-agent).
 func createKAE2EClientRBAC(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
@@ -702,6 +807,12 @@ rules:
   - apiGroups: [""]
     resources: ["users", "groups", "serviceaccounts"]
     verbs: ["impersonate"]
+  - apiGroups: ["alpha.kubernaut-test.ai"]
+    resources: ["testwidgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["beta.kubernaut-test.ai"]
+    resources: ["testwidgets"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
