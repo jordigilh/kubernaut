@@ -122,7 +122,10 @@ jobs:
 
       - name: Run govulncheck
         run: |
-          govulncheck ./... 2>&1; RC=$?
+          set +e
+          govulncheck ./...
+          RC=$?
+          set -e
           if [ $RC -eq 0 ]; then
             exit 0
           fi
