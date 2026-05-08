@@ -656,8 +656,14 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, dsTokenSource *auth.To
 	return &dsClients{
 		ogenClient: ogenClient,
 		dsAdapter:  enrichment.NewDSAdapter(ogenClient),
-		k8sAdapter: enrichment.NewK8sAdapter(infra.dynClient, infra.mapper),
+		k8sAdapter: newK8sAdapterWithLogger(infra.dynClient, infra.mapper, logger),
 	}
+}
+
+func newK8sAdapterWithLogger(dynClient dynamic.Interface, mapper meta.RESTMapper, logger logr.Logger) *enrichment.K8sAdapter {
+	a := enrichment.NewK8sAdapter(dynClient, mapper)
+	a.SetLogger(logger.WithName("k8s-adapter"))
+	return a
 }
 
 // buildDSBaseTransport creates the base HTTP transport for the DataStorage
@@ -874,7 +880,7 @@ func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logge
 		logger.Info("failed to build kind index, using empty index", "error", err)
 		kindIndex = make(map[string]schema.GroupKind)
 	}
-	resolver := k8stools.NewDynamicResolver(infra.dynClient, infra.mapper, kindIndex)
+	resolver := k8stools.NewDynamicResolver(infra.dynClient, infra.mapper, kindIndex, logger.WithName("k8s-resolver"))
 
 	for _, t := range k8stools.NewAllTools(infra.clientset, resolver) {
 		reg.Register(t)

@@ -404,7 +404,9 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 }
 
 func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) (*katypes.InvestigationResult, error) {
-	systemPrompt, err := inv.builder.RenderInvestigation(signalToPrompt(signal))
+	promptSignal := SignalToPrompt(signal)
+	LogLabelOverrideOrRejection(inv.logger, signal, promptSignal, correlationID, "RCA")
+	systemPrompt, err := inv.builder.RenderInvestigation(promptSignal)
 	if err != nil {
 		return nil, fmt.Errorf("rendering investigation prompt: %w", err)
 	}
@@ -577,13 +579,18 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 // Issue #847 / DD-HAPI-847, Layer 3: Programmatic Sentinel Validation Gate.
 
 func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) (*katypes.InvestigationResult, error) {
-	// Attach signal context so workflow discovery tools (list_available_actions,
-	// list_workflows) can extract severity/component/environment/priority from
-	// ctx instead of using hardcoded values. Fix for #779.
-	ctx = katypes.WithSignalContext(ctx, signal)
+	// Apply signal label overrides (target_resource_kind / target_resource_name)
+	// before attaching to context. This ensures workflow discovery tools
+	// (list_available_actions, list_workflows) filter by the correct component.
+	// Defense-in-depth for #1064/#1065: even if enrichment resolved a container
+	// kind (e.g. Namespace), the label override corrects it for tool context.
+	overriddenSignal := ApplySignalLabelOverrides(signal)
+	ctx = katypes.WithSignalContext(ctx, overriddenSignal)
 
+	wfPromptSignal := SignalToPrompt(signal)
+	LogLabelOverrideOrRejection(inv.logger, signal, wfPromptSignal, correlationID, "workflow selection")
 	systemPrompt, err := inv.builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
-		Signal:     signalToPrompt(signal),
+		Signal:     wfPromptSignal,
 		RCASummary: rcaSummary,
 		EnrichData: enrichData,
 		Phase1:     p1Ctx,

@@ -386,3 +386,193 @@ func newSimpleRESTMapper() *meta.DefaultRESTMapper {
 	mapper.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "StatefulSet"}, meta.RESTScopeNamespace)
 	return mapper
 }
+
+// newAmbiguousKindMapper creates a REST mapper where "Subscription" exists in
+// two API groups (Knative first, OLM second by preference order), reproducing
+// the ambiguous-kind scenario from Issue #1062.
+func newAmbiguousKindMapper() *meta.DefaultRESTMapper {
+	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+		{Group: "", Version: "v1"},
+		{Group: "apps", Version: "v1"},
+		{Group: "messaging.knative.dev", Version: "v1"},
+		{Group: "operators.coreos.com", Version: "v1alpha1"},
+	})
+	mapper.Add(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}, meta.RESTScopeNamespace)
+	mapper.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "ReplicaSet"}, meta.RESTScopeNamespace)
+	mapper.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, meta.RESTScopeNamespace)
+	mapper.Add(schema.GroupVersionKind{Group: "messaging.knative.dev", Version: "v1", Kind: "Subscription"}, meta.RESTScopeNamespace)
+	mapper.Add(schema.GroupVersionKind{Group: "operators.coreos.com", Version: "v1alpha1", Kind: "Subscription"}, meta.RESTScopeNamespace)
+	return mapper
+}
+
+var _ = Describe("Issue #1062: Multi-group kind resolution fallback", func() {
+
+	Describe("UT-KA-1062-001: Ambiguous kind, resource exists in second API group (OLM)", func() {
+		It("should find Subscription in operators.coreos.com after messaging.knative.dev returns NotFound", func() {
+			scheme := runtime.NewScheme()
+
+			olmSub := &unstructured.Unstructured{}
+			olmSub.SetGroupVersionKind(schema.GroupVersionKind{
+				Group: "operators.coreos.com", Version: "v1alpha1", Kind: "Subscription",
+			})
+			olmSub.SetName("etcd")
+			olmSub.SetNamespace("demo-operator")
+
+			dynClient := fakedynamic.NewSimpleDynamicClient(scheme, olmSub)
+			mapper := newAmbiguousKindMapper()
+
+			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
+			chain, err := adapter.GetOwnerChain(context.Background(), "Subscription", "etcd", "demo-operator", "")
+			Expect(err).NotTo(HaveOccurred(),
+				"BR-AI-1062: adapter must try alternate API groups when first returns NotFound")
+			Expect(chain).To(BeEmpty(),
+				"Subscription has no ownerReferences")
+		})
+	})
+
+	Describe("UT-KA-1062-002: Ambiguous kind, resource exists in first API group (Knative)", func() {
+		It("should find Subscription in messaging.knative.dev on first attempt", func() {
+			scheme := runtime.NewScheme()
+
+			knativeSub := &unstructured.Unstructured{}
+			knativeSub.SetGroupVersionKind(schema.GroupVersionKind{
+				Group: "messaging.knative.dev", Version: "v1", Kind: "Subscription",
+			})
+			knativeSub.SetName("my-sub")
+			knativeSub.SetNamespace("default")
+
+			dynClient := fakedynamic.NewSimpleDynamicClient(scheme, knativeSub)
+			mapper := newAmbiguousKindMapper()
+
+			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
+			chain, err := adapter.GetOwnerChain(context.Background(), "Subscription", "my-sub", "default", "")
+			Expect(err).NotTo(HaveOccurred(),
+				"BR-AI-1062: adapter must succeed when resource exists in first group")
+			Expect(chain).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-KA-1062-003: Ambiguous kind, resource not found in any group", func() {
+		It("should return error when Subscription is not found in any API group", func() {
+			scheme := runtime.NewScheme()
+
+			dynClient := fakedynamic.NewSimpleDynamicClient(scheme)
+			mapper := newAmbiguousKindMapper()
+
+			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
+			_, err := adapter.GetOwnerChain(context.Background(), "Subscription", "nonexistent", "demo-operator", "")
+			Expect(err).To(HaveOccurred(),
+				"BR-AI-1062: adapter must return error when resource not found in any group")
+			Expect(enrichment.IsNotFoundError(err)).To(BeTrue(),
+				"BR-AI-1062: error must preserve IsNotFoundError classification for TargetResourceDeleted")
+		})
+	})
+
+	Describe("UT-KA-1062-004: Non-ambiguous kind preserves existing behavior", func() {
+		It("should resolve Pod normally with single API group", func() {
+			scheme := runtime.NewScheme()
+
+			pod := &unstructured.Unstructured{}
+			pod.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
+			pod.SetName("test-pod")
+			pod.SetNamespace("default")
+
+			dynClient := fakedynamic.NewSimpleDynamicClient(scheme, pod)
+			mapper := newAmbiguousKindMapper()
+
+			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
+			chain, err := adapter.GetOwnerChain(context.Background(), "Pod", "test-pod", "default", "")
+			Expect(err).NotTo(HaveOccurred(),
+				"BR-AI-1062: non-ambiguous kinds must continue to work")
+			Expect(chain).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-KA-1062-005: Explicit apiVersion bypasses fallback", func() {
+		It("should use only the specified API group and not fall back", func() {
+			scheme := runtime.NewScheme()
+
+			olmSub := &unstructured.Unstructured{}
+			olmSub.SetGroupVersionKind(schema.GroupVersionKind{
+				Group: "operators.coreos.com", Version: "v1alpha1", Kind: "Subscription",
+			})
+			olmSub.SetName("etcd")
+			olmSub.SetNamespace("demo-operator")
+
+			dynClient := fakedynamic.NewSimpleDynamicClient(scheme, olmSub)
+			mapper := newAmbiguousKindMapper()
+
+			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
+
+			chain, err := adapter.GetOwnerChain(context.Background(), "Subscription", "etcd", "demo-operator", "operators.coreos.com/v1alpha1")
+			Expect(err).NotTo(HaveOccurred(),
+				"BR-AI-1062: explicit apiVersion must resolve directly")
+			Expect(chain).To(BeEmpty())
+
+			_, err = adapter.GetOwnerChain(context.Background(), "Subscription", "etcd", "demo-operator", "messaging.knative.dev/v1")
+			Expect(err).To(HaveOccurred(),
+				"BR-AI-1062: explicit apiVersion pointing to wrong group must fail (no fallback)")
+		})
+	})
+
+	Describe("UT-KA-1062-006: GetSpecHash fallback for ambiguous kind", func() {
+		It("should compute a deterministic spec hash via second API group when first returns NotFound", func() {
+			scheme := runtime.NewScheme()
+
+			olmSub := &unstructured.Unstructured{}
+			olmSub.SetGroupVersionKind(schema.GroupVersionKind{
+				Group: "operators.coreos.com", Version: "v1alpha1", Kind: "Subscription",
+			})
+			olmSub.SetName("etcd")
+			olmSub.SetNamespace("demo-operator")
+			olmSub.Object["spec"] = map[string]interface{}{
+				"channel": "stable",
+			}
+
+			dynClient := fakedynamic.NewSimpleDynamicClient(scheme, olmSub)
+			mapper := newAmbiguousKindMapper()
+
+			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
+			hash1, err := adapter.GetSpecHash(context.Background(), "Subscription", "etcd", "demo-operator", "")
+			Expect(err).NotTo(HaveOccurred(),
+				"BR-AI-1062: GetSpecHash must try alternate API groups")
+			Expect(hash1).NotTo(BeEmpty(),
+				"BR-AI-1062: spec hash must be non-empty")
+
+			hash2, err := adapter.GetSpecHash(context.Background(), "Subscription", "etcd", "demo-operator", "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(hash1).To(Equal(hash2),
+				"BR-AI-1062: spec hash must be deterministic for the same resource")
+		})
+	})
+
+	Describe("UT-KA-1062-007: All-groups-NotFound preserves IsNotFoundError for Enrich() classification", func() {
+		It("should return wrapped error that IsNotFoundError recognizes", func() {
+			scheme := runtime.NewScheme()
+
+			dynClient := fakedynamic.NewSimpleDynamicClient(scheme)
+			mapper := newAmbiguousKindMapper()
+
+			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
+			_, err := adapter.GetSpecHash(context.Background(), "Subscription", "missing", "default", "")
+			Expect(err).To(HaveOccurred())
+			Expect(enrichment.IsNotFoundError(err)).To(BeTrue(),
+				"BR-AI-1062: all-groups-NotFound error must be classifiable as NotFound "+
+					"for TargetResourceDeleted handling in Enrich()")
+		})
+	})
+
+	Describe("UT-KA-1062-008: Zero REST mappings returns error for unknown kind", func() {
+		It("should return an error when the mapper has no mappings for the requested kind", func() {
+			scheme := runtime.NewScheme()
+			dynClient := fakedynamic.NewSimpleDynamicClient(scheme)
+
+			mapper := meta.NewDefaultRESTMapper(nil)
+
+			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
+			_, err := adapter.GetOwnerChain(context.Background(), "CompletelyUnknownKind", "foo", "default", "")
+			Expect(err).To(HaveOccurred(),
+				"BR-AI-1062: an unknown kind with zero REST mappings must produce an error")
+		})
+	})
+})

@@ -19,7 +19,10 @@ package investigator
 import (
 	"context"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -28,6 +31,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
+
+const maxK8sIdentifierLen = 253
 
 // BuildPhase1Context extracts structured assessment fields from the Phase 1
 // InvestigationResult for propagation into Phase 3 (HAPI parity: #715).
@@ -87,14 +92,88 @@ func MergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 	}
 }
 
-func signalToPrompt(s katypes.SignalContext) prompt.SignalData {
+// isValidK8sIdentifier validates that s is safe for use as a K8s Kind or
+// resource name in LLM prompts. Rejects path separators, control characters,
+// and values exceeding the K8s name length limit (253 chars). Issue #1061 /
+// FedRAMP SI-10.
+func isValidK8sIdentifier(s string) bool {
+	if strings.TrimSpace(s) == "" {
+		return false
+	}
+	if utf8.RuneCountInString(s) > maxK8sIdentifierLen {
+		return false
+	}
+	if strings.ContainsAny(s, "/\\") || strings.Contains(s, "..") {
+		return false
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// LogLabelOverrideOrRejection emits structured logs when signal labels cause an
+// override (FED-1/SRE-1) or when a non-empty label value was rejected by
+// validation (SEC-6/FedRAMP AU-2). Called from runRCA and runWorkflowSelection.
+func LogLabelOverrideOrRejection(logger logr.Logger, signal katypes.SignalContext, result prompt.SignalData, correlationID, phase string) {
+	kindOverridden := result.ResourceKind != signal.ResourceKind
+	nameOverridden := result.ResourceName != signal.ResourceName
+
+	if kindOverridden || nameOverridden {
+		logger.Info("signal label override applied to "+phase+" prompt",
+			"original_kind", signal.ResourceKind,
+			"original_name", signal.ResourceName,
+			"override_kind", result.ResourceKind,
+			"override_name", result.ResourceName,
+			"correlation_id", correlationID)
+	}
+
+	if signal.SignalLabels == nil {
+		return
+	}
+	if trk := signal.SignalLabels["target_resource_kind"]; trk != "" && trk != signal.ResourceKind && !kindOverridden {
+		logger.Info("signal label override rejected: invalid target_resource_kind",
+			"rejected_value", trk, "correlation_id", correlationID)
+	}
+	if trn := signal.SignalLabels["target_resource_name"]; trn != "" && trn != signal.ResourceName && !nameOverridden {
+		logger.Info("signal label override rejected: invalid target_resource_name",
+			"rejected_value", trn, "correlation_id", correlationID)
+	}
+}
+
+// ApplySignalLabelOverrides returns a copy of signal with ResourceKind and
+// ResourceName overridden by target_resource_kind / target_resource_name
+// signal labels, when present and valid per FedRAMP SI-10 (isValidK8sIdentifier).
+// The original signal is not modified (value semantics).
+// Issue #1064: used by both SignalToPrompt (LLM prompt) and runWorkflowSelection
+// (tool context) to ensure consistent override application.
+func ApplySignalLabelOverrides(signal katypes.SignalContext) katypes.SignalContext {
+	if trk := signal.SignalLabels["target_resource_kind"]; trk != "" && isValidK8sIdentifier(trk) {
+		signal.ResourceKind = trk
+	}
+	if trn := signal.SignalLabels["target_resource_name"]; trn != "" && isValidK8sIdentifier(trn) {
+		signal.ResourceName = trn
+	}
+	return signal
+}
+
+// SignalToPrompt converts a SignalContext to prompt.SignalData.
+// Issue #1061: when the alert carries explicit target_resource_kind /
+// target_resource_name labels, those override the enrichment-resolved
+// ResourceKind / ResourceName so the LLM prompt references the actual
+// remediation target instead of the namespace container.
+// Label values are validated per FedRAMP SI-10 before use.
+func SignalToPrompt(s katypes.SignalContext) prompt.SignalData {
+	overridden := ApplySignalLabelOverrides(s)
 	return prompt.SignalData{
 		Name:                       s.Name,
 		Namespace:                  s.Namespace,
 		Severity:                   s.Severity,
 		Message:                    s.Message,
-		ResourceKind:               s.ResourceKind,
-		ResourceName:               s.ResourceName,
+		ResourceKind:               overridden.ResourceKind,
+		ResourceName:               overridden.ResourceName,
 		ClusterName:                s.ClusterName,
 		Environment:                s.Environment,
 		Priority:                   s.Priority,
@@ -368,8 +447,11 @@ func (r *mapperScopeResolver) IsClusterScoped(kind string) (bool, error) {
 // collision where the REST mapper cannot resolve a unique GVR without an
 // explicit apiVersion. Issue #1044.
 func (r *mapperScopeResolver) IsAmbiguousKind(kind string) (bool, []schema.GroupVersionResource, error) {
-	plural := strings.ToLower(kind) + "s"
-	gvrs, err := r.mapper.ResourcesFor(schema.GroupVersionResource{Resource: plural})
+	if kind == "" {
+		return false, nil, nil
+	}
+	resource := strings.ToLower(kind)
+	gvrs, err := r.mapper.ResourcesFor(schema.GroupVersionResource{Resource: resource})
 	if err != nil {
 		if meta.IsNoMatchError(err) {
 			return false, nil, nil

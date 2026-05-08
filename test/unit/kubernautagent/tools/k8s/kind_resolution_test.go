@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -277,7 +278,7 @@ var _ = Describe("Kubernaut Agent K8s Kind Resolution — #433 Phase 2", func() 
 		dynClient := dynamicfake.NewSimpleDynamicClient(scheme, objects...)
 		mapper := buildTestMapper()
 		kindIndex := buildTestKindIndex()
-		resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex)
+		resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
 
 		reg = registry.New()
 		for _, t := range k8s.NewAllTools(typedClient, resolver) {
@@ -637,7 +638,7 @@ var _ = Describe("Kubernaut Agent K8s Kind Resolution — #433 Phase 2", func() 
 			trimmedIndex := map[string]schema.GroupKind{
 				"pod": {Kind: "Pod"},
 			}
-			resolver := k8s.NewDynamicResolver(dynClient, mapper, trimmedIndex)
+			resolver := k8s.NewDynamicResolver(dynClient, mapper, trimmedIndex, logr.Discard())
 
 			result, err := resolver.Get(context.Background(), "ConfigMap", "fallback-cm", "default")
 			Expect(err).NotTo(HaveOccurred())
