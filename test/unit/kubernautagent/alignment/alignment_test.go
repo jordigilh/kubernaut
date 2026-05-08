@@ -118,7 +118,7 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 			steps := []alignment.Step{
 				{Index: 0, Kind: alignment.StepKindToolResult, Tool: "a", Content: "1"},
@@ -141,7 +141,7 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(slowClient, alignment.EvaluatorConfig{
 				Timeout: 2 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: 0, Content: "slow"})
@@ -158,7 +158,7 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
@@ -179,7 +179,7 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
@@ -216,13 +216,13 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
 
-			obs1, err := alignment.NewObserver(evaluator, "")
+			obs1, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 			ctx1 := alignment.WithObserver(context.Background(), obs1)
 			retrieved1 := alignment.ObserverFromContext(ctx1)
 			Expect(retrieved1).To(BeIdenticalTo(obs1), "observer must be retrievable from context")
 
-			obs2, err := alignment.NewObserver(evaluator, "")
+			obs2, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 			ctx2 := alignment.WithObserver(context.Background(), obs2)
 			retrieved2 := alignment.ObserverFromContext(ctx2)
@@ -245,7 +245,7 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
@@ -272,7 +272,7 @@ var _ = Describe("Shadow Agent alignment — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 

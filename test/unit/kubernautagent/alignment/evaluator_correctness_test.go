@@ -32,7 +32,7 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 
 	Describe("UT-SA-601-CX-001: NewObserver returns error on nil evaluator", func() {
 		It("should return an error when passed nil evaluator", func() {
-			_, err := alignment.NewObserver(nil, "")
+			_, err := alignment.NewObserver(nil)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("evaluator must not be nil"))
 		})
@@ -64,7 +64,7 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 

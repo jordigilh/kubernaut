@@ -95,7 +95,7 @@ var _ = Describe("GAP-4: LLMProxy inner Chat error — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
@@ -124,7 +124,7 @@ var _ = Describe("GAP-5: LLMProxy empty response content — BR-AI-601", func() 
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
@@ -170,7 +170,7 @@ var _ = Describe("GAP-7: ToolProxy empty success result — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 			ctx := alignment.WithObserver(context.Background(), observer)
 
@@ -337,7 +337,7 @@ var _ = Describe("GAP-12: RenderVerdict mixed summary — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
@@ -452,7 +452,7 @@ var _ = Describe("GAP-15: Concurrent EvaluateStep race detection — BR-AI-601",
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 
 			for i := 0; i < 10; i++ {

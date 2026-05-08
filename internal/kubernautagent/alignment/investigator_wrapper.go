@@ -115,7 +115,7 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 
 	correlationID := signalCorrelationID(signal)
 
-	observer, obsErr := NewObserver(w.evaluator, correlationID)
+	observer, obsErr := NewObserver(w.evaluator, WithCorrelationID(correlationID))
 	if obsErr != nil {
 		return nil, fmt.Errorf("alignment observer: %w", obsErr)
 	}

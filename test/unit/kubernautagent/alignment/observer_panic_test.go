@@ -34,7 +34,7 @@ var _ = Describe("Panic recovery in SubmitAsync — SEC-6", func() {
 			evaluator := alignment.NewEvaluator(panicClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 			ctx := context.Background()
 
@@ -56,7 +56,7 @@ var _ = Describe("Panic recovery in SubmitAsync — SEC-6", func() {
 			evaluator := alignment.NewEvaluator(panicClient, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 			ctx := context.Background()
 

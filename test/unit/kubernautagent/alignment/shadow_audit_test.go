@@ -207,7 +207,7 @@ var _ = Describe("Shadow Agent LLM Token Audit — #1059", func() {
 				Timeout: 10 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
 
-			observer, err := alignment.NewObserver(evaluator, "rr-stamp-001")
+			observer, err := alignment.NewObserver(evaluator, alignment.WithCorrelationID("rr-stamp-001"))
 			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{
@@ -229,7 +229,7 @@ var _ = Describe("Shadow Agent LLM Token Audit — #1059", func() {
 				Timeout: 10 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
 
-			observer, err := alignment.NewObserver(evaluator, "")
+			observer, err := alignment.NewObserver(evaluator)
 			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{

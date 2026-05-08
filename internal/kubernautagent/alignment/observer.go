@@ -57,20 +57,35 @@ type Observer struct {
 	sem           chan struct{}
 }
 
+// ObserverOption configures optional Observer behaviour.
+type ObserverOption func(*Observer)
+
+// WithCorrelationID stamps every step submitted via SubmitAsync with the given
+// correlation ID so the evaluator can emit audit events tied to the incident.
+func WithCorrelationID(id string) ObserverOption {
+	return func(o *Observer) { o.correlationID = id }
+}
+
+// WithMaxConcurrent overrides the default goroutine concurrency limit.
+func WithMaxConcurrent(n int) ObserverOption {
+	return func(o *Observer) {
+		if n > 0 {
+			o.sem = make(chan struct{}, n)
+		}
+	}
+}
+
 // NewObserver creates an Observer backed by the given evaluator.
 // Returns an error if evaluator is nil to prevent nil deref in SubmitAsync.
-// correlationID is stamped on every step submitted via SubmitAsync so the
-// evaluator can emit audit events with the correct incident correlation.
-// maxConcurrent limits the number of goroutines; pass 0 for the default.
-func NewObserver(evaluator *Evaluator, correlationID string, maxConcurrent ...int) (*Observer, error) {
+func NewObserver(evaluator *Evaluator, opts ...ObserverOption) (*Observer, error) {
 	if evaluator == nil {
 		return nil, fmt.Errorf("alignment.NewObserver: evaluator must not be nil")
 	}
-	limit := DefaultMaxConcurrentEvals
-	if len(maxConcurrent) > 0 && maxConcurrent[0] > 0 {
-		limit = maxConcurrent[0]
+	obs := &Observer{evaluator: evaluator, sem: make(chan struct{}, DefaultMaxConcurrentEvals)}
+	for _, opt := range opts {
+		opt(obs)
 	}
-	return &Observer{evaluator: evaluator, correlationID: correlationID, sem: make(chan struct{}, limit)}, nil
+	return obs, nil
 }
 
 // NextStepIndex returns the next monotonically increasing step index for this
