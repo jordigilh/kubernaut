@@ -404,7 +404,16 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 }
 
 func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) (*katypes.InvestigationResult, error) {
-	systemPrompt, err := inv.builder.RenderInvestigation(signalToPrompt(signal))
+	promptSignal := SignalToPrompt(signal)
+	if promptSignal.ResourceKind != signal.ResourceKind || promptSignal.ResourceName != signal.ResourceName {
+		inv.logger.Info("signal label override applied to RCA prompt",
+			"original_kind", signal.ResourceKind,
+			"original_name", signal.ResourceName,
+			"override_kind", promptSignal.ResourceKind,
+			"override_name", promptSignal.ResourceName,
+			"correlation_id", correlationID)
+	}
+	systemPrompt, err := inv.builder.RenderInvestigation(promptSignal)
 	if err != nil {
 		return nil, fmt.Errorf("rendering investigation prompt: %w", err)
 	}
@@ -582,8 +591,17 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	// ctx instead of using hardcoded values. Fix for #779.
 	ctx = katypes.WithSignalContext(ctx, signal)
 
+	wfPromptSignal := SignalToPrompt(signal)
+	if wfPromptSignal.ResourceKind != signal.ResourceKind || wfPromptSignal.ResourceName != signal.ResourceName {
+		inv.logger.Info("signal label override applied to workflow selection prompt",
+			"original_kind", signal.ResourceKind,
+			"original_name", signal.ResourceName,
+			"override_kind", wfPromptSignal.ResourceKind,
+			"override_name", wfPromptSignal.ResourceName,
+			"correlation_id", correlationID)
+	}
 	systemPrompt, err := inv.builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
-		Signal:     signalToPrompt(signal),
+		Signal:     wfPromptSignal,
 		RCASummary: rcaSummary,
 		EnrichData: enrichData,
 		Phase1:     p1Ctx,

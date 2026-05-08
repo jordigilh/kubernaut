@@ -19,6 +19,8 @@ package investigator
 import (
 	"context"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -28,6 +30,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
+
+const maxK8sIdentifierLen = 253
 
 // BuildPhase1Context extracts structured assessment fields from the Phase 1
 // InvestigationResult for propagation into Phase 3 (HAPI parity: #715).
@@ -87,14 +91,50 @@ func MergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 	}
 }
 
-func signalToPrompt(s katypes.SignalContext) prompt.SignalData {
+// isValidK8sIdentifier validates that s is safe for use as a K8s Kind or
+// resource name in LLM prompts. Rejects path separators, control characters,
+// and values exceeding the K8s name length limit (253 chars). Issue #1061 /
+// FedRAMP SI-10.
+func isValidK8sIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+	if utf8.RuneCountInString(s) > maxK8sIdentifierLen {
+		return false
+	}
+	if strings.ContainsAny(s, "/\\") || strings.Contains(s, "..") {
+		return false
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// SignalToPrompt converts a SignalContext to prompt.SignalData.
+// Issue #1061: when the alert carries explicit target_resource_kind /
+// target_resource_name labels, those override the enrichment-resolved
+// ResourceKind / ResourceName so the LLM prompt references the actual
+// remediation target instead of the namespace container.
+// Label values are validated per FedRAMP SI-10 before use.
+func SignalToPrompt(s katypes.SignalContext) prompt.SignalData {
+	resourceKind := s.ResourceKind
+	resourceName := s.ResourceName
+	if trk := s.SignalLabels["target_resource_kind"]; trk != "" && isValidK8sIdentifier(trk) {
+		resourceKind = trk
+	}
+	if trn := s.SignalLabels["target_resource_name"]; trn != "" && isValidK8sIdentifier(trn) {
+		resourceName = trn
+	}
 	return prompt.SignalData{
 		Name:                       s.Name,
 		Namespace:                  s.Namespace,
 		Severity:                   s.Severity,
 		Message:                    s.Message,
-		ResourceKind:               s.ResourceKind,
-		ResourceName:               s.ResourceName,
+		ResourceKind:               resourceKind,
+		ResourceName:               resourceName,
 		ClusterName:                s.ClusterName,
 		Environment:                s.Environment,
 		Priority:                   s.Priority,
