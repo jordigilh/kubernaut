@@ -405,7 +405,7 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 
 func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) (*katypes.InvestigationResult, error) {
 	promptSignal := SignalToPrompt(signal)
-	logLabelOverrideOrRejection(inv.logger, signal, promptSignal, correlationID, "RCA")
+	LogLabelOverrideOrRejection(inv.logger, signal, promptSignal, correlationID, "RCA")
 	systemPrompt, err := inv.builder.RenderInvestigation(promptSignal)
 	if err != nil {
 		return nil, fmt.Errorf("rendering investigation prompt: %w", err)
@@ -585,7 +585,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	ctx = katypes.WithSignalContext(ctx, signal)
 
 	wfPromptSignal := SignalToPrompt(signal)
-	logLabelOverrideOrRejection(inv.logger, signal, wfPromptSignal, correlationID, "workflow selection")
+	LogLabelOverrideOrRejection(inv.logger, signal, wfPromptSignal, correlationID, "workflow selection")
 	systemPrompt, err := inv.builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
 		Signal:     wfPromptSignal,
 		RCASummary: rcaSummary,

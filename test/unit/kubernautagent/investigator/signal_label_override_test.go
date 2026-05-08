@@ -18,7 +18,10 @@ package investigator_test
 
 import (
 	"strings"
+	"sync"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -345,6 +348,118 @@ var _ = Describe("Issue #1061: signalToPrompt target_resource label override", f
 			Expect(signal.ResourceKind).To(Equal("Namespace"),
 				"ARCH-5: signal.ResourceKind must remain unchanged after SignalToPrompt "+
 					"so sameKindValidationGate compares against enrichment-layer identity")
+		})
+	})
+})
+
+var _ = Describe("Issue #1061: logLabelOverrideOrRejection audit logging", func() {
+
+	newCapturingLogger := func() (func() []string, logr.Logger) {
+		var mu sync.Mutex
+		var lines []string
+		logger := funcr.New(func(prefix, args string) {
+			mu.Lock()
+			defer mu.Unlock()
+			lines = append(lines, prefix+" "+args)
+		}, funcr.Options{Verbosity: 10})
+		return func() []string {
+			mu.Lock()
+			defer mu.Unlock()
+			dst := make([]string, len(lines))
+			copy(dst, lines)
+			return dst
+		}, logger
+	}
+
+	Describe("UT-KA-1061-017: logs override event when label override is applied", func() {
+		It("should emit a structured log with original and override values", func() {
+			getLines, logger := newCapturingLogger()
+
+			signal := katypes.SignalContext{
+				ResourceKind: "Namespace",
+				ResourceName: "demo-operator",
+				SignalLabels: map[string]string{
+					"target_resource_kind": "Subscription",
+					"target_resource_name": "etcd",
+				},
+			}
+			result := investigator.SignalToPrompt(signal)
+			investigator.LogLabelOverrideOrRejection(logger, signal, result, "corr-123", "RCA")
+
+			lines := getLines()
+			Expect(lines).To(HaveLen(1),
+				"BR-AI-1061: exactly one override log line expected")
+			Expect(lines[0]).To(ContainSubstring("signal label override applied to RCA prompt"),
+				"BR-AI-1061: log must identify the phase")
+			Expect(lines[0]).To(ContainSubstring("original_kind"),
+				"BR-AI-1061/FED-1: log must include original_kind for audit trail")
+			Expect(lines[0]).To(ContainSubstring("corr-123"),
+				"BR-AI-1061/FED-2: log must include correlation_id for trace linking")
+		})
+	})
+
+	Describe("UT-KA-1061-018: logs rejection event when label fails validation", func() {
+		It("should emit a rejection log for each invalid label", func() {
+			getLines, logger := newCapturingLogger()
+
+			signal := katypes.SignalContext{
+				ResourceKind: "Namespace",
+				ResourceName: "demo-operator",
+				SignalLabels: map[string]string{
+					"target_resource_kind": "../../etc/passwd",
+					"target_resource_name": "foo/bar",
+				},
+			}
+			result := investigator.SignalToPrompt(signal)
+			investigator.LogLabelOverrideOrRejection(logger, signal, result, "corr-456", "workflow selection")
+
+			lines := getLines()
+			Expect(lines).To(HaveLen(2),
+				"BR-AI-1061/SEC-6: one rejection log per invalid label expected")
+			Expect(lines[0]).To(ContainSubstring("signal label override rejected"),
+				"BR-AI-1061/SEC-6: rejection log must use consistent message prefix")
+			Expect(lines[0]).To(ContainSubstring("../../etc/passwd"),
+				"BR-AI-1061/SEC-6: rejection log must include the rejected value")
+			Expect(lines[1]).To(ContainSubstring("foo/bar"))
+		})
+	})
+
+	Describe("UT-KA-1061-019: no log emitted when SignalLabels is nil", func() {
+		It("should not emit any log when labels map is nil", func() {
+			getLines, logger := newCapturingLogger()
+
+			signal := katypes.SignalContext{
+				ResourceKind: "Namespace",
+				ResourceName: "demo-operator",
+				SignalLabels: nil,
+			}
+			result := investigator.SignalToPrompt(signal)
+			investigator.LogLabelOverrideOrRejection(logger, signal, result, "corr-789", "RCA")
+
+			lines := getLines()
+			Expect(lines).To(BeEmpty(),
+				"BR-AI-1061: no log expected when SignalLabels is nil (no override attempted)")
+		})
+	})
+
+	Describe("UT-KA-1061-020: no log emitted when label matches enrichment value", func() {
+		It("should not log override or rejection when label equals enrichment value", func() {
+			getLines, logger := newCapturingLogger()
+
+			signal := katypes.SignalContext{
+				ResourceKind: "Subscription",
+				ResourceName: "etcd",
+				SignalLabels: map[string]string{
+					"target_resource_kind": "Subscription",
+					"target_resource_name": "etcd",
+				},
+			}
+			result := investigator.SignalToPrompt(signal)
+			investigator.LogLabelOverrideOrRejection(logger, signal, result, "corr-noop", "RCA")
+
+			lines := getLines()
+			Expect(lines).To(BeEmpty(),
+				"BR-AI-1061: no log when label value matches enrichment value (no-op override)")
 		})
 	})
 })

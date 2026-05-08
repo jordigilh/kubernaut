@@ -114,10 +114,10 @@ func isValidK8sIdentifier(s string) bool {
 	return true
 }
 
-// logLabelOverrideOrRejection emits structured logs when signal labels cause an
+// LogLabelOverrideOrRejection emits structured logs when signal labels cause an
 // override (FED-1/SRE-1) or when a non-empty label value was rejected by
 // validation (SEC-6/FedRAMP AU-2). Called from runRCA and runWorkflowSelection.
-func logLabelOverrideOrRejection(logger logr.Logger, signal katypes.SignalContext, result prompt.SignalData, correlationID, phase string) {
+func LogLabelOverrideOrRejection(logger logr.Logger, signal katypes.SignalContext, result prompt.SignalData, correlationID, phase string) {
 	kindOverridden := result.ResourceKind != signal.ResourceKind
 	nameOverridden := result.ResourceName != signal.ResourceName
 

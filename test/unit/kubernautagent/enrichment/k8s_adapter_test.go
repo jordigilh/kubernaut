@@ -516,7 +516,7 @@ var _ = Describe("Issue #1062: Multi-group kind resolution fallback", func() {
 	})
 
 	Describe("UT-KA-1062-006: GetSpecHash fallback for ambiguous kind", func() {
-		It("should compute spec hash via second API group when first returns NotFound", func() {
+		It("should compute a deterministic spec hash via second API group when first returns NotFound", func() {
 			scheme := runtime.NewScheme()
 
 			olmSub := &unstructured.Unstructured{}
@@ -533,11 +533,16 @@ var _ = Describe("Issue #1062: Multi-group kind resolution fallback", func() {
 			mapper := newAmbiguousKindMapper()
 
 			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
-			hash, err := adapter.GetSpecHash(context.Background(), "Subscription", "etcd", "demo-operator", "")
+			hash1, err := adapter.GetSpecHash(context.Background(), "Subscription", "etcd", "demo-operator", "")
 			Expect(err).NotTo(HaveOccurred(),
 				"BR-AI-1062: GetSpecHash must try alternate API groups")
-			Expect(hash).NotTo(BeEmpty(),
-				"BR-AI-1062: spec hash must be computed from the found resource")
+			Expect(hash1).NotTo(BeEmpty(),
+				"BR-AI-1062: spec hash must be non-empty")
+
+			hash2, err := adapter.GetSpecHash(context.Background(), "Subscription", "etcd", "demo-operator", "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(hash1).To(Equal(hash2),
+				"BR-AI-1062: spec hash must be deterministic for the same resource")
 		})
 	})
 
@@ -554,6 +559,20 @@ var _ = Describe("Issue #1062: Multi-group kind resolution fallback", func() {
 			Expect(enrichment.IsNotFoundError(err)).To(BeTrue(),
 				"BR-AI-1062: all-groups-NotFound error must be classifiable as NotFound "+
 					"for TargetResourceDeleted handling in Enrich()")
+		})
+	})
+
+	Describe("UT-KA-1062-008: Zero REST mappings returns error for unknown kind", func() {
+		It("should return an error when the mapper has no mappings for the requested kind", func() {
+			scheme := runtime.NewScheme()
+			dynClient := fakedynamic.NewSimpleDynamicClient(scheme)
+
+			mapper := meta.NewDefaultRESTMapper(nil)
+
+			adapter := enrichment.NewK8sAdapter(dynClient, mapper)
+			_, err := adapter.GetOwnerChain(context.Background(), "CompletelyUnknownKind", "foo", "default", "")
+			Expect(err).To(HaveOccurred(),
+				"BR-AI-1062: an unknown kind with zero REST mappings must produce an error")
 		})
 	})
 })
