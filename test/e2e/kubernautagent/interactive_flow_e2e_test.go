@@ -269,15 +269,20 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Step 2: Querying DataStorage for audit trail (wait for events to arrive)")
-			Eventually(func() int {
+			By("Step 2: Querying DataStorage for audit trail (wait for interactive.completed to flush)")
+			Eventually(func() bool {
 				audits := queryDSAuditsByRRID(rrID)
 				if len(audits) > 0 {
 					GinkgoWriter.Printf("  Found %d audit entries for %s\n", len(audits), rrID)
 				}
-				return len(audits)
-			}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", 4),
-				"DS should have at least 4 audit entries (interactive.started + llm.request + llm.response + interactive.completed)")
+				for _, a := range audits {
+					if a.EventType == "aiagent.interactive.completed" {
+						return true
+					}
+				}
+				return false
+			}, 60*time.Second, 2*time.Second).Should(BeTrue(),
+				"DS should contain an interactive.completed event before proceeding to assertions")
 
 			By("Step 3: Verifying identity transition events and chronological order")
 			audits := queryDSAuditsByRRID(rrID)

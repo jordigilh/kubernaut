@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
@@ -135,23 +136,29 @@ func (c *KubernautAgentClient) Investigate(ctx context.Context, req *IncidentReq
 		return nil, err
 	}
 
-	// Poll until session completes (1s interval, bounded by ctx deadline)
 	if err := c.awaitSession(ctx, sessionID); err != nil {
 		return nil, err
 	}
 
-	return c.GetSessionResult(ctx, sessionID)
+	return c.getSessionResultWithRetry(ctx, sessionID)
 }
 
 // awaitSession polls a KA session until it reaches a terminal state ("completed" or "failed").
 // Used by the sync wrapper Investigate() to block until the async investigation finishes.
-// The poll interval is 1s, bounded by the ctx deadline.
+// The poll interval is 1s, bounded by the ctx deadline. Transient 429 (rate-limited)
+// responses are retried with a 2s back-off rather than failing immediately.
 //
 // BR-AA-HAPI-064: Internal helper for sync-over-async wrapping.
 func (c *KubernautAgentClient) awaitSession(ctx context.Context, sessionID string) error {
 	for {
 		result, err := c.PollSession(ctx, sessionID)
 		if err != nil {
+			if isRateLimited(err) {
+				if waitErr := sleepCtx(ctx, 2*time.Second); waitErr != nil {
+					return &APIError{StatusCode: 0, Message: fmt.Sprintf("context cancelled while rate-limited polling session %s: %v", sessionID, ctx.Err())}
+				}
+				continue
+			}
 			return err
 		}
 
@@ -164,15 +171,8 @@ func (c *KubernautAgentClient) awaitSession(ctx context.Context, sessionID strin
 				Message:    fmt.Sprintf("agent session failed: %s", result.Error),
 			}
 		default:
-			// "pending" or "investigating" -- wait and retry
-			select {
-			case <-ctx.Done():
-				return &APIError{
-					StatusCode: 0,
-					Message:    fmt.Sprintf("context cancelled while polling session %s: %v", sessionID, ctx.Err()),
-				}
-			case <-time.After(1 * time.Second):
-				// continue polling
+			if waitErr := sleepCtx(ctx, 1*time.Second); waitErr != nil {
+				return &APIError{StatusCode: 0, Message: fmt.Sprintf("context cancelled while polling session %s: %v", sessionID, ctx.Err())}
 			}
 		}
 	}
@@ -310,4 +310,42 @@ func (e *APIError) Error() string {
 		return fmt.Sprintf("agent network error: %s", e.Message)
 	}
 	return fmt.Sprintf("agent error (HTTP %d): %s", e.StatusCode, e.Message)
+}
+
+// isRateLimited returns true if the error indicates an HTTP 429 response.
+// The ogen client does not model 429 as a typed response, so we detect it
+// from the error string ("unexpected status code: 429").
+func isRateLimited(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "429")
+}
+
+// sleepCtx blocks for d or until ctx is cancelled.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
+}
+
+const maxResultRetries = 3
+
+// getSessionResultWithRetry wraps GetSessionResult with retry on 429.
+func (c *KubernautAgentClient) getSessionResultWithRetry(ctx context.Context, sessionID string) (*IncidentResponse, error) {
+	var lastErr error
+	for i := 0; i < maxResultRetries; i++ {
+		resp, err := c.GetSessionResult(ctx, sessionID)
+		if err == nil {
+			return resp, nil
+		}
+		if !isRateLimited(err) {
+			return nil, err
+		}
+		lastErr = err
+		if waitErr := sleepCtx(ctx, 2*time.Second); waitErr != nil {
+			return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("context cancelled while retrying result for session %s: %v", sessionID, ctx.Err())}
+		}
+	}
+	return nil, lastErr
 }
