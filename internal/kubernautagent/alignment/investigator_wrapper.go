@@ -113,7 +113,9 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 		)
 	}
 
-	observer, obsErr := NewObserver(w.evaluator)
+	correlationID := signalCorrelationID(signal)
+
+	observer, obsErr := NewObserver(w.evaluator, correlationID)
 	if obsErr != nil {
 		return nil, fmt.Errorf("alignment observer: %w", obsErr)
 	}
@@ -135,7 +137,7 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 	wr := observer.WaitForCompletion(w.verdictTimeout)
 	verdict := observer.RenderVerdict(wr)
 
-	w.emitAlignmentAudit(ctx, signal, verdict)
+	w.emitAlignmentAudit(ctx, correlationID, verdict)
 
 	alignmentVerdictDuration.Observe(time.Since(start).Seconds())
 	alignmentVerdictTotal.WithLabelValues(string(verdict.Result), string(w.mode)).Inc()
@@ -192,14 +194,9 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 	return result, nil
 }
 
-func (w *InvestigatorWrapper) emitAlignmentAudit(ctx context.Context, signal katypes.SignalContext, verdict Verdict) {
+func (w *InvestigatorWrapper) emitAlignmentAudit(ctx context.Context, correlationID string, verdict Verdict) {
 	if w.auditStore == nil {
 		return
-	}
-
-	correlationID := signal.RemediationID
-	if correlationID == "" {
-		correlationID = signal.Name
 	}
 
 	for _, obs := range verdict.Observations {
@@ -226,7 +223,29 @@ func (w *InvestigatorWrapper) emitAlignmentAudit(ctx context.Context, signal kat
 	event.Data["summary"] = verdict.Summary
 	event.Data["flagged"] = verdict.Flagged
 	event.Data["total"] = verdict.Total
+
+	var shadowPrompt, shadowCompletion, shadowTotal int
+	for _, obs := range verdict.Observations {
+		shadowPrompt += obs.Usage.PromptTokens
+		shadowCompletion += obs.Usage.CompletionTokens
+		shadowTotal += obs.Usage.TotalTokens
+	}
+	if shadowTotal > 0 {
+		event.Data["shadow_prompt_tokens"] = shadowPrompt
+		event.Data["shadow_completion_tokens"] = shadowCompletion
+		event.Data["shadow_total_tokens"] = shadowTotal
+	}
+
 	audit.StoreBestEffort(ctx, w.auditStore, event, w.logger)
+}
+
+// signalCorrelationID derives the audit correlation ID from a signal context.
+// Prefers RemediationID (stable RR name) with fallback to signal Name.
+func signalCorrelationID(signal katypes.SignalContext) string {
+	if signal.RemediationID != "" {
+		return signal.RemediationID
+	}
+	return signal.Name
 }
 
 // BuildSignalInputContent assembles the signal fields that enter the primary

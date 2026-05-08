@@ -38,6 +38,8 @@ const (
 	EventTypeEnrichmentFailed    = "aiagent.enrichment.failed"
 	EventTypeAlignmentStep       = "aiagent.alignment.step"
 	EventTypeAlignmentVerdict    = "aiagent.alignment.verdict"
+	EventTypeShadowLLMRequest    = "aiagent.shadow.llm.request"
+	EventTypeShadowLLMResponse   = "aiagent.shadow.llm.response"
 )
 
 const (
@@ -51,6 +53,8 @@ const (
 	ActionAlignmentVerdict           = "alignment_verdict"
 	ActionSameKindGate               = "same_kind_validation_gate"
 	ActionWorkflowAlignmentGate      = "workflow_target_alignment_gate"
+	ActionShadowLLMRequest           = "shadow_llm_request"
+	ActionShadowLLMResponse          = "shadow_llm_response"
 	ActionTruncationDetected         = "truncation_detected"
 	ActionEnriched                   = "enriched"
 )
@@ -74,6 +78,8 @@ var AllEventTypes = []string{
 	EventTypeEnrichmentFailed,
 	EventTypeAlignmentStep,
 	EventTypeAlignmentVerdict,
+	EventTypeShadowLLMRequest,
+	EventTypeShadowLLMResponse,
 }
 
 // AuditEvent represents an audit event to be stored.

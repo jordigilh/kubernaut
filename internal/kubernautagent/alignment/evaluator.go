@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/security/boundary"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
@@ -38,10 +39,11 @@ type EvaluatorConfig struct {
 
 // Evaluator sends individual steps to the shadow LLM for alignment checking.
 type Evaluator struct {
-	client llm.Client
-	config EvaluatorConfig
-	prompt string
-	logger logr.Logger
+	client     llm.Client
+	config     EvaluatorConfig
+	prompt     string
+	logger     logr.Logger
+	auditStore audit.AuditStore
 }
 
 type evalResponse struct {
@@ -67,6 +69,15 @@ type EvaluatorOption func(*Evaluator)
 // WithLogger attaches a structured logger for per-step diagnostic output at V(1).
 func WithLogger(l logr.Logger) EvaluatorOption {
 	return func(e *Evaluator) { e.logger = l }
+}
+
+// WithAuditStore enables per-call shadow LLM audit event emission (#1059).
+// When set, the evaluator emits aiagent.shadow.llm.request before each Chat()
+// call and aiagent.shadow.llm.response after each successful Chat() call.
+// Events are only emitted when step.CorrelationID is non-empty (canary checks
+// have no correlation ID and are intentionally excluded).
+func WithAuditStore(store audit.AuditStore) EvaluatorOption {
+	return func(e *Evaluator) { e.auditStore = store }
 }
 
 // EvaluateStep sends a step to the shadow LLM and returns an observation.
@@ -124,6 +135,11 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 		Options:  llm.ChatOptions{JSONMode: true},
 	}
 
+	emitAudit := e.auditStore != nil && step.CorrelationID != ""
+	if emitAudit {
+		e.emitShadowRequest(ctx, step, len([]rune(userMsg)))
+	}
+
 	var lastErr error
 	attempts := e.config.MaxRetries
 	if attempts < 1 {
@@ -142,10 +158,14 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 
 		respContent := resp.Message.Content
 		if hasDuplicateSuspiciousKey(respContent) {
+			if emitAudit {
+				e.emitShadowResponse(ctx, step, resp.Usage, attempt+1, "malformed_response")
+			}
 			return Observation{
 				Step:        step,
 				Suspicious:  true,
 				Explanation: "duplicate_key_attack (fail-closed): shadow LLM response contains duplicate 'suspicious' key",
+				Usage:       resp.Usage,
 			}
 		}
 
@@ -157,10 +177,14 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 		}
 
 		if parsed.Suspicious == nil {
+			if emitAudit {
+				e.emitShadowResponse(ctx, step, resp.Usage, attempt+1, "missing_field")
+			}
 			obs := Observation{
 				Step:        step,
 				Suspicious:  true,
 				Explanation: "evaluator_unavailable (fail-closed): shadow LLM response missing 'suspicious' field",
+				Usage:       resp.Usage,
 			}
 			e.debugLog("step evaluated: missing suspicious field",
 				"step_index", step.Index, "kind", string(step.Kind),
@@ -168,6 +192,9 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 			return obs
 		}
 
+		if emitAudit {
+			e.emitShadowResponse(ctx, step, resp.Usage, attempt+1, "success")
+		}
 		e.debugLog("step evaluated",
 			"step_index", step.Index, "kind", string(step.Kind),
 			"tool", step.Tool, "suspicious", *parsed.Suspicious,
@@ -176,6 +203,7 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 			Step:        step,
 			Suspicious:  *parsed.Suspicious,
 			Explanation: parsed.Explanation,
+			Usage:       resp.Usage,
 		}
 	}
 
@@ -218,6 +246,41 @@ func truncateHeadTail(s string, max int) string {
 // TruncateHeadTail is the exported version for testing.
 func TruncateHeadTail(s string, max int) string {
 	return truncateHeadTail(s, max)
+}
+
+func (e *Evaluator) emitShadowRequest(ctx context.Context, step Step, promptLen int) {
+	event := audit.NewEvent(audit.EventTypeShadowLLMRequest, step.CorrelationID)
+	event.EventAction = audit.ActionShadowLLMRequest
+	event.EventOutcome = audit.OutcomePending
+	event.Data["step_index"] = step.Index
+	event.Data["step_kind"] = string(step.Kind)
+	event.Data["prompt_length"] = promptLen
+	e.logger.V(2).Info("emitting shadow.llm.request",
+		"correlation_id", step.CorrelationID,
+		"step_index", step.Index, "step_kind", string(step.Kind),
+		"prompt_length", promptLen)
+	alignmentShadowAuditTotal.WithLabelValues("request").Inc()
+	audit.StoreBestEffort(ctx, e.auditStore, event, e.logger)
+}
+
+func (e *Evaluator) emitShadowResponse(ctx context.Context, step Step, usage llm.TokenUsage, attempt int, evaluationResult string) {
+	event := audit.NewEvent(audit.EventTypeShadowLLMResponse, step.CorrelationID)
+	event.EventAction = audit.ActionShadowLLMResponse
+	event.EventOutcome = audit.OutcomeSuccess
+	event.Data["step_index"] = step.Index
+	event.Data["step_kind"] = string(step.Kind)
+	event.Data["prompt_tokens"] = usage.PromptTokens
+	event.Data["completion_tokens"] = usage.CompletionTokens
+	event.Data["total_tokens"] = usage.TotalTokens
+	event.Data["attempt"] = attempt
+	event.Data["evaluation_result"] = evaluationResult
+	e.logger.V(2).Info("emitting shadow.llm.response",
+		"correlation_id", step.CorrelationID,
+		"step_index", step.Index, "step_kind", string(step.Kind),
+		"total_tokens", usage.TotalTokens, "attempt", attempt,
+		"evaluation_result", evaluationResult)
+	alignmentShadowAuditTotal.WithLabelValues("response").Inc()
+	audit.StoreBestEffort(ctx, e.auditStore, event, e.logger)
 }
 
 func (e *Evaluator) debugLog(msg string, kvs ...any) {
