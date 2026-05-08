@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -70,7 +71,7 @@ var _ = Describe("UT-KA-779-PC: K8s tool parameter capture via PrependReactor", 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, objects...)
 			mapper := buildTestMapper()
 			kindIndex := buildTestKindIndex()
-			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex)
+			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
 
 			reg := registry.New()
 			for _, t := range k8s.NewAllTools(typedClient, resolver) {
@@ -114,7 +115,7 @@ var _ = Describe("UT-KA-779-PC: K8s tool parameter capture via PrependReactor", 
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, objects...)
 			mapper := buildTestMapper()
 			kindIndex := buildTestKindIndex()
-			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex)
+			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
 
 			reg := registry.New()
 			for _, t := range k8s.NewAllTools(typedClient, resolver) {

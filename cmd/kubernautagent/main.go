@@ -880,7 +880,7 @@ func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logge
 		logger.Info("failed to build kind index, using empty index", "error", err)
 		kindIndex = make(map[string]schema.GroupKind)
 	}
-	resolver := k8stools.NewDynamicResolver(infra.dynClient, infra.mapper, kindIndex)
+	resolver := k8stools.NewDynamicResolver(infra.dynClient, infra.mapper, kindIndex, logger.WithName("k8s-resolver"))
 
 	for _, t := range k8stools.NewAllTools(infra.clientset, resolver) {
 		reg.Register(t)
