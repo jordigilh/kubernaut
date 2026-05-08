@@ -22,6 +22,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -96,7 +97,7 @@ func MergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 // and values exceeding the K8s name length limit (253 chars). Issue #1061 /
 // FedRAMP SI-10.
 func isValidK8sIdentifier(s string) bool {
-	if s == "" {
+	if strings.TrimSpace(s) == "" {
 		return false
 	}
 	if utf8.RuneCountInString(s) > maxK8sIdentifierLen {
@@ -111,6 +112,35 @@ func isValidK8sIdentifier(s string) bool {
 		}
 	}
 	return true
+}
+
+// logLabelOverrideOrRejection emits structured logs when signal labels cause an
+// override (FED-1/SRE-1) or when a non-empty label value was rejected by
+// validation (SEC-6/FedRAMP AU-2). Called from runRCA and runWorkflowSelection.
+func logLabelOverrideOrRejection(logger logr.Logger, signal katypes.SignalContext, result prompt.SignalData, correlationID, phase string) {
+	kindOverridden := result.ResourceKind != signal.ResourceKind
+	nameOverridden := result.ResourceName != signal.ResourceName
+
+	if kindOverridden || nameOverridden {
+		logger.Info("signal label override applied to "+phase+" prompt",
+			"original_kind", signal.ResourceKind,
+			"original_name", signal.ResourceName,
+			"override_kind", result.ResourceKind,
+			"override_name", result.ResourceName,
+			"correlation_id", correlationID)
+	}
+
+	if signal.SignalLabels == nil {
+		return
+	}
+	if trk := signal.SignalLabels["target_resource_kind"]; trk != "" && trk != signal.ResourceKind && !kindOverridden {
+		logger.Info("signal label override rejected: invalid target_resource_kind",
+			"rejected_value", trk, "correlation_id", correlationID)
+	}
+	if trn := signal.SignalLabels["target_resource_name"]; trn != "" && trn != signal.ResourceName && !nameOverridden {
+		logger.Info("signal label override rejected: invalid target_resource_name",
+			"rejected_value", trn, "correlation_id", correlationID)
+	}
 }
 
 // SignalToPrompt converts a SignalContext to prompt.SignalData.

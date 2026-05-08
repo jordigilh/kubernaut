@@ -145,49 +145,25 @@ type resettableMapper interface {
 	Reset()
 }
 
-// resolveMappingWithAPIVersion resolves a RESTMapping using an explicit apiVersion
-// when provided, bypassing the heuristic plural-guess path. Falls back to
-// resolveMapping when apiVersion is empty. Issue #1040.
+// resolveMappingWithAPIVersion resolves a RESTMapping using an explicit
+// apiVersion. Callers must provide a non-empty apiVersion; the empty-apiVersion
+// path uses resolveMappingsAll for multi-group fallback (#1062). Issue #1040.
 func (a *K8sAdapter) resolveMappingWithAPIVersion(kind, apiVersion string) (*meta.RESTMapping, error) {
-	if apiVersion != "" {
-		gv, err := schema.ParseGroupVersion(apiVersion)
-		if err != nil {
-			return nil, fmt.Errorf("parse API version %q: %w", apiVersion, err)
-		}
-		mapping, err := a.mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: kind}, gv.Version)
-		if err != nil {
-			if rm, ok := a.mapper.(resettableMapper); ok {
-				rm.Reset()
-				mapping, err = a.mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: kind}, gv.Version)
-			}
-			if err != nil {
-				return nil, fmt.Errorf("resolve mapping for %s in apiVersion %q: %w", kind, apiVersion, err)
-			}
-		}
-		return mapping, nil
+	gv, err := schema.ParseGroupVersion(apiVersion)
+	if err != nil {
+		return nil, fmt.Errorf("parse API version %q: %w", apiVersion, err)
 	}
-	return a.resolveMapping(kind)
-}
-
-// resolveMapping returns the full RESTMapping for a Kind, including GVR and Scope.
-// Includes resettableMapper retry for CRDs installed after startup.
-func (a *K8sAdapter) resolveMapping(kind string) (*meta.RESTMapping, error) {
-	plural := strings.ToLower(kind) + "s"
-	gvr, err := a.mapper.ResourceFor(schema.GroupVersionResource{Resource: plural})
+	mapping, err := a.mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: kind}, gv.Version)
 	if err != nil {
 		if rm, ok := a.mapper.(resettableMapper); ok {
 			rm.Reset()
-			gvr, err = a.mapper.ResourceFor(schema.GroupVersionResource{Resource: plural})
+			mapping, err = a.mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: kind}, gv.Version)
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("resolve mapping for %s in apiVersion %q: %w", kind, apiVersion, err)
 		}
 	}
-	gvk, err := a.mapper.KindFor(gvr)
-	if err != nil {
-		return nil, fmt.Errorf("resolve kind for %s: %w", gvr, err)
-	}
-	return a.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	return mapping, nil
 }
 
 // getResourceWithFallback fetches a resource, trying multiple API groups when
@@ -224,11 +200,17 @@ func (a *K8sAdapter) getResourceWithFallback(ctx context.Context, kind, name, na
 			}
 			return obj, mapping, nil
 		}
+		errReason := "unknown"
+		if errors.IsNotFound(getErr) {
+			errReason = "NotFound"
+		} else if errors.IsForbidden(getErr) {
+			errReason = "Forbidden"
+		}
 		a.logger.V(1).Info("multi-group fallback attempt",
 			"kind", kind, "name", name, "namespace", namespace,
 			"api_group", mapping.Resource.Group,
 			"gvr", mapping.Resource.String(),
-			"result", "NotFound/Forbidden")
+			"result", errReason)
 		lastErr = getErr
 		if !errors.IsNotFound(getErr) && !errors.IsForbidden(getErr) {
 			return nil, nil, fmt.Errorf("k8s adapter: get %s/%s in %s: %w", kind, name, namespace, getErr)

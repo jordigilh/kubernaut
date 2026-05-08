@@ -286,6 +286,44 @@ var _ = Describe("Issue #1061: signalToPrompt target_resource label override", f
 		})
 	})
 
+	Describe("UT-KA-1061-015: Both labels invalid simultaneously (FedRAMP SI-10)", func() {
+		It("should ignore both labels when kind has path traversal and name has control chars", func() {
+			signal := katypes.SignalContext{
+				ResourceKind: "Namespace",
+				ResourceName: "demo-operator",
+				SignalLabels: map[string]string{
+					"target_resource_kind": "../etc/passwd",
+					"target_resource_name": "etcd\x00injected",
+				},
+			}
+
+			result := investigator.SignalToPrompt(signal)
+			Expect(result.ResourceKind).To(Equal("Namespace"),
+				"BR-AI-1061: path traversal kind must be rejected")
+			Expect(result.ResourceName).To(Equal("demo-operator"),
+				"BR-AI-1061: control-char name must be rejected")
+		})
+	})
+
+	Describe("UT-KA-1061-016: Whitespace-only label values are rejected (FedRAMP SI-10)", func() {
+		It("should ignore label values that are only whitespace", func() {
+			signal := katypes.SignalContext{
+				ResourceKind: "Namespace",
+				ResourceName: "demo-operator",
+				SignalLabels: map[string]string{
+					"target_resource_kind": "   ",
+					"target_resource_name": "\t\n",
+				},
+			}
+
+			result := investigator.SignalToPrompt(signal)
+			Expect(result.ResourceKind).To(Equal("Namespace"),
+				"BR-AI-1061: whitespace-only kind label must be rejected")
+			Expect(result.ResourceName).To(Equal("demo-operator"),
+				"BR-AI-1061: whitespace-only name label must be rejected")
+		})
+	})
+
 	Describe("UT-KA-1061-014: sameKindValidationGate uses signal.ResourceKind, not overridden kind (ARCH-5)", func() {
 		It("should confirm that signal.ResourceKind is unmodified after SignalToPrompt", func() {
 			signal := katypes.SignalContext{
