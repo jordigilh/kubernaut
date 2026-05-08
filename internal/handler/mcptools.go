@@ -17,4 +17,10 @@ var mcpToolRegistry = []MCPToolDef{
 	{Name: "kubernaut_get_remediation_history", Description: "Get remediation execution history"},
 	{Name: "kubernaut_get_effectiveness", Description: "Get remediation effectiveness metrics"},
 	{Name: "kubernaut_get_audit_trail", Description: "Get audit trail for remediations"},
+	{Name: "af_list_events", Description: "List Kubernetes events filtered by namespace with optional reason/object filters"},
+	{Name: "af_get_pods", Description: "Get pod status summaries including container states and conditions"},
+	{Name: "af_get_workloads", Description: "List Deployment and StatefulSet health with replica counts"},
+	{Name: "af_resolve_owner", Description: "Trace owner references from a resource to its root workload"},
+	{Name: "af_check_existing_rr", Description: "Check for existing non-terminal RemediationRequest by fingerprint"},
+	{Name: "af_create_rr", Description: "Create a RemediationRequest with singleflight deduplication"},
 }

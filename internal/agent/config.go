@@ -3,9 +3,11 @@
 package agent
 
 import (
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/client-go/dynamic"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ds"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ka"
 )
@@ -38,6 +40,13 @@ type AgentConfig struct {
 	MCPClient ka.MCPClient
 	// Auditor emits audit events for RBAC denials (FedRAMP SI-4).
 	Auditor audit.Emitter
+	// ToolCallsTotal is the af_tool_calls_total counter for observability wiring.
+	ToolCallsTotal *prometheus.CounterVec
+	// ToolCallDuration is the af_tool_call_duration_seconds histogram.
+	ToolCallDuration *prometheus.HistogramVec
+	// ImpersonatingClientFactory creates per-request impersonated dynamic clients
+	// for read-only triage tools (SEC-05). If nil, triage tools fall back to K8sClient.
+	ImpersonatingClientFactory auth.DynamicClientFactory
 }
 
 // Option applies a configuration override to AgentConfig.

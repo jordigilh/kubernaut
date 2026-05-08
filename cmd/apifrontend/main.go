@@ -50,6 +50,7 @@ import (
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/requestid"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/resilience"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/session"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/streaming"
 )
 
@@ -222,29 +223,38 @@ func run() error {
 	})
 
 	// --- K8s dynamic client with circuit breaker ---
-	k8sClient, err := buildK8sDynamicClient(k8sCB, logger)
+	k8sClient, restCfg, err := buildK8sDynamicClient(k8sCB, logger)
 	if err != nil {
 		return fmt.Errorf("create K8s dynamic client: %w", err)
 	}
 
+	// Impersonating factory for triage tools (SEC-05): reads run as the authenticated user
+	var triageFactory auth.DynamicClientFactory
+	if restCfg != nil {
+		triageFactory = auth.NewImpersonatingDynamicFactory(restCfg)
+	}
+
 	agentCfg := agentpkg.AgentConfig{
-		GCPProject:    cfg.Agent.GCPProject,
-		GCPRegion:     cfg.Agent.GCPRegion,
-		Instruction:   "You are the Kubernaut API Frontend agent. Help users triage and remediate Kubernetes incidents.",
-		KABaseURL:     cfg.Agent.KABaseURL,
-		KAMCPEndpoint: cfg.Agent.KAMCPEndpoint,
-		DSBaseURL:     cfg.Agent.DSBaseURL,
-		K8sClient:     k8sClient,
-		DSClient:      dsClient,
-		KAClient:      kaClient,
-		Auditor:       auditor,
-		MCPClient:     mcpClient,
+		GCPProject:                 cfg.Agent.GCPProject,
+		GCPRegion:                  cfg.Agent.GCPRegion,
+		Instruction:                "You are the Kubernaut API Frontend agent. Help users triage and remediate Kubernetes incidents.",
+		KABaseURL:                  cfg.Agent.KABaseURL,
+		KAMCPEndpoint:              cfg.Agent.KAMCPEndpoint,
+		DSBaseURL:                  cfg.Agent.DSBaseURL,
+		K8sClient:                  k8sClient,
+		DSClient:                   dsClient,
+		KAClient:                   kaClient,
+		Auditor:                    auditor,
+		MCPClient:                  mcpClient,
+		ToolCallsTotal:             metricsReg.ToolCallsTotal,
+		ToolCallDuration:           metricsReg.ToolCallDuration,
+		ImpersonatingClientFactory: triageFactory,
 	}
 	rootAgent, _, err := agentpkg.NewRootAgent(agentCfg)
 	if err != nil {
 		return fmt.Errorf("create root agent: %w", err)
 	}
-	sessionSvc := adksession.InMemoryService()
+	sessionSvc := session.NewSessionServiceDecorator(adksession.InMemoryService())
 
 	a2aHandler, err := launcher.NewA2AHandler(launcher.A2AConfig{
 		Agent:          rootAgent,
@@ -475,17 +485,17 @@ func parseLogLevel(s string) (zapcore.Level, error) {
 	return l, err
 }
 
-func buildK8sDynamicClient(cb *resilience.K8sCircuitBreaker, logger logr.Logger) (dynamic.Interface, error) {
+func buildK8sDynamicClient(cb *resilience.K8sCircuitBreaker, logger logr.Logger) (dynamic.Interface, *rest.Config, error) {
 	restCfg, err := rest.InClusterConfig()
 	if err != nil {
 		logger.Error(err, "in-cluster config unavailable — CRD tools will return errors until cluster access is configured")
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	rawClient, err := dynamic.NewForConfig(restCfg)
 	if err != nil {
-		return nil, fmt.Errorf("create dynamic client: %w", err)
+		return nil, nil, fmt.Errorf("create dynamic client: %w", err)
 	}
 
-	return resilience.NewResilientDynamicClient(rawClient, cb), nil
+	return resilience.NewResilientDynamicClient(rawClient, cb), restCfg, nil
 }

@@ -14,6 +14,12 @@ roles:
     - kubernaut_get_remediation_history
     - kubernaut_get_effectiveness
     - kubernaut_get_audit_trail
+    - af_list_events
+    - af_get_pods
+    - af_get_workloads
+    - af_resolve_owner
+    - af_check_existing_rr
+    - af_create_rr
 
   ai-orchestrator:
     - kubernaut_list_remediations
@@ -26,6 +32,12 @@ roles:
     - kubernaut_poll_investigation
     - kubernaut_select_workflow
     - present_decision
+    - af_list_events
+    - af_get_pods
+    - af_get_workloads
+    - af_resolve_owner
+    - af_check_existing_rr
+    - af_create_rr
 
   cicd:
     - kubernaut_submit_signal
@@ -39,6 +51,9 @@ roles:
     - kubernaut_watch
     - kubernaut_get_effectiveness
     - kubernaut_list_workflows
+    - af_list_events
+    - af_get_pods
+    - af_get_workloads
 
   l3-audit:
     - kubernaut_list_remediations

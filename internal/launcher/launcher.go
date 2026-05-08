@@ -16,6 +16,7 @@ import (
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/session"
 )
 
 // A2AConfig holds the configuration for the A2A JSON-RPC handler.
@@ -81,6 +82,7 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 
 // buildBeforeExecuteCallback wraps the user-supplied callback and emits an
 // audit event when an A2A task starts (AU-2 compliance).
+// It also injects SessionCreateContext so the decorator can enrich session creation.
 func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Context, error), auditor audit.Emitter) adka2a.BeforeExecuteCallback {
 	return func(ctx context.Context, reqCtx *a2asrv.RequestContext) (context.Context, error) {
 		user := auth.UserIdentityFromContext(ctx)
@@ -99,6 +101,15 @@ func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Contex
 				UserID: username,
 				Detail: detail,
 			})
+		}
+
+		// Inject session creation context for the SessionServiceDecorator.
+		// The decorator reads this to build CreateConfig with task/user metadata.
+		if reqCtx != nil {
+			sc := &session.SessionCreateContext{
+				TaskID: string(reqCtx.TaskID),
+			}
+			ctx = session.WithSessionCreateContext(ctx, sc)
 		}
 
 		if userCb != nil {

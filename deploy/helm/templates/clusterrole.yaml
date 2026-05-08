@@ -7,19 +7,29 @@ metadata:
     {{- include "kubernaut-apifrontend.labels" . | nindent 4 }}
 rules:
   # CRD read/write for core kubernaut resources
-  - apiGroups: ["kubernaut.io"]
+  - apiGroups: ["kubernaut.ai"]
     resources:
       - remediationrequests
-      - remediationactionrequests
-      - signalpipelines
+      - remediationapprovalrequests
+      - signalprocessings
       - investigationsessions
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["kubernaut.io"]
+  - apiGroups: ["kubernaut.ai"]
     resources:
       - remediationrequests/status
-      - remediationactionrequests/status
+      - remediationapprovalrequests/status
       - investigationsessions/status
     verbs: ["get", "update", "patch"]
+  # Core API read access for triage tools (events, pods, workloads)
+  - apiGroups: [""]
+    resources: ["events", "pods", "replicationcontrollers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets", "daemonsets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list"]
   # TokenReview for JWT validation fallback
   - apiGroups: ["authentication.k8s.io"]
     resources: ["tokenreviews"]

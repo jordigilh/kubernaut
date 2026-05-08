@@ -15,6 +15,8 @@ import (
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
+
+	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 )
 
 var rrGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
@@ -225,7 +227,7 @@ func NewSubmitSignalTool(client dynamic.Interface) (tool.Tool, error) {
 		Name:        "kubernaut_submit_signal",
 		Description: "Submit a new incident signal for triage and potential remediation",
 	}, func(ctx tool.Context, args SubmitSignalArgs) (SubmitSignalResult, error) {
-		return HandleSubmitSignal(ctx, client, args, "system")
+		return HandleSubmitSignal(ctx, client, args, usernameFromContext(ctx))
 	})
 }
 
@@ -293,8 +295,17 @@ func NewApproveTool(client dynamic.Interface) (tool.Tool, error) {
 		Name:        "kubernaut_approve",
 		Description: "Approve or reject a pending remediation approval request",
 	}, func(ctx tool.Context, args ApproveArgs) (ApproveResult, error) {
-		return HandleApprove(ctx, client, args, "system")
+		return HandleApprove(ctx, client, args, usernameFromContext(ctx))
 	})
+}
+
+// usernameFromContext extracts the authenticated username from tool context.
+// Falls back to "system" when no identity is present (e.g. in tests).
+func usernameFromContext(ctx context.Context) string {
+	if identity := auth.UserIdentityFromContext(ctx); identity != nil && identity.Username != "" {
+		return identity.Username
+	}
+	return "system"
 }
 
 // CancelRemediationArgs defines the input for kubernaut_cancel_remediation.
