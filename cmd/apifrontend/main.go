@@ -20,6 +20,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -198,8 +199,13 @@ func run() error {
 
 	// --- MCP client (Pattern B JWT delegation) ---
 	mcpHTTPClient := &http.Client{
+		Timeout: 30 * time.Second,
 		Transport: &auth.ContextJWTDelegationTransport{
-			Base: &requestid.Transport{Base: http.DefaultTransport},
+			Base: &requestid.Transport{Base: &http.Transport{
+				DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+				TLSHandshakeTimeout:   5 * time.Second,
+				ResponseHeaderTimeout: 15 * time.Second,
+			}},
 		},
 	}
 	mcpClient := ka.NewSDKMCPClient(cfg.Agent.KAMCPEndpoint, mcpHTTPClient, logger)
@@ -362,26 +368,27 @@ func run() error {
 		logger.Info("SSE connections drained", "count", drained)
 	}
 
-	// 3. Flush audit buffer
+	// 3. Graceful HTTP drain — wait for in-flight requests to complete
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	if shutdownErr := srv.Shutdown(shutdownCtx); shutdownErr != nil {
+		logger.Error(shutdownErr, "server shutdown error, forcing close")
+		_ = srv.Close()
+	}
+	shutdownCancel()
+
+	// 4. Flush audit buffer AFTER srv.Shutdown so late audit events
+	// (e.g. from cancelled handler contexts) are captured.
 	flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if flushErr := bufferedAuditor.Close(flushCtx); flushErr != nil {
 		logger.Error(flushErr, "audit flush error during shutdown")
 	}
 	flushCancel()
 
-	// 4. Graceful HTTP drain
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer shutdownCancel()
+	logger.Info("shutdown complete")
 
-	if shutdownErr := srv.Shutdown(shutdownCtx); shutdownErr != nil {
-		logger.Error(shutdownErr, "server shutdown error, forcing close")
-		_ = srv.Close()
-	}
-
-	// 5. Sync logger to flush buffered entries
+	// 5. Sync logger AFTER final log message to guarantee it's flushed
 	logging.Sync()
 
-	logger.Info("shutdown complete")
 	return nil
 }
 

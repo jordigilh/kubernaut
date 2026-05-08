@@ -10,6 +10,8 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 )
@@ -102,14 +104,18 @@ var _ = Describe("BufferedEmitter", func() {
 			Expect(evt.Detail["safe_key"]).To(Equal("visible"))
 		})
 
-		It("drops events on buffer overflow without blocking", func() {
+		It("drops events on buffer overflow without blocking and increments counter", func() {
+			overflowCounter := prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "test_overflow_total",
+			})
 			writer = &mockWriter{err: errors.New("slow writer")}
 			emitter = audit.NewBufferedEmitter(audit.BufferConfig{
-				Writer:        writer,
-				Logger:        logr.Discard(),
-				BufferSize:    2,
-				FlushInterval: 1 * time.Hour,
-				BatchSize:     1000,
+				Writer:          writer,
+				Logger:          logr.Discard(),
+				BufferSize:      2,
+				FlushInterval:   1 * time.Hour,
+				BatchSize:       1000,
+				OverflowCounter: overflowCounter,
 			})
 
 			for i := 0; i < 10; i++ {
@@ -117,7 +123,9 @@ var _ = Describe("BufferedEmitter", func() {
 					Type: audit.EventAuthSuccess,
 				})
 			}
-			// Should not block — overflow events are dropped
+			// Should not block — overflow events are dropped.
+			// Buffer holds 2, so at least 8 should overflow.
+			Expect(testutil.ToFloat64(overflowCounter)).To(BeNumerically(">=", 8))
 		})
 	})
 
@@ -139,7 +147,7 @@ var _ = Describe("BufferedEmitter", func() {
 				})
 			}
 
-			time.Sleep(10 * time.Millisecond)
+			// Close drains the buffer synchronously — no sleep needed
 			err := emitter.Close(context.Background())
 			Expect(err).NotTo(HaveOccurred())
 			Expect(writer.eventCount()).To(Equal(3))
@@ -160,7 +168,7 @@ var _ = Describe("BufferedEmitter", func() {
 				Type: audit.EventA2ATaskFailed,
 			})
 
-			time.Sleep(10 * time.Millisecond)
+			// Close drains the buffer synchronously — no sleep needed
 			err := emitter.Close(context.Background())
 			Expect(err).NotTo(HaveOccurred())
 			emitter = nil

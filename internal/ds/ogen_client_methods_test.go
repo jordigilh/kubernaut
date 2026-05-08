@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 func newTestOgenClient(t *testing.T, handler http.Handler) *OgenClient {
@@ -219,5 +220,35 @@ func TestOgenClient_WriteAuditEvents_ServerError(t *testing.T) {
 	err := client.WriteAuditEvents(context.Background(), events)
 	if err == nil {
 		t.Fatal("WriteAuditEvents() expected error on 500 response")
+	}
+}
+
+func TestEventOutcome(t *testing.T) {
+	cases := []struct {
+		eventType audit.EventType
+		want      string
+	}{
+		{audit.EventAuthFailure, "failure"},
+		{audit.EventA2ATaskFailed, "failure"},
+		{audit.EventRateLimitDenied, "failure"},
+		{audit.EventCircuitBreakerTrip, "failure"},
+		{audit.EventConfigRejected, "failure"},
+		{audit.EventSessionAutoCancelled, "failure"},
+		{audit.EventRBACDenied, "failure"},
+		{audit.EventAuthSuccess, "success"},
+		{audit.EventA2ATaskStarted, "success"},
+		{audit.EventA2ATaskCompleted, "success"},
+		{audit.EventSessionCreated, "success"},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.eventType), func(t *testing.T) {
+			got := eventOutcome(tc.eventType)
+			if tc.want == "failure" && got != ogenclient.AuditEventRequestEventOutcomeFailure {
+				t.Errorf("eventOutcome(%q) = %v, want Failure", tc.eventType, got)
+			}
+			if tc.want == "success" && got != ogenclient.AuditEventRequestEventOutcomeSuccess {
+				t.Errorf("eventOutcome(%q) = %v, want Success", tc.eventType, got)
+			}
+		})
 	}
 }

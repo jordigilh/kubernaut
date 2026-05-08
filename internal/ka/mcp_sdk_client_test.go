@@ -28,16 +28,23 @@ var _ = Describe("SDKMCPClient", func() {
 		}
 	})
 
-	buildTestServer := func(toolHandler func(ctx context.Context, req *mcp.CallToolRequest, extra any) (*mcp.CallToolResult, any, error)) *httptest.Server {
+	type toolDef struct {
+		name    string
+		handler func(ctx context.Context, req *mcp.CallToolRequest, extra any) (*mcp.CallToolResult, any, error)
+	}
+
+	buildTestServer := func(tools ...toolDef) *httptest.Server {
 		server := mcp.NewServer(&mcp.Implementation{
 			Name:    "ka-mock",
 			Version: "test",
 		}, nil)
 
-		mcp.AddTool(server, &mcp.Tool{
-			Name:        "kubernaut_select_workflow",
-			Description: "Select a workflow for remediation",
-		}, toolHandler)
+		for _, td := range tools {
+			mcp.AddTool(server, &mcp.Tool{
+				Name:        td.name,
+				Description: td.name,
+			}, td.handler)
+		}
 
 		handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 			return server
@@ -51,15 +58,18 @@ var _ = Describe("SDKMCPClient", func() {
 
 	Describe("SelectWorkflow", func() {
 		It("returns workflow result on success", func() {
-			ts = buildTestServer(func(_ context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
-				resp := map[string]string{
-					"status":  "accepted",
-					"message": "workflow wf-001 selected",
-				}
-				data, _ := json.Marshal(resp)
-				return &mcp.CallToolResult{
-					Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
-				}, nil, nil
+			ts = buildTestServer(toolDef{
+				name: "kubernaut_select_workflow",
+				handler: func(_ context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+					resp := map[string]string{
+						"status":  "accepted",
+						"message": "workflow wf-001 selected",
+					}
+					data, _ := json.Marshal(resp)
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
+					}, nil, nil
+				},
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
@@ -134,10 +144,13 @@ var _ = Describe("SDKMCPClient", func() {
 		})
 
 		It("returns error when auth fails", func() {
-			ts = buildTestServer(func(_ context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
-				return &mcp.CallToolResult{
-					Content: []mcp.Content{&mcp.TextContent{Text: "{}"}},
-				}, nil, nil
+			ts = buildTestServer(toolDef{
+				name: "kubernaut_select_workflow",
+				handler: func(_ context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: "{}"}},
+					}, nil, nil
+				},
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: ""}}
@@ -148,6 +161,69 @@ var _ = Describe("SDKMCPClient", func() {
 				WorkflowID: "wf-002",
 			})
 			Expect(err).To(HaveOccurred())
+		})
+	})
+	Describe("Investigate", func() {
+		It("returns investigation result on success (QE-11)", func() {
+			ts = buildTestServer(toolDef{
+				name: "kubernaut_investigate",
+				handler: func(_ context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+					resp := map[string]string{
+						"status":  "complete",
+						"summary": "pod crashlooping due to OOM",
+					}
+					data, _ := json.Marshal(resp)
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
+					}, nil, nil
+				},
+			})
+
+			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "alice@example.com",
+				RawToken: "token-for-alice@example.com",
+			})
+
+			result, err := client.Investigate(ctx, ka.InvestigateArgs{
+				Namespace: "prod",
+				Kind:      "Deployment",
+				Name:      "web-api",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.Status).To(Equal("complete"))
+			Expect(result.Summary).To(ContainSubstring("OOM"))
+		})
+
+		It("returns error on tool failure", func() {
+			ts = buildTestServer(toolDef{
+				name: "kubernaut_investigate",
+				handler: func(_ context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+					return &mcp.CallToolResult{
+						IsError: true,
+						Content: []mcp.Content{&mcp.TextContent{Text: "investigation failed: resource not found"}},
+					}, nil, nil
+				},
+			})
+
+			httpClient := &http.Client{Transport: &authedRoundTripper{user: "bob@example.com"}}
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "bob@example.com",
+				RawToken: "token-for-bob@example.com",
+			})
+
+			_, err := client.Investigate(ctx, ka.InvestigateArgs{
+				Namespace: "default",
+				Kind:      "Pod",
+				Name:      "missing",
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("kubernaut agent"))
 		})
 	})
 })

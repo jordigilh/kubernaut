@@ -2,6 +2,7 @@ package streaming_test
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"sync"
 
@@ -108,5 +109,5 @@ var _ = Describe("ConnectionTracker", func() {
 })
 
 func connID(i int) string {
-	return "conn-" + string(rune('a'+i))
+	return fmt.Sprintf("conn-%d", i)
 }

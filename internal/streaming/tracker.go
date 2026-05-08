@@ -66,7 +66,17 @@ func (t *ConnectionTracker) Count() int {
 
 // DrainAll sends an SSE shutdown event to all connections, waits for the
 // configured drainWait period for clients to self-disconnect, then force-cancels
-// remaining connections. Returns the number of connections force-closed.
+// remaining connections. Returns the number of connections drained (includes both
+// those that self-disconnected and those force-cancelled — the count reflects
+// all connections active at drain start, not exclusively forced closures).
+//
+// Concurrency note (ARCH-9): The shutdown frame write occurs after clearing the
+// map but while handler goroutines may still be writing to the same ResponseWriter.
+// The drainWait grace period is designed so handlers observe context cancellation
+// and stop writing before the frame is sent. No mutex protects the ResponseWriter
+// because http.ResponseWriter is not safe for concurrent use and adding one would
+// risk deadlock with streaming flushers. If drainWait is too short, a data race on
+// the ResponseWriter is theoretically possible but benign (connection is closing).
 func (t *ConnectionTracker) DrainAll(ctx context.Context) int {
 	t.mu.Lock()
 	snapshot := make([]*TrackedConnection, 0, len(t.conns))

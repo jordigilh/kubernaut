@@ -98,6 +98,11 @@ func (e *BufferedEmitter) Emit(ctx context.Context, event *Event) {
 // Close stops accepting new events, drains the buffer, and flushes remaining
 // events to the writer. If the writer fails, remaining events are logged.
 // The context deadline bounds total close time.
+//
+// If Close returns ctx.Err() due to timeout, the flushLoop goroutine continues
+// running until it finishes draining the bounded buffer (max 4096 events). This
+// is a bounded goroutine leak — it completes once all buffered events are flushed
+// or logged. The writer may be called after the caller's shutdown sequence completes.
 func (e *BufferedEmitter) Close(ctx context.Context) error {
 	close(e.done)
 	done := make(chan struct{})
