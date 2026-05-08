@@ -64,7 +64,7 @@ var (
 	enricher    *enrichment.Enricher
 	auditStore  *audit.DSAuditStore
 	suiteLogger logr.Logger
-	k8sAdapter  enrichment.K8sClient
+	k8sAdapter  *enrichment.K8sAdapter
 )
 
 var _ = SynchronizedBeforeSuite(
