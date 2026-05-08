@@ -224,12 +224,12 @@ func (a *K8sAdapter) getResourceWithFallback(ctx context.Context, kind, name, na
 // Uses ResourcesFor instead of ResourceFor to avoid AmbiguousResourceError.
 // Issue #1062.
 func (a *K8sAdapter) resolveMappingsAll(kind string) ([]*meta.RESTMapping, error) {
-	plural := strings.ToLower(kind) + "s"
-	gvrs, err := a.mapper.ResourcesFor(schema.GroupVersionResource{Resource: plural})
+	resource := strings.ToLower(kind)
+	gvrs, err := a.mapper.ResourcesFor(schema.GroupVersionResource{Resource: resource})
 	if err != nil {
 		if rm, ok := a.mapper.(resettableMapper); ok {
 			rm.Reset()
-			gvrs, err = a.mapper.ResourcesFor(schema.GroupVersionResource{Resource: plural})
+			gvrs, err = a.mapper.ResourcesFor(schema.GroupVersionResource{Resource: resource})
 		}
 		if err != nil {
 			return nil, err

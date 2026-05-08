@@ -138,8 +138,11 @@ func (d *LabelDetector) resolveMapping(kind string) (*meta.RESTMapping, error) {
 	if d.mapper == nil {
 		return nil, fmt.Errorf("REST mapper is required for GVR resolution of kind %q", kind)
 	}
-	plural := strings.ToLower(kind) + "s"
-	gvr, err := d.mapper.ResourceFor(schema.GroupVersionResource{Resource: plural})
+	if kind == "" {
+		return nil, fmt.Errorf("kind must not be empty")
+	}
+	resource := strings.ToLower(kind)
+	gvr, err := d.mapper.ResourceFor(schema.GroupVersionResource{Resource: resource})
 	if err != nil {
 		return nil, err
 	}

@@ -438,8 +438,11 @@ func (r *mapperScopeResolver) IsClusterScoped(kind string) (bool, error) {
 // collision where the REST mapper cannot resolve a unique GVR without an
 // explicit apiVersion. Issue #1044.
 func (r *mapperScopeResolver) IsAmbiguousKind(kind string) (bool, []schema.GroupVersionResource, error) {
-	plural := strings.ToLower(kind) + "s"
-	gvrs, err := r.mapper.ResourcesFor(schema.GroupVersionResource{Resource: plural})
+	if kind == "" {
+		return false, nil, nil
+	}
+	resource := strings.ToLower(kind)
+	gvrs, err := r.mapper.ResourcesFor(schema.GroupVersionResource{Resource: resource})
 	if err != nil {
 		if meta.IsNoMatchError(err) {
 			return false, nil, nil
