@@ -239,10 +239,14 @@ func main() {
 				Timeout:       cfg.AI.AlignmentCheck.Timeout,
 				MaxStepTokens: cfg.AI.AlignmentCheck.MaxStepTokens,
 				MaxRetries:    cfg.AI.AlignmentCheck.MaxRetries,
-			}, alignprompt.SystemPrompt(), alignment.WithLogger(logger))
+			}, alignprompt.SystemPrompt(), alignment.WithLogger(logger), alignment.WithAuditStore(auditStore))
 			effectiveLLM = alignment.NewLLMProxy(instrumentedLLM)
 			effectiveReg = alignment.NewToolProxy(reg)
-			logger.Info("shadow agent alignment check enabled")
+			// #1059: Shadow audit emits aiagent.shadow.llm.request/response events.
+			// data-storage must deploy the updated OpenAPI schema (ShadowLLMRequestPayload,
+			// ShadowLLMResponsePayload) BEFORE this kubernaut-agent version is rolled out,
+			// otherwise DS will reject the unknown event_type discriminator values.
+			logger.Info("shadow agent alignment check enabled (shadow LLM audit active: request/response events will be emitted per step)")
 		}
 	}
 

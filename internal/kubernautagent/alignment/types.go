@@ -16,6 +16,8 @@ limitations under the License.
 
 package alignment
 
+import "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+
 // StepKind distinguishes the source of content being evaluated.
 type StepKind string
 
@@ -27,17 +29,19 @@ const (
 
 // Step represents a single piece of content to be evaluated by the shadow agent.
 type Step struct {
-	Index   int      `json:"index"`
-	Kind    StepKind `json:"kind"`
-	Tool    string   `json:"tool,omitempty"`
-	Content string   `json:"content"`
+	Index         int      `json:"index"`
+	Kind          StepKind `json:"kind"`
+	Tool          string   `json:"tool,omitempty"`
+	Content       string   `json:"content"`
+	CorrelationID string   `json:"correlation_id,omitempty"`
 }
 
 // Observation is the evaluator's assessment of a single step.
 type Observation struct {
-	Step        Step   `json:"step"`
-	Suspicious  bool   `json:"suspicious"`
-	Explanation string `json:"explanation"`
+	Step        Step           `json:"step"`
+	Suspicious  bool           `json:"suspicious"`
+	Explanation string         `json:"explanation"`
+	Usage       llm.TokenUsage `json:"usage"`
 }
 
 // VerdictResult summarizes the shadow agent's overall assessment.

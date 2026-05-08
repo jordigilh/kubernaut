@@ -5649,9 +5649,27 @@ func (s *AlignmentVerdictPayload) encodeFields(e *jx.Encoder) {
 		e.FieldStart("total")
 		e.Int(s.Total)
 	}
+	{
+		if s.ShadowPromptTokens.Set {
+			e.FieldStart("shadow_prompt_tokens")
+			s.ShadowPromptTokens.Encode(e)
+		}
+	}
+	{
+		if s.ShadowCompletionTokens.Set {
+			e.FieldStart("shadow_completion_tokens")
+			s.ShadowCompletionTokens.Encode(e)
+		}
+	}
+	{
+		if s.ShadowTotalTokens.Set {
+			e.FieldStart("shadow_total_tokens")
+			s.ShadowTotalTokens.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfAlignmentVerdictPayload = [7]string{
+var jsonFieldsNameOfAlignmentVerdictPayload = [10]string{
 	0: "event_type",
 	1: "event_id",
 	2: "incident_id",
@@ -5659,6 +5677,9 @@ var jsonFieldsNameOfAlignmentVerdictPayload = [7]string{
 	4: "summary",
 	5: "flagged",
 	6: "total",
+	7: "shadow_prompt_tokens",
+	8: "shadow_completion_tokens",
+	9: "shadow_total_tokens",
 }
 
 // Decode decodes AlignmentVerdictPayload from json.
@@ -5666,7 +5687,7 @@ func (s *AlignmentVerdictPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode AlignmentVerdictPayload to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -5748,6 +5769,36 @@ func (s *AlignmentVerdictPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"total\"")
 			}
+		case "shadow_prompt_tokens":
+			if err := func() error {
+				s.ShadowPromptTokens.Reset()
+				if err := s.ShadowPromptTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"shadow_prompt_tokens\"")
+			}
+		case "shadow_completion_tokens":
+			if err := func() error {
+				s.ShadowCompletionTokens.Reset()
+				if err := s.ShadowCompletionTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"shadow_completion_tokens\"")
+			}
+		case "shadow_total_tokens":
+			if err := func() error {
+				s.ShadowTotalTokens.Reset()
+				if err := s.ShadowTotalTokens.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"shadow_total_tokens\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -5757,8 +5808,9 @@ func (s *AlignmentVerdictPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
+	for i, mask := range [2]uint8{
 		0b01101111,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -8191,6 +8243,96 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.FieldStart("total")
 				e.Int(s.Total)
 			}
+			{
+				if s.ShadowPromptTokens.Set {
+					e.FieldStart("shadow_prompt_tokens")
+					s.ShadowPromptTokens.Encode(e)
+				}
+			}
+			{
+				if s.ShadowCompletionTokens.Set {
+					e.FieldStart("shadow_completion_tokens")
+					s.ShadowCompletionTokens.Encode(e)
+				}
+			}
+			{
+				if s.ShadowTotalTokens.Set {
+					e.FieldStart("shadow_total_tokens")
+					s.ShadowTotalTokens.Encode(e)
+				}
+			}
+		}
+	case ShadowLLMRequestPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.shadow.llm.request")
+		{
+			s := s.ShadowLLMRequestPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("step_index")
+				e.Int(s.StepIndex)
+			}
+			{
+				e.FieldStart("step_kind")
+				e.Str(s.StepKind)
+			}
+			{
+				e.FieldStart("prompt_length")
+				e.Int(s.PromptLength)
+			}
+		}
+	case ShadowLLMResponsePayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.shadow.llm.response")
+		{
+			s := s.ShadowLLMResponsePayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("step_index")
+				e.Int(s.StepIndex)
+			}
+			{
+				e.FieldStart("step_kind")
+				e.Str(s.StepKind)
+			}
+			{
+				e.FieldStart("prompt_tokens")
+				e.Int(s.PromptTokens)
+			}
+			{
+				e.FieldStart("completion_tokens")
+				e.Int(s.CompletionTokens)
+			}
+			{
+				e.FieldStart("total_tokens")
+				e.Int(s.TotalTokens)
+			}
+			{
+				if s.Attempt.Set {
+					e.FieldStart("attempt")
+					s.Attempt.Encode(e)
+				}
+			}
+			{
+				if s.EvaluationResult.Set {
+					e.FieldStart("evaluation_result")
+					s.EvaluationResult.Encode(e)
+				}
+			}
 		}
 	case RemediationRequestWebhookAuditPayloadAuditEventEventData:
 		e.FieldStart("event_type")
@@ -8883,6 +9025,12 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.alignment.verdict":
 					s.Type = AlignmentVerdictPayloadAuditEventEventData
 					found = true
+				case "aiagent.shadow.llm.request":
+					s.Type = ShadowLLMRequestPayloadAuditEventEventData
+					found = true
+				case "aiagent.shadow.llm.response":
+					s.Type = ShadowLLMResponsePayloadAuditEventEventData
+					found = true
 				case "webhook.remediationrequest.timeout_modified":
 					s.Type = RemediationRequestWebhookAuditPayloadAuditEventEventData
 					found = true
@@ -9092,6 +9240,14 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case AlignmentVerdictPayloadAuditEventEventData:
 		if err := s.AlignmentVerdictPayload.Decode(d); err != nil {
+			return err
+		}
+	case ShadowLLMRequestPayloadAuditEventEventData:
+		if err := s.ShadowLLMRequestPayload.Decode(d); err != nil {
+			return err
+		}
+	case ShadowLLMResponsePayloadAuditEventEventData:
+		if err := s.ShadowLLMResponsePayload.Decode(d); err != nil {
 			return err
 		}
 	case RemediationRequestWebhookAuditPayloadAuditEventEventData:
@@ -11353,6 +11509,96 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				e.FieldStart("total")
 				e.Int(s.Total)
 			}
+			{
+				if s.ShadowPromptTokens.Set {
+					e.FieldStart("shadow_prompt_tokens")
+					s.ShadowPromptTokens.Encode(e)
+				}
+			}
+			{
+				if s.ShadowCompletionTokens.Set {
+					e.FieldStart("shadow_completion_tokens")
+					s.ShadowCompletionTokens.Encode(e)
+				}
+			}
+			{
+				if s.ShadowTotalTokens.Set {
+					e.FieldStart("shadow_total_tokens")
+					s.ShadowTotalTokens.Encode(e)
+				}
+			}
+		}
+	case ShadowLLMRequestPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.shadow.llm.request")
+		{
+			s := s.ShadowLLMRequestPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("step_index")
+				e.Int(s.StepIndex)
+			}
+			{
+				e.FieldStart("step_kind")
+				e.Str(s.StepKind)
+			}
+			{
+				e.FieldStart("prompt_length")
+				e.Int(s.PromptLength)
+			}
+		}
+	case ShadowLLMResponsePayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.shadow.llm.response")
+		{
+			s := s.ShadowLLMResponsePayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				e.FieldStart("incident_id")
+				e.Str(s.IncidentID)
+			}
+			{
+				e.FieldStart("step_index")
+				e.Int(s.StepIndex)
+			}
+			{
+				e.FieldStart("step_kind")
+				e.Str(s.StepKind)
+			}
+			{
+				e.FieldStart("prompt_tokens")
+				e.Int(s.PromptTokens)
+			}
+			{
+				e.FieldStart("completion_tokens")
+				e.Int(s.CompletionTokens)
+			}
+			{
+				e.FieldStart("total_tokens")
+				e.Int(s.TotalTokens)
+			}
+			{
+				if s.Attempt.Set {
+					e.FieldStart("attempt")
+					s.Attempt.Encode(e)
+				}
+			}
+			{
+				if s.EvaluationResult.Set {
+					e.FieldStart("evaluation_result")
+					s.EvaluationResult.Encode(e)
+				}
+			}
 		}
 	case RemediationRequestWebhookAuditPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
@@ -12045,6 +12291,12 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.alignment.verdict":
 					s.Type = AlignmentVerdictPayloadAuditEventRequestEventData
 					found = true
+				case "aiagent.shadow.llm.request":
+					s.Type = ShadowLLMRequestPayloadAuditEventRequestEventData
+					found = true
+				case "aiagent.shadow.llm.response":
+					s.Type = ShadowLLMResponsePayloadAuditEventRequestEventData
+					found = true
 				case "webhook.remediationrequest.timeout_modified":
 					s.Type = RemediationRequestWebhookAuditPayloadAuditEventRequestEventData
 					found = true
@@ -12254,6 +12506,14 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case AlignmentVerdictPayloadAuditEventRequestEventData:
 		if err := s.AlignmentVerdictPayload.Decode(d); err != nil {
+			return err
+		}
+	case ShadowLLMRequestPayloadAuditEventRequestEventData:
+		if err := s.ShadowLLMRequestPayload.Decode(d); err != nil {
+			return err
+		}
+	case ShadowLLMResponsePayloadAuditEventRequestEventData:
+		if err := s.ShadowLLMResponsePayload.Decode(d); err != nil {
 			return err
 		}
 	case RemediationRequestWebhookAuditPayloadAuditEventRequestEventData:
@@ -25853,6 +26113,39 @@ func (s *OptRemediationWorkflowParameters) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes ShadowLLMResponsePayloadEvaluationResult as json.
+func (o OptShadowLLMResponsePayloadEvaluationResult) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes ShadowLLMResponsePayloadEvaluationResult from json.
+func (o *OptShadowLLMResponsePayloadEvaluationResult) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptShadowLLMResponsePayloadEvaluationResult to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptShadowLLMResponsePayloadEvaluationResult) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptShadowLLMResponsePayloadEvaluationResult) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SignalProcessingAuditPayloadCriticality as json.
 func (o OptSignalProcessingAuditPayloadCriticality) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -33027,6 +33320,551 @@ func (s *SearchExecutionMetadata) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SearchExecutionMetadata) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *ShadowLLMRequestPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ShadowLLMRequestPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("event_id")
+		e.Str(s.EventID)
+	}
+	{
+		e.FieldStart("incident_id")
+		e.Str(s.IncidentID)
+	}
+	{
+		e.FieldStart("step_index")
+		e.Int(s.StepIndex)
+	}
+	{
+		e.FieldStart("step_kind")
+		e.Str(s.StepKind)
+	}
+	{
+		e.FieldStart("prompt_length")
+		e.Int(s.PromptLength)
+	}
+}
+
+var jsonFieldsNameOfShadowLLMRequestPayload = [6]string{
+	0: "event_type",
+	1: "event_id",
+	2: "incident_id",
+	3: "step_index",
+	4: "step_kind",
+	5: "prompt_length",
+}
+
+// Decode decodes ShadowLLMRequestPayload from json.
+func (s *ShadowLLMRequestPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ShadowLLMRequestPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "event_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.EventID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_id\"")
+			}
+		case "incident_id":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.IncidentID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"incident_id\"")
+			}
+		case "step_index":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.StepIndex = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"step_index\"")
+			}
+		case "step_kind":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.StepKind = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"step_kind\"")
+			}
+		case "prompt_length":
+			requiredBitSet[0] |= 1 << 5
+			if err := func() error {
+				v, err := d.Int()
+				s.PromptLength = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"prompt_length\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ShadowLLMRequestPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00111111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfShadowLLMRequestPayload) {
+					name = jsonFieldsNameOfShadowLLMRequestPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ShadowLLMRequestPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ShadowLLMRequestPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ShadowLLMRequestPayloadEventType as json.
+func (s ShadowLLMRequestPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ShadowLLMRequestPayloadEventType from json.
+func (s *ShadowLLMRequestPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ShadowLLMRequestPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ShadowLLMRequestPayloadEventType(v) {
+	case ShadowLLMRequestPayloadEventTypeAiagentShadowLlmRequest:
+		*s = ShadowLLMRequestPayloadEventTypeAiagentShadowLlmRequest
+	default:
+		*s = ShadowLLMRequestPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ShadowLLMRequestPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ShadowLLMRequestPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *ShadowLLMResponsePayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ShadowLLMResponsePayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("event_id")
+		e.Str(s.EventID)
+	}
+	{
+		e.FieldStart("incident_id")
+		e.Str(s.IncidentID)
+	}
+	{
+		e.FieldStart("step_index")
+		e.Int(s.StepIndex)
+	}
+	{
+		e.FieldStart("step_kind")
+		e.Str(s.StepKind)
+	}
+	{
+		e.FieldStart("prompt_tokens")
+		e.Int(s.PromptTokens)
+	}
+	{
+		e.FieldStart("completion_tokens")
+		e.Int(s.CompletionTokens)
+	}
+	{
+		e.FieldStart("total_tokens")
+		e.Int(s.TotalTokens)
+	}
+	{
+		if s.Attempt.Set {
+			e.FieldStart("attempt")
+			s.Attempt.Encode(e)
+		}
+	}
+	{
+		if s.EvaluationResult.Set {
+			e.FieldStart("evaluation_result")
+			s.EvaluationResult.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfShadowLLMResponsePayload = [10]string{
+	0: "event_type",
+	1: "event_id",
+	2: "incident_id",
+	3: "step_index",
+	4: "step_kind",
+	5: "prompt_tokens",
+	6: "completion_tokens",
+	7: "total_tokens",
+	8: "attempt",
+	9: "evaluation_result",
+}
+
+// Decode decodes ShadowLLMResponsePayload from json.
+func (s *ShadowLLMResponsePayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ShadowLLMResponsePayload to nil")
+	}
+	var requiredBitSet [2]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "event_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.EventID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_id\"")
+			}
+		case "incident_id":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.IncidentID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"incident_id\"")
+			}
+		case "step_index":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int()
+				s.StepIndex = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"step_index\"")
+			}
+		case "step_kind":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.StepKind = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"step_kind\"")
+			}
+		case "prompt_tokens":
+			requiredBitSet[0] |= 1 << 5
+			if err := func() error {
+				v, err := d.Int()
+				s.PromptTokens = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"prompt_tokens\"")
+			}
+		case "completion_tokens":
+			requiredBitSet[0] |= 1 << 6
+			if err := func() error {
+				v, err := d.Int()
+				s.CompletionTokens = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"completion_tokens\"")
+			}
+		case "total_tokens":
+			requiredBitSet[0] |= 1 << 7
+			if err := func() error {
+				v, err := d.Int()
+				s.TotalTokens = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_tokens\"")
+			}
+		case "attempt":
+			if err := func() error {
+				s.Attempt.Reset()
+				if err := s.Attempt.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"attempt\"")
+			}
+		case "evaluation_result":
+			if err := func() error {
+				s.EvaluationResult.Reset()
+				if err := s.EvaluationResult.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"evaluation_result\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ShadowLLMResponsePayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b11111111,
+		0b00000000,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfShadowLLMResponsePayload) {
+					name = jsonFieldsNameOfShadowLLMResponsePayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ShadowLLMResponsePayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ShadowLLMResponsePayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ShadowLLMResponsePayloadEvaluationResult as json.
+func (s ShadowLLMResponsePayloadEvaluationResult) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ShadowLLMResponsePayloadEvaluationResult from json.
+func (s *ShadowLLMResponsePayloadEvaluationResult) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ShadowLLMResponsePayloadEvaluationResult to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ShadowLLMResponsePayloadEvaluationResult(v) {
+	case ShadowLLMResponsePayloadEvaluationResultSuccess:
+		*s = ShadowLLMResponsePayloadEvaluationResultSuccess
+	case ShadowLLMResponsePayloadEvaluationResultMalformedResponse:
+		*s = ShadowLLMResponsePayloadEvaluationResultMalformedResponse
+	case ShadowLLMResponsePayloadEvaluationResultMissingField:
+		*s = ShadowLLMResponsePayloadEvaluationResultMissingField
+	default:
+		*s = ShadowLLMResponsePayloadEvaluationResult(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ShadowLLMResponsePayloadEvaluationResult) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ShadowLLMResponsePayloadEvaluationResult) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ShadowLLMResponsePayloadEventType as json.
+func (s ShadowLLMResponsePayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ShadowLLMResponsePayloadEventType from json.
+func (s *ShadowLLMResponsePayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ShadowLLMResponsePayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ShadowLLMResponsePayloadEventType(v) {
+	case ShadowLLMResponsePayloadEventTypeAiagentShadowLlmResponse:
+		*s = ShadowLLMResponsePayloadEventTypeAiagentShadowLlmResponse
+	default:
+		*s = ShadowLLMResponsePayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ShadowLLMResponsePayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ShadowLLMResponsePayloadEventType) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

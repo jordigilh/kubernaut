@@ -2612,6 +2612,12 @@ type AlignmentVerdictPayload struct {
 	Flagged int `json:"flagged"`
 	// Total number of steps evaluated.
 	Total int `json:"total"`
+	// Total prompt tokens consumed by shadow LLM across all evaluated steps (#1059).
+	ShadowPromptTokens OptInt `json:"shadow_prompt_tokens"`
+	// Total completion tokens consumed by shadow LLM across all evaluated steps (#1059).
+	ShadowCompletionTokens OptInt `json:"shadow_completion_tokens"`
+	// Total tokens consumed by shadow LLM across all evaluated steps (#1059).
+	ShadowTotalTokens OptInt `json:"shadow_total_tokens"`
 }
 
 // GetEventType returns the value of EventType.
@@ -2649,6 +2655,21 @@ func (s *AlignmentVerdictPayload) GetTotal() int {
 	return s.Total
 }
 
+// GetShadowPromptTokens returns the value of ShadowPromptTokens.
+func (s *AlignmentVerdictPayload) GetShadowPromptTokens() OptInt {
+	return s.ShadowPromptTokens
+}
+
+// GetShadowCompletionTokens returns the value of ShadowCompletionTokens.
+func (s *AlignmentVerdictPayload) GetShadowCompletionTokens() OptInt {
+	return s.ShadowCompletionTokens
+}
+
+// GetShadowTotalTokens returns the value of ShadowTotalTokens.
+func (s *AlignmentVerdictPayload) GetShadowTotalTokens() OptInt {
+	return s.ShadowTotalTokens
+}
+
 // SetEventType sets the value of EventType.
 func (s *AlignmentVerdictPayload) SetEventType(val AlignmentVerdictPayloadEventType) {
 	s.EventType = val
@@ -2682,6 +2703,21 @@ func (s *AlignmentVerdictPayload) SetFlagged(val int) {
 // SetTotal sets the value of Total.
 func (s *AlignmentVerdictPayload) SetTotal(val int) {
 	s.Total = val
+}
+
+// SetShadowPromptTokens sets the value of ShadowPromptTokens.
+func (s *AlignmentVerdictPayload) SetShadowPromptTokens(val OptInt) {
+	s.ShadowPromptTokens = val
+}
+
+// SetShadowCompletionTokens sets the value of ShadowCompletionTokens.
+func (s *AlignmentVerdictPayload) SetShadowCompletionTokens(val OptInt) {
+	s.ShadowCompletionTokens = val
+}
+
+// SetShadowTotalTokens sets the value of ShadowTotalTokens.
+func (s *AlignmentVerdictPayload) SetShadowTotalTokens(val OptInt) {
+	s.ShadowTotalTokens = val
 }
 
 // Event type for discriminator (matches parent event_type).
@@ -3190,6 +3226,8 @@ type AuditEventEventData struct {
 	WorkflowValidationPayload              WorkflowValidationPayload
 	AlignmentStepPayload                   AlignmentStepPayload
 	AlignmentVerdictPayload                AlignmentVerdictPayload
+	ShadowLLMRequestPayload                ShadowLLMRequestPayload
+	ShadowLLMResponsePayload               ShadowLLMResponsePayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
 	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
 	EffectivenessAssessmentAuditPayload    EffectivenessAssessmentAuditPayload
@@ -3272,6 +3310,8 @@ const (
 	WorkflowValidationPayloadAuditEventEventData                                     AuditEventEventDataType = "aiagent.workflow.validation_attempt"
 	AlignmentStepPayloadAuditEventEventData                                          AuditEventEventDataType = "aiagent.alignment.step"
 	AlignmentVerdictPayloadAuditEventEventData                                       AuditEventEventDataType = "aiagent.alignment.verdict"
+	ShadowLLMRequestPayloadAuditEventEventData                                       AuditEventEventDataType = "aiagent.shadow.llm.request"
+	ShadowLLMResponsePayloadAuditEventEventData                                      AuditEventEventDataType = "aiagent.shadow.llm.response"
 	RemediationRequestWebhookAuditPayloadAuditEventEventData                         AuditEventEventDataType = "webhook.remediationrequest.timeout_modified"
 	AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.create"
 	AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.delete"
@@ -3495,6 +3535,16 @@ func (s AuditEventEventData) IsAlignmentStepPayload() bool {
 // IsAlignmentVerdictPayload reports whether AuditEventEventData is AlignmentVerdictPayload.
 func (s AuditEventEventData) IsAlignmentVerdictPayload() bool {
 	return s.Type == AlignmentVerdictPayloadAuditEventEventData
+}
+
+// IsShadowLLMRequestPayload reports whether AuditEventEventData is ShadowLLMRequestPayload.
+func (s AuditEventEventData) IsShadowLLMRequestPayload() bool {
+	return s.Type == ShadowLLMRequestPayloadAuditEventEventData
+}
+
+// IsShadowLLMResponsePayload reports whether AuditEventEventData is ShadowLLMResponsePayload.
+func (s AuditEventEventData) IsShadowLLMResponsePayload() bool {
+	return s.Type == ShadowLLMResponsePayloadAuditEventEventData
 }
 
 // IsRemediationRequestWebhookAuditPayload reports whether AuditEventEventData is RemediationRequestWebhookAuditPayload.
@@ -4499,6 +4549,48 @@ func NewAlignmentVerdictPayloadAuditEventEventData(v AlignmentVerdictPayload) Au
 	return s
 }
 
+// SetShadowLLMRequestPayload sets AuditEventEventData to ShadowLLMRequestPayload.
+func (s *AuditEventEventData) SetShadowLLMRequestPayload(v ShadowLLMRequestPayload) {
+	s.Type = ShadowLLMRequestPayloadAuditEventEventData
+	s.ShadowLLMRequestPayload = v
+}
+
+// GetShadowLLMRequestPayload returns ShadowLLMRequestPayload and true boolean if AuditEventEventData is ShadowLLMRequestPayload.
+func (s AuditEventEventData) GetShadowLLMRequestPayload() (v ShadowLLMRequestPayload, ok bool) {
+	if !s.IsShadowLLMRequestPayload() {
+		return v, false
+	}
+	return s.ShadowLLMRequestPayload, true
+}
+
+// NewShadowLLMRequestPayloadAuditEventEventData returns new AuditEventEventData from ShadowLLMRequestPayload.
+func NewShadowLLMRequestPayloadAuditEventEventData(v ShadowLLMRequestPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetShadowLLMRequestPayload(v)
+	return s
+}
+
+// SetShadowLLMResponsePayload sets AuditEventEventData to ShadowLLMResponsePayload.
+func (s *AuditEventEventData) SetShadowLLMResponsePayload(v ShadowLLMResponsePayload) {
+	s.Type = ShadowLLMResponsePayloadAuditEventEventData
+	s.ShadowLLMResponsePayload = v
+}
+
+// GetShadowLLMResponsePayload returns ShadowLLMResponsePayload and true boolean if AuditEventEventData is ShadowLLMResponsePayload.
+func (s AuditEventEventData) GetShadowLLMResponsePayload() (v ShadowLLMResponsePayload, ok bool) {
+	if !s.IsShadowLLMResponsePayload() {
+		return v, false
+	}
+	return s.ShadowLLMResponsePayload, true
+}
+
+// NewShadowLLMResponsePayloadAuditEventEventData returns new AuditEventEventData from ShadowLLMResponsePayload.
+func NewShadowLLMResponsePayloadAuditEventEventData(v ShadowLLMResponsePayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetShadowLLMResponsePayload(v)
+	return s
+}
+
 // SetRemediationRequestWebhookAuditPayload sets AuditEventEventData to RemediationRequestWebhookAuditPayload.
 func (s *AuditEventEventData) SetRemediationRequestWebhookAuditPayload(v RemediationRequestWebhookAuditPayload) {
 	s.Type = RemediationRequestWebhookAuditPayloadAuditEventEventData
@@ -5221,6 +5313,8 @@ type AuditEventRequestEventData struct {
 	WorkflowValidationPayload              WorkflowValidationPayload
 	AlignmentStepPayload                   AlignmentStepPayload
 	AlignmentVerdictPayload                AlignmentVerdictPayload
+	ShadowLLMRequestPayload                ShadowLLMRequestPayload
+	ShadowLLMResponsePayload               ShadowLLMResponsePayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
 	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
 	EffectivenessAssessmentAuditPayload    EffectivenessAssessmentAuditPayload
@@ -5303,6 +5397,8 @@ const (
 	WorkflowValidationPayloadAuditEventRequestEventData                                            AuditEventRequestEventDataType = "aiagent.workflow.validation_attempt"
 	AlignmentStepPayloadAuditEventRequestEventData                                                 AuditEventRequestEventDataType = "aiagent.alignment.step"
 	AlignmentVerdictPayloadAuditEventRequestEventData                                              AuditEventRequestEventDataType = "aiagent.alignment.verdict"
+	ShadowLLMRequestPayloadAuditEventRequestEventData                                              AuditEventRequestEventDataType = "aiagent.shadow.llm.request"
+	ShadowLLMResponsePayloadAuditEventRequestEventData                                             AuditEventRequestEventDataType = "aiagent.shadow.llm.response"
 	RemediationRequestWebhookAuditPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "webhook.remediationrequest.timeout_modified"
 	AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.create"
 	AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.delete"
@@ -5526,6 +5622,16 @@ func (s AuditEventRequestEventData) IsAlignmentStepPayload() bool {
 // IsAlignmentVerdictPayload reports whether AuditEventRequestEventData is AlignmentVerdictPayload.
 func (s AuditEventRequestEventData) IsAlignmentVerdictPayload() bool {
 	return s.Type == AlignmentVerdictPayloadAuditEventRequestEventData
+}
+
+// IsShadowLLMRequestPayload reports whether AuditEventRequestEventData is ShadowLLMRequestPayload.
+func (s AuditEventRequestEventData) IsShadowLLMRequestPayload() bool {
+	return s.Type == ShadowLLMRequestPayloadAuditEventRequestEventData
+}
+
+// IsShadowLLMResponsePayload reports whether AuditEventRequestEventData is ShadowLLMResponsePayload.
+func (s AuditEventRequestEventData) IsShadowLLMResponsePayload() bool {
+	return s.Type == ShadowLLMResponsePayloadAuditEventRequestEventData
 }
 
 // IsRemediationRequestWebhookAuditPayload reports whether AuditEventRequestEventData is RemediationRequestWebhookAuditPayload.
@@ -6527,6 +6633,48 @@ func (s AuditEventRequestEventData) GetAlignmentVerdictPayload() (v AlignmentVer
 func NewAlignmentVerdictPayloadAuditEventRequestEventData(v AlignmentVerdictPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetAlignmentVerdictPayload(v)
+	return s
+}
+
+// SetShadowLLMRequestPayload sets AuditEventRequestEventData to ShadowLLMRequestPayload.
+func (s *AuditEventRequestEventData) SetShadowLLMRequestPayload(v ShadowLLMRequestPayload) {
+	s.Type = ShadowLLMRequestPayloadAuditEventRequestEventData
+	s.ShadowLLMRequestPayload = v
+}
+
+// GetShadowLLMRequestPayload returns ShadowLLMRequestPayload and true boolean if AuditEventRequestEventData is ShadowLLMRequestPayload.
+func (s AuditEventRequestEventData) GetShadowLLMRequestPayload() (v ShadowLLMRequestPayload, ok bool) {
+	if !s.IsShadowLLMRequestPayload() {
+		return v, false
+	}
+	return s.ShadowLLMRequestPayload, true
+}
+
+// NewShadowLLMRequestPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ShadowLLMRequestPayload.
+func NewShadowLLMRequestPayloadAuditEventRequestEventData(v ShadowLLMRequestPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetShadowLLMRequestPayload(v)
+	return s
+}
+
+// SetShadowLLMResponsePayload sets AuditEventRequestEventData to ShadowLLMResponsePayload.
+func (s *AuditEventRequestEventData) SetShadowLLMResponsePayload(v ShadowLLMResponsePayload) {
+	s.Type = ShadowLLMResponsePayloadAuditEventRequestEventData
+	s.ShadowLLMResponsePayload = v
+}
+
+// GetShadowLLMResponsePayload returns ShadowLLMResponsePayload and true boolean if AuditEventRequestEventData is ShadowLLMResponsePayload.
+func (s AuditEventRequestEventData) GetShadowLLMResponsePayload() (v ShadowLLMResponsePayload, ok bool) {
+	if !s.IsShadowLLMResponsePayload() {
+		return v, false
+	}
+	return s.ShadowLLMResponsePayload, true
+}
+
+// NewShadowLLMResponsePayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ShadowLLMResponsePayload.
+func NewShadowLLMResponsePayloadAuditEventRequestEventData(v ShadowLLMResponsePayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetShadowLLMResponsePayload(v)
 	return s
 }
 
@@ -16308,6 +16456,52 @@ func (o OptRemediationWorkflowParameters) Or(d RemediationWorkflowParameters) Re
 	return d
 }
 
+// NewOptShadowLLMResponsePayloadEvaluationResult returns new OptShadowLLMResponsePayloadEvaluationResult with value set to v.
+func NewOptShadowLLMResponsePayloadEvaluationResult(v ShadowLLMResponsePayloadEvaluationResult) OptShadowLLMResponsePayloadEvaluationResult {
+	return OptShadowLLMResponsePayloadEvaluationResult{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptShadowLLMResponsePayloadEvaluationResult is optional ShadowLLMResponsePayloadEvaluationResult.
+type OptShadowLLMResponsePayloadEvaluationResult struct {
+	Value ShadowLLMResponsePayloadEvaluationResult
+	Set   bool
+}
+
+// IsSet returns true if OptShadowLLMResponsePayloadEvaluationResult was set.
+func (o OptShadowLLMResponsePayloadEvaluationResult) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptShadowLLMResponsePayloadEvaluationResult) Reset() {
+	var v ShadowLLMResponsePayloadEvaluationResult
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptShadowLLMResponsePayloadEvaluationResult) SetTo(v ShadowLLMResponsePayloadEvaluationResult) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptShadowLLMResponsePayloadEvaluationResult) Get() (v ShadowLLMResponsePayloadEvaluationResult, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptShadowLLMResponsePayloadEvaluationResult) Or(d ShadowLLMResponsePayloadEvaluationResult) ShadowLLMResponsePayloadEvaluationResult {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSignalProcessingAuditPayloadCriticality returns new OptSignalProcessingAuditPayloadCriticality with value set to v.
 func NewOptSignalProcessingAuditPayloadCriticality(v SignalProcessingAuditPayloadCriticality) OptSignalProcessingAuditPayloadCriticality {
 	return OptSignalProcessingAuditPayloadCriticality{
@@ -20948,6 +21142,335 @@ func (s *SearchExecutionMetadata) GetDurationMs() int64 {
 // SetDurationMs sets the value of DurationMs.
 func (s *SearchExecutionMetadata) SetDurationMs(val int64) {
 	s.DurationMs = val
+}
+
+// Shadow agent LLM request event payload (aiagent.shadow.llm.request). Emitted before each shadow
+// evaluator Chat() call (#1059).
+// Ref: #/components/schemas/ShadowLLMRequestPayload
+type ShadowLLMRequestPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ShadowLLMRequestPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Incident correlation ID (remediation_id or signal name).
+	IncidentID string `json:"incident_id"`
+	// Index of the step being evaluated.
+	StepIndex int `json:"step_index"`
+	// Kind of step (e.g., tool_result, llm_reasoning, signal_input).
+	StepKind string `json:"step_kind"`
+	// Length of prompt sent to shadow LLM (rune/character count, no raw content for security).
+	PromptLength int `json:"prompt_length"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ShadowLLMRequestPayload) GetEventType() ShadowLLMRequestPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *ShadowLLMRequestPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetIncidentID returns the value of IncidentID.
+func (s *ShadowLLMRequestPayload) GetIncidentID() string {
+	return s.IncidentID
+}
+
+// GetStepIndex returns the value of StepIndex.
+func (s *ShadowLLMRequestPayload) GetStepIndex() int {
+	return s.StepIndex
+}
+
+// GetStepKind returns the value of StepKind.
+func (s *ShadowLLMRequestPayload) GetStepKind() string {
+	return s.StepKind
+}
+
+// GetPromptLength returns the value of PromptLength.
+func (s *ShadowLLMRequestPayload) GetPromptLength() int {
+	return s.PromptLength
+}
+
+// SetEventType sets the value of EventType.
+func (s *ShadowLLMRequestPayload) SetEventType(val ShadowLLMRequestPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *ShadowLLMRequestPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetIncidentID sets the value of IncidentID.
+func (s *ShadowLLMRequestPayload) SetIncidentID(val string) {
+	s.IncidentID = val
+}
+
+// SetStepIndex sets the value of StepIndex.
+func (s *ShadowLLMRequestPayload) SetStepIndex(val int) {
+	s.StepIndex = val
+}
+
+// SetStepKind sets the value of StepKind.
+func (s *ShadowLLMRequestPayload) SetStepKind(val string) {
+	s.StepKind = val
+}
+
+// SetPromptLength sets the value of PromptLength.
+func (s *ShadowLLMRequestPayload) SetPromptLength(val int) {
+	s.PromptLength = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ShadowLLMRequestPayloadEventType string
+
+const (
+	ShadowLLMRequestPayloadEventTypeAiagentShadowLlmRequest ShadowLLMRequestPayloadEventType = "aiagent.shadow.llm.request"
+)
+
+// AllValues returns all ShadowLLMRequestPayloadEventType values.
+func (ShadowLLMRequestPayloadEventType) AllValues() []ShadowLLMRequestPayloadEventType {
+	return []ShadowLLMRequestPayloadEventType{
+		ShadowLLMRequestPayloadEventTypeAiagentShadowLlmRequest,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ShadowLLMRequestPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ShadowLLMRequestPayloadEventTypeAiagentShadowLlmRequest:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ShadowLLMRequestPayloadEventType) UnmarshalText(data []byte) error {
+	switch ShadowLLMRequestPayloadEventType(data) {
+	case ShadowLLMRequestPayloadEventTypeAiagentShadowLlmRequest:
+		*s = ShadowLLMRequestPayloadEventTypeAiagentShadowLlmRequest
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Shadow agent LLM response event payload (aiagent.shadow.llm.response). Emitted after each
+// successful shadow evaluator Chat() call with token usage (#1059).
+// Ref: #/components/schemas/ShadowLLMResponsePayload
+type ShadowLLMResponsePayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ShadowLLMResponsePayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Incident correlation ID (remediation_id or signal name).
+	IncidentID string `json:"incident_id"`
+	// Index of the step being evaluated.
+	StepIndex int `json:"step_index"`
+	// Kind of step (e.g., tool_result, llm_reasoning, signal_input).
+	StepKind string `json:"step_kind"`
+	// Prompt tokens consumed by shadow LLM for this call.
+	PromptTokens int `json:"prompt_tokens"`
+	// Completion tokens consumed by shadow LLM for this call.
+	CompletionTokens int `json:"completion_tokens"`
+	// Total tokens consumed by shadow LLM for this call.
+	TotalTokens int `json:"total_tokens"`
+	// Retry attempt number (1-based) that succeeded.
+	Attempt OptInt `json:"attempt"`
+	// Whether the shadow evaluation extracted a usable verdict from this response. 'success' means a
+	// valid suspicious/clean determination was made. 'malformed_response' means the response triggered a
+	// fail-closed path (duplicate key attack, etc). 'missing_field' means the required 'suspicious'
+	// field was absent.
+	EvaluationResult OptShadowLLMResponsePayloadEvaluationResult `json:"evaluation_result"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ShadowLLMResponsePayload) GetEventType() ShadowLLMResponsePayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *ShadowLLMResponsePayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetIncidentID returns the value of IncidentID.
+func (s *ShadowLLMResponsePayload) GetIncidentID() string {
+	return s.IncidentID
+}
+
+// GetStepIndex returns the value of StepIndex.
+func (s *ShadowLLMResponsePayload) GetStepIndex() int {
+	return s.StepIndex
+}
+
+// GetStepKind returns the value of StepKind.
+func (s *ShadowLLMResponsePayload) GetStepKind() string {
+	return s.StepKind
+}
+
+// GetPromptTokens returns the value of PromptTokens.
+func (s *ShadowLLMResponsePayload) GetPromptTokens() int {
+	return s.PromptTokens
+}
+
+// GetCompletionTokens returns the value of CompletionTokens.
+func (s *ShadowLLMResponsePayload) GetCompletionTokens() int {
+	return s.CompletionTokens
+}
+
+// GetTotalTokens returns the value of TotalTokens.
+func (s *ShadowLLMResponsePayload) GetTotalTokens() int {
+	return s.TotalTokens
+}
+
+// GetAttempt returns the value of Attempt.
+func (s *ShadowLLMResponsePayload) GetAttempt() OptInt {
+	return s.Attempt
+}
+
+// GetEvaluationResult returns the value of EvaluationResult.
+func (s *ShadowLLMResponsePayload) GetEvaluationResult() OptShadowLLMResponsePayloadEvaluationResult {
+	return s.EvaluationResult
+}
+
+// SetEventType sets the value of EventType.
+func (s *ShadowLLMResponsePayload) SetEventType(val ShadowLLMResponsePayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *ShadowLLMResponsePayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetIncidentID sets the value of IncidentID.
+func (s *ShadowLLMResponsePayload) SetIncidentID(val string) {
+	s.IncidentID = val
+}
+
+// SetStepIndex sets the value of StepIndex.
+func (s *ShadowLLMResponsePayload) SetStepIndex(val int) {
+	s.StepIndex = val
+}
+
+// SetStepKind sets the value of StepKind.
+func (s *ShadowLLMResponsePayload) SetStepKind(val string) {
+	s.StepKind = val
+}
+
+// SetPromptTokens sets the value of PromptTokens.
+func (s *ShadowLLMResponsePayload) SetPromptTokens(val int) {
+	s.PromptTokens = val
+}
+
+// SetCompletionTokens sets the value of CompletionTokens.
+func (s *ShadowLLMResponsePayload) SetCompletionTokens(val int) {
+	s.CompletionTokens = val
+}
+
+// SetTotalTokens sets the value of TotalTokens.
+func (s *ShadowLLMResponsePayload) SetTotalTokens(val int) {
+	s.TotalTokens = val
+}
+
+// SetAttempt sets the value of Attempt.
+func (s *ShadowLLMResponsePayload) SetAttempt(val OptInt) {
+	s.Attempt = val
+}
+
+// SetEvaluationResult sets the value of EvaluationResult.
+func (s *ShadowLLMResponsePayload) SetEvaluationResult(val OptShadowLLMResponsePayloadEvaluationResult) {
+	s.EvaluationResult = val
+}
+
+// Whether the shadow evaluation extracted a usable verdict from this response. 'success' means a
+// valid suspicious/clean determination was made. 'malformed_response' means the response triggered a
+// fail-closed path (duplicate key attack, etc). 'missing_field' means the required 'suspicious'
+// field was absent.
+type ShadowLLMResponsePayloadEvaluationResult string
+
+const (
+	ShadowLLMResponsePayloadEvaluationResultSuccess           ShadowLLMResponsePayloadEvaluationResult = "success"
+	ShadowLLMResponsePayloadEvaluationResultMalformedResponse ShadowLLMResponsePayloadEvaluationResult = "malformed_response"
+	ShadowLLMResponsePayloadEvaluationResultMissingField      ShadowLLMResponsePayloadEvaluationResult = "missing_field"
+)
+
+// AllValues returns all ShadowLLMResponsePayloadEvaluationResult values.
+func (ShadowLLMResponsePayloadEvaluationResult) AllValues() []ShadowLLMResponsePayloadEvaluationResult {
+	return []ShadowLLMResponsePayloadEvaluationResult{
+		ShadowLLMResponsePayloadEvaluationResultSuccess,
+		ShadowLLMResponsePayloadEvaluationResultMalformedResponse,
+		ShadowLLMResponsePayloadEvaluationResultMissingField,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ShadowLLMResponsePayloadEvaluationResult) MarshalText() ([]byte, error) {
+	switch s {
+	case ShadowLLMResponsePayloadEvaluationResultSuccess:
+		return []byte(s), nil
+	case ShadowLLMResponsePayloadEvaluationResultMalformedResponse:
+		return []byte(s), nil
+	case ShadowLLMResponsePayloadEvaluationResultMissingField:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ShadowLLMResponsePayloadEvaluationResult) UnmarshalText(data []byte) error {
+	switch ShadowLLMResponsePayloadEvaluationResult(data) {
+	case ShadowLLMResponsePayloadEvaluationResultSuccess:
+		*s = ShadowLLMResponsePayloadEvaluationResultSuccess
+		return nil
+	case ShadowLLMResponsePayloadEvaluationResultMalformedResponse:
+		*s = ShadowLLMResponsePayloadEvaluationResultMalformedResponse
+		return nil
+	case ShadowLLMResponsePayloadEvaluationResultMissingField:
+		*s = ShadowLLMResponsePayloadEvaluationResultMissingField
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Event type for discriminator (matches parent event_type).
+type ShadowLLMResponsePayloadEventType string
+
+const (
+	ShadowLLMResponsePayloadEventTypeAiagentShadowLlmResponse ShadowLLMResponsePayloadEventType = "aiagent.shadow.llm.response"
+)
+
+// AllValues returns all ShadowLLMResponsePayloadEventType values.
+func (ShadowLLMResponsePayloadEventType) AllValues() []ShadowLLMResponsePayloadEventType {
+	return []ShadowLLMResponsePayloadEventType{
+		ShadowLLMResponsePayloadEventTypeAiagentShadowLlmResponse,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ShadowLLMResponsePayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ShadowLLMResponsePayloadEventTypeAiagentShadowLlmResponse:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ShadowLLMResponsePayloadEventType) UnmarshalText(data []byte) error {
+	switch ShadowLLMResponsePayloadEventType(data) {
+	case ShadowLLMResponsePayloadEventTypeAiagentShadowLlmResponse:
+		*s = ShadowLLMResponsePayloadEventTypeAiagentShadowLlmResponse
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Type-safe audit event payload for SignalProcessing (signal.processed, phase.transition,
