@@ -49,6 +49,7 @@ var e2eActionTypes = []actionTypeDef{
 	{MetadataName: "rollback-deployment", SpecName: "RollbackDeployment", What: "Revert a deployment to its previous stable revision.", WhenToUse: "Root cause is a recent deployment that introduced a regression."},
 	{MetadataName: "increase-cpu-limits", SpecName: "IncreaseCPULimits", What: "Increase CPU resource limits on containers.", WhenToUse: "CPU throttling is caused by CPU limits being too low relative to the workload actual requirements."},
 	{MetadataName: "scale-replicas", SpecName: "ScaleReplicas", What: "Horizontally scale a workload by adjusting the replica count.", WhenToUse: "Root cause is insufficient capacity to handle current load."},
+	{MetadataName: "reconfigure-resource", SpecName: "ReconfigureResource", What: "Reconfigure a Kubernetes resource spec to fix misconfiguration.", WhenToUse: "Root cause is a resource misconfiguration that can be corrected by updating spec fields."},
 }
 
 // SeedActionTypesViaAPI populates the action_type_taxonomy table by calling the

@@ -1,0 +1,44 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: ambiguous-kind-fix-v1
+spec:
+  # Ambiguous Kind Fix Workflow Schema (Issue #1044)
+  # Used by: KA E2E apiVersion validation gate tests
+  # Targets TestWidget CRs that exist in multiple API groups
+  version: "1.0.0"
+  description:
+    what: "Reconfigures a TestWidget CR when the kind is ambiguous across API groups"
+    whenToUse: "When a TestWidget resource needs reconfiguration and its kind exists in multiple API groups"
+    whenNotToUse: "When the resource kind is unambiguous (single API group)"
+    preconditions: "TestWidget CRD is installed in both alpha and beta API groups"
+  
+  actionType: ReconfigureResource
+  
+  labels:
+    severity: [high, medium]
+    environment: [production, staging, test]
+    component: ["*"]
+    priority: "*"
+  
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:2a07b572d7c2d16845da11ea01ff24198bd2ff366580c81a8d2fbc6ae6b78389
+  
+  parameters:
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the root managing resource (KA-injected)"
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      description: "Kind of the root managing resource (KA-injected)"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the root managing resource (KA-injected)"
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the resource"

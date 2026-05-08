@@ -52,6 +52,7 @@ const (
 	ActionAlignmentEvaluate          = "alignment_evaluate"
 	ActionAlignmentVerdict           = "alignment_verdict"
 	ActionSameKindGate               = "same_kind_validation_gate"
+	ActionAPIVersionGate             = "api_version_validation_gate"
 	ActionWorkflowAlignmentGate      = "workflow_target_alignment_gate"
 	ActionShadowLLMRequest           = "shadow_llm_request"
 	ActionShadowLLMResponse          = "shadow_llm_response"
