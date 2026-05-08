@@ -151,7 +151,7 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(slowClient, alignment.EvaluatorConfig{
 				Timeout: 2 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "slow1"})
@@ -171,7 +171,7 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "a"})
@@ -191,7 +191,7 @@ var _ = Describe("Fail-closed behavior — BR-AI-601", func() {
 			evaluator := alignment.NewEvaluator(slowClient, alignment.EvaluatorConfig{
 				Timeout: 2 * time.Second, MaxRetries: 1,
 			}, "")
-			observer, err := alignment.NewObserver(evaluator)
+			observer, err := alignment.NewObserver(evaluator, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			observer.SubmitAsync(context.Background(), alignment.Step{Index: observer.NextStepIndex(), Content: "slow"})
