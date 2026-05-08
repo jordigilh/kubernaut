@@ -15,7 +15,11 @@ type sessionCreateContextKey struct{}
 // CreateContext carries A2A task metadata through the context for
 // the decorator to inject into the session creation request.
 type CreateContext struct {
-	TaskID         string
+	TaskID string
+	// TODO(v1.6): RemediationRef is a forward-compatibility placeholder.
+	// It will be populated when the A2A protocol carries remediation context
+	// in the task params (tracked in issue #54). Currently only TaskID is set
+	// by the BeforeExecuteCallback in launcher.go.
 	RemediationRef v1alpha1.ObjectRef
 }
 

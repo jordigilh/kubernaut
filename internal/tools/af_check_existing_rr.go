@@ -40,8 +40,14 @@ func HandleCheckExistingRR(ctx context.Context, client dynamic.Interface, args C
 	if args.Kind == "" {
 		return CheckExistingRRResult{}, fmt.Errorf("%w: kind must not be empty", ErrInvalidInput)
 	}
+	if err := validate.LabelValue(args.Kind); err != nil {
+		return CheckExistingRRResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
 	if args.Name == "" {
 		return CheckExistingRRResult{}, fmt.Errorf("%w: name must not be empty", ErrInvalidInput)
+	}
+	if err := validate.LabelValue(args.Name); err != nil {
+		return CheckExistingRRResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 
 	labelSel := fmt.Sprintf("kubernaut.ai/target-kind=%s,kubernaut.ai/target-name=%s", args.Kind, args.Name)
