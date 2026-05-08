@@ -110,7 +110,7 @@ func newFakeDiscovery(resources ...[]*metav1.APIResourceList) *fakediscovery.Fak
 	for _, r := range resources {
 		combined = append(combined, r...)
 	}
-	fd.Fake.Resources = combined
+	fd.Resources = combined
 	return fd
 }
 
@@ -202,8 +202,8 @@ var _ = Describe("API Resource Registry (#1029)", func() {
 		It("UT-GW-1029-014: startup fails with clear error when discovery is unavailable", func() {
 			cs := fakeclientset.NewSimpleClientset()
 			fd := cs.Discovery().(*fakediscovery.FakeDiscovery)
-			fd.Fake.Resources = nil
-			fd.Fake.PrependReactor("*", "*", func(_ k8stesting.Action) (bool, runtime.Object, error) {
+			fd.Resources = nil
+			fd.PrependReactor("*", "*", func(_ k8stesting.Action) (bool, runtime.Object, error) {
 				return true, nil, errors.New("RBAC denied: system:discovery")
 			})
 
@@ -428,8 +428,8 @@ var _ = Describe("API Resource Registry (#1029)", func() {
 			Expect(registry.LabelToKind("deployment")).To(Equal("Deployment"))
 
 			// Simulate discovery failure on refresh
-			fd.Fake.Resources = nil
-			fd.Fake.PrependReactor("*", "*", func(_ k8stesting.Action) (bool, runtime.Object, error) {
+			fd.Resources = nil
+			fd.PrependReactor("*", "*", func(_ k8stesting.Action) (bool, runtime.Object, error) {
 				return true, nil, errors.New("API server unreachable")
 			})
 
