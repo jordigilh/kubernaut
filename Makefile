@@ -65,6 +65,27 @@ generate: manifests
 manifests:
 	$(CONTROLLER_GEN) rbac:roleName=apifrontend-role crd paths="./api/..." output:crd:artifacts:config=config/crd/bases
 
+##@ Coverage
+
+.PHONY: coverage-report
+coverage-report: test-unit
+	go tool cover -html=cover.out -o coverage.html
+	@echo "Coverage report: coverage.html"
+
+.PHONY: coverage-report-json
+coverage-report-json: test-unit
+	go tool cover -func=cover.out
+
+##@ Performance
+
+.PHONY: test-perf-local
+test-perf-local:
+	@which k6 >/dev/null 2>&1 || { echo "k6 not found — install: https://k6.io/docs/get-started/installation/"; exit 1; }
+	k6 run --dry-run tests/performance/scripts/health-baseline.js
+	k6 run --dry-run tests/performance/scripts/mcp-tools-call.js
+	k6 run --dry-run tests/performance/scripts/sse-streams.js
+	k6 run --dry-run tests/performance/scripts/mixed-workload.js
+
 ##@ Validate
 
 .PHONY: verify-generate
@@ -76,6 +97,30 @@ validate-openapi:
 	@which vacuum >/dev/null 2>&1 || { echo "vacuum not found — install: go install github.com/daveshanley/vacuum@v0.26.4"; exit 1; }
 	vacuum lint api/openapi/apifrontend-v1.yaml
 
+.PHONY: validate-maturity-ci
+validate-maturity-ci:
+	bash hack/validate-maturity.sh
+
+.PHONY: helm-lint
+helm-lint:
+	@which helm >/dev/null 2>&1 || { echo "helm not found"; exit 1; }
+	helm lint deploy/helm/
+
+##@ Security & Supply Chain
+
+.PHONY: sbom
+sbom:
+	@which syft >/dev/null 2>&1 || { echo "syft not found — install: https://github.com/anchore/syft#installation"; exit 1; }
+	syft packages $(IMG) -o cyclonedx-json > sbom.cdx.json
+	@echo "SBOM generated: sbom.cdx.json"
+
+.PHONY: image-scan
+image-scan:
+	@which trivy >/dev/null 2>&1 || { echo "trivy not found — install: https://aquasecurity.github.io/trivy/"; exit 1; }
+	trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore $(IMG)
+
+##@ Clean
+
 .PHONY: clean
 clean:
-	rm -rf bin/ cover.out cover-integration.out
+	rm -rf bin/ cover.out cover-integration.out coverage.html sbom.cdx.json
