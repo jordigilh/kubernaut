@@ -769,6 +769,31 @@ var _ = Describe("CRDSessionService", func() {
 	})
 })
 
+var _ = Describe("CRDSessionService Reconnection", func() {
+	It("UT-AF-056-RECONNECT: list by user label returns active sessions for reconnection", func() {
+		scheme := newScheme()
+		k8s := newFakeClient(scheme)
+		svc := newTestService(k8s, scheme)
+		ctx := context.Background()
+
+		req1 := createRequestWithDefaults("sess-reconnect-1", "reconnect-user", createConfigState())
+		_, err := svc.Create(ctx, &req1)
+		Expect(err).NotTo(HaveOccurred())
+
+		req2 := createRequestWithDefaults("sess-reconnect-2", "reconnect-user", createConfigState())
+		_, err = svc.Create(ctx, &req2)
+		Expect(err).NotTo(HaveOccurred())
+
+		listReq := &adksession.ListRequest{
+			AppName: "kubernaut-apifrontend",
+			UserID:  "reconnect-user",
+		}
+		listResp, err := svc.List(ctx, listReq)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(listResp.Sessions).To(HaveLen(2))
+	})
+})
+
 type recordingEmitter struct {
 	mu   sync.Mutex
 	evts []*audit.Event
