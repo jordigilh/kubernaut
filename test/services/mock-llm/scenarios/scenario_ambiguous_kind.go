@@ -35,6 +35,7 @@ func ambiguousKindConfig() MockScenarioConfig {
 		ResourceKind:         "TestWidget",
 		ResourceNS:           "default",
 		ResourceName:         "test-widget-instance",
+		OverrideResource:     true,
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
 		ExecutionEngine:      "job",
