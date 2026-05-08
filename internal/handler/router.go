@@ -1,11 +1,15 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/metrics"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/requestid"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/streaming"
 )
 
 // RouterConfig holds all dependencies needed to construct the HTTP router.
@@ -17,6 +21,8 @@ type RouterConfig struct {
 	AuthMiddleware   func(http.Handler) http.Handler
 	ReadyChecker     func() bool
 	MaxPayloadBytes  int64
+	SSETracker       *streaming.ConnectionTracker
+	Draining         *atomic.Bool
 }
 
 func (c *RouterConfig) validate() error {
@@ -60,12 +66,14 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", handleHealthz)
-	mux.HandleFunc("GET /readyz", readyzHandler(cfg.ReadyChecker))
+	mux.HandleFunc("GET /readyz", readyzHandler(cfg.ReadyChecker, cfg.Draining))
 	mux.Handle("GET /metrics", cfg.MetricsRegistry.Handler())
 	mux.Handle("GET /.well-known/agent-card.json", cfg.AgentCardHandler)
 
-	mux.Handle("POST /a2a/invoke", cfg.AuthMiddleware(writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, cfg.A2AHandler))))
-	mux.Handle("POST /mcp", cfg.AuthMiddleware(writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, cfg.MCPHandler))))
+	a2aChain := cfg.AuthMiddleware(writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, trackSSEConnection(cfg.SSETracker, cfg.A2AHandler))))
+	mcpChain := cfg.AuthMiddleware(writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, trackSSEConnection(cfg.SSETracker, cfg.MCPHandler))))
+	mux.Handle("POST /a2a/invoke", a2aChain)
+	mux.Handle("POST /mcp", mcpChain)
 
 	return metricsMiddleware(cfg.MetricsRegistry, mux), nil
 }
@@ -88,5 +96,27 @@ func writeDeadlineMiddleware(next http.Handler) http.Handler {
 		rc := http.NewResponseController(w)
 		_ = rc.SetWriteDeadline(time.Now().Add(defaultWriteDeadline))
 		next.ServeHTTP(w, r)
+	})
+}
+
+// trackSSEConnection registers active streaming connections with the tracker
+// for graceful shutdown. Each connection is tracked from start to completion.
+func trackSSEConnection(tracker *streaming.ConnectionTracker, next http.Handler) http.Handler {
+	if tracker == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithCancel(r.Context())
+		connID := requestid.FromContext(r.Context())
+		if connID == "" {
+			connID = r.RemoteAddr
+		}
+		tracker.Add(&streaming.TrackedConnection{
+			ID:     connID,
+			Writer: w,
+			Cancel: cancel,
+		})
+		defer tracker.Remove(connID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

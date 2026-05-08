@@ -49,19 +49,24 @@ type Event struct {
 }
 
 // Emitter is the interface for writing audit events.
-//
-// This is the primary injection point for audit event delivery. The current
-// implementation (LogEmitter) writes events synchronously via structured logging
-// as a transitional step. The production implementation (PR6) will replace it
-// with a BufferedDSAuditStore that provides:
-//   - Async fire-and-forget delivery per ADR-038
-//   - Durable buffering with at-least-once semantics
-//   - Integration with the kubernaut audit datastore
-//
 // All callers should treat Emit as non-blocking; implementations must not
 // propagate errors to the caller or block the request path.
 type Emitter interface {
 	Emit(ctx context.Context, event *Event)
+}
+
+// ClosableEmitter extends Emitter with lifecycle management for implementations
+// that buffer events (e.g. BufferedEmitter). Callers that only need fire-and-forget
+// should depend on Emitter; shutdown orchestration depends on ClosableEmitter.
+type ClosableEmitter interface {
+	Emitter
+	Close(ctx context.Context) error
+}
+
+// Writer is the backend for durable audit event storage.
+// Implemented by ds.OgenClient via WriteAuditEvents.
+type Writer interface {
+	WriteAuditEvents(ctx context.Context, events []*Event) error
 }
 
 // LogEmitter emits audit events as structured log entries.

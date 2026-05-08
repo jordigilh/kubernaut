@@ -1,16 +1,19 @@
 // Package ds provides the Data Store client interface and mock implementation.
-// The real ogen-generated client is wired in PR6.
 package ds
 
-import "context"
+import (
+	"context"
+
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
+)
 
 // Client defines the interface for Data Store operations.
-// Production implementation will use the ogen-generated client from kubernaut.
 type Client interface {
 	ListWorkflows(ctx context.Context, opts ListWorkflowsOpts) ([]Workflow, error)
 	GetRemediationHistory(ctx context.Context, opts HistoryOpts) ([]HistoricalRemediation, error)
 	GetEffectiveness(ctx context.Context, opts EffectivenessOpts) (*EffectivenessReport, error)
 	GetAuditTrail(ctx context.Context, opts AuditTrailOpts) ([]AuditEvent, error)
+	WriteAuditEvents(ctx context.Context, events []*audit.Event) error
 }
 
 // ListWorkflowsOpts are the query options for listing workflows.
@@ -77,6 +80,7 @@ type MockClient struct {
 	GetRemediationHistoryFn func(ctx context.Context, opts HistoryOpts) ([]HistoricalRemediation, error)
 	GetEffectivenessFn      func(ctx context.Context, opts EffectivenessOpts) (*EffectivenessReport, error)
 	GetAuditTrailFn         func(ctx context.Context, opts AuditTrailOpts) ([]AuditEvent, error)
+	WriteAuditEventsFn      func(ctx context.Context, events []*audit.Event) error
 }
 
 // ListWorkflows delegates to the mock function.
@@ -97,6 +101,14 @@ func (m *MockClient) GetEffectiveness(ctx context.Context, opts EffectivenessOpt
 // GetAuditTrail delegates to the mock function.
 func (m *MockClient) GetAuditTrail(ctx context.Context, opts AuditTrailOpts) ([]AuditEvent, error) {
 	return m.GetAuditTrailFn(ctx, opts)
+}
+
+// WriteAuditEvents delegates to the mock function.
+func (m *MockClient) WriteAuditEvents(ctx context.Context, events []*audit.Event) error {
+	if m.WriteAuditEventsFn != nil {
+		return m.WriteAuditEventsFn(ctx, events)
+	}
+	return nil
 }
 
 // Compile-time interface check.

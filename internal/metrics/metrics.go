@@ -47,6 +47,8 @@ type Registry struct {
 	AuthDuration           *prometheus.HistogramVec
 	AuditEventsTotal       *prometheus.CounterVec
 	SessionTTLActionsTotal *prometheus.CounterVec
+	SSEActiveConnections   prometheus.Gauge
+	AuditBufferOverflow    prometheus.Counter
 }
 
 // NewRegistry creates and registers all AF Prometheus metrics.
@@ -124,6 +126,17 @@ func NewRegistry() *Registry {
 		}, []string{"action"}),
 	}
 
+	r.SSEActiveConnections = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "af",
+		Name:      "sse_active_connections",
+		Help:      "Number of currently active SSE connections.",
+	})
+	r.AuditBufferOverflow = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "apifrontend",
+		Name:      "audit_buffer_overflow_total",
+		Help:      "Total audit events dropped due to buffer overflow.",
+	})
+
 	reg.MustRegister(r.HTTPRequestsTotal)
 	reg.MustRegister(r.HTTPRequestDuration)
 	reg.MustRegister(r.ToolCallsTotal)
@@ -137,6 +150,8 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.AuthDuration)
 	reg.MustRegister(r.AuditEventsTotal)
 	reg.MustRegister(r.SessionTTLActionsTotal)
+	reg.MustRegister(r.SSEActiveConnections)
+	reg.MustRegister(r.AuditBufferOverflow)
 
 	return r
 }

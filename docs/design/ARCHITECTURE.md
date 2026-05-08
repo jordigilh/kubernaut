@@ -853,6 +853,27 @@ containers:
 
 ---
 
+## East-West Encryption Boundaries
+
+All inter-service communication within the cluster uses mutual TLS (mTLS) via
+the service mesh (Istio sidecar). The API Frontend does **not** terminate TLS
+itself; the envoy sidecar provides transparent mTLS for all east-west traffic:
+
+| Source | Destination | Protocol | Encryption |
+|--------|------------|----------|------------|
+| Ingress Gateway | API Frontend | HTTP (localhost) | mTLS via sidecar |
+| API Frontend | Kubernaut Agent (REST) | HTTP | mTLS via sidecar |
+| API Frontend | Kubernaut Agent (MCP) | HTTP | mTLS via sidecar |
+| API Frontend | Data Storage | HTTP | mTLS via sidecar |
+| API Frontend | Kubernetes API | HTTPS | In-cluster TLS (ServiceAccount token) |
+
+**FedRAMP Boundary Note**: The API Frontend operates within the FedRAMP
+authorization boundary. External traffic enters via the ingress gateway which
+terminates north-south TLS (minimum TLS 1.2, FIPS 140-2 compliant ciphers).
+East-west encryption satisfies SC-8 (Transmission Confidentiality and Integrity).
+
+---
+
 ## References
 
 - GitHub Issues: #41-#56, #57-#71 (design comments)

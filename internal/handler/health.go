@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"sync/atomic"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/httputil"
 )
@@ -28,10 +29,15 @@ func handleHealthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 // readyzHandler returns a handler that responds 503 when the checker reports
-// not ready. The response includes "not ready" to match monitoring expectations.
-// TODO(PR7+): consider ReadyChecker returning (bool, string) for specific reasons.
-func readyzHandler(checker func() bool) http.HandlerFunc {
+// not ready or when the service is draining (shutting down). This ensures
+// load balancers stop sending new traffic during graceful shutdown.
+func readyzHandler(checker func() bool, draining *atomic.Bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
+		if draining != nil && draining.Load() {
+			httputil.WriteProblem(w, http.StatusServiceUnavailable,
+				"Service Unavailable", "service is shutting down")
+			return
+		}
 		if !checker() {
 			httputil.WriteProblem(w, http.StatusServiceUnavailable,
 				"Service Unavailable", "one or more dependencies are not ready")

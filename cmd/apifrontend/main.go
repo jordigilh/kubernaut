@@ -20,11 +20,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -48,6 +50,7 @@ import (
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/requestid"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/resilience"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/streaming"
 )
 
 func main() {
@@ -101,7 +104,6 @@ func run() error {
 	defer cancel()
 
 	metricsReg := metrics.NewRegistry()
-	auditor := audit.NewLogEmitter(logger)
 
 	authCfg := buildAuthConfig(cfg)
 	if len(authCfg.JWT) == 0 {
@@ -180,6 +182,34 @@ func run() error {
 		return fmt.Errorf("create DS client: %w", err)
 	}
 
+	// Auditor: BufferedEmitter with DS backend for durable audit storage
+	bufferedAuditor := audit.NewBufferedEmitter(audit.BufferConfig{
+		Writer:          dsClient,
+		Logger:          logger,
+		BufferSize:      4096,
+		FlushInterval:   5 * time.Second,
+		BatchSize:       100,
+		OverflowCounter: metricsReg.AuditBufferOverflow,
+		EventsCounter:   metricsReg.AuditEventsTotal,
+	})
+	auditor := audit.Emitter(bufferedAuditor)
+
+	// SSE connection tracker for graceful shutdown drain
+	sseTracker := streaming.NewConnectionTracker(metricsReg.SSEActiveConnections, 3*time.Second)
+
+	// --- MCP client (Pattern B JWT delegation) ---
+	mcpHTTPClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &auth.ContextJWTDelegationTransport{
+			Base: &requestid.Transport{Base: &http.Transport{
+				DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+				TLSHandshakeTimeout:   5 * time.Second,
+				ResponseHeaderTimeout: 15 * time.Second,
+			}},
+		},
+	}
+	mcpClient := ka.NewSDKMCPClient(cfg.Agent.KAMCPEndpoint, mcpHTTPClient, logger)
+
 	// --- Resilience: K8s circuit breaker ---
 	k8sCB := resilience.NewK8sCircuitBreaker(resilience.K8sCBConfig{
 		Name:             "k8s-api",
@@ -208,6 +238,7 @@ func run() error {
 		DSClient:      dsClient,
 		KAClient:      kaClient,
 		Auditor:       auditor,
+		MCPClient:     mcpClient,
 	}
 	rootAgent, _, err := agentpkg.NewRootAgent(agentCfg)
 	if err != nil {
@@ -250,12 +281,15 @@ func run() error {
 
 	authMiddleware := buildAuthMiddleware(validator, logger, auditor, ipLimiter, userLimiter, metricsReg)
 
+	var draining atomic.Bool
 	rootHandler, err := handler.NewRouter(handler.RouterConfig{
 		MetricsRegistry:  metricsReg,
 		A2AHandler:       a2aHandler,
 		MCPHandler:       mcpHandler,
 		AgentCardHandler: agentCardHandler,
 		AuthMiddleware:   authMiddleware,
+		SSETracker:       sseTracker,
+		Draining:         &draining,
 		ReadyChecker: handler.AllReady(
 			validator.Ready,
 			kaClient.Healthy,
@@ -323,14 +357,38 @@ func run() error {
 
 	logger.Info("shutting down gracefully")
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer shutdownCancel()
+	// 1. Signal draining so readyz returns 503 (LB stops new traffic)
+	draining.Store(true)
 
-	if shutdownErr := srv.Shutdown(shutdownCtx); shutdownErr != nil {
-		logger.Error(shutdownErr, "server shutdown error")
+	// 2. Drain active SSE/streaming connections
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	drained := sseTracker.DrainAll(drainCtx)
+	drainCancel()
+	if drained > 0 {
+		logger.Info("SSE connections drained", "count", drained)
 	}
 
+	// 3. Graceful HTTP drain — wait for in-flight requests to complete
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	if shutdownErr := srv.Shutdown(shutdownCtx); shutdownErr != nil {
+		logger.Error(shutdownErr, "server shutdown error, forcing close")
+		_ = srv.Close()
+	}
+	shutdownCancel()
+
+	// 4. Flush audit buffer AFTER srv.Shutdown so late audit events
+	// (e.g. from cancelled handler contexts) are captured.
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if flushErr := bufferedAuditor.Close(flushCtx); flushErr != nil {
+		logger.Error(flushErr, "audit flush error during shutdown")
+	}
+	flushCancel()
+
 	logger.Info("shutdown complete")
+
+	// 5. Sync logger AFTER final log message to guarantee it's flushed
+	logging.Sync()
+
 	return nil
 }
 
@@ -350,9 +408,10 @@ func buildAuthMiddleware(
 			Metrics: metricsReg.RateLimitDenied,
 		})(h)
 		h = auth.MiddlewareWithConfig(auth.MiddlewareConfig{
-			Validator: validator,
-			Logger:    logger,
-			Auditor:   auditor,
+			Validator:    validator,
+			Logger:       logger,
+			Auditor:      auditor,
+			AuthDuration: metricsReg.AuthDuration,
 		})(h)
 		h = ratelimit.PreAuthMiddlewareWithConfig(ratelimit.PreAuthMiddlewareConfig{
 			Limiter: ipLimiter,

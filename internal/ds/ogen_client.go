@@ -8,6 +8,8 @@ import (
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/ogenx"
+
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 )
 
 // OgenClient implements the Client interface using the ogen-generated DS client.
@@ -173,6 +175,61 @@ func (c *OgenClient) GetAuditTrail(ctx context.Context, opts AuditTrailOpts) ([]
 		})
 	}
 	return events, nil
+}
+
+// WriteAuditEvents sends a batch of audit events to the DS audit endpoint.
+func (c *OgenClient) WriteAuditEvents(ctx context.Context, events []*audit.Event) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	batch := make([]ogenclient.AuditEventRequest, 0, len(events))
+	for _, evt := range events {
+		req := ogenclient.AuditEventRequest{
+			Version:        "1.0",
+			EventType:      string(evt.Type),
+			EventTimestamp: evt.Timestamp,
+			EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+			EventAction:    detailValue(evt.Detail, "action", string(evt.Type)),
+			EventOutcome:   eventOutcome(evt.Type),
+		}
+		if evt.UserID != "" {
+			req.ActorID = ogenclient.NewOptString(evt.UserID)
+			req.ActorType = ogenclient.NewOptString("user")
+		}
+		if evt.RequestID != "" {
+			req.CorrelationID = evt.RequestID
+		}
+		batch = append(batch, req)
+	}
+
+	_, err := c.client.CreateAuditEventsBatch(ctx, batch)
+	if err != nil {
+		return fmt.Errorf("ds: write audit events batch: %w", err)
+	}
+	return nil
+}
+
+func eventOutcome(t audit.EventType) ogenclient.AuditEventRequestEventOutcome {
+	switch t {
+	case audit.EventAuthFailure,
+		audit.EventA2ATaskFailed,
+		audit.EventRateLimitDenied,
+		audit.EventCircuitBreakerTrip,
+		audit.EventConfigRejected,
+		audit.EventSessionAutoCancelled,
+		audit.EventRBACDenied:
+		return ogenclient.AuditEventRequestEventOutcomeFailure
+	default:
+		return ogenclient.AuditEventRequestEventOutcomeSuccess
+	}
+}
+
+func detailValue(detail map[string]string, key, fallback string) string {
+	if v, ok := detail[key]; ok && v != "" {
+		return v
+	}
+	return fallback
 }
 
 // Compile-time interface check.
