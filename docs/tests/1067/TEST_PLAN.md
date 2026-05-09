@@ -59,6 +59,13 @@ Validate that the `namespace` Prometheus alert label is excluded from `extractTa
 | UT-GW-1067-004 | `exported_namespace` not in denylist | Labels: `exported_namespace=prod`, `pod=worker` | Pod resolves (exported_namespace not matched by LabelToKind) | Unit |
 | UT-GW-1045-012 | API surface: reserved labels count updated | N/A | `PrometheusReservedLabels` has 6 entries including `namespace` | Unit |
 
+### 4.2 Integration Tests
+
+| ID | Scenario | Input | Expected | Tier |
+|----|----------|-------|----------|------|
+| IT-GW-1067-001 | Full pipeline: namespace label excluded with production-realistic discovery | Labels: `namespace=<ns>`, `pod=crashing-pod-abc` + registry includes Namespace | Resource: Pod/crashing-pod-abc; fingerprint based on Pod, not Namespace; CRD target is Pod | Integration |
+| IT-GW-1067-002 | Deployment wins over excluded namespace label | Labels: `namespace=<ns>`, `deployment=api-server` + registry includes Namespace | Resource: Deployment/api-server; fingerprint based on Deployment | Integration |
+
 ---
 
 ## 5. TDD Execution Plan
@@ -93,6 +100,8 @@ Validate that the `namespace` Prometheus alert label is excluded from `extractTa
 | UT-GW-1067-003 | BR-GATEWAY-069 | #1067 |
 | UT-GW-1067-004 | BR-GATEWAY-004 | #1067 |
 | UT-GW-1045-012 | BR-GATEWAY-184 | #1045, #1067 |
+| IT-GW-1067-001 | BR-GATEWAY-004 | #1067 |
+| IT-GW-1067-002 | BR-GATEWAY-004 | #1067 |
 
 ---
 
@@ -100,8 +109,10 @@ Validate that the `namespace` Prometheus alert label is excluded from `extractTa
 
 | Test ID | Status |
 |---------|--------|
-| UT-GW-1067-001 | Pending |
-| UT-GW-1067-002 | Pending |
-| UT-GW-1067-003 | Pending |
-| UT-GW-1067-004 | Pending |
-| UT-GW-1045-012 | Pending |
+| UT-GW-1067-001 | Pass |
+| UT-GW-1067-002 | Pass |
+| UT-GW-1067-003 | Pass |
+| UT-GW-1067-004 | Pass |
+| UT-GW-1045-012 | Pass |
+| IT-GW-1067-001 | Pass (compile-verified) |
+| IT-GW-1067-002 | Pass (compile-verified) |
