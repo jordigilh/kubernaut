@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -29,6 +30,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
@@ -123,7 +125,7 @@ var _ = Describe("Kubernaut Agent K8s Tools Integration — #433", func() {
 			"event":      {Kind: "Event"},
 			"deployment": {Group: "apps", Kind: "Deployment"},
 		}
-		resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex)
+		resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
 
 		reg = registry.New()
 		allTools := k8s.NewAllTools(typedClient, resolver)
@@ -231,6 +233,90 @@ var _ = Describe("Kubernaut Agent K8s Tools Integration — #433", func() {
 			_, err := reg.Execute(context.Background(), "kubectl_logs_grep",
 				json.RawMessage(`{"name":"api-server-abc-xyz","namespace":"production","container":"api","pattern":"OOM"}`))
 			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+})
+
+var _ = Describe("Issue #1064: Multi-group kind resolution through full tool stack", func() {
+
+	var reg *registry.Registry
+
+	BeforeEach(func() {
+		scheme := runtime.NewScheme()
+
+		scheme.AddKnownTypeWithName(
+			schema.GroupVersionKind{Group: "operators.coreos.com", Version: "v1alpha1", Kind: "Subscription"},
+			&unstructured.Unstructured{},
+		)
+		scheme.AddKnownTypeWithName(
+			schema.GroupVersionKind{Group: "operators.coreos.com", Version: "v1alpha1", Kind: "SubscriptionList"},
+			&unstructured.UnstructuredList{},
+		)
+		scheme.AddKnownTypeWithName(
+			schema.GroupVersionKind{Group: "messaging.knative.dev", Version: "v1", Kind: "Subscription"},
+			&unstructured.Unstructured{},
+		)
+		scheme.AddKnownTypeWithName(
+			schema.GroupVersionKind{Group: "messaging.knative.dev", Version: "v1", Kind: "SubscriptionList"},
+			&unstructured.UnstructuredList{},
+		)
+
+		olmSub := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "operators.coreos.com/v1alpha1",
+				"kind":       "Subscription",
+				"metadata": map[string]interface{}{
+					"name":      "etcd",
+					"namespace": "demo-operator",
+				},
+				"spec": map[string]interface{}{
+					"channel": "stable",
+					"name":    "etcd",
+					"source":  "community-operators",
+				},
+			},
+		}
+
+		dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
+		typedClient := fake.NewSimpleClientset()
+
+		mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+			{Group: "messaging.knative.dev", Version: "v1"},
+			{Group: "operators.coreos.com", Version: "v1alpha1"},
+		})
+		mapper.Add(schema.GroupVersionKind{Group: "messaging.knative.dev", Version: "v1", Kind: "Subscription"}, meta.RESTScopeNamespace)
+		mapper.Add(schema.GroupVersionKind{Group: "operators.coreos.com", Version: "v1alpha1", Kind: "Subscription"}, meta.RESTScopeNamespace)
+
+		kindIndex := map[string]schema.GroupKind{
+			"subscription": {Group: "messaging.knative.dev", Kind: "Subscription"},
+		}
+		resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
+
+		reg = registry.New()
+		for _, t := range k8s.NewAllTools(typedClient, resolver) {
+			reg.Register(t)
+		}
+	})
+
+	Describe("IT-KA-1064-001: kubectl_get_by_name resolves ambiguous kind through full tool stack", func() {
+		It("should return the OLM Subscription via multi-group fallback", func() {
+			result, err := reg.Execute(context.Background(), "kubectl_get_by_name",
+				json.RawMessage(`{"kind":"Subscription","name":"etcd","namespace":"demo-operator"}`))
+			Expect(err).NotTo(HaveOccurred(), "tool should succeed via multi-group fallback")
+			Expect(result).To(ContainSubstring("etcd"),
+				"result should contain the OLM Subscription named etcd")
+			Expect(result).To(ContainSubstring("operators.coreos.com"),
+				"result should reference the OLM API group")
+		})
+	})
+
+	Describe("IT-KA-1064-002: kubectl_get_by_kind_in_namespace lists correct group through full tool stack", func() {
+		It("should return non-empty list from OLM API group", func() {
+			result, err := reg.Execute(context.Background(), "kubectl_get_by_kind_in_namespace",
+				json.RawMessage(`{"kind":"Subscription","namespace":"demo-operator"}`))
+			Expect(err).NotTo(HaveOccurred(), "list should succeed via multi-group fallback")
+			Expect(result).To(ContainSubstring("etcd"),
+				"list should contain the OLM Subscription named etcd")
 		})
 	})
 })

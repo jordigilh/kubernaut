@@ -64,7 +64,7 @@ var (
 	enricher    *enrichment.Enricher
 	auditStore  *audit.DSAuditStore
 	suiteLogger logr.Logger
-	k8sAdapter  enrichment.K8sClient
+	k8sAdapter  *enrichment.K8sAdapter
 )
 
 var _ = SynchronizedBeforeSuite(
@@ -141,6 +141,7 @@ var _ = SynchronizedBeforeSuite(
 
 		discoveryMapper := restmapper.NewDiscoveryRESTMapper(groupResources)
 		k8sAdapter = enrichment.NewK8sAdapter(dynClient, discoveryMapper)
+		k8sAdapter.SetLogger(suiteLogger.WithName("k8s-adapter"))
 		enricher = enrichment.NewEnricher(k8sAdapter, dsAdapter, auditStore, suiteLogger)
 
 		connStr := fmt.Sprintf("host=127.0.0.1 port=%d user=slm_user password=test_password dbname=action_history sslmode=disable", enrPostgresPort)
