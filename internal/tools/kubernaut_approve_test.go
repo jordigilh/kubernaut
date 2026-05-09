@@ -108,4 +108,46 @@ var _ = Describe("kubernaut_approve", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(capturedPatch)).To(ContainSubstring("fast-restart"))
 	})
+
+	It("UT-AF-104-006: nil client returns ErrK8sUnavailable", func() {
+		_, err := tools.HandleApprove(ctx, nil, tools.ApproveArgs{
+			Namespace: "default",
+			RARName:   "rar-1",
+			Decision:  "Approved",
+		}, "bob")
+		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
+	})
+
+	It("UT-AF-104-007: invalid namespace returns ErrInvalidInput", func() {
+		client := newDynamicFakeClient()
+		_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+			Namespace: "../etc",
+			RARName:   "rar-1",
+			Decision:  "Approved",
+		}, "bob")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid input"))
+	})
+
+	It("UT-AF-104-008: invalid RARName returns ErrInvalidInput", func() {
+		client := newDynamicFakeClient()
+		_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+			Namespace: "default",
+			RARName:   "INVALID NAME!!",
+			Decision:  "Approved",
+		}, "bob")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid input"))
+	})
+
+	It("UT-AF-104-009: empty decision returns ErrInvalidInput", func() {
+		client := newDynamicFakeClient()
+		_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+			Namespace: "default",
+			RARName:   "rar-1",
+			Decision:  "",
+		}, "bob")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid input"))
+	})
 })

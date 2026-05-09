@@ -93,4 +93,63 @@ var _ = Describe("kubernaut_submit_signal", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("access denied"))
 	})
+
+	It("UT-AF-103-006: nil client returns ErrK8sUnavailable", func() {
+		_, err := tools.HandleSubmitSignal(ctx, nil, tools.SubmitSignalArgs{
+			Namespace:   "default",
+			Kind:        "Deployment",
+			Name:        "api-server",
+			Description: "test",
+		}, "alice")
+		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
+	})
+
+	It("UT-AF-103-007: invalid namespace returns ErrInvalidInput", func() {
+		client := newDynamicFakeClient()
+		_, err := tools.HandleSubmitSignal(ctx, client, tools.SubmitSignalArgs{
+			Namespace:   "../etc",
+			Kind:        "Deployment",
+			Name:        "api-server",
+			Description: "test",
+		}, "alice")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid input"))
+	})
+
+	It("UT-AF-103-008: empty kind returns ErrInvalidInput", func() {
+		client := newDynamicFakeClient()
+		_, err := tools.HandleSubmitSignal(ctx, client, tools.SubmitSignalArgs{
+			Namespace:   "default",
+			Kind:        "",
+			Name:        "api-server",
+			Description: "test",
+		}, "alice")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid input"))
+	})
+
+	It("UT-AF-103-009: invalid severity returns ErrInvalidInput", func() {
+		client := newDynamicFakeClient()
+		_, err := tools.HandleSubmitSignal(ctx, client, tools.SubmitSignalArgs{
+			Namespace:   "default",
+			Kind:        "Deployment",
+			Name:        "api-server",
+			Description: "test",
+			Severity:    "catastrophic",
+		}, "alice")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid input"))
+	})
+
+	It("UT-AF-103-010: invalid resource name returns ErrInvalidInput", func() {
+		client := newDynamicFakeClient()
+		_, err := tools.HandleSubmitSignal(ctx, client, tools.SubmitSignalArgs{
+			Namespace:   "default",
+			Kind:        "Deployment",
+			Name:        "INVALID NAME!!",
+			Description: "test",
+		}, "alice")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid input"))
+	})
 })
