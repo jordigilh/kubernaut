@@ -42,9 +42,10 @@ var rfc1123LabelRegexp = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]{0,251}[a-z0-9]
 
 // PrometheusReservedLabels contains Prometheus-standard label keys that must be
 // excluded from dynamic Kubernetes kind resolution. These labels carry scrape
-// metadata (job name, instance endpoint, etc.), not Kubernetes resource
-// identifiers. Without filtering, "job" maps to batch/v1 Job via API discovery,
-// causing signals to be dropped or directed to wrong targets. Issue #1045.
+// metadata (job name, instance endpoint, etc.) or location context, not
+// Kubernetes resource identifiers. Without filtering, "job" maps to batch/v1
+// Job and "namespace" maps to core/v1 Namespace via API discovery, causing
+// signals to be dropped or directed to wrong targets. Issues #1045, #1067.
 //
 // Reference: https://prometheus.io/docs/concepts/jobs_instances/
 var PrometheusReservedLabels = map[string]bool{
@@ -53,6 +54,7 @@ var PrometheusReservedLabels = map[string]bool{
 	"instance":  true, // Scrape endpoint (e.g. "10.0.1.45:9090")
 	"endpoint":  true, // Port name on ServiceMonitor (e.g. "http")
 	"container": true, // Container name (e.g. "payment-api")
+	"namespace": true, // Location context, not a resource target (#1067)
 }
 
 // PrometheusAdapter handles Prometheus AlertManager webhook format
