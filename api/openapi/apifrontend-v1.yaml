@@ -53,10 +53,9 @@ paths:
         "503":
           description: Service is not ready (draining or dependencies unavailable)
           content:
-            text/plain:
+            application/problem+json:
               schema:
-                type: string
-                const: "not ready"
+                $ref: "#/components/schemas/ProblemDetail"
 
   /metrics:
     get:
@@ -283,9 +282,9 @@ components:
 
     ProblemDetail:
       description: >
-        RFC 9457 Problem Details structure (reserved for future use).
-        Currently, 401/429 responses return text/plain. This schema will be
-        adopted once handlers are migrated to structured error responses.
+        RFC 9457 Problem Details structure used for structured error responses.
+        Used by readiness probe (503), rate limiting (429), and authentication
+        failure (401) responses.
       type: object
       properties:
         type:

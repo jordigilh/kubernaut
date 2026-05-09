@@ -28,6 +28,10 @@ type IssuerConfig struct {
 }
 
 // ClaimMappings defines CEL expressions for mapping claims to user identity.
+// NOTE: Currently the JWT validator uses fixed claim paths (preferred_username/sub
+// for username, groups for group membership). CEL-based claim mapping is a planned
+// enhancement. These fields are parsed from config for forward compatibility but
+// are not yet evaluated at runtime. See buildIdentity() in jwt.go.
 type ClaimMappings struct {
 	Username string `yaml:"username"`
 	Groups   string `yaml:"groups"`

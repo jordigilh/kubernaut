@@ -132,7 +132,7 @@ func NewRegistry() *Registry {
 		Help:      "Number of currently active SSE connections.",
 	})
 	r.AuditBufferOverflow = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "apifrontend",
+		Namespace: "af",
 		Name:      "audit_buffer_overflow_total",
 		Help:      "Total audit events dropped due to buffer overflow.",
 	})

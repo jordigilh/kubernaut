@@ -30,7 +30,7 @@ scenarios but introduces:
   4096 audit events (representing ~20 seconds of sustained activity at flush
   interval) may be lost.
 - **Mitigation**: Pod restart policy + health probes minimize the window of
-  exposure. The `apifrontend_audit_buffer_overflow_total` metric alerts on
+  exposure. The `af_audit_buffer_overflow_total` metric alerts on
   buffer pressure before loss occurs.
 - **Future hardening (FedRAMP Moderate GA)**: Implement WAL-backed staging when
   the service transitions to FedRAMP Moderate authorization boundary. Track in
