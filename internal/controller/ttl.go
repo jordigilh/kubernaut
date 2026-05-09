@@ -16,6 +16,7 @@ import (
 
 	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/session"
 )
 
@@ -84,7 +85,7 @@ func (r *SessionCleanupReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				"session", sess.Name,
 				"namespace", sess.Namespace,
 				"phase", sess.Status.Phase,
-				"error", err,
+				"error", security.RedactError(err),
 			)
 		}
 		return result, err
@@ -96,7 +97,7 @@ func (r *SessionCleanupReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				"session", sess.Name,
 				"namespace", sess.Namespace,
 				"phase", sess.Status.Phase,
-				"error", err,
+				"error", security.RedactError(err),
 			)
 		}
 		return result, err

@@ -7,6 +7,7 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/requestid"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
 )
 
 // EventType classifies audit events for L3 forensic analysis.
@@ -106,7 +107,7 @@ func (e *LogEmitter) Emit(ctx context.Context, event *Event) {
 	if event.SourceIP != "" {
 		kv = append(kv, "source_ip", event.SourceIP)
 	}
-	for k, v := range event.Detail {
+	for k, v := range security.RedactMap(event.Detail) {
 		kv = append(kv, k, v)
 	}
 

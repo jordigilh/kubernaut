@@ -447,3 +447,52 @@ func TestFileWatcher_DoubleStop_NoPanic(t *testing.T) {
 	w.Stop()
 	w.Stop() // must not panic
 }
+
+func TestFileWatcher_CallbackError_RedactsURLsInLog(t *testing.T) {
+	// UT-AF-039-058: Verifies that URLs in callback rejection errors are
+	// redacted in the slog output (security.RedactError applied).
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	initial := []byte("x: 1\n")
+	if err := os.WriteFile(cfgPath, initial, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	var callCount atomic.Int32
+	w, err := NewFileWatcher(cfgPath, func(data []byte) error {
+		if callCount.Add(1) > 1 {
+			return fmt.Errorf("connection to https://internal-api.corp/secret/endpoint failed: token=abc123")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.logger = logger
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := w.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer w.Stop()
+
+	bad := []byte("x: 2\n")
+	if err := os.WriteFile(cfgPath, bad, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	output := logBuf.String()
+	if strings.Contains(output, "https://internal-api.corp/secret/endpoint") {
+		t.Errorf("log output should not contain raw URL, got: %s", output)
+	}
+	if !strings.Contains(output, "[URL_REDACTED]") {
+		t.Errorf("log output should contain [URL_REDACTED], got: %s", output)
+	}
+}

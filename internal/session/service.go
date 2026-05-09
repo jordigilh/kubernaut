@@ -19,6 +19,7 @@ import (
 
 	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
 )
 
 // validCRDName matches a DNS label (lowercase alphanumeric and '-', must
@@ -156,7 +157,7 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 		if delErr := s.client.Delete(ctx, crd); delErr != nil {
 			s.logger.WarnContext(ctx, "CRD rollback failed after status update error",
 				"crd_name", crdName,
-				"rollback_error", delErr,
+				"rollback_error", security.RedactError(delErr),
 			)
 		}
 		return nil, fmt.Errorf("set InvestigationSession initial status: %w", err)
@@ -167,7 +168,7 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 		if delErr := s.client.Delete(ctx, crd); delErr != nil {
 			s.logger.WarnContext(ctx, "CRD rollback failed after delegate error",
 				"crd_name", crdName,
-				"rollback_error", delErr,
+				"rollback_error", security.RedactError(delErr),
 			)
 		}
 		return nil, fmt.Errorf("delegate create: %w", err)
@@ -234,7 +235,7 @@ func (s *CRDSessionService) Delete(ctx context.Context, req *adksession.DeleteRe
 		s.logger.WarnContext(ctx, "CRD delete failed",
 			"session_id", req.SessionID,
 			"crd_name", crdName,
-			"error", err,
+			"error", security.RedactError(err),
 		)
 	}
 
