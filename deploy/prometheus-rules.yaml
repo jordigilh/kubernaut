@@ -103,7 +103,7 @@ spec:
     - name: apifrontend.audit
       rules:
         - alert: ApifrontendAuditBufferOverflow
-          expr: rate(apifrontend_audit_buffer_overflow_total{job="apifrontend"}[5m]) > 0.1
+          expr: rate(af_audit_buffer_overflow_total{job="apifrontend"}[5m]) > 0.1
           for: 1m
           labels:
             severity: critical

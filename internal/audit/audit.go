@@ -17,9 +17,17 @@ const (
 	EventAuthSuccess        EventType = "auth.success"
 	EventAuthFailure        EventType = "auth.failure"
 	EventRateLimitDenied    EventType = "ratelimit.denied"
-	EventImpersonation      EventType = "impersonation.created"
-	EventJWTDelegation      EventType = "jwt.delegation"
 	EventCircuitBreakerTrip EventType = "circuitbreaker.trip"
+
+	// EventImpersonation is emitted when an impersonated K8s client is created
+	// for a triage tool call. Currently captured indirectly via EventToolInvoked
+	// with user identity context. Direct emission deferred until the auditor is
+	// threaded through DynamicClientFactory (tracked as follow-up to SEC-05).
+	EventImpersonation EventType = "impersonation.created"
+	// EventJWTDelegation is emitted when a user's JWT is forwarded to KA.
+	// Currently captured indirectly via EventA2ATaskStarted. Direct emission
+	// deferred until the auditor is injected into JWTDelegationTransport.
+	EventJWTDelegation EventType = "jwt.delegation"
 
 	EventSessionCreated          EventType = "session.created"
 	EventSessionDeleted          EventType = "session.deleted"

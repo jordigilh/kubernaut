@@ -56,7 +56,7 @@ jobs:
       - name: Unit tests
         run: >-
           ginkgo -v --race
-          --coverpkg=./internal/auth/...,./internal/ratelimit/...,./internal/security/...,./internal/httputil/...,./internal/logging/...,./internal/requestid/...,./internal/audit/...,./internal/metrics/...,./internal/agent/...,./internal/tools/...,./internal/ka/...,./internal/ds/...,./internal/session/...,./internal/config/...,./internal/handler/...,./internal/launcher/...,./internal/resilience/...,./internal/streaming/...,./internal/controller/...
+          --coverpkg=./internal/auth/...,./internal/ratelimit/...,./internal/security/...,./internal/httputil/...,./internal/logging/...,./internal/requestid/...,./internal/audit/...,./internal/metrics/...,./internal/agent/...,./internal/tools/...,./internal/ka/...,./internal/ds/...,./internal/session/...,./internal/config/...,./internal/handler/...,./internal/launcher/...,./internal/resilience/...,./internal/streaming/...,./internal/controller/...,./internal/validate/...
           --coverprofile=coverage.out
           ./internal/...
 
@@ -145,6 +145,20 @@ jobs:
 
       - name: Service maturity checks
         run: make validate-maturity-ci
+
+  test-integration:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Integration tests
+        run: go test -v -race -tags=integration -timeout 300s ./internal/...
 
   sbom-scan:
     runs-on: ubuntu-latest

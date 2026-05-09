@@ -14,15 +14,17 @@ import (
 
 // RouterConfig holds all dependencies needed to construct the HTTP router.
 type RouterConfig struct {
-	MetricsRegistry  *metrics.Registry
-	A2AHandler       http.Handler
-	MCPHandler       http.Handler
-	AgentCardHandler http.Handler
-	AuthMiddleware   func(http.Handler) http.Handler
-	ReadyChecker     func() bool
-	MaxPayloadBytes  int64
-	SSETracker       *streaming.ConnectionTracker
-	Draining         *atomic.Bool
+	MetricsRegistry    *metrics.Registry
+	A2AHandler         http.Handler
+	MCPHandler         http.Handler
+	AgentCardHandler   http.Handler
+	AuthMiddleware     func(http.Handler) http.Handler
+	PreAuthMiddleware  func(http.Handler) http.Handler
+	PostAuthMiddleware func(http.Handler) http.Handler
+	ReadyChecker       func() bool
+	MaxPayloadBytes    int64
+	SSETracker         *streaming.ConnectionTracker
+	Draining           *atomic.Bool
 }
 
 func (c *RouterConfig) validate() error {
@@ -70,12 +72,26 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 	mux.Handle("GET /metrics", cfg.MetricsRegistry.Handler())
 	mux.Handle("GET /.well-known/agent-card.json", cfg.AgentCardHandler)
 
-	a2aChain := cfg.AuthMiddleware(writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, trackSSEConnection(cfg.SSETracker, cfg.A2AHandler))))
-	mcpChain := cfg.AuthMiddleware(writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, trackSSEConnection(cfg.SSETracker, cfg.MCPHandler))))
+	innerA2A := writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, trackSSEConnection(cfg.SSETracker, cfg.A2AHandler)))
+	innerMCP := writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, trackSSEConnection(cfg.SSETracker, cfg.MCPHandler)))
+
+	if cfg.PostAuthMiddleware != nil {
+		innerA2A = cfg.PostAuthMiddleware(innerA2A)
+		innerMCP = cfg.PostAuthMiddleware(innerMCP)
+	}
+
+	a2aChain := cfg.AuthMiddleware(innerA2A)
+	mcpChain := cfg.AuthMiddleware(innerMCP)
+
+	if cfg.PreAuthMiddleware != nil {
+		a2aChain = cfg.PreAuthMiddleware(a2aChain)
+		mcpChain = cfg.PreAuthMiddleware(mcpChain)
+	}
+
 	mux.Handle("POST /a2a/invoke", a2aChain)
 	mux.Handle("POST /mcp", mcpChain)
 
-	return metricsMiddleware(cfg.MetricsRegistry, mux), nil
+	return metricsMiddleware(cfg.MetricsRegistry, securityHeadersMiddleware(mux)), nil
 }
 
 // maxBodyMiddleware limits request body size to prevent resource exhaustion.

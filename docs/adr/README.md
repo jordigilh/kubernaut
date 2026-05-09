@@ -31,6 +31,10 @@ Each ADR follows the standard structure:
 | [ADR-013](ADR-013-jwt-forwarding.md) | JWT forwarding for AF-to-KA identity delegation | Accepted | 2026-05-03 |
 | [ADR-014](ADR-014-hybrid-ka-communication.md) | Hybrid REST + MCP client for AF-to-KA communication | Accepted | 2026-05-03 |
 | [ADR-015](ADR-015-ginkgo-mandate.md) | Ginkgo/Gomega for all test tiers (supersedes ADR-004) | Accepted | 2026-05-04 |
+| [ADR-016](ADR-016-jwks-failopen-rationale.md) | JWKS fail-open rationale and compensating controls | Accepted | 2026-05-05 |
+| [ADR-017](ADR-017-crd-pii-classification.md) | CRD PII data classification and retention policy | Accepted | 2026-05-06 |
+| [ADR-018](ADR-018-impersonation-risk-acceptance.md) | Impersonation risk acceptance and boundary enforcement | Accepted | 2026-05-07 |
+| [ADR-019](ADR-019-audit-buffer-volatility.md) | Audit buffer volatility and overflow handling | Accepted | 2026-05-08 |
 
 ## Adding New ADRs
 

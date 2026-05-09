@@ -17,6 +17,7 @@ import (
 	"google.golang.org/adk/tool/functiontool"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/validate"
 )
 
 var rrGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
@@ -52,6 +53,20 @@ func HandleListRemediations(ctx context.Context, client dynamic.Interface, args 
 	if client == nil {
 		return ListRemediationsResult{}, ErrK8sUnavailable
 	}
+	if err := validate.Namespace(args.Namespace); err != nil {
+		return ListRemediationsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if args.Kind != "" {
+		if err := validate.LabelValue(args.Kind); err != nil {
+			return ListRemediationsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+	}
+	if args.Name != "" {
+		if err := validate.LabelValue(args.Name); err != nil {
+			return ListRemediationsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+	}
+
 	opts := metav1.ListOptions{}
 
 	var labelSelectors []string
@@ -190,6 +205,18 @@ func HandleSubmitSignal(ctx context.Context, client dynamic.Interface, args Subm
 	if client == nil {
 		return SubmitSignalResult{}, ErrK8sUnavailable
 	}
+	if err := validate.Namespace(args.Namespace); err != nil {
+		return SubmitSignalResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if args.Kind == "" {
+		return SubmitSignalResult{}, fmt.Errorf("%w: kind must not be empty", ErrInvalidInput)
+	}
+	if err := validate.ResourceName(args.Name); err != nil {
+		return SubmitSignalResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if args.Severity != "" && !validSeverities[args.Severity] {
+		return SubmitSignalResult{}, fmt.Errorf("%w: severity must be one of critical, high, medium, low, info", ErrInvalidInput)
+	}
 	signalName := fmt.Sprintf("sp-%s-%s-%d", args.Kind, args.Name, time.Now().UnixMilli())
 
 	sp := &unstructured.Unstructured{
@@ -252,6 +279,15 @@ type ApproveResult struct {
 func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveArgs, username string) (ApproveResult, error) {
 	if client == nil {
 		return ApproveResult{}, ErrK8sUnavailable
+	}
+	if err := validate.Namespace(args.Namespace); err != nil {
+		return ApproveResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if err := validate.ResourceName(args.RARName); err != nil {
+		return ApproveResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if args.Decision == "" {
+		return ApproveResult{}, fmt.Errorf("%w: decision must not be empty", ErrInvalidInput)
 	}
 	_, err := client.Resource(rarGVR).Namespace(args.Namespace).Get(ctx, args.RARName, metav1.GetOptions{})
 	if err != nil {
@@ -401,6 +437,12 @@ const maxWatchDuration = 10 * time.Minute
 func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) (WatchResult, error) {
 	if client == nil {
 		return WatchResult{}, ErrK8sUnavailable
+	}
+	if err := validate.Namespace(args.Namespace); err != nil {
+		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if err := validate.ResourceName(args.Name); err != nil {
+		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 	watchCtx, cancel := context.WithTimeout(ctx, maxWatchDuration)
 	defer cancel()
