@@ -85,19 +85,25 @@ func BuildKindIndex(disc discovery.DiscoveryInterface) (map[string]schema.GroupK
 	return index, nil
 }
 
-func (r *dynamicResourceResolver) resolveMapping(kind string) (*meta.RESTMapping, error) {
+// resolveGroupKind extracts the GroupKind for a kind string using the kindIndex
+// for API group hints. Falls back to GroupKind with empty group (core API) when
+// the kind is not in the index.
+func (r *dynamicResourceResolver) resolveGroupKind(kind string) schema.GroupKind {
 	lowerKind := strings.ToLower(kind)
 	if gk, found := r.kindIndex[lowerKind]; found {
-		return r.mapper.RESTMapping(gk)
+		return gk
 	}
-	return r.mapper.RESTMapping(schema.GroupKind{Kind: kind})
+	return schema.GroupKind{Kind: kind}
 }
 
 // resolveMappings returns all possible RESTMappings for a kind, supporting
-// multi-group kinds like Subscription (operators.coreos.com + messaging.knative.dev).
+// multi-group kinds like Subscription (operators.coreos.com + messaging.knative.dev)
+// and multi-version kinds like AuthorizationPolicy (security.istio.io/v1beta1 + v1).
 // Uses ResourcesFor to discover all API groups, with resettableMapper retry.
-// Falls back to the kindIndex single-group path when ResourcesFor fails entirely.
-// Mirrors K8sAdapter.resolveMappingsAll (Issue #1062).
+// Falls back to RESTMappings(GroupKind) when ResourcesFor fails entirely,
+// returning ALL versions for the GroupKind instead of a single preferred version.
+// Issue #1064 follow-up: RESTMapping (singular) returns AmbiguousKindError on
+// MultiRESTMapper for multi-version kinds; RESTMappings (plural) handles this.
 func (r *dynamicResourceResolver) resolveMappings(kind string) ([]*meta.RESTMapping, error) {
 	resource := strings.ToLower(kind)
 	gvrs, err := r.mapper.ResourcesFor(schema.GroupVersionResource{Resource: resource})
@@ -107,11 +113,17 @@ func (r *dynamicResourceResolver) resolveMappings(kind string) ([]*meta.RESTMapp
 			gvrs, err = r.mapper.ResourcesFor(schema.GroupVersionResource{Resource: resource})
 		}
 		if err != nil {
-			mapping, fallbackErr := r.resolveMapping(kind)
-			if fallbackErr != nil {
+			gk := r.resolveGroupKind(kind)
+			fallbackMappings, fallbackErr := r.mapper.RESTMappings(gk)
+			if fallbackErr != nil || len(fallbackMappings) == 0 {
 				return nil, fmt.Errorf("unsupported kind %q: %w", kind, fallbackErr)
 			}
-			return []*meta.RESTMapping{mapping}, nil
+			r.logger.V(1).Info("multi-version kind resolved via fallback",
+				"kind", kind,
+				"group", gk.Group,
+				"versions", len(fallbackMappings),
+				"source", "RESTMappings")
+			return fallbackMappings, nil
 		}
 	}
 
