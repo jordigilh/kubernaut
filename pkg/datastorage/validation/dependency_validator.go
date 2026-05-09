@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 
+	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -47,33 +48,44 @@ func NewK8sDependencyValidator(c client.Reader) *K8sDependencyValidator {
 }
 
 // ValidateDependencies checks each declared Secret/ConfigMap exists with non-empty data.
-// Returns an error describing the first missing or empty dependency found.
+// All K8s Gets are issued concurrently via errgroup; the first error cancels remaining checks.
+// Issue #1070: Parallelized from sequential loop for reduced latency on multi-dependency schemas.
 func (v *K8sDependencyValidator) ValidateDependencies(ctx context.Context, namespace string, deps *models.WorkflowDependencies) error {
 	if deps == nil {
 		return nil
 	}
 
+	g, gctx := errgroup.WithContext(ctx)
+
 	for _, s := range deps.Secrets {
-		var secret corev1.Secret
-		key := client.ObjectKey{Name: s.Name, Namespace: namespace}
-		if err := v.client.Get(ctx, key, &secret); err != nil {
-			return fmt.Errorf("dependency Secret %q not found in namespace %q: %w", s.Name, namespace, err)
-		}
-		if len(secret.Data) == 0 {
-			return fmt.Errorf("dependency Secret %q in namespace %q has empty data", s.Name, namespace)
-		}
+		name := s.Name
+		g.Go(func() error {
+			var secret corev1.Secret
+			key := client.ObjectKey{Name: name, Namespace: namespace}
+			if err := v.client.Get(gctx, key, &secret); err != nil {
+				return fmt.Errorf("dependency Secret %q not found in namespace %q: %w", name, namespace, err)
+			}
+			if len(secret.Data) == 0 {
+				return fmt.Errorf("dependency Secret %q in namespace %q has empty data", name, namespace)
+			}
+			return nil
+		})
 	}
 
 	for _, cm := range deps.ConfigMaps {
-		var configMap corev1.ConfigMap
-		key := client.ObjectKey{Name: cm.Name, Namespace: namespace}
-		if err := v.client.Get(ctx, key, &configMap); err != nil {
-			return fmt.Errorf("dependency ConfigMap %q not found in namespace %q: %w", cm.Name, namespace, err)
-		}
-		if len(configMap.Data) == 0 && len(configMap.BinaryData) == 0 {
-			return fmt.Errorf("dependency ConfigMap %q in namespace %q has empty data", cm.Name, namespace)
-		}
+		name := cm.Name
+		g.Go(func() error {
+			var configMap corev1.ConfigMap
+			key := client.ObjectKey{Name: name, Namespace: namespace}
+			if err := v.client.Get(gctx, key, &configMap); err != nil {
+				return fmt.Errorf("dependency ConfigMap %q not found in namespace %q: %w", name, namespace, err)
+			}
+			if len(configMap.Data) == 0 && len(configMap.BinaryData) == 0 {
+				return fmt.Errorf("dependency ConfigMap %q in namespace %q has empty data", name, namespace)
+			}
+			return nil
+		})
 	}
 
-	return nil
+	return g.Wait()
 }
