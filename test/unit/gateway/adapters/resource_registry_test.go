@@ -103,6 +103,20 @@ func ocpResources() []*metav1.APIResourceList {
 	}
 }
 
+// namespaceResource returns the core v1 Namespace API resource, which is
+// absent from standardResources() but present in production clusters.
+// Used by #1067 tests to reproduce the namespace-as-resource-candidate bug.
+func namespaceResource() []*metav1.APIResourceList {
+	return []*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Name: "namespaces", SingularName: "namespace", Kind: "Namespace", Namespaced: false},
+			},
+		},
+	}
+}
+
 func newFakeDiscovery(resources ...[]*metav1.APIResourceList) *fakediscovery.FakeDiscovery {
 	cs := fakeclientset.NewSimpleClientset()
 	fd := cs.Discovery().(*fakediscovery.FakeDiscovery)

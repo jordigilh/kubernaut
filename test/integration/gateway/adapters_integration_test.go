@@ -778,4 +778,134 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				signal.Resource.Kind, signal.Resource.Name)
 		})
 	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// BR-GATEWAY-004: Namespace Label Dedup Escape Fix (Issue #1067)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	//
+	// These tests validate that the "namespace" Prometheus label is excluded
+	// from resource candidate scoring when the Namespace API resource is present
+	// in discovery (as it is in production clusters). Without this fix, the
+	// "namespace" label resolves as a Namespace kind, producing a divergent
+	// fingerprint when the original pod is gone — bypassing deduplication.
+	//
+	// Uses NewTestAPIResourceRegistryWithNamespace() which includes the core/v1
+	// Namespace resource that NewTestAPIResourceRegistry() omits.
+	//
+	// Coverage: #1067 root cause fix — full pipeline validation
+	Context("BR-GATEWAY-004: Namespace Label Dedup Escape Fix (Issue #1067)", func() {
+
+		It("[IT-GW-1067-001] should target pod, not Namespace, with production-realistic discovery (#1067)", func() {
+			By("1. Create Gateway server for full pipeline verification")
+			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("2. Create adapter with production-realistic registry (includes Namespace)")
+			registryWithNS := adapters.NewTestAPIResourceRegistryWithNamespace()
+			adapterWithNS := adapters.NewPrometheusAdapter(nil, registryWithNS)
+
+			By("3. Parse alert reproducing #1067 scenario — namespace + pod labels")
+			payload := []byte(fmt.Sprintf(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubePodCrashLooping",
+						"namespace": "%s",
+						"severity": "critical",
+						"pod": "crashing-pod-abc"
+					},
+					"annotations": {
+						"summary": "Pod is crash looping"
+					},
+					"startsAt": "2026-05-09T10:00:00Z"
+				}]
+			}`, testNamespace))
+
+			signal, err := adapterWithNS.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("4. Verify resource extraction — namespace is reserved, pod is the target")
+			Expect(signal.Resource.Kind).To(Equal("Pod"),
+				"BR-GATEWAY-004 #1067: namespace label must be excluded; pod is the correct target")
+			Expect(signal.Resource.Name).To(Equal("crashing-pod-abc"))
+
+			By("5. Verify fingerprint is based on Pod, not Namespace")
+			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
+				Namespace: testNamespace,
+				Kind:      "Pod",
+				Name:      "crashing-pod-abc",
+			})
+			Expect(signal.Fingerprint).To(Equal(expectedFingerprint),
+				"BR-GATEWAY-004 #1067: Fingerprint must be SHA256(ns:Pod:crashing-pod-abc)")
+
+			divergentFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
+				Namespace: testNamespace,
+				Kind:      "Namespace",
+				Name:      testNamespace,
+			})
+			Expect(signal.Fingerprint).ToNot(Equal(divergentFingerprint),
+				"BR-GATEWAY-004 #1067: Fingerprint must NOT match Namespace-based divergent fingerprint")
+
+			By("6. Process through full pipeline and verify CRD has correct target")
+			response, err := gwServer.ProcessSignal(ctx, signal)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response.Status).To(Equal("created"))
+
+			rr := &remediationv1alpha1.RemediationRequest{}
+			err = k8sClient.Get(ctx, client.ObjectKey{
+				Name:      response.RemediationRequestName,
+				Namespace: controllerNamespace,
+			}, rr)
+			Expect(err).ToNot(HaveOccurred(),
+				"BR-GATEWAY-004 #1067: RemediationRequest CRD must be created")
+			Expect(rr.Spec.TargetResource.Kind).To(Equal("Pod"),
+				"BR-GATEWAY-004 #1067: CRD target must be Pod, not Namespace")
+			Expect(rr.Spec.TargetResource.Name).To(Equal("crashing-pod-abc"))
+
+			GinkgoWriter.Printf("✅ IT-GW-1067-001: Namespace label excluded, correct target: %s/%s\n",
+				rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
+		})
+
+		It("[IT-GW-1067-002] should resolve deployment when namespace + deployment labels present (#1067)", func() {
+			By("1. Create adapter with production-realistic registry (includes Namespace)")
+			registryWithNS := adapters.NewTestAPIResourceRegistryWithNamespace()
+			adapterWithNS := adapters.NewPrometheusAdapter(nil, registryWithNS)
+
+			By("2. Parse alert with namespace + deployment labels")
+			payload := []byte(fmt.Sprintf(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubeDeploymentReplicasMismatch",
+						"namespace": "%s",
+						"severity": "warning",
+						"deployment": "api-server"
+					},
+					"annotations": {
+						"summary": "Deployment replicas mismatch"
+					},
+					"startsAt": "2026-05-09T10:00:00Z"
+				}]
+			}`, testNamespace))
+
+			signal, err := adapterWithNS.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("3. Verify Deployment is the target — namespace is reserved")
+			Expect(signal.Resource.Kind).To(Equal("Deployment"),
+				"BR-GATEWAY-004 #1067: namespace excluded, deployment is the correct tier-1 target")
+			Expect(signal.Resource.Name).To(Equal("api-server"))
+
+			By("4. Verify fingerprint reflects Deployment, not Namespace")
+			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
+				Namespace: testNamespace,
+				Kind:      "Deployment",
+				Name:      "api-server",
+			})
+			Expect(signal.Fingerprint).To(Equal(expectedFingerprint),
+				"BR-GATEWAY-004 #1067: Fingerprint must be SHA256(ns:Deployment:api-server)")
+
+			GinkgoWriter.Printf("✅ IT-GW-1067-002: Namespace excluded, correct target: %s/%s\n",
+				signal.Resource.Kind, signal.Resource.Name)
+		})
+	})
 })

@@ -230,13 +230,99 @@ var _ = Describe("Prometheus Reserved Label Denylist (#1045)", func() {
 	// =========================================================================
 	Context("API Surface", func() {
 
-		It("UT-GW-1045-012: PrometheusReservedLabels contains exactly 5 entries", func() {
-			Expect(adapters.PrometheusReservedLabels).To(HaveLen(5))
+		It("UT-GW-1045-012: PrometheusReservedLabels contains exactly 6 entries", func() {
+			Expect(adapters.PrometheusReservedLabels).To(HaveLen(6))
 			Expect(adapters.PrometheusReservedLabels).To(HaveKey("job"))
 			Expect(adapters.PrometheusReservedLabels).To(HaveKey("service"))
 			Expect(adapters.PrometheusReservedLabels).To(HaveKey("instance"))
 			Expect(adapters.PrometheusReservedLabels).To(HaveKey("endpoint"))
 			Expect(adapters.PrometheusReservedLabels).To(HaveKey("container"))
+			Expect(adapters.PrometheusReservedLabels).To(HaveKey("namespace"))
 		})
+	})
+})
+
+var _ = Describe("Issue #1067: namespace label excluded from candidate scoring", func() {
+
+	var (
+		registry *adapters.APIResourceRegistry
+		adapter  *adapters.PrometheusAdapter
+		ctx      context.Context
+	)
+
+	BeforeEach(func() {
+		fd := newFakeDiscovery(standardResources(), namespaceResource())
+		var err error
+		registry, err = adapters.NewAPIResourceRegistry(fd)
+		Expect(err).ToNot(HaveOccurred())
+
+		adapter = adapters.NewPrometheusAdapter(nil, registry)
+		ctx = context.Background()
+	})
+
+	makePayload := func(labels map[string]interface{}) []byte {
+		payload := map[string]interface{}{
+			"alerts": []map[string]interface{}{
+				{
+					"labels":      labels,
+					"annotations": map[string]interface{}{"summary": "test alert"},
+					"status":      "firing",
+					"startsAt":    "2026-05-09T00:00:00Z",
+					"fingerprint": "test-fp-1067",
+				},
+			},
+		}
+		b, _ := json.Marshal(payload)
+		return b
+	}
+
+	It("UT-GW-1067-001: namespace label does not resolve as K8s Namespace", func() {
+		signal, err := adapter.Parse(ctx, makePayload(map[string]interface{}{
+			"alertname": "KubePodCrashLooping",
+			"namespace": "demo-alert-storm",
+			"pod":       "crashing-pod-abc",
+		}))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(signal.Resource.Kind).To(Equal("Pod"),
+			"BR-GATEWAY-004 #1067: namespace label is metadata, not a resource identifier; pod is the correct target")
+		Expect(signal.Resource.Name).To(Equal("crashing-pod-abc"))
+	})
+
+	It("UT-GW-1067-002: namespace-only labels resolve to Unknown/unknown", func() {
+		signal, err := adapter.Parse(ctx, makePayload(map[string]interface{}{
+			"alertname": "KubeNamespaceTerminating",
+			"namespace": "production",
+		}))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(signal.Resource.Kind).To(Equal("Unknown"),
+			"BR-GATEWAY-004 #1067: namespace label excluded; no other resource candidate; resolves to Unknown")
+		Expect(signal.Resource.Name).To(Equal("unknown"))
+	})
+
+	It("UT-GW-1067-003: namespace + deployment labels — Deployment wins", func() {
+		signal, err := adapter.Parse(ctx, makePayload(map[string]interface{}{
+			"alertname":  "HighMemoryUsage",
+			"namespace":  "production",
+			"deployment": "api-server",
+		}))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(signal.Resource.Kind).To(Equal("Deployment"),
+			"BR-GATEWAY-069 #1067: namespace excluded, deployment is the correct tier-1 target")
+		Expect(signal.Resource.Name).To(Equal("api-server"))
+	})
+
+	It("UT-GW-1067-004: exported_namespace not in denylist", func() {
+		signal, err := adapter.Parse(ctx, makePayload(map[string]interface{}{
+			"alertname":          "KubePodCrashLooping",
+			"namespace":          "monitoring",
+			"exported_namespace": "production",
+			"pod":                "worker-abc",
+		}))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(signal.Resource.Kind).To(Equal("Pod"),
+			"BR-GATEWAY-004 #1067: exported_namespace is not a valid API singular name, does not become a candidate")
+		Expect(signal.Resource.Name).To(Equal("worker-abc"))
+		Expect(signal.Resource.Namespace).To(Equal("production"),
+			"exported_namespace should override namespace for the signal's namespace field")
 	})
 })
