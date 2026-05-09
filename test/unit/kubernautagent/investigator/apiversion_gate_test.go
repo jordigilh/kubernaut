@@ -48,6 +48,10 @@ type gateMockLLMClient struct {
 
 func (m *gateMockLLMClient) Close() error { return nil }
 
+func (m *gateMockLLMClient) StreamChat(_ context.Context, req llm.ChatRequest, _ func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	return m.Chat(context.Background(), req)
+}
+
 func (m *gateMockLLMClient) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

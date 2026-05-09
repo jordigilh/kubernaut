@@ -1,6 +1,7 @@
 # ADR-027: Multi-Architecture Container Build Strategy with Red Hat UBI Base Images
 # Build Stage: Red Hat UBI10 Go Toolset 1.25
 FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
+ENV GOTOOLCHAIN=auto
 
 USER root
 

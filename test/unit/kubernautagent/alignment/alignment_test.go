@@ -914,7 +914,7 @@ var _ = Describe("Performance hardening — PERF-1/PERF-4", func() {
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
 			}, "")
-			observer, obsErr := alignment.NewObserver(evaluator, 3)
+			observer, obsErr := alignment.NewObserver(evaluator, alignment.WithMaxConcurrent(3))
 			Expect(obsErr).NotTo(HaveOccurred())
 
 			for i := 0; i < 20; i++ {

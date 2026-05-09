@@ -14,6 +14,7 @@
 # Stage 1: Build (native cross-compile, no QEMU needed for Go)
 # ============================================================================
 FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
+ENV GOTOOLCHAIN=auto
 
 # Build arguments for multi-architecture support
 ARG GOFLAGS=""

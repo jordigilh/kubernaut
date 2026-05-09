@@ -12,6 +12,7 @@
 # Stage 1: Build (native cross-compile, no QEMU needed for Go)
 # ============================================================================
 FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
+ENV GOTOOLCHAIN=auto
 
 # Auto-detect target architecture from --platform flag
 # Podman/Docker automatically set TARGETARCH when --platform is specified.
@@ -57,7 +58,7 @@ COPY --chown=1001:0 . .
 # - Coverage: No -ldflags, -a, or -installsuffix (breaks coverage instrumentation)
 # - Production: Keep all optimizations for size/performance
 # NOTE: vendor/ excluded in .dockerignore, so we use -mod=mod
-# Toolchain pinned to go1.25.3 in go.mod to match UBI10 go-toolset:1.25
+# GOTOOLCHAIN=auto lets the builder download the exact Go patch required by go.mod
 RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	echo "Building with coverage instrumentation (simple build per DD-TEST-007)..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
