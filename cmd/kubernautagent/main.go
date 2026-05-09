@@ -656,13 +656,19 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, dsTokenSource *auth.To
 	return &dsClients{
 		ogenClient: ogenClient,
 		dsAdapter:  enrichment.NewDSAdapter(ogenClient),
-		k8sAdapter: newK8sAdapterWithLogger(infra.dynClient, infra.mapper, logger),
+		k8sAdapter: newK8sAdapterWithLogger(infra, logger),
 	}
 }
 
-func newK8sAdapterWithLogger(dynClient dynamic.Interface, mapper meta.RESTMapper, logger logr.Logger) *enrichment.K8sAdapter {
-	a := enrichment.NewK8sAdapter(dynClient, mapper)
+func newK8sAdapterWithLogger(infra *k8sInfra, logger logr.Logger) *enrichment.K8sAdapter {
+	a := enrichment.NewK8sAdapter(infra.dynClient, infra.mapper)
 	a.SetLogger(logger.WithName("k8s-adapter"))
+	kindIndex, err := k8stools.BuildKindIndex(infra.clientset.Discovery())
+	if err != nil {
+		logger.Info("failed to build kind index for K8s adapter, using empty index", "error", err)
+		kindIndex = make(map[string]schema.GroupKind)
+	}
+	a.SetKindIndex(kindIndex)
 	return a
 }
 

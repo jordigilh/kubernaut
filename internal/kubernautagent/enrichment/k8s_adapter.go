@@ -37,6 +37,7 @@ const maxOwnerChainDepth = 10
 type K8sAdapter struct {
 	dynClient dynamic.Interface
 	mapper    meta.RESTMapper
+	kindIndex map[string]schema.GroupKind
 	logger    logr.Logger
 }
 
@@ -51,6 +52,14 @@ func NewK8sAdapter(dynClient dynamic.Interface, mapper meta.RESTMapper) *K8sAdap
 // (FedRAMP AU-6 / SRE-2). Defaults to logr.Discard() if never called.
 func (a *K8sAdapter) SetLogger(l logr.Logger) {
 	a.logger = l
+}
+
+// SetKindIndex configures the kind-to-GroupKind index used by the RESTMappings
+// fallback in resolveMappingsAll. Keys must be lowercase kind strings. When not
+// set, the fallback uses an empty API group (core API), which won't match CRDs.
+// Issue #1064 follow-up: mirrors the kindIndex in dynamicResourceResolver.
+func (a *K8sAdapter) SetKindIndex(idx map[string]schema.GroupKind) {
+	a.kindIndex = idx
 }
 
 // GetOwnerChain walks ownerReferences from the given resource up to maxOwnerChainDepth.
@@ -219,10 +228,25 @@ func (a *K8sAdapter) getResourceWithFallback(ctx context.Context, kind, name, na
 	return nil, nil, fmt.Errorf("k8s adapter: get %s/%s in %s: %w", kind, name, namespace, lastErr)
 }
 
+// resolveGroupKind extracts the GroupKind for a kind string using the kindIndex
+// for API group hints. Falls back to GroupKind with empty group (core API) when
+// the kind is not in the index.
+// Issue #1064 follow-up: mirrors resolveGroupKind in dynamicResourceResolver.
+func (a *K8sAdapter) resolveGroupKind(kind string) schema.GroupKind {
+	lowerKind := strings.ToLower(kind)
+	if gk, found := a.kindIndex[lowerKind]; found {
+		return gk
+	}
+	return schema.GroupKind{Kind: kind}
+}
+
 // resolveMappingsAll returns all possible RESTMappings for a kind, supporting
-// multi-group kinds like Subscription (operators.coreos.com + messaging.knative.dev).
+// multi-group kinds like Subscription (operators.coreos.com + messaging.knative.dev)
+// and multi-version kinds like AuthorizationPolicy (security.istio.io/v1beta1 + v1).
 // Uses ResourcesFor instead of ResourceFor to avoid AmbiguousResourceError.
-// Issue #1062.
+// Falls back to RESTMappings(GroupKind) when ResourcesFor fails entirely,
+// returning ALL versions for the GroupKind instead of failing.
+// Issue #1062, #1064 follow-up.
 func (a *K8sAdapter) resolveMappingsAll(kind string) ([]*meta.RESTMapping, error) {
 	resource := strings.ToLower(kind)
 	gvrs, err := a.mapper.ResourcesFor(schema.GroupVersionResource{Resource: resource})
@@ -232,7 +256,17 @@ func (a *K8sAdapter) resolveMappingsAll(kind string) ([]*meta.RESTMapping, error
 			gvrs, err = a.mapper.ResourcesFor(schema.GroupVersionResource{Resource: resource})
 		}
 		if err != nil {
-			return nil, err
+			gk := a.resolveGroupKind(kind)
+			fallbackMappings, fallbackErr := a.mapper.RESTMappings(gk)
+			if fallbackErr != nil || len(fallbackMappings) == 0 {
+				return nil, fmt.Errorf("no valid mappings found for kind %s: %w", kind, fallbackErr)
+			}
+			a.logger.V(1).Info("multi-version kind resolved via fallback",
+				"kind", kind,
+				"group", gk.Group,
+				"versions", len(fallbackMappings),
+				"source", "RESTMappings")
+			return fallbackMappings, nil
 		}
 	}
 
