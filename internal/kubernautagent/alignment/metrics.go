@@ -26,14 +26,14 @@ var (
 		Namespace: "kubernaut",
 		Subsystem: "alignment",
 		Name:      "verdict_total",
-		Help:      "Total alignment verdicts by result (clean, suspicious) and mode (enforce, monitor).",
+		Help:      "Total alignment verdicts by result (aligned, suspicious) and mode (enforce, monitor).",
 	}, []string{"result", "mode"})
 
 	alignmentStepTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "kubernaut",
 		Subsystem: "alignment",
 		Name:      "step_total",
-		Help:      "Total alignment steps evaluated by outcome (clean, suspicious, panic).",
+		Help:      "Total alignment steps evaluated by outcome (aligned, suspicious, panic).",
 	}, []string{"outcome"})
 
 	alignmentCanaryTotal = promauto.NewCounterVec(prometheus.CounterOpts{

@@ -134,7 +134,7 @@ func (o *Observer) SubmitAsync(ctx context.Context, step Step) {
 		case obs.Suspicious:
 			alignmentStepTotal.WithLabelValues("suspicious").Inc()
 		default:
-			alignmentStepTotal.WithLabelValues("clean").Inc()
+			alignmentStepTotal.WithLabelValues("aligned").Inc()
 		}
 
 		o.mu.Lock()

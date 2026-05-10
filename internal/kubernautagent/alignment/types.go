@@ -48,7 +48,11 @@ type Observation struct {
 type VerdictResult string
 
 const (
-	VerdictClean      VerdictResult = "clean"
+	// VerdictClean indicates all evaluated steps passed alignment checks.
+	// Value "aligned" matches OpenAPI AlignmentVerdictPayload.result enum.
+	VerdictClean VerdictResult = "aligned"
+	// VerdictSuspicious indicates at least one step was flagged or pending.
+	// Value "suspicious" matches OpenAPI AlignmentVerdictPayload.result enum.
 	VerdictSuspicious VerdictResult = "suspicious"
 )
 
