@@ -73,7 +73,7 @@ func newFakeDynamicClient(objects ...runtime.Object) *dynamicfake.FakeDynamicCli
 }
 
 // mcpPost sends a JSON-RPC request to the MCP handler and returns the response.
-func mcpPost(handler http.Handler, sessionID string, body any, user *auth.UserIdentity) *httptest.ResponseRecorder {
+func mcpPost(h http.Handler, sessionID string, body any, user *auth.UserIdentity) *httptest.ResponseRecorder {
 	data, _ := json.Marshal(body)
 	req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(data))
 	req.Header.Set("Content-Type", "application/json")
@@ -86,7 +86,7 @@ func mcpPost(handler http.Handler, sessionID string, body any, user *auth.UserId
 		req = req.WithContext(ctx)
 	}
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, req)
 	return rec
 }
 
@@ -117,7 +117,7 @@ func mcpInitialize(h http.Handler, user *auth.UserIdentity) string {
 }
 
 // mcpCallTool sends tools/call and returns the parsed response body.
-func mcpCallTool(h http.Handler, sessionID string, toolName string, args map[string]any, user *auth.UserIdentity) (int, string) {
+func mcpCallTool(h http.Handler, sessionID, toolName string, args map[string]any, user *auth.UserIdentity) (status int, body string) {
 	callReq := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      2,
@@ -1041,7 +1041,8 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 			obs, err := metrics.ToolCallDuration.GetMetricWith(prometheus.Labels{"tool": "af_list_events", "type": "mcp"})
 			Expect(err).NotTo(HaveOccurred())
-			hist := obs.(prometheus.Histogram)
+			hist, ok := obs.(prometheus.Histogram)
+			Expect(ok).To(BeTrue())
 			var m dto.Metric
 			Expect(hist.Write(&m)).To(Succeed())
 			Expect(m.GetHistogram().GetSampleCount()).To(BeNumerically(">=", 1))

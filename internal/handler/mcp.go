@@ -85,7 +85,7 @@ func NewMCPHandler(cfg MCPConfig) (http.Handler, error) { //nolint:gocritic // h
 	return h, nil
 }
 
-func registerStubTools(srv *mcp.Server, cfg MCPConfig) {
+func registerStubTools(srv *mcp.Server, cfg MCPConfig) { //nolint:gocritic // hugeParam: called once at startup
 	tools := cfg.Tools
 	if tools == nil {
 		tools = DefaultMCPTools()
