@@ -37,7 +37,9 @@ type BufferedEmitter struct {
 	wg              sync.WaitGroup
 }
 
-// NewBufferedEmitter creates a BufferedEmitter and starts the background flush loop.
+// NewBufferedEmitter creates a BufferedEmitter. Call Start() to launch the
+// background flush loop. Separating construction from goroutine launch enables
+// deterministic testing of buffer overflow behavior.
 func NewBufferedEmitter(cfg BufferConfig) *BufferedEmitter { //nolint:gocritic // hugeParam: called once at startup
 	bufSize := cfg.BufferSize
 	if bufSize <= 0 {
@@ -52,7 +54,7 @@ func NewBufferedEmitter(cfg BufferConfig) *BufferedEmitter { //nolint:gocritic /
 		batchSize = 100
 	}
 
-	e := &BufferedEmitter{
+	return &BufferedEmitter{
 		buffer:          make(chan *Event, bufSize),
 		writer:          cfg.Writer,
 		logger:          cfg.Logger.WithName("audit-buffer"),
@@ -62,10 +64,12 @@ func NewBufferedEmitter(cfg BufferConfig) *BufferedEmitter { //nolint:gocritic /
 		eventsCounter:   cfg.EventsCounter,
 		done:            make(chan struct{}),
 	}
+}
 
+// Start launches the background flush loop. Must be called exactly once.
+func (e *BufferedEmitter) Start() {
 	e.wg.Add(1)
 	go e.flushLoop()
-	return e
 }
 
 // Emit sanitizes and buffers an audit event. Non-blocking; drops on overflow.
