@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -28,6 +29,10 @@ type MCPConfig struct {
 	Enabled       bool
 	// ToolCallback is invoked on each tool call for observability/testing hooks.
 	ToolCallback func(ctx context.Context, toolName string)
+	// Bridge enables real tool dispatch when set. When nil, stubs are registered.
+	Bridge *MCPBridgeConfig
+	// SessionTimeout configures idle session auto-close duration.
+	SessionTimeout time.Duration
 }
 
 func (c MCPConfig) validate() error { //nolint:gocritic // hugeParam: value copy intentional for validation
@@ -42,8 +47,8 @@ func (c MCPConfig) validate() error { //nolint:gocritic // hugeParam: value copy
 
 // NewMCPHandler creates an http.Handler serving the MCP Streamable HTTP protocol.
 // When cfg.Enabled is false, returns a handler that responds 501 Not Implemented.
-// Tools are registered as pass-through stubs that return "not implemented" until
-// the real tool bridge is wired (PR6+).
+// When cfg.Bridge is set, tools dispatch to real Handle* implementations.
+// Otherwise, tools are registered as pass-through stubs.
 func NewMCPHandler(cfg MCPConfig) (http.Handler, error) { //nolint:gocritic // hugeParam: called once at startup
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("invalid MCP config: %w", err)
@@ -61,6 +66,29 @@ func NewMCPHandler(cfg MCPConfig) (http.Handler, error) { //nolint:gocritic // h
 		Version: cfg.ServerVersion,
 	}, nil)
 
+	if cfg.Bridge != nil {
+		RegisterTools(srv, cfg.Bridge)
+		if cfg.Bridge.RBACRoles != nil {
+			srv.AddReceivingMiddleware(FilterToolsMiddleware(cfg.Bridge.RBACRoles))
+		}
+	} else {
+		registerStubTools(srv, cfg)
+	}
+
+	opts := &mcp.StreamableHTTPOptions{}
+	if cfg.SessionTimeout > 0 {
+		opts.SessionTimeout = cfg.SessionTimeout
+	}
+
+	h := mcp.NewStreamableHTTPHandler(
+		func(_ *http.Request) *mcp.Server { return srv },
+		opts,
+	)
+
+	return h, nil
+}
+
+func registerStubTools(srv *mcp.Server, cfg MCPConfig) {
 	tools := cfg.Tools
 	if tools == nil {
 		tools = DefaultMCPTools()
@@ -97,13 +125,6 @@ func NewMCPHandler(cfg MCPConfig) (http.Handler, error) { //nolint:gocritic // h
 			}, nil
 		})
 	}
-
-	handler := mcp.NewStreamableHTTPHandler(
-		func(_ *http.Request) *mcp.Server { return srv },
-		nil,
-	)
-
-	return handler, nil
 }
 
 // DefaultMCPTools returns the 14 standard MCP tool definitions for the kubernaut agent.

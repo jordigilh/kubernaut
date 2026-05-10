@@ -65,6 +65,8 @@ These SDK capabilities have been verified against `go-sdk v1.6.0` source and inf
 | Nil-Safety | Explicit check preventing nil-pointer panic on unavailable backends |
 | Tool Timeout | `context.WithTimeout` budget per tool invocation (30s) |
 | Session Semaphore | Per-session concurrency limiter using `sync.Map` keyed by `req.Session.ID()` |
+| SessionTimeout | SDK `StreamableHTTPOptions.SessionTimeout` — auto-closes idle sessions after duration (not `IdleTimeout`) |
+| DynamicClientFactory | `func(ctx context.Context) (dynamic.Interface, error)` — produces impersonated K8s clients for triage tools |
 | Receiving Middleware | SDK `AddReceivingMiddleware` — wraps all incoming JSON-RPC method handlers for interception |
 
 ---
@@ -330,7 +332,7 @@ These SDK capabilities have been verified against `go-sdk v1.6.0` source and inf
 - `httptest.Server` for KA REST (canned `/api/v1/incident/analyze`, `/session/{id}`, `/session/{id}/result`)
 - `ka.MockMCPClient` with `SelectWorkflowFn`
 - `dynamicfake.NewSimpleDynamicClient` with pre-loaded CRDs
-- `fakeTriageFactory` returning a fake dynamic client
+- `fakeDynamicClientFactory` returning an impersonated fake dynamic client (for ListEvents, GetPods, GetWorkloads, ResolveOwner)
 - `fakeAuditor` implementing `audit.Emitter` capturing events
 
 **Red criteria:** All 25 tests compile but fail (bridge does not exist yet).
@@ -538,8 +540,8 @@ Before advancing to Tier 2, verify all 9 categories:
 - `context.WithTimeout(ctx, cfg.ToolTimeout)` + `defer cancel()` in dispatch wrapper
 - Per-session semaphore: `sync.Map` keyed by `req.Session.ID()` → `*semaphore.Weighted(int64(cfg.MaxConcurrentTools))`
 - `defer sem.Release(1)` with panic recovery
-- Cleanup semaphore entry when session disconnects (SDK session lifecycle hooks or lazy eviction)
-- Pass `IdleTimeout` to `StreamableHTTPHandler` options
+- Cleanup semaphore entry via custom `EventStore.SessionClosed` or lazy eviction (no exported lifecycle hooks in SDK v1.6.0)
+- Pass `SessionTimeout` to `StreamableHTTPOptions` (SDK field name, not `IdleTimeout`)
 
 **Green criteria:** All 76 tests pass (all tiers). `-race` passes.
 
@@ -718,4 +720,4 @@ All 9 categories verified across the complete implementation:
 | Coverage drops below 80% due to bridge size | Medium | High | Each tier adds tests before code; monitor coverage incrementally |
 | Polling test flakiness in CI | Medium | Low | Use 1ms poll interval; mock KA status response to return immediately |
 | k6 script update breaks perf baseline | Low | Low | Update thresholds to account for real backend latency |
-| Session idle timeout not natively supported by SDK | Medium | Medium | Implement via goroutine + timer wrapping the transport |
+| Session idle timeout | **Resolved** | N/A | SDK provides `StreamableHTTPOptions.SessionTimeout` for idle session closure. Semaphore cleanup via custom `EventStore.SessionClosed` or lazy eviction. |
