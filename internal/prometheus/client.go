@@ -44,7 +44,7 @@ func NewHTTPClient(baseURL string, client *http.Client) Client {
 // GetAlerts queries /api/v1/alerts and returns all alerts.
 func (c *httpClient) GetAlerts(ctx context.Context) ([]Alert, error) {
 	reqURL := fmt.Sprintf("%s/api/v1/alerts", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return nil, redactErr(fmt.Errorf("creating alerts request: %w", err))
 	}
@@ -93,7 +93,7 @@ func (c *httpClient) GetAlerts(ctx context.Context) ([]Alert, error) {
 // GetRules queries /api/v1/rules and returns all rule groups.
 func (c *httpClient) GetRules(ctx context.Context) ([]RuleGroup, error) {
 	reqURL := fmt.Sprintf("%s/api/v1/rules", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return nil, redactErr(fmt.Errorf("creating rules request: %w", err))
 	}
@@ -147,7 +147,7 @@ func (c *httpClient) InstantQuery(ctx context.Context, query string) (*QueryResu
 	params.Set("query", query)
 
 	reqURL := fmt.Sprintf("%s/api/v1/query?%s", c.baseURL, params.Encode())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, http.NoBody)
 	if err != nil {
 		return nil, redactErr(fmt.Errorf("creating query request: %w", err))
 	}
@@ -204,9 +204,9 @@ func (c *httpClient) InstantQuery(ctx context.Context, query string) (*QueryResu
 // --- API response types ---
 
 type alertsAPIResponse struct {
-	Status string         `json:"status"`
-	Data   alertsAPIData  `json:"data"`
-	Error  string         `json:"error,omitempty"`
+	Status string        `json:"status"`
+	Data   alertsAPIData `json:"data"`
+	Error  string        `json:"error,omitempty"`
 }
 
 type alertsAPIData struct {
@@ -221,9 +221,9 @@ type apiAlert struct {
 }
 
 type rulesAPIResponse struct {
-	Status string        `json:"status"`
-	Data   rulesAPIData  `json:"data"`
-	Error  string        `json:"error,omitempty"`
+	Status string       `json:"status"`
+	Data   rulesAPIData `json:"data"`
+	Error  string       `json:"error,omitempty"`
 }
 
 type rulesAPIData struct {

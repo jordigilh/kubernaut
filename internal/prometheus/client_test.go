@@ -306,4 +306,3 @@ func promQueryResponse(resultType string, samples []promSample) []byte {
 	b, _ := json.Marshal(data)
 	return b
 }
-
