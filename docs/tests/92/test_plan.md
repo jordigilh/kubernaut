@@ -14,12 +14,12 @@ This test plan validates the three-tier severity triage pipeline that determines
 
 ### 1.1 Scope
 
-- `pkg/prometheus/client.go` — HTTP client wrapping `/api/v1/alerts`, `/api/v1/rules`, `/api/v1/query`
-- `pkg/prometheus/rules.go` — Rule matching: parse PromQL AST, extract label selectors, filter by target resource
-- `pkg/severity/triage.go` — Orchestrator: runs Tier 1 -> 1.5 -> 2 -> 2.5 -> 3 pipeline
-- `pkg/severity/types.go` — `TriageResult`, `SeveritySource`, severity ordering
-- `pkg/severity/llm.go` — LLM triage for Tier 2.5 (rule-informed) and Tier 3 (pure fallback)
-- `pkg/severity/cache.go` — TTL-based cache for `/api/v1/rules` responses
+- `internal/prometheus/client.go` — HTTP client wrapping `/api/v1/alerts`, `/api/v1/rules`, `/api/v1/query`
+- `internal/prometheus/rules.go` — Rule matching: parse PromQL AST, extract label selectors, filter by target resource
+- `internal/severity/triage.go` — Orchestrator: runs Tier 1 -> 1.5 -> 2 -> 2.5 -> 3 pipeline
+- `internal/severity/types.go` — `TriageResult`, `Source`, severity ordering
+- `internal/severity/llm.go` — LLM triage for Tier 2.5 (rule-informed) and Tier 3 (pure fallback)
+- `internal/severity/cache.go` — TTL-based cache for `/api/v1/rules` responses
 - Integration with `internal/tools/af_create_rr.go` and `internal/tools/crd_tools.go`
 - `internal/config/config.go` — New `SeverityTriage` config section
 - `internal/metrics/metrics.go` — New `af_severity_triage_*` metrics
@@ -66,7 +66,7 @@ This test plan incorporates fixes for all 25 findings from the multi-dimensional
 |----|----------|---------|------------|
 | SEC-01 | FAIL | No audit event for severity triage decisions (FedRAMP AU-2 gap) | Add `EventSeverityTriageCompleted` and `EventSeverityTriageFailed` audit events with tier, source, severity, duration |
 | SEC-02 | FAIL | Prometheus query strings could contain injected PromQL if constructed from user input | All PromQL comes from `/api/v1/rules` responses (server-controlled); validate that no user input is interpolated into query strings. Add explicit guard. |
-| SEC-03 | FAIL | LLM responses not validated against severity enum — could produce arbitrary strings | Validate LLM output against `validSeverities` allowlist; reject and default to `"medium"` on mismatch |
+| SEC-03 | FAIL | LLM responses not validated against severity enum — could produce arbitrary strings | Validate LLM output against `validSeverities` allowlist; reject invalid responses via `NormalizeSeverity` (returns `"medium"` for invalid LLM strings only, not for pipeline failures) |
 | SEC-04 | FAIL | No TLS CA config for Prometheus client (FedRAMP SC-8) | Support `prometheus.tlsCaFile` in config; build `*tls.Config` with custom CA pool |
 | SEC-05 | WARN | Prometheus bearer token for ServiceAccount auth not specified | Support `prometheus.bearerTokenFile` (standard `/var/run/secrets/kubernetes.io/serviceaccount/token`) |
 | SEC-06 | WARN | LLM prompt could leak K8s resource names to external provider | Document that LLM receives namespace/kind/name by design (required for classification); redact any secrets/configmap data from events context |
@@ -95,7 +95,7 @@ This test plan incorporates fixes for all 25 findings from the multi-dimensional
 
 | ID | Severity | Finding | Resolution |
 |----|----------|---------|------------|
-| UX-01 | FAIL | `severity` is optional in `CreateRRArgs` but `validSeverities` rejects empty string — triage must populate before validation | Invoke triage before severity validation; if triage fails, default to `"medium"` (not `"unknown"`, which causes P3 misrouting) |
+| UX-01 | FAIL | `severity` is optional in `CreateRRArgs` but `validSeverities` rejects empty string — triage must populate before validation | Invoke triage before severity validation; if triage fails, propagate error to caller (no silent defaults per ADR-021) |
 | UX-02 | WARN | No user-visible indication of which tier determined severity | Return `severity_source` in tool response alongside severity |
 
 #### Supply Chain (SC)
@@ -129,7 +129,7 @@ This test plan incorporates fixes for all 25 findings from the multi-dimensional
 | `MatchesResource` | `internal/prometheus` | New |
 | `RulesCache` | `internal/severity` | New |
 | `Triager` | `internal/severity` | New |
-| `TriageResult` / `SeveritySource` | `internal/severity` | New |
+| `TriageResult` / `Source` | `internal/severity` | New |
 | `LLMTriager` | `internal/severity` | New |
 | `SeverityTriageConfig` | `internal/config` | Modified |
 | `HandleCreateRR` | `internal/tools` | Modified |
@@ -163,7 +163,7 @@ This test plan incorporates fixes for all 25 findings from the multi-dimensional
 | BAC-T-15 | Prometheus client supports TLS CA and bearer token auth | FedRAMP SC-8 | P1 |
 | BAC-T-16 | Errors from Prometheus are redacted before audit/client exposure | Security | P1 |
 | BAC-T-17 | User-supplied severity on `af_create_rr` bypasses triage entirely | UX | P0 |
-| BAC-T-18 | Triage failure defaults to `"medium"` severity (not `"unknown"`) | Product | P1 |
+| BAC-T-18 | Triage failure returns error to caller (no silent defaults); LLM is mandatory at startup (panic on nil) | Product / ADR-021 | P0 |
 
 ---
 
@@ -319,7 +319,7 @@ This test plan incorporates fixes for all 25 findings from the multi-dimensional
 | UT-AF-T-060 | `HandleCreateRR` populates `spec.signalLabels` with alert/rule name when available | BAC-T-07 | P0 |
 | UT-AF-T-061 | `HandleSubmitSignal` with empty severity invokes triage → SP has triage severity | BAC-T-01 | P0 |
 | UT-AF-T-062 | `HandleSubmitSignal` with user-supplied severity skips triage | BAC-T-17 | P0 |
-| UT-AF-T-063 | Triage failure in `HandleCreateRR` defaults to "medium" (not panic) | BAC-T-18 | P0 |
+| UT-AF-T-063 | Triage failure in `HandleCreateRR` propagates error to caller (no silent default) | BAC-T-18 | P0 |
 | UT-AF-T-064 | `af_severity_triage_total{tier="1",severity="critical"}` incremented on Tier 1 hit | BAC-T-09 | P0 |
 | UT-AF-T-065 | `af_severity_triage_total{tier="3",severity="medium"}` incremented on Tier 3 hit | BAC-T-09 | P0 |
 | UT-AF-T-066 | `af_severity_triage_duration_seconds{tier="1"}` observed on Tier 1 | BAC-T-09 | P0 |
@@ -346,7 +346,7 @@ This test plan incorporates fixes for all 25 findings from the multi-dimensional
 | UT-AF-T-082 | LLM returns empty string → defaults to "medium" | BAC-T-12 | P0 |
 | UT-AF-T-083 | LLM returns "CRITICAL" (wrong case) → normalized to "critical" | BAC-T-12 | P0 |
 | UT-AF-T-084 | Concurrent triage calls (10 goroutines) under -race | BAC-T-01 | P0 |
-| UT-AF-T-085 | Triage with nil Triager in config → graceful error, not panic | BAC-T-10 | P0 |
+| UT-AF-T-085 | NewTriager panics when LLMTriager is nil (fail-fast at startup per ADR-021) | BAC-T-18 | P0 |
 | UT-AF-T-086 | Triage with nil metrics → silently skipped, not panic | BAC-T-09 | P0 |
 
 ---
@@ -615,9 +615,9 @@ This test plan incorporates fixes for all 25 findings from the multi-dimensional
 - NEW: `docs/operations/runbooks/RB-AF-010.md` — Triage troubleshooting runbook
 
 **Design decisions:**
-- `HandleCreateRR` receives `Triager` as optional parameter (nil = skip triage)
+- `HandleCreateRR` receives `Triager` as required parameter
 - Triage invoked only when `args.Severity == ""` (BAC-T-17)
-- On triage failure: log error, default to `"medium"`, set `severity_source: "default_fallback"`
+- On triage failure: propagate error to caller (no silent defaults per ADR-021)
 - Metrics use existing registry pattern; new counters added to `Registry`
 - Audit events emitted via `audit.EmitFromContext` pattern
 
