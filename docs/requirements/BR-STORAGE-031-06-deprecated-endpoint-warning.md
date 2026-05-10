@@ -4,7 +4,7 @@
 **Category**: Data Storage Service
 **Priority**: P2
 **Target Version**: V1
-**Status**: ✅ Approved
+**Status**: ❌ **CANCELLED** — ADR-033 removed per #1048 readiness audit
 **Date**: November 5, 2025
 
 ---

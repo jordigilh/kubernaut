@@ -973,7 +973,7 @@ type DBExecutor interface {
 }
 
 // createDynamicPartitions creates partitions for the current month and next months
-// for BOTH audit_events and resource_action_traces.
+// for audit_events.
 // DD-TEST-001: Dynamic partition creation for time-independent tests
 // BR-AUDIT-029: Delegates to production EnsureMonthlyPartitions (UTC, 4-month window)
 func createDynamicPartitions(ctx context.Context, targetDB DBExecutor) {
@@ -984,5 +984,5 @@ func createDynamicPartitions(ctx context.Context, targetDB DBExecutor) {
 		GinkgoWriter.Printf("  ⚠️  Failed to ensure monthly partitions: %v\n", err)
 		return
 	}
-	GinkgoWriter.Println("  ✅ Monthly partitions ensured for audit_events + resource_action_traces (M0..M+3, UTC)")
+	GinkgoWriter.Println("  ✅ Monthly partitions ensured for audit_events (M0..M+3, UTC)")
 }

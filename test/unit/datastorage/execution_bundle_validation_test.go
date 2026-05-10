@@ -203,7 +203,7 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 		newHandlerWithMockExtractor := func(puller oci.ImagePuller) *server.Handler {
 			p := schema.NewParser()
 			extractor := oci.NewSchemaExtractor(puller, p)
-			return server.NewHandler(nil, server.WithSchemaExtractor(extractor))
+			return server.NewHandler( server.WithSchemaExtractor(extractor))
 		}
 
 		makeInlineCreateRequest := func(content string) *http.Request {
@@ -244,7 +244,7 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 		})
 
 		It("UT-WF-017-012: should reject inline registration when execution section is missing", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := makeInlineCreateRequest(noExecutionSectionSchemaYAML)
 			rr := httptest.NewRecorder()
 

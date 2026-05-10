@@ -70,7 +70,7 @@ var _ = Describe("Inline Schema Workflow Registration (#299)", func() {
 		puller := oci.NewMockImagePuller(validInlineSchemaYAML)
 		parser := schema.NewParser()
 		extractor := oci.NewSchemaExtractor(puller, parser)
-		return server.NewHandler(nil,
+		return server.NewHandler(
 			server.WithSchemaExtractor(extractor),
 		)
 	}

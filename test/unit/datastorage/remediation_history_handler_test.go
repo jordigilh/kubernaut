@@ -68,7 +68,7 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
 
 	BeforeEach(func() {
 		mock = &mockRemediationHistoryQuerier{}
-		handler = server.NewHandler(nil,
+		handler = server.NewHandler(
 			server.WithRemediationHistoryQuerier(mock),
 		)
 		rec = httptest.NewRecorder()

@@ -36,8 +36,8 @@ var _ = Describe("Partition Management — Unit Tests", func() {
 			tables := partition.AllTables()
 			specs := partition.ComputePartitionSpecs(now, 3, tables)
 
-			// 2 tables × 4 months = 8 total partition specs
-			Expect(specs).To(HaveLen(8))
+			// 1 table × 4 months = 4 total partition specs
+			Expect(specs).To(HaveLen(4))
 		})
 
 		It("should produce correct months for mid-month date (April → April, May, June, July)", func() {
@@ -54,14 +54,14 @@ var _ = Describe("Partition Management — Unit Tests", func() {
 
 		It("should handle year rollover (November → Nov, Dec, Jan, Feb)", func() {
 			now := time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC)
-			tables := []partition.ParentTable{partition.ResourceActionTracesTable}
+			tables := []partition.ParentTable{partition.AuditEventsTable}
 			specs := partition.ComputePartitionSpecs(now, 3, tables)
 
 			Expect(specs).To(HaveLen(4))
-			Expect(specs[0].Name).To(Equal("resource_action_traces_2026_11"))
-			Expect(specs[1].Name).To(Equal("resource_action_traces_2026_12"))
-			Expect(specs[2].Name).To(Equal("resource_action_traces_2027_01"))
-			Expect(specs[3].Name).To(Equal("resource_action_traces_2027_02"))
+			Expect(specs[0].Name).To(Equal("audit_events_2026_11"))
+			Expect(specs[1].Name).To(Equal("audit_events_2026_12"))
+			Expect(specs[2].Name).To(Equal("audit_events_2027_01"))
+			Expect(specs[3].Name).To(Equal("audit_events_2027_02"))
 		})
 
 		It("should use UTC for all boundary dates", func() {
@@ -87,24 +87,16 @@ var _ = Describe("Partition Management — Unit Tests", func() {
 			Expect(specs[0].RangeEnd).To(Equal(time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC)))
 		})
 
-		It("should return specs for both tables with matching month sequences", func() {
+		It("should return specs for all tables with matching month sequences", func() {
 			now := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
 			tables := partition.AllTables()
 			specs := partition.ComputePartitionSpecs(now, 1, tables)
 
-			// 2 tables × 2 months = 4 specs
-			Expect(specs).To(HaveLen(4))
+			// 1 table × 2 months = 2 specs
+			Expect(specs).To(HaveLen(2))
 
 			auditSpecs := filterByParent(specs, "audit_events")
-			ratSpecs := filterByParent(specs, "resource_action_traces")
 			Expect(auditSpecs).To(HaveLen(2))
-			Expect(ratSpecs).To(HaveLen(2))
-
-			// Same month sequence for both
-			for i := range auditSpecs {
-				Expect(auditSpecs[i].RangeStart).To(Equal(ratSpecs[i].RangeStart))
-				Expect(auditSpecs[i].RangeEnd).To(Equal(ratSpecs[i].RangeEnd))
-			}
 		})
 
 		It("should handle UTC midnight boundary for timestamp at 2026-04-30T23:59:59Z (still April)", func() {
@@ -126,9 +118,9 @@ var _ = Describe("Partition Management — Unit Tests", func() {
 			Expect(name).To(Equal("audit_events_2026_04"))
 		})
 
-		It("should format resource_action_traces partitions as resource_action_traces_YYYY_MM", func() {
-			name := partition.FormatPartitionName("resource_action_traces", 2026, time.November)
-			Expect(name).To(Equal("resource_action_traces_2026_11"))
+		It("should format arbitrary table partitions as tablename_YYYY_MM", func() {
+			name := partition.FormatPartitionName("custom_table", 2026, time.November)
+			Expect(name).To(Equal("custom_table_2026_11"))
 		})
 
 		It("should zero-pad single-digit months", func() {
@@ -137,14 +129,8 @@ var _ = Describe("Partition Management — Unit Tests", func() {
 		})
 
 		It("should handle December correctly", func() {
-			name := partition.FormatPartitionName("resource_action_traces", 2028, time.December)
-			Expect(name).To(Equal("resource_action_traces_2028_12"))
-		})
-
-		It("should match existing migration naming pattern (YYYY_MM with underscore separator)", func() {
-			// Verify alignment with 001_v1_schema.sql naming: resource_action_traces_2026_03
-			name := partition.FormatPartitionName("resource_action_traces", 2026, time.March)
-			Expect(name).To(Equal("resource_action_traces_2026_03"))
+			name := partition.FormatPartitionName("audit_events", 2028, time.December)
+			Expect(name).To(Equal("audit_events_2028_12"))
 		})
 	})
 
@@ -165,13 +151,13 @@ var _ = Describe("Partition Management — Unit Tests", func() {
 
 		It("should produce DDL with PARTITION OF parent table", func() {
 			spec := partition.PartitionSpec{
-				ParentTable: "resource_action_traces",
-				Name:        "resource_action_traces_2026_05",
+				ParentTable: "audit_events",
+				Name:        "audit_events_2026_05",
 				RangeStart:  time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
 				RangeEnd:    time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC),
 			}
 			ddl := partition.GenerateDDL(spec)
-			Expect(ddl).To(ContainSubstring("PARTITION OF resource_action_traces"))
+			Expect(ddl).To(ContainSubstring("PARTITION OF audit_events"))
 		})
 
 		It("should include correct FOR VALUES FROM ... TO ... range", func() {

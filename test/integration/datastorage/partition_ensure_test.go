@@ -37,7 +37,7 @@ var _ = Describe("Partition Ensure — Integration Tests", Ordered, func() {
 	// IT-DS-235-001 (P0): Startup ensure creates partitions for both tables
 	// BR-AUDIT-029: Automatic partition management
 	Describe("IT-DS-235-001: Startup ensure creates partitions for both tables", func() {
-		It("should create partitions for current month + 3 months for audit_events AND resource_action_traces", func() {
+		It("should create partitions for current month + 3 months for audit_events", func() {
 			err := partition.EnsureMonthlyPartitions(ctx, db, futureNow, partition.DefaultLookaheadMonths, partition.AllTables())
 			Expect(err).NotTo(HaveOccurred())
 
@@ -45,14 +45,6 @@ var _ = Describe("Partition Ensure — Integration Tests", Ordered, func() {
 			for monthOffset := 0; monthOffset <= 3; monthOffset++ {
 				m := futureNow.AddDate(0, monthOffset, 0)
 				name := partition.FormatPartitionName("audit_events", m.Year(), m.Month())
-				Expect(partitionExists(name)).To(BeTrue(),
-					fmt.Sprintf("expected partition %s to exist after EnsureMonthlyPartitions", name))
-			}
-
-			// Verify resource_action_traces partitions exist: 2029-03 through 2029-06
-			for monthOffset := 0; monthOffset <= 3; monthOffset++ {
-				m := futureNow.AddDate(0, monthOffset, 0)
-				name := partition.FormatPartitionName("resource_action_traces", m.Year(), m.Month())
 				Expect(partitionExists(name)).To(BeTrue(),
 					fmt.Sprintf("expected partition %s to exist after EnsureMonthlyPartitions", name))
 			}
@@ -134,7 +126,7 @@ var _ = Describe("Partition Ensure — Integration Tests", Ordered, func() {
 	// IT-DS-235-004 (P0): pg_inherits confirms children for both parents
 	// BR-AUDIT-029: Automatic partition management
 	Describe("IT-DS-235-004: pg_inherits catalog verification for both tables", func() {
-		It("should list monthly children in pg_inherits for both audit_events and resource_action_traces", func() {
+		It("should list monthly children in pg_inherits for audit_events", func() {
 			err := partition.EnsureMonthlyPartitions(ctx, db, futureNow, partition.DefaultLookaheadMonths, partition.AllTables())
 			Expect(err).NotTo(HaveOccurred())
 
@@ -145,15 +137,6 @@ var _ = Describe("Partition Ensure — Integration Tests", Ordered, func() {
 				expectedName := partition.FormatPartitionName("audit_events", m.Year(), m.Month())
 				Expect(auditChildren).To(ContainElement(expectedName),
 					fmt.Sprintf("pg_inherits should list %s as child of audit_events", expectedName))
-			}
-
-			// Check resource_action_traces children via pg_inherits
-			ratChildren := listChildPartitions("resource_action_traces")
-			for monthOffset := 0; monthOffset <= 3; monthOffset++ {
-				m := futureNow.AddDate(0, monthOffset, 0)
-				expectedName := partition.FormatPartitionName("resource_action_traces", m.Year(), m.Month())
-				Expect(ratChildren).To(ContainElement(expectedName),
-					fmt.Sprintf("pg_inherits should list %s as child of resource_action_traces", expectedName))
 			}
 		})
 	})
@@ -185,7 +168,7 @@ var _ = Describe("Partition Ensure — Integration Tests", Ordered, func() {
 	AfterAll(func() {
 		for monthOffset := 0; monthOffset <= 3; monthOffset++ {
 			m := futureNow.AddDate(0, monthOffset, 0)
-			for _, parent := range []string{"audit_events", "resource_action_traces"} {
+			for _, parent := range []string{"audit_events"} {
 				name := partition.FormatPartitionName(parent, m.Year(), m.Month())
 				//nolint:gosec
 				_, _ = db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", name))

@@ -136,7 +136,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 		puller := oci.NewMockImagePuller(integrityBaseYAML)
 		parser := schema.NewParser()
 		extractor := oci.NewSchemaExtractor(puller, parser)
-		return server.NewHandler(nil,
+		return server.NewHandler(
 			server.WithSchemaExtractor(extractor),
 			server.WithWorkflowContentIntegrityRepository(mockRepo),
 		)
@@ -387,7 +387,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 			puller := oci.NewMockImagePuller(integrityBaseYAML)
 			parser := schema.NewParser()
 			extractor := oci.NewSchemaExtractor(puller, parser)
-			handler := server.NewHandler(nil,
+			handler := server.NewHandler(
 				server.WithSchemaExtractor(extractor),
 				server.WithWorkflowContentIntegrityRepository(raceRepo),
 			)
