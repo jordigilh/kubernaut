@@ -16,6 +16,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
 )
 
 const debounceDuration = 200 * time.Millisecond
@@ -236,14 +237,14 @@ func (w *FileWatcher) handleFileChange(ctx context.Context) {
 	}
 
 	if err := w.callback(content); err != nil {
-		w.logger.Warn("config reload: callback rejected new content", "path", w.path, "error", err)
+		w.logger.Warn("config reload: callback rejected new content", "path", w.path, "error", security.RedactError(err))
 		if w.auditor != nil {
 			w.auditor.Emit(ctx, &audit.Event{
 				Type: audit.EventConfigRejected,
 				Detail: map[string]string{
 					"path":   w.path,
 					"hash":   newHash,
-					"reason": err.Error(),
+					"reason": security.RedactError(err),
 				},
 			})
 		}

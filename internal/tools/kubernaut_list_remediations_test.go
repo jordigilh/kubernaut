@@ -108,4 +108,36 @@ var _ = Describe("kubernaut_list_remediations", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("access denied"))
 	})
+
+	It("UT-AF-101-006: nil client returns ErrK8sUnavailable", func() {
+		_, err := tools.HandleListRemediations(ctx, nil, tools.ListRemediationsArgs{Namespace: "default"})
+		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
+	})
+
+	It("UT-AF-101-007: invalid namespace returns ErrInvalidInput", func() {
+		client := newDynamicFakeClient()
+		_, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{Namespace: "../etc"})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid input"))
+	})
+
+	It("UT-AF-101-008: invalid kind label value returns ErrInvalidInput", func() {
+		client := newDynamicFakeClient()
+		_, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{
+			Namespace: "default",
+			Kind:      "has spaces and CAPITALS!!!",
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid input"))
+	})
+
+	It("UT-AF-101-009: invalid name label value returns ErrInvalidInput", func() {
+		client := newDynamicFakeClient()
+		_, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{
+			Namespace: "default",
+			Name:      "has spaces and CAPITALS!!!",
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid input"))
+	})
 })

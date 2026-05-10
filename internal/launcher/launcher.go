@@ -136,7 +136,7 @@ func buildAfterExecuteCallback(log *slog.Logger, auditor audit.Emitter) adka2a.A
 
 		if err != nil {
 			log.ErrorContext(ctx, "a2a task execution failed",
-				"error", err,
+				"error", security.RedactError(err),
 				"user", username,
 				"task_id", taskID,
 			)

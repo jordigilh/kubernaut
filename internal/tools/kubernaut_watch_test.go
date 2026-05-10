@@ -153,4 +153,23 @@ var _ = Describe("kubernaut_watch", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("access denied"))
 	})
+
+	It("UT-AF-106-009: nil client returns ErrK8sUnavailable", func() {
+		_, err := tools.HandleWatch(ctx, nil, tools.WatchArgs{Namespace: "default", Name: "rr-1"})
+		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
+	})
+
+	It("UT-AF-106-010: invalid namespace returns ErrInvalidInput", func() {
+		client := newDynamicFakeClient()
+		_, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "../etc", Name: "rr-1"})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid input"))
+	})
+
+	It("UT-AF-106-011: invalid resource name returns ErrInvalidInput", func() {
+		client := newDynamicFakeClient()
+		_, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "default", Name: "INVALID NAME!!"})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid input"))
+	})
 })

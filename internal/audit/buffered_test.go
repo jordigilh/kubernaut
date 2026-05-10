@@ -62,6 +62,7 @@ var _ = Describe("BufferedEmitter", func() {
 				FlushInterval: 50 * time.Millisecond,
 				BatchSize:     10,
 			})
+			emitter.Start()
 
 			for i := 0; i < 5; i++ {
 				emitter.Emit(context.Background(), &audit.Event{
@@ -84,6 +85,7 @@ var _ = Describe("BufferedEmitter", func() {
 				FlushInterval: 50 * time.Millisecond,
 				BatchSize:     10,
 			})
+			emitter.Start()
 
 			emitter.Emit(context.Background(), &audit.Event{
 				Type: audit.EventAuthSuccess,
@@ -117,15 +119,16 @@ var _ = Describe("BufferedEmitter", func() {
 				BatchSize:       1000,
 				OverflowCounter: overflowCounter,
 			})
+			// Deliberately NOT calling Start() — no flush goroutine competing
+			// for channel reads, making the overflow count deterministic.
 
 			for i := 0; i < 10; i++ {
 				emitter.Emit(context.Background(), &audit.Event{
 					Type: audit.EventAuthSuccess,
 				})
 			}
-			// Should not block — overflow events are dropped.
-			// Buffer holds 2, so at least 8 should overflow.
-			Expect(testutil.ToFloat64(overflowCounter)).To(BeNumerically(">=", 8))
+			// Buffer holds exactly 2, no consumer running, so exactly 8 overflow.
+			Expect(testutil.ToFloat64(overflowCounter)).To(BeNumerically("==", 8))
 		})
 	})
 
@@ -139,6 +142,7 @@ var _ = Describe("BufferedEmitter", func() {
 				FlushInterval: 1 * time.Hour,
 				BatchSize:     1000,
 			})
+			emitter.Start()
 
 			for i := 0; i < 3; i++ {
 				emitter.Emit(context.Background(), &audit.Event{
@@ -163,6 +167,7 @@ var _ = Describe("BufferedEmitter", func() {
 				FlushInterval: 1 * time.Hour,
 				BatchSize:     1000,
 			})
+			emitter.Start()
 
 			emitter.Emit(context.Background(), &audit.Event{
 				Type: audit.EventA2ATaskFailed,
@@ -183,6 +188,7 @@ var _ = Describe("BufferedEmitter", func() {
 				FlushInterval: 50 * time.Millisecond,
 				BatchSize:     10,
 			})
+			emitter.Start()
 
 			err := emitter.Close(context.Background())
 			Expect(err).NotTo(HaveOccurred())

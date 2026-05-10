@@ -3,9 +3,8 @@ info:
   title: kubernaut API Frontend
   version: "0.1.0"
   description: |
-    REST endpoints for the kubernaut API Frontend service.
-    Protocol endpoints (MCP Streamable HTTP and A2A JSON-RPC 2.0) are documented
-    separately; this spec covers the operational REST surface.
+    API surface for the kubernaut API Frontend service, including operational
+    REST endpoints and protocol endpoints (MCP Streamable HTTP and A2A JSON-RPC 2.0).
 
     Supported Protocol Versions:
     - MCP: Streamable HTTP (2025-03-26)
@@ -78,7 +77,11 @@ paths:
     get:
       operationId: getAgentCard
       summary: A2A Agent Card
-      description: Returns the agent's self-describing manifest per the A2A protocol specification.
+      description: |
+        Returns the agent's self-describing manifest per the A2A protocol specification.
+        Unauthenticated callers receive a shell card (metadata only, empty skills array).
+        Authenticated callers receive the full card including available skills scoped to
+        their RBAC role.
       tags: [a2a]
       responses:
         "200":
@@ -114,17 +117,15 @@ paths:
         "401":
           description: Missing or invalid Bearer token
           content:
-            text/plain:
+            application/problem+json:
               schema:
-                type: string
-                description: Plain-text error message (RFC 9457 Problem Details planned)
+                $ref: "#/components/schemas/ProblemDetail"
         "429":
           description: Rate limit exceeded
           content:
-            text/plain:
+            application/problem+json:
               schema:
-                type: string
-                description: Plain-text error message (RFC 9457 Problem Details planned)
+                $ref: "#/components/schemas/ProblemDetail"
         "413":
           description: Request body exceeds 1 MiB limit
 
@@ -160,23 +161,21 @@ paths:
         "401":
           description: Missing or invalid Bearer token
           content:
-            text/plain:
+            application/problem+json:
               schema:
-                type: string
-                description: Plain-text error message (RFC 9457 Problem Details planned)
+                $ref: "#/components/schemas/ProblemDetail"
         "429":
           description: Rate limit exceeded
           content:
-            text/plain:
+            application/problem+json:
               schema:
-                type: string
-                description: Plain-text error message (RFC 9457 Problem Details planned)
+                $ref: "#/components/schemas/ProblemDetail"
         "501":
           description: MCP not enabled
           content:
-            text/plain:
+            application/problem+json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetail"
 
 components:
   securitySchemes:
@@ -283,8 +282,8 @@ components:
     ProblemDetail:
       description: >
         RFC 9457 Problem Details structure used for structured error responses.
-        Used by readiness probe (503), rate limiting (429), and authentication
-        failure (401) responses.
+        Used by authentication failure (401), rate limiting (429), MCP disabled
+        (501), and readiness probe (503) responses.
       type: object
       properties:
         type:
