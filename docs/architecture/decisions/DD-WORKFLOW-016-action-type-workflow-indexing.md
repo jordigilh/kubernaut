@@ -453,7 +453,7 @@ On subsequent pages (offset > 0, hasMore still true):
 **LLM-Rendered Format** (how the tool presents it to the LLM, optional fields omitted when absent):
 
 ```
-Available actions for severity=critical, component=deployment, environment=production (showing 1-2 of 2):
+Available actions for severity=critical, component=apps/v1/Deployment, environment=production (showing 1-2 of 2):
 
 1. ScaleReplicas (2 workflows)
    - What: Horizontally scale a workload by adjusting the replica count.
@@ -469,7 +469,7 @@ Available actions for severity=critical, component=deployment, environment=produ
 When more action types are available than fit in one page (v1.4 cursor-based):
 
 ```
-Available actions for severity=critical, component=deployment, environment=production:
+Available actions for severity=critical, component=apps/v1/Deployment, environment=production:
 
 ... (action types with taxonomy descriptions) ...
 
@@ -528,7 +528,7 @@ ALTER TABLE remediation_workflow_catalog
 **Example request**:
 
 ```
-GET /api/v1/workflows/actions?severity=critical&component=deployment&environment=production&priority=P0&custom_labels={"constraint":["cost-constrained"]}&detected_labels={"gitOpsManaged":true}
+GET /api/v1/workflows/actions?severity=critical&component=apps/v1/Deployment&environment=production&priority=P0&custom_labels={"constraint":["cost-constrained"]}&detected_labels={"gitOpsManaged":true}
 ```
 
 **SQL**:

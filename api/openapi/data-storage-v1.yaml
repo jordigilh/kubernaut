@@ -141,7 +141,10 @@ paths:
           required: true
           schema:
             type: string
-          description: Kubernetes resource type (pod, deployment, node, etc.)
+          description: >-
+            Kubernetes resource GVK (apiVersion/Kind). Format: "group/version/Kind" for named groups
+            (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod").
+            Wildcard "*" matches all components. Issue #1051.
         - name: environment
           in: query
           required: true
@@ -248,7 +251,9 @@ paths:
           required: true
           schema:
             type: string
-          description: Kubernetes resource type
+          description: >-
+            Kubernetes resource GVK (apiVersion/Kind). Format: "group/version/Kind" for named groups
+            (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod"). Issue #1051.
         - name: environment
           in: query
           required: true
@@ -419,6 +424,10 @@ paths:
           in: query
           schema:
             type: string
+          description: >-
+            Kubernetes resource GVK filter (apiVersion/Kind). Format: "group/version/Kind"
+            (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod").
+            Wildcard "*" matches all components. Issue #1051.
         - name: workflow_name
           in: query
           schema:
@@ -488,7 +497,10 @@ paths:
           required: false
           schema:
             type: string
-          description: "Security gate: Kubernetes resource type"
+          description: >-
+            Security gate: Kubernetes resource GVK (apiVersion/Kind). Format:
+            "group/version/Kind" (e.g. "apps/v1/Deployment"), "version/Kind" for
+            core group (e.g. "v1/Pod"). Issue #1051.
         - name: environment
           in: query
           required: false
@@ -2905,8 +2917,8 @@ components:
           example: "critical"
         component:
           type: string
-          description: "Component type (mandatory: pod, node, deployment, etc.)"
-          example: "pod"
+          description: "Kubernetes resource GVK (apiVersion/Kind, e.g. apps/v1/Deployment, v1/Pod). Issue #1051."
+          example: "apps/v1/Deployment"
         environment:
           type: string
           description: "Environment filter (mandatory, single value from Signal Processing)"
@@ -2949,7 +2961,7 @@ components:
           items:
             type: string
           minItems: 1
-          description: "Kubernetes resource type(s) this workflow targets (e.g., pod, deployment, node). Issue #790: now an array like severity/environment."
+          description: "Kubernetes resource GVK(s) this workflow targets in apiVersion/Kind format (e.g. apps/v1/Deployment, v1/Pod). Wildcard '*' matches all. Issues #790, #1051."
           example: [pod]
         environment:
           type: array

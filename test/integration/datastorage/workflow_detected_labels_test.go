@@ -78,7 +78,7 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 			ContentHash:  contentHash,
 			Labels: models.MandatoryLabels{
 				Severity:    []string{"critical"},
-				Component:   []string{"pod"},
+				Component:   []string{"v1/Pod"},
 				Environment: []string{"production"},
 				Priority:    "P0",
 			},

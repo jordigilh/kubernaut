@@ -43,10 +43,12 @@ type MandatoryLabels struct {
 	// DD-WORKFLOW-001 v2.8: Always stored as JSONB array. Supports "*" wildcard (like environment).
 	Severity []string `json:"severity" validate:"required,min=1"`
 
-	// Component is the Kubernetes resource type(s) this workflow remediates (REQUIRED)
-	// Examples: ["pod"], ["deployment", "statefulset"], ["*"] (wildcard for all)
+	// Component is the Kubernetes resource GVK(s) this workflow remediates (REQUIRED)
+	// Format: "apiVersion/Kind" — e.g. "apps/v1/Deployment", "v1/Pod" (core group omits group prefix)
+	// Examples: ["apps/v1/Deployment"], ["v1/Pod", "apps/v1/StatefulSet"], ["*"] (wildcard for all)
 	// Source: K8s Resource (auto-populated by Signal Processing)
 	// Issue #790: Changed from string to []string to match severity/environment pattern
+	// Issue #1051: Changed from plain lowercase kind to fully-qualified GVK format
 	Component []string `json:"component" validate:"required,min=1"`
 
 	// Environment is the deployment environment(s) this workflow targets (REQUIRED)

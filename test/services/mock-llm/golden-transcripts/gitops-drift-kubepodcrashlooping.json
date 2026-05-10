@@ -34,6 +34,7 @@
       ],
       "remediationTarget": {
         "kind": "ConfigMap",
+        "apiVersion": "v1",
         "name": "nginx-config",
         "namespace": "demo-gitops"
       },

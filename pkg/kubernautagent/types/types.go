@@ -178,8 +178,9 @@ type SignalContext struct {
 	RemediationID string `json:"remediation_id,omitempty"`
 
 	// Resource targeting
-	ResourceKind string `json:"resource_kind,omitempty"`
-	ResourceName string `json:"resource_name,omitempty"`
+	ResourceKind       string `json:"resource_kind,omitempty"`
+	ResourceName       string `json:"resource_name,omitempty"`
+	ResourceAPIVersion string `json:"resource_api_version,omitempty"`
 
 	// Environment context
 	ClusterName      string `json:"cluster_name,omitempty"`
@@ -208,4 +209,15 @@ type SignalContext struct {
 	DeduplicationWindowMinutes *int   `json:"deduplication_window_minutes,omitempty"`
 	FirstSeen                  string `json:"first_seen,omitempty"`
 	LastSeen                   string `json:"last_seen,omitempty"`
+}
+
+// ComponentGVK returns the fully-qualified apiVersion/Kind string for workflow
+// component matching (Issue #1051). Returns empty string when either
+// ResourceAPIVersion or ResourceKind is not set, preventing silent mismatch
+// against workflow labels that use GVK format.
+func (s SignalContext) ComponentGVK() string {
+	if s.ResourceAPIVersion == "" || s.ResourceKind == "" {
+		return ""
+	}
+	return s.ResourceAPIVersion + "/" + s.ResourceKind
 }

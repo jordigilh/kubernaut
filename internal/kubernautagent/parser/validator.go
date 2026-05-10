@@ -41,7 +41,7 @@ type WorkflowMeta struct {
 	ExecutionBundleDigest string
 	ServiceAccountName    string
 	Version               string
-	Component             []string // MandatoryLabels.Component: resource kinds this workflow targets (e.g., ["deployment"]), or ["*"]
+	Component             []string // MandatoryLabels.Component: GVK scope (apiVersion/Kind, e.g. apps/v1/Deployment), plain Kind legacy, or ["*"]
 }
 
 // MatchesTargetKind reports whether the workflow's component scope includes
@@ -49,17 +49,31 @@ type WorkflowMeta struct {
 //   - kind is empty (no constraint to check)
 //   - Component is nil or empty (unconstrained — backward compat)
 //   - Component contains "*" (wildcard)
-//   - Component contains kind (case-insensitive, consistent with DS SQL LOWER())
+//   - Component equals kind case-insensely (legacy plain-kind labels)
+//   - Component is GVK-shaped (Issue #1051: "apiVersion/Kind"); the trailing Kind segment
+//     is matched case-insensely against remediation target Kind
 func (m WorkflowMeta) MatchesTargetKind(kind string) bool {
 	if kind == "" || len(m.Component) == 0 {
 		return true
 	}
 	for _, c := range m.Component {
-		if c == "*" || strings.EqualFold(c, kind) {
+		if workflowComponentMatchesTargetKind(c, kind) {
 			return true
 		}
 	}
 	return false
+}
+
+func workflowComponentMatchesTargetKind(component, targetKind string) bool {
+	if component == "*" {
+		return true
+	}
+	if strings.Contains(component, "/") {
+		parts := strings.Split(component, "/")
+		last := parts[len(parts)-1]
+		return strings.EqualFold(last, targetKind)
+	}
+	return strings.EqualFold(component, targetKind)
 }
 
 // Validator checks InvestigationResult against session-specific constraints.

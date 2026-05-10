@@ -66,7 +66,7 @@ func depTestBaseSchemaUnique() string {
 	}
 	crd.Spec.Labels.Severity = []string{"critical"}
 	crd.Spec.Labels.Environment = []string{"*"}
-	crd.Spec.Labels.Component = []string{"deployment"}
+	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
 	crd.Spec.Labels.Priority = "*"
 	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
 	crd.Spec.Parameters = []models.WorkflowParameter{
@@ -83,7 +83,7 @@ func depTestSchemaWithSecrets(secretNames ...string) string {
 	}
 	crd.Spec.Labels.Severity = []string{"critical"}
 	crd.Spec.Labels.Environment = []string{"*"}
-	crd.Spec.Labels.Component = []string{"deployment"}
+	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
 	crd.Spec.Labels.Priority = "*"
 	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
 	crd.Spec.Parameters = []models.WorkflowParameter{
@@ -107,7 +107,7 @@ func depTestSchemaWithConfigMaps(cmNames ...string) string {
 	}
 	crd.Spec.Labels.Severity = []string{"critical"}
 	crd.Spec.Labels.Environment = []string{"*"}
-	crd.Spec.Labels.Component = []string{"deployment"}
+	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
 	crd.Spec.Labels.Priority = "*"
 	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
 	crd.Spec.Parameters = []models.WorkflowParameter{

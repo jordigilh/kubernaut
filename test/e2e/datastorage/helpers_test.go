@@ -47,6 +47,7 @@ var e2eTestAllDetectedLabelsContent string
 
 func init() {
 	stub := testutil.NewTestWorkflowCRD("e2e-stub", "ScaleReplicas", "tekton")
+	stub.Spec.Labels.Component = []string{"v1/Pod"}
 	stub.Spec.Description.What = "Stub workflow for E2E test registration"
 	stub.Spec.Description.WhenToUse = "For E2E tests that need a valid CreateWorkflow request body"
 	stub.Spec.Labels.Priority = "P0"
@@ -62,6 +63,7 @@ func init() {
 	e2eTestWorkflowStubContent = testutil.MarshalWorkflowCRD(stub)
 
 	allLabels := testutil.NewTestWorkflowCRD("e2e-all-labels", "RestartPod", "tekton")
+	allLabels.Spec.Labels.Component = []string{"v1/Pod"}
 	allLabels.Spec.Description.What = "Workflow with all 8 detectedLabels fields for round-trip E2E testing"
 	allLabels.Spec.Description.WhenToUse = "E2E-DS-043-005: validates every detectedLabels field survives storage"
 	allLabels.Spec.Labels.Priority = "P0"
@@ -89,6 +91,7 @@ func init() {
 // Issue #330: Uses builder pattern instead of brittle fmt.Sprintf.
 func generateWorkflowContent(workflowName, version string) string {
 	crd := testutil.NewTestWorkflowCRD(workflowName, "ScaleReplicas", "tekton")
+	crd.Spec.Labels.Component = []string{"v1/Pod"}
 	crd.Spec.Version = version
 	crd.Spec.Description.What = fmt.Sprintf("Generated workflow %s v%s for E2E testing", workflowName, version)
 	crd.Spec.Description.WhenToUse = "E2E tests that need distinct workflow versions"

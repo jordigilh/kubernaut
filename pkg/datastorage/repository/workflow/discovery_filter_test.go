@@ -28,6 +28,7 @@ import (
 // ========================================
 // Authority: DD-WORKFLOW-001 v2.7 (DetectedLabels matching semantics)
 // Bug: Issue #197 (discovery SQL ignores detectedLabels)
+// Issue #1051: component values now use GVK format (apiVersion/Kind)
 //
 // These tests validate that buildContextFilterSQL generates correct SQL
 // conditions for DetectedLabels boolean and string fields per DD-WORKFLOW-001
@@ -91,7 +92,7 @@ func TestBuildContextFilterSQL_DetectedLabels_WithMandatoryFilters(t *testing.T)
 	// conditions for both.
 	filters := &models.WorkflowDiscoveryFilters{
 		Severity:  "critical",
-		Component: "Deployment",
+		Component: "apps/v1/Deployment",
 		DetectedLabels: &models.DetectedLabels{
 			PDBProtected: true,
 		},
@@ -182,10 +183,10 @@ func TestBuildContextFilterSQL_DetectedLabels_ServiceMesh(t *testing.T) {
 // ========================================
 
 func TestBuildContextFilterSQL_Issue464_ComponentWildcard(t *testing.T) {
-	// UT-DS-464-001: When component filter is "Pod", the SQL must include
+	// UT-DS-464-001: When component filter is GVK Pod, the SQL must include
 	// a jsonb_typeof guard (handles legacy scalar values) and wildcard fallback.
 	filters := &models.WorkflowDiscoveryFilters{
-		Component: "Pod",
+		Component: "v1/Pod",
 	}
 
 	sql, args := buildContextFilterSQL(filters)
@@ -202,8 +203,8 @@ func TestBuildContextFilterSQL_Issue464_ComponentWildcard(t *testing.T) {
 	if !strings.Contains(sql, "labels->>'component'") {
 		t.Errorf("UT-DS-464-001: expected scalar fallback in ELSE branch, got: %s", sql)
 	}
-	if len(args) != 1 || args[0] != "Pod" {
-		t.Errorf("UT-DS-464-001: expected args=[Pod], got: %v", args)
+	if len(args) != 1 || args[0] != "v1/Pod" {
+		t.Errorf("UT-DS-464-001: expected args=[v1/Pod], got: %v", args)
 	}
 }
 
@@ -272,7 +273,7 @@ func TestBuildContextFilterSQL_Issue464_AllMandatoryWildcards(t *testing.T) {
 	// all-wildcard workflows are always discoverable.
 	filters := &models.WorkflowDiscoveryFilters{
 		Severity:    "critical",
-		Component:   "Pod",
+		Component:   "v1/Pod",
 		Environment: "staging",
 		Priority:    "P1",
 	}
@@ -299,7 +300,7 @@ func TestBuildContextFilterSQL_Issue464_AllMandatoryWildcards(t *testing.T) {
 	if len(args) != 4 {
 		t.Errorf("UT-DS-464-006: expected 4 args, got: %d", len(args))
 	}
-	expected := []interface{}{"critical", "Pod", "staging", "P1"}
+	expected := []interface{}{"critical", "v1/Pod", "staging", "P1"}
 	for i, exp := range expected {
 		if args[i] != exp {
 			t.Errorf("UT-DS-464-006: args[%d] = %v, want %v", i, args[i], exp)
@@ -389,7 +390,7 @@ func TestBuildContextFilterSQL_Issue595_CombinedCaseInsensitive(t *testing.T) {
 	// case-insensitive pattern; component uses existing LOWER; 4 args preserved.
 	filters := &models.WorkflowDiscoveryFilters{
 		Severity:    "Critical",
-		Component:   "Deployment",
+		Component:   "Apps/V1/Deployment",
 		Environment: "Staging",
 		Priority:    "p1",
 	}
