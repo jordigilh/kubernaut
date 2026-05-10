@@ -47,6 +47,9 @@ const (
 
 	// Audit write API metrics (GAP-10)
 	MetricNameAuditLagSeconds = "datastorage_audit_lag_seconds"
+
+	// Workflow validation phase metrics (Issue #1070)
+	MetricNameWorkflowValidationDuration = "datastorage_workflow_validation_duration_seconds"
 )
 
 // Write operation metrics
@@ -68,6 +71,29 @@ var (
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"table"},
+	)
+)
+
+// Workflow validation phase metrics (Issue #1070)
+// BR-STORAGE-014: Workflow catalog management
+
+var (
+	// WorkflowValidationDuration tracks the duration of each validation phase
+	// during workflow registration.
+	//
+	// Labels:
+	//   - phase: Validation phase ("action_type", "bundle_exists", "dependency", "total")
+	//   - result: Outcome ("ok", "error")
+	//
+	// Example Prometheus query:
+	//   histogram_quantile(0.95, rate(datastorage_workflow_validation_duration_seconds_bucket{phase="total"}[5m]))
+	WorkflowValidationDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    MetricNameWorkflowValidationDuration,
+			Help:    "Duration of workflow validation phases in seconds",
+			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
+		},
+		[]string{"phase", "result"},
 	)
 )
 
@@ -94,9 +120,10 @@ var (
 
 // Metrics Summary:
 //
-// Total Metrics: 2 (external-facing per GitHub issue #294)
+// Total Metrics: 3 (external-facing per GitHub issue #294, #1070)
 // - WriteDuration (Histogram with labels) - write operation performance
 // - AuditLagSeconds (Histogram with labels) - audit lag observability
+// - WorkflowValidationDuration (Histogram with labels) - validation phase timing (Issue #1070)
 //
 // Performance Target: < 5% overhead
 // BR Coverage: BR-STORAGE-001, 002, 007, 008, 012, 013, 019
@@ -145,6 +172,9 @@ type Metrics struct {
 	// Write operation metrics
 	WriteDuration *prometheus.HistogramVec // Write operation duration
 
+	// Workflow validation phase metrics (Issue #1070)
+	WorkflowValidationDuration *prometheus.HistogramVec // Validation phase timing
+
 	// Store registry for testing
 	registry prometheus.Registerer
 }
@@ -169,8 +199,9 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 	if reg == prometheus.DefaultRegisterer {
 		// Production: Use global promauto metrics (already registered)
 		// These are referenced, not created, to avoid duplicate registration
-		m.AuditLagSeconds = AuditLagSeconds // Reference global
-		m.WriteDuration = WriteDuration     // Reference global
+		m.AuditLagSeconds = AuditLagSeconds                       // Reference global
+		m.WriteDuration = WriteDuration                           // Reference global
+		m.WorkflowValidationDuration = WorkflowValidationDuration // Reference global
 	} else {
 		// Testing: Create isolated metrics with custom registry
 		// Testing: Create isolated metrics with full names (DD-005 V3.0: Pattern B)
@@ -192,10 +223,20 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 			[]string{"table"},
 		)
 
+		m.WorkflowValidationDuration = prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    MetricNameWorkflowValidationDuration,
+				Help:    "Duration of workflow validation phases in seconds",
+				Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
+			},
+			[]string{"phase", "result"},
+		)
+
 		// Register ONLY for custom registries (testing)
 		reg.MustRegister(
 			m.AuditLagSeconds,
 			m.WriteDuration,
+			m.WorkflowValidationDuration,
 		)
 	}
 
