@@ -277,6 +277,13 @@ type ReviewContext struct {
 	// RootCauseAnalysis from AIAnalysis if available.
 	// +optional
 	RootCauseAnalysis string `json:"rootCauseAnalysis,omitempty"`
+	// AlignmentVerdict is the shadow agent's overall verdict (aligned/suspicious).
+	// BR-AI-601: Present when shadow agent alignment check is enabled.
+	// +optional
+	AlignmentVerdict string `json:"alignmentVerdict,omitempty"`
+	// CircuitBreakerActivated indicates whether the circuit breaker terminated the investigation early.
+	// +optional
+	CircuitBreakerActivated bool `json:"circuitBreakerActivated,omitempty"`
 }
 
 // ExecutionContext captures execution and retry data.

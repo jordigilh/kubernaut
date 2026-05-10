@@ -458,6 +458,11 @@ func (h *AIAnalysisHandler) populateManualReviewContext(reviewCtx *creator.Manua
 	if ai.Status.Warnings != nil {
 		reviewCtx.Warnings = ai.Status.Warnings
 	}
+
+	// BR-AI-601: Add alignment verdict if available
+	if ai.Status.AlignmentVerdict != nil {
+		reviewCtx.AlignmentVerdict = ai.Status.AlignmentVerdict
+	}
 }
 
 // createManualReviewAndUpdateStatus creates a NotificationRequest and updates RemediationRequest status.
