@@ -19,6 +19,8 @@ These SLOs are aspirational targets to be validated once the service is running 
 | SLO-5 | Authentication Latency (p99) | < 200ms | `af_auth_duration_seconds` | `histogram_quantile(0.99, rate(...[5m]))` |
 | SLO-6 | Availability (5xx rate) | < 0.1% | `af_http_requests_total{status=~"5.."}` | `sum(rate({status=~"5.."}[5m])) / sum(rate(total[5m]))` |
 | SLO-7 | Agent Card Response (p99) | < 50ms | `af_http_request_duration_seconds{path="/.well-known/agent-card.json"}` | `histogram_quantile(0.99, rate(...[5m]))` |
+| SLO-8 | Severity Triage (Tier 1-2, p95) | < 500ms | `af_severity_triage_duration_seconds{tier=~"1\|1.5\|2"}` | `histogram_quantile(0.95, rate(...[5m]))` |
+| SLO-9 | Severity Triage (Tier 3 LLM, p95) | < 15s | `af_severity_triage_duration_seconds{tier="3"}` | `histogram_quantile(0.95, rate(...[5m]))` |
 
 ## Histogram Bucket Alignment
 
@@ -66,6 +68,16 @@ Alerting rules are defined in `deploy/prometheus-rules.yaml`. Each alert is deri
 | `ApifrontendDependencyLatencyHigh` | Operational | Dep P95 > 2s for 5m | warning |
 | `ApifrontendRateLimitStorm` | Operational | Rejections > 10/s for 2m | warning |
 | `ApifrontendSSEConnectionsHigh` | Operational | Active SSE > 100 for 5m | warning |
+| `ApifrontendSeverityTriageErrorRate` | SLO-8/9 | Triage error rate > 10% for 5m | warning |
+
+### Triage Latency Impact on SLO-3 (CRD Tool p99)
+
+The `af_create_rr` tool path now includes severity triage when no severity is provided. This adds latency:
+- **Tier 1** (Prometheus `/api/v1/alerts`): ~50ms — within SLO-3 budget
+- **Tier 1.5/2** (cached rules + instant query): ~100-200ms — within SLO-3 budget
+- **Tier 2.5/3** (LLM fallback): 2-15s — **exceeds** SLO-3; measured separately by SLO-8/9
+
+When triage falls to LLM tiers, the tool call will exceed SLO-3's 500ms target. This is expected and tracked independently. The `af_severity_triage_duration_seconds` histogram isolates triage latency from the overall tool latency.
 
 ## Validation Plan
 

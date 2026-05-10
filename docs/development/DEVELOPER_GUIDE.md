@@ -45,15 +45,18 @@ internal/
   httputil/               — RFC 7807, IP extraction
   ka/                     — KA REST + MCP SDK client
   launcher/               — A2A JSON-RPC handler (ADK executor)
-  logging/                — Zap + slog logger setup
-  metrics/                — Prometheus registry
+  logging/                — logr/zap logger setup
+  metrics/                — Prometheus registry (af_* prefix)
+  prometheus/             — Prometheus HTTP client (alerts, rules, query)
   ratelimit/              — Per-IP and per-user rate limiters
   requestid/              — X-Request-ID middleware
   resilience/             — Circuit breakers, retry transport
   security/               — Error redaction, input sanitization
   session/                — CRD session service (InvestigationSession)
+  severity/               — Multi-tier severity triage pipeline
   streaming/              — SSE connection tracker
-  tools/                  — MCP tool implementations
+  tools/                  — MCP tool implementations (6 AF-native + 14 kubernaut proxy)
+  validate/               — K8s name/namespace/label validation
 api/
   apifrontend/v1alpha1/   — CRD types (InvestigationSession)
   openapi/                — OpenAPI spec

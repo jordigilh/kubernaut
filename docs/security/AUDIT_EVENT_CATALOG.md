@@ -104,6 +104,17 @@ Events are delivered through the `audit.Emitter` interface. Two implementations 
 
 ---
 
+## Severity Triage
+
+| Event Type | Constant | NIST Control | Trigger | Detail Fields |
+|-----------|----------|-------------|---------|---------------|
+| `severity.triage.completed` | `EventSeverityTriageCompleted` | AU-2, AU-12 | Triage pipeline determines severity | `tier`, `severity`, `source`, `duration_ms`, `alert_name` (if Tier 1), `rule_name` (if Tier 1.5/2/2.5) |
+| `severity.triage.failed` | `EventSeverityTriageFailed` | AU-2 | All triage tiers fail or LLM error | `error` (redacted), `tier` (last attempted), `namespace`, `kind`, `name` |
+
+**Emitted from:** `internal/severity/triage.go` (via tool handler integration in `internal/tools/af_create_rr.go`)
+
+---
+
 ## Adding New Events
 
 1. Define the `EventType` constant in `internal/audit/audit.go`
@@ -113,4 +124,4 @@ Events are delivered through the `audit.Emitter` interface. Two implementations 
 
 ---
 
-*Last updated: 2026-05-08 | Covers v1.5 milestone (issues #52, #56)*
+*Last updated: 2026-05-10 | Covers v1.5 milestone (issues #52, #56, #92)*

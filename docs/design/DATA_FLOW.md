@@ -6,7 +6,7 @@
 graph TB
     subgraph External
         Agent[AI Agent / MCP Client]
-        Prom[Prometheus]
+        PromScrape[Prometheus<br/>metrics scrape]
     end
 
     subgraph kubernaut-apifrontend
@@ -14,6 +14,7 @@ graph TB
         Auth[Auth Middleware<br/>JWT + Impersonation]
         MCP[MCP Handler<br/>Streamable HTTP]
         Bridge[Tool Bridge<br/>RBAC + Dispatch]
+        Triager[Severity Triager]
         Metrics[Metrics :9090]
         Health[Health :8081]
         Audit[Audit Emitter]
@@ -23,6 +24,8 @@ graph TB
         KA[kubernaut-agent<br/>REST + MCP]
         DS[data-storage<br/>REST]
         K8s[Kubernetes API<br/>Dynamic Client]
+        PromAPI[Prometheus<br/>Query API]
+        LLMProv[LLM Provider<br/>Vertex AI]
     end
 
     Agent -->|POST /mcp| Router
@@ -32,8 +35,11 @@ graph TB
     Bridge -->|CRD tools| K8s
     Bridge -->|KA tools| KA
     Bridge -->|DS tools| DS
+    Bridge -->|af_create_rr| Triager
+    Triager -->|/api/v1/alerts,rules,query| PromAPI
+    Triager -->|Tier 2.5/3 fallback| LLMProv
     Bridge --> Audit
-    Prom -->|GET /metrics| Metrics
+    PromScrape -->|GET /metrics| Metrics
 ```
 
 ## Request Flow: MCP Tool Call
@@ -109,6 +115,8 @@ graph LR
 | Kubernetes API | Dynamic Client | Impersonation | Yes (K8s-specific) | No | 30s |
 | kubernaut-agent | REST + MCP | JWT forwarding | Yes | 2 retries, exp backoff | 30s |
 | data-storage | REST (ogen) | Service identity | Yes | 3 retries, exp backoff | 10s |
+| Prometheus | HTTP `/api/v1/*` | Bearer token (SA) | Planned | No | 30s |
+| LLM Provider (Vertex AI) | gRPC/HTTP | ADC | Yes | No | Configurable |
 
 ## Error Redaction
 

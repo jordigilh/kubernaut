@@ -1,8 +1,8 @@
 # kubernaut-apifrontend Architecture Design Document
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Accepted
-**Last Updated:** 2026-05-03
+**Last Updated:** 2026-05-10
 
 ---
 
@@ -110,56 +110,102 @@ kubernaut-apifrontend/
 │   └── apifrontend/
 │       └── main.go                # Entry point, wires all components
 ├── internal/
-│   ├── handler/
-│   │   ├── a2a.go                 # A2A JSON-RPC request handler
-│   │   ├── mcp.go                 # MCP Streamable HTTP handler
-│   │   ├── agentcard.go           # /.well-known/agent-card.json
-│   │   └── health.go              # /healthz, /readyz
+│   ├── agent/
+│   │   ├── root.go                # ADK agent config, tool registration, callbacks
+│   │   ├── config.go              # Agent creation config
+│   │   ├── deps.go                # Dependency injection container
+│   │   └── prompt.go              # System prompt construction
+│   ├── audit/
+│   │   ├── audit.go               # Audit event types and Emitter interface
+│   │   └── buffered.go            # BufferedEmitter with overflow protection
 │   ├── auth/
 │   │   ├── jwt.go                 # Multi-issuer JWT validation (KEP-3331)
+│   │   ├── middleware.go          # Auth middleware chain
 │   │   ├── impersonation.go       # K8s impersonation header injection
-│   │   └── middleware.go          # Auth middleware chain
-│   ├── llm/
-│   │   ├── client.go              # LLM provider abstraction
-│   │   ├── orchestrator.go        # Triage orchestration (system prompt + tools)
-│   │   └── prompt.go              # System prompt construction
+│   │   ├── dynamic_impersonation.go # Per-request DynamicClientFactory
+│   │   ├── tokenreview.go         # K8s TokenReview validation
+│   │   ├── jwks_cache.go          # JWKS response caching
+│   │   ├── jwt_delegation.go      # JWT forwarding to downstream services
+│   │   ├── config.go              # Auth configuration
+│   │   ├── context.go             # UserIdentity context helpers
+│   │   └── types.go               # Auth type definitions
+│   ├── config/
+│   │   ├── config.go              # YAML config parsing and validation
+│   │   └── hotreload.go           # Configuration hot-reload
+│   ├── controller/
+│   │   └── ttl.go                 # InvestigationSession TTL controller
+│   ├── ds/
+│   │   ├── client.go              # DataStorage REST client
+│   │   └── ogen_client.go         # Generated ogen client wrapper
+│   ├── handler/
+│   │   ├── router.go              # HTTP route registration
+│   │   ├── mcp.go                 # MCP Streamable HTTP handler
+│   │   ├── mcp_bridge.go          # MCP tool bridge (RBAC, dispatch, metrics)
+│   │   ├── mcptools.go            # MCP tool registry (20 tools)
+│   │   ├── agentcard.go           # /.well-known/agent-card.json
+│   │   ├── health.go              # /healthz, /readyz
+│   │   └── middleware.go          # HTTP middleware chain
+│   ├── httputil/
+│   │   ├── clientip.go            # Client IP extraction
+│   │   ├── errormapper.go         # K8s error to HTTP status mapping
+│   │   └── problem.go             # RFC 7807 Problem Details
+│   ├── ka/
+│   │   ├── rest_client.go         # KA REST API client (autonomous flow)
+│   │   ├── mcp_client.go          # KA MCP client (interactive flow)
+│   │   ├── mcp_sdk_client.go      # KA MCP SDK client wrapper
+│   │   └── config.go              # KA client configuration
+│   ├── launcher/
+│   │   ├── launcher.go            # A2A task launcher (BeforeExecute/AfterExecute)
+│   │   └── model.go               # Launcher types
+│   ├── logging/
+│   │   └── logging.go             # logr/zap logger setup
+│   ├── metrics/
+│   │   └── metrics.go             # Prometheus metric registration (af_* prefix)
+│   ├── prometheus/
+│   │   ├── client.go              # HTTP client for /api/v1/{alerts,rules,query}
+│   │   ├── types.go               # Alert, RuleGroup, Rule, QueryResult types
+│   │   └── rules.go               # PromQL AST label extraction, resource matching
+│   ├── ratelimit/
+│   │   ├── ratelimit.go           # Per-user rate limiting (token bucket)
+│   │   └── config.go              # Rate limit configuration
+│   ├── requestid/
+│   │   ├── requestid.go           # Request ID generation
+│   │   └── transport.go           # Request ID HTTP transport
+│   ├── resilience/
+│   │   ├── circuitbreaker.go      # Generic circuit breaker
+│   │   ├── k8s_cb.go              # K8s-specific circuit breaker
+│   │   ├── k8s_dynamic.go         # Resilient dynamic client wrapper
+│   │   └── retry.go               # Retry with backoff
+│   ├── security/
+│   │   ├── redact.go              # Error/URL/path redaction
+│   │   └── sanitize.go            # Input sanitization
+│   ├── session/
+│   │   ├── service.go             # Session CRD CRUD operations
+│   │   ├── decorator.go           # SessionServiceDecorator (user context)
+│   │   ├── reinvoke.go            # Session reinvocation (LLM re-entry)
+│   │   ├── statemachine.go        # Session phase state machine
+│   │   └── trimming.go            # Tool result size trimming
+│   ├── severity/
+│   │   ├── triage.go              # Multi-tier severity triage orchestrator
+│   │   ├── types.go               # TriageInput, TriageResult, Source, severity utils
+│   │   ├── cache.go               # TTL-based rules cache (sync.RWMutex)
+│   │   └── llm.go                 # LLMTriager interface implementation
+│   ├── streaming/
+│   │   ├── sse.go                 # SSE event construction and delivery
+│   │   └── tracker.go             # SSE connection tracking
 │   ├── tools/
-│   │   ├── registry.go            # Tool registration
+│   │   ├── helpers.go             # Shared tool helpers (TrimSliceToFit, errors)
 │   │   ├── af_list_events.go      # K8s Events query
 │   │   ├── af_get_pods.go         # Pod status query
 │   │   ├── af_get_workloads.go    # Workload health query
 │   │   ├── af_resolve_owner.go    # Owner chain resolution
 │   │   ├── af_check_existing_rr.go # RR existence check (dedup)
-│   │   └── af_create_rr.go        # RemediationRequest creation
-│   ├── session/
-│   │   └── manager.go             # Session lifecycle (create, update, lookup)
-│   ├── ka/
-│   │   ├── rest_client.go         # KA REST API client (autonomous flow)
-│   │   └── mcp_client.go          # KA MCP client (interactive flow: takeover, message)
-│   ├── streaming/
-│   │   ├── sse.go                 # SSE event construction and delivery to client
-│   │   ├── ka_relay.go            # Subscribe to KA /stream SSE and relay to client
-│   │   └── crd_watcher.go         # Watch RR/AA/SP CRD transitions → SSE events
-│   ├── ratelimit/
-│   │   ├── request_rate.go        # Per-user request rate (token bucket)
-│   │   ├── concurrency.go         # Global LLM concurrency (semaphore)
-│   │   └── token_budget.go        # Per-user token budget
-│   ├── security/
-│   │   ├── sanitizer.go           # Input/output sanitization
-│   │   ├── validator.go           # Structured output validation
-│   │   └── anomaly.go             # Tool call anomaly detection
-│   ├── audit/
-│   │   └── emitter.go             # Audit event emission to DataStorage
-│   ├── dedup/
-│   │   └── lease.go               # K8s Lease-based deduplication
-│   ├── controller/
-│   │   └── session_cleanup.go     # InvestigationSession TTL controller
-│   ├── integration/               # Integration tests
-│   ├── conformance/               # Protocol conformance tests
-│   └── maturity/                   # Service maturity P0 checks
-├── pkg/
-│   └── metrics/
-│       └── metrics.go             # Prometheus metric registration
+│   │   ├── af_create_rr.go        # RemediationRequest creation
+│   │   ├── crd_tools.go           # CRD-based kubernaut tools
+│   │   ├── ka_tools.go            # KA proxy tools
+│   │   └── ds_tools.go            # DataStorage proxy tools
+│   └── validate/
+│       └── k8s.go                 # K8s name/namespace/label validation
 ├── config/
 │   ├── crd/bases/                 # Generated CRD YAML
 │   ├── rbac/                      # ClusterRole, ClusterRoleBinding
@@ -167,9 +213,13 @@ kubernaut-apifrontend/
 ├── charts/
 │   └── kubernaut-apifrontend/     # Helm chart (dev/test only)
 └── docs/
-    ├── design/                    # This document
-    ├── adr/                       # Architecture Decision Records
-    └── operations/                # Runbooks
+    ├── design/                    # Architecture, data flow, triage design docs
+    ├── adr/                       # Architecture Decision Records (ADR-001..021)
+    ├── security/                  # Audit catalog, RBAC, service boundary
+    ├── slo/                       # SLO definitions
+    ├── operations/                # Deployment guide, runbooks
+    ├── tests/                     # Per-issue test plans
+    └── development/               # Developer guide, TDD prompts
 ```
 
 ### Component Responsibilities
@@ -185,6 +235,7 @@ graph LR
         Orchestrator[LLM Orchestrator]
         ToolRegistry[Tool Registry]
         SessionManager[Session Manager]
+        SevTriager[Severity Triager]
     end
 
     subgraph infra_pkg [Infrastructure]
@@ -202,6 +253,9 @@ graph LR
     Orchestrator --> ToolRegistry
     Orchestrator --> Security
     ToolRegistry --> SessionManager
+    ToolRegistry --> SevTriager
+    SevTriager -->|/api/v1/*| Prom[Prometheus]
+    SevTriager -->|Tier 2.5/3| LLMProv[LLM Provider]
     SessionManager -->|CRD| K8s[K8s API]
     Orchestrator --> Audit
 ```
@@ -426,7 +480,9 @@ stateDiagram-v2
 | `/mcp` | POST | JSON-RPC method dispatch (tools/list, tools/call) |
 | `/mcp` | POST + `Accept: text/event-stream` | Streaming tool execution |
 
-**Registered tools (6 AF-internal):**
+**Registered tools (20 total: 6 AF-native + 14 kubernaut proxy):**
+
+AF-native tools (execute against K8s API directly):
 
 | Tool | Purpose | Data source |
 |------|---------|-------------|
@@ -435,7 +491,26 @@ stateDiagram-v2
 | `af_get_workloads` | Get Deployment/StatefulSet health | K8s API (impersonated) |
 | `af_resolve_owner` | Resolve owner chain to root | K8s API (impersonated) |
 | `af_check_existing_rr` | Check if RR already exists for resource (dedup) | K8s API (AF SA) |
-| `af_create_rr` | Create RemediationRequest | K8s API (AF SA) |
+| `af_create_rr` | Create RemediationRequest (with severity triage) | K8s API (AF SA) |
+
+kubernaut proxy tools (forwarded to KA REST/MCP or DataStorage):
+
+| Tool | Purpose | Backend |
+|------|---------|---------|
+| `kubernaut_list_remediations` | List active and recent remediations | KA REST |
+| `kubernaut_get_remediation` | Get remediation details | KA REST |
+| `kubernaut_submit_signal` | Submit signal to active remediation | KA REST |
+| `kubernaut_approve` | Approve a remediation action | KA REST |
+| `kubernaut_cancel_remediation` | Cancel active remediation | KA REST |
+| `kubernaut_watch` | Watch remediation state changes | KA REST |
+| `kubernaut_start_investigation` | Start investigation session | KA MCP |
+| `kubernaut_poll_investigation` | Poll investigation for updates | KA REST |
+| `kubernaut_select_workflow` | Select workflow for investigation | KA MCP |
+| `kubernaut_present_decision` | Present decision point to user | KA MCP |
+| `kubernaut_list_workflows` | List available workflows | KA REST |
+| `kubernaut_get_remediation_history` | Get remediation execution history | DS REST |
+| `kubernaut_get_effectiveness` | Get effectiveness metrics | DS REST |
+| `kubernaut_get_audit_trail` | Get audit trail for remediations | DS REST |
 
 ### A2A Protocol (v0.3.0, JSON-RPC 2.0)
 
@@ -554,7 +629,7 @@ AF ServiceAccount permissions:
 | `af_http_request_duration_seconds` | method, path, status | — | Implemented |
 | `af_tool_call_duration_seconds` | tool, type | P99 < 500ms (internal), < 2s (proxy) | Implemented |
 | `af_auth_duration_seconds` | result | P99 < 200ms | Implemented |
-| `af_triage_duration_seconds` | outcome | P95 < 15s | Planned (PR5) |
+| `af_severity_triage_duration_seconds` | tier | P95 < 5s (Tier 1-2), P95 < 15s (Tier 3) | Implemented (#92) |
 | `af_sse_connect_duration_seconds` | — | P99 < 1s | Planned (PR6) |
 | `af_ka_poll_duration_seconds` | endpoint | — | Planned (PR5) |
 
@@ -568,7 +643,8 @@ AF ServiceAccount permissions:
 | `af_llm_tokens_total` | direction, model | Implemented |
 | `af_rate_limit_rejections_total` | tier, reason | Implemented |
 | `af_audit_events_total` | type | Implemented |
-| `af_triage_total` | outcome | Planned (PR5) |
+| `af_severity_triage_total` | tier, severity | Implemented (#92) |
+| `af_severity_triage_errors_total` | tier, error_type | Implemented (#92) |
 
 **Gauges:**
 
@@ -586,14 +662,15 @@ AF ServiceAccount permissions:
 
 ### Audit Trail
 
-7-link forensic chain emitted to DataStorage:
+8-link forensic chain emitted to DataStorage:
 1. A2A request received (who, what, when)
 2. Triage started (session created)
 3. Tool call executed (which tool, params, result summary)
-4. RR created (fingerprint, severity, target)
-5. Investigation delegated (KA session ID)
-6. User decision (accept/reject/cancel)
-7. Session completed (outcome, duration)
+4. Severity triage completed/failed (tier, source, severity, duration) — see `SEVERITY_TRIAGE.md`
+5. RR created (fingerprint, severity, target, signalLabels)
+6. Investigation delegated (KA session ID)
+7. User decision (accept/reject/cancel)
+8. Session completed (outcome, duration)
 
 ---
 
@@ -877,8 +954,9 @@ East-west encryption satisfies SC-8 (Transmission Confidentiality and Integrity)
 
 ## References
 
-- GitHub Issues: #41-#56, #57-#71 (design comments)
-- ADRs: `docs/adr/ADR-001` through `ADR-012`
+- GitHub Issues: #41-#56, #57-#71 (design comments), #92 (severity triage)
+- ADRs: `docs/adr/ADR-001` through `ADR-021`
+- Design Documents: `SEVERITY_TRIAGE.md`, `DATA_FLOW.md`, `TOOL_EXECUTION_MODEL.md`, `CONTAINER_IMAGE.md`
 - kubernaut PROPOSAL-EXT-003 Appendix B (delegated authorization model)
 - MCP Spec: https://spec.modelcontextprotocol.io/specification/2025-03-26/
 - A2A Spec: https://google.github.io/A2A/specification/

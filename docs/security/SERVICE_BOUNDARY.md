@@ -32,6 +32,7 @@ graph TB
         K8sAPI[Kubernetes API Server]
         KA[Kubernaut Agent — REST/MCP]
         DS[Data Store API]
+        Prom[Prometheus — Query API]
         LLM[Vertex AI — Claude Sonnet 4.6]
     end
 
@@ -51,6 +52,7 @@ graph TB
     Agent -->|SA — AF scope| K8sAPI
     Agent -->|REST + JWT delegation| KA
     Agent -->|Audit events via REST| DS
+    Agent -->|/api/v1/alerts,rules,query| Prom
     Agent -->|LLM inference| LLM
 ```
 
@@ -90,6 +92,7 @@ All ingress enters through a single HTTP listener on the configured port (defaul
 | Kubernaut Agent (KA) REST | HTTPS | Custom `ka.Client` | JWT delegation (original user token) | `ka` CB |
 | Kubernaut Agent (KA) MCP | HTTPS | `ka.SDKMCPClient` | JWT delegation (`ContextJWTDelegationTransport`) | — |
 | Data Store (DS) | HTTPS | ogen-generated client | ServiceAccount context | `ds-rest` CB |
+| Prometheus (triage) | HTTP/HTTPS | `prometheus.Client` | Bearer token (SA projected volume) | Planned |
 | Vertex AI (LLM) | HTTPS | ADK genai client | GCP Workload Identity | — |
 
 ---
@@ -102,6 +105,7 @@ All ingress enters through a single HTTP listener on the configured port (defaul
 | AF → K8s API Server | mTLS (in-cluster) | SA projected token + cluster CA |
 | AF → KA REST | TLS 1.2+ | Cluster internal CA |
 | AF → DS REST | TLS 1.2+ | Cluster internal CA |
+| AF → Prometheus | TLS 1.2+ (optional, configurable CA) | Cluster internal CA or custom CA file |
 | AF → Vertex AI | TLS 1.3 | Google public CA |
 
 **Note:** Pod-to-pod communication within the cluster relies on the network CNI's encryption capabilities (e.g., WireGuard in Cilium) or service mesh mTLS if deployed. The AF itself terminates TLS at the Ingress controller level; the pod listens on plain HTTP internally.

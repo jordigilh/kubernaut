@@ -35,6 +35,8 @@ Each ADR follows the standard structure:
 | [ADR-017](ADR-017-crd-pii-classification.md) | CRD PII data classification and retention policy | Accepted | 2026-05-06 |
 | [ADR-018](ADR-018-impersonation-risk-acceptance.md) | Impersonation risk acceptance and boundary enforcement | Accepted | 2026-05-07 |
 | [ADR-019](ADR-019-audit-buffer-volatility.md) | Audit buffer volatility and overflow handling | Accepted | 2026-05-08 |
+| [ADR-020](ADR-020-mcp-bridge-rbac-runtime.md) | MCP bridge RBAC: runtime enforcement only | Accepted | 2026-05-09 |
+| [ADR-021](ADR-021-severity-triage.md) | Severity triage: mandatory LLM, no silent defaults | Accepted | 2026-05-10 |
 
 ## Adding New ADRs
 

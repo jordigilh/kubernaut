@@ -7,6 +7,7 @@
 - OIDC identity provider (Keycloak, Okta, or similar) configured
 - Kubernaut Agent (KA) and DataStorage (DS) services deployed
 - Prometheus Operator (for PrometheusRule CRD)
+- Prometheus instance reachable from AF pods (for severity triage — `/api/v1/alerts`, `/api/v1/rules`, `/api/v1/query`)
 
 ## Deployment Model
 
@@ -72,6 +73,17 @@ mcp:
 
 agentCard:
   url: "https://apifrontend.example.com"
+
+severityTriage:
+  enabled: true
+  prometheusURL: "http://prometheus-operated:9090"
+  cacheTTLSeconds: 30
+  maxQueriesPerCall: 10
+  maxRulesEvaluated: 100
+  llmConfidence: 0.7
+  # prometheus:
+  #   tlsCaFile: "/etc/pki/tls/certs/prometheus-ca.crt"
+  #   bearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
 
 logging:
   level: "INFO"

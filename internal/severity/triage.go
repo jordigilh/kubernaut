@@ -2,6 +2,7 @@ package severity
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 
@@ -44,7 +45,11 @@ type Triager struct {
 }
 
 // NewTriager creates a new Triager instance.
+// Panics if llm is nil — the pipeline requires an LLM fallback to guarantee a result.
 func NewTriager(promClient prom.Client, llm LLMTriager, cfg Config, logger logr.Logger) *Triager {
+	if llm == nil {
+		panic("NewTriager: LLMTriager must not be nil — the triage pipeline requires an LLM fallback")
+	}
 	if logger.GetSink() == nil {
 		logger = logr.Discard()
 	}
@@ -103,7 +108,7 @@ func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, 
 	}
 
 	// Tier 2.5: LLM with rule context (only if rules matched but data was empty)
-	if len(matchedRules) > 0 && t.llm != nil {
+	if len(matchedRules) > 0 {
 		result, done = t.runTier25(ctx, input, matchedRules)
 		if done {
 			return result, nil
@@ -111,11 +116,7 @@ func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, 
 	}
 
 	// Tier 3: Pure LLM fallback
-	if t.llm != nil {
-		return t.runTier3(ctx, input)
-	}
-
-	return TriageResult{Severity: "medium", Source: SourceDefault}, nil
+	return t.runTier3(ctx, input)
 }
 
 func (t *Triager) runTier1(ctx context.Context, input TriageInput) (TriageResult, bool) {
@@ -243,8 +244,7 @@ func (t *Triager) runTier25(ctx context.Context, input TriageInput, matchedRules
 func (t *Triager) runTier3(ctx context.Context, input TriageInput) (TriageResult, error) {
 	result, err := t.llm.TriagePure(ctx, input)
 	if err != nil {
-		t.logger.Info("Tier 3 LLM failed", "error", err.Error())
-		return TriageResult{Severity: "medium", Source: SourceDefault}, nil
+		return TriageResult{}, fmt.Errorf("tier 3 LLM triage failed: %w", err)
 	}
 	result.Source = SourceLLMTriage
 	return result, nil
