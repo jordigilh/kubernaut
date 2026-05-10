@@ -19,6 +19,8 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -90,6 +92,21 @@ func (m *Manager) StartInvestigation(_ context.Context, fn InvestigateFunc, meta
 	go func() {
 		defer m.wg.Done()
 		defer func() { <-m.sem }()
+		defer func() {
+			if r := recover(); r != nil {
+				var panicErr error
+				if r == nil {
+					panicErr = fmt.Errorf("investigation panic: nil")
+				} else {
+					panicErr = fmt.Errorf("investigation panic: %v", r)
+				}
+				m.logger.Error(panicErr, "investigation goroutine panicked",
+					"session_id", id,
+					"stack", string(debug.Stack()),
+				)
+				m.updateSession(id, StatusFailed, nil, panicErr)
+			}
+		}()
 		result, fnErr := fn(m.shutdownCtx)
 		if fnErr != nil {
 			m.logger.Error(fnErr, "investigation failed", "session_id", id)
