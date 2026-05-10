@@ -5,6 +5,30 @@ All notable changes to Kubernaut will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Parallelized workflow validation** (#1070) — External validation checks (action-type taxonomy, OCI bundle existence, K8s dependency validation) now run concurrently during workflow registration, reducing registration latency from sum-of-three to max-of-three backend calls. Error priority contract preserved via typed-result-slot pattern (ADR-060).
+- **Concurrency cap on dependency validation** (#1070) — `ValidateDependencies` now limits concurrent K8s API calls to 10 via `errgroup.SetLimit`, preventing API server overload from schemas with many dependencies.
+- **Validation timeout budget** (#1070) — `validateExternalChecks` enforces a 10-second timeout to prevent degraded backends from consuming the full server WriteTimeout.
+
+### Fixed
+
+- **Request body size limit** — `HandleCreateWorkflow` now caps request body at 2 MiB via `http.MaxBytesReader` to prevent memory exhaustion from oversized payloads.
+- **Deployment manifest probe paths** — Fixed `deploy/data-storage/deployment.yaml` liveness and readiness probes from `/health` to `/healthz` and `/readyz` to match the health server implementation.
+- **OpenAPI domain mismatch** (UX-2) — Fixed `kubernaut.io` → `kubernaut.ai` in RFC 7807 problem type URIs across all OpenAPI specs (5 files). Domain now matches the URIs emitted by Go code.
+- **Copyright year** (COMPAT-3) — Updated copyright headers from 2025 to 2026 in test files modified by this PR.
+
+### Added
+
+- **Workflow validation duration metric** — New `datastorage_workflow_validation_duration_seconds` Prometheus histogram with `phase` and `result` labels for per-phase observability.
+- **ADR-060** — Architecture decision record documenting the parallel validation patterns and error priority contract.
+- **RFC 7807 type enum** (UX-1) — OpenAPI `RFC7807Problem.type` field now uses a strict `enum` of 22 known problem-type URIs across all Data Storage API specs.
+- **Concurrency guidelines** (DX-5) — Added concurrency patterns section to project guidelines documenting `errgroup`, typed-result-slot, and timeout budget patterns.
+- **DD-WE-006 v2.2** (DOC-4) — Added changelog entry noting dependency validation parallelization per Issue #1070.
+- **CONTRIBUTING.md Go version** (DX-4) — Updated prerequisite Go version from 1.25.3+ to 1.25.6+ to match `go.mod`.
+
 ## [1.2.0] - 2026-04-06
 
 ### Added
