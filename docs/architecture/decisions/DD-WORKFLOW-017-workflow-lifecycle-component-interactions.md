@@ -173,10 +173,10 @@ spec:
     whenNotToUse: "When cluster is at capacity"
   actionType: ScaleReplicas
   labels:
-    severity: ["warning", "critical"]
+    severity: ["critical", "high"]
     environment: ["production", "staging"]
-    component: Deployment
-    priority: high
+    component: ["apps/v1/Deployment"]
+    priority: P1
   execution:
     engine: tekton
     bundle: "quay.io/kubernaut-ai/workflow-scale:v1.0.0@sha256:abc123..."

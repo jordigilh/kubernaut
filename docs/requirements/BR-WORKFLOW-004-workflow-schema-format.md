@@ -97,7 +97,7 @@ spec:
   labels:
     severity: [critical]
     environment: [production]
-    component: pod
+    component: [v1/Pod]
     priority: p1
 
   customLabels:
@@ -188,7 +188,7 @@ These fields are used by the three-step discovery protocol (DD-HAPI-017) to filt
 | Field | Type | Required | Valid Values | Description |
 |-------|------|----------|--------------|-------------|
 | `severity` | string[] | Yes | `[critical, high, medium, low]`, `["*"]` for all | Severity level(s) this workflow is designed for. Always an array. Use `"*"` to match any severity. |
-| `component` | string | Yes | Any (e.g., `pod`, `deployment`, `node`, `service`) | Kubernetes resource type this workflow remediates |
+| `component` | string[] | Yes | Non-empty array of GVK strings (format `apiVersion/Kind`, e.g., `v1/Pod`, `apps/v1/Deployment`, `v1/Node`, `v1/Service`). Use `["*"]` to match any resource kind | Kubernetes API resource GVK(s) (`apiVersion/Kind`) this workflow remediates |
 | `environment` | string[] | Yes | Any (e.g., `[production, staging]`, `[*]` for all) | Target environment(s). Always an array. Use `*` to match any environment. |
 | `priority` | string | Yes | `p0`, `p1`, `p2`, `p3`, `p4`, `*` for all | Business priority level |
 
@@ -341,7 +341,7 @@ When a workflow is registered via the RemediationWorkflow CRD (BR-WORKFLOW-006),
 - `spec.description.whenNotToUse` and `spec.description.preconditions` are optional
 - At least one parameter is required in `spec.parameters`
 - Each parameter must have `name`, `type`, and `description`
-- Labels are validated: severity must be a non-empty array of values from [critical, high, medium, low]; environment must be a non-empty array; component and priority must be non-empty strings
+- Labels are validated: severity must be a non-empty array of values from [critical, high, medium, low]; environment must be a non-empty array; component must be a non-empty array of GVK strings (or `["*"]`); priority must be a non-empty string
 
 ### Action Type Validation
 

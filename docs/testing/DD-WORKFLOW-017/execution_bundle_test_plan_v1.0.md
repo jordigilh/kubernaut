@@ -93,7 +93,7 @@ cover OCI extraction and action type FK validation. This test plan extends with 
 
 **Shared preconditions for all schema validation tests**:
 - `schema.NewParser()` instantiated in `BeforeEach`
-- Base schema YAML satisfies all BR-WORKFLOW-004 non-execution requirements (metadata, actionType, labels, parameters)
+- Base schema YAML satisfies all BR-WORKFLOW-004 non-execution requirements (metadata, actionType, labels including `component` as Kubernetes GVK array, parameters)
 - Only the `execution:` section varies between tests
 
 **Base schema YAML constant** (`baseSchemaPrefix`):
@@ -110,7 +110,7 @@ actionType: RestartPod
 labels:
   signalType: OOMKilled
   severity: [critical]
-  component: pod
+  component: [v1/Pod]
   environment: [production]
   priority: P0
 parameters:
