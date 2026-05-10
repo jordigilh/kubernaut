@@ -564,6 +564,7 @@ AF ServiceAccount permissions:
 |--------|--------|--------|
 | `af_http_requests_total` | method, path, status | Implemented |
 | `af_tool_calls_total` | tool, result | Implemented |
+| `af_mcp_rbac_denied_total` | tool | Implemented |
 | `af_llm_tokens_total` | direction, model | Implemented |
 | `af_rate_limit_rejections_total` | tier, reason | Implemented |
 | `af_audit_events_total` | type | Implemented |

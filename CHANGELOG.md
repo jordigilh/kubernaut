@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **#19/#20** MCP tool bridge — full production wiring of all 20 tools via Streamable HTTP
+  - `internal/handler/mcp_bridge.go`: `RegisterTools`, `wrapTool` with runtime RBAC enforcement, semaphore-based concurrency limiting, timeout enforcement, Prometheus metrics, audit events, panic recovery, and error redaction
+  - RBAC enforced at `tools/call` time only (no `tools/list` filtering) — eliminates TOCTOU race
+  - Nil-safe guards for `DSClient`, `DynFactory`, `KAClient`, `Metrics`, and `Auditor`
+  - `validate.Kind()` input validation for Kubernetes kind fields
+  - `af_mcp_rbac_denied_total` Prometheus counter added to metrics registry
+  - 68 Ginkgo tests across 5 tiers (core dispatch, security, observability, adversarial inputs, cross-cutting) with `-race`
+  - `make test-bridge` target with optional `GINKGO_LABEL` filtering
+  - k6 `mcp-tools-call.js` updated for Streamable HTTP session protocol
+
 - **#38** Circuit breaker and resilience for downstream dependencies (KA, DS, K8s)
   - `internal/resilience/` package: `RetryTransport` (exponential backoff, jitter, retryable-status matching), `CircuitBreakerTransport` (gobreaker/v2), `K8sCircuitBreaker` (application-level CB for CRD ops)
   - Config extended with `ResilienceConfig` (per-dependency timeouts, CB params, retry params)
