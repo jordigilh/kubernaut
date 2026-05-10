@@ -1070,6 +1070,16 @@ false
 				[]string{"Pod"}, "Node", false),
 			Entry("UT-KA-934-007: empty target kind = unconstrained (defensive)",
 				[]string{"Pod"}, "", true),
+			Entry("UT-KA-934-008: GVK component matches Kind segment (Issue #1051)",
+				[]string{"apps/v1/Deployment"}, "Deployment", true),
+			Entry("UT-KA-934-009: GVK core-group component matches Kind segment (Issue #1051)",
+				[]string{"v1/Pod"}, "Pod", true),
+			Entry("UT-KA-934-010: GVK component does NOT match different kind (Issue #1051)",
+				[]string{"apps/v1/StatefulSet"}, "Deployment", false),
+			Entry("UT-KA-934-011: multi-GVK slice matches second element (Issue #1051)",
+				[]string{"v1/Pod", "apps/v1/Deployment"}, "Deployment", true),
+			Entry("UT-KA-934-012: GVK case-insensitive Kind match (Issue #1051)",
+				[]string{"apps/v1/Deployment"}, "deployment", true),
 		)
 	})
 

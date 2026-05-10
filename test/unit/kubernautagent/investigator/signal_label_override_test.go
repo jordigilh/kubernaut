@@ -463,3 +463,138 @@ var _ = Describe("Issue #1061: logLabelOverrideOrRejection audit logging", func(
 		})
 	})
 })
+
+// Issue #1051: target_resource_api_version label override and isValidAPIVersion tests.
+// These exercise the ApplySignalLabelOverrides consistency guard that clears
+// ResourceAPIVersion when kind is overridden without an explicit api_version,
+// and validate the isValidAPIVersion regex indirectly through the public API.
+var _ = Describe("TP-1051: target_resource_api_version label override and isValidAPIVersion", func() {
+
+	DescribeTable("UT-KA-1051-020: isValidAPIVersion accepts/rejects via ApplySignalLabelOverrides (Issue #1051 / FedRAMP SI-10)",
+		func(apiVersion string, shouldAccept bool) {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "my-app",
+				ResourceAPIVersion: "apps/v1",
+				SignalLabels: map[string]string{
+					"target_resource_kind":        "StatefulSet",
+					"target_resource_api_version": apiVersion,
+				},
+			}
+			result := investigator.ApplySignalLabelOverrides(signal)
+			if shouldAccept {
+				Expect(result.ResourceAPIVersion).To(Equal(apiVersion),
+					"Issue #1051: valid apiVersion %q should be accepted", apiVersion)
+			} else {
+				Expect(result.ResourceAPIVersion).To(BeEmpty(),
+					"Issue #1051: invalid apiVersion %q should be rejected; kind override clears api_version", apiVersion)
+			}
+		},
+		Entry("empty string", "", false),
+		Entry("valid core v1", "v1", true),
+		Entry("valid apps/v1", "apps/v1", true),
+		Entry("valid apps/v1beta1", "apps/v1beta1", true),
+		Entry("valid apps/v2alpha1", "apps/v2alpha1", true),
+		Entry("valid CRD route.openshift.io/v1", "route.openshift.io/v1", true),
+		Entry("valid CRD networking.k8s.io/v1", "networking.k8s.io/v1", true),
+		Entry("valid CRD batch/v1", "batch/v1", true),
+		Entry("valid policy/v1", "policy/v1", true),
+		Entry("invalid: uppercase group", "Apps/v1", false),
+		Entry("invalid: missing v prefix", "apps/1", false),
+		Entry("invalid: plain kind", "Deployment", false),
+		Entry("invalid: trailing slash", "apps/v1/", false),
+		Entry("invalid: double slash", "apps//v1", false),
+		Entry("invalid: spaces", "apps/ v1", false),
+		Entry("invalid: control characters", "apps/v1\x00", false),
+		Entry("boundary: exactly 253 bytes", strings.Repeat("a", 250)+"/v1", true),
+		Entry("invalid: 254 bytes (overlong)", strings.Repeat("a", 251)+"/v1", false),
+	)
+
+	Describe("UT-KA-1051-021: kind override without api_version clears ResourceAPIVersion (consistency guard)", func() {
+		It("should clear ResourceAPIVersion when kind is overridden but api_version is absent (Issue #1051)", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "my-app",
+				ResourceAPIVersion: "apps/v1",
+				SignalLabels: map[string]string{
+					"target_resource_kind": "StatefulSet",
+				},
+			}
+			result := investigator.ApplySignalLabelOverrides(signal)
+			Expect(result.ResourceKind).To(Equal("StatefulSet"),
+				"Issue #1051: kind should be overridden")
+			Expect(result.ResourceAPIVersion).To(BeEmpty(),
+				"Issue #1051: api_version must be cleared when kind is overridden without explicit api_version")
+		})
+	})
+
+	Describe("UT-KA-1051-022: kind override with valid api_version updates both", func() {
+		It("should set both ResourceKind and ResourceAPIVersion when both labels are valid (Issue #1051)", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "my-app",
+				ResourceAPIVersion: "apps/v1",
+				SignalLabels: map[string]string{
+					"target_resource_kind":        "DaemonSet",
+					"target_resource_api_version": "apps/v1",
+				},
+			}
+			result := investigator.ApplySignalLabelOverrides(signal)
+			Expect(result.ResourceKind).To(Equal("DaemonSet"),
+				"Issue #1051: kind should be overridden")
+			Expect(result.ResourceAPIVersion).To(Equal("apps/v1"),
+				"Issue #1051: api_version should be set from label")
+		})
+	})
+
+	Describe("UT-KA-1051-023: invalid api_version with kind override clears api_version", func() {
+		It("should clear ResourceAPIVersion when kind is overridden and api_version is invalid (Issue #1051)", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "my-app",
+				ResourceAPIVersion: "apps/v1",
+				SignalLabels: map[string]string{
+					"target_resource_kind":        "StatefulSet",
+					"target_resource_api_version": "INVALID",
+				},
+			}
+			result := investigator.ApplySignalLabelOverrides(signal)
+			Expect(result.ResourceKind).To(Equal("StatefulSet"),
+				"Issue #1051: kind should be overridden")
+			Expect(result.ResourceAPIVersion).To(BeEmpty(),
+				"Issue #1051: invalid api_version + kind override must clear api_version")
+		})
+	})
+
+	Describe("UT-KA-1051-024: api_version override alone (no kind override) is ignored (SEC-1 guard)", func() {
+		It("should NOT update ResourceAPIVersion when kind label is absent (Issue #1051 / SEC-1)", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "my-app",
+				ResourceAPIVersion: "apps/v1",
+				SignalLabels: map[string]string{
+					"target_resource_api_version": "apps/v1beta1",
+				},
+			}
+			result := investigator.ApplySignalLabelOverrides(signal)
+			Expect(result.ResourceKind).To(Equal("Deployment"),
+				"Issue #1051: kind should remain unchanged")
+			Expect(result.ResourceAPIVersion).To(Equal("apps/v1"),
+				"Issue #1051 / SEC-1: api_version alone must be ignored to prevent inconsistent GVK")
+		})
+	})
+
+	Describe("UT-KA-1051-025: no api_version label and no kind override preserves original", func() {
+		It("should preserve ResourceAPIVersion when neither kind nor api_version labels are set (Issue #1051)", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "my-app",
+				ResourceAPIVersion: "apps/v1",
+				SignalLabels:       map[string]string{},
+			}
+			result := investigator.ApplySignalLabelOverrides(signal)
+			Expect(result.ResourceAPIVersion).To(Equal("apps/v1"),
+				"Issue #1051: api_version should be preserved when no labels override it")
+		})
+	})
+})

@@ -32,8 +32,8 @@ import (
 // BR-WORKFLOW-016: Workflow discovery tools must forward the active signal's
 // context (severity, component, environment, priority) to DataStorage so the
 // catalog is filtered to the incident's actual characteristics, not hardcoded
-// defaults. Issue #779 exposed that hardcoded "critical/deployment/production/P0"
-// was used regardless of the real signal.
+// defaults. Issue #779 exposed hardcoded values; Issue #1051: component uses
+// ComponentGVK() when resource_api_version + resource_kind are set.
 
 var _ = Describe("UT-KA-779: Signal context forwarding to DS tool params", func() {
 
@@ -42,10 +42,11 @@ var _ = Describe("UT-KA-779: Signal context forwarding to DS tool params", func(
 		ctx  = katypes.WithSignalContext(
 			contextBackground(),
 			katypes.SignalContext{
-				Severity:     "high",
-				ResourceKind: "StatefulSet",
-				Environment:  "staging",
-				Priority:     "P1",
+				Severity:           "high",
+				ResourceKind:       "StatefulSet",
+				ResourceAPIVersion: "apps/v1",
+				Environment:        "staging",
+				Priority:           "P1",
 			},
 		)
 	)
@@ -91,8 +92,8 @@ var _ = Describe("UT-KA-779: Signal context forwarding to DS tool params", func(
 
 			Expect(string(fake.listActionsParams.Severity)).To(Equal("high"),
 				"Severity should come from SignalContext, not hardcoded 'critical'")
-			Expect(fake.listActionsParams.Component).To(Equal("statefulset"),
-				"Component should be SignalContext.ResourceKind lowercased, not hardcoded 'deployment'")
+			Expect(fake.listActionsParams.Component).To(Equal("apps/v1/StatefulSet"),
+				"Component should be SignalContext.ComponentGVK() for DS (#1051)")
 			Expect(fake.listActionsParams.Environment).To(Equal("staging"),
 				"Environment should come from SignalContext, not hardcoded 'production'")
 			Expect(string(fake.listActionsParams.Priority)).To(Equal("P1"),
@@ -111,8 +112,8 @@ var _ = Describe("UT-KA-779: Signal context forwarding to DS tool params", func(
 
 			Expect(string(fake.listWorkflowsParams.Severity)).To(Equal("high"),
 				"Severity should come from SignalContext, not hardcoded 'critical'")
-			Expect(fake.listWorkflowsParams.Component).To(Equal("statefulset"),
-				"Component should be SignalContext.ResourceKind lowercased, not hardcoded 'deployment'")
+			Expect(fake.listWorkflowsParams.Component).To(Equal("apps/v1/StatefulSet"),
+				"Component should be SignalContext.ComponentGVK() for DS (#1051)")
 			Expect(fake.listWorkflowsParams.Environment).To(Equal("staging"),
 				"Environment should come from SignalContext, not hardcoded 'production'")
 			Expect(string(fake.listWorkflowsParams.Priority)).To(Equal("P1"),
@@ -135,8 +136,8 @@ var _ = Describe("UT-KA-779: Signal context forwarding to DS tool params", func(
 
 			Expect(string(fake.listActionsParams.Severity)).To(Equal("high"),
 				"Severity must be from signal even with pagination")
-			Expect(fake.listActionsParams.Component).To(Equal("statefulset"),
-				"Component must be from signal even with pagination")
+			Expect(fake.listActionsParams.Component).To(Equal("apps/v1/StatefulSet"),
+				"Component must be ComponentGVK from signal even with pagination")
 			Expect(fake.listActionsParams.Environment).To(Equal("staging"),
 				"Environment must be from signal even with pagination")
 			Expect(string(fake.listActionsParams.Priority)).To(Equal("P1"),
@@ -163,8 +164,8 @@ var _ = Describe("UT-KA-779: Signal context forwarding to DS tool params", func(
 
 			Expect(string(fake.listWorkflowsParams.Severity)).To(Equal("high"),
 				"Severity must be from signal even with pagination")
-			Expect(fake.listWorkflowsParams.Component).To(Equal("statefulset"),
-				"Component must be from signal even with pagination")
+			Expect(fake.listWorkflowsParams.Component).To(Equal("apps/v1/StatefulSet"),
+				"Component must be ComponentGVK from signal even with pagination")
 			Expect(fake.listWorkflowsParams.Environment).To(Equal("staging"),
 				"Environment must be from signal even with pagination")
 			Expect(string(fake.listWorkflowsParams.Priority)).To(Equal("P1"),
@@ -198,6 +199,68 @@ var _ = Describe("UT-KA-779: Signal context forwarding to DS tool params", func(
 				"Execute must fail when SignalContext is absent from context")
 			Expect(err.Error()).To(ContainSubstring("signal context"),
 				"Error message should explain that signal context is required")
+		})
+	})
+})
+
+var _ = Describe("UT-KA-1051: GVK fallback when ResourceAPIVersion is empty", func() {
+
+	var fake *fakeWorkflowDS
+
+	BeforeEach(func() {
+		fake = &fakeWorkflowDS{
+			listActionsResponse: &ogenclient.ActionTypeListResponse{
+				ActionTypes: []ogenclient.ActionTypeEntry{},
+				Pagination:  ogenclient.PaginationMetadata{TotalCount: 0, Offset: 0, Limit: 10},
+			},
+			listWorkflowsResponse: &ogenclient.WorkflowDiscoveryResponse{
+				ActionType: "ScaleReplicas",
+				Workflows:  []ogenclient.WorkflowDiscoveryEntry{},
+				Pagination: ogenclient.PaginationMetadata{TotalCount: 0, Offset: 0, Limit: 10},
+			},
+		}
+	})
+
+	Describe("UT-KA-1051-030: list_available_actions falls back to lowercase kind when ComponentGVK is empty", func() {
+		It("should send lowercase ResourceKind as component when ResourceAPIVersion is empty (Issue #1051)", func() {
+			noAPIVersionCtx := katypes.WithSignalContext(
+				contextBackground(),
+				katypes.SignalContext{
+					Severity:     "high",
+					ResourceKind: "Deployment",
+					Environment:  "staging",
+					Priority:     "P1",
+				},
+			)
+			allTools := custom.NewAllTools(fake)
+			listActions := allTools[0]
+
+			_, err := listActions.Execute(noAPIVersionCtx, json.RawMessage(`{}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(fake.listActionsParams.Component).To(Equal("deployment"),
+				"Issue #1051: fallback must use strings.ToLower(ResourceKind) when ComponentGVK() is empty")
+		})
+	})
+
+	Describe("UT-KA-1051-031: list_workflows falls back to lowercase kind when ComponentGVK is empty", func() {
+		It("should send lowercase ResourceKind as component when ResourceAPIVersion is empty (Issue #1051)", func() {
+			noAPIVersionCtx := katypes.WithSignalContext(
+				contextBackground(),
+				katypes.SignalContext{
+					Severity:     "high",
+					ResourceKind: "StatefulSet",
+					Environment:  "staging",
+					Priority:     "P1",
+				},
+			)
+			allTools := custom.NewAllTools(fake)
+			listWorkflows := allTools[1]
+
+			_, err := listWorkflows.Execute(noAPIVersionCtx,
+				json.RawMessage(`{"action_type":"ScaleReplicas"}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(fake.listWorkflowsParams.Component).To(Equal("statefulset"),
+				"Issue #1051: fallback must use strings.ToLower(ResourceKind) when ComponentGVK() is empty")
 		})
 	})
 })

@@ -71,7 +71,7 @@ var _ = Describe("Target-Workflow Alignment Gate — #934", func() {
 		It("should emit a workflow_target_alignment_gate audit event with failure outcome", func() {
 			v := parser.NewValidator([]string{"wf-pod-only"})
 			v.SetWorkflowMeta("wf-pod-only", parser.WorkflowMeta{
-				Component: []string{"Pod"},
+				Component: []string{"v1/Pod"},
 			})
 
 			result := &katypes.InvestigationResult{
@@ -98,7 +98,7 @@ var _ = Describe("Target-Workflow Alignment Gate — #934", func() {
 		It("should emit a workflow_target_alignment_gate audit event with success outcome", func() {
 			v := parser.NewValidator([]string{"wf-deploy"})
 			v.SetWorkflowMeta("wf-deploy", parser.WorkflowMeta{
-				Component: []string{"Deployment"},
+				Component: []string{"apps/v1/Deployment"},
 			})
 
 			result := &katypes.InvestigationResult{
@@ -121,7 +121,7 @@ var _ = Describe("Target-Workflow Alignment Gate — #934", func() {
 		It("should append a warning to result.Warnings but NOT set HumanReviewNeeded", func() {
 			v := parser.NewValidator([]string{"wf-pod-only"})
 			v.SetWorkflowMeta("wf-pod-only", parser.WorkflowMeta{
-				Component: []string{"Pod"},
+				Component: []string{"v1/Pod"},
 			})
 
 			result := &katypes.InvestigationResult{
@@ -145,7 +145,7 @@ var _ = Describe("Target-Workflow Alignment Gate — #934", func() {
 		It("should not modify result.Warnings when target is aligned with workflow component", func() {
 			v := parser.NewValidator([]string{"wf-deploy"})
 			v.SetWorkflowMeta("wf-deploy", parser.WorkflowMeta{
-				Component: []string{"Deployment"},
+				Component: []string{"apps/v1/Deployment"},
 			})
 
 			result := &katypes.InvestigationResult{

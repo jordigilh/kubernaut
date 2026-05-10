@@ -135,7 +135,7 @@ func newAmbiguousSubscriptionMapper() *meta.DefaultRESTMapper {
 	return mapper
 }
 
-var _ = Describe("TP-1044: apiVersionValidationGate", func() {
+var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 
 	var (
 		logger     logr.Logger
@@ -235,8 +235,8 @@ var _ = Describe("TP-1044: apiVersionValidationGate", func() {
 		})
 	})
 
-	Describe("UT-KA-1044-003: Unambiguous kind bypasses gate", func() {
-		It("should not fire the gate for Deployment (single API group) (BR-AI-1044 AC4)", func() {
+	Describe("UT-KA-1044-003: Unambiguous kind — gate auto-resolves apiVersion (#1051)", func() {
+		It("should auto-resolve apiVersion for Deployment without LLM retry (Issue #1051 / BR-WORKFLOW-004)", func() {
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{
 					"rca_summary":"Deployment needs more replicas",
@@ -260,9 +260,56 @@ var _ = Describe("TP-1044: apiVersionValidationGate", func() {
 				"UT-KA-1044-003: unambiguous kind must not trigger human review")
 			Expect(result.WorkflowID).To(Equal("scale-up"),
 				"UT-KA-1044-003: pipeline should proceed to workflow selection")
-			// Only 2 LLM calls: RCA + workflow (no gate retry)
+			Expect(result.RemediationTarget.APIVersion).To(Equal("apps/v1"),
+				"UT-KA-1051-010 (TP-1051): gate must auto-resolve apiVersion for non-ambiguous Deployment")
 			Expect(mockClient.calls).To(HaveLen(2),
 				"UT-KA-1044-003: gate must not add extra LLM calls for unambiguous kinds")
+		})
+	})
+
+	Describe("UT-KA-1051-011: Core-group kind — gate auto-resolves apiVersion", func() {
+		It("should auto-resolve apiVersion to v1 for Pod without LLM retry (Issue #1051 / BR-WORKFLOW-004)", func() {
+			coreMapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+				{Group: "", Version: "v1"},
+				{Group: "apps", Version: "v1"},
+			})
+			coreMapper.Add(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}, meta.RESTScopeNamespace)
+			coreMapper.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, meta.RESTScopeNamespace)
+
+			// Signal uses Deployment kind so the same-kind gate does NOT fire
+			// when the RCA target is Pod (cross-type target).
+			podSignal := katypes.SignalContext{
+				ResourceKind: "Deployment",
+				ResourceName: "api-server",
+				Name:         "api-server",
+				Namespace:    "default",
+				Severity:     "critical",
+				Message:      "Pod OOMKilled",
+			}
+
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{
+					"rca_summary":"Pod OOMKilled",
+					"confidence":0.90,
+					"remediation_target":{"kind":"Pod","name":"my-pod","namespace":"default"}
+				}`}},
+				gateWfToolResp(`{"workflow_id":"restart-pod","confidence":0.9,"remediation_target":{"kind":"Pod","name":"my-pod","namespace":"default"}}`),
+			}
+
+			resolver := investigator.NewMapperScopeResolver(coreMapper)
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+			})
+
+			result, err := inv.Investigate(context.Background(), podSignal)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RemediationTarget.APIVersion).To(Equal("v1"),
+				"UT-KA-1051-011: core-group Pod must resolve to apiVersion v1 (no group prefix)")
+			Expect(mockClient.calls).To(HaveLen(2),
+				"UT-KA-1051-011: auto-resolve must not add extra LLM calls")
 		})
 	})
 

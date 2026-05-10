@@ -25,6 +25,64 @@ import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
+var _ = Describe("TP-1051: ComponentGVK — fully-qualified apiVersion/Kind for workflow discovery", func() {
+
+	Describe("UT-KA-1051-001: ComponentGVK with named API group", func() {
+		It("should return group/version/Kind for Deployment (Issue #1051 / BR-WORKFLOW-004)", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceAPIVersion: "apps/v1",
+			}
+			Expect(signal.ComponentGVK()).To(Equal("apps/v1/Deployment"))
+		})
+	})
+
+	Describe("UT-KA-1051-002: ComponentGVK with core API group", func() {
+		It("should return version/Kind for Pod (Issue #1051 / BR-WORKFLOW-004)", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+			}
+			Expect(signal.ComponentGVK()).To(Equal("v1/Pod"))
+		})
+	})
+
+	Describe("UT-KA-1051-003: ComponentGVK with CRD group", func() {
+		It("should return full GVK for Route (Issue #1051 / BR-WORKFLOW-004)", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Route",
+				ResourceAPIVersion: "route.openshift.io/v1",
+			}
+			Expect(signal.ComponentGVK()).To(Equal("route.openshift.io/v1/Route"))
+		})
+	})
+
+	Describe("UT-KA-1051-004: ComponentGVK returns empty when ResourceAPIVersion is empty", func() {
+		It("should return empty string to prevent silent mismatch (Issue #1051 / BR-WORKFLOW-004)", func() {
+			signal := katypes.SignalContext{
+				ResourceKind: "Deployment",
+			}
+			Expect(signal.ComponentGVK()).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-KA-1051-005: ComponentGVK returns empty when ResourceKind is empty", func() {
+		It("should return empty string when kind is missing (Issue #1051 / BR-WORKFLOW-004)", func() {
+			signal := katypes.SignalContext{
+				ResourceAPIVersion: "apps/v1",
+			}
+			Expect(signal.ComponentGVK()).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-KA-1051-006: ComponentGVK returns empty when both are empty", func() {
+		It("should return empty string for zero-value signal (Issue #1051 / BR-WORKFLOW-004)", func() {
+			signal := katypes.SignalContext{}
+			Expect(signal.ComponentGVK()).To(BeEmpty())
+		})
+	})
+})
+
 var _ = Describe("Signal Context Propagation — #433 Phase 1A", func() {
 
 	Describe("UT-KA-433-101: WithSignalContext stores and retrieves signal", func() {
