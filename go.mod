@@ -23,7 +23,7 @@ require (
 	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.15.0
 	google.golang.org/adk v1.2.0
-	google.golang.org/genai v1.40.0
+	google.golang.org/genai v1.56.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.35.3
 	k8s.io/apimachinery v0.35.3
