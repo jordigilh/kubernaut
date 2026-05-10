@@ -124,11 +124,10 @@ func registerStubTools(srv *mcp.Server, cfg MCPConfig) { //nolint:gocritic // hu
 	}
 }
 
-// DefaultMCPTools returns the 14 standard MCP tool definitions for the kubernaut agent.
-// Each tool has a minimal "object" input schema; real schemas will be generated
-// from the ADK tool structs in the full bridge (PR6+).
+// DefaultMCPTools returns the 20 MCP tool definitions as stub descriptors.
+// When Bridge is configured, RegisterTools registers real handlers with
+// SDK-derived input schemas; these stubs serve only the fallback/dev path.
 func DefaultMCPTools() []MCPToolDef {
-	// TODO(PR6+): replace with generated schemas from ADK tool structs per SI-10.
 	objectSchema := map[string]any{
 		"type":       "object",
 		"properties": map[string]any{},

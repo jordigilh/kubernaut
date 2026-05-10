@@ -63,6 +63,12 @@ func (c *MCPBridgeConfig) GetMaxConcurrentTools() int64 {
 
 // RegisterTools registers all 20 MCP tools on the server with the real dispatch handlers.
 func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
+	if cfg == nil {
+		panic("RegisterTools: cfg must not be nil")
+	}
+	if cfg.RBACRoles == nil && cfg.Logger != nil {
+		cfg.Logger.Warn("MCP bridge RBAC is disabled (RBACRoles is nil) — all authenticated users can invoke all tools")
+	}
 	sem := semaphore.NewWeighted(cfg.GetMaxConcurrentTools())
 
 	// K8s CRD tools (use DynFactory for impersonated clients)
@@ -254,7 +260,7 @@ func registerTool[In any](srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.
 //
 // Returns a mcp.ToolHandlerFor compatible with the generic mcp.AddTool.
 func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName string, handler func(context.Context, In) (any, error)) mcp.ToolHandlerFor[In, any] {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, input In) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, input In) (toolResult *mcp.CallToolResult, extra any, retErr error) {
 		start := time.Now()
 		resultLabel := "success"
 
@@ -263,6 +269,14 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 				resultLabel = "panic"
 				recordMetrics(cfg, toolName, resultLabel, start)
 				emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "internal error"})
+				if cfg.Logger != nil {
+					cfg.Logger.ErrorContext(ctx, "tool handler panicked",
+						"tool", toolName, "panic", fmt.Sprintf("%v", r), "user", usernameFromCtx(ctx))
+				}
+				toolResult = &mcp.CallToolResult{
+					Content: []mcp.Content{&mcp.TextContent{Text: "internal error"}},
+					IsError: true,
+				}
 			}
 		}()
 
@@ -274,6 +288,10 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 				cfg.Metrics.RBACDeniedTotal.With(prometheus.Labels{"tool": toolName}).Inc()
 			}
 			emitAudit(ctx, cfg, toolName, audit.EventMCPToolDenied, nil)
+			if cfg.Logger != nil {
+				cfg.Logger.WarnContext(ctx, "tool call denied by RBAC",
+					"tool", toolName, "user", usernameFromCtx(ctx))
+			}
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
 				IsError: true,
@@ -284,6 +302,11 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 		if err := sem.Acquire(ctx, 1); err != nil {
 			resultLabel = "throttled"
 			recordMetrics(cfg, toolName, resultLabel, start)
+			emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "throttled"})
+			if cfg.Logger != nil {
+				cfg.Logger.WarnContext(ctx, "tool call throttled",
+					"tool", toolName, "user", usernameFromCtx(ctx))
+			}
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: "server busy — too many concurrent tool calls, please retry"}},
 				IsError: true,
@@ -298,10 +321,18 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 		// Execute handler
 		result, err := handler(toolCtx, input)
 		if err != nil {
-			resultLabel = "error"
+			if toolCtx.Err() != nil {
+				resultLabel = "timeout"
+			} else {
+				resultLabel = "error"
+			}
 			recordMetrics(cfg, toolName, resultLabel, start)
 			redacted := security.RedactError(err)
 			emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": redacted})
+			if cfg.Logger != nil {
+				cfg.Logger.ErrorContext(ctx, "tool call failed",
+					"tool", toolName, "result", resultLabel, "user", usernameFromCtx(ctx), "error", redacted)
+			}
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: redacted}},
 				IsError: true,
@@ -313,6 +344,11 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 		if err != nil {
 			resultLabel = "error"
 			recordMetrics(cfg, toolName, resultLabel, start)
+			emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "marshal failure"})
+			if cfg.Logger != nil {
+				cfg.Logger.ErrorContext(ctx, "tool result marshal failed",
+					"tool", toolName, "user", usernameFromCtx(ctx), "error", err.Error())
+			}
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: "internal error: failed to marshal result"}},
 				IsError: true,
@@ -387,12 +423,4 @@ func usernameFromCtx(ctx context.Context) string {
 		return identity.Username
 	}
 	return "system"
-}
-
-// FilterToolsMiddleware is a no-op placeholder kept for backward compatibility with mcp.go.
-// RBAC is enforced at tools/call time only — tools/list always returns all tools.
-func FilterToolsMiddleware(_ map[string][]string) mcp.Middleware {
-	return func(next mcp.MethodHandler) mcp.MethodHandler {
-		return next
-	}
 }
