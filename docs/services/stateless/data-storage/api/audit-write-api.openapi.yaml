@@ -281,7 +281,7 @@ paths:
                 missingHeader:
                   summary: Missing required header
                   value:
-                    type: https://kubernaut.io/problems/validation-error
+                    type: https://kubernaut.ai/problems/validation-error
                     title: Validation Error
                     status: 400
                     detail: Missing required header X-Event-Type
@@ -290,7 +290,7 @@ paths:
                 invalidEnvelope:
                   summary: Invalid event data envelope
                   value:
-                    type: https://kubernaut.io/problems/validation-error
+                    type: https://kubernaut.ai/problems/validation-error
                     title: Validation Error
                     status: 400
                     detail: "Missing required field: version"
@@ -314,7 +314,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
               example:
-                type: https://kubernaut.io/problems/rate-limit-exceeded
+                type: https://kubernaut.ai/problems/rate-limit-exceeded
                 title: Rate Limit Exceeded
                 status: 429
                 detail: Rate limit of 500 writes/sec exceeded
@@ -630,8 +630,33 @@ components:
         type:
           type: string
           format: uri
-          description: URI reference identifying the problem type
-          example: https://kubernaut.io/problems/validation-error
+          description: |
+            URI reference identifying the problem type.
+            All types follow the pattern https://kubernaut.ai/problems/{error-type}.
+          enum:
+            - "https://kubernaut.ai/problems/validation-error"
+            - "https://kubernaut.ai/problems/not-found"
+            - "https://kubernaut.ai/problems/internal-error"
+            - "https://kubernaut.ai/problems/service-unavailable"
+            - "https://kubernaut.ai/problems/conflict"
+            - "https://kubernaut.ai/problems/database-error"
+            - "https://kubernaut.ai/problems/bundle-not-found"
+            - "https://kubernaut.ai/problems/dependency-validation-error"
+            - "https://kubernaut.ai/problems/batch-size-exceeded"
+            - "https://kubernaut.ai/problems/effectiveness/missing-correlation-id"
+            - "https://kubernaut.ai/problems/effectiveness/query-error"
+            - "https://kubernaut.ai/problems/effectiveness/not-found"
+            - "https://kubernaut.ai/problems/reconstruction/query-failed"
+            - "https://kubernaut.ai/problems/reconstruction/no-parseable-events"
+            - "https://kubernaut.ai/problems/reconstruction/missing-gateway-event"
+            - "https://kubernaut.ai/problems/reconstruction/build-failed"
+            - "https://kubernaut.ai/problems/reconstruction/validation-failed"
+            - "https://kubernaut.ai/problems/reconstruction/incomplete-data"
+            - "https://kubernaut.ai/problems/reconstruction/yaml-marshal-failed"
+            - "https://kubernaut.ai/problems/reconstruction/unexpected-error"
+            - "https://kubernaut.ai/problems/reconstruction/unknown-response"
+            - "https://kubernaut.ai/problems/audit/correlation-not-found"
+          example: https://kubernaut.ai/problems/validation-error
         title:
           type: string
           description: Short human-readable summary

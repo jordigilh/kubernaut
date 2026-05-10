@@ -1157,7 +1157,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
               example:
-                type: "https://kubernaut.io/problems/validation-error"
+                type: "https://kubernaut.ai/problems/validation-error"
                 title: "Validation Error"
                 status: 400
                 detail: "One or more required fields are missing or invalid"
@@ -1174,7 +1174,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
               example:
-                type: "https://kubernaut.io/problems/conflict"
+                type: "https://kubernaut.ai/problems/conflict"
                 title: "Resource Conflict"
                 status: 409
                 detail: "notification_audit already exists with notification_id 'notification-456'"
@@ -1188,7 +1188,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
               example:
-                type: "https://kubernaut.io/problems/service-unavailable"
+                type: "https://kubernaut.ai/problems/service-unavailable"
                 title: "Service Unavailable"
                 status: 500
                 detail: "database and DLQ both unavailable - please retry"
@@ -2296,8 +2296,31 @@ components:
           format: uri
           description: |
             URI reference identifying the problem type.
-            Dereferenceable URI when possible.
-          example: "https://kubernaut.io/problems/validation-error"
+            All types follow the pattern https://kubernaut.ai/problems/{error-type}.
+          enum:
+            - "https://kubernaut.ai/problems/validation-error"
+            - "https://kubernaut.ai/problems/not-found"
+            - "https://kubernaut.ai/problems/internal-error"
+            - "https://kubernaut.ai/problems/service-unavailable"
+            - "https://kubernaut.ai/problems/conflict"
+            - "https://kubernaut.ai/problems/database-error"
+            - "https://kubernaut.ai/problems/bundle-not-found"
+            - "https://kubernaut.ai/problems/dependency-validation-error"
+            - "https://kubernaut.ai/problems/batch-size-exceeded"
+            - "https://kubernaut.ai/problems/effectiveness/missing-correlation-id"
+            - "https://kubernaut.ai/problems/effectiveness/query-error"
+            - "https://kubernaut.ai/problems/effectiveness/not-found"
+            - "https://kubernaut.ai/problems/reconstruction/query-failed"
+            - "https://kubernaut.ai/problems/reconstruction/no-parseable-events"
+            - "https://kubernaut.ai/problems/reconstruction/missing-gateway-event"
+            - "https://kubernaut.ai/problems/reconstruction/build-failed"
+            - "https://kubernaut.ai/problems/reconstruction/validation-failed"
+            - "https://kubernaut.ai/problems/reconstruction/incomplete-data"
+            - "https://kubernaut.ai/problems/reconstruction/yaml-marshal-failed"
+            - "https://kubernaut.ai/problems/reconstruction/unexpected-error"
+            - "https://kubernaut.ai/problems/reconstruction/unknown-response"
+            - "https://kubernaut.ai/problems/audit/correlation-not-found"
+          example: "https://kubernaut.ai/problems/validation-error"
         title:
           type: string
           description: |
