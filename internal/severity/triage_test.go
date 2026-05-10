@@ -184,8 +184,8 @@ var _ = Describe("Triage Orchestrator", func() {
 			}
 			queryCount := 0
 			mockProm := &mockPromClient{
-				alerts:     []prom.Alert{},
-				ruleGroups: []prom.RuleGroup{{Name: "big", Rules: rules}},
+				alerts:      []prom.Alert{},
+				ruleGroups:  []prom.RuleGroup{{Name: "big", Rules: rules}},
 				queryResult: &prom.QueryResult{Samples: []prom.Sample{}},
 				queryHook: func() {
 					queryCount++

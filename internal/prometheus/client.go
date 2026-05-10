@@ -41,6 +41,7 @@ func NewHTTPClient(baseURL string, client *http.Client) Client {
 	}
 }
 
+// GetAlerts queries /api/v1/alerts and returns all alerts.
 func (c *httpClient) GetAlerts(ctx context.Context) ([]Alert, error) {
 	reqURL := fmt.Sprintf("%s/api/v1/alerts", c.baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
@@ -89,6 +90,7 @@ func (c *httpClient) GetAlerts(ctx context.Context) ([]Alert, error) {
 	return alerts, nil
 }
 
+// GetRules queries /api/v1/rules and returns all rule groups.
 func (c *httpClient) GetRules(ctx context.Context) ([]RuleGroup, error) {
 	reqURL := fmt.Sprintf("%s/api/v1/rules", c.baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
@@ -139,6 +141,7 @@ func (c *httpClient) GetRules(ctx context.Context) ([]RuleGroup, error) {
 	return groups, nil
 }
 
+// InstantQuery evaluates a PromQL expression via /api/v1/query.
 func (c *httpClient) InstantQuery(ctx context.Context, query string) (*QueryResult, error) {
 	params := url.Values{}
 	params.Set("query", query)

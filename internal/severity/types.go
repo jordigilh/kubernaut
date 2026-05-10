@@ -7,16 +7,17 @@ import (
 	prom "github.com/jordigilh/kubernaut-apifrontend/internal/prometheus"
 )
 
-// SeveritySource identifies which triage tier determined the severity.
-type SeveritySource string
+// Source identifies which triage tier determined the severity.
+type Source string
 
+// Triage source constants identify which pipeline tier produced the severity.
 const (
-	SourceFiringAlert   SeveritySource = "firing_alert"
-	SourcePendingAlert  SeveritySource = "pending_alert"
-	SourceRuleEval      SeveritySource = "rule_evaluation"
-	SourceLLMRuleInform SeveritySource = "llm_rule_informed"
-	SourceLLMTriage     SeveritySource = "llm_triage"
-	SourceDefault       SeveritySource = "default_fallback"
+	SourceFiringAlert   Source = "firing_alert"
+	SourcePendingAlert  Source = "pending_alert"
+	SourceRuleEval      Source = "rule_evaluation"
+	SourceLLMRuleInform Source = "llm_rule_informed"
+	SourceLLMTriage     Source = "llm_triage"
+	SourceDefault       Source = "default_fallback"
 )
 
 // TriageInput holds the resource context for severity triage.
@@ -31,7 +32,7 @@ type TriageInput struct {
 // TriageResult holds the outcome of the severity triage pipeline.
 type TriageResult struct {
 	Severity  string
-	Source    SeveritySource
+	Source    Source
 	AlertName string
 	RuleName  string
 }
@@ -98,23 +99,23 @@ var sensitiveKeys = map[string]bool{
 func BuildTriagePrompt(input TriageInput, rules interface{}) string {
 	var sb strings.Builder
 	sb.WriteString("Classify the severity of the following Kubernetes incident.\n\n")
-	sb.WriteString(fmt.Sprintf("Resource: %s/%s in namespace %s\n", input.Kind, input.Name, input.Namespace))
-	sb.WriteString(fmt.Sprintf("Description: %s\n\n", input.Description))
+	fmt.Fprintf(&sb, "Resource: %s/%s in namespace %s\n", input.Kind, input.Name, input.Namespace)
+	fmt.Fprintf(&sb, "Description: %s\n\n", input.Description)
 
 	sb.WriteString("Resource labels:\n")
 	for k, v := range input.Labels {
 		if sensitiveKeys[strings.ToLower(k)] {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("  %s: %s\n", k, v))
+		fmt.Fprintf(&sb, "  %s: %s\n", k, v)
 	}
 
 	if ruleSlice, ok := rules.([]prom.Rule); ok && len(ruleSlice) > 0 {
 		sb.WriteString("\nMatching alerting rules (could not evaluate due to insufficient data):\n")
 		for _, r := range ruleSlice {
-			sb.WriteString(fmt.Sprintf("  - %s: %s (configured severity: %s)\n", r.Name, r.Query, r.Labels["severity"]))
+			fmt.Fprintf(&sb, "  - %s: %s (configured severity: %s)\n", r.Name, r.Query, r.Labels["severity"])
 			if summary, exists := r.Annotations["summary"]; exists {
-				sb.WriteString(fmt.Sprintf("    Summary: %s\n", summary))
+				fmt.Fprintf(&sb, "    Summary: %s\n", summary)
 			}
 		}
 	}

@@ -3,7 +3,6 @@ package prometheus_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -308,5 +307,3 @@ func promQueryResponse(resultType string, samples []promSample) []byte {
 	return b
 }
 
-// Verify unused import suppression
-var _ = fmt.Sprintf
