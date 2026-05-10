@@ -4,7 +4,8 @@ import { Rate, Trend } from 'k6/metrics';
 import { SLO, BASE_URL, AUTH_TOKEN } from '../config.js';
 
 const errorRate = new Rate('errors');
-const toolDuration = new Trend('tool_call_duration_ms');
+const toolListDuration = new Trend('tool_list_duration_ms');
+const toolCallDuration = new Trend('tool_call_duration_ms');
 
 export const options = {
   stages: [
@@ -19,13 +20,13 @@ export const options = {
   },
 };
 
-const headers = {
+const baseHeaders = {
   'Content-Type': 'application/json',
   'Authorization': `Bearer ${AUTH_TOKEN}`,
+  'Accept': 'application/json, text/event-stream',
 };
 
-export function setup() {
-  // Initialize MCP session (required by Streamable HTTP protocol)
+function initSession() {
   const initBody = JSON.stringify({
     jsonrpc: '2.0',
     id: 'init-1',
@@ -37,52 +38,65 @@ export function setup() {
     },
   });
 
-  const initRes = http.post(`${BASE_URL}/mcp`, initBody, {
-    headers: { ...headers, Accept: 'application/json, text/event-stream' },
-  });
-  const sessionId = initRes.headers['Mcp-Session-Id'];
+  const initRes = http.post(`${BASE_URL}/mcp`, initBody, { headers: baseHeaders });
+  // k6 normalizes headers to lowercase
+  const sessionId = initRes.headers['mcp-session-id'] || initRes.headers['Mcp-Session-Id'];
 
-  // Send initialized notification
+  if (!sessionId) {
+    console.error('Failed to obtain MCP session ID');
+    return null;
+  }
+
   const notifBody = JSON.stringify({
     jsonrpc: '2.0',
     method: 'notifications/initialized',
   });
   http.post(`${BASE_URL}/mcp`, notifBody, {
-    headers: { ...headers, 'Mcp-Session-Id': sessionId, Accept: 'application/json, text/event-stream' },
+    headers: { ...baseHeaders, 'Mcp-Session-Id': sessionId },
   });
 
+  return sessionId;
+}
+
+export function setup() {
+  const sessionId = initSession();
   return { sessionId };
 }
 
 export default function (data) {
+  // Each VU creates its own session on first iteration to avoid session contention
+  let sessionId = data.sessionId;
+  if (__ITER === 0 && __VU > 1) {
+    sessionId = initSession() || data.sessionId;
+  }
+
   const sessionHeaders = {
-    ...headers,
-    'Mcp-Session-Id': data.sessionId,
-    Accept: 'application/json, text/event-stream',
+    ...baseHeaders,
+    'Mcp-Session-Id': sessionId,
   };
 
   // MCP tools/list
   const listBody = JSON.stringify({
     jsonrpc: '2.0',
-    id: `perf-${__VU}-${__ITER}`,
+    id: `perf-list-${__VU}-${__ITER}`,
     method: 'tools/list',
     params: {},
   });
 
   const listRes = http.post(`${BASE_URL}/mcp`, listBody, { headers: sessionHeaders });
-  check(listRes, {
+  const listOk = check(listRes, {
     'tools/list returns 200': (r) => r.status === 200,
-    'tools/list has result': (r) => {
+    'tools/list has result (no JSON-RPC error)': (r) => {
       try {
         const body = JSON.parse(r.body);
-        return body.result !== undefined;
+        return body.result !== undefined && body.error === undefined;
       } catch (e) {
         return false;
       }
     },
   });
-  toolDuration.add(listRes.timings.duration);
-  errorRate.add(listRes.status >= 500);
+  toolListDuration.add(listRes.timings.duration);
+  errorRate.add(!listOk);
 
   // MCP tools/call (kubernaut_list_remediations)
   const callBody = JSON.stringify({
@@ -96,11 +110,21 @@ export default function (data) {
   });
 
   const callRes = http.post(`${BASE_URL}/mcp`, callBody, { headers: sessionHeaders });
-  check(callRes, {
+  const callOk = check(callRes, {
     'tools/call returns 200': (r) => r.status === 200,
+    'tools/call result is not error': (r) => {
+      try {
+        const body = JSON.parse(r.body);
+        if (body.error) return false;
+        if (body.result && body.result.isError) return false;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    },
   });
-  toolDuration.add(callRes.timings.duration);
-  errorRate.add(callRes.status >= 500);
+  toolCallDuration.add(callRes.timings.duration);
+  errorRate.add(!callOk);
 
   sleep(1);
 }

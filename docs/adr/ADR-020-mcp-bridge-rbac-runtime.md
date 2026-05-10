@@ -27,8 +27,8 @@ always returns all 20 registered tools regardless of the caller's identity.
 - Agents that call tools without permission receive a structured RBAC denial
   error and an `EventMCPToolDenied` audit event.
 - The `af_mcp_rbac_denied_total` Prometheus counter tracks denial rates by tool.
-- No `FilterToolsMiddleware` is applied to the MCP server. The function exists
-  as a no-op for backward compatibility.
+- No `FilterToolsMiddleware` is applied; the function has been removed entirely.
+  `tools/list` always returns all 20 tools regardless of caller identity.
 
 ## Alternatives Considered
 
