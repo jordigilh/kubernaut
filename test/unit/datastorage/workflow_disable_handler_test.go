@@ -59,7 +59,7 @@ var _ = Describe("Workflow Disable Handler (GAP-WF-5)", func() {
 	Describe("GAP-WF-5: reason mandatory on PATCH /disable", func() {
 		It("should return 400 when reason is missing", func() {
 			// Arrange: empty body (no reason)
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := reqWithWorkflowID(http.MethodPatch, "{}", "550e8400-e29b-41d4-a716-446655440000")
 			rr := httptest.NewRecorder()
 
@@ -77,7 +77,7 @@ var _ = Describe("Workflow Disable Handler (GAP-WF-5)", func() {
 
 		It("should return 400 when reason is empty string", func() {
 			// Arrange: reason present but empty
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			body := `{"reason": ""}`
 			req := reqWithWorkflowID(http.MethodPatch, body, "550e8400-e29b-41d4-a716-446655440000")
 			rr := httptest.NewRecorder()
@@ -94,7 +94,7 @@ var _ = Describe("Workflow Disable Handler (GAP-WF-5)", func() {
 
 		It("should return 400 when reason is whitespace only", func() {
 			// Arrange: reason is only spaces
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			body := `{"reason": "   "}`
 			req := reqWithWorkflowID(http.MethodPatch, body, "550e8400-e29b-41d4-a716-446655440000")
 			rr := httptest.NewRecorder()

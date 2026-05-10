@@ -83,7 +83,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 	// ========================================
 	Describe("PATCH /enable", func() {
 		It("should return 400 when reason is missing", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := reqWithWorkflowID(http.MethodPatch, "/enable", "{}", testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -97,7 +97,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 		})
 
 		It("should return 400 when reason is empty string", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := reqWithWorkflowID(http.MethodPatch, "/enable", `{"reason": ""}`, testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -115,7 +115,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 					return nil, nil
 				},
 			}
-			handler := server.NewHandler(nil, server.WithWorkflowLifecycleRepository(mock))
+			handler := server.NewHandler( server.WithWorkflowLifecycleRepository(mock))
 			req := reqWithWorkflowID(http.MethodPatch, "/enable", `{"reason": "Re-enabling for production use"}`, testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -150,7 +150,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 					return nil
 				},
 			}
-			handler := server.NewHandler(nil, server.WithWorkflowLifecycleRepository(mock))
+			handler := server.NewHandler( server.WithWorkflowLifecycleRepository(mock))
 			req := reqWithWorkflowID(http.MethodPatch, "/enable", `{"reason": "Re-enabling for production use"}`, testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -169,7 +169,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 	// ========================================
 	Describe("PATCH /deprecate", func() {
 		It("should return 400 when reason is missing", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := reqWithWorkflowID(http.MethodPatch, "/deprecate", "{}", testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -183,7 +183,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 		})
 
 		It("should return 400 when reason is empty string", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := reqWithWorkflowID(http.MethodPatch, "/deprecate", `{"reason": ""}`, testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -201,7 +201,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 					return nil, nil
 				},
 			}
-			handler := server.NewHandler(nil, server.WithWorkflowLifecycleRepository(mock))
+			handler := server.NewHandler( server.WithWorkflowLifecycleRepository(mock))
 			req := reqWithWorkflowID(http.MethodPatch, "/deprecate", `{"reason": "Superseded by v2"}`, testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -236,7 +236,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 					return nil
 				},
 			}
-			handler := server.NewHandler(nil, server.WithWorkflowLifecycleRepository(mock))
+			handler := server.NewHandler( server.WithWorkflowLifecycleRepository(mock))
 			req := reqWithWorkflowID(http.MethodPatch, "/deprecate", `{"reason": "Superseded by v2"}`, testWorkflowID)
 			rr := httptest.NewRecorder()
 

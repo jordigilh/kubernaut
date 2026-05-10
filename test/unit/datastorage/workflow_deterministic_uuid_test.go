@@ -124,7 +124,7 @@ var _ = Describe("Deterministic UUID Handler Integration (#548)", func() {
 		puller := oci.NewMockImagePuller(deterministicBaseYAML)
 		parser := schema.NewParser()
 		extractor := oci.NewSchemaExtractor(puller, parser)
-		return server.NewHandler(nil,
+		return server.NewHandler(
 			server.WithSchemaExtractor(extractor),
 			server.WithWorkflowContentIntegrityRepository(mockRepo),
 		)

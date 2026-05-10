@@ -75,44 +75,6 @@ func (s *bug674SpyLogSink) hasMessage(substring string) bool {
 var _ = Describe("Issue #674: Latent bug fixes (BR-STORAGE-010, BR-STORAGE-020)", func() {
 
 	// =========================================================================
-	// Bug 1: convertToStandardPlaceholders corrupts SQL with >10 params
-	// =========================================================================
-	Describe("Bug 1: SQL placeholder format (UT-DS-674-001..002)", func() {
-
-		It("UT-DS-674-001: Build with all filters emits native PostgreSQL $N placeholders", func() {
-			b := query.NewBuilder().
-				WithNamespace("ns").
-				WithSignalName("sig").
-				WithSeverity("critical").
-				WithCluster("prod").
-				WithEnvironment("production").
-				WithActionType("restart")
-
-			sql, args, err := b.Build()
-			Expect(err).ToNot(HaveOccurred())
-			Expect(args).To(HaveLen(8)) // 6 filters + LIMIT + OFFSET
-			Expect(sql).To(ContainSubstring("$1"), "Build should return native $N placeholders")
-			Expect(sql).ToNot(ContainSubstring("?"), "Build should not convert to ? placeholders")
-		})
-
-		It("UT-DS-674-002: BuildCount with all filters emits native PostgreSQL $N placeholders", func() {
-			b := query.NewBuilder().
-				WithNamespace("ns").
-				WithSignalName("sig").
-				WithSeverity("critical").
-				WithCluster("prod").
-				WithEnvironment("production").
-				WithActionType("restart")
-
-			sql, args, err := b.BuildCount()
-			Expect(err).ToNot(HaveOccurred())
-			Expect(args).To(HaveLen(6)) // 6 filters, no LIMIT/OFFSET
-			Expect(sql).To(ContainSubstring("$1"), "BuildCount should return native $N placeholders")
-			Expect(sql).ToNot(ContainSubstring("?"), "BuildCount should not convert to ? placeholders")
-		})
-	})
-
-	// =========================================================================
 	// Bug 2: NewValidatorWithRules silently discards custom rules
 	// =========================================================================
 	Describe("Bug 2: Validator respects custom rules (UT-DS-674-005..006)", func() {
@@ -158,45 +120,6 @@ var _ = Describe("Issue #674: Latent bug fixes (BR-STORAGE-010, BR-STORAGE-020)"
 			}
 			err := v.ValidateRemediationAudit(auditRecord)
 			Expect(err).To(HaveOccurred(), "custom ValidPhases should reject 'pending' when only alpha/beta allowed")
-		})
-	})
-
-	// =========================================================================
-	// Bug 3: ActionTrace.Validate() is a no-op
-	// =========================================================================
-	Describe("Bug 3: ActionTrace.Validate enforces struct tags (UT-DS-674-008..010)", func() {
-
-		It("UT-DS-674-008: empty ActionID fails validation", func() {
-			trace := &models.ActionTrace{
-				ActionID:        "",
-				ActionType:      "restart",
-				ActionTimestamp: time.Now(),
-				Status:          "completed",
-			}
-			err := trace.Validate()
-			Expect(err).To(HaveOccurred(), "empty ActionID should fail required validation")
-		})
-
-		It("UT-DS-674-009: empty ActionType fails validation", func() {
-			trace := &models.ActionTrace{
-				ActionID:        "act-001",
-				ActionType:      "",
-				ActionTimestamp: time.Now(),
-				Status:          "completed",
-			}
-			err := trace.Validate()
-			Expect(err).To(HaveOccurred(), "empty ActionType should fail required validation")
-		})
-
-		It("UT-DS-674-010: valid ActionTrace passes validation", func() {
-			trace := &models.ActionTrace{
-				ActionID:        "act-001",
-				ActionType:      "restart",
-				ActionTimestamp: time.Now(),
-				Status:          "completed",
-			}
-			err := trace.Validate()
-			Expect(err).ToNot(HaveOccurred())
 		})
 	})
 

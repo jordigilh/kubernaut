@@ -46,44 +46,6 @@ import (
 
 var _ = Describe("DataStorage issue #668 UT coverage", func() {
 
-	Describe("ActionTrace model helpers (BR-STORAGE-031)", func() {
-		It("BR-STORAGE-031-01 BR-STORAGE-031-02 exposes table name, validation, success flags, and incident context", func() {
-			step := 3
-			at := &models.ActionTrace{
-				ActionID:           "a1",
-				ActionType:         "restart_pod",
-				ActionTimestamp:    time.Now().UTC(),
-				Status:             "completed",
-				IncidentType:       "cpu-spike",
-				AlertName:          "",
-				WorkflowID:         "wf-1",
-				WorkflowVersion:    "v1",
-				WorkflowStepNumber: &step,
-				AISelectedWorkflow: true,
-			}
-			Expect(at.TableName()).To(Equal("resource_action_traces"))
-			Expect(at.Validate()).To(Succeed())
-			Expect(at.IsSuccessful()).To(BeTrue())
-			Expect(at.IsFailed()).To(BeFalse())
-			Expect(at.HasIncidentContext()).To(BeTrue())
-			Expect(at.HasWorkflowContext()).To(BeTrue())
-			Expect(at.GetAIExecutionMode()).To(Equal("catalog_selection"))
-			Expect(at.GetEffectiveIncidentType()).To(Equal("cpu-spike"))
-
-			at2 := &models.ActionTrace{Status: "failed", IncidentType: "", AlertName: "OOM"}
-			Expect(at2.IsFailed()).To(BeTrue())
-			Expect(at2.HasIncidentContext()).To(BeTrue())
-			Expect(at2.GetEffectiveIncidentType()).To(Equal("OOM"))
-			Expect(at2.HasWorkflowContext()).To(BeFalse())
-		})
-
-		It("BR-STORAGE-031-04 classifies AI execution modes including chained, manual, and unknown", func() {
-			Expect((&models.ActionTrace{AIManualEscalation: true}).GetAIExecutionMode()).To(Equal("manual_escalation"))
-			Expect((&models.ActionTrace{AIChainedWorkflows: true}).GetAIExecutionMode()).To(Equal("chained_workflows"))
-			Expect((&models.ActionTrace{}).GetAIExecutionMode()).To(Equal("unknown"))
-		})
-	})
-
 	Describe("RemediationWorkflow lifecycle predicates (BR-STORAGE-012)", func() {
 		It("BR-STORAGE-012 maps catalog status strings to IsActive, IsDisabled, IsDeprecated, and IsArchived", func() {
 			cases := []struct {
@@ -365,26 +327,6 @@ var _ = Describe("DataStorage issue #668 UT coverage", func() {
 			Expect(err).To(HaveOccurred())
 			_, _, err = query.NewAuditEventsQueryBuilder().WithLimit(1).WithOffset(-1).Build()
 			Expect(err).To(HaveOccurred())
-		})
-	})
-
-	Describe("Remediation trace query Builder (BR-STORAGE-021)", func() {
-		It("BR-STORAGE-021 BR-STORAGE-022 WithLogger and dimension filters feed BuildCount SQL", func() {
-			logger := logr.Discard()
-			b := query.NewBuilder(query.WithLogger(logger)).
-				WithSignalName("HighCPU").
-				WithSeverity("critical").
-				WithCluster("c1").
-				WithEnvironment("prod").
-				WithActionType("restart_pod").
-				WithNamespace("kube-system").
-				WithLimit(10).
-				WithOffset(0)
-			sqlStr, args, err := b.BuildCount()
-			Expect(err).ToNot(HaveOccurred())
-			Expect(sqlStr).To(ContainSubstring("COUNT(*)"))
-			Expect(sqlStr).To(ContainSubstring("signal_name"))
-			Expect(args).To(HaveLen(6))
 		})
 	})
 

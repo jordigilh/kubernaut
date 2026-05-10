@@ -197,7 +197,7 @@ var _ = Describe("SanitizeString - P2-1 Regression Tests", func() {
 			result := validator.SanitizeString(maliciousInput)
 
 			// Parameterized query handles this safely:
-			// SQL: "SELECT * FROM resource_action_traces WHERE alert_name = $1"
+			// SQL: "SELECT * FROM audit_events WHERE alert_name = $1"
 			// Args: ["'; DROP TABLE resource_action_traces; --"]
 			// Result: Query searches for alert_name matching the literal string,
 			//         does NOT execute DROP TABLE command

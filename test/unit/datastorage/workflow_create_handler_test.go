@@ -82,7 +82,7 @@ var _ = Describe("Inline Workflow Registration Handler (DD-WORKFLOW-017)", func(
 
 	Describe("UT-WF-017-001: Valid inline workflow registration", func() {
 		It("should accept valid inline schema content and not return 400", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := makeInlineRequest(validInlineRegistrationSchemaYAML)
 			rr := httptest.NewRecorder()
 
@@ -95,7 +95,7 @@ var _ = Describe("Inline Workflow Registration Handler (DD-WORKFLOW-017)", func(
 
 	Describe("UT-WF-017-002: Empty content rejected", func() {
 		It("should return 400 when content is empty", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := makeInlineRequest("")
 			rr := httptest.NewRecorder()
 
@@ -111,7 +111,7 @@ var _ = Describe("Inline Workflow Registration Handler (DD-WORKFLOW-017)", func(
 
 	Describe("UT-WF-017-003: Malformed YAML content returns 400", func() {
 		It("should return 400 when the content is not parseable YAML", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := makeInlineRequest("not: valid: yaml: {{{")
 			rr := httptest.NewRecorder()
 
@@ -134,7 +134,7 @@ metadata:
 spec:
   version: "v0.1.0"
 `
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := makeInlineRequest(invalidYAML)
 			rr := httptest.NewRecorder()
 
@@ -164,7 +164,7 @@ spec:
       type: string
       description: dummy
 `
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := makeInlineRequest(minimalInvalidSchemaYAML)
 			rr := httptest.NewRecorder()
 
@@ -179,7 +179,7 @@ spec:
 
 	Describe("UT-WF-017-006: Request body must be JSON", func() {
 		It("should return 400 for invalid JSON body", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/workflows",
 				bytes.NewReader([]byte("not json")))
 			rr := httptest.NewRecorder()
@@ -192,7 +192,7 @@ spec:
 
 	Describe("UT-WF-017-007: RFC 7807 compliance", func() {
 		It("should return RFC 7807 Problem Details format for all errors", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := makeInlineRequest("not a valid workflow schema")
 			rr := httptest.NewRecorder()
 
@@ -227,7 +227,7 @@ spec:
 					return validTypes[actionType], nil
 				},
 			}
-			handler := server.NewHandler(nil, server.WithActionTypeValidator(validator))
+			handler := server.NewHandler( server.WithActionTypeValidator(validator))
 			req := makeInlineRequest(invalidActionTypeYAML)
 			rr := httptest.NewRecorder()
 
@@ -254,7 +254,7 @@ spec:
 					return validTypes[actionType], nil
 				},
 			}
-			handler := server.NewHandler(nil, server.WithActionTypeValidator(validator))
+			handler := server.NewHandler( server.WithActionTypeValidator(validator))
 			req := makeInlineRequest(validInlineRegistrationSchemaYAML)
 			rr := httptest.NewRecorder()
 
