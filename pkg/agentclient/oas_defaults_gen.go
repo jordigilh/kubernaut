@@ -3,6 +3,14 @@
 package agentclient
 
 // setDefaults set default value of fields.
+func (s *AlignmentVerdict) setDefaults() {
+	{
+		val := bool(false)
+		s.CircuitBreakerActivated.SetTo(val)
+	}
+}
+
+// setDefaults set default value of fields.
 func (s *IncidentRequest) setDefaults() {
 	{
 		val := bool(false)

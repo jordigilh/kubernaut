@@ -94,6 +94,7 @@ _Appears in:_
 | `approvalContext`| _[ApprovalContext](#approvalcontext)_| Rich context for approval notification|
 | `needsHumanReview`| _boolean_| Set by HAPI when AI cannot produce reliable result<br />True if human review required (HAPI decision: RCA incomplete/unreliable)<br /> Triggers NotificationRequest creation in RO<br />BR-496 v2: Set when root_owner missing (rca_incomplete) or validation/confidence issues.|
 | `humanReviewReason`| _string_| Reason why human review needed (when NeedsHumanReview=true)<br /> Maps to HAPI's human_review_reason enum values<br /> alignment_check_failed added for shadow agent alignment verdicts|
+| `alignmentVerdict`| _[AlignmentVerdictStatus](#alignmentverdictstatus)_| Shadow agent alignment verdict from KA (, #1076).<br />When CircuitBreakerActivated=true, the investigation was terminated early<br />and LLM results (RootCauseAnalysis, SelectedWorkflow) may be incomplete<br />or compromised. Users should treat shadow findings as the primary content.|
 | `actionability`| _string_| #388: LLM's assessment of whether the alert warrants action.<br />Empty when not yet assessed (pre-investigation or error paths).<br />"Actionable" when the LLM determines the alert warrants action (default for all processed alerts).<br />"NotActionable" when the LLM determines the alert is benign (e.g., orphaned PVCs).|
 | `investigationId`| _string_| KA investigation ID for correlation|
 | `investigationTime`| _integer_| Investigation duration in seconds|
@@ -215,6 +216,43 @@ _Appears in:_
 | `previouslyExisted`| _boolean_| PreviouslyExisted indicates if this action type was re-enabled after being disabled.|
 | `activeWorkflowCount`| _integer_| ActiveWorkflowCount is the number of active RemediationWorkflows referencing this action type.<br />Best-effort, updated asynchronously by the RW admission webhook handler.|
 | `catalogStatus`| _[CatalogStatus](#catalogstatus)_| CatalogStatus reflects the DS catalog lifecycle state.|
+
+
+### AlignmentFindingStatus
+
+
+AlignmentFindingStatus captures a single suspicious step on the CRD.
+
+_Appears in:_
+- [AlignmentVerdictStatus](#alignmentverdictstatus)
+
+| Field| Type| Description|
+| ---| ---| ---|
+| `stepIndex`| _integer_| StepIndex is the zero-based index of the evaluated step.|
+| `stepKind`| _string_| StepKind is the kind of step (llm_reasoning, tool_result, signal_input).|
+| `tool`| _string_| Tool is the tool name if StepKind is tool_result.|
+| `explanation`| _string_| Explanation is the shadow agent's explanation for flagging this step.|
+
+
+### AlignmentVerdictStatus
+
+
+AlignmentVerdictStatus holds the shadow agent's alignment verdict on the CRD.
+Produced by KA (InvestigatorWrapper), mapped by AA (ResponseProcessor).
+, #1076: When CircuitBreakerActivated=true, primary LLM results
+may be incomplete or compromised; shadow findings are the primary content.
+
+_Appears in:_
+- [AIAnalysisStatus](#aianalysisstatus)
+
+| Field| Type| Description|
+| ---| ---| ---|
+| `result`| _string_| Result is the overall shadow agent verdict: "clean" or "suspicious".|
+| `circuitBreakerActivated`| _boolean_| CircuitBreakerActivated indicates the investigation was terminated early.|
+| `summary`| _string_| Summary is a narrative summary of the shadow agent evaluation.|
+| `flagged`| _integer_| Flagged is the number of steps flagged as suspicious.|
+| `total`| _integer_| Total is the total number of steps evaluated.|
+| `findings`| _[AlignmentFindingStatus](#alignmentfindingstatus) array_| Findings contains per-step suspicious findings.|
 
 
 ### AlternativeApproach
@@ -1581,6 +1619,8 @@ _Appears in:_
 | `subReason`| _string_| SubReason provides granular detail (e.g., "WorkflowNotFound").|
 | `humanReviewReason`| _string_| HumanReviewReason from HAPI when needs_human_review=true .|
 | `rootCauseAnalysis`| _string_| RootCauseAnalysis from AIAnalysis if available.|
+| `alignmentVerdict`| _string_| AlignmentVerdict is the shadow agent's overall verdict (aligned/suspicious).<br /> Present when shadow agent alignment check is enabled.|
+| `circuitBreakerActivated`| _boolean_| CircuitBreakerActivated indicates whether the circuit breaker terminated the investigation early.|
 
 
 ### ReviewSourceType

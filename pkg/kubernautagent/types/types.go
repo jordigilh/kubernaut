@@ -84,6 +84,12 @@ type InvestigationResult struct {
 	// History of validation attempts during self-correction (DD-HAPI-002 v1.2).
 	// Populated by Validator.SelfCorrect when validation fails and retries occur.
 	ValidationAttemptsHistory []ValidationAttemptRecord `json:"validation_attempts_history,omitempty"`
+
+	// AlignmentVerdict holds the shadow agent's alignment check result.
+	// Populated by InvestigatorWrapper for ALL investigations (aligned or suspicious).
+	// BR-AI-601, #1076: When CircuitBreakerActivated=true, the primary LLM results
+	// may be incomplete or compromised; shadow findings are the primary content.
+	AlignmentVerdict *AlignmentVerdictResult `json:"alignment_verdict,omitempty"`
 }
 
 // ValidationAttemptRecord captures a single validation attempt during
@@ -117,6 +123,26 @@ type DueDiligenceReview struct {
 	Proportionality       string `json:"proportionality"`
 	RegressionAwareness   string `json:"regression_awareness"`
 	ConfidenceCalibration string `json:"confidence_calibration"`
+}
+
+// AlignmentVerdictResult holds the shadow agent's overall verdict on an investigation.
+// Produced by InvestigatorWrapper and consumed by KA handler (mapped to ogen IncidentResponse)
+// and AA response processor (mapped to AIAnalysisStatus.AlignmentVerdict).
+type AlignmentVerdictResult struct {
+	Result                  string             `json:"result"`
+	CircuitBreakerActivated bool               `json:"circuit_breaker_activated"`
+	Summary                 string             `json:"summary"`
+	Flagged                 int                `json:"flagged"`
+	Total                   int                `json:"total"`
+	Findings                []AlignmentFinding `json:"findings,omitempty"`
+}
+
+// AlignmentFinding captures a single suspicious step detected by the shadow agent.
+type AlignmentFinding struct {
+	StepIndex   int    `json:"step_index"`
+	StepKind    string `json:"step_kind"`
+	Tool        string `json:"tool,omitempty"`
+	Explanation string `json:"explanation"`
 }
 
 // RemediationTarget identifies the K8s resource to remediate.

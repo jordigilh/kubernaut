@@ -1189,6 +1189,17 @@
             ],
             "title": "Detected Labels",
             "description": "Cluster characteristics detected at runtime by HAPI (ADR-056). Includes: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, failedDetections."
+          },
+          "alignment_verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlignmentVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Shadow agent alignment verdict. Present when alignment check is enabled. Primary content when circuit_breaker_activated=true -- LLM analysis in root_cause_analysis is from a potentially compromised investigation."
           }
         },
         "type": "object",
@@ -1201,6 +1212,68 @@
         ],
         "title": "IncidentResponse",
         "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\nDesign Decision: ADR-055 (LLM-Driven Context Enrichment)\n\nFields added per AIAnalysis team requests:\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY\n- needs_human_review: AI could not produce reliable result (Dec 6, 2025)\n\nADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input."
+      },
+      "AlignmentVerdict": {
+        "type": "object",
+        "required": ["result", "flagged", "total"],
+        "properties": {
+          "result": {
+            "type": "string",
+            "enum": ["aligned", "suspicious"],
+            "description": "Overall shadow agent alignment verdict."
+          },
+          "circuit_breaker_activated": {
+            "type": "boolean",
+            "description": "True if investigation was terminated early due to suspicious content.",
+            "default": false
+          },
+          "summary": {
+            "type": "string",
+            "description": "Narrative summary of shadow agent evaluation."
+          },
+          "flagged": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of steps flagged as suspicious."
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of steps evaluated."
+          },
+          "findings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AlignmentFinding" },
+            "description": "Per-step suspicious findings from shadow agent."
+          }
+        },
+        "title": "AlignmentVerdict",
+        "description": "Shadow agent alignment verdict for an investigation. BR-AI-601, #1076."
+      },
+      "AlignmentFinding": {
+        "type": "object",
+        "required": ["step_index", "step_kind", "explanation"],
+        "properties": {
+          "step_index": {
+            "type": "integer",
+            "description": "Zero-based index of the evaluated step."
+          },
+          "step_kind": {
+            "type": "string",
+            "enum": ["llm_reasoning", "tool_result", "signal_input"],
+            "description": "Kind of step evaluated."
+          },
+          "tool": {
+            "type": "string",
+            "description": "Tool name if step_kind is tool_result."
+          },
+          "explanation": {
+            "type": "string",
+            "description": "Shadow agent explanation for flagging this step (sanitized)."
+          }
+        },
+        "title": "AlignmentFinding",
+        "description": "A single suspicious finding from the shadow agent evaluation."
       },
       "Severity": {
         "type": "string",

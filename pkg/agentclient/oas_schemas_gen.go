@@ -8,6 +8,227 @@ import (
 	"github.com/google/uuid"
 )
 
+// A single suspicious finding from the shadow agent evaluation.
+// Ref: #/components/schemas/AlignmentFinding
+type AlignmentFinding struct {
+	// Zero-based index of the evaluated step.
+	StepIndex int `json:"step_index"`
+	// Kind of step evaluated.
+	StepKind AlignmentFindingStepKind `json:"step_kind"`
+	// Tool name if step_kind is tool_result.
+	Tool OptString `json:"tool"`
+	// Shadow agent explanation for flagging this step (sanitized).
+	Explanation string `json:"explanation"`
+}
+
+// GetStepIndex returns the value of StepIndex.
+func (s *AlignmentFinding) GetStepIndex() int {
+	return s.StepIndex
+}
+
+// GetStepKind returns the value of StepKind.
+func (s *AlignmentFinding) GetStepKind() AlignmentFindingStepKind {
+	return s.StepKind
+}
+
+// GetTool returns the value of Tool.
+func (s *AlignmentFinding) GetTool() OptString {
+	return s.Tool
+}
+
+// GetExplanation returns the value of Explanation.
+func (s *AlignmentFinding) GetExplanation() string {
+	return s.Explanation
+}
+
+// SetStepIndex sets the value of StepIndex.
+func (s *AlignmentFinding) SetStepIndex(val int) {
+	s.StepIndex = val
+}
+
+// SetStepKind sets the value of StepKind.
+func (s *AlignmentFinding) SetStepKind(val AlignmentFindingStepKind) {
+	s.StepKind = val
+}
+
+// SetTool sets the value of Tool.
+func (s *AlignmentFinding) SetTool(val OptString) {
+	s.Tool = val
+}
+
+// SetExplanation sets the value of Explanation.
+func (s *AlignmentFinding) SetExplanation(val string) {
+	s.Explanation = val
+}
+
+// Kind of step evaluated.
+type AlignmentFindingStepKind string
+
+const (
+	AlignmentFindingStepKindLlmReasoning AlignmentFindingStepKind = "llm_reasoning"
+	AlignmentFindingStepKindToolResult   AlignmentFindingStepKind = "tool_result"
+	AlignmentFindingStepKindSignalInput  AlignmentFindingStepKind = "signal_input"
+)
+
+// AllValues returns all AlignmentFindingStepKind values.
+func (AlignmentFindingStepKind) AllValues() []AlignmentFindingStepKind {
+	return []AlignmentFindingStepKind{
+		AlignmentFindingStepKindLlmReasoning,
+		AlignmentFindingStepKindToolResult,
+		AlignmentFindingStepKindSignalInput,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AlignmentFindingStepKind) MarshalText() ([]byte, error) {
+	switch s {
+	case AlignmentFindingStepKindLlmReasoning:
+		return []byte(s), nil
+	case AlignmentFindingStepKindToolResult:
+		return []byte(s), nil
+	case AlignmentFindingStepKindSignalInput:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AlignmentFindingStepKind) UnmarshalText(data []byte) error {
+	switch AlignmentFindingStepKind(data) {
+	case AlignmentFindingStepKindLlmReasoning:
+		*s = AlignmentFindingStepKindLlmReasoning
+		return nil
+	case AlignmentFindingStepKindToolResult:
+		*s = AlignmentFindingStepKindToolResult
+		return nil
+	case AlignmentFindingStepKindSignalInput:
+		*s = AlignmentFindingStepKindSignalInput
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Shadow agent alignment verdict for an investigation. BR-AI-601, #1076.
+// Ref: #/components/schemas/AlignmentVerdict
+type AlignmentVerdict struct {
+	// Overall shadow agent alignment verdict.
+	Result AlignmentVerdictResult `json:"result"`
+	// True if investigation was terminated early due to suspicious content.
+	CircuitBreakerActivated OptBool `json:"circuit_breaker_activated"`
+	// Narrative summary of shadow agent evaluation.
+	Summary OptString `json:"summary"`
+	// Number of steps flagged as suspicious.
+	Flagged int `json:"flagged"`
+	// Total number of steps evaluated.
+	Total int `json:"total"`
+	// Per-step suspicious findings from shadow agent.
+	Findings []AlignmentFinding `json:"findings"`
+}
+
+// GetResult returns the value of Result.
+func (s *AlignmentVerdict) GetResult() AlignmentVerdictResult {
+	return s.Result
+}
+
+// GetCircuitBreakerActivated returns the value of CircuitBreakerActivated.
+func (s *AlignmentVerdict) GetCircuitBreakerActivated() OptBool {
+	return s.CircuitBreakerActivated
+}
+
+// GetSummary returns the value of Summary.
+func (s *AlignmentVerdict) GetSummary() OptString {
+	return s.Summary
+}
+
+// GetFlagged returns the value of Flagged.
+func (s *AlignmentVerdict) GetFlagged() int {
+	return s.Flagged
+}
+
+// GetTotal returns the value of Total.
+func (s *AlignmentVerdict) GetTotal() int {
+	return s.Total
+}
+
+// GetFindings returns the value of Findings.
+func (s *AlignmentVerdict) GetFindings() []AlignmentFinding {
+	return s.Findings
+}
+
+// SetResult sets the value of Result.
+func (s *AlignmentVerdict) SetResult(val AlignmentVerdictResult) {
+	s.Result = val
+}
+
+// SetCircuitBreakerActivated sets the value of CircuitBreakerActivated.
+func (s *AlignmentVerdict) SetCircuitBreakerActivated(val OptBool) {
+	s.CircuitBreakerActivated = val
+}
+
+// SetSummary sets the value of Summary.
+func (s *AlignmentVerdict) SetSummary(val OptString) {
+	s.Summary = val
+}
+
+// SetFlagged sets the value of Flagged.
+func (s *AlignmentVerdict) SetFlagged(val int) {
+	s.Flagged = val
+}
+
+// SetTotal sets the value of Total.
+func (s *AlignmentVerdict) SetTotal(val int) {
+	s.Total = val
+}
+
+// SetFindings sets the value of Findings.
+func (s *AlignmentVerdict) SetFindings(val []AlignmentFinding) {
+	s.Findings = val
+}
+
+// Overall shadow agent alignment verdict.
+type AlignmentVerdictResult string
+
+const (
+	AlignmentVerdictResultAligned    AlignmentVerdictResult = "aligned"
+	AlignmentVerdictResultSuspicious AlignmentVerdictResult = "suspicious"
+)
+
+// AllValues returns all AlignmentVerdictResult values.
+func (AlignmentVerdictResult) AllValues() []AlignmentVerdictResult {
+	return []AlignmentVerdictResult{
+		AlignmentVerdictResultAligned,
+		AlignmentVerdictResultSuspicious,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AlignmentVerdictResult) MarshalText() ([]byte, error) {
+	switch s {
+	case AlignmentVerdictResultAligned:
+		return []byte(s), nil
+	case AlignmentVerdictResultSuspicious:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AlignmentVerdictResult) UnmarshalText(data []byte) error {
+	switch AlignmentVerdictResult(data) {
+	case AlignmentVerdictResultAligned:
+		*s = AlignmentVerdictResultAligned
+		return nil
+	case AlignmentVerdictResultSuspicious:
+		*s = AlignmentVerdictResultSuspicious
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Alternative workflow recommendation for operator context.
 // Design Decision: ADR-045 v1.2 (Alternative Workflows for Audit)
 // IMPORTANT: Alternatives are for CONTEXT, not EXECUTION.
@@ -1240,6 +1461,10 @@ type IncidentResponse struct {
 	// Cluster characteristics detected at runtime by HAPI (ADR-056). Includes: gitOpsManaged,
 	// pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, failedDetections.
 	DetectedLabels OptNilIncidentResponseDetectedLabels `json:"detected_labels"`
+	// Shadow agent alignment verdict. Present when alignment check is enabled. Primary content when
+	// circuit_breaker_activated=true -- LLM analysis in root_cause_analysis is from a potentially
+	// compromised investigation.
+	AlignmentVerdict OptNilAlignmentVerdict `json:"alignment_verdict"`
 }
 
 // GetIncidentID returns the value of IncidentID.
@@ -1307,6 +1532,11 @@ func (s *IncidentResponse) GetDetectedLabels() OptNilIncidentResponseDetectedLab
 	return s.DetectedLabels
 }
 
+// GetAlignmentVerdict returns the value of AlignmentVerdict.
+func (s *IncidentResponse) GetAlignmentVerdict() OptNilAlignmentVerdict {
+	return s.AlignmentVerdict
+}
+
 // SetIncidentID sets the value of IncidentID.
 func (s *IncidentResponse) SetIncidentID(val string) {
 	s.IncidentID = val
@@ -1370,6 +1600,11 @@ func (s *IncidentResponse) SetValidationAttemptsHistory(val []ValidationAttempt)
 // SetDetectedLabels sets the value of DetectedLabels.
 func (s *IncidentResponse) SetDetectedLabels(val OptNilIncidentResponseDetectedLabels) {
 	s.DetectedLabels = val
+}
+
+// SetAlignmentVerdict sets the value of AlignmentVerdict.
+func (s *IncidentResponse) SetAlignmentVerdict(val OptNilAlignmentVerdict) {
+	s.AlignmentVerdict = val
 }
 
 func (*IncidentResponse) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {}
@@ -1473,6 +1708,69 @@ func (o OptBool) Get() (v bool, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptBool) Or(d bool) bool {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilAlignmentVerdict returns new OptNilAlignmentVerdict with value set to v.
+func NewOptNilAlignmentVerdict(v AlignmentVerdict) OptNilAlignmentVerdict {
+	return OptNilAlignmentVerdict{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilAlignmentVerdict is optional nullable AlignmentVerdict.
+type OptNilAlignmentVerdict struct {
+	Value AlignmentVerdict
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilAlignmentVerdict was set.
+func (o OptNilAlignmentVerdict) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilAlignmentVerdict) Reset() {
+	var v AlignmentVerdict
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilAlignmentVerdict) SetTo(v AlignmentVerdict) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilAlignmentVerdict) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilAlignmentVerdict) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v AlignmentVerdict
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilAlignmentVerdict) Get() (v AlignmentVerdict, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilAlignmentVerdict) Or(d AlignmentVerdict) AlignmentVerdict {
 	if v, ok := o.Get(); ok {
 		return v
 	}
