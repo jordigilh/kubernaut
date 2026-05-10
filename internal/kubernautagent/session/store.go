@@ -51,18 +51,40 @@ type Session struct {
 var ErrSessionNotFound = errors.New("session not found")
 
 // Store provides thread-safe session storage with TTL-based cleanup.
+// Terminal sessions (Completed, Failed) are evicted at TTL.
+// Non-terminal sessions (Pending, Running) are evicted at MaxSessionAge
+// as a safety net to prevent unbounded memory growth.
 type Store struct {
-	mu       sync.RWMutex
-	sessions map[string]*Session
-	ttl      time.Duration
+	mu            sync.RWMutex
+	sessions      map[string]*Session
+	ttl           time.Duration
+	maxSessionAge time.Duration
+}
+
+// StoreOption configures optional Store behaviour.
+type StoreOption func(*Store)
+
+// WithMaxSessionAge sets the hard eviction age for non-terminal sessions.
+// Must be >= TTL. Defaults to 2 * TTL if not set.
+func WithMaxSessionAge(d time.Duration) StoreOption {
+	return func(s *Store) { s.maxSessionAge = d }
 }
 
 // NewStore creates a new session store with the given TTL for cleanup.
-func NewStore(ttl time.Duration) *Store {
-	return &Store{
-		sessions: make(map[string]*Session),
-		ttl:      ttl,
+// Non-terminal sessions are evicted at MaxSessionAge (default: 2 * TTL).
+func NewStore(ttl time.Duration, opts ...StoreOption) *Store {
+	s := &Store{
+		sessions:      make(map[string]*Session),
+		ttl:           ttl,
+		maxSessionAge: 2 * ttl,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	if s.maxSessionAge < s.ttl {
+		panic("session.NewStore: MaxSessionAge must be >= TTL")
+	}
+	return s
 }
 
 // Create stores a new session and returns its ID.
@@ -141,17 +163,31 @@ func (s *Store) StartCleanupLoop(ctx context.Context, interval time.Duration) {
 	}()
 }
 
-// Cleanup removes sessions older than the configured TTL.
+// Cleanup removes sessions using two-tier eviction:
+//   - Terminal sessions (Completed, Failed): evicted when older than TTL
+//   - Non-terminal sessions (Pending, Running): evicted when older than MaxSessionAge
+//
+// Deleting from a map during range iteration is safe in Go.
 // Returns the number of sessions removed.
 func (s *Store) Cleanup() int {
-	cutoff := time.Now().Add(-s.ttl)
+	now := time.Now()
+	terminalCutoff := now.Add(-s.ttl)
+	nonTerminalCutoff := now.Add(-s.maxSessionAge)
 	removed := 0
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, sess := range s.sessions {
-		if sess.CreatedAt.Before(cutoff) {
-			delete(s.sessions, id)
-			removed++
+		switch sess.Status {
+		case StatusCompleted, StatusFailed:
+			if sess.CreatedAt.Before(terminalCutoff) {
+				delete(s.sessions, id)
+				removed++
+			}
+		default:
+			if sess.CreatedAt.Before(nonTerminalCutoff) {
+				delete(s.sessions, id)
+				removed++
+			}
 		}
 	}
 	return removed
