@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -70,7 +69,7 @@ func main() {
 	})
 	auditor.Start()
 
-	mcpHandler, err := buildMCPHandler(cfg, metricsReg, rbacRoles, auditor, zapLogger, logger)
+	mcpHandler, err := buildMCPHandler(cfg, metricsReg, rbacRoles, auditor, logger)
 	if err != nil {
 		logger.Error(err, "failed to create MCP handler")
 		os.Exit(1)
@@ -231,7 +230,7 @@ func loadRBACRoles() (map[string][]string, error) {
 	return rf.Roles, nil
 }
 
-func buildMCPHandler(cfg *config.Config, metricsReg *metrics.Registry, rbacRoles map[string][]string, auditor audit.Emitter, zapLogger *zap.Logger, logger logr.Logger) (http.Handler, error) {
+func buildMCPHandler(cfg *config.Config, metricsReg *metrics.Registry, rbacRoles map[string][]string, auditor audit.Emitter, logger logr.Logger) (http.Handler, error) {
 	var dsClient ds.Client
 	dsCfg := ds.OgenClientConfig{
 		BaseURL: cfg.Agent.DSBaseURL,
@@ -243,21 +242,20 @@ func buildMCPHandler(cfg *config.Config, metricsReg *metrics.Registry, rbacRoles
 		logger.Info("DS client unavailable, DS tools will return errors", "error", err)
 	}
 
-	// MCPBridgeConfig.Logger is *slog.Logger — bridge uses slog for internal diagnostics.
-	// Backed by the same zap core for consistent output format.
-	bridgeLogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-	_ = zapLogger // zapLogger used for the main logr logger; bridgeLogger is slog-native
+	kaMCPClient := ka.NewSDKMCPClient(
+		cfg.Agent.KAMCPEndpoint,
+		&http.Client{Transport: &auth.ContextJWTDelegationTransport{}},
+		logger,
+	)
 
 	bridgeCfg := &handler.MCPBridgeConfig{
 		DynFactory:         buildDynFactory(),
 		KAClient:           ka.NewClient(ka.Config{BaseURL: cfg.Agent.KABaseURL}),
-		KAMCPClient:        &ka.MockMCPClient{},
+		KAMCPClient:        kaMCPClient,
 		DSClient:           dsClient,
 		RBACRoles:          rbacRoles,
 		Auditor:            auditor,
-		Logger:             bridgeLogger,
+		Logger:             logger.WithName("bridge"),
 		Metrics:            bridgeMetricsFrom(metricsReg),
 		ToolTimeout:        30 * time.Second,
 		MaxConcurrentTools: 10,
