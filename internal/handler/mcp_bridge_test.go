@@ -343,7 +343,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 		fakeK8s.PrependWatchReactor("remediationrequests", func(_ k8stesting.Action) (bool, watch.Interface, error) {
 			w := watch.NewFake()
 			go func() {
-				time.Sleep(10 * time.Millisecond)
+				defer GinkgoRecover()
 				w.Modify(&unstructured.Unstructured{
 					Object: map[string]any{
 						"apiVersion": "kubernaut.ai/v1alpha1",
@@ -630,7 +630,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 	})
 
 	Context("RBAC enforcement", func() {
-		It("UT-AF-B-026: unauthenticated user is denied", func() {
+		It("UT-AF-B-025: nil user identity (unauthenticated) is denied when RBAC is configured", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
@@ -648,7 +648,32 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			h, err := handler.NewMCPHandler(cfg)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Initialize without user identity
+			// Initialize and call without user identity (nil)
+			sid := mcpInitialize(h, nil)
+			_, body := mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, nil)
+			Expect(isErrorResult(body)).To(BeTrue())
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("authentication required"))
+		})
+
+		It("UT-AF-B-026: unauthorized user (wrong group) is denied", func() {
+			cfg := handler.MCPConfig{
+				ServerName:    "kubernaut-apifrontend",
+				ServerVersion: "v0.1.0-test",
+				Enabled:       true,
+				Bridge: &handler.MCPBridgeConfig{
+					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
+					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+					RBACRoles:          map[string][]string{"sre": {"*"}},
+					Auditor:            auditor,
+					Metrics:            metrics,
+					ToolTimeout:        2 * time.Second,
+					MaxConcurrentTools: 5,
+				},
+			}
+			h, err := handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
 			noUser := &auth.UserIdentity{Username: "anon", Groups: []string{"viewer"}, Issuer: "test"}
 			sid := mcpInitialize(h, noUser)
 
@@ -1257,6 +1282,70 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 		})
 	})
 
+	Context("Panic recovery", func() {
+		It("UT-AF-B-065: handler panic returns isError result with 'internal error'", func() {
+			// This test uses a special bridge where DynFactory panics
+			panicFactory := auth.DynamicClientFactory(func(_ context.Context) (dynamic.Interface, error) {
+				panic("deliberate test panic")
+			})
+			cfg := handler.MCPConfig{
+				ServerName:    "kubernaut-apifrontend",
+				ServerVersion: "v0.1.0-test",
+				Enabled:       true,
+				Bridge: &handler.MCPBridgeConfig{
+					DynFactory:         panicFactory,
+					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+					DSClient:           newFakeDSClient(),
+					RBACRoles:          nil,
+					Auditor:            auditor,
+					Metrics:            metrics,
+					ToolTimeout:        2 * time.Second,
+					MaxConcurrentTools: 10,
+				},
+			}
+			h, err := handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			user := &auth.UserIdentity{Username: "sre", Groups: []string{"sre"}, Issuer: "test"}
+			sid := mcpInitialize(h, user)
+			_, body := mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			Expect(isErrorResult(body)).To(BeTrue())
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("internal error"))
+		})
+
+		It("UT-AF-B-066: panic records metrics with result=panic", func() {
+			panicFactory := auth.DynamicClientFactory(func(_ context.Context) (dynamic.Interface, error) {
+				panic("boom")
+			})
+			localMetrics := newBridgeMetrics()
+			cfg := handler.MCPConfig{
+				ServerName:    "kubernaut-apifrontend",
+				ServerVersion: "v0.1.0-test",
+				Enabled:       true,
+				Bridge: &handler.MCPBridgeConfig{
+					DynFactory:         panicFactory,
+					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+					DSClient:           newFakeDSClient(),
+					RBACRoles:          nil,
+					Auditor:            auditor,
+					Metrics:            localMetrics,
+					ToolTimeout:        2 * time.Second,
+					MaxConcurrentTools: 10,
+				},
+			}
+			h, err := handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			user := &auth.UserIdentity{Username: "sre", Groups: []string{"sre"}, Issuer: "test"}
+			sid := mcpInitialize(h, user)
+			mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+
+			val := getCounterValue(localMetrics.ToolCallsTotal, prometheus.Labels{"tool": "af_list_events", "result": "panic"})
+			Expect(val).To(BeNumerically(">=", 1))
+		})
+	})
+
 	Context("GetToolTimeout and GetMaxConcurrentTools defaults", func() {
 		It("UT-AF-B-062: GetToolTimeout returns default when not set", func() {
 			cfg := &handler.MCPBridgeConfig{}
@@ -1508,7 +1597,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
 			}
 			// fakeAuditor should have recorded all events without panic
-			Expect(len(auditor.events)).To(BeNumerically(">=", 55))
+			Expect(len(auditor.Events())).To(BeNumerically(">=", 55))
 		})
 	})
 
@@ -1525,8 +1614,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 					KAClient:   ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
 					DSClient:   newFakeDSClient(),
 					RBACRoles: map[string][]string{
-						"af_list_events": {"sre"},
-						"af_get_pods":    {"sre"},
+						"sre": {"af_list_events", "af_get_pods"},
 					},
 					Auditor:            auditor,
 					Metrics:            metrics,
