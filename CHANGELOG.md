@@ -7,8 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Shadow agent alignment verdict schema** (#1076) — New `alignment_verdict` field on KA `IncidentResponse` (OpenAPI) and AA `AIAnalysisStatus` (CRD). Carries shadow agent verdict (`result`, `circuit_breaker_activated`, `summary`, `findings`) for ALL investigations. Enables structured reporting of shadow agent findings alongside primary LLM results.
+- **Circuit breaker for shadow agent enforcement** (#1076) — When shadow agent detects suspicious LLM content in enforce mode, the primary investigation is cancelled via `context.WithCancelCause(ErrCircuitBreaker)`. Shadow evaluations continue on parent context. New `alignmentCircuitBreakerTotal` Prometheus counter.
+- **LLMProxy bypass fix** (C-1) — `PinDecorator` on investigator ensures `LLMProxy` is re-applied around pinned `SwappableClient` snapshots, preventing unmonitored LLM traffic.
+- **RO alignment verdict notifications** (#1076) — Manual review notifications now render shadow agent findings prominently before (relegated) primary LLM RCA. Circuit breaker verdicts show `SUSPICIOUS (Circuit Breaker Activated)`. `alignment_check_failed` SubReason escalates to `NotificationPriorityCritical`.
+- **`ReviewContext` CRD fields** — `alignmentVerdict` and `circuitBreakerActivated` fields on NotificationRequest ReviewContext for routing rule support.
+- **Session panic recovery** (#1078) — Investigation goroutines now recover from panics, log stack traces, and transition to `StatusFailed`.
+- **Two-tier session TTL eviction** (#1078) — Terminal sessions (`Completed`/`Failed`) evicted after `ttl`; non-terminal (`Pending`/`Running`) after configurable `maxSessionAge` (default `2×ttl`).
+- **AA investigation timeout** (#1078) — Wall-clock cap (`DefaultMaxInvestigationDuration = 25min`) prevents unbounded investigation sessions. Transitions to `PhaseFailed` with `Reason=TransientError`.
+
 ### Changed
 
+- **Verdict label rename** (#1077) — `VerdictClean` constant changed from `"clean"` to `"aligned"` for OpenAPI/API consistency. **Breaking**: Prometheus `result` label changes from `result="clean"` to `result="aligned"` — update dashboard queries.
 - **Parallelized workflow validation** (#1070) — External validation checks (action-type taxonomy, OCI bundle existence, K8s dependency validation) now run concurrently during workflow registration, reducing registration latency from sum-of-three to max-of-three backend calls. Error priority contract preserved via typed-result-slot pattern (ADR-060).
 - **Concurrency cap on dependency validation** (#1070) — `ValidateDependencies` now limits concurrent K8s API calls to 10 via `errgroup.SetLimit`, preventing API server overload from schemas with many dependencies.
 - **Validation timeout budget** (#1070) — `validateExternalChecks` enforces a 10-second timeout to prevent degraded backends from consuming the full server WriteTimeout.
