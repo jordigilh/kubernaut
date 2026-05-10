@@ -1258,20 +1258,32 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 	})
 
 	Context("Throttle branch (sem.Acquire failure)", func() {
-		It("UT-AF-B-067: cancelled context before Acquire returns throttled response", func() {
+		It("UT-AF-B-067: tool calls exceeding MaxConcurrentTools are throttled", func() {
 			localMetrics := newBridgeMetrics()
 			localAuditor := &fakeAuditor{}
+
+			// Each handler call takes ~200ms; with MaxConcurrentTools=1 and
+			// ToolTimeout=200ms, concurrent callers waiting for the semaphore
+			// will exhaust their timeout budget and get throttled.
+			slowFactory := auth.DynamicClientFactory(func(ctx context.Context) (dynamic.Interface, error) {
+				select {
+				case <-ctx.Done():
+				case <-time.After(200 * time.Millisecond):
+				}
+				return fakeK8s, nil
+			})
+
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
+					DynFactory:         slowFactory,
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
 					RBACRoles:          map[string][]string{"*": {"*"}},
 					Auditor:            localAuditor,
 					Metrics:            localMetrics,
-					ToolTimeout:        2 * time.Second,
+					ToolTimeout:        200 * time.Millisecond,
 					MaxConcurrentTools: 1,
 				},
 			}
@@ -1283,43 +1295,36 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 			user := &auth.UserIdentity{Username: "sre", Groups: []string{"sre"}, Issuer: "test"}
 
-			// Occupy the single semaphore slot with a slow request
-			blockCh := make(chan struct{})
-			originalFactory := cfg.Bridge.DynFactory
-			cfg.Bridge.DynFactory = auth.DynamicClientFactory(func(ctx context.Context) (dynamic.Interface, error) {
-				<-blockCh
-				return originalFactory(ctx)
-			})
-			// Re-create handler with blocking factory
-			h2, err := handler.NewMCPHandler(cfg)
-			Expect(err).NotTo(HaveOccurred())
-			ts2 := httptest.NewServer(h2)
-			defer ts2.Close()
-
-			sid1 := mcpInitializeHTTP(ts2.URL, user)
-
-			// Start a blocking request
+			results := make(chan string, 6)
 			var wg sync.WaitGroup
-			wg.Add(1)
-			go func() {
-				defer GinkgoRecover()
-				defer wg.Done()
-				mcpCallToolHTTP(ts2.URL, sid1, "af_list_events", map[string]any{"namespace": "default"}, user)
-			}()
-
-			// Give the goroutine time to acquire the semaphore
-			time.Sleep(50 * time.Millisecond)
-
-			// Second request with a tight context should get throttled
-			sid2 := mcpInitializeHTTP(ts2.URL, user)
-			body := mcpCallToolHTTP(ts2.URL, sid2, "af_list_events", map[string]any{"namespace": "default"}, user)
-			// The second call will likely be queued (semaphore waits), not throttled,
-			// unless context expires. Either way the blocking call finishes eventually.
-			close(blockCh)
+			for i := 0; i < 6; i++ {
+				wg.Add(1)
+				go func() {
+					defer GinkgoRecover()
+					defer wg.Done()
+					sid := mcpInitializeHTTP(ts.URL, user)
+					body := mcpCallToolHTTP(ts.URL, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+					results <- body
+				}()
+			}
 			wg.Wait()
+			close(results)
 
-			// At minimum, verify the system handled concurrent calls without panic
-			Expect(body).NotTo(BeEmpty())
+			var throttled int
+			for body := range results {
+				if strings.Contains(body, "busy") {
+					throttled++
+				}
+			}
+
+			// With 6 concurrent calls, MaxConcurrentTools=1, and 200ms per
+			// call + 200ms timeout, several calls should be throttled.
+			Expect(throttled).To(BeNumerically(">=", 1),
+				"expected at least one throttled response out of 6 concurrent calls")
+
+			// Verify the throttle metric was incremented
+			metricVal := getCounterValue(localMetrics.ToolCallsTotal, prometheus.Labels{"tool": "af_list_events", "result": "throttled"})
+			Expect(metricVal).To(BeNumerically(">=", 1))
 		})
 	})
 
@@ -1914,8 +1919,13 @@ func mcpInitializeHTTP(baseURL string, user *auth.UserIdentity) string {
 	return sessionID
 }
 
-// mcpCallToolHTTP sends tools/call via a real HTTP server.
+// mcpCallToolHTTP sends tools/call via a real HTTP server using the default client.
 func mcpCallToolHTTP(baseURL, sessionID, toolName string, args map[string]any, user *auth.UserIdentity) string {
+	return mcpCallToolHTTPClient(http.DefaultClient, baseURL, sessionID, toolName, args, user)
+}
+
+// mcpCallToolHTTPClient sends tools/call via a real HTTP server using a custom client.
+func mcpCallToolHTTPClient(client *http.Client, baseURL, sessionID, toolName string, args map[string]any, user *auth.UserIdentity) string {
 	callReq := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      2,
@@ -1934,7 +1944,7 @@ func mcpCallToolHTTP(baseURL, sessionID, toolName string, args map[string]any, u
 		ctx := auth.WithUserIdentity(req.Context(), user)
 		req = req.WithContext(ctx)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return ""
 	}

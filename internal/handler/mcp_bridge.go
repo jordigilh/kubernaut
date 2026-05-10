@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/semaphore"
@@ -32,7 +32,7 @@ type MCPBridgeConfig struct {
 	DSClient           ds.Client
 	RBACRoles          map[string][]string
 	Auditor            audit.Emitter
-	Logger             *slog.Logger
+	Logger             logr.Logger
 	Metrics            *MCPBridgeMetrics
 	ToolTimeout        time.Duration
 	MaxConcurrentTools int64
@@ -68,6 +68,9 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	}
 	if cfg.RBACRoles == nil {
 		panic("RegisterTools: RBACRoles must not be nil — use map[string][]string{\"*\": {\"*\"}} to explicitly allow all")
+	}
+	if cfg.Logger.GetSink() == nil {
+		cfg.Logger = logr.Discard()
 	}
 	sem := semaphore.NewWeighted(cfg.GetMaxConcurrentTools())
 
@@ -269,10 +272,8 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 				resultLabel = "panic"
 				recordMetrics(cfg, toolName, resultLabel, start)
 				emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "internal error"})
-				if cfg.Logger != nil {
-					cfg.Logger.ErrorContext(ctx, "tool handler panicked",
-						"tool", toolName, "panic", fmt.Sprintf("%v", r), "user", usernameFromCtx(ctx))
-				}
+				cfg.Logger.Error(fmt.Errorf("panic: %v", r), "tool handler panicked",
+					"tool", toolName, "user", usernameFromCtx(ctx))
 				toolResult = &mcp.CallToolResult{
 					Content: []mcp.Content{&mcp.TextContent{Text: "internal error"}},
 					IsError: true,
@@ -288,35 +289,31 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 				cfg.Metrics.RBACDeniedTotal.With(prometheus.Labels{"tool": toolName}).Inc()
 			}
 			emitAudit(ctx, cfg, toolName, audit.EventMCPToolDenied, nil)
-			if cfg.Logger != nil {
-				cfg.Logger.WarnContext(ctx, "tool call denied by RBAC",
-					"tool", toolName, "user", usernameFromCtx(ctx))
-			}
+			cfg.Logger.Info("tool call denied by RBAC",
+				"tool", toolName, "user", usernameFromCtx(ctx))
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
 				IsError: true,
 			}, nil, nil
 		}
 
+		// Timeout enforcement — covers semaphore wait + tool execution
+		toolCtx, cancel := context.WithTimeout(ctx, cfg.GetToolTimeout())
+		defer cancel()
+
 		// Semaphore for per-session concurrency limiting
-		if err := sem.Acquire(ctx, 1); err != nil {
+		if err := sem.Acquire(toolCtx, 1); err != nil {
 			resultLabel = "throttled"
 			recordMetrics(cfg, toolName, resultLabel, start)
 			emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "throttled"})
-			if cfg.Logger != nil {
-				cfg.Logger.WarnContext(ctx, "tool call throttled",
-					"tool", toolName, "user", usernameFromCtx(ctx))
-			}
+			cfg.Logger.Info("tool call throttled",
+				"tool", toolName, "user", usernameFromCtx(ctx))
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: "server busy — too many concurrent tool calls, please retry"}},
 				IsError: true,
 			}, nil, nil
 		}
 		defer sem.Release(1)
-
-		// Timeout enforcement
-		toolCtx, cancel := context.WithTimeout(ctx, cfg.GetToolTimeout())
-		defer cancel()
 
 		// Execute handler
 		result, err := handler(toolCtx, input)
@@ -329,10 +326,8 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 			recordMetrics(cfg, toolName, resultLabel, start)
 			redacted := security.RedactError(err)
 			emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": redacted})
-			if cfg.Logger != nil {
-				cfg.Logger.ErrorContext(ctx, "tool call failed",
-					"tool", toolName, "result", resultLabel, "user", usernameFromCtx(ctx), "error", redacted)
-			}
+			cfg.Logger.Error(err, "tool call failed",
+				"tool", toolName, "result", resultLabel, "user", usernameFromCtx(ctx))
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: redacted}},
 				IsError: true,
@@ -345,10 +340,8 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 			resultLabel = "error"
 			recordMetrics(cfg, toolName, resultLabel, start)
 			emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "marshal failure"})
-			if cfg.Logger != nil {
-				cfg.Logger.ErrorContext(ctx, "tool result marshal failed",
-					"tool", toolName, "user", usernameFromCtx(ctx), "error", err.Error())
-			}
+			cfg.Logger.Error(err, "tool result marshal failed",
+				"tool", toolName, "user", usernameFromCtx(ctx))
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: "internal error: failed to marshal result"}},
 				IsError: true,
