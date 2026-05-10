@@ -68,9 +68,6 @@ func NewMCPHandler(cfg MCPConfig) (http.Handler, error) { //nolint:gocritic // h
 
 	if cfg.Bridge != nil {
 		RegisterTools(srv, cfg.Bridge)
-		if cfg.Bridge.RBACRoles != nil {
-			srv.AddReceivingMiddleware(FilterToolsMiddleware(cfg.Bridge.RBACRoles))
-		}
 	} else {
 		registerStubTools(srv, cfg)
 	}
