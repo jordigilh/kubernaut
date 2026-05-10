@@ -12,7 +12,7 @@ var sensitiveKeys = []string{
 }
 
 var (
-	urlPattern  = regexp.MustCompile(`https?://[^\s"']+`)
+	urlPattern  = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s"']+`)
 	pathPattern = regexp.MustCompile(`(/[a-zA-Z0-9._-]+){2,}`)
 
 	// Value patterns for detecting secrets embedded in arbitrary values.

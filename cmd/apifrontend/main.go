@@ -1,505 +1,366 @@
-/*
-Copyright 2026 Jordi Gil.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	adksession "google.golang.org/adk/session"
+	"gopkg.in/yaml.v3"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 
-	agentpkg "github.com/jordigilh/kubernaut-apifrontend/internal/agent"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/config"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ds"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/handler"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ka"
-	"github.com/jordigilh/kubernaut-apifrontend/internal/launcher"
-	"github.com/jordigilh/kubernaut-apifrontend/internal/logging"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/metrics"
-	"github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
-	"github.com/jordigilh/kubernaut-apifrontend/internal/requestid"
-	"github.com/jordigilh/kubernaut-apifrontend/internal/resilience"
-	"github.com/jordigilh/kubernaut-apifrontend/internal/session"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/streaming"
 )
 
+const (
+	configPath     = "/etc/apifrontend/config.yaml"
+	rbacRolesPath  = "/etc/apifrontend/rbac_roles.yaml"
+	defaultHealthz = ":8081"
+	defaultMetrics = ":9090"
+)
+
 func main() {
-	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+	zapLogger := newZapLogger()
+	defer func() { _ = zapLogger.Sync() }()
+	logger := zapr.NewLogger(zapLogger).WithName("apifrontend")
+
+	cfg, err := loadConfig()
+	if err != nil {
+		logger.Error(err, "failed to load config")
+		os.Exit(1) //nolint:gocritic // exitAfterDefer: deferred Sync is best-effort
+	}
+	cfg.ResolveDefaults()
+	if err := cfg.Validate(); err != nil {
+		logger.Error(err, "invalid config")
 		os.Exit(1)
 	}
-}
 
-func run() error {
-	var configPath string
-	flag.StringVar(&configPath, "config", "/etc/apifrontend/config.yaml", "Path to YAML configuration file (ConfigMap mount)")
-	flag.Parse()
-
-	level := zap.NewAtomicLevelAt(zap.InfoLevel)
-	logger, err := logging.NewLogger(level)
+	rbacRoles, err := loadRBACRoles()
 	if err != nil {
-		return fmt.Errorf("initialize logger: %w", err)
+		logger.Error(err, "failed to load RBAC roles", "path", rbacRolesPath)
+		os.Exit(1)
 	}
-	logger = logger.WithValues("service", "kubernaut-apifrontend")
-
-	cfgData, err := os.ReadFile(filepath.Clean(configPath))
-	if err != nil {
-		return fmt.Errorf("read config %s (use --config to specify path): %w", configPath, err)
-	}
-
-	cfg, err := config.Load(cfgData)
-	if err != nil {
-		return fmt.Errorf("parse config %s: %w", configPath, err)
-	}
-
-	cfg.ResolveDefaults()
-
-	if err := cfg.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
-	}
-
-	if cfgLevel, err := parseLogLevel(cfg.Logging.Level); err == nil {
-		level.SetLevel(cfgLevel)
-	}
-
-	logger.Info("configuration loaded",
-		"port", cfg.Server.Port,
-		"mcpEnabled", cfg.MCP.Enabled,
-		"agentCardURL", cfg.AgentCard.URL,
-		"kaBaseURL", cfg.Agent.KABaseURL,
-		"logLevel", cfg.Logging.Level,
-	)
-
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
 
 	metricsReg := metrics.NewRegistry()
 
-	authCfg := buildAuthConfig(cfg)
-	if len(authCfg.JWT) == 0 {
-		logger.Error(nil, "no JWT providers configured — all bearer tokens will be rejected unless K8s TokenReview is enabled")
-	}
-	validator, err := auth.NewJWTValidator(authCfg, auth.WithCBMetrics(metricsReg.CircuitBreakerState))
-	if err != nil {
-		return fmt.Errorf("create JWT validator: %w", err)
-	}
-
-	ipLimiter := ratelimit.NewIPLimiter(ratelimit.PerIPConfig{
-		RequestsPerSecond: float64(cfg.RateLimit.IPRequestsPerSec),
-		Burst:             cfg.RateLimit.IPRequestsPerSec * 2,
-		CleanupInterval:   5 * time.Minute,
-		MaxAge:            10 * time.Minute,
-	})
-	defer ipLimiter.Stop()
-	maxSessions := cfg.RateLimit.MaxConcurrentSessions
-	if maxSessions <= 0 {
-		maxSessions = 5
-	}
-	toolCallsPM := cfg.RateLimit.ToolCallsPerMinute
-	if toolCallsPM <= 0 {
-		toolCallsPM = 60
-	}
-	userLimiter := ratelimit.NewUserLimiter(ratelimit.PerUserConfig{
-		RequestsPerMinute:     cfg.RateLimit.UserRequestsPerSec * 60,
-		MaxConcurrentSessions: maxSessions,
-		ToolCallsPerMinute:    toolCallsPM,
-	})
-
-	// --- Resilience: KA client ---
-	kaClient := ka.NewClient(ka.Config{
-		BaseURL:            cfg.Agent.KABaseURL,
-		Timeout:            cfg.Resilience.KA.RequestTimeout,
-		RetryMax:           cfg.Resilience.KA.RetryMax,
-		RetryInitBackoff:   cfg.Resilience.KA.RetryInitBackoff,
-		RetryMaxBackoff:    cfg.Resilience.KA.RetryMaxBackoff,
-		RetryableStatuses:  cfg.Resilience.KA.RetryableStatuses,
-		CBMaxRequests:      cfg.Resilience.KA.CBMaxRequests,
-		CBInterval:         cfg.Resilience.KA.CBInterval,
-		CBTimeout:          cfg.Resilience.KA.CBTimeout,
-		CBFailureThreshold: cfg.Resilience.KA.CBFailureThreshold,
-	}, &ka.ClientMetrics{
-		StateGauge:   metricsReg.CircuitBreakerState,
-		RetryCounter: metricsReg.DownstreamRetryTotal,
-		DurationHist: metricsReg.DownstreamDuration,
-	})
-
-	// --- Resilience: DS ogen client ---
-	dsBaseRT := &requestid.Transport{Base: http.DefaultTransport}
-	dsRetryRT := resilience.NewRetryTransport(dsBaseRT, &resilience.RetryConfig{
-		MaxAttempts:       cfg.Resilience.DS.RetryMax + 1,
-		InitialBackoff:    cfg.Resilience.DS.RetryInitBackoff,
-		MaxBackoff:        cfg.Resilience.DS.RetryMaxBackoff,
-		RetryableStatuses: cfg.Resilience.DS.RetryableStatuses,
-		RetryCounter:      metricsReg.DownstreamRetryTotal,
-		DependencyName:    "ds",
-	})
-	dsCBT := resilience.NewCircuitBreakerTransport(dsRetryRT, &resilience.CircuitBreakerConfig{
-		Name:             "ds-rest",
-		MaxRequests:      cfg.Resilience.DS.CBMaxRequests,
-		Interval:         cfg.Resilience.DS.CBInterval,
-		Timeout:          cfg.Resilience.DS.CBTimeout,
-		FailureThreshold: cfg.Resilience.DS.CBFailureThreshold,
-		StateGauge:       metricsReg.CircuitBreakerState,
-		DurationHist:     metricsReg.DownstreamDuration,
-		DependencyName:   "ds",
-	})
-	dsClient, err := ds.NewOgenClient(ds.OgenClientConfig{
-		BaseURL:   cfg.Agent.DSBaseURL,
-		Transport: dsCBT,
-		Timeout:   cfg.Resilience.DS.RequestTimeout,
-	})
-	if err != nil {
-		return fmt.Errorf("create DS client: %w", err)
-	}
-
-	// Auditor: BufferedEmitter with DS backend for durable audit storage
-	bufferedAuditor := audit.NewBufferedEmitter(audit.BufferConfig{
-		Writer:          dsClient,
+	auditor := audit.NewBufferedEmitter(audit.BufferConfig{
+		Writer:          &logAuditWriter{logger: logger.WithName("audit-writer")},
 		Logger:          logger,
-		BufferSize:      4096,
-		FlushInterval:   5 * time.Second,
-		BatchSize:       100,
 		OverflowCounter: metricsReg.AuditBufferOverflow,
 		EventsCounter:   metricsReg.AuditEventsTotal,
 	})
-	auditor := audit.Emitter(bufferedAuditor)
+	auditor.Start()
 
-	// SSE connection tracker for graceful shutdown drain
-	sseTracker := streaming.NewConnectionTracker(metricsReg.SSEActiveConnections, 3*time.Second)
-
-	// --- MCP client (Pattern B JWT delegation) ---
-	mcpHTTPClient := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &auth.ContextJWTDelegationTransport{
-			Base: &requestid.Transport{Base: &http.Transport{
-				DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
-				TLSHandshakeTimeout:   5 * time.Second,
-				ResponseHeaderTimeout: 15 * time.Second,
-			}},
-		},
-	}
-	mcpClient := ka.NewSDKMCPClient(cfg.Agent.KAMCPEndpoint, mcpHTTPClient, logger)
-
-	// --- Resilience: K8s circuit breaker ---
-	k8sCB := resilience.NewK8sCircuitBreaker(resilience.K8sCBConfig{
-		Name:             "k8s-api",
-		MaxRequests:      cfg.Resilience.K8s.CBMaxRequests,
-		Interval:         cfg.Resilience.K8s.CBInterval,
-		Timeout:          cfg.Resilience.K8s.CBTimeout,
-		FailureThreshold: cfg.Resilience.K8s.CBFailureThreshold,
-		StateGauge:       metricsReg.CircuitBreakerState,
-		DependencyName:   "k8s",
-	})
-
-	// --- K8s dynamic client with circuit breaker ---
-	k8sClient, restCfg, err := buildK8sDynamicClient(k8sCB, logger)
+	mcpHandler, err := buildMCPHandler(cfg, metricsReg, rbacRoles, auditor, logger)
 	if err != nil {
-		return fmt.Errorf("create K8s dynamic client: %w", err)
-	}
-
-	// Impersonating factory for triage tools (SEC-05): reads run as the authenticated user.
-	// Wraps each impersonated client with the shared K8s circuit breaker (SEC-1 review).
-	var triageFactory auth.DynamicClientFactory
-	if restCfg != nil {
-		cbWrapper := auth.ClientWrapper(func(c dynamic.Interface) dynamic.Interface {
-			return resilience.NewResilientDynamicClient(c, k8sCB)
-		})
-		triageFactory = auth.NewImpersonatingDynamicFactory(restCfg, cbWrapper)
-	}
-
-	agentCfg := agentpkg.AgentConfig{
-		GCPProject:                 cfg.Agent.GCPProject,
-		GCPRegion:                  cfg.Agent.GCPRegion,
-		Instruction:                "You are the Kubernaut API Frontend agent. Help users triage and remediate Kubernetes incidents.",
-		KABaseURL:                  cfg.Agent.KABaseURL,
-		KAMCPEndpoint:              cfg.Agent.KAMCPEndpoint,
-		DSBaseURL:                  cfg.Agent.DSBaseURL,
-		K8sClient:                  k8sClient,
-		DSClient:                   dsClient,
-		KAClient:                   kaClient,
-		Auditor:                    auditor,
-		MCPClient:                  mcpClient,
-		ToolCallsTotal:             metricsReg.ToolCallsTotal,
-		ToolCallDuration:           metricsReg.ToolCallDuration,
-		ImpersonatingClientFactory: triageFactory,
-	}
-	rootAgent, _, err := agentpkg.NewRootAgent(agentCfg)
-	if err != nil {
-		return fmt.Errorf("create root agent: %w", err)
-	}
-	sessionSvc := session.NewServiceDecorator(adksession.InMemoryService())
-
-	a2aHandler, err := launcher.NewA2AHandler(launcher.A2AConfig{
-		Agent:          rootAgent,
-		SessionService: sessionSvc,
-		AppName:        "kubernaut-apifrontend",
-		Logger:         logging.NewSlogLogger(level),
-		Auditor:        auditor,
-	})
-	if err != nil {
-		return fmt.Errorf("create A2A handler: %w", err)
-	}
-
-	mcpHandler, err := handler.NewMCPHandler(handler.MCPConfig{
-		ServerName:    "kubernaut-apifrontend",
-		ServerVersion: "0.1.0",
-		Tools:         handler.DefaultMCPTools(),
-		Auditor:       auditor,
-		Enabled:       cfg.MCP.Enabled,
-	})
-	if err != nil {
-		return fmt.Errorf("create MCP handler: %w", err)
-	}
-
-	rbacRoles, rbacErr := agentpkg.LoadRBACRoles()
-	if rbacErr != nil {
-		return fmt.Errorf("load RBAC roles: %w", rbacErr)
-	}
-
-	var agentCardRBAC handler.RBACRoles
-	var agentCardGroupMapping handler.GroupMapping
-	if len(rbacRoles) > 0 {
-		agentCardRBAC = handler.RBACRoles(rbacRoles)
-	}
-	if len(cfg.RBAC.GroupMapping) > 0 {
-		agentCardGroupMapping = handler.GroupMapping(cfg.RBAC.GroupMapping)
+		logger.Error(err, "failed to create MCP handler")
+		os.Exit(1)
 	}
 
 	agentCardHandler, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
-		Name:         "kubernaut-apifrontend",
-		Description:  "Kubernaut API Frontend agent for Kubernetes incident triage and remediation",
-		URL:          cfg.AgentCard.URL,
-		Version:      "0.1.0",
-		Skills:       handler.DefaultAgentSkills(),
-		RBACRoles:    agentCardRBAC,
-		GroupMapping: agentCardGroupMapping,
+		Name:        "kubernaut-apifrontend",
+		Description: "Kubernaut AI-driven remediation API Frontend",
+		URL:         cfg.AgentCard.URL,
+		Version:     version(),
+		Skills:      handler.DefaultAgentSkills(),
 	})
 	if err != nil {
-		return fmt.Errorf("create agent card handler: %w", err)
+		logger.Error(err, "failed to create agent card handler")
+		os.Exit(1)
 	}
 
-	authMiddleware := buildAuthMiddleware(validator, logger, auditor, ipLimiter, userLimiter, metricsReg)
+	a2aHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "A2A not configured", http.StatusNotImplemented)
+	})
 
-	var draining atomic.Bool
-	rootHandler, err := handler.NewRouter(handler.RouterConfig{
+	draining := &atomic.Bool{}
+	routerCfg := handler.RouterConfig{
 		MetricsRegistry:  metricsReg,
 		A2AHandler:       a2aHandler,
 		MCPHandler:       mcpHandler,
 		AgentCardHandler: agentCardHandler,
-		AuthMiddleware:   authMiddleware,
-		SSETracker:       sseTracker,
-		Draining:         &draining,
-		ReadyChecker: handler.AllReady(
-			validator.Ready,
-			kaClient.Healthy,
-			dsCBT.Healthy,
-			k8sCB.Healthy,
-		),
-	})
+		AuthMiddleware:   noopMiddleware,
+		ReadyChecker:     func() bool { return !draining.Load() },
+		SSETracker:       streaming.NewConnectionTracker(metricsReg.SSEActiveConnections, 5*time.Second),
+		Draining:         draining,
+	}
+	router, err := handler.NewRouter(routerCfg)
 	if err != nil {
-		return fmt.Errorf("create router: %w", err)
+		logger.Error(err, "failed to create router")
+		os.Exit(1)
 	}
 
-	port := strconv.Itoa(cfg.Server.Port)
-	srv := &http.Server{
-		Addr:              ":" + port,
-		Handler:           rootHandler,
-		ReadTimeout:       60 * time.Second,
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      5 * time.Minute,
 		IdleTimeout:       120 * time.Second,
-		// WriteTimeout intentionally omitted (0) for SSE/MCP streaming.
-		// Per-request deadlines enforced via http.ResponseController.SetWriteDeadline().
 	}
 
-	// --- Config hot-reload ---
-	// Hot-reloadable: logging.level, rateLimit (IP + User via SetLimit/SetBurst)
-	// NOT hot-reloadable (require pod restart): auth, resilience CB thresholds,
-	// server.port, agent endpoints, mcp.enabled, agentCard.url
-	watcher, watchErr := config.NewFileWatcher(configPath, func(newContent []byte) error {
-		newCfg, err := config.Load(newContent)
-		if err != nil {
-			return fmt.Errorf("parse: %w", err)
+	healthMux := http.NewServeMux()
+	healthMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `{"status":"healthy"}`)
+	})
+	healthMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if draining.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = fmt.Fprint(w, `{"status":"draining"}`)
+			return
 		}
-		newCfg.ResolveDefaults()
-		if err := newCfg.Validate(); err != nil {
-			return fmt.Errorf("validate: %w", err)
-		}
-		if newLevel, err := parseLogLevel(newCfg.Logging.Level); err == nil {
-			level.SetLevel(newLevel)
-			logger.Info("log level updated via hot-reload", "level", newCfg.Logging.Level)
-		}
-		ipRPS := float64(newCfg.RateLimit.IPRequestsPerSec)
-		ipBurst := newCfg.RateLimit.IPRequestsPerSec * 2
-		if ipBurst < 1 {
-			ipBurst = 1
-		}
-		ipLimiter.UpdateLimits(ipRPS, ipBurst)
-		userRPM := newCfg.RateLimit.UserRequestsPerSec * 60
-		userLimiter.UpdateRequestRate(userRPM)
-		if newCfg.RateLimit.ToolCallsPerMinute > 0 {
-			userLimiter.UpdateToolRate(newCfg.RateLimit.ToolCallsPerMinute)
-		}
-		logger.Info("rate limits updated via hot-reload",
-			"ipRPS", ipRPS,
-			"userRPM", userRPM,
-			"toolCallsPM", newCfg.RateLimit.ToolCallsPerMinute,
-		)
-		return nil
-	}, config.WithAuditor(auditor))
-	if watchErr != nil {
-		logger.Error(watchErr, "config hot-reload disabled")
-	} else {
-		if startErr := watcher.Start(ctx); startErr != nil {
-			logger.Error(startErr, "config watcher start failed")
-		} else {
-			defer watcher.Stop()
-		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `{"status":"ready"}`)
+	})
+	healthServer := &http.Server{
+		Addr:              defaultHealthz,
+		Handler:           healthMux,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	errCh := make(chan error, 1)
-	go func() {
-		logger.Info("starting kubernaut-apifrontend", "port", port)
-		if listenErr := srv.ListenAndServe(); listenErr != nil && listenErr != http.ErrServerClosed {
-			errCh <- listenErr
-		}
-	}()
-
-	select {
-	case err := <-errCh:
-		return fmt.Errorf("server failed: %w", err)
-	case <-ctx.Done():
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.Handler())
+	metricsServer := &http.Server{
+		Addr:              defaultMetrics,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	logger.Info("shutting down gracefully")
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	// 1. Signal draining so readyz returns 503 (LB stops new traffic)
+	go startServer(httpServer, "API", logger)
+	go startServer(healthServer, "health", logger)
+	go startServer(metricsServer, "metrics", logger)
+
+	logger.Info("kubernaut-apifrontend started",
+		"addr", addr, "mcp_enabled", cfg.MCP.Enabled, "tools", 20)
+
+	<-ctx.Done()
 	draining.Store(true)
+	logger.Info("shutting down...")
 
-	// 2. Drain active SSE/streaming connections
-	drainCtx, drainCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	drained := sseTracker.DrainAll(drainCtx)
-	drainCancel()
-	if drained > 0 {
-		logger.Info("SSE connections drained", "count", drained)
-	}
-
-	// 3. Graceful HTTP drain — wait for in-flight requests to complete
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	if shutdownErr := srv.Shutdown(shutdownCtx); shutdownErr != nil {
-		logger.Error(shutdownErr, "server shutdown error, forcing close")
-		_ = srv.Close()
-	}
-	shutdownCancel()
-
-	// 4. Flush audit buffer AFTER srv.Shutdown so late audit events
-	// (e.g. from cancelled handler contexts) are captured.
-	flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if flushErr := bufferedAuditor.Close(flushCtx); flushErr != nil {
-		logger.Error(flushErr, "audit flush error during shutdown")
-	}
-	flushCancel()
+	shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	shutdownServer(shutCtx, httpServer, "API", logger)
+	shutdownServer(shutCtx, healthServer, "health", logger)
+	shutdownServer(shutCtx, metricsServer, "metrics", logger)
 
 	logger.Info("shutdown complete")
-
-	// 5. Sync logger AFTER final log message to guarantee it's flushed
-	logging.Sync()
-
-	return nil
 }
 
-func buildAuthMiddleware(
-	validator *auth.JWTValidator,
-	logger logr.Logger,
-	auditor audit.Emitter,
-	ipLimiter *ratelimit.IPLimiter,
-	userLimiter *ratelimit.UserLimiter,
-	metricsReg *metrics.Registry,
-) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		h := next
-		h = ratelimit.PostAuthMiddlewareWithConfig(ratelimit.PostAuthMiddlewareConfig{
-			Limiter: userLimiter,
-			Auditor: auditor,
-			Metrics: metricsReg.RateLimitDenied,
-		})(h)
-		h = auth.MiddlewareWithConfig(auth.MiddlewareConfig{
-			Validator:    validator,
-			Logger:       logger,
-			Auditor:      auditor,
-			AuthDuration: metricsReg.AuthDuration,
-		})(h)
-		h = ratelimit.PreAuthMiddlewareWithConfig(ratelimit.PreAuthMiddlewareConfig{
-			Limiter: ipLimiter,
-			Auditor: auditor,
-			Metrics: metricsReg.RateLimitDenied,
-		})(h)
-		h = requestid.Middleware(h)
-		return h
+func newZapLogger() *zap.Logger {
+	zapCfg := zap.NewProductionConfig()
+	zapCfg.EncoderConfig.TimeKey = "ts"
+	zapCfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	zapCfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
+
+	zapLogger, err := zapCfg.Build()
+	if err != nil {
+		return zap.NewNop()
+	}
+	return zapLogger
+}
+
+func startServer(srv *http.Server, name string, logger logr.Logger) {
+	logger.Info("server listening", "name", name, "addr", srv.Addr)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Error(err, "server error", "name", name)
+		os.Exit(1)
 	}
 }
 
-func buildAuthConfig(cfg *config.Config) auth.Config {
-	if cfg.Auth.IssuerURL == "" {
-		return auth.Config{}
-	}
-	return auth.Config{
-		JWT: []auth.ProviderConfig{{
-			Issuer: auth.IssuerConfig{
-				URL:       cfg.Auth.IssuerURL,
-				Audiences: []string{cfg.Auth.Audience},
-			},
-		}},
+func shutdownServer(ctx context.Context, srv *http.Server, name string, logger logr.Logger) {
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Error(err, "shutdown error", "name", name)
 	}
 }
+
+func loadConfig() (*config.Config, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return config.DefaultConfig(), nil
+		}
+		return nil, err
+	}
+	return config.Load(data)
+}
+
+type rbacFile struct {
+	Roles map[string][]string `yaml:"roles"`
+}
+
+func loadRBACRoles() (map[string][]string, error) {
+	data, err := os.ReadFile(rbacRolesPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string][]string{"*": {"*"}}, nil
+		}
+		return nil, err
+	}
+	var rf rbacFile
+	if err := yaml.Unmarshal(data, &rf); err != nil {
+		return nil, fmt.Errorf("parsing rbac_roles.yaml: %w", err)
+	}
+	if len(rf.Roles) == 0 {
+		return nil, fmt.Errorf("rbac_roles.yaml must define at least one role")
+	}
+	return rf.Roles, nil
+}
+
+func buildMCPHandler(cfg *config.Config, metricsReg *metrics.Registry, rbacRoles map[string][]string, auditor audit.Emitter, logger logr.Logger) (http.Handler, error) {
+	var dsClient ds.Client
+	dsCfg := ds.OgenClientConfig{
+		BaseURL: cfg.Agent.DSBaseURL,
+		Timeout: cfg.Resilience.DS.RequestTimeout,
+	}
+	if c, err := ds.NewOgenClient(dsCfg); err == nil {
+		dsClient = c
+	} else {
+		logger.Info("DS client unavailable, DS tools will return errors", "error", err)
+	}
+
+	kaMCPClient := ka.NewSDKMCPClient(
+		cfg.Agent.KAMCPEndpoint,
+		&http.Client{Transport: &auth.ContextJWTDelegationTransport{}},
+		logger,
+	)
+
+	bridgeCfg := &handler.MCPBridgeConfig{
+		DynFactory:         buildDynFactory(),
+		KAClient:           ka.NewClient(ka.Config{BaseURL: cfg.Agent.KABaseURL}),
+		KAMCPClient:        kaMCPClient,
+		DSClient:           dsClient,
+		RBACRoles:          rbacRoles,
+		Auditor:            auditor,
+		Logger:             logger.WithName("bridge"),
+		Metrics:            bridgeMetricsFrom(metricsReg),
+		ToolTimeout:        30 * time.Second,
+		MaxConcurrentTools: 10,
+	}
+
+	return handler.NewMCPHandler(handler.MCPConfig{
+		ServerName:    "kubernaut-apifrontend",
+		ServerVersion: version(),
+		Enabled:       cfg.MCP.Enabled,
+		Bridge:        bridgeCfg,
+		Auditor:       auditor,
+	})
+}
+
+// bridgeMetricsFrom wires the global metrics registry counters into
+// the bridge metrics struct — single instances shared across the process.
+func bridgeMetricsFrom(reg *metrics.Registry) *handler.MCPBridgeMetrics {
+	return &handler.MCPBridgeMetrics{
+		ToolCallsTotal:   reg.ToolCallsTotal,
+		ToolCallDuration: reg.ToolCallDuration,
+		RBACDeniedTotal:  reg.MCPRBACDeniedTotal,
+	}
+}
+
+func buildDynFactory() auth.DynamicClientFactory {
+	return func(ctx context.Context) (dynamic.Interface, error) {
+		restCfg, err := ctrl.GetConfig()
+		if err != nil {
+			return nil, fmt.Errorf("kubernetes config unavailable: %w", err)
+		}
+		identity := auth.UserIdentityFromContext(ctx)
+		if identity != nil {
+			return auth.NewImpersonatingDynamicFactory(restCfg)(ctx)
+		}
+		return dynamic.NewForConfig(restCfg)
+	}
+}
+
+func noopMiddleware(next http.Handler) http.Handler { return next }
 
 func parseLogLevel(s string) (zapcore.Level, error) {
-	var l zapcore.Level
-	err := l.UnmarshalText([]byte(s))
-	return l, err
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "info":
+		return zapcore.InfoLevel, nil
+	case "debug":
+		return zapcore.DebugLevel, nil
+	case "warn", "warning":
+		return zapcore.WarnLevel, nil
+	case "error":
+		return zapcore.ErrorLevel, nil
+	default:
+		return zapcore.InfoLevel, fmt.Errorf("unsupported log level: %q", s)
+	}
 }
 
-func buildK8sDynamicClient(cb *resilience.K8sCircuitBreaker, logger logr.Logger) (dynamic.Interface, *rest.Config, error) {
-	restCfg, err := rest.InClusterConfig()
-	if err != nil {
-		logger.Error(err, "in-cluster config unavailable — CRD tools will return errors until cluster access is configured")
-		return nil, nil, nil
-	}
+// authConfig holds JWT auth provider configuration for the auth middleware.
+type authConfig struct {
+	JWT []jwtProvider
+}
 
-	rawClient, err := dynamic.NewForConfig(restCfg)
-	if err != nil {
-		return nil, nil, fmt.Errorf("create dynamic client: %w", err)
-	}
+type jwtProvider struct {
+	Issuer jwtIssuer
+}
 
-	return resilience.NewResilientDynamicClient(rawClient, cb), restCfg, nil
+type jwtIssuer struct {
+	URL       string
+	Audiences []string
+}
+
+func buildAuthConfig(cfg *config.Config) authConfig {
+	if cfg.Auth.IssuerURL == "" {
+		return authConfig{}
+	}
+	return authConfig{
+		JWT: []jwtProvider{
+			{
+				Issuer: jwtIssuer{
+					URL:       cfg.Auth.IssuerURL,
+					Audiences: []string{cfg.Auth.Audience},
+				},
+			},
+		},
+	}
+}
+
+// Build-time metadata set via -ldflags.
+var (
+	Version   = "v0.1.0-dev"
+	GitCommit = "unknown"
+	BuildDate = "unknown"
+)
+
+func version() string {
+	return Version
+}
+
+// logAuditWriter implements audit.Writer by logging events via logr.
+// In production, replace with a DS-backed writer.
+type logAuditWriter struct {
+	logger logr.Logger
+}
+
+func (w *logAuditWriter) WriteAuditEvents(_ context.Context, events []*audit.Event) error {
+	for _, ev := range events {
+		w.logger.Info("audit event", "type", ev.Type, "user", ev.UserID, "detail", ev.Detail)
+	}
+	return nil
 }

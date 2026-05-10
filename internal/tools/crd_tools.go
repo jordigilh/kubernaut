@@ -208,8 +208,8 @@ func HandleSubmitSignal(ctx context.Context, client dynamic.Interface, args Subm
 	if err := validate.Namespace(args.Namespace); err != nil {
 		return SubmitSignalResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
-	if args.Kind == "" {
-		return SubmitSignalResult{}, fmt.Errorf("%w: kind must not be empty", ErrInvalidInput)
+	if err := validate.Kind(args.Kind); err != nil {
+		return SubmitSignalResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 	if err := validate.ResourceName(args.Name); err != nil {
 		return SubmitSignalResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)

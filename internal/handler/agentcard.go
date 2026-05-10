@@ -201,7 +201,7 @@ func filterSkills(index map[string]AgentSkill, allowed map[string]bool) []AgentS
 	return result
 }
 
-// DefaultAgentSkills returns the 14 agent skills corresponding to the tools.
+// DefaultAgentSkills returns the 20 agent skills corresponding to the MCP tools.
 func DefaultAgentSkills() []AgentSkill {
 	skills := make([]AgentSkill, len(mcpToolRegistry))
 	for i, t := range mcpToolRegistry {

@@ -5,10 +5,13 @@ package validate
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/validation"
 )
+
+var kindRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
 
 // Namespace validates that ns is a valid Kubernetes namespace (RFC 1123 DNS label).
 func Namespace(ns string) error {
@@ -28,6 +31,20 @@ func ResourceName(name string) error {
 	}
 	if errs := validation.IsDNS1123Subdomain(name); len(errs) > 0 {
 		return fmt.Errorf("invalid resource name %q: %s", name, strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// Kind validates that k is a valid Kubernetes resource kind (PascalCase identifier, ASCII alphanumeric only).
+func Kind(k string) error {
+	if k == "" {
+		return fmt.Errorf("kind must not be empty")
+	}
+	if len(k) > 63 {
+		return fmt.Errorf("kind %q exceeds max length 63", k)
+	}
+	if !kindRE.MatchString(k) {
+		return fmt.Errorf("invalid kind %q: must start with letter and contain only ASCII alphanumeric characters", k)
 	}
 	return nil
 }

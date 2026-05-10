@@ -116,19 +116,49 @@ spec:
     - name: apifrontend.tools
       rules:
         - alert: ApifrontendToolLatencyHigh
-          expr: histogram_quantile(0.99, rate(af_tool_call_duration_seconds_bucket{job="apifrontend"}[5m])) > 5
+          expr: histogram_quantile(0.99, sum(rate(af_tool_call_duration_seconds_bucket{job="apifrontend"}[5m])) by (le)) > 5
           for: 5m
           labels:
             severity: warning
           annotations:
             summary: "API Frontend tool call P99 latency > 5s"
             description: "99th percentile tool call duration exceeds 5 seconds. Investigate slow downstream dependencies."
-            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-007.md"
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-009.md"
+
+        - alert: ApifrontendMCPRBACDenialSpike
+          expr: sum(rate(af_mcp_rbac_denied_total{job="apifrontend"}[5m])) > 1
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "MCP RBAC denials elevated (>1/s for 3m)"
+            description: "Sustained RBAC denials may indicate misconfigured roles, credential issues, or unauthorized access attempts."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-009.md"
+
+        - alert: ApifrontendToolErrorRate
+          expr: sum(rate(af_tool_calls_total{job="apifrontend",result=~"error|timeout|panic"}[5m])) / sum(rate(af_tool_calls_total{job="apifrontend"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "MCP tool error rate > 5%"
+            description: "More than 5% of MCP tool calls are failing (errors, timeouts, or panics). Investigate downstream services."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-009.md"
+
+        - alert: ApifrontendToolThrottling
+          expr: sum(rate(af_tool_calls_total{job="apifrontend",result="throttled"}[5m])) > 0.5
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "MCP tool calls being throttled"
+            description: "Tool concurrency limit is saturated. Consider increasing MaxConcurrentTools or investigate slow handlers."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-009.md"
 
     - name: apifrontend.dependencies
       rules:
         - alert: ApifrontendDependencyLatencyHigh
-          expr: histogram_quantile(0.95, rate(af_downstream_request_duration_seconds_bucket{job="apifrontend"}[5m])) > 2
+          expr: histogram_quantile(0.95, sum(rate(af_downstream_request_duration_seconds_bucket{job="apifrontend"}[5m])) by (le)) > 2
           for: 5m
           labels:
             severity: warning

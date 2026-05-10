@@ -8,7 +8,12 @@ bin/
 # Test coverage
 cover.out
 cover-integration.out
+cover-bridge.out
 *.coverprofile
+coverage.html
+
+# Test binaries
+*.test
 
 # IDE
 .idea/
@@ -22,5 +27,6 @@ Thumbs.db
 
 # Build
 dist/
-apifrontend
+/apifrontend
 *.out
+sbom.cdx.json

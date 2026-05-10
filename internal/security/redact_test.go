@@ -84,10 +84,19 @@ var _ = Describe("RedactError", func() {
 		Expect(security.RedactError(nil)).To(BeEmpty())
 	})
 
-	It("strips URLs from error messages", func() {
+	It("strips HTTP URLs from error messages", func() {
 		err := errors.New("connection to https://internal.svc:8443/api/v1/secrets failed")
 		result := security.RedactError(err)
 		Expect(result).NotTo(ContainSubstring("https://"))
+		Expect(result).To(ContainSubstring("[URL_REDACTED]"))
+	})
+
+	It("strips non-HTTP URL schemes (postgres, redis, amqp)", func() {
+		err := errors.New("dial tcp postgres://admin:secret@db.prod.local:5432/kubernaut failed; also redis://cache.internal:6379/0 is down")
+		result := security.RedactError(err)
+		Expect(result).NotTo(ContainSubstring("postgres://"))
+		Expect(result).NotTo(ContainSubstring("redis://"))
+		Expect(result).NotTo(ContainSubstring("secret"))
 		Expect(result).To(ContainSubstring("[URL_REDACTED]"))
 	})
 

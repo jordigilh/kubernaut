@@ -40,6 +40,9 @@ const (
 	EventA2ATaskCompleted EventType = "a2a.task_completed"
 	EventA2ATaskFailed    EventType = "a2a.task_failed"
 	EventMCPToolInvoked   EventType = "mcp.tool_invoked"
+	EventMCPToolDenied    EventType = "mcp.tool_denied"
+	EventMCPToolFailed    EventType = "mcp.tool_failed"
+	EventMCPSessionInit   EventType = "mcp.session_init"
 
 	EventConfigReloaded EventType = "config.reloaded"
 	EventConfigRejected EventType = "config.rejected"
