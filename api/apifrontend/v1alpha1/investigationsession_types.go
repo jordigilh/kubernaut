@@ -153,6 +153,3 @@ type InvestigationSessionList struct {
 	Items           []InvestigationSession `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&InvestigationSession{}, &InvestigationSessionList{})
-}
