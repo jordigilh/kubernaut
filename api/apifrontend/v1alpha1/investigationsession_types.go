@@ -152,4 +152,3 @@ type InvestigationSessionList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []InvestigationSession `json:"items"`
 }
-
