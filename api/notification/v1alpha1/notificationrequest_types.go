@@ -185,6 +185,10 @@ func (c *NotificationContext) FlattenToMap() map[string]string {
 		setIfNonEmpty(m, "subReason", c.Review.SubReason)
 		setIfNonEmpty(m, "humanReviewReason", c.Review.HumanReviewReason)
 		setIfNonEmpty(m, "rootCauseAnalysis", c.Review.RootCauseAnalysis)
+		setIfNonEmpty(m, "alignmentVerdict", c.Review.AlignmentVerdict)
+		if c.Review.CircuitBreakerActivated {
+			m["circuitBreakerActivated"] = "true"
+		}
 	}
 	if c.Execution != nil {
 		setIfNonEmpty(m, "retryCount", c.Execution.RetryCount)

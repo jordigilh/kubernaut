@@ -357,6 +357,60 @@ var _ = Describe("Issue #453 Phase B: Metadata Decomposition", func() {
 		})
 	})
 
+	// =====================================================
+	// #1076: AlignmentVerdict on ReviewContext
+	// =====================================================
+
+	Context("UT-NOT-1076-001: FlattenToMap includes alignment routing keys", func() {
+		It("should return alignmentVerdict and circuitBreakerActivated when set", func() {
+			ctx := &notificationv1.NotificationContext{
+				Lineage: &notificationv1.LineageContext{
+					RemediationRequest: "rr-alignment-001",
+				},
+				Review: &notificationv1.ReviewContext{
+					Reason:                  "alignment_check_failed",
+					AlignmentVerdict:        "suspicious",
+					CircuitBreakerActivated: true,
+				},
+			}
+			result := ctx.FlattenToMap()
+			Expect(result).To(HaveKeyWithValue("alignmentVerdict", "suspicious"))
+			Expect(result).To(HaveKeyWithValue("circuitBreakerActivated", "true"))
+			Expect(result).To(HaveKeyWithValue("reason", "alignment_check_failed"))
+		})
+	})
+
+	Context("UT-NOT-1076-002: FlattenToMap omits alignment keys when not set", func() {
+		It("should NOT contain alignment keys when verdict is empty and CB is false", func() {
+			ctx := &notificationv1.NotificationContext{
+				Lineage: &notificationv1.LineageContext{
+					RemediationRequest: "rr-no-alignment",
+				},
+				Review: &notificationv1.ReviewContext{
+					Reason: "LowConfidence",
+				},
+			}
+			result := ctx.FlattenToMap()
+			Expect(result).NotTo(HaveKey("alignmentVerdict"))
+			Expect(result).NotTo(HaveKey("circuitBreakerActivated"))
+		})
+	})
+
+	Context("UT-NOT-1076-003: FlattenToMap alignment with clean verdict", func() {
+		It("should include alignmentVerdict but NOT circuitBreakerActivated for clean verdict", func() {
+			ctx := &notificationv1.NotificationContext{
+				Review: &notificationv1.ReviewContext{
+					Reason:                  "WorkflowResolutionFailed",
+					AlignmentVerdict:        "aligned",
+					CircuitBreakerActivated: false,
+				},
+			}
+			result := ctx.FlattenToMap()
+			Expect(result).To(HaveKeyWithValue("alignmentVerdict", "aligned"))
+			Expect(result).NotTo(HaveKey("circuitBreakerActivated"))
+		})
+	})
+
 	Context("UT-NOT-453B-009: Redundant key elimination", func() {
 		It("should NOT contain severity or source keys in FlattenToMap output", func() {
 			ctx := &notificationv1.NotificationContext{

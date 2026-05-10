@@ -115,7 +115,10 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 
 	correlationID := signalCorrelationID(signal)
 
-	observerOpts := []ObserverOption{WithCorrelationID(correlationID)}
+	observerOpts := []ObserverOption{
+		WithCorrelationID(correlationID),
+		WithObserverLogger(w.logger),
+	}
 
 	// Circuit breaker: in enforce mode, create a cancellable investigation context.
 	// When the shadow detects suspicious content, the onSuspicious callback cancels

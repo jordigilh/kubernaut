@@ -19,10 +19,13 @@ package alignment
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/go-logr/logr"
 )
 
 type observerContextKey struct{}
@@ -55,6 +58,7 @@ const MaxObservationContentLen = 4096
 type Observer struct {
 	evaluator      *Evaluator
 	correlationID  string
+	logger         logr.Logger
 	mu             sync.Mutex
 	observations   []Observation
 	wg             sync.WaitGroup
@@ -94,9 +98,15 @@ func WithEvalContext(ctx context.Context) ObserverOption {
 // WithOnSuspicious registers a callback invoked (at most once) when any
 // evaluation returns Suspicious=true. Used by the circuit breaker to cancel
 // the investigation context. The callback is guarded by sync.Once and runs
-// inside the existing recover() block, so panics are caught.
+// inside a recover() block that logs panics with stack traces.
 func WithOnSuspicious(fn func()) ObserverOption {
 	return func(o *Observer) { o.onSuspicious = fn }
+}
+
+// WithObserverLogger sets the logger used by the Observer for panic recovery
+// and diagnostic logging.
+func WithObserverLogger(l logr.Logger) ObserverOption {
+	return func(o *Observer) { o.logger = l }
 }
 
 // NewObserver creates an Observer backed by the given evaluator.
@@ -174,7 +184,15 @@ func (o *Observer) SubmitAsync(ctx context.Context, step Step) {
 
 		if obs.Suspicious && o.onSuspicious != nil {
 			o.suspiciousOnce.Do(func() {
-				defer func() { recover() }()
+				defer func() {
+					if r := recover(); r != nil {
+						o.logger.Error(
+							fmt.Errorf("onSuspicious callback panic: %v", r),
+							"panic in circuit breaker callback",
+							"stack", string(debug.Stack()),
+						)
+					}
+				}()
 				o.onSuspicious()
 			})
 		}
