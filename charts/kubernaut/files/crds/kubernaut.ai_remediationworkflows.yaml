@@ -162,7 +162,9 @@ spec:
                   for discovery
                 properties:
                   component:
-                    description: Component is the Kubernetes resource type(s)
+                    description: 'Component is the Kubernetes resource GVK(s) in
+                      apiVersion/Kind format (e.g. apps/v1/Deployment, v1/Pod).
+                      Use "*" as wildcard for all resource types.'
                     items:
                       type: string
                     minItems: 1

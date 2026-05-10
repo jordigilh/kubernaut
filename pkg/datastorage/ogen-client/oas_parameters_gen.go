@@ -1308,7 +1308,8 @@ type GetWorkflowByIDParams struct {
 	WorkflowID uuid.UUID
 	// Security gate: signal severity level.
 	Severity OptGetWorkflowByIDSeverity `json:",omitempty,omitzero"`
-	// Security gate: Kubernetes resource type.
+	// Security gate: Kubernetes resource GVK (apiVersion/Kind). Format: "group/version/Kind" (e.g.
+	// "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod"). Issue #1051.
 	Component OptString `json:",omitempty,omitzero"`
 	// Security gate: target environment.
 	Environment OptString `json:",omitempty,omitzero"`
@@ -1767,7 +1768,9 @@ func decodeGetWorkflowByIDParams(args [1]string, argsEscaped bool, r *http.Reque
 type ListAvailableActionsParams struct {
 	// Signal severity level.
 	Severity ListAvailableActionsSeverity
-	// Kubernetes resource type (pod, deployment, node, etc.).
+	// Kubernetes resource GVK (apiVersion/Kind). Format: "group/version/Kind" for named groups (e.g.
+	// "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod"). Wildcard "*" matches all
+	// components. Issue #1051.
 	Component string
 	// Target environment (production, staging, etc.).
 	Environment string
@@ -2272,7 +2275,10 @@ type ListWorkflowsParams struct {
 	Status      OptListWorkflowsStatus `json:",omitempty,omitzero"`
 	Environment OptString              `json:",omitempty,omitzero"`
 	Priority    OptString              `json:",omitempty,omitzero"`
-	Component   OptString              `json:",omitempty,omitzero"`
+	// Kubernetes resource GVK filter (apiVersion/Kind). Format: "group/version/Kind" (e.g.
+	// "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod"). Wildcard "*" matches all
+	// components. Issue #1051.
+	Component OptString `json:",omitempty,omitzero"`
 	// Filter by workflow name (exact match for test idempotency).
 	WorkflowName OptString `json:",omitempty,omitzero"`
 	Limit        OptInt    `json:",omitempty,omitzero"`
@@ -2694,7 +2700,8 @@ type ListWorkflowsByActionTypeParams struct {
 	ActionType string
 	// Signal severity level.
 	Severity ListWorkflowsByActionTypeSeverity
-	// Kubernetes resource type.
+	// Kubernetes resource GVK (apiVersion/Kind). Format: "group/version/Kind" for named groups (e.g.
+	// "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod"). Issue #1051.
 	Component string
 	// Target environment.
 	Environment string

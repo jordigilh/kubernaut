@@ -15978,8 +15978,8 @@ type LivenessCheckOK struct{}
 type MandatoryLabels struct {
 	// Severity level(s) this workflow is designed for. Always an array. Use '*' to match any severity.
 	Severity []MandatoryLabelsSeverityItem `json:"severity"`
-	// Kubernetes resource type(s) this workflow targets (e.g., pod, deployment, node). Issue #790: now
-	// an array like severity/environment.
+	// Kubernetes resource GVK(s) this workflow targets in apiVersion/Kind format (e.g.
+	// apps/v1/Deployment, v1/Pod). Wildcard '*' matches all. Issues #790, #1051.
 	Component []string `json:"component"`
 	// Target environments (workflow can declare multiple, '*' matches all).
 	Environment []MandatoryLabelsEnvironmentItem `json:"environment"`
@@ -28429,7 +28429,7 @@ func (s *WorkflowResultAuditLabels) init() WorkflowResultAuditLabels {
 type WorkflowSearchFilters struct {
 	// Severity level (mandatory: critical, high, medium, low).
 	Severity WorkflowSearchFiltersSeverity `json:"severity"`
-	// Component type (mandatory: pod, node, deployment, etc.).
+	// Kubernetes resource GVK (apiVersion/Kind, e.g. apps/v1/Deployment, v1/Pod). Issue #1051.
 	Component string `json:"component"`
 	// Environment filter (mandatory, single value from Signal Processing).
 	Environment string `json:"environment"`
