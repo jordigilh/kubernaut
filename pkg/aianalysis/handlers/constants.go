@@ -72,6 +72,11 @@ const (
 	// A constant interval is simpler, predictable, and sufficient for async LLM investigations.
 	// Configurable via WithSessionPollInterval option or --session-poll-interval flag.
 	DefaultSessionPollInterval = 15 * time.Second
+
+	// DefaultMaxInvestigationDuration is the wall-clock cap for an investigation session.
+	// #1078: If a session exceeds this duration, the handler transitions to PhaseFailed
+	// with Reason=TransientError to prevent unbounded resource consumption.
+	DefaultMaxInvestigationDuration = 25 * time.Minute
 )
 
 
