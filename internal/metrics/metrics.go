@@ -47,6 +47,7 @@ type Registry struct {
 	AuthDuration           *prometheus.HistogramVec
 	AuditEventsTotal       *prometheus.CounterVec
 	SessionTTLActionsTotal *prometheus.CounterVec
+	MCPRBACDeniedTotal     *prometheus.CounterVec
 	SSEActiveConnections   prometheus.Gauge
 	AuditBufferOverflow    prometheus.Counter
 }
@@ -126,6 +127,12 @@ func NewRegistry() *Registry {
 		}, []string{"action"}),
 	}
 
+	r.MCPRBACDeniedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "af",
+		Name:      "mcp_rbac_denied_total",
+		Help:      "Total MCP tool calls denied by RBAC policy.",
+	}, []string{"tool"})
+
 	r.SSEActiveConnections = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "af",
 		Name:      "sse_active_connections",
@@ -150,6 +157,7 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.AuthDuration)
 	reg.MustRegister(r.AuditEventsTotal)
 	reg.MustRegister(r.SessionTTLActionsTotal)
+	reg.MustRegister(r.MCPRBACDeniedTotal)
 	reg.MustRegister(r.SSEActiveConnections)
 	reg.MustRegister(r.AuditBufferOverflow)
 

@@ -42,6 +42,10 @@ test-unit: fmt vet
 test-integration:
 	go test ./... -tags=integration -race -coverprofile cover-integration.out
 
+.PHONY: test-bridge
+test-bridge: fmt vet ## Run MCP bridge tests (pass GINKGO_LABEL="tier1" to filter)
+	$(GINKGO) -v --race $(if $(GINKGO_LABEL),--label-filter="$(GINKGO_LABEL) && bridge",--label-filter="bridge") --coverpkg=$(COVERPKGS) --coverprofile=cover-bridge.out ./internal/handler/...
+
 .PHONY: test-all
 test-all: test-unit test-integration
 

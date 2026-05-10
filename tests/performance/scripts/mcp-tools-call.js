@@ -24,7 +24,43 @@ const headers = {
   'Authorization': `Bearer ${AUTH_TOKEN}`,
 };
 
-export default function () {
+export function setup() {
+  // Initialize MCP session (required by Streamable HTTP protocol)
+  const initBody = JSON.stringify({
+    jsonrpc: '2.0',
+    id: 'init-1',
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-03-26',
+      capabilities: {},
+      clientInfo: { name: 'k6-perf', version: '1.0' },
+    },
+  });
+
+  const initRes = http.post(`${BASE_URL}/mcp`, initBody, {
+    headers: { ...headers, Accept: 'application/json, text/event-stream' },
+  });
+  const sessionId = initRes.headers['Mcp-Session-Id'];
+
+  // Send initialized notification
+  const notifBody = JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'notifications/initialized',
+  });
+  http.post(`${BASE_URL}/mcp`, notifBody, {
+    headers: { ...headers, 'Mcp-Session-Id': sessionId, Accept: 'application/json, text/event-stream' },
+  });
+
+  return { sessionId };
+}
+
+export default function (data) {
+  const sessionHeaders = {
+    ...headers,
+    'Mcp-Session-Id': data.sessionId,
+    Accept: 'application/json, text/event-stream',
+  };
+
   // MCP tools/list
   const listBody = JSON.stringify({
     jsonrpc: '2.0',
@@ -33,7 +69,7 @@ export default function () {
     params: {},
   });
 
-  const listRes = http.post(`${BASE_URL}/mcp`, listBody, { headers });
+  const listRes = http.post(`${BASE_URL}/mcp`, listBody, { headers: sessionHeaders });
   check(listRes, {
     'tools/list returns 200': (r) => r.status === 200,
     'tools/list has result': (r) => {
@@ -48,18 +84,18 @@ export default function () {
   toolDuration.add(listRes.timings.duration);
   errorRate.add(listRes.status >= 500);
 
-  // MCP tools/call (af_list_active_remediations)
+  // MCP tools/call (kubernaut_list_remediations)
   const callBody = JSON.stringify({
     jsonrpc: '2.0',
     id: `perf-call-${__VU}-${__ITER}`,
     method: 'tools/call',
     params: {
-      name: 'af_list_active_remediations',
-      arguments: {},
+      name: 'kubernaut_list_remediations',
+      arguments: { namespace: 'default' },
     },
   });
 
-  const callRes = http.post(`${BASE_URL}/mcp`, callBody, { headers });
+  const callRes = http.post(`${BASE_URL}/mcp`, callBody, { headers: sessionHeaders });
   check(callRes, {
     'tools/call returns 200': (r) => r.status === 200,
   });
