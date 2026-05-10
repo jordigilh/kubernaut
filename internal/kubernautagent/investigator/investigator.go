@@ -330,6 +330,17 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			deletedResourceWarning(signalKind, signalName, signalNS))
 	}
 
+	// #1051: propagate RCA-resolved apiVersion to workflowSignal so
+	// ComponentGVK() returns the correct GVK for DS catalog queries.
+	// When APIVersion is empty but the RCA changed the target kind,
+	// clear any stale ResourceAPIVersion to prevent an invalid GVK
+	// combination (old apiVersion + new kind).
+	if rcaResult.RemediationTarget.APIVersion != "" {
+		workflowSignal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
+	} else if workflowSignal.ResourceKind != signal.ResourceKind {
+		workflowSignal.ResourceAPIVersion = ""
+	}
+
 	// #1052 / BR-AI-056: Marshal enrichment DetectedLabels into the signal context
 	// so workflow discovery tools forward them to DS catalog queries, activating
 	// GitOps-aware scoring.

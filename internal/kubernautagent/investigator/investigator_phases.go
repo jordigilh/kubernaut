@@ -18,6 +18,7 @@ package investigator
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -114,6 +115,18 @@ func isValidK8sIdentifier(s string) bool {
 	return true
 }
 
+// apiVersionPattern matches Kubernetes apiVersion strings: optional "group/"
+// prefix followed by a version like "v1", "v1beta1", "v2alpha1". Groups follow
+// DNS subdomain rules. Issue #1051 / FedRAMP SI-10.
+var apiVersionPattern = regexp.MustCompile(`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*\/)?v[0-9]+([a-z][a-z0-9]*)?$`)
+
+// isValidAPIVersion validates that s is a well-formed Kubernetes apiVersion
+// string (e.g. "v1", "apps/v1", "route.openshift.io/v1"). Rejects empty,
+// overlong, or malformed values. Issue #1051 / FedRAMP SI-10.
+func isValidAPIVersion(s string) bool {
+	return s != "" && len(s) <= maxK8sIdentifierLen && apiVersionPattern.MatchString(s)
+}
+
 // LogLabelOverrideOrRejection emits structured logs when signal labels cause an
 // override (FED-1/SRE-1) or when a non-empty label value was rejected by
 // validation (SEC-6/FedRAMP AU-2). Called from runRCA and runWorkflowSelection.
@@ -143,18 +156,34 @@ func LogLabelOverrideOrRejection(logger logr.Logger, signal katypes.SignalContex
 	}
 }
 
-// ApplySignalLabelOverrides returns a copy of signal with ResourceKind and
-// ResourceName overridden by target_resource_kind / target_resource_name
-// signal labels, when present and valid per FedRAMP SI-10 (isValidK8sIdentifier).
+// ApplySignalLabelOverrides returns a copy of signal with ResourceKind,
+// ResourceName, and ResourceAPIVersion overridden by corresponding
+// target_resource_* signal labels, when present and valid per FedRAMP SI-10.
 // The original signal is not modified (value semantics).
+//
+// Consistency guards (#1051):
+//   - When target_resource_kind is overridden without an explicit
+//     target_resource_api_version, ResourceAPIVersion is cleared to prevent
+//     an invalid GVK combination (stale apiVersion + new kind).
+//   - target_resource_api_version is only applied when target_resource_kind
+//     is also present and valid, to prevent a semantically inconsistent GVK
+//     where the apiVersion does not match the existing kind.
+//
 // Issue #1064: used by both SignalToPrompt (LLM prompt) and runWorkflowSelection
 // (tool context) to ensure consistent override application.
 func ApplySignalLabelOverrides(signal katypes.SignalContext) katypes.SignalContext {
+	kindOverridden := false
 	if trk := signal.SignalLabels["target_resource_kind"]; trk != "" && isValidK8sIdentifier(trk) {
 		signal.ResourceKind = trk
+		kindOverridden = true
 	}
 	if trn := signal.SignalLabels["target_resource_name"]; trn != "" && isValidK8sIdentifier(trn) {
 		signal.ResourceName = trn
+	}
+	if trav := signal.SignalLabels["target_resource_api_version"]; trav != "" && isValidAPIVersion(trav) && kindOverridden {
+		signal.ResourceAPIVersion = trav
+	} else if kindOverridden {
+		signal.ResourceAPIVersion = ""
 	}
 	return signal
 }
