@@ -1,5 +1,5 @@
 /*
-Copyright 2025 Jordi Gil.
+Copyright 2026 Jordi Gil.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -173,6 +173,51 @@ var _ = Describe("K8sDependencyValidator (DD-WE-006)", func() {
 			ConfigMaps: []models.ResourceDependency{{Name: "binary-config"}},
 		}
 		Expect(validator.ValidateDependencies(ctx, namespace, deps)).To(Succeed())
+	})
+
+	It("UT-DS-006-040: should return an error naming a valid resource when multiple dependencies fail (QE-2, Issue #1070)", func() {
+		k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		validator := validation.NewK8sDependencyValidator(k8sClient)
+
+		deps := &models.WorkflowDependencies{
+			Secrets: []models.ResourceDependency{
+				{Name: "missing-secret-a"},
+				{Name: "missing-secret-b"},
+			},
+			ConfigMaps: []models.ResourceDependency{
+				{Name: "missing-cm-c"},
+			},
+		}
+		err := validator.ValidateDependencies(ctx, namespace, deps)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(SatisfyAny(
+			ContainSubstring("missing-secret-a"),
+			ContainSubstring("missing-secret-b"),
+			ContainSubstring("missing-cm-c"),
+		), "error must name one of the missing resources")
+		Expect(err.Error()).To(ContainSubstring("not found"),
+			"error should indicate the resource was not found")
+	})
+
+	It("UT-DS-006-041: errgroup cancels remaining checks when one dependency fails (QE-3, Issue #1070)", func() {
+		k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		validator := validation.NewK8sDependencyValidator(k8sClient)
+
+		deps := &models.WorkflowDependencies{
+			Secrets: []models.ResourceDependency{
+				{Name: "missing-a"},
+				{Name: "missing-b"},
+				{Name: "missing-c"},
+			},
+		}
+		err := validator.ValidateDependencies(ctx, namespace, deps)
+		Expect(err).To(HaveOccurred(),
+			"errgroup must return an error when a dependency is missing")
+		Expect(err.Error()).To(SatisfyAny(
+			ContainSubstring("missing-a"),
+			ContainSubstring("missing-b"),
+			ContainSubstring("missing-c"),
+		), "errgroup returns the first error; remaining checks are cancelled")
 	})
 
 	It("UT-DS-006-039: should report the specific failing resource when one passes and one fails", func() {

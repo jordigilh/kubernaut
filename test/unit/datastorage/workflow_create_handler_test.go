@@ -1,5 +1,5 @@
 /*
-Copyright 2025 Jordi Gil.
+Copyright 2026 Jordi Gil.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -31,18 +31,6 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/testutil"
 )
-
-// mockActionTypeValidator implements server.ActionTypeValidator for testing.
-type mockActionTypeValidator struct {
-	existsFn func(ctx context.Context, actionType string) (bool, error)
-}
-
-func (m *mockActionTypeValidator) ActionTypeExists(ctx context.Context, actionType string) (bool, error) {
-	if m.existsFn != nil {
-		return m.existsFn(ctx, actionType)
-	}
-	return true, nil // default: all types valid
-}
 
 // ========================================
 // INLINE WORKFLOW REGISTRATION HANDLER UNIT TESTS

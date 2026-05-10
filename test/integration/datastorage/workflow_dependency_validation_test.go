@@ -284,6 +284,9 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			detail, _ := errResp["detail"].(string)
 			Expect(detail).To(ContainSubstring("it-missing-secret-002"),
 				"error should name the missing resource")
+			errType, _ := errResp["type"].(string)
+			Expect(errType).To(ContainSubstring("dependency-validation-error"),
+				"#1070: RFC 7807 type must identify dependency validation failure")
 		})
 
 		It("IT-DS-006-003: should reject workflow when declared Secret has empty data", func() {
@@ -312,6 +315,9 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			detail, _ := errResp["detail"].(string)
 			Expect(detail).To(ContainSubstring("empty"),
 				"error should indicate empty data")
+			errType, _ := errResp["type"].(string)
+			Expect(errType).To(ContainSubstring("dependency-validation-error"),
+				"#1070: RFC 7807 type must identify dependency validation failure")
 		})
 
 		It("IT-DS-006-004: should reject workflow when declared ConfigMap is missing", func() {
@@ -333,6 +339,9 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			detail, _ := errResp["detail"].(string)
 			Expect(detail).To(ContainSubstring("it-missing-cm-004"),
 				"error should name the missing resource")
+			errType, _ := errResp["type"].(string)
+			Expect(errType).To(ContainSubstring("dependency-validation-error"),
+				"#1070: RFC 7807 type must identify dependency validation failure")
 		})
 
 		It("IT-DS-006-005: should reject workflow when declared ConfigMap has empty data", func() {
@@ -361,6 +370,9 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			detail, _ := errResp["detail"].(string)
 			Expect(detail).To(ContainSubstring("empty"),
 				"error should indicate empty data")
+			errType, _ := errResp["type"].(string)
+			Expect(errType).To(ContainSubstring("dependency-validation-error"),
+				"#1070: RFC 7807 type must identify dependency validation failure")
 		})
 
 		It("IT-DS-006-006: should accept workflow without dependencies section", func() {
