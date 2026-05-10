@@ -66,8 +66,8 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	if cfg == nil {
 		panic("RegisterTools: cfg must not be nil")
 	}
-	if cfg.RBACRoles == nil && cfg.Logger != nil {
-		cfg.Logger.Warn("MCP bridge RBAC is disabled (RBACRoles is nil) — all authenticated users can invoke all tools")
+	if cfg.RBACRoles == nil {
+		panic("RegisterTools: RBACRoles must not be nil — use map[string][]string{\"*\": {\"*\"}} to explicitly allow all")
 	}
 	sem := semaphore.NewWeighted(cfg.GetMaxConcurrentTools())
 
@@ -367,9 +367,15 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 // checkRBAC verifies the user has permission to invoke the named tool.
 // Returns nil if allowed, or an error describing the denial.
 func checkRBAC(ctx context.Context, cfg *MCPBridgeConfig, toolName string) error {
-	if cfg.RBACRoles == nil {
-		return nil
+	// Check wildcard group first (matches any authenticated user)
+	if allowedTools, ok := cfg.RBACRoles["*"]; ok {
+		for _, t := range allowedTools {
+			if t == toolName || t == "*" {
+				return nil
+			}
+		}
 	}
+
 	user := auth.UserIdentityFromContext(ctx)
 	if user == nil {
 		return fmt.Errorf("permission denied: authentication required to invoke %s", toolName)
