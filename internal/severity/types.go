@@ -17,7 +17,6 @@ const (
 	SourceRuleEval      Source = "rule_evaluation"
 	SourceLLMRuleInform Source = "llm_rule_informed"
 	SourceLLMTriage     Source = "llm_triage"
-	SourceDefault       Source = "default_fallback"
 )
 
 // TriageInput holds the resource context for severity triage.

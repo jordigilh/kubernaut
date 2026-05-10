@@ -415,6 +415,26 @@ var _ = Describe("Triage Orchestrator", func() {
 			Expect(result.Severity).To(BeEmpty())
 			Expect(result.Source).To(BeEmpty())
 		})
+
+		It("UT-AF-T-047: NewTriager panics when LLM is nil", func() {
+			Expect(func() {
+				severity.NewTriager(&mockPromClient{}, nil, defaultCfg, logr.Discard())
+			}).To(Panic())
+		})
+
+		It("UT-AF-T-048: Tier 3 LLM error propagates instead of defaulting", func() {
+			mockProm := &mockPromClient{
+				alerts:     []prom.Alert{},
+				ruleGroups: []prom.RuleGroup{},
+			}
+			llm := &mockLLM{
+				pureErr: errors.New("LLM unavailable"),
+			}
+			triager := severity.NewTriager(mockProm, llm, defaultCfg, logr.Discard())
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("tier 3 LLM triage failed"))
+		})
 	})
 
 	Describe("Concurrency", func() {
