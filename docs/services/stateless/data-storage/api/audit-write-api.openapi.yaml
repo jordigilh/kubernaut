@@ -633,29 +633,7 @@ components:
           description: |
             URI reference identifying the problem type.
             All types follow the pattern https://kubernaut.ai/problems/{error-type}.
-          enum:
-            - "https://kubernaut.ai/problems/validation-error"
-            - "https://kubernaut.ai/problems/not-found"
-            - "https://kubernaut.ai/problems/internal-error"
-            - "https://kubernaut.ai/problems/service-unavailable"
-            - "https://kubernaut.ai/problems/conflict"
-            - "https://kubernaut.ai/problems/database-error"
-            - "https://kubernaut.ai/problems/bundle-not-found"
-            - "https://kubernaut.ai/problems/dependency-validation-error"
-            - "https://kubernaut.ai/problems/batch-size-exceeded"
-            - "https://kubernaut.ai/problems/effectiveness/missing-correlation-id"
-            - "https://kubernaut.ai/problems/effectiveness/query-error"
-            - "https://kubernaut.ai/problems/effectiveness/not-found"
-            - "https://kubernaut.ai/problems/reconstruction/query-failed"
-            - "https://kubernaut.ai/problems/reconstruction/no-parseable-events"
-            - "https://kubernaut.ai/problems/reconstruction/missing-gateway-event"
-            - "https://kubernaut.ai/problems/reconstruction/build-failed"
-            - "https://kubernaut.ai/problems/reconstruction/validation-failed"
-            - "https://kubernaut.ai/problems/reconstruction/incomplete-data"
-            - "https://kubernaut.ai/problems/reconstruction/yaml-marshal-failed"
-            - "https://kubernaut.ai/problems/reconstruction/unexpected-error"
-            - "https://kubernaut.ai/problems/reconstruction/unknown-response"
-            - "https://kubernaut.ai/problems/audit/correlation-not-found"
+          pattern: "^https://kubernaut\\.ai/problems/.+"
           example: https://kubernaut.ai/problems/validation-error
         title:
           type: string

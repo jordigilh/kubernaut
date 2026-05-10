@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Workflow validation duration metric** — New `datastorage_workflow_validation_duration_seconds` Prometheus histogram with `phase` and `result` labels for per-phase observability.
 - **ADR-060** — Architecture decision record documenting the parallel validation patterns and error priority contract.
-- **RFC 7807 type enum** (UX-1) — OpenAPI `RFC7807Problem.type` field now uses a strict `enum` of 22 known problem-type URIs across all Data Storage API specs.
+- **RFC 7807 type constraint** (UX-1) — OpenAPI `RFC7807Problem.type` field now uses a `pattern` constraint (`^https://kubernaut\.ai/problems/.+`) with documented common types across all Data Storage API specs.
 - **Concurrency guidelines** (DX-5) — Added concurrency patterns section to project guidelines documenting `errgroup`, typed-result-slot, and timeout budget patterns.
 - **DD-WE-006 v2.2** (DOC-4) — Added changelog entry noting dependency validation parallelization per Issue #1070.
 - **CONTRIBUTING.md Go version** (DX-4) — Updated prerequisite Go version from 1.25.3+ to 1.25.6+ to match `go.mod`.
