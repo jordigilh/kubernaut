@@ -1,0 +1,221 @@
+name: Release
+
+# Triggered by version tag push (e.g., v1.0.0, v1.5.0-rc1)
+# Builds multi-arch images (amd64 + arm64), generates SBOM, and creates a GitHub Release.
+# Pre-release tags (-rc*, -alpha*, -beta*) create a pre-release and skip :latest tagging.
+#
+# Prerequisites:
+#   - Quay.io robot account with push access
+#   - GitHub Actions secrets: QUAY_ROBOT_USERNAME, QUAY_ROBOT_TOKEN
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  IMAGE_REGISTRY: quay.io/kubernaut-ai
+
+jobs:
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      build_date: ${{ steps.version.outputs.build_date }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
+          if [[ "$VERSION" =~ -(rc|alpha|beta) ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-amd64:
+    name: Build (amd64)
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Login to Quay.io
+        run: |
+          podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
+
+      - name: Build image
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_ARCH: amd64
+          IMAGE_TARGET: production
+          CONTAINER_TOOL: podman
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+        run: make image-build
+
+      - name: Push image
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_ARCH: amd64
+          CONTAINER_TOOL: podman
+        run: make image-push
+
+  build-arm64:
+    name: Build (arm64)
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Cross-compile binary (native, no QEMU)
+        env:
+          IMAGE_ARCH: arm64
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+        run: make cross-build
+
+      - name: Login to Quay.io
+        run: |
+          podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
+
+      - name: Build runtime image (no QEMU)
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_ARCH: arm64
+          IMAGE_TARGET: production
+          CONTAINER_TOOL: podman
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+        run: make image-build
+
+      - name: Push image
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          IMAGE_ARCH: arm64
+          CONTAINER_TOOL: podman
+        run: make image-push
+
+  create-manifests:
+    name: Create Multi-Arch Manifests
+    needs: [prepare, build-amd64, build-arm64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Login to Quay.io
+        run: |
+          podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
+
+      - name: Create and push multi-arch manifest
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+          CONTAINER_TOOL: podman
+        run: make image-manifest
+
+      - name: Tag as latest (GA releases only)
+        if: needs.prepare.outputs.is_prerelease == 'false'
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+        run: |
+          podman manifest rm ${IMAGE_REGISTRY}/apifrontend:latest 2>/dev/null || true
+          podman manifest create ${IMAGE_REGISTRY}/apifrontend:latest \
+            ${IMAGE_REGISTRY}/apifrontend:${IMAGE_TAG}-amd64 \
+            ${IMAGE_REGISTRY}/apifrontend:${IMAGE_TAG}-arm64
+          podman manifest push ${IMAGE_REGISTRY}/apifrontend:latest \
+            docker://${IMAGE_REGISTRY}/apifrontend:latest
+
+  sbom:
+    name: Generate SBOM
+    needs: [prepare, build-amd64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Login to Quay.io
+        run: |
+          podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
+
+      - name: Install Syft
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Generate SBOM
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+        run: |
+          podman pull ${IMAGE_REGISTRY}/apifrontend:${IMAGE_TAG}-amd64
+          syft packages ${IMAGE_REGISTRY}/apifrontend:${IMAGE_TAG}-amd64 -o cyclonedx-json > sbom.cdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ needs.prepare.outputs.version }}
+          path: sbom.cdx.json
+
+  release:
+    name: Create GitHub Release
+    needs: [prepare, create-manifests, sbom]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Download SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom-${{ needs.prepare.outputs.version }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          IS_PRERELEASE: ${{ needs.prepare.outputs.is_prerelease }}
+        run: |
+          PRERELEASE_FLAG=""
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          gh release create "${TAG}" \
+            --title "kubernaut-apifrontend ${TAG}" \
+            --generate-notes \
+            ${PRERELEASE_FLAG} \
+            sbom.cdx.json
