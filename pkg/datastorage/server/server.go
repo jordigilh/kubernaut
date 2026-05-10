@@ -36,7 +36,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/cert"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/adapter"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
@@ -261,12 +260,6 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		"dlq_client_nil", dlqClient == nil,
 		"validator_nil", validator == nil)
 
-	// Create ADR-033 action trace repository (BR-STORAGE-031-01, BR-STORAGE-031-02)
-	logger.V(1).Info("Creating ADR-033 action trace repository...")
-	actionTraceRepo := repository.NewActionTraceRepository(db, logger)
-	logger.V(1).Info("ADR-033 action trace repository created",
-		"action_trace_repo_nil", actionTraceRepo == nil)
-
 	// Create BR-STORAGE-033: Unified audit events repository (ADR-034)
 	// SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
 	logger.V(1).Info("Creating ADR-034 unified audit events repository (PostgreSQL)...")
@@ -322,9 +315,6 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	// BR-WORKFLOW-007: ActionType taxonomy repository
 	actionTypeRepo := actiontyperepo.NewRepository(sqlxDB, logger)
 
-	// Create database adapter for READ API handlers
-	dbAdapter := adapter.NewDBAdapter(db, logger)
-
 	// DD-WE-006: Create OCI schema extractor for execution bundle validation
 	imagePuller := oci.NewCraneImagePuller(logger)
 	schemaParser := schema.NewParser()
@@ -341,7 +331,6 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	// Build handler options: fixed options + caller-provided options (e.g. WithDependencyValidator)
 	opts := []HandlerOption{
 		WithLogger(logger),
-		WithActionTraceRepository(actionTraceRepo),
 		WithWorkflowRepository(workflowRepo),
 		WithWorkflowLifecycleRepository(workflowRepo),
 		WithWorkflowContentIntegrityRepository(workflowRepo),
@@ -353,7 +342,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		WithActionTypeRepository(actionTypeRepo),
 	}
 	opts = append(opts, deps.HandlerOpts...)
-	handler := NewHandler(dbAdapter, opts...)
+	handler := NewHandler(opts...)
 
 	// SOC2 Day 9.1: Load signing certificate for audit exports
 	// BR-AUDIT-007: Digital signatures for tamper-evident audit exports
@@ -492,20 +481,6 @@ func (s *Server) Handler() http.Handler {
 			"resourceName", "data-storage-service",
 			"verb", "create",
 		)
-
-		// DISABLED: Incident and ADR-033 success-rate endpoints are out of V1.0 scope.
-		// Not in OpenAPI spec. V1.0 tracks effectiveness per resource (via EM), not incidents.
-		// Evaluate for next release: https://github.com/jordigilh/kubernaut/issues/238
-		//
-		// r.Get("/incidents", s.handler.ListIncidents)                                                  // BR-STORAGE-021
-		// r.Get("/incidents/{id}", s.handler.GetIncident)                                               // BR-STORAGE-021
-		// r.Get("/incidents/aggregate/success-rate", s.handler.AggregateSuccessRate)    // BR-STORAGE-030
-		// r.Get("/incidents/aggregate/by-namespace", s.handler.AggregateByNamespace)    // BR-STORAGE-032
-		// r.Get("/incidents/aggregate/by-severity", s.handler.AggregateBySeverity)      // BR-STORAGE-033
-		// r.Get("/incidents/aggregate/trend", s.handler.AggregateIncidentTrend)         // BR-STORAGE-034
-		// r.Get("/success-rate/incident-type", s.handler.HandleGetSuccessRateByIncidentType)        // BR-STORAGE-031-01
-		// r.Get("/success-rate/workflow", s.handler.HandleGetSuccessRateByWorkflow)                  // BR-STORAGE-031-02
-		// r.Get("/success-rate/multi-dimensional", s.handler.HandleGetSuccessRateMultiDimensional)   // BR-STORAGE-031-05
 
 		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
 		s.logger.V(1).Info("Registering POST /api/v1/audit/notifications handler")
