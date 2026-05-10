@@ -610,7 +610,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 		Context("IT-DS-522-010: severity wildcard in catalog list", func() {
 			It("should return a workflow with severity=['*'] when queried with severity=high", func() {
-				createWorkflowWithLabels("sev-wc", []string{"*"}, "pod", []string{"production"}, "P1")
+				createWorkflowWithLabels("sev-wc", []string{"*"}, "v1/Pod", []string{"production"}, "P1")
 
 				workflows, totalCount, err := workflowRepo.List(ctx, &models.WorkflowSearchFilters{
 					WorkflowName: fmt.Sprintf("wf-repo-%s-sev-wc", testID),
@@ -630,7 +630,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				workflows, totalCount, err := workflowRepo.List(ctx, &models.WorkflowSearchFilters{
 					WorkflowName: fmt.Sprintf("wf-repo-%s-comp-wc", testID),
-					Component:    "Node",
+					Component:    "v1/Node",
 				}, 100, 0)
 
 				Expect(err).ToNot(HaveOccurred())
@@ -642,7 +642,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 		Context("IT-DS-522-012: priority wildcard in catalog list", func() {
 			It("should return a workflow with priority='*' when queried with priority=P3", func() {
-				createWorkflowWithLabels("pri-wc", []string{"critical"}, "pod", []string{"production"}, "*")
+				createWorkflowWithLabels("pri-wc", []string{"critical"}, "v1/Pod", []string{"production"}, "*")
 
 				workflows, totalCount, err := workflowRepo.List(ctx, &models.WorkflowSearchFilters{
 					WorkflowName: fmt.Sprintf("wf-repo-%s-pri-wc", testID),
@@ -663,7 +663,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				workflows, totalCount, err := workflowRepo.List(ctx, &models.WorkflowSearchFilters{
 					WorkflowName: fmt.Sprintf("wf-repo-%s-all-wc", testID),
 					Severity:     "high",
-					Component:    "Node",
+					Component:    "v1/Node",
 					Environment:  "unknown",
 					Priority:     "P3",
 				}, 100, 0)
@@ -677,11 +677,11 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 		Context("IT-DS-522-014: case-insensitive component in catalog list", func() {
 			It("should match component=deployment when queried with component=Deployment (PascalCase)", func() {
-				createWorkflowWithLabels("comp-ci", []string{"critical"}, "deployment", []string{"production"}, "P1")
+				createWorkflowWithLabels("comp-ci", []string{"critical"}, "apps/v1/Deployment", []string{"production"}, "P1")
 
 				workflows, _, err := workflowRepo.List(ctx, &models.WorkflowSearchFilters{
 					WorkflowName: fmt.Sprintf("wf-repo-%s-comp-ci", testID),
-					Component:    "Deployment",
+					Component:    "Apps/V1/Deployment",
 				}, 100, 0)
 
 				Expect(err).ToNot(HaveOccurred())

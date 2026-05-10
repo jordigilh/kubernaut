@@ -66,6 +66,7 @@ var _ = Describe("E2E-DS-481: ServiceAccountName REST API Persistence (#481)", L
 			crd.Spec.Description.What = "E2E SA persistence test"
 			crd.Spec.Description.WhenToUse = "E2E-DS-481-001: validates serviceAccountName survives REST API roundtrip"
 			crd.Spec.Labels.Priority = "P0"
+			crd.Spec.Labels.Component = []string{"v1/Pod"}
 			crd.Spec.Execution.Bundle = e2eBundleRef
 			crd.Spec.Execution.ServiceAccountName = "e2e-custom-workflow-sa"
 			crd.Spec.Parameters = []models.WorkflowParameter{
@@ -124,6 +125,7 @@ var _ = Describe("E2E-DS-481: ServiceAccountName REST API Persistence (#481)", L
 			crd.Spec.Description.What = "E2E SA discovery test"
 			crd.Spec.Description.WhenToUse = "E2E-DS-481-002: validates serviceAccountName in discovery endpoint"
 			crd.Spec.Labels.Priority = "P0"
+			crd.Spec.Labels.Component = []string{"v1/Pod"}
 			crd.Spec.Execution.Bundle = e2eBundleRef
 			crd.Spec.Execution.ServiceAccountName = "e2e-discovery-sa"
 			crd.Spec.Parameters = []models.WorkflowParameter{
@@ -156,7 +158,7 @@ var _ = Describe("E2E-DS-481: ServiceAccountName REST API Persistence (#481)", L
 			discResp, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
 				ActionType:  "RestartPod",
 				Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
-				Component:   "pod",
+				Component:   "v1/Pod",
 				Environment: "production",
 				Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
 				Limit:       dsgen.NewOptInt(100),

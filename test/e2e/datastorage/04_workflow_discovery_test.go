@@ -73,7 +73,7 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			// STEP 1: List available action types
 			step1Resp, err := DSClient.ListAvailableActions(testCtx, dsgen.ListAvailableActionsParams{
 				Severity:    dsgen.ListAvailableActionsSeverityCritical,
-				Component:   "pod",
+				Component:   "v1/Pod",
 				Environment: "production",
 				Priority:    dsgen.ListAvailableActionsPriorityP0,
 				Limit:       dsgen.NewOptInt(100),
@@ -103,7 +103,7 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 				step2Resp, listErr := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
 					ActionType:  "ScaleReplicas",
 					Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
-					Component:   "pod",
+					Component:   "v1/Pod",
 					Environment: "production",
 					Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
 					Limit:       dsgen.NewOptInt(100),
@@ -133,7 +133,7 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			step3Resp, err := DSClient.GetWorkflowByID(testCtx, dsgen.GetWorkflowByIDParams{
 				WorkflowID:  workflowUUID,
 				Severity:    dsgen.NewOptGetWorkflowByIDSeverity(dsgen.GetWorkflowByIDSeverityCritical),
-				Component:   dsgen.NewOptString("pod"),
+				Component:   dsgen.NewOptString("v1/Pod"),
 				Environment: dsgen.NewOptString("production"),
 				Priority:    dsgen.NewOptGetWorkflowByIDPriority(dsgen.GetWorkflowByIDPriorityP0),
 			})
@@ -207,11 +207,11 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			})
 			Expect(err).ToNot(HaveOccurred())
 
-			// Query discovery with filters matching the stub (ScaleReplicas, critical, pod, production, P0)
+			// Query discovery with filters matching the stub (ScaleReplicas, critical, v1/Pod, production, P0)
 			step2Resp, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
 				ActionType:  "ScaleReplicas",
 				Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
-				Component:   "pod",
+				Component:   "v1/Pod",
 				Environment: "production",
 				Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
 				Limit:       dsgen.NewOptInt(100),
@@ -267,7 +267,7 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			step3Resp, err := DSClient.GetWorkflowByID(testCtx, dsgen.GetWorkflowByIDParams{
 				WorkflowID:  workflowUUID,
 				Severity:    dsgen.NewOptGetWorkflowByIDSeverity(dsgen.GetWorkflowByIDSeverityLow),   // mismatch: low != critical
-				Component:   dsgen.NewOptString("statefulset"),                                       // mismatch: statefulset != pod
+				Component:   dsgen.NewOptString("apps/v1/StatefulSet"),                              // mismatch: StatefulSet != Pod
 				Environment: dsgen.NewOptString("staging"),                                           // mismatch: staging != production
 				Priority:    dsgen.NewOptGetWorkflowByIDPriority(dsgen.GetWorkflowByIDPriorityP3),    // mismatch: P3 != P0
 			})
@@ -292,7 +292,7 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 
 			// Use AuthHTTPClient for raw HTTP request (endpoint no longer in ogen client)
 			searchURL := fmt.Sprintf("%s/api/v1/workflows/search", dataStorageURL)
-			body := bytes.NewBufferString(`{"filters":{"signalName":"OOMKilled","severity":"critical","component":"pod","environment":"production","priority":"P0"}}`)
+			body := bytes.NewBufferString(`{"filters":{"signalName":"OOMKilled","severity":"critical","component":"v1/Pod","environment":"production","priority":"P0"}}`)
 
 			req, err := http.NewRequestWithContext(testCtx, http.MethodPost, searchURL, body)
 			Expect(err).ToNot(HaveOccurred())

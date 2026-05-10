@@ -72,7 +72,7 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 		// ACT: Call step 1 with remediation_id
 		_, err := DSClient.ListAvailableActions(testCtx, dsgen.ListAvailableActionsParams{
 			Severity:      dsgen.ListAvailableActionsSeverityCritical,
-			Component:     "pod",
+			Component:     "v1/Pod",
 			Environment:   "production",
 			Priority:      dsgen.ListAvailableActionsPriorityP0,
 			RemediationID: dsgen.NewOptString(remediationID),
@@ -110,7 +110,7 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 		_, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
 			ActionType:    "ScaleReplicas",
 			Severity:      dsgen.ListWorkflowsByActionTypeSeverityCritical,
-			Component:     "pod",
+			Component:     "v1/Pod",
 			Environment:   "production",
 			Priority:      dsgen.ListWorkflowsByActionTypePriorityP0,
 			RemediationID: dsgen.NewOptString(remediationID),
@@ -148,7 +148,7 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 		_, err := DSClient.GetWorkflowByID(testCtx, dsgen.GetWorkflowByIDParams{
 			WorkflowID:    auditWorkflowUUID,
 			Severity:      dsgen.NewOptGetWorkflowByIDSeverity(dsgen.GetWorkflowByIDSeverityCritical),
-			Component:     dsgen.NewOptString("pod"),
+			Component:     dsgen.NewOptString("v1/Pod"),
 			Environment:   dsgen.NewOptString("production"),
 			Priority:      dsgen.NewOptGetWorkflowByIDPriority(dsgen.GetWorkflowByIDPriorityP0),
 			RemediationID: dsgen.NewOptString(remediationID),
@@ -188,7 +188,7 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 		_, err := DSClient.GetWorkflowByID(testCtx, dsgen.GetWorkflowByIDParams{
 			WorkflowID:    auditWorkflowUUID,
 			Severity:      dsgen.NewOptGetWorkflowByIDSeverity(dsgen.GetWorkflowByIDSeverityCritical),
-			Component:     dsgen.NewOptString("pod"),
+			Component:     dsgen.NewOptString("v1/Pod"),
 			Environment:   dsgen.NewOptString("production"),
 			Priority:      dsgen.NewOptGetWorkflowByIDPriority(dsgen.GetWorkflowByIDPriorityP0),
 			RemediationID: dsgen.NewOptString(validationRemID),
