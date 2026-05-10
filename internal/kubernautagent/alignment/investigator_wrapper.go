@@ -115,27 +115,64 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 
 	correlationID := signalCorrelationID(signal)
 
-	observer, obsErr := NewObserver(w.evaluator, WithCorrelationID(correlationID))
+	observerOpts := []ObserverOption{WithCorrelationID(correlationID)}
+
+	// Circuit breaker: in enforce mode, create a cancellable investigation context.
+	// When the shadow detects suspicious content, the onSuspicious callback cancels
+	// investCtx, which causes the inner investigation to return context.Canceled.
+	// Shadow evaluations use the parent ctx (via WithEvalContext) so they continue.
+	var investCtx context.Context
+	var investCancel context.CancelCauseFunc
+	if w.mode == config.AlignmentModeEnforce {
+		investCtx, investCancel = context.WithCancelCause(ctx)
+		defer investCancel(nil)
+		observerOpts = append(observerOpts,
+			WithEvalContext(ctx),
+			WithOnSuspicious(func() {
+				investCancel(ErrCircuitBreaker)
+				alignmentCircuitBreakerTotal.WithLabelValues(string(w.mode)).Inc()
+				w.logger.Info("circuit_breaker_triggered",
+					"correlationID", correlationID,
+					"mode", string(w.mode),
+				)
+			}),
+		)
+	} else {
+		investCtx = ctx
+	}
+
+	observer, obsErr := NewObserver(w.evaluator, observerOpts...)
 	if obsErr != nil {
 		return nil, fmt.Errorf("alignment observer: %w", obsErr)
 	}
-	ctx = WithObserver(ctx, observer)
+	investCtx = WithObserver(investCtx, observer)
 
 	if signalContent := BuildSignalInputContent(signal); signalContent != "" {
-		observer.SubmitAsync(ctx, Step{
+		observer.SubmitAsync(investCtx, Step{
 			Index:   observer.NextStepIndex(),
 			Kind:    StepKindSignalInput,
 			Content: signalContent,
 		})
 	}
 
-	result, err := w.inner.Investigate(ctx, signal)
-	if err != nil {
+	result, err := w.inner.Investigate(investCtx, signal)
+
+	// Check if the error is a circuit breaker cancellation.
+	circuitBroken := err != nil && context.Cause(investCtx) == ErrCircuitBreaker
+	if circuitBroken {
+		if result == nil {
+			result = &katypes.InvestigationResult{}
+		}
+		err = nil
+	} else if err != nil {
 		return result, err
 	}
 
 	wr := observer.WaitForCompletion(w.verdictTimeout)
 	verdict := observer.RenderVerdict(wr)
+	if circuitBroken {
+		verdict.CircuitBreaker = true
+	}
 
 	w.emitAlignmentAudit(ctx, correlationID, verdict)
 
@@ -169,8 +206,13 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 		if escalateVerdict {
 			result.HumanReviewNeeded = true
 			result.HumanReviewReason = "alignment_check_failed"
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("Shadow agent alignment check flagged suspicious content: %s", verdict.Summary))
+			if circuitBroken {
+				result.Warnings = append(result.Warnings,
+					fmt.Sprintf("Shadow agent circuit breaker activated: %s", verdict.Summary))
+			} else {
+				result.Warnings = append(result.Warnings,
+					fmt.Sprintf("Shadow agent alignment check flagged suspicious content: %s", verdict.Summary))
+			}
 		}
 		w.logger.Info("shadow agent flagged suspicious content",
 			"signal", signal.Name,
@@ -181,6 +223,7 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 			"timed_out", verdict.TimedOut,
 			"summary", verdict.Summary,
 			"escalated", escalateVerdict,
+			"circuit_breaker", circuitBroken,
 			"mode", string(w.mode),
 		)
 	} else if !canaryDegraded {
@@ -223,6 +266,9 @@ func (w *InvestigatorWrapper) emitAlignmentAudit(ctx context.Context, correlatio
 	event.Data["summary"] = verdict.Summary
 	event.Data["flagged"] = verdict.Flagged
 	event.Data["total"] = verdict.Total
+	if verdict.CircuitBreaker {
+		event.Data["circuit_breaker"] = true
+	}
 
 	var shadowPrompt, shadowCompletion, shadowTotal int
 	for _, obs := range verdict.Observations {

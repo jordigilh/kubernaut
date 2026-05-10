@@ -47,14 +47,22 @@ const MaxObservationContentLen = 4096
 // Observer collects observations from concurrent evaluations and renders a verdict.
 // Each Observer instance is scoped to a single investigation — a fresh Observer
 // must be created per Investigate() call to avoid cross-request state leakage.
+//
+// ARCH-3: evalCtx is stored in the struct to decouple shadow evaluation context
+// from the investigation context. When the circuit breaker cancels investCtx,
+// shadow evaluations must continue using the parent context so WaitForCompletion
+// can collect results.
 type Observer struct {
-	evaluator     *Evaluator
-	correlationID string
-	mu            sync.Mutex
-	observations  []Observation
-	wg            sync.WaitGroup
-	stepIdx       atomic.Int64
-	sem           chan struct{}
+	evaluator      *Evaluator
+	correlationID  string
+	mu             sync.Mutex
+	observations   []Observation
+	wg             sync.WaitGroup
+	stepIdx        atomic.Int64
+	sem            chan struct{}
+	evalCtx        context.Context
+	onSuspicious   func()
+	suspiciousOnce sync.Once
 }
 
 // ObserverOption configures optional Observer behaviour.
@@ -73,6 +81,22 @@ func WithMaxConcurrent(n int) ObserverOption {
 			o.sem = make(chan struct{}, n)
 		}
 	}
+}
+
+// WithEvalContext sets the context used for EvaluateStep calls inside SubmitAsync.
+// This decouples shadow evaluation from the investigation context (ARCH-3),
+// ensuring shadow evaluations continue even when the circuit breaker cancels
+// the investigation context.
+func WithEvalContext(ctx context.Context) ObserverOption {
+	return func(o *Observer) { o.evalCtx = ctx }
+}
+
+// WithOnSuspicious registers a callback invoked (at most once) when any
+// evaluation returns Suspicious=true. Used by the circuit breaker to cancel
+// the investigation context. The callback is guarded by sync.Once and runs
+// inside the existing recover() block, so panics are caught.
+func WithOnSuspicious(fn func()) ObserverOption {
+	return func(o *Observer) { o.onSuspicious = fn }
 }
 
 // NewObserver creates an Observer backed by the given evaluator.
@@ -103,6 +127,13 @@ func (o *Observer) NextStepIndex() int {
 // evaluation failure from crashing the entire KA process.
 func (o *Observer) SubmitAsync(ctx context.Context, step Step) {
 	step.CorrelationID = o.correlationID
+
+	// Use evalCtx for shadow evaluation if set (ARCH-3), otherwise use caller ctx.
+	evalCtx := ctx
+	if o.evalCtx != nil {
+		evalCtx = o.evalCtx
+	}
+
 	o.wg.Add(1)
 	go func() {
 		defer o.wg.Done()
@@ -121,7 +152,7 @@ func (o *Observer) SubmitAsync(ctx context.Context, step Step) {
 					}
 				}
 			}()
-			obs = o.evaluator.EvaluateStep(ctx, step)
+			obs = o.evaluator.EvaluateStep(evalCtx, step)
 		}()
 
 		if len(obs.Step.Content) > MaxObservationContentLen {
@@ -140,6 +171,13 @@ func (o *Observer) SubmitAsync(ctx context.Context, step Step) {
 		o.mu.Lock()
 		o.observations = append(o.observations, obs)
 		o.mu.Unlock()
+
+		if obs.Suspicious && o.onSuspicious != nil {
+			o.suspiciousOnce.Do(func() {
+				defer func() { recover() }()
+				o.onSuspicious()
+			})
+		}
 	}()
 }
 

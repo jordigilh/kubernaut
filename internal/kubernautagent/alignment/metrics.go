@@ -57,4 +57,11 @@ var (
 		Name:      "shadow_audit_total",
 		Help:      "Total shadow LLM audit events emitted by event_type (request, response).",
 	}, []string{"event_type"})
+
+	alignmentCircuitBreakerTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "kubernaut",
+		Subsystem: "alignment",
+		Name:      "circuit_breaker_total",
+		Help:      "Total circuit breaker activations by mode (enforce).",
+	}, []string{"mode"})
 )
