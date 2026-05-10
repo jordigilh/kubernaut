@@ -5,7 +5,7 @@ go 1.25.6
 require (
 	github.com/Alcova-AI/adk-anthropic-go v0.1.15
 	github.com/a2aproject/a2a-go v0.3.13
-	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zapr v1.3.0
