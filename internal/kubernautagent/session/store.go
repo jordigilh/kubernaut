@@ -59,7 +59,6 @@ type Store struct {
 	sessions      map[string]*Session
 	ttl           time.Duration
 	maxSessionAge time.Duration
-	logger        func(msg string, keysAndValues ...any)
 }
 
 // StoreOption configures optional Store behaviour.
