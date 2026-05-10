@@ -16,7 +16,16 @@ limitations under the License.
 
 package alignment
 
-import "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+import (
+	"errors"
+
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+)
+
+// ErrCircuitBreaker is the sentinel error passed to context.WithCancelCause
+// when the shadow agent detects suspicious content in enforce mode.
+// context.Cause returns this exact value, so == comparison is correct.
+var ErrCircuitBreaker = errors.New("shadow agent circuit breaker: suspicious content detected")
 
 // StepKind distinguishes the source of content being evaluated.
 type StepKind string
@@ -58,13 +67,14 @@ const (
 
 // Verdict is the final output of the shadow agent for an investigation.
 type Verdict struct {
-	Result       VerdictResult `json:"result"`
-	Summary      string        `json:"summary"`
-	Observations []Observation `json:"observations"`
-	Flagged      int           `json:"flagged"`
-	Total        int           `json:"total"`
-	Pending      int           `json:"pending,omitempty"`
-	TimedOut     bool          `json:"timed_out,omitempty"`
+	Result         VerdictResult `json:"result"`
+	Summary        string        `json:"summary"`
+	Observations   []Observation `json:"observations"`
+	Flagged        int           `json:"flagged"`
+	Total          int           `json:"total"`
+	Pending        int           `json:"pending,omitempty"`
+	TimedOut       bool          `json:"timed_out,omitempty"`
+	CircuitBreaker bool          `json:"circuit_breaker,omitempty"`
 }
 
 // WaitResult captures the observer state at the moment WaitForCompletion returns.

@@ -255,7 +255,7 @@ func main() {
 		scopeResolver = investigator.NewMapperScopeResolver(k8sInfra.mapper)
 	}
 
-	inv := investigator.New(investigator.Config{
+	invCfg := investigator.Config{
 		Client:        effectiveLLM,
 		Builder:       promptBuilder,
 		ResultParser:  resultParser,
@@ -275,7 +275,13 @@ func main() {
 			Summarizer:        sum,
 			MaxToolOutputSize: cfg.AI.Summarizer.MaxToolOutputSize,
 		},
-	})
+	}
+	if alignEvaluator != nil {
+		invCfg.PinDecorator = func(pinned llm.Client) llm.Client {
+			return alignment.NewLLMProxy(llm.NewInstrumentedClient(pinned))
+		}
+	}
+	inv := investigator.New(invCfg)
 
 	var investigationRunner kaserver.InvestigationRunner = inv
 	if alignEvaluator != nil {

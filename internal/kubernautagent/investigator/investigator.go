@@ -141,6 +141,11 @@ type Config struct {
 	ModelName     string
 	ScopeResolver ScopeResolver
 	Swappable     *llm.SwappableClient
+	// PinDecorator wraps the pinned client snapshot before use.
+	// When alignment is enabled, this preserves the LLMProxy chain so the
+	// shadow agent observes LLM reasoning steps (C-1 bypass fix).
+	// When nil, falls back to llm.NewInstrumentedClient(pinned).
+	PinDecorator func(llm.Client) llm.Client
 }
 
 // Investigator orchestrates the two-invocation architecture:
@@ -160,6 +165,7 @@ type Investigator struct {
 	modelName     string
 	scopeResolver ScopeResolver
 	swappable     *llm.SwappableClient
+	pinDecorator  func(llm.Client) llm.Client
 }
 
 func (inv *Investigator) auditLog() logr.Logger {
@@ -188,6 +194,7 @@ func New(cfg Config) *Investigator {
 		modelName:     cfg.ModelName,
 		scopeResolver: cfg.ScopeResolver,
 		swappable:     cfg.Swappable,
+		pinDecorator:  cfg.PinDecorator,
 	}
 }
 
@@ -204,7 +211,14 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	var runtimeParams llm.RuntimeParams
 	if inv.swappable != nil {
 		pinned := inv.swappable.Snapshot()
-		client = llm.NewInstrumentedClient(pinned)
+		if inv.pinDecorator != nil {
+			client = inv.pinDecorator(pinned)
+			if client == nil {
+				client = llm.NewInstrumentedClient(pinned)
+			}
+		} else {
+			client = llm.NewInstrumentedClient(pinned)
+		}
 		modelName = inv.swappable.ModelName()
 		runtimeParams = inv.swappable.RuntimeParameters()
 	}
