@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,8 +29,9 @@ func oomkilledPredictiveConfig() MockScenarioConfig {
 		Rationale:    "Predicted OOMKill trend warrants preemptive memory limit increase before the threshold is breached",
 		RootCause:    "Predicted OOMKill based on memory utilization trend analysis (predict_linear). Current memory usage is 85% of limit and growing at 50MB/min. Preemptive action recommended to increase memory limits before the predicted OOMKill event occurs.",
 		ResourceKind: "Deployment", ResourceNS: "production", ResourceName: "api-server",
-		Parameters:   map[string]string{"MEMORY_LIMIT_NEW": "512Mi"}, ExecutionEngine: "job",
-		Contributing: []string{"memory_trend_increasing", "predict_linear_threshold_breach", "no_HPA_configured"},
+		APIVersion: "apps/v1",
+		Parameters: map[string]string{"MEMORY_LIMIT_NEW": "512Mi"}, ExecutionEngine: "job",
+		Contributing:         []string{"memory_trend_increasing", "predict_linear_threshold_breach", "no_HPA_configured"},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
 	}
@@ -39,9 +40,10 @@ func oomkilledPredictiveConfig() MockScenarioConfig {
 func predictiveNoActionConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "predictive_no_action", SignalName: "OOMKilled", Severity: "medium",
-		Confidence:           0.82,
-		RootCause:            "Predicted OOMKill based on trend analysis, but current assessment shows the trend is reversing. Memory usage has stabilized at 60% of limit after recent deployment rollout. No preemptive action needed — the prediction is unlikely to materialize.",
-		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "api-server-def456",
+		Confidence:   0.82,
+		RootCause:    "Predicted OOMKill based on trend analysis, but current assessment shows the trend is reversing. Memory usage has stabilized at 60% of limit after recent deployment rollout. No preemptive action needed — the prediction is unlikely to materialize.",
+		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "api-server-def456",
+		APIVersion:           "v1",
 		InvestigationOutcome: "predictive_no_action",
 		IsActionable:         BoolPtr(false),
 	}

@@ -34,6 +34,7 @@
       ],
       "remediationTarget": {
         "kind": "PodDisruptionBudget",
+        "apiVersion": "policy/v1",
         "name": "payment-service-pdb",
         "namespace": "demo-pdb"
       },

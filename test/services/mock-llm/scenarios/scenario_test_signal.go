@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,8 +26,9 @@ func testSignalConfig() MockScenarioConfig {
 		ScenarioName: "test_signal", SignalName: "TestSignal", Severity: "critical",
 		WorkflowName: "test-signal-handler-v1", WorkflowID: uuid.DeterministicUUID("test-signal-handler-v1"),
 		WorkflowTitle: "Test Signal Handler", Confidence: 0.90,
-		RootCause:            "Test signal for graceful shutdown validation",
-		ResourceKind:         "Pod", ResourceNS: "test", ResourceName: "test-pod",
+		RootCause:    "Test signal for graceful shutdown validation",
+		ResourceKind: "Pod", ResourceNS: "test", ResourceName: "test-pod",
+		APIVersion:           "v1",
 		Parameters:           map[string]string{"NAMESPACE": "test", "POD_NAME": "test-pod"},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
