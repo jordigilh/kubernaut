@@ -5,6 +5,10 @@ metadata:
   namespace: kubernaut-system
 spec:
   groups:
+    # NOTE: All rules filter on job="apifrontend". The Prometheus scrape config
+    # (ServiceMonitor/PodMonitor) MUST set this job label, or these alerts will
+    # be silently inactive. Ratio-based alerts return NaN (no alert) when traffic
+    # is zero — this is intentional to avoid false positives during idle periods.
     - name: apifrontend.availability
       rules:
         - alert: ApifrontendDown
@@ -87,13 +91,33 @@ spec:
 
     - name: apifrontend.circuitbreaker
       rules:
-        - alert: ApifrontendCircuitBreakerOpen
-          expr: af_circuit_breaker_state{job="apifrontend"} == 2
+        - alert: ApifrontendCircuitBreakerOpenKA
+          expr: af_circuit_breaker_state{job="apifrontend",dependency="ka"} == 2
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "KA circuit breaker is open"
+            description: "Circuit breaker for Kubernaut Agent (KA) has been open for more than 2 minutes — all KA-proxied tools are unavailable."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-005.md"
+
+        - alert: ApifrontendCircuitBreakerOpenDS
+          expr: af_circuit_breaker_state{job="apifrontend",dependency="ds"} == 2
           for: 2m
           labels:
             severity: warning
           annotations:
-            summary: "API Frontend circuit breaker is open"
+            summary: "DS circuit breaker is open"
+            description: "Circuit breaker for Data Store (DS) has been open for more than 2 minutes — audit and data tools are degraded."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-005.md"
+
+        - alert: ApifrontendCircuitBreakerOpenOther
+          expr: af_circuit_breaker_state{job="apifrontend",dependency!="ka",dependency!="ds"} == 2
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Circuit breaker open for {{ $labels.dependency }}"
             description: "Circuit breaker for {{ $labels.dependency }} has been open for more than 2 minutes."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-005.md"
 

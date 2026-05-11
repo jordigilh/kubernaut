@@ -51,8 +51,8 @@ test-unit: fmt vet ## Run all unit tests with race detection and coverage
 	$(GINKGO) -v --race --coverpkg=$(COVERPKGS) --coverprofile=cover.out ./internal/...
 
 .PHONY: test-integration
-test-integration: ## Run integration tests
-	go test ./... -tags=integration -race -coverprofile cover-integration.out
+test-integration: ## Run integration tests (matches CI runner)
+	$(GINKGO) -v --race --tags=integration --coverpkg=$(COVERPKGS) --coverprofile=cover-integration.out ./internal/...
 
 .PHONY: test-bridge
 test-bridge: fmt vet ## Run MCP bridge tests (pass GINKGO_LABEL="tier1" to filter)
@@ -132,6 +132,7 @@ CERT_DIR ?= /tmp/apifrontend-dev-certs
 
 .PHONY: kind-create
 kind-create: ## Create a Kind cluster for development
+	@which kind >/dev/null 2>&1 || { echo "kind not found — install: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"; exit 1; }
 	kind create cluster --name $(KIND_CLUSTER_NAME) --config $(KIND_CONFIG_DEV)
 
 .PHONY: kind-delete
@@ -159,9 +160,11 @@ deploy-ci: ## Deploy to Kind cluster using CI overlay
 	kubectl apply -k deploy/kustomize/overlays/ci/
 	kubectl rollout status deployment/apifrontend -n kubernaut-system --timeout=120s
 
+OVERLAY ?= dev
+
 .PHONY: undeploy
-undeploy: ## Remove kustomize-managed resources from cluster
-	kubectl delete -k deploy/kustomize/overlays/dev/ --ignore-not-found=true
+undeploy: ## Remove kustomize-managed resources (OVERLAY=dev|ci)
+	kubectl delete -k deploy/kustomize/overlays/$(OVERLAY)/ --ignore-not-found=true
 
 ##@ Validate
 
@@ -180,6 +183,7 @@ validate-maturity-ci:
 
 .PHONY: validate-kustomize
 validate-kustomize: ## Validate kustomize build for dev and ci overlays
+	@which kubectl >/dev/null 2>&1 || { echo "kubectl not found — install: https://kubernetes.io/docs/tasks/tools/"; exit 1; }
 	kubectl kustomize deploy/kustomize/overlays/dev/ > /dev/null
 	kubectl kustomize deploy/kustomize/overlays/ci/ > /dev/null
 	@echo "Kustomize build validated for dev and ci overlays"

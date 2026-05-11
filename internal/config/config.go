@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -29,6 +30,9 @@ type Config struct {
 }
 
 // SeverityTriageConfig holds settings for the Prometheus-based severity triage pipeline.
+// NOTE: These fields are forward-looking — the triage pipeline is implemented in
+// internal/severity but not yet wired into main.go. The config fields are defined
+// here so that deployment configs can be prepared ahead of the wiring PR.
 type SeverityTriageConfig struct {
 	PrometheusURL       string `yaml:"prometheusURL,omitempty"`
 	PrometheusTLSCaFile string `yaml:"prometheusTlsCaFile,omitempty"`
@@ -229,6 +233,9 @@ func (c *Config) Validate() error {
 	if err := c.validateResilience(); err != nil {
 		return err
 	}
+	if err := c.validateTLSPaths(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -315,6 +322,26 @@ func (c *Config) ResolveDefaults() {
 	if c.AgentCard.URL == "" {
 		c.AgentCard.URL = fmt.Sprintf("https://localhost:%d", c.Server.Port)
 	}
+}
+
+func (c *Config) validateTLSPaths() error {
+	paths := []struct {
+		field string
+		path  string
+	}{
+		{"agent.kaTlsCaFile", c.Agent.KATLSCaFile},
+		{"agent.dsTlsCaFile", c.Agent.DSTLSCaFile},
+		{"severityTriage.prometheusTlsCaFile", c.SeverityTriage.PrometheusTLSCaFile},
+	}
+	for _, p := range paths {
+		if p.path == "" {
+			continue
+		}
+		if _, err := os.Stat(p.path); err != nil {
+			return fmt.Errorf("%s: CA file %q is not accessible: %w", p.field, p.path, err)
+		}
+	}
+	return nil
 }
 
 func validateURL(field, raw string) error {

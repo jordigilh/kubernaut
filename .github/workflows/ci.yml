@@ -131,7 +131,7 @@ jobs:
           fi
           # Exit code 3 = vulns found. Allow stdlib-only vulns when the
           # patched Go release (1.25.10) is not yet available for download.
-          # TODO: revert to strict `govulncheck ./...` once go1.25.10 is released.
+          # TODO(#109): revert to strict `govulncheck ./...` once go1.25.10 is released.
           if [ $RC -eq 3 ]; then
             echo "::warning::govulncheck found vulnerabilities — stdlib fix (go1.25.10) not yet released"
             exit 0

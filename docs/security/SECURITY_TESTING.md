@@ -81,10 +81,10 @@ All static analysis gates run before tests in the CI pipeline and block merge on
 
 ### Trivy Configuration
 
-- Scans the container image (`quay.io/kubernaut/apifrontend:latest`)
+- Scans the container image (`quay.io/kubernaut-ai/apifrontend:latest`)
 - Severity filter: `CRITICAL,HIGH` only
 - `.trivyignore` file for accepted risk suppressions (each entry requires justification comment)
-- Exit code 1 fails the CI pipeline
+- CI uses `continue-on-error: true` — scan failures produce warnings but do not block merge
 
 ### SBOM Generation
 
@@ -109,7 +109,7 @@ Coverage is measured using Go's native coverage tooling via Ginkgo's `--coverpro
 ### Coverage Packages (from Makefile `COVERPKGS`)
 
 All `internal/` packages are included in coverage measurement:
-`auth`, `ratelimit`, `security`, `httputil`, `logging`, `requestid`, `audit`, `metrics`, `agent`, `tools`, `ka`, `ds`, `session`, `config`, `handler`, `launcher`, `resilience`, `streaming`, `controller`
+`auth`, `ratelimit`, `security`, `httputil`, `logging`, `requestid`, `audit`, `metrics`, `agent`, `tools`, `ka`, `ds`, `session`, `config`, `handler`, `launcher`, `resilience`, `streaming`, `controller`, `prometheus`, `severity`, `tlswiring`, `validate`
 
 ---
 
@@ -119,15 +119,15 @@ The following gates must pass before a PR can be merged:
 
 | Gate | Command | Blocks Merge |
 |------|---------|-------------|
-| Format check | `go fmt ./...` (diff check) | Yes |
-| Vet | `go vet ./...` | Yes |
-| Lint | `golangci-lint run ./...` | Yes |
+| Lint (includes `go vet`, formatting, 50+ linters) | `golangci-lint run ./...` | Yes |
 | Unit tests + race detector | `ginkgo -v --race --coverpkg=... ./internal/...` | Yes |
+| Integration tests | `ginkgo -v --race --tags=integration ./internal/...` | Yes |
 | Maturity validation | `bash hack/validate-maturity.sh` | Yes |
-| Image vulnerability scan | `trivy image --severity CRITICAL,HIGH --exit-code 1` | Yes |
 | OpenAPI schema validation | `vacuum lint api/openapi/apifrontend-v1.yaml` | Yes |
 | Kustomize validation | `make validate-kustomize` | Yes |
-| Coverage threshold | Enforced per-tier (see above) | Advisory (warning) |
+| Image build | `docker build --target production` | Yes |
+| SBOM + vulnerability scan | `syft` + `trivy` (CRITICAL/HIGH) | Advisory (`continue-on-error`) |
+| Coverage threshold | Total coverage ≥ 80% or CI fails | Yes (enforced) |
 
 ### Test Execution Flags
 

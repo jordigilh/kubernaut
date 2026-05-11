@@ -8,7 +8,7 @@ The API Frontend serves as the entry point for AI agents interacting with Kubern
 
 - **MCP Streamable HTTP** (`/mcp`) — 20 tools for incident triage, remediation orchestration, and cluster inspection
 - **A2A Protocol** (`/a2a`) — Agent-to-Agent communication (planned)
-- **Agent Card** (`/.well-known/agent.json`) — A2A-compliant service discovery
+- **Agent Card** (`/.well-known/agent-card.json`) — A2A-compliant service discovery
 
 ```mermaid
 graph LR
@@ -91,7 +91,7 @@ internal/
   security/            Error redaction, input validation
   validate/            Kubernetes name validators
 api/                   CRD type definitions
-deploy/                Development manifests, Helm chart, Prometheus rules
+deploy/                Kustomize manifests (base + dev/ci overlays)
 docs/                  Design docs, ADRs, test plans, security catalog
 tests/performance/     k6 load test scripts
 ```

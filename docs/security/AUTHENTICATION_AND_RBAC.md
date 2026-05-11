@@ -160,7 +160,7 @@ sequenceDiagram
 
 ## 4. Kubernetes RBAC (ClusterRole)
 
-The Helm-managed ClusterRole grants the AF ServiceAccount:
+The Kustomize-managed ClusterRole (`deploy/kustomize/base/02-rbac.yaml`) grants the AF ServiceAccount:
 
 | API Group | Resources | Verbs | Purpose |
 |-----------|-----------|-------|---------|

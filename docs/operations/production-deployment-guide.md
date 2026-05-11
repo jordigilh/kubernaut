@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Kubernetes cluster (1.29+) with CRD support
-- Helm 3.12+
+- `kubectl` with Kustomize support (v1.14+)
 - OIDC identity provider (Keycloak, Okta, or similar) configured
 - Kubernaut Agent (KA) and DataStorage (DS) services deployed
 - Prometheus Operator (for PrometheusRule CRD)
@@ -135,13 +135,15 @@ resilience:
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| 8443 | HTTP | Main API (A2A, MCP, Agent Card, health) |
+| 8443 | HTTPS (or HTTP when TLS disabled) | Main API (A2A, MCP, Agent Card) |
+| 8081 | HTTP | Health probes (liveness, readiness) |
+| 9090 | HTTP | Prometheus metrics scrape |
 
 ## RBAC
 
-The Helm chart creates:
+The Kustomize base manifests (`deploy/kustomize/base/02-rbac.yaml`) create:
 - **ServiceAccount** — identity for the AF pod
-- **ClusterRole** — CRD CRUD, TokenReview, SubjectAccessReview
+- **ClusterRole** — CRD CRUD, Events
 - **ClusterRoleBinding** — binds role to service account
 
 ### Agent Card RBAC (Group-to-Role Mapping)
@@ -186,4 +188,4 @@ For production HA:
 
 The PrometheusRule CR is included in the Kustomize base manifests (`deploy/kustomize/base/05-prometheusrule.yaml`) and is deployed automatically with `kubectl apply -k deploy/kustomize/overlays/dev/`.
 
-Import Grafana dashboards from `docs/grafana/` (when available).
+Grafana dashboards are planned for a future release.

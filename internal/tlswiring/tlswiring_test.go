@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/tlswiring"
 )
 
@@ -186,6 +187,135 @@ func TestOutboundTransport_Concurrent(t *testing.T) {
 	}
 }
 
+func TestCheckPartialTLSMaterial_BothPresent(t *testing.T) {
+	t.Parallel()
+	dir := generateTestCerts(t)
+	if warn := tlswiring.CheckPartialTLSMaterial(dir); warn != "" {
+		t.Fatalf("expected no warning with both files, got: %s", warn)
+	}
+}
+
+func TestCheckPartialTLSMaterial_NeitherPresent(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if warn := tlswiring.CheckPartialTLSMaterial(dir); warn != "" {
+		t.Fatalf("expected no warning with neither file, got: %s", warn)
+	}
+}
+
+func TestCheckPartialTLSMaterial_OnlyCert(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tls.crt"), []byte("cert"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	warn := tlswiring.CheckPartialTLSMaterial(dir)
+	if warn == "" {
+		t.Fatal("expected warning when only tls.crt exists")
+	}
+}
+
+func TestCheckPartialTLSMaterial_OnlyKey(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tls.key"), []byte("key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	warn := tlswiring.CheckPartialTLSMaterial(dir)
+	if warn == "" {
+		t.Fatal("expected warning when only tls.key exists")
+	}
+}
+
+func TestCheckPartialTLSMaterial_EmptyDir(t *testing.T) {
+	t.Parallel()
+	if warn := tlswiring.CheckPartialTLSMaterial(""); warn != "" {
+		t.Fatalf("expected no warning with empty dir, got: %s", warn)
+	}
+}
+
+func TestCAReloadableTransport_EmptyCA(t *testing.T) {
+	t.Parallel()
+	rt, watcher, err := tlswiring.CAReloadableTransport("", testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt != nil {
+		t.Fatal("expected nil transport")
+	}
+	if watcher != nil {
+		t.Fatal("expected nil watcher")
+	}
+}
+
+func TestCAReloadableTransport_ValidCA(t *testing.T) {
+	t.Parallel()
+	caFile := generateTestCA(t)
+	rt, watcher, err := tlswiring.CAReloadableTransport(caFile, testLogger())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rt == nil {
+		t.Fatal("expected non-nil transport")
+	}
+	if watcher == nil {
+		t.Fatal("expected non-nil watcher")
+	}
+}
+
+func TestCAReloadableTransport_InvalidCA(t *testing.T) {
+	t.Parallel()
+	caFile := filepath.Join(t.TempDir(), "bad-ca.crt")
+	if err := os.WriteFile(caFile, []byte("not a cert"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := tlswiring.CAReloadableTransport(caFile, testLogger())
+	if err == nil {
+		t.Fatal("expected error with invalid CA")
+	}
+}
+
+func TestCAReloadableTransport_NonExistentFile(t *testing.T) {
+	t.Parallel()
+	_, _, err := tlswiring.CAReloadableTransport("/nonexistent/ca.crt", testLogger())
+	if err == nil {
+		t.Fatal("expected error with non-existent file")
+	}
+}
+
+func TestValidateCAFilePath_Empty(t *testing.T) {
+	t.Parallel()
+	if err := tlswiring.ValidateCAFilePath("test", ""); err != nil {
+		t.Fatalf("expected nil error for empty path, got: %v", err)
+	}
+}
+
+func TestValidateCAFilePath_Valid(t *testing.T) {
+	t.Parallel()
+	caFile := generateTestCA(t)
+	if err := tlswiring.ValidateCAFilePath("test", caFile); err != nil {
+		t.Fatalf("expected nil error for valid CA, got: %v", err)
+	}
+}
+
+func TestValidateCAFilePath_Invalid(t *testing.T) {
+	t.Parallel()
+	caFile := filepath.Join(t.TempDir(), "bad.crt")
+	if err := os.WriteFile(caFile, []byte("not a cert"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := tlswiring.ValidateCAFilePath("test", caFile); err == nil {
+		t.Fatal("expected error for invalid CA")
+	}
+}
+
+func TestValidateCAFilePath_NonExistent(t *testing.T) {
+	t.Parallel()
+	if err := tlswiring.ValidateCAFilePath("test", "/nonexistent/ca.crt"); err == nil {
+		t.Fatal("expected error for non-existent file")
+	}
+}
+
 // generateTestCerts creates a self-signed cert+key pair in a temp directory.
 func generateTestCerts(t *testing.T) string {
 	t.Helper()
@@ -226,6 +356,10 @@ func generateTestCerts(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+func testLogger() logr.Logger {
+	return logr.Discard()
 }
 
 // generateTestCA creates a self-signed CA certificate in a temp file.

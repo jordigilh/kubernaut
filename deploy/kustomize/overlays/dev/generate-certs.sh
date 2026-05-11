@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generates self-signed TLS certificates for local development.
+# Generates self-signed TLS certificates for LOCAL DEVELOPMENT ONLY.
+# Do NOT use these certificates in production environments.
 # Creates a CA and server certificate valid for the in-cluster service DNS names.
 
 CERT_DIR="${1:-/tmp/apifrontend-dev-certs}"
 DAYS=365
 NAMESPACE="kubernaut-system"
 
+umask 077
 mkdir -p "${CERT_DIR}"
 
 # Generate CA key and certificate
@@ -66,9 +68,18 @@ IP.1 = 127.0.0.1
 EOF
 )
 
+# Enforce restrictive permissions on private keys
+chmod 0600 "${CERT_DIR}/ca.key" "${CERT_DIR}/tls.key"
+chmod 0644 "${CERT_DIR}/ca.crt" "${CERT_DIR}/tls.crt"
+
+# Clean up intermediate artifacts
+rm -f "${CERT_DIR}/tls.csr" "${CERT_DIR}/ca.srl"
+
 echo "Certificates generated in ${CERT_DIR}:"
 ls -la "${CERT_DIR}"
 
+echo ""
+echo "WARNING: These certificates are for LOCAL DEVELOPMENT ONLY."
 echo ""
 echo "To create Kubernetes secrets:"
 echo "  kubectl create secret tls apifrontend-tls --cert=${CERT_DIR}/tls.crt --key=${CERT_DIR}/tls.key -n ${NAMESPACE}"

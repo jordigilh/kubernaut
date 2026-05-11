@@ -1,3 +1,5 @@
+//go:build integration
+
 package tlswiring_test
 
 import (

@@ -12,31 +12,55 @@ spec:
     - Ingress
     - Egress
   ingress:
-    - ports:
+    # API traffic from within the namespace (ingress controller, other services)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kubernaut-system
+      ports:
         - port: 8443
           protocol: TCP
+    # Health probes from kubelet (any source within cluster)
+    - ports:
         - port: 8081
           protocol: TCP
+    # Metrics scraping from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kubernaut-system
+      ports:
         - port: 9090
           protocol: TCP
   egress:
-    # KA and DS services (HTTPS)
-    - ports:
+    # KA and DS services within namespace (HTTPS)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: kubernaut
+      ports:
         - port: 8443
           protocol: TCP
     # Kubernetes API server
-    - ports:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
         - port: 443
           protocol: TCP
         - port: 6443
           protocol: TCP
-    # DNS resolution
+    # DNS resolution (kube-dns / CoreDNS)
     - ports:
         - port: 53
           protocol: UDP
         - port: 53
           protocol: TCP
     # Prometheus (for severity triage queries)
-    - ports:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kubernaut-system
+      ports:
         - port: 9090
           protocol: TCP

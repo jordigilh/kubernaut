@@ -20,6 +20,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/config"
@@ -70,11 +72,19 @@ func main() {
 	})
 	auditor.Start()
 
-	mcpHandler, err := buildMCPHandler(cfg, metricsReg, rbacRoles, auditor, logger)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	mcpHandler, caWatchers, err := buildMCPHandler(ctx, cfg, metricsReg, rbacRoles, auditor, logger)
 	if err != nil {
 		logger.Error(err, "failed to create MCP handler")
 		os.Exit(1)
 	}
+	defer func() {
+		for _, w := range caWatchers {
+			w.watcher.Stop()
+		}
+	}()
 
 	agentCardHandler, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
 		Name:        "kubernaut-apifrontend",
@@ -148,9 +158,6 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
 	tlsEnabled, certReloader, err := tlswiring.ConfigureServer(httpServer, cfg.Server.TLS.CertDir)
 	if err != nil {
 		logger.Error(err, "failed to configure TLS")
@@ -159,6 +166,9 @@ func main() {
 	if tlsEnabled {
 		logger.Info("TLS enabled with hot-reloadable certificates", "certDir", cfg.Server.TLS.CertDir)
 	} else {
+		if warn := tlswiring.CheckPartialTLSMaterial(cfg.Server.TLS.CertDir); warn != "" {
+			logger.Info("WARNING: "+warn, "certDir", cfg.Server.TLS.CertDir)
+		}
 		logger.Info("TLS disabled, serving plain HTTP")
 	}
 
@@ -272,11 +282,25 @@ func loadRBACRoles() (map[string][]string, error) {
 	return rf.Roles, nil
 }
 
-func buildMCPHandler(cfg *config.Config, metricsReg *metrics.Registry, rbacRoles map[string][]string, auditor audit.Emitter, logger logr.Logger) (http.Handler, error) {
-	dsTransport, err := tlswiring.OutboundTransport(cfg.Agent.DSTLSCaFile)
+type caWatcherEntry struct {
+	name    string
+	watcher *hotreload.FileWatcher
+}
+
+func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metrics.Registry, rbacRoles map[string][]string, auditor audit.Emitter, logger logr.Logger) (http.Handler, []caWatcherEntry, error) {
+	var caWatchers []caWatcherEntry
+
+	dsTransport, dsWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.DSTLSCaFile, logger.WithName("ds-ca"))
 	if err != nil {
-		return nil, fmt.Errorf("DS TLS transport: %w", err)
+		return nil, nil, fmt.Errorf("DS TLS transport: %w", err)
 	}
+	if dsWatcher != nil {
+		if err := dsWatcher.Start(ctx); err != nil {
+			return nil, nil, fmt.Errorf("DS CA watcher start: %w", err)
+		}
+		caWatchers = append(caWatchers, caWatcherEntry{name: "ds-ca", watcher: dsWatcher})
+	}
+
 	var dsClient ds.Client
 	dsCfg := ds.OgenClientConfig{
 		BaseURL:   cfg.Agent.DSBaseURL,
@@ -289,9 +313,15 @@ func buildMCPHandler(cfg *config.Config, metricsReg *metrics.Registry, rbacRoles
 		logger.Info("DS client unavailable, DS tools will return errors", "error", err)
 	}
 
-	kaTransport, err := tlswiring.OutboundTransport(cfg.Agent.KATLSCaFile)
+	kaTransport, kaWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.KATLSCaFile, logger.WithName("ka-ca"))
 	if err != nil {
-		return nil, fmt.Errorf("KA TLS transport: %w", err)
+		return nil, nil, fmt.Errorf("KA TLS transport: %w", err)
+	}
+	if kaWatcher != nil {
+		if err := kaWatcher.Start(ctx); err != nil {
+			return nil, nil, fmt.Errorf("KA CA watcher start: %w", err)
+		}
+		caWatchers = append(caWatchers, caWatcherEntry{name: "ka-ca", watcher: kaWatcher})
 	}
 
 	kaMCPHTTPClient := &http.Client{Transport: &auth.ContextJWTDelegationTransport{}}
@@ -317,13 +347,17 @@ func buildMCPHandler(cfg *config.Config, metricsReg *metrics.Registry, rbacRoles
 		MaxConcurrentTools: 10,
 	}
 
-	return handler.NewMCPHandler(handler.MCPConfig{
+	h, err := handler.NewMCPHandler(handler.MCPConfig{
 		ServerName:    "kubernaut-apifrontend",
 		ServerVersion: version(),
 		Enabled:       cfg.MCP.Enabled,
 		Bridge:        bridgeCfg,
 		Auditor:       auditor,
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return h, caWatchers, nil
 }
 
 // bridgeMetricsFrom wires the global metrics registry counters into
