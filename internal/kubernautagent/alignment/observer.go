@@ -369,12 +369,13 @@ func (o *Observer) RenderVerdict(wr WaitResult) Verdict {
 	}
 
 	return Verdict{
-		Result:       result,
-		Summary:      summary,
-		Observations: obs,
-		Flagged:      flagged,
-		Total:        len(obs),
-		Pending:      pending,
-		TimedOut:     timedOut,
+		Result:          result,
+		Summary:         summary,
+		Observations:    obs,
+		Flagged:         flagged,
+		Total:           len(obs),
+		Pending:         pending,
+		TimedOut:        timedOut,
+		GroundingReview: wr.GroundingObservation,
 	}
 }

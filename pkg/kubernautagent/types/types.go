@@ -129,12 +129,20 @@ type DueDiligenceReview struct {
 // Produced by InvestigatorWrapper and consumed by KA handler (mapped to ogen IncidentResponse)
 // and AA response processor (mapped to AIAnalysisStatus.AlignmentVerdict).
 type AlignmentVerdictResult struct {
-	Result                  string             `json:"result"`
-	CircuitBreakerActivated bool               `json:"circuit_breaker_activated"`
-	Summary                 string             `json:"summary"`
-	Flagged                 int                `json:"flagged"`
-	Total                   int                `json:"total"`
-	Findings                []AlignmentFinding `json:"findings,omitempty"`
+	Result                  string                    `json:"result"`
+	CircuitBreakerActivated bool                      `json:"circuit_breaker_activated"`
+	Summary                 string                    `json:"summary"`
+	Flagged                 int                       `json:"flagged"`
+	Total                   int                       `json:"total"`
+	Findings                []AlignmentFinding        `json:"findings,omitempty"`
+	GroundingReview         *AlignmentGroundingResult `json:"grounding_review,omitempty"`
+}
+
+// AlignmentGroundingResult holds the structured outcome of the full-context
+// grounding review (#1096). Populated when grounding review is enabled.
+type AlignmentGroundingResult struct {
+	Grounded    bool   `json:"grounded"`
+	Explanation string `json:"explanation"`
 }
 
 // AlignmentFinding captures a single suspicious step detected by the shadow agent.

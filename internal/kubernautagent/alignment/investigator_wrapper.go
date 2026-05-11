@@ -278,6 +278,10 @@ func (w *InvestigatorWrapper) emitAlignmentAudit(ctx context.Context, correlatio
 	if verdict.CircuitBreaker {
 		event.Data["circuit_breaker"] = true
 	}
+	if verdict.GroundingReview != nil {
+		event.Data["grounding_grounded"] = verdict.GroundingReview.Grounded
+		event.Data["grounding_explanation"] = SanitizeExplanation(verdict.GroundingReview.Explanation)
+	}
 
 	var shadowPrompt, shadowCompletion, shadowTotal int
 	for _, obs := range verdict.Observations {
@@ -321,6 +325,12 @@ func mapVerdictToResult(verdict Verdict) *katypes.AlignmentVerdictResult {
 				Tool:        obs.Step.Tool,
 				Explanation: SanitizeExplanation(obs.Explanation),
 			})
+		}
+	}
+	if verdict.GroundingReview != nil {
+		avr.GroundingReview = &katypes.AlignmentGroundingResult{
+			Grounded:    verdict.GroundingReview.Grounded,
+			Explanation: SanitizeExplanation(verdict.GroundingReview.Explanation),
 		}
 	}
 	return avr

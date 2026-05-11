@@ -88,6 +88,19 @@ func (e *Evaluator) EvaluateGrounding(ctx context.Context, conversation []llm.Me
 		return obs
 	}
 
+	if hasDuplicateGroundedKey(resp.Message.Content) {
+		obs := GroundingObservation{
+			Grounded:    false,
+			Explanation: "duplicate_key_attack (fail-closed): shadow LLM response contains duplicate 'grounded' key",
+			Usage:       resp.Usage,
+			Duration:    time.Since(start),
+		}
+		if emitAudit {
+			e.emitGroundingResponse(ctx, correlationID, obs, "malformed_response")
+		}
+		return obs
+	}
+
 	content := extractJSON(resp.Message.Content)
 	var parsed groundingResponse
 	if jsonErr := json.Unmarshal([]byte(content), &parsed); jsonErr != nil {
@@ -156,6 +169,12 @@ func renderConversation(messages []llm.Message, maxTokens int) string {
 	return result
 }
 
+// hasDuplicateGroundedKey performs a raw-byte pre-scan for duplicate
+// "grounded" keys in JSON. Mirrors hasDuplicateSuspiciousKey from evaluator.go.
+func hasDuplicateGroundedKey(raw string) bool {
+	return strings.Count(raw, `"grounded"`) > 1
+}
+
 func (e *Evaluator) emitGroundingRequest(ctx context.Context, correlationID string, conversationLen int, tokenEstimate int) {
 	event := audit.NewEvent(audit.EventTypeGroundingRequest, correlationID)
 	event.EventAction = audit.ActionGroundingRequest
@@ -172,7 +191,12 @@ func (e *Evaluator) emitGroundingRequest(ctx context.Context, correlationID stri
 func (e *Evaluator) emitGroundingResponse(ctx context.Context, correlationID string, obs GroundingObservation, result string) {
 	event := audit.NewEvent(audit.EventTypeGroundingResponse, correlationID)
 	event.EventAction = audit.ActionGroundingResponse
-	event.EventOutcome = audit.OutcomeSuccess
+	switch result {
+	case "grounded":
+		event.EventOutcome = audit.OutcomeSuccess
+	default:
+		event.EventOutcome = audit.OutcomeFailure
+	}
 	event.Data["grounded"] = obs.Grounded
 	event.Data["duration_ms"] = obs.Duration.Milliseconds()
 	event.Data["result"] = result
