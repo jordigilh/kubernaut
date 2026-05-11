@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -81,6 +82,9 @@ type Client struct {
 	redisClient *redis.Client
 	logger      logr.Logger
 	maxLen      int64 // Maximum DLQ stream length (for capacity monitoring - Gap 3.3)
+
+	// xaddCounter is optional (#1048 Phase 5 / AU-11); nil if not wired by server wiring.
+	xaddCounter *prometheus.CounterVec
 }
 
 // AuditMessage represents a message in the DLQ.
@@ -127,6 +131,34 @@ func NewClient(redisClient *redis.Client, logger logr.Logger, maxLen int64) (*Cl
 	}, nil
 }
 
+// SetXAddCounter wires the Prometheus counter for successful XADD calls (optional).
+func (c *Client) SetXAddCounter(counter *prometheus.CounterVec) {
+	c.xaddCounter = counter
+}
+
+// xaddStreamMetricLabel maps Redis stream keys to bounded Prometheus label values (#1048 / AU-11).
+func xaddStreamMetricLabel(streamKey string) string {
+	switch streamKey {
+	case "audit:dlq:notifications":
+		return "notifications"
+	case "audit:dlq:events":
+		return "audit_events"
+	case "audit:dead-letter:notifications":
+		return "dead_letter_notifications"
+	case "audit:dead-letter:events":
+		return "dead_letter_audit_events"
+	default:
+		return "unknown"
+	}
+}
+
+func (c *Client) observeXAddSuccess(streamKey string) {
+	if c.xaddCounter == nil {
+		return
+	}
+	c.xaddCounter.WithLabelValues(xaddStreamMetricLabel(streamKey)).Inc()
+}
+
 // EnqueueNotificationAudit adds a NotificationAudit record to the DLQ.
 // This is called when the primary write to PostgreSQL fails.
 func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.NotificationAudit, originalError error) error {
@@ -166,6 +198,7 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 	if err != nil {
 		return fmt.Errorf("failed to enqueue to DLQ: %w", err)
 	}
+	c.observeXAddSuccess(streamKey)
 
 	// Gap 3.3 REFACTOR: Monitor DLQ capacity using extracted monitoring function
 	c.monitorDLQCapacity(ctx, "notifications", streamKey, "notification_audit")
@@ -215,6 +248,7 @@ func (c *Client) EnqueueAuditEvent(ctx context.Context, audit *audit.AuditEvent,
 	if err != nil {
 		return fmt.Errorf("failed to add audit event to DLQ: %w", err)
 	}
+	c.observeXAddSuccess(streamKey)
 
 	// Gap 3.3 REFACTOR: Monitor DLQ capacity using extracted monitoring function
 	c.monitorDLQCapacity(ctx, "events", streamKey, "audit_event")
@@ -329,6 +363,109 @@ func (c *Client) ReadMessages(ctx context.Context, auditType, consumerGroup, con
 	return messages, nil
 }
 
+// AutoClaimMessages reclaims messages that have been idle for longer than minIdleTime.
+// #1048 Phase 5 / AU-2: PEL recovery for stuck unprocessable messages.
+// Returns claimed messages and the next cursor ID for incremental XAUTOCLAIM sweeps (Redis next-start).
+func (c *Client) AutoClaimMessages(ctx context.Context, auditType, consumerGroup, consumer string,
+	minIdleTime time.Duration, startID string, count int64) ([]DLQMessage, string, error) {
+	streamKey := fmt.Sprintf("audit:dlq:%s", auditType)
+
+	err := c.redisClient.XGroupCreateMkStream(ctx, streamKey, consumerGroup, "0").Err()
+	if err != nil && !isConsumerGroupExistsError(err) {
+		return nil, "", fmt.Errorf("failed to ensure consumer group for XAUTOCLAIM: %w", err)
+	}
+
+	if count <= 0 {
+		count = 10
+	}
+
+	redisMsgs, nextStart, err := c.redisClient.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+		Stream:   streamKey,
+		Group:    consumerGroup,
+		Consumer: consumer,
+		MinIdle:  minIdleTime,
+		Start:    startID,
+		Count:    count,
+	}).Result()
+	if err != nil {
+		return nil, "", fmt.Errorf("XAUTOCLAIM failed for stream %s: %w", streamKey, err)
+	}
+
+	var messages []DLQMessage
+	for _, msg := range redisMsgs {
+		dlqMsg, parseErr := c.parseStreamMessage(msg)
+		if parseErr != nil {
+			c.logger.Error(parseErr, "Invalid message format in PEL claim",
+				"stream", streamKey,
+				"message_id", msg.ID)
+			continue
+		}
+		messages = append(messages, *dlqMsg)
+	}
+
+	return messages, nextStart, nil
+}
+
+// ReadPendingMessages reads messages from this consumer's pending entries list (PEL).
+// Used for two-phase startup: drain pending before reading new messages.
+// Pass startID "0" (or "0-0") to read from the beginning of the consumer's pending backlog.
+//
+// Blocking: Uses non-blocking XREADGROUP (same pattern as ReadMessages with negative Block).
+func (c *Client) ReadPendingMessages(ctx context.Context, auditType, consumerGroup, consumer string,
+	count int64, startID string) ([]DLQMessage, error) {
+	streamKey := fmt.Sprintf("audit:dlq:%s", auditType)
+
+	err := c.redisClient.XGroupCreateMkStream(ctx, streamKey, consumerGroup, "0").Err()
+	if err != nil && !isConsumerGroupExistsError(err) {
+		return nil, fmt.Errorf("failed to create consumer group: %w", err)
+	}
+
+	if count <= 0 {
+		count = 10
+	}
+
+	if startID == "" {
+		startID = "0"
+	}
+
+	// Block must be negative so go-redis omits BLOCK and the call returns immediately
+	// (see redis.XReadGroup: negative Block skips the block argument).
+	const noBlock time.Duration = -1
+
+	streams, err := c.redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    consumerGroup,
+		Consumer: consumer,
+		Streams:  []string{streamKey, startID},
+		Count:    count,
+		Block:    noBlock,
+	}).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
+		if isNoGroupError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read pending messages: %w", err)
+	}
+
+	var messages []DLQMessage
+	for _, stream := range streams {
+		for _, msg := range stream.Messages {
+			dlqMsg, parseErr := c.parseStreamMessage(msg)
+			if parseErr != nil {
+				c.logger.Error(parseErr, "Failed to unmarshal pending message",
+					"stream", streamKey,
+					"message_id", msg.ID)
+				continue
+			}
+			messages = append(messages, *dlqMsg)
+		}
+	}
+
+	return messages, nil
+}
+
 // AckMessage acknowledges a successfully processed message.
 //
 // After acknowledgment, the message is removed from the pending entries list
@@ -382,6 +519,7 @@ func (c *Client) MoveToDeadLetter(ctx context.Context, auditType string, msg *DL
 	if err != nil {
 		return fmt.Errorf("failed to write to dead letter: %w", err)
 	}
+	c.observeXAddSuccess(deadLetterKey)
 
 	// Remove from original DLQ stream
 	_, err = c.redisClient.XDel(ctx, sourceStreamKey, msg.ID).Result()
@@ -432,6 +570,7 @@ func (c *Client) IncrementRetryCount(ctx context.Context, auditType string, msg 
 	if err != nil {
 		return fmt.Errorf("failed to re-add message with incremented retry count: %w", err)
 	}
+	c.observeXAddSuccess(streamKey)
 
 	// Remove old message
 	_, err = c.redisClient.XDel(ctx, streamKey, msg.ID).Result()

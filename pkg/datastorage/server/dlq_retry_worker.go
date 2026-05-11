@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -53,6 +54,14 @@ import (
 // - After max retries: Move to dead letter
 //
 // ========================================
+
+// PEL recovery tuning (#1048 Phase 5 / FedRAMP AU-2). Exported for unit test contract checks.
+const (
+	PelRecoveryClaimInterval = 30 * time.Second
+	PelRecoveryMinIdleTime   = 60 * time.Second
+	PelRecoveryClaimCount    = int64(10)
+	PelRecoveryMaxDeliveries = 5
+)
 
 // backoffIntervals defines the exponential backoff schedule per DD-009.
 // After 6 retries, messages are moved to dead letter for manual investigation.
@@ -106,6 +115,9 @@ type DLQRetryWorker struct {
 	// Lifecycle: cancel func interrupts blocking Redis reads on Stop()
 	cancel context.CancelFunc
 	doneCh chan struct{}
+
+	// #1048 Phase 5 / AU-2: after first processRetryBatch, PEL backlog was drained ahead of live ">" reads.
+	pelDrained bool
 }
 
 // NewDLQRetryWorker creates a new DLQ retry worker.
@@ -141,7 +153,20 @@ func NewDLQRetryWorker(
 func (w *DLQRetryWorker) Start(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	w.cancel = cancel
-	go w.retryLoop(ctx)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		w.retryLoop(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		w.runClaimJanitor(ctx)
+	}()
+	go func() {
+		wg.Wait()
+		close(w.doneCh)
+	}()
 	w.logger.Info("DLQ retry worker started (DD-009 V1.0)",
 		"poll_interval", w.pollInterval,
 		"max_batch_size", w.maxBatchSize,
@@ -161,8 +186,6 @@ func (w *DLQRetryWorker) Stop() {
 }
 
 func (w *DLQRetryWorker) retryLoop(ctx context.Context) {
-	defer close(w.doneCh)
-
 	ticker := time.NewTicker(w.pollInterval)
 	defer ticker.Stop()
 
@@ -181,6 +204,17 @@ func (w *DLQRetryWorker) processRetryBatch(ctx context.Context) {
 	// Process both audit types
 	auditTypes := []string{"events", "notifications"}
 
+	// Two-phase startup (AU-2): drain this consumer's PEL before reading new messages (">").
+	if !w.pelDrained {
+		for _, auditType := range auditTypes {
+			if ctx.Err() != nil {
+				return
+			}
+			w.drainPEL(ctx, auditType)
+		}
+		w.pelDrained = true
+	}
+
 	for _, auditType := range auditTypes {
 		messages, err := w.dlqClient.ReadMessages(ctx, auditType, w.consumerGroup, w.consumerName, w.maxBatchSize, -1)
 		if err != nil {
@@ -189,12 +223,99 @@ func (w *DLQRetryWorker) processRetryBatch(ctx context.Context) {
 		}
 
 		for _, msg := range messages {
-			w.processMessage(ctx, auditType, msg)
+			_ = w.processMessage(ctx, auditType, msg)
 		}
 	}
 }
 
-func (w *DLQRetryWorker) processMessage(ctx context.Context, auditType string, msg *dlq.DLQMessage) {
+func (w *DLQRetryWorker) drainPEL(ctx context.Context, auditType string) {
+	w.logger.Info("PEL drain phase: processing previously unacknowledged messages",
+		"audit_type", auditType)
+
+	const pelDrainBatch = int64(10)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		messages, err := w.dlqClient.ReadPendingMessages(ctx, auditType,
+			w.consumerGroup, w.consumerName, pelDrainBatch, "0")
+		if err != nil {
+			w.logger.Error(err, "Failed to read pending messages during PEL drain",
+				"audit_type", auditType)
+			return
+		}
+
+		if len(messages) == 0 {
+			w.logger.Info("PEL drain complete: no more pending messages",
+				"audit_type", auditType)
+			return
+		}
+
+		progressed := false
+		for i := range messages {
+			msg := messages[i]
+			if w.processMessage(ctx, auditType, &msg) {
+				progressed = true
+			}
+		}
+		if !progressed {
+			w.logger.Info("PEL drain stalled on backoff; remaining entries remain pending until idle reclaim",
+				"audit_type", auditType)
+			return
+		}
+	}
+}
+
+func (w *DLQRetryWorker) runClaimJanitor(ctx context.Context) {
+	ticker := time.NewTicker(PelRecoveryClaimInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			w.claimOrphanedMessages(ctx)
+		}
+	}
+}
+
+func (w *DLQRetryWorker) claimOrphanedMessages(ctx context.Context) {
+	auditTypes := []string{"events", "notifications"}
+
+	for _, auditType := range auditTypes {
+		messages, _, err := w.dlqClient.AutoClaimMessages(ctx, auditType,
+			w.consumerGroup, w.consumerName, PelRecoveryMinIdleTime, "0-0", PelRecoveryClaimCount)
+		if err != nil {
+			w.logger.V(1).Info("XAUTOCLAIM sweep returned error (may be empty PEL or transient Redis)",
+				"audit_type", auditType,
+				"error", err.Error())
+			continue
+		}
+
+		for i := range messages {
+			msg := messages[i]
+			if msg.AuditMessage.RetryCount > PelRecoveryMaxDeliveries {
+				w.logger.Info("Poison message detected in PEL, moving to dead letter",
+					"message_id", msg.ID,
+					"retry_count", msg.AuditMessage.RetryCount,
+					"audit_type", auditType)
+				w.moveToDeadLetter(ctx, auditType, &msg)
+				continue
+			}
+
+			w.processMessage(ctx, auditType, &msg)
+		}
+	}
+}
+
+// processMessage attempts to persist a DLQ entry. Returns false when the message was skipped
+// (for example backoff not elapsed). Returns true when a side-effect occurred (dead-letter,
+// retry increment, or ack attempted) so PEL drains avoid busy-spinning unready entries (AU-2).
+func (w *DLQRetryWorker) processMessage(ctx context.Context, auditType string, msg *dlq.DLQMessage) bool {
 	// Check if message is ready for retry (backoff period elapsed)
 	if !IsReadyForRetry(msg.AuditMessage.RetryCount, msg.AuditMessage.Timestamp) {
 		w.logger.V(1).Info("Message not ready for retry (backoff not elapsed)",
@@ -202,20 +323,20 @@ func (w *DLQRetryWorker) processMessage(ctx context.Context, auditType string, m
 			"retry_count", msg.AuditMessage.RetryCount,
 			"created_at", msg.AuditMessage.Timestamp,
 		)
-		return
+		return false
 	}
 
 	// Check if max retries exceeded
 	if msg.AuditMessage.RetryCount >= w.maxRetriesPerMsg {
 		w.moveToDeadLetter(ctx, auditType, msg)
-		return
+		return true
 	}
 
 	// Attempt write to PostgreSQL
 	err := w.writeToPostgres(ctx, auditType, msg)
 	if err != nil {
 		w.handleRetryFailure(ctx, auditType, msg, err)
-		return
+		return true
 	}
 
 	// Success - acknowledge message
@@ -224,14 +345,15 @@ func (w *DLQRetryWorker) processMessage(ctx context.Context, auditType string, m
 			"message_id", msg.ID,
 			"audit_type", auditType,
 		)
-	} else {
-		w.logger.Info("DLQ message processed successfully",
-			"message_id", msg.ID,
-			"audit_type", auditType,
-			"retry_count", msg.AuditMessage.RetryCount,
-			"correlation_id", msg.AuditMessage.CorrelationID(),
-		)
+		return true
 	}
+	w.logger.Info("DLQ message processed successfully",
+		"message_id", msg.ID,
+		"audit_type", auditType,
+		"retry_count", msg.AuditMessage.RetryCount,
+		"correlation_id", msg.AuditMessage.CorrelationID(),
+	)
+	return true
 }
 
 // writeToPostgres persists a DLQ message to PostgreSQL.
