@@ -26,6 +26,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
@@ -434,6 +435,8 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	if err != nil {
 		return nil, err
 	}
+
+	alignment.NotifyRCAComplete(ctx, messages)
 
 	var content string
 	switch r := loopRes.(type) {

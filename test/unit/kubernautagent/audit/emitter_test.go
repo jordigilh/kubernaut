@@ -64,10 +64,12 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 			Entry("aiagent.alignment.verdict", audit.EventTypeAlignmentVerdict),
 			Entry("aiagent.shadow.llm.request", audit.EventTypeShadowLLMRequest),
 			Entry("aiagent.shadow.llm.response", audit.EventTypeShadowLLMResponse),
+			Entry("aiagent.alignment.grounding.request", audit.EventTypeGroundingRequest),
+			Entry("aiagent.alignment.grounding.response", audit.EventTypeGroundingResponse),
 		)
 
-		It("should define exactly 13 event types", func() {
-			Expect(audit.AllEventTypes).To(HaveLen(13))
+		It("should define exactly 15 event types", func() {
+			Expect(audit.AllEventTypes).To(HaveLen(15))
 		})
 
 		It("should include aiagent.rca.complete in AllEventTypes", func() {

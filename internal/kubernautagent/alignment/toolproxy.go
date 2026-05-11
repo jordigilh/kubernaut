@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
@@ -62,6 +63,18 @@ func SubmitToolStep(ctx context.Context, name, content string) {
 		Content: content,
 	}
 	obs.SubmitAsync(ctx, step)
+}
+
+// NotifyRCAComplete triggers the full-context grounding review (#1096).
+// Called by the investigator after the RCA loop completes, passing the
+// full conversation for grounding analysis. Safe to call when alignment
+// is disabled or the observer is absent (no-op in both cases).
+func NotifyRCAComplete(ctx context.Context, messages []llm.Message) {
+	obs := ObserverFromContext(ctx)
+	if obs == nil {
+		return
+	}
+	obs.StartGroundingReview(messages)
 }
 
 // ToolsForPhase delegates directly to the inner registry.
