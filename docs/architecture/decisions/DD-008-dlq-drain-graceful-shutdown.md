@@ -75,9 +75,9 @@ DataStorage service uses a Dead Letter Queue (DLQ) to store audit messages that 
 - ✅ **Graceful Degradation**: If timeout, at least some messages saved
 
 **Cons**:
-- ⚠️ **Partial Loss Possible**: If DLQ drain times out, remaining messages lost
+- ⚠️ **Partial Drain Possible**: If DLQ drain times out, remaining messages stay in Redis
   - **Mitigation**: 10 seconds is sufficient for typical DLQ depth
-  - **Rationale**: Better to save some than none
+  - **Note**: Messages are NOT lost — they remain in Redis and will be retried on next startup
 
 **Confidence**: 95% (approved - pragmatic balance)
 
@@ -148,6 +148,9 @@ defer cancel()
 stats, err := s.dlqClient.DrainWithTimeout(ctx, s.repository, s.auditEventsRepo)
 
 // 3. For each stream (notifications, events):
+//    Two-pass cursor-based iteration (ARCH-F1 fix):
+//    Pass 1: forward sweep, XDel only after successful write
+//    Pass 2 (if any writes failed): retry from "-" for remaining messages
 for each message in stream {
     // Check timeout before processing
     if ctx.Done() { return processed, nil }
@@ -155,10 +158,13 @@ for each message in stream {
     // Parse message
     dlqMsg := parseStreamMessage(msg)
 
-    // Write to database (best effort)
-    writeMessageToDB(ctx, auditType, dlqMsg, repo)
+    // Write to database
+    if err := writeMessageToDB(ctx, auditType, dlqMsg, repo); err != nil {
+        // Message stays in Redis — NOT deleted (DF-3 fix)
+        continue
+    }
 
-    // Remove from DLQ
+    // Remove from DLQ only on success
     XDel(ctx, streamKey, msg.ID)
 
     processed++
@@ -180,7 +186,7 @@ return DrainStats{
 **If DLQ drain times out**:
 - ✅ Already-processed messages are persisted
 - ✅ Shutdown continues (timeout is non-fatal)
-- ⚠️ Remaining DLQ messages are lost
+- ✅ Remaining DLQ messages stay in Redis for the next startup's retry worker (#1048 DF-3)
 - 📊 Drain statistics logged for monitoring
 
 **Metrics** (via Prometheus):
@@ -204,8 +210,9 @@ return DrainStats{
 
 1. ⚠️ **Shutdown Delay**: Additional 10s maximum
    - **Mitigation**: Acceptable for audit completeness, configurable timeout
-2. ⚠️ **Partial Loss Possible**: If timeout, remaining messages lost
+2. ⚠️ **Partial Drain Possible**: If timeout, remaining messages stay in Redis
    - **Mitigation**: Typical DLQ depth low (monitored), 10s sufficient for most cases
+   - **Note**: Messages are NOT lost — they remain in Redis for the next startup's retry worker (#1048 DF-3)
 3. ⚠️ **Complexity**: Additional shutdown step
    - **Mitigation**: Well-tested (5/5 tests passing), clear logging
 
