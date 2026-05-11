@@ -157,7 +157,7 @@ func ValidateCAFilePath(field, path string) error {
 	if path == "" {
 		return nil
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is from operator-controlled config, not user input
 	if err != nil {
 		return fmt.Errorf("%s: cannot read CA file %q: %w", field, path, err)
 	}

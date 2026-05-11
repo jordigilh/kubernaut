@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/tlswiring"
 )
 
@@ -192,8 +191,4 @@ func TestStartCertFileWatcher_EmptyCertDir(t *testing.T) {
 	if watcher != nil {
 		t.Fatal("expected nil watcher with empty certDir")
 	}
-}
-
-func testLogger() logr.Logger {
-	return logr.Discard()
 }
