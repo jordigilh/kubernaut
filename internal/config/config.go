@@ -88,8 +88,14 @@ type ShutdownConfig struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port int                 `yaml:"port"`
-	TLS  sharedtls.TLSConfig `yaml:"tls"`
+	Port int             `yaml:"port"`
+	TLS  ServerTLSConfig `yaml:"tls"`
+}
+
+// ServerTLSConfig extends the shared TLS config with a Required flag for FedRAMP compliance.
+type ServerTLSConfig struct {
+	sharedtls.TLSConfig `yaml:",inline"`
+	Required            bool `yaml:"required,omitempty"`
 }
 
 // AgentConfig holds ADK agent and backend connectivity settings.
@@ -105,7 +111,8 @@ type AgentConfig struct {
 
 // MCPConfig holds Model Context Protocol feature flags.
 type MCPConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled            bool          `yaml:"enabled"`
+	SessionIdleTimeout time.Duration `yaml:"sessionIdleTimeout,omitempty"`
 }
 
 // AgentCardConfig holds the agent card endpoint configuration.
@@ -246,6 +253,10 @@ func (c *Config) Validate() error {
 }
 
 func (c *Config) validateAuth() error {
+	// CFG-03: When TLS is required (production), auth must also be configured.
+	if c.Server.TLS.Required && c.Auth.IssuerURL == "" {
+		return fmt.Errorf("auth.issuerURL is required when server.tls.required is true (production mode)")
+	}
 	if c.Auth.IssuerURL == "" {
 		return nil
 	}
