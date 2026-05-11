@@ -41,6 +41,22 @@ func DefaultConfig() Config {
 	}
 }
 
+// GetInterval returns Interval or the default when unset or non-positive.
+func (c Config) GetInterval() time.Duration {
+	if c.Interval <= 0 {
+		return DefaultConfig().Interval
+	}
+	return c.Interval
+}
+
+// GetBatchSize returns BatchSize or the default when unset or non-positive.
+func (c Config) GetBatchSize() int {
+	if c.BatchSize <= 0 {
+		return DefaultConfig().BatchSize
+	}
+	return c.BatchSize
+}
+
 // MinRetentionDays is the minimum allowed retention period.
 const MinRetentionDays = 1
 
@@ -127,6 +143,16 @@ func ValidateRetentionDays(days int) error {
 const PurgeSQL = `DELETE FROM audit_events
 WHERE event_date + (retention_days * INTERVAL '1 day') < $1::DATE
   AND legal_hold = FALSE`
+
+// PurgeSQLBatched is PurgeSQL with a LIMIT clause for batched deletion.
+// Prevents long-running transactions on large tables.
+const PurgeSQLBatched = `DELETE FROM audit_events
+WHERE ctid IN (
+    SELECT ctid FROM audit_events
+    WHERE event_date + (retention_days * INTERVAL '1 day') < $1::DATE
+      AND legal_hold = FALSE
+    LIMIT $2
+)`
 
 // Clock is re-exported from the partition package for retention worker usage.
 type Clock = partition.Clock
