@@ -28,6 +28,7 @@ import (
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ka"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/metrics"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/streaming"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/tlswiring"
 )
 
 const (
@@ -150,12 +151,21 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	go startServer(httpServer, "API", logger)
+	tlsEnabled, _, err := tlswiring.ConfigureServer(httpServer, cfg.Server.TLS.CertDir)
+	if err != nil {
+		logger.Error(err, "failed to configure TLS")
+		os.Exit(1)
+	}
+	if tlsEnabled {
+		logger.Info("TLS enabled with hot-reloadable certificates", "certDir", cfg.Server.TLS.CertDir)
+	}
+
+	go startServerTLS(httpServer, tlsEnabled, "API", logger)
 	go startServer(healthServer, "health", logger)
 	go startServer(metricsServer, "metrics", logger)
 
 	logger.Info("kubernaut-apifrontend started",
-		"addr", addr, "mcp_enabled", cfg.MCP.Enabled, "tools", 20)
+		"addr", addr, "tls", tlsEnabled, "mcp_enabled", cfg.MCP.Enabled, "tools", 20)
 
 	<-ctx.Done()
 	draining.Store(true)
@@ -187,6 +197,18 @@ func startServer(srv *http.Server, name string, logger logr.Logger) {
 	logger.Info("server listening", "name", name, "addr", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error(err, "server error", "name", name)
+		os.Exit(1)
+	}
+}
+
+func startServerTLS(srv *http.Server, tlsEnabled bool, name string, logger logr.Logger) {
+	if !tlsEnabled {
+		startServer(srv, name, logger)
+		return
+	}
+	logger.Info("server listening (TLS)", "name", name, "addr", srv.Addr)
+	if err := srv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+		logger.Error(err, "server TLS error", "name", name)
 		os.Exit(1)
 	}
 }
@@ -231,10 +253,15 @@ func loadRBACRoles() (map[string][]string, error) {
 }
 
 func buildMCPHandler(cfg *config.Config, metricsReg *metrics.Registry, rbacRoles map[string][]string, auditor audit.Emitter, logger logr.Logger) (http.Handler, error) {
+	dsTransport, err := tlswiring.OutboundTransport(cfg.Agent.DSTLSCaFile)
+	if err != nil {
+		return nil, fmt.Errorf("DS TLS transport: %w", err)
+	}
 	var dsClient ds.Client
 	dsCfg := ds.OgenClientConfig{
-		BaseURL: cfg.Agent.DSBaseURL,
-		Timeout: cfg.Resilience.DS.RequestTimeout,
+		BaseURL:   cfg.Agent.DSBaseURL,
+		Timeout:   cfg.Resilience.DS.RequestTimeout,
+		Transport: dsTransport,
 	}
 	if c, err := ds.NewOgenClient(dsCfg); err == nil {
 		dsClient = c
@@ -242,15 +269,24 @@ func buildMCPHandler(cfg *config.Config, metricsReg *metrics.Registry, rbacRoles
 		logger.Info("DS client unavailable, DS tools will return errors", "error", err)
 	}
 
+	kaTransport, err := tlswiring.OutboundTransport(cfg.Agent.KATLSCaFile)
+	if err != nil {
+		return nil, fmt.Errorf("KA TLS transport: %w", err)
+	}
+
+	kaMCPHTTPClient := &http.Client{Transport: &auth.ContextJWTDelegationTransport{}}
+	if kaTransport != nil {
+		kaMCPHTTPClient.Transport = &auth.ContextJWTDelegationTransport{Base: kaTransport}
+	}
 	kaMCPClient := ka.NewSDKMCPClient(
 		cfg.Agent.KAMCPEndpoint,
-		&http.Client{Transport: &auth.ContextJWTDelegationTransport{}},
+		kaMCPHTTPClient,
 		logger,
 	)
 
 	bridgeCfg := &handler.MCPBridgeConfig{
 		DynFactory:         buildDynFactory(),
-		KAClient:           ka.NewClient(ka.Config{BaseURL: cfg.Agent.KABaseURL}),
+		KAClient:           ka.NewClient(ka.Config{BaseURL: cfg.Agent.KABaseURL, BaseTransport: kaTransport}),
 		KAMCPClient:        kaMCPClient,
 		DSClient:           dsClient,
 		RBACRoles:          rbacRoles,

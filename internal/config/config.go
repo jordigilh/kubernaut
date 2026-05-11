@@ -9,21 +9,29 @@ import (
 	"strings"
 	"time"
 
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"gopkg.in/yaml.v3"
 )
 
 // Config holds all operational configuration for the API Frontend.
 type Config struct {
-	Server     ServerConfig     `yaml:"server"`
-	Agent      AgentConfig      `yaml:"agent"`
-	MCP        MCPConfig        `yaml:"mcp"`
-	AgentCard  AgentCardConfig  `yaml:"agentCard"`
-	Auth       AuthConfig       `yaml:"auth"`
-	Logging    LoggingConfig    `yaml:"logging"`
-	RateLimit  RateLimitConfig  `yaml:"rateLimit"`
-	Shutdown   ShutdownConfig   `yaml:"shutdown"`
-	Resilience ResilienceConfig `yaml:"resilience"`
-	RBAC       RBACConfig       `yaml:"rbac"`
+	Server         ServerConfig         `yaml:"server"`
+	Agent          AgentConfig          `yaml:"agent"`
+	MCP            MCPConfig            `yaml:"mcp"`
+	AgentCard      AgentCardConfig      `yaml:"agentCard"`
+	Auth           AuthConfig           `yaml:"auth"`
+	Logging        LoggingConfig        `yaml:"logging"`
+	RateLimit      RateLimitConfig      `yaml:"rateLimit"`
+	Shutdown       ShutdownConfig       `yaml:"shutdown"`
+	Resilience     ResilienceConfig     `yaml:"resilience"`
+	RBAC           RBACConfig           `yaml:"rbac"`
+	SeverityTriage SeverityTriageConfig `yaml:"severityTriage"`
+}
+
+// SeverityTriageConfig holds settings for the Prometheus-based severity triage pipeline.
+type SeverityTriageConfig struct {
+	PrometheusURL       string `yaml:"prometheusURL,omitempty"`
+	PrometheusTLSCaFile string `yaml:"prometheusTlsCaFile,omitempty"`
 }
 
 // ResilienceConfig holds per-dependency circuit breaker and retry settings.
@@ -73,7 +81,8 @@ type ShutdownConfig struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port int `yaml:"port"`
+	Port int                 `yaml:"port"`
+	TLS  sharedtls.TLSConfig `yaml:"tls"`
 }
 
 // AgentConfig holds ADK agent and backend connectivity settings.
@@ -83,6 +92,8 @@ type AgentConfig struct {
 	KABaseURL     string `yaml:"kaBaseURL"`
 	KAMCPEndpoint string `yaml:"kaMCPEndpoint"`
 	DSBaseURL     string `yaml:"dsBaseURL"`
+	KATLSCaFile   string `yaml:"kaTlsCaFile,omitempty"`
+	DSTLSCaFile   string `yaml:"dsTlsCaFile,omitempty"`
 }
 
 // MCPConfig holds Model Context Protocol feature flags.
