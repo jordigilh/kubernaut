@@ -105,11 +105,16 @@ datastorage:
       # Override with explicit origins for production (e.g., ["https://dashboard.example.com"]).
       corsAllowedOrigins:
         - "*"
+      # #1048 Phase 5 / AU-9: Directory containing signing cert (tls.crt, tls.key).
+      signerCertDir: "/etc/certs"
     database:
       sslMode: "disable"
       maxOpenConns: 100
       maxIdleConns: 20
       connMaxLifetime: "1h"
+    redis:
+      # #1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound (streams: audit:dlq:* , audit:dead-letter:* )
+      dlqMaxLen: 10000
   resources:
     requests:
       memory: 256Mi

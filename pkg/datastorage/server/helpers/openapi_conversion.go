@@ -46,28 +46,37 @@ import (
 // This performs the conversion from the REST API request type (OpenAPI-generated)
 // to the internal audit event type used by the audit system.
 //
+// When authenticatedActorID is non-empty (typically from oauth-proxy header
+// X-Auth-Request-User), server-side attribution overrides client body actor fields
+// to prevent spoofing (SEC-S1 / AU-3).
+//
 // Parameters:
 //   - req: OpenAPI-generated audit event request
+//   - authenticatedActorID: trusted human identity when present; otherwise use body defaults
 //
 // Returns:
 //   - *audit.AuditEvent: Internal audit event ready for storage
 //   - error: Conversion error (e.g., invalid event_data JSON)
-func ConvertAuditEventRequest(req ogenclient.AuditEventRequest) (*audit.AuditEvent, error) {
+func ConvertAuditEventRequest(req ogenclient.AuditEventRequest, authenticatedActorID string) (*audit.AuditEvent, error) {
 	// Convert event_data from map to JSON bytes
 	eventDataJSON, err := json.Marshal(req.EventData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal event_data: %w", err)
 	}
 
-	// Extract optional fields with defaults
-	actorType := "service" // Default
-	if req.ActorType.IsSet() {
-		actorType = req.ActorType.Value
-	}
+	actorType := "service"
+	actorID := string(req.EventCategory) + "-service"
 
-	actorID := string(req.EventCategory) + "-service" // Default: category-service
-	if req.ActorID.IsSet() {
-		actorID = req.ActorID.Value
+	if authenticatedActorID != "" {
+		actorType = "user"
+		actorID = authenticatedActorID
+	} else {
+		if req.ActorType.IsSet() {
+			actorType = req.ActorType.Value
+		}
+		if req.ActorID.IsSet() {
+			actorID = req.ActorID.Value
+		}
 	}
 
 	resourceType := string(req.EventCategory) // Default

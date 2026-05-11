@@ -1059,6 +1059,9 @@ func createTestServerWithAccess() (*httptest.Server, *httptest.Server, *server.S
 
 	// Create application config with database pool settings
 	appCfg := &config.Config{
+		Server: config.ServerConfig{
+			SignerCertDir: datastorageIntegrationSigningCertDirOrDie(),
+		},
 		Database: config.DatabaseConfig{
 			MaxOpenConns:    25,
 			MaxIdleConns:    5,

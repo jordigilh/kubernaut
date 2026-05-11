@@ -51,6 +51,9 @@ const (
 	// #1048 Phase 4 / BR-STORAGE-019: OpenAPI + DLQ validation failure counters
 	MetricNameValidationFailures    = "datastorage_validation_failures_total"
 	MetricNameDLQValidationFailures = "datastorage_dlq_validation_failures_total"
+
+	// #1048 Phase 5 / AU-11: XADD + MAXLEN~ trim observability (combined with DLQ depth gauge)
+	MetricNameDLQStreamXAddTotal = "datastorage_dlq_stream_xadd_total"
 )
 
 // Write operation metrics
@@ -100,6 +103,16 @@ var (
 		},
 		[]string{"audit_type", "reason"},
 	)
+
+	// #1048 Phase 5 / AU-11: Counts XADD operations that may trigger MAXLEN~ trimming.
+	// Combined with dlq_depth gauge, operators can detect active trimming.
+	DLQStreamXAddTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameDLQStreamXAddTotal,
+			Help: "Total XADD operations per stream (each may trigger MAXLEN~ trim)",
+		},
+		[]string{"stream"},
+	)
 )
 
 // Audit write API metrics (GAP-10)
@@ -115,7 +128,7 @@ var (
 	//   histogram_quantile(0.95, rate(datastorage_audit_lag_seconds_bucket[5m]))
 	AuditLagSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name: MetricNameAuditLagSeconds, // DD-005 V3.0: Pattern B (full name),
+			Name:    MetricNameAuditLagSeconds, // DD-005 V3.0: Pattern B (full name),
 			Help:    "Time lag between event occurrence and audit write in seconds",
 			Buckets: prometheus.DefBuckets,
 		},
@@ -125,11 +138,12 @@ var (
 
 // Metrics Summary:
 //
-// Total Metrics: 4 (external-facing per GitHub issue #294, #1048)
+// Total Metrics: 5 (external-facing per GitHub issue #294, #1048)
 // - WriteDuration (Histogram with labels) - write operation performance
 // - AuditLagSeconds (Histogram with labels) - audit lag observability
 // - ValidationFailures (Counter with labels) - OpenAPI validation rejections (#1048)
 // - DLQValidationFailures (Counter with labels) - DLQ replay validation failures (#1048)
+// - DLQStreamXAddTotal (Counter with labels) - DLQ stream XADD / trim correlation (#1048 Phase 5)
 //
 // Performance Target: < 5% overhead
 // BR Coverage: BR-STORAGE-001, 002, 007, 008, 012, 013, 019
@@ -182,6 +196,9 @@ type Metrics struct {
 	ValidationFailures    *prometheus.CounterVec // OpenAPI middleware rejections
 	DLQValidationFailures *prometheus.CounterVec // DLQ replay validation failures
 
+	// #1048 Phase 5 / AU-11: XADD observability for MAXLEN~ trimming
+	DLQStreamXAddTotal *prometheus.CounterVec // Per-stream XADD (may trigger trimming)
+
 	// Store registry for testing
 	registry prometheus.Registerer
 }
@@ -208,6 +225,7 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 		m.WriteDuration = WriteDuration
 		m.ValidationFailures = ValidationFailures
 		m.DLQValidationFailures = DLQValidationFailures
+		m.DLQStreamXAddTotal = DLQStreamXAddTotal
 	} else {
 		// Testing: Create isolated metrics with custom registry
 		// Testing: Create isolated metrics with full names (DD-005 V3.0: Pattern B)
@@ -245,11 +263,20 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 			[]string{"audit_type", "reason"},
 		)
 
+		m.DLQStreamXAddTotal = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameDLQStreamXAddTotal,
+				Help: "Total XADD operations per stream (each may trigger MAXLEN~ trim)",
+			},
+			[]string{"stream"},
+		)
+
 		reg.MustRegister(
 			m.AuditLagSeconds,
 			m.WriteDuration,
 			m.ValidationFailures,
 			m.DLQValidationFailures,
+			m.DLQStreamXAddTotal,
 		)
 	}
 
