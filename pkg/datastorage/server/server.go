@@ -190,9 +190,22 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
 
+	// #1048 Phase 4 / RES-M2: Track resources for cleanup on late-stage errors.
+	// On success the cleanup is disarmed; on failure all acquired resources are released
+	// in reverse order to prevent leaks during startup.
+	var cleanups []func()
+	success := false
+	defer func() {
+		if !success {
+			for i := len(cleanups) - 1; i >= 0; i-- {
+				cleanups[i]()
+			}
+		}
+	}()
+	cleanups = append(cleanups, func() { _ = db.Close() })
+
 	// Verify connection
 	if err := db.Ping(); err != nil {
-		_ = db.Close() // Best effort close on failed ping
 		return nil, fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
 
@@ -205,7 +218,6 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	if err := partition.EnsureMonthlyPartitions(
 		partitionCtx, db, clock.Now(), partition.DefaultLookaheadMonths, partition.AllTables(),
 	); err != nil {
-		_ = db.Close()
 		return nil, fmt.Errorf("failed to ensure monthly partitions at startup: %w", err)
 	}
 	logger.Info("Monthly partitions ensured",
@@ -214,23 +226,17 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	)
 
 	// Configure connection pool from config (not hardcoded)
-	// Bug fix: Use appCfg.Database values instead of hardcoded 25/5
-	// Issue discovered: 2026-01-14 - Integration tests with 12 parallel processes
-	// were bottlenecked by hardcoded max_open_conns=25
 	db.SetMaxOpenConns(appCfg.Database.MaxOpenConns)
 	db.SetMaxIdleConns(appCfg.Database.MaxIdleConns)
 
-	// Parse duration strings from config
 	connMaxLifetime, err := time.ParseDuration(appCfg.Database.ConnMaxLifetime)
 	if err != nil {
-		_ = db.Close()
 		return nil, fmt.Errorf("invalid connMaxLifetime: %w", err)
 	}
 	db.SetConnMaxLifetime(connMaxLifetime)
 
 	connMaxIdleTime, err := time.ParseDuration(appCfg.Database.ConnMaxIdleTime)
 	if err != nil {
-		_ = db.Close()
 		return nil, fmt.Errorf("invalid connMaxIdleTime: %w", err)
 	}
 	db.SetConnMaxIdleTime(connMaxIdleTime)
@@ -248,9 +254,9 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		Password: deps.RedisPassword, // ADR-030: Password from mounted secret
 	})
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {
-		_ = db.Close() // Clean up DB connection
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
+	cleanups = append(cleanups, func() { _ = redisClient.Close() })
 
 	logger.Info("Redis connection established",
 		"addr", deps.RedisAddr,
@@ -266,7 +272,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	}
 	dlqClient, err := dlq.NewClient(redisClient, logger, dlqMaxLen)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create DLQ client: %w", err)
+		return nil, fmt.Errorf("failed to create DLQ client: %w", err) // cleanups run via defer
 	}
 	validator := validation.NewNotificationAuditValidator()
 
@@ -295,9 +301,9 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		logger,                                 // Use logr.Logger directly (DD-005 v2.0)
 	)
 	if err != nil {
-		_ = db.Close() // Clean up DB connection
-		return nil, fmt.Errorf("failed to create audit store: %w", err)
+		return nil, fmt.Errorf("failed to create audit store: %w", err) // cleanups run via defer
 	}
+	cleanups = append(cleanups, func() { _ = auditStore.Close() })
 
 	logger.Info("Self-auditing audit store initialized (DD-STORAGE-012)",
 		"buffer_size", audit.DefaultConfig().BufferSize,
@@ -364,8 +370,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	logger.V(1).Info("Loading signing certificate from /etc/certs...")
 	signer, err := loadSigningCertificate(logger)
 	if err != nil {
-		_ = db.Close() // Clean up DB connection
-		return nil, fmt.Errorf("failed to load signing certificate: %w", err)
+		return nil, fmt.Errorf("failed to load signing certificate: %w", err) // cleanups run via defer
 	}
 	logger.Info("Signing certificate loaded successfully",
 		"algorithm", signer.GetAlgorithm(),
@@ -376,11 +381,10 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	// request validation silently accepts malformed input.
 	openapiValidator, err := dsmiddleware.NewOpenAPIValidator(
 		logger.WithName("openapi-validator"),
-		nil,
+		metrics.ValidationFailures,
 	)
 	if err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("failed to initialize OpenAPI validator: %w", err)
+		return nil, fmt.Errorf("failed to initialize OpenAPI validator: %w", err) // cleanups run via defer
 	}
 	logger.Info("OpenAPI validator initialized at startup (fail-hard)")
 
@@ -388,7 +392,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	// #1048 DF-1: Pass notification repo so notification DLQ messages are persisted
 	dlqWorkerConfig := DefaultDLQRetryWorkerConfig()
 	dlqWorkerConfig.ConsumerName = fmt.Sprintf("worker-%d", os.Getpid())
-	dlqRetryWorker := NewDLQRetryWorker(dlqClient, auditEventsRepo, repo, dlqWorkerConfig, logger)
+	dlqRetryWorker := NewDLQRetryWorker(dlqClient, auditEventsRepo, repo, dlqWorkerConfig, logger, metrics.DLQValidationFailures)
 
 	// DS-FLAKY-003 FIX: Create server with handler assigned to httpServer
 	// This allows graceful shutdown to work in both Start() and httptest scenarios
@@ -426,8 +430,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	if serverCfg.TLS.Enabled() {
 		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(srv.httpServer, serverCfg.TLS.CertDir)
 		if tlsErr != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
+			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr) // cleanups run via defer
 		}
 		if isTLS {
 			srv.certReloader = reloader
@@ -436,6 +439,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		}
 	}
 
+	success = true
 	return srv, nil
 }
 
