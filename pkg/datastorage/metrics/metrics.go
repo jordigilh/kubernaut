@@ -92,7 +92,7 @@ var (
 	// DLQValidationFailures counts DLQ replay validation rejections.
 	// Labels:
 	//   - audit_type: "events" or "notifications"
-	//   - reason: "field_validation", "size_exceeded", "depth_exceeded", "unmarshal_error"
+	//   - reason: "field_validation", "size_or_depth", "unmarshal_error"
 	DLQValidationFailures = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: MetricNameDLQValidationFailures,

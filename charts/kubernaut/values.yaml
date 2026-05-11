@@ -97,6 +97,14 @@ datastorage:
     level: "INFO"
   dbExistingSecret: ""  # DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret.
   config:
+    server:
+      # #1048 Phase 4 / SC-5: Maximum request body size in bytes.
+      # Clamped to [1048576, 52428800] (1–50 MiB). Plain integer only.
+      maxBodySize: "5242880"
+      # #1048 Phase 4 / AC-4: CORS allowed origins.
+      # Override with explicit origins for production (e.g., ["https://dashboard.example.com"]).
+      corsAllowedOrigins:
+        - "*"
     database:
       sslMode: "disable"
       maxOpenConns: 100
