@@ -188,6 +188,15 @@ jobs:
           cosign sign --yes \
             ${IMAGE_REGISTRY}/apifrontend:latest
 
+      - name: Verify signature
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.version }}
+        run: |
+          cosign verify \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp="^https://github.com/jordigilh/kubernaut-apifrontend/" \
+            ${IMAGE_REGISTRY}/apifrontend:${IMAGE_TAG}
+
   sbom:
     name: Generate SBOM
     needs: [prepare, build-amd64]

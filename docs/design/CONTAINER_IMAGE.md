@@ -85,6 +85,47 @@ The `scratch` production image copies only the statically-linked binary plus:
 - [x] No `dnf update` in non-builder stages (DD-TEST-002)
 - [x] Coverage-conditional build (DD-TEST-007)
 
+## Supply Chain Verification
+
+Released images are cryptographically signed using [Cosign](https://docs.sigstore.dev/cosign/overview/)
+with keyless signing (Fulcio + GitHub OIDC). No manual key management is required.
+
+### Verify image signature
+
+```bash
+cosign verify \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp="^https://github.com/jordigilh/kubernaut-apifrontend/" \
+  quay.io/kubernaut-ai/apifrontend:v1.5.0
+```
+
+### Verify SBOM attestation
+
+```bash
+cosign verify-attestation \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp="^https://github.com/jordigilh/kubernaut-apifrontend/" \
+  --type cyclonedx \
+  quay.io/kubernaut-ai/apifrontend:v1.5.0-amd64
+```
+
+### What is verified
+
+| Artifact | Format | Attached to |
+|----------|--------|-------------|
+| Image signature | Cosign keyless (Fulcio) | Multi-arch manifest + `:latest` |
+| SBOM attestation | CycloneDX JSON (in-toto) | Per-arch image digest |
+
+### License compliance
+
+CI runs `go-licenses check` against an approved allowlist:
+
+```
+Apache-2.0, BSD-2-Clause, BSD-3-Clause, MIT, ISC, MPL-2.0
+```
+
+Any dependency with a non-permissive license will fail the CI build.
+
 ## Makefile Integration
 
 The `Makefile` should define targets following the kubernaut pattern:
