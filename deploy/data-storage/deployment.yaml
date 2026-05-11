@@ -108,5 +108,5 @@ spec:
           secret:
             secretName: datastorage-signing-cert
       restartPolicy: Always
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 90
 

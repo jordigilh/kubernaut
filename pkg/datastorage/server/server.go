@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -71,6 +72,11 @@ type Server struct {
 	// DD-007: Graceful shutdown coordination flag
 	// Thread-safe flag for readiness probe coordination during shutdown
 	isShuttingDown atomic.Bool
+
+	// endpointPropagationDelay is the time to wait for Kubernetes endpoint
+	// removal to propagate. Defaults to endpointRemovalPropagationDelay (5s).
+	// Set to 0 in tests to avoid slow shutdown specs.
+	endpointPropagationDelay time.Duration
 
 	// BR-STORAGE-001 to BR-STORAGE-020: Audit write API dependencies
 	repository *repository.NotificationAuditRepository
@@ -381,11 +387,12 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		auditStore:             auditStore,
 		metrics:         metrics,
 		signer:          signer,
-		dlqRetryWorker: dlqRetryWorker,       // DD-009 V1.0: DLQ retry worker
-		authenticator:   deps.Authenticator, // DD-AUTH-014: Injected at runtime
-		authorizer:      deps.Authorizer,    // DD-AUTH-014: Injected at runtime
-		authNamespace:   deps.AuthNamespace,  // DD-AUTH-014: Dynamic namespace for SAR checks
-		maxBatchSize:    defaultMaxBatchSize(appCfg.Server.MaxBatchSize), // Issue #667 / BR-STORAGE-043
+		dlqRetryWorker:           dlqRetryWorker,       // DD-009 V1.0: DLQ retry worker
+		authenticator:            deps.Authenticator, // DD-AUTH-014: Injected at runtime
+		authorizer:               deps.Authorizer,    // DD-AUTH-014: Injected at runtime
+		authNamespace:            deps.AuthNamespace,  // DD-AUTH-014: Dynamic namespace for SAR checks
+		maxBatchSize:             defaultMaxBatchSize(appCfg.Server.MaxBatchSize), // Issue #667 / BR-STORAGE-043
+		endpointPropagationDelay: endpointRemovalPropagationDelay,
 	}
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
@@ -595,13 +602,22 @@ func (s *Server) Start() error {
 	return s.httpServer.ListenAndServe()
 }
 
-// Shutdown gracefully shuts down the server following DD-007 pattern
-// DD-007: Kubernetes-Aware Graceful Shutdown (4-Step Pattern)
+// Shutdown gracefully shuts down the server following DD-007 + DD-008 pattern.
 //
-// This implements the production-proven pattern from Gateway/Context API services
-// to achieve ZERO request failures during rolling updates
+// Steps executed (all steps run regardless of prior errors):
+//  1. Set readiness flag (Kubernetes removes pod from endpoints)
+//  2. Wait for endpoint removal propagation
+//  3. Drain in-flight HTTP connections
+//  3.5 Stop DLQ retry worker (DD-009)
+//  4. Drain DLQ messages to PostgreSQL (DD-008)
+//  5. Close external resources (audit store, PostgreSQL)
+//
+// Returns a joined error if any step failed; individual step errors are
+// logged at the point of failure. The returned error supports errors.Is/As.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info("Initiating DD-007 + DD-008 Kubernetes-aware graceful shutdown with DLQ drain")
+
+	var shutdownErrors []error
 
 	// STEP 1: Signal Kubernetes to remove pod from endpoints
 	s.shutdownStep1SetFlag()
@@ -610,8 +626,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.shutdownStep2WaitForPropagation()
 
 	// STEP 3: Drain in-flight HTTP connections
+	// #1048 Phase 3: Never skip subsequent cleanup steps. HTTP drain failure
+	// must not prevent DLQ drain or DB close — that would cause data loss
+	// (BR-AUDIT-001) and leak database connections.
 	if err := s.shutdownStep3DrainConnections(ctx); err != nil {
-		return err
+		s.logger.Error(err, "HTTP connection drain failed, continuing with cleanup",
+			"dd", "DD-007-step-3-error-non-fatal")
+		shutdownErrors = append(shutdownErrors, err)
 	}
 
 	// Issue #756: Stop cert file watcher after HTTP server is down
@@ -627,7 +648,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	// STEP 5: Close external resources (database)
 	if err := s.shutdownStep5CloseResources(); err != nil {
-		return err
+		shutdownErrors = append(shutdownErrors, err)
+	}
+
+	if len(shutdownErrors) > 0 {
+		s.logger.Info("DD-007 + DD-008 graceful shutdown completed with errors",
+			"error_count", len(shutdownErrors),
+			"dd", "DD-007-DD-008-complete-with-errors")
+		return errors.Join(shutdownErrors...)
 	}
 
 	s.logger.Info("DD-007 + DD-008 graceful shutdown complete - all resources closed, DLQ drained",
@@ -647,10 +675,13 @@ func (s *Server) shutdownStep1SetFlag() {
 // shutdownStep2WaitForPropagation waits for Kubernetes endpoint removal to propagate
 // DD-007 STEP 2: Industry best practice is 5 seconds (Kubernetes typically takes 1-3s)
 func (s *Server) shutdownStep2WaitForPropagation() {
+	delay := s.endpointPropagationDelay
 	s.logger.Info("Waiting for Kubernetes endpoint removal to propagate",
-		"delay", endpointRemovalPropagationDelay,
+		"delay", delay,
 		"dd", "DD-007-step-2")
-	time.Sleep(endpointRemovalPropagationDelay)
+	if delay > 0 {
+		time.Sleep(delay)
+	}
 	s.logger.Info("Endpoint propagation complete - now draining connections",
 		"dd", "DD-007-step-2-complete")
 }
@@ -697,13 +728,17 @@ func (s *Server) shutdownStep4DrainDLQ(ctx context.Context) {
 		"timeout", dlqDrainTimeout,
 		"dd", "DD-008-step-4")
 
-	// Create timeout context for DLQ drain
+	// Create timeout context for DLQ drain.
+	// Always start from context.Background() so the DLQ drain gets its full budget
+	// even if the parent context expired during HTTP drain (ARCH-M2).
 	drainCtx, cancel := context.WithTimeout(context.Background(), dlqDrainTimeout)
 	defer cancel()
 
-	// Override parent context if it would timeout sooner
+	// Use the parent context only if it has positive remaining time shorter than
+	// the DLQ budget — this prevents an expired parent from starving the drain.
 	if deadline, ok := ctx.Deadline(); ok {
-		if time.Until(deadline) < dlqDrainTimeout {
+		remaining := time.Until(deadline)
+		if remaining > 0 && remaining < dlqDrainTimeout {
 			drainCtx = ctx
 		}
 	}
@@ -759,7 +794,11 @@ func (s *Server) shutdownStep5CloseResources() error {
 	}
 
 	// Close PostgreSQL connection
-	if err := s.db.Close(); err != nil {
+	if s.db == nil {
+		s.logger.Info("No PostgreSQL connection to close — verify initialization",
+			"severity", "warning",
+			"dd", "DD-007-step-5-no-db")
+	} else if err := s.db.Close(); err != nil {
 		s.logger.Error(err, "Failed to close PostgreSQL connection",
 			"dd", "DD-007-step-5-error")
 		return fmt.Errorf("failed to close PostgreSQL: %w", err)
