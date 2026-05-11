@@ -152,7 +152,3 @@ type InvestigationSessionList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []InvestigationSession `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&InvestigationSession{}, &InvestigationSessionList{})
-}
