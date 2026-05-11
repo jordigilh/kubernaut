@@ -14,6 +14,8 @@ resources:
   - 04-service.yaml
   - 05-prometheusrule.yaml
   - 06-networkpolicy.yaml
+  - 07-pdb.yaml
+  - 08-servicemonitor.yaml
 
 labels:
   - pairs:

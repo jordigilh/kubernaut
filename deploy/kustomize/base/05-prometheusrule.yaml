@@ -209,3 +209,36 @@ spec:
             summary: "Severity triage P95 latency > 5s"
             description: "95th percentile triage duration for tier {{ $labels.tier }} exceeds 5 seconds."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-010.md"
+        # CM-05: Rate limit storm detection
+        - alert: ApifrontendRateLimitStorm
+          expr: sum(rate(af_rate_limit_rejections_total{job="apifrontend"}[5m])) > 10
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Sustained rate limit rejections (>10/s)"
+            description: "Rate limit denials exceeded 10/s for 3 minutes. Potential DoS or misconfigured client."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-008.md"
+        # CM-05: Auth latency SLO breach
+        - alert: ApifrontendAuthLatencyHigh
+          expr: histogram_quantile(0.99, sum(rate(af_auth_duration_seconds_bucket{job="apifrontend"}[5m])) by (le)) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Auth middleware P99 latency > 1s"
+            description: "JWT validation P99 exceeds 1 second — possible JWKS fetch issues or network degradation."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-011.md"
+        # IR-03: Composite attack pattern detection
+        - alert: ApifrontendSustainedAttackPattern
+          expr: |
+            (sum(rate(af_rate_limit_rejections_total{job="apifrontend"}[5m])) > 5)
+            and
+            (sum(rate(af_http_requests_total{job="apifrontend",code="401"}[5m])) > 5)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Sustained attack pattern: rate limits + auth failures"
+            description: "Concurrent elevated rate-limit denials and 401 responses for 5+ minutes. Investigate for credential stuffing or brute force."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-012.md"

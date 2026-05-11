@@ -1,0 +1,22 @@
+# CM-03: ServiceMonitor for repeatable Prometheus scrape configuration.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: apifrontend
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: kubernaut-apifrontend
+    app.kubernetes.io/component: apifrontend
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernaut-apifrontend
+      app.kubernetes.io/component: apifrontend
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scheme: http
+  namespaceSelector:
+    matchNames:
+      - kubernaut-system
