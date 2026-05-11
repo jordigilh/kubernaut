@@ -25,6 +25,7 @@ data:
       {{- else }}
         - "*"
       {{- end }}
+      signerCertDir: {{ .Values.datastorage.config.server.signerCertDir | default "/etc/certs" | quote }}
       tls:
         certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
     database:
@@ -42,7 +43,7 @@ data:
       passwordKey: "password"
     redis:
       addr: {{ include "kubernaut.valkey.addr" . }}
-      dlqMaxLen: 1000
+      dlqMaxLen: {{ .Values.datastorage.config.redis.dlqMaxLen | default "10000" }}
       secretsFile: "/etc/datastorage/secrets/valkey-secrets.yaml"
       passwordKey: "password"
     logging:

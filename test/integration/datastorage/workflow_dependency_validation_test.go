@@ -153,6 +153,9 @@ func createDepTestServer(schemaYAML string) (*httptest.Server, *server.Server) {
 	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
 
 	appCfg := &config.Config{
+		Server: config.ServerConfig{
+			SignerCertDir: datastorageIntegrationSigningCertDirOrDie(),
+		},
 		Database: config.DatabaseConfig{
 			MaxOpenConns:    25,
 			MaxIdleConns:    5,

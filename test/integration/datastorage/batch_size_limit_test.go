@@ -156,8 +156,9 @@ func newBatchLimitTestServer(maxBatchSize int) *httptest.Server {
 
 	appCfg := &dsconfig.Config{
 		Server: dsconfig.ServerConfig{
-			Port:         18090,
-			MaxBatchSize: maxBatchSize,
+			Port:          18090,
+			MaxBatchSize:  maxBatchSize,
+			SignerCertDir: datastorageIntegrationSigningCertDirOrDie(),
 		},
 		Database: dsconfig.DatabaseConfig{
 			MaxOpenConns:    5,

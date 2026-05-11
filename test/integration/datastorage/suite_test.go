@@ -24,7 +24,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,6 +38,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/jordigilh/kubernaut/pkg/cert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -44,12 +48,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
+	dsconfig "github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
-	dsconfig "github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -103,6 +107,10 @@ var (
 	// Shared envtest (process 1 only), stopped in AfterSuite Phase 2. Mimics Gateway integration.
 	sharedDSEnvTest   *envtest.Environment
 	sharedDSEnvConfig *rest.Config
+
+	// #1048 Phase 5 / AU-9: Per-process PEM dir for audit signing (replacing DS startup fallback certs).
+	datastorageIntegrationSigningCertDir  string
+	datastorageIntegrationSigningCertOnce sync.Once
 )
 
 // This enables parallel test execution by ensuring each test has unique data
@@ -116,6 +124,27 @@ func generateTestID() string { //nolint:unused
 // Used for audit events and other UUID-based records
 func generateTestUUID() uuid.UUID { //nolint:unused
 	return uuid.New()
+}
+
+// datastorageIntegrationSigningCertDirOrDie prepares tls.crt/tls.key once per parallel process
+// so in-process DataStorage servers satisfy BR-AUDIT-007 without relying on deprecated runtime fallbacks.
+func datastorageIntegrationSigningCertDirOrDie() string {
+	datastorageIntegrationSigningCertOnce.Do(func() {
+		tmpDir, err := os.MkdirTemp("", "ds-int-audit-signing-*")
+		Expect(err).ToNot(HaveOccurred())
+		pair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
+			CommonName:       "data-storage-integration",
+			Organization:     "Kubernaut",
+			DNSNames:         []string{"localhost"},
+			ValidityDuration: 8760 * time.Hour,
+			KeySize:          2048,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(os.WriteFile(filepath.Join(tmpDir, "tls.crt"), pair.CertPEM, 0o600)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(tmpDir, "tls.key"), pair.KeyPEM, 0o600)).To(Succeed())
+		datastorageIntegrationSigningCertDir = tmpDir
+	})
+	return datastorageIntegrationSigningCertDir
 }
 
 // preflightCheck validates the test environment before running tests
@@ -832,6 +861,9 @@ func seedActionTypesViaInProcessServer() {
 	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
 
 	appCfg := &dsconfig.Config{
+		Server: dsconfig.ServerConfig{
+			SignerCertDir: datastorageIntegrationSigningCertDirOrDie(),
+		},
 		Database: dsconfig.DatabaseConfig{
 			MaxOpenConns:    5,
 			MaxIdleConns:    2,

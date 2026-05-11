@@ -175,6 +175,9 @@ func newContextPropagationTestServer() *httptest.Server {
 	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
 
 	appCfg := &dsconfig.Config{
+		Server: dsconfig.ServerConfig{
+			SignerCertDir: datastorageIntegrationSigningCertDirOrDie(),
+		},
 		Database: dsconfig.DatabaseConfig{
 			MaxOpenConns:    5,
 			MaxIdleConns:    2,

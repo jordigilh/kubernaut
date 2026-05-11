@@ -37,18 +37,19 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/cert"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/retention"
 	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
-	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"      // Issue #756: FileWatcher for cert rotation
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"     // Issue #756: FileWatcher for cert rotation
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #493/#678: Conditional TLS
 )
 
@@ -65,9 +66,9 @@ type Server struct {
 	httpServer *http.Server
 
 	// Issue #756: TLS cert hot-reload support
-	certReloader *sharedtls.CertReloader      // nil when TLS disabled
-	certWatcher  *hotreload.FileWatcher        // nil when TLS disabled
-	tlsCertDir   string                        // cert dir for FileWatcher path
+	certReloader *sharedtls.CertReloader // nil when TLS disabled
+	certWatcher  *hotreload.FileWatcher  // nil when TLS disabled
+	tlsCertDir   string                  // cert dir for FileWatcher path
 
 	// DD-007: Graceful shutdown coordination flag
 	// Thread-safe flag for readiness probe coordination during shutdown
@@ -101,6 +102,9 @@ type Server struct {
 	// DD-009 V1.0: DLQ retry worker (background goroutine for async persistence)
 	// Processes 202 Accepted events from Redis DLQ back to PostgreSQL
 	dlqRetryWorker *DLQRetryWorker
+
+	// #1048 Phase 5 / AU-11: Retention worker (background purge)
+	retentionWorker *retention.Worker
 
 	// DD-AUTH-014: Authentication and authorization via dependency injection
 	// Authenticator validates tokens (TokenReview)
@@ -148,17 +152,17 @@ const (
 // ServerDeps groups the dependencies required to create a Data Storage HTTP server.
 // Replaces the previous long positional parameter list for clarity and extensibility.
 type ServerDeps struct {
-	DBConnStr     string            // PostgreSQL connection string
-	RedisAddr     string            // Redis address for DLQ (format: "localhost:6379")
-	RedisPassword string            // Redis password (from mounted secret)
-	Logger        logr.Logger       // Structured logger
-	AppConfig     *config.Config    // Full application configuration (includes database pool settings)
-	ServerConfig  *Config           // Server-specific configuration (port, timeouts)
-	DLQMaxLen     int64             // Maximum DLQ stream length for capacity monitoring (Gap 3.3)
+	DBConnStr     string             // PostgreSQL connection string
+	RedisAddr     string             // Redis address for DLQ (format: "localhost:6379")
+	RedisPassword string             // Redis password (from mounted secret)
+	Logger        logr.Logger        // Structured logger
+	AppConfig     *config.Config     // Full application configuration (includes database pool settings)
+	ServerConfig  *Config            // Server-specific configuration (port, timeouts)
+	DLQMaxLen     int64              // Maximum DLQ stream length for capacity monitoring (Gap 3.3)
 	Authenticator auth.Authenticator // Token validator (DD-AUTH-014)
-	Authorizer    auth.Authorizer   // Permission checker (DD-AUTH-014)
-	AuthNamespace string            // Namespace for SAR checks (DD-AUTH-014)
-	HandlerOpts   []HandlerOption   // Optional handler options (e.g. WithDependencyValidator for DD-WE-006)
+	Authorizer    auth.Authorizer    // Permission checker (DD-AUTH-014)
+	AuthNamespace string             // Namespace for SAR checks (DD-AUTH-014)
+	HandlerOpts   []HandlerOption    // Optional handler options (e.g. WithDependencyValidator for DD-WE-006)
 }
 
 // NewServer creates a new Data Storage HTTP server.
@@ -249,10 +253,19 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	)
 
 	// Connect to Redis for DLQ (DD-009)
-	redisClient := redis.NewClient(&redis.Options{
+	redisOpts := &redis.Options{
 		Addr:     deps.RedisAddr,
 		Password: deps.RedisPassword, // ADR-030: Password from mounted secret
-	})
+	}
+	if appCfg.Redis.TLS.Enabled {
+		redisTLS, err := appCfg.Redis.TLS.BuildTLSConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure Redis TLS: %w", err)
+		}
+		redisOpts.TLSConfig = redisTLS
+		logger.Info("Redis TLS enabled", "ca_file", appCfg.Redis.TLS.CAFile)
+	}
+	redisClient := redis.NewClient(redisOpts)
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
@@ -320,6 +333,9 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		"namespace", "datastorage",
 	)
 
+	// #1048 Phase 5 / AU-11: DLQ stream XADD / MAXLEN~ trim observability.
+	dlqClient.SetXAddCounter(metrics.DLQStreamXAddTotal)
+
 	// BR-STORAGE-013, BR-STORAGE-014: Create workflow catalog dependencies
 	logger.V(1).Info("Creating workflow catalog dependencies...")
 	sqlxDB := sqlx.NewDb(db, "pgx") // Wrap *sql.DB with sqlx for workflow repository
@@ -367,8 +383,9 @@ func NewServer(deps ServerDeps) (*Server, error) {
 
 	// SOC2 Day 9.1: Load signing certificate for audit exports
 	// BR-AUDIT-007: Digital signatures for tamper-evident audit exports
-	logger.V(1).Info("Loading signing certificate from /etc/certs...")
-	signer, err := loadSigningCertificate(logger)
+	signerCertDir := deps.AppConfig.Server.GetSignerCertDir()
+	logger.V(1).Info("Loading signing certificate...", "cert_dir", signerCertDir)
+	signer, err := loadSigningCertificate(logger, signerCertDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load signing certificate: %w", err) // cleanups run via defer
 	}
@@ -394,6 +411,13 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	dlqWorkerConfig.ConsumerName = fmt.Sprintf("worker-%d", os.Getpid())
 	dlqRetryWorker := NewDLQRetryWorker(dlqClient, auditEventsRepo, repo, dlqWorkerConfig, logger, metrics.DLQValidationFailures)
 
+	retentionWorker := retention.NewWorker(db, retention.Config{
+		Enabled:              appCfg.Retention.Enabled,
+		Interval:             appCfg.Retention.GetInterval(),
+		BatchSize:            appCfg.Retention.GetBatchSize(),
+		PartitionDropEnabled: appCfg.Retention.PartitionDropEnabled,
+	}, logger)
+
 	// DS-FLAKY-003 FIX: Create server with handler assigned to httpServer
 	// This allows graceful shutdown to work in both Start() and httptest scenarios
 	// Previously, handler was only assigned in Start(), causing Shutdown() to hang in tests
@@ -406,17 +430,18 @@ func NewServer(deps ServerDeps) (*Server, error) {
 			ReadTimeout:  serverCfg.ReadTimeout,
 			WriteTimeout: serverCfg.WriteTimeout,
 		},
-		repository:      repo,
-		dlqClient:       dlqClient,
-		validator:       validator,
-		auditEventsRepo:        auditEventsRepo,
-		auditStore:             auditStore,
-		metrics:         metrics,
-		signer:          signer,
-		dlqRetryWorker:           dlqRetryWorker,       // DD-009 V1.0: DLQ retry worker
-		authenticator:            deps.Authenticator, // DD-AUTH-014: Injected at runtime
-		authorizer:               deps.Authorizer,    // DD-AUTH-014: Injected at runtime
-		authNamespace:            deps.AuthNamespace,  // DD-AUTH-014: Dynamic namespace for SAR checks
+		repository:               repo,
+		dlqClient:                dlqClient,
+		validator:                validator,
+		auditEventsRepo:          auditEventsRepo,
+		auditStore:               auditStore,
+		metrics:                  metrics,
+		signer:                   signer,
+		dlqRetryWorker:           dlqRetryWorker,                                  // DD-009 V1.0: DLQ retry worker
+		retentionWorker:          retentionWorker,                                 // #1048 Phase 5 / AU-11: retention purge
+		authenticator:            deps.Authenticator,                              // DD-AUTH-014: Injected at runtime
+		authorizer:               deps.Authorizer,                                 // DD-AUTH-014: Injected at runtime
+		authNamespace:            deps.AuthNamespace,                              // DD-AUTH-014: Dynamic namespace for SAR checks
 		maxBatchSize:             defaultMaxBatchSize(appCfg.Server.MaxBatchSize), // Issue #667 / BR-STORAGE-043
 		endpointPropagationDelay: endpointRemovalPropagationDelay,
 		openapiValidator:         openapiValidator,
@@ -597,6 +622,7 @@ func (s *Server) Start() error {
 	// DD-009 V1.0: Start DLQ retry worker before accepting HTTP traffic
 	// Issue #667/M4: Use a server-scoped context instead of context.Background()
 	s.dlqRetryWorker.Start(context.Background())
+	s.retentionWorker.Start(context.Background())
 
 	// Issue #756: Start cert file watcher for hot-reload before accepting connections
 	if s.certReloader != nil {
@@ -627,8 +653,9 @@ func (s *Server) Start() error {
 //  1. Set readiness flag (Kubernetes removes pod from endpoints)
 //  2. Wait for endpoint removal propagation
 //  3. Drain in-flight HTTP connections
-//  3.5 Stop DLQ retry worker (DD-009)
+//     3.5 Stop DLQ retry worker (DD-009)
 //  4. Drain DLQ messages to PostgreSQL (DD-008)
+//  4.5. Stop retention worker (AU-11) after DLQ drain, before closing DB
 //  5. Close external resources (audit store, PostgreSQL)
 //
 // Returns a joined error if any step failed; individual step errors are
@@ -664,6 +691,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	// STEP 4: Drain DLQ messages (DD-008)
 	s.shutdownStep4DrainDLQ(ctx)
+
+	// STEP 4.5: Stop retention worker before closing PostgreSQL (#1048 Phase 5 / AU-11)
+	s.retentionWorker.Stop()
 
 	// STEP 5: Close external resources (database)
 	if err := s.shutdownStep5CloseResources(); err != nil {
@@ -838,47 +868,33 @@ func (s *Server) GetDLQClient() *dlq.Client {
 // SOC2 Day 9.1: Digital signatures for audit exports
 // BR-AUDIT-007: Tamper-evident audit logs
 //
-// Certificate Location: /etc/certs/ (mounted from datastorage-signing-cert Secret)
-// - /etc/certs/tls.crt (PEM certificate)
-// - /etc/certs/tls.key (PEM private key)
+// Certificate files (under certDir, default /etc/certs from config):
+// - tls.crt (PEM certificate)
+// - tls.key (PEM private key)
 //
 // cert-manager Compatibility:
 // - Managed by Certificate CRD (deploy/data-storage/certificate.yaml)
 // - Auto-rotates 30 days before expiry
 // - Self-signed via selfsigned-issuer ClusterIssuer
 //
-// Fallback: If cert-manager not available, generate self-signed cert
-func loadSigningCertificate(logger logr.Logger) (*cert.Signer, error) {
-	certFile := "/etc/certs/tls.crt"
-	keyFile := "/etc/certs/tls.key"
+// #1048 Phase 5 / AU-9: Missing or invalid provisioning is a fatal startup error (no fallback).
+func loadSigningCertificate(logger logr.Logger, certDir string) (*cert.Signer, error) {
+	certFile := filepath.Join(certDir, "tls.crt")
+	keyFile := filepath.Join(certDir, "tls.key")
 
-	// Check if cert-manager provided certificate exists
-	_, statErr := os.Stat(certFile)
-	if os.IsNotExist(statErr) {
-		logger.Info("cert-manager certificate not found, generating self-signed certificate",
-			"cert_file", certFile)
-		return generateFallbackCertificate(logger)
+	if _, err := os.Stat(certFile); os.IsNotExist(err) {
+		return nil, fmt.Errorf("signing certificate not found at %s: cert-manager Certificate must be provisioned (AU-9)", certFile)
 	}
 
-	// Check if key file exists
 	if _, err := os.Stat(keyFile); os.IsNotExist(err) {
-		logger.Info("cert-manager key file not found, generating self-signed certificate",
-			"key_file", keyFile)
-		return generateFallbackCertificate(logger)
+		return nil, fmt.Errorf("signing key not found at %s: cert-manager Certificate must be provisioned (AU-9)", keyFile)
 	}
 
-	// Load certificate from cert-manager Secret
 	tlsCert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		// Fallback to self-signed if cert-manager cert is invalid/corrupt
-		logger.Info("cert-manager certificate invalid or corrupt, generating self-signed certificate",
-			"cert_file", certFile,
-			"key_file", keyFile,
-			"load_error", err.Error())
-		return generateFallbackCertificate(logger)
+		return nil, fmt.Errorf("signing certificate at %s is invalid or corrupt: %w", certFile, err)
 	}
 
-	// Create signer from TLS certificate
 	signer, err := cert.NewSignerFromTLSCertificate(&tlsCert)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create signer from certificate: %w", err)
@@ -888,40 +904,6 @@ func loadSigningCertificate(logger logr.Logger) (*cert.Signer, error) {
 		"cert_file", certFile,
 		"algorithm", signer.GetAlgorithm(),
 		"fingerprint", signer.GetCertificateFingerprint())
-
-	return signer, nil
-}
-
-// generateFallbackCertificate generates a self-signed certificate if cert-manager is unavailable
-// Used in development or when cert-manager is not yet installed
-func generateFallbackCertificate(logger logr.Logger) (*cert.Signer, error) {
-	logger.Info("Generating fallback self-signed certificate",
-		"validity", "1 year",
-		"key_size", "2048-bit RSA")
-
-	// Generate self-signed certificate
-	certPair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
-		CommonName:       "data-storage-service",
-		Organization:     "Kubernaut",
-		DNSNames:         []string{"data-storage-service", "data-storage-service.kubernaut-system.svc.cluster.local"},
-		ValidityDuration: 8760 * time.Hour, // 1 year (cert-manager default)
-		KeySize:          2048,             // cert-manager default
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate fallback certificate: %w", err)
-	}
-
-	// Create signer from generated certificate
-	signer, err := cert.NewSignerFromPEM(certPair.CertPEM, certPair.KeyPEM)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create signer from generated certificate: %w", err)
-	}
-
-	logger.Info("Fallback certificate generated successfully",
-		"algorithm", signer.GetAlgorithm(),
-		"fingerprint", signer.GetCertificateFingerprint(),
-		"not_before", certPair.NotBefore,
-		"not_after", certPair.NotAfter)
 
 	return signer, nil
 }

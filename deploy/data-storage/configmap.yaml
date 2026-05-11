@@ -17,6 +17,9 @@ data:
       # Production should list explicit origins, e.g. ["https://dashboard.kubernaut.ai"]
       corsAllowedOrigins:
         - "*"
+      # #1048 Phase 5 / AU-9: Directory containing signing certificate (tls.crt, tls.key)
+      # Default: /etc/certs. Override for Helm environments where cert-manager mounts differ.
+      # signerCertDir: "/etc/certs"
 
     logging:
       level: "info"
