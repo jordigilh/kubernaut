@@ -29,12 +29,20 @@ import (
 // GET/HEAD/OPTIONS requests pass through without a limit.
 //
 // #1048 Phase 4 / SC-5: Prevents oversized payloads from exhausting memory.
-// On exceeding the limit, returns 413 with an RFC 7807 response.
+// Two-layer enforcement:
+//   - Fast path: if Content-Length is present and exceeds maxBytes, returns 413
+//     immediately (no body read). Covers all standard API clients.
+//   - Slow path: wraps r.Body with http.MaxBytesReader for chunked/unknown-size
+//     bodies. The handler's json.Decode will fail with MaxBytesError.
 func MaxBytesReaderMiddleware(maxBytes int64, logger logr.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
 			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+				if r.ContentLength > maxBytes {
+					WriteMaxBytesExceeded(w, logger)
+					return
+				}
 				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 			}
 			next.ServeHTTP(w, r)

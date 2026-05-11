@@ -45,10 +45,12 @@ var _ = Describe("DLQ EventData Validation (#1048 Phase 4 / SC-5, SI-10)", func(
 		})
 
 		It("UT-DS-1048-ED-004: should accept EventData at exactly 256 KB boundary", func() {
-			data := []byte(`{"d":"` + strings.Repeat("x", maxEventDataSize-10) + `"}`)
-			if len(data) <= maxEventDataSize {
-				Expect(validateEventData(data)).To(Succeed())
-			}
+			// JSON framing: {"d":""} = 7 bytes, fill the rest with 'x'
+			framing := len(`{"d":"` + `"}`)
+			fill := maxEventDataSize - framing
+			data := []byte(`{"d":"` + strings.Repeat("x", fill) + `"}`)
+			Expect(len(data)).To(Equal(maxEventDataSize), "test payload should be exactly maxEventDataSize")
+			Expect(validateEventData(data)).To(Succeed())
 		})
 	})
 

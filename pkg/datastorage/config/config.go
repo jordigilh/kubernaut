@@ -70,7 +70,8 @@ type ServerConfig struct {
 	ShutdownTimeout  string              `yaml:"shutdownTimeout"`  // DD-007: graceful shutdown budget, e.g. "60s" (default: 60s, range: 30s–120s)
 	TLS              sharedtls.TLSConfig `yaml:"tls,omitempty"`    // Issue #678: Optional inter-service TLS
 
-	// #1048 Phase 4 / SC-5: Maximum request body size, e.g. "5MiB" (default: 5 MiB, range: 1–50 MiB)
+	// #1048 Phase 4 / SC-5: Maximum request body size in bytes, e.g. "5242880" for 5 MiB
+	// (default: 5242880 = 5 MiB, range: 1048576–52428800 = 1–50 MiB)
 	MaxBodySize string `yaml:"maxBodySize,omitempty"`
 
 	// #1048 Phase 4 / AC-4: CORS allowed origins (default: ["*"] with startup warning)
@@ -404,10 +405,9 @@ func (c *ServerConfig) GetMaxBodySize() int64 {
 	if c.MaxBodySize == "" {
 		return int64(defaultSize)
 	}
-	// Support plain integer (bytes) or suffixed values
 	var size int64
 	if n, err := fmt.Sscanf(c.MaxBodySize, "%d", &size); err == nil && n == 1 {
-		// Plain integer: treat as bytes
+		// Plain integer in bytes
 	} else {
 		return int64(defaultSize)
 	}

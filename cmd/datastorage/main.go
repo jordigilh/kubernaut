@@ -352,6 +352,16 @@ func main() {
 			"range", "30s–120s")
 	}
 
+	// #1048 Phase 4 / SRE-A1: Log when maxBodySize is clamped (matching shutdownTimeout pattern).
+	effectiveMaxBody := cfg.Server.GetMaxBodySize()
+	if cfg.Server.MaxBodySize != "" && fmt.Sprintf("%d", effectiveMaxBody) != cfg.Server.MaxBodySize {
+		logger.Info("Configured maxBodySize was clamped to safe range",
+			"severity", "warning",
+			"configured", cfg.Server.MaxBodySize,
+			"effective_bytes", effectiveMaxBody,
+			"range", "1048576–52428800 (1–50 MiB)")
+	}
+
 	// #1048 Phase 4 / SRE-P2: Log effective CORS origins and max body size at startup.
 	corsOrigins := cfg.Server.GetCORSAllowedOrigins()
 	for _, o := range corsOrigins {
@@ -370,7 +380,7 @@ func main() {
 		"host", cfg.Server.Host,
 		"shutdown_timeout", shutdownTimeout,
 		"recommended_k8s_termination_grace_period", shutdownTimeout+30*time.Second,
-		"max_body_size", cfg.Server.GetMaxBodySize(),
+		"max_body_size", effectiveMaxBody,
 		"cors_allowed_origins", corsOrigins,
 	)
 

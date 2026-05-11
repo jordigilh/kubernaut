@@ -67,12 +67,13 @@ var _ = Describe("MaxBytesReaderMiddleware", func() {
 		Expect(rr.Body.String()).To(Equal(body))
 	})
 
-	It("UT-DS-1048-MB-002: should reject POST body exceeding limit with 413", func() {
+	It("UT-DS-1048-MB-002: should reject POST body exceeding limit with 413 (Content-Length fast-path)", func() {
 		mw := middleware.MaxBytesReaderMiddleware(limit, logger)
 		handler := mw(echoHandler)
 
 		body := strings.Repeat("a", 2048)
 		req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(body))
+		req.ContentLength = 2048
 		rr := httptest.NewRecorder()
 
 		handler.ServeHTTP(rr, req)
