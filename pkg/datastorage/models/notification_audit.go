@@ -18,6 +18,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -50,9 +51,10 @@ type NotificationAudit struct {
 	// Maps to: notification_audit.recipient (VARCHAR(255) NOT NULL)
 	Recipient string `json:"recipient" db:"recipient" validate:"required,max=255"`
 
-	// Channel is the communication channel (e.g., "email", "slack", "pagerduty", "teams", "sms")
+	// Channel is the communication channel (e.g., "slack", "pagerduty", "teams", "console", "file", "log")
 	// Maps to: notification_audit.channel (VARCHAR(50) NOT NULL)
-	Channel string `json:"channel" db:"channel" validate:"required,oneof=email slack pagerduty teams sms"`
+	// Authority: migrations/006_add_teams_channel.sql
+	Channel string `json:"channel" db:"channel" validate:"required,oneof=slack pagerduty teams console file log"`
 
 	// MessageSummary is a short summary of the notification content
 	// Maps to: notification_audit.message_summary (TEXT NOT NULL)
@@ -87,9 +89,10 @@ type NotificationAudit struct {
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
-// validChannels is the set of allowed notification channels (matches DB CHECK constraint).
+// validChannels is the set of allowed notification channels.
+// Authority: migrations/006_add_teams_channel.sql (DB CHECK constraint).
 var validChannels = map[string]bool{
-	"email": true, "slack": true, "pagerduty": true, "teams": true, "sms": true,
+	"slack": true, "pagerduty": true, "teams": true, "console": true, "file": true, "log": true,
 }
 
 // validStatuses is the set of allowed notification statuses (matches DB CHECK constraint).
@@ -110,13 +113,13 @@ func (n *NotificationAudit) Validate() error {
 	if n.Recipient == "" {
 		return fmt.Errorf("recipient is required")
 	}
-	if !validChannels[n.Channel] {
-		return fmt.Errorf("channel must be one of email, slack, pagerduty, teams, sms; got %q", n.Channel)
+	if !validChannels[strings.ToLower(n.Channel)] {
+		return fmt.Errorf("channel must be one of slack, pagerduty, teams, console, file, log; got %q", n.Channel)
 	}
 	if n.MessageSummary == "" {
 		return fmt.Errorf("message_summary is required")
 	}
-	if !validStatuses[n.Status] {
+	if !validStatuses[strings.ToLower(n.Status)] {
 		return fmt.Errorf("status must be one of sent, failed, acknowledged, escalated; got %q", n.Status)
 	}
 	if n.SentAt.IsZero() {

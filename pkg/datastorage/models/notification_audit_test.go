@@ -36,7 +36,7 @@ func validNotificationAudit() *models.NotificationAudit {
 		RemediationID:  "rr-2026-001",
 		NotificationID: "notif-001",
 		Recipient:      "oncall@example.com",
-		Channel:        "email",
+		Channel:        "slack",
 		MessageSummary: "Alert triggered for pod restart",
 		Status:         "sent",
 		SentAt:         time.Now(),
@@ -87,17 +87,29 @@ var _ = Describe("NotificationAudit.Validate (#1048 Phase 4 / SI-10)", func() {
 			"sent_at is required"),
 	)
 
-	DescribeTable("UT-DS-1048-NV-003: should accept all valid channels",
+	DescribeTable("UT-DS-1048-NV-003: should accept all valid channels (migration 006)",
 		func(channel string) {
 			n := validNotificationAudit()
 			n.Channel = channel
 			Expect(n.Validate()).To(Succeed())
 		},
-		Entry("email", "email"),
 		Entry("slack", "slack"),
 		Entry("pagerduty", "pagerduty"),
 		Entry("teams", "teams"),
-		Entry("sms", "sms"),
+		Entry("console", "console"),
+		Entry("file", "file"),
+		Entry("log", "log"),
+	)
+
+	DescribeTable("UT-DS-1048-NV-005: should accept channels case-insensitively",
+		func(channel string) {
+			n := validNotificationAudit()
+			n.Channel = channel
+			Expect(n.Validate()).To(Succeed())
+		},
+		Entry("Slack (title case)", "Slack"),
+		Entry("PAGERDUTY (upper case)", "PAGERDUTY"),
+		Entry("Teams (title case)", "Teams"),
 	)
 
 	DescribeTable("UT-DS-1048-NV-004: should accept all valid statuses",

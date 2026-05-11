@@ -72,7 +72,7 @@ var _ = Describe("NotificationAuditRepository", func() {
 			RemediationID:   "test-remediation-1",
 			NotificationID:  "test-notification-1",
 			Recipient:       "test@example.com",
-			Channel:         "email",
+			Channel:         "slack",
 			MessageSummary:  "Test notification message",
 			Status:          "sent",
 			SentAt:          now,
@@ -266,7 +266,7 @@ var _ = Describe("NotificationAuditRepository", func() {
 						"message_summary", "status", "sent_at", "delivery_status", "error_message",
 						"escalation_level", "created_at", "updated_at",
 					}).AddRow(
-						expectedID, "test-remediation-1", notificationID, "test@example.com", "email",
+						expectedID, "test-remediation-1", notificationID, "test@example.com", "slack",
 						"Test message", "sent", now, "200 OK", nil,
 						0, now, now,
 					))
