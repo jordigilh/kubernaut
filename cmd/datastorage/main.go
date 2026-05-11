@@ -337,35 +337,13 @@ func main() {
 		time.Sleep(retryDelay)
 	}
 
-	// DD-007: Graceful shutdown timeout (Kubernetes terminationGracePeriodSeconds)
-	// #1048 Phase 3: Default 60s to accommodate internal budgets:
+	// DD-007: Graceful shutdown timeout — read from config file (ADR-030).
+	// Default 60s accommodates internal budgets:
 	//   endpoint propagation (5s) + HTTP drain (30s) + DLQ drain (10s) + resource close (~1s)
 	//   + health/metrics shutdown (2s each) = ~50s, with 10s headroom.
+	// GetShutdownTimeout clamps to [30s, 120s] for safety.
 	// terminationGracePeriodSeconds in deployment.yaml must be >= this value + buffer (90s).
-	const (
-		defaultShutdownTimeout = 60 * time.Second
-		minShutdownTimeout     = 30 * time.Second
-		maxShutdownTimeout     = 120 * time.Second
-	)
-	shutdownTimeout := defaultShutdownTimeout
-	if timeoutEnv := os.Getenv("SHUTDOWN_TIMEOUT"); timeoutEnv != "" {
-		if timeout, err := time.ParseDuration(timeoutEnv); err == nil {
-			if timeout < minShutdownTimeout || timeout > maxShutdownTimeout {
-				logger.Info("SHUTDOWN_TIMEOUT out of safe range, using default",
-					"severity", "warning",
-					"requested", timeout,
-					"min", minShutdownTimeout,
-					"max", maxShutdownTimeout,
-					"using", defaultShutdownTimeout)
-			} else {
-				shutdownTimeout = timeout
-			}
-		} else {
-			logger.Error(err, "Failed to parse SHUTDOWN_TIMEOUT, using default",
-				"raw_value", timeoutEnv,
-				"using", defaultShutdownTimeout)
-		}
-	}
+	shutdownTimeout := cfg.Server.GetShutdownTimeout()
 
 	logger.Info("Starting Data Storage service (ADR-030 + DD-007)",
 		"port", cfg.Server.Port,

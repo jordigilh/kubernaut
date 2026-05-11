@@ -67,6 +67,7 @@ type ServerConfig struct {
 	MaxBatchSize     int                 `yaml:"maxBatchSize"`     // Issue #667: Max events per batch API request (default: 500)
 	ReadTimeout      string              `yaml:"readTimeout"`      // e.g., "30s"
 	WriteTimeout     string              `yaml:"writeTimeout"`     // e.g., "30s"
+	ShutdownTimeout  string              `yaml:"shutdownTimeout"`  // DD-007: graceful shutdown budget, e.g. "60s" (default: 60s, range: 30s–120s)
 	TLS              sharedtls.TLSConfig `yaml:"tls,omitempty"`    // Issue #678: Optional inter-service TLS
 }
 
@@ -367,6 +368,31 @@ func (c *ServerConfig) GetWriteTimeout() time.Duration {
 	duration, err := time.ParseDuration(c.WriteTimeout)
 	if err != nil {
 		return 30 * time.Second // fallback to default
+	}
+	return duration
+}
+
+// GetShutdownTimeout returns the graceful shutdown budget as a time.Duration.
+// DD-007: Defaults to 60s. Clamped to [30s, 120s] for safety — a value below 30s
+// risks data loss (DLQ drain alone needs 10s), a value above 120s wastes K8s resources.
+func (c *ServerConfig) GetShutdownTimeout() time.Duration {
+	const (
+		defaultTimeout = 60 * time.Second
+		minTimeout     = 30 * time.Second
+		maxTimeout     = 120 * time.Second
+	)
+	if c.ShutdownTimeout == "" {
+		return defaultTimeout
+	}
+	duration, err := time.ParseDuration(c.ShutdownTimeout)
+	if err != nil {
+		return defaultTimeout
+	}
+	if duration < minTimeout {
+		return minTimeout
+	}
+	if duration > maxTimeout {
+		return maxTimeout
 	}
 	return duration
 }
