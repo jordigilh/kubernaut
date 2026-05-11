@@ -39,10 +39,15 @@ func MaxBytesReaderMiddleware(maxBytes int64, logger logr.Logger) func(http.Hand
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
 			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-				if r.ContentLength > maxBytes {
-					WriteMaxBytesExceeded(w, logger)
-					return
-				}
+			if r.ContentLength > maxBytes {
+				logger.Info("Rejecting oversized request body (Content-Length fast path)",
+					"method", r.Method,
+					"path", r.URL.Path,
+					"content_length", r.ContentLength,
+					"max_bytes", maxBytes)
+				WriteMaxBytesExceeded(w, logger)
+				return
+			}
 				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 			}
 			next.ServeHTTP(w, r)

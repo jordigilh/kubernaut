@@ -113,6 +113,7 @@ func (h *Handler) HandleCreateActionType(w http.ResponseWriter, r *http.Request)
 
 	result, err := h.actionTypeRepo.Create(r.Context(), req.Name, req.Description, req.RegisteredBy)
 	if err != nil {
+		h.logger.Error(err, "Failed to create action type", "name", req.Name)
 		response.WriteRFC7807InternalError(w, "database-error", "Database Error", err, h.logger)
 		return
 	}
@@ -362,6 +363,7 @@ func (h *Handler) HandleGetActionTypeWorkflowCount(w http.ResponseWriter, r *htt
 
 	count, _, err := h.actionTypeRepo.CountActiveWorkflows(r.Context(), name)
 	if err != nil {
+		h.logger.Error(err, "Failed to count active workflows for action type", "name", name)
 		response.WriteRFC7807InternalError(w, "database-error", "Database Error", err, h.logger)
 		return
 	}

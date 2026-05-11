@@ -118,6 +118,9 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	s.logger.V(1).Info("Converting OpenAPI request to internal type...")
 	auditEvent, err := helpers.ConvertAuditEventRequest(req)
 	if err != nil {
+		s.logger.Error(err, "Failed to convert audit event request",
+			"event_type", req.EventType,
+			"correlation_id", req.CorrelationID)
 		response.WriteRFC7807InternalError(w, "conversion_error", "Conversion Error", err, s.logger)
 		return
 	}

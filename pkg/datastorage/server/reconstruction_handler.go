@@ -81,6 +81,7 @@ func (s *Server) handleReconstructRemediationRequestWrapper(w http.ResponseWrite
 	})
 
 	if err != nil {
+		s.logger.Error(err, "Unexpected error during reconstruction", "correlation_id", correlationID)
 		response.WriteRFC7807InternalError(w,
 			"https://kubernaut.ai/problems/reconstruction/unexpected-error",
 			"Unexpected Error", err, s.logger)
@@ -136,9 +137,11 @@ func (s *Server) handleReconstructRemediationRequestWrapper(w http.ResponseWrite
 		)
 
 	default:
+		unknownErr := fmt.Errorf("unknown response type: %T", resp)
+		s.logger.Error(unknownErr, "Unknown reconstruction response type", "correlation_id", correlationID)
 		response.WriteRFC7807InternalError(w,
 			"https://kubernaut.ai/problems/reconstruction/unknown-response",
 			"Unknown Response Type",
-			fmt.Errorf("unknown response type: %T", resp), s.logger)
+			unknownErr, s.logger)
 	}
 }

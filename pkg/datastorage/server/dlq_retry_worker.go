@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
@@ -99,6 +100,9 @@ type DLQRetryWorker struct {
 	maxBatchSize     int64
 	maxRetriesPerMsg int
 
+	// #1048 Phase 4: Prometheus counter for DLQ validation failures (nil-safe)
+	validationMetrics *prometheus.CounterVec
+
 	// Lifecycle: cancel func interrupts blocking Redis reads on Stop()
 	cancel context.CancelFunc
 	doneCh chan struct{}
@@ -113,18 +117,20 @@ func NewDLQRetryWorker(
 	notificationRepo dlq.NotificationCreator,
 	config DLQRetryWorkerConfig,
 	logger logr.Logger,
+	validationMetrics *prometheus.CounterVec,
 ) *DLQRetryWorker {
 	return &DLQRetryWorker{
-		dlqClient:        dlqClient,
-		auditRepo:        auditRepo,
-		notificationRepo: notificationRepo,
-		logger:           logger.WithName("dlq-retry-worker"),
-		consumerGroup:    config.ConsumerGroup,
-		consumerName:     config.ConsumerName,
-		pollInterval:     config.PollInterval,
-		maxBatchSize:     config.MaxBatchSize,
-		maxRetriesPerMsg: config.MaxRetries,
-		doneCh:           make(chan struct{}),
+		dlqClient:         dlqClient,
+		auditRepo:         auditRepo,
+		notificationRepo:  notificationRepo,
+		logger:            logger.WithName("dlq-retry-worker"),
+		consumerGroup:     config.ConsumerGroup,
+		consumerName:      config.ConsumerName,
+		pollInterval:      config.PollInterval,
+		maxBatchSize:      config.MaxBatchSize,
+		maxRetriesPerMsg:  config.MaxRetries,
+		validationMetrics: validationMetrics,
+		doneCh:            make(chan struct{}),
 	}
 }
 
@@ -244,20 +250,19 @@ func (w *DLQRetryWorker) writeToPostgres(ctx context.Context, auditType string, 
 		}
 		var auditEvent audit.AuditEvent
 		if err := json.Unmarshal(msg.AuditMessage.Payload, &auditEvent); err != nil {
+			w.incValidationMetric(auditType, "unmarshal_error")
 			return fmt.Errorf("failed to unmarshal audit event payload: %w", err)
-		}
-		// #1048 Phase 4 / SI-10: Validate required fields before persisting.
-		// Reuses the existing audit.AuditEvent.Validate() to catch empty
-		// EventType, CorrelationID, etc. that would violate data integrity.
-		if err := auditEvent.Validate(); err != nil {
-			return fmt.Errorf("audit event validation failed: %w", err)
-		}
-		// #1048 Phase 4 / SC-5: Enforce EventData size and depth limits.
-		if err := validateEventData(auditEvent.EventData); err != nil {
-			return fmt.Errorf("audit event EventData validation failed: %w", err)
 		}
 		if len(auditEvent.EventData) == 0 {
 			auditEvent.EventData = []byte("{}")
+		}
+		if err := auditEvent.Validate(); err != nil {
+			w.incValidationMetric(auditType, "field_validation")
+			return fmt.Errorf("audit event validation failed: %w", err)
+		}
+		if err := validateEventData(auditEvent.EventData); err != nil {
+			w.incValidationMetric(auditType, "size_or_depth")
+			return fmt.Errorf("audit event EventData validation failed: %w", err)
 		}
 		repoEvent, err := helpers.ConvertToRepositoryAuditEvent(&auditEvent)
 		if err != nil {
@@ -272,10 +277,11 @@ func (w *DLQRetryWorker) writeToPostgres(ctx context.Context, auditType string, 
 		}
 		var notifAudit models.NotificationAudit
 		if err := json.Unmarshal(msg.AuditMessage.Payload, &notifAudit); err != nil {
+			w.incValidationMetric(auditType, "unmarshal_error")
 			return fmt.Errorf("failed to unmarshal notification audit payload: %w", err)
 		}
-		// #1048 Phase 4 / SI-10: Validate required fields before persisting.
 		if err := notifAudit.Validate(); err != nil {
+			w.incValidationMetric(auditType, "field_validation")
 			return fmt.Errorf("notification audit validation failed: %w", err)
 		}
 		_, err := w.notificationRepo.Create(ctx, &notifAudit)
@@ -292,12 +298,30 @@ func (w *DLQRetryWorker) handleRetryFailure(ctx context.Context, auditType strin
 		"audit_type", auditType,
 		"retry_count", msg.AuditMessage.RetryCount,
 		"correlation_id", msg.AuditMessage.CorrelationID(),
+		"event_type", extractPayloadField(msg.AuditMessage.Payload, "event_type"),
+		"payload_size", len(msg.AuditMessage.Payload),
 	)
 
-	// Increment retry count for next attempt (includes the error for tracking)
 	if err := w.dlqClient.IncrementRetryCount(ctx, auditType, msg, writeErr); err != nil {
 		w.logger.Error(err, "Failed to increment retry count", "message_id", msg.ID)
 	}
+}
+
+// extractPayloadField best-effort extracts a top-level string field from raw JSON payload.
+func extractPayloadField(payload json.RawMessage, field string) string {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &m); err != nil {
+		return ""
+	}
+	raw, ok := m[field]
+	if !ok {
+		return ""
+	}
+	var v string
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return ""
+	}
+	return v
 }
 
 func (w *DLQRetryWorker) moveToDeadLetter(ctx context.Context, auditType string, msg *dlq.DLQMessage) {
@@ -317,6 +341,12 @@ func (w *DLQRetryWorker) moveToDeadLetter(ctx context.Context, auditType string,
 			"retry_count", msg.AuditMessage.RetryCount,
 			"correlation_id", msg.AuditMessage.CorrelationID(),
 		)
+	}
+}
+
+func (w *DLQRetryWorker) incValidationMetric(auditType, reason string) {
+	if w.validationMetrics != nil {
+		w.validationMetrics.WithLabelValues(auditType, reason).Inc()
 	}
 }
 
