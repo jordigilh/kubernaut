@@ -44,7 +44,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/sony/gobreaker"
+	"github.com/sony/gobreaker/v2"
 )
 
 // drainEvents reads all available events from the FakeRecorder channel.

@@ -56,7 +56,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: Inter-service TLS
-	"github.com/sony/gobreaker"
+	"github.com/sony/gobreaker/v2"
 	//+kubebuilder:scaffold:imports
 )
 

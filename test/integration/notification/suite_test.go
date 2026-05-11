@@ -62,7 +62,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
-	"github.com/sony/gobreaker"
+	"github.com/sony/gobreaker/v2"
 	// +kubebuilder:scaffold:imports
 )
 

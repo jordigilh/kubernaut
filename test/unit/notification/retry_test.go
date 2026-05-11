@@ -23,7 +23,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/sony/gobreaker"
+	"github.com/sony/gobreaker/v2"
 
 	"github.com/jordigilh/kubernaut/pkg/notification/retry"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
@@ -283,8 +283,8 @@ var _ = Describe("BR-NOT-061: Circuit Breaker Manager", func() {
 
 	Context("Manager Creation", func() {
 		It("should create manager with shared settings", func() {
-			// BEHAVIOR: Manager initializes successfully
-			Expect(manager).ToNot(BeNil())
+			Expect(manager.AllowRequest("new-channel")).To(BeTrue(),
+				"Newly created manager should allow requests on any channel")
 		})
 
 		It("should allow initial requests (circuit starts closed)", func() {

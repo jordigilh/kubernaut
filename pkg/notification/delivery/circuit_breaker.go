@@ -19,7 +19,7 @@ package delivery
 import (
 	"context"
 
-	"github.com/sony/gobreaker"
+	"github.com/sony/gobreaker/v2"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"

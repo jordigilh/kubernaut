@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/sony/gobreaker"
+	"github.com/sony/gobreaker/v2"
 )
 
 // CircuitBreakerConfig controls the circuit breaker behavior.
@@ -85,7 +85,7 @@ func DefaultCircuitBreakerConfig(name string) CircuitBreakerConfig {
 // This ensures that when the circuit is open, no retries are wasted.
 type CircuitBreakerTransport struct {
 	next http.RoundTripper
-	cb   *gobreaker.CircuitBreaker
+	cb   *gobreaker.CircuitBreaker[*http.Response]
 }
 
 // NewCircuitBreakerTransport creates a CircuitBreakerTransport wrapping
@@ -129,14 +129,14 @@ func NewCircuitBreakerTransport(next http.RoundTripper, cfg CircuitBreakerConfig
 
 	return &CircuitBreakerTransport{
 		next: next,
-		cb:   gobreaker.NewCircuitBreaker(settings),
+		cb:   gobreaker.NewCircuitBreaker[*http.Response](settings),
 	}
 }
 
 // RoundTrip executes the HTTP request through the circuit breaker.
 // Returns gobreaker.ErrOpenState when the circuit is open.
 func (t *CircuitBreakerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	result, err := t.cb.Execute(func() (interface{}, error) {
+	resp, err := t.cb.Execute(func() (*http.Response, error) {
 		resp, err := t.next.RoundTrip(req)
 		if err != nil {
 			return nil, err
@@ -148,13 +148,13 @@ func (t *CircuitBreakerTransport) RoundTrip(req *http.Request) (*http.Response, 
 	})
 
 	if err != nil {
-		if resp, ok := result.(*http.Response); ok && resp != nil {
+		if resp != nil {
 			return resp, nil
 		}
 		return nil, err
 	}
 
-	return result.(*http.Response), nil
+	return resp, nil
 }
 
 // State returns the current circuit breaker state (for observability).

@@ -29,7 +29,7 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
-	"github.com/sony/gobreaker"
+	"github.com/sony/gobreaker/v2"
 )
 
 // P0 TESTS: Concurrent Deliveries + Circuit Breaker (6 tests)

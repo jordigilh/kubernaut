@@ -19,7 +19,7 @@ package circuitbreaker
 import (
 	"sync"
 
-	"github.com/sony/gobreaker"
+	"github.com/sony/gobreaker/v2"
 )
 
 // Manager manages multiple circuit breakers (one per resource/channel)
@@ -55,7 +55,7 @@ import (
 //	    return nil, k8sClient.Create(ctx, crd)
 //	})
 type Manager struct {
-	breakers map[string]*gobreaker.CircuitBreaker
+	breakers map[string]*gobreaker.CircuitBreaker[any]
 	settings gobreaker.Settings
 	mu       sync.RWMutex
 }
@@ -67,7 +67,7 @@ type Manager struct {
 //   Note: settings.Name will be overridden per channel
 func NewManager(settings gobreaker.Settings) *Manager {
 	return &Manager{
-		breakers: make(map[string]*gobreaker.CircuitBreaker),
+		breakers: make(map[string]*gobreaker.CircuitBreaker[any]),
 		settings: settings,
 	}
 }
@@ -172,7 +172,7 @@ func (m *Manager) RecordFailure(channel string) {
 // write lock only for slow path (create new breaker).
 //
 // Note: Caller does not need to hold lock, this method handles locking internally.
-func (m *Manager) getOrCreate(channel string) *gobreaker.CircuitBreaker {
+func (m *Manager) getOrCreate(channel string) *gobreaker.CircuitBreaker[any] {
 	// Fast path: breaker already exists
 	m.mu.RLock()
 	if cb, exists := m.breakers[channel]; exists {
@@ -195,7 +195,7 @@ func (m *Manager) getOrCreate(channel string) *gobreaker.CircuitBreaker {
 	settings.Name = channel
 
 	// Create and store circuit breaker for this channel
-	cb := gobreaker.NewCircuitBreaker(settings)
+	cb := gobreaker.NewCircuitBreaker[any](settings)
 	m.breakers[channel] = cb
 	return cb
 }

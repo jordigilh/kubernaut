@@ -32,7 +32,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/sony/gobreaker" // BR-GATEWAY-093: Circuit breaker detection
+	"github.com/sony/gobreaker/v2" // BR-GATEWAY-093: Circuit breaker detection
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
