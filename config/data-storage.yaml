@@ -10,6 +10,9 @@ server:
   # #1048 Phase 4 / AC-4: CORS allowed origins (default: ["*"])
   corsAllowedOrigins:
     - "*"
+  # #1048 Phase 5 / AU-9: Directory containing signing certificate (tls.crt, tls.key)
+  # Default: /etc/certs. Override for Helm environments where cert-manager mounts differ.
+  # signerCertDir: "/etc/certs"
 
 logging:
   level: "info"
@@ -33,3 +36,19 @@ redis:
   # DD-009: Redis used for Dead Letter Queue (DLQ) fallback
   # when PostgreSQL is unavailable
   dlqMaxLen: 10000
+  # #1048 Phase 5 / AU-9, SC-8: Redis TLS for audit data transport encryption
+  # Server-side Valkey TLS: tracked in kubernaut-operator#89
+  tls:
+    enabled: false
+    # certFile: ""       # Client cert for mTLS (optional)
+    # keyFile: ""        # Client key for mTLS (optional)
+    # caFile: ""         # CA bundle to verify Valkey server
+    # insecureSkipVerify: false
+
+# #1048 Phase 5 / AU-11, BR-AUDIT-009: Audit data retention enforcement
+retention:
+  enabled: false         # Opt-in: destructive operation (BR-AUDIT-004 safe default)
+  interval: "24h"        # How often the worker runs
+  batchSize: 1000        # Max rows per DELETE batch
+  defaultDays: 2555      # ADR-034: 7 years (SOC 2 / ISO 27001)
+  partitionDropEnabled: false

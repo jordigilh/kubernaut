@@ -17,6 +17,8 @@ limitations under the License.
 package config
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -47,10 +49,11 @@ import (
 
 // Config represents the complete Data Storage service configuration
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Logging  LoggingConfig  `yaml:"logging"`
-	Database DatabaseConfig `yaml:"database"`
-	Redis    RedisConfig    `yaml:"redis"`
+	Server    ServerConfig    `yaml:"server"`
+	Logging   LoggingConfig   `yaml:"logging"`
+	Database  DatabaseConfig  `yaml:"database"`
+	Redis     RedisConfig     `yaml:"redis"`
+	Retention RetentionConfig `yaml:"retention"`
 
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
@@ -76,6 +79,10 @@ type ServerConfig struct {
 
 	// #1048 Phase 4 / AC-4: CORS allowed origins (default: ["*"] with startup warning)
 	CORSAllowedOrigins []string `yaml:"corsAllowedOrigins,omitempty"`
+
+	// #1048 Phase 5 / AU-9: Directory containing signing certificate (tls.crt, tls.key)
+	// Default: /etc/certs. Configurable for Helm vs Kustomize path alignment.
+	SignerCertDir string `yaml:"signerCertDir,omitempty"`
 }
 
 // LoggingConfig contains logging configuration
@@ -104,6 +111,48 @@ type DatabaseConfig struct {
 	PasswordKey string `yaml:"passwordKey"` // Key name for password in secret file (e.g., "password")
 }
 
+// RedisTLSConfig selects TLS settings for Redis/Valkey client connections (#1048 Phase 5 / AU-9).
+type RedisTLSConfig struct {
+	Enabled            bool   `yaml:"enabled"`
+	CertFile           string `yaml:"certFile"`
+	KeyFile            string `yaml:"keyFile"`
+	CAFile             string `yaml:"caFile"`
+	InsecureSkipVerify bool   `yaml:"insecureSkipVerify"`
+}
+
+// BuildTLSConfig returns a tls.Config when TLS is enabled, or nil if disabled.
+func (t *RedisTLSConfig) BuildTLSConfig() (*tls.Config, error) {
+	if !t.Enabled {
+		return nil, nil
+	}
+
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: t.InsecureSkipVerify, //nolint:gosec // G402: operator-controlled flag for dev/test environments
+	}
+
+	if t.CAFile != "" {
+		caCert, err := os.ReadFile(t.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read Redis CA file %s: %w", t.CAFile, err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse CA certificate from %s", t.CAFile)
+		}
+		tlsConfig.RootCAs = caCertPool
+	}
+
+	if t.CertFile != "" && t.KeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(t.CertFile, t.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load Redis client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	return tlsConfig, nil
+}
+
 // RedisConfig contains Redis configuration for DLQ
 type RedisConfig struct {
 	Addr      string `yaml:"addr"`      // e.g., "localhost:6379"
@@ -113,6 +162,46 @@ type RedisConfig struct {
 	// Secret file configuration (ADR-030 Section 6)
 	SecretsFile string `yaml:"secretsFile"` // Full path to secret file, e.g., "/etc/secrets/redis/credentials.yaml"
 	PasswordKey string `yaml:"passwordKey"` // Key name for password in secret file (e.g., "password")
+
+	TLS RedisTLSConfig `yaml:"tls"` // #1048 Phase 5 / AU-9: Redis TLS for audit data transport
+}
+
+// RetentionConfig contains retention worker configuration.
+// #1048 Phase 5 / AU-11, BR-AUDIT-009: Audit data retention enforcement.
+type RetentionConfig struct {
+	Enabled              bool   `yaml:"enabled"`              // Master switch (default: false, opt-in)
+	Interval             string `yaml:"interval"`             // How often the worker runs (default: "24h")
+	BatchSize            int    `yaml:"batchSize"`            // Max rows per DELETE batch (default: 1000)
+	DefaultDays          int    `yaml:"defaultDays"`          // Application-level default retention (default: 2555 per ADR-034)
+	PartitionDropEnabled bool   `yaml:"partitionDropEnabled"` // Whether to attempt DROP PARTITION on empty months
+}
+
+func (r *RetentionConfig) GetInterval() time.Duration {
+	if r.Interval == "" {
+		return 24 * time.Hour
+	}
+	d, err := time.ParseDuration(r.Interval)
+	if err != nil {
+		return 24 * time.Hour
+	}
+	return d
+}
+
+func (r *RetentionConfig) GetBatchSize() int {
+	if r.BatchSize <= 0 {
+		return 1000
+	}
+	return r.BatchSize
+}
+
+func (r *RetentionConfig) GetDefaultDays() int {
+	if r.DefaultDays <= 0 {
+		return 2555
+	}
+	if r.DefaultDays > 2555 {
+		return 2555
+	}
+	return r.DefaultDays
 }
 
 // LoadFromFile loads configuration from a YAML file
@@ -306,6 +395,21 @@ func (c *Config) Validate() error {
 	if c.Redis.Addr == "" {
 		return fmt.Errorf("redis address required")
 	}
+	if c.Redis.TLS.Enabled {
+		if c.Redis.TLS.CAFile == "" && !c.Redis.TLS.InsecureSkipVerify {
+			return fmt.Errorf("redis TLS enabled but no caFile specified and insecureSkipVerify is false")
+		}
+	}
+
+	// Validate retention configuration
+	if c.Retention.Interval != "" {
+		if _, err := time.ParseDuration(c.Retention.Interval); err != nil {
+			return fmt.Errorf("invalid retention interval: %w", err)
+		}
+	}
+	if c.Retention.DefaultDays < 0 {
+		return fmt.Errorf("retention defaultDays must be non-negative, got: %d", c.Retention.DefaultDays)
+	}
 
 	// Validate logging configuration (case-insensitive per Issue #875)
 	validLevels := map[string]bool{
@@ -397,10 +501,10 @@ func (c *ServerConfig) GetShutdownTimeout() time.Duration {
 // 5 MiB accommodates batch audit event requests (500 events × ~2-5 KB each).
 func (c *ServerConfig) GetMaxBodySize() int64 {
 	const (
-		mib            = 1 << 20
-		defaultSize    = 5 * mib
-		minSize        = 1 * mib
-		maxSize        = 50 * mib
+		mib         = 1 << 20
+		defaultSize = 5 * mib
+		minSize     = 1 * mib
+		maxSize     = 50 * mib
 	)
 	if c.MaxBodySize == "" {
 		return int64(defaultSize)
@@ -428,6 +532,15 @@ func (c *ServerConfig) GetCORSAllowedOrigins() []string {
 		return []string{"*"}
 	}
 	return c.CORSAllowedOrigins
+}
+
+// GetSignerCertDir returns the directory holding tls.crt/tls.key for audit export signing.
+// #1048 Phase 5 / AU-9: Defaults to /etc/certs when unset.
+func (c *ServerConfig) GetSignerCertDir() string {
+	if c.SignerCertDir == "" {
+		return "/etc/certs"
+	}
+	return c.SignerCertDir
 }
 
 // GetConnectionString returns the PostgreSQL connection string with PG-level timeouts.
