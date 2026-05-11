@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sony/gobreaker"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -31,13 +29,11 @@ var _ = Describe("Generic CircuitBreakerService (BR-NOT-055)", func() {
 	)
 
 	BeforeEach(func() {
-		cbManager = circuitbreaker.NewManager(gobreaker.Settings{
-			MaxRequests: 1,
-			Interval:    60 * time.Second,
-			Timeout:     60 * time.Second,
-			ReadyToTrip: func(counts gobreaker.Counts) bool {
-				return counts.ConsecutiveFailures >= 2
-			},
+		cbManager = circuitbreaker.NewManager(circuitbreaker.ManagerConfig{
+			MaxRequests:                 1,
+			Interval:                   60 * time.Second,
+			Timeout:                    60 * time.Second,
+			ConsecutiveFailureThreshold: 2,
 		})
 		nr = newTestNotification("cb-test", "ns", notificationv1alpha1.NotificationTypeSimple, notificationv1alpha1.NotificationPriorityMedium)
 	})
@@ -72,7 +68,7 @@ var _ = Describe("Generic CircuitBreakerService (BR-NOT-055)", func() {
 		_ = svc.Deliver(context.Background(), nr)
 
 		err := svc.Deliver(context.Background(), nr)
-		Expect(err).To(Equal(gobreaker.ErrOpenState))
+		Expect(err).To(Equal(circuitbreaker.ErrOpenState))
 		Expect(callCount).To(Equal(2), "inner should not be called when circuit is open")
 	})
 
@@ -90,7 +86,7 @@ var _ = Describe("Generic CircuitBreakerService (BR-NOT-055)", func() {
 		_ = pdSvc.Deliver(context.Background(), nr)
 		_ = pdSvc.Deliver(context.Background(), nr)
 		err := pdSvc.Deliver(context.Background(), nr)
-		Expect(err).To(Equal(gobreaker.ErrOpenState), "pagerduty breaker should be open")
+		Expect(err).To(Equal(circuitbreaker.ErrOpenState), "pagerduty breaker should be open")
 
 		Expect(teamsSvc.Deliver(context.Background(), nr)).To(Succeed(),
 			"teams breaker should still be closed")

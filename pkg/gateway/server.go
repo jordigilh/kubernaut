@@ -32,7 +32,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/sony/gobreaker" // BR-GATEWAY-093: Circuit breaker detection
+	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker" // BR-GATEWAY-093: Circuit breaker detection
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
@@ -2161,7 +2161,7 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 	// BR-AUDIT-005 Gap #7: Standardized error_details
 	// GW-INT-AUD-019 (BR-GATEWAY-093): Detect circuit breaker errors for audit compliance
 	var errorDetails *sharedaudit.ErrorDetails
-	if errors.Is(err, gobreaker.ErrOpenState) {
+	if errors.Is(err, circuitbreaker.ErrOpenState) {
 		// Circuit breaker is open - create specialized error details
 		// BR-GATEWAY-093: Circuit breaker for K8s API
 		errorDetails = sharedaudit.NewErrorDetails(
