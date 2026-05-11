@@ -30,6 +30,10 @@ rateLimit:
 shutdown:
   drainSeconds: 15
 
+severityTriage:
+  prometheusURL: ""
+  prometheusTlsCaFile: ""
+
 resilience:
   ka:
     connectTimeout: 5s

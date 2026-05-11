@@ -15,7 +15,7 @@ This test plan validates the SLO definitions documentation, PrometheusRule alert
 ### 1.1 Scope
 
 - `docs/slo/SLO_DEFINITIONS.md` documenting targets, metrics, and measurement methods
-- `deploy/prometheus-rules.yaml` with alerting rules derived from SLOs
+- `deploy/kustomize/base/05-prometheusrule.yaml` with alerting rules derived from SLOs
 - Verification that `prometheus.DefBuckets` align with SLO thresholds
 - YAML syntax validation of PrometheusRule manifest
 
@@ -105,7 +105,7 @@ This test plan validates the SLO definitions documentation, PrometheusRule alert
 ### 5.1 Test Methodology
 
 This issue is primarily documentation and configuration. Validation approach:
-- **YAML syntax**: `kubectl --dry-run=client -f deploy/prometheus-rules.yaml` or manual review
+- **YAML syntax**: `kubectl kustomize deploy/kustomize/overlays/dev/` or manual review
 - **Cross-reference**: Script/test that verifies metric names in rules match `internal/metrics/metrics.go`
 - **Bucket alignment**: Documented analysis (no code change needed)
 
@@ -171,7 +171,7 @@ This issue is primarily documentation and configuration. Validation approach:
 | Deliverable | Location |
 |-------------|----------|
 | SLO definitions | `docs/slo/SLO_DEFINITIONS.md` |
-| Alerting rules | `deploy/prometheus-rules.yaml` |
+| Alerting rules | `deploy/kustomize/base/05-prometheusrule.yaml` |
 | This test plan | `docs/tests/41/test_plan.md` |
 
 ---

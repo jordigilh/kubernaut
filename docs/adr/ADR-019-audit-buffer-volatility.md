@@ -40,4 +40,4 @@ scenarios but introduces:
 
 - FedRAMP Moderate: AU-9 (Protection of Audit Information)
 - `internal/audit/buffered.go` — BufferedEmitter implementation
-- `deploy/prometheus-rules.yaml` — ApifrontendAuditBufferOverflow alert
+- `deploy/kustomize/base/05-prometheusrule.yaml` — ApifrontendAuditBufferOverflow alert

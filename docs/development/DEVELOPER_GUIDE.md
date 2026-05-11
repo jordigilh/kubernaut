@@ -8,7 +8,7 @@
 - `ginkgo` (for test runner)
 
 Optional:
-- `helm` (for chart linting)
+- `kind` (for local Kubernetes cluster)
 - `k6` (for performance test scripts)
 - `syft` + `trivy` (for SBOM/scanning)
 - `golangci-lint` (for linting)
@@ -26,8 +26,8 @@ make build
 # Run unit tests
 make test-unit
 
-# Run with local config (will fail without K8s cluster)
-go run ./cmd/apifrontend/ --config deploy/configmap-local.yaml
+# Run locally (will fail without K8s cluster; use Kind for full workflow)
+go run ./cmd/apifrontend/
 ```
 
 ## Project Structure
@@ -55,15 +55,16 @@ internal/
   session/                — CRD session service (InvestigationSession)
   severity/               — Multi-tier severity triage pipeline
   streaming/              — SSE connection tracker
+  tlswiring/              — TLS configuration helpers (server + outbound)
   tools/                  — MCP tool implementations (6 AF-native + 14 kubernaut proxy)
   validate/               — K8s name/namespace/label validation
 api/
   apifrontend/v1alpha1/   — CRD types (InvestigationSession)
   openapi/                — OpenAPI spec
 deploy/
-  helm/                   — Helm chart (SA, ClusterRole, CRB)
-  configmap.yaml          — Example ConfigMap
-  prometheus-rules.yaml   — PrometheusRule CR
+  kustomize/base/         — Kustomize base (Deployment, Service, RBAC, NetworkPolicy, PrometheusRule)
+  kustomize/overlays/dev/ — Dev overlay (Kind, self-signed TLS, debug logging)
+  kustomize/overlays/ci/  — CI overlay (GitHub Actions)
 docs/                     — ADRs, SLOs, runbooks, guides
 hack/                     — Utility scripts
 tests/performance/        — k6 performance test scripts

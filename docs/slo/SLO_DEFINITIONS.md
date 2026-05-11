@@ -6,7 +6,7 @@
 
 ## Overview
 
-These SLOs are aspirational targets to be validated once the service is running under production-like load. They drive alerting rules in `deploy/prometheus-rules.yaml` and histogram bucket selection in `internal/metrics/metrics.go`.
+These SLOs are aspirational targets to be validated once the service is running under production-like load. They drive alerting rules in `deploy/kustomize/base/05-prometheusrule.yaml` and histogram bucket selection in `internal/metrics/metrics.go`.
 
 ## SLO Targets
 
@@ -52,7 +52,7 @@ DefBuckets = {.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}
 
 ## Alerting Rules
 
-Alerting rules are defined in `deploy/prometheus-rules.yaml`. Each alert is derived from an SLO:
+Alerting rules are defined in `deploy/kustomize/base/05-prometheusrule.yaml`. Each alert is derived from an SLO:
 
 | Alert | Derived From | Condition | Severity |
 |-------|-------------|-----------|----------|

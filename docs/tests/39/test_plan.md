@@ -274,7 +274,7 @@ Test-Driven Development (TDD) in three phases:
 | Lint report | `golangci-lint run ./internal/config/... ./cmd/apifrontend/...` |
 | This test plan | `docs/tests/39/test_plan.md` |
 | Sample config (test fixture) | `internal/config/testdata/valid.yaml` |
-| Sample config (production) | `deploy/configmap.yaml` |
+| Sample config (production) | `deploy/kustomize/base/config.yaml` |
 
 ---
 

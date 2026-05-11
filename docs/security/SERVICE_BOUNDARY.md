@@ -2,7 +2,7 @@
 
 **Service:** kubernaut-apifrontend
 **NIST Controls:** SC-7 (Boundary Protection), SC-8 (Transmission Confidentiality), SC-13 (Cryptographic Protection), AC-4 (Information Flow Enforcement)
-**Source of truth:** `cmd/apifrontend/main.go`, `deploy/helm/`, `internal/ratelimit/`, `internal/resilience/`
+**Source of truth:** `cmd/apifrontend/main.go`, `deploy/kustomize/base/`, `internal/ratelimit/`, `internal/resilience/`
 **Last updated:** 2026-05-08
 
 ---
@@ -261,4 +261,4 @@ The AF implements an ordered shutdown to prevent data loss at the boundary:
 
 ---
 
-*Source files: `cmd/apifrontend/main.go`, `internal/ratelimit/`, `internal/resilience/`, `deploy/helm/templates/`, `docs/design/ARCHITECTURE.md`*
+*Source files: `cmd/apifrontend/main.go`, `internal/ratelimit/`, `internal/resilience/`, `deploy/kustomize/base/`, `docs/design/ARCHITECTURE.md`*

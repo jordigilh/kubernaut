@@ -50,7 +50,7 @@ make help
 
 ## Configuration
 
-The service reads configuration from `/etc/apifrontend/config.yaml` at startup. If the file is absent, sensible defaults are applied. See [`deploy/configmap.yaml`](deploy/configmap.yaml) for a complete example.
+The service reads configuration from `/etc/apifrontend/config.yaml` at startup. If the file is absent, sensible defaults are applied. See [`deploy/kustomize/base/config.yaml`](deploy/kustomize/base/config.yaml) for a complete example.
 
 RBAC roles are loaded from `/etc/apifrontend/rbac_roles.yaml`. If absent, all authenticated users can invoke all tools (`"*": ["*"]`).
 
