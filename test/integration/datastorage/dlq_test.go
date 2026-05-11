@@ -434,19 +434,19 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// ACT: Read messages
-				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 10, 2*time.Second)
 
 				// ASSERT
 				Expect(err).ToNot(HaveOccurred())
 				Expect(messages).To(HaveLen(1))
-				Expect(messages[0].ID).ToNot(BeEmpty())
+				Expect(messages[0].ID).To(MatchRegexp(`\d+-\d+`), "Redis stream ID format")
 				Expect(messages[0].AuditMessage.Type).To(Equal("audit_event"))
 				Expect(messages[0].AuditMessage.CorrelationID()).To(Equal("remediation-read-test"))
 			})
 
 			It("should return empty slice when DLQ is empty", func() {
 				// ACT: Read from empty DLQ
-				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 1*time.Second)
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 10, 1*time.Second)
 
 				// ASSERT
 				Expect(err).ToNot(HaveOccurred())
@@ -476,7 +476,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 				}
 
 				// ACT: Read all messages
-				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 10, 2*time.Second)
 
 				// ASSERT
 				Expect(err).ToNot(HaveOccurred())
@@ -506,7 +506,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("ack test error"))
 				Expect(err).ToNot(HaveOccurred())
 
-				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 10, 2*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(messages).To(HaveLen(1))
 
@@ -545,7 +545,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("permanent failure"))
 				Expect(err).ToNot(HaveOccurred())
 
-				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 10, 2*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(messages).To(HaveLen(1))
 
@@ -590,7 +590,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("retry error"))
 				Expect(err).ToNot(HaveOccurred())
 
-				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 10, 2*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(messages).To(HaveLen(1))
 				Expect(messages[0].AuditMessage.RetryCount).To(Equal(0))
@@ -607,7 +607,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 
 				// Read again with new consumer group
 				newConsumerGroup := fmt.Sprintf("test-consumer-group-verify-%d", time.Now().UnixNano())
-				updatedMessages, err := dlqClient.ReadMessages(ctx, "events", newConsumerGroup, consumerName, 2*time.Second)
+				updatedMessages, err := dlqClient.ReadMessages(ctx, "events", newConsumerGroup, consumerName, 10, 2*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedMessages).To(HaveLen(1))
 				Expect(updatedMessages[0].AuditMessage.RetryCount).To(Equal(1))
