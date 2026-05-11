@@ -21,8 +21,7 @@ BR-AI-601 requires a parallel security auditor ("shadow agent") that monitors AL
 1. **Regex/heuristic scanner** — Rejected. Pattern matching cannot detect novel or obfuscated injection techniques (Unicode homoglyphs, nested JSON encoding, context-dependent authority impersonation). LLM-based evaluation provides semantic understanding of injection intent.
 2. **Inline content filtering before LLM** — Rejected. Pre-filtering would strip potentially legitimate content (e.g., a pod log containing "SYSTEM:" as a normal application prefix). The shadow agent evaluates content in context without modifying the investigation flow.
 3. **Post-investigation batch review** — Rejected. Too late — if the primary LLM is already manipulated, the investigation result is compromised. Real-time parallel evaluation catches injection before the primary LLM acts on it.
-4. **Dedicated sidecar process** — Superseded by Option 5 (Goose recipe). The current in-process goroutine-based design (v1.4) will be replaced by the Goose recipe-based approach in v1.5.
-5. **Shadow agent as a Goose recipe session** — **Accepted for v1.6.** PROPOSAL-EXT-003 §8 (updated May 2026) commits to this approach: the shadow agent runs as a separate Goose session with a security-focused recipe. KA relays `SessionUpdate` events from the primary investigation session to the shadow. v1.5 retains the in-process proxy pattern while KA focuses on agentic integration (MCP/A2A). See the v1.6 Evolution section below.
+4. **Dedicated sidecar process** — Deferred. The current in-process goroutine-based design avoids network latency and deployment complexity. PROPOSAL-EXT-003 §8 describes the path to a Goose-based sidecar when the ACP Go SDK matures.
 
 ## Decision
 
@@ -163,68 +162,23 @@ When `ai.alignmentCheck.enabled=true`:
 - High-volume tool calls (8-12 per investigation) generate proportional shadow evaluations. Mitigated by async goroutine-based design and configurable timeout.
 - `maxStepTokens` too low could truncate injection payloads, allowing them to pass. Default of 500 runes covers typical injection patterns while limiting evaluation cost.
 
-## v1.6 Evolution: Shadow Agent as Goose Recipe
+## Changelog
 
-> **Decision Update (May 3, 2026):** With the adoption of Goose as KA's LLM runtime (PROPOSAL-EXT-003, accepted, targeting v1.6), the shadow agent evolves from an in-process proxy pattern to a **separate Goose session running a security-focused recipe**. v1.5 retains the current in-process proxy pattern while KA focuses on agentic integration (MCP server, A2A protocol, API Frontend, interactive mode).
+### v1.1 (2026-05-10) — #1076, #1077, #1078, C-1
 
-### Architecture Change (v1.6)
-
-The in-process components (`LLMProxy`, `ToolProxy`, `Observer`, `Evaluator`) are replaced by:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  KA (Pure Orchestrator)                                     │
-│                                                             │
-│  ┌─────────────────────┐    ┌──────────────────────────┐   │
-│  │ Primary Goose       │    │ Shadow Goose              │   │
-│  │ Session              │    │ Session                   │   │
-│  │ (investigation       │    │ (security evaluation      │   │
-│  │  recipe)             │    │  recipe)                  │   │
-│  └─────────┬───────────┘    └──────────┬───────────────┘   │
-│            │ SessionUpdate              │ Prompt()          │
-│            │ events                     │ (relayed content) │
-│            └────────────────────────────┘                   │
-│                          │                                  │
-│                    Verdict ──▶ Audit Trail                   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Execution Flow
-
-1. KA creates two Goose sessions: primary (investigation recipe) and shadow (security recipe).
-2. KA streams `SessionUpdate` events from the primary session (tool calls, LLM responses).
-3. KA relays each event's content to the shadow session via `Prompt()` calls.
-4. Shadow recipe evaluates content for prompt injection and returns structured verdicts.
-5. If suspicious content is flagged, KA cancels the primary session and escalates.
-6. Fail-closed semantics are preserved: timeout or shadow error → `HumanReviewNeeded=true`.
-
-### What Stays the Same
-
-- **Fail-closed guarantees** — every error path results in human review escalation
-- **Boundary token isolation** — content wrapping with random tokens (now handled within the shadow recipe)
-- **Audit trail** — `alignment.step` and `alignment.verdict` events
-- **Verdict semantics** — Clean / Suspicious / Timeout
-- **Configuration** — `alignmentCheck.enabled`, `timeout`, `maxStepTokens` remain valid
-
-### What Changes
-
-| Aspect | v1.4-v1.5 (In-Process) | v1.6 (Goose Recipe) |
-|--------|-------------------|---------------------|
-| Execution | In-process goroutines with `LLMProxy`/`ToolProxy` | Separate Goose session with security recipe |
-| LLM invocation | Direct via `llm.Client` | Via `goose-server` (same as primary) |
-| Extensibility | Code changes required | Recipe changes (no KA code changes) |
-| Model selection | `alignmentCheck.llm` config | Goose recipe `settings` block |
-| Content feed | Proxy intercepts in-process | KA relays `SessionUpdate` events |
-
-### Benefits
-
-- **Recipe-based extensibility** — customers customize the shadow recipe without modifying KA
-- **Consistent architecture** — primary and shadow use the same Goose runtime
-- **Independent model selection** — shadow recipe specifies its own model via Goose `settings`
+- **Circuit breaker** (#1076): Enforce mode now uses `context.WithCancelCause(ErrCircuitBreaker)` to halt the primary LLM investigation when the shadow agent detects suspicious content. Shadow evaluations continue on the parent context (ARCH-3 resolution).
+- **PinDecorator** (C-1): Fixed LLMProxy bypass when `SwappableClient` pins the client snapshot. `PinDecorator` re-applies the LLMProxy around the pinned client so shadow observes all LLM traffic.
+- **AlignmentVerdict schema**: New `alignment_verdict` field on `IncidentResponse` (OpenAPI) and `AIAnalysisStatus` (CRD). Populated for ALL investigations (not just suspicious). Carries `result`, `circuit_breaker_activated`, `summary`, `flagged`, `total`, and `findings`.
+- **RO notification rendering**: Alignment verdict rendered prominently in manual review notifications. Circuit breaker verdicts show "SUSPICIOUS (Circuit Breaker Activated)" with findings listed before the (relegated) primary LLM RCA.
+- **Priority escalation**: `alignment_check_failed` SubReason maps to `NotificationPriorityCritical`.
+- **Panic recovery** (#1078): Session goroutines now recover from panics, log stack trace, and transition to `StatusFailed`.
+- **Two-tier TTL eviction** (#1078): Terminal sessions evicted after `ttl`, non-terminal after `maxSessionAge` (default 2×ttl).
+- **AA investigation timeout** (#1078): Wall-clock cap (`DefaultMaxInvestigationDuration = 25min`) prevents unbounded sessions.
+- **Verdict label rename** (#1077): `VerdictClean` constant changed from `"clean"` to `"aligned"` for API consistency (pre-GA breaking change).
 
 ## References
 
-- [PROPOSAL-EXT-003 §8](../proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) — Goose runtime shadow agent integration (updated May 2026, targeting v1.6)
+- [PROPOSAL-EXT-003 §8](../proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) — Goose runtime shadow agent integration path
 - [ADR-039](ADR-039-llm-prompt-response-contract.md) — LLM prompt/response contract
 - [BR-AI-601](../../requirements/) — Prompt injection guardrails business requirement
 - [TP-601-v2.0](../../tests/601/TEST_PLAN_v2.md) — Shadow agent test plan

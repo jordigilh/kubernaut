@@ -102,7 +102,7 @@ This test plan validates the audit remediation for Issue #601. A comprehensive a
 
 - **E2E tests**: Blocked on #657 (mock-LLM tool call scenario support). Deferred.
 - **Formal injection benchmarking** (#602, v1.5): Curated attack datasets and scoring.
-- **Circuit breaker for shadow downtime**: Future enhancement (v1.5+).
+- **Circuit breaker for shadow downtime**: Moved to active development. See [#1076 test plan](../1076-1077-1078/TEST_PLAN.md).
 - **`todo_write` tool**: Internal session tool, not external data. Bypasses ToolProxy and boundary wrapping by design. Not an attack surface.
 
 ### 4.3 Design Decisions
@@ -855,6 +855,7 @@ go tool cover -func=boundary_coverage.out
 | 1.0 | 2026-03-04 | Initial test plan |
 | 2.0 | 2026-03-04 | Audit remediation: fail-closed, random boundaries, head+tail truncation, correctness fixes. TDD phases broken into RED/GREEN/REFACTOR. Checkpoints added. Anti-pattern compliance. |
 | 2.1 | 2026-04-09 | F1-F19 findings: BD-009/BD-010, FC-011, P11-P13 exfiltration payloads, two-tier claim fix, template path fix, todo_write exclusion, mock delay pattern, dual ID note, IT-CX-001 approach (extract wiring), shadow-raw + evaluator ordering design decisions, finding-to-test traceability. |
+| 2.2 | 2026-05-10 | Circuit breaker moved from "Features Not to be Tested" to active development (#1076). See [1076-1077-1078 test plan](../1076-1077-1078/TEST_PLAN.md). |
 
 ---
 

@@ -109,6 +109,12 @@ type InvestigationResult struct {
 	// cancellation; for completed investigations it captures total spend.
 	// Used for cost attribution and forensic audit (BR-AUDIT-070, CC6.1).
 	TokenUsage *TokenUsageSummary `json:"token_usage,omitempty"`
+
+	// AlignmentVerdict holds the shadow agent's alignment check result.
+	// Populated by InvestigatorWrapper for ALL investigations (aligned or suspicious).
+	// BR-AI-601, #1076: When CircuitBreakerActivated=true, the primary LLM results
+	// may be incomplete or compromised; shadow findings are the primary content.
+	AlignmentVerdict *AlignmentVerdictResult `json:"alignment_verdict,omitempty"`
 }
 
 // TokenUsageSummary holds cumulative token counts. Mirrors
@@ -137,6 +143,34 @@ type AlternativeWorkflow struct {
 	ExecutionBundle string  `json:"execution_bundle,omitempty"`
 	Confidence      float64 `json:"confidence"`
 	Rationale       string  `json:"rationale"`
+}
+
+// AlignmentVerdictResult holds the shadow agent's overall verdict on an investigation.
+// Produced by InvestigatorWrapper and consumed by KA handler (mapped to ogen IncidentResponse)
+// and AA response processor (mapped to AIAnalysisStatus.AlignmentVerdict).
+type AlignmentVerdictResult struct {
+	Result                  string                    `json:"result"`
+	CircuitBreakerActivated bool                      `json:"circuit_breaker_activated"`
+	Summary                 string                    `json:"summary"`
+	Flagged                 int                       `json:"flagged"`
+	Total                   int                       `json:"total"`
+	Findings                []AlignmentFinding        `json:"findings,omitempty"`
+	GroundingReview         *AlignmentGroundingResult `json:"grounding_review,omitempty"`
+}
+
+// AlignmentGroundingResult holds the structured outcome of the full-context
+// grounding review (#1096). Populated when grounding review is enabled.
+type AlignmentGroundingResult struct {
+	Grounded    bool   `json:"grounded"`
+	Explanation string `json:"explanation"`
+}
+
+// AlignmentFinding captures a single suspicious step detected by the shadow agent.
+type AlignmentFinding struct {
+	StepIndex   int    `json:"step_index"`
+	StepKind    string `json:"step_kind"`
+	Tool        string `json:"tool,omitempty"`
+	Explanation string `json:"explanation"`
 }
 
 // DueDiligenceReview captures the LLM's adversarial self-review across 8 dimensions.

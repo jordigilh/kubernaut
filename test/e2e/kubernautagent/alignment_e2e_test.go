@@ -85,6 +85,8 @@ var _ = Describe("E2E-SA-601: Shadow Agent Alignment Check", Label("e2e", "ka", 
 			for _, w := range result.Warnings {
 				Expect(w).NotTo(ContainSubstring("alignment check flagged"),
 					"no alignment warnings expected for clean content")
+				Expect(w).NotTo(ContainSubstring("circuit breaker activated"),
+					"no circuit breaker warnings expected for clean content")
 			}
 		})
 	})
@@ -135,8 +137,9 @@ var _ = Describe("E2E-SA-601: Shadow Agent Alignment Check", Label("e2e", "ka", 
 			Expect(string(reason)).To(Equal(string(agentclient.HumanReviewReasonAlignmentCheckFailed)),
 				"alignment_check_failed should be returned as first-class API enum")
 
-			Expect(result.Warnings).To(ContainElement(ContainSubstring("alignment check flagged")),
-				"warnings should contain alignment check flagged message from tool output path")
+			Expect(result.Warnings).To(ContainElement(
+				Or(ContainSubstring("alignment check flagged"), ContainSubstring("circuit breaker activated")),
+			), "warnings should contain alignment or circuit breaker message from tool output path")
 		})
 	})
 
@@ -185,8 +188,9 @@ var _ = Describe("E2E-SA-601: Shadow Agent Alignment Check", Label("e2e", "ka", 
 			Expect(string(reason)).To(Equal(string(agentclient.HumanReviewReasonAlignmentCheckFailed)),
 				"alignment_check_failed should be returned as first-class API enum")
 
-			Expect(result.Warnings).To(ContainElement(ContainSubstring("alignment check flagged")),
-				"warnings should contain alignment check flagged message")
+			Expect(result.Warnings).To(ContainElement(
+				Or(ContainSubstring("alignment check flagged"), ContainSubstring("circuit breaker activated")),
+			), "warnings should contain alignment or circuit breaker message")
 		})
 	})
 })

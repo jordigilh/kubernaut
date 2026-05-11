@@ -35,7 +35,7 @@ require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/slack-go/slack v0.19.0
-	github.com/sony/gobreaker v1.0.0
+	github.com/sony/gobreaker/v2 v2.4.0
 	github.com/tektoncd/pipeline v1.10.2
 	github.com/tmc/langchaingo v0.1.14
 	go.opentelemetry.io/otel v1.42.0

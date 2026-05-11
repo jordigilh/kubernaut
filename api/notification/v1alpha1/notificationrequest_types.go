@@ -185,6 +185,10 @@ func (c *NotificationContext) FlattenToMap() map[string]string {
 		setIfNonEmpty(m, "subReason", c.Review.SubReason)
 		setIfNonEmpty(m, "humanReviewReason", c.Review.HumanReviewReason)
 		setIfNonEmpty(m, "rootCauseAnalysis", c.Review.RootCauseAnalysis)
+		setIfNonEmpty(m, "alignmentVerdict", c.Review.AlignmentVerdict)
+		if c.Review.CircuitBreakerActivated {
+			m["circuitBreakerActivated"] = "true"
+		}
 	}
 	if c.Execution != nil {
 		setIfNonEmpty(m, "retryCount", c.Execution.RetryCount)
@@ -277,6 +281,13 @@ type ReviewContext struct {
 	// RootCauseAnalysis from AIAnalysis if available.
 	// +optional
 	RootCauseAnalysis string `json:"rootCauseAnalysis,omitempty"`
+	// AlignmentVerdict is the shadow agent's overall verdict (aligned/suspicious).
+	// BR-AI-601: Present when shadow agent alignment check is enabled.
+	// +optional
+	AlignmentVerdict string `json:"alignmentVerdict,omitempty"`
+	// CircuitBreakerActivated indicates whether the circuit breaker terminated the investigation early.
+	// +optional
+	CircuitBreakerActivated bool `json:"circuitBreakerActivated,omitempty"`
 }
 
 // ExecutionContext captures execution and retry data.

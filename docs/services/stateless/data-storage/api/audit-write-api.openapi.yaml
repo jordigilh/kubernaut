@@ -281,7 +281,7 @@ paths:
                 missingHeader:
                   summary: Missing required header
                   value:
-                    type: https://kubernaut.io/problems/validation-error
+                    type: https://kubernaut.ai/problems/validation-error
                     title: Validation Error
                     status: 400
                     detail: Missing required header X-Event-Type
@@ -290,7 +290,7 @@ paths:
                 invalidEnvelope:
                   summary: Invalid event data envelope
                   value:
-                    type: https://kubernaut.io/problems/validation-error
+                    type: https://kubernaut.ai/problems/validation-error
                     title: Validation Error
                     status: 400
                     detail: "Missing required field: version"
@@ -314,7 +314,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
               example:
-                type: https://kubernaut.io/problems/rate-limit-exceeded
+                type: https://kubernaut.ai/problems/rate-limit-exceeded
                 title: Rate Limit Exceeded
                 status: 429
                 detail: Rate limit of 500 writes/sec exceeded
@@ -630,8 +630,11 @@ components:
         type:
           type: string
           format: uri
-          description: URI reference identifying the problem type
-          example: https://kubernaut.io/problems/validation-error
+          description: |
+            URI reference identifying the problem type.
+            All types follow the pattern https://kubernaut.ai/problems/{error-type}.
+          pattern: "^https://kubernaut\\.ai/problems/.+"
+          example: https://kubernaut.ai/problems/validation-error
         title:
           type: string
           description: Short human-readable summary

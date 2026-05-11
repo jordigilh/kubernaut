@@ -289,6 +289,33 @@ rate(datastorage_validation_failures_total{reason=~"xss_detected|sql_injection_d
 **BR Coverage**: BR-STORAGE-011
 **Alert Threshold**: > 0 (investigate immediately)
 
+### Workflow Registration Validation Latency (Issue #1070)
+
+**Query** (P95 total validation time):
+```promql
+histogram_quantile(0.95, rate(datastorage_workflow_validation_duration_seconds_bucket{phase="total"}[5m]))
+```
+
+**Use Case**: Monitor end-to-end validation latency for workflow registration
+**BR Coverage**: BR-STORAGE-014
+**Target**: < 500ms P95
+
+**Query** (per-phase breakdown):
+```promql
+histogram_quantile(0.95, rate(datastorage_workflow_validation_duration_seconds_bucket[5m])) by (phase)
+```
+
+**Use Case**: Identify which validation phase (action_type, bundle_exists, dependency) contributes most latency
+**Labels**: `phase` = {action_type, bundle_exists, dependency, total}, `result` = {ok, error}
+
+**Query** (validation error rate by phase):
+```promql
+sum(rate(datastorage_workflow_validation_duration_seconds_count{result="error"}[5m])) by (phase)
+```
+
+**Use Case**: Monitor validation failure rates per phase to detect backend degradation
+**Alert Threshold**: > 0.1/s sustained for any phase
+
 ---
 
 ## Error Rates and SLIs

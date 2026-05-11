@@ -18,9 +18,47 @@ package circuitbreaker
 
 import (
 	"sync"
+	"time"
 
-	"github.com/sony/gobreaker"
+	"github.com/sony/gobreaker/v2"
 )
+
+// State represents the circuit breaker state. Re-exported so callers
+// never need to import gobreaker directly.
+type State = gobreaker.State
+
+const (
+	StateClosed   = gobreaker.StateClosed
+	StateHalfOpen = gobreaker.StateHalfOpen
+	StateOpen     = gobreaker.StateOpen
+)
+
+// ErrOpenState is returned when the circuit breaker is open and rejects
+// the call. Re-exported so callers never need to import gobreaker.
+var ErrOpenState = gobreaker.ErrOpenState
+
+// ManagerConfig controls the circuit breaker Manager behavior.
+// Mirrors transport.CircuitBreakerConfig so that callers never import
+// gobreaker directly.
+type ManagerConfig struct {
+	// MaxRequests is the number of requests allowed in half-open state.
+	MaxRequests uint32
+
+	// Interval is the cyclic period of the closed state for clearing
+	// internal counts. If 0, internal counts are never cleared.
+	Interval time.Duration
+
+	// Timeout is the period of the open state, after which the state
+	// transitions to half-open.
+	Timeout time.Duration
+
+	// ConsecutiveFailureThreshold trips the circuit when consecutive
+	// failures reach this count. 0 means never trip.
+	ConsecutiveFailureThreshold uint32
+
+	// OnStateChange is called when any channel's breaker transitions state.
+	OnStateChange func(name string, from, to State)
+}
 
 // Manager manages multiple circuit breakers (one per resource/channel)
 //
@@ -37,105 +75,65 @@ import (
 //
 // Notification Service (multi-channel):
 //
-//	manager := circuitbreaker.NewManager(gobreaker.Settings{
-//	    MaxRequests: 2,
-//	    Timeout:     30 * time.Second,
-//	    ReadyToTrip: func(counts gobreaker.Counts) bool {
-//	        return counts.ConsecutiveFailures >= 3
-//	    },
+//	manager := circuitbreaker.NewManager(circuitbreaker.ManagerConfig{
+//	    MaxRequests:                 2,
+//	    Timeout:                    30 * time.Second,
+//	    ConsecutiveFailureThreshold: 3,
 //	})
 //	_, err := manager.Execute("slack", func() (interface{}, error) {
 //	    return nil, slackService.Deliver(ctx, notification)
 //	})
-//
-// Gateway Service (single K8s API):
-//
-//	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{...})
-//	_, err := cb.Execute(func() (interface{}, error) {
-//	    return nil, k8sClient.Create(ctx, crd)
-//	})
 type Manager struct {
-	breakers map[string]*gobreaker.CircuitBreaker
+	breakers map[string]*gobreaker.CircuitBreaker[any]
 	settings gobreaker.Settings
 	mu       sync.RWMutex
 }
 
-// NewManager creates a circuit breaker manager with shared settings
-//
-// Parameters:
-// - settings: Base gobreaker.Settings applied to all channels
-//   Note: settings.Name will be overridden per channel
-func NewManager(settings gobreaker.Settings) *Manager {
+// NewManager creates a circuit breaker manager with shared settings.
+// The ManagerConfig is translated to gobreaker.Settings internally so
+// that callers never depend on gobreaker types.
+func NewManager(cfg ManagerConfig) *Manager {
+	settings := gobreaker.Settings{
+		MaxRequests: cfg.MaxRequests,
+		Interval:    cfg.Interval,
+		Timeout:     cfg.Timeout,
+	}
+
+	if cfg.ConsecutiveFailureThreshold > 0 {
+		threshold := cfg.ConsecutiveFailureThreshold
+		settings.ReadyToTrip = func(counts gobreaker.Counts) bool {
+			return counts.ConsecutiveFailures >= threshold
+		}
+	}
+
+	if cfg.OnStateChange != nil {
+		settings.OnStateChange = cfg.OnStateChange
+	}
+
 	return &Manager{
-		breakers: make(map[string]*gobreaker.CircuitBreaker),
+		breakers: make(map[string]*gobreaker.CircuitBreaker[any]),
 		settings: settings,
 	}
 }
 
-// Execute runs a function with circuit breaker protection for a specific channel
+// Execute runs a function with circuit breaker protection for a specific channel.
 //
-// This is the recommended method as it automatically tracks success/failure
-// and handles state transitions.
-//
-// Parameters:
-// - channel: Resource identifier (e.g., "slack", "console", "k8s-api")
-// - fn: Function to execute with circuit breaker protection
-//
-// Returns:
-// - result: Function return value (or nil if error)
-// - error: gobreaker.ErrOpenState if circuit is open, or function error
-//
-// Example:
-//
-//	result, err := manager.Execute("slack", func() (interface{}, error) {
-//	    return slackService.Deliver(ctx, notification)
-//	})
-//	if err == gobreaker.ErrOpenState {
-//	    // Circuit breaker is open, fail fast
-//	}
+// Returns ErrOpenState when the circuit is open (fail-fast).
 func (m *Manager) Execute(channel string, fn func() (interface{}, error)) (interface{}, error) {
 	cb := m.getOrCreate(channel)
 	return cb.Execute(fn)
 }
 
-// AllowRequest checks if circuit breaker allows requests for a channel
-//
-// This method is provided for backward compatibility with existing code
-// that manually checks circuit breaker state before operations.
-//
-// Returns:
-// - true: Circuit is Closed or HalfOpen (allow requests)
-// - false: Circuit is Open (reject requests)
-//
-// Example:
-//
-//	if !manager.AllowRequest("slack") {
-//	    return fmt.Errorf("slack circuit breaker is open")
-//	}
+// AllowRequest checks if circuit breaker allows requests for a channel.
+// Returns false when the circuit is Open (reject requests).
 func (m *Manager) AllowRequest(channel string) bool {
 	cb := m.getOrCreate(channel)
-	return cb.State() != gobreaker.StateOpen
+	return cb.State() != StateOpen
 }
 
 // State returns the current state of a channel's circuit breaker
-//
-// Returns:
-// - gobreaker.StateClosed: Normal operation (0)
-// - gobreaker.StateHalfOpen: Testing recovery (1)
-// - gobreaker.StateOpen: Blocking requests (2)
-//
-// Example:
-//
-//	state := manager.State("slack")
-//	switch state {
-//	case gobreaker.StateClosed:
-//	    // Normal operation
-//	case gobreaker.StateOpen:
-//	    // Failing fast
-//	case gobreaker.StateHalfOpen:
-//	    // Testing recovery
-//	}
-func (m *Manager) State(channel string) gobreaker.State {
+// (StateClosed, StateHalfOpen, or StateOpen).
+func (m *Manager) State(channel string) State {
 	cb := m.getOrCreate(channel)
 	return cb.State()
 }
@@ -172,7 +170,7 @@ func (m *Manager) RecordFailure(channel string) {
 // write lock only for slow path (create new breaker).
 //
 // Note: Caller does not need to hold lock, this method handles locking internally.
-func (m *Manager) getOrCreate(channel string) *gobreaker.CircuitBreaker {
+func (m *Manager) getOrCreate(channel string) *gobreaker.CircuitBreaker[any] {
 	// Fast path: breaker already exists
 	m.mu.RLock()
 	if cb, exists := m.breakers[channel]; exists {
@@ -195,7 +193,7 @@ func (m *Manager) getOrCreate(channel string) *gobreaker.CircuitBreaker {
 	settings.Name = channel
 
 	// Create and store circuit breaker for this channel
-	cb := gobreaker.NewCircuitBreaker(settings)
+	cb := gobreaker.NewCircuitBreaker[any](settings)
 	m.breakers[channel] = cb
 	return cb
 }

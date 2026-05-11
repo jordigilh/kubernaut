@@ -68,8 +68,8 @@ spec:
           # DD-AUTH-014: Health probes check DataStorage directly (no proxy)
           livenessProbe:
             httpGet:
-              path: /health
-              port: 8081  # Direct to DataStorage
+              path: /healthz
+              port: 8081  # Direct to DataStorage health server
               scheme: HTTP
             initialDelaySeconds: 30
             periodSeconds: 10
@@ -77,8 +77,8 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health
-              port: 8081  # DD-AUTH-014: Direct to DataStorage
+              path: /readyz
+              port: 8081  # DD-AUTH-014: Direct to DataStorage health server
               scheme: HTTP
             initialDelaySeconds: 5
             periodSeconds: 5

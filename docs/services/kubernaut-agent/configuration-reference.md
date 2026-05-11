@@ -252,6 +252,19 @@ When `enabled` is true and `llm` is nil, startup logs **error-level** diagnostic
 
 Overrides do not duplicate `tlsCaFile` here; TLS trust stays on `ai.llm.tlsCaFile` for LangChain transports.
 
+### 7.2 Enforcement modes and circuit breaker
+
+The `mode` field controls how suspicious verdicts affect the investigation:
+
+| Mode | Suspicious verdict behavior | Circuit breaker | Use case |
+|------|-----------------------------|-----------------|----------|
+| `enforce` | Sets `HumanReviewNeeded=true`, `HumanReviewReason="alignment_check_failed"`, appends warning. Circuit breaker cancels the primary LLM context mid-investigation when the first suspicious step is detected. | Active | Production environments where prompt injection must be blocked. |
+| `monitor` | Logs verdict, emits audit events and Prometheus metrics. Investigation proceeds normally. | Inactive | Initial rollout, false-positive tuning, observability-only deployment. |
+
+The alignment circuit breaker is distinct from the Data Storage circuit breaker (§8.1). The DS circuit breaker protects against backend failures using request-count thresholds, while the alignment circuit breaker is a per-investigation safety mechanism that cancels the primary LLM on detected prompt injection. The alignment circuit breaker has no configurable thresholds — it fires on the first suspicious evaluation in `enforce` mode.
+
+For the complete shadow agent operational guide, see [shadow-agent-configuration.md](shadow-agent-configuration.md).
+
 ## 8. Integrations
 
 YAML path: `integrations`

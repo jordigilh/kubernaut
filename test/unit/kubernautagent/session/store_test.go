@@ -233,7 +233,7 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 
 	Describe("UT-KA-823-006: Active investigations are never removed by housekeeping", func() {
 		It("should skip running sessions during cleanup even if TTL expired", func() {
-			store := session.NewStore(1 * time.Millisecond)
+			store := session.NewStore(1*time.Millisecond, session.WithMaxSessionAge(1*time.Hour))
 			id, err := store.Create()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())

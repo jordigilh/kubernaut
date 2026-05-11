@@ -26,8 +26,8 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/sony/gobreaker"
 
+	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/transport"
 )
 
@@ -100,7 +100,7 @@ var _ = Describe("CircuitBreakerTransport — OPS-2 / BR-AI-982", func() {
 			req, err := http.NewRequest(http.MethodGet, server.URL, nil)
 			Expect(err).NotTo(HaveOccurred())
 			_, err = rt.RoundTrip(req)
-			Expect(err).To(MatchError(gobreaker.ErrOpenState))
+			Expect(err).To(MatchError(circuitbreaker.ErrOpenState))
 
 			Expect(callCount.Load()).To(BeNumerically("<", 6),
 				"circuit should have opened, preventing some requests from reaching the server")
@@ -135,7 +135,7 @@ var _ = Describe("CircuitBreakerTransport — OPS-2 / BR-AI-982", func() {
 
 			cbt, ok := rt.(*transport.CircuitBreakerTransport)
 			Expect(ok).To(BeTrue())
-			Expect(cbt.State()).To(Equal(gobreaker.StateClosed))
+			Expect(cbt.State()).To(Equal(circuitbreaker.StateClosed))
 		})
 	})
 
@@ -155,7 +155,7 @@ var _ = Describe("CircuitBreakerTransport — OPS-2 / BR-AI-982", func() {
 				Timeout:          30 * time.Second,
 				FailureThreshold: 3,
 				FailureRatio:     0.5,
-				OnStateChange: func(name string, from, to gobreaker.State) {
+				OnStateChange: func(name string, from, to circuitbreaker.State) {
 					transitions = append(transitions, fmt.Sprintf("%s->%s", from.String(), to.String()))
 				},
 			})
@@ -197,7 +197,7 @@ var _ = Describe("CircuitBreakerTransport — OPS-2 / BR-AI-982", func() {
 
 			cbt, ok := rt.(*transport.CircuitBreakerTransport)
 			Expect(ok).To(BeTrue())
-			Expect(cbt.State()).To(Equal(gobreaker.StateOpen))
+			Expect(cbt.State()).To(Equal(circuitbreaker.StateOpen))
 		})
 	})
 

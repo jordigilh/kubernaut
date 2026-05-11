@@ -57,9 +57,10 @@ type InvestigatingHandler struct {
 	processor           *ResponseProcessor   // P1.1: Response processing logic
 	builder             *RequestBuilder      // P1.2: Request construction logic
 	errorClassifier     *ErrorClassifier     // P2.1: Error classification and retry logic
-	useSessionMode      bool                 // BR-AA-HAPI-064: Enable async session-based flow
-	sessionPollInterval time.Duration        // BR-AA-HAPI-064.8: Constant interval between session polls
-	recorder            record.EventRecorder // DD-EVENT-001: K8s event recorder for session lifecycle events
+	useSessionMode           bool                 // BR-AA-HAPI-064: Enable async session-based flow
+	sessionPollInterval      time.Duration        // BR-AA-HAPI-064.8: Constant interval between session polls
+	maxInvestigationDuration time.Duration        // #1078: Wall-clock cap on investigation before PhaseFailed
+	recorder                 record.EventRecorder // DD-EVENT-001: K8s event recorder for session lifecycle events
 }
 
 // InvestigatingHandlerOption is a functional option for InvestigatingHandler configuration.
@@ -91,6 +92,15 @@ func WithSessionPollInterval(d time.Duration) InvestigatingHandlerOption {
 	}
 }
 
+// WithMaxInvestigationDuration sets the wall-clock cap for an investigation session.
+// If the session exceeds this duration, the handler transitions to PhaseFailed with
+// Reason=TransientError. Default: DefaultMaxInvestigationDuration (25m).
+func WithMaxInvestigationDuration(d time.Duration) InvestigatingHandlerOption {
+	return func(h *InvestigatingHandler) {
+		h.maxInvestigationDuration = d
+	}
+}
+
 // P1.3 Refactoring: AuditClientInterface moved to interfaces.go
 
 // NewInvestigatingHandler creates a new InvestigatingHandler
@@ -108,10 +118,11 @@ func NewInvestigatingHandler(hgClient AgentClientInterface, log logr.Logger, m *
 		metrics:             m,
 		auditClient:         auditClient,
 		log:                 handlerLog,
-		sessionPollInterval: DefaultSessionPollInterval,                  // BR-AA-HAPI-064.8: Constant poll interval (configurable via WithSessionPollInterval)
-		processor:           NewResponseProcessor(log, m, auditClient),   // P1.1: Initialize response processor (audit recorded by processor for failures)
-		builder:             NewRequestBuilder(log),                      // P1.2: Initialize request builder
-		errorClassifier:     NewErrorClassifier(handlerLog),              // P2.1: Initialize error classifier
+		sessionPollInterval:      DefaultSessionPollInterval,            // BR-AA-HAPI-064.8: Constant poll interval
+		maxInvestigationDuration: DefaultMaxInvestigationDuration,       // #1078: Wall-clock cap
+		processor:                NewResponseProcessor(log, m, auditClient),
+		builder:                  NewRequestBuilder(log),
+		errorClassifier:          NewErrorClassifier(handlerLog),
 	}
 	for _, opt := range opts {
 		opt(h)
@@ -483,6 +494,28 @@ func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context,
 // so they don't trigger re-reconciles. Only RequeueAfter controls the next poll.
 func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
+
+	if session.CreatedAt != nil {
+		elapsed := time.Since(session.CreatedAt.Time)
+		if elapsed > h.maxInvestigationDuration {
+			h.log.Info("Investigation exceeded max duration, failing",
+				"sessionID", session.ID,
+				"elapsed", elapsed,
+				"maxDuration", h.maxInvestigationDuration,
+			)
+			now := metav1.Now()
+			analysis.Status.Phase = aianalysis.PhaseFailed
+			analysis.Status.ObservedGeneration = analysis.Generation
+			analysis.Status.CompletedAt = &now
+			analysis.Status.Reason = aianalysisv1.ReasonTransientError
+			analysis.Status.SubReason = "TransientError"
+			analysis.Status.Message = fmt.Sprintf(
+				"Investigation timed out after %s (limit: %s)",
+				elapsed.Truncate(time.Second), h.maxInvestigationDuration,
+			)
+			return ctrl.Result{}, nil
+		}
+	}
 
 	// Update poll tracking fields for observability
 	session.PollCount++
