@@ -8,7 +8,7 @@
 - `ginkgo` (for test runner)
 
 Optional:
-- `helm` (for chart linting)
+- `kind` (for local Kubernetes cluster)
 - `k6` (for performance test scripts)
 - `syft` + `trivy` (for SBOM/scanning)
 - `golangci-lint` (for linting)
@@ -26,8 +26,8 @@ make build
 # Run unit tests
 make test-unit
 
-# Run with local config (will fail without K8s cluster)
-go run ./cmd/apifrontend/ --config deploy/configmap-local.yaml
+# Run locally (will fail without K8s cluster; use Kind for full workflow)
+go run ./cmd/apifrontend/
 ```
 
 ## Project Structure
@@ -55,15 +55,16 @@ internal/
   session/                — CRD session service (InvestigationSession)
   severity/               — Multi-tier severity triage pipeline
   streaming/              — SSE connection tracker
+  tlswiring/              — TLS configuration helpers (server + outbound)
   tools/                  — MCP tool implementations (6 AF-native + 14 kubernaut proxy)
   validate/               — K8s name/namespace/label validation
 api/
   apifrontend/v1alpha1/   — CRD types (InvestigationSession)
   openapi/                — OpenAPI spec
 deploy/
-  helm/                   — Helm chart (SA, ClusterRole, CRB)
-  configmap.yaml          — Example ConfigMap
-  prometheus-rules.yaml   — PrometheusRule CR
+  kustomize/base/         — Kustomize base (Deployment, Service, RBAC, NetworkPolicy, PrometheusRule)
+  kustomize/overlays/dev/ — Dev overlay (Kind, self-signed TLS, debug logging)
+  kustomize/overlays/ci/  — CI overlay (GitHub Actions)
 docs/                     — ADRs, SLOs, runbooks, guides
 hack/                     — Utility scripts
 tests/performance/        — k6 performance test scripts
@@ -99,6 +100,42 @@ tests/performance/        — k6 performance test scripts
 
 5. Update the Agent Card skills in `internal/handler/agentcard.go`
 
+## Local Development with Kind
+
+Deploy the API Frontend in a local Kubernetes cluster using [Kind](https://kind.sigs.k8s.io/):
+
+```bash
+# 1. Create the Kind cluster
+make kind-create
+
+# 2. Generate self-signed TLS certificates and create K8s secrets
+make generate-dev-certs
+
+# 3. Build the container image and load into Kind
+make kind-load
+
+# 4. Deploy using the dev overlay (Kustomize)
+make deploy-dev
+
+# 5. Verify the pod is running
+kubectl get pods -n kubernaut-system
+
+# 6. Port-forward to access locally
+kubectl port-forward -n kubernaut-system svc/apifrontend 8443:8443
+
+# Tear down
+make undeploy
+make kind-delete
+```
+
+The dev overlay provides:
+- Debug-level logging
+- Reduced resource limits (suitable for laptops)
+- Self-signed TLS certificates via `generate-certs.sh`
+- Kind port mappings (host 8443 → container 30443)
+
+TLS secrets are optional in the dev overlay — the pod will start without them and serve plain HTTP.
+
 ## Running Tests
 
 ```bash
@@ -128,10 +165,17 @@ make test-perf-local
 | `test-perf-local` | Dry-run k6 performance scripts |
 | `validate-maturity-ci` | Run service maturity checks |
 | `validate-openapi` | Lint OpenAPI spec |
-| `helm-lint` | Lint Helm chart |
+| `validate-kustomize` | Validate kustomize build for dev/ci overlays |
+| `kind-create` | Create a Kind cluster for development |
+| `kind-delete` | Delete the Kind cluster |
+| `kind-load` | Build and load image into Kind |
+| `generate-dev-certs` | Generate self-signed TLS certificates |
+| `deploy-dev` | Deploy to Kind using dev overlay |
+| `deploy-ci` | Deploy to Kind using CI overlay |
+| `undeploy` | Remove kustomize-managed resources |
 | `sbom` | Generate CycloneDX SBOM |
 | `image-scan` | Trivy image vulnerability scan |
-| `docker-build` | Build container image |
+| `image-build` | Build container image |
 | `generate` | Run controller-gen for CRD types |
 | `verify-generate` | Verify generated code is up to date |
 

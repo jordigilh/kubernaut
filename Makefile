@@ -10,7 +10,7 @@ BUILD_DATE ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 CONTROLLER_GEN ?= $(shell which controller-gen 2>/dev/null)
 GINKGO ?= $(shell which ginkgo 2>/dev/null || echo "go run github.com/onsi/ginkgo/v2/ginkgo")
 LOCALBIN ?= $(shell pwd)/bin
-COVERPKGS = ./internal/auth/...,./internal/ratelimit/...,./internal/security/...,./internal/httputil/...,./internal/logging/...,./internal/requestid/...,./internal/audit/...,./internal/metrics/...,./internal/agent/...,./internal/tools/...,./internal/ka/...,./internal/ds/...,./internal/session/...,./internal/config/...,./internal/handler/...,./internal/launcher/...,./internal/resilience/...,./internal/streaming/...,./internal/controller/...
+COVERPKGS = ./internal/auth/...,./internal/ratelimit/...,./internal/security/...,./internal/httputil/...,./internal/logging/...,./internal/requestid/...,./internal/audit/...,./internal/metrics/...,./internal/agent/...,./internal/tools/...,./internal/ka/...,./internal/ds/...,./internal/session/...,./internal/config/...,./internal/handler/...,./internal/launcher/...,./internal/resilience/...,./internal/streaming/...,./internal/controller/...,./internal/prometheus/...,./internal/severity/...,./internal/tlswiring/...,./internal/validate/...
 
 .PHONY: all
 all: build
@@ -51,8 +51,8 @@ test-unit: fmt vet ## Run all unit tests with race detection and coverage
 	$(GINKGO) -v --race --coverpkg=$(COVERPKGS) --coverprofile=cover.out ./internal/...
 
 .PHONY: test-integration
-test-integration: ## Run integration tests
-	go test ./... -tags=integration -race -coverprofile cover-integration.out
+test-integration: ## Run integration tests (matches CI runner)
+	$(GINKGO) -v --race --tags=integration --coverpkg=$(COVERPKGS) --coverprofile=cover-integration.out ./internal/...
 
 .PHONY: test-bridge
 test-bridge: fmt vet ## Run MCP bridge tests (pass GINKGO_LABEL="tier1" to filter)
@@ -123,6 +123,49 @@ test-perf-local:
 	k6 run --dry-run tests/performance/scripts/sse-streams.js
 	k6 run --dry-run tests/performance/scripts/mixed-workload.js
 
+##@ Deploy (Kind)
+
+KIND_CLUSTER_NAME ?= apifrontend-dev
+KIND_CONFIG_DEV ?= deploy/kustomize/overlays/dev/kind-config.yaml
+KIND_CONFIG_CI ?= deploy/kustomize/overlays/ci/kind-config.yaml
+CERT_DIR ?= /tmp/apifrontend-dev-certs
+
+.PHONY: kind-create
+kind-create: ## Create a Kind cluster for development
+	@which kind >/dev/null 2>&1 || { echo "kind not found — install: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"; exit 1; }
+	kind create cluster --name $(KIND_CLUSTER_NAME) --config $(KIND_CONFIG_DEV)
+
+.PHONY: kind-delete
+kind-delete: ## Delete the Kind cluster
+	kind delete cluster --name $(KIND_CLUSTER_NAME)
+
+.PHONY: kind-load
+kind-load: image-build ## Build and load image into Kind cluster
+	kind load docker-image $(IMAGE_REGISTRY)/apifrontend:$(IMAGE_TAG)-$(IMAGE_ARCH) --name $(KIND_CLUSTER_NAME)
+
+.PHONY: generate-dev-certs
+generate-dev-certs: ## Generate self-signed TLS certificates for dev
+	bash deploy/kustomize/overlays/dev/generate-certs.sh $(CERT_DIR)
+	kubectl create namespace kubernaut-system --dry-run=client -o yaml | kubectl apply -f -
+	kubectl create secret tls apifrontend-tls --cert=$(CERT_DIR)/tls.crt --key=$(CERT_DIR)/tls.key -n kubernaut-system --dry-run=client -o yaml | kubectl apply -f -
+	kubectl create secret generic apifrontend-ca --from-file=ca.crt=$(CERT_DIR)/ca.crt -n kubernaut-system --dry-run=client -o yaml | kubectl apply -f -
+
+.PHONY: deploy-dev
+deploy-dev: ## Deploy to Kind cluster using dev overlay
+	kubectl apply -k deploy/kustomize/overlays/dev/
+	kubectl rollout status deployment/apifrontend -n kubernaut-system --timeout=120s
+
+.PHONY: deploy-ci
+deploy-ci: ## Deploy to Kind cluster using CI overlay
+	kubectl apply -k deploy/kustomize/overlays/ci/
+	kubectl rollout status deployment/apifrontend -n kubernaut-system --timeout=120s
+
+OVERLAY ?= dev
+
+.PHONY: undeploy
+undeploy: ## Remove kustomize-managed resources (OVERLAY=dev|ci)
+	kubectl delete -k deploy/kustomize/overlays/$(OVERLAY)/ --ignore-not-found=true
+
 ##@ Validate
 
 .PHONY: verify-generate
@@ -138,10 +181,12 @@ validate-openapi:
 validate-maturity-ci:
 	bash hack/validate-maturity.sh
 
-.PHONY: helm-lint
-helm-lint:
-	@which helm >/dev/null 2>&1 || { echo "helm not found"; exit 1; }
-	helm lint deploy/helm/
+.PHONY: validate-kustomize
+validate-kustomize: ## Validate kustomize build for dev and ci overlays
+	@which kubectl >/dev/null 2>&1 || { echo "kubectl not found — install: https://kubernetes.io/docs/tasks/tools/"; exit 1; }
+	kubectl kustomize deploy/kustomize/overlays/dev/ > /dev/null
+	kubectl kustomize deploy/kustomize/overlays/ci/ > /dev/null
+	@echo "Kustomize build validated for dev and ci overlays"
 
 ##@ Security & Supply Chain
 

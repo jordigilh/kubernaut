@@ -1,0 +1,66 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apifrontend
+  namespace: kubernaut-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kubernaut-apifrontend
+      app.kubernetes.io/component: apifrontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # API traffic from within the namespace (ingress controller, other services)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kubernaut-system
+      ports:
+        - port: 8443
+          protocol: TCP
+    # Health probes from kubelet (any source within cluster)
+    - ports:
+        - port: 8081
+          protocol: TCP
+    # Metrics scraping from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kubernaut-system
+      ports:
+        - port: 9090
+          protocol: TCP
+  egress:
+    # KA and DS services within namespace (HTTPS)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: kubernaut
+      ports:
+        - port: 8443
+          protocol: TCP
+    # Kubernetes API server
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    # DNS resolution (kube-dns / CoreDNS)
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Prometheus (for severity triage queries)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kubernaut-system
+      ports:
+        - port: 9090
+          protocol: TCP

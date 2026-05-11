@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apifrontend
+spec:
+  template:
+    spec:
+      volumes:
+        - name: tls-server
+          secret:
+            secretName: apifrontend-tls
+            optional: true
+        - name: tls-ca
+          secret:
+            secretName: apifrontend-ca
+            optional: true

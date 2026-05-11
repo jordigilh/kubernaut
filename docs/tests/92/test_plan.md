@@ -24,7 +24,7 @@ This test plan validates the three-tier severity triage pipeline that determines
 - `internal/config/config.go` — New `SeverityTriage` config section
 - `internal/metrics/metrics.go` — New `af_severity_triage_*` metrics
 - `internal/audit/audit.go` — New `EventSeverityTriage*` audit events
-- `deploy/prometheus-rules.yaml` — New alerting rules for triage health
+- `deploy/kustomize/base/05-prometheusrule.yaml` — New alerting rules for triage health
 
 ### 1.2 Out of Scope
 
@@ -137,7 +137,7 @@ This test plan incorporates fixes for all 25 findings from the multi-dimensional
 | `MCPBridgeConfig` | `internal/handler` | Modified |
 | `Registry` (metrics) | `internal/metrics` | Modified |
 | Audit events | `internal/audit` | Modified |
-| Prometheus rules | `deploy/prometheus-rules.yaml` | Modified |
+| Prometheus rules | `deploy/kustomize/base/05-prometheusrule.yaml` | Modified |
 | Runbook | `docs/operations/runbooks/RB-AF-010.md` | New |
 
 ---
@@ -611,7 +611,7 @@ This test plan incorporates fixes for all 25 findings from the multi-dimensional
 - MODIFY: `internal/audit/audit.go` — Add `EventSeverityTriageCompleted`, `EventSeverityTriageFailed`
 - MODIFY: `internal/config/config.go` — Add `SeverityTriage` config section
 - MODIFY: `internal/handler/mcp_bridge.go` — Pass triager to tool handlers
-- NEW: `deploy/prometheus-rules.yaml` — Add `ApifrontendSeverityTriageErrorRate` alert
+- MODIFY: `deploy/kustomize/base/05-prometheusrule.yaml` — Add `ApifrontendSeverityTriageErrorRate` alert
 - NEW: `docs/operations/runbooks/RB-AF-010.md` — Triage troubleshooting runbook
 
 **Design decisions:**
@@ -713,7 +713,7 @@ This test plan incorporates fixes for all 25 findings from the multi-dimensional
 - Verify 80% coverage gate per package
 - Check for exported symbols only used in tests
 - Create runbook `RB-AF-010.md`
-- Update `deploy/prometheus-rules.yaml` with triage alert
+- Update `deploy/kustomize/base/05-prometheusrule.yaml` with triage alert
 - Update `CHANGELOG.md`
 - Update `docs/design/ARCHITECTURE.md` metrics catalog (section 7)
 - Final 100 Go Mistakes scan across all new code

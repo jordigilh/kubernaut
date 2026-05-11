@@ -1,8 +1,8 @@
 # Service Boundary Definition
 
 **Service:** kubernaut-apifrontend
-**NIST Controls:** SC-7 (Boundary Protection), SC-8 (Transmission Confidentiality), SC-13 (Cryptographic Protection), AC-4 (Information Flow Enforcement)
-**Source of truth:** `cmd/apifrontend/main.go`, `deploy/helm/`, `internal/ratelimit/`, `internal/resilience/`
+**NIST Controls:** SC-7 (Boundary Protection), SC-8 (Transmission Confidentiality), SC-13 (Cryptographic Protection), AC-4 (Information Flow Enforcement), AC-17 (Remote Access)
+**Source of truth:** `cmd/apifrontend/main.go`, `deploy/kustomize/base/`, `internal/ratelimit/`, `internal/resilience/`
 **Last updated:** 2026-05-08
 
 ---
@@ -60,14 +60,14 @@ graph TB
 
 ## 2. Ingress Points
 
-All ingress enters through a single HTTP listener on the configured port (default 8080). There is no secondary listener or sidecar port.
+All ingress enters through a single HTTPS listener on the configured port (default 8443). Health probes and metrics are served on separate plain-HTTP ports (8081, 9090) bound to the pod network only.
 
 | Endpoint | Protocol | Auth Required | Purpose |
 |----------|----------|---------------|---------|
 | `POST /` | A2A JSON-RPC 2.0 | Yes (Bearer JWT) | Agent task execution |
 | `POST /mcp` | MCP Streamable HTTP | Yes (Bearer JWT) | MCP tool invocation |
 | `GET /mcp/sse` | Server-Sent Events | Yes (Bearer JWT) | Streaming MCP responses |
-| `GET /.well-known/agent.json` | HTTP GET | No | A2A Agent Card discovery |
+| `GET /.well-known/agent-card.json` | HTTP GET | No | A2A Agent Card discovery |
 | `GET /healthz` | HTTP GET | No | Liveness probe (kubelet) |
 | `GET /readyz` | HTTP GET | No | Readiness probe (kubelet) |
 | `GET /metrics` | HTTP GET | No | Prometheus metrics scrape |
@@ -108,7 +108,7 @@ All ingress enters through a single HTTP listener on the configured port (defaul
 | AF → Prometheus | TLS 1.2+ (optional, configurable CA) | Cluster internal CA or custom CA file |
 | AF → Vertex AI | TLS 1.3 | Google public CA |
 
-**Note:** Pod-to-pod communication within the cluster relies on the network CNI's encryption capabilities (e.g., WireGuard in Cilium) or service mesh mTLS if deployed. The AF itself terminates TLS at the Ingress controller level; the pod listens on plain HTTP internally.
+**Note:** When `server.tls.certDir` is configured, the AF pod terminates TLS directly on port 8443 with TLS 1.2+ minimum. Health (8081) and metrics (9090) ports intentionally remain plain HTTP — they are internal-only and protected by NetworkPolicy. This is an intentional design decision to simplify health probe configuration and Prometheus scraping while keeping the primary API encrypted. mTLS (AC-17) is not currently implemented at the AF level; mutual authentication relies on JWT bearer tokens at the application layer.
 
 ---
 
@@ -186,14 +186,14 @@ spec:
             matchLabels:
               network.openshift.io/policy-group: ingress
       ports:
-        - port: 8080
+        - port: 8443
           protocol: TCP
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: openshift-monitoring
       ports:
-        - port: 8080
+        - port: 9090
           protocol: TCP
 ---
 # Allow egress only to known destinations
@@ -261,4 +261,4 @@ The AF implements an ordered shutdown to prevent data loss at the boundary:
 
 ---
 
-*Source files: `cmd/apifrontend/main.go`, `internal/ratelimit/`, `internal/resilience/`, `deploy/helm/templates/`, `docs/design/ARCHITECTURE.md`*
+*Source files: `cmd/apifrontend/main.go`, `internal/ratelimit/`, `internal/resilience/`, `deploy/kustomize/base/`, `docs/design/ARCHITECTURE.md`*

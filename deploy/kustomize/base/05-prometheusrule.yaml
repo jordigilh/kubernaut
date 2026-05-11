@@ -2,12 +2,13 @@ apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: apifrontend-rules
-  namespace: kubernaut
-  labels:
-    app.kubernetes.io/name: apifrontend
-    app.kubernetes.io/component: monitoring
+  namespace: kubernaut-system
 spec:
   groups:
+    # NOTE: All rules filter on job="apifrontend". The Prometheus scrape config
+    # (ServiceMonitor/PodMonitor) MUST set this job label, or these alerts will
+    # be silently inactive. Ratio-based alerts return NaN (no alert) when traffic
+    # is zero — this is intentional to avoid false positives during idle periods.
     - name: apifrontend.availability
       rules:
         - alert: ApifrontendDown
@@ -55,7 +56,7 @@ spec:
             severity: warning
           annotations:
             summary: "API Frontend error rate > 0.5%"
-            description: "More than 0.5% of HTTP requests are returning 5xx status codes. Approaching SLO-6 budget (0.1%)."
+            description: "More than 0.5% of HTTP requests are returning 5xx status codes."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-003.md"
 
         - alert: ApifrontendHighErrorRate
@@ -85,18 +86,38 @@ spec:
             severity: critical
           annotations:
             summary: "API Frontend auth failure rate > 10%"
-            description: "More than 10% of requests are failing authentication. Possible token issuer outage or attack."
+            description: "More than 10% of requests are failing authentication."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-004.md"
 
     - name: apifrontend.circuitbreaker
       rules:
-        - alert: ApifrontendCircuitBreakerOpen
-          expr: af_circuit_breaker_state{job="apifrontend"} == 2
+        - alert: ApifrontendCircuitBreakerOpenKA
+          expr: af_circuit_breaker_state{job="apifrontend",dependency="ka"} == 2
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "KA circuit breaker is open"
+            description: "Circuit breaker for Kubernaut Agent (KA) has been open for more than 2 minutes — all KA-proxied tools are unavailable."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-005.md"
+
+        - alert: ApifrontendCircuitBreakerOpenDS
+          expr: af_circuit_breaker_state{job="apifrontend",dependency="ds"} == 2
           for: 2m
           labels:
             severity: warning
           annotations:
-            summary: "API Frontend circuit breaker is open"
+            summary: "DS circuit breaker is open"
+            description: "Circuit breaker for Data Store (DS) has been open for more than 2 minutes — audit and data tools are degraded."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-005.md"
+
+        - alert: ApifrontendCircuitBreakerOpenOther
+          expr: af_circuit_breaker_state{job="apifrontend",dependency!="ka",dependency!="ds"} == 2
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Circuit breaker open for {{ $labels.dependency }}"
             description: "Circuit breaker for {{ $labels.dependency }} has been open for more than 2 minutes."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-005.md"
 
@@ -109,9 +130,8 @@ spec:
             severity: critical
           annotations:
             summary: "Audit events being dropped due to buffer overflow"
-            description: "The audit buffer is overflowing (~30+ drops in 5m) — events may be lost. Check DS connectivity and latency."
+            description: "The audit buffer is overflowing — events may be lost."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-006.md"
-            response: "1. Check DS health/latency. 2. Scale DS if saturated. 3. Increase buffer size if sustained."
 
     - name: apifrontend.tools
       rules:
@@ -122,7 +142,7 @@ spec:
             severity: warning
           annotations:
             summary: "API Frontend tool call P99 latency > 5s"
-            description: "99th percentile tool call duration exceeds 5 seconds. Investigate slow downstream dependencies."
+            description: "99th percentile tool call duration exceeds 5 seconds."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-009.md"
 
         - alert: ApifrontendMCPRBACDenialSpike
@@ -132,7 +152,7 @@ spec:
             severity: warning
           annotations:
             summary: "MCP RBAC denials elevated (>1/s for 3m)"
-            description: "Sustained RBAC denials may indicate misconfigured roles, credential issues, or unauthorized access attempts."
+            description: "Sustained RBAC denials may indicate misconfigured roles or unauthorized access attempts."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-009.md"
 
         - alert: ApifrontendToolErrorRate
@@ -142,17 +162,7 @@ spec:
             severity: critical
           annotations:
             summary: "MCP tool error rate > 5%"
-            description: "More than 5% of MCP tool calls are failing (errors, timeouts, or panics). Investigate downstream services."
-            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-009.md"
-
-        - alert: ApifrontendToolThrottling
-          expr: sum(rate(af_tool_calls_total{job="apifrontend",result="throttled"}[5m])) > 0.5
-          for: 3m
-          labels:
-            severity: warning
-          annotations:
-            summary: "MCP tool calls being throttled"
-            description: "Tool concurrency limit is saturated. Consider increasing MaxConcurrentTools or investigate slow handlers."
+            description: "More than 5% of MCP tool calls are failing."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-009.md"
 
     - name: apifrontend.dependencies
@@ -167,16 +177,6 @@ spec:
             description: "95th percentile downstream request duration for {{ $labels.dependency }} exceeds 2 seconds."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-007.md"
 
-        - alert: ApifrontendRateLimitStorm
-          expr: rate(af_rate_limit_rejections_total{job="apifrontend"}[5m]) > 10
-          for: 2m
-          labels:
-            severity: warning
-          annotations:
-            summary: "API Frontend rate limit rejection storm"
-            description: "Rate limit rejections are elevated — possible DoS or misconfigured client."
-            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-008.md"
-
     - name: apifrontend.sse
       rules:
         - alert: ApifrontendSSEConnectionsHigh
@@ -186,5 +186,5 @@ spec:
             severity: warning
           annotations:
             summary: "API Frontend SSE connections > 100"
-            description: "Active SSE connections are above threshold. Check for connection leaks or unusual traffic."
+            description: "Active SSE connections are above threshold."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-008.md"

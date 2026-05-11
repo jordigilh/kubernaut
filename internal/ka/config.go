@@ -3,6 +3,7 @@ package ka
 
 import (
 	"errors"
+	"net/http"
 	"time"
 )
 
@@ -19,6 +20,10 @@ type Config struct {
 	Token string
 	// Timeout for HTTP requests to KA.
 	Timeout time.Duration
+	// BaseTransport is the underlying transport used for outbound requests.
+	// When nil, http.DefaultTransport is used. Inject a TLS-configured
+	// transport here for mTLS/CA-verified connections.
+	BaseTransport http.RoundTripper
 	// CBMaxRequests is the circuit breaker max requests in half-open state.
 	CBMaxRequests uint32
 	// CBInterval is the circuit breaker interval.

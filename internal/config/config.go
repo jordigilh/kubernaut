@@ -6,24 +6,36 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"gopkg.in/yaml.v3"
 )
 
 // Config holds all operational configuration for the API Frontend.
 type Config struct {
-	Server     ServerConfig     `yaml:"server"`
-	Agent      AgentConfig      `yaml:"agent"`
-	MCP        MCPConfig        `yaml:"mcp"`
-	AgentCard  AgentCardConfig  `yaml:"agentCard"`
-	Auth       AuthConfig       `yaml:"auth"`
-	Logging    LoggingConfig    `yaml:"logging"`
-	RateLimit  RateLimitConfig  `yaml:"rateLimit"`
-	Shutdown   ShutdownConfig   `yaml:"shutdown"`
-	Resilience ResilienceConfig `yaml:"resilience"`
-	RBAC       RBACConfig       `yaml:"rbac"`
+	Server         ServerConfig         `yaml:"server"`
+	Agent          AgentConfig          `yaml:"agent"`
+	MCP            MCPConfig            `yaml:"mcp"`
+	AgentCard      AgentCardConfig      `yaml:"agentCard"`
+	Auth           AuthConfig           `yaml:"auth"`
+	Logging        LoggingConfig        `yaml:"logging"`
+	RateLimit      RateLimitConfig      `yaml:"rateLimit"`
+	Shutdown       ShutdownConfig       `yaml:"shutdown"`
+	Resilience     ResilienceConfig     `yaml:"resilience"`
+	RBAC           RBACConfig           `yaml:"rbac"`
+	SeverityTriage SeverityTriageConfig `yaml:"severityTriage"`
+}
+
+// SeverityTriageConfig holds settings for the Prometheus-based severity triage pipeline.
+// NOTE: These fields are forward-looking — the triage pipeline is implemented in
+// internal/severity but not yet wired into main.go. The config fields are defined
+// here so that deployment configs can be prepared ahead of the wiring PR.
+type SeverityTriageConfig struct {
+	PrometheusURL       string `yaml:"prometheusURL,omitempty"`
+	PrometheusTLSCaFile string `yaml:"prometheusTlsCaFile,omitempty"`
 }
 
 // ResilienceConfig holds per-dependency circuit breaker and retry settings.
@@ -73,7 +85,8 @@ type ShutdownConfig struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port int `yaml:"port"`
+	Port int                 `yaml:"port"`
+	TLS  sharedtls.TLSConfig `yaml:"tls"`
 }
 
 // AgentConfig holds ADK agent and backend connectivity settings.
@@ -83,6 +96,8 @@ type AgentConfig struct {
 	KABaseURL     string `yaml:"kaBaseURL"`
 	KAMCPEndpoint string `yaml:"kaMCPEndpoint"`
 	DSBaseURL     string `yaml:"dsBaseURL"`
+	KATLSCaFile   string `yaml:"kaTlsCaFile,omitempty"`
+	DSTLSCaFile   string `yaml:"dsTlsCaFile,omitempty"`
 }
 
 // MCPConfig holds Model Context Protocol feature flags.
@@ -218,6 +233,9 @@ func (c *Config) Validate() error {
 	if err := c.validateResilience(); err != nil {
 		return err
 	}
+	if err := c.validateTLSPaths(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -304,6 +322,26 @@ func (c *Config) ResolveDefaults() {
 	if c.AgentCard.URL == "" {
 		c.AgentCard.URL = fmt.Sprintf("https://localhost:%d", c.Server.Port)
 	}
+}
+
+func (c *Config) validateTLSPaths() error {
+	paths := []struct {
+		field string
+		path  string
+	}{
+		{"agent.kaTlsCaFile", c.Agent.KATLSCaFile},
+		{"agent.dsTlsCaFile", c.Agent.DSTLSCaFile},
+		{"severityTriage.prometheusTlsCaFile", c.SeverityTriage.PrometheusTLSCaFile},
+	}
+	for _, p := range paths {
+		if p.path == "" {
+			continue
+		}
+		if _, err := os.Stat(p.path); err != nil {
+			return fmt.Errorf("%s: CA file %q is not accessible: %w", p.field, p.path, err)
+		}
+	}
+	return nil
 }
 
 func validateURL(field, raw string) error {

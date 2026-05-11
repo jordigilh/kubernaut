@@ -160,7 +160,7 @@ sequenceDiagram
 
 ## 4. Kubernetes RBAC (ClusterRole)
 
-The Helm-managed ClusterRole grants the AF ServiceAccount:
+The Kustomize-managed ClusterRole (`deploy/kustomize/base/02-rbac.yaml`) grants the AF ServiceAccount:
 
 | API Group | Resources | Verbs | Purpose |
 |-----------|-----------|-------|---------|
@@ -210,4 +210,4 @@ This is distinct from the K8s impersonation model used by triage tools (`af_list
 
 ---
 
-*Source files: `internal/auth/middleware.go`, `internal/auth/jwt.go`, `internal/auth/tokenreview.go`, `internal/auth/impersonation.go`, `internal/auth/dynamic_impersonation.go`, `internal/agent/rbac_roles.yaml`, `deploy/helm/templates/clusterrole.yaml`*
+*Source files: `internal/auth/middleware.go`, `internal/auth/jwt.go`, `internal/auth/tokenreview.go`, `internal/auth/impersonation.go`, `internal/auth/dynamic_impersonation.go`, `internal/agent/rbac_roles.yaml`, `deploy/kustomize/base/02-rbac.yaml`*

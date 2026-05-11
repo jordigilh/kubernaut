@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Kubernetes cluster (1.29+) with CRD support
-- Helm 3.12+
+- `kubectl` with Kustomize support (v1.14+)
 - OIDC identity provider (Keycloak, Okta, or similar) configured
 - Kubernaut Agent (KA) and DataStorage (DS) services deployed
 - Prometheus Operator (for PrometheusRule CRD)
@@ -11,9 +11,9 @@
 
 ## Deployment Model
 
-The API Frontend workload (Deployment, Service, ConfigMap) is managed by the **kubernaut-operator** in production environments. The Helm chart in this repository (`deploy/helm/`) provides **RBAC resources only** (ServiceAccount, ClusterRole, ClusterRoleBinding).
+The API Frontend workload (Deployment, Service, ConfigMap) is managed by the **kubernaut-operator** in production environments. The Kustomize manifests in this repository (`deploy/kustomize/`) provide the base configuration with dev and CI overlays for non-production environments.
 
-For development or standalone environments without the operator, deploy the workload using raw manifests or a parent chart that includes this chart as a dependency.
+For development, deploy using `make deploy-dev` (Kind cluster with self-signed TLS). Production deployments are managed by the kubernaut-operator.
 
 ## Resource Requirements
 
@@ -32,22 +32,19 @@ No persistent storage required. All state is held in:
 - In-memory session state (ephemeral per pod)
 - DataStorage (external service for audit trail)
 
-## Helm Chart (RBAC Only)
+## Kustomize Manifests
 
-The chart at `deploy/helm/` installs Kubernetes RBAC resources required by the AF service account:
+The manifests at `deploy/kustomize/base/` define the full Kubernetes resource set:
 
-```bash
-helm install af-rbac deploy/helm/ \
-  --namespace kubernaut \
-  --create-namespace
-```
-
-This creates:
+- **Namespace** (`kubernaut-system`)
 - **ServiceAccount** — pod identity for AF
-- **ClusterRole** — CRD CRUD, TokenReview, SubjectAccessReview
-- **ClusterRoleBinding** — binds the role to the service account
+- **ClusterRole/ClusterRoleBinding** — CRD CRUD, Events
+- **Deployment** — with TLS volume mounts, security context, pod anti-affinity
+- **Service** — ClusterIP exposing ports 8443, 8081, 9090
+- **PrometheusRule** — alerting rules for SLO monitoring
+- **NetworkPolicy** — restricts ingress/egress to required ports
 
-The chart does **not** create Deployment, Service, or ConfigMap resources. Those are managed by the kubernaut-operator (see `docs/design/ARCHITECTURE.md`).
+In production, the kubernaut-operator manages the Deployment lifecycle. The base manifests serve as the authoritative resource definitions.
 
 ## Configuration
 
@@ -138,13 +135,15 @@ resilience:
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| 8443 | HTTP | Main API (A2A, MCP, Agent Card, health) |
+| 8443 | HTTPS (or HTTP when TLS disabled) | Main API (A2A, MCP, Agent Card) |
+| 8081 | HTTP | Health probes (liveness, readiness) |
+| 9090 | HTTP | Prometheus metrics scrape |
 
 ## RBAC
 
-The Helm chart creates:
+The Kustomize base manifests (`deploy/kustomize/base/02-rbac.yaml`) create:
 - **ServiceAccount** — identity for the AF pod
-- **ClusterRole** — CRD CRUD, TokenReview, SubjectAccessReview
+- **ClusterRole** — CRD CRUD, Events
 - **ClusterRoleBinding** — binds role to service account
 
 ### Agent Card RBAC (Group-to-Role Mapping)
@@ -187,9 +186,6 @@ For production HA:
 
 ## Monitoring
 
-Deploy `deploy/prometheus-rules.yaml` as a PrometheusRule CR:
-```bash
-kubectl apply -f deploy/prometheus-rules.yaml
-```
+The PrometheusRule CR is included in the Kustomize base manifests (`deploy/kustomize/base/05-prometheusrule.yaml`) and is deployed automatically with `kubectl apply -k deploy/kustomize/overlays/dev/`.
 
-Import Grafana dashboards from `docs/grafana/` (when available).
+Grafana dashboards are planned for a future release.

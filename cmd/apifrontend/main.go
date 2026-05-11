@@ -20,6 +20,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/config"
@@ -28,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ka"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/metrics"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/streaming"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/tlswiring"
 )
 
 const (
@@ -69,11 +72,19 @@ func main() {
 	})
 	auditor.Start()
 
-	mcpHandler, err := buildMCPHandler(cfg, metricsReg, rbacRoles, auditor, logger)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	mcpHandler, caWatchers, err := buildMCPHandler(ctx, cfg, metricsReg, rbacRoles, auditor, logger)
 	if err != nil {
 		logger.Error(err, "failed to create MCP handler")
 		os.Exit(1)
 	}
+	defer func() {
+		for _, w := range caWatchers {
+			w.watcher.Stop()
+		}
+	}()
 
 	agentCardHandler, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
 		Name:        "kubernaut-apifrontend",
@@ -147,15 +158,44 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+	tlsEnabled, certReloader, err := tlswiring.ConfigureServer(httpServer, cfg.Server.TLS.CertDir)
+	if err != nil {
+		logger.Error(err, "failed to configure TLS")
+		os.Exit(1)
+	}
+	if tlsEnabled {
+		logger.Info("TLS enabled with hot-reloadable certificates", "certDir", cfg.Server.TLS.CertDir)
+	} else {
+		if warn := tlswiring.CheckPartialTLSMaterial(cfg.Server.TLS.CertDir); warn != "" {
+			logger.Info("WARNING: "+warn, "certDir", cfg.Server.TLS.CertDir)
+		}
+		logger.Info("TLS disabled, serving plain HTTP")
+	}
 
-	go startServer(httpServer, "API", logger)
+	certWatcher, err := tlswiring.StartCertFileWatcher(ctx, cfg.Server.TLS.CertDir, certReloader, logger)
+	if err != nil {
+		logger.Error(err, "failed to start certificate file watcher")
+		os.Exit(1)
+	}
+	if certWatcher != nil {
+		defer certWatcher.Stop()
+	}
+
+	caWatcher, err := tlswiring.StartCAFileWatcher(ctx, logger)
+	if err != nil {
+		logger.Error(err, "failed to start CA file watcher")
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		defer caWatcher.Stop()
+	}
+
+	go startServerTLS(httpServer, tlsEnabled, "API", logger)
 	go startServer(healthServer, "health", logger)
 	go startServer(metricsServer, "metrics", logger)
 
 	logger.Info("kubernaut-apifrontend started",
-		"addr", addr, "mcp_enabled", cfg.MCP.Enabled, "tools", 20)
+		"addr", addr, "tls", tlsEnabled, "mcp_enabled", cfg.MCP.Enabled, "tools", 20)
 
 	<-ctx.Done()
 	draining.Store(true)
@@ -187,6 +227,18 @@ func startServer(srv *http.Server, name string, logger logr.Logger) {
 	logger.Info("server listening", "name", name, "addr", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error(err, "server error", "name", name)
+		os.Exit(1)
+	}
+}
+
+func startServerTLS(srv *http.Server, tlsEnabled bool, name string, logger logr.Logger) {
+	if !tlsEnabled {
+		startServer(srv, name, logger)
+		return
+	}
+	logger.Info("server listening (TLS)", "name", name, "addr", srv.Addr)
+	if err := srv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+		logger.Error(err, "server TLS error", "name", name)
 		os.Exit(1)
 	}
 }
@@ -230,11 +282,30 @@ func loadRBACRoles() (map[string][]string, error) {
 	return rf.Roles, nil
 }
 
-func buildMCPHandler(cfg *config.Config, metricsReg *metrics.Registry, rbacRoles map[string][]string, auditor audit.Emitter, logger logr.Logger) (http.Handler, error) {
+type caWatcherEntry struct {
+	name    string
+	watcher *hotreload.FileWatcher
+}
+
+func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metrics.Registry, rbacRoles map[string][]string, auditor audit.Emitter, logger logr.Logger) (http.Handler, []caWatcherEntry, error) {
+	var caWatchers []caWatcherEntry
+
+	dsTransport, dsWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.DSTLSCaFile, logger.WithName("ds-ca"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("DS TLS transport: %w", err)
+	}
+	if dsWatcher != nil {
+		if err := dsWatcher.Start(ctx); err != nil {
+			return nil, nil, fmt.Errorf("DS CA watcher start: %w", err)
+		}
+		caWatchers = append(caWatchers, caWatcherEntry{name: "ds-ca", watcher: dsWatcher})
+	}
+
 	var dsClient ds.Client
 	dsCfg := ds.OgenClientConfig{
-		BaseURL: cfg.Agent.DSBaseURL,
-		Timeout: cfg.Resilience.DS.RequestTimeout,
+		BaseURL:   cfg.Agent.DSBaseURL,
+		Timeout:   cfg.Resilience.DS.RequestTimeout,
+		Transport: dsTransport,
 	}
 	if c, err := ds.NewOgenClient(dsCfg); err == nil {
 		dsClient = c
@@ -242,15 +313,30 @@ func buildMCPHandler(cfg *config.Config, metricsReg *metrics.Registry, rbacRoles
 		logger.Info("DS client unavailable, DS tools will return errors", "error", err)
 	}
 
+	kaTransport, kaWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.KATLSCaFile, logger.WithName("ka-ca"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("KA TLS transport: %w", err)
+	}
+	if kaWatcher != nil {
+		if err := kaWatcher.Start(ctx); err != nil {
+			return nil, nil, fmt.Errorf("KA CA watcher start: %w", err)
+		}
+		caWatchers = append(caWatchers, caWatcherEntry{name: "ka-ca", watcher: kaWatcher})
+	}
+
+	kaMCPHTTPClient := &http.Client{Transport: &auth.ContextJWTDelegationTransport{}}
+	if kaTransport != nil {
+		kaMCPHTTPClient.Transport = &auth.ContextJWTDelegationTransport{Base: kaTransport}
+	}
 	kaMCPClient := ka.NewSDKMCPClient(
 		cfg.Agent.KAMCPEndpoint,
-		&http.Client{Transport: &auth.ContextJWTDelegationTransport{}},
+		kaMCPHTTPClient,
 		logger,
 	)
 
 	bridgeCfg := &handler.MCPBridgeConfig{
 		DynFactory:         buildDynFactory(),
-		KAClient:           ka.NewClient(ka.Config{BaseURL: cfg.Agent.KABaseURL}),
+		KAClient:           ka.NewClient(ka.Config{BaseURL: cfg.Agent.KABaseURL, BaseTransport: kaTransport}),
 		KAMCPClient:        kaMCPClient,
 		DSClient:           dsClient,
 		RBACRoles:          rbacRoles,
@@ -261,13 +347,17 @@ func buildMCPHandler(cfg *config.Config, metricsReg *metrics.Registry, rbacRoles
 		MaxConcurrentTools: 10,
 	}
 
-	return handler.NewMCPHandler(handler.MCPConfig{
+	h, err := handler.NewMCPHandler(handler.MCPConfig{
 		ServerName:    "kubernaut-apifrontend",
 		ServerVersion: version(),
 		Enabled:       cfg.MCP.Enabled,
 		Bridge:        bridgeCfg,
 		Auditor:       auditor,
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return h, caWatchers, nil
 }
 
 // bridgeMetricsFrom wires the global metrics registry counters into

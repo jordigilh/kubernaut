@@ -42,7 +42,11 @@ func NewClient(cfg Config, metrics ...*ClientMetrics) *Client {
 		timeout = 30 * time.Second
 	}
 
-	var baseTransport http.RoundTripper = &requestid.Transport{Base: http.DefaultTransport}
+	underlying := cfg.BaseTransport
+	if underlying == nil {
+		underlying = http.DefaultTransport
+	}
+	var baseTransport http.RoundTripper = &requestid.Transport{Base: underlying}
 	if cfg.Token != "" {
 		baseTransport = &auth.JWTDelegationTransport{
 			Base:  baseTransport,
