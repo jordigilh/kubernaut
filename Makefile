@@ -354,7 +354,7 @@ test-e2e-%: generate ginkgo ensure-coverage-dirs ## Run E2E tests for specified 
 		}; \
 		echo "✅ DataStorage client validated successfully"; \
 	fi
-	@GINKGO_CMD="$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_$*.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/..."; \
+	@GINKGO_CMD="$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_$*.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/..."; \
 	if [ -n "$(GINKGO_LABEL)" ]; then \
 		GINKGO_CMD="$$GINKGO_CMD --label-filter='$(GINKGO_LABEL)'"; \
 		echo "🏷️  Label filter: $(GINKGO_LABEL)"; \
@@ -389,7 +389,7 @@ test-e2e-datastorage: generate ginkgo ensure-coverage-dirs ## Run datastorage E2
 	@echo "🔍 Pre-validating DataStorage OpenAPI client generation..."
 	@$(MAKE) generate-datastorage-client || { echo "❌ DataStorage client generation failed"; exit 1; }
 	@echo "✅ DataStorage client validated successfully"
-	@GINKGO_CMD="$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_datastorage.out --covermode=atomic --coverpkg=$(DATASTORAGE_COVERPKG)"; \
+	@GINKGO_CMD="$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_datastorage.out --covermode=atomic --coverpkg=$(DATASTORAGE_COVERPKG)"; \
 	if [ -n "$(GINKGO_LABEL)" ]; then GINKGO_CMD="$$GINKGO_CMD --label-filter='$(GINKGO_LABEL)'"; fi; \
 	if [ -n "$(GINKGO_FOCUS)" ]; then GINKGO_CMD="$$GINKGO_CMD --focus='$(GINKGO_FOCUS)'"; fi; \
 	if [ -n "$(GINKGO_SKIP)" ]; then GINKGO_CMD="$$GINKGO_CMD --skip='$(GINKGO_SKIP)'"; fi; \
@@ -650,7 +650,7 @@ test-e2e-kubernautagent: ginkgo ensure-coverage-dirs generate-agentclient ## Run
 	@echo "⏱️  Expected Duration: ~10 minutes"
 	@echo ""
 	@echo "🧪 Running KA E2E tests (test/e2e/kubernautagent/)..."
-	@$(GINKGO) -v --timeout=15m --coverprofile=coverage_e2e_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/e2e/kubernautagent/...
+	@$(GINKGO) -v --race --timeout=15m --coverprofile=coverage_e2e_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/e2e/kubernautagent/...
 	@if [ -f coverage_e2e_kubernautagent_binary.out ]; then \
 		echo "📊 Using GOCOVERDIR binary coverage (deployed service instrumentation)"; \
 		cp coverage_e2e_kubernautagent_binary.out coverage_e2e_kubernautagent.out; \
@@ -681,7 +681,7 @@ test-e2e-authwebhook: ginkgo ensure-coverage-dirs ## Run webhook E2E tests (Kind
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_authwebhook.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/authwebhook/... ./test/e2e/authwebhook/...
+	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --coverprofile=coverage_e2e_authwebhook.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/authwebhook/... ./test/e2e/authwebhook/...
 	@# DD-TEST-007: Prefer GOCOVERDIR binary coverage over Ginkgo --coverprofile
 	@if [ -f coverage_e2e_authwebhook_binary.out ]; then \
 		echo "📊 Using GOCOVERDIR binary coverage (deployed service instrumentation)"; \
@@ -727,7 +727,7 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@echo "   All Kubernaut services in a single Kind cluster"
 	@echo "   Event → Gateway → RO → SP → AA → KA → WE(Job) → Notification"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fullpipeline/...
+	@$(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
 
 ##@ Legacy Aliases (Backward Compatibility)
