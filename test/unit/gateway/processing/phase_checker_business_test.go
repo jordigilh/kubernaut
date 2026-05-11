@@ -309,6 +309,81 @@ var _ = Describe("BR-GATEWAY-182: Status Updater tracks duplicate signal occurre
 	})
 })
 
+// ============================================================================
+// BUSINESS OUTCOME TESTS: Inconclusive Backoff Deduplication (Issue #1091)
+// ============================================================================
+//
+// BR-ORCH-042.6: RO sets NextAllowedExecution on Completed+Inconclusive RRs.
+// Gateway MUST honour this field identically to Failed RRs to prevent
+// premature retry during backoff.
+//
+// BUSINESS VALUE:
+// - Inconclusive remediations (alert still firing) get progressively longer backoff
+// - Gateway suppresses new RRs while backoff is active
+// - Prevents 30+ RR flood for persistent alerts
+// ============================================================================
+
+var _ = Describe("Issue #1091: Gateway dedup for Completed+Inconclusive with NextAllowedExecution", func() {
+	var (
+		ctx       context.Context
+		k8sClient client.Client
+		scheme    *runtime.Scheme
+		checker   *processing.PhaseBasedDeduplicationChecker
+	)
+
+	const (
+		namespace   = "kubernaut-system"
+		fingerprint = "f6a7b8c9d0e1234567890123456789012345678901234567890abcdef12345678"
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		Expect(remediationv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		k8sClient = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithStatusSubresource(&remediationv1alpha1.RemediationRequest{}).
+			WithIndex(&remediationv1alpha1.RemediationRequest{}, "spec.signalFingerprint", func(o client.Object) []string {
+				rr := o.(*remediationv1alpha1.RemediationRequest)
+				return []string{rr.Spec.SignalFingerprint}
+			}).
+			Build()
+
+		checker = processing.NewPhaseBasedDeduplicationChecker(k8sClient, 0)
+	})
+
+	Context("UT-GW-1091-001: Completed+Inconclusive RR with active backoff", func() {
+		It("should deduplicate to enforce backoff and prevent premature retry", func() {
+			nextAllowed := metav1.NewTime(time.Now().Add(2 * time.Minute))
+			rr := &remediationv1alpha1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-inconclusive-backoff-active",
+					Namespace: namespace,
+				},
+				Spec: remediationv1alpha1.RemediationRequestSpec{
+					SignalFingerprint: fingerprint,
+				},
+				Status: remediationv1alpha1.RemediationRequestStatus{
+					OverallPhase:           remediationv1alpha1.PhaseCompleted,
+					Outcome:                "Inconclusive",
+					NextAllowedExecution:   &nextAllowed,
+					ConsecutiveFailureCount: 1,
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			shouldDedup, existingRR, err := checker.ShouldDeduplicate(ctx, namespace, fingerprint)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(shouldDedup).To(BeTrue(),
+				"#1091: Completed+Inconclusive with NextAllowedExecution in the future must suppress new RR")
+			Expect(existingRR).NotTo(BeNil())
+			Expect(existingRR.Name).To(Equal("rr-inconclusive-backoff-active"))
+		})
+	})
+})
+
 // #280: Post-completion cooldown tests (BR-GATEWAY-011) removed.
 // Verifying phase now covers the deduplication gap between WFE completion and EA completion.
 // See: GitHub Issue #280, UT-GW-280-001/002 at end of file.
