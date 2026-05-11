@@ -251,13 +251,13 @@ func (s *Server) handleGetEffectivenessScore(w http.ResponseWriter, r *http.Requ
 	// Query effectiveness audit events from the database
 	events, err := s.queryEffectivenessEvents(r.Context(), correlationID)
 	if err != nil {
-		s.logger.Error(err, "Failed to query effectiveness events",
+		s.logger.Error(err, "Failed to query effectiveness events (redacted from client)",
 			"correlation_id", correlationID)
 		writeValidationRFC7807Error(w, &validation.RFC7807Problem{
 			Type:     "https://kubernaut.ai/problems/effectiveness/query-error",
 			Title:    "Effectiveness Query Error",
 			Status:   http.StatusInternalServerError,
-			Detail:   "Failed to query effectiveness events: " + err.Error(),
+			Detail:   "An internal error occurred. Check server logs for details.",
 			Instance: r.URL.Path,
 		}, s)
 		return

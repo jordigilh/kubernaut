@@ -112,6 +112,15 @@ type Server struct {
 
 	// Issue #667 / BR-STORAGE-043: Maximum events per batch API request
 	maxBatchSize int
+
+	// #1048 Phase 4: OpenAPI validator created at startup (fail-hard)
+	openapiValidator *dsmiddleware.OpenAPIValidator
+
+	// #1048 Phase 4: Configurable CORS origins (ADR-030), default ["*"]
+	corsAllowedOrigins []string
+
+	// #1048 Phase 4: Max request body size in bytes (SC-5 DoS protection)
+	maxBodySize int64
 }
 
 func defaultMaxBatchSize(v int) int {
@@ -181,9 +190,22 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
 
+	// #1048 Phase 4 / RES-M2: Track resources for cleanup on late-stage errors.
+	// On success the cleanup is disarmed; on failure all acquired resources are released
+	// in reverse order to prevent leaks during startup.
+	var cleanups []func()
+	success := false
+	defer func() {
+		if !success {
+			for i := len(cleanups) - 1; i >= 0; i-- {
+				cleanups[i]()
+			}
+		}
+	}()
+	cleanups = append(cleanups, func() { _ = db.Close() })
+
 	// Verify connection
 	if err := db.Ping(); err != nil {
-		_ = db.Close() // Best effort close on failed ping
 		return nil, fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
 
@@ -196,7 +218,6 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	if err := partition.EnsureMonthlyPartitions(
 		partitionCtx, db, clock.Now(), partition.DefaultLookaheadMonths, partition.AllTables(),
 	); err != nil {
-		_ = db.Close()
 		return nil, fmt.Errorf("failed to ensure monthly partitions at startup: %w", err)
 	}
 	logger.Info("Monthly partitions ensured",
@@ -205,23 +226,17 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	)
 
 	// Configure connection pool from config (not hardcoded)
-	// Bug fix: Use appCfg.Database values instead of hardcoded 25/5
-	// Issue discovered: 2026-01-14 - Integration tests with 12 parallel processes
-	// were bottlenecked by hardcoded max_open_conns=25
 	db.SetMaxOpenConns(appCfg.Database.MaxOpenConns)
 	db.SetMaxIdleConns(appCfg.Database.MaxIdleConns)
 
-	// Parse duration strings from config
 	connMaxLifetime, err := time.ParseDuration(appCfg.Database.ConnMaxLifetime)
 	if err != nil {
-		_ = db.Close()
 		return nil, fmt.Errorf("invalid connMaxLifetime: %w", err)
 	}
 	db.SetConnMaxLifetime(connMaxLifetime)
 
 	connMaxIdleTime, err := time.ParseDuration(appCfg.Database.ConnMaxIdleTime)
 	if err != nil {
-		_ = db.Close()
 		return nil, fmt.Errorf("invalid connMaxIdleTime: %w", err)
 	}
 	db.SetConnMaxIdleTime(connMaxIdleTime)
@@ -239,9 +254,9 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		Password: deps.RedisPassword, // ADR-030: Password from mounted secret
 	})
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {
-		_ = db.Close() // Clean up DB connection
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
+	cleanups = append(cleanups, func() { _ = redisClient.Close() })
 
 	logger.Info("Redis connection established",
 		"addr", deps.RedisAddr,
@@ -257,7 +272,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	}
 	dlqClient, err := dlq.NewClient(redisClient, logger, dlqMaxLen)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create DLQ client: %w", err)
+		return nil, fmt.Errorf("failed to create DLQ client: %w", err) // cleanups run via defer
 	}
 	validator := validation.NewNotificationAuditValidator()
 
@@ -286,9 +301,9 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		logger,                                 // Use logr.Logger directly (DD-005 v2.0)
 	)
 	if err != nil {
-		_ = db.Close() // Clean up DB connection
-		return nil, fmt.Errorf("failed to create audit store: %w", err)
+		return nil, fmt.Errorf("failed to create audit store: %w", err) // cleanups run via defer
 	}
+	cleanups = append(cleanups, func() { _ = auditStore.Close() })
 
 	logger.Info("Self-auditing audit store initialized (DD-STORAGE-012)",
 		"buffer_size", audit.DefaultConfig().BufferSize,
@@ -355,18 +370,29 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	logger.V(1).Info("Loading signing certificate from /etc/certs...")
 	signer, err := loadSigningCertificate(logger)
 	if err != nil {
-		_ = db.Close() // Clean up DB connection
-		return nil, fmt.Errorf("failed to load signing certificate: %w", err)
+		return nil, fmt.Errorf("failed to load signing certificate: %w", err) // cleanups run via defer
 	}
 	logger.Info("Signing certificate loaded successfully",
 		"algorithm", signer.GetAlgorithm(),
 		"fingerprint", signer.GetCertificateFingerprint())
 
+	// #1048 Phase 4 / BR-STORAGE-034: Initialize OpenAPI validator at startup (fail-hard).
+	// If the embedded spec is invalid the service MUST NOT start — running without
+	// request validation silently accepts malformed input.
+	openapiValidator, err := dsmiddleware.NewOpenAPIValidator(
+		logger.WithName("openapi-validator"),
+		metrics.ValidationFailures,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize OpenAPI validator: %w", err) // cleanups run via defer
+	}
+	logger.Info("OpenAPI validator initialized at startup (fail-hard)")
+
 	// DD-009 V1.0: Create DLQ retry worker (goroutine inside server)
 	// #1048 DF-1: Pass notification repo so notification DLQ messages are persisted
 	dlqWorkerConfig := DefaultDLQRetryWorkerConfig()
 	dlqWorkerConfig.ConsumerName = fmt.Sprintf("worker-%d", os.Getpid())
-	dlqRetryWorker := NewDLQRetryWorker(dlqClient, auditEventsRepo, repo, dlqWorkerConfig, logger)
+	dlqRetryWorker := NewDLQRetryWorker(dlqClient, auditEventsRepo, repo, dlqWorkerConfig, logger, metrics.DLQValidationFailures)
 
 	// DS-FLAKY-003 FIX: Create server with handler assigned to httpServer
 	// This allows graceful shutdown to work in both Start() and httptest scenarios
@@ -393,6 +419,9 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		authNamespace:            deps.AuthNamespace,  // DD-AUTH-014: Dynamic namespace for SAR checks
 		maxBatchSize:             defaultMaxBatchSize(appCfg.Server.MaxBatchSize), // Issue #667 / BR-STORAGE-043
 		endpointPropagationDelay: endpointRemovalPropagationDelay,
+		openapiValidator:         openapiValidator,
+		corsAllowedOrigins:       appCfg.Server.GetCORSAllowedOrigins(),
+		maxBodySize:              appCfg.Server.GetMaxBodySize(),
 	}
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
@@ -401,8 +430,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	if serverCfg.TLS.Enabled() {
 		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(srv.httpServer, serverCfg.TLS.CertDir)
 		if tlsErr != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
+			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr) // cleanups run via defer
 		}
 		if isTLS {
 			srv.certReloader = reloader
@@ -411,6 +439,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		}
 	}
 
+	success = true
 	return srv, nil
 }
 
@@ -424,33 +453,23 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.RealIP)         // Get real client IP
 	r.Use(s.loggingMiddleware)       // Custom logging middleware
 	r.Use(s.panicRecoveryMiddleware) // Enhanced panic recovery with logging
+	// #1048 Phase 4 / SC-5: Request body size limit (DoS protection).
+	// Applied before OpenAPI validation so the body is capped before spec parsing.
+	r.Use(dsmiddleware.MaxBytesReaderMiddleware(s.maxBodySize, s.logger))
+
+	// #1048 Phase 4 / AC-4: CORS with configurable origins (ADR-030).
+	// AllowedMethods includes PATCH and DELETE for workflow/action-type/legal-hold routes.
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"}, // V1.0: Permissive CORS (configure via env var in production)
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedOrigins:   s.corsAllowedOrigins,
+		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
 		ExposedHeaders:   []string{"Link", "X-Request-ID"},
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
 
-	// BR-STORAGE-034: OpenAPI validation middleware
-	// DD-API-002: OpenAPI spec embedded in binary (zero-config deployment)
-	//
-	// Automatically validates all API requests against OpenAPI spec:
-	// - Validates required fields (including empty strings via minLength: 1)
-	// - Validates enum values, types, formats
-	// - Returns RFC 7807 errors for validation failures
-	// Routes not in spec (/health, /metrics) pass through without validation
-	openapiValidator, err := dsmiddleware.NewOpenAPIValidator(
-		s.logger.WithName("openapi-validator"),
-		nil, // Validation metrics removed per GitHub issue #294
-	)
-	if err != nil {
-		s.logger.Error(err, "Failed to initialize OpenAPI validator - continuing without validation")
-	} else {
-		r.Use(openapiValidator.Middleware)
-		s.logger.Info("OpenAPI validation middleware enabled")
-	}
+	// BR-STORAGE-034: OpenAPI validation middleware (fail-hard, initialized in NewServer)
+	r.Use(s.openapiValidator.Middleware)
 
 	// Issue #753: Health endpoints moved to dedicated :8081 server.
 	// See health.NewHealthServer in cmd/datastorage/main.go.

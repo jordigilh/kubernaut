@@ -16,7 +16,11 @@ limitations under the License.
 
 package models
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 // NotificationAudit represents a notification audit record
 // Authority: migrations/010_audit_write_api_phase1.sql
@@ -47,9 +51,10 @@ type NotificationAudit struct {
 	// Maps to: notification_audit.recipient (VARCHAR(255) NOT NULL)
 	Recipient string `json:"recipient" db:"recipient" validate:"required,max=255"`
 
-	// Channel is the communication channel (e.g., "email", "slack", "pagerduty", "teams", "sms")
+	// Channel is the communication channel (e.g., "slack", "pagerduty", "teams", "console", "file", "log")
 	// Maps to: notification_audit.channel (VARCHAR(50) NOT NULL)
-	Channel string `json:"channel" db:"channel" validate:"required,oneof=email slack pagerduty teams sms"`
+	// Authority: migrations/006_add_teams_channel.sql
+	Channel string `json:"channel" db:"channel" validate:"required,oneof=slack pagerduty teams console file log"`
 
 	// MessageSummary is a short summary of the notification content
 	// Maps to: notification_audit.message_summary (TEXT NOT NULL)
@@ -84,11 +89,42 @@ type NotificationAudit struct {
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
-// Validate performs business logic validation on the NotificationAudit struct
-// This is called before persisting to the database to ensure data integrity
+// validChannels is the set of allowed notification channels.
+// Authority: migrations/006_add_teams_channel.sql (DB CHECK constraint).
+var validChannels = map[string]bool{
+	"slack": true, "pagerduty": true, "teams": true, "console": true, "file": true, "log": true,
+}
+
+// validStatuses is the set of allowed notification statuses (matches DB CHECK constraint).
+var validStatuses = map[string]bool{
+	"sent": true, "failed": true, "acknowledged": true, "escalated": true,
+}
+
+// Validate performs business logic validation on the NotificationAudit struct.
+// #1048 Phase 4 / SI-10: Called by the DLQ retry path to reject invalid
+// payloads before persisting to PostgreSQL.
 func (n *NotificationAudit) Validate() error {
-	// Validation is handled by struct tags and the validator package
-	// Additional business logic validation can be added here if needed
+	if n.RemediationID == "" {
+		return fmt.Errorf("remediation_id is required")
+	}
+	if n.NotificationID == "" {
+		return fmt.Errorf("notification_id is required")
+	}
+	if n.Recipient == "" {
+		return fmt.Errorf("recipient is required")
+	}
+	if !validChannels[strings.ToLower(n.Channel)] {
+		return fmt.Errorf("channel must be one of slack, pagerduty, teams, console, file, log; got %q", n.Channel)
+	}
+	if n.MessageSummary == "" {
+		return fmt.Errorf("message_summary is required")
+	}
+	if !validStatuses[strings.ToLower(n.Status)] {
+		return fmt.Errorf("status must be one of sent, failed, acknowledged, escalated; got %q", n.Status)
+	}
+	if n.SentAt.IsZero() {
+		return fmt.Errorf("sent_at is required")
+	}
 	return nil
 }
 

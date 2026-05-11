@@ -69,12 +69,18 @@ type ServerConfig struct {
 	WriteTimeout     string              `yaml:"writeTimeout"`     // e.g., "30s"
 	ShutdownTimeout  string              `yaml:"shutdownTimeout"`  // DD-007: graceful shutdown budget, e.g. "60s" (default: 60s, range: 30s–120s)
 	TLS              sharedtls.TLSConfig `yaml:"tls,omitempty"`    // Issue #678: Optional inter-service TLS
+
+	// #1048 Phase 4 / SC-5: Maximum request body size in bytes, e.g. "5242880" for 5 MiB
+	// (default: 5242880 = 5 MiB, range: 1048576–52428800 = 1–50 MiB)
+	MaxBodySize string `yaml:"maxBodySize,omitempty"`
+
+	// #1048 Phase 4 / AC-4: CORS allowed origins (default: ["*"] with startup warning)
+	CORSAllowedOrigins []string `yaml:"corsAllowedOrigins,omitempty"`
 }
 
 // LoggingConfig contains logging configuration
 type LoggingConfig struct {
-	Level  string `yaml:"level"`  // debug, info, warn, error
-	Format string `yaml:"format"` // json, console
+	Level string `yaml:"level"` // debug, info, warn, error
 }
 
 // DatabaseConfig contains PostgreSQL database configuration
@@ -100,12 +106,9 @@ type DatabaseConfig struct {
 
 // RedisConfig contains Redis configuration for DLQ
 type RedisConfig struct {
-	Addr             string `yaml:"addr"`             // e.g., "localhost:6379"
-	DB               int    `yaml:"db"`               // Redis database number
-	Password         string `yaml:"-"`                // NOT in YAML - loaded from secret file via LoadSecrets()
-	DLQStreamName    string `yaml:"dlqStreamName"`    // DD-009: Dead Letter Queue stream name
-	DLQMaxLen        int    `yaml:"dlqMaxLen"`        // Maximum DLQ stream length
-	DLQConsumerGroup string `yaml:"dlqConsumerGroup"` // DLQ consumer group name
+	Addr      string `yaml:"addr"`      // e.g., "localhost:6379"
+	Password  string `yaml:"-"`         // NOT in YAML - loaded from secret file via LoadSecrets()
+	DLQMaxLen int    `yaml:"dlqMaxLen"` // Maximum DLQ stream length
 
 	// Secret file configuration (ADR-030 Section 6)
 	SecretsFile string `yaml:"secretsFile"` // Full path to secret file, e.g., "/etc/secrets/redis/credentials.yaml"
@@ -315,14 +318,6 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid log level: %s (must be DEBUG, INFO, WARN, or ERROR)", c.Logging.Level)
 	}
 
-	validFormats := map[string]bool{
-		"json":    true,
-		"console": true,
-	}
-	if c.Logging.Format != "" && !validFormats[c.Logging.Format] {
-		return fmt.Errorf("invalid log format: %s (must be json or console)", c.Logging.Format)
-	}
-
 	// Validate timeout durations (parse to ensure valid format)
 	if c.Server.ReadTimeout != "" {
 		if _, err := time.ParseDuration(c.Server.ReadTimeout); err != nil {
@@ -395,6 +390,44 @@ func (c *ServerConfig) GetShutdownTimeout() time.Duration {
 		return maxTimeout
 	}
 	return duration
+}
+
+// GetMaxBodySize returns the maximum request body size in bytes.
+// #1048 Phase 4 / SC-5: Defaults to 5 MiB. Clamped to [1 MiB, 50 MiB].
+// 5 MiB accommodates batch audit event requests (500 events × ~2-5 KB each).
+func (c *ServerConfig) GetMaxBodySize() int64 {
+	const (
+		mib            = 1 << 20
+		defaultSize    = 5 * mib
+		minSize        = 1 * mib
+		maxSize        = 50 * mib
+	)
+	if c.MaxBodySize == "" {
+		return int64(defaultSize)
+	}
+	var size int64
+	if n, err := fmt.Sscanf(c.MaxBodySize, "%d", &size); err == nil && n == 1 {
+		// Plain integer in bytes
+	} else {
+		return int64(defaultSize)
+	}
+	if size < int64(minSize) {
+		return int64(minSize)
+	}
+	if size > int64(maxSize) {
+		return int64(maxSize)
+	}
+	return size
+}
+
+// GetCORSAllowedOrigins returns the configured CORS origins.
+// #1048 Phase 4 / AC-4: Defaults to ["*"] for backward compatibility.
+// Operators should configure explicit origins for production.
+func (c *ServerConfig) GetCORSAllowedOrigins() []string {
+	if len(c.CORSAllowedOrigins) == 0 {
+		return []string{"*"}
+	}
+	return c.CORSAllowedOrigins
 }
 
 // GetConnectionString returns the PostgreSQL connection string with PG-level timeouts.

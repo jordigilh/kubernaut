@@ -16,6 +16,15 @@ data:
       metricsPort: 9090
       readTimeout: 30s
       writeTimeout: 30s
+      # #1048 Phase 4 / SC-5: Maximum request body size in bytes (default: 5242880 = 5 MiB)
+      maxBodySize: {{ .Values.datastorage.config.server.maxBodySize | default "5242880" | quote }}
+      # #1048 Phase 4 / AC-4: CORS allowed origins
+      corsAllowedOrigins:
+      {{- if .Values.datastorage.config.server.corsAllowedOrigins }}
+        {{- toYaml .Values.datastorage.config.server.corsAllowedOrigins | nindent 8 }}
+      {{- else }}
+        - "*"
+      {{- end }}
       tls:
         certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
     database:
@@ -33,15 +42,11 @@ data:
       passwordKey: "password"
     redis:
       addr: {{ include "kubernaut.valkey.addr" . }}
-      db: 0
-      dlqStreamName: dlq-stream
       dlqMaxLen: 1000
-      dlqConsumerGroup: dlq-group
       secretsFile: "/etc/datastorage/secrets/valkey-secrets.yaml"
       passwordKey: "password"
     logging:
       level: {{ .Values.datastorage.logging.level | default "INFO" | upper | quote }}
-      format: json
 ---
 apiVersion: apps/v1
 kind: Deployment

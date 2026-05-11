@@ -28,6 +28,7 @@ import (
 	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
+	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
@@ -74,6 +75,10 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 	// 1. Parse request body as JSON array using OpenAPI type (type-safe)
 	var requests []dsclient.AuditEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&requests); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, s.logger)
+			return
+		}
 		// Check if error is due to non-array payload
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "cannot unmarshal object") {

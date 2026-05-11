@@ -47,6 +47,10 @@ const (
 
 	// Audit write API metrics (GAP-10)
 	MetricNameAuditLagSeconds = "datastorage_audit_lag_seconds"
+
+	// #1048 Phase 4 / BR-STORAGE-019: OpenAPI + DLQ validation failure counters
+	MetricNameValidationFailures    = "datastorage_validation_failures_total"
+	MetricNameDLQValidationFailures = "datastorage_dlq_validation_failures_total"
 )
 
 // Write operation metrics
@@ -68,6 +72,33 @@ var (
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"table"},
+	)
+)
+
+// #1048 Phase 4 / BR-STORAGE-019: Validation failure metrics
+var (
+	// ValidationFailures counts OpenAPI middleware validation rejections.
+	// Labels:
+	//   - source: Validation source (e.g., "openapi_middleware")
+	//   - reason: Failure reason (e.g., "validation_error")
+	ValidationFailures = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameValidationFailures,
+			Help: "Total number of request validation failures",
+		},
+		[]string{"source", "reason"},
+	)
+
+	// DLQValidationFailures counts DLQ replay validation rejections.
+	// Labels:
+	//   - audit_type: "events" or "notifications"
+	//   - reason: "field_validation", "size_or_depth", "unmarshal_error"
+	DLQValidationFailures = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameDLQValidationFailures,
+			Help: "Total number of DLQ message validation failures during replay",
+		},
+		[]string{"audit_type", "reason"},
 	)
 )
 
@@ -94,9 +125,11 @@ var (
 
 // Metrics Summary:
 //
-// Total Metrics: 2 (external-facing per GitHub issue #294)
+// Total Metrics: 4 (external-facing per GitHub issue #294, #1048)
 // - WriteDuration (Histogram with labels) - write operation performance
 // - AuditLagSeconds (Histogram with labels) - audit lag observability
+// - ValidationFailures (Counter with labels) - OpenAPI validation rejections (#1048)
+// - DLQValidationFailures (Counter with labels) - DLQ replay validation failures (#1048)
 //
 // Performance Target: < 5% overhead
 // BR Coverage: BR-STORAGE-001, 002, 007, 008, 012, 013, 019
@@ -145,6 +178,10 @@ type Metrics struct {
 	// Write operation metrics
 	WriteDuration *prometheus.HistogramVec // Write operation duration
 
+	// #1048 Phase 4: Validation metrics
+	ValidationFailures    *prometheus.CounterVec // OpenAPI middleware rejections
+	DLQValidationFailures *prometheus.CounterVec // DLQ replay validation failures
+
 	// Store registry for testing
 	registry prometheus.Registerer
 }
@@ -167,10 +204,10 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 	// For production (default registry): Reference existing global promauto metrics
 	// For testing (custom registry): Create new isolated metrics
 	if reg == prometheus.DefaultRegisterer {
-		// Production: Use global promauto metrics (already registered)
-		// These are referenced, not created, to avoid duplicate registration
-		m.AuditLagSeconds = AuditLagSeconds // Reference global
-		m.WriteDuration = WriteDuration     // Reference global
+		m.AuditLagSeconds = AuditLagSeconds
+		m.WriteDuration = WriteDuration
+		m.ValidationFailures = ValidationFailures
+		m.DLQValidationFailures = DLQValidationFailures
 	} else {
 		// Testing: Create isolated metrics with custom registry
 		// Testing: Create isolated metrics with full names (DD-005 V3.0: Pattern B)
@@ -192,10 +229,27 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 			[]string{"table"},
 		)
 
-		// Register ONLY for custom registries (testing)
+		m.ValidationFailures = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameValidationFailures,
+				Help: "Total number of request validation failures",
+			},
+			[]string{"source", "reason"},
+		)
+
+		m.DLQValidationFailures = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameDLQValidationFailures,
+				Help: "Total number of DLQ message validation failures during replay",
+			},
+			[]string{"audit_type", "reason"},
+		)
+
 		reg.MustRegister(
 			m.AuditLagSeconds,
 			m.WriteDuration,
+			m.ValidationFailures,
+			m.DLQValidationFailures,
 		)
 	}
 

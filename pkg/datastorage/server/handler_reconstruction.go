@@ -65,7 +65,7 @@ func (h *Handler) ReconstructRemediationRequest(
 			Type:   *typeURL,                      // url.URL (dereference pointer)
 			Title:  "Reconstruction Query Failed", // string (not OptString)
 			Status: 500,                           // int32
-			Detail: ogenclient.NewOptString(fmt.Sprintf("Failed to query audit events: %v", err)),
+			Detail: ogenclient.NewOptString("An internal error occurred. Check server logs for details."),
 		}, nil // Return error response as success (ogen pattern)
 	}
 
@@ -131,7 +131,7 @@ func (h *Handler) ReconstructRemediationRequest(
 			Type:   *typeURL,
 			Title:  "Build Failed",
 			Status: 500,
-			Detail: ogenclient.NewOptString(fmt.Sprintf("Failed to build RemediationRequest: %v", err)),
+			Detail: ogenclient.NewOptString("An internal error occurred. Check server logs for details."),
 		}, nil // Return 500 as success (ogen pattern)
 	}
 
@@ -145,7 +145,7 @@ func (h *Handler) ReconstructRemediationRequest(
 			Type:   *typeURL,
 			Title:  "Validation Failed",
 			Status: 500,
-			Detail: ogenclient.NewOptString(fmt.Sprintf("Failed to validate RemediationRequest: %v", err)),
+			Detail: ogenclient.NewOptString("An internal error occurred. Check server logs for details."),
 		}, nil // Return 500 as success (ogen pattern)
 	}
 
@@ -173,7 +173,7 @@ func (h *Handler) ReconstructRemediationRequest(
 			Type:   *typeURL,
 			Title:  "YAML Marshaling Failed",
 			Status: 500,
-			Detail: ogenclient.NewOptString(fmt.Sprintf("Failed to marshal RemediationRequest to YAML: %v", err)),
+			Detail: ogenclient.NewOptString("An internal error occurred. Check server logs for details."),
 		}, nil // Return 500 as success (ogen pattern)
 	}
 

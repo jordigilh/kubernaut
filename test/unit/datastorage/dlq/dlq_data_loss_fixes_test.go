@@ -111,7 +111,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				ConsumerGroup: "test-df1-workers",
 				ConsumerName:  "test-df1-worker-1",
 			}
-			worker := server.NewDLQRetryWorker(dlqClient, nil, mockNotifRepo, workerConfig, logger)
+			worker := server.NewDLQRetryWorker(dlqClient, nil, mockNotifRepo, workerConfig, logger, nil)
 
 			// ACT: Start and let the worker process one cycle
 			worker.Start(ctx)
@@ -154,7 +154,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				ConsumerGroup: "test-df1-fail-workers",
 				ConsumerName:  "test-df1-fail-1",
 			}
-			worker := server.NewDLQRetryWorker(dlqClient, nil, failingNotifRepo, workerConfig, logger)
+			worker := server.NewDLQRetryWorker(dlqClient, nil, failingNotifRepo, workerConfig, logger, nil)
 
 			// ACT: Let worker attempt processing
 			worker.Start(ctx)
@@ -236,7 +236,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				ConsumerGroup: "test-df2-workers",
 				ConsumerName:  "test-df2-worker-1",
 			}
-			worker := server.NewDLQRetryWorker(dlqClient, mockEventsRepo, nil, workerConfig, logger)
+			worker := server.NewDLQRetryWorker(dlqClient, mockEventsRepo, nil, workerConfig, logger, nil)
 
 			// ACT: Process one cycle
 			worker.Start(ctx)
@@ -299,7 +299,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				ConsumerGroup: "test-df2-empty-workers",
 				ConsumerName:  "test-df2-empty-1",
 			}
-			worker := server.NewDLQRetryWorker(dlqClient, mockEventsRepo, nil, workerConfig, logger)
+			worker := server.NewDLQRetryWorker(dlqClient, mockEventsRepo, nil, workerConfig, logger, nil)
 
 			worker.Start(ctx)
 			// ✅ APPROVED EXCEPTION: Waiting for goroutine-based retry worker poll cycle
@@ -501,7 +501,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				ConsumerGroup: "test-nil-guard",
 				ConsumerName:  "test-nil-1",
 			}
-			worker := server.NewDLQRetryWorker(dlqClient, nil, nil, workerConfig, logger)
+			worker := server.NewDLQRetryWorker(dlqClient, nil, nil, workerConfig, logger, nil)
 
 			// ACT: Start and let the worker attempt processing (must not panic)
 			worker.Start(ctx)

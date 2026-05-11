@@ -28,6 +28,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
+	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
@@ -100,6 +101,10 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	s.logger.V(1).Info("Parsing request body with OpenAPI types...")
 	var req dsclient.AuditEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, s.logger)
+			return
+		}
 		s.logger.Info("Invalid JSON in request body", "error", err, "remote_addr", r.RemoteAddr)
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_request", "Invalid Request", err.Error(), s.logger)
 		return
@@ -118,8 +123,10 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	s.logger.V(1).Info("Converting OpenAPI request to internal type...")
 	auditEvent, err := helpers.ConvertAuditEventRequest(req)
 	if err != nil {
-		s.logger.Error(err, "Failed to convert audit event request")
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "conversion_error", "Conversion Error", err.Error(), s.logger)
+		s.logger.Error(err, "Failed to convert audit event request",
+			"event_type", req.EventType,
+			"correlation_id", req.CorrelationID)
+		response.WriteRFC7807InternalError(w, "conversion_error", "Conversion Error", err, s.logger)
 		return
 	}
 
