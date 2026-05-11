@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Inconclusive RR flood prevention** (#1091) — `Inconclusive` outcomes (EA confirms alert still firing, `alertScore=0`) now trigger exponential backoff and 3-strikes blocking. `completeVerificationIfNeeded` increments `ConsecutiveFailureCount` and sets `NextAllowedExecution`. `CheckConsecutiveFailures` counts `Completed+Inconclusive` as a functional failure instead of a chain-breaker. Prevents 30+ RR flood for persistent alerts. **BR-ORCH-042.6 updated**.
 - **Request body size limit** — `HandleCreateWorkflow` now caps request body at 2 MiB via `http.MaxBytesReader` to prevent memory exhaustion from oversized payloads.
 - **Deployment manifest probe paths** — Fixed `deploy/data-storage/deployment.yaml` liveness and readiness probes from `/health` to `/healthz` and `/readyz` to match the health server implementation.
 - **OpenAPI domain mismatch** (UX-2) — Fixed `kubernaut.io` → `kubernaut.ai` in RFC 7807 problem type URIs across all OpenAPI specs (5 files). Domain now matches the URIs emitted by Go code.
