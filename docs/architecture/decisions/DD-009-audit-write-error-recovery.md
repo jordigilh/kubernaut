@@ -236,10 +236,12 @@ func DefaultDLQRetryWorkerConfig() DLQRetryWorkerConfig {
     }
 }
 
-// NewDLQRetryWorker creates a new DLQ retry worker
+// NewDLQRetryWorker creates a new DLQ retry worker.
+// #1048 DF-1: Added notificationRepo so notification DLQ messages are persisted.
 func NewDLQRetryWorker(
     dlqClient *dlq.Client,
-    auditRepo *repository.AuditEventsRepository,
+    auditRepo dlq.EventCreator,
+    notificationRepo dlq.NotificationCreator,
     config DLQRetryWorkerConfig,
     logger logr.Logger,
 ) *DLQRetryWorker {
@@ -795,7 +797,7 @@ func (s *Server) Start() error {
     // Start DLQ retry worker (DD-009 V1.0)
     dlqConfig := DefaultDLQRetryWorkerConfig()
     dlqConfig.ConsumerName = s.podName // Use pod name for consumer group distribution
-    s.dlqRetryWorker = NewDLQRetryWorker(s.dlqClient, s.auditRepo, dlqConfig, s.logger)
+    s.dlqRetryWorker = NewDLQRetryWorker(s.dlqClient, s.auditEventsRepo, s.repository, dlqConfig, s.logger)
     s.dlqRetryWorker.Start()
 
     return nil

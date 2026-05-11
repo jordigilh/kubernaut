@@ -162,6 +162,23 @@ func ConvertToRepositoryAuditEvent(event *audit.AuditEvent) (*repository.AuditEv
 		durationMs = *event.DurationMs
 	}
 
+	// DF-H1: Preserve original RetentionDays and IsSensitive from the source event.
+	// Fall back to defaults only when the source value is unset (zero-value).
+	retentionDays := event.RetentionDays
+	if retentionDays <= 0 {
+		retentionDays = 2555 // Default: 7 years (SOC 2 / ISO 27001)
+	}
+
+	errorCode := ""
+	if event.ErrorCode != nil {
+		errorCode = *event.ErrorCode
+	}
+
+	errorMessage := ""
+	if event.ErrorMessage != nil {
+		errorMessage = *event.ErrorMessage
+	}
+
 	return &repository.AuditEvent{
 		EventID:           event.EventID,
 		Version:           event.EventVersion, // Map EventVersion to Version (DB column event_version)
@@ -179,11 +196,13 @@ func ConvertToRepositoryAuditEvent(event *audit.AuditEvent) (*repository.AuditEv
 		ClusterID:         clusterID,
 		Severity:          severity,
 		DurationMs:        durationMs,
+		ErrorCode:         errorCode,
+		ErrorMessage:      errorMessage,
 		ActorID:           event.ActorID,
 		ActorType:         event.ActorType,
 		EventData:         eventDataMap,
-		RetentionDays:     2555,  // Default: 7 years
-		IsSensitive:       false, // Default: not sensitive
+		RetentionDays:     retentionDays,
+		IsSensitive:       event.IsSensitive,
 	}, nil
 }
 
