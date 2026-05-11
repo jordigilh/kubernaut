@@ -10,10 +10,16 @@ data:
       host: "0.0.0.0"
       readTimeout: "30s"
       writeTimeout: "30s"
+      # #1048 Phase 4 / SC-5: Maximum request body size in bytes (default: 5242880 = 5 MiB)
+      # Clamped to [1048576, 52428800] (1–50 MiB). Plain integer only.
+      maxBodySize: "5242880"
+      # #1048 Phase 4 / AC-4: CORS allowed origins. Use ["*"] only in dev.
+      # Production should list explicit origins, e.g. ["https://dashboard.kubernaut.ai"]
+      corsAllowedOrigins:
+        - "*"
 
     logging:
       level: "info"
-      format: "json"
 
     database:
       host: "postgresql.kubernaut-system.svc.cluster.local"
@@ -31,10 +37,7 @@ data:
 
     redis:
       addr: "redis.kubernaut-system.svc.cluster.local:6379"
-      db: 0
-      dlqStreamName: "audit:dlq:production"
       dlqMaxLen: 10000
-      dlqConsumerGroup: "datastorage-dlq-consumers"
       secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
       passwordKey: "password"
 
