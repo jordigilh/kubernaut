@@ -188,3 +188,24 @@ spec:
             summary: "API Frontend SSE connections > 100"
             description: "Active SSE connections are above threshold."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-008.md"
+
+    - name: apifrontend.severity-triage
+      rules:
+        - alert: ApifrontendSeverityTriageErrorRate
+          expr: rate(af_severity_triage_errors_total{job="apifrontend"}[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Severity triage pipeline error rate elevated"
+            description: "More than 0.1 errors/sec in severity triage pipeline over the last 5 minutes."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-010.md"
+        - alert: ApifrontendSeverityTriageLatencyHigh
+          expr: histogram_quantile(0.95, sum(rate(af_severity_triage_duration_seconds_bucket{job="apifrontend"}[5m])) by (le, tier)) > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Severity triage P95 latency > 5s"
+            description: "95th percentile triage duration for tier {{ $labels.tier }} exceeds 5 seconds."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-010.md"

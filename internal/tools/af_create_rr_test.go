@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -11,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 
+	"github.com/jordigilh/kubernaut-apifrontend/internal/severity"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/tools"
 )
 
@@ -28,7 +30,7 @@ var _ = Describe("af_create_rr", func() {
 			Name:        "web",
 			Severity:    "high",
 			Description: "Pod CrashLoopBackOff detected",
-		}, "sre-user")
+		}, "sre-user", nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
 		Expect(result.AlreadyExists).To(BeFalse())
@@ -48,7 +50,7 @@ var _ = Describe("af_create_rr", func() {
 			Kind:        "Deployment",
 			Name:        "web",
 			Description: "duplicate",
-		}, "sre-user")
+		}, "sre-user", nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.AlreadyExists).To(BeTrue())
 		Expect(result.RRID).To(Equal("prod/rr-deploy-web-existing"))
@@ -61,7 +63,7 @@ var _ = Describe("af_create_rr", func() {
 
 		_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace: "", Kind: "Deployment", Name: "web", Description: "x",
-		}, "user")
+		}, "user", nil)
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
 
@@ -72,7 +74,7 @@ var _ = Describe("af_create_rr", func() {
 
 		_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "", Name: "web", Description: "x",
-		}, "user")
+		}, "user", nil)
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
 
@@ -83,14 +85,14 @@ var _ = Describe("af_create_rr", func() {
 
 		_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "", Description: "x",
-		}, "user")
+		}, "user", nil)
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
 
 	It("UT-AF-052-055: nil client returns ErrK8sUnavailable", func() {
 		_, err := tools.HandleCreateRR(context.Background(), nil, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "web", Description: "x",
-		}, "user")
+		}, "user", nil)
 		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
 	})
 
@@ -109,7 +111,7 @@ var _ = Describe("af_create_rr", func() {
 			Kind:        "Deployment",
 			Name:        "web",
 			Description: string(longDesc),
-		}, "user")
+		}, "user", nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
 	})
@@ -132,7 +134,7 @@ var _ = Describe("af_create_rr", func() {
 					Kind:        "Deployment",
 					Name:        "dedup-target",
 					Description: "concurrent test",
-				}, "user")
+				}, "user", nil)
 			}(i)
 		}
 		wg.Wait()
@@ -154,7 +156,7 @@ var _ = Describe("af_create_rr", func() {
 
 		_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace: "../../etc", Kind: "Deployment", Name: "web", Description: "x",
-		}, "user")
+		}, "user", nil)
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
 
@@ -169,7 +171,7 @@ var _ = Describe("af_create_rr", func() {
 			Name:        "web",
 			Severity:    "CATASTROPHIC",
 			Description: "bad sev",
-		}, "user")
+		}, "user", nil)
 		Expect(err).To(MatchError(ContainSubstring("severity must be one of")))
 	})
 
@@ -184,7 +186,7 @@ var _ = Describe("af_create_rr", func() {
 			Name:        "web",
 			Severity:    "critical",
 			Description: "oom kill",
-		}, "alice")
+		}, "alice", nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
 	})
@@ -200,7 +202,33 @@ var _ = Describe("af_create_rr", func() {
 			Name:        "web",
 			Severity:    "",
 			Description: "no sev",
-		}, "alice")
+		}, "alice", nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RRID).NotTo(BeEmpty())
+	})
+
+	It("UT-AF-052-071: non-empty severity skips triage", func() {
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
+
+		noopLLM := severity.NewNoopLLMTriager(logr.Discard())
+		cfg := severity.Config{
+			Enabled:           true,
+			MaxQueriesPerCall: 10,
+			MaxRulesEvaluated: 100,
+			CacheTTLSeconds:   30,
+			LLMConfidence:     0.7,
+		}
+		triager := severity.NewTriager(nil, noopLLM, cfg, logr.Discard())
+
+		result, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
+			Namespace:   "prod",
+			Kind:        "Deployment",
+			Name:        "web",
+			Severity:    "high",
+			Description: "user-supplied severity",
+		}, "alice", triager)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
 	})

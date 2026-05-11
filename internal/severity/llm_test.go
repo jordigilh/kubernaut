@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -104,6 +105,34 @@ var _ = Describe("LLM Triage", func() {
 			_, err := mock.TriagePure(context.Background(), defaultInput)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("LLM unavailable"))
+		})
+	})
+
+	Describe("NoopLLMTriager", func() {
+		It("UT-AF-T-090: TriagePure always returns medium with full confidence", func() {
+			noop := severity.NewNoopLLMTriager(logr.Discard())
+			result, err := noop.TriagePure(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Severity).To(Equal("medium"))
+			Expect(result.Confidence).To(Equal(1.0))
+			Expect(result.Source).To(BeZero())
+		})
+
+		It("UT-AF-T-091: TriageWithRules always returns medium with full confidence", func() {
+			noop := severity.NewNoopLLMTriager(logr.Discard())
+			rules := []prom.Rule{{Name: "SomeRule", Query: "up == 0"}}
+			result, err := noop.TriageWithRules(context.Background(), rules, defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Severity).To(Equal("medium"))
+			Expect(result.Confidence).To(Equal(1.0))
+		})
+	})
+
+	Describe("GenAITriager Construction", func() {
+		It("UT-AF-T-092: panics with nil client", func() {
+			Expect(func() {
+				severity.NewGenAITriager(severity.GenAITriagerConfig{Client: nil})
+			}).To(Panic())
 		})
 	})
 

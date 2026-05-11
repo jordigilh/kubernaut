@@ -29,6 +29,8 @@ import (
 	"github.com/jordigilh/kubernaut-apifrontend/internal/handler"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ka"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/metrics"
+	prom "github.com/jordigilh/kubernaut-apifrontend/internal/prometheus"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/severity"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/streaming"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/tlswiring"
 )
@@ -334,11 +336,61 @@ func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metric
 		logger,
 	)
 
+	var triager *severity.Triager
+	if cfg.SeverityTriage.Enabled {
+		promTransport, promWatcher, promErr := tlswiring.CAReloadableTransport(cfg.SeverityTriage.PrometheusTLSCaFile, logger.WithName("prom-ca"))
+		if promErr != nil {
+			return nil, nil, fmt.Errorf("prometheus TLS transport: %w", promErr)
+		}
+		if promWatcher != nil {
+			if err := promWatcher.Start(ctx); err != nil {
+				return nil, nil, fmt.Errorf("prometheus CA watcher start: %w", err)
+			}
+			caWatchers = append(caWatchers, caWatcherEntry{name: "prom-ca", watcher: promWatcher})
+		}
+
+		promHTTPClient := &http.Client{Transport: promTransport}
+		if cfg.SeverityTriage.PrometheusBearerTokenFile != "" {
+			promHTTPClient.Transport = &bearerTokenTransport{
+				base:      promTransport,
+				tokenFile: cfg.SeverityTriage.PrometheusBearerTokenFile,
+			}
+		}
+
+		promClient := prom.NewHTTPClient(cfg.SeverityTriage.PrometheusURL, promHTTPClient)
+
+		llmTriager := severity.LLMTriager(severity.NewNoopLLMTriager(logger.WithName("llm-triage")))
+
+		severityCfg := severity.Config{
+			Enabled:           true,
+			MaxQueriesPerCall: cfg.SeverityTriage.MaxQueriesPerCall,
+			MaxRulesEvaluated: cfg.SeverityTriage.MaxRulesEvaluated,
+			CacheTTLSeconds:   cfg.SeverityTriage.CacheTTLSeconds,
+			LLMConfidence:     cfg.SeverityTriage.LLMConfidence,
+		}
+		if severityCfg.MaxQueriesPerCall == 0 {
+			severityCfg.MaxQueriesPerCall = 10
+		}
+		if severityCfg.MaxRulesEvaluated == 0 {
+			severityCfg.MaxRulesEvaluated = 100
+		}
+		if severityCfg.CacheTTLSeconds == 0 {
+			severityCfg.CacheTTLSeconds = 30
+		}
+		if severityCfg.LLMConfidence == 0 {
+			severityCfg.LLMConfidence = 0.7
+		}
+
+		triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"))
+		logger.Info("severity triage enabled", "prometheusURL", cfg.SeverityTriage.PrometheusURL)
+	}
+
 	bridgeCfg := &handler.MCPBridgeConfig{
 		DynFactory:         buildDynFactory(),
 		KAClient:           ka.NewClient(ka.Config{BaseURL: cfg.Agent.KABaseURL, BaseTransport: kaTransport}),
 		KAMCPClient:        kaMCPClient,
 		DSClient:           dsClient,
+		Triager:            triager,
 		RBACRoles:          rbacRoles,
 		Auditor:            auditor,
 		Logger:             logger.WithName("bridge"),
@@ -440,6 +492,27 @@ var (
 
 func version() string {
 	return Version
+}
+
+// bearerTokenTransport wraps an http.RoundTripper to inject an Authorization
+// header with a bearer token read from a file (e.g. ServiceAccount token).
+type bearerTokenTransport struct {
+	base      http.RoundTripper
+	tokenFile string
+}
+
+func (t *bearerTokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	token, err := os.ReadFile(t.tokenFile) // #nosec G304 -- path from operator-controlled config
+	if err != nil {
+		return nil, fmt.Errorf("reading bearer token: %w", err)
+	}
+	r := req.Clone(req.Context())
+	r.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return base.RoundTrip(r)
 }
 
 // logAuditWriter implements audit.Writer by logging events via logr.

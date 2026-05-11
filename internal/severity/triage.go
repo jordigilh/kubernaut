@@ -238,6 +238,11 @@ func (t *Triager) runTier25(ctx context.Context, input TriageInput, matchedRules
 		return TriageResult{}, false
 	}
 	result.Source = SourceLLMRuleInform
+	if result.Confidence > 0 && result.Confidence < t.config.LLMConfidence {
+		t.logger.Info("LLM confidence below threshold, defaulting to medium",
+			"tier", "2.5", "confidence", result.Confidence, "threshold", t.config.LLMConfidence)
+		result.Severity = "medium"
+	}
 	return result, true
 }
 
@@ -247,6 +252,11 @@ func (t *Triager) runTier3(ctx context.Context, input TriageInput) (TriageResult
 		return TriageResult{}, fmt.Errorf("tier 3 LLM triage failed: %w", err)
 	}
 	result.Source = SourceLLMTriage
+	if result.Confidence > 0 && result.Confidence < t.config.LLMConfidence {
+		t.logger.Info("LLM confidence below threshold, defaulting to medium",
+			"tier", "3", "confidence", result.Confidence, "threshold", t.config.LLMConfidence)
+		result.Severity = "medium"
+	}
 	return result, nil
 }
 

@@ -115,6 +115,10 @@ var _ = Describe("SLO Conformance — Prometheus Rules", func() {
 			"af_mcp_rbac_denied_total":                      true,
 			"af_sse_active_connections":                     true,
 			"af_audit_buffer_overflow_total":                true,
+			"af_severity_triage_total":                      true,
+			"af_severity_triage_duration_seconds":           true,
+			"af_severity_triage_duration_seconds_bucket":    true,
+			"af_severity_triage_errors_total":               true,
 			"up":                                            true,
 		}
 

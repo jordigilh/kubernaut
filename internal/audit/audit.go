@@ -44,6 +44,9 @@ const (
 	EventMCPToolFailed    EventType = "mcp.tool_failed"
 	EventMCPSessionInit   EventType = "mcp.session_init"
 
+	EventSeverityTriageCompleted EventType = "severity_triage.completed"
+	EventSeverityTriageFailed    EventType = "severity_triage.failed"
+
 	EventConfigReloaded EventType = "config.reloaded"
 	EventConfigRejected EventType = "config.rejected"
 

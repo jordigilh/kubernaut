@@ -817,3 +817,51 @@ func TestValidate_ResilienceRequestTimeoutLessThanConnect(t *testing.T) {
 		t.Errorf("error = %q, want to contain 'requestTimeout'", err.Error())
 	}
 }
+
+func TestValidate_SeverityTriageEnabledRequiresPrometheusURL(t *testing.T) {
+	cfg := validConfig()
+	cfg.SeverityTriage.Enabled = true
+	cfg.SeverityTriage.PrometheusURL = ""
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error when triage enabled without PrometheusURL")
+	}
+	if !strings.Contains(err.Error(), "prometheusURL") {
+		t.Errorf("error = %q, want to contain 'prometheusURL'", err.Error())
+	}
+}
+
+func TestValidate_SeverityTriageDisabledSkipsValidation(t *testing.T) {
+	cfg := validConfig()
+	cfg.SeverityTriage.Enabled = false
+	cfg.SeverityTriage.PrometheusURL = ""
+	err := cfg.Validate()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_SeverityTriageLLMConfidenceOutOfRange(t *testing.T) {
+	cfg := validConfig()
+	cfg.SeverityTriage.Enabled = true
+	cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+	cfg.SeverityTriage.LLMConfidence = 1.5
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error when LLMConfidence > 1.0")
+	}
+	if !strings.Contains(err.Error(), "llmConfidence") {
+		t.Errorf("error = %q, want to contain 'llmConfidence'", err.Error())
+	}
+}
+
+func TestValidate_SeverityTriageValidConfig(t *testing.T) {
+	cfg := validConfig()
+	cfg.SeverityTriage.Enabled = true
+	cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+	cfg.SeverityTriage.LLMConfidence = 0.7
+	err := cfg.Validate()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

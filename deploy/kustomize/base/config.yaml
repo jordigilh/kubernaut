@@ -31,8 +31,14 @@ shutdown:
   drainSeconds: 15
 
 severityTriage:
-  prometheusURL: ""
+  enabled: true
+  prometheusURL: "http://prometheus.monitoring:9090"
   prometheusTlsCaFile: ""
+  prometheusBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+  cacheTTLSeconds: 30
+  maxQueriesPerCall: 10
+  maxRulesEvaluated: 100
+  llmConfidence: 0.7
 
 resilience:
   ka:

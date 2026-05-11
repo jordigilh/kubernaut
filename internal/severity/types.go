@@ -30,10 +30,11 @@ type TriageInput struct {
 
 // TriageResult holds the outcome of the severity triage pipeline.
 type TriageResult struct {
-	Severity  string
-	Source    Source
-	AlertName string
-	RuleName  string
+	Severity   string
+	Source     Source
+	AlertName  string
+	RuleName   string
+	Confidence float64
 }
 
 var severityRank = map[string]int{

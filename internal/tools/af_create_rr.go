@@ -14,6 +14,7 @@ import (
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
+	"github.com/jordigilh/kubernaut-apifrontend/internal/severity"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/validate"
 )
 
@@ -60,7 +61,8 @@ func rrFingerprint(namespace, kind, name string) string {
 
 // HandleCreateRR creates a RemediationRequest CRD with singleflight deduplication.
 // Concurrent calls with the same fingerprint are deduplicated — only one creation executes.
-func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateRRArgs, username string) (CreateRRResult, error) {
+// If severity is empty and a triager is available, severity is determined via triage pipeline.
+func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateRRArgs, username string, triager *severity.Triager) (CreateRRResult, error) {
 	if client == nil {
 		return CreateRRResult{}, ErrK8sUnavailable
 	}
@@ -79,6 +81,26 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 
 	if len(args.Description) > maxDescriptionLen {
 		args.Description = args.Description[:maxDescriptionLen]
+	}
+
+	// Invoke triage pipeline when severity is not user-supplied
+	var triageResult *severity.TriageResult
+	if args.Severity == "" && triager != nil {
+		input := severity.TriageInput{
+			Namespace:   args.Namespace,
+			Kind:        args.Kind,
+			Name:        args.Name,
+			Description: args.Description,
+			Labels:      map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
+		}
+		result, err := triager.Triage(ctx, input)
+		if err != nil {
+			return CreateRRResult{}, fmt.Errorf("severity triage failed: %w", err)
+		}
+		if result.Severity != "" {
+			args.Severity = result.Severity
+			triageResult = &result
+		}
 	}
 
 	fingerprint := rrFingerprint(args.Namespace, args.Kind, args.Name)
@@ -105,6 +127,30 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 			rrName = rrName[:63]
 		}
 
+		spec := map[string]interface{}{
+			"targetRef": map[string]interface{}{
+				"kind":      args.Kind,
+				"name":      args.Name,
+				"namespace": args.Namespace,
+			},
+			"severity":    args.Severity,
+			"description": args.Description,
+			"reportedBy":  username,
+		}
+
+		if triageResult != nil {
+			signalLabels := map[string]interface{}{
+				"severity_source": string(triageResult.Source),
+			}
+			if triageResult.AlertName != "" {
+				signalLabels["severity_alert_name"] = triageResult.AlertName
+			}
+			if triageResult.RuleName != "" {
+				signalLabels["severity_rule_name"] = triageResult.RuleName
+			}
+			spec["signalLabels"] = signalLabels
+		}
+
 		rr := &unstructured.Unstructured{
 			Object: map[string]interface{}{
 				"apiVersion": "kubernaut.ai/v1alpha1",
@@ -118,16 +164,7 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 						"kubernaut.ai/reported-by": username,
 					},
 				},
-				"spec": map[string]interface{}{
-					"targetRef": map[string]interface{}{
-						"kind":      args.Kind,
-						"name":      args.Name,
-						"namespace": args.Namespace,
-					},
-					"severity":    args.Severity,
-					"description": args.Description,
-					"reportedBy":  username,
-				},
+				"spec": spec,
 			},
 		}
 
@@ -153,11 +190,11 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 }
 
 // NewCreateRRTool creates the af_create_rr tool.
-func NewCreateRRTool(client dynamic.Interface) (tool.Tool, error) {
+func NewCreateRRTool(client dynamic.Interface, triager *severity.Triager) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "af_create_rr",
 		Description: "Create a RemediationRequest for a target resource with deduplication. Checks for existing non-terminal RRs before creating.",
 	}, func(ctx tool.Context, args CreateRRArgs) (CreateRRResult, error) {
-		return HandleCreateRR(ctx, client, &args, usernameFromContext(ctx))
+		return HandleCreateRR(ctx, client, &args, usernameFromContext(ctx), triager)
 	})
 }
