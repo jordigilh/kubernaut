@@ -91,7 +91,7 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 	mux.Handle("POST /a2a/invoke", a2aChain)
 	mux.Handle("POST /mcp", mcpChain)
 
-	return metricsMiddleware(cfg.MetricsRegistry, securityHeadersMiddleware(mux)), nil
+	return requestid.Middleware(metricsMiddleware(cfg.MetricsRegistry, securityHeadersMiddleware(mux))), nil
 }
 
 // maxBodyMiddleware limits request body size to prevent resource exhaustion.
@@ -127,11 +127,15 @@ func trackSSEConnection(tracker *streaming.ConnectionTracker, next http.Handler)
 		if connID == "" {
 			connID = r.RemoteAddr
 		}
-		tracker.Add(&streaming.TrackedConnection{
+		if !tracker.Add(&streaming.TrackedConnection{
 			ID:     connID,
 			Writer: w,
 			Cancel: cancel,
-		})
+		}) {
+			cancel()
+			http.Error(w, "too many concurrent connections", http.StatusServiceUnavailable)
+			return
+		}
 		defer tracker.Remove(connID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

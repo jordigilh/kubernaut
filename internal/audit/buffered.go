@@ -99,6 +99,34 @@ func (e *BufferedEmitter) Emit(ctx context.Context, event *Event) {
 	}
 }
 
+// EmitBlocking sanitizes and buffers a security-critical audit event with
+// backpressure. Unlike Emit, it blocks (up to context deadline) rather than
+// dropping the event if the buffer is full. Use for authentication failures,
+// RBAC denials, and other FedRAMP-required security events.
+func (e *BufferedEmitter) EmitBlocking(ctx context.Context, event *Event) {
+	ev := *event
+	ev.Timestamp = time.Now()
+	if ev.RequestID == "" {
+		ev.RequestID = requestid.FromContext(ctx)
+	}
+	ev.Detail = security.RedactMap(ev.Detail)
+
+	select {
+	case e.buffer <- &ev:
+		if e.eventsCounter != nil {
+			e.eventsCounter.WithLabelValues(string(ev.Type)).Inc()
+		}
+	case <-ctx.Done():
+		if e.overflowCounter != nil {
+			e.overflowCounter.Inc()
+		}
+		e.logger.Error(nil, "audit buffer full, critical event lost due to context deadline",
+			"event_type", string(ev.Type),
+			"request_id", ev.RequestID,
+		)
+	}
+}
+
 // Close stops accepting new events, drains the buffer, and flushes remaining
 // events to the writer. If the writer fails, remaining events are logged.
 // The context deadline bounds total close time.
