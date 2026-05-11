@@ -21,6 +21,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 )
 
@@ -41,6 +42,7 @@ func MaxBytesReaderMiddleware(maxBytes int64, logger logr.Logger) func(http.Hand
 			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
 			if r.ContentLength > maxBytes {
 				logger.Info("Rejecting oversized request body (Content-Length fast path)",
+					"request_id", middleware.GetReqID(r.Context()),
 					"method", r.Method,
 					"path", r.URL.Path,
 					"content_length", r.ContentLength,

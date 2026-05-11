@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"time"
 
+	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
 
@@ -81,6 +82,10 @@ func (s *Server) HandleVerifyChain(w http.ResponseWriter, r *http.Request) {
 	// Parse request
 	var req VerifyChainRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, s.logger)
+			return
+		}
 		s.logger.Error(err, "Failed to decode verify chain request")
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return

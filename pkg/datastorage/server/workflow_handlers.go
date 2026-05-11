@@ -34,6 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
+	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 	deterministicuuid "github.com/jordigilh/kubernaut/pkg/datastorage/uuid"
 )
@@ -69,6 +70,10 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		SchemaImage  string `json:"schemaImage"` // legacy field — reject if present
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode workflow create request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
 			fmt.Sprintf("Invalid request body: %v", err), h.logger)
@@ -819,6 +824,10 @@ func (h *Handler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 	// Parse request body
 	var updateReq models.WorkflowUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&updateReq); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode workflow update request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
 			fmt.Sprintf("Invalid request body: %v", err), h.logger)
@@ -972,6 +981,10 @@ func (h *Handler) HandleEnableWorkflow(w http.ResponseWriter, r *http.Request) {
 	// Parse request body
 	var req models.WorkflowDisableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode workflow enable request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
 			fmt.Sprintf("Invalid request body: %v", err), h.logger)
@@ -1089,6 +1102,10 @@ func (h *Handler) HandleDeprecateWorkflow(w http.ResponseWriter, r *http.Request
 	// Parse request body
 	var req models.WorkflowDisableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode workflow deprecate request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
 			fmt.Sprintf("Invalid request body: %v", err), h.logger)
@@ -1203,6 +1220,10 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 	// Parse request body
 	var disableReq models.WorkflowDisableRequest
 	if err := json.NewDecoder(r.Body).Decode(&disableReq); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode workflow disable request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
 			fmt.Sprintf("Invalid request body: %v", err), h.logger)

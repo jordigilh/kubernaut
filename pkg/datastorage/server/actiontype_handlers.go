@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
+	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
 
@@ -94,6 +95,10 @@ func (h *Handler) HandleCreateActionType(w http.ResponseWriter, r *http.Request)
 
 	var req actionTypeCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode action type create request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request",
 			"Bad Request", fmt.Sprintf("Invalid request body: %v", err), h.logger)
@@ -189,6 +194,10 @@ func (h *Handler) HandleUpdateActionType(w http.ResponseWriter, r *http.Request)
 
 	var req actionTypeUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode action type update request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request",
 			"Bad Request", fmt.Sprintf("Invalid request body: %v", err), h.logger)
@@ -268,6 +277,10 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 
 	var req actionTypeDisableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode action type disable request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request",
 			"Bad Request", fmt.Sprintf("Invalid request body: %v", err), h.logger)

@@ -25,6 +25,7 @@ import (
 
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
@@ -69,6 +70,10 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 	s.logger.V(1).Info("Parsing request body...")
 	var audit models.NotificationAudit
 	if err := json.NewDecoder(r.Body).Decode(&audit); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, s.logger)
+			return
+		}
 		s.logger.Info("Invalid JSON in request body",
 			"error", err,
 			"remote_addr", r.RemoteAddr)
