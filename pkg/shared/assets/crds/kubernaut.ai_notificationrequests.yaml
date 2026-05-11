@@ -171,6 +171,15 @@ spec:
                     description: Review captures manual review context (manual-review
                       notifications).
                     properties:
+                      alignmentVerdict:
+                        description: |-
+                          AlignmentVerdict is the shadow agent's overall verdict (aligned/suspicious).
+                          BR-AI-601: Present when shadow agent alignment check is enabled.
+                        type: string
+                      circuitBreakerActivated:
+                        description: CircuitBreakerActivated indicates whether the
+                          circuit breaker terminated the investigation early.
+                        type: boolean
                       humanReviewReason:
                         description: HumanReviewReason from HAPI when needs_human_review=true
                           (BR-HAPI-197).

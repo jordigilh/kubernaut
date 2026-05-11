@@ -115,7 +115,10 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 
 	correlationID := signalCorrelationID(signal)
 
-	observerOpts := []ObserverOption{WithCorrelationID(correlationID)}
+	observerOpts := []ObserverOption{
+		WithCorrelationID(correlationID),
+		WithObserverLogger(w.logger),
+	}
 
 	// Circuit breaker: in enforce mode, create a cancellable investigation context.
 	// When the shadow detects suspicious content, the onSuspicious callback cancels
@@ -173,6 +176,8 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 	if circuitBroken {
 		verdict.CircuitBreaker = true
 	}
+
+	result.AlignmentVerdict = mapVerdictToResult(verdict)
 
 	w.emitAlignmentAudit(ctx, correlationID, verdict)
 
@@ -292,6 +297,29 @@ func signalCorrelationID(signal katypes.SignalContext) string {
 		return signal.RemediationID
 	}
 	return signal.Name
+}
+
+// mapVerdictToResult converts an internal Verdict to the API-facing AlignmentVerdictResult.
+// Populated for ALL investigations so consumers always see the alignment status.
+func mapVerdictToResult(verdict Verdict) *katypes.AlignmentVerdictResult {
+	avr := &katypes.AlignmentVerdictResult{
+		Result:                  string(verdict.Result),
+		CircuitBreakerActivated: verdict.CircuitBreaker,
+		Summary:                 verdict.Summary,
+		Flagged:                 verdict.Flagged,
+		Total:                   verdict.Total,
+	}
+	for _, obs := range verdict.Observations {
+		if obs.Suspicious {
+			avr.Findings = append(avr.Findings, katypes.AlignmentFinding{
+				StepIndex:   obs.Step.Index,
+				StepKind:    string(obs.Step.Kind),
+				Tool:        obs.Step.Tool,
+				Explanation: SanitizeExplanation(obs.Explanation),
+			})
+		}
+	}
+	return avr
 }
 
 // BuildSignalInputContent assembles the signal fields that enter the primary

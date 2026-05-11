@@ -162,6 +162,20 @@ When `ai.alignmentCheck.enabled=true`:
 - High-volume tool calls (8-12 per investigation) generate proportional shadow evaluations. Mitigated by async goroutine-based design and configurable timeout.
 - `maxStepTokens` too low could truncate injection payloads, allowing them to pass. Default of 500 runes covers typical injection patterns while limiting evaluation cost.
 
+## Changelog
+
+### v1.1 (2026-05-10) — #1076, #1077, #1078, C-1
+
+- **Circuit breaker** (#1076): Enforce mode now uses `context.WithCancelCause(ErrCircuitBreaker)` to halt the primary LLM investigation when the shadow agent detects suspicious content. Shadow evaluations continue on the parent context (ARCH-3 resolution).
+- **PinDecorator** (C-1): Fixed LLMProxy bypass when `SwappableClient` pins the client snapshot. `PinDecorator` re-applies the LLMProxy around the pinned client so shadow observes all LLM traffic.
+- **AlignmentVerdict schema**: New `alignment_verdict` field on `IncidentResponse` (OpenAPI) and `AIAnalysisStatus` (CRD). Populated for ALL investigations (not just suspicious). Carries `result`, `circuit_breaker_activated`, `summary`, `flagged`, `total`, and `findings`.
+- **RO notification rendering**: Alignment verdict rendered prominently in manual review notifications. Circuit breaker verdicts show "SUSPICIOUS (Circuit Breaker Activated)" with findings listed before the (relegated) primary LLM RCA.
+- **Priority escalation**: `alignment_check_failed` SubReason maps to `NotificationPriorityCritical`.
+- **Panic recovery** (#1078): Session goroutines now recover from panics, log stack trace, and transition to `StatusFailed`.
+- **Two-tier TTL eviction** (#1078): Terminal sessions evicted after `ttl`, non-terminal after `maxSessionAge` (default 2×ttl).
+- **AA investigation timeout** (#1078): Wall-clock cap (`DefaultMaxInvestigationDuration = 25min`) prevents unbounded sessions.
+- **Verdict label rename** (#1077): `VerdictClean` constant changed from `"clean"` to `"aligned"` for API consistency (pre-GA breaking change).
+
 ## References
 
 - [PROPOSAL-EXT-003 §8](../proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) — Goose runtime shadow agent integration path

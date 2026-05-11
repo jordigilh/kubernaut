@@ -74,6 +74,9 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// NotActionable handler overrides this to "NotActionable".
 	analysis.Status.Actionability = aianalysis.ActionabilityActionable
 
+	// BR-AI-601: Map alignment verdict from KA to CRD status for ALL response paths.
+	p.mapAlignmentVerdict(analysis, resp)
+
 	// Check if NeedsHumanReview is set
 	needsHumanReview := GetOptBoolValue(resp.NeedsHumanReview)
 	hasSelectedWorkflow := resp.SelectedWorkflow.Set && !resp.SelectedWorkflow.Null
@@ -221,6 +224,32 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// NOT recorded here to avoid duplicates - handler records after status is committed
 
 	return ctrl.Result{Requeue: true}, nil
+}
+
+// mapAlignmentVerdict maps the alignment verdict from the ogen IncidentResponse
+// to the AIAnalysisStatus CRD. Called for ALL response paths so aligned verdicts
+// are also recorded. No-op when alignment_verdict is absent or null.
+func (p *ResponseProcessor) mapAlignmentVerdict(analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) {
+	if !resp.AlignmentVerdict.Set || resp.AlignmentVerdict.Null {
+		return
+	}
+	av := resp.AlignmentVerdict.Value
+	status := &aianalysisv1.AlignmentVerdictStatus{
+		Result:                  string(av.Result),
+		CircuitBreakerActivated: av.CircuitBreakerActivated.Or(false),
+		Summary:                 av.Summary.Or(""),
+		Flagged:                 av.Flagged,
+		Total:                   av.Total,
+	}
+	for _, f := range av.Findings {
+		status.Findings = append(status.Findings, aianalysisv1.AlignmentFindingStatus{
+			StepIndex:   f.StepIndex,
+			StepKind:    string(f.StepKind),
+			Tool:        f.Tool.Or(""),
+			Explanation: f.Explanation,
+		})
+	}
+	analysis.Status.AlignmentVerdict = status
 }
 
 // populatePostRCAContext extracts detected_labels from the KA response raw map

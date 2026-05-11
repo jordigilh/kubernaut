@@ -634,6 +634,10 @@ type ManualReviewContext struct {
 	// Warnings if available (from AIAnalysis)
 	Warnings []string
 
+	// AlignmentVerdict from AIAnalysis CRD when shadow agent alignment is enabled.
+	// BR-AI-601, #1076: When non-nil, rendered prominently in notification body.
+	AlignmentVerdict *aianalysisv1.AlignmentVerdictStatus
+
 	// WorkflowExecution-specific fields (for ExhaustedRetries)
 	// RetryCount is the number of retries attempted
 	RetryCount int
@@ -969,6 +973,8 @@ func (c *NotificationCreator) mapManualReviewPriority(ctx *ManualReviewContext) 
 
 	// AIAnalysis failures - map by SubReason
 	switch ctx.SubReason {
+	case "alignment_check_failed":
+		return notificationv1.NotificationPriorityCritical
 	// Workflow resolution failures
 	case "WorkflowNotFound", "ImageMismatch", "ParameterValidationFailed", "LLMParsingError":
 		return notificationv1.NotificationPriorityHigh
@@ -1001,6 +1007,10 @@ func (c *NotificationCreator) buildManualReviewContext(rr *remediationv1.Remedia
 	}
 	if ctx.RootCauseAnalysis != "" {
 		nCtx.Review.RootCauseAnalysis = ctx.RootCauseAnalysis
+	}
+	if ctx.AlignmentVerdict != nil {
+		nCtx.Review.AlignmentVerdict = ctx.AlignmentVerdict.Result
+		nCtx.Review.CircuitBreakerActivated = ctx.AlignmentVerdict.CircuitBreakerActivated
 	}
 	if ctx.Source == notificationv1.ReviewSourceWorkflowExecution {
 		nCtx.Execution = &notificationv1.ExecutionContext{}
@@ -1056,8 +1066,14 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 		body += fmt.Sprintf("\n\n**Details**:\n%s", ctx.Message)
 	}
 
+	body += renderAlignmentVerdictSection(ctx)
+
 	if ctx.RootCauseAnalysis != "" && !isRCASentinel(ctx.RootCauseAnalysis) {
-		body += fmt.Sprintf("\n\n**Root Cause Analysis**:\n%s", ctx.RootCauseAnalysis)
+		if ctx.AlignmentVerdict != nil && ctx.AlignmentVerdict.CircuitBreakerActivated {
+			body += "\n\n**Primary LLM Analysis** (relegated — review with caution):\n" + ctx.RootCauseAnalysis
+		} else {
+			body += fmt.Sprintf("\n\n**Root Cause Analysis**:\n%s", ctx.RootCauseAnalysis)
+		}
 	}
 
 	if len(ctx.Warnings) > 0 {
@@ -1080,6 +1096,56 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 	}
 
 	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) + body
+}
+
+const maxFindingsInBody = 20
+
+// renderAlignmentVerdictSection renders the shadow agent alignment verdict section
+// for insertion into the notification body. Returns empty string when no verdict.
+func renderAlignmentVerdictSection(ctx *ManualReviewContext) string {
+	av := ctx.AlignmentVerdict
+	if av == nil {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n\n---\n\n")
+
+	switch {
+	case av.CircuitBreakerActivated:
+		b.WriteString("**Shadow Agent Alignment Verdict**: SUSPICIOUS (Circuit Breaker Activated)\n\n")
+		b.WriteString("Investigation was terminated early after the shadow agent detected suspicious LLM behavior.\n")
+	case av.Result == "suspicious":
+		b.WriteString("**Shadow Agent Alignment Verdict**: SUSPICIOUS\n")
+	default:
+		b.WriteString("**Shadow Agent Alignment Verdict**: ALIGNED\n")
+		b.WriteString("All investigation steps passed alignment checks. No suspicious behavior detected.\n")
+		return b.String()
+	}
+
+	if av.Summary != "" {
+		b.WriteString(fmt.Sprintf("\n**Shadow Agent Summary**:\n%s\n", av.Summary))
+	}
+
+	if len(av.Findings) > 0 {
+		b.WriteString("\n**Findings**:\n")
+		limit := len(av.Findings)
+		if limit > maxFindingsInBody {
+			limit = maxFindingsInBody
+		}
+		for _, f := range av.Findings[:limit] {
+			if f.Tool != "" {
+				b.WriteString(fmt.Sprintf("- Step %d (%s, tool: %s): %s\n", f.StepIndex, f.StepKind, f.Tool, f.Explanation))
+			} else {
+				b.WriteString(fmt.Sprintf("- Step %d (%s): %s\n", f.StepIndex, f.StepKind, f.Explanation))
+			}
+		}
+		if remaining := len(av.Findings) - maxFindingsInBody; remaining > 0 {
+			b.WriteString(fmt.Sprintf("- ... and %d more\n", remaining))
+		}
+	}
+
+	return b.String()
 }
 
 // ========================================
