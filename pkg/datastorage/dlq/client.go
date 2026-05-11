@@ -597,41 +597,50 @@ func (c *Client) DrainWithTimeout(ctx context.Context, notificationRepo interfac
 	return stats, nil
 }
 
-// drainStream processes all messages from a specific DLQ stream
+// drainBatchSize limits the number of messages read per XRangeN call during
+// drain to bound memory usage (PERF-3).
+const drainBatchSize int64 = 100
+
+// drainStream processes all messages from a specific DLQ stream using
+// cursor-based iteration.
+//
+// #1048 DF-3: Only XDel after confirmed DB write success. Failed messages
+// remain in the stream for the next startup's retry worker to pick up.
+//
+// #1048 PERF-3: Uses XRangeN with cursor to avoid loading the entire stream
+// into memory at once.
 func (c *Client) drainStream(ctx context.Context, auditType string, repo interface{}) (int, error) {
 	streamKey := c.getStreamKey(auditType)
 	processed := 0
+	cursor := "-"
 
-	// Read all messages in stream (no consumer group needed for drain)
 	for {
-		// Check timeout
 		select {
 		case <-ctx.Done():
 			return processed, nil
 		default:
 		}
 
-		// Read next batch of messages (up to 100 at a time)
-		messages, err := c.redisClient.XRange(ctx, streamKey, "-", "+").Result()
+		messages, err := c.redisClient.XRangeN(ctx, streamKey, cursor, "+", drainBatchSize).Result()
 		if err != nil {
 			return processed, fmt.Errorf("failed to read stream: %w", err)
 		}
 
-		// No more messages
 		if len(messages) == 0 {
 			break
 		}
 
-		// Process each message
 		for _, msg := range messages {
-			// Check timeout before processing each message
 			select {
 			case <-ctx.Done():
 				return processed, nil
 			default:
 			}
 
-			// Parse message
+			// Advance cursor past this message regardless of outcome to
+			// prevent re-reading on the next outer-loop iteration.
+			cursor = "(" + msg.ID
+
 			dlqMsg, err := c.parseStreamMessage(msg)
 			if err != nil {
 				c.logger.Error(err, "Failed to parse DLQ message during drain",
@@ -640,16 +649,14 @@ func (c *Client) drainStream(ctx context.Context, auditType string, repo interfa
 				continue
 			}
 
-			// Write to database (best effort)
 			if err := c.writeMessageToDB(ctx, auditType, dlqMsg, repo); err != nil {
 				c.logger.Error(err, "Failed to write DLQ message to database during drain",
 					"message_id", msg.ID,
 					"audit_type", auditType,
 					"correlation_id", dlqMsg.AuditMessage.CorrelationID())
-				// Continue processing other messages even if one fails
+				continue
 			}
 
-			// Remove message from stream (processed, whether successful or not)
 			if err := c.redisClient.XDel(ctx, streamKey, msg.ID).Err(); err != nil {
 				c.logger.Error(err, "Failed to delete DLQ message during drain",
 					"message_id", msg.ID,
