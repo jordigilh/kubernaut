@@ -344,6 +344,13 @@ func main() {
 	// GetShutdownTimeout clamps to [30s, 120s] for safety.
 	// terminationGracePeriodSeconds in deployment.yaml must be >= this value + buffer (90s).
 	shutdownTimeout := cfg.Server.GetShutdownTimeout()
+	if cfg.Server.ShutdownTimeout != "" && cfg.Server.ShutdownTimeout != shutdownTimeout.String() {
+		logger.Info("Configured shutdownTimeout was clamped to safe range",
+			"severity", "warning",
+			"configured", cfg.Server.ShutdownTimeout,
+			"effective", shutdownTimeout,
+			"range", "30s–120s")
+	}
 
 	logger.Info("Starting Data Storage service (ADR-030 + DD-007)",
 		"port", cfg.Server.Port,
