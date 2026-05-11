@@ -4,8 +4,8 @@
 **Title**: Consecutive Failure Blocking with Automatic Cooldown
 **Category**: ORCH (Remediation Orchestrator)
 **Priority**: 🔴 P0 (V1.0)
-**Version**: 1.5
-**Date**: December 10, 2025
+**Version**: 1.6
+**Date**: May 11, 2026
 **Status**: 🚧 IN PROGRESS
 **Related**: DD-GATEWAY-011, BR-GATEWAY-184 (superseded), BR-GATEWAY-185 (field selectors)
 
@@ -344,13 +344,36 @@ func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remedia
 
 ---
 
-### BR-ORCH-042.6: Completed-but-Ineffective Remediation Handling (Option C Decision)
+### BR-ORCH-042.6: Completed-but-Ineffective Remediation Handling (Option C Decision + Inconclusive Exception)
 
-**Decision**: Completed-but-ineffective remediations (resource keeps reverting, health does not improve) are handled via **Option C: LLM-driven escalation**.
+**Decision**: Completed-but-ineffective remediations (resource keeps reverting, health does not improve) are handled via **Option C: LLM-driven escalation**, with one exception: **Inconclusive outcomes** are treated as functional failures for backoff and chain-counting purposes.
 
-**Background**: `CheckConsecutiveFailures` only counts RRs with OverallPhase `Failed` or `Blocked`. An RR that completes successfully but is ineffective (e.g., the underlying issue recurs immediately) does not increment the consecutive failure counter. This is by design — the orchestrator should not penalize successful execution.
+**Background**: `CheckConsecutiveFailures` counts RRs with OverallPhase `Failed` or `Blocked`, and additionally counts `Completed` RRs with `Outcome == "Inconclusive"` as functional failures. An RR that completes with a successful outcome (e.g., `Remediated`, `NoActionRequired`) breaks the consecutive failure chain. This is by design — the orchestrator should not penalize successful execution, but should prevent unbounded retries when EA confirms the alert is still firing.
 
-**Option C — LLM-Driven Escalation**:
+**Inconclusive Exception (Issue #1091)**:
+
+`Inconclusive` (`alertScore=0`) is a definitive signal from the Effectiveness Monitor that the alert persists after remediation. Unlike general "completed but ineffective" scenarios (where the resource may have changed but the EM cannot assess impact), `Inconclusive` means:
+- The workflow executed successfully
+- EA completed its assessment
+- AlertManager confirms the alert is **still firing**
+
+Automatic retry without changed conditions is futile. Therefore:
+
+1. **Backoff on completion**: When `completeVerificationIfNeeded` sets `Outcome == "Inconclusive"`, RO also increments `ConsecutiveFailureCount` and sets `NextAllowedExecution` with exponential backoff (same curve as `transitionToFailed`: 1m, 2m, 4m, 8m, 10m cap). This delays GW from creating the next RR.
+
+2. **Chain-counting**: `CheckConsecutiveFailures` treats `Completed + Inconclusive` as a functional failure (counts it) instead of a chain-breaker (breaking the loop). After 3 consecutive Inconclusive outcomes, the routing engine blocks the signal with `BlockReasonConsecutiveFailures` and 1-hour cooldown — escalating to human review via notification.
+
+**Acceptance Criteria**:
+
+| ID | Criterion | Test |
+|----|-----------|------|
+| AC-042-6-1 | Inconclusive RR gets `ConsecutiveFailureCount++` and `NextAllowedExecution` set | UT-RO-1091-001 |
+| AC-042-6-2 | Remediated RR does NOT get backoff fields set | UT-RO-1091-005 |
+| AC-042-6-3 | `CheckConsecutiveFailures` counts `Completed+Inconclusive` as failure | UT-RO-1091-007 |
+| AC-042-6-4 | `CheckConsecutiveFailures` still breaks chain on `Completed+Remediated` | UT-RO-1091-008 |
+| AC-042-6-5 | 3 consecutive Inconclusive RRs trigger blocking | UT-RO-1091-009 |
+
+**Option C — LLM-Driven Escalation** (unchanged for non-Inconclusive outcomes):
 Instead of modifying the consecutive failure counter, the system uses DataStorage audit traces to detect ineffective remediation chains. When the same pre-remediation state recurs, the LLM (via HAPI) receives the full remediation history context and can:
 1. Choose a different remediation strategy
 2. Escalate to manual review if no alternative exists
@@ -360,9 +383,10 @@ Instead of modifying the consecutive failure counter, the system uses DataStorag
 - ✅ `CheckIneffectiveRemediationChain` in `blocking.go` (Issue #214, BR-ORCH-042.5)
 - ✅ HAPI `resource_context` tools (`get_namespaced_resource_context` / `get_cluster_resource_context`) provide remediation history to the LLM
 - ✅ HAPI prompt engineering leverages history context (`remediation_history_prompt.py`, BR-HAPI-016, DD-HAPI-016 v1.1)
+- ✅ Inconclusive backoff and chain-counting (Issue #1091, BR-ORCH-042.6)
 
 **Why not Option A/B?**
-- **Option A** (count completed-but-ineffective as failures): Punishes correct execution; undermines trust in success signals.
+- **Option A** (count all completed-but-ineffective as failures): Punishes correct execution; undermines trust in success signals. However, `Inconclusive` is carved out because it is a definitive signal (alert still firing), not an ambiguous "we don't know" state.
 - **Option B** (separate ineffective counter): Adds complexity without leveraging AI insight; a static counter cannot make nuanced decisions.
 - **Option C** (LLM-driven): Leverages the full context — the LLM can distinguish between "same fix, different root cause" vs "same root cause, fix not working" and choose accordingly.
 
@@ -493,6 +517,7 @@ routing:
 | Unit | 8 | `consecutive_failure_test.go` |
 | Unit | 10 | `ineffective_chain_test.go` (Issue #214 -- Layer 1+2, Layer 3, cross-layer) |
 | Unit | 10 | `ineffective_chain_test.go` (Issue #525 -- Layer 1b forward chain) |
+| Unit | 10 | `inconclusive_backoff_test.go` + `consecutive_failures_inconclusive_test.go` (Issue #1091 -- Inconclusive backoff + chain-counting) |
 | Integration | 4 | `blocking_integration_test.go` |
 | E2E | 2 | `blocking_e2e_test.go` |
 
@@ -508,4 +533,5 @@ routing:
 | 1.3 | 2026-03-02 | Added BR-ORCH-042.6: Documented Option C decision for completed-but-ineffective handling. Prompt engineering deferred to HAPI team. |
 | 1.4 | 2026-03-03 | Externalized routing config to YAML ConfigMap (ADR-030). Marked HAPI prompt engineering as implemented. Fixed latent zero-value bug for Issue #214 fields. |
 | 1.5 | 2026-03-04 | Added BR-ORCH-042.7: Forward hash chain detection (Issue #525). Five-condition Layer 1b with ActionType matching, EA failure check, 1h window, threshold=2. New config fields: `forwardChainThreshold`, `forwardChainWindow`. |
+| 1.6 | 2026-05-11 | Updated BR-ORCH-042.6: Inconclusive exception (Issue #1091). `Completed+Inconclusive` treated as functional failure for backoff and chain-counting. RO sets `NextAllowedExecution` on Inconclusive completion. `CheckConsecutiveFailures` counts Inconclusive as failure instead of chain-breaker. 3 consecutive Inconclusive outcomes trigger blocking. |
 
