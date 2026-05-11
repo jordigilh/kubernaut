@@ -41,27 +41,23 @@ type compiledRule struct {
 
 type providerRuntime struct {
 	config   ProviderConfig
+	jwksURL  string
 	celRules []compiledRule
 }
 
 // JWTValidator validates JWT tokens against configured OIDC providers.
 // It implements issuer-based deterministic routing (KEP-3331 pattern),
-// CEL-based claim validation, and JWKS caching with circuit breaker.
-//
-// Known limitation (v1.5): no token replay protection. Tokens are validated
-// for signature, expiry, audience, and CEL rules, but the "jti" (JWT ID) claim
-// is not tracked. A stolen token can be replayed until it expires. This is
-// acceptable for the current threat model where tokens are short-lived and
-// transmitted over TLS. Future versions may add jti-based replay detection
-// backed by a distributed cache.
+// CEL-based claim validation, JWKS caching with circuit breaker, and optional
+// jti-based token replay protection.
 type JWTValidator struct {
-	providers  map[string]*providerRuntime
-	cache      *JWKSCache
-	reviewer   *TokenReviewer
-	k8sEnabled bool
-	httpClient *http.Client
-	cbTimeout  time.Duration
-	cbGauge    *prometheus.GaugeVec
+	providers   map[string]*providerRuntime
+	cache       *JWKSCache
+	reviewer    *TokenReviewer
+	replayCache *ReplayCache
+	k8sEnabled  bool
+	httpClient  *http.Client
+	cbTimeout   time.Duration
+	cbGauge     *prometheus.GaugeVec
 }
 
 // JWTValidatorOption is a functional option for configuring JWTValidator.
@@ -88,6 +84,11 @@ func WithCBMetrics(g *prometheus.GaugeVec) JWTValidatorOption {
 	return func(v *JWTValidator) { v.cbGauge = g }
 }
 
+// WithReplayCache enables jti-based token replay detection.
+func WithReplayCache(rc *ReplayCache) JWTValidatorOption {
+	return func(v *JWTValidator) { v.replayCache = rc }
+}
+
 // NewJWTValidator creates a new JWTValidator from the given config.
 // Returns an error if the config is invalid (e.g., duplicate issuer URLs)
 // or if any CEL expression fails to compile.
@@ -100,7 +101,7 @@ func NewJWTValidator(cfg Config, opts ...JWTValidatorOption) (*JWTValidator, err
 	issuers := make([]string, 0, len(cfg.JWT))
 
 	for _, pc := range cfg.JWT {
-		rt := &providerRuntime{config: pc}
+		rt := &providerRuntime{config: pc, jwksURL: pc.Issuer.ResolveJWKSURL()}
 
 		for _, rule := range pc.UserValidationRules {
 			program, err := compileCELRule(rule.Expression)
@@ -164,7 +165,7 @@ func (v *JWTValidator) Validate(ctx context.Context, rawToken string) (*UserIden
 		return v.fallbackToTokenReview(ctx, rawToken, ErrUnknownIssuer)
 	}
 
-	keySet, err := v.cache.GetKeys(ctx, issuer)
+	keySet, err := v.cache.GetKeys(ctx, provider.jwksURL)
 	if err != nil {
 		if errors.Is(err, ErrCircuitOpen) {
 			return nil, ErrCircuitOpen
@@ -183,6 +184,16 @@ func (v *JWTValidator) Validate(ctx context.Context, rawToken string) (*UserIden
 
 	if err := validateAudience(claims, provider.config.Issuer.Audiences); err != nil {
 		return nil, err
+	}
+
+	if v.replayCache != nil {
+		jti, _ := claims["jti"].(string)
+		if v.replayCache.MissingJTI(jti) {
+			return nil, fmt.Errorf("%w: token missing required jti claim for replay protection", ErrMalformedToken)
+		}
+		if v.replayCache.Seen(jti) {
+			return nil, fmt.Errorf("%w: token jti already used", ErrTokenExpired)
+		}
 	}
 
 	identity := buildIdentity(claims, issuer, rawToken)
