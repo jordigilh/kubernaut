@@ -16,7 +16,10 @@ limitations under the License.
 
 package models
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // NotificationAudit represents a notification audit record
 // Authority: migrations/010_audit_write_api_phase1.sql
@@ -84,11 +87,41 @@ type NotificationAudit struct {
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
-// Validate performs business logic validation on the NotificationAudit struct
-// This is called before persisting to the database to ensure data integrity
+// validChannels is the set of allowed notification channels (matches DB CHECK constraint).
+var validChannels = map[string]bool{
+	"email": true, "slack": true, "pagerduty": true, "teams": true, "sms": true,
+}
+
+// validStatuses is the set of allowed notification statuses (matches DB CHECK constraint).
+var validStatuses = map[string]bool{
+	"sent": true, "failed": true, "acknowledged": true, "escalated": true,
+}
+
+// Validate performs business logic validation on the NotificationAudit struct.
+// #1048 Phase 4 / SI-10: Called by the DLQ retry path to reject invalid
+// payloads before persisting to PostgreSQL.
 func (n *NotificationAudit) Validate() error {
-	// Validation is handled by struct tags and the validator package
-	// Additional business logic validation can be added here if needed
+	if n.RemediationID == "" {
+		return fmt.Errorf("remediation_id is required")
+	}
+	if n.NotificationID == "" {
+		return fmt.Errorf("notification_id is required")
+	}
+	if n.Recipient == "" {
+		return fmt.Errorf("recipient is required")
+	}
+	if !validChannels[n.Channel] {
+		return fmt.Errorf("channel must be one of email, slack, pagerduty, teams, sms; got %q", n.Channel)
+	}
+	if n.MessageSummary == "" {
+		return fmt.Errorf("message_summary is required")
+	}
+	if !validStatuses[n.Status] {
+		return fmt.Errorf("status must be one of sent, failed, acknowledged, escalated; got %q", n.Status)
+	}
+	if n.SentAt.IsZero() {
+		return fmt.Errorf("sent_at is required")
+	}
 	return nil
 }
 

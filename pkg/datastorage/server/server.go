@@ -112,6 +112,15 @@ type Server struct {
 
 	// Issue #667 / BR-STORAGE-043: Maximum events per batch API request
 	maxBatchSize int
+
+	// #1048 Phase 4: OpenAPI validator created at startup (fail-hard)
+	openapiValidator *dsmiddleware.OpenAPIValidator
+
+	// #1048 Phase 4: Configurable CORS origins (ADR-030), default ["*"]
+	corsAllowedOrigins []string
+
+	// #1048 Phase 4: Max request body size in bytes (SC-5 DoS protection)
+	maxBodySize int64
 }
 
 func defaultMaxBatchSize(v int) int {
@@ -362,6 +371,19 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		"algorithm", signer.GetAlgorithm(),
 		"fingerprint", signer.GetCertificateFingerprint())
 
+	// #1048 Phase 4 / BR-STORAGE-034: Initialize OpenAPI validator at startup (fail-hard).
+	// If the embedded spec is invalid the service MUST NOT start — running without
+	// request validation silently accepts malformed input.
+	openapiValidator, err := dsmiddleware.NewOpenAPIValidator(
+		logger.WithName("openapi-validator"),
+		nil,
+	)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to initialize OpenAPI validator: %w", err)
+	}
+	logger.Info("OpenAPI validator initialized at startup (fail-hard)")
+
 	// DD-009 V1.0: Create DLQ retry worker (goroutine inside server)
 	// #1048 DF-1: Pass notification repo so notification DLQ messages are persisted
 	dlqWorkerConfig := DefaultDLQRetryWorkerConfig()
@@ -393,6 +415,9 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		authNamespace:            deps.AuthNamespace,  // DD-AUTH-014: Dynamic namespace for SAR checks
 		maxBatchSize:             defaultMaxBatchSize(appCfg.Server.MaxBatchSize), // Issue #667 / BR-STORAGE-043
 		endpointPropagationDelay: endpointRemovalPropagationDelay,
+		openapiValidator:         openapiValidator,
+		corsAllowedOrigins:       appCfg.Server.GetCORSAllowedOrigins(),
+		maxBodySize:              appCfg.Server.GetMaxBodySize(),
 	}
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
@@ -424,33 +449,23 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.RealIP)         // Get real client IP
 	r.Use(s.loggingMiddleware)       // Custom logging middleware
 	r.Use(s.panicRecoveryMiddleware) // Enhanced panic recovery with logging
+	// #1048 Phase 4 / SC-5: Request body size limit (DoS protection).
+	// Applied before OpenAPI validation so the body is capped before spec parsing.
+	r.Use(dsmiddleware.MaxBytesReaderMiddleware(s.maxBodySize, s.logger))
+
+	// #1048 Phase 4 / AC-4: CORS with configurable origins (ADR-030).
+	// AllowedMethods includes PATCH and DELETE for workflow/action-type/legal-hold routes.
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"}, // V1.0: Permissive CORS (configure via env var in production)
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedOrigins:   s.corsAllowedOrigins,
+		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
 		ExposedHeaders:   []string{"Link", "X-Request-ID"},
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
 
-	// BR-STORAGE-034: OpenAPI validation middleware
-	// DD-API-002: OpenAPI spec embedded in binary (zero-config deployment)
-	//
-	// Automatically validates all API requests against OpenAPI spec:
-	// - Validates required fields (including empty strings via minLength: 1)
-	// - Validates enum values, types, formats
-	// - Returns RFC 7807 errors for validation failures
-	// Routes not in spec (/health, /metrics) pass through without validation
-	openapiValidator, err := dsmiddleware.NewOpenAPIValidator(
-		s.logger.WithName("openapi-validator"),
-		nil, // Validation metrics removed per GitHub issue #294
-	)
-	if err != nil {
-		s.logger.Error(err, "Failed to initialize OpenAPI validator - continuing without validation")
-	} else {
-		r.Use(openapiValidator.Middleware)
-		s.logger.Info("OpenAPI validation middleware enabled")
-	}
+	// BR-STORAGE-034: OpenAPI validation middleware (fail-hard, initialized in NewServer)
+	r.Use(s.openapiValidator.Middleware)
 
 	// Issue #753: Health endpoints moved to dedicated :8081 server.
 	// See health.NewHealthServer in cmd/datastorage/main.go.

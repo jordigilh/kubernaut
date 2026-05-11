@@ -113,9 +113,7 @@ func (h *Handler) HandleCreateActionType(w http.ResponseWriter, r *http.Request)
 
 	result, err := h.actionTypeRepo.Create(r.Context(), req.Name, req.Description, req.RegisteredBy)
 	if err != nil {
-		h.logger.Error(err, "Failed to create action type", "name", req.Name)
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error",
-			"Database Error", fmt.Sprintf("Failed to create action type: %v", err), h.logger)
+		response.WriteRFC7807InternalError(w, "database-error", "Database Error", err, h.logger)
 		return
 	}
 
@@ -215,8 +213,7 @@ func (h *Handler) HandleUpdateActionType(w http.ResponseWriter, r *http.Request)
 				"Action Type Disabled", fmt.Sprintf("Action type %q is disabled and cannot be updated", name), h.logger)
 			return
 		}
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error",
-			"Database Error", fmt.Sprintf("Failed to update action type: %v", err), h.logger)
+		response.WriteRFC7807InternalError(w, "database-error", "Database Error", err, h.logger)
 		return
 	}
 
@@ -292,8 +289,7 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 				"Not Found", fmt.Sprintf("Action type %q not found", name), h.logger)
 			return
 		}
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error",
-			"Database Error", fmt.Sprintf("Failed to disable action type: %v", disableErr), h.logger)
+		response.WriteRFC7807InternalError(w, "database-error", "Database Error", disableErr, h.logger)
 		return
 	}
 
@@ -366,9 +362,7 @@ func (h *Handler) HandleGetActionTypeWorkflowCount(w http.ResponseWriter, r *htt
 
 	count, _, err := h.actionTypeRepo.CountActiveWorkflows(r.Context(), name)
 	if err != nil {
-		h.logger.Error(err, "Failed to count active workflows", "name", name)
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error",
-			"Database Error", fmt.Sprintf("Failed to count active workflows: %v", err), h.logger)
+		response.WriteRFC7807InternalError(w, "database-error", "Database Error", err, h.logger)
 		return
 	}
 

@@ -17,9 +17,11 @@ limitations under the License.
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"time"
 
@@ -244,6 +246,16 @@ func (w *DLQRetryWorker) writeToPostgres(ctx context.Context, auditType string, 
 		if err := json.Unmarshal(msg.AuditMessage.Payload, &auditEvent); err != nil {
 			return fmt.Errorf("failed to unmarshal audit event payload: %w", err)
 		}
+		// #1048 Phase 4 / SI-10: Validate required fields before persisting.
+		// Reuses the existing audit.AuditEvent.Validate() to catch empty
+		// EventType, CorrelationID, etc. that would violate data integrity.
+		if err := auditEvent.Validate(); err != nil {
+			return fmt.Errorf("audit event validation failed: %w", err)
+		}
+		// #1048 Phase 4 / SC-5: Enforce EventData size and depth limits.
+		if err := validateEventData(auditEvent.EventData); err != nil {
+			return fmt.Errorf("audit event EventData validation failed: %w", err)
+		}
 		if len(auditEvent.EventData) == 0 {
 			auditEvent.EventData = []byte("{}")
 		}
@@ -261,6 +273,10 @@ func (w *DLQRetryWorker) writeToPostgres(ctx context.Context, auditType string, 
 		var notifAudit models.NotificationAudit
 		if err := json.Unmarshal(msg.AuditMessage.Payload, &notifAudit); err != nil {
 			return fmt.Errorf("failed to unmarshal notification audit payload: %w", err)
+		}
+		// #1048 Phase 4 / SI-10: Validate required fields before persisting.
+		if err := notifAudit.Validate(); err != nil {
+			return fmt.Errorf("notification audit validation failed: %w", err)
 		}
 		_, err := w.notificationRepo.Create(ctx, &notifAudit)
 		return err
@@ -301,6 +317,52 @@ func (w *DLQRetryWorker) moveToDeadLetter(ctx context.Context, auditType string,
 			"retry_count", msg.AuditMessage.RetryCount,
 			"correlation_id", msg.AuditMessage.CorrelationID(),
 		)
+	}
+}
+
+// ========================================
+// EventData Validation (Fix 7 / SC-5, SI-10)
+// ========================================
+
+const (
+	maxEventDataSize  = 256 * 1024 // 256 KB — consistent with gateway MaxRequestBodySize
+	maxEventDataDepth = 10         // prevent billion-laughs / recursive JSON attacks
+)
+
+// validateEventData checks EventData size and JSON nesting depth.
+// Uses a streaming json.Decoder (token-by-token) to count depth without
+// loading the full structure into memory.
+func validateEventData(data []byte) error {
+	if len(data) > maxEventDataSize {
+		return fmt.Errorf("EventData exceeds maximum size (%d > %d bytes)", len(data), maxEventDataSize)
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	return validateJSONDepth(data, maxEventDataDepth)
+}
+
+// validateJSONDepth walks JSON tokens and returns an error if nesting exceeds maxDepth.
+func validateJSONDepth(data []byte, maxDepth int) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	var depth int
+	for {
+		t, err := dec.Token()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return fmt.Errorf("invalid JSON in EventData: %w", err)
+		}
+		switch t {
+		case json.Delim('{'), json.Delim('['):
+			depth++
+			if depth > maxDepth {
+				return fmt.Errorf("EventData JSON nesting depth exceeds maximum (%d)", maxDepth)
+			}
+		case json.Delim('}'), json.Delim(']'):
+			depth--
+		}
 	}
 }
 

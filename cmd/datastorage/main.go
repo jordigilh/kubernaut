@@ -352,6 +352,17 @@ func main() {
 			"range", "30s–120s")
 	}
 
+	// #1048 Phase 4 / SRE-P2: Log effective CORS origins and max body size at startup.
+	corsOrigins := cfg.Server.GetCORSAllowedOrigins()
+	for _, o := range corsOrigins {
+		if o == "*" {
+			logger.Info("CORS allows all origins — not recommended for production",
+				"severity", "warning",
+				"cors_allowed_origins", corsOrigins)
+			break
+		}
+	}
+
 	logger.Info("Starting Data Storage service (ADR-030 + DD-007)",
 		"port", cfg.Server.Port,
 		"metricsPort", cfg.Server.MetricsPort,
@@ -359,6 +370,8 @@ func main() {
 		"host", cfg.Server.Host,
 		"shutdown_timeout", shutdownTimeout,
 		"recommended_k8s_termination_grace_period", shutdownTimeout+30*time.Second,
+		"max_body_size", cfg.Server.GetMaxBodySize(),
+		"cors_allowed_origins", corsOrigins,
 	)
 
 	// Issue #283: Dedicated Prometheus metrics server on standardised port

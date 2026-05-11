@@ -81,15 +81,9 @@ func (s *Server) handleReconstructRemediationRequestWrapper(w http.ResponseWrite
 	})
 
 	if err != nil {
-		// Unexpected error (ogen handler should return errors as response types, not err)
-		s.logger.Error(err, "Unexpected error from reconstruction handler",
-			"correlation_id", correlationID)
-		response.WriteRFC7807Error(w, http.StatusInternalServerError,
+		response.WriteRFC7807InternalError(w,
 			"https://kubernaut.ai/problems/reconstruction/unexpected-error",
-			"Unexpected Error",
-			fmt.Sprintf("Unexpected error: %v", err),
-			s.logger,
-		)
+			"Unexpected Error", err, s.logger)
 		return
 	}
 
@@ -142,12 +136,9 @@ func (s *Server) handleReconstructRemediationRequestWrapper(w http.ResponseWrite
 		)
 
 	default:
-		s.logger.Error(fmt.Errorf("unknown response type: %T", resp), "Unknown response type from handler")
-		response.WriteRFC7807Error(w, http.StatusInternalServerError,
+		response.WriteRFC7807InternalError(w,
 			"https://kubernaut.ai/problems/reconstruction/unknown-response",
 			"Unknown Response Type",
-			fmt.Sprintf("Unexpected response type: %T", resp),
-			s.logger,
-		)
+			fmt.Errorf("unknown response type: %T", resp), s.logger)
 	}
 }

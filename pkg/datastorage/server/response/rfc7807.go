@@ -77,6 +77,16 @@ func WriteRFC7807Error(w http.ResponseWriter, status int, errorType, title, deta
 	}
 }
 
+// WriteRFC7807InternalError writes a redacted RFC 7807 response for 5xx errors.
+// #1048 Phase 4 / SI-11: The real error is logged server-side but never exposed
+// to the client, preventing leakage of DB hostnames, driver errors, or stack traces.
+func WriteRFC7807InternalError(w http.ResponseWriter, errorType, title string, err error, logger logr.Logger) {
+	logger.Error(err, "Internal error (redacted from client response)",
+		"error_type", errorType)
+	WriteRFC7807Error(w, http.StatusInternalServerError, errorType, title,
+		"An internal error occurred. Check server logs for details.", logger)
+}
+
 // WriteRFC7807ErrorWithRequestID writes an RFC 7807 error with request ID in logs
 // Convenience wrapper that includes request ID context
 func WriteRFC7807ErrorWithRequestID(w http.ResponseWriter, status int, errorType, title, detail, requestID string, logger logr.Logger) {
