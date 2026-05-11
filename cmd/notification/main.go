@@ -56,7 +56,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: Inter-service TLS
-	"github.com/sony/gobreaker/v2"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -109,15 +108,14 @@ func validateFileOutputDirectory(dir string) error {
 	return nil
 }
 
-// stateToString converts gobreaker.State to human-readable string
-// Used for logging circuit breaker state transitions
-func stateToString(state gobreaker.State) string {
+// stateToString converts a circuit breaker State to a human-readable string.
+func stateToString(state circuitbreaker.State) string {
 	switch state {
-	case gobreaker.StateClosed:
+	case circuitbreaker.StateClosed:
 		return "closed"
-	case gobreaker.StateOpen:
+	case circuitbreaker.StateOpen:
 		return "open"
-	case gobreaker.StateHalfOpen:
+	case circuitbreaker.StateHalfOpen:
 		return "half-open"
 	default:
 		return "unknown"
@@ -355,22 +353,17 @@ func main() {
 	//
 	// See: docs/services/crd-controllers/06-notification/README.md#circuit-breaker
 	// ========================================
-	circuitBreakerManager := circuitbreaker.NewManager(gobreaker.Settings{
-		MaxRequests: 2, // Allow 2 test requests in half-open state
-		Interval:    10 * time.Second,
-		Timeout:     30 * time.Second, // Stay open for 30s before recovery attempt
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			// Trip circuit after 3 consecutive failures
-			return counts.ConsecutiveFailures >= 3
-		},
-		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
-			// Log circuit breaker state transitions
+	circuitBreakerManager := circuitbreaker.NewManager(circuitbreaker.ManagerConfig{
+		MaxRequests:                 2,
+		Interval:                   10 * time.Second,
+		Timeout:                    30 * time.Second,
+		ConsecutiveFailureThreshold: 3,
+		OnStateChange: func(name string, from, to circuitbreaker.State) {
 			logger.Info("Circuit breaker state changed",
 				"channel", name,
 				"from", stateToString(from),
 				"to", stateToString(to))
 
-			// Update Prometheus metric
 			if metricsRecorder != nil {
 				metricsRecorder.UpdateCircuitBreakerState(name, int(to))
 			}

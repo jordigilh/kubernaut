@@ -62,7 +62,6 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
-	"github.com/sony/gobreaker/v2"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -544,15 +543,12 @@ receivers:
 
 	// Create circuit breaker for integration tests
 	// Per BR-NOT-055: Circuit breaker provides per-channel isolation
-	circuitBreakerManager := circuitbreaker.NewManager(gobreaker.Settings{
-		MaxRequests: 2,
-		Interval:    10 * time.Second,
-		Timeout:     30 * time.Second,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.ConsecutiveFailures >= 3
-		},
-		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
-			// Update metrics on state change
+	circuitBreakerManager := circuitbreaker.NewManager(circuitbreaker.ManagerConfig{
+		MaxRequests:                 2,
+		Interval:                   10 * time.Second,
+		Timeout:                    30 * time.Second,
+		ConsecutiveFailureThreshold: 3,
+		OnStateChange: func(name string, from, to circuitbreaker.State) {
 			if metricsRecorder != nil {
 				metricsRecorder.UpdateCircuitBreakerState(name, int(to))
 			}

@@ -44,7 +44,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/sony/gobreaker/v2"
 )
 
 // drainEvents reads all available events from the FakeRecorder channel.
@@ -157,9 +156,7 @@ var _ = Describe("Notification Controller K8s Events [DD-EVENT-001]", func() {
 			)
 			orchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), delivery.NewConsoleDeliveryService())
 
-			cbManager := circuitbreaker.NewManager(gobreaker.Settings{
-				ReadyToTrip: func(gobreaker.Counts) bool { return false },
-			})
+			cbManager := circuitbreaker.NewManager(circuitbreaker.ManagerConfig{})
 
 			reconciler := &notificationcontroller.NotificationRequestReconciler{
 				Client:               fakeClient,
@@ -232,9 +229,7 @@ var _ = Describe("Notification Controller K8s Events [DD-EVENT-001]", func() {
 			)
 			orchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), delivery.NewConsoleDeliveryService())
 
-			cbManager := circuitbreaker.NewManager(gobreaker.Settings{
-				ReadyToTrip: func(gobreaker.Counts) bool { return false },
-			})
+			cbManager := circuitbreaker.NewManager(circuitbreaker.ManagerConfig{})
 
 			reconciler := &notificationcontroller.NotificationRequestReconciler{
 				Client:               fakeClient,

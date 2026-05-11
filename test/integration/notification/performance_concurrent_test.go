@@ -29,7 +29,6 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
-	"github.com/sony/gobreaker/v2"
 )
 
 // P0 TESTS: Concurrent Deliveries + Circuit Breaker (6 tests)
@@ -261,16 +260,11 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 			// BEHAVIOR: Circuit breaker blocks requests to protect failing service
 			// BUSINESS CONTEXT: Prevents overwhelming unhealthy service with more requests
 
-			// Configure circuit breaker with low threshold for testing
-			// Migrated to github.com/sony/gobreaker via Manager wrapper
-			circuitBreaker := circuitbreaker.NewManager(gobreaker.Settings{
-				MaxRequests: 2, // Allow 2 test requests in half-open
-				Interval:    10 * time.Second,
-				Timeout:     5 * time.Second, // Transition to half-open after 5s
-				ReadyToTrip: func(counts gobreaker.Counts) bool {
-					// Trip after 3 consecutive failures
-					return counts.ConsecutiveFailures >= 3
-				},
+			circuitBreaker := circuitbreaker.NewManager(circuitbreaker.ManagerConfig{
+				MaxRequests:                 2,
+				Interval:                   10 * time.Second,
+				Timeout:                    5 * time.Second,
+				ConsecutiveFailureThreshold: 3,
 			})
 
 			// BEHAVIOR VALIDATION: Initial state allows requests
@@ -306,14 +300,11 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 			// BEHAVIOR: Circuit breaker allows requests again after service recovers
 			// BUSINESS CONTEXT: Returns to normal operation once service proves it's healthy
 
-			// Migrated to github.com/sony/gobreaker via Manager wrapper
-			circuitBreaker := circuitbreaker.NewManager(gobreaker.Settings{
-				MaxRequests: 2, // Allow 2 test requests in half-open
-				Interval:    10 * time.Second,
-				Timeout:     100 * time.Millisecond, // Quick transition to half-open for testing
-				ReadyToTrip: func(counts gobreaker.Counts) bool {
-					return counts.ConsecutiveFailures >= 3
-				},
+			circuitBreaker := circuitbreaker.NewManager(circuitbreaker.ManagerConfig{
+				MaxRequests:                 2,
+				Interval:                   10 * time.Second,
+				Timeout:                    100 * time.Millisecond,
+				ConsecutiveFailureThreshold: 3,
 			})
 
 			// Trigger circuit breaker (open state) by making actual Execute() calls
