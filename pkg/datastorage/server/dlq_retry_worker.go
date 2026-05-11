@@ -19,13 +19,17 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/go-logr/logr"
 
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
 )
 
 // ========================================
@@ -79,14 +83,25 @@ func DefaultDLQRetryWorkerConfig() DLQRetryWorkerConfig {
 	}
 }
 
+// EventCreator abstracts audit event persistence for dependency injection.
+type EventCreator interface {
+	Create(context.Context, *repository.AuditEvent) (*repository.AuditEvent, error)
+}
+
+// NotificationCreator abstracts notification persistence for dependency injection.
+type NotificationCreator interface {
+	Create(context.Context, *models.NotificationAudit) (*models.NotificationAudit, error)
+}
+
 // DLQRetryWorker processes DLQ messages and retries writes to PostgreSQL.
 // V1.0: Runs as goroutine inside Data Storage server (DD-007 lifecycle).
 type DLQRetryWorker struct {
-	dlqClient     *dlq.Client
-	auditRepo     *repository.AuditEventsRepository
-	logger        logr.Logger
-	consumerGroup string
-	consumerName  string
+	dlqClient        *dlq.Client
+	auditRepo        EventCreator
+	notificationRepo NotificationCreator
+	logger           logr.Logger
+	consumerGroup    string
+	consumerName     string
 
 	// Configuration
 	pollInterval     time.Duration
@@ -99,15 +114,19 @@ type DLQRetryWorker struct {
 }
 
 // NewDLQRetryWorker creates a new DLQ retry worker.
+// #1048 DF-1: Added notificationRepo parameter so notification DLQ messages
+// are persisted instead of silently dropped.
 func NewDLQRetryWorker(
 	dlqClient *dlq.Client,
-	auditRepo *repository.AuditEventsRepository,
+	auditRepo EventCreator,
+	notificationRepo NotificationCreator,
 	config DLQRetryWorkerConfig,
 	logger logr.Logger,
 ) *DLQRetryWorker {
 	return &DLQRetryWorker{
 		dlqClient:        dlqClient,
 		auditRepo:        auditRepo,
+		notificationRepo: notificationRepo,
 		logger:           logger.WithName("dlq-retry-worker"),
 		consumerGroup:    config.ConsumerGroup,
 		consumerName:     config.ConsumerName,
@@ -218,62 +237,41 @@ func (w *DLQRetryWorker) processMessage(ctx context.Context, auditType string, m
 	}
 }
 
+// writeToPostgres persists a DLQ message to PostgreSQL.
+// #1048 DF-1: Added "notifications" case (was silently returning nil).
+// #1048 DF-2: Replaced manual getString parsing with json.Unmarshal +
+// ConvertToRepositoryAuditEvent, aligning with the drain path in dlq/client.go.
 func (w *DLQRetryWorker) writeToPostgres(ctx context.Context, auditType string, msg *dlq.DLQMessage) error {
-	// Direct PostgreSQL write (bypass HTTP layer)
 	switch auditType {
 	case "events":
-		// Parse JSON payload and create audit event
-		event, err := w.parseAuditEventPayload(msg.AuditMessage.Payload)
+		var auditEvent audit.AuditEvent
+		if err := json.Unmarshal(msg.AuditMessage.Payload, &auditEvent); err != nil {
+			return fmt.Errorf("failed to unmarshal audit event payload: %w", err)
+		}
+		if len(auditEvent.EventData) == 0 {
+			auditEvent.EventData = []byte("{}")
+		}
+		repoEvent, err := helpers.ConvertToRepositoryAuditEvent(&auditEvent)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to convert audit event: %w", err)
 		}
-		_, err = w.auditRepo.Create(ctx, event)
+		_, err = w.auditRepo.Create(ctx, repoEvent)
 		return err
-	default:
-		// For other types, log and skip
-		w.logger.Info("Unsupported audit type for DLQ retry",
-			"audit_type", auditType,
-			"message_id", msg.ID,
-		)
-		return nil
-	}
-}
 
-// parseAuditEventPayload parses JSON payload into AuditEvent.
-func (w *DLQRetryWorker) parseAuditEventPayload(payload []byte) (*repository.AuditEvent, error) {
-	var data map[string]interface{}
-	if err := json.Unmarshal(payload, &data); err != nil {
-		return nil, err
-	}
-
-	// Extract required fields
-	event := &repository.AuditEvent{
-		EventType:    getString(data, "event_type"),
-		EventAction:  getString(data, "event_action"),
-		EventOutcome: getString(data, "event_outcome"),
-		ActorType:    getString(data, "actor_type"),
-		ActorID:      getString(data, "actor_id"),
-	}
-
-	// Set defaults for missing fields
-	if event.EventAction == "" {
-		event.EventAction = getString(data, "operation")
-	}
-	if event.EventOutcome == "" {
-		event.EventOutcome = getString(data, "outcome")
-	}
-
-	return event, nil
-}
-
-// getString safely extracts a string from map.
-func getString(data map[string]interface{}, key string) string {
-	if v, ok := data[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
+	case "notifications":
+		if w.notificationRepo == nil {
+			return fmt.Errorf("notification repository not configured; cannot persist notification DLQ message")
 		}
+		var notifAudit models.NotificationAudit
+		if err := json.Unmarshal(msg.AuditMessage.Payload, &notifAudit); err != nil {
+			return fmt.Errorf("failed to unmarshal notification audit payload: %w", err)
+		}
+		_, err := w.notificationRepo.Create(ctx, &notifAudit)
+		return err
+
+	default:
+		return fmt.Errorf("unknown audit type for DLQ retry: %s", auditType)
 	}
-	return ""
 }
 
 func (w *DLQRetryWorker) handleRetryFailure(ctx context.Context, auditType string, msg *dlq.DLQMessage, writeErr error) {

@@ -357,9 +357,10 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		"fingerprint", signer.GetCertificateFingerprint())
 
 	// DD-009 V1.0: Create DLQ retry worker (goroutine inside server)
+	// #1048 DF-1: Pass notification repo so notification DLQ messages are persisted
 	dlqWorkerConfig := DefaultDLQRetryWorkerConfig()
 	dlqWorkerConfig.ConsumerName = fmt.Sprintf("worker-%d", os.Getpid())
-	dlqRetryWorker := NewDLQRetryWorker(dlqClient, auditEventsRepo, dlqWorkerConfig, logger)
+	dlqRetryWorker := NewDLQRetryWorker(dlqClient, auditEventsRepo, repo, dlqWorkerConfig, logger)
 
 	// DS-FLAKY-003 FIX: Create server with handler assigned to httpServer
 	// This allows graceful shutdown to work in both Start() and httptest scenarios
