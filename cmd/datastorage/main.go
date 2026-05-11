@@ -337,13 +337,19 @@ func main() {
 		time.Sleep(retryDelay)
 	}
 
-	// DD-007: Graceful shutdown timeout (Kubernetes terminationGracePeriodSeconds)
-	// Default: 30 seconds to allow endpoint removal + connection drain
-	shutdownTimeout := 30 * time.Second
-	if timeoutEnv := os.Getenv("SHUTDOWN_TIMEOUT"); timeoutEnv != "" {
-		if timeout, err := time.ParseDuration(timeoutEnv); err == nil {
-			shutdownTimeout = timeout
-		}
+	// DD-007: Graceful shutdown timeout — read from config file (ADR-030).
+	// Default 60s accommodates internal budgets:
+	//   endpoint propagation (5s) + HTTP drain (30s) + DLQ drain (10s) + resource close (~1s)
+	//   + health/metrics shutdown (2s each) = ~50s, with 10s headroom.
+	// GetShutdownTimeout clamps to [30s, 120s] for safety.
+	// terminationGracePeriodSeconds in deployment.yaml must be >= this value + buffer (90s).
+	shutdownTimeout := cfg.Server.GetShutdownTimeout()
+	if cfg.Server.ShutdownTimeout != "" && cfg.Server.ShutdownTimeout != shutdownTimeout.String() {
+		logger.Info("Configured shutdownTimeout was clamped to safe range",
+			"severity", "warning",
+			"configured", cfg.Server.ShutdownTimeout,
+			"effective", shutdownTimeout,
+			"range", "30s–120s")
 	}
 
 	logger.Info("Starting Data Storage service (ADR-030 + DD-007)",
@@ -352,6 +358,7 @@ func main() {
 		"healthPort", cfg.Server.HealthPort,
 		"host", cfg.Server.Host,
 		"shutdown_timeout", shutdownTimeout,
+		"recommended_k8s_termination_grace_period", shutdownTimeout+30*time.Second,
 	)
 
 	// Issue #283: Dedicated Prometheus metrics server on standardised port
@@ -446,16 +453,30 @@ func main() {
 		serverErrors <- srv.Start()
 	}()
 
-	// gracefulShutdown shuts down all servers with the given context.
+	// #1048 Phase 3: Shutdown order — API first, then health/metrics.
+	// API server shutdown (srv.Shutdown) handles DD-007 internally:
+	//   set readiness flag → wait for propagation → drain HTTP → drain DLQ → close DB.
+	// Health and metrics servers stay alive during the entire API drain window
+	// so liveness probes succeed and K8s does not force-kill the pod.
+	const (
+		healthShutdownTimeout  = 2 * time.Second
+		metricsShutdownTimeout = 2 * time.Second
+	)
 	gracefulShutdown := func(shutdownCtx context.Context) {
-		if err := healthServer.Shutdown(shutdownCtx); err != nil {
-			logger.Error(err, "Health server shutdown failed")
-		}
-		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
-			logger.Error(err, "Metrics server shutdown failed")
-		}
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			logger.Error(err, "Graceful shutdown failed (DD-007)")
+		}
+
+		healthCtx, healthCancel := context.WithTimeout(context.Background(), healthShutdownTimeout)
+		defer healthCancel()
+		if err := healthServer.Shutdown(healthCtx); err != nil {
+			logger.Error(err, "Health server shutdown failed")
+		}
+
+		metricsCtx, metricsCancel := context.WithTimeout(context.Background(), metricsShutdownTimeout)
+		defer metricsCancel()
+		if err := metricsServer.Shutdown(metricsCtx); err != nil {
+			logger.Error(err, "Metrics server shutdown failed")
 		}
 	}
 
