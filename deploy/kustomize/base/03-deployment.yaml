@@ -49,7 +49,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: TLS_CA_FILE
-              value: /etc/apifrontend/tls/ca.crt
+              value: /etc/apifrontend/tls-ca/ca.crt
           resources:
             requests:
               cpu: 100m
@@ -111,11 +111,9 @@ spec:
         - name: tls-server
           secret:
             secretName: apifrontend-tls
-            optional: true
         - name: tls-ca
           secret:
             secretName: apifrontend-ca
-            optional: true
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

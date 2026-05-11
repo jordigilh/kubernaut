@@ -151,13 +151,33 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	tlsEnabled, _, err := tlswiring.ConfigureServer(httpServer, cfg.Server.TLS.CertDir)
+	tlsEnabled, certReloader, err := tlswiring.ConfigureServer(httpServer, cfg.Server.TLS.CertDir)
 	if err != nil {
 		logger.Error(err, "failed to configure TLS")
 		os.Exit(1)
 	}
 	if tlsEnabled {
 		logger.Info("TLS enabled with hot-reloadable certificates", "certDir", cfg.Server.TLS.CertDir)
+	} else {
+		logger.Info("TLS disabled, serving plain HTTP")
+	}
+
+	certWatcher, err := tlswiring.StartCertFileWatcher(ctx, cfg.Server.TLS.CertDir, certReloader, logger)
+	if err != nil {
+		logger.Error(err, "failed to start certificate file watcher")
+		os.Exit(1)
+	}
+	if certWatcher != nil {
+		defer certWatcher.Stop()
+	}
+
+	caWatcher, err := tlswiring.StartCAFileWatcher(ctx, logger)
+	if err != nil {
+		logger.Error(err, "failed to start CA file watcher")
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		defer caWatcher.Stop()
 	}
 
 	go startServerTLS(httpServer, tlsEnabled, "API", logger)

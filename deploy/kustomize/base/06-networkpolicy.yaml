@@ -1,0 +1,42 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apifrontend
+  namespace: kubernaut-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kubernaut-apifrontend
+      app.kubernetes.io/component: apifrontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: 8443
+          protocol: TCP
+        - port: 8081
+          protocol: TCP
+        - port: 9090
+          protocol: TCP
+  egress:
+    # KA and DS services (HTTPS)
+    - ports:
+        - port: 8443
+          protocol: TCP
+    # Kubernetes API server
+    - ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    # DNS resolution
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Prometheus (for severity triage queries)
+    - ports:
+        - port: 9090
+          protocol: TCP

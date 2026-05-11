@@ -13,12 +13,15 @@ resources:
   - 03-deployment.yaml
   - 04-service.yaml
   - 05-prometheusrule.yaml
+  - 06-networkpolicy.yaml
 
-commonLabels:
-  app.kubernetes.io/name: kubernaut-apifrontend
-  app.kubernetes.io/component: apifrontend
-  app.kubernetes.io/part-of: kubernaut
-  app.kubernetes.io/managed-by: kustomize
+labels:
+  - pairs:
+      app.kubernetes.io/name: kubernaut-apifrontend
+      app.kubernetes.io/component: apifrontend
+      app.kubernetes.io/part-of: kubernaut
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: true
 
 namespace: kubernaut-system
 

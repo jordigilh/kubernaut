@@ -14,6 +14,10 @@ patches:
     target:
       kind: Deployment
       name: apifrontend
+  - path: patch-tls-optional.yaml
+    target:
+      kind: Deployment
+      name: apifrontend
 
 configMapGenerator:
   - name: apifrontend-config
