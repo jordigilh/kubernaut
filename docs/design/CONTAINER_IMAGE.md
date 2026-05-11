@@ -90,41 +90,80 @@ The `scratch` production image copies only the statically-linked binary plus:
 Released images are cryptographically signed using [Cosign](https://docs.sigstore.dev/cosign/overview/)
 with keyless signing (Fulcio + GitHub OIDC). No manual key management is required.
 
+> **Note:** Git tags use `vX.Y.Z` but container image tags strip the `v` prefix (e.g. `1.5.0`).
+
+### Prerequisites
+
+- [Cosign](https://docs.sigstore.dev/cosign/system_config/installation/) v2.4+ installed
+- Network access to Sigstore infrastructure (Rekor transparency log)
+- Registry credentials if verifying from a private registry
+
 ### Verify image signature
 
 ```bash
 cosign verify \
   --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp="^https://github.com/jordigilh/kubernaut-apifrontend/" \
-  quay.io/kubernaut-ai/apifrontend:v1.5.0
+  --certificate-identity-regexp="^https://github.com/jordigilh/kubernaut-apifrontend/.github/workflows/release.yml@refs/tags/" \
+  quay.io/kubernaut-ai/apifrontend:1.5.0
 ```
 
 ### Verify SBOM attestation
 
+The CycloneDX SBOM attestation is currently attached to the **amd64** image only.
+
 ```bash
 cosign verify-attestation \
   --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp="^https://github.com/jordigilh/kubernaut-apifrontend/" \
+  --certificate-identity-regexp="^https://github.com/jordigilh/kubernaut-apifrontend/.github/workflows/release.yml@refs/tags/" \
   --type cyclonedx \
-  quay.io/kubernaut-ai/apifrontend:v1.5.0-amd64
+  quay.io/kubernaut-ai/apifrontend:1.5.0-amd64
 ```
 
 ### What is verified
 
 | Artifact | Format | Attached to |
 |----------|--------|-------------|
-| Image signature | Cosign keyless (Fulcio) | Multi-arch manifest + `:latest` |
-| SBOM attestation | CycloneDX JSON (in-toto) | Per-arch image digest |
+| Image signature | Cosign keyless (Fulcio) | Multi-arch manifest + `:latest` (GA only) |
+| SBOM attestation | CycloneDX JSON (in-toto) | amd64 image digest |
+
+### Evidence for compliance auditors
+
+Cosign keyless signing uses short-lived certificates from [Fulcio](https://docs.sigstore.dev/fulcio/overview/)
+bound to the GitHub Actions OIDC identity. The signing event is recorded in the
+[Rekor](https://docs.sigstore.dev/logging/overview/) transparency log, providing
+a tamper-evident audit trail. The expected signer identity is:
+
+```
+Issuer:  https://token.actions.githubusercontent.com
+Subject: https://github.com/jordigilh/kubernaut-apifrontend/.github/workflows/release.yml@refs/tags/vX.Y.Z
+```
+
+The CycloneDX SBOM is also uploaded as a GitHub Release artifact (`sbom-X.Y.Z`).
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `no matching signatures` | Image not signed or wrong tag | Verify tag matches a release (not `latest` for pre-releases) |
+| `OIDC issuer mismatch` | Using wrong `--certificate-oidc-issuer` | Must be `https://token.actions.githubusercontent.com` |
+| `identity mismatch` | Verifying fork-built image | Only images built by this repo's release workflow are signed |
+| `network timeout` | Cannot reach Rekor/Sigstore | Check proxy/firewall allows `rekor.sigstore.dev`, `fulcio.sigstore.dev` |
 
 ### License compliance
 
 CI runs `go-licenses check` against an approved allowlist:
 
 ```
-Apache-2.0, BSD-2-Clause, BSD-3-Clause, MIT, ISC, MPL-2.0
+Apache-2.0, BSD-2-Clause, BSD-3-Clause, MIT, ISC, MPL-2.0, Unlicense, CC0-1.0, 0BSD
 ```
 
-Any dependency with a non-permissive license will fail the CI build.
+Any dependency with a license not on this list will fail the CI build.
+
+**If CI fails on a license check:**
+1. Run `go-licenses report ./...` locally to identify the offending module
+2. Evaluate whether the license is acceptable for the project
+3. If approved: add to the allowlist in `.github/workflows/ci.yml` and update this doc
+4. If not approved: find an alternative dependency or request a legal exception
 
 ## Makefile Integration
 

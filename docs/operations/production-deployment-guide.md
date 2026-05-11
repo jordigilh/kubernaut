@@ -9,6 +9,12 @@
 - Prometheus Operator (for PrometheusRule CRD)
 - Prometheus instance reachable from AF pods (for severity triage — `/api/v1/alerts`, `/api/v1/rules`, `/api/v1/query`)
 
+## Container Image Integrity
+
+Before deploying, verify the container image signature and SBOM attestation using Cosign.
+See [`docs/design/CONTAINER_IMAGE.md` § Supply Chain Verification](../design/CONTAINER_IMAGE.md#supply-chain-verification)
+for full instructions, prerequisites, and troubleshooting.
+
 ## Deployment Model
 
 The API Frontend workload (Deployment, Service, ConfigMap) is managed by the **kubernaut-operator** in production environments. The Kustomize manifests in this repository (`deploy/kustomize/`) provide the base configuration with dev and CI overlays for non-production environments.

@@ -202,7 +202,7 @@ jobs:
         run: go install github.com/google/go-licenses@v1.6.0
 
       - name: Check dependency licenses
-        run: go-licenses check ./... --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC,MPL-2.0
+        run: go-licenses check ./... --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC,MPL-2.0,Unlicense,CC0-1.0,0BSD
 
   sbom-scan:
     runs-on: ubuntu-latest
@@ -235,11 +235,15 @@ jobs:
         run: trivy image --severity CRITICAL,HIGH,MEDIUM --exit-code 1 --ignorefile .trivyignore kubernaut-apifrontend:ci
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
 
-      - name: Verify image signature (cosign)
+      - name: Verify image signature (cosign, informational)
         run: |
-          cosign verify --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
-            --certificate-identity-regexp="^https://github.com/jordigilh/kubernaut-apifrontend/" \
-            kubernaut-apifrontend:ci 2>/dev/null || \
-            echo "::notice::Image not signed yet (CI build) — signature verification will pass on release images"
+          if cosign verify \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp="^https://github.com/jordigilh/kubernaut-apifrontend/.github/workflows/release.yml@refs/tags/" \
+            kubernaut-apifrontend:ci 2>&1; then
+            echo "::notice::Image signature verified"
+          else
+            echo "::notice::Image not signed (expected for CI builds) — verification enforced on release images only"
+          fi

@@ -167,7 +167,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
 
       - name: Login to Quay.io
         run: |
@@ -194,7 +194,7 @@ jobs:
         run: |
           cosign verify \
             --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
-            --certificate-identity-regexp="^https://github.com/jordigilh/kubernaut-apifrontend/" \
+            --certificate-identity-regexp="^https://github.com/jordigilh/kubernaut-apifrontend/.github/workflows/release.yml@refs/tags/" \
             ${IMAGE_REGISTRY}/apifrontend:${IMAGE_TAG}
 
   sbom:
@@ -230,7 +230,7 @@ jobs:
           name: sbom-${{ needs.prepare.outputs.version }}
           path: sbom.cdx.json
 
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
 
       - name: Attest SBOM to image (Cosign)
         env:
@@ -242,7 +242,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [prepare, create-manifests, sbom]
+    needs: [prepare, create-manifests, sbom, sign]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -45,6 +45,9 @@ We follow coordinated disclosure. We will:
 
 ## Security Controls
 
+For container image signature verification and SBOM attestation, see
+[`docs/design/CONTAINER_IMAGE.md` § Supply Chain Verification](docs/design/CONTAINER_IMAGE.md#supply-chain-verification).
+
 This project implements FedRAMP Moderate-aligned security controls including:
 - JWT authentication with replay protection (jti tracking)
 - Per-IP and per-user rate limiting
