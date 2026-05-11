@@ -119,9 +119,10 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// 3. Convert OpenAPI request to internal audit event
+	// 3. Convert OpenAPI request to internal audit event (trusted actor from oauth-proxy header)
 	s.logger.V(1).Info("Converting OpenAPI request to internal type...")
-	auditEvent, err := helpers.ConvertAuditEventRequest(req)
+	authenticatedActorID := r.Header.Get("X-Auth-Request-User")
+	auditEvent, err := helpers.ConvertAuditEventRequest(req, authenticatedActorID)
 	if err != nil {
 		s.logger.Error(err, "Failed to convert audit event request",
 			"event_type", req.EventType,

@@ -72,7 +72,7 @@ var _ = Describe("IT-AT-300-006: ActionType Audit Events", Label("integration", 
 		// Override correlation_id for test isolation
 		ogenEvent.CorrelationID = fmt.Sprintf("it-at-006-%s-%s", testID, uuid.New().String()[:8])
 
-		internalEvent, err := helpers.ConvertAuditEventRequest(*ogenEvent)
+		internalEvent, err := helpers.ConvertAuditEventRequest(*ogenEvent, "")
 		Expect(err).ToNot(HaveOccurred(), "ConvertAuditEventRequest should succeed")
 
 		repoEvent, err := helpers.ConvertToRepositoryAuditEvent(internalEvent)

@@ -115,6 +115,8 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 
 	s.logger.V(1).Info("Parsing batch of audit events", "count", len(requests))
 
+	authenticatedActorID := r.Header.Get("X-Auth-Request-User")
+
 	// 3. Validate and convert ALL events BEFORE persisting any (atomic batch)
 	auditEvents := make([]*audit.AuditEvent, 0, len(requests))
 	repositoryEvents := make([]*repository.AuditEvent, 0, len(requests))
@@ -128,7 +130,7 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 		}
 
 		// Convert to internal type
-		internalEvent, err := helpers.ConvertAuditEventRequest(req)
+		internalEvent, err := helpers.ConvertAuditEventRequest(req, authenticatedActorID)
 		if err != nil {
 			s.logger.Info("Batch conversion failed", "index", i, "error", err)
 			response.WriteRFC7807Error(w, http.StatusBadRequest, "conversion_error", "Conversion Error", fmt.Sprintf("event at index %d: %s", i, err.Error()), s.logger)
