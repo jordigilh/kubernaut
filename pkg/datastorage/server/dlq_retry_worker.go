@@ -28,7 +28,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
 )
 
@@ -83,22 +82,12 @@ func DefaultDLQRetryWorkerConfig() DLQRetryWorkerConfig {
 	}
 }
 
-// EventCreator abstracts audit event persistence for dependency injection.
-type EventCreator interface {
-	Create(context.Context, *repository.AuditEvent) (*repository.AuditEvent, error)
-}
-
-// NotificationCreator abstracts notification persistence for dependency injection.
-type NotificationCreator interface {
-	Create(context.Context, *models.NotificationAudit) (*models.NotificationAudit, error)
-}
-
 // DLQRetryWorker processes DLQ messages and retries writes to PostgreSQL.
 // V1.0: Runs as goroutine inside Data Storage server (DD-007 lifecycle).
 type DLQRetryWorker struct {
 	dlqClient        *dlq.Client
-	auditRepo        EventCreator
-	notificationRepo NotificationCreator
+	auditRepo        dlq.EventCreator
+	notificationRepo dlq.NotificationCreator
 	logger           logr.Logger
 	consumerGroup    string
 	consumerName     string
@@ -118,8 +107,8 @@ type DLQRetryWorker struct {
 // are persisted instead of silently dropped.
 func NewDLQRetryWorker(
 	dlqClient *dlq.Client,
-	auditRepo EventCreator,
-	notificationRepo NotificationCreator,
+	auditRepo dlq.EventCreator,
+	notificationRepo dlq.NotificationCreator,
 	config DLQRetryWorkerConfig,
 	logger logr.Logger,
 ) *DLQRetryWorker {
@@ -185,7 +174,7 @@ func (w *DLQRetryWorker) processRetryBatch(ctx context.Context) {
 	auditTypes := []string{"events", "notifications"}
 
 	for _, auditType := range auditTypes {
-		messages, err := w.dlqClient.ReadMessages(ctx, auditType, w.consumerGroup, w.consumerName, -1)
+		messages, err := w.dlqClient.ReadMessages(ctx, auditType, w.consumerGroup, w.consumerName, w.maxBatchSize, -1)
 		if err != nil {
 			w.logger.Error(err, "Failed to read from DLQ", "audit_type", auditType)
 			continue
@@ -242,8 +231,15 @@ func (w *DLQRetryWorker) processMessage(ctx context.Context, auditType string, m
 // #1048 DF-2: Replaced manual getString parsing with json.Unmarshal +
 // ConvertToRepositoryAuditEvent, aligning with the drain path in dlq/client.go.
 func (w *DLQRetryWorker) writeToPostgres(ctx context.Context, auditType string, msg *dlq.DLQMessage) error {
+	if len(msg.AuditMessage.Payload) > dlq.MaxPayloadSize() {
+		return fmt.Errorf("payload exceeds maximum size (%d > %d bytes)", len(msg.AuditMessage.Payload), dlq.MaxPayloadSize())
+	}
+
 	switch auditType {
 	case "events":
+		if w.auditRepo == nil {
+			return fmt.Errorf("audit event repository not configured; cannot persist event DLQ message")
+		}
 		var auditEvent audit.AuditEvent
 		if err := json.Unmarshal(msg.AuditMessage.Payload, &auditEvent); err != nil {
 			return fmt.Errorf("failed to unmarshal audit event payload: %w", err)
