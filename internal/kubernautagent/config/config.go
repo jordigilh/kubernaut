@@ -252,14 +252,24 @@ const (
 
 // AlignmentCheckConfig holds settings for the shadow agent alignment checker (#601).
 type AlignmentCheckConfig struct {
-	Enabled        bool               `yaml:"enabled"`
-	Mode           AlignmentMode      `yaml:"mode"`
-	LLM            *LLMOverrideConfig `yaml:"llm"`
-	Timeout        time.Duration      `yaml:"timeout"`
-	MaxStepTokens  int                `yaml:"maxStepTokens"`
-	MaxRetries     int                `yaml:"maxRetries"`
-	VerdictTimeout time.Duration      `yaml:"verdictTimeout"`
-	Canary         CanaryConfig       `yaml:"canary"`
+	Enabled        bool                 `yaml:"enabled"`
+	Mode           AlignmentMode        `yaml:"mode"`
+	LLM            *LLMOverrideConfig   `yaml:"llm"`
+	Timeout        time.Duration        `yaml:"timeout"`
+	MaxStepTokens  int                  `yaml:"maxStepTokens"`
+	MaxRetries     int                  `yaml:"maxRetries"`
+	VerdictTimeout time.Duration        `yaml:"verdictTimeout"`
+	Canary         CanaryConfig         `yaml:"canary"`
+	GroundingReview GroundingReviewConfig `yaml:"groundingReview"`
+}
+
+// GroundingReviewConfig holds settings for the full-context grounding review (#1096).
+// When enabled, the shadow agent evaluates the entire RCA conversation at the
+// RCA-to-workflow-discovery boundary to detect distributed prompt injection.
+type GroundingReviewConfig struct {
+	Enabled               bool          `yaml:"enabled"`
+	Timeout               time.Duration `yaml:"timeout"`
+	MaxConversationTokens int           `yaml:"maxConversationTokens"`
 }
 
 // CanaryConfig controls per-investigation canary integrity checks.
@@ -432,6 +442,14 @@ func (c *Config) Validate() error {
 		default:
 			return fmt.Errorf("ai.alignmentCheck.mode must be 'enforce' or 'monitor', got %q", c.AI.AlignmentCheck.Mode)
 		}
+		if c.AI.AlignmentCheck.GroundingReview.Enabled {
+			if c.AI.AlignmentCheck.GroundingReview.Timeout <= 0 {
+				return fmt.Errorf("ai.alignmentCheck.groundingReview.timeout must be positive when enabled, got %v", c.AI.AlignmentCheck.GroundingReview.Timeout)
+			}
+			if c.AI.AlignmentCheck.GroundingReview.MaxConversationTokens <= 0 {
+				return fmt.Errorf("ai.alignmentCheck.groundingReview.maxConversationTokens must be positive when enabled, got %d", c.AI.AlignmentCheck.GroundingReview.MaxConversationTokens)
+			}
+		}
 	}
 	return nil
 }
@@ -469,6 +487,11 @@ func DefaultConfig() *Config {
 				MaxRetries:     1,
 				VerdictTimeout: 30 * time.Second,
 				Canary:         CanaryConfig{ForceEscalation: true},
+				GroundingReview: GroundingReviewConfig{
+					Enabled:               false,
+					Timeout:               30 * time.Second,
+					MaxConversationTokens: 32000,
+				},
 			},
 			Safety: SafetyConfig{
 			Sanitization: SanitizationConfig{

@@ -18,6 +18,7 @@ package alignment
 
 import (
 	"errors"
+	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
@@ -77,11 +78,21 @@ type Verdict struct {
 	CircuitBreaker bool          `json:"circuit_breaker,omitempty"`
 }
 
+// GroundingObservation is the evaluator's assessment of an entire RCA conversation.
+// It answers: "given the tool evidence, are the RCA conclusions well-grounded?"
+type GroundingObservation struct {
+	Grounded    bool           `json:"grounded"`
+	Explanation string         `json:"explanation"`
+	Usage       llm.TokenUsage `json:"usage"`
+	Duration    time.Duration  `json:"duration"`
+}
+
 // WaitResult captures the observer state at the moment WaitForCompletion returns.
 // It provides a single snapshot for verdict rendering — no re-reading internal state.
 type WaitResult struct {
-	Complete     bool
-	Submitted    int
-	Observations []Observation
-	Pending      int
+	Complete             bool
+	Submitted            int
+	Observations         []Observation
+	Pending              int
+	GroundingObservation *GroundingObservation
 }

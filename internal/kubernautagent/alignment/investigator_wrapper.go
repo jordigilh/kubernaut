@@ -39,6 +39,7 @@ type InvestigatorWrapper struct {
 	logger                logr.Logger
 	mode                  config.AlignmentMode
 	canaryForceEscalation bool
+	groundingEnabled      bool
 }
 
 var _ kaserver.InvestigationRunner = (*InvestigatorWrapper)(nil)
@@ -52,6 +53,7 @@ type InvestigatorWrapperConfig struct {
 	Logger                logr.Logger
 	Mode                  config.AlignmentMode
 	CanaryForceEscalation bool
+	GroundingEnabled      bool
 }
 
 // NewInvestigatorWrapper creates an InvestigatorWrapper.
@@ -80,6 +82,7 @@ func NewInvestigatorWrapper(cfg InvestigatorWrapperConfig) (*InvestigatorWrapper
 		logger:                logger,
 		mode:                  mode,
 		canaryForceEscalation: cfg.CanaryForceEscalation,
+		groundingEnabled:      cfg.GroundingEnabled,
 	}, nil
 }
 
@@ -118,6 +121,7 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 	observerOpts := []ObserverOption{
 		WithCorrelationID(correlationID),
 		WithObserverLogger(w.logger),
+		WithGroundingEnabled(w.groundingEnabled),
 	}
 
 	// Circuit breaker: in enforce mode, create a cancellable investigation context.

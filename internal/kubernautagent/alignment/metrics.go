@@ -64,4 +64,19 @@ var (
 		Name:      "circuit_breaker_total",
 		Help:      "Total circuit breaker activations by mode (enforce).",
 	}, []string{"mode"})
+
+	alignmentGroundingTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "kubernaut",
+		Subsystem: "alignment",
+		Name:      "grounding_total",
+		Help:      "Total grounding reviews by result (grounded, ungrounded, error, timeout, disabled).",
+	}, []string{"result"})
+
+	alignmentGroundingDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "kubernaut",
+		Subsystem: "alignment",
+		Name:      "grounding_duration_seconds",
+		Help:      "Time taken by the full-context grounding review in seconds.",
+		Buckets:   prometheus.DefBuckets,
+	})
 )
