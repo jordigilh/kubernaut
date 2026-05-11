@@ -21,14 +21,20 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: apifrontend
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: apifrontend
+          # F-013: Use digest-pinned images in production overlays.
+          # Base uses :latest for dev; kustomize overlays pin SHA256 digests.
           image: quay.io/jordigilh/kubernaut-apifrontend:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - name: https
               containerPort: 8443

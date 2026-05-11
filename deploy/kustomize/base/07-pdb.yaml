@@ -1,0 +1,12 @@
+# F-022: PodDisruptionBudget ensures at least one replica remains during voluntary disruptions.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: apifrontend
+  namespace: kubernaut-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernaut-apifrontend
+      app.kubernetes.io/component: apifrontend
