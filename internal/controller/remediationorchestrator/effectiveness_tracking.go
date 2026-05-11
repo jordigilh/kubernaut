@@ -193,6 +193,12 @@ func DeriveOutcomeFromEA(ea *eav1.EffectivenessAssessment) string {
 // completeVerificationIfNeeded transitions the RR from Verifying to Completed (#280, #722).
 // Called inside a status update closure when EA reaches a terminal phase.
 // Issue #722: Uses DeriveOutcomeFromEA for score-aware outcome instead of hardcoding "Remediated".
+//
+// Issue #1091 (BR-ORCH-042.6): When outcome is "Inconclusive" (EA confirms alert still firing,
+// alertScore=0), this method also sets exponential backoff fields. Inconclusive is architecturally
+// a Completed RR (OverallPhase=Completed) but functionally a failure — automatic retry without
+// changed conditions is futile. ConsecutiveFailureCount increments despite PhaseCompleted because
+// it tracks "functional failures" (including Inconclusive), not just phase failures.
 func (r *Reconciler) completeVerificationIfNeeded(rr *remediationv1.RemediationRequest, ea *eav1.EffectivenessAssessment, logger interface{ Info(string, ...interface{}) }) {
 	if rr.Status.OverallPhase != phase.Verifying {
 		return
@@ -214,7 +220,30 @@ func (r *Reconciler) completeVerificationIfNeeded(rr *remediationv1.RemediationR
 		r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
 	}
 
+	// #1091 (BR-ORCH-042.6): Inconclusive outcomes get exponential backoff to prevent RR flood.
+	// Mirrors transitionToFailed backoff pattern — count always increments, backoff only set below threshold.
+	if outcome == "Inconclusive" {
+		rr.Status.ConsecutiveFailureCount++
+
+		if rr.Status.ConsecutiveFailureCount < int32(r.routingEngine.Config().ConsecutiveFailureThreshold) {
+			backoff := r.routingEngine.CalculateExponentialBackoff(rr.Status.ConsecutiveFailureCount)
+			if backoff > 0 {
+				nextAllowed := metav1.NewTime(time.Now().Add(backoff))
+				rr.Status.NextAllowedExecution = &nextAllowed
+				logger.Info("Inconclusive outcome: set exponential backoff",
+					"consecutiveFailures", rr.Status.ConsecutiveFailureCount,
+					"backoff", backoff.Round(time.Second),
+					"nextAllowedExecution", nextAllowed.Format(time.RFC3339))
+			}
+		} else {
+			logger.Info("Inconclusive outcome: at/above threshold, skipping backoff (routing engine will block)",
+				"consecutiveFailures", rr.Status.ConsecutiveFailureCount,
+				"threshold", r.routingEngine.Config().ConsecutiveFailureThreshold)
+		}
+	}
+
 	logger.Info("Verification complete, RR transitioned to Completed",
 		"outcome", outcome,
-		"remediationRequest", rr.Name)
+		"remediationRequest", rr.Name,
+		"consecutiveFailures", rr.Status.ConsecutiveFailureCount)
 }

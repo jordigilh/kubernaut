@@ -394,16 +394,21 @@ func (r *RoutingEngine) CheckConsecutiveFailures(
 			continue
 		}
 
-		// Count both Failed and Blocked RRs as failures
-		// Blocked RRs indicate the signal was blocked due to consecutive failures
+		// Count Failed and Blocked RRs as failures.
+		// #1091 (BR-ORCH-042.6): Also count Completed+Inconclusive as a functional failure —
+		// EA confirmed alert still firing, automatic retry is futile.
 		if item.Status.OverallPhase == remediationv1.PhaseFailed ||
 		   item.Status.OverallPhase == remediationv1.PhaseBlocked {
 			consecutiveFailures++
 			logger.Info("Counted failed/blocked RR", "name", item.Name, "phase", item.Status.OverallPhase, "consecutiveFailures", consecutiveFailures)
 		} else if item.Status.OverallPhase == remediationv1.PhaseCompleted {
-			// Found a successful RR - consecutive chain is broken
-			logger.Info("Found completed RR - breaking chain", "name", item.Name, "consecutiveFailures", consecutiveFailures)
-			break
+			if item.Status.Outcome == "Inconclusive" {
+				consecutiveFailures++
+				logger.Info("Counted Completed+Inconclusive RR as functional failure", "name", item.Name, "consecutiveFailures", consecutiveFailures)
+			} else {
+				logger.Info("Found completed RR with successful outcome - breaking chain", "name", item.Name, "outcome", item.Status.Outcome, "consecutiveFailures", consecutiveFailures)
+				break
+			}
 		} else {
 			logger.Info("Ignoring non-terminal RR", "name", item.Name, "phase", item.Status.OverallPhase)
 		}
