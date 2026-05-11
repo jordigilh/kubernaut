@@ -1,0 +1,64 @@
+server:
+  port: 8443
+  tls:
+    certDir: /etc/apifrontend/tls
+
+agent:
+  gcpProject: ""
+  gcpRegion: "us-central1"
+  kaBaseURL: "https://kubernaut-agent:8443"
+  kaMCPEndpoint: "https://kubernaut-agent:8443/api/v1/mcp/"
+  dsBaseURL: "https://data-storage:8443"
+  kaTlsCaFile: /etc/apifrontend/tls-ca/ca.crt
+  dsTlsCaFile: /etc/apifrontend/tls-ca/ca.crt
+
+mcp:
+  enabled: true
+
+agentCard:
+  url: "https://apifrontend.kubernaut-system.svc:8443"
+
+logging:
+  level: info
+
+rateLimit:
+  ipRequestsPerSec: 50
+  userRequestsPerSec: 20
+  maxConcurrentSessions: 100
+  toolCallsPerMinute: 60
+
+shutdown:
+  drainSeconds: 15
+
+resilience:
+  ka:
+    connectTimeout: 5s
+    requestTimeout: 30s
+    cbMaxRequests: 3
+    cbInterval: 10s
+    cbTimeout: 30s
+    cbFailureThreshold: 5
+    retryMax: 2
+    retryInitBackoff: 500ms
+    retryMaxBackoff: 5s
+    retryableStatuses: [502, 503, 504]
+  ds:
+    connectTimeout: 3s
+    requestTimeout: 10s
+    cbMaxRequests: 3
+    cbInterval: 10s
+    cbTimeout: 15s
+    cbFailureThreshold: 3
+    retryMax: 3
+    retryInitBackoff: 200ms
+    retryMaxBackoff: 3s
+    retryableStatuses: [502, 503, 504]
+  k8s:
+    connectTimeout: 5s
+    requestTimeout: 30s
+    cbMaxRequests: 3
+    cbInterval: 10s
+    cbTimeout: 30s
+    cbFailureThreshold: 5
+    retryMax: 0
+    retryableStatuses: []

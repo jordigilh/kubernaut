@@ -1,7 +1,0 @@
-serviceAccount:
-  create: true
-  name: ""
-  annotations: {}
-
-rbac:
-  create: true

@@ -53,7 +53,7 @@ All static analysis gates run before tests in the CI pipeline and block merge on
 | `golangci-lint` | `make lint` | 50+ linters including `errcheck`, `gocritic`, `gosec`, `staticcheck` |
 | Race detector | `--race` flag in `make test-unit` | Data races in concurrent code |
 | OpenAPI validation | `make validate-openapi` | Schema conformance via `vacuum lint` |
-| Helm lint | `make helm-lint` | Chart template errors, missing values |
+| Kustomize validation | `make validate-kustomize` | Kustomize build errors, missing resources |
 | Maturity validation | `make validate-maturity-ci` | Service maturity criteria (8 checks) |
 
 ### Maturity Validation Checks (`hack/validate-maturity.sh`)
@@ -126,7 +126,7 @@ The following gates must pass before a PR can be merged:
 | Maturity validation | `bash hack/validate-maturity.sh` | Yes |
 | Image vulnerability scan | `trivy image --severity CRITICAL,HIGH --exit-code 1` | Yes |
 | OpenAPI schema validation | `vacuum lint api/openapi/apifrontend-v1.yaml` | Yes |
-| Helm chart lint | `helm lint deploy/helm/` | Yes |
+| Kustomize validation | `make validate-kustomize` | Yes |
 | Coverage threshold | Enforced per-tier (see above) | Advisory (warning) |
 
 ### Test Execution Flags

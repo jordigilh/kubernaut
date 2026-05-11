@@ -128,7 +128,7 @@ make test-perf-local
 | `test-perf-local` | Dry-run k6 performance scripts |
 | `validate-maturity-ci` | Run service maturity checks |
 | `validate-openapi` | Lint OpenAPI spec |
-| `helm-lint` | Lint Helm chart |
+| `validate-kustomize` | Validate kustomize build for dev/ci overlays |
 | `sbom` | Generate CycloneDX SBOM |
 | `image-scan` | Trivy image vulnerability scan |
 | `docker-build` | Build container image |

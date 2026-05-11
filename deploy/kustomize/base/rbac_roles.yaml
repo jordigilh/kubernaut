@@ -1,0 +1,27 @@
+roles:
+  sre:
+    - kubernaut_investigate
+    - kubernaut_select_workflow
+    - kubernaut_get_session
+    - kubernaut_list_workflows
+    - kubernaut_get_remediation_request
+    - kubernaut_list_remediation_requests
+    - ds_store_event
+    - ds_query_events
+    - ds_get_timeline
+    - k8s_get_resource
+    - k8s_list_resources
+    - k8s_describe_resource
+  developer:
+    - kubernaut_investigate
+    - kubernaut_get_session
+    - kubernaut_list_workflows
+    - ds_query_events
+    - ds_get_timeline
+    - k8s_get_resource
+    - k8s_list_resources
+  viewer:
+    - kubernaut_get_session
+    - ds_query_events
+    - k8s_get_resource
+    - k8s_list_resources

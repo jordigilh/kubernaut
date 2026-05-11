@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: apifrontend-dev
+  annotations:
+    description: "Dev overlay — Kind cluster with self-signed TLS certificates"
+
+resources:
+  - ../../base
+
+patches:
+  - path: patch-deployment.yaml
+    target:
+      kind: Deployment
+      name: apifrontend
+
+configMapGenerator:
+  - name: apifrontend-config
+    behavior: replace
+    files:
+      - config.yaml
+
+images:
+  - name: quay.io/jordigilh/kubernaut-apifrontend
+    newName: localhost/kubernaut-apifrontend
+    newTag: dev
