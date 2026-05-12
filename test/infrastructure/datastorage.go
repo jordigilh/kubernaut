@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/cert"
 	"github.com/jordigilh/kubernaut/test/testutil"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -525,6 +526,12 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "🔐 Issue #753: Generating inter-service TLS certificates...")
 	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
+	}
+
+	// AU-9: Generate RSA signing certificate for audit exports (separate from ECDSA inter-service TLS)
+	_, _ = fmt.Fprintln(writer, "🔏 AU-9: Generating RSA signing certificate for audit exports...")
+	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate signing certificate: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -1172,7 +1179,7 @@ data:
       healthPort: 8081
       readTimeout: 30s
       writeTimeout: 30s
-      signerCertDir: /etc/tls
+      signerCertDir: /etc/signing-certs
       tls:
         certDir: /etc/tls
     database:
@@ -1328,6 +1335,9 @@ spec:
           readOnly: true
         - name: tls-certs
           mountPath: /etc/tls
+          readOnly: true
+        - name: signing-certs
+          mountPath: /etc/signing-certs
           readOnly: true%[7]s
         resources:
           requests:
@@ -1360,6 +1370,9 @@ spec:
         secret:
           secretName: datastorage-tls
           optional: true
+      - name: signing-certs
+        secret:
+          secretName: datastorage-signing
       - name: secrets
         projected:
           sources:
@@ -2347,5 +2360,38 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 
 	_, _ = fmt.Fprintln(writer, "✅ DataStorage deployed with cert-manager certificate")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
+
+// GenerateSigningCertSecret creates a datastorage-signing K8s Secret with an RSA self-signed
+// certificate for audit export signing (AU-9). This is separate from the ECDSA inter-service
+// TLS certificates because the Signer requires RSA keys.
+func GenerateSigningCertSecret(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	pair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
+		CommonName:       "datastorage-signing",
+		Organization:     "Kubernaut",
+		DNSNames:         []string{"localhost"},
+		ValidityDuration: 24 * time.Hour,
+		KeySize:          2048,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to generate signing cert: %w", err)
+	}
+
+	manifest := fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: datastorage-signing
+type: kubernetes.io/tls
+stringData:
+  tls.crt: |
+%s
+  tls.key: |
+%s`, indentPEM(string(pair.CertPEM), 4), indentPEM(string(pair.KeyPEM), 4))
+
+	if err := kubectlApply(ctx, kubeconfigPath, namespace, manifest, writer); err != nil {
+		return fmt.Errorf("failed to create signing cert Secret: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ datastorage-signing Secret created (RSA 2048)")
 	return nil
 }
