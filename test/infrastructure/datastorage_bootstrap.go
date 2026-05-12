@@ -790,6 +790,9 @@ func generateBootstrapSigningCert(serviceName string, writer io.Writer) (string,
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
 	}
+	if err := os.Chmod(tmpDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to chmod temp dir: %w", err)
+	}
 
 	pair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
 		CommonName:       fmt.Sprintf("datastorage-signing-%s", serviceName),
@@ -802,10 +805,10 @@ func generateBootstrapSigningCert(serviceName string, writer io.Writer) (string,
 		return "", fmt.Errorf("failed to generate self-signed cert: %w", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "tls.crt"), pair.CertPEM, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "tls.crt"), pair.CertPEM, 0o644); err != nil {
 		return "", fmt.Errorf("failed to write tls.crt: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, "tls.key"), pair.KeyPEM, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "tls.key"), pair.KeyPEM, 0o644); err != nil {
 		return "", fmt.Errorf("failed to write tls.key: %w", err)
 	}
 

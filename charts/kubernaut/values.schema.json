@@ -335,6 +335,18 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "server": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "DataStorage server configuration",
+              "properties": {
+                "maxBodySize": { "type": "string", "default": "5242880", "description": "#1048 Phase 4 / SC-5: Maximum request body size in bytes" },
+                "maxConcurrentRequests": { "type": "integer", "default": 100, "description": "Maximum concurrent request limit" },
+                "readTimeout": { "type": "string", "default": "30s", "description": "Server read timeout" },
+                "corsAllowedOrigins": { "type": "array", "items": { "type": "string" }, "description": "#1048 Phase 4 / AC-4: CORS allowed origins" },
+                "signerCertDir": { "type": "string", "default": "/etc/certs", "description": "#1048 Phase 5 / AU-9: Directory containing signing cert (tls.crt, tls.key)" }
+              }
+            },
             "database": {
               "type": "object",
               "additionalProperties": false,
@@ -343,6 +355,14 @@
                 "maxOpenConns": { "type": "integer", "default": 100, "description": "Maximum open database connections" },
                 "maxIdleConns": { "type": "integer", "default": 20, "description": "Maximum idle database connections" },
                 "connMaxLifetime": { "type": "string", "default": "1h", "description": "Maximum connection lifetime" }
+              }
+            },
+            "redis": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Redis DLQ configuration",
+              "properties": {
+                "dlqMaxLen": { "type": "integer", "default": 10000, "description": "#1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound" }
               }
             }
           }
