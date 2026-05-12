@@ -70,6 +70,8 @@ agent:
 auth:
   issuerURL: "https://keycloak.example.com/realms/kubernaut"
   audience: "kubernaut-apifrontend"
+  # jwksURL: "https://keycloak.example.com/realms/kubernaut/protocol/openid-connect/certs"
+  # enableReplayProtection: true
 
 mcp:
   enabled: true
@@ -134,7 +136,7 @@ resilience:
 | Probe | Path | Expected Response |
 |-------|------|-------------------|
 | Liveness | `/healthz` | 200 (always, unless process is dead) |
-| Readiness | `/readyz` | 200 when all dependencies are reachable |
+| Readiness | `/readyz` | 200 when dependency circuit breakers are healthy; 503 when draining or CB open |
 | Metrics | `/metrics` | Prometheus exposition format |
 
 ## Ports

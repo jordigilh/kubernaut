@@ -64,8 +64,10 @@ type DependencyConfig struct {
 
 // AuthConfig holds OIDC authentication settings.
 type AuthConfig struct {
-	IssuerURL string `yaml:"issuerURL"`
-	Audience  string `yaml:"audience"`
+	IssuerURL              string `yaml:"issuerURL"`
+	JWKSURL                string `yaml:"jwksURL,omitempty"`
+	Audience               string `yaml:"audience"`
+	EnableReplayProtection bool   `yaml:"enableReplayProtection,omitempty"`
 }
 
 // LoggingConfig holds structured logging settings.
@@ -253,14 +255,21 @@ func (c *Config) Validate() error {
 }
 
 func (c *Config) validateAuth() error {
-	// CFG-03: When TLS is required (production), auth must also be configured.
 	if c.Server.TLS.Required && c.Auth.IssuerURL == "" {
 		return fmt.Errorf("auth.issuerURL is required when server.tls.required is true (production mode)")
 	}
 	if c.Auth.IssuerURL == "" {
 		return nil
 	}
-	return validateURL("auth.issuerURL", c.Auth.IssuerURL)
+	if err := validateURL("auth.issuerURL", c.Auth.IssuerURL); err != nil {
+		return err
+	}
+	if c.Auth.JWKSURL != "" {
+		if err := validateURL("auth.jwksURL", c.Auth.JWKSURL); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 var validLogLevels = map[string]bool{

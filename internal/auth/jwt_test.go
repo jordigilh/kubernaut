@@ -682,6 +682,38 @@ var _ = Describe("Auth", func() {
 				Expect(err).NotTo(HaveOccurred(), "existing sessions with cached JWKS should continue working when circuit is open")
 				Expect(identity.Username).To(Equal("alice"))
 			})
+
+			It("UT-AF-002-021: resolves separate JWKS URL from issuer", func() {
+				kp := newTestKeyPair("key-1")
+				jwksSrv := newJWKSServer(kp.jwks())
+
+				issuerURL := "https://fake-issuer.example.com"
+				cfg := auth.Config{
+					JWT: []auth.ProviderConfig{
+						{
+							Issuer: auth.IssuerConfig{
+								URL:       issuerURL,
+								JWKSURL:   jwksSrv.URL,
+								Audiences: []string{"test-audience"},
+							},
+							ClaimMappings: auth.ClaimMappings{
+								Username: "claims.preferred_username",
+								Groups:   "claims.groups",
+							},
+						},
+					},
+				}
+
+				validator, err := auth.NewJWTValidator(cfg, auth.WithHTTPClient(jwksSrv.Client()))
+				Expect(err).NotTo(HaveOccurred())
+
+				claims := standardClaims(issuerURL, "alice", []string{"test-audience"}, nil, time.Now().Add(time.Hour))
+				token := kp.signToken(claims)
+
+				identity, err := validator.Validate(context.Background(), token)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(identity.Username).To(Equal("alice"))
+			})
 		})
 	})
 

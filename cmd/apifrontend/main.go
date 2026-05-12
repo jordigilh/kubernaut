@@ -598,14 +598,17 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 		authCfg.JWT = append(authCfg.JWT, auth.ProviderConfig{
 			Issuer: auth.IssuerConfig{
 				URL:       jp.Issuer.URL,
+				JWKSURL:   jp.Issuer.JWKSURL,
 				Audiences: jp.Issuer.Audiences,
 			},
 		})
 	}
 
-	// F-007: Enable jti replay cache for token replay protection.
-	replayCache := auth.NewReplayCache(10 * time.Minute)
-	validator, err := auth.NewJWTValidator(authCfg, auth.WithReplayCache(replayCache))
+	var validatorOpts []auth.JWTValidatorOption
+	if cfg.Auth.EnableReplayProtection {
+		validatorOpts = append(validatorOpts, auth.WithReplayCache(auth.NewReplayCache(10*time.Minute)))
+	}
+	validator, err := auth.NewJWTValidator(authCfg, validatorOpts...)
 	if err != nil {
 		logger.Error(err, "failed to create JWT validator — falling back to deny-all")
 		return func(next http.Handler) http.Handler {
@@ -649,6 +652,7 @@ type jwtProvider struct {
 
 type jwtIssuer struct {
 	URL       string
+	JWKSURL   string
 	Audiences []string
 }
 
@@ -661,6 +665,7 @@ func buildAuthConfig(cfg *config.Config) authConfig {
 			{
 				Issuer: jwtIssuer{
 					URL:       cfg.Auth.IssuerURL,
+					JWKSURL:   cfg.Auth.JWKSURL,
 					Audiences: []string{cfg.Auth.Audience},
 				},
 			},
