@@ -138,13 +138,18 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 		Page   string `json:"page"`
 		Cursor string `json:"cursor"`
 	}
-	_ = json.Unmarshal(args, &a)
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", fmt.Errorf("parsing args: %w", err)
+	}
 
 	params := ogenclient.ListAvailableActionsParams{
 		Severity:    ogenclient.ListAvailableActionsSeverity(signal.Severity),
 		Component:   strings.ToLower(signal.ResourceKind),
 		Environment: signal.Environment,
 		Priority:    ogenclient.ListAvailableActionsPriority(signal.Priority),
+	}
+	if signal.RemediationID != "" {
+		params.RemediationID = ogenclient.NewOptString(signal.RemediationID)
 	}
 	if signal.DetectedLabelsJSON != "" {
 		params.DetectedLabels = ogenclient.NewOptString(signal.DetectedLabelsJSON)
@@ -199,6 +204,9 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 		Environment: signal.Environment,
 		Priority:    ogenclient.ListWorkflowsByActionTypePriority(signal.Priority),
 	}
+	if signal.RemediationID != "" {
+		params.RemediationID = ogenclient.NewOptString(signal.RemediationID)
+	}
 	if signal.DetectedLabelsJSON != "" {
 		params.DetectedLabels = ogenclient.NewOptString(signal.DetectedLabelsJSON)
 	}
@@ -241,9 +249,25 @@ func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (st
 		return "", fmt.Errorf("invalid workflow ID %q: %w", a.WorkflowID, err)
 	}
 
-	res, err := t.ds.GetWorkflowByID(ctx, ogenclient.GetWorkflowByIDParams{
+	params := ogenclient.GetWorkflowByIDParams{
 		WorkflowID: uid,
-	})
+	}
+
+	// Best-effort: forward signal context for audit correlation and security-gate
+	// filtering. Non-investigator callers (e.g., notification resolver) may not
+	// have a signal context — that is acceptable (#1111).
+	signal, ok := katypes.SignalContextFromContext(ctx)
+	if ok && signal.RemediationID != "" {
+		params.RemediationID = ogenclient.NewOptString(signal.RemediationID)
+		params.Severity = ogenclient.NewOptGetWorkflowByIDSeverity(
+			ogenclient.GetWorkflowByIDSeverity(signal.Severity))
+		params.Component = ogenclient.NewOptString(strings.ToLower(signal.ResourceKind))
+		params.Environment = ogenclient.NewOptString(signal.Environment)
+		params.Priority = ogenclient.NewOptGetWorkflowByIDPriority(
+			ogenclient.GetWorkflowByIDPriority(signal.Priority))
+	}
+
+	res, err := t.ds.GetWorkflowByID(ctx, params)
 	if err != nil {
 		return "", fmt.Errorf("getting workflow: %w", err)
 	}
