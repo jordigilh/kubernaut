@@ -52,7 +52,7 @@ AIAnalysisSpec defines the desired state of AIAnalysis.
 AIAnalysis represents an immutable event (AI investigation).
 Once created by RemediationOrchestrator, spec cannot be modified to ensure:
 - Audit trail integrity (AI investigation matches original RCA request)
-- No tampering with RCA targets post-HAPI validation
+- No tampering with RCA targets post-KA validation
 - No workflow selection modification after AI recommendation
 
 To re-analyze, delete and recreate the AIAnalysis CRD.
@@ -92,20 +92,20 @@ _Appears in:_
 | `approvalRequired`| _boolean_| True if approval is required (confidence < 80% or policy requires)|
 | `approvalReason`| _string_| Reason why approval is required (when ApprovalRequired=true)|
 | `approvalContext`| _[ApprovalContext](#approvalcontext)_| Rich context for approval notification|
-| `needsHumanReview`| _boolean_| Set by HAPI when AI cannot produce reliable result<br />True if human review required (HAPI decision: RCA incomplete/unreliable)<br /> Triggers NotificationRequest creation in RO<br />BR-496 v2: Set when root_owner missing (rca_incomplete) or validation/confidence issues.|
-| `humanReviewReason`| _string_| Reason why human review needed (when NeedsHumanReview=true)<br /> Maps to HAPI's human_review_reason enum values<br /> alignment_check_failed added for shadow agent alignment verdicts|
+| `needsHumanReview`| _boolean_| Set by Kubernaut Agent when AI cannot produce reliable result<br />True if human review required (KA decision: RCA incomplete/unreliable)<br /> Triggers NotificationRequest creation in RO<br />BR-496 v2: Set when root_owner missing (rca_incomplete) or validation/confidence issues.|
+| `humanReviewReason`| _string_| Reason why human review needed (when NeedsHumanReview=true)<br /> Maps to KA's human_review_reason enum values<br /> alignment_check_failed added for shadow agent alignment verdicts|
 | `alignmentVerdict`| _[AlignmentVerdictStatus](#alignmentverdictstatus)_| Shadow agent alignment verdict from KA (, #1076).<br />When CircuitBreakerActivated=true, the investigation was terminated early<br />and LLM results (RootCauseAnalysis, SelectedWorkflow) may be incomplete<br />or compromised. Users should treat shadow findings as the primary content.|
 | `actionability`| _string_| #388: LLM's assessment of whether the alert warrants action.<br />Empty when not yet assessed (pre-investigation or error paths).<br />"Actionable" when the LLM determines the alert warrants action (default for all processed alerts).<br />"NotActionable" when the LLM determines the alert is benign (e.g., orphaned PVCs).|
 | `investigationId`| _string_| KA investigation ID for correlation|
 | `investigationTime`| _integer_| Investigation duration in seconds|
 | `warnings`| _string array_| Non-fatal warnings from KA (e.g., low confidence)|
-| `validationAttemptsHistory`| _[ValidationAttempt](#validationattempt) array_| ValidationAttemptsHistory contains complete history of all HAPI validation attempts<br />Per HAPI retries up to 3 times with LLM self-correction<br />This field provides audit trail for operator notifications and debugging|
+| `validationAttemptsHistory`| _[ValidationAttempt](#validationattempt) array_| ValidationAttemptsHistory contains complete history of all KA validation attempts<br />Per KA retries up to 3 times with LLM self-correction<br />This field provides audit trail for operator notifications and debugging|
 | `degradedMode`| _boolean_| DegradedMode indicates if the analysis ran with degraded capabilities<br />(e.g., Rego policy evaluation failed, using safe defaults)|
 | `totalAnalysisTime`| _integer_| TotalAnalysisTime is the total duration of the analysis in seconds|
 | `consecutiveFailures`| _integer_| ConsecutiveFailures tracks retry attempts for exponential backoff<br /> Reset to 0 on success, increment on transient failure<br />Used with for retry logic with jitter|
-| `investigationSession`| _[InvestigationSession](#investigationsession)_| Tracks the async submit/poll session with HAPI<br />InvestigationSession tracks the async HAPI session for submit/poll pattern|
+| `investigationSession`| _[InvestigationSession](#investigationsession)_| Tracks the async submit/poll session with Kubernaut Agent<br />InvestigationSession tracks the async KA session for submit/poll pattern|
 | `interactiveSession`| _[InteractiveSessionInfo](#interactivesessioninfo)_| Tracks the dynamic takeover session for MCP interactive mode <br />InteractiveSession tracks who is currently driving the investigation.<br />Populated when a user takes over via MCP; nil during autonomous mode.<br /> Every RR is takeover-capable; this is observability-only.|
-| `postRCAContext`| _[PostRCAContext](#postrcacontext)_| Runtime-computed cluster characteristics from HAPI<br />PostRCAContext holds data computed by HAPI after RCA (e.g., DetectedLabels).<br />Immutable once set — use CEL validation on the PostRCAContext type.|
+| `postRCAContext`| _[PostRCAContext](#postrcacontext)_| Runtime-computed cluster characteristics from Kubernaut Agent<br />PostRCAContext holds data computed by Kubernaut Agent after RCA (e.g., DetectedLabels).<br />Immutable once set — use CEL validation on the PostRCAContext type.|
 | `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions|
 
 
@@ -616,7 +616,7 @@ _Appears in:_
 | `correlationID`| _string_| CorrelationID is the name of the parent RemediationRequest.<br />Used as the correlation ID for audit events .|
 | `remediationRequestPhase`| _string_| RemediationRequestPhase is the RemediationRequest's OverallPhase at the time<br />the EA was created. Captured as an immutable spec field so the EM can branch<br />assessment logic based on the RR outcome (Verifying, Completed, Failed, TimedOut).<br />Verifying: happy path — WFE succeeded, EA created while RR awaits assessment .<br />Previously stored as the mutable label kubernaut.ai/rr-phase; moved to spec<br />for immutability and security.|
 | `signalTarget`| _[TargetResource](#targetresource)_| SignalTarget is the resource that triggered the alert.<br />Source: RR.Spec.TargetResource (from Gateway alert extraction).<br />Used by: health assessment, alert resolution, metrics queries .|
-| `remediationTarget`| _[TargetResource](#targetresource)_| RemediationTarget is the resource the workflow modified.<br />Source: AA.Status.RootCauseAnalysis.RemediationTarget (from HAPI RCA resolution).<br />Used by: spec hash computation, drift detection .|
+| `remediationTarget`| _[TargetResource](#targetresource)_| RemediationTarget is the resource the workflow modified.<br />Source: AA.Status.RootCauseAnalysis.RemediationTarget (from KA RCA resolution).<br />Used by: spec hash computation, drift detection .|
 | `config`| _[EAConfig](#eaconfig)_| Config contains the assessment configuration parameters.|
 | `remediationCreatedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| RemediationCreatedAt is the creation timestamp of the parent RemediationRequest.<br />Set by the RO at EA creation time from rr.CreationTimestamp.<br />Used by the audit manager to compute resolution_time_seconds in the<br />assessment.completed event (CompletedAt - RemediationCreatedAt).|
 | `signalName`| _string_| SignalName is the original alert/signal name from the parent RemediationRequest.<br />Set by the RO at EA creation time from rr.Spec.SignalName.<br />Used by the audit manager to populate the signal_name field in assessment.completed<br />events (OBS-1: distinct from CorrelationID which is the RR name).|
@@ -821,16 +821,16 @@ _Appears in:_
 ### InvestigationSession
 
 
-InvestigationSession tracks the async HAPI session lifecycle.
+InvestigationSession tracks the async Kubernaut Agent session lifecycle.
  AA controller session tracking
- Session regeneration on 404 (HAPI restart)
+ Session regeneration on 404 (KA restart)
 
 _Appears in:_
 - [AIAnalysisStatus](#aianalysisstatus)
 
 | Field| Type| Description|
 | ---| ---| ---|
-| `id`| _string_| Session ID returned by HAPI on submit (cleared on session loss)|
+| `id`| _string_| Session ID returned by Kubernaut Agent on submit (cleared on session loss)|
 | `generation`| _integer_| Generation counter tracking session regenerations (0 = first session, incremented on 404)|
 | `lastPolled`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| LastPolled timestamp of the last poll attempt|
 | `createdAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| CreatedAt timestamp when the current session was created|
@@ -1095,9 +1095,9 @@ _Appears in:_
 ### PostRCAContext
 
 
-PostRCAContext holds data computed by HAPI after the RCA phase.
- DetectedLabels are computed at runtime by HAPI's LabelDetector
-and returned in the HAPI response for storage in the AIAnalysis status.
+PostRCAContext holds data computed by Kubernaut Agent after the RCA phase.
+ DetectedLabels are computed at runtime by KA's LabelDetector
+and returned in the KA response for storage in the AIAnalysis status.
 This data is used by Rego policies for approval gating (e.g., stateful
 workload detection) and is immutable once set.
 
@@ -1106,7 +1106,7 @@ _Appears in:_
 
 | Field| Type| Description|
 | ---| ---| ---|
-| `detectedLabels`| _DetectedLabels_| DetectedLabels contains cluster characteristics computed by HAPI's<br />LabelDetector during get_namespaced_resource_context or get_cluster_resource_context tool invocations.|
+| `detectedLabels`| _DetectedLabels_| DetectedLabels contains cluster characteristics computed by KA's<br />LabelDetector during get_namespaced_resource_context or get_cluster_resource_context tool invocations.|
 | `setAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| SetAt records when the PostRCAContext was populated.<br />Used as the immutability guard: once SetAt is non-nil, the entire<br />PostRCAContext becomes immutable via CEL validation.|
 
 
@@ -1638,7 +1638,7 @@ _Appears in:_
 | ---| ---| ---|
 | `reason`| _string_| Reason is the high-level failure reason (e.g., "WorkflowResolutionFailed").|
 | `subReason`| _string_| SubReason provides granular detail (e.g., "WorkflowNotFound").|
-| `humanReviewReason`| _string_| HumanReviewReason from HAPI when needs_human_review=true .|
+| `humanReviewReason`| _string_| HumanReviewReason from Kubernaut Agent when needs_human_review=true .|
 | `rootCauseAnalysis`| _string_| RootCauseAnalysis from AIAnalysis if available.|
 | `alignmentVerdict`| _string_| AlignmentVerdict is the shadow agent's overall verdict (aligned/suspicious).<br /> Present when shadow agent alignment check is enabled.|
 | `circuitBreakerActivated`| _boolean_| CircuitBreakerActivated indicates whether the circuit breaker terminated the investigation early.|
@@ -1673,7 +1673,7 @@ _Appears in:_
 | Field| Type| Description|
 | ---| ---| ---|
 | `summary`| _string_| Brief summary of root cause|
-| `severity`| _string_| Severity determined by RCA <br /> Aligned with HAPI/workflow catalog (critical, high, medium, low, unknown)|
+| `severity`| _string_| Severity determined by RCA <br /> Aligned with KA/workflow catalog (critical, high, medium, low, unknown)|
 | `signalType`| _string_| Signal type determined by RCA (may differ from input)|
 | `contributingFactors`| _string array_| Contributing factors|
 | `remediationTarget`| _[RemediationTarget](#remediationtarget)_| RemediationTarget identifies the actual resource the LLM determined should be remediated.<br /> The LLM may identify a higher-level resource (e.g., Deployment) rather than<br />the Pod that generated the signal. The WFE creator should prefer this over the RR's<br />TargetResource when available to ensure the correct resource is patched.|
@@ -1691,7 +1691,7 @@ _Appears in:_
 | Field| Type| Description|
 | ---| ---| ---|
 | `workflowId`| _string_| Workflow identifier (catalog lookup key)|
-| `actionType`| _string_| Action type from taxonomy (e.g., ScaleReplicas, RestartPod).<br />Propagated from HAPI three-step discovery protocol to RO audit events.|
+| `actionType`| _string_| Action type from taxonomy (e.g., ScaleReplicas, RestartPod).<br />Propagated from KA three-step discovery protocol to RO audit events.|
 | `version`| _string_| Workflow version|
 | `executionBundle`| _string_| Execution bundle OCI reference (digest-pinned) - resolved by KA|
 | `executionBundleDigest`| _string_| Execution bundle digest for audit trail|
@@ -1717,7 +1717,7 @@ _Appears in:_
 | `fingerprint`| _string_| Signal fingerprint for correlation|
 | `severity`| _string_| Signal severity: critical, high, medium, low, unknown (normalized by SignalProcessing Rego - )|
 | `signalName`| _string_| Signal name (e.g., OOMKilled, CrashLoopBackOff)<br />Normalized by SignalProcessing: proactive names mapped to base names|
-| `signalMode`| _string_| SignalMode indicates whether this is a reactive or proactive signal.<br /> Proactive Signal Mode Prompt Strategy<br />Copied from SignalProcessing status by RemediationOrchestrator.<br />Used by HAPI to switch investigation prompt (RCA vs. predict & prevent).|
+| `signalMode`| _string_| SignalMode indicates whether this is a reactive or proactive signal.<br /> Proactive Signal Mode Prompt Strategy<br />Copied from SignalProcessing status by RemediationOrchestrator.<br />Used by Kubernaut Agent to switch investigation prompt (RCA vs. predict & prevent).|
 | `environment`| _string_| Environment classification<br />Examples: "production", "staging", "development", "qa-eu", "canary"|
 | `businessPriority`| _string_| Business priority<br />Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)|
 | `targetResource`| _[TargetResource](#targetresource)_| Target resource identification|
@@ -1833,10 +1833,10 @@ _Appears in:_
 | `environmentClassification`| _[EnvironmentClassification](#environmentclassification)_| Categorization results|
 | `priorityAssignment`| _[PriorityAssignment](#priorityassignment)_||
 | `businessClassification`| _BusinessClassification_||
-| `severity`| _string_| Severity determination <br />Normalized severity determined by Rego policy: "critical", "high", "medium", "low", or "unknown"<br />Aligned with HAPI/workflow catalog severity levels for consistency across platform<br />Enables downstream services (AIAnalysis, RemediationOrchestrator, Notification)<br />to interpret alert urgency without understanding external severity schemes.|
+| `severity`| _string_| Severity determination <br />Normalized severity determined by Rego policy: "critical", "high", "medium", "low", or "unknown"<br />Aligned with KA/workflow catalog severity levels for consistency across platform<br />Enables downstream services (AIAnalysis, RemediationOrchestrator, Notification)<br />to interpret alert urgency without understanding external severity schemes.|
 | `policyHash`| _string_| PolicyHash is the SHA256 hash of the Rego policy used for severity determination<br />Provides audit trail and policy version tracking for compliance requirements<br />Expected format: 64-character hexadecimal string (SHA256 hash)|
 | `signalMode`| _string_| SignalMode indicates whether this is a reactive or proactive signal.<br /> Proactive Signal Mode Classification<br /> Proactive Signal Mode Classification and Prompt Strategy<br />Set during the Classifying phase alongside severity, environment, and priority.<br />All signals MUST be classified — "reactive" is the default for unmapped types.|
-| `signalName`| _string_| SignalName is the normalized signal name after proactive-to-base mapping.<br /> Signal Name Normalization<br />For proactive signals (e.g., "PredictedOOMKill"), this is the base name (e.g., "OOMKilled").<br />For reactive signals, this matches Spec.Signal.Name unchanged.<br />This is the AUTHORITATIVE signal name for all downstream consumers (RO, AA, HAPI).|
+| `signalName`| _string_| SignalName is the normalized signal name after proactive-to-base mapping.<br /> Signal Name Normalization<br />For proactive signals (e.g., "PredictedOOMKill"), this is the base name (e.g., "OOMKilled").<br />For reactive signals, this matches Spec.Signal.Name unchanged.<br />This is the AUTHORITATIVE signal name for all downstream consumers (RO, AA, KA).|
 | `sourceSignalName`| _string_| SourceSignalName preserves the pre-normalization signal name for audit trail.<br /> Audit trail preservation (SOC2 CC7.4)<br />Only populated for proactive signals (e.g., "PredictedOOMKill").<br />Empty for reactive signals.|
 | `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions for detailed status|
 | `error`| _string_| Error information|
@@ -1914,8 +1914,8 @@ _Appears in:_
 ### ValidationAttempt
 
 
-ValidationAttempt contains details of a single HAPI validation attempt
-Per HAPI retries up to 3 times with LLM self-correction
+ValidationAttempt contains details of a single KA validation attempt
+Per KA retries up to 3 times with LLM self-correction
 Each attempt feeds validation errors back to the LLM for correction
 
 _Appears in:_
@@ -1989,7 +1989,7 @@ WorkflowExecutionSpec defines the desired state of WorkflowExecution
 WorkflowExecution represents an immutable event (workflow execution attempt).
 Once created by RemediationOrchestrator, spec cannot be modified to ensure:
 - Audit trail integrity (executed spec matches approved spec)
-- No parameter tampering after HAPI validation
+- No parameter tampering after KA validation
 - No target resource changes after routing decisions
 
 To change execution parameters, delete and recreate the WorkflowExecution.

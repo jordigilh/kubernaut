@@ -120,6 +120,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **OpenAPI domain mismatch** (UX-2) — Fixed `kubernaut.io` → `kubernaut.ai` in RFC 7807 problem type URIs across all OpenAPI specs (5 files). Domain now matches the URIs emitted by Go code.
 - **Copyright year** (COMPAT-3) — Updated copyright headers from 2025 to 2026 in test files modified by this PR.
 
+## [1.4.0] - 2026-05-12
+
+### Added
+
+#### Prompt Injection Defense — Shadow Agent (#601, #1076, #1096)
+
+- **Shadow agent alignment check** (#601) — Fail-closed shadow agent evaluates every LLM tool output for prompt injection using random boundary markers, head+tail truncation, and data exfiltration detection. 82 unit tests, E2E tests with poisoned ConfigMap injection.
+- **Full-context grounding review** (#1096) — Second evaluation layer reviews the entire RCA conversation through the shadow LLM at the RCA-to-workflow boundary. Detects distributed injection (boiling frog attacks) that per-step isolation cannot catch. Runs in parallel with workflow discovery for zero added latency. Fail-closed design with `hasDuplicateGroundedKey` pre-scan for duplicate JSON key attacks. 2 new Prometheus metrics (`kubernaut_alignment_grounding_total`, `kubernaut_alignment_grounding_duration_seconds`) and 2 new audit events.
+- **Alignment verdict schema** (#1076) — New `alignment_verdict` field on KA `IncidentResponse` (OpenAPI) and AA `AIAnalysisStatus` (CRD) carrying shadow agent verdict (`result`, `circuit_breaker_activated`, `summary`, `findings`). `alignmentVerdict` and `circuitBreakerActivated` fields added to NotificationRequest `ReviewContext` for routing rule support.
+- **Circuit breaker enforcement** (#1076) — When shadow agent detects suspicious content in enforce mode, the primary investigation is cancelled via `context.WithCancelCause(ErrCircuitBreaker)`. New `alignmentCircuitBreakerTotal` Prometheus counter.
+- **RO alignment verdict notifications** (#1076) — Manual review notifications render shadow agent findings prominently. `alignment_check_failed` SubReason escalates to `NotificationPriorityCritical`.
+- **Shadow agent LLM token audit events** (#1059) — Per-step audit trail with shadow LLM request/response payloads and token counts for cost tracking.
+- **RCA completion audit event** (#847) — `aiagent.rca.complete` audit event with causal chain and due diligence propagation from Phase 1 to final result. Prometheus `match[]` filter added.
+- **Mock-LLM tool call scenarios** (#657) — Per-scenario `ForceText` override, `ToolCallOverride` for custom tool call bypass, `injection_configmap_read` scenario, and `CreatePoisonedConfigMap` E2E fixture for security testing.
+
+#### Notification Channels (#60, #593)
+
+- **PagerDuty delivery channel** (#60) — Events API v2 delivery adapter with circuit breaker, hot-reload routing integration, and configurable URL override for E2E testability.
+- **Microsoft Teams delivery channel** (#593) — Adaptive Card delivery adapter with circuit breaker and hot-reload routing integration.
+- **Generic circuit breaker for delivery channels** (#60, #593) — Unified circuit breaker pattern replaces per-channel implementations.
+
+#### Orchestrator Enhancements
+
+- **RAR operator workflow overrides** (#594) — Operators can override AIA-selected workflows via RAR status. Validated by authwebhook (verifies override RW exists and is Active), merged by RO (`ResolveWorkflow` merge logic — RAR override takes precedence over AIA).
+- **RO Phase Handler Registry** (#666) — Refactored the 2.5k-line monolithic RO reconciler into 7 modular phase handlers (Pending, Processing, Executing, Verifying, Blocked, Analyzing, AwaitingApproval) dispatched via a `PhaseHandlerRegistry`. Removed ~705 lines of dead legacy code. ADR-062 documents the architectural decision.
+- **Dry-run mode** (#712, #736) — When `dryRun` is enabled in RO config, the pipeline stops after AI analysis — no WFE, RAR, or EA CRDs are created. RemediationRequest completes with outcome `DryRun`. `NextAllowedExecution` set for Gateway dedup suppression.
+- **Execution-time dedup classification** (#190) — RO dedup handler classifies execution-time resource collisions as `Deduplicated`. Outcome aligned with CRD enum and OpenAPI spec.
+- **DuplicateInProgress outcome inheritance** (#614) — Generalized inherited transitions so DuplicateInProgress outcomes inherit from the original WFE instead of re-running the pipeline.
+- **CRD TTL enforcement** (#265) — 24h retention TTL on terminal RemediationRequests with `RetentionConfig` and Helm-configurable `retention.period`.
+
+#### Kubernaut Agent
+
+- **Parallel tool execution** (#970) — LLM loop executes multiple tool calls concurrently when the LLM returns batched tool requests.
+- **Tool call batching directive** (#971) — Investigation prompt instructs the LLM to batch independent tool calls for reduced round-trips.
+- **apiVersion validation gate** (#1044) — Detects ambiguous CRD Kinds (multiple API groups for same Kind), triggers human review on gate exhaustion. Prevents incorrect `kubectl` operations against wrong API group.
+- **Signal annotations forwarding** (#462) — `RR.spec.signalAnnotations` forwarded through KA handler, prompt builder, and investigation template. Anti-confirmation-bias guardrail added to investigation prompt.
+- **DetectedLabels wiring** (#1052) — DetectedLabels from enrichment wired to DS catalog queries. Unified into single canonical type in `pkg/shared/types`.
+- **SA token refresh and audit auth handling** (#1055, #1056) — Custom token path constructor with 401 cache invalidation for SA token refresh. Audit 401/403 reclassified as retryable auth errors. `TokenSource` extracted for shared token cache across all callers.
+- **OAuth2 client credentials transport** (#417) — Support for enterprise LLM gateways requiring OAuth2 token acquisition with configurable custom authentication headers.
+- **CRD-aware engine registration** (#868) — Engine registration validates CRD availability; enters degraded status when required CRDs are missing.
+- **Session hardening** (#1078) — Panic recovery in investigation goroutines, two-tier TTL eviction (terminal after `ttl`, non-terminal after `maxSessionAge`), and 25-minute wall-clock investigation timeout.
+- **LLMProxy bypass fix** (C-1) — `PinDecorator` ensures `LLMProxy` is re-applied around pinned `SwappableClient` snapshots, preventing unmonitored LLM traffic.
+- **Authenticated audit actor** (#998) — Propagates the authenticated user identity into all audit events for SOC2 attribution.
+- **LLM and DS circuit breaker** (OPS-2) — Circuit breaker wrapping LLM and DataStorage HTTP clients for graceful degradation under downstream failures.
+
+#### Gateway
+
+- **Security hardening** (#673) — 14-finding security audit remediation: 256KB body limits via `MaxBytesReader`, generic error responses (RFC 7807), `X-Auth-Request-User` header stripping, RBAC least-privilege, per-handler K8s API timeout (15s), trusted proxy RealIP middleware (fail-closed), CORS restrictive default, image tag pinning.
+- **Dynamic owner resolution** (#1029, #1032) — Dynamic API resource registry with existence validation. Batch-independent alert processing with FedRAMP readiness remediation.
+- **Prometheus reserved label denylist** (#1045, #1067) — `namespace` and Prometheus-reserved labels excluded from dynamic kind resolution to prevent misrouting.
+
+#### Orchestrator Resilience
+
+- **RO config hot-reload** (#835) — FileWatcher-based hot-reload for RO ConfigMap fields. Thread-safe config access via `ReloadCallback` eliminates pod restarts for runtime tuning.
+- **Cache sync readiness gating** (#852, #853) — Controller readiness probes now gate on informer cache sync completion. HTTP retry transport with exponential backoff for transient DataStorage failures.
+
+#### Infrastructure
+
+- **Inter-service TLS with security profiles** (#748) — TLS wired between all 10 services (Gateway, DataStorage, KA, RO, WE, EM, NT, SP, AuthWebhook, Operator). Configurable `tlsProfile` field selects built-in cipher/protocol profiles (Modern, Intermediate, Old). ADR-TLS-001 documents the design.
+- **SBOM and license scan** (COMP-1) — `go-licenses` SBOM and license compliance scan added to CI pipeline.
+- **NetworkPolicy templates** (#285) — 12 NetworkPolicy templates for all Kubernaut services with default-deny posture, configurable CIDRs, and per-service toggle.
+- **FileWatcher routing hot-reload** (#244) — Notification routing ConfigMap informer replaced with FileWatcher. `SLACK_WEBHOOK_URL` environment variable dependency removed.
+- **Defense-in-depth parameter filtering** (#243) — WE controller filters workflow parameters against the workflow schema with consolidated DataStorage calls.
+- **Unified monitoring config** (#463) — Prometheus and AlertManager configuration unified into a single `monitoring` block for EM and KA.
+- **CRD-to-OpenAPI enum drift detection** (#838) — Automated detection of enum value mismatches between CRD Go types and OpenAPI specs.
+- **Workflow validation duration metric** — New `datastorage_workflow_validation_duration_seconds` Prometheus histogram with `phase` and `result` labels.
+- **ADR-060** — Architecture decision record documenting parallel validation patterns and error priority contract.
+- **`-race` detector enforcement** (#1073) — All E2E test targets now run with Go's race detector enabled.
+
+### Changed
+
+- **KA config camelCase migration** (#908) — All KA YAML config fields migrated from `snake_case` to `camelCase` per ADR-030. **Breaking**: existing KA ConfigMaps must be updated.
+- **KA config restructured into 3 domains** (#908) — Config reorganized into `runtime`, `ai`, and `integrations` top-level domains (`server` nested under `runtime`; `tools` nested under `integrations`). **Breaking**: config field paths have changed.
+- **KA config split** (#916) — KA config split into static ConfigMap and hot-reloadable ConfigMap. Runtime changes to AI/tool settings take effect without pod restart.
+- **Verdict label rename** (#1077) — `VerdictClean` changed from `"clean"` to `"aligned"` for API consistency. **Breaking**: Prometheus `result` label changes from `result="clean"` to `result="aligned"`.
+- **Standardized log levels** (#875) — Log level configuration standardized across all services with consistent YAML key naming.
+- **logr logging standard** (#935) — KA migrated to `go-logr/logr` per DD-005 v2.0.
+- **Parallelized workflow validation** (#1070) — External validation checks run concurrently during workflow registration. Concurrency capped at 10 via `errgroup.SetLimit` with 10-second timeout budget.
+- **gobreaker v1 to v2 migration** (#1087) — `github.com/sony/gobreaker` upgraded from v1.0.0 to v2.4.0. Generic type parameters eliminate unsafe `interface{}` type assertions. `ManagerConfig` API encapsulates gobreaker so consumers never import it directly.
+- **Generic delivery timeout** (#60, #593) — `SlackTimeout` renamed to `DeliveryTimeout` for channel-agnostic configuration.
+
+### Security
+
+- **MCP impersonation hardening** (#895, #896) — Hardened impersonation flow to eliminate double-auth and prevent header injection in interactive sessions.
+
+### Fixed
+
+- **Shadow agent false positives on K8s/OCP metadata** (#1094) — Narrowed classification rule #4 to target imperative agent-manipulation intent. Added CLEAN whitelist for well-known K8s/OCP annotation namespaces, container commands, probe commands, event messages, RBAC verbs, and registry URLs.
+- **Shadow agent evaluates raw tool output** (#1101) — Moved `SubmitToolStep` from post-summarizer to post-sanitizer so the shadow agent evaluates raw external data, not LLM-generated directive language from the summarizer. Eliminates false positives from summarized analysis content.
+- **Inconclusive RR flood prevention** (#1091) — `Inconclusive` outcomes now trigger exponential backoff and 3-strikes blocking, preventing 30+ RR flood for persistent alerts.
+- **CompletedAt on PhaseSkipped** (#612) — Skip handlers (`ResourceBusy`, `RecentlyRemediated`) now set `CompletedAt` when transitioning to `PhaseSkipped`.
+- **Enrichment NotFound exemption** (#1039) — `NotFound` errors exempt from `HardFail` for deleted resources. Deleted-resource warning surfaced and propagated to workflow result.
+- **apiVersion propagation** (#1040) — `apiVersion` propagated through the full remediation target pipeline (schema → API → CRD).
+- **SignalToPrompt label override** (#1061) — Signal prompt now prefers `target_resource` labels over enrichment labels.
+- **Multi-group/multi-version kind resolution** (#1062, #1064) — `K8sAdapter` tries all API groups for ambiguous kinds. `RESTMappings` fallback for multi-version resolution.
+- **Prometheus reserved label `namespace`** (#1067) — `namespace` added to reserved label denylist to prevent gateway misrouting.
+- **Audit data quality** (#1033) — Outcome vocabulary normalized; `workflow_name` added to audit events.
+- **Shadow agent Vertex AI provider** (#922) — Shadow agent uses `buildLLMClientFromConfig` for Vertex AI compatibility.
+- **Markdown fences in shadow responses** (#925) — Markdown code fences stripped from shadow agent evaluator responses before JSON parsing.
+- **Target-workflow alignment gate** (#934) — Phase 3 validates workflow Component scope against RCA remediation target kind.
+- **tool_result always set** (#929) — `LLMToolCallPayload` always includes `tool_result` field, preventing OpenAPI validation failures on empty tool output.
+- **Request body size limit** — `HandleCreateWorkflow` caps request body at 2 MiB via `MaxBytesReader`.
+- **Flaky UT-GAP2-001 test** (#1098) — Eliminated race condition in wrapper gap test by providing clean response for signal step and using monitor mode.
+- **Stale HAPI references in CRD docs** (#1103) — Renamed 32 stale `HAPI` → `Kubernaut Agent`/`KA` references in Go source comments across 5 `api/` type files. Regenerated `docs/generated/crds.md`.
+- **OpenAPI domain mismatch** — Fixed `kubernaut.io` → `kubernaut.ai` in RFC 7807 problem type URIs across all OpenAPI specs.
+- **Deployment manifest probe paths** — Fixed liveness/readiness probes from `/health` to `/healthz` and `/readyz`.
+
+### Removed
+
+- **Conversation API** (#867) — Conversational mode for Kubernaut Agent (#592) removed from v1.4; deferred to v1.5 (`development/v1.5` branch).
+
+### Upgrade Notes
+
+- **Breaking: KA config camelCase** (#908, ADR-030) — All KA YAML config fields migrated from `snake_case` to `camelCase`. Update your KA ConfigMap before upgrading.
+- **Breaking: KA config restructured** (#908) — Config reorganized into `runtime`, `ai`, and `integrations` top-level domains (e.g., `llm_provider` → `ai.llmProvider`, `server` is now under `runtime`, `tools` under `integrations`).
+- **Breaking: KA config split** (#916) — KA now reads from two ConfigMaps: a static one (mounted at startup) and a hot-reloadable one (watched at runtime). Update Helm values accordingly.
+- **Breaking: Prometheus verdict label** (#1077) — Shadow agent Prometheus metric `result` label changed from `"clean"` to `"aligned"`. Update dashboard queries and alerting rules.
+- **Database migrations required** — Run v1.4 migrations before upgrading controllers. The Helm pre-upgrade hook handles this automatically.
+- **NetworkPolicy** (#285) — NetworkPolicies are now deployed for all services by default with a default-deny posture. Verify your cluster's CNI supports NetworkPolicy enforcement. Disable per-service with `networkPolicies.<service>.enabled: false`.
+
+[1.4.0]: https://github.com/jordigilh/kubernaut/compare/v1.3.2...v1.4.0
 ## [1.2.0] - 2026-04-06
 
 ### Added

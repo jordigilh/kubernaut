@@ -205,6 +205,18 @@ data:
 {{- end }}
 {{- end }}
 {{- end }}
+{{- if .Values.kubernautAgent.llm.vertexProject }}
+        vertexProject: {{ .Values.kubernautAgent.llm.vertexProject | quote }}
+{{- end }}
+{{- if .Values.kubernautAgent.llm.vertexLocation }}
+        vertexLocation: {{ .Values.kubernautAgent.llm.vertexLocation | quote }}
+{{- end }}
+{{- if .Values.kubernautAgent.llm.azureApiVersion }}
+        azureApiVersion: {{ .Values.kubernautAgent.llm.azureApiVersion | quote }}
+{{- end }}
+{{- if .Values.kubernautAgent.llm.bedrockRegion }}
+        bedrockRegion: {{ .Values.kubernautAgent.llm.bedrockRegion | quote }}
+{{- end }}
 {{- if .Values.kubernautAgent.llm.tlsCaFile }}
         tlsCaFile: {{ .Values.kubernautAgent.llm.tlsCaFile | quote }}
 {{- end }}

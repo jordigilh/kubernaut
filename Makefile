@@ -131,11 +131,13 @@ validate-embed: sync-embed ## Validate embedded assets are in sync with source f
 	@echo "✅ Embedded assets are in sync"
 
 .PHONY: sync-version
-sync-version: ## Propagate VERSION file to Chart.yaml, values, Dockerfiles, and docs
+sync-version: ## Propagate VERSION and CHART_VERSION files to Chart.yaml, values, Dockerfiles, and docs
 	@test -f VERSION || (echo "ERROR: VERSION file not found at repo root" && exit 1)
+	@test -f CHART_VERSION || (echo "ERROR: CHART_VERSION file not found at repo root" && exit 1)
 	@VER=$$(cat VERSION) && \
-	echo "📌 Syncing version v$$VER from VERSION file..." && \
-	sed -i.bak "s/^version: .*/version: $$VER/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
+	CHART_VER=$$(cat CHART_VERSION) && \
+	echo "📌 Syncing version v$$VER (chart $$CHART_VER) from VERSION/CHART_VERSION files..." && \
+	sed -i.bak "s/^version: .*/version: $$CHART_VER/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
 	sed -i.bak "s/^appVersion: .*/appVersion: \"$$VER\"/" charts/kubernaut/Chart.yaml && rm -f charts/kubernaut/Chart.yaml.bak && \
 	sed -i.bak "s|db-migrate:v[0-9][0-9a-zA-Z._-]*|db-migrate:v$$VER|g" \
 		charts/kubernaut/values.yaml \

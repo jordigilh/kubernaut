@@ -739,7 +739,11 @@
           "additionalProperties": false,
           "properties": {
             "credentialsSecretName": { "type": "string", "default": "llm-credentials", "description": "Name of the pre-existing K8s Secret containing LLM API credentials (e.g. OPENAI_API_KEY)" },
-            "provider": { "type": "string", "default": "", "description": "LLM provider name (openai, anthropic). Static — requires pod restart." },
+            "provider": { "type": "string", "default": "", "description": "LLM provider name (openai, anthropic, vertex_ai, bedrock). Static — requires pod restart." },
+            "vertexProject": { "type": "string", "default": "", "description": "GCP project ID. Required for vertex_ai provider. Static — requires pod restart." },
+            "vertexLocation": { "type": "string", "default": "", "description": "GCP region (e.g. us-central1). Required for vertex_ai provider. Static — requires pod restart." },
+            "azureApiVersion": { "type": "string", "default": "", "description": "Azure OpenAI API version. Required for azure provider. Static — requires pod restart." },
+            "bedrockRegion": { "type": "string", "default": "", "description": "AWS region. Required for bedrock provider. Static — requires pod restart." },
             "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA cert for internal LLM endpoints behind private CA. Static — requires pod restart." },
             "model": { "type": "string", "default": "", "description": "LLM model name (gpt-4o, claude-sonnet-4-20250514). Hot-reloadable." },
             "endpoint": { "type": "string", "default": "", "description": "LLM endpoint URL. Hot-reloadable." },

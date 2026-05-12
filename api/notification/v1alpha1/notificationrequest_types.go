@@ -275,7 +275,7 @@ type ReviewContext struct {
 	// SubReason provides granular detail (e.g., "WorkflowNotFound").
 	// +optional
 	SubReason string `json:"subReason,omitempty"`
-	// HumanReviewReason from HAPI when needs_human_review=true (BR-HAPI-197).
+	// HumanReviewReason from Kubernaut Agent when needs_human_review=true (BR-HAPI-197).
 	// +optional
 	HumanReviewReason string `json:"humanReviewReason,omitempty"`
 	// RootCauseAnalysis from AIAnalysis if available.
