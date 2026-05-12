@@ -559,11 +559,9 @@ var _ = Describe("Handler metadata wiring — BR-AUDIT-070", func() {
 			resp, err := h.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(context.Background(), req)
 			Expect(err).NotTo(HaveOccurred())
 
-			raw, ok := resp.(*agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON)
-			Expect(ok).To(BeTrue(), "response should be *...AcceptedApplicationJSON")
-			var body map[string]string
-			Expect(json.Unmarshal([]byte(*raw), &body)).To(Succeed())
-			sid := body["session_id"]
+			accepted, ok := resp.(*agentclient.AnalyzeAccepted)
+			Expect(ok).To(BeTrue(), "response should be *AnalyzeAccepted")
+			sid := accepted.SessionID.String()
 			Expect(sid).NotTo(BeEmpty())
 
 			Eventually(func() session.Status {

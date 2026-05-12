@@ -28,6 +28,7 @@ import (
 
 	"github.com/go-faster/jx"
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 
@@ -135,9 +136,18 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 		}, nil
 	}
 
-	body, _ := json.Marshal(map[string]string{"session_id": sessionID})
-	raw := agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON(body)
-	return &raw, nil
+	sid, err := uuid.Parse(sessionID)
+	if err != nil {
+		h.logger.Error(err, "invalid session ID format", "session_id", sessionID)
+		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError{
+			Type:     "https://kubernaut.ai/problems/internal-error",
+			Title:    "Internal Server Error",
+			Detail:   "invalid session ID",
+			Status:   500,
+			Instance: "/api/v1/incident/analyze",
+		}, nil
+	}
+	return &agentclient.AnalyzeAccepted{SessionID: sid}, nil
 }
 
 // IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet implements GET /api/v1/incident/session/{session_id}.

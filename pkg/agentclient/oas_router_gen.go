@@ -263,9 +263,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 
-			case 'h': // Prefix: "health"
+			case 'h': // Prefix: "healthz"
 
-				if l := len("health"); len(elem) >= l && elem[0:l] == "health" {
+				if l := len("healthz"); len(elem) >= l && elem[0:l] == "healthz" {
 					elem = elem[l:]
 				} else {
 					break
@@ -275,7 +275,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					// Leaf node.
 					switch r.Method {
 					case "GET":
-						s.handleHealthCheckHealthGetRequest([0]string{}, elemIsEscaped, w, r)
+						s.handleHealthCheckHealthzGetRequest([0]string{}, elemIsEscaped, w, r)
 					default:
 						s.notAllowed(w, r, "GET")
 					}
@@ -283,9 +283,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 
-			case 'r': // Prefix: "ready"
+			case 'r': // Prefix: "readyz"
 
-				if l := len("ready"); len(elem) >= l && elem[0:l] == "ready" {
+				if l := len("readyz"); len(elem) >= l && elem[0:l] == "readyz" {
 					elem = elem[l:]
 				} else {
 					break
@@ -295,7 +295,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					// Leaf node.
 					switch r.Method {
 					case "GET":
-						s.handleReadinessCheckReadyGetRequest([0]string{}, elemIsEscaped, w, r)
+						s.handleReadinessCheckReadyzGetRequest([0]string{}, elemIsEscaped, w, r)
 					default:
 						s.notAllowed(w, r, "GET")
 					}
@@ -498,7 +498,7 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								switch method {
 								case "POST":
 									r.name = CancelSessionAPIV1IncidentSessionSessionIDCancelPostOperation
-									r.summary = "Cancel Investigation Session"
+									r.summary = "Cancel Session"
 									r.operationID = "cancel_session_api_v1_incident_session__session_id__cancel_post"
 									r.operationGroup = ""
 									r.pathPattern = "/api/v1/incident/session/{session_id}/cancel"
@@ -585,7 +585,7 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 									switch method {
 									case "GET":
 										r.name = SessionStreamAPIV1IncidentSessionSessionIDStreamGetOperation
-										r.summary = "Stream Investigation Events"
+										r.summary = "Session Stream"
 										r.operationID = "session_stream_api_v1_incident_session__session_id__stream_get"
 										r.operationGroup = ""
 										r.pathPattern = "/api/v1/incident/session/{session_id}/stream"
@@ -630,9 +630,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 					}
 				}
 
-			case 'h': // Prefix: "health"
+			case 'h': // Prefix: "healthz"
 
-				if l := len("health"); len(elem) >= l && elem[0:l] == "health" {
+				if l := len("healthz"); len(elem) >= l && elem[0:l] == "healthz" {
 					elem = elem[l:]
 				} else {
 					break
@@ -642,11 +642,11 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 					// Leaf node.
 					switch method {
 					case "GET":
-						r.name = HealthCheckHealthGetOperation
+						r.name = HealthCheckHealthzGetOperation
 						r.summary = "Health Check"
-						r.operationID = "health_check_health_get"
+						r.operationID = "health_check_healthz_get"
 						r.operationGroup = ""
-						r.pathPattern = "/health"
+						r.pathPattern = "/healthz"
 						r.args = args
 						r.count = 0
 						return r, true
@@ -655,9 +655,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 					}
 				}
 
-			case 'r': // Prefix: "ready"
+			case 'r': // Prefix: "readyz"
 
-				if l := len("ready"); len(elem) >= l && elem[0:l] == "ready" {
+				if l := len("readyz"); len(elem) >= l && elem[0:l] == "readyz" {
 					elem = elem[l:]
 				} else {
 					break
@@ -667,11 +667,11 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 					// Leaf node.
 					switch method {
 					case "GET":
-						r.name = ReadinessCheckReadyGetOperation
+						r.name = ReadinessCheckReadyzGetOperation
 						r.summary = "Readiness Check"
-						r.operationID = "readiness_check_ready_get"
+						r.operationID = "readiness_check_readyz_get"
 						r.operationGroup = ""
-						r.pathPattern = "/ready"
+						r.pathPattern = "/readyz"
 						r.args = args
 						r.count = 0
 						return r, true

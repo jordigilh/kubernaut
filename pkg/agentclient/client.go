@@ -25,7 +25,6 @@ package agentclient
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -214,14 +213,8 @@ func (c *KubernautAgentClient) SubmitInvestigation(ctx context.Context, req *Inc
 	}
 
 	switch v := res.(type) {
-	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON:
-		var parsed struct {
-			SessionID string `json:"session_id"`
-		}
-		if err := json.Unmarshal([]byte(*v), &parsed); err != nil {
-			return "", &APIError{StatusCode: http.StatusAccepted, Message: fmt.Sprintf("failed to decode session response: %v", err)}
-		}
-		return parsed.SessionID, nil
+	case *AnalyzeAccepted:
+		return v.SessionID.String(), nil
 	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest:
 		return "", &APIError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("bad request: %s", HTTPError(*v).Detail)}
 	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON:

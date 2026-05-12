@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
+	"github.com/ogen-go/ogen/json"
 	"github.com/ogen-go/ogen/validate"
 )
 
@@ -572,6 +573,102 @@ func (s *AlternativeWorkflow) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *AlternativeWorkflow) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *AnalyzeAccepted) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AnalyzeAccepted) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("session_id")
+		json.EncodeUUID(e, s.SessionID)
+	}
+}
+
+var jsonFieldsNameOfAnalyzeAccepted = [1]string{
+	0: "session_id",
+}
+
+// Decode decodes AnalyzeAccepted from json.
+func (s *AnalyzeAccepted) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AnalyzeAccepted to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "session_id":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := json.DecodeUUID(d)
+				s.SessionID = v
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"session_id\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AnalyzeAccepted")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAnalyzeAccepted) {
+					name = jsonFieldsNameOfAnalyzeAccepted[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AnalyzeAccepted) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AnalyzeAccepted) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -1407,48 +1504,6 @@ func (s HumanReviewReason) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *HumanReviewReason) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON as json.
-func (s IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON) Encode(e *jx.Encoder) {
-	unwrapped := jx.Raw(s)
-
-	if len(unwrapped) != 0 {
-		e.Raw(unwrapped)
-	}
-}
-
-// Decode decodes IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON from json.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON to nil")
-	}
-	var unwrapped jx.Raw
-	if err := func() error {
-		v, err := d.RawAppend(nil)
-		unwrapped = jx.Raw(v)
-		if err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		return errors.Wrap(err, "alias")
-	}
-	*s = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON(unwrapped)
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -13,28 +13,25 @@ type Handler interface {
 	// CancelSessionAPIV1IncidentSessionSessionIDCancelPost implements cancel_session_api_v1_incident_session__session_id__cancel_post operation.
 	//
 	// Cancel a running investigation session.
-	// Business Requirement: BR-SESSION-003 (Session cancellability)
-	// Design Decision: DD-004 (RFC 7807 Problem Details)
-	// Returns 200 with cancelled session state.
-	// Returns 404 if session not found.
-	// Returns 409 if session already in terminal state.
+	// Business Requirement: BR-SESSION-003 (Session cancellability).
 	//
 	// POST /api/v1/incident/session/{session_id}/cancel
 	CancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx context.Context, params CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams) (CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, error)
 	// GetConfigConfigGet implements get_config_config_get operation.
 	//
-	// Get service configuration (sanitized)
+	// Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
+	// port.
 	// Business Requirement: BR-HAPI-128 (Configuration endpoint).
 	//
 	// GET /config
 	GetConfigConfigGet(ctx context.Context) (jx.Raw, error)
-	// HealthCheckHealthGet implements health_check_health_get operation.
+	// HealthCheckHealthzGet implements health_check_healthz_get operation.
 	//
-	// Liveness probe endpoint
+	// Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 	// Business Requirement: BR-HAPI-126 (Health check endpoint).
 	//
-	// GET /health
-	HealthCheckHealthGet(ctx context.Context) (jx.Raw, error)
+	// GET /healthz
+	HealthCheckHealthzGet(ctx context.Context) (jx.Raw, error)
 	// IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost implements incident_analyze_endpoint_api_v1_incident_analyze_post operation.
 	//
 	// Submit incident analysis request (async session-based pattern).
@@ -59,35 +56,26 @@ type Handler interface {
 	//
 	// GET /api/v1/incident/session/{session_id}
 	IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx context.Context, params IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams) (IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, error)
-	// ReadinessCheckReadyGet implements readiness_check_ready_get operation.
+	// ReadinessCheckReadyzGet implements readiness_check_readyz_get operation.
 	//
-	// Readiness probe endpoint
+	// Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 	// Business Requirements:
 	// - BR-HAPI-127 (Readiness check endpoint)
-	// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern)
-	// TDD GREEN Phase: Check shutdown flag first
-	// REFACTOR phase: Real dependency health checks.
+	// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern).
 	//
-	// GET /ready
-	ReadinessCheckReadyGet(ctx context.Context) (jx.Raw, error)
+	// GET /readyz
+	ReadinessCheckReadyzGet(ctx context.Context) (jx.Raw, error)
 	// SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet implements session_snapshot_api_v1_incident_session__session_id__snapshot_get operation.
 	//
-	// Retrieve point-in-time snapshot of session state.
-	// Business Requirement: BR-SESSION-002 (Session lifecycle visibility)
-	// Returns 200 with session state for terminal sessions (cancelled, completed, failed).
-	// Returns 409 if session is still in progress.
-	// Returns 404 if session not found.
 	// PR3 extends the response with CancelledResult fields (messages, turn, phase, tokens).
+	// Business Requirement: BR-SESSION-004 (Session observability).
 	//
 	// GET /api/v1/incident/session/{session_id}/snapshot
 	SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx context.Context, params SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams) (SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, error)
 	// SessionStreamAPIV1IncidentSessionSessionIDStreamGet implements session_stream_api_v1_incident_session__session_id__stream_get operation.
 	//
-	// Subscribe to live investigation events via Server-Sent Events (SSE).
-	// Business Requirement: BR-SESSION-007 (Investigation event observability)
 	// Streams turn-level and token-level events in real time.
-	// Returns 404 if session not found or already in terminal state (use the snapshot endpoint instead).
-	// SSE format: id: {seq}\nevent: {type}\ndata: {json}\n\n.
+	// Business Requirement: BR-SESSION-005 (Real-time session streaming).
 	//
 	// GET /api/v1/incident/session/{session_id}/stream
 	SessionStreamAPIV1IncidentSessionSessionIDStreamGet(ctx context.Context, params SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams) (SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, error)

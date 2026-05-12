@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
+	"github.com/google/uuid"
 )
 
 // A single suspicious finding from the shadow agent evaluation.
@@ -292,6 +293,24 @@ func (s *AlternativeWorkflow) SetConfidence(val float64) {
 func (s *AlternativeWorkflow) SetRationale(val string) {
 	s.Rationale = val
 }
+
+// Ref: #/components/schemas/AnalyzeAccepted
+type AnalyzeAccepted struct {
+	// Unique session identifier for polling.
+	SessionID uuid.UUID `json:"session_id"`
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *AnalyzeAccepted) GetSessionID() uuid.UUID {
+	return s.SessionID
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *AnalyzeAccepted) SetSessionID(val uuid.UUID) {
+	s.SessionID = val
+}
+
+func (*AnalyzeAccepted) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {}
 
 // Business context from SignalProcessing categorization phase.
 // BR-SP-002: Business Classification
@@ -663,11 +682,6 @@ func (s *HumanReviewReason) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
-}
-
-type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON jx.Raw
-
-func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
 type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest HTTPError
@@ -2720,11 +2734,7 @@ func (o OptString) Or(d string) string {
 	return d
 }
 
-// Point-in-time snapshot of session state.
-// Business Requirement: BR-SESSION-002 (Session lifecycle visibility)
-// BR-AUDIT-070: Forensic Post-Mortem RAG Data Completeness
-// Extended with cancelled_phase, cancelled_at_turn, rca_summary, and token usage from investigation
-// result.
+// Point-in-time snapshot of a terminal session.
 // Ref: #/components/schemas/SessionSnapshot
 type SessionSnapshot struct {
 	// Session identifier.
@@ -2737,12 +2747,11 @@ type SessionSnapshot struct {
 	CreatedAt string `json:"created_at"`
 	// Error message for failed sessions, null otherwise.
 	Error OptNilString `json:"error"`
-	// Investigation phase active at cancellation (rca or workflow_discovery), null for non-cancelled
-	// sessions.
+	// Investigation phase active at cancellation (rca or workflow_discovery).
 	CancelledPhase OptNilString `json:"cancelled_phase"`
-	// LLM conversation turn at cancellation, null for non-cancelled sessions.
+	// LLM conversation turn at cancellation.
 	CancelledAtTurn OptNilInt `json:"cancelled_at_turn"`
-	// Root cause analysis summary from investigation result, null if not available.
+	// Root cause analysis summary from investigation result.
 	RcaSummary OptNilString `json:"rca_summary"`
 	// Cumulative prompt tokens consumed during the investigation.
 	TotalPromptTokens OptNilInt `json:"total_prompt_tokens"`
@@ -2862,7 +2871,7 @@ type SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound HTTPError
 func (*SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound) sessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes() {
 }
 
-// Request-level metadata (incident_id, remediation_id).
+// Ref: #/components/schemas/SessionSnapshotMetadata
 type SessionSnapshotMetadata map[string]string
 
 func (s *SessionSnapshotMetadata) init() SessionSnapshotMetadata {
@@ -2880,11 +2889,9 @@ type SessionStatus struct {
 	Status    string `json:"status"`
 	// Error message when status is failed.
 	Error OptString `json:"error"`
-	// Username of the interactive session driver (present when status is user_driving,
-	// BR-INTERACTIVE-001, #774).
+	// Resolved identity currently driving the investigation (BR-INTERACTIVE-001, #774).
 	ActingUser OptString `json:"acting_user"`
-	// Groups of the interactive session driver (present when status is user_driving, BR-INTERACTIVE-001,
-	// #774).
+	// Groups of the user driving the investigation (BR-INTERACTIVE-001, #774).
 	ActingUserGroups []string `json:"acting_user_groups"`
 }
 

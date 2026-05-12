@@ -37,11 +37,7 @@ func (c *codeRecorder) Unwrap() http.ResponseWriter {
 // handleCancelSessionAPIV1IncidentSessionSessionIDCancelPostRequest handles cancel_session_api_v1_incident_session__session_id__cancel_post operation.
 //
 // Cancel a running investigation session.
-// Business Requirement: BR-SESSION-003 (Session cancellability)
-// Design Decision: DD-004 (RFC 7807 Problem Details)
-// Returns 200 with cancelled session state.
-// Returns 404 if session not found.
-// Returns 409 if session already in terminal state.
+// Business Requirement: BR-SESSION-003 (Session cancellability).
 //
 // POST /api/v1/incident/session/{session_id}/cancel
 func (s *Server) handleCancelSessionAPIV1IncidentSessionSessionIDCancelPostRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -131,7 +127,7 @@ func (s *Server) handleCancelSessionAPIV1IncidentSessionSessionIDCancelPostReque
 		mreq := middleware.Request{
 			Context:          ctx,
 			OperationName:    CancelSessionAPIV1IncidentSessionSessionIDCancelPostOperation,
-			OperationSummary: "Cancel Investigation Session",
+			OperationSummary: "Cancel Session",
 			OperationID:      "cancel_session_api_v1_incident_session__session_id__cancel_post",
 			Body:             nil,
 			RawBody:          rawBody,
@@ -182,7 +178,8 @@ func (s *Server) handleCancelSessionAPIV1IncidentSessionSessionIDCancelPostReque
 
 // handleGetConfigConfigGetRequest handles get_config_config_get operation.
 //
-// Get service configuration (sanitized)
+// Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
+// port.
 // Business Requirement: BR-HAPI-128 (Configuration endpoint).
 //
 // GET /config
@@ -303,23 +300,23 @@ func (s *Server) handleGetConfigConfigGetRequest(args [0]string, argsEscaped boo
 	}
 }
 
-// handleHealthCheckHealthGetRequest handles health_check_health_get operation.
+// handleHealthCheckHealthzGetRequest handles health_check_healthz_get operation.
 //
-// Liveness probe endpoint
+// Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 // Business Requirement: BR-HAPI-126 (Health check endpoint).
 //
-// GET /health
-func (s *Server) handleHealthCheckHealthGetRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// GET /healthz
+func (s *Server) handleHealthCheckHealthzGetRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("health_check_health_get"),
+		otelogen.OperationID("health_check_healthz_get"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/health"),
+		semconv.HTTPRouteKey.String("/healthz"),
 	}
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), HealthCheckHealthGetOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), HealthCheckHealthzGetOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -381,9 +378,9 @@ func (s *Server) handleHealthCheckHealthGetRequest(args [0]string, argsEscaped b
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    HealthCheckHealthGetOperation,
+			OperationName:    HealthCheckHealthzGetOperation,
 			OperationSummary: "Health Check",
-			OperationID:      "health_check_health_get",
+			OperationID:      "health_check_healthz_get",
 			Body:             nil,
 			RawBody:          rawBody,
 			Params:           middleware.Parameters{},
@@ -404,12 +401,12 @@ func (s *Server) handleHealthCheckHealthGetRequest(args [0]string, argsEscaped b
 			mreq,
 			nil,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.HealthCheckHealthGet(ctx)
+				response, err = s.h.HealthCheckHealthzGet(ctx)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.HealthCheckHealthGet(ctx)
+		response, err = s.h.HealthCheckHealthzGet(ctx)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -417,7 +414,7 @@ func (s *Server) handleHealthCheckHealthGetRequest(args [0]string, argsEscaped b
 		return
 	}
 
-	if err := encodeHealthCheckHealthGetResponse(response, w, span); err != nil {
+	if err := encodeHealthCheckHealthzGetResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -855,27 +852,25 @@ func (s *Server) handleIncidentSessionStatusEndpointAPIV1IncidentSessionSessionI
 	}
 }
 
-// handleReadinessCheckReadyGetRequest handles readiness_check_ready_get operation.
+// handleReadinessCheckReadyzGetRequest handles readiness_check_readyz_get operation.
 //
-// Readiness probe endpoint
+// Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 // Business Requirements:
 // - BR-HAPI-127 (Readiness check endpoint)
-// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern)
-// TDD GREEN Phase: Check shutdown flag first
-// REFACTOR phase: Real dependency health checks.
+// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern).
 //
-// GET /ready
-func (s *Server) handleReadinessCheckReadyGetRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// GET /readyz
+func (s *Server) handleReadinessCheckReadyzGetRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("readiness_check_ready_get"),
+		otelogen.OperationID("readiness_check_readyz_get"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/ready"),
+		semconv.HTTPRouteKey.String("/readyz"),
 	}
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), ReadinessCheckReadyGetOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ReadinessCheckReadyzGetOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -937,9 +932,9 @@ func (s *Server) handleReadinessCheckReadyGetRequest(args [0]string, argsEscaped
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    ReadinessCheckReadyGetOperation,
+			OperationName:    ReadinessCheckReadyzGetOperation,
 			OperationSummary: "Readiness Check",
-			OperationID:      "readiness_check_ready_get",
+			OperationID:      "readiness_check_readyz_get",
 			Body:             nil,
 			RawBody:          rawBody,
 			Params:           middleware.Parameters{},
@@ -960,12 +955,12 @@ func (s *Server) handleReadinessCheckReadyGetRequest(args [0]string, argsEscaped
 			mreq,
 			nil,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.ReadinessCheckReadyGet(ctx)
+				response, err = s.h.ReadinessCheckReadyzGet(ctx)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.ReadinessCheckReadyGet(ctx)
+		response, err = s.h.ReadinessCheckReadyzGet(ctx)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -973,7 +968,7 @@ func (s *Server) handleReadinessCheckReadyGetRequest(args [0]string, argsEscaped
 		return
 	}
 
-	if err := encodeReadinessCheckReadyGetResponse(response, w, span); err != nil {
+	if err := encodeReadinessCheckReadyzGetResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -984,12 +979,8 @@ func (s *Server) handleReadinessCheckReadyGetRequest(args [0]string, argsEscaped
 
 // handleSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRequest handles session_snapshot_api_v1_incident_session__session_id__snapshot_get operation.
 //
-// Retrieve point-in-time snapshot of session state.
-// Business Requirement: BR-SESSION-002 (Session lifecycle visibility)
-// Returns 200 with session state for terminal sessions (cancelled, completed, failed).
-// Returns 409 if session is still in progress.
-// Returns 404 if session not found.
 // PR3 extends the response with CancelledResult fields (messages, turn, phase, tokens).
+// Business Requirement: BR-SESSION-004 (Session observability).
 //
 // GET /api/v1/incident/session/{session_id}/snapshot
 func (s *Server) handleSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -1130,11 +1121,8 @@ func (s *Server) handleSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRe
 
 // handleSessionStreamAPIV1IncidentSessionSessionIDStreamGetRequest handles session_stream_api_v1_incident_session__session_id__stream_get operation.
 //
-// Subscribe to live investigation events via Server-Sent Events (SSE).
-// Business Requirement: BR-SESSION-007 (Investigation event observability)
 // Streams turn-level and token-level events in real time.
-// Returns 404 if session not found or already in terminal state (use the snapshot endpoint instead).
-// SSE format: id: {seq}\nevent: {type}\ndata: {json}\n\n.
+// Business Requirement: BR-SESSION-005 (Real-time session streaming).
 //
 // GET /api/v1/incident/session/{session_id}/stream
 func (s *Server) handleSessionStreamAPIV1IncidentSessionSessionIDStreamGetRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -1224,7 +1212,7 @@ func (s *Server) handleSessionStreamAPIV1IncidentSessionSessionIDStreamGetReques
 		mreq := middleware.Request{
 			Context:          ctx,
 			OperationName:    SessionStreamAPIV1IncidentSessionSessionIDStreamGetOperation,
-			OperationSummary: "Stream Investigation Events",
+			OperationSummary: "Session Stream",
 			OperationID:      "session_stream_api_v1_incident_session__session_id__stream_get",
 			Body:             nil,
 			RawBody:          rawBody,

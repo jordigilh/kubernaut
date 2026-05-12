@@ -31,28 +31,25 @@ type Invoker interface {
 	// CancelSessionAPIV1IncidentSessionSessionIDCancelPost invokes cancel_session_api_v1_incident_session__session_id__cancel_post operation.
 	//
 	// Cancel a running investigation session.
-	// Business Requirement: BR-SESSION-003 (Session cancellability)
-	// Design Decision: DD-004 (RFC 7807 Problem Details)
-	// Returns 200 with cancelled session state.
-	// Returns 404 if session not found.
-	// Returns 409 if session already in terminal state.
+	// Business Requirement: BR-SESSION-003 (Session cancellability).
 	//
 	// POST /api/v1/incident/session/{session_id}/cancel
 	CancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx context.Context, params CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams) (CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, error)
 	// GetConfigConfigGet invokes get_config_config_get operation.
 	//
-	// Get service configuration (sanitized)
+	// Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
+	// port.
 	// Business Requirement: BR-HAPI-128 (Configuration endpoint).
 	//
 	// GET /config
 	GetConfigConfigGet(ctx context.Context) (jx.Raw, error)
-	// HealthCheckHealthGet invokes health_check_health_get operation.
+	// HealthCheckHealthzGet invokes health_check_healthz_get operation.
 	//
-	// Liveness probe endpoint
+	// Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 	// Business Requirement: BR-HAPI-126 (Health check endpoint).
 	//
-	// GET /health
-	HealthCheckHealthGet(ctx context.Context) (jx.Raw, error)
+	// GET /healthz
+	HealthCheckHealthzGet(ctx context.Context) (jx.Raw, error)
 	// IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost invokes incident_analyze_endpoint_api_v1_incident_analyze_post operation.
 	//
 	// Submit incident analysis request (async session-based pattern).
@@ -77,35 +74,26 @@ type Invoker interface {
 	//
 	// GET /api/v1/incident/session/{session_id}
 	IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx context.Context, params IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams) (IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, error)
-	// ReadinessCheckReadyGet invokes readiness_check_ready_get operation.
+	// ReadinessCheckReadyzGet invokes readiness_check_readyz_get operation.
 	//
-	// Readiness probe endpoint
+	// Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 	// Business Requirements:
 	// - BR-HAPI-127 (Readiness check endpoint)
-	// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern)
-	// TDD GREEN Phase: Check shutdown flag first
-	// REFACTOR phase: Real dependency health checks.
+	// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern).
 	//
-	// GET /ready
-	ReadinessCheckReadyGet(ctx context.Context) (jx.Raw, error)
+	// GET /readyz
+	ReadinessCheckReadyzGet(ctx context.Context) (jx.Raw, error)
 	// SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet invokes session_snapshot_api_v1_incident_session__session_id__snapshot_get operation.
 	//
-	// Retrieve point-in-time snapshot of session state.
-	// Business Requirement: BR-SESSION-002 (Session lifecycle visibility)
-	// Returns 200 with session state for terminal sessions (cancelled, completed, failed).
-	// Returns 409 if session is still in progress.
-	// Returns 404 if session not found.
 	// PR3 extends the response with CancelledResult fields (messages, turn, phase, tokens).
+	// Business Requirement: BR-SESSION-004 (Session observability).
 	//
 	// GET /api/v1/incident/session/{session_id}/snapshot
 	SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx context.Context, params SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams) (SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, error)
 	// SessionStreamAPIV1IncidentSessionSessionIDStreamGet invokes session_stream_api_v1_incident_session__session_id__stream_get operation.
 	//
-	// Subscribe to live investigation events via Server-Sent Events (SSE).
-	// Business Requirement: BR-SESSION-007 (Investigation event observability)
 	// Streams turn-level and token-level events in real time.
-	// Returns 404 if session not found or already in terminal state (use the snapshot endpoint instead).
-	// SSE format: id: {seq}\nevent: {type}\ndata: {json}\n\n.
+	// Business Requirement: BR-SESSION-005 (Real-time session streaming).
 	//
 	// GET /api/v1/incident/session/{session_id}/stream
 	SessionStreamAPIV1IncidentSessionSessionIDStreamGet(ctx context.Context, params SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams) (SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, error)
@@ -157,11 +145,7 @@ func (c *Client) requestURL(ctx context.Context) *url.URL {
 // CancelSessionAPIV1IncidentSessionSessionIDCancelPost invokes cancel_session_api_v1_incident_session__session_id__cancel_post operation.
 //
 // Cancel a running investigation session.
-// Business Requirement: BR-SESSION-003 (Session cancellability)
-// Design Decision: DD-004 (RFC 7807 Problem Details)
-// Returns 200 with cancelled session state.
-// Returns 404 if session not found.
-// Returns 409 if session already in terminal state.
+// Business Requirement: BR-SESSION-003 (Session cancellability).
 //
 // POST /api/v1/incident/session/{session_id}/cancel
 func (c *Client) CancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx context.Context, params CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams) (CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, error) {
@@ -253,7 +237,8 @@ func (c *Client) sendCancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx co
 
 // GetConfigConfigGet invokes get_config_config_get operation.
 //
-// Get service configuration (sanitized)
+// Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
+// port.
 // Business Requirement: BR-HAPI-128 (Configuration endpoint).
 //
 // GET /config
@@ -325,22 +310,22 @@ func (c *Client) sendGetConfigConfigGet(ctx context.Context) (res jx.Raw, err er
 	return result, nil
 }
 
-// HealthCheckHealthGet invokes health_check_health_get operation.
+// HealthCheckHealthzGet invokes health_check_healthz_get operation.
 //
-// Liveness probe endpoint
+// Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 // Business Requirement: BR-HAPI-126 (Health check endpoint).
 //
-// GET /health
-func (c *Client) HealthCheckHealthGet(ctx context.Context) (jx.Raw, error) {
-	res, err := c.sendHealthCheckHealthGet(ctx)
+// GET /healthz
+func (c *Client) HealthCheckHealthzGet(ctx context.Context) (jx.Raw, error) {
+	res, err := c.sendHealthCheckHealthzGet(ctx)
 	return res, err
 }
 
-func (c *Client) sendHealthCheckHealthGet(ctx context.Context) (res jx.Raw, err error) {
+func (c *Client) sendHealthCheckHealthzGet(ctx context.Context) (res jx.Raw, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("health_check_health_get"),
+		otelogen.OperationID("health_check_healthz_get"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/health"),
+		semconv.URLTemplateKey.String("/healthz"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -356,7 +341,7 @@ func (c *Client) sendHealthCheckHealthGet(ctx context.Context) (res jx.Raw, err 
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, HealthCheckHealthGetOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, HealthCheckHealthzGetOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -374,7 +359,7 @@ func (c *Client) sendHealthCheckHealthGet(ctx context.Context) (res jx.Raw, err 
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [1]string
-	pathParts[0] = "/health"
+	pathParts[0] = "/healthz"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -391,7 +376,7 @@ func (c *Client) sendHealthCheckHealthGet(ctx context.Context) (res jx.Raw, err 
 	defer resp.Body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeHealthCheckHealthGetResponse(resp)
+	result, err := decodeHealthCheckHealthzGetResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -664,26 +649,24 @@ func (c *Client) sendIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDG
 	return result, nil
 }
 
-// ReadinessCheckReadyGet invokes readiness_check_ready_get operation.
+// ReadinessCheckReadyzGet invokes readiness_check_readyz_get operation.
 //
-// Readiness probe endpoint
+// Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.
 // Business Requirements:
 // - BR-HAPI-127 (Readiness check endpoint)
-// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern)
-// TDD GREEN Phase: Check shutdown flag first
-// REFACTOR phase: Real dependency health checks.
+// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern).
 //
-// GET /ready
-func (c *Client) ReadinessCheckReadyGet(ctx context.Context) (jx.Raw, error) {
-	res, err := c.sendReadinessCheckReadyGet(ctx)
+// GET /readyz
+func (c *Client) ReadinessCheckReadyzGet(ctx context.Context) (jx.Raw, error) {
+	res, err := c.sendReadinessCheckReadyzGet(ctx)
 	return res, err
 }
 
-func (c *Client) sendReadinessCheckReadyGet(ctx context.Context) (res jx.Raw, err error) {
+func (c *Client) sendReadinessCheckReadyzGet(ctx context.Context) (res jx.Raw, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("readiness_check_ready_get"),
+		otelogen.OperationID("readiness_check_readyz_get"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/ready"),
+		semconv.URLTemplateKey.String("/readyz"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -699,7 +682,7 @@ func (c *Client) sendReadinessCheckReadyGet(ctx context.Context) (res jx.Raw, er
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ReadinessCheckReadyGetOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, ReadinessCheckReadyzGetOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -717,7 +700,7 @@ func (c *Client) sendReadinessCheckReadyGet(ctx context.Context) (res jx.Raw, er
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [1]string
-	pathParts[0] = "/ready"
+	pathParts[0] = "/readyz"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -734,7 +717,7 @@ func (c *Client) sendReadinessCheckReadyGet(ctx context.Context) (res jx.Raw, er
 	defer resp.Body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeReadinessCheckReadyGetResponse(resp)
+	result, err := decodeReadinessCheckReadyzGetResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -744,12 +727,8 @@ func (c *Client) sendReadinessCheckReadyGet(ctx context.Context) (res jx.Raw, er
 
 // SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet invokes session_snapshot_api_v1_incident_session__session_id__snapshot_get operation.
 //
-// Retrieve point-in-time snapshot of session state.
-// Business Requirement: BR-SESSION-002 (Session lifecycle visibility)
-// Returns 200 with session state for terminal sessions (cancelled, completed, failed).
-// Returns 409 if session is still in progress.
-// Returns 404 if session not found.
 // PR3 extends the response with CancelledResult fields (messages, turn, phase, tokens).
+// Business Requirement: BR-SESSION-004 (Session observability).
 //
 // GET /api/v1/incident/session/{session_id}/snapshot
 func (c *Client) SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx context.Context, params SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams) (SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, error) {
@@ -841,11 +820,8 @@ func (c *Client) sendSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx
 
 // SessionStreamAPIV1IncidentSessionSessionIDStreamGet invokes session_stream_api_v1_incident_session__session_id__stream_get operation.
 //
-// Subscribe to live investigation events via Server-Sent Events (SSE).
-// Business Requirement: BR-SESSION-007 (Investigation event observability)
 // Streams turn-level and token-level events in real time.
-// Returns 404 if session not found or already in terminal state (use the snapshot endpoint instead).
-// SSE format: id: {seq}\nevent: {type}\ndata: {json}\n\n.
+// Business Requirement: BR-SESSION-005 (Real-time session streaming).
 //
 // GET /api/v1/incident/session/{session_id}/stream
 func (c *Client) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(ctx context.Context, params SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams) (SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, error) {
