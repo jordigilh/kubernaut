@@ -19,8 +19,6 @@ package delivery
 import (
 	"context"
 
-	"github.com/sony/gobreaker"
-
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 )
@@ -48,13 +46,10 @@ func NewCircuitBreakerService(inner Service, cbManager *circuitbreaker.Manager, 
 }
 
 // Deliver sends the notification through the circuit breaker.
-// When the circuit is open, returns gobreaker.ErrOpenState.
+// When the circuit is open, returns circuitbreaker.ErrOpenState.
 func (s *CircuitBreakerService) Deliver(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 	_, err := s.cbManager.Execute(s.breakerName, func() (interface{}, error) {
 		return nil, s.inner.Deliver(ctx, notification)
 	})
-	if err == gobreaker.ErrOpenState {
-		return err
-	}
 	return err
 }

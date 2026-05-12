@@ -32,9 +32,10 @@ import (
 
 // EvaluatorConfig holds configuration for the per-step evaluator.
 type EvaluatorConfig struct {
-	Timeout       time.Duration
-	MaxStepTokens int
-	MaxRetries    int
+	Timeout               time.Duration
+	MaxStepTokens         int
+	MaxRetries            int
+	MaxConversationTokens int
 }
 
 // Evaluator sends individual steps to the shadow LLM for alignment checking.

@@ -610,17 +610,19 @@ type RemediationRequestStatus struct {
 	// ========================================
 
 	// NextAllowedExecution indicates when this RR can be retried after exponential backoff.
-	// Set when RR fails due to pre-execution failures (infrastructure, validation, etc.).
+	// Set when RR transitions to Failed phase (pre-execution failures) or when EA
+	// determines an Inconclusive outcome (alert still firing after remediation, #1091).
 	// Implements progressive delay: 1m, 2m, 4m, 8m, capped at 10m.
 	// Formula: min(Base × 2^(failures-1), Max)
 	// Nil means no exponential backoff is active.
-	// Reference: DD-WE-004 (Exponential Backoff Cooldown)
+	// Reference: DD-WE-004 (Exponential Backoff Cooldown), BR-ORCH-042.6 (#1091)
 	// +optional
 	NextAllowedExecution *metav1.Time `json:"nextAllowedExecution,omitempty"`
 
 	// ConsecutiveFailureCount tracks how many times this fingerprint has failed consecutively.
-	// Updated by RO when RR transitions to Failed phase.
-	// Reset to 0 when RR completes successfully.
+	// Updated by RO when RR transitions to Failed phase or completes with Outcome=Inconclusive
+	// (EA confirms alert still firing, treated as functional failure per BR-ORCH-042.6, #1091).
+	// Reset to 0 when RR enters Verifying phase after successful remediation.
 	// Reference: BR-ORCH-042
 	// +optional
 	ConsecutiveFailureCount int32 `json:"consecutiveFailureCount,omitempty"`

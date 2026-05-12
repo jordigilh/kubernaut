@@ -429,6 +429,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 			Addr:         fmt.Sprintf(":%d", serverCfg.Port),
 			ReadTimeout:  serverCfg.ReadTimeout,
 			WriteTimeout: serverCfg.WriteTimeout,
+			IdleTimeout:  120 * time.Second,
 		},
 		repository:               repo,
 		dlqClient:                dlqClient,

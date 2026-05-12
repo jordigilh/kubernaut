@@ -686,6 +686,36 @@ func mapInvestigationResultToResponse(log logr.Logger, r *katypes.InvestigationR
 		resp.ValidationAttemptsHistory = attempts
 	}
 
+	if r.AlignmentVerdict != nil {
+		av := agentclient.AlignmentVerdict{
+			Result:  agentclient.AlignmentVerdictResult(r.AlignmentVerdict.Result),
+			Flagged: r.AlignmentVerdict.Flagged,
+			Total:   r.AlignmentVerdict.Total,
+		}
+		if r.AlignmentVerdict.CircuitBreakerActivated {
+			av.CircuitBreakerActivated.SetTo(true)
+		}
+		if r.AlignmentVerdict.Summary != "" {
+			av.Summary.SetTo(r.AlignmentVerdict.Summary)
+		}
+		if len(r.AlignmentVerdict.Findings) > 0 {
+			findings := make([]agentclient.AlignmentFinding, 0, len(r.AlignmentVerdict.Findings))
+			for _, f := range r.AlignmentVerdict.Findings {
+				finding := agentclient.AlignmentFinding{
+					StepIndex:   f.StepIndex,
+					StepKind:    agentclient.AlignmentFindingStepKind(f.StepKind),
+					Explanation: f.Explanation,
+				}
+				if f.Tool != "" {
+					finding.Tool.SetTo(f.Tool)
+				}
+				findings = append(findings, finding)
+			}
+			av.Findings = findings
+		}
+		resp.AlignmentVerdict.SetTo(av)
+	}
+
 	return resp
 }
 

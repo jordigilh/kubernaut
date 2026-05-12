@@ -54,6 +54,9 @@ const (
 
 	// #1048 Phase 5 / AU-11: XADD + MAXLEN~ trim observability (combined with DLQ depth gauge)
 	MetricNameDLQStreamXAddTotal = "datastorage_dlq_stream_xadd_total"
+
+	// Workflow validation phase metrics (Issue #1070)
+	MetricNameWorkflowValidationDuration = "datastorage_workflow_validation_duration_seconds"
 )
 
 // Write operation metrics
@@ -115,6 +118,29 @@ var (
 	)
 )
 
+// Workflow validation phase metrics (Issue #1070)
+// BR-STORAGE-014: Workflow catalog management
+
+var (
+	// WorkflowValidationDuration tracks the duration of each validation phase
+	// during workflow registration.
+	//
+	// Labels:
+	//   - phase: Validation phase ("action_type", "bundle_exists", "dependency", "total")
+	//   - result: Outcome ("ok", "error")
+	//
+	// Example Prometheus query:
+	//   histogram_quantile(0.95, rate(datastorage_workflow_validation_duration_seconds_bucket{phase="total"}[5m]))
+	WorkflowValidationDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    MetricNameWorkflowValidationDuration,
+			Help:    "Duration of workflow validation phases in seconds",
+			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
+		},
+		[]string{"phase", "result"},
+	)
+)
+
 // Audit write API metrics (GAP-10)
 // BR-STORAGE-001 to BR-STORAGE-020: Audit trail metrics
 
@@ -138,12 +164,13 @@ var (
 
 // Metrics Summary:
 //
-// Total Metrics: 5 (external-facing per GitHub issue #294, #1048)
+// Total Metrics: 6 (external-facing per GitHub issue #294, #1048, #1070)
 // - WriteDuration (Histogram with labels) - write operation performance
 // - AuditLagSeconds (Histogram with labels) - audit lag observability
 // - ValidationFailures (Counter with labels) - OpenAPI validation rejections (#1048)
 // - DLQValidationFailures (Counter with labels) - DLQ replay validation failures (#1048)
 // - DLQStreamXAddTotal (Counter with labels) - DLQ stream XADD / trim correlation (#1048 Phase 5)
+// - WorkflowValidationDuration (Histogram with labels) - validation phase timing (Issue #1070)
 //
 // Performance Target: < 5% overhead
 // BR Coverage: BR-STORAGE-001, 002, 007, 008, 012, 013, 019
@@ -199,6 +226,9 @@ type Metrics struct {
 	// #1048 Phase 5 / AU-11: XADD observability for MAXLEN~ trimming
 	DLQStreamXAddTotal *prometheus.CounterVec // Per-stream XADD (may trigger trimming)
 
+	// Workflow validation phase metrics (Issue #1070)
+	WorkflowValidationDuration *prometheus.HistogramVec // Validation phase timing
+
 	// Store registry for testing
 	registry prometheus.Registerer
 }
@@ -226,6 +256,7 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 		m.ValidationFailures = ValidationFailures
 		m.DLQValidationFailures = DLQValidationFailures
 		m.DLQStreamXAddTotal = DLQStreamXAddTotal
+		m.WorkflowValidationDuration = WorkflowValidationDuration
 	} else {
 		// Testing: Create isolated metrics with custom registry
 		// Testing: Create isolated metrics with full names (DD-005 V3.0: Pattern B)
@@ -271,12 +302,22 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 			[]string{"stream"},
 		)
 
+		m.WorkflowValidationDuration = prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    MetricNameWorkflowValidationDuration,
+				Help:    "Duration of workflow validation phases in seconds",
+				Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
+			},
+			[]string{"phase", "result"},
+		)
+
 		reg.MustRegister(
 			m.AuditLagSeconds,
 			m.WriteDuration,
 			m.ValidationFailures,
 			m.DLQValidationFailures,
 			m.DLQStreamXAddTotal,
+			m.WorkflowValidationDuration,
 		)
 	}
 

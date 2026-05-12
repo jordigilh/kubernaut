@@ -27,6 +27,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
@@ -161,6 +162,11 @@ type Config struct {
 	ScopeResolver ScopeResolver
 	Swappable     *llm.SwappableClient
 	Metrics       *metrics.Metrics
+	// PinDecorator wraps the pinned client snapshot before use.
+	// When alignment is enabled, this preserves the LLMProxy chain so the
+	// shadow agent observes LLM reasoning steps (C-1 bypass fix).
+	// When nil, falls back to llm.NewInstrumentedClient(pinned).
+	PinDecorator func(llm.Client) llm.Client
 }
 
 // Investigator orchestrates the two-invocation architecture:
@@ -181,6 +187,7 @@ type Investigator struct {
 	scopeResolver ScopeResolver
 	swappable     *llm.SwappableClient
 	metrics       *metrics.Metrics
+	pinDecorator  func(llm.Client) llm.Client
 }
 
 func (inv *Investigator) auditLog() logr.Logger {
@@ -210,6 +217,7 @@ func New(cfg Config) *Investigator {
 		scopeResolver: cfg.ScopeResolver,
 		swappable:     cfg.Swappable,
 		metrics:       cfg.Metrics,
+		pinDecorator:  cfg.PinDecorator,
 	}
 }
 
@@ -222,7 +230,14 @@ func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.
 	var runtimeParams llm.RuntimeParams
 	if inv.swappable != nil {
 		pinned := inv.swappable.Snapshot()
-		client = llm.NewInstrumentedClient(pinned)
+		if inv.pinDecorator != nil {
+			client = inv.pinDecorator(pinned)
+			if client == nil {
+				client = llm.NewInstrumentedClient(pinned)
+			}
+		} else {
+			client = llm.NewInstrumentedClient(pinned)
+		}
 		modelName = inv.swappable.ModelName()
 		runtimeParams = inv.swappable.RuntimeParameters()
 	}
@@ -242,7 +257,14 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	var runtimeParams llm.RuntimeParams
 	if inv.swappable != nil {
 		pinned := inv.swappable.Snapshot()
-		client = llm.NewInstrumentedClient(pinned)
+		if inv.pinDecorator != nil {
+			client = inv.pinDecorator(pinned)
+			if client == nil {
+				client = llm.NewInstrumentedClient(pinned)
+			}
+		} else {
+			client = llm.NewInstrumentedClient(pinned)
+		}
 		modelName = inv.swappable.ModelName()
 		runtimeParams = inv.swappable.RuntimeParameters()
 	}
@@ -479,6 +501,8 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	if err != nil {
 		return nil, err
 	}
+
+	alignment.NotifyRCAComplete(ctx, messages)
 
 	var content string
 	switch r := loopRes.(type) {

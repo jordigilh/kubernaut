@@ -1169,7 +1169,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
               example:
-                type: "https://kubernaut.io/problems/validation-error"
+                type: "https://kubernaut.ai/problems/validation-error"
                 title: "Validation Error"
                 status: 400
                 detail: "One or more required fields are missing or invalid"
@@ -1186,7 +1186,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
               example:
-                type: "https://kubernaut.io/problems/conflict"
+                type: "https://kubernaut.ai/problems/conflict"
                 title: "Resource Conflict"
                 status: 409
                 detail: "notification_audit already exists with notification_id 'notification-456'"
@@ -1200,7 +1200,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
               example:
-                type: "https://kubernaut.io/problems/service-unavailable"
+                type: "https://kubernaut.ai/problems/service-unavailable"
                 title: "Service Unavailable"
                 status: 500
                 detail: "database and DLQ both unavailable - please retry"
@@ -2308,8 +2308,13 @@ components:
           format: uri
           description: |
             URI reference identifying the problem type.
-            Dereferenceable URI when possible.
-          example: "https://kubernaut.io/problems/validation-error"
+            All types follow the pattern https://kubernaut.ai/problems/{error-type}.
+            Common types: validation-error, not-found, internal-error,
+            service-unavailable, conflict, database-error, bad-request.
+            Domain-specific types use path prefixes: reconstruction/*,
+            effectiveness/*, audit/*, remediation-history/*.
+          pattern: "^https://kubernaut\\.ai/problems/.+"
+          example: "https://kubernaut.ai/problems/validation-error"
         title:
           type: string
           description: |

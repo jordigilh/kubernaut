@@ -26,10 +26,12 @@
         },
         "responses": {
           "202": {
-            "description": "Successful Response",
+            "description": "Investigation accepted",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeAccepted"
+                }
               }
             }
           },
@@ -445,7 +447,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Investigation result (completed or failed).",
             "content": {
               "application/json": {
                 "schema": {
@@ -465,7 +467,7 @@
             }
           },
           "409": {
-            "description": "Session not yet completed",
+            "description": "Session still in progress (pending/running)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -497,163 +499,15 @@
         }
       }
     },
-    "/api/v1/incident/session/{session_id}/cancel": {
-      "post": {
-        "tags": [
-          "Session Control"
-        ],
-        "summary": "Cancel Investigation Session",
-        "description": "Cancel a running investigation session.\n\nBusiness Requirement: BR-SESSION-003 (Session cancellability)\nDesign Decision: DD-004 (RFC 7807 Problem Details)\n\nReturns 200 with cancelled session state.\nReturns 404 if session not found.\nReturns 409 if session already in terminal state.",
-        "operationId": "cancel_session_api_v1_incident_session__session_id__cancel_post",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Session Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Session cancelled successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CancelSessionResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Session not found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Session already in terminal state",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/incident/session/{session_id}/snapshot": {
-      "get": {
-        "tags": [
-          "Session Control"
-        ],
-        "summary": "Session Snapshot",
-        "description": "Retrieve point-in-time snapshot of session state.\n\nBusiness Requirement: BR-SESSION-002 (Session lifecycle visibility)\n\nReturns 200 with session state for terminal sessions (cancelled, completed, failed).\nReturns 409 if session is still in progress.\nReturns 404 if session not found.\n\nPR3 extends the response with CancelledResult fields (messages, turn, phase, tokens).",
-        "operationId": "session_snapshot_api_v1_incident_session__session_id__snapshot_get",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Session Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Session snapshot",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionSnapshot"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Session not found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Session still in progress",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/incident/session/{session_id}/stream": {
-      "get": {
-        "tags": [
-          "Session Control"
-        ],
-        "summary": "Stream Investigation Events",
-        "description": "Subscribe to live investigation events via Server-Sent Events (SSE).\n\nBusiness Requirement: BR-SESSION-007 (Investigation event observability)\n\nStreams turn-level and token-level events in real time.\nReturns 404 if session not found or already in terminal state (use the snapshot endpoint instead).\n\nSSE format: id: {seq}\\nevent: {type}\\ndata: {json}\\n\\n",
-        "operationId": "session_stream_api_v1_incident_session__session_id__stream_get",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Session Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "SSE event stream",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Session not found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/health": {
+    "/healthz": {
       "get": {
         "tags": [
           "Health"
         ],
         "summary": "Health Check",
-        "description": "Liveness probe endpoint\n\nBusiness Requirement: BR-HAPI-126 (Health check endpoint)",
-        "operationId": "health_check_health_get",
+        "description": "Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.\n\nBusiness Requirement: BR-HAPI-126 (Health check endpoint)",
+        "operationId": "health_check_healthz_get",
+        "x-port": 8081,
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -666,14 +520,15 @@
         }
       }
     },
-    "/ready": {
+    "/readyz": {
       "get": {
         "tags": [
           "Health"
         ],
         "summary": "Readiness Check",
-        "description": "Readiness probe endpoint\n\nBusiness Requirements:\n- BR-HAPI-127 (Readiness check endpoint)\n- BR-HAPI-201 (Graceful shutdown with DD-007 pattern)\n\nTDD GREEN Phase: Check shutdown flag first\nREFACTOR phase: Real dependency health checks",
-        "operationId": "readiness_check_ready_get",
+        "description": "Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.\n\nBusiness Requirements:\n- BR-HAPI-127 (Readiness check endpoint)\n- BR-HAPI-201 (Graceful shutdown with DD-007 pattern)",
+        "operationId": "readiness_check_readyz_get",
+        "x-port": 8081,
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -692,8 +547,9 @@
           "Health"
         ],
         "summary": "Get Config",
-        "description": "Get service configuration (sanitized)\n\nBusiness Requirement: BR-HAPI-128 (Configuration endpoint)",
+        "description": "Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API port.\n\nBusiness Requirement: BR-HAPI-128 (Configuration endpoint)",
         "operationId": "get_config_config_get",
+        "x-port": 8081,
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -709,12 +565,20 @@
   },
   "components": {
     "schemas": {
+      "AnalyzeAccepted": {
+        "type": "object",
+        "required": ["session_id"],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique session identifier for polling"
+          }
+        }
+      },
       "SessionStatus": {
         "type": "object",
-        "required": [
-          "session_id",
-          "status"
-        ],
+        "required": ["session_id", "status"],
         "properties": {
           "session_id": {
             "type": "string"
@@ -725,17 +589,25 @@
           "error": {
             "type": "string",
             "description": "Error message when status is failed"
-          },
-          "acting_user": {
+          }
+        }
+      },
+      "InvestigationFailed": {
+        "type": "object",
+        "required": ["session_id", "status"],
+        "properties": {
+          "session_id": {
             "type": "string",
-            "description": "Username of the interactive session driver (present when status is user_driving, BR-INTERACTIVE-001, #774)"
+            "format": "uuid"
           },
-          "acting_user_groups": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "description": "Groups of the interactive session driver (present when status is user_driving, BR-INTERACTIVE-001, #774)"
+          "status": {
+            "type": "string",
+            "enum": ["failed"],
+            "description": "Always 'failed' for this schema"
+          },
+          "error_detail": {
+            "type": "string",
+            "description": "Human-readable error description (sanitized, no internal details)"
           }
         }
       },
@@ -779,27 +651,6 @@
         ],
         "title": "AlternativeWorkflow",
         "description": "Alternative workflow recommendation for operator context.\n\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nIMPORTANT: Alternatives are for CONTEXT, not EXECUTION.\nPer APPROVAL_REJECTION_BEHAVIOR_DETAILED.md:\n- \u2705 Purpose: Help operator make an informed decision\n- \u2705 Content: Pros/cons of alternative approaches\n- \u274c NOT: A fallback queue for automatic execution\n\nOnly `selected_workflow` is executed. Alternatives provide:\n- Audit trail of what options were considered\n- Context for operator approval decisions\n- Transparency into AI reasoning"
-      },
-      "CancelSessionResponse": {
-        "properties": {
-          "session_id": {
-            "type": "string",
-            "title": "Session Id",
-            "description": "Session identifier"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status",
-            "description": "Session status after cancellation (always 'cancelled')"
-          }
-        },
-        "type": "object",
-        "required": [
-          "session_id",
-          "status"
-        ],
-        "title": "CancelSessionResponse",
-        "description": "Response after cancelling an investigation session.\n\nBusiness Requirement: BR-SESSION-003 (Session cancellability)"
       },
       "BusinessClassification": {
         "properties": {
@@ -1338,6 +1189,17 @@
             ],
             "title": "Detected Labels",
             "description": "Cluster characteristics detected at runtime by HAPI (ADR-056). Includes: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, failedDetections."
+          },
+          "alignment_verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlignmentVerdict"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Shadow agent alignment verdict. Present when alignment check is enabled. Primary content when circuit_breaker_activated=true -- LLM analysis in root_cause_analysis is from a potentially compromised investigation."
           }
         },
         "type": "object",
@@ -1351,112 +1213,67 @@
         "title": "IncidentResponse",
         "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\nDesign Decision: ADR-055 (LLM-Driven Context Enrichment)\n\nFields added per AIAnalysis team requests:\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY\n- needs_human_review: AI could not produce reliable result (Dec 6, 2025)\n\nADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input."
       },
-      "SessionSnapshot": {
+      "AlignmentVerdict": {
+        "type": "object",
+        "required": ["result", "flagged", "total"],
         "properties": {
-          "session_id": {
+          "result": {
             "type": "string",
-            "title": "Session Id",
-            "description": "Session identifier"
+            "enum": ["aligned", "suspicious"],
+            "description": "Overall shadow agent alignment verdict."
           },
-          "status": {
+          "circuit_breaker_activated": {
+            "type": "boolean",
+            "description": "True if investigation was terminated early due to suspicious content.",
+            "default": false
+          },
+          "summary": {
             "type": "string",
-            "title": "Status",
-            "description": "Session status (cancelled, completed, or failed)"
+            "description": "Narrative summary of shadow agent evaluation."
           },
-          "metadata": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object",
-            "title": "Metadata",
-            "description": "Request-level metadata (incident_id, remediation_id)"
+          "flagged": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of steps flagged as suspicious."
           },
-          "created_at": {
-            "type": "string",
-            "title": "Created At",
-            "description": "ISO 8601 timestamp of session creation"
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of steps evaluated."
           },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error",
-            "description": "Error message for failed sessions, null otherwise"
-          },
-          "cancelled_phase": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cancelled Phase",
-            "description": "Investigation phase active at cancellation (rca or workflow_discovery), null for non-cancelled sessions"
-          },
-          "cancelled_at_turn": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cancelled At Turn",
-            "description": "LLM conversation turn at cancellation, null for non-cancelled sessions"
-          },
-          "rca_summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "RCA Summary",
-            "description": "Root cause analysis summary from investigation result, null if not available"
-          },
-          "total_prompt_tokens": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Total Prompt Tokens",
-            "description": "Cumulative prompt tokens consumed during the investigation"
-          },
-          "total_completion_tokens": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Total Completion Tokens",
-            "description": "Cumulative completion tokens consumed during the investigation"
+          "findings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AlignmentFinding" },
+            "description": "Per-step suspicious findings from shadow agent."
           }
         },
+        "title": "AlignmentVerdict",
+        "description": "Shadow agent alignment verdict for an investigation. BR-AI-601, #1076."
+      },
+      "AlignmentFinding": {
         "type": "object",
-        "required": [
-          "session_id",
-          "status",
-          "created_at"
-        ],
-        "title": "SessionSnapshot",
-        "description": "Point-in-time snapshot of session state.\n\nBusiness Requirement: BR-SESSION-002 (Session lifecycle visibility)\nBR-AUDIT-070: Forensic Post-Mortem RAG Data Completeness\n\nExtended with cancelled_phase, cancelled_at_turn, rca_summary, and token usage from investigation result."
+        "required": ["step_index", "step_kind", "explanation"],
+        "properties": {
+          "step_index": {
+            "type": "integer",
+            "description": "Zero-based index of the evaluated step."
+          },
+          "step_kind": {
+            "type": "string",
+            "enum": ["llm_reasoning", "tool_result", "signal_input"],
+            "description": "Kind of step evaluated."
+          },
+          "tool": {
+            "type": "string",
+            "description": "Tool name if step_kind is tool_result."
+          },
+          "explanation": {
+            "type": "string",
+            "description": "Shadow agent explanation for flagging this step (sanitized)."
+          }
+        },
+        "title": "AlignmentFinding",
+        "description": "A single suspicious finding from the shadow agent evaluation."
       },
       "Severity": {
         "type": "string",

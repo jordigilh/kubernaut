@@ -475,6 +475,10 @@ components:
         type:
           type: string
           format: uri
+          description: |
+            URI reference identifying the problem type.
+            All types follow the pattern https://kubernaut.ai/problems/{error-type}.
+          pattern: "^https://kubernaut\\.ai/problems/.+"
         title:
           type: string
         status:

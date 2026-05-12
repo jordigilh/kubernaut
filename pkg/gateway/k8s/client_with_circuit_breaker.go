@@ -20,7 +20,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sony/gobreaker"
+	"github.com/sony/gobreaker/v2"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -52,7 +52,7 @@ import (
 // - OnStateChange callback updates gateway_circuit_breaker_state metric
 type ClientWithCircuitBreaker struct {
 	*Client                        // Embed base client for non-circuit-breaker methods
-	cb      *gobreaker.CircuitBreaker
+	cb      *gobreaker.CircuitBreaker[any]
 	metrics *metrics.Metrics
 }
 
@@ -67,7 +67,7 @@ type ClientWithCircuitBreaker struct {
 // - Recovery: 30s timeout before testing recovery
 // - Half-Open: Allow 3 test requests during recovery
 func NewClientWithCircuitBreaker(client *Client, metricsInstance *metrics.Metrics) *ClientWithCircuitBreaker {
-	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{
+	cb := gobreaker.NewCircuitBreaker[any](gobreaker.Settings{
 		Name:        "k8s-api",
 		MaxRequests: 3, // Allow 3 test requests in half-open state
 		Interval:    10 * time.Second,

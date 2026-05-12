@@ -278,9 +278,10 @@ func main() {
 		}
 		if shadowClient != nil {
 			alignEvaluator = alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
-				Timeout:       cfg.AI.AlignmentCheck.Timeout,
-				MaxStepTokens: cfg.AI.AlignmentCheck.MaxStepTokens,
-				MaxRetries:    cfg.AI.AlignmentCheck.MaxRetries,
+				Timeout:               cfg.AI.AlignmentCheck.Timeout,
+				MaxStepTokens:         cfg.AI.AlignmentCheck.MaxStepTokens,
+				MaxRetries:            cfg.AI.AlignmentCheck.MaxRetries,
+				MaxConversationTokens: cfg.AI.AlignmentCheck.GroundingReview.MaxConversationTokens,
 			}, alignprompt.SystemPrompt(), alignment.WithLogger(logger), alignment.WithAuditStore(auditStore))
 			effectiveLLM = alignment.NewLLMProxy(instrumentedLLM)
 			effectiveReg = alignment.NewToolProxy(reg)
@@ -301,7 +302,7 @@ func main() {
 		scopeResolver = investigator.NewMapperScopeResolver(k8sInfra.mapper)
 	}
 
-	inv := investigator.New(investigator.Config{
+	invCfg := investigator.Config{
 		Client:        effectiveLLM,
 		Builder:       promptBuilder,
 		ResultParser:  resultParser,
@@ -322,7 +323,13 @@ func main() {
 			Summarizer:        sum,
 			MaxToolOutputSize: cfg.AI.Summarizer.MaxToolOutputSize,
 		},
-	})
+	}
+	if alignEvaluator != nil {
+		invCfg.PinDecorator = func(pinned llm.Client) llm.Client {
+			return alignment.NewLLMProxy(llm.NewInstrumentedClient(pinned))
+		}
+	}
+	inv := investigator.New(invCfg)
 
 	var investigationRunner kaserver.InvestigationRunner = inv
 	if alignEvaluator != nil {
@@ -334,6 +341,7 @@ func main() {
 			Logger:                logger,
 			Mode:                  cfg.AI.AlignmentCheck.Mode,
 			CanaryForceEscalation: cfg.AI.AlignmentCheck.Canary.ForceEscalation,
+			GroundingEnabled:      cfg.AI.AlignmentCheck.GroundingReview.Enabled,
 		})
 		if wrapErr != nil {
 			logger.Error(wrapErr, "failed to create alignment wrapper")

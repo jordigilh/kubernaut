@@ -449,3 +449,4 @@ Workflows without `dependencies` in their schema continue to work unchanged. The
 | 2026-02-24 | 1.0 | Initial decision -- EnvFrom injection with CRD propagation |
 | 2026-02-24 | 2.0 | Rewrite -- Volume mount, on-demand DS query, dual validation, no CRD propagation |
 | 2026-03-11 | 2.1 | Updated schema structure per #329: metadata.name, spec.version, spec.description |
+| 2026-05-09 | 2.2 | Issue #1070: Dependency validation parallelized via errgroup (capped at 10 goroutines). See ADR-060. |

@@ -389,6 +389,13 @@ type AIAnalysisStatus struct {
 	// +optional
 	HumanReviewReason string `json:"humanReviewReason,omitempty"`
 
+	// Shadow agent alignment verdict from KA (BR-AI-601, #1076).
+	// When CircuitBreakerActivated=true, the investigation was terminated early
+	// and LLM results (RootCauseAnalysis, SelectedWorkflow) may be incomplete
+	// or compromised. Users should treat shadow findings as the primary content.
+	// +optional
+	AlignmentVerdict *AlignmentVerdictStatus `json:"alignmentVerdict,omitempty"`
+
 	// #388: LLM's assessment of whether the alert warrants action.
 	// Empty when not yet assessed (pre-investigation or error paths).
 	// "Actionable" when the LLM determines the alert warrants action (default for all processed alerts).
@@ -655,6 +662,40 @@ type ValidationAttempt struct {
 	Errors []string `json:"errors,omitempty"`
 	// When this attempt occurred
 	Timestamp metav1.Time `json:"timestamp"`
+}
+
+// AlignmentVerdictStatus holds the shadow agent's alignment verdict on the CRD.
+// Produced by KA (InvestigatorWrapper), mapped by AA (ResponseProcessor).
+// BR-AI-601, #1076: When CircuitBreakerActivated=true, primary LLM results
+// may be incomplete or compromised; shadow findings are the primary content.
+type AlignmentVerdictStatus struct {
+	// Result is the overall shadow agent verdict: "clean" or "suspicious".
+	Result string `json:"result"`
+	// CircuitBreakerActivated indicates the investigation was terminated early.
+	CircuitBreakerActivated bool `json:"circuitBreakerActivated"`
+	// Summary is a narrative summary of the shadow agent evaluation.
+	// +optional
+	Summary string `json:"summary,omitempty"`
+	// Flagged is the number of steps flagged as suspicious.
+	Flagged int `json:"flagged"`
+	// Total is the total number of steps evaluated.
+	Total int `json:"total"`
+	// Findings contains per-step suspicious findings.
+	// +optional
+	Findings []AlignmentFindingStatus `json:"findings,omitempty"`
+}
+
+// AlignmentFindingStatus captures a single suspicious step on the CRD.
+type AlignmentFindingStatus struct {
+	// StepIndex is the zero-based index of the evaluated step.
+	StepIndex int `json:"stepIndex"`
+	// StepKind is the kind of step (llm_reasoning, tool_result, signal_input).
+	StepKind string `json:"stepKind"`
+	// Tool is the tool name if StepKind is tool_result.
+	// +optional
+	Tool string `json:"tool,omitempty"`
+	// Explanation is the shadow agent's explanation for flagging this step.
+	Explanation string `json:"explanation"`
 }
 
 // +kubebuilder:object:root=true

@@ -72,6 +72,13 @@ Testing principles:
 * Provide a summary of the coverage of Business Requirements tested based on the scope of testing (unit, integration or end to end).
 
 
+Concurrency principles:
+* Use `errgroup` with `SetLimit` for bounded fan-out of independent I/O calls (e.g., K8s API Gets). The derived context cancels remaining goroutines on first error.
+* Use the typed-result-slot pattern (`sync.WaitGroup` + `sync.Mutex` + fixed-size slot array) when multiple parallel checks must preserve deterministic error priority. Each goroutine writes to its own slot; the caller inspects slots in priority order after `wg.Wait()`.
+* Always gate parallel validation with `context.WithTimeout` to bound worst-case latency.
+* Run concurrent tests with `-race` to detect data races. The project Makefile already includes `--race` in test targets.
+* See ADR-060 for the rationale behind parallel workflow validation patterns.
+
 After completing task:
 * Whenever applies, ensure code builds without errors related to changes made during this session. Address any error found based on the previous principles.
 * Propose enhancements with a confidence level >=60% based on the current milestone scope. DO NOT implement anything unless otherwise stated.

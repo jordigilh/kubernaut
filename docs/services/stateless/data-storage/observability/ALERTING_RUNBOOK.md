@@ -264,6 +264,32 @@ kubectl get networkpolicies -n kubernaut
 # Should be > 0 and increasing
 ```
 
+### DataStorageHighValidationLatency (Issue #1070)
+
+**Alert Query**:
+```promql
+histogram_quantile(0.95, rate(datastorage_workflow_validation_duration_seconds_bucket{phase="total"}[5m])) > 2
+```
+
+**Severity**: Warning
+**Summary**: Workflow registration validation P95 latency exceeds 2 seconds
+**Impact**: Workflow registrations take longer than expected; may indicate backend degradation
+
+**Diagnosis**:
+1. Check per-phase latency to identify the slow backend:
+   ```promql
+   histogram_quantile(0.95, rate(datastorage_workflow_validation_duration_seconds_bucket[5m])) by (phase)
+   ```
+2. If `action_type` is slow: Check PostgreSQL connectivity and query performance
+3. If `bundle_exists` is slow: Check OCI registry (e.g., Quay) availability and network egress
+4. If `dependency` is slow: Check K8s API server load and the number of dependencies in submitted schemas
+5. Check Data Storage pod logs: `kubectl logs -l app=datastorage -n kubernaut-system --tail=100`
+
+**Remediation**:
+- If OCI registry is degraded: The 10-second validation timeout will prevent cascading failures
+- If K8s API is throttling: Check `g.SetLimit(10)` cap; reduce if K8s API server is overloaded
+- If PostgreSQL is slow: Investigate connection pool and query plans for action_type lookups
+
 ---
 
 ## Warning Alerts

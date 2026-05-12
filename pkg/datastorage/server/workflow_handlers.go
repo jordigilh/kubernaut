@@ -26,11 +26,14 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5/pgconn"
 	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
+	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
@@ -63,6 +66,10 @@ import (
 // BR-WORKFLOW-006: Accept content (raw YAML), parse CRD envelope, validate, populate catalog
 func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	// Step 1: Parse request body — expect {"content": "...", "source": "...", "registeredBy": "..."}
+	// Cap request body at 2 MiB to prevent memory exhaustion from oversized payloads.
+	const maxBodySize = 2 << 20 // 2 MiB
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+
 	var req struct {
 		Content      string `json:"content"`
 		Source       string `json:"source"`
@@ -114,55 +121,13 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Step 5a: Validate action_type against taxonomy (GAP-4, DD-WORKFLOW-016)
-	if h.actionTypeValidator != nil {
-		exists, err := h.actionTypeValidator.ActionTypeExists(r.Context(), workflow.ActionType)
-		if err != nil {
-			h.logger.Error(err, "Failed to validate action_type against taxonomy",
-				"action_type", workflow.ActionType,
-			)
-			response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
-				"Failed to validate action type", h.logger)
-			return
-		}
-		if !exists {
-			detail := fmt.Sprintf("action_type '%s' is not in the action type taxonomy (DD-WORKFLOW-016)", workflow.ActionType)
-			response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error",
-				detail, h.logger)
-			return
-		}
-	}
-
-	// Step 5b: Validate execution bundle image exists in the registry (skip for ansible — Git repo)
-	if workflow.ExecutionBundle != nil && *workflow.ExecutionBundle != "" && workflow.ExecutionEngine != models.ExecutionEngineAnsible {
-		if h.schemaExtractor != nil {
-			if err := h.schemaExtractor.ValidateBundleExists(r.Context(), *workflow.ExecutionBundle); err != nil {
-				h.logger.Error(err, "Execution bundle image not found in registry",
-					"execution_bundle", *workflow.ExecutionBundle,
-				)
-				response.WriteRFC7807Error(w, http.StatusBadRequest, "bundle-not-found", "Execution Bundle Not Found",
-					fmt.Sprintf("execution.bundle image not found: %v", err), h.logger)
-				return
-			}
-		}
-	}
-
-	// Step 5c: Validate schema-declared dependencies exist in execution namespace (DD-WE-006)
-	if h.dependencyValidator != nil && parsedSchema.Dependencies != nil {
-		deps := schema.NewParser().ExtractDependencies(parsedSchema)
-		if deps != nil {
-			if err := h.dependencyValidator.ValidateDependencies(r.Context(), h.executionNamespace, deps); err != nil {
-				h.logger.Error(err, "Dependency validation failed",
-					"execution_namespace", h.executionNamespace,
-				)
-				response.WriteRFC7807Error(w, http.StatusBadRequest, "dependency-validation-error",
-					"Dependency Validation Error",
-					fmt.Sprintf("Schema-declared dependency not satisfied: %v. Ensure all dependencies "+
-						"are provisioned in namespace %q before registering the workflow (DD-WE-006).", err, h.executionNamespace),
-					h.logger)
-				return
-			}
-		}
+	// Steps 5a–5c: Validate external checks in parallel (Issue #1070)
+	// Typed-result-slot pattern: each check writes to its own error slot,
+	// then we check slots in priority order so callers always see the same
+	// RFC 7807 error type regardless of goroutine completion order.
+	if err := h.validateExternalChecks(r.Context(), schemaParser, parsedSchema, workflow); err != nil {
+		err.writeTo(w, h.logger)
+		return
 	}
 
 	// Step 6: Create workflow in repository (with content integrity checking)
@@ -266,6 +231,162 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(workflow); err != nil {
 		h.logger.Error(err, "Failed to encode workflow create response")
 	}
+}
+
+// validationError carries all fields needed to produce an RFC 7807 response.
+// Returned by validateExternalChecks so HandleCreateWorkflow can write the error
+// without duplicating RFC 7807 construction logic.
+type validationError struct {
+	status    int
+	errorType string
+	title     string
+	detail    string
+}
+
+// writeTo writes the validationError as an RFC 7807 Problem Details response.
+func (ve *validationError) writeTo(w http.ResponseWriter, logger logr.Logger) {
+	response.WriteRFC7807Error(w, ve.status, ve.errorType, ve.title, ve.detail, logger)
+}
+
+// validateExternalChecks runs Steps 5a–5c (action-type, bundle-exists,
+// dependency validation) in parallel and returns the highest-priority
+// error, preserving the original sequential error contract.
+//
+// A 10-second timeout budget bounds the total wall-clock time for all
+// external calls, preventing a degraded backend from consuming the
+// entire server WriteTimeout.
+//
+// Issue #1070: Typed-result-slot pattern — each goroutine writes to its
+// own slot; after all goroutines complete we check slots in priority order.
+func (h *Handler) validateExternalChecks(
+	ctx context.Context,
+	schemaParser *schema.Parser,
+	parsedSchema *models.WorkflowSchema,
+	workflow *models.RemediationWorkflow,
+) *validationError {
+	const (
+		slotActionType = iota
+		slotBundle
+		slotDependency
+		slotCount
+
+		validationTimeout = 10 * time.Second
+	)
+
+	ctx, cancel := context.WithTimeout(ctx, validationTimeout)
+	defer cancel()
+
+	var (
+		slots [slotCount]*validationError
+		mu    sync.Mutex
+		wg    sync.WaitGroup
+	)
+
+	totalStart := time.Now()
+
+	setSlot := func(idx int, ve *validationError) {
+		mu.Lock()
+		slots[idx] = ve
+		mu.Unlock()
+	}
+
+	// 5a: Validate action_type against taxonomy (GAP-4, DD-WORKFLOW-016)
+	if h.actionTypeValidator != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			start := time.Now()
+			exists, err := h.actionTypeValidator.ActionTypeExists(ctx, workflow.ActionType)
+			if err != nil {
+				dsmetrics.WorkflowValidationDuration.WithLabelValues("action_type", "error").Observe(time.Since(start).Seconds())
+				h.logger.Error(err, "Failed to validate action_type against taxonomy",
+					"action_type", workflow.ActionType,
+				)
+				setSlot(slotActionType, &validationError{
+					status:    http.StatusInternalServerError,
+					errorType: "internal-error",
+					title:     "Internal Server Error",
+					detail:    "Failed to validate action type",
+				})
+				return
+			}
+			if !exists {
+				dsmetrics.WorkflowValidationDuration.WithLabelValues("action_type", "error").Observe(time.Since(start).Seconds())
+				setSlot(slotActionType, &validationError{
+					status:    http.StatusBadRequest,
+					errorType: "validation-error",
+					title:     "Validation Error",
+					detail:    fmt.Sprintf("action_type '%s' is not in the action type taxonomy (DD-WORKFLOW-016)", workflow.ActionType),
+				})
+				return
+			}
+			dsmetrics.WorkflowValidationDuration.WithLabelValues("action_type", "ok").Observe(time.Since(start).Seconds())
+		}()
+	}
+
+	// 5b: Validate execution bundle image exists in the registry (skip for ansible — Git repo)
+	if workflow.ExecutionBundle != nil && *workflow.ExecutionBundle != "" &&
+		workflow.ExecutionEngine != models.ExecutionEngineAnsible && h.schemaExtractor != nil {
+		bundleRef := *workflow.ExecutionBundle
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			start := time.Now()
+			if err := h.schemaExtractor.ValidateBundleExists(ctx, bundleRef); err != nil {
+				dsmetrics.WorkflowValidationDuration.WithLabelValues("bundle_exists", "error").Observe(time.Since(start).Seconds())
+				h.logger.Error(err, "Execution bundle image not found in registry",
+					"execution_bundle", bundleRef,
+				)
+				setSlot(slotBundle, &validationError{
+					status:    http.StatusBadRequest,
+					errorType: "bundle-not-found",
+					title:     "Execution Bundle Not Found",
+					detail:    fmt.Sprintf("execution.bundle image not found: %v", err),
+				})
+				return
+			}
+			dsmetrics.WorkflowValidationDuration.WithLabelValues("bundle_exists", "ok").Observe(time.Since(start).Seconds())
+		}()
+	}
+
+	// 5c: Validate schema-declared dependencies exist in execution namespace (DD-WE-006)
+	if h.dependencyValidator != nil && parsedSchema.Dependencies != nil {
+		deps := schemaParser.ExtractDependencies(parsedSchema)
+		if deps != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				start := time.Now()
+				if err := h.dependencyValidator.ValidateDependencies(ctx, h.executionNamespace, deps); err != nil {
+					dsmetrics.WorkflowValidationDuration.WithLabelValues("dependency", "error").Observe(time.Since(start).Seconds())
+					h.logger.Error(err, "Dependency validation failed",
+						"execution_namespace", h.executionNamespace,
+					)
+					setSlot(slotDependency, &validationError{
+						status:    http.StatusBadRequest,
+						errorType: "dependency-validation-error",
+						title:     "Dependency Validation Error",
+						detail: fmt.Sprintf("Schema-declared dependency not satisfied: %v. Ensure all dependencies "+
+							"are provisioned in namespace %q before registering the workflow (DD-WE-006).", err, h.executionNamespace),
+					})
+					return
+				}
+				dsmetrics.WorkflowValidationDuration.WithLabelValues("dependency", "ok").Observe(time.Since(start).Seconds())
+			}()
+		}
+	}
+
+	wg.Wait()
+
+	// Return the highest-priority error (lowest slot index).
+	for _, slot := range slots {
+		if slot != nil {
+			dsmetrics.WorkflowValidationDuration.WithLabelValues("total", "error").Observe(time.Since(totalStart).Seconds())
+			return slot
+		}
+	}
+	dsmetrics.WorkflowValidationDuration.WithLabelValues("total", "ok").Observe(time.Since(totalStart).Seconds())
+	return nil
 }
 
 // contentIntegrityError is returned when an active workflow with the same

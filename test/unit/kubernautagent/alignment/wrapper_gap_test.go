@@ -42,6 +42,7 @@ var _ = Describe("GAP-2: InvestigatorWrapper inner error skips verdict — BR-AI
 			inner := &mockInvestigationRunner{result: nil, err: innerErr}
 			client := &mockLLMClient{responses: []llm.ChatResponse{
 				suspiciousResponse(), // canary
+				cleanResponse(),      // signal step (prevents fail-closed circuit breaker race)
 			}}
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxRetries: 1,
@@ -51,6 +52,7 @@ var _ = Describe("GAP-2: InvestigatorWrapper inner error skips verdict — BR-AI
 				Evaluator:      evaluator,
 				VerdictTimeout: 5 * time.Second,
 				Logger:         logr.Discard(),
+				Mode:           config.AlignmentModeMonitor,
 			})
 			Expect(err).NotTo(HaveOccurred())
 

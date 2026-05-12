@@ -40,6 +40,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Shadow agent evaluator** — Parallel evaluation of investigation quality via alignment check with configurable `mode` (shadow/enforce) and `verdictTimeout`.
 - **Canary force-escalation** — `canary.forceEscalation` flag for testing alignment enforcement paths.
+- **Full-context grounding review for shadow agent** (#1096) — Added a second evaluation layer that reviews the entire RCA conversation through the shadow LLM in a single call, triggered at the RCA-to-workflow-discovery boundary. Detects distributed prompt injection that per-step isolation cannot catch (boiling frog attacks). Runs in parallel with workflow discovery for zero added latency. New `EvaluateGrounding` method on Evaluator, `StartGroundingReview`/`NotifyRCAComplete` integration points, `GroundingReview` config section, 2 new Prometheus metrics (`kubernaut_alignment_grounding_total`, `kubernaut_alignment_grounding_duration_seconds`), and 2 new audit event types (`aiagent.alignment.grounding.request`, `aiagent.alignment.grounding.response`). Gated behind `ai.alignmentCheck.groundingReview.enabled: true`. 29 unit tests covering observer integration, evaluator, config, metrics, and concurrency.
+- **Shadow agent alignment verdict schema** (#1076) — New `alignment_verdict` field on KA `IncidentResponse` (OpenAPI) and AA `AIAnalysisStatus` (CRD). Carries shadow agent verdict (`result`, `circuit_breaker_activated`, `summary`, `findings`) for ALL investigations. Enables structured reporting of shadow agent findings alongside primary LLM results.
+- **Circuit breaker for shadow agent enforcement** (#1076) — When shadow agent detects suspicious LLM content in enforce mode, the primary investigation is cancelled via `context.WithCancelCause(ErrCircuitBreaker)`. Shadow evaluations continue on parent context. New `alignmentCircuitBreakerTotal` Prometheus counter.
+- **LLMProxy bypass fix** (C-1) — `PinDecorator` on investigator ensures `LLMProxy` is re-applied around pinned `SwappableClient` snapshots, preventing unmonitored LLM traffic.
+- **RO alignment verdict notifications** (#1076) — Manual review notifications now render shadow agent findings prominently before (relegated) primary LLM RCA. Circuit breaker verdicts show `SUSPICIOUS (Circuit Breaker Activated)`. `alignment_check_failed` SubReason escalates to `NotificationPriorityCritical`.
+- **`ReviewContext` CRD fields** — `alignmentVerdict` and `circuitBreakerActivated` fields on NotificationRequest ReviewContext for routing rule support.
+
+#### Session Lifecycle (#1078)
+
+- **Session panic recovery** — Investigation goroutines now recover from panics, log stack traces, and transition to `StatusFailed`.
+- **Two-tier session TTL eviction** — Terminal sessions (`Completed`/`Failed`) evicted after `ttl`; non-terminal (`Pending`/`Running`) after configurable `maxSessionAge` (default `2×ttl`).
+- **AA investigation timeout** — Wall-clock cap (`DefaultMaxInvestigationDuration = 25min`) prevents unbounded investigation sessions. Transitions to `PhaseFailed` with `Reason=TransientError`.
 
 #### Logging Migration (#885)
 
@@ -48,11 +60,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Observability
 
 - **pprof runtime profiling** — `/debug/pprof/*` endpoints registered on the shared health server (DataStorage, KA, Gateway). Enabled by default following `kube-apiserver --profiling` pattern; gated via `disableProfiling` config field for hardened environments. Zero overhead when not actively queried.
+- **Workflow validation duration metric** — New `datastorage_workflow_validation_duration_seconds` Prometheus histogram with `phase` and `result` labels for per-phase observability.
+
+#### Documentation & Standards
+
+- **ADR-060** — Architecture decision record documenting the parallel validation patterns and error priority contract.
+- **RFC 7807 type constraint** (UX-1) — OpenAPI `RFC7807Problem.type` field now uses a `pattern` constraint (`^https://kubernaut\.ai/problems/.+`) with documented common types across all Data Storage API specs.
+- **Concurrency guidelines** (DX-5) — Added concurrency patterns section to project guidelines documenting `errgroup`, typed-result-slot, and timeout budget patterns.
+- **DD-WE-006 v2.2** (DOC-4) — Added changelog entry noting dependency validation parallelization per Issue #1070.
+- **CONTRIBUTING.md Go version** (DX-4) — Updated prerequisite Go version from 1.25.3+ to 1.25.6+ to match `go.mod`.
 
 ### Changed
 
 - **VERSION** bumped to 1.5.0 with propagation to Chart.yaml, Dockerfiles, and airgap templates via `make sync-version`.
 - **golangci-lint CI gate** — Lint step is now blocking (removed `continue-on-error`). New issues must be clean before merge.
+- **Verdict label rename** (#1077) — `VerdictClean` constant changed from `"clean"` to `"aligned"` for OpenAPI/API consistency. **Breaking**: Prometheus `result` label changes from `result="clean"` to `result="aligned"` — update dashboard queries.
+- **Parallelized workflow validation** (#1070) — External validation checks (action-type taxonomy, OCI bundle existence, K8s dependency validation) now run concurrently during workflow registration, reducing registration latency from sum-of-three to max-of-three backend calls. Error priority contract preserved via typed-result-slot pattern (ADR-060).
+- **Concurrency cap on dependency validation** (#1070) — `ValidateDependencies` now limits concurrent K8s API calls to 10 via `errgroup.SetLimit`, preventing API server overload from schemas with many dependencies.
+- **Validation timeout budget** (#1070) — `validateExternalChecks` enforces a 10-second timeout to prevent degraded backends from consuming the full server WriteTimeout.
 
 ### Security
 
@@ -88,6 +113,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI stability** — UUID-based namespace naming to prevent parallel test collisions, E2E RR fixture provisioning for HARM-004 tests, fullpipeline timeout alignment.
 - **Double logging** — Removed redundant `logger.Error` calls before `fmt.Errorf(... %w)` returns in `reconstruct.go` and `llm_builder.go`.
 - **RR existence check** (HARM-004) — `RRExistenceChecker` interface prevents Lease creation for non-existent RemediationRequests.
+- **Shadow agent false positive on standard K8s/OCP metadata** (#1094) — Refined shadow agent evaluation prompt to reduce false positives on standard Kubernetes and OpenShift metadata. Narrowed classification rule #4 to target imperative agent-manipulation intent rather than incidental keyword matches. Added explicit CLEAN whitelist for well-known annotation namespaces (`kubernetes.io/*`, `kubectl.kubernetes.io/*`, `openshift.io/*`, etc.), container spec commands, probe exec commands, K8s event lifecycle messages, RBAC verbs, and registry URLs. Added 3 new CLEAN few-shot examples (OCP Secret metadata, container commands/probes, K8s events) and 6 new test payloads (5 CLEAN + 1 adversarial SUSPICIOUS).
+- **Inconclusive RR flood prevention** (#1091) — `Inconclusive` outcomes (EA confirms alert still firing, `alertScore=0`) now trigger exponential backoff and 3-strikes blocking. `completeVerificationIfNeeded` increments `ConsecutiveFailureCount` and sets `NextAllowedExecution`. `CheckConsecutiveFailures` counts `Completed+Inconclusive` as a functional failure instead of a chain-breaker. Prevents 30+ RR flood for persistent alerts. **BR-ORCH-042.6 updated**.
+- **Request body size limit** — `HandleCreateWorkflow` now caps request body at 2 MiB via `http.MaxBytesReader` to prevent memory exhaustion from oversized payloads.
+- **Deployment manifest probe paths** — Fixed `deploy/data-storage/deployment.yaml` liveness and readiness probes from `/health` to `/healthz` and `/readyz` to match the health server implementation.
+- **OpenAPI domain mismatch** (UX-2) — Fixed `kubernaut.io` → `kubernaut.ai` in RFC 7807 problem type URIs across all OpenAPI specs (5 files). Domain now matches the URIs emitted by Go code.
+- **Copyright year** (COMPAT-3) — Updated copyright headers from 2025 to 2026 in test files modified by this PR.
 
 ## [1.2.0] - 2026-04-06
 

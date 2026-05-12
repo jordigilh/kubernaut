@@ -23,7 +23,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/sony/gobreaker"
 
 	"github.com/jordigilh/kubernaut/pkg/notification/retry"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
@@ -271,27 +270,25 @@ var _ = Describe("BR-NOT-061: Circuit Breaker Manager", func() {
 
 	BeforeEach(func() {
 		// Create manager with test-friendly settings
-		manager = circuitbreaker.NewManager(gobreaker.Settings{
-			MaxRequests: 2,
-			Interval:    10 * time.Second,
-			Timeout:     1 * time.Second,
-			ReadyToTrip: func(counts gobreaker.Counts) bool {
-				return counts.ConsecutiveFailures >= 3
-			},
+		manager = circuitbreaker.NewManager(circuitbreaker.ManagerConfig{
+			MaxRequests:                 2,
+			Interval:                   10 * time.Second,
+			Timeout:                    1 * time.Second,
+			ConsecutiveFailureThreshold: 3,
 		})
 	})
 
 	Context("Manager Creation", func() {
 		It("should create manager with shared settings", func() {
-			// BEHAVIOR: Manager initializes successfully
-			Expect(manager).ToNot(BeNil())
+			Expect(manager.AllowRequest("new-channel")).To(BeTrue(),
+				"Newly created manager should allow requests on any channel")
 		})
 
 		It("should allow initial requests (circuit starts closed)", func() {
 			// BEHAVIOR: New channels start in closed state (normal operation)
 			Expect(manager.AllowRequest("slack")).To(BeTrue(),
 				"New circuit should allow requests initially")
-			Expect(manager.State("slack")).To(Equal(gobreaker.StateClosed),
+			Expect(manager.State("slack")).To(Equal(circuitbreaker.StateClosed),
 				"New circuit should start in Closed state")
 		})
 	})
@@ -316,7 +313,7 @@ var _ = Describe("BR-NOT-061: Circuit Breaker Manager", func() {
 			// CORRECTNESS: Console circuit should still be closed
 			Expect(manager.AllowRequest("console")).To(BeTrue(),
 				"Console circuit should remain closed (independent from slack)")
-			Expect(manager.State("console")).To(Equal(gobreaker.StateClosed),
+			Expect(manager.State("console")).To(Equal(circuitbreaker.StateClosed),
 				"Console circuit should be in Closed state")
 		})
 
@@ -365,12 +362,11 @@ var _ = Describe("BR-NOT-061: Circuit Breaker Manager", func() {
 				})
 			}
 
-			// BEHAVIOR: Execute returns gobreaker.ErrOpenState
 			_, err := manager.Execute("slack", func() (interface{}, error) {
 				Fail("Function should not be called when circuit is open")
 				return nil, nil
 			})
-			Expect(err).To(Equal(gobreaker.ErrOpenState),
+			Expect(err).To(Equal(circuitbreaker.ErrOpenState),
 				"Should return ErrOpenState when circuit is open")
 		})
 	})
@@ -378,7 +374,7 @@ var _ = Describe("BR-NOT-061: Circuit Breaker Manager", func() {
 	Context("State Method", func() {
 		It("should return Closed state initially", func() {
 			state := manager.State("new-channel")
-			Expect(state).To(Equal(gobreaker.StateClosed))
+			Expect(state).To(Equal(circuitbreaker.StateClosed))
 		})
 
 		It("should return Open state after threshold failures", func() {
@@ -390,7 +386,7 @@ var _ = Describe("BR-NOT-061: Circuit Breaker Manager", func() {
 			}
 
 			state := manager.State("slack")
-			Expect(state).To(Equal(gobreaker.StateOpen))
+			Expect(state).To(Equal(circuitbreaker.StateOpen))
 		})
 	})
 
