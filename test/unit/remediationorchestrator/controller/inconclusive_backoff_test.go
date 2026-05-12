@@ -224,7 +224,7 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 		Expect(fetchedRR.Status.Outcome).To(Equal("Inconclusive"))
 		Expect(fetchedRR.Status.ConsecutiveFailureCount).To(Equal(int32(1)))
 		Expect(fetchedRR.Status.NextAllowedExecution).To(
-			Satisfy(func(t *metav1.Time) bool { return t != nil && t.Time.After(time.Now()) }),
+			Satisfy(func(t *metav1.Time) bool { return t != nil && t.After(time.Now()) }),
 			"Inconclusive should set NextAllowedExecution to a future time")
 	})
 

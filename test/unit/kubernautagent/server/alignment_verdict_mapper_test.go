@@ -85,7 +85,7 @@ var _ = Describe("Fix 7: UT-KA-SCHEMA-001 — AlignmentVerdict mapping in handle
 		params := agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
 			SessionID: id,
 		}
-		resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(nil, params)
+		resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(context.TODO(), params)
 		Expect(err).NotTo(HaveOccurred())
 
 		incidentResp, ok := resp.(*agentclient.IncidentResponse)
