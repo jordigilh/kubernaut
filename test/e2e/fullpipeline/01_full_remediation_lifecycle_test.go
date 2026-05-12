@@ -1192,6 +1192,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// Same expected audit events as the K8s event test — the full pipeline is identical
 		// after the signal enters Gateway, regardless of signal source.
+		// Total: 14 exactlyOnce + 26 atLeastOnce = 40 minimum events.
+		// #1111: Promoted 10 events (1 exactlyOnce, 6 atLeastOnce, 3 MAY→atLeastOnce).
 		// BR-EM-012, #369: effectiveness.alert.assessed is handled separately below
 		// because alert decay may emit effectiveness.alert_decay.detected instead.
 		exactlyOnceEvents := []string{
@@ -1199,7 +1201,10 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"gateway.crd.created",
 			"orchestrator.lifecycle.created",
 			"orchestrator.lifecycle.started",
+			"orchestrator.lifecycle.verifying_started",
+			"orchestrator.lifecycle.verification_completed",
 			"orchestrator.lifecycle.completed",
+			"orchestrator.ea.created",
 			"effectiveness.assessment.scheduled",
 			"effectiveness.health.assessed",
 			"effectiveness.hash.computed",
@@ -1213,18 +1218,27 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"signalprocessing.classification.decision",
 			"signalprocessing.signal.processed",
 			"signalprocessing.phase.transition",
+			"signalprocessing.business.classified",
 			"aianalysis.phase.transition",
 			"aianalysis.aiagent.call",
 			"aianalysis.rego.evaluation",
 			"aianalysis.analysis.completed",
+			"aianalysis.approval.decision",
 			string(ogenclient.LLMRequestPayloadAuditEventEventData),
 			string(ogenclient.LLMResponsePayloadAuditEventEventData),
 			string(ogenclient.WorkflowValidationPayloadAuditEventEventData),
 			string(ogenclient.AIAgentResponsePayloadAuditEventEventData),
+			string(ogenclient.LLMToolCallPayloadAuditEventEventData),
+			string(ogenclient.AIAgentRCACompletePayloadAuditEventEventData),
 			"workflowexecution.selection.completed",
 			"workflowexecution.execution.started",
 			"workflowexecution.workflow.completed",
 			"notification.message.sent",
+			"remediation.workflow_created",
+			"workflow.catalog.actions_listed",
+			"workflow.catalog.workflows_listed",
+			"workflow.catalog.workflow_retrieved",
+			"workflow.catalog.selection_validated",
 		}
 
 		allExpected := append(exactlyOnceEvents, atLeastOnceEvents...)

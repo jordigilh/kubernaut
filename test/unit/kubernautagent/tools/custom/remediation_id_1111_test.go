@@ -114,7 +114,7 @@ var _ = Describe("Issue #1111: Remediation ID forwarding to DS discovery tools",
 		})
 	})
 
-	Describe("UT-KA-1111-006: Empty RemediationID does NOT send param", func() {
+	Describe("UT-KA-1111-004: Empty RemediationID does NOT send param", func() {
 		It("should not set RemediationID when signal.RemediationID is empty", func() {
 			fake := &fakeWorkflowDS{
 				listActionsResponse: &ogenclient.ActionTypeListResponse{},
@@ -131,7 +131,7 @@ var _ = Describe("Issue #1111: Remediation ID forwarding to DS discovery tools",
 		})
 	})
 
-	Describe("UT-KA-1111-007: Max-length RemediationID forwarded without truncation", func() {
+	Describe("UT-KA-1111-005: Max-length RemediationID forwarded without truncation", func() {
 		It("should forward a 256-char RemediationID as-is", func() {
 			longID := "rr-" + strings.Repeat("a", 253)
 			Expect(len(longID)).To(Equal(256))
@@ -152,7 +152,7 @@ var _ = Describe("Issue #1111: Remediation ID forwarding to DS discovery tools",
 		})
 	})
 
-	Describe("UT-KA-1111-008: Path traversal RemediationID forwarded as-is", func() {
+	Describe("UT-KA-1111-006: Path traversal RemediationID forwarded as-is", func() {
 		It("should forward path traversal chars without sanitization", func() {
 			pathTraversal := "../../etc/passwd"
 			fake := &fakeWorkflowDS{
@@ -171,7 +171,7 @@ var _ = Describe("Issue #1111: Remediation ID forwarding to DS discovery tools",
 		})
 	})
 
-	Describe("UT-KA-1111-009: Unicode RemediationID forwarded correctly", func() {
+	Describe("UT-KA-1111-007: Unicode RemediationID forwarded correctly", func() {
 		It("should forward Unicode characters without corruption", func() {
 			unicodeID := "rr-テスト-123"
 			fake := &fakeWorkflowDS{
@@ -190,7 +190,7 @@ var _ = Describe("Issue #1111: Remediation ID forwarding to DS discovery tools",
 		})
 	})
 
-	Describe("UT-KA-1111-010: get_workflow without signal context succeeds (best-effort)", func() {
+	Describe("UT-KA-1111-008: get_workflow without signal context succeeds (best-effort)", func() {
 		It("should succeed without forwarding RemediationID when signal is missing", func() {
 			fake := &fakeWorkflowDS{}
 			allTools := custom.NewAllTools(fake)
@@ -207,7 +207,7 @@ var _ = Describe("Issue #1111: Remediation ID forwarding to DS discovery tools",
 		})
 	})
 
-	Describe("UT-KA-1111-011: get_workflow with empty RemediationID does not populate params", func() {
+	Describe("UT-KA-1111-009: get_workflow with empty RemediationID does not populate params", func() {
 		It("should not set context filters when RemediationID is empty", func() {
 			fake := &fakeWorkflowDS{}
 			allTools := custom.NewAllTools(fake)

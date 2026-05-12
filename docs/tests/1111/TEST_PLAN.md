@@ -25,7 +25,7 @@ This test plan ensures that every audit event type emitted by Kubernaut producti
 ### 1.2 Objectives
 
 1. **Fix #1111**: KA forwards `signal.RemediationID` to all 3 DS discovery tools, restoring 4 `workflow.catalog.*` audit events
-2. **FP E2E coverage**: Promote 10 events from uncovered/MAY to the FP assertion list (32 -> 42 events)
+2. **FP E2E coverage**: Promote 10 events from uncovered/MAY to the FP assertion list (30 -> 40 events)
 3. **Service E2E coverage**: Add assertions for ~22 error/conditional path events at the service E2E tier
 4. **IT coverage**: Verify ~18 webhook/bootstrap events are asserted at the integration tier
 5. **100% emittable coverage**: Every event type with a production emitter path is validated at some tier
@@ -34,11 +34,11 @@ This test plan ensures that every audit event type emitted by Kubernaut producti
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| FP E2E event assertion count | 42 events | Count items in `exactlyOnceEvents` + `atLeastOnceEvents` |
+| FP E2E event assertion count | 40 events | Count items in `exactlyOnceEvents` + `atLeastOnceEvents` |
 | Unit test pass rate | 100% | `go test ./test/unit/kubernautagent/tools/custom/... ./test/unit/datastorage/...` |
 | Build clean | 0 errors | `go build ./...` |
 | Lint clean | 0 new warnings | `golangci-lint run --timeout=5m` |
-| Backward compatibility | 0 regressions | All existing tests pass |
+| Regression check | 0 regressions | All existing tests pass |
 | Emittable event coverage | >=80% | (FP + Service E2E + IT asserted) / (total defined - never-emitted) |
 
 ---
@@ -86,7 +86,7 @@ This test plan ensures that every audit event type emitted by Kubernaut producti
 
 - **KA tool remediation_id forwarding** (`internal/kubernautagent/tools/custom/tools.go`): All 3 DS discovery tools forward `signal.RemediationID` as `remediation_id` query parameter
 - **DS audit correlation** (`pkg/datastorage/audit/workflow_discovery_event.go`): `setCorrelationIDFromFilters` correctly sets correlation_id from filters or fallback
-- **FP E2E audit completeness** (`test/e2e/fullpipeline/01_full_remediation_lifecycle_test.go`): Step 11 validates 42 event types (up from 32)
+- **FP E2E audit completeness** (`test/e2e/fullpipeline/01_full_remediation_lifecycle_test.go`): Step 11 validates 40 event types (up from 30)
 - **Service E2E error paths**: Error/conditional audit events validated per service
 - **IT webhook/bootstrap events**: Administrative audit events validated at integration tier
 
@@ -102,7 +102,7 @@ This test plan ensures that every audit event type emitted by Kubernaut producti
 |----------|-----------|
 | FP queries by `correlation_id = RR.Name` | DD-AUDIT-CORRELATION-001 establishes RR name as the universal correlation ID |
 | Events with non-RR correlation are tested at service/IT tier | FP cannot query events correlated by admission UID or AIAnalysis name |
-| `get_workflow` signal context is best-effort | Backward compatibility with non-investigator callers (notification resolver, RO adapter, WE querier) |
+| `get_workflow` signal context is best-effort | Non-investigator callers (notification resolver, RO adapter, WE querier) may not have a signal context |
 
 ---
 
@@ -112,7 +112,7 @@ This test plan ensures that every audit event type emitted by Kubernaut producti
 
 - **Unit**: >=80% of unit-testable code in `tools.go` and `workflow_discovery_event.go`
 - **Integration**: Covered by existing IT suites; new assertions added where gaps exist
-- **E2E**: FP asserts 42 events; service E2E covers error/conditional paths
+- **E2E**: FP asserts 40 events; service E2E covers error/conditional paths
 
 ### 5.2 Two-Tier Minimum
 
@@ -129,7 +129,7 @@ Tests validate that audit events are **persisted in DataStorage** with the corre
 **PASS**: All of the following:
 1. All P0 tests pass (0 failures)
 2. `go build ./...` succeeds
-3. FP E2E Step 11 passes with 42 events
+3. FP E2E Step 11 passes with 40 events
 4. No regressions in existing test suites
 
 **FAIL**: Any of the following:
@@ -172,23 +172,23 @@ Tests validate that audit events are **persisted in DataStorage** with the corre
 
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |-------|-------------|----------|------|---------|--------|
-| BR-AUDIT-021 | Remediation ID forwarded for audit correlation | P0 | Unit | UT-KA-1111-001 | Pending |
-| BR-AUDIT-021 | Remediation ID forwarded for list_workflows | P0 | Unit | UT-KA-1111-002 | Pending |
-| BR-AUDIT-021 | Remediation ID forwarded for get_workflow | P0 | Unit | UT-KA-1111-003 | Pending |
-| BR-AUDIT-023 | setCorrelationIDFromFilters uses RemediationID | P0 | Unit | UT-DS-1111-001 | Pending |
-| BR-AUDIT-023 | setCorrelationIDFromFilters uses fallback | P0 | Unit | UT-DS-1111-002 | Pending |
-| BR-AUDIT-023 | setCorrelationIDFromFilters leaves unset when empty | P0 | Unit | UT-DS-1111-003 | Pending |
-| BR-AUDIT-023 | ActionsListed event has valid correlation_id | P0 | Unit | UT-DS-1111-004 | Pending |
-| BR-AUDIT-023 | WorkflowsListed event has valid correlation_id | P0 | Unit | UT-DS-1111-005 | Pending |
-| BR-AUDIT-021 | Empty RemediationID does not send param | P0 | Unit | UT-KA-1111-006 | Pending |
-| BR-AUDIT-021 | Max-length RemediationID forwarded | P1 | Unit | UT-KA-1111-007 | Pending |
-| BR-AUDIT-021 | Path traversal RemediationID forwarded | P1 | Unit | UT-KA-1111-008 | Pending |
-| BR-AUDIT-021 | Unicode RemediationID forwarded | P1 | Unit | UT-KA-1111-009 | Pending |
-| BR-AUDIT-021 | get_workflow without signal context succeeds | P0 | Unit | UT-KA-1111-010 | Pending |
-| BR-AUDIT-021 | get_workflow with empty RemediationID skips | P0 | Unit | UT-KA-1111-011 | Pending |
-| BR-AUDIT-023 | Nil filters with non-empty fallback | P0 | Unit | UT-DS-1111-006 | Pending |
-| BR-AUDIT-023 | Empty filters with empty fallback | P0 | Unit | UT-DS-1111-007 | Pending |
-| BR-AUDIT-005 | FP E2E validates 42 audit event types | P0 | E2E | FP-Step-11 | Pending |
+| BR-AUDIT-021 | Remediation ID forwarded for audit correlation | P0 | Unit | UT-KA-1111-001 | Pass |
+| BR-AUDIT-021 | Remediation ID forwarded for list_workflows | P0 | Unit | UT-KA-1111-002 | Pass |
+| BR-AUDIT-021 | Remediation ID forwarded for get_workflow | P0 | Unit | UT-KA-1111-003 | Pass |
+| BR-AUDIT-023 | setCorrelationIDFromFilters uses RemediationID | P0 | Unit | UT-DS-1111-001 | Pass |
+| BR-AUDIT-023 | setCorrelationIDFromFilters uses fallback | P0 | Unit | UT-DS-1111-002 | Pass |
+| BR-AUDIT-023 | setCorrelationIDFromFilters leaves unset when empty | P0 | Unit | UT-DS-1111-003 | Pass |
+| BR-AUDIT-023 | ActionsListed event has valid correlation_id | P0 | Unit | UT-DS-1111-004 | Pass |
+| BR-AUDIT-023 | WorkflowsListed event has valid correlation_id | P0 | Unit | UT-DS-1111-005 | Pass |
+| BR-AUDIT-021 | Empty RemediationID does not send param | P0 | Unit | UT-KA-1111-004 | Pass |
+| BR-AUDIT-021 | Max-length RemediationID forwarded | P1 | Unit | UT-KA-1111-005 | Pass |
+| BR-AUDIT-021 | Path traversal RemediationID forwarded | P1 | Unit | UT-KA-1111-006 | Pass |
+| BR-AUDIT-021 | Unicode RemediationID forwarded | P1 | Unit | UT-KA-1111-007 | Pass |
+| BR-AUDIT-021 | get_workflow without signal context succeeds | P0 | Unit | UT-KA-1111-008 | Pass |
+| BR-AUDIT-021 | get_workflow with empty RemediationID skips | P0 | Unit | UT-KA-1111-009 | Pass |
+| BR-AUDIT-023 | Nil filters with non-empty fallback | P0 | Unit | UT-DS-1111-006 | Pass |
+| BR-AUDIT-023 | Empty filters with empty fallback | P0 | Unit | UT-DS-1111-007 | Pass |
+| BR-AUDIT-005 | FP E2E validates 40 audit event types | P0 | E2E | FP-Step-11 | Pass |
 
 ### Status Legend
 
@@ -217,27 +217,27 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-KA-1111-001` | list_available_actions forwards signal.RemediationID to DS params | Pending |
-| `UT-KA-1111-002` | list_workflows forwards signal.RemediationID to DS params | Pending |
-| `UT-KA-1111-003` | get_workflow loads signal context and forwards RemediationID + context filters | Pending |
-| `UT-KA-1111-006` | Empty signal.RemediationID does NOT send remediation_id= to DS | Pending |
-| `UT-KA-1111-007` | Max-length+1 (256 char) RemediationID forwarded without truncation | Pending |
-| `UT-KA-1111-008` | Path traversal RemediationID (../../etc/passwd) forwarded as-is | Pending |
-| `UT-KA-1111-009` | Unicode RemediationID (rr-テスト-123) forwarded correctly | Pending |
-| `UT-KA-1111-010` | get_workflow without signal context in ctx succeeds (best-effort) | Pending |
-| `UT-KA-1111-011` | get_workflow with signal context where RemediationID="" does not populate params | Pending |
+| `UT-KA-1111-001` | list_available_actions forwards signal.RemediationID to DS params | Pass |
+| `UT-KA-1111-002` | list_workflows forwards signal.RemediationID to DS params | Pass |
+| `UT-KA-1111-003` | get_workflow loads signal context and forwards RemediationID + context filters | Pass |
+| `UT-KA-1111-004` | Empty signal.RemediationID does NOT send remediation_id= to DS | Pass |
+| `UT-KA-1111-005` | Max-length+1 (256 char) RemediationID forwarded without truncation | Pass |
+| `UT-KA-1111-006` | Path traversal RemediationID (../../etc/passwd) forwarded as-is | Pass |
+| `UT-KA-1111-007` | Unicode RemediationID (rr-テスト-123) forwarded correctly | Pass |
+| `UT-KA-1111-008` | get_workflow without signal context in ctx succeeds (best-effort) | Pass |
+| `UT-KA-1111-009` | get_workflow with signal context where RemediationID="" does not populate params | Pass |
 
 **Phase 1 — DS setCorrelationIDFromFilters**
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-DS-1111-001` | setCorrelationIDFromFilters sets correlation from filters.RemediationID when non-empty | Pending |
-| `UT-DS-1111-002` | setCorrelationIDFromFilters uses fallbackID when RemediationID is empty | Pending |
-| `UT-DS-1111-003` | setCorrelationIDFromFilters leaves correlation unset when both are empty | Pending |
-| `UT-DS-1111-004` | NewActionsListedAuditEvent with non-empty RemediationID produces valid correlation_id | Pending |
-| `UT-DS-1111-005` | NewWorkflowsListedAuditEvent with non-empty RemediationID produces valid correlation_id | Pending |
-| `UT-DS-1111-006` | Nil filters with non-empty fallbackID uses fallback | Pending |
-| `UT-DS-1111-007` | Empty filters.RemediationID with empty fallbackID leaves correlation unset | Pending |
+| `UT-DS-1111-001` | setCorrelationIDFromFilters sets correlation from filters.RemediationID when non-empty | Pass |
+| `UT-DS-1111-002` | setCorrelationIDFromFilters uses fallbackID when RemediationID is empty | Pass |
+| `UT-DS-1111-003` | setCorrelationIDFromFilters leaves correlation unset when both are empty | Pass |
+| `UT-DS-1111-004` | NewActionsListedAuditEvent with non-empty RemediationID produces valid correlation_id | Pass |
+| `UT-DS-1111-005` | NewWorkflowsListedAuditEvent with non-empty RemediationID produces valid correlation_id | Pass |
+| `UT-DS-1111-006` | Nil filters with non-empty fallbackID uses fallback | Pass |
+| `UT-DS-1111-007` | Empty filters.RemediationID with empty fallbackID leaves correlation unset | Pass |
 
 ### Tier 3: E2E Tests
 
@@ -245,7 +245,7 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `FP-Step-11` | FP E2E validates 42 audit event types (14 exactlyOnce + 26 atLeastOnce + 2 MAY) | Pending |
+| `FP-Step-11` | FP E2E validates 40 audit event types (14 exactlyOnce + 26 atLeastOnce) | Pass |
 
 ---
 
@@ -361,7 +361,7 @@ go build ./...
 
 ## 15. Audit Event Coverage Matrix
 
-### Events Validated in FP E2E (42 total after Phase 2)
+### Events Validated in FP E2E (40 total after Phase 2)
 
 #### exactlyOnceEvents (14)
 

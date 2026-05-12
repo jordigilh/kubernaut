@@ -292,16 +292,12 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 					eventTypes[event.EventType] = true
 				}
 
-				return eventTypes[roaudit.EventTypeEACreated] ||
-					eventTypes[roaudit.EventTypeRemediationWorkflowCreated] ||
-					eventTypes[roaudit.EventTypeLifecycleCompleted] ||
-					eventTypes[roaudit.EventTypeLifecycleFailed]
+				return eventTypes[roaudit.EventTypeEACreated] &&
+					eventTypes[roaudit.EventTypeRemediationWorkflowCreated]
 			}, 2*time.Minute, 2*time.Second).Should(BeTrue(),
-				"Expected EA created or workflow created audit events")
+				"Both orchestrator.ea.created AND remediation.workflow_created must be present")
 
-			eventTypes := make(map[string]bool)
 			for _, event := range events {
-				eventTypes[event.EventType] = true
 				if event.EventType == roaudit.EventTypeEACreated ||
 					event.EventType == roaudit.EventTypeRemediationWorkflowCreated {
 					Expect(event.CorrelationID).To(Equal(correlationID),
@@ -309,7 +305,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 				}
 			}
 
-			GinkgoWriter.Printf("✅ E2E: RO audit events found — types: %v\n", eventTypes)
+			GinkgoWriter.Printf("✅ E2E: RO audit events found — ea.created and workflow_created confirmed\n")
 		})
 
 		It("should handle audit service unavailability gracefully during startup", func() {
