@@ -11,6 +11,7 @@ func TestClassifyAuthError(t *testing.T) {
 		expected string
 	}{
 		{"expired", ErrTokenExpired, "token_expired"},
+		{"not yet valid", ErrNotYetValid, "not_yet_valid"},
 		{"audience", ErrInvalidAudience, "invalid_audience"},
 		{"unknown issuer", ErrUnknownIssuer, "unknown_issuer"},
 		{"malformed", ErrMalformedToken, "malformed_token"},

@@ -117,6 +117,8 @@ func writeDeadlineMiddleware(next http.Handler) http.Handler {
 
 // trackSSEConnection registers active streaming connections with the tracker
 // for graceful shutdown. Each connection is tracked from start to completion.
+// It also clears the write deadline set by writeDeadlineMiddleware, since
+// streaming connections are long-lived and should not be killed by a fixed timeout.
 func trackSSEConnection(tracker *streaming.ConnectionTracker, next http.Handler) http.Handler {
 	if tracker == nil {
 		return next
@@ -137,6 +139,12 @@ func trackSSEConnection(tracker *streaming.ConnectionTracker, next http.Handler)
 			return
 		}
 		defer tracker.Remove(connID)
+
+		// Clear the write deadline for streaming — these are long-lived
+		// connections whose lifetime is managed by token expiry and graceful shutdown.
+		rc := http.NewResponseController(w)
+		_ = rc.SetWriteDeadline(time.Time{})
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

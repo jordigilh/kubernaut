@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
 	"net/http"
 	"strings"
 	"time"
@@ -97,6 +98,17 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 
 			ctx = WithUserIdentity(ctx, identity)
 			ctx = logging.WithUserID(ctx, identity.Username)
+
+			// Derive deadline from token expiry so streaming handlers terminate
+			// before the token becomes invalid. Jitter prevents timing oracle.
+			if !identity.ExpiresAt.IsZero() {
+				jitter := time.Duration(25+rand.IntN(10)) * time.Second
+				deadline := identity.ExpiresAt.Add(-jitter)
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithDeadline(ctx, deadline)
+				defer cancel()
+			}
+
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -134,6 +146,8 @@ func classifyAuthError(err error) string {
 	switch {
 	case errors.Is(err, ErrTokenExpired):
 		return "token_expired"
+	case errors.Is(err, ErrNotYetValid):
+		return "not_yet_valid"
 	case errors.Is(err, ErrInvalidAudience):
 		return "invalid_audience"
 	case errors.Is(err, ErrUnknownIssuer):

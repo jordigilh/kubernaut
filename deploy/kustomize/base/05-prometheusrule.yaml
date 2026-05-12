@@ -234,7 +234,7 @@ spec:
           expr: |
             (sum(rate(af_rate_limit_rejections_total{job="apifrontend"}[5m])) > 5)
             and
-            (sum(rate(af_http_requests_total{job="apifrontend",code="401"}[5m])) > 5)
+            (sum(rate(af_http_requests_total{job="apifrontend",status="401"}[5m])) > 5)
           for: 5m
           labels:
             severity: critical
