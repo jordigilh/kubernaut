@@ -61,6 +61,58 @@ test-bridge: fmt vet ## Run MCP bridge tests (pass GINKGO_LABEL="tier1" to filte
 .PHONY: test-all
 test-all: test-unit test-integration ## Run unit + integration tests
 
+##@ E2E
+
+E2E_IMAGE ?= localhost/kubernaut-apifrontend:e2e
+E2E_CLUSTER_NAME ?= apifrontend-e2e
+E2E_KIND_CONFIG ?= deploy/kustomize/overlays/e2e/kind-config.yaml
+E2E_CERT_DIR ?= /tmp/apifrontend-e2e-certs
+E2E_BASE_URL ?= https://localhost:18443
+E2E_DEX_URL ?= http://localhost:15556/dex
+E2E_NAMESPACE ?= kubernaut-system
+
+.PHONY: e2e-setup
+e2e-setup: ## Create Kind cluster, build image, generate certs, deploy AF + DEX
+	@which kind >/dev/null 2>&1 || { echo "kind not found — install: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"; exit 1; }
+	$(CONTAINER_TOOL) build --target production -t $(E2E_IMAGE) .
+	kind create cluster --name $(E2E_CLUSTER_NAME) --config $(E2E_KIND_CONFIG) --wait 60s
+	kind load docker-image $(E2E_IMAGE) --name $(E2E_CLUSTER_NAME)
+	bash deploy/kustomize/overlays/e2e/generate-certs.sh $(E2E_CERT_DIR)
+	kubectl --context kind-$(E2E_CLUSTER_NAME) create namespace $(E2E_NAMESPACE) --dry-run=client -o yaml | kubectl --context kind-$(E2E_CLUSTER_NAME) apply -f -
+	kubectl --context kind-$(E2E_CLUSTER_NAME) create secret tls apifrontend-tls --cert=$(E2E_CERT_DIR)/tls.crt --key=$(E2E_CERT_DIR)/tls.key -n $(E2E_NAMESPACE) --dry-run=client -o yaml | kubectl --context kind-$(E2E_CLUSTER_NAME) apply -f -
+	kubectl --context kind-$(E2E_CLUSTER_NAME) create secret generic apifrontend-ca --from-file=ca.crt=$(E2E_CERT_DIR)/ca.crt -n $(E2E_NAMESPACE) --dry-run=client -o yaml | kubectl --context kind-$(E2E_CLUSTER_NAME) apply -f -
+	kubectl --context kind-$(E2E_CLUSTER_NAME) apply -k deploy/kustomize/overlays/e2e/
+	kubectl --context kind-$(E2E_CLUSTER_NAME) rollout status deployment/dex -n $(E2E_NAMESPACE) --timeout=90s
+	kubectl --context kind-$(E2E_CLUSTER_NAME) rollout status deployment/apifrontend -n $(E2E_NAMESPACE) --timeout=120s
+
+.PHONY: deploy-e2e
+deploy-e2e: ## Rebuild image and redeploy AF to existing E2E cluster
+	$(CONTAINER_TOOL) build --target production -t $(E2E_IMAGE) .
+	kind load docker-image $(E2E_IMAGE) --name $(E2E_CLUSTER_NAME)
+	kubectl --context kind-$(E2E_CLUSTER_NAME) rollout restart deployment/apifrontend -n $(E2E_NAMESPACE)
+	kubectl --context kind-$(E2E_CLUSTER_NAME) rollout status deployment/apifrontend -n $(E2E_NAMESPACE) --timeout=120s
+
+.PHONY: test-e2e
+test-e2e: ## Run E2E tests (requires port-forward to AF:18443 and DEX:15556)
+	AF_E2E_BASE_URL=$(E2E_BASE_URL) \
+	AF_E2E_CA_CERT=$(E2E_CERT_DIR)/ca.crt \
+	AF_E2E_DEX_URL=$(E2E_DEX_URL) \
+	AF_E2E_CLIENT_ID=kubernaut-apifrontend \
+	AF_E2E_CLIENT_SECRET=e2e-client-secret \
+	AF_E2E_USERNAME=e2e-user@kubernaut.ai \
+	AF_E2E_PASSWORD=password \
+	$(GINKGO) -v --timeout=5m --label-filter="phase1" ./test/e2e/
+
+.PHONY: e2e-port-forward
+e2e-port-forward: ## Start port-forwards for AF and DEX
+	kubectl --context kind-$(E2E_CLUSTER_NAME) port-forward -n $(E2E_NAMESPACE) svc/apifrontend 18443:8443 &
+	kubectl --context kind-$(E2E_CLUSTER_NAME) port-forward -n $(E2E_NAMESPACE) svc/dex 15556:5556 &
+	@echo "Port-forwards started: AF=https://localhost:18443, DEX=http://localhost:15556/dex"
+
+.PHONY: e2e-teardown
+e2e-teardown: ## Delete E2E Kind cluster
+	kind delete cluster --name $(E2E_CLUSTER_NAME)
+
 ##@ Container
 
 .PHONY: image-build
@@ -182,11 +234,12 @@ validate-maturity-ci:
 	bash hack/validate-maturity.sh
 
 .PHONY: validate-kustomize
-validate-kustomize: ## Validate kustomize build for dev and ci overlays
+validate-kustomize: ## Validate kustomize build for dev, ci, and e2e overlays
 	@which kubectl >/dev/null 2>&1 || { echo "kubectl not found — install: https://kubernetes.io/docs/tasks/tools/"; exit 1; }
 	kubectl kustomize deploy/kustomize/overlays/dev/ > /dev/null
 	kubectl kustomize deploy/kustomize/overlays/ci/ > /dev/null
-	@echo "Kustomize build validated for dev and ci overlays"
+	kubectl kustomize deploy/kustomize/overlays/e2e/ > /dev/null
+	@echo "Kustomize build validated for dev, ci, and e2e overlays"
 
 ##@ Security & Supply Chain
 
