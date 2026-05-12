@@ -104,10 +104,12 @@ test-e2e: ## Run E2E tests (requires port-forward to AF:18443 and DEX:15556)
 	$(GINKGO) -v --timeout=5m --label-filter="phase1" ./test/e2e/
 
 .PHONY: e2e-port-forward
-e2e-port-forward: ## Start port-forwards for AF and DEX
+e2e-port-forward: ## Start port-forwards for AF and DEX (waits for readiness)
 	kubectl --context kind-$(E2E_CLUSTER_NAME) port-forward -n $(E2E_NAMESPACE) svc/apifrontend 18443:8443 &
 	kubectl --context kind-$(E2E_CLUSTER_NAME) port-forward -n $(E2E_NAMESPACE) svc/dex 15556:5556 &
-	@echo "Port-forwards started: AF=https://localhost:18443, DEX=http://localhost:15556/dex"
+	@for i in $$(seq 1 30); do curl -s --cacert $(E2E_CERT_DIR)/ca.crt https://localhost:18443/healthz >/dev/null 2>&1 && break || sleep 1; done
+	@for i in $$(seq 1 30); do curl -sf http://localhost:15556/dex/healthz >/dev/null 2>&1 && break || sleep 1; done
+	@echo "Port-forwards ready: AF=https://localhost:18443, DEX=http://localhost:15556/dex"
 
 .PHONY: e2e-teardown
 e2e-teardown: ## Delete E2E Kind cluster
