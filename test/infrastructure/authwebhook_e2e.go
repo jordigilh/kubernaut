@@ -1021,6 +1021,7 @@ data:
       healthPort: 8081
       readTimeout: 30s
       writeTimeout: 30s
+      signerCertDir: /etc/signing-certs
       tls:
         certDir: /etc/tls
     database:
@@ -1158,6 +1159,9 @@ spec:
         - name: tls-certs
           mountPath: /etc/tls
           readOnly: true
+        - name: signing-certs
+          mountPath: /etc/signing-certs
+          readOnly: true
         resources:
           requests:
             memory: 256Mi
@@ -1187,6 +1191,9 @@ spec:
         secret:
           secretName: datastorage-tls
           optional: true
+      - name: signing-certs
+        secret:
+          secretName: datastorage-signing
       - name: secrets
         projected:
           sources:
