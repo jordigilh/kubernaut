@@ -40,10 +40,15 @@ patches:
       name: apifrontend
   - patch: |-
       - op: add
-        path: /spec/egress/0/ports/-
+        path: /spec/egress/-
         value:
-          port: 5556
-          protocol: TCP
+          to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: dex
+          ports:
+            - port: 5556
+              protocol: TCP
     target:
       kind: NetworkPolicy
       name: apifrontend
