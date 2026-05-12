@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Circuit breaker enforcement** (#1076) — When shadow agent detects suspicious content in enforce mode, the primary investigation is cancelled via `context.WithCancelCause(ErrCircuitBreaker)`. New `alignmentCircuitBreakerTotal` Prometheus counter.
 - **RO alignment verdict notifications** (#1076) — Manual review notifications render shadow agent findings prominently. `alignment_check_failed` SubReason escalates to `NotificationPriorityCritical`.
 - **Shadow agent LLM token audit events** (#1059) — Per-step audit trail with shadow LLM request/response payloads and token counts for cost tracking.
+- **RCA completion audit event** (#847) — `aiagent.rca.complete` audit event with causal chain and due diligence propagation from Phase 1 to final result. Prometheus `match[]` filter added.
 - **Mock-LLM tool call scenarios** (#657) — Per-scenario `ForceText` override, `ToolCallOverride` for custom tool call bypass, `injection_configmap_read` scenario, and `CreatePoisonedConfigMap` E2E fixture for security testing.
 
 #### Notification Channels (#60, #593)
@@ -46,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CRD-aware engine registration** (#868) — Engine registration validates CRD availability; enters degraded status when required CRDs are missing.
 - **Session hardening** (#1078) — Panic recovery in investigation goroutines, two-tier TTL eviction (terminal after `ttl`, non-terminal after `maxSessionAge`), and 25-minute wall-clock investigation timeout.
 - **LLMProxy bypass fix** (C-1) — `PinDecorator` ensures `LLMProxy` is re-applied around pinned `SwappableClient` snapshots, preventing unmonitored LLM traffic.
+- **Authenticated audit actor** (#998) — Propagates the authenticated user identity into all audit events for SOC2 attribution.
+- **LLM and DS circuit breaker** (OPS-2) — Circuit breaker wrapping LLM and DataStorage HTTP clients for graceful degradation under downstream failures.
 
 #### Gateway
 
@@ -53,8 +56,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dynamic owner resolution** (#1029, #1032) — Dynamic API resource registry with existence validation. Batch-independent alert processing with FedRAMP readiness remediation.
 - **Prometheus reserved label denylist** (#1045, #1067) — `namespace` and Prometheus-reserved labels excluded from dynamic kind resolution to prevent misrouting.
 
+#### Orchestrator Resilience
+
+- **RO config hot-reload** (#835) — FileWatcher-based hot-reload for RO ConfigMap fields. Thread-safe config access via `ReloadCallback` eliminates pod restarts for runtime tuning.
+- **Cache sync readiness gating** (#852, #853) — Controller readiness probes now gate on informer cache sync completion. HTTP retry transport with exponential backoff for transient DataStorage failures.
+
 #### Infrastructure
 
+- **Inter-service TLS with security profiles** (#748) — TLS wired between all 10 services (Gateway, DataStorage, KA, RO, WE, EM, NT, SP, AuthWebhook, Operator). Configurable `tlsProfile` field selects built-in cipher/protocol profiles (Modern, Intermediate, Old). ADR-TLS-001 documents the design.
+- **SBOM and license scan** (COMP-1) — `go-licenses` SBOM and license compliance scan added to CI pipeline.
 - **NetworkPolicy templates** (#285) — 12 NetworkPolicy templates for all Kubernaut services with default-deny posture, configurable CIDRs, and per-service toggle.
 - **FileWatcher routing hot-reload** (#244) — Notification routing ConfigMap informer replaced with FileWatcher. `SLACK_WEBHOOK_URL` environment variable dependency removed.
 - **Defense-in-depth parameter filtering** (#243) — WE controller filters workflow parameters against the workflow schema with consolidated DataStorage calls.
@@ -67,7 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **KA config camelCase migration** (#908) — All KA YAML config fields migrated from `snake_case` to `camelCase` per ADR-030. **Breaking**: existing KA ConfigMaps must be updated.
-- **KA config restructured into 3 domains** (#908) — Config reorganized into `server`, `ai`, and `tools` concern domains. **Breaking**: config field paths have changed.
+- **KA config restructured into 3 domains** (#908) — Config reorganized into `runtime`, `ai`, and `integrations` top-level domains (`server` nested under `runtime`; `tools` nested under `integrations`). **Breaking**: config field paths have changed.
 - **KA config split** (#916) — KA config split into static ConfigMap and hot-reloadable ConfigMap. Runtime changes to AI/tool settings take effect without pod restart.
 - **Verdict label rename** (#1077) — `VerdictClean` changed from `"clean"` to `"aligned"` for API consistency. **Breaking**: Prometheus `result` label changes from `result="clean"` to `result="aligned"`.
 - **Standardized log levels** (#875) — Log level configuration standardized across all services with consistent YAML key naming.
@@ -105,11 +115,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Upgrade Notes
 
 - **Breaking: KA config camelCase** (#908, ADR-030) — All KA YAML config fields migrated from `snake_case` to `camelCase`. Update your KA ConfigMap before upgrading.
-- **Breaking: KA config restructured** (#908) — Config reorganized into `server`, `ai`, and `tools` domains. Field paths have changed (e.g., `llm_provider` → `ai.llmProvider`).
+- **Breaking: KA config restructured** (#908) — Config reorganized into `runtime`, `ai`, and `integrations` top-level domains (e.g., `llm_provider` → `ai.llmProvider`, `server` is now under `runtime`, `tools` under `integrations`).
 - **Breaking: KA config split** (#916) — KA now reads from two ConfigMaps: a static one (mounted at startup) and a hot-reloadable one (watched at runtime). Update Helm values accordingly.
 - **Breaking: Prometheus verdict label** (#1077) — Shadow agent Prometheus metric `result` label changed from `"clean"` to `"aligned"`. Update dashboard queries and alerting rules.
 - **Database migrations required** — Run v1.4 migrations before upgrading controllers. The Helm pre-upgrade hook handles this automatically.
-- **NetworkPolicy** (#285) — NetworkPolicies are now deployed for all services by default with a default-deny posture. Verify your cluster's CNI supports NetworkPolicy enforcement. Disable per-service with `networkPolicy.<service>.enabled: false`.
+- **NetworkPolicy** (#285) — NetworkPolicies are now deployed for all services by default with a default-deny posture. Verify your cluster's CNI supports NetworkPolicy enforcement. Disable per-service with `networkPolicies.<service>.enabled: false`.
 
 [1.4.0]: https://github.com/jordigilh/kubernaut/compare/v1.3.2...v1.4.0
 
