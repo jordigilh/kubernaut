@@ -34,22 +34,25 @@ import (
 type Registry struct {
 	registry *prometheus.Registry
 
-	HTTPRequestsTotal      *prometheus.CounterVec
-	HTTPRequestDuration    *prometheus.HistogramVec
-	ToolCallsTotal         *prometheus.CounterVec
-	ToolCallDuration       *prometheus.HistogramVec
-	SessionsActive         *prometheus.GaugeVec
-	LLMTokensTotal         *prometheus.CounterVec
-	RateLimitDenied        *prometheus.CounterVec
-	CircuitBreakerState    *prometheus.GaugeVec
-	DownstreamDuration     *prometheus.HistogramVec
-	DownstreamRetryTotal   *prometheus.CounterVec
-	AuthDuration           *prometheus.HistogramVec
-	AuditEventsTotal       *prometheus.CounterVec
-	SessionTTLActionsTotal *prometheus.CounterVec
-	MCPRBACDeniedTotal     *prometheus.CounterVec
-	SSEActiveConnections   prometheus.Gauge
-	AuditBufferOverflow    prometheus.Counter
+	HTTPRequestsTotal         *prometheus.CounterVec
+	HTTPRequestDuration       *prometheus.HistogramVec
+	ToolCallsTotal            *prometheus.CounterVec
+	ToolCallDuration          *prometheus.HistogramVec
+	SessionsActive            *prometheus.GaugeVec
+	LLMTokensTotal            *prometheus.CounterVec
+	RateLimitDenied           *prometheus.CounterVec
+	CircuitBreakerState       *prometheus.GaugeVec
+	DownstreamDuration        *prometheus.HistogramVec
+	DownstreamRetryTotal      *prometheus.CounterVec
+	AuthDuration              *prometheus.HistogramVec
+	AuditEventsTotal          *prometheus.CounterVec
+	SessionTTLActionsTotal    *prometheus.CounterVec
+	MCPRBACDeniedTotal        *prometheus.CounterVec
+	SSEActiveConnections      prometheus.Gauge
+	AuditBufferOverflow       prometheus.Counter
+	SeverityTriageTotal       *prometheus.CounterVec
+	SeverityTriageDuration    *prometheus.HistogramVec
+	SeverityTriageErrorsTotal *prometheus.CounterVec
 }
 
 // NewRegistry creates and registers all AF Prometheus metrics.
@@ -144,6 +147,23 @@ func NewRegistry() *Registry {
 		Help:      "Total audit events dropped due to buffer overflow.",
 	})
 
+	r.SeverityTriageTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "af",
+		Name:      "severity_triage_total",
+		Help:      "Total severity triage completions by tier and resulting severity.",
+	}, []string{"tier", "severity"})
+	r.SeverityTriageDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "af",
+		Name:      "severity_triage_duration_seconds",
+		Help:      "Severity triage latency distribution by tier.",
+		Buckets:   prometheus.DefBuckets,
+	}, []string{"tier"})
+	r.SeverityTriageErrorsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "af",
+		Name:      "severity_triage_errors_total",
+		Help:      "Total severity triage errors by tier and error type.",
+	}, []string{"tier", "error_type"})
+
 	reg.MustRegister(r.HTTPRequestsTotal)
 	reg.MustRegister(r.HTTPRequestDuration)
 	reg.MustRegister(r.ToolCallsTotal)
@@ -160,6 +180,9 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.MCPRBACDeniedTotal)
 	reg.MustRegister(r.SSEActiveConnections)
 	reg.MustRegister(r.AuditBufferOverflow)
+	reg.MustRegister(r.SeverityTriageTotal)
+	reg.MustRegister(r.SeverityTriageDuration)
+	reg.MustRegister(r.SeverityTriageErrorsTotal)
 
 	return r
 }

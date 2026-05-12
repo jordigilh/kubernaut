@@ -26,7 +26,7 @@ var _ = Describe("kubernaut_submit_signal", func() {
 			Kind:        "Deployment",
 			Name:        "api-server",
 			Description: "High error rate",
-		}, "alice")
+		}, "alice", nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.SignalName).NotTo(BeEmpty())
 	})
@@ -45,7 +45,7 @@ var _ = Describe("kubernaut_submit_signal", func() {
 			Name:        "api-server",
 			Description: "High error rate",
 			Severity:    "critical",
-		}, "alice")
+		}, "alice", nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(capturedObj).NotTo(BeNil())
 		spec, _, _ := unstructured.NestedMap(capturedObj.Object, "spec")
@@ -60,7 +60,7 @@ var _ = Describe("kubernaut_submit_signal", func() {
 			Kind:        "Deployment",
 			Name:        "api-server",
 			Description: "CPU spike",
-		}, "alice")
+		}, "alice", nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Message).To(ContainSubstring("alice"))
 	})
@@ -75,7 +75,7 @@ var _ = Describe("kubernaut_submit_signal", func() {
 			Kind:        "Deployment",
 			Name:        "api-server",
 			Description: "duplicate",
-		}, "alice")
+		}, "alice", nil)
 		Expect(err).To(HaveOccurred())
 	})
 
@@ -89,7 +89,7 @@ var _ = Describe("kubernaut_submit_signal", func() {
 			Kind:        "Deployment",
 			Name:        "api-server",
 			Description: "error",
-		}, "alice")
+		}, "alice", nil)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("access denied"))
 	})
@@ -100,7 +100,7 @@ var _ = Describe("kubernaut_submit_signal", func() {
 			Kind:        "Deployment",
 			Name:        "api-server",
 			Description: "test",
-		}, "alice")
+		}, "alice", nil)
 		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
 	})
 
@@ -111,7 +111,7 @@ var _ = Describe("kubernaut_submit_signal", func() {
 			Kind:        "Deployment",
 			Name:        "api-server",
 			Description: "test",
-		}, "alice")
+		}, "alice", nil)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})
@@ -123,7 +123,7 @@ var _ = Describe("kubernaut_submit_signal", func() {
 			Kind:        "",
 			Name:        "api-server",
 			Description: "test",
-		}, "alice")
+		}, "alice", nil)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})
@@ -136,7 +136,7 @@ var _ = Describe("kubernaut_submit_signal", func() {
 			Name:        "api-server",
 			Description: "test",
 			Severity:    "catastrophic",
-		}, "alice")
+		}, "alice", nil)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})
@@ -148,7 +148,7 @@ var _ = Describe("kubernaut_submit_signal", func() {
 			Kind:        "Deployment",
 			Name:        "INVALID NAME!!",
 			Description: "test",
-		}, "alice")
+		}, "alice", nil)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})

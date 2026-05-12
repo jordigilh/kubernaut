@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures — fake JWTs and base64 strings used in unit tests"
+paths = [
+  '''_test\.go$''',
+]

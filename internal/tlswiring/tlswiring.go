@@ -1,6 +1,16 @@
 // Package tlswiring provides TLS configuration helpers for the API Frontend.
 // It wraps the kubernaut shared TLS package with AF-specific logic for
 // conditional server TLS and per-dependency outbound transports.
+//
+// FedRAMP / FIPS 140-2 Compliance Notes (CK-01):
+//   - Server TLS is configured with MinVersion TLS 1.2 and only AEAD cipher suites
+//     (AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305) with ECDHE key exchange.
+//   - For FIPS 140-2 Level 1 compliance, build with GOEXPERIMENT=boringcrypto which
+//     restricts the crypto backend to BoringSSL (FIPS-validated module).
+//   - Outbound transports also enforce TLS 1.2+ with system-default cipher selection.
+//   - ChaCha20-Poly1305 is not FIPS-approved; when building with boringcrypto it is
+//     automatically excluded by the runtime. In non-FIPS builds it provides good
+//     performance on platforms without AES-NI hardware acceleration.
 package tlswiring
 
 import (
@@ -21,11 +31,28 @@ import (
 // ConfigureServer sets up conditional TLS on the server based on certDir.
 // Returns (tlsEnabled, certReloader, error). When certDir is empty or cert
 // files don't exist, returns (false, nil, nil) — the server serves plain HTTP.
+// CK-02: Enforces TLS 1.2+ with FedRAMP-compatible cipher suites.
 func ConfigureServer(server *http.Server, certDir string) (bool, *sharedtls.CertReloader, error) {
 	if certDir == "" {
 		return false, nil, nil
 	}
-	return sharedtls.ConfigureConditionalTLS(server, certDir)
+	enabled, reloader, err := sharedtls.ConfigureConditionalTLS(server, certDir)
+	if err != nil || !enabled {
+		return enabled, reloader, err
+	}
+	if server.TLSConfig == nil {
+		server.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12} // #nosec G402
+	}
+	server.TLSConfig.MinVersion = tls.VersionTLS12
+	server.TLSConfig.CipherSuites = []uint16{
+		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+	}
+	return enabled, reloader, nil
 }
 
 // CheckPartialTLSMaterial returns a warning message if exactly one of tls.crt

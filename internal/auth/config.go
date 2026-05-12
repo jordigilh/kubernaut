@@ -15,16 +15,23 @@ type ProviderConfig struct {
 	UserValidationRules []ValidationRule `yaml:"userValidationRules,omitempty"`
 }
 
-// IssuerConfig holds the issuer URL and audiences.
-// URL is the JWKS endpoint, not the OIDC discovery URL. This is intentional:
-// the operator provides the JWKS URL explicitly in the configuration rather than
-// relying on .well-known/openid-configuration discovery, which avoids an extra
-// network round-trip at startup and supports non-standard OIDC providers.
-// If OIDC discovery is needed in future, add a DiscoveryURL field and resolve
-// the JWKS URL from the discovery document at startup.
+// IssuerConfig holds the OIDC issuer identity and JWKS endpoint.
+// URL is the issuer identifier (must match the "iss" claim in JWTs).
+// JWKSURL is the HTTP(S) endpoint for fetching the JSON Web Key Set.
+// When JWKSURL is empty, URL is used as both issuer and JWKS endpoint
+// (legacy behavior for providers that serve JWKS at their issuer URL).
 type IssuerConfig struct {
 	URL       string   `yaml:"url"`
+	JWKSURL   string   `yaml:"jwksURL,omitempty"`
 	Audiences []string `yaml:"audiences"`
+}
+
+// ResolveJWKSURL returns the effective JWKS fetch URL.
+func (c IssuerConfig) ResolveJWKSURL() string {
+	if c.JWKSURL != "" {
+		return c.JWKSURL
+	}
+	return c.URL
 }
 
 // ClaimMappings defines CEL expressions for mapping claims to user identity.

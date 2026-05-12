@@ -514,3 +514,30 @@ func TestFileWatcher_CallbackError_RedactsURLsInLog(t *testing.T) {
 		t.Errorf("log output should contain [URL_REDACTED], got: %s", output)
 	}
 }
+
+func TestFileWatcher_GetLastHash(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgFile := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(cfgFile, []byte("key: value"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := NewFileWatcher(cfgFile, func(_ []byte) error { return nil })
+	if err != nil {
+		t.Fatalf("NewFileWatcher: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := w.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer func() {
+		cancel()
+		w.Stop()
+	}()
+
+	hash := w.GetLastHash()
+	if hash == "" {
+		t.Error("expected non-empty hash from GetLastHash()")
+	}
+}

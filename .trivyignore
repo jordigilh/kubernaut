@@ -1,5 +1,15 @@
 # .trivyignore — Vulnerability IDs to suppress in Trivy image scanning.
 # Format: one CVE/GHSA ID per line. Add a comment explaining why it is ignored.
-#
-# Example:
-#   CVE-2024-XXXXX  # stdlib fix not yet released; tracked in go1.25.10
+
+# Go stdlib CVEs with no upstream fix as of Go 1.26.3 (2026-05-07).
+# Re-evaluate after each Go patch release.
+CVE-2026-32281  # crypto/x509 DoS — no fix released
+CVE-2026-32283  # crypto/tls DoS — no fix released
+CVE-2026-33814  # net/http HTTP/2 SETTINGS DoS — no fix released
+CVE-2026-39820  # net/mail ParseAddress panic — no fix released
+CVE-2026-39836  # net Dial/LookupPort NUL byte panic — no fix released
+CVE-2026-42499  # net/mail consumePhrase DoS — no fix released
+CVE-2026-32288  # archive/tar DoS — no fix released
+CVE-2026-32289  # html/template XSS — no fix released
+CVE-2026-39825  # net/http/httputil ReverseProxy query forwarding — no fix released
+CVE-2026-39826  # html/template script tag injection — no fix released

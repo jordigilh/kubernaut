@@ -117,7 +117,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 	constructors := []toolConstructor{
 		{"list_remediations", func() (tool.Tool, error) { return tools.NewListRemediationsTool(k8s) }},
 		{"get_remediation", func() (tool.Tool, error) { return tools.NewGetRemediationTool(k8s) }},
-		{"submit_signal", func() (tool.Tool, error) { return tools.NewSubmitSignalTool(k8s) }},
+		{"submit_signal", func() (tool.Tool, error) { return tools.NewSubmitSignalTool(k8s, nil) }},
 		{"approve", func() (tool.Tool, error) { return tools.NewApproveTool(k8s) }},
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},
@@ -136,7 +136,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"resolve_owner", func() (tool.Tool, error) { return tools.NewResolveOwnerTool(triageFactory) }},
 		// RR tools use AF ServiceAccount (write AF-owned CRDs)
 		{"check_existing_rr", func() (tool.Tool, error) { return tools.NewCheckExistingRRTool(k8s) }},
-		{"create_rr", func() (tool.Tool, error) { return tools.NewCreateRRTool(k8s) }},
+		{"create_rr", func() (tool.Tool, error) { return tools.NewCreateRRTool(k8s, nil) }},
 	}
 
 	result := make([]tool.Tool, 0, len(constructors))

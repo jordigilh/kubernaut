@@ -19,11 +19,13 @@ type TrackedConnection struct {
 
 // ConnectionTracker manages active SSE connections for graceful shutdown.
 // Thread-safe for concurrent Add/Remove/DrainAll calls.
+// DOS-01: MaxConnections limits total concurrent SSE connections as a DoS safeguard.
 type ConnectionTracker struct {
-	mu        sync.Mutex
-	conns     map[string]*TrackedConnection
-	gauge     prometheus.Gauge
-	drainWait time.Duration
+	mu             sync.Mutex
+	conns          map[string]*TrackedConnection
+	gauge          prometheus.Gauge
+	drainWait      time.Duration
+	MaxConnections int
 }
 
 // NewConnectionTracker creates a new tracker with an optional Prometheus gauge.
@@ -31,20 +33,25 @@ type ConnectionTracker struct {
 // pass 0 for immediate cancellation (useful in tests).
 func NewConnectionTracker(gauge prometheus.Gauge, drainWait time.Duration) *ConnectionTracker {
 	return &ConnectionTracker{
-		conns:     make(map[string]*TrackedConnection),
-		gauge:     gauge,
-		drainWait: drainWait,
+		conns:          make(map[string]*TrackedConnection),
+		gauge:          gauge,
+		drainWait:      drainWait,
+		MaxConnections: 1000,
 	}
 }
 
-// Add registers a new SSE connection.
-func (t *ConnectionTracker) Add(conn *TrackedConnection) {
+// Add registers a new SSE connection. Returns false if the connection limit is reached.
+func (t *ConnectionTracker) Add(conn *TrackedConnection) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.MaxConnections > 0 && len(t.conns) >= t.MaxConnections {
+		return false
+	}
 	t.conns[conn.ID] = conn
 	if t.gauge != nil {
 		t.gauge.Set(float64(len(t.conns)))
 	}
+	return true
 }
 
 // Remove deregisters an SSE connection (e.g., on client disconnect).

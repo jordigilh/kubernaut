@@ -16,6 +16,7 @@ import (
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ds"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ka"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/severity"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/tools"
 )
 
@@ -30,6 +31,7 @@ type MCPBridgeConfig struct {
 	KAClient           *ka.Client
 	KAMCPClient        ka.MCPClient
 	DSClient           ds.Client
+	Triager            *severity.Triager
 	RBACRoles          map[string][]string
 	Auditor            audit.Emitter
 	Logger             logr.Logger
@@ -100,7 +102,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 				return nil, err
 			}
 			username := usernameFromCtx(ctx)
-			return tools.HandleSubmitSignal(ctx, client, args, username)
+			return tools.HandleSubmitSignal(ctx, client, args, username, cfg.Triager)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_approve", "Approve a remediation action",
@@ -240,7 +242,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 				return nil, err
 			}
 			username := usernameFromCtx(ctx)
-			return tools.HandleCreateRR(ctx, client, &args, username)
+			return tools.HandleCreateRR(ctx, client, &args, username, cfg.Triager)
 		})
 }
 

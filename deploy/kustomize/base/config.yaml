@@ -2,6 +2,7 @@ server:
   port: 8443
   tls:
     certDir: /etc/apifrontend/tls
+    required: true
 
 agent:
   gcpProject: ""
@@ -14,9 +15,14 @@ agent:
 
 mcp:
   enabled: true
+  sessionIdleTimeout: 30m
 
 agentCard:
   url: "https://apifrontend.kubernaut-system.svc:8443"
+
+auth:
+  issuerURL: "https://login.kubernaut.ai/realms/kubernaut"
+  audience: "kubernaut-apifrontend"
 
 logging:
   level: info
@@ -31,8 +37,14 @@ shutdown:
   drainSeconds: 15
 
 severityTriage:
-  prometheusURL: ""
-  prometheusTlsCaFile: ""
+  enabled: true
+  prometheusURL: "https://prometheus.monitoring:9090"
+  prometheusTlsCaFile: /etc/apifrontend/tls-ca/ca.crt
+  prometheusBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+  cacheTTLSeconds: 30
+  maxQueriesPerCall: 10
+  maxRulesEvaluated: 100
+  llmConfidence: 0.7
 
 resilience:
   ka:

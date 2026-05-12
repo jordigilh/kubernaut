@@ -30,12 +30,15 @@ type Config struct {
 }
 
 // SeverityTriageConfig holds settings for the Prometheus-based severity triage pipeline.
-// NOTE: These fields are forward-looking — the triage pipeline is implemented in
-// internal/severity but not yet wired into main.go. The config fields are defined
-// here so that deployment configs can be prepared ahead of the wiring PR.
 type SeverityTriageConfig struct {
-	PrometheusURL       string `yaml:"prometheusURL,omitempty"`
-	PrometheusTLSCaFile string `yaml:"prometheusTlsCaFile,omitempty"`
+	Enabled                   bool    `yaml:"enabled"`
+	PrometheusURL             string  `yaml:"prometheusURL,omitempty"`
+	PrometheusTLSCaFile       string  `yaml:"prometheusTlsCaFile,omitempty"`
+	PrometheusBearerTokenFile string  `yaml:"prometheusBearerTokenFile,omitempty"`
+	CacheTTLSeconds           int     `yaml:"cacheTTLSeconds,omitempty"`
+	MaxQueriesPerCall         int     `yaml:"maxQueriesPerCall,omitempty"`
+	MaxRulesEvaluated         int     `yaml:"maxRulesEvaluated,omitempty"`
+	LLMConfidence             float64 `yaml:"llmConfidence,omitempty"`
 }
 
 // ResilienceConfig holds per-dependency circuit breaker and retry settings.
@@ -85,8 +88,14 @@ type ShutdownConfig struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port int                 `yaml:"port"`
-	TLS  sharedtls.TLSConfig `yaml:"tls"`
+	Port int             `yaml:"port"`
+	TLS  ServerTLSConfig `yaml:"tls"`
+}
+
+// ServerTLSConfig extends the shared TLS config with a Required flag for FedRAMP compliance.
+type ServerTLSConfig struct {
+	sharedtls.TLSConfig `yaml:",inline"`
+	Required            bool `yaml:"required,omitempty"`
 }
 
 // AgentConfig holds ADK agent and backend connectivity settings.
@@ -102,7 +111,8 @@ type AgentConfig struct {
 
 // MCPConfig holds Model Context Protocol feature flags.
 type MCPConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled            bool          `yaml:"enabled"`
+	SessionIdleTimeout time.Duration `yaml:"sessionIdleTimeout,omitempty"`
 }
 
 // AgentCardConfig holds the agent card endpoint configuration.
@@ -236,10 +246,17 @@ func (c *Config) Validate() error {
 	if err := c.validateTLSPaths(); err != nil {
 		return err
 	}
+	if err := c.validateSeverityTriage(); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (c *Config) validateAuth() error {
+	// CFG-03: When TLS is required (production), auth must also be configured.
+	if c.Server.TLS.Required && c.Auth.IssuerURL == "" {
+		return fmt.Errorf("auth.issuerURL is required when server.tls.required is true (production mode)")
+	}
 	if c.Auth.IssuerURL == "" {
 		return nil
 	}
@@ -322,6 +339,28 @@ func (c *Config) ResolveDefaults() {
 	if c.AgentCard.URL == "" {
 		c.AgentCard.URL = fmt.Sprintf("https://localhost:%d", c.Server.Port)
 	}
+}
+
+func (c *Config) validateSeverityTriage() error {
+	st := &c.SeverityTriage
+	if !st.Enabled {
+		return nil
+	}
+	if st.PrometheusURL == "" {
+		return fmt.Errorf("severityTriage.prometheusURL is required when triage is enabled")
+	}
+	if err := validateURL("severityTriage.prometheusURL", st.PrometheusURL); err != nil {
+		return err
+	}
+	if st.LLMConfidence < 0 || st.LLMConfidence > 1 {
+		return fmt.Errorf("severityTriage.llmConfidence must be between 0.0 and 1.0, got %v", st.LLMConfidence)
+	}
+	if st.PrometheusBearerTokenFile != "" {
+		if _, err := os.Stat(st.PrometheusBearerTokenFile); err != nil {
+			return fmt.Errorf("severityTriage.prometheusBearerTokenFile %q is not accessible: %w", st.PrometheusBearerTokenFile, err)
+		}
+	}
+	return nil
 }
 
 func (c *Config) validateTLSPaths() error {

@@ -17,6 +17,7 @@ import (
 	"google.golang.org/adk/tool/functiontool"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/severity"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/validate"
 )
 
@@ -199,9 +200,10 @@ type SubmitSignalResult struct {
 }
 
 // HandleSubmitSignal implements the kubernaut_submit_signal logic.
+// If severity is empty and a triager is available, severity is determined via triage pipeline.
 //
 //nolint:gocritic // hugeParam: args passed by value for simplicity; not performance-critical
-func HandleSubmitSignal(ctx context.Context, client dynamic.Interface, args SubmitSignalArgs, username string) (SubmitSignalResult, error) {
+func HandleSubmitSignal(ctx context.Context, client dynamic.Interface, args SubmitSignalArgs, username string, triager *severity.Triager) (SubmitSignalResult, error) {
 	if client == nil {
 		return SubmitSignalResult{}, ErrK8sUnavailable
 	}
@@ -217,7 +219,48 @@ func HandleSubmitSignal(ctx context.Context, client dynamic.Interface, args Subm
 	if args.Severity != "" && !validSeverities[args.Severity] {
 		return SubmitSignalResult{}, fmt.Errorf("%w: severity must be one of critical, high, medium, low, info", ErrInvalidInput)
 	}
+
+	var triageResult *severity.TriageResult
+	if args.Severity == "" && triager != nil {
+		input := severity.TriageInput{
+			Namespace:   args.Namespace,
+			Kind:        args.Kind,
+			Name:        args.Name,
+			Description: args.Description,
+			Labels:      map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
+		}
+		result, err := triager.Triage(ctx, input)
+		if err != nil {
+			return SubmitSignalResult{}, fmt.Errorf("severity triage failed: %w", err)
+		}
+		if result.Severity != "" {
+			args.Severity = result.Severity
+			triageResult = &result
+		}
+	}
+
 	signalName := fmt.Sprintf("sp-%s-%s-%d", args.Kind, args.Name, time.Now().UnixMilli())
+
+	spec := map[string]interface{}{
+		"kind":        args.Kind,
+		"name":        args.Name,
+		"description": args.Description,
+		"severity":    args.Severity,
+		"reportedBy":  username,
+	}
+
+	if triageResult != nil {
+		signalLabels := map[string]interface{}{
+			"severity_source": string(triageResult.Source),
+		}
+		if triageResult.AlertName != "" {
+			signalLabels["severity_alert_name"] = triageResult.AlertName
+		}
+		if triageResult.RuleName != "" {
+			signalLabels["severity_rule_name"] = triageResult.RuleName
+		}
+		spec["signalLabels"] = signalLabels
+	}
 
 	sp := &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -227,13 +270,7 @@ func HandleSubmitSignal(ctx context.Context, client dynamic.Interface, args Subm
 				"name":      signalName,
 				"namespace": args.Namespace,
 			},
-			"spec": map[string]interface{}{
-				"kind":        args.Kind,
-				"name":        args.Name,
-				"description": args.Description,
-				"severity":    args.Severity,
-				"reportedBy":  username,
-			},
+			"spec": spec,
 		},
 	}
 
@@ -249,12 +286,12 @@ func HandleSubmitSignal(ctx context.Context, client dynamic.Interface, args Subm
 }
 
 // NewSubmitSignalTool creates the kubernaut_submit_signal tool.
-func NewSubmitSignalTool(client dynamic.Interface) (tool.Tool, error) {
+func NewSubmitSignalTool(client dynamic.Interface, triager *severity.Triager) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_submit_signal",
 		Description: "Submit a new incident signal for triage and potential remediation",
 	}, func(ctx tool.Context, args SubmitSignalArgs) (SubmitSignalResult, error) {
-		return HandleSubmitSignal(ctx, client, args, usernameFromContext(ctx))
+		return HandleSubmitSignal(ctx, client, args, usernameFromContext(ctx), triager)
 	})
 }
 
