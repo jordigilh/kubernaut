@@ -15,6 +15,7 @@ data:
 
     oauth2:
       skipApprovalScreen: true
+      passwordConnector: local
 
     staticClients:
       - id: kubernaut-apifrontend
