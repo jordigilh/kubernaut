@@ -83,7 +83,7 @@ jobs:
           kubectl port-forward -n ${{ env.NAMESPACE }} svc/dex 15556:5556 &
           # Wait for port-forwards to be ready
           for i in $(seq 1 30); do
-            if curl -sk https://localhost:18443/healthz --cacert ${{ env.CERT_DIR }}/ca.crt >/dev/null 2>&1; then
+            if curl -s --cacert ${{ env.CERT_DIR }}/ca.crt https://localhost:18443/healthz >/dev/null 2>&1; then
               echo "AF port-forward ready"
               break
             fi
