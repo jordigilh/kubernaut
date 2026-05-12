@@ -30,7 +30,7 @@ These documents live at:
 |----------|-------|
 | Binary | `cmd/apifrontend/main.go` |
 | Dockerfile | `Dockerfile` (root) |
-| Builder base | `registry.access.redhat.com/ubi10/go-toolset:1.26` |
+| Builder base | `registry.access.redhat.com/ubi10/go-toolset:1.25` (GOTOOLCHAIN=auto upgrades to go.mod version) |
 | Production runtime | `scratch` (zero CVE surface) |
 | Development runtime | `registry.access.redhat.com/ubi10/ubi-minimal:latest` |
 | UID (production) | 65534 (nobody) |
@@ -76,7 +76,7 @@ The `scratch` production image copies only the statically-linked binary plus:
 ## Compliance Checklist (ADR-028)
 
 - [x] Base images from `registry.access.redhat.com` only
-- [x] Go toolset pinned to minor (`go-toolset:1.26`)
+- [x] Go toolset pinned to minor (`go-toolset:1.25`, GOTOOLCHAIN=auto)
 - [x] Runtime uses `latest` tag (ubi-minimal) or scratch
 - [x] Multi-arch support via `TARGETARCH` build arg
 - [x] Non-root user at runtime
