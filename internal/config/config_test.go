@@ -484,6 +484,57 @@ auth:
 	}
 }
 
+func TestLoad_AuthJWKSURL(t *testing.T) {
+	data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  jwksURL: "https://sso.example.com/realms/kubernaut/protocol/openid-connect/certs"
+  audience: "apifrontend"
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Auth.JWKSURL != "https://sso.example.com/realms/kubernaut/protocol/openid-connect/certs" {
+		t.Errorf("jwksURL = %q, want OIDC certs URL", cfg.Auth.JWKSURL)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+}
+
+func TestLoad_AuthJWKSURL_Invalid(t *testing.T) {
+	data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  jwksURL: "not-a-url"
+  audience: "apifrontend"
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("Validate should fail for malformed jwksURL")
+	}
+}
+
+func TestLoad_AuthEnableReplayProtection(t *testing.T) {
+	data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+  enableReplayProtection: true
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Auth.EnableReplayProtection {
+		t.Error("enableReplayProtection should be true")
+	}
+}
+
 func TestLoad_LoggingLevel(t *testing.T) {
 	// UT-AF-039-032
 	for _, level := range []string{"debug", "DEBUG", "info", "INFO", "warn", "WARN", "error", "ERROR"} {
