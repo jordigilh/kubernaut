@@ -130,6 +130,9 @@ spec:
             - name: tls-certs
               mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
               readOnly: true
+            - name: signing-certs
+              mountPath: {{ .Values.datastorage.config.server.signerCertDir | default "/etc/certs" }}
+              readOnly: true
           resources:
             {{- toYaml .Values.datastorage.resources | nindent 12 }}
           readinessProbe:
@@ -169,6 +172,9 @@ spec:
           secret:
             secretName: datastorage-tls
             optional: true
+        - name: signing-certs
+          secret:
+            secretName: datastorage-signing
 ---
 apiVersion: v1
 kind: Service
