@@ -604,9 +604,11 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 		})
 	}
 
-	// F-007: Enable jti replay cache for token replay protection.
-	replayCache := auth.NewReplayCache(10 * time.Minute)
-	validator, err := auth.NewJWTValidator(authCfg, auth.WithReplayCache(replayCache))
+	var validatorOpts []auth.JWTValidatorOption
+	if !cfg.Auth.DisableReplayProtect {
+		validatorOpts = append(validatorOpts, auth.WithReplayCache(auth.NewReplayCache(10*time.Minute)))
+	}
+	validator, err := auth.NewJWTValidator(authCfg, validatorOpts...)
 	if err != nil {
 		logger.Error(err, "failed to create JWT validator — falling back to deny-all")
 		return func(next http.Handler) http.Handler {

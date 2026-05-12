@@ -64,9 +64,10 @@ type DependencyConfig struct {
 
 // AuthConfig holds OIDC authentication settings.
 type AuthConfig struct {
-	IssuerURL string `yaml:"issuerURL"`
-	JWKSURL   string `yaml:"jwksURL,omitempty"`
-	Audience  string `yaml:"audience"`
+	IssuerURL            string `yaml:"issuerURL"`
+	JWKSURL              string `yaml:"jwksURL,omitempty"`
+	Audience             string `yaml:"audience"`
+	DisableReplayProtect bool   `yaml:"disableReplayProtection,omitempty"`
 }
 
 // LoggingConfig holds structured logging settings.

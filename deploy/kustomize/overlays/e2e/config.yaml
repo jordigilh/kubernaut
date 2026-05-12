@@ -24,6 +24,7 @@ auth:
   issuerURL: "http://dex.kubernaut-system.svc:5556/dex"
   jwksURL: "http://dex.kubernaut-system.svc:5556/dex/keys"
   audience: "kubernaut-apifrontend"
+  disableReplayProtection: true
 
 logging:
   level: debug
