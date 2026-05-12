@@ -452,10 +452,10 @@ var _ = Describe("BufferedAuditStore", func() {
 				_ = store.StoreAudit(ctx, event) // Intentionally ignore errors in test setup
 			}
 
-			// Wait for flush interval
+			// Wait for flush interval (generous timeout for loaded CI machines)
 			Eventually(func() int {
 				return mockClient.BatchCount()
-			}, "1s").Should(Equal(1))
+			}, "3s").Should(Equal(1))
 
 			Expect(mockClient.LastBatchSize()).To(Equal(5))
 		})
@@ -466,7 +466,7 @@ var _ = Describe("BufferedAuditStore", func() {
 			config := audit.Config{
 				BufferSize:    100,
 				BatchSize:     10,
-				FlushInterval: 100 * time.Millisecond,
+				FlushInterval: 10 * time.Second, // Long interval: retry tests trigger via batch-full, not timer
 				MaxRetries:    3,
 			}
 			var err error

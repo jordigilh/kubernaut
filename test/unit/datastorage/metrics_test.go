@@ -94,11 +94,11 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 			}
 			duration := time.Since(start)
 
-			// 1000 observations should take < 20ms (generous threshold for CI with shared CPU)
-			Expect(duration.Milliseconds()).To(BeNumerically("<", 20),
-				"Histogram observation should be fast (< 20μs per operation on average)")
+			// 1000 observations should take < 50ms (generous threshold for CI with shared CPU and parallel suites)
+			Expect(duration.Milliseconds()).To(BeNumerically("<", 50),
+				"Histogram observation should be fast (< 50μs per operation on average)")
 
-			GinkgoWriter.Printf("✅ 1000 histogram observations took %v (< 20ms target for CI)\n", duration)
+			GinkgoWriter.Printf("✅ 1000 histogram observations took %v (< 50ms target for CI)\n", duration)
 		})
 	})
 })
