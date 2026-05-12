@@ -28,11 +28,12 @@ func NewCircuitBreakerStateGauge() *prometheus.GaugeVec {
 // Fail-open for existing sessions (cached keys available), fail-closed for new sessions.
 // CK-04: maxStaleness caps how long cached keys remain valid without refresh.
 type JWKSCache struct {
-	mu           sync.RWMutex
-	entries      map[string]*jwksCacheEntry
-	client       *http.Client
-	maxStaleness time.Duration
-	breakers     map[string]*gobreaker.CircuitBreaker[*jose.JSONWebKeySet]
+	mu              sync.RWMutex
+	entries         map[string]*jwksCacheEntry
+	client          *http.Client
+	maxStaleness    time.Duration
+	refreshInterval time.Duration
+	breakers        map[string]*gobreaker.CircuitBreaker[*jose.JSONWebKeySet]
 }
 
 type jwksCacheEntry struct {
@@ -44,9 +45,10 @@ type jwksCacheEntry struct {
 type JWKSCacheOption func(*jwksCacheConfig)
 
 type jwksCacheConfig struct {
-	cbTimeout    time.Duration
-	cbGauge      *prometheus.GaugeVec
-	maxStaleness time.Duration
+	cbTimeout       time.Duration
+	cbGauge         *prometheus.GaugeVec
+	maxStaleness    time.Duration
+	refreshInterval time.Duration
 }
 
 // WithCBTimeout sets the circuit breaker half-open timeout. Default is 30s.
@@ -65,22 +67,30 @@ func WithMaxStaleness(d time.Duration) JWKSCacheOption {
 	return func(c *jwksCacheConfig) { c.maxStaleness = d }
 }
 
+// WithRefreshInterval sets the minimum time between successful JWKS fetches.
+// If cached keys are younger than this, GetKeys returns them without a network call.
+// Default: 5 minutes.
+func WithRefreshInterval(d time.Duration) JWKSCacheOption {
+	return func(c *jwksCacheConfig) { c.refreshInterval = d }
+}
+
 // NewJWKSCache creates a JWKS cache with circuit breakers per JWKS endpoint.
 func NewJWKSCache(client *http.Client, jwksURLs []string, opts ...JWKSCacheOption) *JWKSCache {
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
 
-	cfg := &jwksCacheConfig{cbTimeout: 30 * time.Second, maxStaleness: time.Hour}
+	cfg := &jwksCacheConfig{cbTimeout: 30 * time.Second, maxStaleness: time.Hour, refreshInterval: 5 * time.Minute}
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
 	cache := &JWKSCache{
-		entries:      make(map[string]*jwksCacheEntry, len(jwksURLs)),
-		client:       client,
-		maxStaleness: cfg.maxStaleness,
-		breakers:     make(map[string]*gobreaker.CircuitBreaker[*jose.JSONWebKeySet], len(jwksURLs)),
+		entries:         make(map[string]*jwksCacheEntry, len(jwksURLs)),
+		client:          client,
+		maxStaleness:    cfg.maxStaleness,
+		refreshInterval: cfg.refreshInterval,
+		breakers:        make(map[string]*gobreaker.CircuitBreaker[*jose.JSONWebKeySet], len(jwksURLs)),
 	}
 
 	for _, jwksURL := range jwksURLs {
@@ -112,6 +122,16 @@ func (c *JWKSCache) GetKeys(ctx context.Context, issuerURL string) (*jose.JSONWe
 	cb, ok := c.breakers[issuerURL]
 	if !ok {
 		return nil, fmt.Errorf("no circuit breaker configured for issuer: %s", issuerURL)
+	}
+
+	// Return cached keys if still fresh (skip network round-trip)
+	if c.refreshInterval > 0 {
+		c.mu.RLock()
+		entry, hasCached := c.entries[issuerURL]
+		c.mu.RUnlock()
+		if hasCached && entry.keys != nil && time.Since(entry.fetchedAt) < c.refreshInterval {
+			return entry.keys, nil
+		}
 	}
 
 	result, err := cb.Execute(func() (*jose.JSONWebKeySet, error) {

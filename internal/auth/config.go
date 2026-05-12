@@ -2,6 +2,7 @@ package auth
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -64,7 +65,24 @@ type KubernetesAuthConfig struct {
 // Validate checks the Config for structural errors.
 func (c *Config) Validate() error {
 	seen := make(map[string]struct{}, len(c.JWT))
-	for _, p := range c.JWT {
+	for i, p := range c.JWT {
+		if p.Issuer.URL == "" {
+			return fmt.Errorf("jwt[%d]: issuer URL must not be empty", i)
+		}
+		if len(p.Issuer.Audiences) == 0 {
+			return fmt.Errorf("jwt[%d]: audiences must not be empty (would reject all tokens)", i)
+		}
+		if p.Issuer.JWKSURL != "" {
+			u, err := url.Parse(p.Issuer.JWKSURL)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+				return fmt.Errorf("jwt[%d]: invalid JWKS URL %q (must be http or https)", i, p.Issuer.JWKSURL)
+			}
+		}
+		for j, rule := range p.UserValidationRules {
+			if rule.Expression == "" {
+				return fmt.Errorf("jwt[%d].userValidationRules[%d]: expression must not be empty", i, j)
+			}
+		}
 		if _, exists := seen[p.Issuer.URL]; exists {
 			return fmt.Errorf("duplicate issuer URL: %s", p.Issuer.URL)
 		}

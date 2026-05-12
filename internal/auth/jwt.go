@@ -182,6 +182,10 @@ func (v *JWTValidator) Validate(ctx context.Context, rawToken string) (*UserIden
 		return nil, err
 	}
 
+	if err := validateNotBefore(claims); err != nil {
+		return nil, err
+	}
+
 	if err := validateAudience(claims, provider.config.Issuer.Audiences); err != nil {
 		return nil, err
 	}
@@ -248,6 +252,9 @@ func verifySignature(token *josejwt.JSONWebToken, keySet *jose.JSONWebKeySet) (m
 // ErrMissingExpiry is returned when a token has no exp claim.
 var ErrMissingExpiry = errors.New("token missing required exp claim")
 
+// ErrNotYetValid is returned when a token's nbf claim is in the future.
+var ErrNotYetValid = errors.New("token not yet valid")
+
 func validateExpiry(claims map[string]interface{}) error {
 	raw, ok := claims["exp"]
 	if !ok {
@@ -259,6 +266,21 @@ func validateExpiry(claims map[string]interface{}) error {
 	}
 	if time.Unix(int64(exp), 0).Before(time.Now()) {
 		return ErrTokenExpired
+	}
+	return nil
+}
+
+func validateNotBefore(claims map[string]interface{}) error {
+	raw, ok := claims["nbf"]
+	if !ok {
+		return nil // nbf is optional per RFC 7519
+	}
+	nbf, ok := raw.(float64)
+	if !ok {
+		return nil // non-numeric nbf ignored (lenient)
+	}
+	if time.Now().Before(time.Unix(int64(nbf), 0)) {
+		return ErrNotYetValid
 	}
 	return nil
 }
@@ -297,12 +319,16 @@ func buildIdentity(claims map[string]interface{}, issuer, rawToken string) *User
 	if username == "" {
 		username = extractStringClaim(claims, "sub")
 	}
-	return &UserIdentity{
+	identity := &UserIdentity{
 		Username: security.SanitizeClaimValue(username),
 		Groups:   sanitizeGroups(extractGroupsClaim(claims)),
 		Issuer:   issuer,
 		RawToken: rawToken,
 	}
+	if exp, ok := claims["exp"].(float64); ok {
+		identity.ExpiresAt = time.Unix(int64(exp), 0)
+	}
+	return identity
 }
 
 func sanitizeGroups(groups []string) []string {

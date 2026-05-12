@@ -221,6 +221,90 @@ var _ = Describe("Auth", func() {
 				Expect(err).To(MatchError(auth.ErrMissingExpiry))
 			})
 
+			It("UT-AF-002-022: token with nbf in the future is rejected", func() {
+				kp := newTestKeyPair("key-1")
+				jwksSrv := newJWKSServer(kp.jwks())
+
+				cfg := auth.Config{
+					JWT: []auth.ProviderConfig{
+						{
+							Issuer: auth.IssuerConfig{
+								URL:       jwksSrv.URL,
+								Audiences: []string{"kubernaut-agent"},
+							},
+						},
+					},
+				}
+
+				validator, err := auth.NewJWTValidator(cfg, auth.WithHTTPClient(jwksSrv.Client()))
+				Expect(err).NotTo(HaveOccurred())
+
+				claims := standardClaims(jwksSrv.URL, "alice", []string{"kubernaut-agent"}, nil, time.Now().Add(time.Hour))
+				claims["nbf"] = time.Now().Add(time.Hour).Unix() // not valid until 1h from now
+
+				token := kp.signToken(claims)
+
+				_, err = validator.Validate(context.Background(), token)
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(auth.ErrNotYetValid))
+			})
+
+			It("UT-AF-002-023: token with nbf in the past is accepted", func() {
+				kp := newTestKeyPair("key-1")
+				jwksSrv := newJWKSServer(kp.jwks())
+
+				cfg := auth.Config{
+					JWT: []auth.ProviderConfig{
+						{
+							Issuer: auth.IssuerConfig{
+								URL:       jwksSrv.URL,
+								Audiences: []string{"kubernaut-agent"},
+							},
+						},
+					},
+				}
+
+				validator, err := auth.NewJWTValidator(cfg, auth.WithHTTPClient(jwksSrv.Client()))
+				Expect(err).NotTo(HaveOccurred())
+
+				claims := standardClaims(jwksSrv.URL, "alice", []string{"kubernaut-agent"}, nil, time.Now().Add(time.Hour))
+				claims["nbf"] = time.Now().Add(-time.Minute).Unix() // valid since 1m ago
+
+				token := kp.signToken(claims)
+
+				identity, err := validator.Validate(context.Background(), token)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(identity.Username).To(Equal("alice"))
+			})
+
+			It("UT-AF-002-024: token without nbf claim is accepted (optional per RFC 7519)", func() {
+				kp := newTestKeyPair("key-1")
+				jwksSrv := newJWKSServer(kp.jwks())
+
+				cfg := auth.Config{
+					JWT: []auth.ProviderConfig{
+						{
+							Issuer: auth.IssuerConfig{
+								URL:       jwksSrv.URL,
+								Audiences: []string{"kubernaut-agent"},
+							},
+						},
+					},
+				}
+
+				validator, err := auth.NewJWTValidator(cfg, auth.WithHTTPClient(jwksSrv.Client()))
+				Expect(err).NotTo(HaveOccurred())
+
+				// standardClaims does not include nbf
+				claims := standardClaims(jwksSrv.URL, "alice", []string{"kubernaut-agent"}, nil, time.Now().Add(time.Hour))
+
+				token := kp.signToken(claims)
+
+				identity, err := validator.Validate(context.Background(), token)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(identity.Username).To(Equal("alice"))
+			})
+
 			It("UT-AF-002-003: wrong audience returns invalid audience error", func() {
 				kp := newTestKeyPair("key-1")
 				jwksSrv := newJWKSServer(kp.jwks())
@@ -326,10 +410,10 @@ var _ = Describe("Auth", func() {
 				cfg := auth.Config{
 					JWT: []auth.ProviderConfig{
 						{
-							Issuer: auth.IssuerConfig{URL: "https://sso.example.com"},
+							Issuer: auth.IssuerConfig{URL: "https://sso.example.com", Audiences: []string{"aud"}},
 						},
 						{
-							Issuer: auth.IssuerConfig{URL: "https://sso.example.com"},
+							Issuer: auth.IssuerConfig{URL: "https://sso.example.com", Audiences: []string{"aud"}},
 						},
 					},
 				}
