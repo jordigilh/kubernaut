@@ -57,7 +57,6 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 - **MCP Interactive Mode** — Kubernaut Agent exposes an MCP endpoint for human-in-the-loop investigation with lease-based session management, dynamic takeover, and user impersonation ([#703](https://github.com/jordigilh/kubernaut/issues/703))
 - **SSE streaming and session cancellation** — Real-time token-level streaming, session cancellation with context propagation, and object-level session authorization ([#823](https://github.com/jordigilh/kubernaut/issues/823))
 - **Data Storage service hardening** — FedRAMP AU compliance (audit signing, DLQ reliability, retention worker, Redis TLS), AppSec fixes, and production runbooks ([#1048](https://github.com/jordigilh/kubernaut/issues/1048))
-- **Shadow agent grounding review** — Full-context second evaluation layer detecting distributed prompt injection (boiling frog attacks) at the RCA-to-workflow boundary ([#1096](https://github.com/jordigilh/kubernaut/issues/1096))
 - **Operational hardening** — Per-user rate limiting, graceful shutdown, panic recovery, session lifecycle management, and Go Mistakes audit remediation
 
 Track progress on the [v1.5 milestone](https://github.com/jordigilh/kubernaut/milestone/6).
