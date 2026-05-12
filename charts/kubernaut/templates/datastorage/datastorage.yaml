@@ -46,6 +46,17 @@ data:
       dlqMaxLen: {{ .Values.datastorage.config.redis.dlqMaxLen | default "10000" }}
       secretsFile: "/etc/datastorage/secrets/valkey-secrets.yaml"
       passwordKey: "password"
+      tls:
+        enabled: {{ .Values.datastorage.config.redis.tls.enabled | default false }}
+        certFile: {{ .Values.datastorage.config.redis.tls.certFile | default "" | quote }}
+        keyFile: {{ .Values.datastorage.config.redis.tls.keyFile | default "" | quote }}
+        caFile: {{ .Values.datastorage.config.redis.tls.caFile | default "" | quote }}
+        insecureSkipVerify: {{ .Values.datastorage.config.redis.tls.insecureSkipVerify | default false }}
+    retention:
+      enabled: {{ .Values.datastorage.config.retention.enabled | default false }}
+      interval: {{ .Values.datastorage.config.retention.interval | default "24h" | quote }}
+      batchSize: {{ .Values.datastorage.config.retention.batchSize | default 1000 }}
+      defaultDays: {{ .Values.datastorage.config.retention.defaultDays | default 2555 }}
     logging:
       level: {{ .Values.datastorage.logging.level | default "INFO" | upper | quote }}
 ---

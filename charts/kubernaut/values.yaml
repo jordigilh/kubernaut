@@ -115,6 +115,19 @@ datastorage:
     redis:
       # #1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound (streams: audit:dlq:* , audit:dead-letter:* )
       dlqMaxLen: 10000
+      # #1048 Phase 5 / AU-9: Redis TLS client configuration (operator#89 for server-side)
+      tls:
+        enabled: false
+        certFile: ""
+        keyFile: ""
+        caFile: ""
+        insecureSkipVerify: false
+    # #1048 Phase 5 / AU-11: Retention worker configuration (BR-AUDIT-009)
+    retention:
+      enabled: false
+      interval: "24h"
+      batchSize: 1000
+      defaultDays: 2555
   resources:
     requests:
       memory: 256Mi

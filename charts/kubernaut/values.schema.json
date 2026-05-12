@@ -362,7 +362,30 @@
               "additionalProperties": false,
               "description": "Redis DLQ configuration",
               "properties": {
-                "dlqMaxLen": { "type": "integer", "default": 10000, "description": "#1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound" }
+                "dlqMaxLen": { "type": "integer", "default": 10000, "description": "#1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound" },
+                "tls": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "#1048 Phase 5 / AU-9: Redis TLS client configuration",
+                  "properties": {
+                    "enabled": { "type": "boolean", "default": false, "description": "Enable TLS for Redis/Valkey connections" },
+                    "certFile": { "type": "string", "default": "", "description": "Client certificate file path (mTLS)" },
+                    "keyFile": { "type": "string", "default": "", "description": "Client key file path (mTLS)" },
+                    "caFile": { "type": "string", "default": "", "description": "CA bundle to verify Redis server" },
+                    "insecureSkipVerify": { "type": "boolean", "default": false, "description": "Skip TLS verification (dev/test only)" }
+                  }
+                }
+              }
+            },
+            "retention": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "#1048 Phase 5 / AU-11: Retention worker configuration (BR-AUDIT-009)",
+              "properties": {
+                "enabled": { "type": "boolean", "default": false, "description": "Enable periodic purge of expired audit events" },
+                "interval": { "type": "string", "default": "24h", "description": "How often the retention worker runs" },
+                "batchSize": { "type": "integer", "default": 1000, "description": "Max rows per DELETE batch" },
+                "defaultDays": { "type": "integer", "default": 2555, "description": "Application-level default retention in days (ADR-034: 7 years)" }
               }
             }
           }
