@@ -53,14 +53,14 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 		It("should return 200 on /healthz", func() {
 			resp, err := httpClient.Get(baseURL + "/healthz")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		})
 
 		It("should return 200 on /readyz", func() {
 			resp, err := httpClient.Get(baseURL + "/readyz")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			// May return 503 if deps (KA/DS) are not reachable — acceptable for Phase 1
 			Expect(resp.StatusCode).To(BeElementOf(http.StatusOK, http.StatusServiceUnavailable))
 		})
@@ -70,7 +70,7 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 		It("should serve HTTPS with valid certificate", func() {
 			resp, err := httpClient.Get(baseURL + "/healthz")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			Expect(resp.TLS).NotTo(BeNil())
 			Expect(resp.TLS.Version).To(BeNumerically(">=", 0x0303)) // TLS 1.2+
 		})
@@ -80,7 +80,7 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 		It("should expose Prometheus metrics on /metrics", func() {
 			resp, err := httpClient.Get(baseURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 			body, err := io.ReadAll(resp.Body)
@@ -94,7 +94,7 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 		It("should serve agent card JSON at /.well-known/agent-card.json", func() {
 			resp, err := httpClient.Get(baseURL + "/.well-known/agent-card.json")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("application/json"))
 
@@ -116,7 +116,7 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 
 			resp, err := httpClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
 		})
 
@@ -128,7 +128,7 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 
 			resp, err := httpClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
 		})
 
@@ -145,7 +145,7 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 
 			resp, err := httpClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			// Should not be 401 — may be 501 (A2A not configured) or other, but NOT unauthorized
 			Expect(resp.StatusCode).NotTo(Equal(http.StatusUnauthorized))
 		})
@@ -155,7 +155,7 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 		It("should include security headers in responses", func() {
 			resp, err := httpClient.Get(baseURL + "/healthz")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.Header.Get("X-Content-Type-Options")).To(Equal("nosniff"))
 			Expect(resp.Header.Get("X-Frame-Options")).To(Equal("DENY"))
@@ -166,7 +166,7 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 		It("should return X-Request-Id header", func() {
 			resp, err := httpClient.Get(baseURL + "/healthz")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.Header.Get("X-Request-Id")).NotTo(BeEmpty())
 		})

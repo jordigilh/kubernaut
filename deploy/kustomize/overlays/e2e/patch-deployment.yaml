@@ -8,6 +8,7 @@ spec:
     spec:
       containers:
         - name: apifrontend
+          imagePullPolicy: IfNotPresent
           resources:
             requests:
               cpu: 50m
