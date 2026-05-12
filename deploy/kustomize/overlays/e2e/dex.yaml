@@ -67,14 +67,23 @@ spec:
         app.kubernetes.io/component: identity
         app.kubernetes.io/part-of: kubernaut
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: dex
-          image: ghcr.io/dexidp/dex:v2.41.1
+          image: ghcr.io/dexidp/dex:v2.41.1@sha256:b04e1e68bbf1016e1e3ef04c32c7c2e41e6939dbb9eb60c142e69c4e82c291a8
           command: ["dex", "serve", "/etc/dex/config.yaml"]
           ports:
             - name: http
               containerPort: 5556
               protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
           readinessProbe:
             httpGet:
               path: /dex/healthz
@@ -92,7 +101,11 @@ spec:
             - name: config
               mountPath: /etc/dex
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: config
           configMap:
             name: dex-config
+        - name: tmp
+          emptyDir: {}

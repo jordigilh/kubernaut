@@ -38,7 +38,12 @@ patches:
     target:
       kind: Deployment
       name: apifrontend
-  - path: patch-networkpolicy.yaml
+  - patch: |-
+      - op: add
+        path: /spec/egress/0/ports/-
+        value:
+          port: 5556
+          protocol: TCP
     target:
       kind: NetworkPolicy
       name: apifrontend
