@@ -132,6 +132,52 @@ var _ = Describe("BufferedEmitter", func() {
 		})
 	})
 
+	Describe("EmitBlocking", func() {
+		It("buffers security-critical events with backpressure", func() {
+			writer = &mockWriter{}
+			emitter = audit.NewBufferedEmitter(audit.BufferConfig{
+				Writer:        writer,
+				Logger:        logr.Discard(),
+				BufferSize:    100,
+				FlushInterval: 50 * time.Millisecond,
+				BatchSize:     10,
+			})
+			emitter.Start()
+
+			emitter.EmitBlocking(context.Background(), &audit.Event{
+				Type:   audit.EventAuthFailure,
+				UserID: "attacker",
+			})
+
+			Eventually(func() int {
+				return writer.eventCount()
+			}, 500*time.Millisecond, 10*time.Millisecond).Should(Equal(1))
+		})
+
+		It("respects context cancellation on full buffer", func() {
+			overflowCounter := prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "test_blocking_overflow",
+			})
+			writer = &mockWriter{}
+			emitter = audit.NewBufferedEmitter(audit.BufferConfig{
+				Writer:          writer,
+				Logger:          logr.Discard(),
+				BufferSize:      1,
+				FlushInterval:   1 * time.Hour,
+				BatchSize:       1000,
+				OverflowCounter: overflowCounter,
+			})
+
+			emitter.EmitBlocking(context.Background(), &audit.Event{Type: audit.EventAuthSuccess})
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+			defer cancel()
+			emitter.EmitBlocking(ctx, &audit.Event{Type: audit.EventAuthFailure})
+
+			Expect(testutil.ToFloat64(overflowCounter)).To(BeNumerically("==", 1))
+		})
+	})
+
 	Describe("Close", func() {
 		It("flushes remaining events on close", func() {
 			writer = &mockWriter{}

@@ -19,6 +19,26 @@ func TestRateLimitSuite(t *testing.T) {
 	RunSpecs(t, "RateLimit Suite")
 }
 
+func TestDefaultConfig(t *testing.T) {
+	cfg := ratelimit.DefaultConfig()
+	if cfg.PerIP.RequestsPerSecond != 10 {
+		t.Errorf("expected PerIP.RequestsPerSecond=10, got %f", cfg.PerIP.RequestsPerSecond)
+	}
+	if cfg.PerUser.MaxConcurrentSessions != 3 {
+		t.Errorf("expected MaxConcurrentSessions=3, got %d", cfg.PerUser.MaxConcurrentSessions)
+	}
+	if cfg.PerUser.ToolCallsPerMinute != 60 {
+		t.Errorf("expected ToolCallsPerMinute=60, got %d", cfg.PerUser.ToolCallsPerMinute)
+	}
+}
+
+func TestNewRateLimitDeniedTotal(t *testing.T) {
+	c := ratelimit.NewRateLimitDeniedTotal()
+	if c == nil {
+		t.Fatal("expected non-nil counter")
+	}
+}
+
 var _ = Describe("Rate limiting", func() {
 	Describe("per-IP", func() {
 		It("UT-AF-009-001 allows requests under the burst limit", func() {

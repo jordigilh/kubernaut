@@ -36,6 +36,18 @@ func TestReplayCache_EmptyJTIAlwaysNew(t *testing.T) {
 	}
 }
 
+func TestReplayCache_MissingJTI(t *testing.T) {
+	rc := NewReplayCache(1 * time.Minute)
+	defer rc.Stop()
+
+	if !rc.MissingJTI("") {
+		t.Error("MissingJTI should return true for empty jti")
+	}
+	if rc.MissingJTI("abc-123") {
+		t.Error("MissingJTI should return false for non-empty jti")
+	}
+}
+
 func TestReplayCache_EvictionRemovesExpiredEntries(t *testing.T) {
 	rc := NewReplayCache(1 * time.Millisecond)
 	defer rc.Stop()

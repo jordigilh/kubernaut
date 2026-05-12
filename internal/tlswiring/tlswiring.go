@@ -3,14 +3,14 @@
 // conditional server TLS and per-dependency outbound transports.
 //
 // FedRAMP / FIPS 140-2 Compliance Notes (CK-01):
-// - Server TLS is configured with MinVersion TLS 1.2 and only AEAD cipher suites
-//   (AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305) with ECDHE key exchange.
-// - For FIPS 140-2 Level 1 compliance, build with GOEXPERIMENT=boringcrypto which
-//   restricts the crypto backend to BoringSSL (FIPS-validated module).
-// - Outbound transports also enforce TLS 1.2+ with system-default cipher selection.
-// - ChaCha20-Poly1305 is not FIPS-approved; when building with boringcrypto it is
-//   automatically excluded by the runtime. In non-FIPS builds it provides good
-//   performance on platforms without AES-NI hardware acceleration.
+//   - Server TLS is configured with MinVersion TLS 1.2 and only AEAD cipher suites
+//     (AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305) with ECDHE key exchange.
+//   - For FIPS 140-2 Level 1 compliance, build with GOEXPERIMENT=boringcrypto which
+//     restricts the crypto backend to BoringSSL (FIPS-validated module).
+//   - Outbound transports also enforce TLS 1.2+ with system-default cipher selection.
+//   - ChaCha20-Poly1305 is not FIPS-approved; when building with boringcrypto it is
+//     automatically excluded by the runtime. In non-FIPS builds it provides good
+//     performance on platforms without AES-NI hardware acceleration.
 package tlswiring
 
 import (
@@ -41,7 +41,7 @@ func ConfigureServer(server *http.Server, certDir string) (bool, *sharedtls.Cert
 		return enabled, reloader, err
 	}
 	if server.TLSConfig == nil {
-		server.TLSConfig = &tls.Config{}
+		server.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12} // #nosec G402
 	}
 	server.TLSConfig.MinVersion = tls.VersionTLS12
 	server.TLSConfig.CipherSuites = []uint16{

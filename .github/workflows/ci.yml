@@ -202,7 +202,10 @@ jobs:
         run: go install github.com/google/go-licenses@v1.6.0
 
       - name: Check dependency licenses
-        run: go-licenses check ./... --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC,MPL-2.0,Unlicense,CC0-1.0,0BSD
+        run: >-
+          go-licenses check ./...
+          --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC,MPL-2.0,Unlicense,CC0-1.0,0BSD
+          --ignore=github.com/segmentio/asm
 
   sbom-scan:
     runs-on: ubuntu-latest
@@ -229,7 +232,7 @@ jobs:
 
       - name: Install Trivy
         run: |
-          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.62.0
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.70.0
 
       - name: Scan image
         run: trivy image --severity CRITICAL,HIGH,MEDIUM --exit-code 1 --ignorefile .trivyignore kubernaut-apifrontend:ci

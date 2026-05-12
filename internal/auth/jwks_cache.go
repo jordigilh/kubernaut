@@ -32,7 +32,7 @@ type JWKSCache struct {
 	entries      map[string]*jwksCacheEntry
 	client       *http.Client
 	maxStaleness time.Duration
-	breakers map[string]*gobreaker.CircuitBreaker[*jose.JSONWebKeySet]
+	breakers     map[string]*gobreaker.CircuitBreaker[*jose.JSONWebKeySet]
 }
 
 type jwksCacheEntry struct {

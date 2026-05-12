@@ -43,17 +43,17 @@ const (
 	defaultMetrics = ":9090"
 )
 
-func main() {
+func main() { os.Exit(run()) }
+
+func run() int {
 	cfg, err := loadConfig()
 	if err != nil {
-		// Bootstrap logger for early errors.
 		z, _ := zap.NewProduction()
 		z.Error("failed to load config", zap.Error(err))
-		os.Exit(1)
+		return 1
 	}
 	cfg.ResolveDefaults()
 
-	// F-018: Apply configured logging level.
 	logLevel, _ := parseLogLevel(cfg.Logging.Level)
 	zapLogger := newZapLogger(logLevel)
 	defer func() { _ = zapLogger.Sync() }()
@@ -61,13 +61,13 @@ func main() {
 
 	if err := cfg.Validate(); err != nil {
 		logger.Error(err, "invalid config")
-		os.Exit(1)
+		return 1
 	}
 
 	rbacRoles, err := loadRBACRoles()
 	if err != nil {
 		logger.Error(err, "failed to load RBAC roles", "path", rbacRolesPath)
-		os.Exit(1)
+		return 1
 	}
 
 	metricsReg := metrics.NewRegistry()
@@ -103,7 +103,7 @@ func main() {
 	mcpHandler, caWatchers, depsReady, err := buildMCPHandler(ctx, cfg, metricsReg, rbacRoles, auditor, logger)
 	if err != nil {
 		logger.Error(err, "failed to create MCP handler")
-		os.Exit(1)
+		return 1
 	}
 	defer func() {
 		for _, w := range caWatchers {
@@ -139,7 +139,7 @@ func main() {
 	})
 	if err != nil {
 		logger.Error(err, "failed to create agent card handler")
-		os.Exit(1)
+		return 1
 	}
 
 	a2aHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -191,7 +191,7 @@ func main() {
 	router, err := handler.NewRouter(routerCfg)
 	if err != nil {
 		logger.Error(err, "failed to create router")
-		os.Exit(1)
+		return 1
 	}
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
@@ -236,7 +236,7 @@ func main() {
 	tlsEnabled, certReloader, err := tlswiring.ConfigureServer(httpServer, cfg.Server.TLS.CertDir)
 	if err != nil {
 		logger.Error(err, "failed to configure TLS")
-		os.Exit(1)
+		return 1
 	}
 	if tlsEnabled {
 		logger.Info("TLS enabled with hot-reloadable certificates", "certDir", cfg.Server.TLS.CertDir)
@@ -248,7 +248,7 @@ func main() {
 		}
 		if cfg.Server.TLS.Required {
 			logger.Error(fmt.Errorf("TLS required but no certificates found"), "server.tls.required is true but certDir is empty or missing certs")
-			os.Exit(1)
+			return 1
 		}
 		logger.Info("WARNING: TLS disabled, serving plain HTTP — not suitable for FedRAMP production")
 	}
@@ -256,7 +256,7 @@ func main() {
 	certWatcher, err := tlswiring.StartCertFileWatcher(ctx, cfg.Server.TLS.CertDir, certReloader, logger)
 	if err != nil {
 		logger.Error(err, "failed to start certificate file watcher")
-		os.Exit(1)
+		return 1
 	}
 	if certWatcher != nil {
 		defer certWatcher.Stop()
@@ -265,7 +265,7 @@ func main() {
 	caWatcher, err := tlswiring.StartCAFileWatcher(ctx, logger)
 	if err != nil {
 		logger.Error(err, "failed to start CA file watcher")
-		os.Exit(1)
+		return 1
 	}
 	if caWatcher != nil {
 		defer caWatcher.Stop()
@@ -294,6 +294,7 @@ func main() {
 	}
 
 	logger.Info("shutdown complete")
+	return 0
 }
 
 func newZapLogger(level zapcore.Level) *zap.Logger {
@@ -391,7 +392,7 @@ func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metric
 	}
 
 	// F-014: Wrap DS transport with retry + circuit breaker for resilience.
-	dsResilientTransport := buildResilientTransport(dsTransport, cfg.Resilience.DS, "ds", metricsReg)
+	dsResilientTransport := buildResilientTransport(dsTransport, &cfg.Resilience.DS, "ds", metricsReg)
 
 	var dsClient ds.Client
 	dsCfg := ds.OgenClientConfig{
@@ -517,7 +518,7 @@ func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metric
 
 // buildResilientTransport wraps a base transport with retry + circuit breaker.
 // Returns the CB transport for health checking.
-func buildResilientTransport(base http.RoundTripper, depCfg config.DependencyConfig, name string, reg *metrics.Registry) *resilience.CircuitBreakerTransport {
+func buildResilientTransport(base http.RoundTripper, depCfg *config.DependencyConfig, name string, reg *metrics.Registry) *resilience.CircuitBreakerTransport {
 	if base == nil {
 		base = http.DefaultTransport
 	}
