@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 )
 
+// WaitForDeployment blocks until a Kubernetes deployment reaches Available status.
 func WaitForDeployment(ctx context.Context, kubeContext, namespace, name string, timeout time.Duration) error {
 	cmd := exec.CommandContext(ctx, "kubectl", "--context", kubeContext,
-		"rollout", "status", "deployment/"+name, "-n", namespace, fmt.Sprintf("--timeout=%ds", int(timeout.Seconds())))
+		"rollout", "status", "deployment/"+name, "-n", namespace, fmt.Sprintf("--timeout=%ds", int(timeout.Seconds()))) // #nosec G204 -- test infrastructure
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -26,7 +28,7 @@ func WaitForEndpoint(ctx context.Context, url, caCertPath string, timeout time.D
 		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
 	}
 	if caCertPath != "" {
-		caCert, err := os.ReadFile(caCertPath)
+		caCert, err := os.ReadFile(filepath.Clean(caCertPath)) // #nosec G304 -- test infrastructure, path from env
 		if err != nil {
 			return fmt.Errorf("read CA cert: %w", err)
 		}
@@ -40,13 +42,13 @@ func WaitForEndpoint(ctx context.Context, url, caCertPath string, timeout time.D
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 		if err != nil {
 			return err
 		}
 		resp, err := client.Do(req)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				return nil
 			}
@@ -63,10 +65,11 @@ func WaitForEndpoint(ctx context.Context, url, caCertPath string, timeout time.D
 	return fmt.Errorf("endpoint %s not ready after %v: %w", url, timeout, lastErr)
 }
 
+// PortForward starts a kubectl port-forward process for the given service.
 func PortForward(ctx context.Context, kubeContext, namespace, service string, localPort, remotePort int) (*exec.Cmd, error) {
 	cmd := exec.CommandContext(ctx, "kubectl", "--context", kubeContext,
 		"port-forward", "-n", namespace, "svc/"+service,
-		fmt.Sprintf("%d:%d", localPort, remotePort))
+		fmt.Sprintf("%d:%d", localPort, remotePort)) // #nosec G204 -- test infrastructure
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {

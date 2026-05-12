@@ -39,7 +39,7 @@ var _ = BeforeSuite(func() {
 		if err != nil {
 			return err
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("healthz returned %d", resp.StatusCode)
 		}

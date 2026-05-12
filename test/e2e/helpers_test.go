@@ -18,14 +18,6 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
-func mustGetEnv(key string) string {
-	v := os.Getenv(key)
-	if v == "" {
-		panic(fmt.Sprintf("required env var %s is not set", key))
-	}
-	return v
-}
-
 func newTLSClient(caCertPath string) *http.Client {
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if caCertPath != "" {
@@ -45,7 +37,7 @@ func newTLSClient(caCertPath string) *http.Client {
 }
 
 // fetchDEXToken performs an OAuth2 Resource Owner Password Credentials grant
-// against DEX to obtain a valid access token for E2E testing.
+// against DEX to obtain a valid ID token for E2E testing.
 func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (string, error) {
 	tokenURL := dexURL + "/token"
 	data := url.Values{
@@ -61,14 +53,13 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 	if err != nil {
 		return "", fmt.Errorf("token request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("token request returned %d: %s", resp.StatusCode, body)
 	}
 
-	// Extract access_token from JSON response
 	bodyStr := string(body)
 	start := strings.Index(bodyStr, `"id_token":"`)
 	if start == -1 {

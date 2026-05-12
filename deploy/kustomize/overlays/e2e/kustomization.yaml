@@ -10,7 +10,26 @@ resources:
   - ../../base
   - dex.yaml
 
+# Prometheus Operator CRDs are not available in bare Kind clusters
 patches:
+  - target:
+      kind: PrometheusRule
+      name: apifrontend-rules
+    patch: |
+      $patch: delete
+      apiVersion: monitoring.coreos.com/v1
+      kind: PrometheusRule
+      metadata:
+        name: apifrontend-rules
+  - target:
+      kind: ServiceMonitor
+      name: apifrontend
+    patch: |
+      $patch: delete
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: apifrontend
   - path: patch-deployment.yaml
     target:
       kind: Deployment
