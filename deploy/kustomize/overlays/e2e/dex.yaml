@@ -73,7 +73,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: dex
-          image: ghcr.io/dexidp/dex:v2.41.1@sha256:b04e1e68bbf1016e1e3ef04c32c7c2e41e6939dbb9eb60c142e69c4e82c291a8
+          image: ghcr.io/dexidp/dex:v2.41.1@sha256:bc7cfce7c17f52864e2bb2a4dc1d2f86a41e3019f6d42e81d92a301fad0c8a1d
           command: ["dex", "serve", "/etc/dex/config.yaml"]
           ports:
             - name: http
