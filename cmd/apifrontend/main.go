@@ -598,6 +598,7 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 		authCfg.JWT = append(authCfg.JWT, auth.ProviderConfig{
 			Issuer: auth.IssuerConfig{
 				URL:       jp.Issuer.URL,
+				JWKSURL:   jp.Issuer.JWKSURL,
 				Audiences: jp.Issuer.Audiences,
 			},
 		})
@@ -649,6 +650,7 @@ type jwtProvider struct {
 
 type jwtIssuer struct {
 	URL       string
+	JWKSURL   string
 	Audiences []string
 }
 
@@ -661,6 +663,7 @@ func buildAuthConfig(cfg *config.Config) authConfig {
 			{
 				Issuer: jwtIssuer{
 					URL:       cfg.Auth.IssuerURL,
+					JWKSURL:   cfg.Auth.JWKSURL,
 					Audiences: []string{cfg.Auth.Audience},
 				},
 			},

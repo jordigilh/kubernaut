@@ -38,6 +38,10 @@ patches:
     target:
       kind: Deployment
       name: apifrontend
+  - path: patch-networkpolicy.yaml
+    target:
+      kind: NetworkPolicy
+      name: apifrontend
 
 configMapGenerator:
   - name: apifrontend-config
