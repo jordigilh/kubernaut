@@ -86,6 +86,18 @@ var _ = Describe("UT-DS-1048-P5: Actor Identity Enrichment (AU-3)", func() {
 		})
 	})
 
+	Describe("UT-DS-1048-P5-044-SA: ServiceAccount preserves body actor_id", func() {
+		It("should preserve client-submitted actor when caller is a ServiceAccount", func() {
+			baseReq.ActorType.SetTo("service")
+			baseReq.ActorID.SetTo("signalprocessing-controller")
+
+			event, err := helpers.ConvertAuditEventRequest(*baseReq, "system:serviceaccount:default:signalprocessing-ds-client")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(event.ActorID).To(Equal("signalprocessing-controller"))
+			Expect(event.ActorType).To(Equal("service"))
+		})
+	})
+
 	Describe("UT-DS-1048-P5-045: actor_type set correctly", func() {
 		It("should set actor_type to 'user' when header present", func() {
 			event, err := helpers.ConvertAuditEventRequest(*baseReq, "admin@company.com")
