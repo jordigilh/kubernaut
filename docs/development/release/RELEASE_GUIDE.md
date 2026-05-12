@@ -62,6 +62,24 @@ Key behaviors driven by the `is_prerelease` flag in the release workflow:
 The `v` prefix is stripped for image tags and Helm chart versions
 (e.g., git tag `v1.1.0` produces images tagged `1.1.0` and chart version `1.1.0`).
 
+### Chart Version vs App Version
+
+The Helm chart has two independent version fields:
+
+- **`version`** (chart packaging version) — tracked in the `CHART_VERSION` file at repo root.
+  Bumped for any chart change (values, templates, schema) regardless of operator changes.
+- **`appVersion`** (operator binary version) — tracked in the `VERSION` file at repo root.
+  Bumped only for operator/Go code changes.
+
+**When to bump each:**
+
+| Change type | `VERSION` | `CHART_VERSION` | Tag | Workflow |
+|-------------|-----------|-----------------|-----|----------|
+| Operator release | Bump | Bump (match) | `v1.5.0` | `release.yml` (full) |
+| Chart-only fix | No change | Bump | `chart-v1.4.1` | `chart-release.yml` (chart only) |
+
+`make sync-version` reads both files and propagates them to `Chart.yaml` independently.
+
 ---
 
 ## Release Candidate (RC) Workflow
@@ -139,18 +157,20 @@ git checkout main && git pull origin main
 git checkout -b release/vX.Y.0
 ```
 
-### Step 3: Bump Chart.yaml
+### Step 3: Bump version files
 
-Update `version` and `appVersion` to the GA version (remove any RC suffix):
+Update both `VERSION` and `CHART_VERSION` at repo root to the GA version:
 
 ```bash
-# charts/kubernaut/Chart.yaml
-version: X.Y.0
-appVersion: "X.Y.0"
+echo "X.Y.0" > VERSION
+echo "X.Y.0" > CHART_VERSION
 ```
 
-> **Why bump Chart.yaml here?** The release workflow uses `sed` to overwrite these
-> fields from the git tag, but committing the correct version ensures the chart is
+Then run `make sync-version` to propagate to `Chart.yaml` (sets `version` from
+`CHART_VERSION` and `appVersion` from `VERSION`).
+
+> **Why bump here?** The release workflow overwrites these fields from the git tag
+> and `CHART_VERSION` file, but committing the correct values ensures the chart is
 > accurate in the repository even outside of CI (e.g., `helm template` from a
 > local checkout).
 
@@ -417,9 +437,12 @@ After all 24 build jobs complete:
 
 ### Stage 3: Helm Chart Publish
 
-1. Overwrites `Chart.yaml` with the release version (from git tag).
-2. Syncs demo content from `kubernaut-demo-scenarios`.
+1. Reads chart version from `CHART_VERSION` file and app version from the git tag.
+2. Overwrites `Chart.yaml` `version` (from `CHART_VERSION`) and `appVersion` (from tag).
 3. Packages and pushes to `oci://quay.io/kubernaut-ai/charts`.
+
+For chart-only releases (tag `chart-v*`), a separate `chart-release.yml` workflow
+handles publishing without building container images.
 
 ### Stage 4: GitHub Release
 
@@ -454,10 +477,11 @@ Expected output: `2 arch(es)` for every service.
 ### Helm Chart (all releases)
 
 ```bash
-helm show chart oci://quay.io/kubernaut-ai/charts/kubernaut --version $VERSION
+helm show chart oci://quay.io/kubernaut-ai/charts/kubernaut --version $CHART_VERSION
 ```
 
-Verify `version` and `appVersion` match.
+Verify `version` matches `CHART_VERSION` and `appVersion` matches `VERSION`.
+For operator releases these are the same; for chart-only releases they may differ.
 
 ### GitHub Release (all releases)
 
@@ -610,7 +634,9 @@ multi-arch manifests (amd64 + arm64).
 ### Helm Chart
 
 Published to `oci://quay.io/kubernaut-ai/charts/kubernaut`. The chart's `version`
-and `appVersion` are set from the git tag automatically during the release workflow.
+is set from the `CHART_VERSION` file and `appVersion` from the git tag (operator
+releases) or `VERSION` file (chart-only releases). These may differ when a
+chart-only fix is shipped independently of an operator release.
 
 Install with:
 
@@ -646,7 +672,8 @@ Every released image carries build-time version metadata:
 
 ## Related
 
-- [`.github/workflows/release.yml`](../../../.github/workflows/release.yml) — Release workflow source
+- [`.github/workflows/release.yml`](../../../.github/workflows/release.yml) — Operator release workflow (tag `v*`)
+- [`.github/workflows/chart-release.yml`](../../../.github/workflows/chart-release.yml) — Chart-only release workflow (tag `chart-v*`)
 - [`Makefile`](../../../Makefile) — `image-build`, `image-push`, `image-manifest` targets
 - [`CHANGELOG.md`](../../../CHANGELOG.md) — Release history
 - Issue [#80](https://github.com/jordigilh/kubernaut/issues/80) — Release: Helm chart creation, multi-arch images

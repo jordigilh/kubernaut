@@ -1,0 +1,76 @@
+name: Chart Release
+
+# Triggered by chart-only version tags (e.g., chart-v1.4.1).
+# Publishes the Helm chart to OCI without rebuilding container images.
+# Container images are referenced via appVersion (from VERSION file),
+# which points to the last operator release.
+#
+# Chart-only fixes (values, templates, schema) are validated by PR CI
+# (helm lint + smoke tests) before merge, so no smoke tests run here.
+#
+# Authority: Decoupled chart versioning (CHART_VERSION file)
+
+on:
+  push:
+    tags: ['chart-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish Helm Chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Extract versions
+        id: versions
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          CHART_VERSION=${TAG#chart-v}
+          APP_VERSION=$(cat VERSION)
+          echo "chart_version=$CHART_VERSION" >> $GITHUB_OUTPUT
+          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Chart version: $CHART_VERSION (appVersion: $APP_VERSION)"
+
+      - name: Update Chart.yaml
+        run: |
+          sed -i "s/^version:.*/version: ${{ steps.versions.outputs.chart_version }}/" charts/kubernaut/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.versions.outputs.app_version }}\"/" charts/kubernaut/Chart.yaml
+          echo "Updated Chart.yaml:"
+          head -6 charts/kubernaut/Chart.yaml
+
+      - name: Login to Quay.io OCI registry
+        run: |
+          echo "${{ secrets.QUAY_ROBOT_TOKEN }}" | helm registry login quay.io \
+            -u "${{ secrets.QUAY_ROBOT_USERNAME }}" --password-stdin
+
+      - name: Package and push Helm chart
+        env:
+          CHART_VERSION: ${{ steps.versions.outputs.chart_version }}
+        run: |
+          helm package charts/kubernaut/
+          helm push kubernaut-${CHART_VERSION}.tgz oci://quay.io/kubernaut-ai/charts
+          echo "Helm chart published: oci://quay.io/kubernaut-ai/charts/kubernaut:${CHART_VERSION}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.versions.outputs.tag }}
+          CHART_VERSION: ${{ steps.versions.outputs.chart_version }}
+          APP_VERSION: ${{ steps.versions.outputs.app_version }}
+        run: |
+          gh release create "${TAG}" \
+            --title "Chart ${CHART_VERSION}" \
+            --notes "Helm chart version **${CHART_VERSION}** for Kubernaut operator **v${APP_VERSION}**.
+
+          Install with:
+          \`\`\`bash
+          helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut --version ${CHART_VERSION}
+          \`\`\`
+
+          **Full changelog**: https://github.com/${{ github.repository }}/compare/v${APP_VERSION}...${TAG}"

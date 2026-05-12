@@ -319,8 +319,13 @@ kubernautAgent:
     # K8s Secret reference for LLM API credentials (mounted at /etc/kubernaut-agent/credentials).
     credentialsSecretName: llm-credentials
     # -- LLM provider (static, requires pod restart to change).
-    # Supported providers: openai, anthropic, bedrock, mistral, vertex, local.
-    provider: ""   # e.g., "openai", "anthropic"
+    # Supported providers: openai, anthropic, bedrock, mistral, vertex_ai, local.
+    provider: ""   # e.g., "openai", "anthropic", "vertex_ai"
+    # -- Provider-specific static fields (require pod restart to change).
+    vertexProject: ""    # GCP project ID (required for vertex_ai provider)
+    vertexLocation: ""   # GCP region (required for vertex_ai provider), e.g., "us-central1"
+    azureApiVersion: ""  # Azure OpenAI API version (required for azure provider)
+    bedrockRegion: ""    # AWS region (required for bedrock provider)
     # -- Path to a PEM CA certificate for internal LLM endpoints (static).
     # Use when the LLM gateway (vLLM, Ollama, LiteLLM, etc.) uses a
     # private/internal CA. Leave empty for public LLM endpoints.
