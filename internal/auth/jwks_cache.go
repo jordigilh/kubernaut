@@ -19,7 +19,7 @@ func NewCircuitBreakerStateGauge() *prometheus.GaugeVec {
 	return prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "af",
 		Name:      "circuit_breaker_state",
-		Help:      "JWKS circuit breaker state per issuer (0=closed, 1=half-open, 2=open).",
+		Help:      "JWKS circuit breaker state per endpoint (0=closed, 1=half-open, 2=open).",
 	}, []string{"dependency"})
 }
 
@@ -65,8 +65,8 @@ func WithMaxStaleness(d time.Duration) JWKSCacheOption {
 	return func(c *jwksCacheConfig) { c.maxStaleness = d }
 }
 
-// NewJWKSCache creates a JWKS cache with circuit breakers per issuer.
-func NewJWKSCache(client *http.Client, issuers []string, opts ...JWKSCacheOption) *JWKSCache {
+// NewJWKSCache creates a JWKS cache with circuit breakers per JWKS endpoint.
+func NewJWKSCache(client *http.Client, jwksURLs []string, opts ...JWKSCacheOption) *JWKSCache {
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
@@ -77,15 +77,15 @@ func NewJWKSCache(client *http.Client, issuers []string, opts ...JWKSCacheOption
 	}
 
 	cache := &JWKSCache{
-		entries:      make(map[string]*jwksCacheEntry, len(issuers)),
+		entries:      make(map[string]*jwksCacheEntry, len(jwksURLs)),
 		client:       client,
 		maxStaleness: cfg.maxStaleness,
-		breakers:     make(map[string]*gobreaker.CircuitBreaker[*jose.JSONWebKeySet], len(issuers)),
+		breakers:     make(map[string]*gobreaker.CircuitBreaker[*jose.JSONWebKeySet], len(jwksURLs)),
 	}
 
-	for _, issuer := range issuers {
+	for _, jwksURL := range jwksURLs {
 		settings := gobreaker.Settings{
-			Name:        fmt.Sprintf("jwks-%s", issuer),
+			Name:        fmt.Sprintf("jwks-%s", jwksURL),
 			MaxRequests: 1,
 			Interval:    0,
 			Timeout:     cfg.cbTimeout,
@@ -94,12 +94,12 @@ func NewJWKSCache(client *http.Client, issuers []string, opts ...JWKSCacheOption
 			},
 		}
 		if cfg.cbGauge != nil {
-			depLabel := fmt.Sprintf("jwks_%s", issuer)
+			depLabel := fmt.Sprintf("jwks_%s", jwksURL)
 			settings.OnStateChange = func(_ string, _, to gobreaker.State) {
 				cfg.cbGauge.WithLabelValues(depLabel).Set(float64(to))
 			}
 		}
-		cache.breakers[issuer] = gobreaker.NewCircuitBreaker[*jose.JSONWebKeySet](settings)
+		cache.breakers[jwksURL] = gobreaker.NewCircuitBreaker[*jose.JSONWebKeySet](settings)
 	}
 
 	return cache

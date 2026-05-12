@@ -605,7 +605,7 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 	}
 
 	var validatorOpts []auth.JWTValidatorOption
-	if !cfg.Auth.DisableReplayProtect {
+	if cfg.Auth.EnableReplayProtection {
 		validatorOpts = append(validatorOpts, auth.WithReplayCache(auth.NewReplayCache(10*time.Minute)))
 	}
 	validator, err := auth.NewJWTValidator(authCfg, validatorOpts...)
