@@ -41,7 +41,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aaaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ========================================
@@ -505,6 +507,96 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 				"#301: Contributing factors should be preserved despite resolution")
 
 			GinkgoWriter.Printf("✅ Problem resolved contradiction test complete (#301)\n")
+		})
+	})
+
+	// ========================================
+	// Scenario 5: analysis.failed DS Audit Event Persistence
+	// Business Requirement: BR-AUDIT-005 (Complete audit trail)
+	// Issue: #1111 / #1114 — previously uncovered at IT tier
+	// ========================================
+	Context("analysis.failed audit event persistence - #1111", func() {
+		It("IT-AA-1111-001: should persist aianalysis.analysis.failed audit event to DS on permanent LLM failure", func() {
+			testID := fmt.Sprintf("analysis-failed-%d", time.Now().UnixNano())
+			analysis := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testID,
+					Namespace: testNamespace,
+				},
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      fmt.Sprintf("test-rr-%s", testID),
+						Namespace: testNamespace,
+					},
+					RemediationID: fmt.Sprintf("test-rr-%s", testID),
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
+							SignalName:       "MOCK_RCA_PERMANENT_ERROR",
+							Severity:         "critical",
+							Environment:      "production",
+							BusinessPriority: "P1",
+							Fingerprint:      "test-fingerprint-" + testID,
+							TargetResource: aianalysisv1.TargetResource{
+								Namespace: testNamespace,
+								Kind:      "Pod",
+								Name:      "test-pod-failed",
+							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
+						},
+						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
+					},
+				},
+			}
+
+			defer func() { _ = k8sClient.Delete(testCtx, analysis) }()
+
+			By("Creating AIAnalysis CRD with MOCK_RCA_PERMANENT_ERROR signal")
+			Expect(k8sClient.Create(testCtx, analysis)).To(Succeed())
+
+			By("Waiting for Failed phase (Mock LLM HTTP 500 → permanent error)")
+			Eventually(func() string {
+				var updated aianalysisv1.AIAnalysis
+				if err := k8sClient.Get(testCtx, client.ObjectKeyFromObject(analysis), &updated); err != nil {
+					return ""
+				}
+				GinkgoWriter.Printf("  Current phase: %s, Reason: %s\n",
+					updated.Status.Phase, updated.Status.Reason)
+				return string(updated.Status.Phase)
+			}, 90*time.Second, 2*time.Second).Should(Equal("Failed"),
+				"AIAnalysis should reach Failed phase on MOCK_RCA_PERMANENT_ERROR")
+
+			By("Querying DS for aianalysis.analysis.failed audit event")
+			correlationID := analysis.Spec.RemediationRequestRef.Name
+
+			Eventually(func() bool {
+				_ = auditStore.Flush(testCtx)
+
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
+					EventType:     ogenclient.NewOptString(aaaudit.EventTypeAnalysisFailed),
+				})
+				if err != nil {
+					GinkgoWriter.Printf("  ⚠️  Audit query failed: %v\n", err)
+					return false
+				}
+				if len(resp.Data) == 0 {
+					GinkgoWriter.Printf("  ⏳ No %s events yet\n", aaaudit.EventTypeAnalysisFailed)
+					return false
+				}
+
+				GinkgoWriter.Printf("  ✅ Found %d %s event(s)\n", len(resp.Data), aaaudit.EventTypeAnalysisFailed)
+
+				Expect(resp.Data).To(HaveLen(1),
+					"Exactly one analysis.failed event expected per failed analysis")
+				Expect(resp.Data[0].CorrelationID).To(Equal(correlationID))
+				Expect(resp.Data[0].EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure),
+					"analysis.failed should have outcome=failure")
+
+				return true
+			}, 90*time.Second, 2*time.Second).Should(BeTrue(),
+				fmt.Sprintf("DS should contain %s audit event for correlation_id=%s", aaaudit.EventTypeAnalysisFailed, correlationID))
+
+			GinkgoWriter.Printf("✅ analysis.failed DS audit event persistence test complete\n")
 		})
 	})
 })
