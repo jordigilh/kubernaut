@@ -1172,6 +1172,7 @@ data:
       healthPort: 8081
       readTimeout: 30s
       writeTimeout: 30s
+      signerCertDir: /etc/tls
       tls:
         certDir: /etc/tls
     database:
