@@ -155,6 +155,8 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 		result = sanitized
 	}
 
+	alignment.SubmitToolStep(ctx, name, result)
+
 	if inv.pipeline.Summarizer != nil {
 		summarized, sumErr := inv.pipeline.Summarizer.MaybeSummarize(ctx, name, result)
 		if sumErr != nil {
@@ -169,8 +171,6 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 	if inv.pipeline.MaxToolOutputSize > 0 {
 		result = summarizer.TruncateToolOutput(result, name, inv.pipeline.MaxToolOutputSize)
 	}
-
-	alignment.SubmitToolStep(ctx, name, result)
 
 	return result
 }
