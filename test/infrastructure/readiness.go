@@ -66,14 +66,22 @@ func WaitForEndpoint(ctx context.Context, url, caCertPath string, timeout time.D
 }
 
 // PortForward starts a kubectl port-forward process for the given service.
-func PortForward(ctx context.Context, kubeContext, namespace, service string, localPort, remotePort int) (*exec.Cmd, error) {
+// The returned cleanup function kills the process and waits for it to exit;
+// callers must defer it to avoid leaked kubectl processes.
+func PortForward(ctx context.Context, kubeContext, namespace, service string, localPort, remotePort int) (*exec.Cmd, func(), error) {
 	cmd := exec.CommandContext(ctx, "kubectl", "--context", kubeContext,
 		"port-forward", "-n", namespace, "svc/"+service,
 		fmt.Sprintf("%d:%d", localPort, remotePort)) // #nosec G204 -- test infrastructure
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("port-forward: %w", err)
+		return nil, nil, fmt.Errorf("port-forward: %w", err)
 	}
-	return cmd, nil
+	cleanup := func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	}
+	return cmd, cleanup, nil
 }
