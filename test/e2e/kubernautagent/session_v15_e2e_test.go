@@ -75,18 +75,11 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 			Expect(len(sessionID)).To(BeNumerically(">", 0),
 				"SubmitInvestigation should return a non-zero-length session ID")
 
-			By("Waiting for investigation to start")
-			Eventually(func() string {
-				status, pollErr := sessionClient.PollSession(ctx, sessionID)
-				if pollErr != nil {
-					return "error"
-				}
-				return status.Status
-			}, 15*time.Second, 500*time.Millisecond).Should(
-				SatisfyAny(Equal("investigating"), Equal("completed")),
-				"session should reach investigating or completed")
-
-			By("Connecting to SSE stream")
+			// Connect SSE immediately after submission — before the mock LLM
+			// can complete the investigation. Polling first introduces a race
+			// where the session reaches terminal state and Subscribe returns
+			// ErrSessionTerminal (404 with application/json).
+			By("Connecting to SSE stream immediately after submission")
 			streamReq, err := http.NewRequestWithContext(ctx, "GET",
 				fmt.Sprintf("%s/api/v1/incident/session/%s/stream", kaURL, sessionID), nil)
 			Expect(err).ToNot(HaveOccurred())
