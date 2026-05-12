@@ -30,7 +30,7 @@ These documents live at:
 |----------|-------|
 | Binary | `cmd/apifrontend/main.go` |
 | Dockerfile | `Dockerfile` (root) |
-| Builder base | `registry.access.redhat.com/ubi10/go-toolset:1.25` |
+| Builder base | `registry.access.redhat.com/ubi10/go-toolset:1.26` |
 | Production runtime | `scratch` (zero CVE surface) |
 | Development runtime | `registry.access.redhat.com/ubi10/ubi-minimal:latest` |
 | UID (production) | 65534 (nobody) |
@@ -76,7 +76,7 @@ The `scratch` production image copies only the statically-linked binary plus:
 ## Compliance Checklist (ADR-028)
 
 - [x] Base images from `registry.access.redhat.com` only
-- [x] Go toolset pinned to minor (`go-toolset:1.25`)
+- [x] Go toolset pinned to minor (`go-toolset:1.26`)
 - [x] Runtime uses `latest` tag (ubi-minimal) or scratch
 - [x] Multi-arch support via `TARGETARCH` build arg
 - [x] Non-root user at runtime
@@ -170,7 +170,7 @@ Any dependency with a license not on this list will fail the CI build.
 The `Makefile` should define targets following the kubernaut pattern:
 
 ```makefile
-IMAGE_REGISTRY ?= quay.io/jordigilh
+IMAGE_REGISTRY ?= quay.io/kubernaut-ai
 IMAGE_TAG ?= $(shell git describe --tags --always --dirty)
 CONTAINER_TOOL ?= $(shell command -v podman 2>/dev/null || echo docker)
 
