@@ -208,7 +208,7 @@ type SignalProcessingStatus struct {
 
 	// Severity determination (DD-SEVERITY-001 v1.1)
 	// Normalized severity determined by Rego policy: "critical", "high", "medium", "low", or "unknown"
-	// Aligned with HAPI/workflow catalog severity levels for consistency across platform
+	// Aligned with KA/workflow catalog severity levels for consistency across platform
 	// Enables downstream services (AIAnalysis, RemediationOrchestrator, Notification)
 	// to interpret alert urgency without understanding external severity schemes.
 	// +kubebuilder:validation:Enum=critical;high;medium;low;unknown
@@ -234,7 +234,7 @@ type SignalProcessingStatus struct {
 	// BR-SP-106: Signal Name Normalization
 	// For proactive signals (e.g., "PredictedOOMKill"), this is the base name (e.g., "OOMKilled").
 	// For reactive signals, this matches Spec.Signal.Name unchanged.
-	// This is the AUTHORITATIVE signal name for all downstream consumers (RO, AA, HAPI).
+	// This is the AUTHORITATIVE signal name for all downstream consumers (RO, AA, KA).
 	// +optional
 	SignalName string `json:"signalName,omitempty"`
 

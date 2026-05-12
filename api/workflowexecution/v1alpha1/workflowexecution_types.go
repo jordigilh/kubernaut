@@ -134,7 +134,7 @@ import (
 // WorkflowExecution represents an immutable event (workflow execution attempt).
 // Once created by RemediationOrchestrator, spec cannot be modified to ensure:
 // - Audit trail integrity (executed spec matches approved spec)
-// - No parameter tampering after HAPI validation
+// - No parameter tampering after KA validation
 // - No target resource changes after routing decisions
 //
 // To change execution parameters, delete and recreate the WorkflowExecution.

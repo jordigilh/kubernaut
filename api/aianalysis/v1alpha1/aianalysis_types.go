@@ -38,7 +38,7 @@ import (
 // AIAnalysis represents an immutable event (AI investigation).
 // Once created by RemediationOrchestrator, spec cannot be modified to ensure:
 // - Audit trail integrity (AI investigation matches original RCA request)
-// - No tampering with RCA targets post-HAPI validation
+// - No tampering with RCA targets post-KA validation
 // - No workflow selection modification after AI recommendation
 //
 // To re-analyze, delete and recreate the AIAnalysis CRD.
@@ -157,7 +157,7 @@ type SignalContextInput struct {
 	// SignalMode indicates whether this is a reactive or proactive signal.
 	// BR-AI-084: Proactive Signal Mode Prompt Strategy
 	// Copied from SignalProcessing status by RemediationOrchestrator.
-	// Used by HAPI to switch investigation prompt (RCA vs. predict & prevent).
+	// Used by Kubernaut Agent to switch investigation prompt (RCA vs. predict & prevent).
 	// +kubebuilder:validation:Enum=reactive;proactive
 	// +optional
 	SignalMode string `json:"signalMode,omitempty"`
@@ -376,14 +376,14 @@ type AIAnalysisStatus struct {
 
 	// ========================================
 	// HUMAN REVIEW SIGNALING (BR-HAPI-197)
-	// Set by HAPI when AI cannot produce reliable result
+	// Set by Kubernaut Agent when AI cannot produce reliable result
 	// ========================================
-	// True if human review required (HAPI decision: RCA incomplete/unreliable)
+	// True if human review required (KA decision: RCA incomplete/unreliable)
 	// BR-HAPI-197: Triggers NotificationRequest creation in RO
 	// BR-496 v2: Set when root_owner missing (rca_incomplete) or validation/confidence issues.
 	NeedsHumanReview bool `json:"needsHumanReview"`
 	// Reason why human review needed (when NeedsHumanReview=true)
-	// BR-HAPI-197: Maps to HAPI's human_review_reason enum values
+	// BR-HAPI-197: Maps to KA's human_review_reason enum values
 	// BR-AI-601: alignment_check_failed added for shadow agent alignment verdicts
 	// +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete;alignment_check_failed
 	// +optional
@@ -411,21 +411,21 @@ type AIAnalysisStatus struct {
 	// +kubebuilder:validation:MaxLength=253
 	InvestigationID string `json:"investigationId,omitempty"`
 	// NOTE: TokensUsed REMOVED (Dec 2025)
-	// Reason: LLM token tracking is HAPI's responsibility (they call the LLM)
+	// Reason: LLM token tracking is KA's responsibility (it calls the LLM)
 	// Observability: KA exposes kubernaut_agent_llm_token_usage_total Prometheus metric
-	// Correlation: Use InvestigationID to link AIAnalysis CRD to HAPI metrics
+	// Correlation: Use InvestigationID to link AIAnalysis CRD to KA metrics
 	// Design Decision: DD-COST-001 - Cost observability is provider's responsibility
 	// Investigation duration in seconds
 	// +kubebuilder:validation:Minimum=0
 	InvestigationTime int64 `json:"investigationTime,omitempty"`
 
 	// ========================================
-	// HAPI RESPONSE METADATA
+	// KA RESPONSE METADATA
 	// ========================================
 	// Non-fatal warnings from KA (e.g., low confidence)
 	Warnings []string `json:"warnings,omitempty"`
-	// ValidationAttemptsHistory contains complete history of all HAPI validation attempts
-	// Per DD-HAPI-002 v1.4: HAPI retries up to 3 times with LLM self-correction
+	// ValidationAttemptsHistory contains complete history of all KA validation attempts
+	// Per DD-HAPI-002 v1.4: KA retries up to 3 times with LLM self-correction
 	// This field provides audit trail for operator notifications and debugging
 	// +optional
 	ValidationAttemptsHistory []ValidationAttempt `json:"validationAttemptsHistory,omitempty"`
@@ -448,17 +448,17 @@ type AIAnalysisStatus struct {
 
 	// ========================================
 	// INVESTIGATION SESSION (BR-AA-HAPI-064)
-	// Tracks the async submit/poll session with HAPI
+	// Tracks the async submit/poll session with Kubernaut Agent
 	// ========================================
-	// InvestigationSession tracks the async HAPI session for submit/poll pattern
+	// InvestigationSession tracks the async KA session for submit/poll pattern
 	// +optional
 	InvestigationSession *InvestigationSession `json:"investigationSession,omitempty"`
 
 	// ========================================
 	// POST-RCA CONTEXT (ADR-056)
-	// Runtime-computed cluster characteristics from HAPI
+	// Runtime-computed cluster characteristics from Kubernaut Agent
 	// ========================================
-	// PostRCAContext holds data computed by HAPI after RCA (e.g., DetectedLabels).
+	// PostRCAContext holds data computed by Kubernaut Agent after RCA (e.g., DetectedLabels).
 	// Immutable once set — use CEL validation on the PostRCAContext type.
 	// +optional
 	PostRCAContext *PostRCAContext `json:"postRCAContext,omitempty"`
@@ -467,15 +467,15 @@ type AIAnalysisStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// PostRCAContext holds data computed by HAPI after the RCA phase.
-// ADR-056: DetectedLabels are computed at runtime by HAPI's LabelDetector
-// and returned in the HAPI response for storage in the AIAnalysis status.
+// PostRCAContext holds data computed by Kubernaut Agent after the RCA phase.
+// ADR-056: DetectedLabels are computed at runtime by KA's LabelDetector
+// and returned in the KA response for storage in the AIAnalysis status.
 // This data is used by Rego policies for approval gating (e.g., stateful
 // workload detection) and is immutable once set.
 //
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.setAt) || self == oldSelf",message="postRCAContext is immutable once setAt is populated (ADR-056)"
 type PostRCAContext struct {
-	// DetectedLabels contains cluster characteristics computed by HAPI's
+	// DetectedLabels contains cluster characteristics computed by KA's
 	// LabelDetector during get_namespaced_resource_context or get_cluster_resource_context tool invocations.
 	// +optional
 	DetectedLabels *sharedtypes.DetectedLabels `json:"detectedLabels,omitempty"`
@@ -486,11 +486,11 @@ type PostRCAContext struct {
 	SetAt *metav1.Time `json:"setAt,omitempty"`
 }
 
-// InvestigationSession tracks the async HAPI session lifecycle.
+// InvestigationSession tracks the async Kubernaut Agent session lifecycle.
 // BR-AA-HAPI-064.4: AA controller session tracking
-// BR-AA-HAPI-064.5: Session regeneration on 404 (HAPI restart)
+// BR-AA-HAPI-064.5: Session regeneration on 404 (KA restart)
 type InvestigationSession struct {
-	// Session ID returned by HAPI on submit (cleared on session loss)
+	// Session ID returned by Kubernaut Agent on submit (cleared on session loss)
 	ID string `json:"id,omitempty"`
 	// Generation counter tracking session regenerations (0 = first session, incremented on 404)
 	// +kubebuilder:validation:Minimum=0
@@ -513,7 +513,7 @@ type RootCauseAnalysis struct {
 	// Brief summary of root cause
 	Summary string `json:"summary"`
 	// Severity determined by RCA (normalized per DD-SEVERITY-001 v1.1)
-	// DD-SEVERITY-001 v1.1: Aligned with HAPI/workflow catalog (critical, high, medium, low, unknown)
+	// DD-SEVERITY-001 v1.1: Aligned with KA/workflow catalog (critical, high, medium, low, unknown)
 	// +kubebuilder:validation:Enum=critical;high;medium;low;unknown
 	Severity string `json:"severity"`
 	// Signal type determined by RCA (may differ from input)
@@ -555,7 +555,7 @@ type SelectedWorkflow struct {
 	// +kubebuilder:validation:Required
 	WorkflowID string `json:"workflowId"`
 	// Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
-	// Propagated from HAPI three-step discovery protocol to RO audit events.
+	// Propagated from KA three-step discovery protocol to RO audit events.
 	// +optional
 	ActionType string `json:"actionType,omitempty"`
 	// Workflow version
@@ -611,8 +611,8 @@ type AlternativeWorkflow struct {
 	Rationale string `json:"rationale"`
 }
 
-// ValidationAttempt contains details of a single HAPI validation attempt
-// Per DD-HAPI-002 v1.4: HAPI retries up to 3 times with LLM self-correction
+// ValidationAttempt contains details of a single KA validation attempt
+// Per DD-HAPI-002 v1.4: KA retries up to 3 times with LLM self-correction
 // Each attempt feeds validation errors back to the LLM for correction
 type ValidationAttempt struct {
 	// Attempt number (1, 2, or 3)
