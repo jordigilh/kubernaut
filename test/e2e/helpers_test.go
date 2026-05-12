@@ -3,12 +3,12 @@ package e2e_test
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 )
 
 func getEnvOrDefault(key, defaultValue string) string {
@@ -55,20 +55,22 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read token response: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("token request returned %d: %s", resp.StatusCode, body)
 	}
 
-	bodyStr := string(body)
-	start := strings.Index(bodyStr, `"id_token":"`)
-	if start == -1 {
-		return "", fmt.Errorf("id_token not found in response: %s", bodyStr)
+	var tokenResp struct {
+		IDToken string `json:"id_token"`
 	}
-	start += len(`"id_token":"`)
-	end := strings.Index(bodyStr[start:], `"`)
-	if end == -1 {
-		return "", fmt.Errorf("malformed token response")
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return "", fmt.Errorf("unmarshal token response: %w", err)
 	}
-	return bodyStr[start : start+end], nil
+	if tokenResp.IDToken == "" {
+		return "", fmt.Errorf("id_token not found in response: %s", body)
+	}
+	return tokenResp.IDToken, nil
 }

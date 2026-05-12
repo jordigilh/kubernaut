@@ -61,7 +61,7 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 			resp, err := httpClient.Get(baseURL + "/readyz")
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
-			// May return 503 if deps (KA/DS) are not reachable — acceptable for Phase 1
+			// Readiness is circuit-breaker-based: 200 when CBs are healthy (closed), 503 when open or draining. In Phase 1 without KA/DS traffic, CBs stay closed so 200 is expected.
 			Expect(resp.StatusCode).To(BeElementOf(http.StatusOK, http.StatusServiceUnavailable))
 		})
 	})
@@ -146,8 +146,8 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 			resp, err := httpClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
-			// Should not be 401 — may be 501 (A2A not configured) or other, but NOT unauthorized
-			Expect(resp.StatusCode).NotTo(Equal(http.StatusUnauthorized))
+			// Token accepted (not 401/403); downstream may return 4xx/5xx since KA is absent in Phase 1
+			Expect(resp.StatusCode).NotTo(BeElementOf(http.StatusUnauthorized, http.StatusForbidden))
 		})
 	})
 
@@ -159,6 +159,8 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 
 			Expect(resp.Header.Get("X-Content-Type-Options")).To(Equal("nosniff"))
 			Expect(resp.Header.Get("X-Frame-Options")).To(Equal("DENY"))
+			Expect(resp.Header.Get("Strict-Transport-Security")).NotTo(BeEmpty())
+			Expect(resp.Header.Get("Cache-Control")).To(Equal("no-store"))
 		})
 	})
 
