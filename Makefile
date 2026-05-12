@@ -243,6 +243,13 @@ validate-kustomize: ## Validate kustomize build for dev, ci, and e2e overlays
 	kubectl kustomize deploy/kustomize/overlays/e2e/ > /dev/null
 	@echo "Kustomize build validated for dev, ci, and e2e overlays"
 
+##@ Local LLM Testing
+
+.PHONY: test-llm-local
+test-llm-local: ## Run LLM integration tests locally (requires LLM_PROJECT, LLM_REGION env vars)
+	@echo "Running LLM integration tests (never runs in CI)..."
+	go test -v -count=1 --tags=llm_integration ./internal/severity/...
+
 ##@ Security & Supply Chain
 
 .PHONY: sbom

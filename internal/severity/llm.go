@@ -11,24 +11,46 @@ import (
 	prom "github.com/jordigilh/kubernaut-apifrontend/internal/prometheus"
 )
 
+// ContentGenerator abstracts the LLM content generation call for testability.
+type ContentGenerator interface {
+	GenerateContent(ctx context.Context, model string, contents []*genai.Content, config *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error)
+}
+
+// genaiModels adapts genai.Models to the ContentGenerator interface.
+type genaiModels struct {
+	models genai.Models
+}
+
+func (g *genaiModels) GenerateContent(ctx context.Context, model string, contents []*genai.Content, config *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {
+	return g.models.GenerateContent(ctx, model, contents, config)
+}
+
 // GenAITriager implements LLMTriager using Google GenAI (Vertex AI).
 type GenAITriager struct {
-	client *genai.Client
-	model  string
-	logger logr.Logger
+	generator ContentGenerator
+	model     string
+	logger    logr.Logger
 }
 
 // GenAITriagerConfig holds construction parameters for GenAITriager.
 type GenAITriagerConfig struct {
-	Client *genai.Client
-	Model  string
-	Logger logr.Logger
+	Client    *genai.Client
+	Generator ContentGenerator
+	Model     string
+	Logger    logr.Logger
 }
 
 // NewGenAITriager creates a production LLMTriager backed by Google GenAI.
+// If Generator is set, it is used directly; otherwise Client.Models is wrapped.
 func NewGenAITriager(cfg GenAITriagerConfig) *GenAITriager {
-	if cfg.Client == nil {
-		panic("NewGenAITriager: Client must not be nil")
+	var gen ContentGenerator
+	if cfg.Generator != nil {
+		gen = cfg.Generator
+	} else {
+		if cfg.Client == nil {
+			panic("NewGenAITriager: Client or Generator must not be nil")
+		}
+		gen = &genaiModels{models: *cfg.Client.Models}
 	}
 	if cfg.Model == "" {
 		cfg.Model = "gemini-2.0-flash"
@@ -37,9 +59,9 @@ func NewGenAITriager(cfg GenAITriagerConfig) *GenAITriager {
 		cfg.Logger = logr.Discard()
 	}
 	return &GenAITriager{
-		client: cfg.Client,
-		model:  cfg.Model,
-		logger: cfg.Logger,
+		generator: gen,
+		model:     cfg.Model,
+		logger:    cfg.Logger,
 	}
 }
 
@@ -56,7 +78,7 @@ func (g *GenAITriager) TriagePure(ctx context.Context, input TriageInput) (Triag
 }
 
 func (g *GenAITriager) classify(ctx context.Context, prompt string) (TriageResult, error) {
-	resp, err := g.client.Models.GenerateContent(ctx, g.model, genai.Text(prompt), nil)
+	resp, err := g.generator.GenerateContent(ctx, g.model, genai.Text(prompt), nil)
 	if err != nil {
 		return TriageResult{}, fmt.Errorf("LLM call failed: %w", err)
 	}
