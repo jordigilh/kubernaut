@@ -98,7 +98,7 @@ func NewJWTValidator(cfg Config, opts ...JWTValidatorOption) (*JWTValidator, err
 	}
 
 	providers := make(map[string]*providerRuntime, len(cfg.JWT))
-	issuers := make([]string, 0, len(cfg.JWT))
+	jwksURLs := make([]string, 0, len(cfg.JWT))
 
 	for _, pc := range cfg.JWT {
 		rt := &providerRuntime{config: pc, jwksURL: pc.Issuer.ResolveJWKSURL()}
@@ -112,7 +112,7 @@ func NewJWTValidator(cfg Config, opts ...JWTValidatorOption) (*JWTValidator, err
 		}
 
 		providers[pc.Issuer.URL] = rt
-		issuers = append(issuers, pc.Issuer.URL)
+		jwksURLs = append(jwksURLs, rt.jwksURL)
 	}
 
 	v := &JWTValidator{
@@ -132,7 +132,7 @@ func NewJWTValidator(cfg Config, opts ...JWTValidatorOption) (*JWTValidator, err
 	if v.cbGauge != nil {
 		cacheOpts = append(cacheOpts, WithCBGauge(v.cbGauge))
 	}
-	v.cache = NewJWKSCache(v.httpClient, issuers, cacheOpts...)
+	v.cache = NewJWKSCache(v.httpClient, jwksURLs, cacheOpts...)
 
 	return v, nil
 }
