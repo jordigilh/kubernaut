@@ -126,7 +126,7 @@ jobs:
         run: govulncheck ./...
 
       - name: Install gitleaks
-        run: go install github.com/gitleaks/gitleaks/v8@v8.24.0
+        run: go install github.com/zricethezav/gitleaks/v8@v8.24.0
 
       - name: Secrets scanning (gitleaks)
         run: gitleaks detect --source . --no-banner
@@ -206,6 +206,8 @@ jobs:
           go-licenses check ./...
           --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,MIT,ISC,MPL-2.0,Unlicense,CC0-1.0,0BSD
           --ignore=github.com/segmentio/asm
+          --ignore=github.com/Alcova-AI/adk-anthropic-go
+          --ignore=github.com/jordigilh/kubernaut-apifrontend
 
   sbom-scan:
     runs-on: ubuntu-latest

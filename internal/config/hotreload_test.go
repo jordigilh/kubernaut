@@ -518,7 +518,7 @@ func TestFileWatcher_CallbackError_RedactsURLsInLog(t *testing.T) {
 func TestFileWatcher_GetLastHash(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfgFile := filepath.Join(tmpDir, "config.yaml")
-	if err := os.WriteFile(cfgFile, []byte("key: value"), 0600); err != nil {
+	if err := os.WriteFile(cfgFile, []byte("key: value"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
