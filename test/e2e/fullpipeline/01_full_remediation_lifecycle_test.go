@@ -348,8 +348,10 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// Expected audit event types from a successful full remediation lifecycle.
 		// Derived from BR-AUDIT-005, ADR-034, and each service's audit implementation.
+		// Total: 14 exactlyOnce + 26 atLeastOnce = 40 minimum events.
+		// #1111: Promoted 10 events (1 exactlyOnce, 6 atLeastOnce, 3 MAY→atLeastOnce).
 		//
-		// === Events that MUST appear exactly once ===
+		// === Events that MUST appear exactly once (14) ===
 		// These are lifecycle boundary events — one per RR by definition.
 		exactlyOnceEvents := []string{
 			// Gateway: signal ingestion and CRD creation
@@ -361,6 +363,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"orchestrator.lifecycle.verifying_started",      // #280: emitVerifyingStartedAudit (Executing → Verifying)
 			"orchestrator.lifecycle.verification_completed", // #280: emitVerificationCompletedAudit (EA terminal → Completed)
 			"orchestrator.lifecycle.completed",              // pkg/remediationorchestrator/audit: emitCompletionAudit
+			// Remediation Orchestrator: EA creation (#1111)
+			"orchestrator.ea.created", // pkg/remediationorchestrator/audit: emitEACreatedAudit — correlation_id=RR.Name confirmed
 			// Effectiveness Monitor: assessment lifecycle + component events
 			// The RO creates an EA CRD when RR enters Verifying (#280, ADR-EM-001). The EM waits
 			// for the stabilization window (30s default), then runs all 4 component
@@ -374,7 +378,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"effectiveness.assessment.completed", // pkg/effectivenessmonitor/audit: RecordAssessmentCompleted
 		}
 
-		// === Events that MUST appear at least once ===
+		// === Events that MUST appear at least once (26) ===
 		// These fire during processing; some may repeat (phase transitions, retries).
 		atLeastOnceEvents := []string{
 			// Remediation Orchestrator: phase transitions
@@ -384,29 +388,44 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"signalprocessing.classification.decision", // pkg/signalprocessing/audit: RecordClassificationDecision
 			"signalprocessing.signal.processed",        // pkg/signalprocessing/audit: RecordSignalProcessed
 			"signalprocessing.phase.transition",        // pkg/signalprocessing/audit: RecordPhaseTransition
+			// Signal Processing: business classification (#1111)
+			"signalprocessing.business.classified", // pkg/signalprocessing/audit: RecordBusinessClassified — promoted from MAY
 			// AI Analysis
 			"aianalysis.phase.transition",   // pkg/aianalysis/audit: RecordPhaseTransition
 			"aianalysis.aiagent.call",       // pkg/aianalysis/audit: RecordAIAgentCall
 			"aianalysis.rego.evaluation",    // pkg/aianalysis/audit: RecordRegoEvaluation
 			"aianalysis.analysis.completed", // pkg/aianalysis/audit: RecordAnalysisComplete
+			// AI Analysis: approval decision (#1111)
+			"aianalysis.approval.decision", // pkg/aianalysis/audit: RecordApprovalDecision — promoted from MAY
 			// KA (event_category: "aiagent" per ADR-034 v1.2)
 			string(ogenclient.LLMRequestPayloadAuditEventEventData),         // kubernaut-agent/src/audit/events.py: create_llm_request_event
 			string(ogenclient.LLMResponsePayloadAuditEventEventData),        // kubernaut-agent/src/audit/events.py: create_llm_response_event
 			string(ogenclient.WorkflowValidationPayloadAuditEventEventData), // kubernaut-agent/src/audit/events.py: create_validation_attempt_event
 			string(ogenclient.AIAgentResponsePayloadAuditEventEventData),    // kubernaut-agent/src/audit/events.py: create_aiagent_response_complete_event
+			// KA: tool calls and RCA (#1111)
+			string(ogenclient.LLMToolCallPayloadAuditEventEventData),            // aiagent.llm.tool_call — promoted from MAY
+			string(ogenclient.AIAgentRCACompletePayloadAuditEventEventData), // aiagent.rca.complete — correlation_id=RR.Name confirmed
 			// Workflow Execution
 			"workflowexecution.selection.completed", // pkg/workflowexecution/audit: RecordWorkflowSelectionCompleted
 			"workflowexecution.execution.started",   // pkg/workflowexecution/audit: RecordExecutionWorkflowStarted
 			"workflowexecution.workflow.completed",  // pkg/workflowexecution/audit: RecordWorkflowCompleted
 			// Notification
 			"notification.message.sent", // pkg/notification/audit: CreateMessageSentEvent
+			// Remediation Orchestrator: workflow creation (#1111)
+			"remediation.workflow_created", // pkg/remediationorchestrator/audit: emitWorkflowCreatedAudit — correlation_id=RR.Name confirmed
+			// DataStorage: workflow discovery (#1111 — requires Phase 1 fix for remediation_id forwarding)
+			"workflow.catalog.actions_listed",      // pkg/datastorage/audit: NewActionsListedAuditEvent
+			"workflow.catalog.workflows_listed",    // pkg/datastorage/audit: NewWorkflowsListedAuditEvent
+			"workflow.catalog.workflow_retrieved",   // pkg/datastorage/audit: NewWorkflowRetrievedAuditEvent
+			"workflow.catalog.selection_validated",  // pkg/datastorage/audit: NewSelectionValidatedAuditEvent
 		}
 
 		// === Events that MAY appear (non-deterministic) ===
 		// These depend on LLM behavior or conditional logic.
-		// ogenclient.LLMToolCallPayloadAuditEventEventData ("aiagent.llm.tool_call") — emitted when the LLM uses tools (e.g., search_workflow_catalog)
-		// "signalprocessing.business.classified" — emitted if business classification applies
-		// "aianalysis.approval.decision" — emitted if auto-approval is configured
+		//
+		// Events NOT promotable to FP due to correlation_id pattern mismatch:
+		// - "aiagent.enrichment.completed" — uses ai-rr-* (AIAnalysis CR name), not rr-* (RR name). Cover at KA E2E tier.
+		// - "remediationworkflow.admitted.create/update" — uses admission UID. Cover at Auth Webhook IT tier.
 
 		allExpected := append(exactlyOnceEvents, atLeastOnceEvents...)
 

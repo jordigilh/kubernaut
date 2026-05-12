@@ -544,6 +544,10 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				HaveKey(weaudit.EventTypeFailed),
 			), "Expected workflowexecution.workflow.completed or workflowexecution.workflow.failed audit event (ADR-034 v1.5)")
 
+			// #1111: Verify selection.completed event is also present
+			Expect(eventTypes).To(HaveKey(weaudit.EventTypeSelectionCompleted),
+				"Expected workflowexecution.selection.completed audit event (#1111 coverage)")
+
 			GinkgoWriter.Println("✅ BR-WE-005: Audit events persisted to Data Storage PostgreSQL")
 		})
 

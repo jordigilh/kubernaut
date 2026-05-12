@@ -276,6 +276,42 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 				total, len(eventTypes))
 		})
 
+		It("#1111: should emit EA created and workflow created events", func() {
+			By("Querying for orchestrator.ea.created and remediation.workflow_created events")
+			var events []dsgen.AuditEvent
+			var err error
+
+			Eventually(func() bool {
+				events, _, err = queryAuditEvents(correlationID)
+				if err != nil {
+					return false
+				}
+
+				eventTypes := make(map[string]bool)
+				for _, event := range events {
+					eventTypes[event.EventType] = true
+				}
+
+				return eventTypes[roaudit.EventTypeEACreated] ||
+					eventTypes[roaudit.EventTypeRemediationWorkflowCreated] ||
+					eventTypes[roaudit.EventTypeLifecycleCompleted] ||
+					eventTypes[roaudit.EventTypeLifecycleFailed]
+			}, 2*time.Minute, 2*time.Second).Should(BeTrue(),
+				"Expected EA created or workflow created audit events")
+
+			eventTypes := make(map[string]bool)
+			for _, event := range events {
+				eventTypes[event.EventType] = true
+				if event.EventType == roaudit.EventTypeEACreated ||
+					event.EventType == roaudit.EventTypeRemediationWorkflowCreated {
+					Expect(event.CorrelationID).To(Equal(correlationID),
+						"Event %s must have RR name as correlation_id", event.EventType)
+				}
+			}
+
+			GinkgoWriter.Printf("✅ E2E: RO audit events found — types: %v\n", eventTypes)
+		})
+
 		It("should handle audit service unavailability gracefully during startup", func() {
 			// ADR-032 §2: P0 services MUST crash if audit cannot be initialized
 			// This test validates that IF DataStorage is unreachable at RO startup,

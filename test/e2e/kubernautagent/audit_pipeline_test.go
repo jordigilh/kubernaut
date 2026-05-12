@@ -409,6 +409,193 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 		})
 	})
 
+	Context("#1111: Extended audit trail coverage — events emitted during investigation", func() {
+
+		It("E2E-KA-1111-001: RCA complete and tool call events persisted", func() {
+			remediationID := "test-audit-1111-001-" + time.Now().Format("20060102150405")
+
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "test-audit-1111-001",
+				RemediationID:     remediationID,
+				SignalName:        "CrashLoopBackOff",
+				Severity:          "critical",
+				SignalSource:      "kubernetes",
+				ResourceNamespace: "default",
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod-1111-001",
+				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
+			}
+
+			_, err := sessionClient.Investigate(ctx, req)
+			Expect(err).ToNot(HaveOccurred(), "KA investigation should succeed")
+
+			var events []ogenclient.AuditEvent
+			Eventually(func() bool {
+				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(remediationID),
+				})
+				if qErr != nil {
+					return false
+				}
+				events = resp.Data
+
+				hasRCA := false
+				hasToolCall := false
+				for _, event := range events {
+					switch event.EventType {
+					case string(ogenclient.AIAgentRCACompletePayloadAuditEventEventData):
+						hasRCA = true
+					case string(ogenclient.LLMToolCallPayloadAuditEventEventData):
+						hasToolCall = true
+					}
+				}
+				return hasRCA && hasToolCall
+			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
+				"RCA complete and tool call events must be persisted")
+
+			hasRCA := false
+			hasToolCall := false
+			for _, event := range events {
+				switch event.EventType {
+				case string(ogenclient.AIAgentRCACompletePayloadAuditEventEventData):
+					hasRCA = true
+					Expect(event.CorrelationID).To(Equal(remediationID),
+						"RCA complete event must have remediation_id as correlation_id")
+				case string(ogenclient.LLMToolCallPayloadAuditEventEventData):
+					hasToolCall = true
+					Expect(event.CorrelationID).To(Equal(remediationID),
+						"Tool call event must have remediation_id as correlation_id")
+				}
+			}
+			Expect(hasRCA).To(BeTrue(), "aiagent.rca.complete must be present")
+			Expect(hasToolCall).To(BeTrue(), "aiagent.llm.tool_call must be present")
+		})
+
+		It("E2E-KA-1111-002: Enrichment completed event persisted with IncidentID correlation", func() {
+			incidentID := "test-audit-1111-002"
+			remediationID := "test-audit-1111-002-" + time.Now().Format("20060102150405")
+
+			req := &agentclient.IncidentRequest{
+				IncidentID:        incidentID,
+				RemediationID:     remediationID,
+				SignalName:        "OOMKilled",
+				Severity:          "high",
+				SignalSource:      "kubernetes",
+				ResourceNamespace: "default",
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod-1111-002",
+				ErrorMessage:      "Container memory limit exceeded",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
+			}
+
+			_, err := sessionClient.Investigate(ctx, req)
+			Expect(err).ToNot(HaveOccurred(), "KA investigation should succeed")
+
+			// aiagent.enrichment.completed uses IncidentID (= AIAnalysis CR name in FP,
+			// or req.IncidentID in direct KA calls) as correlation_id, NOT remediationID.
+			// This is why it's excluded from FP assertions and covered here instead.
+			var events []ogenclient.AuditEvent
+			Eventually(func() bool {
+				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(incidentID),
+				})
+				if qErr != nil {
+					return false
+				}
+				events = resp.Data
+				for _, event := range events {
+					if event.EventType == "aiagent.enrichment.completed" {
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
+				"aiagent.enrichment.completed event must be persisted (queried by IncidentID)")
+
+			for _, event := range events {
+				if event.EventType == "aiagent.enrichment.completed" {
+					Expect(event.CorrelationID).To(Equal(incidentID),
+						"enrichment.completed must use IncidentID as correlation_id")
+					break
+				}
+			}
+		})
+
+		It("E2E-KA-1111-003: Workflow discovery events persisted after Phase 1 fix", func() {
+			remediationID := "test-audit-1111-003-" + time.Now().Format("20060102150405")
+
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "test-audit-1111-003",
+				RemediationID:     remediationID,
+				SignalName:        "CrashLoopBackOff",
+				Severity:          "critical",
+				SignalSource:      "kubernetes",
+				ResourceNamespace: "default",
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod-1111-003",
+				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
+			}
+
+			_, err := sessionClient.Investigate(ctx, req)
+			Expect(err).ToNot(HaveOccurred(), "KA investigation should succeed")
+
+			// After #1111 fix, the KA forwards remediation_id to all 3 DS discovery tools.
+			// The DS emits workflow.catalog.* audit events with correlation_id = remediationID.
+			var events []ogenclient.AuditEvent
+			Eventually(func() bool {
+				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(remediationID),
+				})
+				if qErr != nil {
+					return false
+				}
+				events = resp.Data
+
+				hasActionsListed := false
+				hasWorkflowsListed := false
+				for _, event := range events {
+					switch event.EventType {
+					case "workflow.catalog.actions_listed":
+						hasActionsListed = true
+					case "workflow.catalog.workflows_listed":
+						hasWorkflowsListed = true
+					}
+				}
+				return hasActionsListed && hasWorkflowsListed
+			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
+				"Workflow discovery audit events must be persisted after #1111 fix")
+
+			hasActionsListed := false
+			hasWorkflowsListed := false
+			for _, event := range events {
+				switch event.EventType {
+				case "workflow.catalog.actions_listed":
+					hasActionsListed = true
+					Expect(event.CorrelationID).To(Equal(remediationID))
+				case "workflow.catalog.workflows_listed":
+					hasWorkflowsListed = true
+					Expect(event.CorrelationID).To(Equal(remediationID))
+				}
+			}
+			Expect(hasActionsListed).To(BeTrue(), "workflow.catalog.actions_listed must be present")
+			Expect(hasWorkflowsListed).To(BeTrue(), "workflow.catalog.workflows_listed must be present")
+		})
+	})
+
 	Context("TP-433-AUDIT-SOC2: Audit parity — populated payloads", func() {
 
 		It("E2E-KA-433-AP-001: Full investigation audit trail with populated payloads", func() {
