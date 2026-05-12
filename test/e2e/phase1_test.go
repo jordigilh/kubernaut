@@ -183,7 +183,7 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 
 				resp, err := httpClient.Do(req)
 				Expect(err).NotTo(HaveOccurred())
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				if resp.StatusCode == http.StatusTooManyRequests {
 					hitRateLimit = true
 					break
