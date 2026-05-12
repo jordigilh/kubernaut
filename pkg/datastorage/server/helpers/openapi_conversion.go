@@ -19,6 +19,7 @@ package helpers
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,13 +47,17 @@ import (
 // This performs the conversion from the REST API request type (OpenAPI-generated)
 // to the internal audit event type used by the audit system.
 //
-// When authenticatedActorID is non-empty (typically from oauth-proxy header
-// X-Auth-Request-User), server-side attribution overrides client body actor fields
-// to prevent spoofing (SEC-S1 / AU-3).
+// When authenticatedActorID is a human identity (non-ServiceAccount), server-side
+// attribution overrides client body actor fields to prevent spoofing (SEC-S1 / AU-3).
+//
+// When authenticatedActorID is a Kubernetes ServiceAccount (system:serviceaccount:*),
+// the client-submitted actor fields are preserved. Service accounts represent transport
+// credentials, not logical actors — the calling service's self-declared identity
+// (e.g., "signalprocessing-controller") is the meaningful audit actor.
 //
 // Parameters:
 //   - req: OpenAPI-generated audit event request
-//   - authenticatedActorID: trusted human identity when present; otherwise use body defaults
+//   - authenticatedActorID: trusted identity from auth middleware; SA identities preserve body fields
 //
 // Returns:
 //   - *audit.AuditEvent: Internal audit event ready for storage
@@ -67,7 +72,10 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest, authenticatedAct
 	actorType := "service"
 	actorID := string(req.EventCategory) + "-service"
 
-	if authenticatedActorID != "" {
+	isServiceAccount := strings.HasPrefix(authenticatedActorID, "system:serviceaccount:")
+
+	if authenticatedActorID != "" && !isServiceAccount {
+		// SEC-S1 / AU-3: Override actor for human operators to prevent spoofing
 		actorType = "user"
 		actorID = authenticatedActorID
 	} else {
