@@ -17,7 +17,7 @@ Kubernaut closes the loop from Kubernetes alert to automated remediation. When s
 <p align="center">
   <a href="https://jordigilh.github.io/kubernaut-docs/"><strong>Full Documentation</strong></a> &nbsp;·&nbsp;
   <a href="https://github.com/jordigilh/kubernaut-demo-scenarios"><strong>Demo Scenarios</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/jordigilh/kubernaut/releases/tag/v1.3.0"><strong>Latest Release</strong></a>
+  <a href="https://github.com/jordigilh/kubernaut/releases/tag/v1.4.0"><strong>Latest Release (v1.4.0)</strong></a>
 </p>
 
 ---
@@ -52,17 +52,27 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 ## Roadmap
 
-### v1.4 — Operator Overrides and Platform Hardening (current)
+### v1.5 — Live Investigation Control and MCP Integration (current)
 
-- **Prompt injection guardrails** — Shadow agent with a dedicated scanning model to protect the agentic pipeline against prompt injection attacks ([#601](https://github.com/jordigilh/kubernaut/issues/601))
-- **Operator workflow/parameter override** — Operators can override workflow selection and parameters during RAR approval, with authwebhook validation ([#594](https://github.com/jordigilh/kubernaut/issues/594))
-- **PagerDuty and Microsoft Teams** — New notification delivery channels alongside Slack and console ([#60](https://github.com/jordigilh/kubernaut/issues/60), [#593](https://github.com/jordigilh/kubernaut/issues/593))
-- **Unified monitoring config** — Single `monitoring:` Helm block replacing per-component Prometheus/AlertManager keys, with OCP auto-detection ([#463](https://github.com/jordigilh/kubernaut/issues/463))
-- **NetworkPolicies** — Default-deny network policies for all services based on the traffic matrix ([#285](https://github.com/jordigilh/kubernaut/issues/285))
+- **MCP Interactive Mode** — Kubernaut Agent exposes an MCP endpoint for human-in-the-loop investigation with lease-based session management, dynamic takeover, and user impersonation ([#703](https://github.com/jordigilh/kubernaut/issues/703))
+- **SSE streaming and session cancellation** — Real-time token-level streaming, session cancellation with context propagation, and object-level session authorization ([#823](https://github.com/jordigilh/kubernaut/issues/823))
+- **Data Storage service hardening** — FedRAMP AU compliance (audit signing, DLQ reliability, retention worker, Redis TLS), AppSec fixes, and production runbooks ([#1048](https://github.com/jordigilh/kubernaut/issues/1048))
+- **Shadow agent grounding review** — Full-context second evaluation layer detecting distributed prompt injection (boiling frog attacks) at the RCA-to-workflow boundary ([#1096](https://github.com/jordigilh/kubernaut/issues/1096))
+- **Operational hardening** — Per-user rate limiting, graceful shutdown, panic recovery, session lifecycle management, and Go Mistakes audit remediation
 
-Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/milestone/5).
+Track progress on the [v1.5 milestone](https://github.com/jordigilh/kubernaut/milestone/6).
 
-**[Full roadmap](docs/roadmap/ROADMAP.md)** — Live Investigation Control, Agentic Integration (MCP/A2A), Collective Intelligence, Fleet Operations (ACM/AAP), and Operational Expansion (cost, security, non-K8s).
+### v1.4 — Operator Overrides and Platform Hardening (released)
+
+- **Prompt injection guardrails** — Shadow agent with a dedicated scanning model ([#601](https://github.com/jordigilh/kubernaut/issues/601))
+- **Operator workflow/parameter override** — RAR approval overrides with authwebhook validation ([#594](https://github.com/jordigilh/kubernaut/issues/594))
+- **PagerDuty and Microsoft Teams** — New notification delivery channels ([#60](https://github.com/jordigilh/kubernaut/issues/60), [#593](https://github.com/jordigilh/kubernaut/issues/593))
+- **Inter-service TLS** — TLS wired between all 10 services with configurable security profiles ([#748](https://github.com/jordigilh/kubernaut/issues/748))
+- **NetworkPolicies** — Default-deny network policies for all services ([#285](https://github.com/jordigilh/kubernaut/issues/285))
+
+See the [v1.4.0 release notes](https://github.com/jordigilh/kubernaut/releases/tag/v1.4.0).
+
+**[Full roadmap](docs/roadmap/ROADMAP.md)** — Agentic Integration (A2A), Collective Intelligence, Fleet Operations (ACM/AAP), and Operational Expansion (cost, security, non-K8s).
 
 <p align="center">
   <img src="docs/architecture/diagrams/kubernaut-console-animated.gif" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
