@@ -1,0 +1,14 @@
+## Key Incident Findings
+
+The deployment `web-app` in namespace `demo-alert-misdirection` is experiencing CrashLoopBackOff, but the root cause is NOT OOM as suggested by the alert description. Analysis of the Deployment spec reveals:
+
+1. **Command Override**: The container command has been changed to `["/bin/sh", "-c", "exit 1"]`, which immediately exits with failure
+2. **Image Version**: The image was updated to `registry.example.com/web-app:2.0.0-rc1` (from 1.9.0 in the previous ReplicaSet)
+3. **Memory Limits**: Memory limits (256Mi) are unchanged between revisions, ruling out OOM as the cause
+
+The alert description mentioning OOM is misleading — the actual failure is a deliberate or accidental command override that prevents the container from starting.
+
+### Recommended Next Steps
+1. Immediately roll back the deployment to the previous ReplicaSet (revision 2, image 1.9.0)
+2. Investigate who/what introduced the command override referencing 2.0.0-rc1
+3. Check the CI/CD pipeline for the source of the malformed deployment spec
