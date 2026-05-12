@@ -65,6 +65,7 @@ jobs:
           APP_VERSION: ${{ steps.versions.outputs.app_version }}
         run: |
           gh release create "${TAG}" \
+            --latest=false \
             --title "Chart ${CHART_VERSION}" \
             --notes "Helm chart version **${CHART_VERSION}** for Kubernaut operator **v${APP_VERSION}**.
 
