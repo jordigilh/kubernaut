@@ -181,7 +181,7 @@ spec:
                           circuit breaker terminated the investigation early.
                         type: boolean
                       humanReviewReason:
-                        description: HumanReviewReason from HAPI when needs_human_review=true
+                        description: HumanReviewReason from Kubernaut Agent when needs_human_review=true
                           (BR-HAPI-197).
                         type: string
                       reason:
