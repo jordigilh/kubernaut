@@ -108,6 +108,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				PollInterval:  100 * time.Millisecond,
 				MaxBatchSize:  10,
 				MaxRetries:    6,
+				ReadTimeout:   100 * time.Millisecond,
 				ConsumerGroup: "test-df1-workers",
 				ConsumerName:  "test-df1-worker-1",
 			}
@@ -151,6 +152,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				PollInterval:  100 * time.Millisecond,
 				MaxBatchSize:  10,
 				MaxRetries:    6,
+				ReadTimeout:   100 * time.Millisecond,
 				ConsumerGroup: "test-df1-fail-workers",
 				ConsumerName:  "test-df1-fail-1",
 			}
@@ -233,6 +235,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				PollInterval:  100 * time.Millisecond,
 				MaxBatchSize:  10,
 				MaxRetries:    6,
+				ReadTimeout:   100 * time.Millisecond,
 				ConsumerGroup: "test-df2-workers",
 				ConsumerName:  "test-df2-worker-1",
 			}
@@ -296,6 +299,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				PollInterval:  100 * time.Millisecond,
 				MaxBatchSize:  10,
 				MaxRetries:    6,
+				ReadTimeout:   100 * time.Millisecond,
 				ConsumerGroup: "test-df2-empty-workers",
 				ConsumerName:  "test-df2-empty-1",
 			}
@@ -498,6 +502,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				PollInterval:  100 * time.Millisecond,
 				MaxBatchSize:  10,
 				MaxRetries:    6,
+				ReadTimeout:   100 * time.Millisecond,
 				ConsumerGroup: "test-nil-guard",
 				ConsumerName:  "test-nil-1",
 			}

@@ -19,78 +19,62 @@ package datastorage
 import (
 	"context"
 
+	"github.com/alicebob/miniredis/v2"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 )
 
 // ========================================
-// PHASE 7: REDIS READINESS CHECK (TP-1088-P1)
+// PHASE 7: REDIS READINESS CHECK — BEHAVIORAL (TP-1088-P1)
 // ========================================
 //
 // Issue: #1088 Phase 7.3
-// File Under Test: pkg/datastorage/server/handlers.go
-// TDD Phase: RED — readiness handler does NOT check Redis yet
+// File Under Test: pkg/datastorage/dlq/client.go (HealthCheck)
 //
-// The readiness probe currently checks only:
-// 1. Shutdown flag
-// 2. Database connectivity (s.db.Ping())
-//
-// Missing: Redis connectivity via s.dlqClient.HealthCheck(ctx)
-//
-// The handler-level test (verifying HTTP 503 when Redis is down) requires
-// a *Server instance which is heavy for unit tests. Instead, we test the
-// contract: dlq.Client.HealthCheck must work with real Redis interaction.
+// These tests exercise dlq.Client.HealthCheck against real (miniredis)
+// and stopped Redis instances, proving the production code path that
+// the readiness handler depends on.
 //
 // ========================================
 
-var _ = Describe("Phase 7: Redis Readiness Check Contract (TP-1088-P1)", func() {
+var _ = Describe("Phase 7: Redis Readiness Check (TP-1088-P1)", func() {
 
 	Describe("dlq.Client.HealthCheck", func() {
-		It("UT-DS-1088-P7-003a: HealthCheck must return error for unreachable Redis", func() {
-			// This test validates the contract of dlq.Client.HealthCheck:
-			// when Redis is unreachable, it returns an error.
-			// The readiness handler should use this to return 503.
 
-			// Create a DLQ client with an invalid Redis address
-			// The client constructor validates nil but not connectivity.
-			// HealthCheck will fail on Ping.
+		It("UT-DS-1088-P7-003a: HealthCheck returns nil when Redis is reachable", func() {
+			mr := miniredis.RunT(GinkgoT())
 
-			// We can't create a dlq.Client with a bad address because
-			// NewClient requires a non-nil *redis.Client but doesn't ping.
-			// Instead we verify the HealthCheck API exists with correct signature.
+			rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+			defer rc.Close()
 
-			// Compile-time assertion: HealthCheck accepts context and returns error
-			var fn func(context.Context) error
-			var c *dlq.Client
-			fn = c.HealthCheck
-			_ = fn // prevent unused error
+			client, err := dlq.NewClient(rc, logr.Discard(), 1000)
+			Expect(err).ToNot(HaveOccurred())
 
-			// The actual behavioral test (readiness returns 503 when Redis is down)
-			// is deferred to integration tests. This unit test verifies the contract.
+			err = client.HealthCheck(context.Background())
+			Expect(err).ToNot(HaveOccurred(),
+				"HealthCheck must return nil when Redis responds to PING")
 		})
 
-		It("UT-DS-1088-P7-003b: readiness response must include redis status reason", func() {
-			// RED: The current readiness handler only returns:
-			//   - "shutting_down"
-			//   - "database_unreachable"
-			//   - "ready"
-			//
-			// It does NOT return "redis_unreachable".
-			// This test documents the expected response reasons.
+		It("UT-DS-1088-P7-003b: HealthCheck returns error when Redis is unreachable", func() {
+			mr := miniredis.RunT(GinkgoT())
+			addr := mr.Addr()
+			mr.Close()
 
-			expectedReasons := []string{
-				"shutting_down",
-				"database_unreachable",
-				"redis_unreachable", // Phase 7.3: NEW — not yet implemented
-			}
+			rc := redis.NewClient(&redis.Options{Addr: addr})
+			defer rc.Close()
 
-			// The handler should support all three failure modes.
-			// Currently only 2 are implemented. This test passes structurally
-			// but the behavioral test (handler returns 503 for Redis) is integration-level.
-			Expect(expectedReasons).To(ContainElement("redis_unreachable"),
-				"Readiness handler must check Redis and return 'redis_unreachable' on failure")
+			client, err := dlq.NewClient(rc, logr.Discard(), 1000)
+			Expect(err).ToNot(HaveOccurred())
+
+			err = client.HealthCheck(context.Background())
+			Expect(err).To(HaveOccurred(),
+				"HealthCheck must return error when Redis is down")
+			Expect(err.Error()).To(ContainSubstring("redis ping failed"),
+				"Error must wrap the ping failure with context")
 		})
 	})
 })

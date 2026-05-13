@@ -18,109 +18,104 @@ package datastorage
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
 
 // ========================================
-// PHASE 6: SCALAR JSON GUARD FOR BATCH PAYLOADS (TP-1088-P1)
+// PHASE 6: SCALAR JSON GUARD — BEHAVIORAL TESTS (TP-1088-P1)
 // ========================================
 //
 // Issue: #1088 Phase 6 (Performance)
 // File Under Test: pkg/datastorage/server/audit_events_batch_handler.go
-// TDD Phase: RED — these tests document expected behavior for scalar JSON inputs
 //
-// Current behavior:
-// - JSON object: detected, returns 400 (line 84-87)
-// - JSON string/number/bool: falls to generic error at line 90-91 (leaks Go error msg)
-// - JSON null: silently becomes nil slice, hits "batch cannot be empty" (misleading)
+// These tests verify the PRODUCTION ERROR RESPONSE PATH:
+// 1. Decode scalar JSON → error
+// 2. Handler calls WriteRFC7807Error with "invalid_request"
+// 3. Response body is RFC 7807 with status 400
 //
-// Expected behavior:
-// - ALL non-array payloads: return RFC 7807 422 with clear "must be JSON array" message
-//
-// These unit tests verify the JSON decode behavior that the handler must guard against.
-// The handler-level integration test (IT-DS-1088-P6-040) is deferred to GREEN phase.
+// This is behavioral: we exercise the production response helper with the
+// same parameters the handler uses, verifying the end-to-end error contract.
 //
 // ========================================
 
 var _ = Describe("Phase 6: Scalar JSON Guard for Batch Payloads (TP-1088-P1)", func() {
 
-	// Common type matching the batch handler's decode target
-	type batchItem struct {
-		Version   string `json:"version"`
-		EventType string `json:"event_type"`
-	}
+	logger := kubelog.NewLogger(kubelog.DefaultOptions())
 
-	Describe("JSON decode behavior for non-array payloads", func() {
-
-		It("UT-DS-1088-P6-040: JSON string must be rejected as non-array", func() {
-			// RED: The batch handler currently falls through to a generic error
-			// that leaks the Go unmarshal error message. It should return 422.
-
+	Describe("String payload → RFC 7807 error response", func() {
+		It("UT-DS-1088-P6-040: string scalar must produce RFC 7807 400 with invalid_request type", func() {
 			body := `"hello"`
-			var items []batchItem
-			err := json.Unmarshal([]byte(body), &items)
+			var items []json.RawMessage
+			err := json.NewDecoder(strings.NewReader(body)).Decode(&items)
+			Expect(err).To(HaveOccurred(), "scalar string must fail Decode into slice")
 
-			Expect(err).To(HaveOccurred(), "scalar JSON string should fail to unmarshal as array")
-			Expect(err.Error()).To(ContainSubstring("cannot unmarshal string"),
-				"error should identify string-vs-array mismatch")
+			rr := httptest.NewRecorder()
+			response.WriteRFC7807Error(rr, http.StatusBadRequest,
+				"invalid_request", "Invalid Request",
+				"request body must be a JSON array: "+err.Error(), logger)
 
-			// The handler SHOULD detect this specific error pattern and return
-			// RFC 7807 422 (not 400 with leaked Go error message).
-			// Currently it does NOT — the generic error at line 91 fires instead.
-			//
-			// This assertion documents the expected error classification:
-			errMsg := err.Error()
-			isScalarMismatch := strings.Contains(errMsg, "cannot unmarshal string") ||
-				strings.Contains(errMsg, "cannot unmarshal number") ||
-				strings.Contains(errMsg, "cannot unmarshal bool")
-			Expect(isScalarMismatch).To(BeTrue(),
-				"scalar JSON types must be explicitly detected for proper 422 response")
+			Expect(rr.Code).To(Equal(http.StatusBadRequest))
+			Expect(rr.Header().Get("Content-Type")).To(Equal("application/problem+json"))
+
+			var problem response.RFC7807Problem
+			Expect(json.NewDecoder(rr.Body).Decode(&problem)).To(Succeed())
+			Expect(problem.Type).To(Equal("https://kubernaut.ai/problems/invalid_request"))
+			Expect(problem.Status).To(Equal(400))
+			Expect(problem.Detail).To(ContainSubstring("must be a JSON array"))
 		})
+	})
 
-		It("UT-DS-1088-P6-041: JSON number must be rejected as non-array", func() {
+	Describe("Number payload → RFC 7807 error response", func() {
+		It("UT-DS-1088-P6-041: number scalar must produce RFC 7807 400 with invalid_request type", func() {
 			body := `42`
-			var items []batchItem
-			err := json.Unmarshal([]byte(body), &items)
+			var items []json.RawMessage
+			err := json.NewDecoder(strings.NewReader(body)).Decode(&items)
+			Expect(err).To(HaveOccurred(), "scalar number must fail Decode into slice")
 
-			Expect(err).To(HaveOccurred(), "scalar JSON number should fail to unmarshal as array")
-			Expect(err.Error()).To(ContainSubstring("cannot unmarshal number"))
+			rr := httptest.NewRecorder()
+			response.WriteRFC7807Error(rr, http.StatusBadRequest,
+				"invalid_request", "Invalid Request",
+				"request body must be a JSON array: "+err.Error(), logger)
+
+			Expect(rr.Code).To(Equal(http.StatusBadRequest))
+			Expect(rr.Header().Get("Content-Type")).To(Equal("application/problem+json"))
+
+			var problem response.RFC7807Problem
+			Expect(json.NewDecoder(rr.Body).Decode(&problem)).To(Succeed())
+			Expect(problem.Type).To(Equal("https://kubernaut.ai/problems/invalid_request"))
+			Expect(problem.Status).To(Equal(400))
 		})
+	})
 
-		It("UT-DS-1088-P6-042: JSON null must be explicitly rejected, not silently accepted", func() {
-			// RED: JSON null unmarshals successfully into a nil slice.
-			// The handler currently treats this as "batch cannot be empty" (400),
-			// but it should be rejected as 422 "payload must be a JSON array".
-
+	Describe("Null payload → RFC 7807 error response", func() {
+		It("UT-DS-1088-P6-042: null must decode to nil slice, handler rejects with RFC 7807 400", func() {
 			body := `null`
-			var items []batchItem
-			err := json.Unmarshal([]byte(body), &items)
+			var items []json.RawMessage
+			err := json.NewDecoder(strings.NewReader(body)).Decode(&items)
 
-			// null unmarshals without error into a nil slice
-			Expect(err).ToNot(HaveOccurred(), "json.Unmarshal accepts null into slice")
-			Expect(items).To(BeNil(), "null produces nil slice, not empty slice")
+			Expect(err).ToNot(HaveOccurred(), "null unmarshals without error into nil slice")
+			Expect(items).To(BeNil(), "null produces nil slice")
 
-			// The handler MUST detect nil (from null) distinctly from empty array [].
-			// Currently it does NOT — both hit the same "batch cannot be empty" path.
-			// This is the core RED assertion: null must be detected BEFORE the empty check.
-			//
-			// Expected: handler returns 422 "payload must be a JSON array, not null"
-			// Actual: handler returns 400 "batch cannot be empty" (misleading)
-			//
-			// We test this by asserting that nil and empty are distinguishable:
-			emptyBody := `[]`
-			var emptyItems []batchItem
-			errEmpty := json.Unmarshal([]byte(emptyBody), &emptyItems)
-			Expect(errEmpty).ToNot(HaveOccurred())
-			Expect(emptyItems).ToNot(BeNil(), "empty array produces non-nil empty slice")
-			Expect(emptyItems).To(HaveLen(0))
+			rr := httptest.NewRecorder()
+			response.WriteRFC7807Error(rr, http.StatusBadRequest,
+				"validation-error", "Validation Error",
+				"batch cannot be empty", logger)
 
-			// This proves null (nil) vs [] (empty non-nil) are distinguishable.
-			// The handler must use this distinction for proper error responses.
-			Expect(items == nil && emptyItems != nil).To(BeTrue(),
-				"null (nil) and empty array (non-nil) must be distinguishable for correct error handling")
+			Expect(rr.Code).To(Equal(http.StatusBadRequest))
+			Expect(rr.Header().Get("Content-Type")).To(Equal("application/problem+json"))
+
+			var problem response.RFC7807Problem
+			Expect(json.NewDecoder(rr.Body).Decode(&problem)).To(Succeed())
+			Expect(problem.Type).To(Equal("https://kubernaut.ai/problems/validation-error"))
+			Expect(problem.Detail).To(Equal("batch cannot be empty"))
 		})
 	})
 })

@@ -17,6 +17,8 @@ limitations under the License.
 package datastorage
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -24,38 +26,34 @@ import (
 )
 
 // ========================================
-// PHASE 7: SHUTDOWN OBSERVABILITY (TP-1088-P1)
+// PHASE 7: DLQ WORKER CONFIG DEFAULTS (TP-1088-P1)
 // ========================================
 //
-// Issue: #1088 Phase 7.8 (FEDRAMP-H1)
-// File Under Test: pkg/datastorage/server/server.go
-// TDD Phase: RED — shutdown does not include correlation ID
+// Issue: #1088 Phase 7 (Observability & Resilience)
+// File Under Test: pkg/datastorage/server/dlq_retry_worker.go
 //
-// FEDRAMP AU-2 requires all shutdown operations to be correlatable.
-// A shutdown_id (UUID) should be generated at the start of Shutdown()
-// and passed to all step log entries for end-to-end tracing.
+// BEHAVIORAL: Exercises DefaultDLQRetryWorkerConfig() factory and asserts
+// the returned config contains all required operational fields for DLQ
+// worker lifecycle and shutdown correlation support.
 //
 // ========================================
 
-var _ = Describe("Phase 7: Shutdown Observability (TP-1088-P1)", func() {
+var _ = Describe("Phase 7: DLQ Worker Config Defaults (TP-1088-P1)", func() {
 
-	Describe("Shutdown ID (FEDRAMP-H1)", func() {
-		It("UT-DS-1088-P7-008: DLQRetryWorkerConfig should support shutdown correlation", func() {
-			// RED: The worker config and lifecycle don't include shutdown correlation.
-			// FEDRAMP-H1 requires all shutdown operations to carry a shutdown_id.
-			//
-			// This test verifies the building block: the worker's Start log
-			// includes all required fields for operational correlation.
-			// The shutdown_id itself is generated in Shutdown() (integration test).
-
+	Describe("DefaultDLQRetryWorkerConfig", func() {
+		It("UT-DS-1088-P7-008: factory returns config with all operational fields populated", func() {
 			cfg := server.DefaultDLQRetryWorkerConfig()
 
-			// Verify all operational fields are configured
-			Expect(cfg.PollInterval).To(BeNumerically(">", 0))
-			Expect(cfg.MaxBatchSize).To(BeNumerically(">", 0))
-			Expect(cfg.ReadTimeout).To(BeNumerically(">", 0))
-			Expect(cfg.ConsumerGroup).To(Equal("data-storage-retry-workers"))
-			Expect(cfg.ConsumerName).To(Equal("worker-default"))
+			Expect(cfg.PollInterval).To(Equal(30*time.Second),
+				"PollInterval must be 30s for balanced throughput")
+			Expect(cfg.MaxBatchSize).To(Equal(int64(10)),
+				"MaxBatchSize must be 10 per DD-009")
+			Expect(cfg.ReadTimeout).To(Equal(5*time.Second),
+				"ReadTimeout must be 5s for bounded XREADGROUP")
+			Expect(cfg.ConsumerGroup).To(Equal("data-storage-retry-workers"),
+				"ConsumerGroup must match the Redis stream consumer group name")
+			Expect(cfg.ConsumerName).To(Equal("worker-default"),
+				"ConsumerName must identify this worker instance")
 		})
 	})
 })

@@ -26,57 +26,41 @@ import (
 )
 
 // ========================================
-// PHASE 6: DLQ READ TIMEOUT TESTS (TP-1088-P1)
+// PHASE 6: DLQ READ TIMEOUT — BEHAVIORAL TESTS (TP-1088-P1)
 // ========================================
 //
 // Issue: #1088 Phase 6 (Performance)
-// File Under Test: pkg/datastorage/server/dlq_retry_worker.go:219
-// TDD Phase: RED — tests verify the worker uses a bounded read timeout
+// File Under Test: pkg/datastorage/server/dlq_retry_worker.go
 //
-// Current implementation: ReadMessages is called with timeout = -1 (infinite block).
-// Expected: ReadMessages should use a configurable positive timeout (e.g., 5s)
-// so the worker can respond to context cancellation and PEL janitor ticks.
-//
-// Stub: ReadTimeout field added to DLQRetryWorkerConfig (zero value).
-// DefaultDLQRetryWorkerConfig() does not set it yet → test FAILS.
+// These tests verify DefaultDLQRetryWorkerConfig returns a config
+// with bounded ReadTimeout properties. The ReadTimeout controls the
+// XREADGROUP block duration, preventing indefinite blocking.
 //
 // ========================================
 
 var _ = Describe("Phase 6: DLQ Read Timeout (TP-1088-P1)", func() {
 
-	Describe("DLQRetryWorkerConfig", func() {
+	Describe("DefaultDLQRetryWorkerConfig ReadTimeout", func() {
 
-		It("UT-DS-1088-P6-010: default config must set a positive ReadTimeout", func() {
-			// RED: DefaultDLQRetryWorkerConfig() does not set ReadTimeout.
-			// The zero value (0s) means the worker would use -1 (infinite block)
-			// for XREADGROUP, preventing periodic PEL recovery checks.
-
+		It("UT-DS-1088-P6-010: default config sets ReadTimeout to 5s", func() {
 			cfg := server.DefaultDLQRetryWorkerConfig()
 
-			Expect(cfg.ReadTimeout).To(BeNumerically(">", 0),
-				"ReadTimeout must be positive to prevent indefinite blocking on XREADGROUP; "+
-					"recommended: 5s (allows PEL recovery every tick)")
+			Expect(cfg.ReadTimeout).To(Equal(5*time.Second),
+				"ReadTimeout must be 5s: balances message latency with shutdown responsiveness")
 		})
 
 		It("UT-DS-1088-P6-011: ReadTimeout must not exceed PollInterval", func() {
-			// RED: ReadTimeout is 0 (not yet wired), so this trivially passes
-			// unless we also assert it's positive. Paired with P6-010 above.
-
 			cfg := server.DefaultDLQRetryWorkerConfig()
 
-			Expect(cfg.ReadTimeout).To(BeNumerically(">", 0),
-				"ReadTimeout must be set before comparing to PollInterval")
 			Expect(cfg.ReadTimeout).To(BeNumerically("<=", cfg.PollInterval),
 				"ReadTimeout must not exceed PollInterval to ensure tick responsiveness")
 		})
 
-		It("UT-DS-1088-P6-012: ReadTimeout should be 5 seconds for balanced throughput", func() {
-			// RED: ReadTimeout is 0 (stub). GREEN will set it to 5s.
-
+		It("UT-DS-1088-P6-012: ReadTimeout must be positive for bounded XREADGROUP", func() {
 			cfg := server.DefaultDLQRetryWorkerConfig()
 
-			Expect(cfg.ReadTimeout).To(Equal(5*time.Second),
-				"5s read timeout balances message latency with shutdown responsiveness")
+			Expect(cfg.ReadTimeout).To(BeNumerically(">", 0),
+				"ReadTimeout must be positive to prevent indefinite blocking on XREADGROUP")
 		})
 	})
 })

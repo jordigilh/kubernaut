@@ -76,14 +76,80 @@ var _ = Describe("Phase 7: Configurable Endpoint Propagation Delay (TP-1088-P1)"
 		})
 
 		It("UT-DS-1088-P7-007d: must clamp to maximum 30s", func() {
-			// RED: Stub returns 0.
-
 			cfg := config.ServerConfig{
 				EndpointPropagationDelay: "60s",
 			}
 
 			Expect(cfg.GetEndpointPropagationDelay()).To(BeNumerically("<=", 30*time.Second),
 				"Endpoint propagation delay must not exceed 30s to prevent slow shutdown")
+		})
+	})
+
+	Describe("ServerConfig.GetShutdownTimeout", func() {
+		It("UT-DS-1088-P7-020a: default must be 60s when field is empty", func() {
+			cfg := config.ServerConfig{}
+			Expect(cfg.GetShutdownTimeout()).To(Equal(60 * time.Second))
+		})
+
+		It("UT-DS-1088-P7-020b: must parse valid duration string", func() {
+			cfg := config.ServerConfig{ShutdownTimeout: "90s"}
+			Expect(cfg.GetShutdownTimeout()).To(Equal(90 * time.Second))
+		})
+
+		It("UT-DS-1088-P7-020c: must clamp to minimum 30s", func() {
+			cfg := config.ServerConfig{ShutdownTimeout: "5s"}
+			Expect(cfg.GetShutdownTimeout()).To(Equal(30 * time.Second))
+		})
+
+		It("UT-DS-1088-P7-020d: must clamp to maximum 120s", func() {
+			cfg := config.ServerConfig{ShutdownTimeout: "300s"}
+			Expect(cfg.GetShutdownTimeout()).To(Equal(120 * time.Second))
+		})
+
+		It("UT-DS-1088-P7-020e: must return default for invalid duration", func() {
+			cfg := config.ServerConfig{ShutdownTimeout: "not-a-duration"}
+			Expect(cfg.GetShutdownTimeout()).To(Equal(60 * time.Second))
+		})
+	})
+
+	Describe("ServerConfig.GetMaxBodySize", func() {
+		It("UT-DS-1088-P7-021a: default must be 5 MiB when field is empty", func() {
+			cfg := config.ServerConfig{}
+			Expect(cfg.GetMaxBodySize()).To(Equal(int64(5 << 20)))
+		})
+
+		It("UT-DS-1088-P7-021b: must parse integer byte value", func() {
+			cfg := config.ServerConfig{MaxBodySize: "10485760"}
+			Expect(cfg.GetMaxBodySize()).To(Equal(int64(10 << 20)))
+		})
+
+		It("UT-DS-1088-P7-021c: must clamp to minimum 1 MiB", func() {
+			cfg := config.ServerConfig{MaxBodySize: "100"}
+			Expect(cfg.GetMaxBodySize()).To(Equal(int64(1 << 20)))
+		})
+
+		It("UT-DS-1088-P7-021d: must clamp to maximum 50 MiB", func() {
+			cfg := config.ServerConfig{MaxBodySize: "104857600"}
+			Expect(cfg.GetMaxBodySize()).To(Equal(int64(50 << 20)))
+		})
+
+		It("UT-DS-1088-P7-021e: must return default for invalid string", func() {
+			cfg := config.ServerConfig{MaxBodySize: "invalid"}
+			Expect(cfg.GetMaxBodySize()).To(Equal(int64(5 << 20)))
+		})
+	})
+
+	Describe("ServerConfig.GetCORSAllowedOrigins", func() {
+		It("UT-DS-1088-P7-022a: default must be wildcard when field is empty", func() {
+			cfg := config.ServerConfig{}
+			Expect(cfg.GetCORSAllowedOrigins()).To(Equal([]string{"*"}))
+		})
+
+		It("UT-DS-1088-P7-022b: must return configured origins", func() {
+			cfg := config.ServerConfig{
+				CORSAllowedOrigins: []string{"https://kubernaut.ai", "https://console.kubernaut.ai"},
+			}
+			Expect(cfg.GetCORSAllowedOrigins()).To(Equal([]string{"https://kubernaut.ai", "https://console.kubernaut.ai"}))
 		})
 	})
 })
