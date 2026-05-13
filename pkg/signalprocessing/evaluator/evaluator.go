@@ -211,7 +211,15 @@ func (e *Evaluator) EvaluateEnvironment(ctx context.Context, input PolicyInput) 
 		return nil, fmt.Errorf("environment query not loaded - policy not initialized")
 	}
 
-	results, err := query.Eval(ctx, rego.EvalInput(input))
+	// E7: Apply regoEvalTimeout for parity with EvaluatePriority
+	timeoutCtx, cancel := context.WithTimeout(ctx, regoEvalTimeout)
+	defer cancel()
+
+	if err := timeoutCtx.Err(); err != nil {
+		return nil, fmt.Errorf("context already done before environment evaluation: %w", err)
+	}
+
+	results, err := query.Eval(timeoutCtx, rego.EvalInput(input))
 	if err != nil {
 		return nil, fmt.Errorf("rego evaluation failed: %w", err)
 	}
@@ -255,7 +263,15 @@ func (e *Evaluator) EvaluateSeverity(ctx context.Context, input PolicyInput) (*S
 		return nil, fmt.Errorf("severity query not loaded - policy not initialized")
 	}
 
-	results, err := query.Eval(ctx, rego.EvalInput(input))
+	// E7: Apply regoEvalTimeout for parity with EvaluatePriority
+	timeoutCtx, cancel := context.WithTimeout(ctx, regoEvalTimeout)
+	defer cancel()
+
+	if err := timeoutCtx.Err(); err != nil {
+		return nil, fmt.Errorf("context already done before severity evaluation: %w", err)
+	}
+
+	results, err := query.Eval(timeoutCtx, rego.EvalInput(input))
 	if err != nil {
 		return nil, fmt.Errorf("rego evaluation failed: %w", err)
 	}
@@ -294,6 +310,10 @@ func (e *Evaluator) EvaluatePriority(ctx context.Context, input PolicyInput) (*s
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, regoEvalTimeout)
 	defer cancel()
+
+	if err := timeoutCtx.Err(); err != nil {
+		return nil, fmt.Errorf("context already done before priority evaluation: %w", err)
+	}
 
 	results, err := query.Eval(timeoutCtx, rego.EvalInput(input))
 	if err != nil {

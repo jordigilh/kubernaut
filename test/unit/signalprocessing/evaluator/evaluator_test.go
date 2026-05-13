@@ -359,6 +359,45 @@ default labels := {}
 		})
 	})
 
+	// ========================================
+	// E7: Rego timeout parity for EvaluateEnvironment / EvaluateSeverity
+	// EvaluatePriority uses regoEvalTimeout (100ms); Environment and Severity do not.
+	// ========================================
+	Describe("UT-SP-1110-012/013: E7 Rego evaluation timeout", func() {
+		BeforeEach(func() {
+			Expect(eval.LoadPolicy(testPolicy)).To(Succeed())
+		})
+
+		It("UT-SP-1110-012: EvaluateEnvironment respects context timeout (cancels within regoEvalTimeout)", func() {
+			cancelledCtx, cancel := context.WithCancel(ctx)
+			cancel() // immediately cancel before evaluation
+
+			input := evaluator.PolicyInput{
+				Namespace: types.NamespaceContext{
+					Name:   "test-ns",
+					Labels: map[string]string{"env": "production"},
+				},
+			}
+
+			_, err := eval.EvaluateEnvironment(cancelledCtx, input)
+			Expect(err).To(HaveOccurred(),
+				"E7: EvaluateEnvironment MUST respect context timeout (currently inherits caller ctx without own deadline)")
+		})
+
+		It("UT-SP-1110-013: EvaluateSeverity respects context timeout (cancels within regoEvalTimeout)", func() {
+			cancelledCtx, cancel := context.WithCancel(ctx)
+			cancel() // immediately cancel before evaluation
+
+			input := evaluator.PolicyInput{
+				Signal: evaluator.SignalInput{Severity: "critical"},
+			}
+
+			_, err := eval.EvaluateSeverity(cancelledCtx, input)
+			Expect(err).To(HaveOccurred(),
+				"E7: EvaluateSeverity MUST respect context timeout (currently inherits caller ctx without own deadline)")
+		})
+	})
+
 	Describe("UT-EVAL-070: Label sanitization (BR-SP-104)", func() {
 		It("should strip reserved prefixes from labels", func() {
 			policy := `package signalprocessing
