@@ -211,6 +211,13 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 		It("IT-AW-1111-001: remediationworkflow.admitted.create persisted to DS", func() {
 			uid := uniqueID("rw-create")
 			actionType := uniqueID("ITScaleCreate")
+
+			// DD-WORKFLOW-016: Register the action type in the taxonomy before
+			// creating the RW, otherwise DS rejects with 403 (FK constraint).
+			atSetupUID := uniqueID("at-setup-create")
+			atResp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Create, buildAT(actionType), atSetupUID))
+			Expect(atResp.Allowed).To(BeTrue(), "AT setup CREATE should succeed: %s", atResp.Result)
+
 			rw := buildRW(uniqueID("it-rw-create"), actionType)
 
 			resp := rwHandler.Handle(ctx, rwAdmissionRequest(admissionv1.Create, rw, uid))
@@ -224,6 +231,11 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 		It("IT-AW-1111-002: remediationworkflow.admitted.update persisted to DS", func() {
 			uid := uniqueID("rw-update")
 			actionType := uniqueID("ITScaleUpdate")
+
+			atSetupUID := uniqueID("at-setup-update")
+			atResp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Create, buildAT(actionType), atSetupUID))
+			Expect(atResp.Allowed).To(BeTrue(), "AT setup CREATE should succeed: %s", atResp.Result)
+
 			rw := buildRW(uniqueID("it-rw-update"), actionType)
 
 			resp := rwHandler.Handle(ctx, rwAdmissionRequest(admissionv1.Update, rw, uid))
@@ -236,6 +248,11 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 
 		It("IT-AW-1111-003: remediationworkflow.admitted.delete persisted to DS", func() {
 			actionType := uniqueID("ITScaleDelete")
+
+			atSetupUID := uniqueID("at-setup-delete")
+			atResp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Create, buildAT(actionType), atSetupUID))
+			Expect(atResp.Allowed).To(BeTrue(), "AT setup CREATE should succeed: %s", atResp.Result)
+
 			rw := buildRW(uniqueID("it-rw-delete"), actionType)
 
 			createUID := uniqueID("rw-pre-delete")

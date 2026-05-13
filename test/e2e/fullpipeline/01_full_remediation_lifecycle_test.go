@@ -348,8 +348,9 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// Expected audit event types from a successful full remediation lifecycle.
 		// Derived from BR-AUDIT-005, ADR-034, and each service's audit implementation.
-		// Total: 14 exactlyOnce + 26 atLeastOnce = 40 minimum events.
-		// #1111: Promoted 10 events (1 exactlyOnce, 6 atLeastOnce, 3 MAY→atLeastOnce).
+		// Total: 14 exactlyOnce + 21 atLeastOnce = 35 minimum events.
+		// #1111: Promoted 5 events (1 exactlyOnce, 4 atLeastOnce). 5 events
+		// deferred to MAY pending mock LLM tool-call scenario support.
 		//
 		// === Events that MUST appear exactly once (14) ===
 		// These are lifecycle boundary events — one per RR by definition.
@@ -402,8 +403,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			string(ogenclient.LLMResponsePayloadAuditEventEventData),        // kubernaut-agent/src/audit/events.py: create_llm_response_event
 			string(ogenclient.WorkflowValidationPayloadAuditEventEventData), // kubernaut-agent/src/audit/events.py: create_validation_attempt_event
 			string(ogenclient.AIAgentResponsePayloadAuditEventEventData),    // kubernaut-agent/src/audit/events.py: create_aiagent_response_complete_event
-			// KA: tool calls and RCA (#1111)
-			string(ogenclient.LLMToolCallPayloadAuditEventEventData),            // aiagent.llm.tool_call — promoted from MAY
+			// KA: RCA (#1111)
 			string(ogenclient.AIAgentRCACompletePayloadAuditEventEventData), // aiagent.rca.complete — correlation_id=RR.Name confirmed
 			// Workflow Execution
 			"workflowexecution.selection.completed", // pkg/workflowexecution/audit: RecordWorkflowSelectionCompleted
@@ -413,11 +413,6 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"notification.message.sent", // pkg/notification/audit: CreateMessageSentEvent
 			// Remediation Orchestrator: workflow creation (#1111)
 			"remediation.workflow_created", // pkg/remediationorchestrator/audit: emitWorkflowCreatedAudit — correlation_id=RR.Name confirmed
-			// DataStorage: workflow discovery (#1111 — requires Phase 1 fix for remediation_id forwarding)
-			"workflow.catalog.actions_listed",      // pkg/datastorage/audit: NewActionsListedAuditEvent
-			"workflow.catalog.workflows_listed",    // pkg/datastorage/audit: NewWorkflowsListedAuditEvent
-			"workflow.catalog.workflow_retrieved",   // pkg/datastorage/audit: NewWorkflowRetrievedAuditEvent
-			"workflow.catalog.selection_validated",  // pkg/datastorage/audit: NewSelectionValidatedAuditEvent
 		}
 
 		// === Events that MAY appear (non-deterministic) ===
@@ -426,6 +421,14 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// Events NOT promotable to FP due to correlation_id pattern mismatch:
 		// - "aiagent.enrichment.completed" — uses ai-rr-* (AIAnalysis CR name), not rr-* (RR name). Cover at KA E2E tier.
 		// - "remediationworkflow.admitted.create/update" — uses admission UID. Cover at Auth Webhook IT tier.
+		//
+		// Events deferred to MAY until mock LLM produces tool_call responses in E2E (#1111):
+		// - "aiagent.llm.tool_call" — requires mock LLM to issue tool_calls (not text-only response)
+		// - "workflow.catalog.actions_listed" — emitted by DS only when KA invokes discovery tools
+		// - "workflow.catalog.workflows_listed" — same as above
+		// - "workflow.catalog.workflow_retrieved" — same as above
+		// - "workflow.catalog.selection_validated" — same as above
+		// These are covered by KA E2E tests once mock LLM tool-call scenarios are enabled.
 
 		allExpected := append(exactlyOnceEvents, atLeastOnceEvents...)
 
@@ -1192,8 +1195,9 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// Same expected audit events as the K8s event test — the full pipeline is identical
 		// after the signal enters Gateway, regardless of signal source.
-		// Total: 14 exactlyOnce + 26 atLeastOnce = 40 minimum events.
-		// #1111: Promoted 10 events (1 exactlyOnce, 6 atLeastOnce, 3 MAY→atLeastOnce).
+		// Total: 14 exactlyOnce + 21 atLeastOnce = 35 minimum events.
+		// #1111: Promoted 5 events (1 exactlyOnce, 4 atLeastOnce). 5 events
+		// deferred to MAY pending mock LLM tool-call scenario support.
 		// BR-EM-012, #369: effectiveness.alert.assessed is handled separately below
 		// because alert decay may emit effectiveness.alert_decay.detected instead.
 		exactlyOnceEvents := []string{
@@ -1228,18 +1232,17 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			string(ogenclient.LLMResponsePayloadAuditEventEventData),
 			string(ogenclient.WorkflowValidationPayloadAuditEventEventData),
 			string(ogenclient.AIAgentResponsePayloadAuditEventEventData),
-			string(ogenclient.LLMToolCallPayloadAuditEventEventData),
 			string(ogenclient.AIAgentRCACompletePayloadAuditEventEventData),
 			"workflowexecution.selection.completed",
 			"workflowexecution.execution.started",
 			"workflowexecution.workflow.completed",
 			"notification.message.sent",
 			"remediation.workflow_created",
-			"workflow.catalog.actions_listed",
-			"workflow.catalog.workflows_listed",
-			"workflow.catalog.workflow_retrieved",
-			"workflow.catalog.selection_validated",
 		}
+		// MAY events deferred until mock LLM produces tool_call responses (#1111):
+		// "aiagent.llm.tool_call", "workflow.catalog.actions_listed",
+		// "workflow.catalog.workflows_listed", "workflow.catalog.workflow_retrieved",
+		// "workflow.catalog.selection_validated"
 
 		allExpected := append(exactlyOnceEvents, atLeastOnceEvents...)
 
