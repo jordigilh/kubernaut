@@ -211,7 +211,11 @@ func (e *Evaluator) EvaluateEnvironment(ctx context.Context, input PolicyInput) 
 		return nil, fmt.Errorf("environment query not loaded - policy not initialized")
 	}
 
-	results, err := query.Eval(ctx, rego.EvalInput(input))
+	// E7-FIX: Add explicit timeout (matching priority/custom-labels pattern)
+	evalCtx, cancel := context.WithTimeout(ctx, regoEvalTimeout)
+	defer cancel()
+
+	results, err := query.Eval(evalCtx, rego.EvalInput(input))
 	if err != nil {
 		return nil, fmt.Errorf("rego evaluation failed: %w", err)
 	}
@@ -255,7 +259,11 @@ func (e *Evaluator) EvaluateSeverity(ctx context.Context, input PolicyInput) (*S
 		return nil, fmt.Errorf("severity query not loaded - policy not initialized")
 	}
 
-	results, err := query.Eval(ctx, rego.EvalInput(input))
+	// E7-FIX: Add explicit timeout (matching priority/custom-labels pattern)
+	evalCtx, cancel := context.WithTimeout(ctx, regoEvalTimeout)
+	defer cancel()
+
+	results, err := query.Eval(evalCtx, rego.EvalInput(input))
 	if err != nil {
 		return nil, fmt.Errorf("rego evaluation failed: %w", err)
 	}

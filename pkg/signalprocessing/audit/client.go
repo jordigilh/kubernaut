@@ -46,6 +46,8 @@ const (
 	EventTypeBusinessClassified = "signalprocessing.business.classified"
 	// EventTypeEnrichmentComplete is emitted when K8s enrichment completes (ADR-034 Service Requirements)
 	EventTypeEnrichmentComplete = "signalprocessing.enrichment.completed"
+	// EventTypeSignalReceived is emitted when a new signal is first reconciled (O2-FIX)
+	EventTypeSignalReceived = "signalprocessing.signal.received"
 	// EventTypeError is emitted on errors (ADR-034 Service Requirements)
 	EventTypeError = "signalprocessing.error.occurred"
 	// CategorySignalProcessing is the service-level category per ADR-034 v1.2
@@ -56,11 +58,12 @@ const (
 
 // Event action constants (L-3 SOC2 Fix: compile-time safety for event action strings)
 const (
-	ActionProcessed      = "processed"
+	ActionProcessed       = "processed"
+	ActionReceived        = "received"
 	ActionPhaseTransition = "phase_transition"
-	ActionClassification = "classification"
-	ActionEnrichment     = "enrichment"
-	ActionError          = "error"
+	ActionClassification  = "classification"
+	ActionEnrichment      = "enrichment"
+	ActionError           = "error"
 )
 
 // AuditClient handles audit event storage using pkg/audit shared library.
@@ -187,6 +190,41 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 			"correlation_id", event.CorrelationID,
 		)
 		// Don't fail reconciliation on audit failure (graceful degradation)
+	}
+}
+
+// RecordSignalReceived records a signal-received audit event when a new SP CR is first reconciled.
+// O2-FIX: Provides audit trail for signal ingestion time.
+func (c *AuditClient) RecordSignalReceived(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) {
+	payload := api.SignalProcessingAuditPayload{
+		EventType: EventTypeSignalReceived,
+		Signal:    sp.Spec.Signal.Name,
+		Phase:     toSignalProcessingAuditPayloadPhase(string(signalprocessingv1alpha1.PhasePending)),
+	}
+
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeSignalReceived)
+	audit.SetEventCategory(event, CategorySignalProcessing)
+	audit.SetEventAction(event, ActionReceived)
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "service", "signalprocessing-controller")
+	audit.SetResource(event, "SignalProcessing", sp.Name)
+
+	if sp.Spec.RemediationRequestRef.Name == "" {
+		c.log.V(1).Info("Skipping signal received audit - no RemediationRequestRef")
+		return
+	}
+	audit.SetCorrelationID(event, sp.Spec.RemediationRequestRef.Name)
+	audit.SetNamespace(event, sp.Namespace)
+
+	event.EventData = api.NewAuditEventRequestEventDataSignalprocessingSignalProcessedAuditEventRequestEventData(payload)
+
+	if err := c.store.StoreAudit(ctx, event); err != nil {
+		c.log.Error(err, "Failed to write signal received audit event",
+			"event_type", event.EventType,
+			"correlation_id", event.CorrelationID,
+		)
 	}
 }
 

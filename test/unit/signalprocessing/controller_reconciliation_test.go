@@ -310,7 +310,6 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 				// Then: Should not requeue (terminal state)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result.RequeueAfter).To(BeZero())
-				Expect(result.RequeueAfter).To(BeZero())
 
 				// Verify phase unchanged
 				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}

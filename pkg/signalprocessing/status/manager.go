@@ -60,7 +60,7 @@ func (m *Manager) GetCurrentPhase(ctx context.Context, sp *signalprocessingv1alp
 // - Consecutive failure tracking
 // - Error state management
 //
-// Satisfies BR-SP-XXX and improves performance by 66-75% (DD-PERF-001)
+// Satisfies BR-SP-110 (Kubernetes Conditions) and improves performance by 66-75% (DD-PERF-001)
 //
 // Example Usage:
 //

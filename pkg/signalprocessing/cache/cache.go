@@ -28,11 +28,18 @@ import (
 	"time"
 )
 
+const (
+	// DefaultMaxEntries bounds the cache to prevent unbounded memory growth.
+	DefaultMaxEntries = 1000
+)
+
 // TTLCache provides thread-safe caching with automatic TTL expiration.
+// C3-FIX: Added maxEntries bound and expired-entry eviction on Set.
 type TTLCache struct {
-	mu      sync.RWMutex
-	entries map[string]*cacheEntry
-	ttl     time.Duration
+	mu         sync.RWMutex
+	entries    map[string]*cacheEntry
+	ttl        time.Duration
+	maxEntries int
 }
 
 type cacheEntry struct {
@@ -43,8 +50,9 @@ type cacheEntry struct {
 // NewTTLCache creates a new TTLCache with the specified TTL duration.
 func NewTTLCache(ttl time.Duration) *TTLCache {
 	return &TTLCache{
-		entries: make(map[string]*cacheEntry),
-		ttl:     ttl,
+		entries:    make(map[string]*cacheEntry),
+		ttl:        ttl,
+		maxEntries: DefaultMaxEntries,
 	}
 }
 
@@ -62,6 +70,7 @@ func (c *TTLCache) Get(key string) (interface{}, bool) {
 }
 
 // Set stores a value in the cache with the configured TTL.
+// Evicts expired entries when the cache exceeds maxEntries.
 func (c *TTLCache) Set(key string, value interface{}) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -69,6 +78,20 @@ func (c *TTLCache) Set(key string, value interface{}) {
 	c.entries[key] = &cacheEntry{
 		value:     value,
 		expiresAt: time.Now().Add(c.ttl),
+	}
+
+	if len(c.entries) > c.maxEntries {
+		c.evictExpiredLocked()
+	}
+}
+
+// evictExpiredLocked removes expired entries. Caller must hold write lock.
+func (c *TTLCache) evictExpiredLocked() {
+	now := time.Now()
+	for k, e := range c.entries {
+		if now.After(e.expiresAt) {
+			delete(c.entries, k)
+		}
 	}
 }
 

@@ -207,6 +207,17 @@ func (m *Manager) RecordError(ctx context.Context, sp *signalprocessingv1alpha1.
 	return nil
 }
 
+// RecordSignalReceived records a signal-received audit event when a new SP CR is first reconciled.
+// O2-FIX: Provides audit trail for signal ingestion time.
+func (m *Manager) RecordSignalReceived(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) error {
+	if m.client == nil {
+		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
+	}
+
+	m.client.RecordSignalReceived(ctx, sp)
+	return nil
+}
+
 
 
 
