@@ -51,11 +51,15 @@ var _ = Describe("Orchestrator TOCTOU Race Prevention (DD-NOT-008)", func() {
 	// attemptCount < MaxAttempts before either increments the in-flight counter,
 	// so both pass the gate and both deliver — exceeding MaxAttempts.
 	Describe("Concurrent delivery must respect MaxAttempts", func() {
-		It("UT-TOCTOU-001: concurrent reconciles must not exceed MaxAttempts total Deliver calls", func() {
+		It("UT-TOCTOU-001: concurrent reconciles with overlapping delivery must not exceed MaxAttempts", func() {
 			const maxAttempts = 1
 			const concurrency = 10
 
 			var deliverCalls atomic.Int32
+			// Hold all goroutines at the delivery gate so they overlap
+			// inside the reserve-then-check region simultaneously.
+			allReserved := make(chan struct{})
+			var reservedCount atomic.Int32
 
 			svc := &mockDeliveryService{
 				deliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
@@ -68,22 +72,23 @@ var _ = Describe("Orchestrator TOCTOU Race Prevention (DD-NOT-008)", func() {
 			notification := helpers.NewNotificationRequest("toctou-test", "default")
 			policy := &notificationv1alpha1.RetryPolicy{MaxAttempts: maxAttempts}
 
-			// Use the orchestrator's own success tracking — mirrors the
-			// real controller's channelAlreadySucceeded callback which
-			// calls HasChannelSucceeded.
-			channelSucceeded := func(n *notificationv1alpha1.NotificationRequest, ch string) bool {
-				return orchestrator.HasChannelSucceeded(n, ch, false)
-			}
+			noopSucceeded := func(*notificationv1alpha1.NotificationRequest, string) bool { return false }
 			noopPermanent := func(*notificationv1alpha1.NotificationRequest, string) bool { return false }
 			noopAuditSent := func(context.Context, *notificationv1alpha1.NotificationRequest, string) error { return nil }
 			noopAuditFail := func(context.Context, *notificationv1alpha1.NotificationRequest, string, error) error {
 				return nil
 			}
 
-			// getChannelAttemptCount uses the orchestrator's own
-			// GetTotalAttemptCount, which includes in-flight tracking —
-			// this mirrors the real controller's callback.
+			// The getChannelAttemptCount callback blocks until all
+			// goroutines have reserved their in-flight slots. This
+			// guarantees all reservations are visible before any
+			// goroutine evaluates the max-attempts gate.
 			getAttemptCount := func(n *notificationv1alpha1.NotificationRequest, ch string) int {
+				if reservedCount.Add(1) == int32(concurrency) {
+					close(allReserved)
+				} else {
+					<-allReserved
+				}
 				return orchestrator.GetTotalAttemptCount(n, ch, 0)
 			}
 
@@ -97,7 +102,7 @@ var _ = Describe("Orchestrator TOCTOU Race Prevention (DD-NOT-008)", func() {
 						ctx, notification,
 						[]notificationv1alpha1.Channel{notificationv1alpha1.ChannelFile},
 						policy,
-						channelSucceeded, noopPermanent, getAttemptCount,
+						noopSucceeded, noopPermanent, getAttemptCount,
 						noopAuditSent, noopAuditFail,
 						nil,
 					)
@@ -105,10 +110,9 @@ var _ = Describe("Orchestrator TOCTOU Race Prevention (DD-NOT-008)", func() {
 			}
 			wg.Wait()
 
-			// With MaxAttempts=1, we expect at most 1 real Deliver call
-			// regardless of how many concurrent reconciles race.
-			// singleflight may collapse truly concurrent calls, but
-			// sequential arrivals each get their own Do() invocation.
+			// All 10 goroutines increment in-flight before any checks
+			// the count. With MaxAttempts=1, exactly 1 sees count<=1
+			// and proceeds; the other 9 see count>1 and bail.
 			Expect(int(deliverCalls.Load())).To(BeNumerically("<=", maxAttempts),
 				"BR-NOT-052: concurrent reconciles must not exceed MaxAttempts Deliver calls")
 		})
