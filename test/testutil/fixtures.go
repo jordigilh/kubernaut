@@ -32,10 +32,9 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// ValidBundleRef is a syntactically valid OCI bundle reference with sha256 digest
-// for use in test fixtures. Tests that don't care about the specific bundle value
-// can use this default.
-const ValidBundleRef = "quay.io/kubernaut-cicd/test-workflows/generic:v1@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+// ValidBundleRef is a real OCI bundle reference that exists in the test workflow
+// registry and can be resolved by DS bundle-exists validation.
+const ValidBundleRef = "quay.io/kubernaut-cicd/test-workflows/hello-world:v1.0.0@sha256:0888ba318004c8d91f3b9b970afa1878f60368c1ef3e7a33e9d77304d5e3eef8"
 
 // LoadWorkflowFixture reads a workflow-schema.yaml from the shared fixture directory.
 // The fixture must exist at test/fixtures/workflows/<name>/workflow-schema.yaml
