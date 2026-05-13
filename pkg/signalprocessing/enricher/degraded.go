@@ -41,24 +41,34 @@ const (
 func BuildDegradedContext(signal *signalprocessingv1alpha1.SignalData) *signalprocessingv1alpha1.KubernetesContext {
 	ctx := &signalprocessingv1alpha1.KubernetesContext{
 		DegradedMode: true,
-		Namespace: &signalprocessingv1alpha1.NamespaceContext{
-			Name:        signal.TargetResource.Namespace,
-			Labels:      make(map[string]string),
-			Annotations: make(map[string]string),
-		},
 	}
 
-	// Use signal labels as namespace labels fallback
-	if signal.Labels != nil {
-		for k, v := range signal.Labels {
-			ctx.Namespace.Labels[k] = v
+	// BLAST-B1 (BR-SP-112 R6): Populate Workload from target resource metadata
+	if signal.TargetResource.Kind != "" || signal.TargetResource.Name != "" {
+		ctx.Workload = &signalprocessingv1alpha1.WorkloadDetails{
+			Kind: signal.TargetResource.Kind,
+			Name: signal.TargetResource.Name,
 		}
 	}
 
-	// Use signal annotations as namespace annotations fallback
-	if signal.Annotations != nil {
-		for k, v := range signal.Annotations {
-			ctx.Namespace.Annotations[k] = v
+	// BLAST-B1 (BR-SP-112 R6): Only create Namespace for namespace-scoped resources
+	if signal.TargetResource.Namespace != "" {
+		ctx.Namespace = &signalprocessingv1alpha1.NamespaceContext{
+			Name:        signal.TargetResource.Namespace,
+			Labels:      make(map[string]string),
+			Annotations: make(map[string]string),
+		}
+
+		if signal.Labels != nil {
+			for k, v := range signal.Labels {
+				ctx.Namespace.Labels[k] = v
+			}
+		}
+
+		if signal.Annotations != nil {
+			for k, v := range signal.Annotations {
+				ctx.Namespace.Annotations[k] = v
+			}
 		}
 	}
 

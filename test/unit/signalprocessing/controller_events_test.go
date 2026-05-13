@@ -22,6 +22,7 @@ package signalprocessing
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -136,13 +137,14 @@ var _ = Describe("SignalProcessing Controller K8s Events [DD-EVENT-001]", func()
 				Build()
 
 			reconciler := &controller.SignalProcessingReconciler{
-				Client:        fakeClient,
-				Scheme:       scheme,
-				Recorder:     recorder,
-				StatusManager: spstatus.NewManager(fakeClient, fakeClient),
-				Metrics:      spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				AuditManager: spaudit.NewManager(auditClient),
-				K8sEnricher:  newDefaultMockK8sEnricher(),
+				Client:          fakeClient,
+				Scheme:          scheme,
+				Recorder:        recorder,
+				StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				AuditManager:    spaudit.NewManager(auditClient),
+				K8sEnricher:     newDefaultMockK8sEnricher(),
+				PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 			}
 
 			req := reconcile.Request{
@@ -201,13 +203,14 @@ var _ = Describe("SignalProcessing Controller K8s Events [DD-EVENT-001]", func()
 				Build()
 
 			reconciler := &controller.SignalProcessingReconciler{
-				Client:        fakeClient,
-				Scheme:       scheme,
-				Recorder:     recorder,
-				StatusManager: spstatus.NewManager(fakeClient, fakeClient),
-				Metrics:      spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				AuditManager: spaudit.NewManager(auditClient),
-				K8sEnricher:  newMockK8sEnricherWithClient(fakeClient),
+				Client:          fakeClient,
+				Scheme:          scheme,
+				Recorder:        recorder,
+				StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				AuditManager:    spaudit.NewManager(auditClient),
+				K8sEnricher:     newMockK8sEnricherWithClient(fakeClient),
+				PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 			}
 
 			req := reconcile.Request{
@@ -274,13 +277,14 @@ var _ = Describe("SignalProcessing Controller K8s Events [DD-EVENT-001]", func()
 				Build()
 
 			reconciler := &controller.SignalProcessingReconciler{
-				Client:        fakeClient,
-				Scheme:       scheme,
-				Recorder:     recorder,
-				StatusManager: spstatus.NewManager(fakeClient, fakeClient),
-				Metrics:      spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				AuditManager: spaudit.NewManager(auditClient),
-				K8sEnricher:  degradedEnricher,
+				Client:          fakeClient,
+				Scheme:          scheme,
+				Recorder:        recorder,
+				StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				AuditManager:    spaudit.NewManager(auditClient),
+				K8sEnricher:     degradedEnricher,
+				PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 			}
 
 			req := reconcile.Request{
@@ -379,6 +383,192 @@ var _ = Describe("SignalProcessing Controller K8s Events [DD-EVENT-001]", func()
 			Expect(events.EventReasonSignalEnriched).To(Equal("SignalEnriched"))
 			Expect(events.EventReasonEnrichmentDegraded).To(Equal("EnrichmentDegraded"))
 			Expect(events.EventReasonPhaseTransition).To(Equal("PhaseTransition"))
+		})
+	})
+
+	// ========================================
+	// PHASE 3 TDD RED: Issue #1110 SP Readiness Audit
+	// Findings: O6, O7
+	// ========================================
+
+	// O6 (Medium): K8s events missing for hard enrichment failure
+	// Authority: DD-EVENT-001
+	Context("UT-SP-1110-030: O6 K8s event on hard enrichment failure", func() {
+		It("should emit Warning event when enrichment fails", func() {
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "enrich-fail-event",
+					Namespace:  "default",
+					Generation: 1,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "fp-o6",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind:      "Pod",
+							Name:      "test-pod",
+							Namespace: "test-ns",
+						},
+					},
+				},
+				Status: signalprocessingv1alpha1.SignalProcessingStatus{
+					Phase:     signalprocessingv1alpha1.PhaseEnriching,
+					StartTime: &metav1.Time{Time: metav1.Now().Time},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(sp).
+				WithStatusSubresource(sp).
+				Build()
+
+			failEnricher := &mockK8sEnricher{
+				EnrichFunc: func(_ context.Context, _ *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.KubernetesContext, error) {
+					return nil, fmt.Errorf("K8s API unavailable")
+				},
+			}
+
+			fakeRecorder := record.NewFakeRecorder(20)
+			mockStore := &mockAuditStore{}
+			auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+
+			reconciler := &controller.SignalProcessingReconciler{
+				Client:          fakeClient,
+				Scheme:          scheme,
+				StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				AuditManager:    spaudit.NewManager(auditClient),
+				PolicyEvaluator: newDefaultMockPolicyEvaluator(),
+				K8sEnricher:     failEnricher,
+				Recorder:        fakeRecorder,
+			}
+
+			_, _ = reconciler.Reconcile(context.Background(), reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
+			})
+
+			evts := drainEvents(fakeRecorder)
+			Expect(containsEvent(evts, "Warning", events.EventReasonEnrichmentFailed, "", "")).To(BeTrue(),
+				"O6: Hard enrichment failure MUST emit a Warning K8s event per DD-EVENT-001")
+		})
+	})
+
+	// ========================================
+	// PHASE 6 TDD RED: Issue #1110 SP Readiness Audit
+	// Finding: E3 — nil Recorder
+	// ========================================
+
+	// E3 (Low): Reconcile with nil Recorder does not panic
+	Context("UT-SP-1110-054: E3 nil Recorder safety", func() {
+		It("should not panic when Recorder is nil on UnsupportedTargetType path", func() {
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "nil-recorder",
+					Namespace:  "default",
+					Generation: 1,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "fp-e3",
+						TargetType:  "cloud-native",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind: "VirtualMachine",
+							Name: "vm-01",
+						},
+					},
+				},
+				Status: signalprocessingv1alpha1.SignalProcessingStatus{
+					Phase:     signalprocessingv1alpha1.PhaseEnriching,
+					StartTime: &metav1.Time{Time: metav1.Now().Time},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(sp).
+				WithStatusSubresource(sp).
+				Build()
+
+			mockStore := &mockAuditStore{}
+			auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+
+			reconciler := &controller.SignalProcessingReconciler{
+				Client:          fakeClient,
+				Scheme:          scheme,
+				StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				AuditManager:    spaudit.NewManager(auditClient),
+				PolicyEvaluator: newDefaultMockPolicyEvaluator(),
+				K8sEnricher:     newDefaultMockK8sEnricher(),
+				Recorder:        nil,
+			}
+
+			Expect(func() {
+				_, _ = reconciler.Reconcile(context.Background(), reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
+				})
+			}).ToNot(Panic(), "E3: Reconcile with nil Recorder MUST NOT panic on UnsupportedTargetType path")
+		})
+	})
+
+	// O7 (Medium): UnsupportedTargetType uses string literals vs constants
+	// Authority: DD-EVENT-001
+	Context("UT-SP-1110-031: O7 UnsupportedTargetType event uses constants", func() {
+		It("should emit UnsupportedTargetType event with event type constant", func() {
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "unsupported-target",
+					Namespace:  "default",
+					Generation: 1,
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+					Signal: signalprocessingv1alpha1.SignalData{
+						Fingerprint: "fp-o7",
+						TargetType:  "cloud-native",
+						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+							Kind: "VirtualMachine",
+							Name: "vm-01",
+						},
+					},
+				},
+				Status: signalprocessingv1alpha1.SignalProcessingStatus{
+					Phase:     signalprocessingv1alpha1.PhaseEnriching,
+					StartTime: &metav1.Time{Time: metav1.Now().Time},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(sp).
+				WithStatusSubresource(sp).
+				Build()
+
+			fakeRecorder := record.NewFakeRecorder(20)
+			mockStore := &mockAuditStore{}
+			auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+
+			reconciler := &controller.SignalProcessingReconciler{
+				Client:          fakeClient,
+				Scheme:          scheme,
+				StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				AuditManager:    spaudit.NewManager(auditClient),
+				PolicyEvaluator: newDefaultMockPolicyEvaluator(),
+				K8sEnricher:     newDefaultMockK8sEnricher(),
+				Recorder:        fakeRecorder,
+			}
+
+			_, _ = reconciler.Reconcile(context.Background(), reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
+			})
+
+			evts := drainEvents(fakeRecorder)
+
+			hasCorrectEvent := containsEvent(evts, corev1.EventTypeWarning,
+				events.EventReasonUnsupportedTargetType, "cloud-native", "")
+			Expect(hasCorrectEvent).To(BeTrue(),
+				"O7: UnsupportedTargetType event MUST use events.EventReasonUnsupportedTargetType constant per DD-EVENT-001")
 		})
 	})
 })
