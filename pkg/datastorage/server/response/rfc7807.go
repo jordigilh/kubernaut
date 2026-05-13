@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-logr/logr"
 )
@@ -51,10 +52,15 @@ type RFC7807Problem struct {
 //   - detail: Detailed error message
 //   - logger: Optional logger for encoding failures
 func WriteRFC7807Error(w http.ResponseWriter, status int, errorType, title, detail string, logger logr.Logger) {
+	// DD-004: Use kubernaut.ai/problems/* for RFC 7807 error type URIs.
+	// If errorType is already a full URI, use it as-is to prevent double-prefix.
+	typeURI := errorType
+	if !strings.HasPrefix(errorType, "https://") {
+		typeURI = fmt.Sprintf("https://kubernaut.ai/problems/%s", errorType)
+	}
+
 	problem := RFC7807Problem{
-		// DD-004: Use kubernaut.ai/problems/* for RFC 7807 error type URIs
-		// V1.0 Domain: kubernaut.ai (standardized across all services)
-		Type:   fmt.Sprintf("https://kubernaut.ai/problems/%s", errorType),
+		Type:   typeURI,
 		Title:  title,
 		Status: status,
 		Detail: detail,

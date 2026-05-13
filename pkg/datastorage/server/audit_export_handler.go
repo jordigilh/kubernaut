@@ -27,6 +27,7 @@ import (
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 	"github.com/jordigilh/kubernaut/pkg/pii"
 )
 
@@ -61,7 +62,9 @@ const (
 // Implements: ExportAuditEvents operation from OpenAPI spec
 func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		response.WriteRFC7807Error(w, http.StatusMethodNotAllowed,
+			"method-not-allowed", "Method Not Allowed",
+			"Only GET is accepted for audit export", s.logger)
 		return
 	}
 
@@ -71,10 +74,9 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 	exportedBy := r.Header.Get("X-Auth-Request-User")
 	if exportedBy == "" {
 		s.logger.Info("Export request rejected: missing X-Auth-Request-User header")
-		writeRFC7807Error(w, http.StatusUnauthorized,
-			"Unauthorized",
-			"X-Auth-Request-User header required for audit export",
-			r.URL.Path)
+		response.WriteRFC7807Error(w, http.StatusUnauthorized,
+			"export/unauthorized", "Unauthorized",
+			"X-Auth-Request-User header required for audit export", s.logger)
 		return
 	}
 
@@ -82,30 +84,25 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 	filters, err := parseExportFilters(r)
 	if err != nil {
 		s.logger.Error(err, "Invalid export query parameters")
-		writeRFC7807Error(w, http.StatusBadRequest,
-			"Validation Error",
-			fmt.Sprintf("Invalid query parameters: %v", err),
-			r.URL.Path)
+		response.WriteRFC7807Error(w, http.StatusBadRequest,
+			"export/invalid-parameters", "Validation Error",
+			fmt.Sprintf("Invalid query parameters: %v", err), s.logger)
 		return
 	}
 
 	// Validate limit
 	if filters.Limit > maxExportLimit {
-		writeRFC7807Error(w, http.StatusRequestEntityTooLarge,
-			"Payload Too Large",
-			fmt.Sprintf("Export limit exceeds maximum of %d events. Use pagination.", maxExportLimit),
-			r.URL.Path)
+		response.WriteRFC7807Error(w, http.StatusRequestEntityTooLarge,
+			"export/limit-exceeded", "Payload Too Large",
+			fmt.Sprintf("Export limit exceeds maximum of %d events. Use pagination.", maxExportLimit), s.logger)
 		return
 	}
 
 	// Export audit events with hash chain verification
 	exportResult, err := s.auditEventsRepo.Export(ctx, filters)
 	if err != nil {
-		s.logger.Error(err, "Failed to export audit events")
-		writeRFC7807Error(w, http.StatusInternalServerError,
-			"Export Failed",
-			"Failed to export audit events. Please retry.",
-			r.URL.Path)
+		response.WriteRFC7807InternalError(w,
+			"export/query-failed", "Export Failed", err, s.logger)
 		return
 	}
 
@@ -118,13 +115,10 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 	includeDetachedSignature := r.URL.Query().Get("include_detached_signature") == "true"
 
 	// Build export response
-	response, err := s.buildExportResponse(ctx, exportResult, filters, format, includeDetachedSignature, exportedBy)
+	exportResp, err := s.buildExportResponse(ctx, exportResult, filters, format, includeDetachedSignature, exportedBy)
 	if err != nil {
-		s.logger.Error(err, "Failed to build export response")
-		writeRFC7807Error(w, http.StatusInternalServerError,
-			"Export Failed",
-			"Failed to build export response. Please retry.",
-			r.URL.Path)
+		response.WriteRFC7807InternalError(w,
+			"export/build-failed", "Export Failed", err, s.logger)
 		return
 	}
 
@@ -133,14 +127,13 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 	case "json":
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		if err := json.NewEncoder(w).Encode(response); err != nil {
+		if err := json.NewEncoder(w).Encode(exportResp); err != nil {
 			s.logger.Error(err, "Failed to encode export response")
 		}
 	default:
-		writeRFC7807Error(w, http.StatusBadRequest,
-			"Invalid Format",
-			fmt.Sprintf("Unknown format: %s. Supported formats: json.", format),
-			r.URL.Path)
+		response.WriteRFC7807Error(w, http.StatusBadRequest,
+			"export/invalid-format", "Invalid Format",
+			fmt.Sprintf("Unknown format: %s. Supported formats: json.", format), s.logger)
 		return
 	}
 
@@ -432,19 +425,3 @@ func (s *Server) applyPIIRedaction(response *ogenclient.AuditExportResponse) err
 	return nil
 }
 
-// writeRFC7807Error writes an RFC 7807 Problem Details error response
-func writeRFC7807Error(w http.ResponseWriter, status int, title, detail, instance string) {
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-
-	problem := map[string]interface{}{
-		"type":     "about:blank",
-		"title":    title,
-		"status":   status,
-		"detail":   detail,
-		"instance": instance,
-	}
-
-	// Ignore encoding errors - response is already committed
-	_ = json.NewEncoder(w).Encode(problem)
-}

@@ -26,6 +26,7 @@ import (
 
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
 
 // ========================================
@@ -73,7 +74,9 @@ type TamperedEvent struct {
 // HandleVerifyChain verifies the hash chain integrity for a correlation_id
 func (s *Server) HandleVerifyChain(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		response.WriteRFC7807Error(w, http.StatusMethodNotAllowed,
+			"method-not-allowed", "Method Not Allowed",
+			"Only POST is accepted for verify-chain", s.logger)
 		return
 	}
 
@@ -87,31 +90,35 @@ func (s *Server) HandleVerifyChain(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.logger.Error(err, "Failed to decode verify chain request")
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		response.WriteRFC7807Error(w, http.StatusBadRequest,
+			"invalid-request-body", "Invalid Request Body",
+			"The request body could not be parsed as JSON", s.logger)
 		return
 	}
 
 	if req.CorrelationID == "" {
-		http.Error(w, "correlation_id is required", http.StatusBadRequest)
+		response.WriteRFC7807Error(w, http.StatusBadRequest,
+			"missing-correlation-id", "Missing Required Field",
+			"Field 'correlation_id' is required", s.logger)
 		return
 	}
 
 	// Verify chain
-	response, err := s.verifyHashChain(ctx, req.CorrelationID)
+	resp, err := s.verifyHashChain(ctx, req.CorrelationID)
 	if err != nil {
-		s.logger.Error(err, "Failed to verify hash chain",
-			"correlation_id", req.CorrelationID)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		response.WriteRFC7807InternalError(w,
+			"verify-chain/internal-error", "Verification Failed",
+			err, s.logger)
 		return
 	}
 
 	// Return response
 	w.Header().Set("Content-Type", "application/json")
-	if !response.IsValid {
+	if !resp.IsValid {
 		w.WriteHeader(http.StatusOK) // Still 200, but IsValid=false indicates tampering
 	}
 
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		s.logger.Error(err, "Failed to encode verify chain response")
 	}
 }
