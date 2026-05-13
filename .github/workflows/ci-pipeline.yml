@@ -118,6 +118,16 @@ jobs:
           export PATH="${{ github.workspace }}/bin:$PATH"
           make generate
 
+      - name: Verify generated files are up-to-date
+        run: |
+          echo "🔍 Checking for uncommitted generated file changes..."
+          if ! git diff --exit-code --name-only; then
+            echo "❌ Generated files are out of date. Run 'make generate' and commit."
+            git diff --stat
+            exit 1
+          fi
+          echo "✅ Generated files are up-to-date"
+
       - name: Lint Go code
         uses: golangci/golangci-lint-action@v9
         with:
@@ -1035,6 +1045,17 @@ jobs:
             exit 1
           fi
       
+      - name: Enforce coverage gate (>=80% per tier)
+        if: always()
+        run: |
+          echo "🔒 Coverage Gate: Checking >=80% per-tier threshold..."
+          if python3 scripts/coverage/coverage_report.py --check-gate 80 > /dev/null 2>&1; then
+            echo "✅ Coverage gate PASSED"
+          else
+            echo "⚠️  Coverage gate: some services below 80% — see report for details"
+            echo "   (Non-blocking in V1.5 rollout; will become blocking after Phase 9)"
+          fi
+
       - name: Post coverage report to PR
         if: github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v3

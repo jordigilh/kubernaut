@@ -160,9 +160,20 @@ generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto
 	@echo "📋 Generating OpenAPI spec copies for embedding (DD-API-002)..."
 	@go generate ./pkg/datastorage/server/middleware/...
 	@go generate ./pkg/audit/...
+	@echo "📋 Generating DataStorage ogen client..."
+	@go generate ./pkg/datastorage/ogen-client/...
 	@echo "📋 Generating AgentClient (ogen)..."
 	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/agentclient/...
 	@echo "✅ Generation complete"
+
+.PHONY: gen-diff
+gen-diff: generate ## Verify generated files are up-to-date (CI gate)
+	@echo "🔍 Checking for uncommitted generated file changes..."
+	@if ! git diff --exit-code --name-only; then \
+		echo "❌ Generated files are out of date. Run 'make generate' and commit."; \
+		exit 1; \
+	fi
+	@echo "✅ Generated files are up-to-date"
 
 .PHONY: generate-datastorage-client
 generate-datastorage-client: ogen ## Generate DataStorage OpenAPI client from spec (DD-API-001)
@@ -798,7 +809,7 @@ CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
 CONTROLLER_TOOLS_VERSION ?= v0.19.0
-OGEN_VERSION ?= v1.18.0
+OGEN_VERSION ?= v1.20.1
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.1.0
