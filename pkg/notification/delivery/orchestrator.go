@@ -66,7 +66,8 @@ import (
 //
 // DD-NOT-008: Production-Grade Concurrency Control
 // See: docs/architecture/decisions/DD-NOT-008-CONCURRENT-DELIVERY-DEDUPLICATION.md
-// - singleflight.Group: Deduplicates concurrent delivery attempts (prevents 6th attempt bug)
+// - singleflight.Group: Deduplicates concurrent delivery attempts
+// - Reserve-then-check: In-flight counter incremented BEFORE max-attempts gate (TOCTOU fix)
 // - Optimistic locking: Detects stale reconciliations via resourceVersion checks
 type Orchestrator struct {
 	// DD-NOT-007: Dynamic channel registration (sync.Map for thread-safe parallel test execution)
@@ -77,8 +78,8 @@ type Orchestrator struct {
 	// Key format: "{notificationUID}:{channel}" ensures per-notification-channel deduplication
 	deliveryGroup singleflight.Group
 
-	// DD-NOT-008: In-flight attempt tracking (prevents "6 attempts instead of 5" bug)
-	// Tracks delivery attempts that have been initiated but not yet persisted to status
+	// DD-NOT-008: In-flight attempt tracking (TOCTOU fix: reserve-then-check pattern)
+	// Incremented BEFORE the max-attempts gate so concurrent callers see each other's reservations
 	// Key format: "{notificationUID}:{channel}"
 	// Value: int count of in-flight attempts for that notification+channel
 	inFlightAttempts sync.Map
@@ -232,9 +233,18 @@ func (o *Orchestrator) DeliverToChannels(
 			continue
 		}
 
-		// Check channel attempt count using policy max attempts
+		// DD-NOT-008 TOCTOU fix: Reserve an in-flight slot BEFORE checking
+		// the attempt count. This closes the race window where concurrent
+		// reconciles both read attemptCount < MaxAttempts before either
+		// increments. With reserve-then-check, each concurrent caller's
+		// reservation is visible to all others via GetTotalAttemptCount.
+		o.incrementInFlightAttempts(string(notification.UID), string(channel))
+
 		attemptCount := getChannelAttemptCount(notification, string(channel))
-		if attemptCount >= policy.MaxAttempts {
+		if attemptCount > policy.MaxAttempts {
+			// Over-reserved: another concurrent reconcile already claimed
+			// the last slot. Release our reservation and skip.
+			o.decrementInFlightAttempts(string(notification.UID), string(channel))
 			log.Info("Max retry attempts reached for channel", "channel", channel, "attempts", attemptCount, "maxAttempts", policy.MaxAttempts)
 			result.DeliveryResults[string(channel)] = fmt.Errorf("max retry attempts exceeded")
 			result.FailureCount++
@@ -244,16 +254,16 @@ func (o *Orchestrator) DeliverToChannels(
 		// DD-EVENT-001 v1.1: Optional pre-delivery check (e.g. circuit breaker)
 		if checkBeforeDelivery != nil {
 			if checkErr := checkBeforeDelivery(notification, string(channel)); checkErr != nil {
+				o.decrementInFlightAttempts(string(notification.UID), string(channel))
 				log.Info("Pre-delivery check failed, skipping channel", "channel", channel, "error", checkErr)
-				// Treat as delivery failure - record attempt and continue
 				now := metav1.Now()
 				attempt := notificationv1alpha1.DeliveryAttempt{
 					Channel:         notificationv1alpha1.DeliveryChannelName(channel),
-					Attempt:         attemptCount + 1,
+					Attempt:         attemptCount,
 					Timestamp:       now,
 					Status:          "failed",
 					Error:           checkErr.Error(),
-					DurationSeconds: 0, // Pre-delivery check fails before delivery starts
+					DurationSeconds: 0,
 				}
 				if auditErr := auditMessageFailed(ctx, notification, string(channel), checkErr); auditErr != nil {
 					log.Error(auditErr, "CRITICAL: Failed to audit message.failed (ADR-032 §1)")
@@ -267,10 +277,6 @@ func (o *Orchestrator) DeliverToChannels(
 			}
 		}
 
-		// NT-RACE-FIX: Increment in-flight counter BEFORE delivery
-		// This ensures concurrent reconciliations see the correct attempt count
-		o.incrementInFlightAttempts(string(notification.UID), string(channel))
-
 		// Record duration for DeliveryAttempt.DurationSeconds
 		start := time.Now()
 
@@ -279,10 +285,6 @@ func (o *Orchestrator) DeliverToChannels(
 
 		// Round to milliseconds - sub-ms precision is typically noise for observability
 		durationSeconds := math.Round(time.Since(start).Seconds()*1000) / 1000
-
-		// NT-RACE-FIX: Re-fetch attempt count AFTER in-flight increment
-		// This gives us the correct 1-based attempt number for concurrent reconciliations
-		attemptCountAfterIncrement := getChannelAttemptCount(notification, string(channel))
 
 		// Decrement in-flight counter now that delivery is complete
 		o.decrementInFlightAttempts(string(notification.UID), string(channel))
@@ -293,7 +295,7 @@ func (o *Orchestrator) DeliverToChannels(
 
 		attempt := notificationv1alpha1.DeliveryAttempt{
 			Channel:         notificationv1alpha1.DeliveryChannelName(channel),
-			Attempt:         attemptCountAfterIncrement, // Use post-increment count for correct numbering
+			Attempt:         attemptCount, // Already includes our reservation from pre-check increment
 			Timestamp:       now,
 			DurationSeconds: durationSeconds,
 		}
@@ -388,8 +390,8 @@ func (o *Orchestrator) DeliverToChannel(
 }
 
 // doDelivery performs the actual delivery (called by singleflight)
-// DD-NOT-008: Tracks in-flight attempts and successful deliveries to prevent duplicate deliveries
-// NT-RACE-FIX: In-flight counter is now managed by caller (DeliverToChannels) to fix attempt numbering race
+// DD-NOT-008: Tracks successful deliveries to prevent duplicate deliveries
+// In-flight counter is managed by caller (DeliverToChannels) via reserve-then-check pattern
 func (o *Orchestrator) doDelivery(
 	ctx context.Context,
 	notification *notificationv1alpha1.NotificationRequest,
@@ -428,8 +430,8 @@ func (o *Orchestrator) doDelivery(
 // All channels now use common DeliverToChannel() via registration pattern
 
 // DD-NOT-008: In-Flight Attempt Tracking Methods
-// These methods prevent the "6 attempts instead of 5" bug by tracking
-// attempts that have been initiated but not yet persisted to status.
+// Reserve-then-check pattern: callers increment in-flight BEFORE the
+// max-attempts gate, so concurrent reconciles see each other's reservations.
 
 // GetTotalAttemptCount returns the total number of attempts for a channel,
 // including both persisted attempts (in status) and in-flight attempts.
@@ -487,7 +489,7 @@ func (o *Orchestrator) HasChannelSucceeded(
 }
 
 // incrementInFlightAttempts increments the in-flight counter for a channel.
-// Called when delivery attempt starts (before calling service.Deliver).
+// Called BEFORE the max-attempts gate (reserve-then-check TOCTOU fix).
 func (o *Orchestrator) incrementInFlightAttempts(uid string, channel string) {
 	key := fmt.Sprintf("%s:%s", uid, channel)
 
