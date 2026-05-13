@@ -3,8 +3,8 @@ package auth
 import (
 	"context"
 	"crypto/rand"
-	"encoding/binary"
 	"errors"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -174,11 +174,9 @@ func observeAuthDuration(hist *prometheus.HistogramVec, start time.Time, result 
 
 // cryptoRandIntn returns a cryptographically random int in [0, n).
 func cryptoRandIntn(n int) int {
-	var buf [8]byte
-	_, _ = rand.Read(buf[:])
-	v := int(binary.LittleEndian.Uint64(buf[:]))
-	if v < 0 {
-		v = -v
+	v, err := rand.Int(rand.Reader, big.NewInt(int64(n)))
+	if err != nil {
+		return 0
 	}
-	return v % n
+	return int(v.Int64())
 }
