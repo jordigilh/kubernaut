@@ -134,7 +134,12 @@ func (e *K8sEnricher) Enrich(ctx context.Context, signal *signalprocessingv1alph
 	case "Node":
 		return e.enrichNodeSignal(ctx, signal, result)
 	default:
-		// Graceful fallback: namespace only for unknown resource types
+		// A5-FIX: For cluster-scoped kinds, skip namespace lookup (namespace is empty)
+		if ownerchain.IsClusterScoped(signal.TargetResource.Kind) {
+			e.logger.V(1).Info("Cluster-scoped resource, skipping namespace enrichment",
+				"kind", signal.TargetResource.Kind, "name", signal.TargetResource.Name)
+			return result, nil
+		}
 		return e.enrichNamespaceOnly(ctx, signal, result)
 	}
 }
@@ -350,10 +355,18 @@ func (e *K8sEnricher) enrichServiceSignal(ctx context.Context, signal *signalpro
 }
 
 // enrichNodeSignal fetches Node only (no namespace for node signals).
+// A4-FIX: Enter degraded mode if Node not found, matching Pod/Deployment pattern.
 func (e *K8sEnricher) enrichNodeSignal(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
-	// Node signals have no namespace
 	node, err := e.getNode(ctx, signal.TargetResource.Name)
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			e.logger.Info("Target node not found, entering degraded mode", "name", signal.TargetResource.Name)
+			result.DegradedMode = true
+			e.metrics.RecordEnrichmentError("not_found")
+			return result, nil
+		}
+		e.logger.Error(err, "Failed to fetch node", "name", signal.TargetResource.Name)
+		e.metrics.RecordEnrichmentError("api_error")
 		return nil, fmt.Errorf("failed to get node %s: %w", signal.TargetResource.Name, err)
 	}
 	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{

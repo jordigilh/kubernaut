@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
 )
 
 const (
@@ -41,24 +42,26 @@ const (
 func BuildDegradedContext(signal *signalprocessingv1alpha1.SignalData) *signalprocessingv1alpha1.KubernetesContext {
 	ctx := &signalprocessingv1alpha1.KubernetesContext{
 		DegradedMode: true,
-		Namespace: &signalprocessingv1alpha1.NamespaceContext{
+	}
+
+	// B1-FIX: Leave Namespace nil for cluster-scoped targets (consistent with enrichNodeSignal)
+	if !ownerchain.IsClusterScoped(signal.TargetResource.Kind) {
+		ctx.Namespace = &signalprocessingv1alpha1.NamespaceContext{
 			Name:        signal.TargetResource.Namespace,
 			Labels:      make(map[string]string),
 			Annotations: make(map[string]string),
-		},
-	}
-
-	// Use signal labels as namespace labels fallback
-	if signal.Labels != nil {
-		for k, v := range signal.Labels {
-			ctx.Namespace.Labels[k] = v
 		}
-	}
 
-	// Use signal annotations as namespace annotations fallback
-	if signal.Annotations != nil {
-		for k, v := range signal.Annotations {
-			ctx.Namespace.Annotations[k] = v
+		if signal.Labels != nil {
+			for k, v := range signal.Labels {
+				ctx.Namespace.Labels[k] = v
+			}
+		}
+
+		if signal.Annotations != nil {
+			for k, v := range signal.Annotations {
+				ctx.Namespace.Annotations[k] = v
+			}
 		}
 	}
 

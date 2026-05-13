@@ -115,7 +115,7 @@ func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]si
 
 		// Cluster-scoped resources have empty namespace
 		ownerNamespace := currentNamespace
-		if isClusterScoped(ownerRef.Kind) {
+		if IsClusterScoped(ownerRef.Kind) {
 			ownerNamespace = ""
 		}
 
@@ -200,14 +200,17 @@ func getGVKForKind(kind string) schema.GroupVersionKind {
 	}
 }
 
-// isClusterScoped returns true if the resource kind is cluster-scoped.
-func isClusterScoped(kind string) bool {
+// IsClusterScoped returns true if the resource kind is cluster-scoped.
+func IsClusterScoped(kind string) bool {
 	clusterScoped := map[string]bool{
-		"Node":               true,
-		"PersistentVolume":   true,
-		"Namespace":          true,
-		"ClusterRole":        true,
-		"ClusterRoleBinding": true,
+		"Node":                          true,
+		"PersistentVolume":              true,
+		"Namespace":                     true,
+		"ClusterRole":                   true,
+		"ClusterRoleBinding":            true,
+		"StorageClass":                  true,
+		"CustomResourceDefinition":      true,
+		"PersistentVolumeClaimTemplate": true,
 	}
 	return clusterScoped[kind]
 }
