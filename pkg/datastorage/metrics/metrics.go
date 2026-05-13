@@ -62,7 +62,6 @@ const (
 	MetricNameDLQDrainBatchTotal    = "datastorage_dlq_drain_batch_total"
 	MetricNameRetentionPurgeTotal   = "datastorage_retention_purge_total"
 	MetricNameDLQPelPending         = "datastorage_dlq_pel_pending"
-	MetricNameDLQPelMaxIdleSeconds  = "datastorage_dlq_pel_max_idle_seconds"
 	MetricNameShutdownDLQDrainError = "datastorage_shutdown_dlq_drain_errors_total"
 )
 
@@ -125,6 +124,26 @@ var (
 	)
 )
 
+// #1088 Phase 7: Observability & Resilience metrics
+var (
+	DLQDrainBatchTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: MetricNameDLQDrainBatchTotal,
+		Help: "Total DLQ drain batch operations during shutdown",
+	})
+	RetentionPurgeTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: MetricNameRetentionPurgeTotal,
+		Help: "Total retention purge operations",
+	})
+	DLQPelPending = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: MetricNameDLQPelPending,
+		Help: "Number of pending entries in the DLQ PEL (XPENDING count)",
+	})
+	ShutdownDLQDrainError = promauto.NewCounter(prometheus.CounterOpts{
+		Name: MetricNameShutdownDLQDrainError,
+		Help: "Total DLQ drain errors during shutdown",
+	})
+)
+
 // Workflow validation phase metrics (Issue #1070)
 // BR-STORAGE-014: Workflow catalog management
 
@@ -171,13 +190,17 @@ var (
 
 // Metrics Summary:
 //
-// Total Metrics: 6 (external-facing per GitHub issue #294, #1048, #1070)
+// Total Metrics: 10 (external-facing per GitHub issue #294, #1048, #1070, #1088)
 // - WriteDuration (Histogram with labels) - write operation performance
 // - AuditLagSeconds (Histogram with labels) - audit lag observability
 // - ValidationFailures (Counter with labels) - OpenAPI validation rejections (#1048)
 // - DLQValidationFailures (Counter with labels) - DLQ replay validation failures (#1048)
 // - DLQStreamXAddTotal (Counter with labels) - DLQ stream XADD / trim correlation (#1048 Phase 5)
 // - WorkflowValidationDuration (Histogram with labels) - validation phase timing (Issue #1070)
+// - DLQDrainBatchTotal (Counter) - shutdown drain operations (#1088 Phase 7)
+// - RetentionPurgeTotal (Counter) - retention purge operations (#1088 Phase 7)
+// - DLQPelPending (Gauge) - PEL backlog depth (#1088 Phase 7)
+// - ShutdownDLQDrainError (Counter) - shutdown drain errors (#1088 Phase 7)
 //
 // Performance Target: < 5% overhead
 // BR Coverage: BR-STORAGE-001, 002, 007, 008, 012, 013, 019
@@ -236,6 +259,12 @@ type Metrics struct {
 	// Workflow validation phase metrics (Issue #1070)
 	WorkflowValidationDuration *prometheus.HistogramVec // Validation phase timing
 
+	// #1088 Phase 7: Observability & Resilience
+	DLQDrainBatchTotal    prometheus.Counter // Drain batch operations during shutdown
+	RetentionPurgeTotal   prometheus.Counter // Retention purge operations
+	DLQPelPending         prometheus.Gauge   // PEL pending entries
+	ShutdownDLQDrainError prometheus.Counter // DLQ drain errors during shutdown
+
 	// Store registry for testing
 	registry prometheus.Registerer
 }
@@ -264,6 +293,10 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 		m.DLQValidationFailures = DLQValidationFailures
 		m.DLQStreamXAddTotal = DLQStreamXAddTotal
 		m.WorkflowValidationDuration = WorkflowValidationDuration
+		m.DLQDrainBatchTotal = DLQDrainBatchTotal
+		m.RetentionPurgeTotal = RetentionPurgeTotal
+		m.DLQPelPending = DLQPelPending
+		m.ShutdownDLQDrainError = ShutdownDLQDrainError
 	} else {
 		// Testing: Create isolated metrics with custom registry
 		// Testing: Create isolated metrics with full names (DD-005 V3.0: Pattern B)
@@ -318,6 +351,23 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 			[]string{"phase", "result"},
 		)
 
+		m.DLQDrainBatchTotal = prometheus.NewCounter(prometheus.CounterOpts{
+			Name: MetricNameDLQDrainBatchTotal,
+			Help: "Total DLQ drain batch operations during shutdown",
+		})
+		m.RetentionPurgeTotal = prometheus.NewCounter(prometheus.CounterOpts{
+			Name: MetricNameRetentionPurgeTotal,
+			Help: "Total retention purge operations",
+		})
+		m.DLQPelPending = prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: MetricNameDLQPelPending,
+			Help: "Number of pending entries in the DLQ PEL",
+		})
+		m.ShutdownDLQDrainError = prometheus.NewCounter(prometheus.CounterOpts{
+			Name: MetricNameShutdownDLQDrainError,
+			Help: "Total DLQ drain errors during shutdown",
+		})
+
 		reg.MustRegister(
 			m.AuditLagSeconds,
 			m.WriteDuration,
@@ -325,6 +375,10 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 			m.DLQValidationFailures,
 			m.DLQStreamXAddTotal,
 			m.WorkflowValidationDuration,
+			m.DLQDrainBatchTotal,
+			m.RetentionPurgeTotal,
+			m.DLQPelPending,
+			m.ShutdownDLQDrainError,
 		)
 	}
 

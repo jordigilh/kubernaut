@@ -52,25 +52,26 @@ var _ = Describe("Metrics Struct", func() {
 		})
 
 		It("should register metrics with custom registry", func() {
-			// Record some values to ensure metrics appear in Gather()
 			m.AuditLagSeconds.WithLabelValues(metrics.ServiceNotification).Observe(0.5)
 			m.WriteDuration.WithLabelValues("notification_audit").Observe(0.025)
 
-			// Gather metrics from registry
 			families, err := registry.Gather()
 			Expect(err).ToNot(HaveOccurred())
 
-			// Should have 2 metrics (external-facing per GitHub issue #294)
-			Expect(families).To(HaveLen(2), "Registry should contain 2 metric families")
+			Expect(families).To(HaveLen(6),
+				"Registry should contain 6 gathered metric families (2 observed histograms + 4 Phase 7 counters/gauges)")
 
-			// Check for key metrics
 			metricNames := make(map[string]bool)
 			for _, family := range families {
 				metricNames[family.GetName()] = true
 			}
 
-			Expect(metricNames).To(HaveKey("datastorage_audit_lag_seconds"), "audit_lag_seconds metric should exist")
-			Expect(metricNames).To(HaveKey("datastorage_write_duration_seconds"), "write_duration metric should exist")
+			Expect(metricNames).To(HaveKey("datastorage_audit_lag_seconds"))
+			Expect(metricNames).To(HaveKey("datastorage_write_duration_seconds"))
+			Expect(metricNames).To(HaveKey(metrics.MetricNameDLQDrainBatchTotal))
+			Expect(metricNames).To(HaveKey(metrics.MetricNameRetentionPurgeTotal))
+			Expect(metricNames).To(HaveKey(metrics.MetricNameDLQPelPending))
+			Expect(metricNames).To(HaveKey(metrics.MetricNameShutdownDLQDrainError))
 		})
 	})
 

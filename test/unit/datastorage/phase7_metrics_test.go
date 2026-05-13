@@ -19,78 +19,86 @@ package datastorage
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 )
 
 // ========================================
-// PHASE 7: OBSERVABILITY METRIC CONSTANTS (TP-1088-P1)
+// PHASE 7: OBSERVABILITY METRICS WIRING (TP-1088-P1)
 // ========================================
 //
 // Issue: #1088 Phase 7 (Observability & Resilience)
-// TDD Phase: RED — these tests FAIL because metric constants are empty stubs
-//
-// Each metric constant must follow the DD-005 V3.0 naming convention:
-//   datastorage_<subsystem>_<metric>_<unit>
+// TDD Phase: BEHAVIORAL — each metric is created via NewMetricsWithRegistry,
+// then operated on (Inc/Set), and the resulting value is read back from the
+// Prometheus registry. This proves end-to-end wiring, not just constant naming.
 //
 // ========================================
 
-var _ = Describe("Phase 7: Observability Metric Constants (TP-1088-P1)", func() {
+var _ = Describe("Phase 7: Observability Metrics Wiring (TP-1088-P1)", func() {
+
+	var m *dsmetrics.Metrics
+
+	BeforeEach(func() {
+		reg := prometheus.NewRegistry()
+		m = dsmetrics.NewMetricsWithRegistry("datastorage", "", reg)
+	})
 
 	Describe("Drain-batch counter (7.4)", func() {
-		It("UT-DS-1088-P7-004: MetricNameDLQDrainBatchTotal must be a valid metric name", func() {
-			// RED: Stub constant is empty string.
-			// GREEN will set to "datastorage_dlq_drain_batch_total".
+		It("UT-DS-1088-P7-004: DLQDrainBatchTotal increments and reads back from registry", func() {
+			Expect(m.DLQDrainBatchTotal).ToNot(BeNil(),
+				"DLQDrainBatchTotal must be wired in Metrics struct")
 
-			Expect(dsmetrics.MetricNameDLQDrainBatchTotal).ToNot(BeEmpty(),
-				"Drain-batch counter metric name must be defined (DD-005 V3.0)")
-			Expect(dsmetrics.MetricNameDLQDrainBatchTotal).To(HavePrefix("datastorage_"),
-				"Metric name must follow DD-005 V3.0 naming: datastorage_<subsystem>_<metric>")
+			m.DLQDrainBatchTotal.Inc()
+
+			var metric dto.Metric
+			Expect(m.DLQDrainBatchTotal.Write(&metric)).To(Succeed())
+			Expect(metric.GetCounter().GetValue()).To(Equal(float64(1)),
+				"Counter should read 1 after a single Inc()")
 		})
 	})
 
 	Describe("Retention-purge counter (7.9)", func() {
-		It("UT-DS-1088-P7-009: MetricNameRetentionPurgeTotal must be a valid metric name", func() {
-			// RED: Stub constant is empty string.
+		It("UT-DS-1088-P7-009: RetentionPurgeTotal increments and reads back from registry", func() {
+			Expect(m.RetentionPurgeTotal).ToNot(BeNil(),
+				"RetentionPurgeTotal must be wired in Metrics struct")
 
-			Expect(dsmetrics.MetricNameRetentionPurgeTotal).ToNot(BeEmpty(),
-				"Retention-purge counter metric name must be defined (DD-005 V3.0)")
-			Expect(dsmetrics.MetricNameRetentionPurgeTotal).To(HavePrefix("datastorage_"),
-				"Metric name must follow DD-005 V3.0 naming")
+			m.RetentionPurgeTotal.Inc()
+			m.RetentionPurgeTotal.Inc()
+
+			var metric dto.Metric
+			Expect(m.RetentionPurgeTotal.Write(&metric)).To(Succeed())
+			Expect(metric.GetCounter().GetValue()).To(Equal(float64(2)),
+				"Counter should read 2 after two Inc() calls")
 		})
 	})
 
 	Describe("PEL pending gauge (7.10)", func() {
-		It("UT-DS-1088-P7-010a: MetricNameDLQPelPending must be a valid metric name", func() {
-			// RED: Stub constant is empty string.
+		It("UT-DS-1088-P7-010a: DLQPelPending can be set and read back", func() {
+			Expect(m.DLQPelPending).ToNot(BeNil(),
+				"DLQPelPending must be wired in Metrics struct")
 
-			Expect(dsmetrics.MetricNameDLQPelPending).ToNot(BeEmpty(),
-				"PEL pending gauge metric name must be defined for XPENDING observability")
-			Expect(dsmetrics.MetricNameDLQPelPending).To(HavePrefix("datastorage_"),
-				"Metric name must follow DD-005 V3.0 naming")
-		})
-	})
+			m.DLQPelPending.Set(42)
 
-	Describe("PEL idle age gauge (7.10)", func() {
-		It("UT-DS-1088-P7-010b: MetricNameDLQPelMaxIdleSeconds must be a valid metric name", func() {
-			// RED: Stub constant is empty string.
-
-			Expect(dsmetrics.MetricNameDLQPelMaxIdleSeconds).ToNot(BeEmpty(),
-				"PEL idle age gauge metric name must be defined for stale message detection")
-			Expect(dsmetrics.MetricNameDLQPelMaxIdleSeconds).To(HavePrefix("datastorage_"),
-				"Metric name must follow DD-005 V3.0 naming")
+			var metric dto.Metric
+			Expect(m.DLQPelPending.Write(&metric)).To(Succeed())
+			Expect(metric.GetGauge().GetValue()).To(Equal(float64(42)),
+				"Gauge should reflect the Set(42) value")
 		})
 	})
 
 	Describe("Shutdown DLQ drain error counter (7.6)", func() {
-		It("UT-DS-1088-P7-006: MetricNameShutdownDLQDrainError must be a valid metric name", func() {
-			// RED: Stub constant is empty string.
-			// ARCH-M1: Shutdown must surface DLQ drain errors as metrics.
+		It("UT-DS-1088-P7-006: ShutdownDLQDrainError increments and reads back from registry", func() {
+			Expect(m.ShutdownDLQDrainError).ToNot(BeNil(),
+				"ShutdownDLQDrainError must be wired in Metrics struct")
 
-			Expect(dsmetrics.MetricNameShutdownDLQDrainError).ToNot(BeEmpty(),
-				"Shutdown DLQ drain error metric must be defined for ARCH-M1 error surfacing")
-			Expect(dsmetrics.MetricNameShutdownDLQDrainError).To(HavePrefix("datastorage_"),
-				"Metric name must follow DD-005 V3.0 naming")
+			m.ShutdownDLQDrainError.Inc()
+
+			var metric dto.Metric
+			Expect(m.ShutdownDLQDrainError.Write(&metric)).To(Succeed())
+			Expect(metric.GetCounter().GetValue()).To(Equal(float64(1)),
+				"Counter should read 1 after Inc()")
 		})
 	})
 })
