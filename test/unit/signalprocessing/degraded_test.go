@@ -84,13 +84,18 @@ var _ = Describe("Degraded Mode", func() {
 			signal := &signalprocessingv1alpha1.SignalData{
 				Name:   "test-signal",
 				Labels: nil,
+				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+				},
 			}
 
 			ctx := enricher.BuildDegradedContext(signal)
 
 			Expect(ctx).NotTo(BeNil())
 			Expect(ctx.Namespace).NotTo(BeNil())
-			Expect(ctx.Namespace.Labels).NotTo(BeNil()) // Should be empty map, not nil
+			Expect(ctx.Namespace.Labels).NotTo(BeNil())
 			Expect(ctx.DegradedMode).To(BeTrue())
 		})
 
@@ -98,6 +103,11 @@ var _ = Describe("Degraded Mode", func() {
 			signal := &signalprocessingv1alpha1.SignalData{
 				Name:   "test-signal",
 				Labels: map[string]string{},
+				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+				},
 			}
 
 			ctx := enricher.BuildDegradedContext(signal)
@@ -115,12 +125,90 @@ var _ = Describe("Degraded Mode", func() {
 				Annotations: map[string]string{
 					"description": "test annotation",
 				},
+				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+				},
 			}
 
 			ctx := enricher.BuildDegradedContext(signal)
 
 			Expect(ctx.Namespace).NotTo(BeNil())
 			Expect(ctx.Namespace.Annotations).To(HaveKeyWithValue("description", "test annotation"))
+		})
+	})
+
+	// ========================================
+	// PHASE 2 TDD RED: Issue #1110 SP Readiness Audit
+	// Finding: BLAST-B1 — BuildDegradedContext semantics
+	// BR-SP-112: Cluster-Scoped Resource Label Exposure
+	// ========================================
+
+	Describe("BLAST-B1: BuildDegradedContext cluster-scoped semantics (BR-SP-112 R6)", func() {
+		It("UT-SP-1110-021: cluster-scoped signal (Node) produces no Namespace in degraded context", func() {
+			signal := &signalprocessingv1alpha1.SignalData{
+				Name: "node-signal",
+				Labels: map[string]string{
+					"kubernaut.ai/business-unit": "platform",
+				},
+				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+					Kind:      "Node",
+					Name:      "worker-01",
+					Namespace: "", // cluster-scoped
+				},
+			}
+
+			ctx := enricher.BuildDegradedContext(signal)
+
+			Expect(ctx).NotTo(BeNil())
+			Expect(ctx.DegradedMode).To(BeTrue())
+			Expect(ctx.Namespace).To(BeNil(),
+				"BLAST-B1: Cluster-scoped resources MUST NOT create a Namespace with empty name")
+		})
+
+		It("UT-SP-1110-022: degraded context populates Workload from target resource", func() {
+			signal := &signalprocessingv1alpha1.SignalData{
+				Name: "node-signal",
+				Labels: map[string]string{
+					"kubernaut.ai/tier": "infrastructure",
+				},
+				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+					Kind:      "Node",
+					Name:      "worker-01",
+					Namespace: "",
+				},
+			}
+
+			ctx := enricher.BuildDegradedContext(signal)
+
+			Expect(ctx).NotTo(BeNil())
+			Expect(ctx.Workload).ToNot(BeNil(),
+				"BLAST-B1: Degraded context MUST populate Workload with target Kind/Name")
+			Expect(ctx.Workload.Kind).To(Equal("Node"))
+			Expect(ctx.Workload.Name).To(Equal("worker-01"))
+		})
+
+		It("UT-SP-1110-023: namespace-scoped signal still creates Namespace in degraded context", func() {
+			signal := &signalprocessingv1alpha1.SignalData{
+				Name: "pod-signal",
+				Labels: map[string]string{
+					"app": "my-app",
+				},
+				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "my-pod",
+					Namespace: "production",
+				},
+			}
+
+			ctx := enricher.BuildDegradedContext(signal)
+
+			Expect(ctx).NotTo(BeNil())
+			Expect(ctx.DegradedMode).To(BeTrue())
+			Expect(ctx.Namespace).ToNot(BeNil(),
+				"BLAST-B1: Namespace-scoped resources MUST still create Namespace context")
+			Expect(ctx.Namespace.Name).To(Equal("production"))
 		})
 	})
 

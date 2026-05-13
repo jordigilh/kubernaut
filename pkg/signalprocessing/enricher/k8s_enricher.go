@@ -350,10 +350,17 @@ func (e *K8sEnricher) enrichServiceSignal(ctx context.Context, signal *signalpro
 }
 
 // enrichNodeSignal fetches Node only (no namespace for node signals).
+// BLAST-A4 (BR-SP-112 R4): Returns degraded mode on NotFound instead of hard error,
+// matching Pod/Deployment/StatefulSet/DaemonSet/ReplicaSet degraded behavior (DD-017 Principle 3).
 func (e *K8sEnricher) enrichNodeSignal(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
-	// Node signals have no namespace
 	node, err := e.getNode(ctx, signal.TargetResource.Name)
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			e.logger.Info("Node not found, entering degraded mode", "node", signal.TargetResource.Name)
+			e.metrics.RecordEnrichmentError("not_found")
+			result.DegradedMode = true
+			return result, nil
+		}
 		return nil, fmt.Errorf("failed to get node %s: %w", signal.TargetResource.Name, err)
 	}
 	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
@@ -367,7 +374,15 @@ func (e *K8sEnricher) enrichNodeSignal(ctx context.Context, signal *signalproces
 }
 
 // enrichNamespaceOnly fetches namespace only for unknown resource types.
+// BLAST-A5 (BR-SP-112 R5): When namespace is empty (cluster-scoped kind),
+// returns degraded context instead of attempting to fetch empty namespace name.
 func (e *K8sEnricher) enrichNamespaceOnly(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
+	if signal.TargetResource.Namespace == "" {
+		e.logger.Info("Cluster-scoped unknown kind, entering degraded mode",
+			"kind", signal.TargetResource.Kind, "name", signal.TargetResource.Name)
+		result.DegradedMode = true
+		return result, nil
+	}
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
