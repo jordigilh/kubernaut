@@ -286,8 +286,10 @@ func (o *Orchestrator) DeliverToChannels(
 		// Round to milliseconds - sub-ms precision is typically noise for observability
 		durationSeconds := math.Round(time.Since(start).Seconds()*1000) / 1000
 
-		// Decrement in-flight counter now that delivery is complete
-		o.decrementInFlightAttempts(string(notification.UID), string(channel))
+		// Do NOT decrement the in-flight counter here. It must stay elevated
+		// until ClearInMemoryState is called after status persistence. Otherwise
+		// a reconcile triggered between delivery completion and persistence
+		// reads stale persisted count + 0 in-flight, slipping past the gate.
 
 		// Create delivery attempt record (but DON'T write to status yet)
 		// This prevents status updates from triggering immediate reconciles
