@@ -54,9 +54,11 @@ type RFC7807Problem struct {
 func WriteRFC7807Error(w http.ResponseWriter, status int, errorType, title, detail string, logger logr.Logger) {
 	// DD-004: Use kubernaut.ai/problems/* for RFC 7807 error type URIs.
 	// If errorType is already a full URI, use it as-is to prevent double-prefix.
-	typeURI := errorType
-	if !strings.HasPrefix(errorType, "https://") {
-		typeURI = fmt.Sprintf("https://kubernaut.ai/problems/%s", errorType)
+	trimmed := strings.TrimSpace(errorType)
+	typeURI := trimmed
+	lower := strings.ToLower(trimmed)
+	if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
+		typeURI = fmt.Sprintf("https://kubernaut.ai/problems/%s", trimmed)
 	}
 
 	problem := RFC7807Problem{

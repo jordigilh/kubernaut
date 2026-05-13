@@ -673,8 +673,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// #1048 Phase 3: Never skip subsequent cleanup steps. HTTP drain failure
 	// must not prevent DLQ drain or DB close — that would cause data loss
 	// (BR-AUDIT-001) and leak database connections.
-	if err := s.shutdownStep3DrainConnections(ctx); err != nil {
+	if err := s.shutdownStep3DrainConnections(ctx, shutdownID); err != nil {
 		s.logger.Error(err, "HTTP connection drain failed, continuing with cleanup",
+			"shutdown_id", shutdownID,
 			"dd", "DD-007-step-3-error-non-fatal")
 		shutdownErrors = append(shutdownErrors, err)
 	}
@@ -688,8 +689,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.dlqRetryWorker.Stop()
 
 	// STEP 4: Drain DLQ messages (DD-008) — ARCH-M1: surface DLQ drain errors
-	if err := s.shutdownStep4DrainDLQ(ctx); err != nil {
+	if err := s.shutdownStep4DrainDLQ(ctx, shutdownID); err != nil {
 		s.logger.Error(err, "DLQ drain failed during shutdown, continuing with cleanup",
+			"shutdown_id", shutdownID,
 			"dd", "DD-008-step-4-error-non-fatal")
 		shutdownErrors = append(shutdownErrors, err)
 	}
@@ -698,7 +700,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.retentionWorker.Stop()
 
 	// STEP 5: Close external resources (database)
-	if err := s.shutdownStep5CloseResources(); err != nil {
+	if err := s.shutdownStep5CloseResources(shutdownID); err != nil {
 		shutdownErrors = append(shutdownErrors, err)
 	}
 
@@ -741,8 +743,9 @@ func (s *Server) shutdownStep2WaitForPropagation() {
 
 // shutdownStep3DrainConnections drains in-flight HTTP connections
 // DD-007 STEP 3: Gracefully close HTTP connections with timeout
-func (s *Server) shutdownStep3DrainConnections(ctx context.Context) error {
+func (s *Server) shutdownStep3DrainConnections(ctx context.Context, shutdownID string) error {
 	s.logger.Info("Draining in-flight HTTP connections",
+		"shutdown_id", shutdownID,
 		"drain_timeout", drainTimeout,
 		"dd", "DD-007-step-3")
 
@@ -759,25 +762,29 @@ func (s *Server) shutdownStep3DrainConnections(ctx context.Context) error {
 
 	if err := s.httpServer.Shutdown(drainCtx); err != nil {
 		s.logger.Error(err, "Error during HTTP connection drain",
+			"shutdown_id", shutdownID,
 			"dd", "DD-007-step-3-error")
 		return fmt.Errorf("HTTP connection drain failed: %w", err)
 	}
 
 	s.logger.Info("HTTP connections drained successfully",
+		"shutdown_id", shutdownID,
 		"dd", "DD-007-step-3-complete")
 	return nil
 }
 
 // shutdownStep4DrainDLQ drains pending DLQ messages before shutdown
 // DD-008 STEP 4: Ensure audit messages in DLQ are not lost
-func (s *Server) shutdownStep4DrainDLQ(ctx context.Context) error {
+func (s *Server) shutdownStep4DrainDLQ(ctx context.Context, shutdownID string) error {
 	if s.dlqClient == nil {
 		s.logger.Info("DLQ client not available, skipping DLQ drain",
+			"shutdown_id", shutdownID,
 			"dd", "DD-008-step-4-skipped")
 		return nil
 	}
 
 	s.logger.Info("Draining DLQ messages before shutdown",
+		"shutdown_id", shutdownID,
 		"timeout", dlqDrainTimeout,
 		"dd", "DD-008-step-4")
 
@@ -798,14 +805,19 @@ func (s *Server) shutdownStep4DrainDLQ(ctx context.Context) error {
 
 	// Drain DLQ with timeout
 	stats, err := s.dlqClient.DrainWithTimeout(drainCtx, s.repository, s.auditEventsRepo)
+	s.metrics.DLQDrainBatchTotal.Inc()
+
 	if err != nil {
+		s.metrics.ShutdownDLQDrainError.Inc()
 		s.logger.Error(err, "Error during DLQ drain (non-fatal, continuing shutdown)",
+			"shutdown_id", shutdownID,
 			"dd", "DD-008-step-4-error")
 		return fmt.Errorf("DLQ drain failed: %w", err)
 	}
 
 	// Log drain statistics
 	s.logger.Info("DLQ drain complete",
+		"shutdown_id", shutdownID,
 		"notifications_processed", stats.NotificationsProcessed,
 		"events_processed", stats.EventsProcessed,
 		"total_processed", stats.TotalProcessed,
@@ -816,7 +828,9 @@ func (s *Server) shutdownStep4DrainDLQ(ctx context.Context) error {
 
 	// Log any errors encountered during drain (but don't fail shutdown)
 	for i, drainErr := range stats.Errors {
+		s.metrics.ShutdownDLQDrainError.Inc()
 		s.logger.Error(drainErr, "Error during DLQ drain processing",
+			"shutdown_id", shutdownID,
 			"error_index", i,
 			"dd", "DD-008-step-4-drain-error")
 	}
@@ -825,22 +839,24 @@ func (s *Server) shutdownStep4DrainDLQ(ctx context.Context) error {
 
 // shutdownStep5CloseResources closes external resources (database, audit store)
 // DD-007 STEP 5 (previously step 4): Clean up database connections and flush audit events
-func (s *Server) shutdownStep5CloseResources() error {
+func (s *Server) shutdownStep5CloseResources(shutdownID string) error {
 	s.logger.Info("Closing external resources (PostgreSQL, audit store)",
+		"shutdown_id", shutdownID,
 		"dd", "DD-007-step-5")
 
 	// BR-STORAGE-014: Flush remaining audit events before closing database
 	// This ensures no audit traces are lost during graceful shutdown
 	if s.auditStore != nil {
 		s.logger.Info("Flushing remaining audit events (DD-STORAGE-012)",
+			"shutdown_id", shutdownID,
 			"dd", "DD-007-step-5-audit-flush")
 		if err := s.auditStore.Close(); err != nil {
 			s.logger.Error(err, "Failed to flush audit events",
+				"shutdown_id", shutdownID,
 				"dd", "DD-007-step-5-audit-error")
-			// Continue with shutdown even if audit flush fails
-			// (audit failures should not block graceful shutdown)
 		} else {
 			s.logger.Info("Audit events flushed successfully",
+				"shutdown_id", shutdownID,
 				"dd", "DD-007-step-5-audit-complete")
 		}
 	}
@@ -848,15 +864,18 @@ func (s *Server) shutdownStep5CloseResources() error {
 	// Close PostgreSQL connection
 	if s.db == nil {
 		s.logger.Info("No PostgreSQL connection to close — verify initialization",
+			"shutdown_id", shutdownID,
 			"severity", "warning",
 			"dd", "DD-007-step-5-no-db")
 	} else if err := s.db.Close(); err != nil {
 		s.logger.Error(err, "Failed to close PostgreSQL connection",
+			"shutdown_id", shutdownID,
 			"dd", "DD-007-step-5-error")
 		return fmt.Errorf("failed to close PostgreSQL: %w", err)
 	}
 
 	s.logger.Info("All external resources closed",
+		"shutdown_id", shutdownID,
 		"dd", "DD-007-step-5-complete")
 	return nil
 }

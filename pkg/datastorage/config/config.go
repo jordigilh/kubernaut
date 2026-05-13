@@ -448,6 +448,40 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// SI-10: Fail fast on invalid shutdown/propagation durations instead of
+	// silently defaulting at runtime where operators may not notice.
+	if c.Server.ShutdownTimeout != "" {
+		if _, err := time.ParseDuration(c.Server.ShutdownTimeout); err != nil {
+			return fmt.Errorf("invalid shutdownTimeout: %w", err)
+		}
+	}
+	if c.Server.EndpointPropagationDelay != "" {
+		if _, err := time.ParseDuration(c.Server.EndpointPropagationDelay); err != nil {
+			return fmt.Errorf("invalid endpointPropagationDelay: %w", err)
+		}
+	}
+	if c.Server.MaxBodySize != "" {
+		var size int64
+		if n, err := fmt.Sscanf(c.Server.MaxBodySize, "%d", &size); err != nil || n != 1 {
+			return fmt.Errorf("invalid maxBodySize %q: must be an integer (bytes)", c.Server.MaxBodySize)
+		}
+	}
+
+	// AC-4: Validate CORS origin format aligned with go-chi/cors semantics.
+	for i, origin := range c.Server.CORSAllowedOrigins {
+		trimmed := strings.TrimSpace(origin)
+		if trimmed == "" {
+			return fmt.Errorf("corsAllowedOrigins[%d]: empty or whitespace-only origin", i)
+		}
+		if trimmed == "*" {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
+			return fmt.Errorf("corsAllowedOrigins[%d] %q: must start with http:// or https:// (or be \"*\")", i, origin)
+		}
+	}
+
 	return nil
 }
 

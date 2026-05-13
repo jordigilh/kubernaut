@@ -24,6 +24,8 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+
+	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 )
 
 // Worker periodically purges expired audit events from PostgreSQL.
@@ -125,7 +127,13 @@ func (w *Worker) executePurge(ctx context.Context) {
 			return
 		}
 
-		rowsAffected, _ := result.RowsAffected()
+		rowsAffected, raErr := result.RowsAffected()
+		if raErr != nil {
+			w.logger.Error(raErr, "RowsAffected unavailable, assuming batch complete",
+				"run_id", runID,
+				"total_deleted_so_far", totalDeleted)
+			break
+		}
 		totalDeleted += rowsAffected
 
 		if rowsAffected < int64(w.config.GetBatchSize()) {
@@ -134,6 +142,7 @@ func (w *Worker) executePurge(ctx context.Context) {
 	}
 
 	duration := time.Since(start)
+	dsmetrics.RetentionPurgeTotal.Inc()
 	w.logger.Info("Retention purge run completed",
 		"run_id", runID,
 		"rows_deleted", totalDeleted,

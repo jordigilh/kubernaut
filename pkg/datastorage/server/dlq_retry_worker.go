@@ -31,6 +31,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
+	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
 )
@@ -295,13 +296,25 @@ func (w *DLQRetryWorker) runClaimJanitor(ctx context.Context) {
 func (w *DLQRetryWorker) claimOrphanedMessages(ctx context.Context) {
 	auditTypes := []string{"events", "notifications"}
 
+	var totalPending int64
+	for _, auditType := range auditTypes {
+		pending, err := w.dlqClient.GetPendingMessages(ctx, auditType, w.consumerGroup)
+		if err != nil {
+			w.logger.Error(err, "Failed to query PEL pending count (AU-2)",
+				"audit_type", auditType,
+				"consumer_group", w.consumerGroup)
+			continue
+		}
+		totalPending += pending
+	}
+	dsmetrics.DLQPelPending.Set(float64(totalPending))
+
 	for _, auditType := range auditTypes {
 		messages, _, err := w.dlqClient.AutoClaimMessages(ctx, auditType,
 			w.consumerGroup, w.consumerName, PelRecoveryMinIdleTime, "0-0", PelRecoveryClaimCount)
 		if err != nil {
-			w.logger.V(1).Info("XAUTOCLAIM sweep returned error (may be empty PEL or transient Redis)",
-				"audit_type", auditType,
-				"error", err.Error())
+			w.logger.Error(err, "XAUTOCLAIM sweep failed (transient Redis issue)",
+				"audit_type", auditType)
 			continue
 		}
 

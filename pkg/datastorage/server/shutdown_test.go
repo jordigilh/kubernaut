@@ -33,6 +33,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/retention"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
 
@@ -61,6 +63,8 @@ func newMinimalServer(db *sql.DB) (*Server, *httptest.Server) {
 		dlqRetryWorker: &DLQRetryWorker{
 			logger: logger,
 		},
+		retentionWorker: retention.NewWorker(nil, retention.Config{}, logger),
+		metrics:         dsmetrics.NewMetrics("", ""),
 		// QE-H1: Zero propagation delay eliminates the 5s time.Sleep
 		// that made each full-Shutdown test take ~5 seconds.
 		endpointPropagationDelay: 0,
@@ -133,7 +137,7 @@ var _ = Describe("#1048 Phase 3: Shutdown Ordering", func() {
 			srv.dlqClient = nil
 
 			ctx := context.Background()
-			Expect(func() { srv.shutdownStep4DrainDLQ(ctx) }).ToNot(Panic())
+			Expect(func() { srv.shutdownStep4DrainDLQ(ctx, "test-shutdown-id") }).ToNot(Panic())
 		})
 
 		It("UT-DS-1048-SD-005: should not panic on DB close and complete all steps (QE-M3)", func() {
