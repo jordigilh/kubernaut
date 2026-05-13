@@ -21,6 +21,7 @@ type genaiModels struct {
 	models genai.Models
 }
 
+// GenerateContent delegates to the underlying genai.Models client.
 func (g *genaiModels) GenerateContent(ctx context.Context, model string, contents []*genai.Content, config *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {
 	return g.models.GenerateContent(ctx, model, contents, config)
 }

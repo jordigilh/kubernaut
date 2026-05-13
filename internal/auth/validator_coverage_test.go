@@ -155,8 +155,8 @@ func TestWithReplayCache_RejectsReplayedToken(t *testing.T) {
 
 	claims := map[string]interface{}{
 		"iss": srv.URL, "sub": "alice", "aud": []string{"aud"},
-		"exp": time.Now().Add(time.Hour).Unix(),
-		"jti": "unique-token-id-001",
+		"exp":                time.Now().Add(time.Hour).Unix(),
+		"jti":                "unique-token-id-001",
 		"preferred_username": "alice",
 	}
 	token := testSignToken(t, key, "k1", claims)
@@ -210,7 +210,7 @@ func TestWithReplayCache_RequiresJTI(t *testing.T) {
 	// Token without jti
 	claims := map[string]interface{}{
 		"iss": srv.URL, "sub": "alice", "aud": []string{"aud"},
-		"exp": time.Now().Add(time.Hour).Unix(),
+		"exp":                time.Now().Add(time.Hour).Unix(),
 		"preferred_username": "alice",
 	}
 	token := testSignToken(t, key, "k1", claims)

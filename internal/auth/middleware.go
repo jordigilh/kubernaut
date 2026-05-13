@@ -2,8 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
-	"math/rand/v2"
 	"net/http"
 	"strings"
 	"time"
@@ -102,7 +103,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 			// Derive deadline from token expiry so streaming handlers terminate
 			// before the token becomes invalid. Jitter prevents timing oracle.
 			if !identity.ExpiresAt.IsZero() {
-				jitter := time.Duration(25+rand.IntN(10)) * time.Second
+				jitter := time.Duration(25+cryptoRandIntn(10)) * time.Second
 				deadline := identity.ExpiresAt.Add(-jitter)
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithDeadline(ctx, deadline)
@@ -169,4 +170,15 @@ func observeAuthDuration(hist *prometheus.HistogramVec, start time.Time, result 
 	if hist != nil {
 		hist.WithLabelValues(result).Observe(time.Since(start).Seconds())
 	}
+}
+
+// cryptoRandIntn returns a cryptographically random int in [0, n).
+func cryptoRandIntn(n int) int {
+	var buf [8]byte
+	_, _ = rand.Read(buf[:])
+	v := int(binary.LittleEndian.Uint64(buf[:]))
+	if v < 0 {
+		v = -v
+	}
+	return v % n
 }
