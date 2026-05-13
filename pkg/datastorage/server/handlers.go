@@ -59,6 +59,16 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// #1088 Phase 7.3: Check Redis connectivity
+	if s.dlqClient != nil {
+		if err := s.dlqClient.HealthCheck(r.Context()); err != nil {
+			s.logger.Error(err, "Readiness probe failed - Redis unreachable")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = fmt.Fprint(w, `{"status":"not_ready","reason":"redis_unreachable"}`)
+			return
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprint(w, `{"status":"ready"}`)
 }

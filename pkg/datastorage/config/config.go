@@ -83,6 +83,10 @@ type ServerConfig struct {
 	// #1048 Phase 5 / AU-9: Directory containing signing certificate (tls.crt, tls.key)
 	// Default: /etc/certs. Configurable for Helm vs Kustomize path alignment.
 	SignerCertDir string `yaml:"signerCertDir,omitempty"`
+
+	// #1088 Phase 7 / SRE-L1: Time to wait for K8s endpoint removal propagation.
+	// e.g., "5s" (default: 5s). Overrides the hardcoded endpointRemovalPropagationDelay.
+	EndpointPropagationDelay string `yaml:"endpointPropagationDelay,omitempty"`
 }
 
 // LoggingConfig contains logging configuration
@@ -492,6 +496,31 @@ func (c *ServerConfig) GetShutdownTimeout() time.Duration {
 	}
 	if duration > maxTimeout {
 		return maxTimeout
+	}
+	return duration
+}
+
+// GetEndpointPropagationDelay returns the endpoint propagation delay as time.Duration.
+// #1088 Phase 7 / SRE-L1: Defaults to 5s. Clamped to [1s, 30s] — below 1s risks
+// receiving traffic before K8s propagation; above 30s wastes shutdown budget.
+func (c *ServerConfig) GetEndpointPropagationDelay() time.Duration {
+	const (
+		defaultDelay = 5 * time.Second
+		minDelay     = 1 * time.Second
+		maxDelay     = 30 * time.Second
+	)
+	if c.EndpointPropagationDelay == "" {
+		return defaultDelay
+	}
+	duration, err := time.ParseDuration(c.EndpointPropagationDelay)
+	if err != nil {
+		return defaultDelay
+	}
+	if duration < minDelay {
+		return minDelay
+	}
+	if duration > maxDelay {
+		return maxDelay
 	}
 	return duration
 }

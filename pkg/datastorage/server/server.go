@@ -32,6 +32,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
 
@@ -75,8 +76,8 @@ type Server struct {
 	isShuttingDown atomic.Bool
 
 	// endpointPropagationDelay is the time to wait for Kubernetes endpoint
-	// removal to propagate. Defaults to endpointRemovalPropagationDelay (5s).
-	// Set to 0 in tests to avoid slow shutdown specs.
+	// removal to propagate. Set via ServerConfig.GetEndpointPropagationDelay()
+	// (default: 5s, range: [1s, 30s]). Set to 0 in tests to avoid slow shutdown specs.
 	endpointPropagationDelay time.Duration
 
 	// BR-STORAGE-001 to BR-STORAGE-020: Audit write API dependencies
@@ -136,16 +137,10 @@ func defaultMaxBatchSize(v int) int {
 
 // DD-007 + DD-008 graceful shutdown constants
 const (
-	// endpointRemovalPropagationDelay is the time to wait for Kubernetes to propagate
-	// endpoint removal across all nodes. Industry best practice is 5 seconds.
-	// Kubernetes typically takes 1-3 seconds, but we wait longer to be safe.
-	endpointRemovalPropagationDelay = 5 * time.Second
-
 	// drainTimeout is the maximum time to wait for in-flight requests to complete
 	drainTimeout = 30 * time.Second
 
 	// dlqDrainTimeout is the maximum time to drain DLQ messages during shutdown (DD-008)
-	// This ensures audit messages in the DLQ are persisted before shutdown
 	dlqDrainTimeout = 10 * time.Second
 )
 
@@ -444,7 +439,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		authorizer:               deps.Authorizer,                                 // DD-AUTH-014: Injected at runtime
 		authNamespace:            deps.AuthNamespace,                              // DD-AUTH-014: Dynamic namespace for SAR checks
 		maxBatchSize:             defaultMaxBatchSize(appCfg.Server.MaxBatchSize), // Issue #667 / BR-STORAGE-043
-		endpointPropagationDelay: endpointRemovalPropagationDelay,
+		endpointPropagationDelay: appCfg.Server.GetEndpointPropagationDelay(),
 		openapiValidator:         openapiValidator,
 		corsAllowedOrigins:       appCfg.Server.GetCORSAllowedOrigins(),
 		maxBodySize:              appCfg.Server.GetMaxBodySize(),
@@ -662,7 +657,9 @@ func (s *Server) Start() error {
 // Returns a joined error if any step failed; individual step errors are
 // logged at the point of failure. The returned error supports errors.Is/As.
 func (s *Server) Shutdown(ctx context.Context) error {
-	s.logger.Info("Initiating DD-007 + DD-008 Kubernetes-aware graceful shutdown with DLQ drain")
+	shutdownID := uuid.New().String()
+	s.logger.Info("Initiating DD-007 + DD-008 Kubernetes-aware graceful shutdown with DLQ drain",
+		"shutdown_id", shutdownID)
 
 	var shutdownErrors []error
 
@@ -690,8 +687,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// STEP 3.5: Stop DLQ retry worker before draining (DD-009 V1.0)
 	s.dlqRetryWorker.Stop()
 
-	// STEP 4: Drain DLQ messages (DD-008)
-	s.shutdownStep4DrainDLQ(ctx)
+	// STEP 4: Drain DLQ messages (DD-008) — ARCH-M1: surface DLQ drain errors
+	if err := s.shutdownStep4DrainDLQ(ctx); err != nil {
+		s.logger.Error(err, "DLQ drain failed during shutdown, continuing with cleanup",
+			"dd", "DD-008-step-4-error-non-fatal")
+		shutdownErrors = append(shutdownErrors, err)
+	}
 
 	// STEP 4.5: Stop retention worker before closing PostgreSQL (#1048 Phase 5 / AU-11)
 	s.retentionWorker.Stop()
@@ -703,12 +704,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	if len(shutdownErrors) > 0 {
 		s.logger.Info("DD-007 + DD-008 graceful shutdown completed with errors",
+			"shutdown_id", shutdownID,
 			"error_count", len(shutdownErrors),
 			"dd", "DD-007-DD-008-complete-with-errors")
 		return errors.Join(shutdownErrors...)
 	}
 
 	s.logger.Info("DD-007 + DD-008 graceful shutdown complete - all resources closed, DLQ drained",
+		"shutdown_id", shutdownID,
 		"dd", "DD-007-DD-008-complete-success")
 	return nil
 }
@@ -767,11 +770,11 @@ func (s *Server) shutdownStep3DrainConnections(ctx context.Context) error {
 
 // shutdownStep4DrainDLQ drains pending DLQ messages before shutdown
 // DD-008 STEP 4: Ensure audit messages in DLQ are not lost
-func (s *Server) shutdownStep4DrainDLQ(ctx context.Context) {
+func (s *Server) shutdownStep4DrainDLQ(ctx context.Context) error {
 	if s.dlqClient == nil {
 		s.logger.Info("DLQ client not available, skipping DLQ drain",
 			"dd", "DD-008-step-4-skipped")
-		return
+		return nil
 	}
 
 	s.logger.Info("Draining DLQ messages before shutdown",
@@ -798,9 +801,7 @@ func (s *Server) shutdownStep4DrainDLQ(ctx context.Context) {
 	if err != nil {
 		s.logger.Error(err, "Error during DLQ drain (non-fatal, continuing shutdown)",
 			"dd", "DD-008-step-4-error")
-		// Continue with shutdown even if DLQ drain fails
-		// (DLQ failures should not block graceful shutdown)
-		return
+		return fmt.Errorf("DLQ drain failed: %w", err)
 	}
 
 	// Log drain statistics
@@ -819,6 +820,7 @@ func (s *Server) shutdownStep4DrainDLQ(ctx context.Context) {
 			"error_index", i,
 			"dd", "DD-008-step-4-drain-error")
 	}
+	return nil
 }
 
 // shutdownStep5CloseResources closes external resources (database, audit store)

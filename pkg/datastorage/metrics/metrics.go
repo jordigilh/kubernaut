@@ -57,6 +57,13 @@ const (
 
 	// Workflow validation phase metrics (Issue #1070)
 	MetricNameWorkflowValidationDuration = "datastorage_workflow_validation_duration_seconds"
+
+	// #1088 Phase 7: Observability & Resilience metrics
+	MetricNameDLQDrainBatchTotal    = "datastorage_dlq_drain_batch_total"
+	MetricNameRetentionPurgeTotal   = "datastorage_retention_purge_total"
+	MetricNameDLQPelPending         = "datastorage_dlq_pel_pending"
+	MetricNameDLQPelMaxIdleSeconds  = "datastorage_dlq_pel_max_idle_seconds"
+	MetricNameShutdownDLQDrainError = "datastorage_shutdown_dlq_drain_errors_total"
 )
 
 // Write operation metrics
