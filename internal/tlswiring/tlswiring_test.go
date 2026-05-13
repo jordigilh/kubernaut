@@ -8,6 +8,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -280,6 +282,56 @@ func TestCAReloadableTransport_NonExistentFile(t *testing.T) {
 	_, _, err := tlswiring.CAReloadableTransport("/nonexistent/ca.crt", testLogger())
 	if err == nil {
 		t.Fatal("expected error with non-existent file")
+	}
+}
+
+func TestCAReloadableTransport_RoundTrip(t *testing.T) {
+	// Business outcome: an HTTP request goes through the CAReloadableTransport
+	// and reaches the target TLS server using the loaded CA certificate.
+	t.Parallel()
+	certDir := generateTestCerts(t)
+	caFile := filepath.Join(certDir, "tls.crt")
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ping", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(w, "pong")
+	})
+
+	srv := &http.Server{Handler: mux}
+	enabled, _, err := tlswiring.ConfigureServer(srv, certDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enabled {
+		t.Fatal("expected TLS enabled")
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tlsLn := tls.NewListener(ln, srv.TLSConfig)
+	defer func() { _ = srv.Close() }()
+	go func() { _ = srv.Serve(tlsLn) }()
+
+	rt, watcher, err := tlswiring.CAReloadableTransport(caFile, testLogger())
+	if err != nil {
+		t.Fatalf("CAReloadableTransport: %v", err)
+	}
+	if watcher == nil {
+		t.Fatal("expected non-nil watcher")
+	}
+
+	client := &http.Client{Transport: rt, Timeout: 5 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("https://%s/ping", ln.Addr().String()))
+	if err != nil {
+		t.Fatalf("GET through CAReloadableTransport failed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "pong" {
+		t.Fatalf("expected 'pong', got %q", body)
 	}
 }
 

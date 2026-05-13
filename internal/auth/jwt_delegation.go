@@ -1,6 +1,13 @@
 package auth
 
-import "net/http"
+import (
+	"fmt"
+	"net/http"
+	"time"
+)
+
+// ErrTokenExpiredDelegation is returned when outbound delegation is attempted with an expired token.
+var ErrTokenExpiredDelegation = fmt.Errorf("token expired: refusing outbound delegation")
 
 // ContextJWTDelegationTransport wraps an http.RoundTripper to inject the
 // authenticated user's JWT from request context into outbound requests.
@@ -12,13 +19,19 @@ type ContextJWTDelegationTransport struct {
 }
 
 // RoundTrip extracts the raw JWT token from the request context (stored by
-// auth middleware) and sets it as the Authorization header. If no token is
-// found in context, the request is forwarded without modification.
+// auth middleware) and sets it as the Authorization header. If the token has
+// expired, the request is rejected (fail-closed) to prevent forwarding
+// invalid credentials.
 func (t *ContextJWTDelegationTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	identity := UserIdentityFromContext(req.Context())
-	if identity != nil && identity.RawToken != "" {
-		req = req.Clone(req.Context())
-		req.Header.Set("Authorization", "Bearer "+identity.RawToken)
+	if identity != nil {
+		if !identity.ExpiresAt.IsZero() && time.Now().After(identity.ExpiresAt) {
+			return nil, ErrTokenExpiredDelegation
+		}
+		if identity.RawToken != "" {
+			req = req.Clone(req.Context())
+			req.Header.Set("Authorization", "Bearer "+identity.RawToken)
+		}
 	}
 
 	base := t.Base

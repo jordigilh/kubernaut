@@ -15,6 +15,7 @@ import (
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ds"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ka"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/severity"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/tools"
@@ -38,6 +39,7 @@ type MCPBridgeConfig struct {
 	Metrics            *MCPBridgeMetrics
 	ToolTimeout        time.Duration
 	MaxConcurrentTools int64
+	UserLimiter        *ratelimit.UserLimiter
 }
 
 // MCPBridgeMetrics holds Prometheus collectors specific to MCP bridge operations.
@@ -297,6 +299,22 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
 				IsError: true,
 			}, nil, nil
+		}
+
+		// Per-user tool call rate limiting
+		if cfg.UserLimiter != nil {
+			username := usernameFromCtx(ctx)
+			if !cfg.UserLimiter.AllowToolCall(username) {
+				resultLabel = "rate_limited"
+				recordMetrics(cfg, toolName, resultLabel, start)
+				emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "rate_limited"})
+				cfg.Logger.Info("tool call rate limited",
+					"tool", toolName, "user", username)
+				return &mcp.CallToolResult{
+					Content: []mcp.Content{&mcp.TextContent{Text: "rate limit exceeded — too many tool calls per minute, please retry later"}},
+					IsError: true,
+				}, nil, nil
+			}
 		}
 
 		// Timeout enforcement — covers semaphore wait + tool execution

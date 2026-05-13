@@ -1,13 +1,17 @@
 package auth
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // UserIdentity represents an authenticated user's identity extracted from a JWT.
 type UserIdentity struct {
-	Username string   `json:"username"`
-	Groups   []string `json:"groups,omitempty"`
-	Issuer   string   `json:"issuer"`
-	RawToken string   `json:"-"`
+	Username  string    `json:"username"`
+	Groups    []string  `json:"groups,omitempty"`
+	Issuer    string    `json:"issuer"`
+	RawToken  string    `json:"-"`
+	ExpiresAt time.Time `json:"expiresAt,omitempty"`
 }
 
 // String returns a safe representation that redacts the raw token (SEC-3).

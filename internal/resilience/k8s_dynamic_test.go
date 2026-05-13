@@ -395,6 +395,7 @@ func TestResilientResourceInterface_AllOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
+
 }
 
 // IT-AF-038-087: All operations fail fast when CB is open
@@ -436,6 +437,12 @@ func TestResilientDynamicClient_AllOpsFailWhenCBOpen(t *testing.T) {
 	if _, err := res.Patch(ctx, "x", types.MergePatchType, []byte(`{}`), metav1.PatchOptions{}); !errors.Is(err, gobreaker.ErrOpenState) {
 		t.Errorf("cluster Patch: got %v, want ErrOpenState", err)
 	}
+	if _, err := res.Apply(ctx, "x", obj, metav1.ApplyOptions{FieldManager: "test"}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("cluster Apply: got %v, want ErrOpenState", err)
+	}
+	if _, err := res.ApplyStatus(ctx, "x", obj, metav1.ApplyOptions{FieldManager: "test"}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("cluster ApplyStatus: got %v, want ErrOpenState", err)
+	}
 
 	// Namespaced
 	ns := resilientClient.Resource(testGVR).Namespace("ns")
@@ -453,5 +460,11 @@ func TestResilientDynamicClient_AllOpsFailWhenCBOpen(t *testing.T) {
 	}
 	if _, err := ns.Patch(ctx, "x", types.MergePatchType, []byte(`{}`), metav1.PatchOptions{}); !errors.Is(err, gobreaker.ErrOpenState) {
 		t.Errorf("ns Patch: got %v, want ErrOpenState", err)
+	}
+	if _, err := ns.Apply(ctx, "x", obj, metav1.ApplyOptions{FieldManager: "test"}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("ns Apply: got %v, want ErrOpenState", err)
+	}
+	if _, err := ns.ApplyStatus(ctx, "x", obj, metav1.ApplyOptions{FieldManager: "test"}); !errors.Is(err, gobreaker.ErrOpenState) {
+		t.Errorf("ns ApplyStatus: got %v, want ErrOpenState", err)
 	}
 }

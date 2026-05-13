@@ -23,6 +23,9 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Verify module checksums
+        run: go mod verify
+
       - name: Verify go.mod tidy
         run: |
           go mod tidy

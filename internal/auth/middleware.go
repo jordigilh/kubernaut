@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -97,6 +99,17 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 
 			ctx = WithUserIdentity(ctx, identity)
 			ctx = logging.WithUserID(ctx, identity.Username)
+
+			// Derive deadline from token expiry so streaming handlers terminate
+			// before the token becomes invalid. Jitter prevents timing oracle.
+			if !identity.ExpiresAt.IsZero() {
+				jitter := time.Duration(25+cryptoRandIntn(10)) * time.Second
+				deadline := identity.ExpiresAt.Add(-jitter)
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithDeadline(ctx, deadline)
+				defer cancel()
+			}
+
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -134,6 +147,8 @@ func classifyAuthError(err error) string {
 	switch {
 	case errors.Is(err, ErrTokenExpired):
 		return "token_expired"
+	case errors.Is(err, ErrNotYetValid):
+		return "not_yet_valid"
 	case errors.Is(err, ErrInvalidAudience):
 		return "invalid_audience"
 	case errors.Is(err, ErrUnknownIssuer):
@@ -155,4 +170,13 @@ func observeAuthDuration(hist *prometheus.HistogramVec, start time.Time, result 
 	if hist != nil {
 		hist.WithLabelValues(result).Observe(time.Since(start).Seconds())
 	}
+}
+
+// cryptoRandIntn returns a cryptographically random int in [0, n).
+func cryptoRandIntn(n int) int {
+	v, err := rand.Int(rand.Reader, big.NewInt(int64(n)))
+	if err != nil {
+		return 0
+	}
+	return int(v.Int64())
 }
