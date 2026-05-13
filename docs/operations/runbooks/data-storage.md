@@ -1,9 +1,11 @@
 # Data Storage Service - Production Runbook
 
-**Version**: v1.0
-**Last Updated**: 2026-05-12
+**Version**: v1.1
+**Last Updated**: 2026-05-13
 **Status**: Production Ready
 **Related**: [ADR-034](../../architecture/decisions/ADR-034-unified-audit-table-design.md), [BR-AUDIT-007](../../requirements/BR-AUDIT-007-tamper-evident-exports.md), [BR-AUDIT-009](../../requirements/BR-AUDIT-009-retention-policies.md), [#1048](https://github.com/jordigilh/kubernaut/issues/1048) Phase 5
+
+> **Naming note**: This runbook uses Helm resource names (`deploy/datastorage`, `datastorage-config`, `datastorage-signing`). The kustomize manifests in `deploy/data-storage/` use different names (`data-storage-service`, `data-storage-config`, `datastorage-signing-cert`). Adjust `kubectl` commands accordingly for your deployment method.
 
 ---
 
@@ -16,6 +18,7 @@
 | RB-DS-003 | [Signing Certificate Rotation](#rb-ds-003-signing-certificate-rotation) | Certificate approaching expiry (30-day threshold) | Manual / cert-manager |
 | RB-DS-004 | [Redis TLS Connection Failure](#rb-ds-004-redis-tls-connection-failure) | DataStorage pod failing readiness with Redis TLS errors | Manual |
 | RB-DS-005 | [PEL Stuck Messages](#rb-ds-005-pel-stuck-messages) | DLQ messages not being processed after consumer restart | Manual |
+| RB-DS-006 | [Shutdown DLQ Drain Issues](#rb-ds-006-shutdown-dlq-drain-issues) | `datastorage_shutdown_dlq_drain_errors_total` incrementing during rollouts | Manual |
 
 ---
 
@@ -106,6 +109,8 @@ DLQ depth / dlqMaxLen > 0.95 sustained for 5 minutes
 ### Prevention
 
 - Monitor `datastorage_dlq_stream_xadd_total` rate alongside DLQ depth
+- Monitor `datastorage_dlq_pel_pending` for PEL backlog growth (Phase 7)
+- Monitor `datastorage_retention_purge_total` to confirm retention worker is active (Phase 7)
 - Set up alerting on `DLQ depth / dlqMaxLen > 0.95`
 - Size `dlqMaxLen` based on expected peak write rate and acceptable RPO
 
@@ -320,3 +325,71 @@ The DLQ retry worker uses a Pending Entries List (PEL) recovery mechanism to rec
    kubectl exec -n kubernaut-system deploy/valkey -- \
      redis-cli XACK audit:dlq:audit_events datastorage-group <message-id>
    ```
+
+---
+
+## RB-DS-006: Shutdown DLQ Drain Issues
+
+### Context
+
+During graceful shutdown (DD-007 + DD-008), the Data Storage service drains pending DLQ messages to PostgreSQL before closing connections. The drain runs with a 10-second timeout budget after the DLQ retry worker is stopped and HTTP connections are drained. Each shutdown is assigned a `shutdown_id` UUID for log correlation.
+
+Shutdown step order:
+1. Set readiness flag (Kubernetes removes pod from endpoints)
+2. Wait for endpoint propagation (configurable, default 5s)
+3. Drain in-flight HTTP connections (30s budget)
+4. Stop DLQ retry worker, then drain DLQ to PostgreSQL (10s budget)
+5. Stop retention worker, then close PostgreSQL and audit store
+
+### Symptoms
+
+- `datastorage_shutdown_dlq_drain_errors_total` is incrementing during rollouts
+- `datastorage_dlq_drain_batch_total` increments but logs show errors with `dd=DD-008-step-4-error`
+- Pod termination takes longer than expected (`terminationGracePeriodSeconds: 90`)
+- Audit events appear in DLQ (`XLEN`) after pod restart, indicating incomplete drain
+
+### Diagnosis
+
+1. Correlate shutdown logs using `shutdown_id`:
+   ```bash
+   kubectl logs -n kubernaut-system deploy/datastorage --previous | grep "shutdown_id"
+   ```
+
+2. Check drain statistics in logs:
+   ```bash
+   kubectl logs -n kubernaut-system deploy/datastorage --previous | grep "DD-008-step-4"
+   ```
+
+3. Check DLQ depth after restart (non-zero means messages survived the drain):
+   ```bash
+   kubectl exec -n kubernaut-system deploy/valkey -- redis-cli XLEN audit:dlq:audit_events
+   kubectl exec -n kubernaut-system deploy/valkey -- redis-cli XLEN audit:dlq:audit_notifications
+   ```
+
+4. Check PostgreSQL connectivity at shutdown time (drain fails if DB is unreachable):
+   ```bash
+   kubectl logs -n kubernaut-system deploy/datastorage --previous | grep "failed to close PostgreSQL\|DLQ drain failed"
+   ```
+
+### Resolution
+
+1. **Drain timeout** — if `timed_out: true` appears in drain logs, the 10s budget was insufficient. Messages that were not drained remain in Redis and will be picked up by the next pod's retry worker on startup. This is safe (at-least-once semantics) but delays persistence.
+
+2. **PostgreSQL unreachable** — if drain errors show connection failures, investigate PostgreSQL availability. The drain cannot persist messages if the database is down. Messages remain in Redis.
+
+3. **Large DLQ backlog** — if DLQ depth is very high at shutdown time, the 10s drain budget may not be enough. Consider draining the backlog before initiating a rolling update:
+   ```bash
+   # Check current backlog
+   kubectl exec -n kubernaut-system deploy/valkey -- redis-cli XLEN audit:dlq:audit_events
+   # Wait for the retry worker to reduce it before deploying
+   ```
+
+4. **Repeated errors across rollouts** — check `datastorage_shutdown_dlq_drain_errors_total` rate. If errors are consistent, the root cause is likely a persistent PostgreSQL issue, not the drain itself.
+
+### Metrics
+
+| Metric | Type | Purpose |
+|--------|------|---------|
+| `datastorage_dlq_drain_batch_total` | Counter | Total drain attempts during shutdown |
+| `datastorage_shutdown_dlq_drain_errors_total` | Counter | Drain errors during shutdown |
+| `datastorage_dlq_pel_pending` | Gauge | PEL backlog depth (pre-drain) |

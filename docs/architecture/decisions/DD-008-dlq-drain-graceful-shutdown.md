@@ -189,10 +189,9 @@ return DrainStats{
 - ✅ Remaining DLQ messages stay in Redis for the next startup's retry worker (#1048 DF-3)
 - 📊 Drain statistics logged for monitoring
 
-**Metrics** (via Prometheus):
-- `datastorage_dlq_drain_messages_processed_total` - Total messages drained
-- `datastorage_dlq_drain_timeout_total` - Number of drains that timed out
-- `datastorage_dlq_drain_duration_seconds` - Duration histogram
+**Metrics** (via Prometheus, see `pkg/datastorage/metrics/metrics.go`):
+- `datastorage_dlq_drain_batch_total` - Total DLQ drain batch operations during shutdown
+- `datastorage_shutdown_dlq_drain_errors_total` - Total DLQ drain errors during shutdown
 
 ---
 

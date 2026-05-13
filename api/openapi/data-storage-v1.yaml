@@ -1665,6 +1665,65 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+  /api/v1/audit/verify-chain:
+    post:
+      tags:
+        - Audit Chain Verification API
+      summary: Verify hash chain integrity for a correlation_id
+      description: |
+        Verifies the integrity of audit event hash chains for a given correlation_id.
+        Returns verification status, any broken links, and tampered events.
+
+        **Compliance**:
+        - SOC 2 Type II: Tamper-evident audit logs (Trust Services Criteria CC8.1)
+        - NIST 800-53: AU-9 (Protection of Audit Information)
+        - Sarbanes-Oxley: Section 404 (Internal Controls)
+
+        **Business Requirement**: BR-AUDIT-007 (SOC2 Gap #9)
+
+        **Authentication**: Protected by OAuth-proxy in production/E2E.
+      operationId: verifyAuditChain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyChainRequest'
+            example:
+              correlation_id: "rr-prometheus-alert-highcpu-abc123"
+      responses:
+        '200':
+          description: |
+            Verification completed. Check `is_valid` to determine if the chain is intact.
+            Returns 200 even when tampering is detected (use `is_valid: false` to detect).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyChainResponse'
+        '400':
+          description: |
+            Bad Request - missing or invalid request body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+              examples:
+                missing_correlation_id:
+                  summary: Missing correlation_id field
+                  value:
+                    type: "https://kubernaut.ai/problems/missing-correlation-id"
+                    title: "Missing Required Field"
+                    status: 400
+                    detail: "Field 'correlation_id' is required"
+                    instance: "/api/v1/audit/verify-chain"
+        '500':
+          description: |
+            Internal Server Error - database or verification logic failure.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
   /api/v1/effectiveness/{correlation_id}:
     get:
       tags:
@@ -1842,106 +1901,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
-  /health:
-    get:
-      tags:
-        - Health
-      summary: Overall health check
-      description: |
-        Returns 200 if service is healthy (database and Redis reachable).
-        Used by Kubernetes liveness probe (DD-007).
-      operationId: healthCheck
-      responses:
-        '200':
-          description: Service is healthy
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [healthy]
-                example:
-                  status: "healthy"
-        '503':
-          description: Service is unhealthy
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [unhealthy]
-                  error:
-                    type: string
-                example:
-                  status: "unhealthy"
-                  error: "database connection failed"
-
-  /health/ready:
-    get:
-      tags:
-        - Health
-      summary: Readiness check
-      description: |
-        Returns 200 if service is ready to accept traffic.
-        Returns 503 during graceful shutdown (DD-007 4-step pattern).
-        Used by Kubernetes readiness probe.
-      operationId: readinessCheck
-      responses:
-        '200':
-          description: Service is ready
-        '503':
-          description: Service is shutting down (not ready for new requests)
-
-  /health/live:
-    get:
-      tags:
-        - Health
-      summary: Liveness check
-      description: |
-        Returns 200 if service process is alive.
-        Does not check dependencies.
-        Used by Kubernetes liveness probe.
-      operationId: livenessCheck
-      responses:
-        '200':
-          description: Service is alive
-
-  /metrics:
-    get:
-      tags:
-        - Metrics
-      summary: Prometheus metrics
-      description: |
-        Exposes Prometheus metrics in text format.
-
-        **Metrics Exposed** (BR-STORAGE-019, GAP-10):
-        - `datastorage_audit_traces_total{service,status}` - Audit write operations
-        - `datastorage_audit_lag_seconds{service}` - Time between event and audit write
-        - `datastorage_write_duration_seconds{table}` - Database write latency
-        - `datastorage_validation_failures_total{field,reason}` - Validation errors
-      operationId: getMetrics
-      responses:
-        '200':
-          description: Prometheus metrics
-          content:
-            text/plain:
-              schema:
-                type: string
-              example: |
-                # HELP datastorage_audit_traces_total Total number of audit traces written by service and status
-                # TYPE datastorage_audit_traces_total counter
-                datastorage_audit_traces_total{service="notification",status="success"} 42
-                datastorage_audit_traces_total{service="notification",status="dlq_fallback"} 3
-
-                # HELP datastorage_audit_lag_seconds Time lag between event occurrence and audit write in seconds
-                # TYPE datastorage_audit_lag_seconds histogram
-                datastorage_audit_lag_seconds_bucket{service="notification",le="0.1"} 10
-                datastorage_audit_lag_seconds_bucket{service="notification",le="0.5"} 35
-                datastorage_audit_lag_seconds_bucket{service="notification",le="1"} 42
+  # NOTE: /health, /health/ready, /health/live, and /metrics are served on a
+  # dedicated health server (port 8081) and are NOT part of the API server.
+  # See pkg/datastorage/health/ and DD-007 for details.
 
 components:
   schemas:
@@ -2291,6 +2253,66 @@ components:
             Helps identify gaps in reconstruction.
           example:
             - "SignalAnnotations are missing (Gap #3) - annotations provide additional metadata"
+
+    VerifyChainRequest:
+      type: object
+      description: Request body for hash chain verification.
+      required:
+        - correlation_id
+      properties:
+        correlation_id:
+          type: string
+          description: The correlation ID whose event hash chain should be verified.
+          example: "rr-prometheus-alert-highcpu-abc123"
+
+    VerifyChainResponse:
+      type: object
+      description: |
+        Hash chain verification result. `is_valid: true` means the entire chain is intact.
+        When `is_valid: false`, the `tampered_events` array describes each broken link.
+      required:
+        - correlation_id
+        - is_valid
+        - total_events
+        - verified_events
+        - verification_time
+        - message
+      properties:
+        correlation_id:
+          type: string
+        is_valid:
+          type: boolean
+        total_events:
+          type: integer
+        verified_events:
+          type: integer
+        tampered_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/TamperedEvent'
+        verification_time:
+          type: string
+          format: date-time
+        message:
+          type: string
+
+    TamperedEvent:
+      type: object
+      description: Details about a single tampered event in the hash chain.
+      properties:
+        event_id:
+          type: string
+        event_timestamp:
+          type: string
+          format: date-time
+        expected_hash:
+          type: string
+        actual_hash:
+          type: string
+        previous_hash:
+          type: string
+        message:
+          type: string
 
     RFC7807Problem:
       type: object

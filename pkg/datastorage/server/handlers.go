@@ -40,7 +40,7 @@ func (s *Server) ReadinessHandler() http.HandlerFunc {
 	return s.handleReadiness
 }
 
-// handleReadiness handles GET /health/ready - readiness probe for Kubernetes
+// handleReadiness handles GET /readyz - readiness probe for Kubernetes (port 8081)
 // DD-007: Returns 503 during shutdown to remove pod from endpoints
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	// DD-007: Check shutdown flag first
