@@ -348,11 +348,11 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// Expected audit event types from a successful full remediation lifecycle.
 		// Derived from BR-AUDIT-005, ADR-034, and each service's audit implementation.
-		// Total: 14 exactlyOnce + 21 atLeastOnce = 35 minimum events.
+		// Total: 13 exactlyOnce + 22 atLeastOnce = 35 minimum events.
 		// #1111: Promoted 5 events (1 exactlyOnce, 4 atLeastOnce). 5 events
 		// deferred to MAY pending mock LLM tool-call scenario support.
 		//
-		// === Events that MUST appear exactly once (14) ===
+		// === Events that MUST appear exactly once (13) ===
 		// These are lifecycle boundary events — one per RR by definition.
 		exactlyOnceEvents := []string{
 			// Gateway: signal ingestion and CRD creation
@@ -364,8 +364,6 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"orchestrator.lifecycle.verifying_started",      // #280: emitVerifyingStartedAudit (Executing → Verifying)
 			"orchestrator.lifecycle.verification_completed", // #280: emitVerificationCompletedAudit (EA terminal → Completed)
 			"orchestrator.lifecycle.completed",              // pkg/remediationorchestrator/audit: emitCompletionAudit
-			// Remediation Orchestrator: EA creation (#1111)
-			"orchestrator.ea.created", // pkg/remediationorchestrator/audit: emitEACreatedAudit — correlation_id=RR.Name confirmed
 			// Effectiveness Monitor: assessment lifecycle + component events
 			// The RO creates an EA CRD when RR enters Verifying (#280, ADR-EM-001). The EM waits
 			// for the stabilization window (30s default), then runs all 4 component
@@ -379,10 +377,11 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"effectiveness.assessment.completed", // pkg/effectivenessmonitor/audit: RecordAssessmentCompleted
 		}
 
-		// === Events that MUST appear at least once (26) ===
+		// === Events that MUST appear at least once (27) ===
 		// These fire during processing; some may repeat (phase transitions, retries).
 		atLeastOnceEvents := []string{
-			// Remediation Orchestrator: phase transitions
+			// Remediation Orchestrator: EA creation and phase transitions
+			"orchestrator.ea.created",            // pkg/remediationorchestrator/audit: emitEACreatedAudit — may repeat on reconcile retry
 			"orchestrator.lifecycle.transitioned", // pkg/remediationorchestrator/audit: emitPhaseTransitionAudit
 			// Signal Processing
 			"signalprocessing.enrichment.completed",    // pkg/signalprocessing/audit: RecordEnrichmentComplete
@@ -1195,7 +1194,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// Same expected audit events as the K8s event test — the full pipeline is identical
 		// after the signal enters Gateway, regardless of signal source.
-		// Total: 14 exactlyOnce + 21 atLeastOnce = 35 minimum events.
+		// Total: 13 exactlyOnce + 22 atLeastOnce = 35 minimum events.
 		// #1111: Promoted 5 events (1 exactlyOnce, 4 atLeastOnce). 5 events
 		// deferred to MAY pending mock LLM tool-call scenario support.
 		// BR-EM-012, #369: effectiveness.alert.assessed is handled separately below
@@ -1208,7 +1207,6 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"orchestrator.lifecycle.verifying_started",
 			"orchestrator.lifecycle.verification_completed",
 			"orchestrator.lifecycle.completed",
-			"orchestrator.ea.created",
 			"effectiveness.assessment.scheduled",
 			"effectiveness.health.assessed",
 			"effectiveness.hash.computed",
@@ -1217,6 +1215,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		}
 
 		atLeastOnceEvents := []string{
+			"orchestrator.ea.created",
 			"orchestrator.lifecycle.transitioned",
 			"signalprocessing.enrichment.completed",
 			"signalprocessing.classification.decision",
