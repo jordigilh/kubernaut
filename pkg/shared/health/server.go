@@ -55,5 +55,6 @@ func NewHealthServer(addr string, liveness, readiness http.HandlerFunc, enablePr
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 }

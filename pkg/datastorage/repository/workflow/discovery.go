@@ -169,9 +169,12 @@ func (r *Repository) ListWorkflowsByActionType(ctx context.Context, actionType s
 	penaltySQL := buildDetectedLabelsPenaltySQL(dl)
 
 	// #220: Wrap in scoring subquery with final_score computation per DD-WORKFLOW-016
+	// #1088 Phase 6.1: explicit column list replaces SELECT * for schema drift protection
 	mainQuery := fmt.Sprintf(`
-		SELECT * FROM (
-			SELECT *,
+		SELECT `+workflowCatalogColumns+`,
+			detected_label_boost, custom_label_boost, label_penalty, final_score
+		FROM (
+			SELECT `+workflowCatalogColumns+`,
 				%s AS detected_label_boost,
 				%s AS custom_label_boost,
 				%s AS label_penalty,
@@ -234,7 +237,7 @@ func (r *Repository) GetWorkflowWithContextFilters(ctx context.Context, workflow
 	}
 
 	query := fmt.Sprintf(`
-		SELECT * FROM remediation_workflow_catalog
+		SELECT `+workflowCatalogColumns+` FROM remediation_workflow_catalog
 		WHERE %s
 	`, fullWhere)
 

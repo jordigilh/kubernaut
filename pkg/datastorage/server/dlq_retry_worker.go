@@ -81,6 +81,7 @@ type DLQRetryWorkerConfig struct {
 	MaxRetries    int
 	ConsumerGroup string
 	ConsumerName  string
+	ReadTimeout   time.Duration // #1088: bounded XREADGROUP block timeout (default 5s)
 }
 
 // DefaultDLQRetryWorkerConfig returns sensible defaults per DD-009.
@@ -91,6 +92,7 @@ func DefaultDLQRetryWorkerConfig() DLQRetryWorkerConfig {
 		MaxRetries:    6,
 		ConsumerGroup: "data-storage-retry-workers",
 		ConsumerName:  "worker-default",
+		ReadTimeout:   5 * time.Second,
 	}
 }
 
@@ -108,6 +110,7 @@ type DLQRetryWorker struct {
 	pollInterval     time.Duration
 	maxBatchSize     int64
 	maxRetriesPerMsg int
+	readTimeout      time.Duration
 
 	// #1048 Phase 4: Prometheus counter for DLQ validation failures (nil-safe)
 	validationMetrics *prometheus.CounterVec
@@ -131,6 +134,10 @@ func NewDLQRetryWorker(
 	logger logr.Logger,
 	validationMetrics *prometheus.CounterVec,
 ) *DLQRetryWorker {
+	readTimeout := config.ReadTimeout
+	if readTimeout <= 0 {
+		readTimeout = 5 * time.Second
+	}
 	return &DLQRetryWorker{
 		dlqClient:         dlqClient,
 		auditRepo:         auditRepo,
@@ -141,6 +148,7 @@ func NewDLQRetryWorker(
 		pollInterval:      config.PollInterval,
 		maxBatchSize:      config.MaxBatchSize,
 		maxRetriesPerMsg:  config.MaxRetries,
+		readTimeout:       readTimeout,
 		validationMetrics: validationMetrics,
 		doneCh:            make(chan struct{}),
 	}
@@ -170,6 +178,7 @@ func (w *DLQRetryWorker) Start(ctx context.Context) {
 	w.logger.Info("DLQ retry worker started (DD-009 V1.0)",
 		"poll_interval", w.pollInterval,
 		"max_batch_size", w.maxBatchSize,
+		"read_timeout", w.readTimeout,
 		"consumer_group", w.consumerGroup,
 	)
 }
@@ -216,7 +225,7 @@ func (w *DLQRetryWorker) processRetryBatch(ctx context.Context) {
 	}
 
 	for _, auditType := range auditTypes {
-		messages, err := w.dlqClient.ReadMessages(ctx, auditType, w.consumerGroup, w.consumerName, w.maxBatchSize, -1)
+		messages, err := w.dlqClient.ReadMessages(ctx, auditType, w.consumerGroup, w.consumerName, w.maxBatchSize, w.readTimeout)
 		if err != nil {
 			w.logger.Error(err, "Failed to read from DLQ", "audit_type", auditType)
 			continue
