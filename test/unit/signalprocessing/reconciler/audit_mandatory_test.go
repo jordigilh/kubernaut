@@ -42,6 +42,7 @@ import (
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 )
@@ -62,6 +63,22 @@ func (m *mockK8sEnricher) Enrich(ctx context.Context, signal *signalprocessingv1
 	}
 	return &signalprocessingv1alpha1.KubernetesContext{}, nil
 }
+
+type stubPolicyEvaluator struct{}
+
+func (s *stubPolicyEvaluator) EvaluateEnvironment(_ context.Context, _ evaluator.PolicyInput) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
+	return &signalprocessingv1alpha1.EnvironmentClassification{Environment: "unknown", Source: "stub"}, nil
+}
+func (s *stubPolicyEvaluator) EvaluatePriority(_ context.Context, _ evaluator.PolicyInput) (*signalprocessingv1alpha1.PriorityAssignment, error) {
+	return &signalprocessingv1alpha1.PriorityAssignment{Priority: "P3", Source: "stub"}, nil
+}
+func (s *stubPolicyEvaluator) EvaluateSeverity(_ context.Context, _ evaluator.PolicyInput) (*evaluator.SeverityResult, error) {
+	return &evaluator.SeverityResult{Severity: "unknown", Source: "stub"}, nil
+}
+func (s *stubPolicyEvaluator) EvaluateCustomLabels(_ context.Context, _ evaluator.PolicyInput) (map[string][]string, error) {
+	return nil, nil
+}
+func (s *stubPolicyEvaluator) GetPolicyHash() string { return "stub" }
 
 var _ = Describe("BR-SP-090/ADR-032: Audit Client Mandatory Enforcement", func() {
 	var (
@@ -147,12 +164,13 @@ var _ = Describe("BR-SP-090/ADR-032: Audit Client Mandatory Enforcement", func()
 			}
 
 			reconciler := &signalprocessing.SignalProcessingReconciler{
-				Client:        fakeClient,
-				Scheme:        scheme,
-				StatusManager: status.NewManager(fakeClient, fakeClient),
-				Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				K8sEnricher:   mockEnricher, // Need this to reach audit check
-				AuditManager:  nil,          // DELIBERATELY nil to test mandatory enforcement
+				Client:          fakeClient,
+				Scheme:          scheme,
+				StatusManager:   status.NewManager(fakeClient, fakeClient),
+				Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				PolicyEvaluator: &stubPolicyEvaluator{},
+				K8sEnricher:     mockEnricher, // Need this to reach audit check
+				AuditManager:    nil,          // DELIBERATELY nil to test mandatory enforcement
 			}
 
 			By("Attempting reconciliation")

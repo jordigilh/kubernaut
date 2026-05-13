@@ -101,8 +101,7 @@ var _ = Describe("SignalProcessing Conditions (BR-SP-110)", func() {
 				metav1.ConditionTrue, spconditions.ReasonEnrichmentSucceeded, "Test")
 
 			cond := spconditions.GetCondition(sp, spconditions.ConditionEnrichmentComplete)
-			Expect(cond).ToNot(BeNil())
-			Expect(cond.Type).To(Equal(spconditions.ConditionEnrichmentComplete))
+			Expect(cond).To(HaveField("Type", Equal(spconditions.ConditionEnrichmentComplete)))
 			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		})
 	})
@@ -143,8 +142,7 @@ var _ = Describe("SignalProcessing Conditions (BR-SP-110)", func() {
 			spconditions.SetEnrichmentComplete(sp, true, "", "K8s context enriched: Pod nginx")
 
 			cond := spconditions.GetCondition(sp, spconditions.ConditionEnrichmentComplete)
-			Expect(cond).ToNot(BeNil())
-			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(cond).To(HaveField("Status", Equal(metav1.ConditionTrue)))
 			Expect(cond.Reason).To(Equal(spconditions.ReasonEnrichmentSucceeded))
 			Expect(cond.Message).To(Equal("K8s context enriched: Pod nginx"))
 		})
@@ -440,6 +438,33 @@ var _ = Describe("SignalProcessing Conditions (BR-SP-110)", func() {
 			Expect(spconditions.ReasonProcessingFailed).To(Equal("ProcessingFailed"))
 			Expect(spconditions.ReasonAuditWriteFailed).To(Equal("AuditWriteFailed"))
 			Expect(spconditions.ReasonValidationFailed).To(Equal("ValidationFailed"))
+		})
+	})
+
+	// ========================================
+	// PHASE 6 TDD RED: Issue #1110 SP Readiness Audit
+	// Finding: API-A3 — CRD phase enum regression guard
+	// ========================================
+
+	Describe("API-A3: CRD Phase Enum Regression Guard", func() {
+		It("UT-SP-1110-055: phase enum matches Pending;Enriching;Classifying;Categorizing;Completed;Failed", func() {
+			expectedPhases := []spv1.SignalProcessingPhase{
+				spv1.PhasePending,
+				spv1.PhaseEnriching,
+				spv1.PhaseClassifying,
+				spv1.PhaseCategorizing,
+				spv1.PhaseCompleted,
+				spv1.PhaseFailed,
+			}
+
+			Expect(expectedPhases).To(HaveLen(6),
+				"API-A3: CRD MUST define exactly 6 lifecycle phases")
+			Expect(string(spv1.PhasePending)).To(Equal("Pending"))
+			Expect(string(spv1.PhaseEnriching)).To(Equal("Enriching"))
+			Expect(string(spv1.PhaseClassifying)).To(Equal("Classifying"))
+			Expect(string(spv1.PhaseCategorizing)).To(Equal("Categorizing"))
+			Expect(string(spv1.PhaseCompleted)).To(Equal("Completed"))
+			Expect(string(spv1.PhaseFailed)).To(Equal("Failed"))
 		})
 	})
 })

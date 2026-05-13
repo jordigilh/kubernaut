@@ -33,6 +33,7 @@ package signalprocessing
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -125,10 +126,11 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					Build()
 
 				reconciler := &controller.SignalProcessingReconciler{
-					Client:        fakeClient,
-					Scheme:        scheme,
-					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
-					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 				}
 
 				result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
@@ -162,10 +164,11 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					Build()
 
 				reconciler := &controller.SignalProcessingReconciler{
-					Client:        fakeClient,
-					Scheme:        scheme,
-					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
-					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 				}
 
 				// When: Reconcile is triggered for non-existent resource
@@ -225,12 +228,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 				auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
 
 				reconciler := &controller.SignalProcessingReconciler{
-					Client:        fakeClient,
-					Scheme:        scheme,
-					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
-					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-					AuditManager:  spaudit.NewManager(auditClient),
-					K8sEnricher:   newDefaultMockK8sEnricher(),
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					K8sEnricher:     newDefaultMockK8sEnricher(),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 				}
 
 				result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
@@ -294,10 +298,11 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					Build()
 
 				reconciler := &controller.SignalProcessingReconciler{
-					Client:        fakeClient,
-					Scheme:        scheme,
-					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
-					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 				}
 
 				result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
@@ -356,10 +361,11 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					Build()
 
 				reconciler := &controller.SignalProcessingReconciler{
-					Client:        fakeClient,
-					Scheme:        scheme,
-					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
-					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 				}
 
 				result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
@@ -457,12 +463,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					Build()
 
 				reconciler := &controller.SignalProcessingReconciler{
-					Client:        fakeClient,
-					Scheme:        scheme,
-					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
-					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-					AuditManager:  spaudit.NewManager(auditClient),
-					K8sEnricher:   newMockK8sEnricherWithClient(fakeClient),
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					K8sEnricher:     newMockK8sEnricherWithClient(fakeClient),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 				}
 
 				result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
@@ -524,12 +531,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					Build()
 
 				reconciler := &controller.SignalProcessingReconciler{
-					Client:        fakeClient,
-					Scheme:        scheme,
-					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
-					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-					AuditManager:  spaudit.NewManager(auditClient),
-					K8sEnricher:   newDefaultMockK8sEnricher(),
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					K8sEnricher:     newDefaultMockK8sEnricher(),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 				}
 
 				result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
@@ -978,12 +986,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					Build()
 
 				reconciler := &controller.SignalProcessingReconciler{
-					Client:        fakeClient,
-					Scheme:        scheme,
-					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
-					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-					AuditManager:  spaudit.NewManager(auditClient),
-					K8sEnricher:   newDefaultMockK8sEnricher(),
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					K8sEnricher:     newDefaultMockK8sEnricher(),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 				}
 
 				result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
@@ -1080,12 +1089,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					Build()
 
 				reconciler := &controller.SignalProcessingReconciler{
-					Client:        fakeClient,
-					Scheme:        scheme,
-					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
-					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-					AuditManager:  spaudit.NewManager(auditClient),
-					K8sEnricher:   newDefaultMockK8sEnricher(),
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					K8sEnricher:     newDefaultMockK8sEnricher(),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 				}
 
 				// When: Reconcile triggers Categorizing → Completed
@@ -1268,6 +1278,778 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 	})
 
 	// ========================================
+	// PHASE 2 TDD RED: Issue #1110 SP Readiness Audit
+	// Findings: BLAST-A1, BLAST-A2, BLAST-A3, BLAST-B2
+	// BR-SP-112: Cluster-Scoped Resource Label Exposure
+	// ========================================
+
+	Describe("Issue #1110 Phase 2: Cluster-Scoped Resource Handling", func() {
+
+		// BLAST-A1 (High): classifyBusiness loses workload labels when Namespace nil
+		// Authority: BR-SP-112 R1
+		Describe("BLAST-A1: classifyBusiness with cluster-scoped resources", func() {
+			It("UT-SP-1110-024: Node signal with workload labels extracts business-unit from Workload", func() {
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "node-biz-class",
+						Namespace:  "default",
+						Generation: 1,
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+						RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{Name: "rr-blast-a1"},
+						Signal: signalprocessingv1alpha1.SignalData{
+							Fingerprint: "fp-blast-a1",
+							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+								Kind: "Node",
+								Name: "worker-01",
+							},
+						},
+					},
+					Status: signalprocessingv1alpha1.SignalProcessingStatus{
+						Phase:     signalprocessingv1alpha1.PhaseCategorizing,
+						StartTime: &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+						KubernetesContext: &signalprocessingv1alpha1.KubernetesContext{
+							Workload: &signalprocessingv1alpha1.WorkloadDetails{
+								Kind: "Node",
+								Name: "worker-01",
+								Labels: map[string]string{
+									"kubernaut.ai/business-unit": "infrastructure",
+									"kubernaut.ai/team":          "platform-eng",
+								},
+							},
+						},
+						EnvironmentClassification: &signalprocessingv1alpha1.EnvironmentClassification{
+							Environment:  signalprocessingv1alpha1.EnvironmentProduction,
+							Source:       "rego",
+							ClassifiedAt: metav1.Now(),
+						},
+						PriorityAssignment: &signalprocessingv1alpha1.PriorityAssignment{
+							Priority:   signalprocessingv1alpha1.PriorityP1,
+							Source:     "rego",
+							AssignedAt: metav1.Now(),
+						},
+					},
+				}
+
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(sp).
+					WithStatusSubresource(sp).
+					Build()
+
+				mockStore := &mockAuditStore{}
+				auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+
+				reconciler := &controller.SignalProcessingReconciler{
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
+					K8sEnricher:     newDefaultMockK8sEnricher(),
+					Recorder:        record.NewFakeRecorder(20),
+				}
+
+				_, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
+				})
+				Expect(err).ToNot(HaveOccurred())
+
+				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
+				Expect(fakeClient.Get(context.Background(), types.NamespacedName{
+					Name: sp.Name, Namespace: sp.Namespace,
+				}, updatedSP)).To(Succeed())
+
+				Expect(updatedSP.Status.BusinessClassification).To(HaveField("BusinessUnit", Equal("infrastructure")),
+					"BLAST-A1: classifyBusiness MUST extract business-unit from Workload labels when Namespace is nil")
+			})
+		})
+
+		// BLAST-A2 (High): CustomLabels fallback skips workload labels
+		// Authority: BR-SP-112 R2
+		Describe("BLAST-A2: CustomLabels fallback with cluster-scoped resources", func() {
+			It("UT-SP-1110-025: Node signal extracts kubernaut.ai labels from Workload in fallback", func() {
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "node-custom-labels",
+						Namespace:  "default",
+						Generation: 1,
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+						RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{Name: "rr-blast-a2"},
+						Signal: signalprocessingv1alpha1.SignalData{
+							Fingerprint: "fp-blast-a2",
+							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+								Kind: "Node",
+								Name: "worker-02",
+							},
+						},
+					},
+					Status: signalprocessingv1alpha1.SignalProcessingStatus{
+						Phase:     signalprocessingv1alpha1.PhaseEnriching,
+						StartTime: &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+					},
+				}
+
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(sp).
+					WithStatusSubresource(sp).
+					Build()
+
+				nodeEnricher := &mockK8sEnricher{
+					EnrichFunc: func(_ context.Context, _ *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.KubernetesContext, error) {
+						return &signalprocessingv1alpha1.KubernetesContext{
+							Workload: &signalprocessingv1alpha1.WorkloadDetails{
+								Kind: "Node",
+								Name: "worker-02",
+								Labels: map[string]string{
+									"kubernaut.ai/team": "sre-team",
+									"kubernaut.ai/tier": "infrastructure",
+								},
+							},
+						}, nil
+					},
+				}
+
+				failingEval := &mockPolicyEvaluator{
+					EvaluateCustomLabelsFunc: func(_ context.Context, _ evaluator.PolicyInput) (map[string][]string, error) {
+						return nil, fmt.Errorf("rego custom labels failed")
+					},
+				}
+
+				mockStore := &mockAuditStore{}
+				auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+
+				reconciler := &controller.SignalProcessingReconciler{
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					PolicyEvaluator: failingEval,
+					K8sEnricher:     nodeEnricher,
+					Recorder:        record.NewFakeRecorder(20),
+				}
+
+				_, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
+				})
+				Expect(err).ToNot(HaveOccurred())
+
+				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
+				Expect(fakeClient.Get(context.Background(), types.NamespacedName{
+					Name: sp.Name, Namespace: sp.Namespace,
+				}, updatedSP)).To(Succeed())
+
+				Expect(updatedSP.Status.KubernetesContext).To(HaveField("CustomLabels", HaveKey("team")),
+					"BLAST-A2: CustomLabels fallback MUST extract kubernaut.ai/team from Workload labels when Namespace is nil")
+			})
+		})
+
+		// BLAST-A3 (Medium): #437 guard treats nil Namespace as incomplete
+		// Authority: Issue #437 -> BR-SP-070, BR-SP-112 R3
+		Describe("BLAST-A3: #437 guard with cluster-scoped resources", func() {
+			It("UT-SP-1110-026: Node signal with nil Namespace proceeds to classification without requeue", func() {
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "node-classify",
+						Namespace:  "default",
+						Generation: 1,
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+						RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{Name: "rr-blast-a3"},
+						Signal: signalprocessingv1alpha1.SignalData{
+							Fingerprint: "fp-blast-a3",
+							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+								Kind: "Node",
+								Name: "worker-03",
+							},
+						},
+					},
+					Status: signalprocessingv1alpha1.SignalProcessingStatus{
+						Phase:     signalprocessingv1alpha1.PhaseClassifying,
+						StartTime: &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+						KubernetesContext: &signalprocessingv1alpha1.KubernetesContext{
+							Workload: &signalprocessingv1alpha1.WorkloadDetails{
+								Kind:   "Node",
+								Name:   "worker-03",
+								Labels: map[string]string{"node-role.kubernetes.io/worker": ""},
+							},
+						},
+						Conditions: []metav1.Condition{
+							{
+								Type:               "EnrichmentComplete",
+								Status:             metav1.ConditionTrue,
+								Reason:             "EnrichmentSucceeded",
+								Message:            "Enrichment completed",
+								LastTransitionTime: metav1.Now(),
+							},
+						},
+					},
+				}
+
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(sp).
+					WithStatusSubresource(sp).
+					Build()
+
+				mockStore := &mockAuditStore{}
+				auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+
+				reconciler := &controller.SignalProcessingReconciler{
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
+					K8sEnricher:     newDefaultMockK8sEnricher(),
+					Recorder:        record.NewFakeRecorder(20),
+				}
+
+				result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
+				})
+				Expect(err).ToNot(HaveOccurred())
+
+				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
+				Expect(fakeClient.Get(context.Background(), types.NamespacedName{
+					Name: sp.Name, Namespace: sp.Namespace,
+				}, updatedSP)).To(Succeed())
+
+				hasAdvanced := updatedSP.Status.Phase == signalprocessingv1alpha1.PhaseCategorizing ||
+					updatedSP.Status.Phase == signalprocessingv1alpha1.PhaseCompleted
+				if !hasAdvanced {
+					Expect(result.RequeueAfter).ToNot(Equal(500*time.Millisecond),
+						"BLAST-A3: #437 guard MUST NOT requeue Node signals due to nil Namespace — Namespace is legitimately nil for cluster-scoped resources")
+				}
+			})
+		})
+
+		// BLAST-B2 (Low): Log format with empty namespace
+		// Hardening
+		Describe("BLAST-B2: Degraded enrichment message format", func() {
+			It("UT-SP-1110-027: Node signal in degraded mode produces clean log message without empty namespace", func() {
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "node-degraded-msg",
+						Namespace:  "default",
+						Generation: 1,
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+						RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{Name: "rr-blast-b2"},
+						Signal: signalprocessingv1alpha1.SignalData{
+							Fingerprint: "fp-blast-b2",
+							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+								Kind: "Node",
+								Name: "worker-04",
+							},
+						},
+					},
+					Status: signalprocessingv1alpha1.SignalProcessingStatus{
+						Phase:     signalprocessingv1alpha1.PhaseEnriching,
+						StartTime: &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+					},
+				}
+
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(sp).
+					WithStatusSubresource(sp).
+					Build()
+
+				nodeEnricher := &mockK8sEnricher{
+					EnrichFunc: func(_ context.Context, _ *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.KubernetesContext, error) {
+						return &signalprocessingv1alpha1.KubernetesContext{
+							DegradedMode: true,
+							Workload: &signalprocessingv1alpha1.WorkloadDetails{
+								Kind: "Node",
+								Name: "worker-04",
+							},
+						}, nil
+					},
+				}
+
+				mockStore := &mockAuditStore{}
+				auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+				fakeRecorder := record.NewFakeRecorder(20)
+
+				reconciler := &controller.SignalProcessingReconciler{
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
+					K8sEnricher:     nodeEnricher,
+					Recorder:        fakeRecorder,
+				}
+
+				_, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
+				})
+				Expect(err).ToNot(HaveOccurred())
+
+				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
+				Expect(fakeClient.Get(context.Background(), types.NamespacedName{
+					Name: sp.Name, Namespace: sp.Namespace,
+				}, updatedSP)).To(Succeed())
+
+				for _, c := range updatedSP.Status.Conditions {
+					if c.Type == "EnrichmentComplete" {
+						Expect(c.Message).ToNot(ContainSubstring("/worker-04"),
+							"BLAST-B2: Degraded message for cluster-scoped kind MUST NOT use 'kind /name' format with empty namespace")
+						break
+					}
+				}
+			})
+		})
+	})
+
+	// ========================================
+	// PHASE 3 TDD RED: Issue #1110 SP Readiness Audit
+	// Findings: O1, O2, O3, O4
+	// ========================================
+
+	Describe("Issue #1110 Phase 3: Observability Gaps", func() {
+
+		// O1 (High): Classification failures don't emit error audit event
+		// Authority: BR-SP-090 + OpenAPI signalprocessing.error.occurred
+		Describe("O1: Classification error audit event", func() {
+			It("UT-SP-1110-028: classification failure emits error audit event", func() {
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "classify-fail-audit",
+						Namespace:  "default",
+						Generation: 1,
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+						RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{Name: "rr-o1"},
+						Signal: signalprocessingv1alpha1.SignalData{
+							Fingerprint: "fp-o1",
+							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+								Kind:      "Pod",
+								Name:      "test-pod",
+								Namespace: "test-ns",
+							},
+						},
+					},
+					Status: signalprocessingv1alpha1.SignalProcessingStatus{
+						Phase:     signalprocessingv1alpha1.PhaseClassifying,
+						StartTime: &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+						KubernetesContext: &signalprocessingv1alpha1.KubernetesContext{
+							Namespace: &signalprocessingv1alpha1.NamespaceContext{
+								Name:   "test-ns",
+								Labels: map[string]string{"env": "prod"},
+							},
+						},
+						Conditions: []metav1.Condition{
+							{
+								Type:               "EnrichmentComplete",
+								Status:             metav1.ConditionTrue,
+								Reason:             "EnrichmentSucceeded",
+								Message:            "Enrichment completed",
+								LastTransitionTime: metav1.Now(),
+							},
+						},
+					},
+				}
+
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(sp).
+					WithStatusSubresource(sp).
+					Build()
+
+				mockStore := &mockAuditStore{}
+				auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+
+				failPolicyEval := &mockPolicyEvaluator{
+					EvaluateSeverityFunc: func(_ context.Context, _ evaluator.PolicyInput) (*evaluator.SeverityResult, error) {
+						return nil, fmt.Errorf("rego policy engine crashed")
+					},
+				}
+
+				reconciler := &controller.SignalProcessingReconciler{
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					PolicyEvaluator: failPolicyEval,
+					K8sEnricher:     newDefaultMockK8sEnricher(),
+					Recorder:        record.NewFakeRecorder(20),
+				}
+
+				_, _ = reconciler.Reconcile(context.Background(), reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
+				})
+
+				hasErrorAudit := false
+				for _, evt := range mockStore.events {
+					if evt.EventType == "signalprocessing.error.occurred" {
+						hasErrorAudit = true
+						break
+					}
+				}
+				Expect(hasErrorAudit).To(BeTrue(),
+					"O1: Classification failure MUST emit signalprocessing.error.occurred audit event per BR-SP-090")
+			})
+		})
+
+		// O2 (High): No phase transition audit at first reconcile ("" → Pending)
+		// Authority: BR-SP-090
+		Describe("O2: First reconcile phase transition audit", func() {
+			It("UT-SP-1110-029: first reconcile emits phase transition audit for '' → Pending", func() {
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "init-audit",
+						Namespace:  "default",
+						Generation: 1,
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+						RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{Name: "rr-o2"},
+						Signal: signalprocessingv1alpha1.SignalData{
+							Fingerprint: "fp-o2",
+							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+								Kind:      "Pod",
+								Name:      "test-pod",
+								Namespace: "test-ns",
+							},
+						},
+					},
+				}
+
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(sp).
+					WithStatusSubresource(sp).
+					Build()
+
+				mockStore := &mockAuditStore{}
+				auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+
+				reconciler := &controller.SignalProcessingReconciler{
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
+					K8sEnricher:     newDefaultMockK8sEnricher(),
+					Recorder:        record.NewFakeRecorder(20),
+				}
+
+				_, _ = reconciler.Reconcile(context.Background(), reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
+				})
+
+				hasPhaseTransition := false
+				for _, evt := range mockStore.events {
+					if evt.EventType == "signalprocessing.phase.transition" {
+						hasPhaseTransition = true
+						break
+					}
+				}
+				Expect(hasPhaseTransition).To(BeTrue(),
+					"O2: First reconcile MUST emit signalprocessing.phase.transition audit for '' → Pending per BR-SP-090")
+			})
+		})
+
+		// O3 (High): PhaseFailed doesn't record completed/failure metrics
+		// Authority: DD-005 metrics pattern
+		Describe("O3: PhaseFailed completion metrics", func() {
+			It("UT-SP-1110-032: PhaseFailed increments completed/failure metric counter", func() {
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "phase-failed-metrics",
+						Namespace:  "default",
+						Generation: 1,
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+						RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{Name: "rr-o3"},
+						Signal: signalprocessingv1alpha1.SignalData{
+							Fingerprint: "fp-o3",
+							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+								Kind:      "Pod",
+								Name:      "test-pod",
+								Namespace: "test-ns",
+							},
+						},
+					},
+					Status: signalprocessingv1alpha1.SignalProcessingStatus{
+						Phase:     signalprocessingv1alpha1.PhaseClassifying,
+						StartTime: &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+						KubernetesContext: &signalprocessingv1alpha1.KubernetesContext{
+							Namespace: &signalprocessingv1alpha1.NamespaceContext{
+								Name:   "test-ns",
+								Labels: map[string]string{"env": "prod"},
+							},
+						},
+						Conditions: []metav1.Condition{
+							{
+								Type:               "EnrichmentComplete",
+								Status:             metav1.ConditionTrue,
+								Reason:             "EnrichmentSucceeded",
+								Message:            "Enrichment completed",
+								LastTransitionTime: metav1.Now(),
+							},
+						},
+					},
+				}
+
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(sp).
+					WithStatusSubresource(sp).
+					Build()
+
+				registry := prometheus.NewRegistry()
+				m := spmetrics.NewMetricsWithRegistry(registry)
+
+				failPolicyEval := &mockPolicyEvaluator{
+					EvaluateSeverityFunc: func(_ context.Context, _ evaluator.PolicyInput) (*evaluator.SeverityResult, error) {
+						return nil, fmt.Errorf("severity eval failed")
+					},
+				}
+
+				mockStore := &mockAuditStore{}
+				auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+
+				reconciler := &controller.SignalProcessingReconciler{
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         m,
+					AuditManager:    spaudit.NewManager(auditClient),
+					PolicyEvaluator: failPolicyEval,
+					K8sEnricher:     newDefaultMockK8sEnricher(),
+					Recorder:        record.NewFakeRecorder(20),
+				}
+
+				_, _ = reconciler.Reconcile(context.Background(), reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
+				})
+
+				metrics, err := registry.Gather()
+				Expect(err).ToNot(HaveOccurred())
+
+				foundCompletedFailure := false
+				for _, mf := range metrics {
+					if mf.GetName() == "signalprocessing_processing_total" {
+						for _, metric := range mf.GetMetric() {
+							var phase, result string
+							for _, lp := range metric.GetLabel() {
+								if lp.GetName() == "phase" {
+									phase = lp.GetValue()
+								}
+								if lp.GetName() == "result" {
+									result = lp.GetValue()
+								}
+							}
+							if phase == "completed" && result == "failure" {
+								foundCompletedFailure = true
+							}
+						}
+					}
+				}
+
+				Expect(foundCompletedFailure).To(BeTrue(),
+					"O3: PhaseFailed MUST increment signalprocessing_processing_total{phase=completed,result=failure}")
+			})
+		})
+	})
+
+	// ========================================
+	// PHASE 5 TDD RED: Issue #1110 SP Readiness Audit
+	// Findings: S1, S2, S3, S4
+	// ========================================
+
+	Describe("Issue #1110 Phase 5: State Machine and Conditions", func() {
+
+		// S1 (High): PhaseFailed sets all conditions
+		// Authority: DD-SP-002
+		Describe("S1: PhaseFailed sets ProcessingComplete and CategorizationComplete", func() {
+			It("UT-SP-1110-049: severity failure sets ProcessingComplete=False and CategorizationComplete=False", func() {
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "phase-failed-conditions",
+						Namespace:  "default",
+						Generation: 1,
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+						RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{Name: "rr-s1"},
+						Signal: signalprocessingv1alpha1.SignalData{
+							Fingerprint: "fp-s1",
+							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+								Kind:      "Pod",
+								Name:      "test-pod",
+								Namespace: "test-ns",
+							},
+						},
+					},
+					Status: signalprocessingv1alpha1.SignalProcessingStatus{
+						Phase:     signalprocessingv1alpha1.PhaseClassifying,
+						StartTime: &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+						KubernetesContext: &signalprocessingv1alpha1.KubernetesContext{
+							Namespace: &signalprocessingv1alpha1.NamespaceContext{
+								Name:   "test-ns",
+								Labels: map[string]string{"env": "prod"},
+							},
+						},
+						Conditions: []metav1.Condition{
+							{
+								Type:               "EnrichmentComplete",
+								Status:             metav1.ConditionTrue,
+								Reason:             "EnrichmentSucceeded",
+								Message:            "Enrichment completed",
+								LastTransitionTime: metav1.Now(),
+							},
+						},
+					},
+				}
+
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(sp).
+					WithStatusSubresource(sp).
+					Build()
+
+				mockStore := &mockAuditStore{}
+				auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+
+				failPolicyEval := &mockPolicyEvaluator{
+					EvaluateSeverityFunc: func(_ context.Context, _ evaluator.PolicyInput) (*evaluator.SeverityResult, error) {
+						return nil, fmt.Errorf("severity policy error")
+					},
+				}
+
+				reconciler := &controller.SignalProcessingReconciler{
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					PolicyEvaluator: failPolicyEval,
+					K8sEnricher:     newDefaultMockK8sEnricher(),
+					Recorder:        record.NewFakeRecorder(20),
+				}
+
+				_, _ = reconciler.Reconcile(context.Background(), reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
+				})
+
+				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
+				Expect(fakeClient.Get(context.Background(), types.NamespacedName{
+					Name: sp.Name, Namespace: sp.Namespace,
+				}, updatedSP)).To(Succeed())
+
+				Expect(updatedSP.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseFailed))
+
+				hasProcessingComplete := false
+				hasCategorizationComplete := false
+				for _, c := range updatedSP.Status.Conditions {
+					if c.Type == "ProcessingComplete" && c.Status == metav1.ConditionFalse {
+						hasProcessingComplete = true
+					}
+					if c.Type == "CategorizationComplete" && c.Status == metav1.ConditionFalse {
+						hasCategorizationComplete = true
+					}
+				}
+				Expect(hasProcessingComplete).To(BeTrue(),
+					"S1: PhaseFailed MUST set ProcessingComplete=False per DD-SP-002")
+				Expect(hasCategorizationComplete).To(BeTrue(),
+					"S1: PhaseFailed MUST set CategorizationComplete=False per DD-SP-002")
+			})
+		})
+
+		// S2 (High): Non-transient classification errors -> PhaseFailed
+		Describe("S2: Non-transient environment classification error transitions to Failed", func() {
+			It("UT-SP-1110-050: non-transient EvaluateEnvironment error transitions to PhaseFailed", func() {
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "env-classify-fail",
+						Namespace:  "default",
+						Generation: 1,
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+						Signal: signalprocessingv1alpha1.SignalData{
+							Fingerprint: "fp-s2-env",
+							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+								Kind:      "Pod",
+								Name:      "test-pod",
+								Namespace: "test-ns",
+							},
+						},
+					},
+					Status: signalprocessingv1alpha1.SignalProcessingStatus{
+						Phase:     signalprocessingv1alpha1.PhaseClassifying,
+						StartTime: &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+						KubernetesContext: &signalprocessingv1alpha1.KubernetesContext{
+							Namespace: &signalprocessingv1alpha1.NamespaceContext{
+								Name:   "test-ns",
+								Labels: map[string]string{"env": "prod"},
+							},
+						},
+						Conditions: []metav1.Condition{
+							{
+								Type:               "EnrichmentComplete",
+								Status:             metav1.ConditionTrue,
+								Reason:             "EnrichmentSucceeded",
+								Message:            "ok",
+								LastTransitionTime: metav1.Now(),
+							},
+						},
+					},
+				}
+
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(sp).
+					WithStatusSubresource(sp).
+					Build()
+
+				failEnvEval := &mockPolicyEvaluator{
+					EvaluateEnvironmentFunc: func(_ context.Context, _ evaluator.PolicyInput) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
+						return nil, fmt.Errorf("rego policy syntax error: non-transient")
+					},
+				}
+
+				mockStore := &mockAuditStore{}
+				auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+
+				reconciler := &controller.SignalProcessingReconciler{
+					Client:          fakeClient,
+					Scheme:          scheme,
+					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
+					PolicyEvaluator: failEnvEval,
+					K8sEnricher:     newDefaultMockK8sEnricher(),
+					Recorder:        record.NewFakeRecorder(20),
+				}
+
+				_, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
+				})
+
+				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
+				Expect(fakeClient.Get(context.Background(), types.NamespacedName{
+					Name: sp.Name, Namespace: sp.Namespace,
+				}, updatedSP)).To(Succeed())
+
+				Expect(err).ToNot(HaveOccurred(),
+					"S2: Non-transient environment error MUST transition to PhaseFailed, not requeue with error")
+				Expect(updatedSP.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseFailed),
+					"S2: Non-transient EvaluateEnvironment error MUST transition to PhaseFailed")
+			})
+		})
+	})
+
+	// ========================================
 	// Interface Compliance Tests
 	// Verifies controller implements required interfaces
 	// ========================================
@@ -1275,9 +2057,10 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 		It("CTRL-IFACE-01: should implement controller-runtime Reconciler interface", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			reconciler := &controller.SignalProcessingReconciler{
-				Client:        fakeClient,
-				Scheme:        scheme,
-				StatusManager: spstatus.NewManager(fakeClient, fakeClient),
+				Client:          fakeClient,
+				Scheme:          scheme,
+				StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+				PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 			}
 
 			// Compile-time interface check
@@ -1288,9 +2071,10 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 		It("CTRL-IFACE-02: should have SetupWithManager method", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			reconciler := &controller.SignalProcessingReconciler{
-				Client:        fakeClient,
-				Scheme:        scheme,
-				StatusManager: spstatus.NewManager(fakeClient, fakeClient),
+				Client:          fakeClient,
+				Scheme:          scheme,
+				StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
+				PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 			}
 
 			// Verify method exists
