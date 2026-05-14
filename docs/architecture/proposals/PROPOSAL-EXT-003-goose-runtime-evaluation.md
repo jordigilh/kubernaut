@@ -808,6 +808,8 @@ Two rounds of adversarial audit produced 14 findings (3 critical, 4 high, 4 medi
 | **DG-18: AgenticWorkflow CRD naming and model** | What is the CRD kind for user-defined agentic recipes? | **Resolved** -- `AgenticWorkflow` (`kubernaut.ai/v1alpha1`). Renamed from `InvestigationHook`. The CRD defines a **reusable recipe definition with operational constraints**, decoupled from where it is injected. Spec carries: recipe OCI reference, service account, constraints (budget limits, tool-call caps, timeout, allowed MCP extensions), failure policy. No `phase` field — injection point mapping lives in each consuming service's configuration (KA maps `AgenticWorkflow` CRs to its hook phases in KA config; EM maps them to its assessment phases in EM config). This avoids duplicating CRD instances when the same recipe is used at multiple injection points and makes the CRD reusable across services. |
 | **DG-19: Recipe OCI cache** | Should recipe OCI artifacts be cached to avoid repeated pulls in high-throughput scenarios? | **Open (v1.6)** -- Evaluate node-local or cluster-level cache keyed by OCI digest. Init container checks cache before pulling. Not blocking for launch but important for production tuning under high investigation throughput. See Section 16.6. |
 | **DG-20: Shadow agent alignment port to goose-server** | How does the v1.5 two-phase alignment model (per-step circuit breaker + grounding review) port to goose-server while keeping KA LLM-free? | **Resolved** -- Shadow alignment runs as a dedicated Goose session (not an in-process `Evaluator`). KA creates two Goose sessions: primary (investigation recipe) and shadow (alignment audit recipe). KA forwards each primary SSE event to the shadow session as a message; the shadow LLM evaluates it and returns a structured JSON verdict (`{suspicious, explanation}`). KA parses the verdict (no LLM) and trips the circuit breaker if suspicious. Grounding review is a `[GROUNDING_REVIEW]` message sent to the same shadow session at RCA completion. KA has zero LLM dependencies — all LLM calls go through Goose. Same cost profile as v1.5 (N shadow LLM calls for N steps). See Section 8.1 and Section 16.2. |
+| **DG-21: Agent Sandbox CRD for Goose runtime isolation** | Should Kubernaut use `kubernetes-sigs/agent-sandbox` (`Sandbox` CRD, `agents.x-k8s.io/v1alpha1`) instead of manually managing ephemeral pods for goose-server? | **Open (v1.6)** -- Agent Sandbox provides: gVisor/Kata kernel isolation, managed NetworkPolicy (default deny), `SandboxWarmPool` for pre-warmed goose instances (eliminates cold start), lifecycle management (`shutdownTime`, TTL cleanup), `envVarsInjectionPolicy: Disallowed` (K8s-enforced zero-secret), and Go SDK for programmatic management. Potential fit: `SandboxTemplate` defines goose-server + AuthBridge pod spec with network policy; `SandboxClaim` provisions per-investigation sandbox from warm pool; `AgenticWorkflow` CRD references `sandboxTemplateRef` in its `runtime` section. Warm pool subsumes DG-19 (recipe OCI cache). Does **not** replace AuthBridge (request-level auth) or OpenShell (agent-level policy). Currently v0.2.1 alpha — maturity risk. Evaluate when Kubernaut v1.6 implementation begins. See [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox), [Kubernetes blog](https://kubernetes.io/blog/2026/03/20/running-agents-on-kubernetes-with-agent-sandbox/). |
+| **DG-22: NemoClaw pattern scanner integration for fast-path injection detection** | Should KA integrate NemoClaw's prompt injection scanner as a fast-path pre-filter before the shadow agent LLM evaluation? | **Open (v1.6+, enhancement)** -- NemoClaw provides a regex-based prompt injection scanner (15 patterns, 4 categories: role/system prompt overrides, instruction injection, tool manipulation, data exfiltration; plus Unicode NFKC normalization, zero-width character stripping, base64 decode-and-rescan). This is **complementary** to the shadow agent's LLM-based semantic evaluation: the scanner catches known patterns instantly (zero LLM cost), while the shadow agent catches novel attacks that evade patterns. Preferred approach: integrate NemoClaw's scanner module directly in KA rather than reimplementing — avoids pattern duplication and benefits from NemoClaw's upstream maintenance. KA would run the scanner on each primary SSE event **before** forwarding to the shadow Goose session; if the scanner flags an event, KA trips the circuit breaker immediately without waiting for the shadow LLM verdict. See Section 16.7. References: [NemoClaw scanner PR](https://github.com/NVIDIA/NemoClaw/pull/870), [Lasso exfiltration research](https://www.esecurityplanet.com/threats/nvidia-nemoclaw-research-highlights-ai-sandbox-exfiltration-risks/). |
 
 ---
 
@@ -996,6 +998,19 @@ The proposal covers production deployment (OCI artifacts, digest versioning) but
 
 Kubernaut should provide a `make recipe-test` target that runs a recipe against a mock goose-server with a known signal payload and validates the structured output. This is the functional recipe testing mentioned in DG-15.
 
+**Local development tooling:** [OpenKaiden](https://openkaiden.ai/) (`kdn`) is an open-source CLI for running AI coding agents (including Goose) in isolated workspaces with Podman containers or OpenShell. It provides secret management (system keychain, HTTP header injection), network allow/deny policies, reproducible workspace configuration, and automatic agent onboarding. While not Kubernetes-native (K8s runtime is planned but not yet available), it is a candidate tool for recipe authors to develop and test recipes locally in an isolated Goose environment before pushing to the OCI registry:
+
+```
+kdn init /path/to/recipe-project --runtime podman --agent goose
+kdn start my-recipe-dev
+kdn terminal my-recipe-dev
+# Inside the workspace: goose run --recipe recipe.yaml --params ...
+# Test, iterate, validate structured output
+# Done: oras push to OCI registry
+```
+
+This gives recipe authors an isolated, reproducible Goose environment with consistent configuration and credential management, without requiring a full Kubernetes cluster. See [openkaiden/kdn](https://github.com/openkaiden/kdn) (Go, Apache 2.0, v0.5.0).
+
 ### 16.5 GooseClient Testing Strategy
 
 The `GooseClient` interface enables clean test layering:
@@ -1013,6 +1028,60 @@ Mocking at the `GooseClient` interface level (not the HTTP level) means unit tes
 The ephemeral pod model extracts OCI recipe artifacts via init container on every investigation. For high-frequency signal processing, this means repeated OCI pulls of the same digest.
 
 **Recommendation (DG-19):** Evaluate a node-local or cluster-level recipe cache keyed by OCI digest. The init container checks the cache before pulling from the registry. This reduces startup latency and registry load under high investigation throughput. Not blocking for v1.6 launch but worth a DG note for production tuning.
+
+### 16.7 Defense-in-Depth Security Model
+
+Kubernaut's v1.6 agent security operates at five complementary layers. No single layer is sufficient — the [Lasso research on NemoClaw exfiltration](https://www.esecurityplanet.com/threats/nvidia-nemoclaw-research-highlights-ai-sandbox-exfiltration-risks/) (May 2026) demonstrated that infrastructure-level sandboxing can be bypassed through trusted tools and approved outbound connections.
+
+```
+Layer 5: Deterministic gate
+         Remediation requires human/policy approval. Even if all other
+         layers are bypassed, the agent cannot execute remediation.
+         ─────────────────────────────────────────────────────────────
+Layer 4: Semantic detection (shadow agent — Goose session)
+         LLM-based per-step evaluation catches novel injection, manipulated
+         reasoning, fabricated evidence, wrong diagnosis, tool result
+         poisoning. Catches attacks that evade pattern matching.
+         ─────────────────────────────────────────────────────────────
+Layer 3: Pattern detection (NemoClaw scanner — in KA, DG-22)
+         Regex-based fast-path catches known injection patterns: role
+         overrides, instruction injection, tool manipulation, data
+         exfiltration. Zero LLM cost. Runs before shadow LLM evaluation.
+         ─────────────────────────────────────────────────────────────
+Layer 2: Infrastructure isolation (OpenShell / Agent Sandbox — DG-21)
+         Sandbox isolation (Landlock/gVisor/Kata), network policy (egress
+         restricted to approved endpoints), filesystem confinement, L7
+         proxy for credential injection at the network boundary.
+         ─────────────────────────────────────────────────────────────
+Layer 1: Identity and credential interception (AuthBridge + SPIFFE)
+         Zero-secret: agents never have credentials. AuthBridge intercepts
+         every MCP/A2A call for auth/authz. inference.local strips LLM
+         credentials. Short-lived scoped tokens per investigation.
+```
+
+**NemoClaw scanner integration (DG-22):** Rather than reimplementing NemoClaw's pattern library, KA integrates the scanner module directly. The flow for each primary SSE event becomes:
+
+1. KA receives SSE event from primary Goose session
+2. KA runs NemoClaw scanner on event content (regex, zero LLM cost, sub-millisecond)
+3. If scanner flags the event → circuit breaker fires immediately (no shadow LLM call needed)
+4. If scanner passes → KA forwards event to shadow Goose session for semantic LLM evaluation
+5. If shadow verdict is suspicious → circuit breaker fires
+
+This two-stage evaluation means known patterns are caught instantly, while the shadow LLM handles novel attacks and semantic analysis. The NemoClaw scanner acts as a fast-path filter that reduces shadow LLM calls for obvious injection attempts and provides deterministic detection for well-known attack patterns (Unicode homoglyphs, base64 encoded payloads, zero-width characters).
+
+**What each layer catches that others miss:**
+
+| Attack | L1 Identity | L2 Infra | L3 Pattern | L4 Semantic | L5 Gate |
+|--------|------------|----------|------------|-------------|---------|
+| Agent requests unauthorized API | Blocked (AuthBridge) | | | | |
+| Agent accesses unauthorized filesystem | | Blocked (sandbox) | | | |
+| Tool result contains `ignore previous instructions` | | | Caught (regex) | Caught (LLM) | |
+| Tool result contains obfuscated emoji-encoded injection | | | Missed | Caught (LLM) | |
+| Agent fabricates evidence for wrong diagnosis | | | Missed | Caught (grounding) | |
+| All layers bypassed, agent recommends wrong workflow | | | | | Blocked (human approval) |
+| Malicious npm package exfiltrates via approved GitHub egress | | Missed (trusted tool) | Partial (if patterns match) | Caught (LLM evaluates tool output) | |
+
+**CNCF alignment:** This defense-in-depth model exceeds the [CNCF cloud native agentic standards](https://www.cncf.io/blog/2026/03/23/cloud-native-agentic-standards/) recommendations, which call for least-privilege, input validation, sandbox isolation, and "Agent-as-a-Judge" evaluation. Kubernaut implements all four, plus the deterministic approval gate that the CNCF paper does not explicitly recommend.
 
 ---
 
@@ -1660,6 +1729,14 @@ In both paths, the API Frontend has no visibility into Goose pods, recipe compil
 | [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) | Safe, private runtime for autonomous AI agents (sandbox, policy, audit) |
 | [OpenShell BYOC](https://github.com/NVIDIA/OpenShell/tree/main/examples/bring-your-own-container) | Bring Your Own Container model for custom agent images |
 | [kagenti OpenShell Driver](https://github.com/kagenti/kagenti/issues/1354) | Multi-tenant OpenShell driver for OpenShift with namespace scoping |
+| [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) | Kubernetes-native `Sandbox` CRD for isolated, stateful agent workloads (gVisor/Kata, warm pools, lifecycle management) |
+| [Agent Sandbox blog](https://kubernetes.io/blog/2026/03/20/running-agents-on-kubernetes-with-agent-sandbox/) | Kubernetes blog: Running Agents on Kubernetes with Agent Sandbox (March 2026) |
+| [CNCF Cloud Native Agentic Standards](https://www.cncf.io/blog/2026/03/23/cloud-native-agentic-standards/) | CNCF standards for security, observability, governance, and communication in agentic systems (March 2026) |
+| [NVIDIA NemoClaw](https://docs.nvidia.com/nemoclaw/latest/about/overview.html) | Opinionated reference stack for running OpenClaw securely inside OpenShell (sandbox, L7 proxy, policy, prompt injection scanner) |
+| [NemoClaw prompt injection scanner](https://github.com/NVIDIA/NemoClaw/pull/870) | Regex-based application-layer prompt injection detection (15 patterns, 4 categories, Unicode normalization, base64 rescan) |
+| [Lasso NemoClaw exfiltration research](https://www.esecurityplanet.com/threats/nvidia-nemoclaw-research-highlights-ai-sandbox-exfiltration-risks/) | May 2026 research demonstrating sandbox bypass via trusted tools and approved outbound connections |
+| [Kagenti ADK](https://developers.redhat.com/articles/2026/05/04/how-kagenti-adk-simplifies-production-ai-agent-management) | Kagenti Application Development Kit for production AI agent management on OpenShift (May 2026) |
+| [OpenKaiden (kdn)](https://github.com/openkaiden/kdn) | CLI for running AI coding agents (Goose, Claude Code, Cursor) in isolated Podman/OpenShell workspaces (Go, Apache 2.0) |
 
 ---
 
