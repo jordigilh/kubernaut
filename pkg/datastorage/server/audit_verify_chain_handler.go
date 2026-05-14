@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -179,6 +180,18 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 		event := &repository.AuditEvent{}
 		var eventDataJSON []byte
 
+		// Nullable columns must use sql.Null* types; ToNullStringValue("")
+		// stores empty strings as SQL NULL, so scanning into a bare
+		// Go string/int would fail with "converting NULL to <type>".
+		var (
+			namespace    sql.NullString
+			clusterName  sql.NullString
+			severity     sql.NullString
+			durationMs   sql.NullInt32
+			errorCode    sql.NullString
+			errorMessage sql.NullString
+		)
+
 		err := rows.Scan(
 			&event.EventID,
 			&event.EventTimestamp,
@@ -191,14 +204,14 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 			&event.ParentEventDate,
 			&event.ResourceType,
 			&event.ResourceID,
-			&event.ResourceNamespace,
-			&event.ClusterID,
+			&namespace,
+			&clusterName,
 			&event.ActorID,
 			&event.ActorType,
-			&event.Severity,
-			&event.DurationMs,
-			&event.ErrorCode,
-			&event.ErrorMessage,
+			&severity,
+			&durationMs,
+			&errorCode,
+			&errorMessage,
 			&event.RetentionDays,
 			&event.IsSensitive,
 			&eventDataJSON,
@@ -209,6 +222,13 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 		if err != nil {
 			return nil, err
 		}
+
+		event.ResourceNamespace = namespace.String
+		event.ClusterID = clusterName.String
+		event.Severity = severity.String
+		event.DurationMs = int(durationMs.Int32)
+		event.ErrorCode = errorCode.String
+		event.ErrorMessage = errorMessage.String
 
 		// CRITICAL: Force timestamp to UTC for hash consistency
 		// PostgreSQL timestamptz stores in UTC but Go reads them with local timezone.
