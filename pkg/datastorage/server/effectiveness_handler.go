@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
@@ -303,9 +304,10 @@ func (s *Server) queryEffectivenessEvents(ctx context.Context, correlationID str
 	query := `SELECT event_type, event_data FROM audit_events
 		WHERE correlation_id = $1
 		AND event_category = 'effectiveness'
-		ORDER BY event_timestamp ASC, event_id ASC`
+		ORDER BY event_timestamp ASC, event_id ASC
+		LIMIT $2`
 
-	rows, err := s.db.QueryContext(ctx, query, correlationID)
+	rows, err := s.db.QueryContext(ctx, query, correlationID, helpers.MaxEffectivenessResults)
 	if err != nil {
 		return nil, err
 	}

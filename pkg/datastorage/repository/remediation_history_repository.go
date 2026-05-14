@@ -95,13 +95,17 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 	// Include event_type column so BuildEffectivenessResponse can route events correctly.
 	// The event_data JSONB may not contain event_type (E2E tests insert it only as a column),
 	// so we merge the column value into EventData to ensure downstream consumers always see it.
+	// PERF-H3: LIMIT prevents unbounded result sets when many
+	// EM events exist across the correlated RO chain.
+	const maxEMBatchResults = 10000
 	query := `SELECT correlation_id, event_type, event_data
 		FROM audit_events
 		WHERE correlation_id = ANY($1)
 		AND event_category = 'effectiveness'
-		ORDER BY event_timestamp ASC, event_id ASC`
+		ORDER BY event_timestamp ASC, event_id ASC
+		LIMIT $2`
 
-	rows, err := r.db.QueryContext(ctx, query, pq.Array(correlationIDs))
+	rows, err := r.db.QueryContext(ctx, query, pq.Array(correlationIDs), maxEMBatchResults)
 	if err != nil {
 		r.logger.Error(err, "Failed to query EM events batch",
 			"correlation_id_count", len(correlationIDs))
@@ -165,6 +169,8 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 	since time.Time,
 	until time.Time,
 ) ([]RawAuditRow, error) {
+	// PERF-H2: LIMIT prevents unbounded result sets.
+	const maxROResults = 10000
 	query := `SELECT event_type, event_data, event_timestamp, correlation_id
 		FROM audit_events
 		WHERE event_type = 'remediation.workflow_created'
@@ -178,9 +184,10 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 				AND event_data->>'post_remediation_spec_hash' = $1
 			)
 		)
-		ORDER BY event_timestamp ASC, event_id ASC`
+		ORDER BY event_timestamp ASC, event_id ASC
+		LIMIT $4`
 
-	rows, err := r.db.QueryContext(ctx, query, specHash, since, until)
+	rows, err := r.db.QueryContext(ctx, query, specHash, since, until, maxROResults)
 	if err != nil {
 		r.logger.Error(err, "Failed to query RO events by spec hash",
 			"spec_hash", specHash, "since", since, "until", until)

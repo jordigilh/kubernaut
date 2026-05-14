@@ -107,6 +107,11 @@ type AuditEvent struct {
 	// ParentEventID links to the parent event in a causal chain (optional)
 	ParentEventID *uuid.UUID `json:"parent_event_id,omitempty"`
 
+	// ParentEventDate is the date partition key for the parent event (DF-M2).
+	// Required when ParentEventID is set so the FK constraint can target the
+	// correct partition without a cross-partition scan.
+	ParentEventDate *time.Time `json:"parent_event_date,omitempty"`
+
 	// TraceID is the OpenTelemetry trace ID for distributed tracing (optional)
 	TraceID *string `json:"trace_id,omitempty"`
 

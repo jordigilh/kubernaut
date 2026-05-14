@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -28,6 +27,10 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
+
+// MaxEffectivenessResults caps the number of rows returned by the
+// effectiveness query to prevent unbounded memory usage (PERF-H2).
+const MaxEffectivenessResults = 10000
 
 // ========================================
 // OPENAPI TYPE CONVERSION HELPERS
@@ -144,87 +147,11 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest, authenticatedAct
 	return event, nil
 }
 
-// ConvertToRepositoryAuditEvent converts internal audit event to repository type
-//
-// This is a straightforward conversion between the pkg/audit type and
-// pkg/datastorage/repository type.
-//
-// Parameters:
-//   - event: Internal audit event
-//
-// Returns:
-//   - *repository.AuditEvent: Repository audit event for database operations
-//   - error: Conversion error (e.g., invalid event_data JSON)
+// ConvertToRepositoryAuditEvent delegates to repository.ConvertFromAuditEvent.
+// ARCH-C1: Canonical implementation moved to repository package so dlq can
+// import it without an upward dependency on server/helpers.
 func ConvertToRepositoryAuditEvent(event *audit.AuditEvent) (*repository.AuditEvent, error) {
-	// Convert EventData from []byte to map[string]interface{}
-	var eventDataMap map[string]interface{}
-	if err := json.Unmarshal(event.EventData, &eventDataMap); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal event_data: %w", err)
-	}
-
-	// Extract pointer fields with defaults
-	resourceNamespace := ""
-	if event.Namespace != nil {
-		resourceNamespace = *event.Namespace
-	}
-
-	clusterID := ""
-	if event.ClusterName != nil {
-		clusterID = *event.ClusterName
-	}
-
-	severity := "info" // Default severity
-	if event.Severity != nil {
-		severity = *event.Severity
-	}
-
-	durationMs := 0 // Default duration
-	if event.DurationMs != nil {
-		durationMs = *event.DurationMs
-	}
-
-	// DF-H1: Preserve original RetentionDays and IsSensitive from the source event.
-	// Fall back to defaults only when the source value is unset (zero-value).
-	retentionDays := event.RetentionDays
-	if retentionDays <= 0 {
-		retentionDays = 2555 // Default: 7 years (SOC 2 / ISO 27001)
-	}
-
-	errorCode := ""
-	if event.ErrorCode != nil {
-		errorCode = *event.ErrorCode
-	}
-
-	errorMessage := ""
-	if event.ErrorMessage != nil {
-		errorMessage = *event.ErrorMessage
-	}
-
-	return &repository.AuditEvent{
-		EventID:           event.EventID,
-		Version:           event.EventVersion, // Map EventVersion to Version (DB column event_version)
-		EventTimestamp:    event.EventTimestamp,
-		EventDate:         repository.DateOnly(event.EventTimestamp.Truncate(24 * time.Hour)), // Generated column, truncated to date
-		EventType:         event.EventType,
-		EventCategory:     event.EventCategory,
-		EventAction:       event.EventAction,
-		EventOutcome:      event.EventOutcome,
-		CorrelationID:     event.CorrelationID,
-		ParentEventID:     event.ParentEventID,
-		ResourceType:      event.ResourceType,
-		ResourceID:        event.ResourceID,
-		ResourceNamespace: resourceNamespace,
-		ClusterID:         clusterID,
-		Severity:          severity,
-		DurationMs:        durationMs,
-		ErrorCode:         errorCode,
-		ErrorMessage:      errorMessage,
-		ActorID:           event.ActorID,
-		ActorType:         event.ActorType,
-		EventData:         eventDataMap,
-		RetentionDays:     retentionDays,
-		IsSensitive:       event.IsSensitive,
-	}, nil
+	return repository.ConvertFromAuditEvent(event)
 }
 
 // ConvertToAuditEventResponse converts repository event to OpenAPI response

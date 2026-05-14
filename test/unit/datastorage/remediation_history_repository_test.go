@@ -89,7 +89,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				)
 
 				sqlMock.ExpectQuery(`SELECT correlation_id, event_type, event_data FROM audit_events`).
-					WithArgs(sqlmock.AnyArg()).
+					WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				correlationIDs := []string{"rr-abc-123"}
@@ -123,7 +123,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				)
 
 				sqlMock.ExpectQuery(`SELECT correlation_id, event_type, event_data FROM audit_events`).
-					WithArgs(sqlmock.AnyArg()).
+					WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				correlationIDs := []string{"rr-abc-123", "rr-def-456"}
@@ -155,7 +155,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				)
 
 				sqlMock.ExpectQuery(`SELECT correlation_id, event_type, event_data FROM audit_events`).
-					WithArgs(sqlmock.AnyArg()).
+					WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				correlationIDs := []string{"rr-rc2-test"}
@@ -178,7 +178,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				})
 
 				sqlMock.ExpectQuery(`ORDER BY event_timestamp ASC, event_id ASC`).
-					WithArgs(sqlmock.AnyArg()).
+					WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				correlationIDs := []string{"rr-order-test"}
@@ -196,7 +196,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				})
 
 				sqlMock.ExpectQuery(`SELECT correlation_id, event_type, event_data FROM audit_events`).
-					WithArgs(sqlmock.AnyArg()).
+					WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				correlationIDs := []string{"rr-nonexistent"}
@@ -210,7 +210,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 		Context("when database returns an error", func() {
 			It("UT-RH-008: should propagate the error", func() {
 				sqlMock.ExpectQuery(`SELECT correlation_id, event_type, event_data FROM audit_events`).
-					WithArgs(sqlmock.AnyArg()).
+					WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnError(sql.ErrConnDone)
 
 				correlationIDs := []string{"rr-abc-123"}
@@ -256,7 +256,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				)
 
 				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
-					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)
@@ -275,7 +275,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				})
 
 				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
-					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)
@@ -288,7 +288,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 		Context("when database returns an error", func() {
 			It("UT-RH-011: should propagate the error", func() {
 				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
-					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnError(sql.ErrConnDone)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)
@@ -311,7 +311,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				)
 
 				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
-					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)
@@ -330,7 +330,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				})
 
 				sqlMock.ExpectQuery(`ORDER BY event_timestamp ASC, event_id ASC`).
-					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)
@@ -359,7 +359,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 
 				// Regex requires event_type filter - without it, query would leak EM events
 				sqlMock.ExpectQuery(`event_type = 'remediation\.workflow_created'`).
-					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
 				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)

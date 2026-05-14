@@ -24,6 +24,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/lib/pq"
+
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -130,16 +133,20 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 	// 3. Validate and convert ALL events BEFORE persisting any (atomic batch)
 	auditEvents := make([]*audit.AuditEvent, 0, len(requests))
 	repositoryEvents := make([]*repository.AuditEvent, 0, len(requests))
+	// PERF-H1: Collect parent IDs for batch FK check instead of N per-row queries.
+	type parentRef struct {
+		index    int
+		parentID uuid.UUID
+	}
+	var parentRefs []parentRef
 
 	for i, req := range requests {
-		// Validate business rules
 		if err := helpers.ValidateAuditEventRequest(&req); err != nil {
 			s.logger.Info("Batch validation failed", "index", i, "error", err)
 			response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", fmt.Sprintf("event at index %d: %s", i, err.Error()), s.logger)
 			return
 		}
 
-		// Convert to internal type
 		internalEvent, err := helpers.ConvertAuditEventRequest(req, authenticatedActorID)
 		if err != nil {
 			s.logger.Info("Batch conversion failed", "index", i, "error", err)
@@ -147,38 +154,54 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 			return
 		}
 
-		// D2/SI-10: Validate EventData size and depth (consistent with DLQ replay)
 		if err := dlq.ValidateEventData(internalEvent.EventData); err != nil {
 			s.logger.Info("Batch EventData validation failed", "index", i, "error", err)
 			response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error",
 				fmt.Sprintf("event at index %d: event_data exceeds size or nesting depth limits", i), s.logger)
 			return
 		}
-		// D4/SI-10: Verify parent_event_id FK (parity with single-event handler)
+		// Collect parent IDs for batch FK verification below.
 		if req.ParentEventID.IsSet() {
-			parentEventID := req.ParentEventID.Value
-			var parentDate time.Time
-			if fkErr := s.db.QueryRowContext(ctx,
-				"SELECT event_date FROM audit_events WHERE event_id = $1",
-				&parentEventID).Scan(&parentDate); fkErr != nil {
-				s.logger.Info("Batch parent event not found", "index", i, "parent_event_id", parentEventID.String())
-				response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error",
-					fmt.Sprintf("event at index %d: parent event does not exist", i), s.logger)
-				return
-			}
+			parentRefs = append(parentRefs, parentRef{index: i, parentID: req.ParentEventID.Value})
 		}
 		auditEvents = append(auditEvents, internalEvent)
 
-		// Convert to repository type
 		repoEvent, err := helpers.ConvertToRepositoryAuditEvent(internalEvent)
 		if err != nil {
-			// Conversion errors are client-side validation errors (e.g., invalid event_data JSON)
-			// Return 400 Bad Request, not 500 Internal Server Error
 			s.logger.Info("Batch repository conversion failed - invalid event_data", "index", i, "error", err)
 			response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_event_data", "Invalid Event Data", fmt.Sprintf("event at index %d: %s", i, err.Error()), s.logger)
 			return
 		}
 		repositoryEvents = append(repositoryEvents, repoEvent)
+	}
+
+	// PERF-H1: Batch FK check -- single query for all parent_event_ids.
+	if len(parentRefs) > 0 {
+		parentIDs := make([]uuid.UUID, 0, len(parentRefs))
+		for _, pr := range parentRefs {
+			parentIDs = append(parentIDs, pr.parentID)
+		}
+		foundParents, fkErr := s.batchLookupParentDates(ctx, parentIDs)
+		if fkErr != nil {
+			s.logger.Error(fkErr, "Batch FK lookup failed")
+			response.WriteRFC7807Error(w, http.StatusInternalServerError,
+				"query-error", "Internal Server Error",
+				"Failed to verify parent events", s.logger)
+			return
+		}
+		for _, pr := range parentRefs {
+			parentDate, ok := foundParents[pr.parentID]
+			if !ok {
+				s.logger.Info("Batch parent event not found", "index", pr.index, "parent_event_id", pr.parentID.String())
+				response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error",
+					fmt.Sprintf("event at index %d: parent event does not exist", pr.index), s.logger)
+				return
+			}
+			// DF-M2: Propagate resolved parent date into the internal event
+			// so ConvertToRepositoryAuditEvent carries it to the DB layer.
+			auditEvents[pr.index].ParentEventDate = &parentDate
+			repositoryEvents[pr.index].ParentEventDate = &parentDate
+		}
 	}
 
 	// 4. Persist batch atomically (transaction)
@@ -251,11 +274,37 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 	// 7. Return 201 Created
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	response := BatchAuditEventCreatedResponse{
+	resp := BatchAuditEventCreatedResponse{
 		EventIDs: eventIDs,
 		Message:  fmt.Sprintf("%d audit events created successfully", len(eventIDs)),
 	}
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		s.logger.Error(err, "failed to encode batch response")
 	}
+}
+
+// batchLookupParentDates resolves parent event dates for a set of event IDs
+// in a single query. PERF-H1: Replaces N per-row queries with one batch query.
+func (s *Server) batchLookupParentDates(ctx context.Context, parentIDs []uuid.UUID) (map[uuid.UUID]time.Time, error) {
+	query := `SELECT event_id, event_date FROM audit_events WHERE event_id = ANY($1)`
+	rows, err := s.db.QueryContext(ctx, query, pq.Array(parentIDs))
+	if err != nil {
+		return nil, fmt.Errorf("batch parent lookup: %w", err)
+	}
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			s.logger.Error(cerr, "failed to close batch parent lookup rows")
+		}
+	}()
+
+	result := make(map[uuid.UUID]time.Time, len(parentIDs))
+	for rows.Next() {
+		var id uuid.UUID
+		var date time.Time
+		if err := rows.Scan(&id, &date); err != nil {
+			return nil, fmt.Errorf("batch parent lookup scan: %w", err)
+		}
+		result[id] = date
+	}
+	return result, rows.Err()
 }
