@@ -24,10 +24,12 @@ import (
 	"time"
 
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
+	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
@@ -100,8 +102,13 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	s.logger.V(1).Info("Parsing request body with OpenAPI types...")
 	var req dsclient.AuditEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, s.logger)
+			return
+		}
 		s.logger.Info("Invalid JSON in request body", "error", err, "remote_addr", r.RemoteAddr)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_request", "Invalid Request", err.Error(), s.logger)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_request", "Invalid Request",
+			"The request body could not be parsed as valid JSON", s.logger)
 		return
 	}
 
@@ -110,20 +117,34 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	s.logger.V(1).Info("Validating business rules...")
 	if err := helpers.ValidateAuditEventRequest(&req); err != nil {
 		s.logger.Info("Business validation failed", "error", err)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", err.Error(), s.logger)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", "audit event request failed validation", s.logger)
 		return
 	}
 
-	// 3. Convert OpenAPI request to internal audit event
+	// 3. Convert OpenAPI request to internal audit event (trusted actor from oauth-proxy header)
 	s.logger.V(1).Info("Converting OpenAPI request to internal type...")
-	auditEvent, err := helpers.ConvertAuditEventRequest(req)
+	authenticatedActorID := r.Header.Get("X-Auth-Request-User")
+	auditEvent, err := helpers.ConvertAuditEventRequest(req, authenticatedActorID)
 	if err != nil {
-		s.logger.Error(err, "Failed to convert audit event request")
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "conversion_error", "Conversion Error", err.Error(), s.logger)
+		s.logger.Error(err, "Failed to convert audit event request",
+			"event_type", req.EventType,
+			"correlation_id", req.CorrelationID)
+		response.WriteRFC7807InternalError(w, "conversion_error", "Conversion Error", err, s.logger)
 		return
 	}
 
-	// 4. Handle parent_event_id FK constraint (query parent's event_date) - OGEN-MIGRATION: OptNilUUID
+	// D2/SI-10: Validate EventData size and depth (defense-in-depth, consistent with DLQ replay)
+	if err := dlq.ValidateEventData(auditEvent.EventData); err != nil {
+		s.logger.Info("EventData validation failed", "error", err,
+			"correlation_id", req.CorrelationID)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error",
+			"event_data exceeds size or nesting depth limits", s.logger)
+		return
+	}
+
+	// 4. Handle parent_event_id FK constraint (query parent's event_date)
+	// DF-C2: Set BOTH ParentEventID and ParentEventDate so the composite FK
+	// (parent_event_id, parent_event_date) is fully satisfied.
 	if req.ParentEventID.IsSet() {
 		parentEventID := req.ParentEventID.Value
 		var parentDate time.Time
@@ -136,6 +157,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		auditEvent.ParentEventID = &parentEventID
+		auditEvent.ParentEventDate = &parentDate
 	}
 
 	// 5. Convert to repository type
@@ -145,7 +167,8 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		// Conversion errors are client-side validation errors (e.g., invalid event_data JSON)
 		// Return 400 Bad Request, not 500 Internal Server Error
 		s.logger.Info("Invalid event_data format", "error", err)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_event_data", "Invalid Event Data", err.Error(), s.logger)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_event_data", "Invalid Event Data",
+			"The event_data field could not be processed; check JSON structure and field types", s.logger)
 		return
 	}
 
@@ -286,7 +309,7 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 			"error", err,
 			"query", r.URL.RawQuery)
 		writeValidationRFC7807Error(w, validation.NewValidationErrorProblem("query parameters", map[string]string{
-			"query": err.Error(),
+			"query": "invalid query parameters",
 		}), s)
 		return
 	}
@@ -298,7 +321,7 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 		s.logger.Info("Failed to build query",
 			"error", err)
 		writeValidationRFC7807Error(w, validation.NewValidationErrorProblem("query parameters", map[string]string{
-			"pagination": err.Error(),
+			"pagination": "invalid pagination parameters",
 		}), s)
 		return
 	}

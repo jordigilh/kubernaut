@@ -134,16 +134,18 @@ func (v *NotificationAuditValidator) validateChannel(channel string, valErr *Val
 	}
 
 	// Enum validation (case-insensitive)
+	// Authority: migrations/006_add_teams_channel.sql
 	validChannels := map[string]bool{
-		"email":     true,
 		"slack":     true,
 		"pagerduty": true,
 		"teams":     true,
-		"sms":       true,
+		"console":   true,
+		"file":      true,
+		"log":       true,
 	}
 
 	if !validChannels[strings.ToLower(channel)] {
-		valErr.AddFieldError("channel", fmt.Sprintf("channel must be one of: email, slack, pagerduty, teams, sms (got '%s')", channel))
+		valErr.AddFieldError("channel", fmt.Sprintf("channel must be one of: slack, pagerduty, teams, console, file, log (got '%s')", channel))
 	}
 }
 

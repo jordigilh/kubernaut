@@ -244,11 +244,12 @@ var _ = Describe("DLQ Retry Worker (DD-009 V1.0)", func() {
 				PollInterval:  100 * time.Millisecond, // Fast poll for test
 				MaxBatchSize:  10,
 				MaxRetries:    6,
+				ReadTimeout:   100 * time.Millisecond,
 				ConsumerGroup: "test-workers",
 				ConsumerName:  "test-worker-1",
 			}
 
-			worker := server.NewDLQRetryWorker(dlqClient, nil, workerConfig, logger)
+			worker := server.NewDLQRetryWorker(dlqClient, nil, nil, workerConfig, logger, nil)
 
 			// ACT: Start the worker (launches goroutine)
 			worker.Start(context.Background())

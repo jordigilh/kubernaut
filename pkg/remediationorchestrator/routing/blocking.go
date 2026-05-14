@@ -387,8 +387,8 @@ func (r *RoutingEngine) CheckConsecutiveFailures(
 	// Count consecutive failures from most recent RRs
 	// Stop counting when we hit a non-Failed RR (success breaks the consecutive chain)
 	consecutiveFailures := 0
-	for _, item := range list.Items {
-		// Skip the incoming RR itself (it's not failed yet)
+	for i := range list.Items {
+		item := &list.Items[i]
 		if item.UID == rr.UID {
 			logger.Info("Skipping incoming RR", "name", item.Name)
 			continue
@@ -468,7 +468,7 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 	// If the found RR was created AFTER us, we are the original and must not be blocked.
 	// This prevents circular deadlocks (A blocks B, B blocks A).
 	if !rr.CreationTimestamp.IsZero() && !originalRR.CreationTimestamp.IsZero() {
-		if originalRR.CreationTimestamp.Time.After(rr.CreationTimestamp.Time) {
+		if originalRR.CreationTimestamp.After(rr.CreationTimestamp.Time) {
 			return nil, nil // We are older → we are the original
 		}
 		// Same timestamp: use name as secondary tiebreaker (lexicographic)

@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -139,6 +140,11 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
 	}
 
+	// AU-9: Generate RSA signing certificate for audit exports
+	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate signing certificate: %w", err)
+	}
+
 	type deployResult struct {
 		name string
 		err  error
@@ -189,7 +195,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// PHASE 5: Seed workflows + deploy Mock LLM (same as AIAnalysis E2E Phase 4c/4d)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🌱 PHASE 5: Seeding workflows and deploying Mock LLM...")
-	if err := createKAE2EServiceAccount(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := CreateKAE2EServiceAccount(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create E2E service account: %w", err)
 	}
 
@@ -220,34 +226,65 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows\n", len(workflowUUIDs))
 
-	if err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, images["mock-llm"], workflowUUIDs, writer); err != nil {
+	if err := DeployMockLLMInNamespace(ctx, namespace, kubeconfigPath, images["mock-llm"], workflowUUIDs, writer); err != nil {
 		return fmt.Errorf("failed to deploy Mock LLM: %w", err)
 	}
 
 	// Deploy shadow alignment evaluation instance (same image, mode: shadow)
-	if err := deployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, images["mock-llm"], writer); err != nil {
+	if err := DeployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, images["mock-llm"], writer); err != nil {
 		return fmt.Errorf("failed to deploy Mock LLM Shadow: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 5.5: Install ambiguous-kind CRDs for apiVersion gate E2E (#1044)
+	// PHASE 5.5: Install CRDs required by interactive tests (#703)
+	// The RemediationRequest CRD is needed so createTestRemediationRequest()
+	// in interactive E2E tests can provision RR fixtures for the
+	// RRExistenceChecker (HARM-004). Without this, the K8s API rejects
+	// CR creation with "no matches for kubernaut.ai/v1alpha1".
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📋 PHASE 5.5: Installing CRDs for interactive tests (#703)...")
+	if err := installKAE2ECRDs(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to install CRDs: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 5.6: Install ambiguous-kind CRDs for apiVersion gate E2E (#1044)
 	// Two CRDs with Kind "TestWidget" in different API groups so the REST
 	// mapper reports the kind as ambiguous. Must be installed BEFORE KA
 	// starts so its mapper discovers both groups at init.
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n🔧 PHASE 5.5: Installing ambiguous-kind CRDs (#1044)...")
+	_, _ = fmt.Fprintln(writer, "\n🔧 PHASE 5.6: Installing ambiguous-kind CRDs (#1044)...")
 	if err := createAmbiguousKindCRDs(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create ambiguous-kind CRDs: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 5.8: Deploy DEX OIDC Provider for JWT E2E testing (#1009)
+	// Must be ready BEFORE KA starts so JWKS pre-warm succeeds.
+	// DD-AUTH-MCP-001 v2.0: Pattern B validation with real OIDC provider.
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 5.8: Deploying DEX OIDC Provider (#1009)...")
+	if err := PreloadDexImage(clusterName, writer); err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to preload DEX image (non-fatal, Kind may pull): %v\n", err)
+	}
+	if err := deployDexInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy DEX: %w", err)
+	}
+	if err := waitForDexReady(writer); err != nil {
+		return fmt.Errorf("DEX not ready: %w", err)
+	}
+	if err := createDexUserRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create DEX user RBAC: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 6: Deploy Kubernaut Agent
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🤖 PHASE 6: Deploying Kubernaut Agent...")
-	if err := deployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := DeployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy KA RBAC: %w", err)
 	}
-	if err := deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, images["kubernautagent"], writer); err != nil {
+	if err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, images["kubernautagent"], true, writer); err != nil {
 		return fmt.Errorf("failed to deploy Kubernaut Agent: %w", err)
 	}
 
@@ -263,6 +300,28 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n✅ Kubernaut Agent E2E infrastructure ready")
+	return nil
+}
+
+// installKAE2ECRDs installs the Kubernaut CRDs required by interactive E2E tests.
+// The RemediationRequest CRD is mandatory for createTestRemediationRequest() which
+// provisions RR fixtures so the RRExistenceChecker (HARM-004) allows sessions to start.
+func installKAE2ECRDs(kubeconfigPath string, writer io.Writer) error {
+	projectRoot := getProjectRoot()
+	crdFiles := []string{
+		"kubernaut.ai_remediationrequests.yaml",
+	}
+	for _, crdFile := range crdFiles {
+		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
+		_, _ = fmt.Fprintf(writer, "  ├── Installing %s...\n", crdFile)
+		crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+		crdCmd.Stdout = writer
+		crdCmd.Stderr = writer
+		if err := crdCmd.Run(); err != nil {
+			return fmt.Errorf("failed to install CRD %s: %w", crdFile, err)
+		}
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ CRDs installed")
 	return nil
 }
 
@@ -643,9 +702,9 @@ subjects:
 	return nil
 }
 
-// deployKubernautAgentServiceRBAC creates the ServiceAccount and RBAC for KA pods.
+// DeployKubernautAgentServiceRBAC creates the ServiceAccount and RBAC for KA pods.
 // Mirrors the KA RBAC pattern (DD-AUTH-014) with KA-specific names.
-func deployKubernautAgentServiceRBAC(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func DeployKubernautAgentServiceRBAC(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	rbacManifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: ServiceAccount
@@ -741,6 +800,18 @@ rules:
   - apiGroups: ["metrics.k8s.io"]
     resources: ["pods", "nodes"]
     verbs: ["get", "list"]
+  # Interactive mode: RR existence check (#703 HARM-004)
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["get", "list"]
+  # Interactive mode: Lease-based session management (#703)
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "delete"]
+  # Interactive mode: user impersonation (DD-AUTH-MCP-001)
+  - apiGroups: [""]
+    resources: ["users", "groups", "serviceaccounts"]
+    verbs: ["impersonate"]
   - apiGroups: ["alpha.kubernaut-test.ai"]
     resources: ["testwidgets"]
     verbs: ["get", "list", "watch"]
@@ -776,15 +847,28 @@ subjects:
 	return nil
 }
 
-// deployKubernautAgentOnly deploys the Go Kubernaut Agent as a Deployment + NodePort Service.
+// DeployKubernautAgentOnly deploys the Go Kubernaut Agent as a Deployment + NodePort Service.
 // Same port mapping as legacy HolmesGPT API / KA (30088 → 8080, host 8088) for API contract parity.
-func deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
+// enableJWT controls whether jwtProviders are included in the config (requires DEX to be deployed).
+func DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, imageTag string, enableJWT bool, writer io.Writer) error {
 	imagePullPolicy := GetImagePullPolicy()
 
 	// DD-TEST-007: Build GOCOVERDIR YAML snippets for binary coverage instrumentation
 	covEnv := coverageEnvYAML("kubernautagent")
 	covMount := coverageVolumeMountYAML()
 	covVol := coverageVolumeYAML()
+
+	jwtConfigSection := ""
+	if enableJWT {
+		jwtConfigSection = `      jwtProviders:
+        - name: dex-e2e
+          issuer: "http://dex:5556/dex"
+          jwksURL: "http://dex:5556/dex/keys"
+          audience: "kubernaut-agent"
+          claimMappings:
+            username: "email"
+            groups: "groups"`
+	}
 
 	manifest := fmt.Sprintf(`---
 apiVersion: v1
@@ -819,6 +903,13 @@ data:
     integrations:
       dataStorage:
         url: "https://data-storage-service:8080"
+    interactive:
+      enabled: true
+      sessionTTL: "5m"
+      inactivityTimeout: "2m"
+      maxConcurrentSessions: 3
+      rateLimitPerUser: 20
+%s
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -942,7 +1033,7 @@ spec:
     nodePort: 30988
   selector:
     app: kubernaut-agent
-`, namespace, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)
+`, namespace, jwtConfigSection, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)
 
 	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)

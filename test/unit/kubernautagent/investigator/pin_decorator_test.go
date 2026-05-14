@@ -82,6 +82,10 @@ func (s *pinSubmitClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatRe
 	}, nil
 }
 
+func (s *pinSubmitClient) StreamChat(_ context.Context, _ llm.ChatRequest, _ func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	return s.Chat(context.Background(), llm.ChatRequest{})
+}
+
 func (s *pinSubmitClient) Close() error { return nil }
 
 var _ = Describe("PinDecorator — C-1 LLMProxy Bypass Fix", func() {

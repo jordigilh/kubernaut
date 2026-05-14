@@ -331,10 +331,10 @@ var _ = Describe("EM Timing Computation (#253, #277, BR-EM-009, BR-EM-010.4)", f
 // uses a fixed "now" instead of time.Now(). This enables table-driven tests
 // with predictable results.
 func checkWindowStateAt(now time.Time, anchor metav1.Time, stabilizationWindow time.Duration, validityDeadline metav1.Time) validity.WindowState {
-	if !validityDeadline.Time.After(now) {
+	if !validityDeadline.After(now) {
 		return validity.WindowExpired
 	}
-	stabilizationEnd := anchor.Time.Add(stabilizationWindow)
+	stabilizationEnd := anchor.Add(stabilizationWindow)
 	if now.Before(stabilizationEnd) {
 		return validity.WindowStabilizing
 	}

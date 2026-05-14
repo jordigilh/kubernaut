@@ -19,11 +19,13 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
@@ -68,12 +70,17 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 	s.logger.V(1).Info("Parsing request body...")
 	var audit models.NotificationAudit
 	if err := json.NewDecoder(r.Body).Decode(&audit); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, s.logger)
+			return
+		}
 		s.logger.Info("Invalid JSON in request body",
 			"error", err,
 			"remote_addr", r.RemoteAddr)
+		s.logger.Info("JSON decode failed", "error", err)
 		writeValidationRFC7807Error(w, validation.NewValidationErrorProblem(
 			"notification_audit",
-			map[string]string{"body": "invalid JSON: " + err.Error()},
+			map[string]string{"body": "request body is not valid JSON"},
 		), s)
 		return
 	}
@@ -91,11 +98,11 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 		// Validator returns ValidationError with field-specific errors
 		// Extract field errors for RFC 7807 response
 		var fieldErrors map[string]string
-		if valErr, ok := err.(*validation.ValidationError); ok {
+		var valErr *validation.ValidationError
+		if errors.As(err, &valErr) {
 			fieldErrors = valErr.FieldErrors
 		} else {
-			// Fallback for unexpected error type
-			fieldErrors = map[string]string{"error": err.Error()}
+			fieldErrors = map[string]string{"error": "validation failed"}
 		}
 
 		writeValidationRFC7807Error(w, validation.NewValidationErrorProblem(
@@ -117,7 +124,8 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 			"notification_id", audit.NotificationID,
 			"write_duration_seconds", writeDuration)
 		// Check if it's a known RFC 7807 error type (validation, conflict, not found)
-		if rfc7807Err, ok := err.(*validation.RFC7807Problem); ok {
+		var rfc7807Err *validation.RFC7807Problem
+		if errors.As(err, &rfc7807Err) {
 			s.logger.Info("Database write returned RFC 7807 error",
 				"error_type", rfc7807Err.Type,
 				"status", rfc7807Err.Status,

@@ -6,14 +6,24 @@ metadata:
 data:
   config.yaml: |
     server:
-      port: 8081  # DD-AUTH-004: Internal port (oauth-proxy listens on 8080, proxies to 8081)
+      port: 8080  # DD-AUTH-014: Direct access (no proxy)
+      healthPort: 8081
+      metricsPort: 9090
       host: "0.0.0.0"
       readTimeout: "30s"
       writeTimeout: "30s"
+      # #1048 Phase 4 / SC-5: Maximum request body size in bytes (default: 5242880 = 5 MiB)
+      # Clamped to [1048576, 52428800] (1–50 MiB). Plain integer only.
+      maxBodySize: "5242880"
+      # #1048 Phase 4 / AC-4: CORS allowed origins. Use ["*"] only in dev.
+      # Production should list explicit origins, e.g. ["https://dashboard.kubernaut.ai"]
+      corsAllowedOrigins: []
+      # #1048 Phase 5 / AU-9: Directory containing signing certificate (tls.crt, tls.key)
+      # Default: /etc/certs. Override for Helm environments where cert-manager mounts differ.
+      # signerCertDir: "/etc/certs"
 
     logging:
       level: "info"
-      format: "json"
 
     database:
       host: "postgresql.kubernaut-system.svc.cluster.local"
@@ -31,10 +41,16 @@ data:
 
     redis:
       addr: "redis.kubernaut-system.svc.cluster.local:6379"
-      db: 0
-      dlqStreamName: "audit:dlq:production"
       dlqMaxLen: 10000
-      dlqConsumerGroup: "datastorage-dlq-consumers"
       secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
       passwordKey: "password"
+
+    # #1048 Phase 5 / AU-11: Retention worker configuration
+    # Purges audit events past their retention period while respecting legal holds.
+    # Default: enabled in production (2555 days per ADR-034 SOC 2 / ISO 27001).
+    retention:
+      enabled: true
+      interval: "24h"
+      batchSize: 1000
+      defaultDays: 2555
 

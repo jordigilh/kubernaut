@@ -77,6 +77,14 @@ func (m *mockLLMClient) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatRe
 	return llm.ChatResponse{}, nil
 }
 
+func (m *mockLLMClient) StreamChat(ctx context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	resp, err := m.Chat(ctx, req)
+	if err == nil {
+		_ = cb(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
+	}
+	return resp, err
+}
+
 func (m *mockLLMClient) Close() error { return nil }
 
 func (m *mockLLMClient) chatCalls() int {
@@ -91,6 +99,14 @@ type slowMockLLMClient struct {
 }
 
 func (m *slowMockLLMClient) Close() error { return nil }
+
+func (m *slowMockLLMClient) StreamChat(ctx context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	resp, err := m.Chat(ctx, req)
+	if err == nil {
+		_ = cb(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
+	}
+	return resp, err
+}
 
 func (m *slowMockLLMClient) Chat(ctx context.Context, _ llm.ChatRequest) (llm.ChatResponse, error) {
 	select {
@@ -172,6 +188,10 @@ func (p *panicMockLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.Cha
 	panic("simulated crypto/rand failure in boundary.Generate")
 }
 
+func (p *panicMockLLMClient) StreamChat(_ context.Context, _ llm.ChatRequest, _ func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	panic("simulated crypto/rand failure in boundary.Generate")
+}
+
 func (p *panicMockLLMClient) Close() error { return nil }
 
 // mockAuditStore captures audit events for testing.
@@ -204,6 +224,14 @@ func (m *concurrentMockLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (ll
 	}
 	m.call++
 	return llm.ChatResponse{}, nil
+}
+
+func (m *concurrentMockLLMClient) StreamChat(ctx context.Context, req llm.ChatRequest, cb func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	resp, err := m.Chat(ctx, req)
+	if err == nil {
+		_ = cb(llm.ChatStreamEvent{Delta: resp.Message.Content, Done: true})
+	}
+	return resp, err
 }
 
 func (m *concurrentMockLLMClient) Close() error { return nil }

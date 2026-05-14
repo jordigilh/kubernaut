@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/eventdata"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
@@ -48,28 +49,46 @@ import (
 //
 // ========================================
 
+// InternalAuditClientConfig holds configurable parameters for InternalAuditClient.
+// DF-H2: RetentionDays is configurable instead of hardcoded.
+type InternalAuditClientConfig struct {
+	RetentionDays int // Per-event retention (default: 2555 = 7 years, SOC 2 / ISO 27001)
+}
+
+// DefaultInternalAuditClientConfig returns production defaults.
+func DefaultInternalAuditClientConfig() InternalAuditClientConfig {
+	return InternalAuditClientConfig{
+		RetentionDays: 2555,
+	}
+}
+
 // InternalAuditClient writes audit events directly to PostgreSQL
 // Used by Data Storage Service to avoid circular dependency (cannot call its own REST API)
 //
 // BR-STORAGE-013: Must use direct PostgreSQL writes (not REST API)
 type InternalAuditClient struct {
-	db *sql.DB
+	db     *sql.DB
+	config InternalAuditClientConfig
 }
 
-// NewInternalAuditClient creates a new internal audit client
-//
-// Parameters:
-//   - db: PostgreSQL database connection
-//
-// Returns:
-//   - DataStorageClient: Client for writing audit events
-//
-// Usage:
-//
-//	internalClient := audit.NewInternalAuditClient(db)
-//	auditStore := audit.NewBufferedStore(internalClient, audit.DefaultConfig(), logger)
+// NewInternalAuditClient creates a new internal audit client with default config.
 func NewInternalAuditClient(db *sql.DB) DataStorageClient {
-	return &InternalAuditClient{db: db}
+	return &InternalAuditClient{
+		db:     db,
+		config: DefaultInternalAuditClientConfig(),
+	}
+}
+
+// NewInternalAuditClientWithConfig creates an internal audit client with explicit config.
+// DF-H2: Allows configurable RetentionDays instead of hardcoded 90.
+func NewInternalAuditClientWithConfig(db *sql.DB, config InternalAuditClientConfig) DataStorageClient {
+	if config.RetentionDays <= 0 {
+		config.RetentionDays = DefaultInternalAuditClientConfig().RetentionDays
+	}
+	return &InternalAuditClient{
+		db:     db,
+		config: config,
+	}
 }
 
 // StoreBatch writes audit events directly to PostgreSQL (bypasses REST API)
@@ -118,19 +137,19 @@ func (c *InternalAuditClient) StoreBatch(ctx context.Context, events []*ogenclie
 
 	// Insert each event
 	for _, event := range events {
-		// Generate event_id
 		eventID := uuid.New().String()
-
-		// Calculate event_date from event_timestamp for partitioning
 		eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
 
-		// Marshal event_data to JSON
 		eventDataJSON, err := json.Marshal(event.EventData)
 		if err != nil {
 			return fmt.Errorf("failed to marshal event_data: %w", err)
 		}
 
-		// Extract optional fields (ogen uses OptString, not *string)
+		// DF-M1: Validate EventData before insert (defense-in-depth)
+		if err := eventdata.ValidateEventData(eventDataJSON); err != nil {
+			return fmt.Errorf("event_data validation failed: %w", err)
+		}
+
 		actorType := ""
 		if event.ActorType.IsSet() {
 			actorType = event.ActorType.Value
@@ -148,28 +167,25 @@ func (c *InternalAuditClient) StoreBatch(ctx context.Context, events []*ogenclie
 			resourceID = event.ResourceID.Value
 		}
 
-		// DD-AUDIT-002 V2.0: Hardcoded defaults (OpenAPI spec doesn't have these fields)
-		// Option C (Hybrid): InternalAuditClient only, no spec/schema changes needed
-		const defaultRetentionDays = 90
 		const defaultIsSensitive = false
 
 		_, err = stmt.ExecContext(ctx,
-			eventID,                    // event_id (generated UUID)
-			event.Version,              // version (OpenAPI field)
-			event.EventTimestamp,       // event_timestamp
-			eventDate,                  // event_date for partitioning
-			event.EventType,            // event_type
-			event.EventCategory,        // event_category (ADR-034)
-			event.EventAction,          // event_action (ADR-034)
-			string(event.EventOutcome), // event_outcome (ADR-034, enum)
-			actorType,                  // actor_type (optional)
-			actorID,                    // actor_id (optional)
-			resourceType,               // resource_type (optional)
-			resourceID,                 // resource_id (optional)
-			event.CorrelationID,        // correlation_id (OpenAPI field)
-			eventDataJSON,              // event_data (JSONB)
-			defaultRetentionDays,       // retention_days (hardcoded default)
-			defaultIsSensitive,         // is_sensitive (hardcoded default)
+			eventID,
+			event.Version,
+			event.EventTimestamp,
+			eventDate,
+			event.EventType,
+			event.EventCategory,
+			event.EventAction,
+			string(event.EventOutcome),
+			actorType,
+			actorID,
+			resourceType,
+			resourceID,
+			event.CorrelationID,
+			eventDataJSON,
+			c.config.RetentionDays, // DF-H2: configurable, not hardcoded
+			defaultIsSensitive,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert audit event: %w", err)

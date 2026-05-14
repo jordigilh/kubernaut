@@ -32,7 +32,7 @@ import (
 func NewTestAPIResourceRegistry() *APIResourceRegistry {
 	cs := fakeclientset.NewSimpleClientset()
 	fd := cs.Discovery().(*fakediscovery.FakeDiscovery)
-	fd.Fake.Resources = []*metav1.APIResourceList{
+	fd.Resources = []*metav1.APIResourceList{
 		{
 			GroupVersion: "apps/v1",
 			APIResources: []metav1.APIResource{
@@ -86,7 +86,7 @@ func NewTestAPIResourceRegistry() *APIResourceRegistry {
 func NewTestAPIResourceRegistryWithNamespace() *APIResourceRegistry {
 	cs := fakeclientset.NewSimpleClientset()
 	fd := cs.Discovery().(*fakediscovery.FakeDiscovery)
-	fd.Fake.Resources = []*metav1.APIResourceList{
+	fd.Resources = []*metav1.APIResourceList{
 		{
 			GroupVersion: "apps/v1",
 			APIResources: []metav1.APIResource{

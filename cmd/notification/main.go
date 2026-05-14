@@ -83,7 +83,7 @@ func init() {
 // Returns error if validation fails.
 func validateFileOutputDirectory(dir string) error {
 	// Create directory if it doesn't exist (mkdir -p behavior)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
@@ -98,7 +98,7 @@ func validateFileOutputDirectory(dir string) error {
 
 	// Check it's writable (create temp file)
 	testFile := dir + "/.write-test"
-	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test"), 0o644); err != nil {
 		return fmt.Errorf("directory not writable: %w", err)
 	}
 	if err := os.Remove(testFile); err != nil {

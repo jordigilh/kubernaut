@@ -82,7 +82,7 @@ var _ = Describe("RO Config Hot-Reload via FileWatcher (IT-RO-835)", func() {
 	})
 
 	AfterEach(func() {
-		os.RemoveAll(tmpDir)
+		Expect(os.RemoveAll(tmpDir)).To(Succeed())
 	})
 
 	It("IT-RO-835-01: file modification triggers config update via FileWatcher", func() {

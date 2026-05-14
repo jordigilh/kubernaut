@@ -116,6 +116,28 @@ var _ = Describe("K8sAuthenticator", func() {
 			Expect(user).To(BeEmpty())
 		})
 	})
+
+	Context("UT-KA-1009-023: ProviderType set on successful K8s authentication", func() {
+		It("should set ProviderType to 'k8s:tokenreview' on ValidateTokenFull", func() {
+			fakeClient.PrependReactor("create", "tokenreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				createAction := action.(k8stesting.CreateAction)
+				review := createAction.GetObject().(*authenticationv1.TokenReview)
+				review.Status = authenticationv1.TokenReviewStatus{
+					Authenticated: true,
+					User: authenticationv1.UserInfo{
+						Username: "system:serviceaccount:kubernaut-system:apifrontend",
+						Groups:   []string{"system:serviceaccounts"},
+					},
+				}
+				return true, review, nil
+			})
+
+			userInfo, err := authenticator.ValidateTokenFull(ctx, "valid-sa-token")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(userInfo.Username).To(Equal("system:serviceaccount:kubernaut-system:apifrontend"))
+			Expect(userInfo.ProviderType).To(Equal("k8s:tokenreview"))
+		})
+	})
 })
 
 var _ = Describe("K8sAuthorizer", func() {

@@ -19,6 +19,7 @@ package enrichment
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -204,6 +205,10 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 		return chain, nil
 	}
 
+	if isForbiddenError(err) {
+		return nil, err
+	}
+
 	if e.retryConfig.MaxRetries == 0 || IsNotFoundError(err) || IsNoMatchError(err) {
 		return nil, err
 	}
@@ -231,13 +236,15 @@ func (e *Enricher) resolveOwnerChainWithRetry(ctx context.Context, kind, name, n
 		if err == nil {
 			return chain, nil
 		}
+		if isForbiddenError(err) {
+			return nil, err
+		}
 	}
 
 	return nil, err
 }
 
-// isTransientK8sError classifies K8s API errors for observability purposes.
-// IsNoMatchError returns true if the error indicates an unknown Kind/resource
+// IsNoMatchError reports whether the error indicates an unknown Kind/resource
 // type (CRD not registered with the API server). This distinguishes schema
 // limitations (e.g. cert-manager not installed) from actual resource failures.
 func IsNoMatchError(err error) bool {
@@ -246,14 +253,15 @@ func IsNoMatchError(err error) bool {
 	return errors.As(err, &noResource) || errors.As(err, &noKind)
 }
 
-// Not used in the retry path (HAPI retries all errors), but kept for logging
-// and future use in metrics/audit classification.
-func isTransientK8sError(err error) bool {
-	return apierrors.IsTimeout(err) ||
-		apierrors.IsServerTimeout(err) ||
-		apierrors.IsServiceUnavailable(err) ||
-		apierrors.IsInternalError(err) ||
-		apierrors.IsTooManyRequests(err)
+// ErrRBACForbidden is returned when an enrichment K8s API call fails with
+// 403 Forbidden, indicating the impersonated user lacks RBAC permissions in
+// the target namespace. Per BR-INTERACTIVE-002, authorization failures must
+// be surfaced as errors — not silently swallowed as partial failures.
+var ErrRBACForbidden = errors.New("RBAC: access denied")
+
+// isForbiddenError reports whether the error wraps a K8s API 403 Forbidden.
+func isForbiddenError(err error) bool {
+	return apierrors.IsForbidden(err)
 }
 
 // Enrich resolves enrichment data for the given resource.
@@ -270,6 +278,9 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, apiVersion
 	if specHash == "" {
 		computed, err := e.k8s.GetSpecHash(ctx, kind, name, namespace, apiVersion)
 		if err != nil {
+			if isForbiddenError(err) {
+				return nil, fmt.Errorf("%w: GetSpecHash %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, err)
+			}
 			e.logger.Error(err, "enrichment: specHash auto-computation failed, proceeding with empty",
 				"resource", namespace+"/"+kind+"/"+name,
 			)
@@ -282,6 +293,9 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, apiVersion
 
 	chain, ownerErr := e.resolveOwnerChainWithRetry(ctx, kind, name, namespace, apiVersion)
 	if ownerErr != nil {
+		if isForbiddenError(ownerErr) {
+			return nil, fmt.Errorf("%w: GetOwnerChain %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, ownerErr)
+		}
 		result.OwnerChainError = ownerErr
 		if IsNotFoundError(ownerErr) {
 			result.TargetResourceDeleted = true
@@ -299,6 +313,9 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, apiVersion
 	if e.labelDetector != nil {
 		labels, quotaDetails, labelErr := e.labelDetector.DetectLabels(ctx, kind, name, namespace, result.OwnerChain)
 		if labelErr != nil {
+			if isForbiddenError(labelErr) {
+				return nil, fmt.Errorf("%w: DetectLabels %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, labelErr)
+			}
 			e.logger.Error(labelErr, "enrichment: label detection failed",
 				"resource", namespace+"/"+kind+"/"+name,
 			)

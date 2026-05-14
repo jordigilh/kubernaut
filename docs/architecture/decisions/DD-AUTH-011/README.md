@@ -150,7 +150,7 @@ Session summaries from January 26, 2026.
 ### Related DDs
 - **[DD-AUTH-009: OAuth2-Proxy Workflow Attribution](../DD-AUTH-009-oauth2-proxy-workflow-attribution-implementation.md)** - Workflow audit tracking with X-Auth-Request-User header
 - **[DD-AUTH-006: HAPI OAuth-Proxy Configuration](../DD-AUTH-006-kubernaut-agent-oauth-proxy-config.md)** - HolmesGPT API sidecar config
-- **[DD-AUTH-004: DataStorage Client Authentication](../DD-AUTH-004-datastorage-client-authentication-pattern.md)** - ServiceAccount authentication pattern
+- **[DD-AUTH-005: DataStorage Client Authentication](../DD-AUTH-005-datastorage-client-authentication-pattern.md)** - ServiceAccount authentication pattern
 - **[DD-AUDIT-004: RR Reconstruction Field Mapping](../DD-AUDIT-004-RR-RECONSTRUCTION-FIELD-MAPPING.md)** - Audit trail for RemediationRequest reconstruction
 
 ### Related ADRs

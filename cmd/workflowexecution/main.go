@@ -30,7 +30,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -440,18 +439,6 @@ func main() {
 			setupLog.Info("Audit store closed successfully")
 		}
 	}
-}
-
-func readSecretKey(c client.Client, namespace, name, key string) (string, error) {
-	var secret corev1.Secret
-	if err := c.Get(context.Background(), types.NamespacedName{Namespace: namespace, Name: name}, &secret); err != nil {
-		return "", fmt.Errorf("get secret %s/%s: %w", namespace, name, err)
-	}
-	val, ok := secret.Data[key]
-	if !ok {
-		return "", fmt.Errorf("key %q not found in secret %s/%s", key, namespace, name)
-	}
-	return string(val), nil
 }
 
 func readSecretKeyDirect(clientset kubernetes.Interface, namespace, name, key string) (string, error) {

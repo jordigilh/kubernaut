@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
@@ -174,6 +175,20 @@ func (inv *Investigator) apiVersionValidationGate(
 		return result
 	}
 	if !ambiguous {
+		// #1051: auto-resolve apiVersion for non-ambiguous kinds using the
+		// REST mapper. This guarantees RemediationTarget.APIVersion is always
+		// populated after RCA, enabling GVK-format workflow component matching.
+		// PROD-2: when len(gvrs) > 1 but not ambiguous (multiple versions in
+		// the same group, e.g. v1 and v1beta1), we skip auto-resolve because
+		// the preferred version is not deterministic. The fallback in custom
+		// tools will use lowercase kind for discovery in this edge case.
+		if len(gvrs) == 1 {
+			result.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
+			inv.logger.Info("apiVersionValidationGate: auto-resolved apiVersion for non-ambiguous kind",
+				"kind", kind,
+				"api_version", result.RemediationTarget.APIVersion,
+				"correlation_id", correlationID)
+		}
 		return result
 	}
 
@@ -333,6 +348,16 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 		result.ServiceAccountName = meta.ServiceAccountName
 	}
 	result.WorkflowVersion = meta.Version
+}
+
+// gvrToAPIVersion converts a GroupVersionResource to the apiVersion string
+// format used by Kubernetes: "group/version" for named groups, "version" for
+// core group (empty group). Issue #1051.
+func gvrToAPIVersion(gvr schema.GroupVersionResource) string {
+	if gvr.Group == "" {
+		return gvr.Version
+	}
+	return gvr.Group + "/" + gvr.Version
 }
 
 // CheckWorkflowTargetAlignment verifies that the selected workflow's component

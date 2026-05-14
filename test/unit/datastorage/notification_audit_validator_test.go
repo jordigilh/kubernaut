@@ -52,7 +52,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			RemediationID:   "test-remediation-1",
 			NotificationID:  "test-notification-1",
 			Recipient:       "test@example.com",
-			Channel:         "email",
+			Channel:         "slack",
 			MessageSummary:  "Test notification message",
 			Status:          "sent",
 			SentAt:          now,
@@ -119,10 +119,12 @@ var _ = Describe("NotificationAuditValidator", func() {
 				// CORRECTNESS: Channel is valid
 				Expect(err).ToNot(HaveOccurred(), "channel %q should be valid", channel)
 			},
-			Entry("channel: email", "email"),
 			Entry("channel: slack", "slack"),
 			Entry("channel: pagerduty", "pagerduty"),
-			Entry("channel: sms", "sms"),
+			Entry("channel: teams", "teams"),
+			Entry("channel: console", "console"),
+			Entry("channel: file", "file"),
+			Entry("channel: log", "log"),
 		)
 
 		// BEHAVIOR: Validator accepts escalation levels from 0 to 100
@@ -360,7 +362,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			// ARRANGE: 256 character recipient
 			audit.Recipient = strings.Repeat("a", 256)
 			err := validator.Validate(audit)
-			Expect(err).ToNot(BeNil())
+			Expect(err).To(HaveOccurred())
 			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["recipient"]).To(ContainSubstring("255 characters"))
@@ -444,7 +446,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 		// CORRECTNESS: All valid channel variations accepted (EMAIL, email, Email, etc.)
 		It("should accept all case variations of valid channels", func() {
 			// ARRANGE: All valid channel variations (case-insensitive)
-			channels := []string{"EMAIL", "Email", "SLACK", "Slack", "PAGERDUTY", "PagerDuty", "SMS", "Sms"}
+			channels := []string{"SLACK", "Slack", "PAGERDUTY", "PagerDuty", "TEAMS", "Teams", "CONSOLE", "Console", "FILE", "File", "LOG", "Log"}
 
 			// ACT & CORRECTNESS: Validate each variation
 			for _, channel := range channels {

@@ -134,7 +134,7 @@ func (v *OpenAPIValidator) Middleware(next http.Handler) http.Handler {
 		options := &openapi3filter.Options{
 			// Enable strict validation
 			ExcludeRequestBody:    false, // Validate request body
-			ExcludeResponseBody:   true,  // Don't validate responses (performance)
+			ExcludeResponseBody:   true,  // FED-L1: Intentionally disabled for performance; see DD-AUTH-014
 			IncludeResponseStatus: false,
 
 			// Collect all validation errors, not just the first one
@@ -178,28 +178,29 @@ func (v *OpenAPIValidator) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// writeValidationError writes an RFC 7807 error response for validation failures
+// writeValidationError writes an RFC 7807 error response for validation failures.
+// SI-11: Raw kin-openapi error strings are logged server-side but not exposed
+// to clients to prevent leaking schema paths and constraint details.
 func (v *OpenAPIValidator) writeValidationError(w http.ResponseWriter, r *http.Request, validationErr error) {
-	// Parse validation errors
-	var details string
-	var validationErrors []string
+	var errorCount int
 
-	// kin-openapi may return multiple validation errors
 	if multiErr, ok := validationErr.(interface{ Unwrap() []error }); ok {
-		for _, err := range multiErr.Unwrap() {
-			validationErrors = append(validationErrors, err.Error())
-		}
-		if len(validationErrors) > 0 {
-			details = validationErrors[0] // Use first error as primary detail
-			if len(validationErrors) > 1 {
-				details = fmt.Sprintf("%s (and %d more errors)", details, len(validationErrors)-1)
-			}
-		}
+		errorCount = len(multiErr.Unwrap())
 	} else {
-		details = validationErr.Error()
+		errorCount = 1
 	}
 
-	// RFC 7807 Problem Details
+	v.logger.Info("OpenAPI validation failed",
+		"error", validationErr.Error(),
+		"error_count", errorCount,
+		"method", r.Method,
+		"path", r.URL.Path)
+
+	details := "The request did not pass OpenAPI schema validation"
+	if errorCount > 1 {
+		details = fmt.Sprintf("The request did not pass OpenAPI schema validation (%d errors)", errorCount)
+	}
+
 	problem := map[string]interface{}{
 		"type":   "https://kubernaut.ai/problems/validation-error",
 		"title":  "Validation Error",

@@ -364,6 +364,15 @@ func PreloadExternalImage(imageName, clusterName string, writer io.Writer) error
 		return fmt.Errorf("failed to save %s: %w", imageName, err)
 	}
 
+	// Remove Podman copy immediately after save — the tar has the bits and
+	// keeping both wastes disk during the Kind load that follows.
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	}
+
 	loadCmd := exec.Command("kind", "load", "image-archive", tmpFile, "--name", clusterName)
 	loadCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
 	loadCmd.Stdout = writer

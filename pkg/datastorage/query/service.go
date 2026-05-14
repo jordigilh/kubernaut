@@ -71,6 +71,16 @@ type DBQuerier interface {
 	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 }
 
+// remediationAuditColumns is the explicit column list for remediation_audit,
+// derived from RemediationAuditResult struct db: tags. #1088 Phase 6.1: replaces SELECT *
+// to protect against schema drift.
+const remediationAuditColumns = "id, name, namespace, phase, action_type, status, " +
+	"start_time, end_time, duration, " +
+	"remediation_request_id, signal_fingerprint, " +
+	"severity, environment, cluster_name, target_resource, " +
+	"error_message, metadata, " +
+	"created_at, updated_at"
+
 // Service handles query operations
 // BR-STORAGE-005: Query service implementation
 type Service struct {
@@ -92,8 +102,7 @@ func NewService(db DBQuerier, logger logr.Logger) *Service {
 // CONVENTION (#213): All paginated remediation_audit queries must use id DESC as a
 // deterministic tiebreaker in ORDER BY to prevent row shifting between pages.
 func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) ([]*models.RemediationAudit, error) {
-	// Build base query
-	query := "SELECT * FROM remediation_audit WHERE 1=1"
+	query := "SELECT " + remediationAuditColumns + " FROM remediation_audit WHERE 1=1"
 	args := []interface{}{}
 	argCount := 1
 

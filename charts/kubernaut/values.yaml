@@ -90,18 +90,43 @@ gateway:
 datastorage:
   replicas: 1
   pdb:
-    enabled: false
-    # minAvailable: 1
+    enabled: true
+    minAvailable: 1
     # maxUnavailable: ""
   logging:
     level: "INFO"
   dbExistingSecret: ""  # DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret.
   config:
+    server:
+      # #1048 Phase 4 / SC-5: Maximum request body size in bytes.
+      # Clamped to [1048576, 52428800] (1–50 MiB). Plain integer only.
+      maxBodySize: "5242880"
+      # SEC-H3 / AC-4: CORS allowed origins (default: [] = reject all cross-origin).
+      # Configure explicit origins for browser-based access (e.g., ["https://dashboard.example.com"]).
+      corsAllowedOrigins: []
+      # #1048 Phase 5 / AU-9: Directory containing signing cert (tls.crt, tls.key).
+      signerCertDir: "/etc/certs"
     database:
       sslMode: "disable"
       maxOpenConns: 100
       maxIdleConns: 20
       connMaxLifetime: "1h"
+    redis:
+      # #1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound (streams: audit:dlq:* , audit:dead-letter:* )
+      dlqMaxLen: 10000
+      # #1048 Phase 5 / AU-9: Redis TLS client configuration (operator#89 for server-side)
+      tls:
+        enabled: false
+        certFile: ""
+        keyFile: ""
+        caFile: ""  # SC-8: required when enabled; mount self-signed CA via Helm/operator
+    # FED-C2 / AU-11: Retention enabled by default for compliance.
+    # Set enabled: false explicitly for development environments.
+    retention:
+      enabled: true
+      interval: "24h"
+      batchSize: 1000
+      defaultDays: 2555
   resources:
     requests:
       memory: 256Mi
@@ -300,6 +325,35 @@ effectivenessmonitor:
 # -- Kubernaut Agent (Go LLM investigation service)
 kubernautAgent:
   replicas: 1
+  # -- MCP interactive mode (#703): human-in-the-loop investigation sessions.
+  # When enabled, KA exposes a Streamable HTTP MCP endpoint at POST /api/v1/mcp
+  # and provisions Lease RBAC + impersonate ClusterRole.
+  interactive:
+    # -- Enable MCP interactive mode endpoint and Lease-based session management.
+    enabled: false
+    # -- Maximum duration for an interactive session before auto-release (Go duration).
+    # sessionTTL: "30m"
+    # -- Session timeout after last operator activity (Go duration).
+    # inactivityTimeout: "10m"
+    # -- Maximum concurrent interactive sessions per agent replica.
+    # maxConcurrentSessions: 5
+    # -- Maximum MCP requests per second per authenticated user.
+    # rateLimitPerUser: 10
+    # -- Extended analyzing timeout for RO when an interactive session is active (Go duration).
+    # Prevents RO from timing out a RemediationRequest while an operator is investigating.
+    # maxAnalyzingTimeout: "45m"
+    # -- JWT providers for Pattern B authentication (DD-AUTH-MCP-001 v2.0).
+    # When configured, KA validates JWT signatures via JWKS endpoints and extracts
+    # user identity from verified claims. Multiple providers support multi-issuer
+    # architecture (v1.5: Keycloak, v1.6: + SPIRE).
+    # jwtProviders:
+    #   - name: "keycloak"
+    #     issuer: "https://keycloak.example.com/realms/kubernaut"
+    #     jwksURL: "https://keycloak.example.com/realms/kubernaut/protocol/openid-connect/certs"
+    #     audience: "kubernaut-agent"
+    #     claimMappings:
+    #       username: "preferred_username"
+    #       groups: "groups"
   pdb:
     enabled: false
     # minAvailable: 1
@@ -451,6 +505,26 @@ monitoring:
     enabled: false
     url: ""
     tlsCaFile: ""
+  # -- PrometheusRule for interactive session SLO alerting (Issue #1005).
+  # Requires monitoring.coreos.com/v1 CRD (kube-prometheus-stack).
+  prometheusRule:
+    enabled: false
+    # Additional labels to attach to the PrometheusRule resource (e.g. for rule selection).
+    additionalLabels: {}
+    # Alert thresholds — tune to your environment.
+    thresholds:
+      # Max concurrent interactive sessions before alerting.
+      activeSessionsMax: 10
+      activeSessionsFor: "5m"
+      # Lease contention rate (events/sec over 5m window).
+      leaseContentionRateMax: 0.1
+      leaseContentionFor: "5m"
+      # MCP tool call p99 latency SLO (seconds).
+      commandDurationP99Max: 30
+      commandDurationFor: "10m"
+      # Takeover rate (events/sec over 5m window) — indicates session quality.
+      takeoverRateMax: 0.05
+      takeoverRateFor: "15m"
 
 # -- NetworkPolicies: default-deny with explicit allow rules (Issue #285)
 networkPolicies:

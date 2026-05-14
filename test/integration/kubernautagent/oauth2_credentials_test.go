@@ -32,19 +32,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
 )
 
-// newMockIdPServerWithExpiry returns an httptest.Server that issues tokens
-// with a configurable expiry. Useful for testing token refresh behavior.
-func newMockIdPServerWithExpiry(accessToken string, expiresIn int) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"access_token": accessToken,
-			"token_type":   "Bearer",
-			"expires_in":   expiresIn,
-		})
-	}))
-}
-
 var _ = Describe("OAuth2 Client Credentials Integration — #417", func() {
 
 	Describe("IT-KA-417-010: Full round trip with token acquisition from IdP", func() {

@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
-	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -28,6 +28,13 @@ func trimTrailingSlashes(u *url.URL) {
 
 // Invoker invokes operations described by OpenAPI v3 specification.
 type Invoker interface {
+	// CancelSessionAPIV1IncidentSessionSessionIDCancelPost invokes cancel_session_api_v1_incident_session__session_id__cancel_post operation.
+	//
+	// Cancel a running investigation session.
+	// Business Requirement: BR-SESSION-003 (Session cancellability).
+	//
+	// POST /api/v1/incident/session/{session_id}/cancel
+	CancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx context.Context, params CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams) (CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, error)
 	// GetConfigConfigGet invokes get_config_config_get operation.
 	//
 	// Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
@@ -76,6 +83,20 @@ type Invoker interface {
 	//
 	// GET /readyz
 	ReadinessCheckReadyzGet(ctx context.Context) (jx.Raw, error)
+	// SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet invokes session_snapshot_api_v1_incident_session__session_id__snapshot_get operation.
+	//
+	// PR3 extends the response with CancelledResult fields (messages, turn, phase, tokens).
+	// Business Requirement: BR-SESSION-004 (Session observability).
+	//
+	// GET /api/v1/incident/session/{session_id}/snapshot
+	SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx context.Context, params SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams) (SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, error)
+	// SessionStreamAPIV1IncidentSessionSessionIDStreamGet invokes session_stream_api_v1_incident_session__session_id__stream_get operation.
+	//
+	// Streams turn-level and token-level events in real time.
+	// Business Requirement: BR-SESSION-005 (Real-time session streaming).
+	//
+	// GET /api/v1/incident/session/{session_id}/stream
+	SessionStreamAPIV1IncidentSessionSessionIDStreamGet(ctx context.Context, params SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams) (SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, error)
 }
 
 // Client implements OAS client.
@@ -83,10 +104,6 @@ type Client struct {
 	serverURL *url.URL
 	baseClient
 }
-
-var _ Handler = struct {
-	*Client
-}{}
 
 // NewClient initializes new Client defined by OAS.
 func NewClient(serverURL string, opts ...ClientOption) (*Client, error) {
@@ -119,6 +136,100 @@ func (c *Client) requestURL(ctx context.Context) *url.URL {
 		return c.serverURL
 	}
 	return u
+}
+
+// CancelSessionAPIV1IncidentSessionSessionIDCancelPost invokes cancel_session_api_v1_incident_session__session_id__cancel_post operation.
+//
+// Cancel a running investigation session.
+// Business Requirement: BR-SESSION-003 (Session cancellability).
+//
+// POST /api/v1/incident/session/{session_id}/cancel
+func (c *Client) CancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx context.Context, params CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams) (CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, error) {
+	res, err := c.sendCancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendCancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx context.Context, params CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams) (res CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("cancel_session_api_v1_incident_session__session_id__cancel_post"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/v1/incident/session/{session_id}/cancel"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CancelSessionAPIV1IncidentSessionSessionIDCancelPostOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/incident/session/"
+	{
+		// Encode "session_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "session_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SessionID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/cancel"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCancelSessionAPIV1IncidentSessionSessionIDCancelPostResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
 }
 
 // GetConfigConfigGet invokes get_config_config_get operation.
@@ -185,7 +296,8 @@ func (c *Client) sendGetConfigConfigGet(ctx context.Context) (res jx.Raw, err er
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetConfigConfigGetResponse(resp)
@@ -259,7 +371,8 @@ func (c *Client) sendHealthCheckHealthzGet(ctx context.Context) (res jx.Raw, err
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeHealthCheckHealthzGetResponse(resp)
@@ -341,7 +454,8 @@ func (c *Client) sendIncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx context
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp)
@@ -433,7 +547,8 @@ func (c *Client) sendIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDR
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetResponse(resp)
@@ -524,7 +639,8 @@ func (c *Client) sendIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDG
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse(resp)
@@ -600,10 +716,199 @@ func (c *Client) sendReadinessCheckReadyzGet(ctx context.Context) (res jx.Raw, e
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeReadinessCheckReadyzGetResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet invokes session_snapshot_api_v1_incident_session__session_id__snapshot_get operation.
+//
+// PR3 extends the response with CancelledResult fields (messages, turn, phase, tokens).
+// Business Requirement: BR-SESSION-004 (Session observability).
+//
+// GET /api/v1/incident/session/{session_id}/snapshot
+func (c *Client) SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx context.Context, params SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams) (SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, error) {
+	res, err := c.sendSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx context.Context, params SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams) (res SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("session_snapshot_api_v1_incident_session__session_id__snapshot_get"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/incident/session/{session_id}/snapshot"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/incident/session/"
+	{
+		// Encode "session_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "session_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SessionID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/snapshot"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// SessionStreamAPIV1IncidentSessionSessionIDStreamGet invokes session_stream_api_v1_incident_session__session_id__stream_get operation.
+//
+// Streams turn-level and token-level events in real time.
+// Business Requirement: BR-SESSION-005 (Real-time session streaming).
+//
+// GET /api/v1/incident/session/{session_id}/stream
+func (c *Client) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(ctx context.Context, params SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams) (SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, error) {
+	res, err := c.sendSessionStreamAPIV1IncidentSessionSessionIDStreamGet(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendSessionStreamAPIV1IncidentSessionSessionIDStreamGet(ctx context.Context, params SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams) (res SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("session_stream_api_v1_incident_session__session_id__stream_get"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/incident/session/{session_id}/stream"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, SessionStreamAPIV1IncidentSessionSessionIDStreamGetOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/incident/session/"
+	{
+		// Encode "session_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "session_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SessionID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/stream"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeSessionStreamAPIV1IncidentSessionSessionIDStreamGetResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

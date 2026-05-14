@@ -78,7 +78,7 @@ var _ = Describe("Issue #1070: Concurrent HandleCreateWorkflow Safety", Label("u
 			err: fmt.Errorf("secret test-secret not found"),
 		}
 
-		handler := server.NewHandler(nil,
+		handler := server.NewHandler(
 			server.WithActionTypeValidator(acceptingValidator),
 			server.WithSchemaExtractor(extractor),
 			server.WithDependencyValidator(depValidator, "test-ns"),

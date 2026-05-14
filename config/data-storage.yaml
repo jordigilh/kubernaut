@@ -2,12 +2,20 @@ server:
   port: 8080
   host: "0.0.0.0"
   maxBatchSize: 500    # Issue #667: Max events per batch API request (default: 500)
-  readTimeout: "30s"   # CORRECTED: camelCase to match Go struct tag
-  writeTimeout: "30s"  # CORRECTED: camelCase to match Go struct tag
+  readTimeout: "30s"
+  writeTimeout: "30s"
+  # #1048 Phase 4 / SC-5: Maximum request body size in bytes (default: 5242880 = 5 MiB)
+  # Clamped to [1048576, 52428800] (1–50 MiB). Plain integer only.
+  maxBodySize: "5242880"
+  # SEC-H3 / AC-4: CORS allowed origins (default: [] = reject all cross-origin)
+  # Configure explicit origins for browser-based access.
+  corsAllowedOrigins: []
+  # #1048 Phase 5 / AU-9: Directory containing signing certificate (tls.crt, tls.key)
+  # Default: /etc/certs. Override for Helm environments where cert-manager mounts differ.
+  # signerCertDir: "/etc/certs"
 
 logging:
   level: "info"
-  format: "json"
 
 database:
   host: "localhost"
@@ -15,21 +23,33 @@ database:
   name: "action_history"
   user: "slm_user"
   password: "slm_password_dev"
-  sslMode: "disable"         # CORRECTED: camelCase to match Go struct tag
-  maxOpenConns: 25           # CORRECTED: camelCase to match Go struct tag (was max_open_conns)
-  maxIdleConns: 5            # CORRECTED: camelCase to match Go struct tag (was max_idle_conns)
-  connMaxLifetime: "5m"      # CORRECTED: camelCase to match Go struct tag (was conn_max_lifetime)
-  connMaxIdleTime: "10m"     # CORRECTED: camelCase to match Go struct tag (was conn_max_idle_time)
+  sslMode: "disable"
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: "5m"
+  connMaxIdleTime: "10m"
   statementTimeout: "30s"    # Issue #667/M1: PG-level statement timeout (default: 30s)
   lockTimeout: "10s"         # Issue #667/M1: PG-level lock wait timeout (default: 10s)
 
 redis:
   addr: "localhost:6379"
-  db: 0
   # DD-009: Redis used for Dead Letter Queue (DLQ) fallback
   # when PostgreSQL is unavailable
-  dlqStreamName: "audit:dlq:notification"     # CORRECTED: camelCase to match Go struct tag
-  dlqMaxLen: 10000                            # CORRECTED: camelCase to match Go struct tag
-  dlqConsumerGroup: "datastorage-dlq-consumers"  # CORRECTED: camelCase to match Go struct tag
+  dlqMaxLen: 10000
+  # #1048 Phase 5 / AU-9, SC-8: Redis TLS for audit data transport encryption
+  # Server-side Valkey TLS: tracked in kubernaut-operator#89
+  tls:
+    enabled: false
+    # certFile: ""       # Client cert for mTLS (optional)
+    # keyFile: ""        # Client key for mTLS (optional)
+    # caFile: ""         # CA bundle to verify Valkey server (SC-8: required when enabled)
 
-
+# #1048 Phase 5 / AU-11, BR-AUDIT-009: Audit data retention enforcement
+# FED-C2: Retention enabled by default for FedRAMP AU-11 compliance.
+# Set enabled: false explicitly for development environments.
+retention:
+  enabled: true          # AU-11: enforced by default; set false for dev only
+  interval: "24h"        # How often the worker runs
+  batchSize: 1000        # Max rows per DELETE batch
+  defaultDays: 2555      # ADR-034: 7 years (SOC 2 / ISO 27001)
+  partitionDropEnabled: false

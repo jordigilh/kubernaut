@@ -51,6 +51,10 @@ func (s *stubLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResp
 	return llm.ChatResponse{}, nil
 }
 
+func (s *stubLLMClient) StreamChat(_ context.Context, _ llm.ChatRequest, _ func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	return llm.ChatResponse{}, nil
+}
+
 func (s *stubLLMClient) Close() error { return nil }
 
 func TestReloadRejectsEmptyContent(t *testing.T) {

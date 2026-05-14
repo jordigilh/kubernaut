@@ -322,6 +322,11 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
 	}
 
+	// AU-9: Generate RSA signing certificate for audit exports
+	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate signing certificate: %w", err)
+	}
+
 	// 4d. Deploy DataStorage with middleware-based auth (DD-AUTH-014)
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with middleware-based auth...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImageName, writer); err != nil {

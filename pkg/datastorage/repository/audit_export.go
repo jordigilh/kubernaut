@@ -28,7 +28,7 @@ import (
 
 // ========================================
 // SOC2 Day 9.1: Audit Export with Hash Chain Verification
-// Authority: SOC2_WEEK2_COMPLETE_PLAN_V1_1_JAN07.md - Day 9
+// Authority: BR-AUDIT-007 (Tamper-evident audit exports)
 // ========================================
 //
 // Exports audit events with tamper-evident hash chain verification for compliance audits.

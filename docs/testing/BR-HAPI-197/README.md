@@ -23,8 +23,8 @@ This directory contains all test plans related to **BR-HAPI-197** (Human Review 
 | Service | Test Plan | Status | Coverage |
 |---------|-----------|--------|----------|
 | **AIAnalysis** | [aianalysis_test_plan_v1.0.md](aianalysis_test_plan_v1.0.md) | ✅ Complete | 18 unit + 8 integration + 3 E2E |
-| **RemediationOrchestrator** | [remediationorchestrator_test_plan_v1.0.md](remediationorchestrator_test_plan_v1.0.md) | 🔄 In Progress | TBD |
-| **Cross-Service Integration** | [integration_test_plan_v1.0.md](integration_test_plan_v1.0.md) | 📅 Planned | TBD |
+| **RemediationOrchestrator** | [remediationorchestrator_test_plan_v1.0.md](remediationorchestrator_test_plan_v1.0.md) | 🔄 In Progress | See RO test plan (unit + integration scenario list) |
+| **Cross-Service Integration** | [integration_test_plan_v1.0.md](integration_test_plan_v1.0.md) | 📅 Planned | See cross-service plan (full cascade scenarios) |
 
 ---
 
@@ -48,18 +48,18 @@ This directory contains all test plans related to **BR-HAPI-197** (Human Review 
 
 ## 📊 **Overall Coverage Strategy (Defense-in-Depth)**
 
-### **Unit Tests** (70%+ Coverage)
+### **Unit Tests** (>=80% of unit-testable code)
 - **AIAnalysis**: 18 tests (CRD schema, response processor, metrics)
-- **RO**: TBD tests (routing logic, notification creation)
+- **RO**: Covered in remediationorchestrator test plan — routing logic, notification creation (implementation in progress)
 
-### **Integration Tests** (50% Coverage)
+### **Integration Tests** (>=80% of integration-testable code)
 - **AIAnalysis**: 8 tests (HAPI → CRD flow)
-- **RO**: TBD tests (AIAnalysis → NotificationRequest flow)
-- **Cross-Service**: TBD tests (Full cascade)
+- **RO**: Covered in RO plan — AIAnalysis → NotificationRequest flow (planned / in progress per plan)
+- **Cross-Service**: Covered in integration_test_plan — full cascade scenarios (planned)
 
-### **E2E Tests** (<10% Coverage)
+### **E2E Tests** (>=80% of full service code)
 - **AIAnalysis**: 3 tests (Complete business workflows)
-- **RO**: TBD tests (End-to-end remediation flows)
+- **RO**: Covered in RO / cross-service plans — end-to-end remediation journeys (planned)
 
 ---
 

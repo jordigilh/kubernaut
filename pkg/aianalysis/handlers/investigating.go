@@ -438,6 +438,8 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 	switch status.Status {
 	case "pending", "investigating":
 		return h.handleSessionPollPending(ctx, analysis, status)
+	case "user_driving":
+		return h.handleSessionPollUserDriving(ctx, analysis, status)
 	case "completed":
 		return h.handleSessionPollCompleted(ctx, analysis)
 	case "failed":
@@ -449,13 +451,48 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 	}
 }
 
+// handleSessionPollUserDriving handles the case where a user has taken over the
+// interactive session via MCP (DD-INTERACTIVE-002 dynamic takeover).
+// The controller continues polling at the normal interval so it detects when the
+// user-driven session completes or fails.
+// BR-INTERACTIVE-001: User takeover observability via CRD status.
+func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
+	session := analysis.Status.InvestigationSession
+
+	session.PollCount++
+	now := metav1.Now()
+	session.LastPolled = &now
+
+	// #774: Propagate identity from KA poll response to CR status.
+	if status.ActingUser != "" || len(status.ActingUserGroups) > 0 {
+		if analysis.Status.InteractiveSession == nil {
+			analysis.Status.InteractiveSession = &aianalysisv1.InteractiveSessionInfo{}
+		}
+		analysis.Status.InteractiveSession.ActingUser = status.ActingUser
+		analysis.Status.InteractiveSession.ActingUserGroups = status.ActingUserGroups
+	}
+
+	h.log.Info("Session under user control, continuing to poll",
+		"sessionID", session.ID,
+		"progress", status.Progress,
+		"actingUser", status.ActingUser,
+		"nextPollIn", h.sessionPollInterval,
+		"pollCount", session.PollCount,
+	)
+
+	h.recorder.Eventf(analysis, corev1.EventTypeNormal, events.EventReasonUserDriving,
+		"Interactive session %s: user is driving investigation", session.ID)
+
+	return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
+}
+
 // handleSessionPollPending handles poll results where investigation is still in progress.
 // BR-AA-HAPI-064.8: Constant poll interval (not backoff -- polling is normal async behavior).
 //
 // Updates PollCount and LastPolled in the CRD status for observability.
 // The aiAnalysisUpdatePredicate filters PollCount/LastPolled-only status writes
 // so they don't trigger re-reconciles. Only RequeueAfter controls the next poll.
-func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatus) (ctrl.Result, error) {
+func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
 	session := analysis.Status.InvestigationSession
 
 	if session.CreatedAt != nil {
@@ -542,28 +579,28 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 
 // handleSessionPollFailed handles poll results where investigation has failed on KA side.
 // BR-AA-HAPI-064: Surface KA-side failure to operators via CRD status
-func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatus) (ctrl.Result, error) {
+func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
 	h.log.Info("KA session failed",
 		"sessionID", analysis.Status.InvestigationSession.ID,
-		"error", status.Error.Value,
+		"error", status.Error,
 	)
 
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.CompletedAt = &now
 	analysis.Status.ObservedGeneration = analysis.Generation
-	analysis.Status.Message = status.Error.Value
+	analysis.Status.Message = status.Error
 	if analysis.Status.Message == "" {
 		analysis.Status.Message = "Investigation failed on KA side"
 	}
 
 	// Record failure audit
-	failureErr := fmt.Errorf("KA session failed: %s", status.Error.Value)
+	failureErr := fmt.Errorf("KA session failed: %s", status.Error)
 	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
 		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 	}
 
-	msg := status.Error.Value
+	msg := status.Error
 	if msg == "" {
 		msg = "Investigation failed on KA side"
 	}

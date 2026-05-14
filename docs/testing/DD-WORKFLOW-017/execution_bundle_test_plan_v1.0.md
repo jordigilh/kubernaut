@@ -33,6 +33,10 @@ during workflow registration in the DataStorage service (Issue #89):
 - OCI 1.1 subject/referrers integration (Issue #105)
 - DB migration and repository SQL (covered during GREEN phase, not unit-testable)
 
+### Cross-Repo Dependencies
+
+- **kubernaut-operator**: Workflow lifecycle state transitions (Deprecated, Superseded terminal states) are enforced in DS handlers. The operator must honour the same terminal-state semantics when reconciling WorkflowCatalog CRDs. See kubernaut-operator v1.5 milestone for related issues.
+
 ### Design Decisions
 
 **Decision date**: 2026-02-17
@@ -79,7 +83,7 @@ cover OCI extraction and action type FK validation. This test plan extends with 
 | Tier | BR Coverage | Code Coverage Target | Scenarios | Focus |
 |------|-------------|---------------------|-----------|-------|
 | **Unit** | 100% of execution.bundle validation logic | 100% of `Validate()` bundle path + handler rejection path + bundle existence check | 12 (8 schema + 4 handler) | Parser validation, handler error propagation, bundle existence |
-| **Integration** | DB storage and API responses | Deferred to GREEN phase | TBD | Repository SQL, API field presence |
+| **Integration** | DB storage and API responses | Deferred to GREEN phase | >=80% of integration-testable code when exercised (per testing strategy) | Repository SQL, API field presence |
 
 ---
 
@@ -93,7 +97,7 @@ cover OCI extraction and action type FK validation. This test plan extends with 
 
 **Shared preconditions for all schema validation tests**:
 - `schema.NewParser()` instantiated in `BeforeEach`
-- Base schema YAML satisfies all BR-WORKFLOW-004 non-execution requirements (metadata, actionType, labels, parameters)
+- Base schema YAML satisfies all BR-WORKFLOW-004 non-execution requirements (metadata, actionType, labels including `component` as Kubernetes GVK array, parameters)
 - Only the `execution:` section varies between tests
 
 **Base schema YAML constant** (`baseSchemaPrefix`):
@@ -110,7 +114,7 @@ actionType: RestartPod
 labels:
   signalType: OOMKilled
   severity: [critical]
-  component: pod
+  component: [v1/Pod]
   environment: [production]
   priority: P0
 parameters:

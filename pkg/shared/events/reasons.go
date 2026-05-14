@@ -65,6 +65,11 @@ const (
 	// Type: Warning
 	EventReasonSessionRegenerationExceeded = "SessionRegenerationExceeded"
 
+	// EventReasonUserDriving is emitted when a user takes over an interactive
+	// session via MCP dynamic takeover (DD-INTERACTIVE-002).
+	// The KA investigation pauses while the user drives.
+	EventReasonUserDriving = "UserDriving"
+
 	// EventReasonApprovalRequired is emitted when human approval is required
 	// for workflow execution (low confidence or policy mandate).
 	EventReasonApprovalRequired = "ApprovalRequired"

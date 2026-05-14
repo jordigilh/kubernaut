@@ -120,14 +120,15 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 			})
 
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
-				Name:         "api-server",
-				Namespace:    "staging-ns",
-				Severity:     "high",
-				Message:      "OOMKilled",
-				ResourceKind: "StatefulSet",
-				ResourceName: "api-server-0",
-				Environment:  "staging",
-				Priority:     "P1",
+				Name:               "api-server",
+				Namespace:          "staging-ns",
+				Severity:           "high",
+				Message:            "OOMKilled",
+				ResourceKind:       "StatefulSet",
+				ResourceAPIVersion: "apps/v1",
+				ResourceName:       "api-server-0",
+				Environment:        "staging",
+				Priority:           "P1",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(capturingDS.actionsCalled).To(BeTrue(),
@@ -135,8 +136,8 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 
 			Expect(string(capturingDS.listActionsParams.Severity)).To(Equal("high"),
 				"DS Severity should match signal, not hardcoded 'critical'")
-			Expect(capturingDS.listActionsParams.Component).To(Equal("statefulset"),
-				"DS Component should be signal ResourceKind lowercased, not hardcoded 'deployment'")
+			Expect(capturingDS.listActionsParams.Component).To(Equal("apps/v1/StatefulSet"),
+				"DS Component should be signal ComponentGVK (apiVersion/kind)")
 			Expect(capturingDS.listActionsParams.Environment).To(Equal("staging"),
 				"DS Environment should match signal, not hardcoded 'production'")
 			Expect(string(capturingDS.listActionsParams.Priority)).To(Equal("P1"),
@@ -174,14 +175,15 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 			})
 
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
-				Name:         "web-app",
-				Namespace:    "dev-ns",
-				Severity:     "medium",
-				Message:      "CrashLoopBackOff",
-				ResourceKind: "Deployment",
-				ResourceName: "web-app",
-				Environment:  "development",
-				Priority:     "P2",
+				Name:               "web-app",
+				Namespace:          "dev-ns",
+				Severity:           "medium",
+				Message:            "CrashLoopBackOff",
+				ResourceKind:       "Deployment",
+				ResourceAPIVersion: "apps/v1",
+				ResourceName:       "web-app",
+				Environment:        "development",
+				Priority:           "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(capturingDS.workflowsCalled).To(BeTrue(),
@@ -189,8 +191,8 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 
 			Expect(string(capturingDS.listWorkflowsParams.Severity)).To(Equal("medium"),
 				"DS Severity should match signal")
-			Expect(capturingDS.listWorkflowsParams.Component).To(Equal("deployment"),
-				"DS Component should be signal ResourceKind lowercased")
+			Expect(capturingDS.listWorkflowsParams.Component).To(Equal("apps/v1/Deployment"),
+				"DS Component should be signal ComponentGVK (apiVersion/kind)")
 			Expect(capturingDS.listWorkflowsParams.Environment).To(Equal("development"),
 				"DS Environment should match signal")
 			Expect(string(capturingDS.listWorkflowsParams.Priority)).To(Equal("P2"),

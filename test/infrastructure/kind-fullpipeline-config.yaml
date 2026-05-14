@@ -58,6 +58,10 @@ nodes:
   - containerPort: 30281  # Data Storage health NodePort (Issue #753)
     hostPort: 30281       # Port on host machine
     protocol: TCP
+  # Kubernaut Agent (MCP endpoint for HARM-001 regression test)
+  - containerPort: 30088  # Kubernaut Agent NodePort
+    hostPort: 8088        # localhost:8088 (same as KA E2E per DD-TEST-001)
+    protocol: TCP
   # Prometheus (for EM metric comparison - remote write receiver)
   - containerPort: 30190  # Prometheus NodePort
     hostPort: 9190        # DD-TEST-001 v2.8: Prometheus

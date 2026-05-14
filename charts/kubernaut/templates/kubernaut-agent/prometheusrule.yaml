@@ -1,0 +1,60 @@
+{{- if .Values.monitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-interactive-slos
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+    app: kubernaut-agent
+    {{- with .Values.monitoring.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: kubernaut-interactive-slos
+      rules:
+        - alert: KubernautInteractiveSessionsHigh
+          expr: aiagent_mcp_interactive_sessions_active > {{ .Values.monitoring.prometheusRule.thresholds.activeSessionsMax }}
+          for: {{ .Values.monitoring.prometheusRule.thresholds.activeSessionsFor | default "5m" }}
+          labels:
+            severity: warning
+            service: kubernaut-agent
+          annotations:
+            summary: "High number of active interactive sessions"
+            description: "Kubernaut Agent has {{ "{{" }} $value {{ "}}" }} active interactive sessions (threshold: {{ .Values.monitoring.prometheusRule.thresholds.activeSessionsMax }})."
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/operations/runbooks/interactive-mode-runbook.md#1-session-stuck-in-analyzing"
+
+        - alert: KubernautLeaseContentionSpike
+          expr: rate(aiagent_mcp_interactive_lease_contention_total[5m]) > {{ .Values.monitoring.prometheusRule.thresholds.leaseContentionRateMax }}
+          for: {{ .Values.monitoring.prometheusRule.thresholds.leaseContentionFor | default "5m" }}
+          labels:
+            severity: warning
+            service: kubernaut-agent
+          annotations:
+            summary: "Interactive session Lease contention spike"
+            description: "Lease contention rate is {{ "{{" }} $value | humanize {{ "}}" }}/s over 5m (threshold: {{ .Values.monitoring.prometheusRule.thresholds.leaseContentionRateMax }}/s)."
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/operations/runbooks/interactive-mode-runbook.md#2-lease-contention"
+
+        - alert: KubernautInteractiveCommandLatencyHigh
+          expr: histogram_quantile(0.99, sum(rate(aiagent_mcp_interactive_command_duration_seconds_bucket[5m])) by (le, tool)) > {{ .Values.monitoring.prometheusRule.thresholds.commandDurationP99Max }}
+          for: {{ .Values.monitoring.prometheusRule.thresholds.commandDurationFor | default "10m" }}
+          labels:
+            severity: warning
+            service: kubernaut-agent
+          annotations:
+            summary: "Interactive MCP command p99 latency exceeds SLO"
+            description: "Tool {{ "{{" }} $labels.tool {{ "}}" }} p99 latency is {{ "{{" }} $value | humanize {{ "}}" }}s (SLO: {{ .Values.monitoring.prometheusRule.thresholds.commandDurationP99Max }}s)."
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/operations/runbooks/interactive-mode-runbook.md#9-command-latency-high"
+
+        - alert: KubernautTakeoverRateHigh
+          expr: rate(aiagent_mcp_interactive_takeover_total[5m]) > {{ .Values.monitoring.prometheusRule.thresholds.takeoverRateMax }}
+          for: {{ .Values.monitoring.prometheusRule.thresholds.takeoverRateFor | default "15m" }}
+          labels:
+            severity: info
+            service: kubernaut-agent
+          annotations:
+            summary: "High interactive takeover rate (potential session quality issue)"
+            description: "Takeover rate is {{ "{{" }} $value | humanize {{ "}}" }}/s over 5m (threshold: {{ .Values.monitoring.prometheusRule.thresholds.takeoverRateMax }}/s). Frequent takeovers may indicate autonomous investigation quality issues."
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/operations/runbooks/interactive-mode-runbook.md#3-takeover-failures"
+{{- end }}

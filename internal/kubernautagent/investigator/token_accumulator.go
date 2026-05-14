@@ -42,6 +42,24 @@ func (ta *TokenAccumulator) CompletionTokens() int { return ta.completionTokens 
 // TotalTokens returns cumulative total tokens.
 func (ta *TokenAccumulator) TotalTokens() int { return ta.totalTokens }
 
+// TokenUsageSummary holds cumulative token counts for embedding in
+// InvestigationResult and audit payloads (DES-3, BR-AUDIT-070).
+type TokenUsageSummary struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// Summary returns a snapshot of accumulated token usage as a value type
+// suitable for storing on InvestigationResult (DES-3).
+func (ta *TokenAccumulator) Summary() TokenUsageSummary {
+	return TokenUsageSummary{
+		PromptTokens:     ta.promptTokens,
+		CompletionTokens: ta.completionTokens,
+		TotalTokens:      ta.totalTokens,
+	}
+}
+
 // AuditData returns a map suitable for embedding in audit event Data.
 func (ta *TokenAccumulator) AuditData() map[string]interface{} {
 	return map[string]interface{}{

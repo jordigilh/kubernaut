@@ -51,7 +51,7 @@ var _ = Describe("EffectivenessMonitor audit manager coverage 668 (BR-EM-009.4)"
 			HashComputeDelay:    &metav1.Duration{Duration: 30 * time.Second},
 			AlertCheckDelay:     &metav1.Duration{Duration: 15 * time.Second},
 		}
-		ea.ObjectMeta.CreationTimestamp = metav1.NewTime(time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC))
+		ea.CreationTimestamp = metav1.NewTime(time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC))
 		t1 := metav1.NewTime(time.Date(2026, 4, 1, 13, 0, 0, 0, time.UTC))
 		t2 := metav1.NewTime(time.Date(2026, 4, 1, 13, 30, 0, 0, time.UTC))
 		t3 := metav1.NewTime(time.Date(2026, 4, 1, 14, 0, 0, 0, time.UTC))

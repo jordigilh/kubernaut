@@ -74,7 +74,6 @@ var _ = Describe("Server Connection Pool Configuration (BR-STORAGE-027)", func()
 				},
 				Redis: config.RedisConfig{
 					Addr: "localhost:6379",
-					DB:   0,
 				},
 			}
 
@@ -142,7 +141,6 @@ var _ = Describe("Server Connection Pool Configuration (BR-STORAGE-027)", func()
 				},
 				Redis: config.RedisConfig{
 					Addr: "localhost:6379",
-					DB:   0,
 				},
 			}
 
@@ -192,7 +190,6 @@ var _ = Describe("Server Connection Pool Configuration (BR-STORAGE-027)", func()
 				},
 				Redis: config.RedisConfig{
 					Addr: "localhost:6379",
-					DB:   0,
 				},
 			}
 
@@ -245,7 +242,6 @@ var _ = Describe("Server Connection Pool Configuration (BR-STORAGE-027)", func()
 				},
 				Redis: config.RedisConfig{
 					Addr: "localhost:6379",
-					DB:   0,
 				},
 			}
 

@@ -190,7 +190,7 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 	Describe("UT-KA-433-133: DataStorageClient accepts kind and specHash parameters", func() {
 		It("should compile with kind, name, namespace, specHash parameters", func() {
 			var client enrichment.DataStorageClient = &fakeDS{}
-			result, err := client.GetRemediationHistory(nil, "Deployment", "api-server", "production", "abc123hash")
+			result, err := client.GetRemediationHistory(context.TODO(), "Deployment", "api-server", "production", "abc123hash")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 		})
@@ -199,7 +199,7 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 	Describe("UT-KA-433-134: K8sClient.GetOwnerChain returns []OwnerChainEntry", func() {
 		It("should compile with []OwnerChainEntry return type", func() {
 			var client enrichment.K8sClient = &fakeK8s{}
-			chain, err := client.GetOwnerChain(nil, "Pod", "web-abc", "default", "")
+			chain, err := client.GetOwnerChain(context.TODO(), "Pod", "web-abc", "default", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(chain).To(HaveLen(1))
 			Expect(chain[0].Kind).To(Equal("Deployment"))

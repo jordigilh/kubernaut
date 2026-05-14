@@ -356,13 +356,13 @@ func (r *Repository) SupersedeAndCreate(ctx context.Context, oldID, oldVersion, 
 // DD-WORKFLOW-002 v3.0: workflow_id is the sole UUID primary key
 func (r *Repository) GetByID(ctx context.Context, workflowID string) (*models.RemediationWorkflow, error) {
 	query := `
-		SELECT * FROM remediation_workflow_catalog
+		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
 		WHERE workflow_id = $1
 	`
 
 	var workflow models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &workflow, query, workflowID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil // Not found
 	}
 	if err != nil {
@@ -378,13 +378,13 @@ func (r *Repository) GetByID(ctx context.Context, workflowID string) (*models.Re
 // DD-WORKFLOW-002 v3.0: workflow_name is the human-readable identifier
 func (r *Repository) GetByNameAndVersion(ctx context.Context, workflowName, version string) (*models.RemediationWorkflow, error) {
 	query := `
-		SELECT * FROM remediation_workflow_catalog
+		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
 		WHERE workflow_name = $1 AND version = $2
 	`
 
 	var workflow models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &workflow, query, workflowName, version)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil // Not found
 	}
 	if err != nil {
@@ -401,13 +401,13 @@ func (r *Repository) GetByNameAndVersion(ctx context.Context, workflowName, vers
 // BR-WORKFLOW-006: Used by content integrity check to detect idempotent re-apply vs supersede.
 func (r *Repository) GetActiveByNameAndVersion(ctx context.Context, workflowName, version string) (*models.RemediationWorkflow, error) {
 	query := `
-		SELECT * FROM remediation_workflow_catalog
+		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
 		WHERE workflow_name = $1 AND version = $2 AND status = 'Active'
 	`
 
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, workflowName, version)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -423,7 +423,7 @@ func (r *Repository) GetActiveByNameAndVersion(ctx context.Context, workflowName
 // between re-enable (same hash) and create-new (different hash).
 func (r *Repository) GetLatestDisabledByNameAndVersion(ctx context.Context, workflowName, version string) (*models.RemediationWorkflow, error) {
 	query := `
-		SELECT * FROM remediation_workflow_catalog
+		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
 		WHERE workflow_name = $1 AND version = $2 AND status = 'Disabled'
 		ORDER BY updated_at DESC
 		LIMIT 1
@@ -431,7 +431,7 @@ func (r *Repository) GetLatestDisabledByNameAndVersion(ctx context.Context, work
 
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, workflowName, version)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -447,7 +447,7 @@ func (r *Repository) GetLatestDisabledByNameAndVersion(ctx context.Context, work
 // for cross-version supersession when a new version of an existing workflow is registered.
 func (r *Repository) GetActiveByWorkflowName(ctx context.Context, workflowName string) (*models.RemediationWorkflow, error) {
 	query := `
-		SELECT * FROM remediation_workflow_catalog
+		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
 		WHERE workflow_name = $1 AND status = 'Active'
 		ORDER BY created_at DESC
 		LIMIT 1
@@ -455,7 +455,7 @@ func (r *Repository) GetActiveByWorkflowName(ctx context.Context, workflowName s
 
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, workflowName)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -470,13 +470,13 @@ func (r *Repository) GetActiveByWorkflowName(ctx context.Context, workflowName s
 // DD-WORKFLOW-002 v3.0: Uses is_latest_version flag for efficient lookup
 func (r *Repository) GetLatestVersion(ctx context.Context, workflowName string) (*models.RemediationWorkflow, error) {
 	query := `
-		SELECT * FROM remediation_workflow_catalog
+		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
 		WHERE workflow_name = $1 AND is_latest_version = true
 	`
 
 	var workflow models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &workflow, query, workflowName)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil // Not found
 	}
 	if err != nil {
@@ -492,7 +492,7 @@ func (r *Repository) GetLatestVersion(ctx context.Context, workflowName string) 
 // DD-WORKFLOW-002 v3.0: Returns all versions ordered by created_at DESC
 func (r *Repository) GetVersionsByName(ctx context.Context, workflowName string) ([]models.RemediationWorkflow, error) {
 	query := `
-		SELECT * FROM remediation_workflow_catalog
+		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
 		WHERE workflow_name = $1
 		ORDER BY created_at DESC, workflow_id ASC
 	`
@@ -512,8 +512,8 @@ func (r *Repository) GetVersionsByName(ctx context.Context, workflowName string)
 // BR-STORAGE-012: Workflow catalog listing
 // V1.0 REFACTOR: Uses SQL builder for type-safe query construction
 func (r *Repository) List(ctx context.Context, filters *models.WorkflowSearchFilters, limit, offset int) ([]models.RemediationWorkflow, int, error) {
-	// Build query using SQL builder
 	builder := sqlbuilder.NewBuilder().
+		Select(workflowCatalogColumns).
 		From("remediation_workflow_catalog")
 
 	// Apply filters if provided

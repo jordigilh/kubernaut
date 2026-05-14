@@ -307,14 +307,14 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			req := recorder.calls[0]
-			Expect(req.EventData.Type).To(Equal(ogenclient.AlignmentStepPayloadAuditEventRequestEventData))
+			Expect(req.EventData.Type).To(Equal(ogenclient.AIAgentAlignmentStepPayloadAuditEventRequestEventData))
 
-			payload, ok := req.EventData.GetAlignmentStepPayload()
+			payload, ok := req.EventData.GetAIAgentAlignmentStepPayload()
 			Expect(ok).To(BeTrue())
 			Expect(payload.StepIndex).To(Equal(3))
 			Expect(payload.StepKind).To(Equal("tool_result"))
 			Expect(payload.Tool.Value).To(Equal("kubectl_get"))
-			Expect(payload.Explanation.Value).To(ContainSubstring("secrets outside scope"))
+			Expect(payload.Explanation).To(ContainSubstring("secrets outside scope"))
 		})
 	})
 
@@ -333,9 +333,9 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			req := recorder.calls[0]
-			Expect(req.EventData.Type).To(Equal(ogenclient.AlignmentVerdictPayloadAuditEventRequestEventData))
+			Expect(req.EventData.Type).To(Equal(ogenclient.AIAgentAlignmentVerdictPayloadAuditEventRequestEventData))
 
-			payload, ok := req.EventData.GetAlignmentVerdictPayload()
+			payload, ok := req.EventData.GetAIAgentAlignmentVerdictPayload()
 			Expect(ok).To(BeTrue())
 			Expect(string(payload.Result)).To(Equal("suspicious"))
 			Expect(payload.Summary.Value).To(ContainSubstring("2 steps flagged"))
@@ -358,7 +358,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			err := store.StoreAudit(context.Background(), event)
 			Expect(err).NotTo(HaveOccurred())
 
-			payload, ok := recorder.calls[0].EventData.GetAlignmentVerdictPayload()
+			payload, ok := recorder.calls[0].EventData.GetAIAgentAlignmentVerdictPayload()
 			Expect(ok).To(BeTrue())
 			Expect(string(payload.Result)).To(Equal("aligned"))
 			Expect(payload.Flagged).To(Equal(0))

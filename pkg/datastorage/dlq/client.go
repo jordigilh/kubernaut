@@ -19,17 +19,18 @@ package dlq
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
 )
 
 // ========================================
@@ -56,11 +57,63 @@ import (
 //
 // ========================================
 
+// EventCreator abstracts audit event persistence for dependency injection.
+// Defined in the dlq package to avoid duplicate declarations (ARCH-M2).
+type EventCreator interface {
+	Create(context.Context, *repository.AuditEvent) (*repository.AuditEvent, error)
+}
+
+// NotificationCreator abstracts notification persistence for dependency injection.
+// Defined in the dlq package to avoid duplicate declarations (ARCH-M2).
+type NotificationCreator interface {
+	Create(context.Context, *models.NotificationAudit) (*models.NotificationAudit, error)
+}
+
+// maxPayloadSize caps the DLQ message payload that will be unmarshalled,
+// preventing unbounded memory allocation from oversized messages (SI-10).
+const maxPayloadSize = 1 << 20 // 1 MiB
+
+// maxLastErrorLen caps the LastError field to prevent internal error
+// details (SQL, driver info) from leaking into the DLQ stream (SEC-L1).
+const maxLastErrorLen = 256
+
+// SanitizeError truncates and redacts error strings stored in DLQ LastError.
+// SEC-L1 / SEC-M1: Prevents raw SQL/driver/credential details from persisting in Redis.
+func SanitizeError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	lower := strings.ToLower(msg)
+	// SEC-H1 / SEC-M1: Redact any error containing SQL/driver/credential patterns.
+	for _, pattern := range []string{
+		"pq:", "pgx:", "sql:", "driver:", "sqlstate",
+		"error:", "fatal:",
+		"connection refused", "connection reset",
+		"password", "secret", "token",
+		"postgres://", "postgresql://", "redis://",
+	} {
+		if strings.Contains(lower, pattern) {
+			return "database write failed"
+		}
+	}
+	if len(msg) > maxLastErrorLen {
+		msg = string([]rune(msg)[:maxLastErrorLen]) + "..."
+	}
+	return msg
+}
+
+// MaxPayloadSize returns the maximum allowed DLQ payload size in bytes.
+func MaxPayloadSize() int { return maxPayloadSize }
+
 // Client provides Dead Letter Queue functionality using Redis Streams.
 type Client struct {
 	redisClient *redis.Client
 	logger      logr.Logger
 	maxLen      int64 // Maximum DLQ stream length (for capacity monitoring - Gap 3.3)
+
+	// xaddCounter is optional (#1048 Phase 5 / AU-11); nil if not wired by server wiring.
+	xaddCounter *prometheus.CounterVec
 }
 
 // AuditMessage represents a message in the DLQ.
@@ -107,6 +160,34 @@ func NewClient(redisClient *redis.Client, logger logr.Logger, maxLen int64) (*Cl
 	}, nil
 }
 
+// SetXAddCounter wires the Prometheus counter for successful XADD calls (optional).
+func (c *Client) SetXAddCounter(counter *prometheus.CounterVec) {
+	c.xaddCounter = counter
+}
+
+// xaddStreamMetricLabel maps Redis stream keys to bounded Prometheus label values (#1048 / AU-11).
+func xaddStreamMetricLabel(streamKey string) string {
+	switch streamKey {
+	case "audit:dlq:notifications":
+		return "notifications"
+	case "audit:dlq:events":
+		return "audit_events"
+	case "audit:dead-letter:notifications":
+		return "dead_letter_notifications"
+	case "audit:dead-letter:events":
+		return "dead_letter_audit_events"
+	default:
+		return "unknown"
+	}
+}
+
+func (c *Client) observeXAddSuccess(streamKey string) {
+	if c.xaddCounter == nil {
+		return
+	}
+	c.xaddCounter.WithLabelValues(xaddStreamMetricLabel(streamKey)).Inc()
+}
+
 // EnqueueNotificationAudit adds a NotificationAudit record to the DLQ.
 // This is called when the primary write to PostgreSQL fails.
 func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.NotificationAudit, originalError error) error {
@@ -116,13 +197,12 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 		return fmt.Errorf("failed to marshal audit payload: %w", err)
 	}
 
-	// Create DLQ message
 	auditMsg := AuditMessage{
 		Type:       "notification_audit",
 		Payload:    payloadJSON,
 		Timestamp:  time.Now(),
 		RetryCount: 0,
-		LastError:  originalError.Error(),
+		LastError:  SanitizeError(originalError),
 	}
 
 	// Serialize message
@@ -146,19 +226,28 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 	if err != nil {
 		return fmt.Errorf("failed to enqueue to DLQ: %w", err)
 	}
+	c.observeXAddSuccess(streamKey)
 
 	// Gap 3.3 REFACTOR: Monitor DLQ capacity using extracted monitoring function
 	c.monitorDLQCapacity(ctx, "notifications", streamKey, "notification_audit")
 
-	// Log success
-	c.logNotificationEnqueueSuccess(c.logger, audit.NotificationID, originalError.Error())
+	c.logNotificationEnqueueSuccess(c.logger, audit.NotificationID, SanitizeError(originalError))
 
 	return nil
 }
 
 // EnqueueAuditEvent adds a generic AuditEvent record to the DLQ.
 // This is called when the primary write to PostgreSQL fails for unified audit events.
+// D3/SI-10: Validates the event before enqueue to prevent replay rejection.
 func (c *Client) EnqueueAuditEvent(ctx context.Context, audit *audit.AuditEvent, originalError error) error {
+	// D3: Validate before enqueue so replay never rejects payloads we accepted
+	if err := audit.Validate(); err != nil {
+		return fmt.Errorf("DLQ enqueue rejected: audit event invalid: %w", err)
+	}
+	if err := ValidateEventData(audit.EventData); err != nil {
+		return fmt.Errorf("DLQ enqueue rejected: EventData invalid: %w", err)
+	}
+
 	// Serialize audit payload
 	payloadJSON, err := json.Marshal(audit)
 	if err != nil {
@@ -171,7 +260,7 @@ func (c *Client) EnqueueAuditEvent(ctx context.Context, audit *audit.AuditEvent,
 		Payload:    payloadJSON,
 		Timestamp:  time.Now(),
 		RetryCount: 0,
-		LastError:  originalError.Error(),
+		LastError:  SanitizeError(originalError),
 	}
 
 	// Serialize message
@@ -195,12 +284,12 @@ func (c *Client) EnqueueAuditEvent(ctx context.Context, audit *audit.AuditEvent,
 	if err != nil {
 		return fmt.Errorf("failed to add audit event to DLQ: %w", err)
 	}
+	c.observeXAddSuccess(streamKey)
 
 	// Gap 3.3 REFACTOR: Monitor DLQ capacity using extracted monitoring function
 	c.monitorDLQCapacity(ctx, "events", streamKey, "audit_event")
 
-	// Log success
-	c.logEnqueueSuccess(c.logger, "audit_event", audit.EventID.String(), originalError.Error())
+	c.logEnqueueSuccess(c.logger, "audit_event", audit.EventID.String(), SanitizeError(originalError))
 
 	return nil
 }
@@ -213,7 +302,7 @@ func (c *Client) GetDLQDepth(ctx context.Context, auditType string) (int64, erro
 	if err != nil {
 		// If stream doesn't exist, Redis returns 0 (not an error)
 		// But if Redis is down, we get an error
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			return 0, nil
 		}
 		return 0, fmt.Errorf("failed to get DLQ depth: %w", err)
@@ -242,23 +331,23 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 // Messages are claimed by this consumer and must be acknowledged with AckMessage.
 //
 // Parameters:
-// - auditType: Type of audit messages to read ("events" or "notifications")
-// - consumerGroup: Consumer group name (e.g., "audit-retry-workers")
-// - consumerName: Consumer instance name (e.g., "worker-1")
-// - timeout: How long to block waiting for messages
-//
-// Returns up to 10 messages per call.
-func (c *Client) ReadMessages(ctx context.Context, auditType, consumerGroup, consumerName string, timeout time.Duration) ([]*DLQMessage, error) {
+//   - auditType: Type of audit messages to read ("events" or "notifications")
+//   - consumerGroup: Consumer group name (e.g., "audit-retry-workers")
+//   - consumerName: Consumer instance name (e.g., "worker-1")
+//   - count: Maximum number of messages to return per call
+//   - timeout: How long to block waiting for messages
+func (c *Client) ReadMessages(ctx context.Context, auditType, consumerGroup, consumerName string, count int64, timeout time.Duration) ([]*DLQMessage, error) {
 	streamKey := fmt.Sprintf("audit:dlq:%s", auditType)
 
 	// Create consumer group if it doesn't exist
 	// MKSTREAM creates the stream if it doesn't exist
 	err := c.redisClient.XGroupCreateMkStream(ctx, streamKey, consumerGroup, "0").Err()
-	if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
-		// Ignore "already exists" error, but fail on other errors
-		if !isConsumerGroupExistsError(err) {
-			return nil, fmt.Errorf("failed to create consumer group: %w", err)
-		}
+	if err != nil && !isConsumerGroupExistsError(err) {
+		return nil, fmt.Errorf("failed to create consumer group: %w", err)
+	}
+
+	if count <= 0 {
+		count = 10
 	}
 
 	// Read messages using XREADGROUP
@@ -267,12 +356,12 @@ func (c *Client) ReadMessages(ctx context.Context, auditType, consumerGroup, con
 		Group:    consumerGroup,
 		Consumer: consumerName,
 		Streams:  []string{streamKey, ">"},
-		Count:    10,
+		Count:    count,
 		Block:    timeout,
 	}).Result()
 
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			// No messages available (timeout)
 			return []*DLQMessage{}, nil
 		}
@@ -304,6 +393,109 @@ func (c *Client) ReadMessages(ctx context.Context, auditType, consumerGroup, con
 			"audit_type", auditType,
 			"consumer_group", consumerGroup,
 		)
+	}
+
+	return messages, nil
+}
+
+// AutoClaimMessages reclaims messages that have been idle for longer than minIdleTime.
+// #1048 Phase 5 / AU-2: PEL recovery for stuck unprocessable messages.
+// Returns claimed messages and the next cursor ID for incremental XAUTOCLAIM sweeps (Redis next-start).
+func (c *Client) AutoClaimMessages(ctx context.Context, auditType, consumerGroup, consumer string,
+	minIdleTime time.Duration, startID string, count int64) ([]DLQMessage, string, error) {
+	streamKey := fmt.Sprintf("audit:dlq:%s", auditType)
+
+	err := c.redisClient.XGroupCreateMkStream(ctx, streamKey, consumerGroup, "0").Err()
+	if err != nil && !isConsumerGroupExistsError(err) {
+		return nil, "", fmt.Errorf("failed to ensure consumer group for XAUTOCLAIM: %w", err)
+	}
+
+	if count <= 0 {
+		count = 10
+	}
+
+	redisMsgs, nextStart, err := c.redisClient.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+		Stream:   streamKey,
+		Group:    consumerGroup,
+		Consumer: consumer,
+		MinIdle:  minIdleTime,
+		Start:    startID,
+		Count:    count,
+	}).Result()
+	if err != nil {
+		return nil, "", fmt.Errorf("XAUTOCLAIM failed for stream %s: %w", streamKey, err)
+	}
+
+	var messages []DLQMessage
+	for _, msg := range redisMsgs {
+		dlqMsg, parseErr := c.parseStreamMessage(msg)
+		if parseErr != nil {
+			c.logger.Error(parseErr, "Invalid message format in PEL claim",
+				"stream", streamKey,
+				"message_id", msg.ID)
+			continue
+		}
+		messages = append(messages, *dlqMsg)
+	}
+
+	return messages, nextStart, nil
+}
+
+// ReadPendingMessages reads messages from this consumer's pending entries list (PEL).
+// Used for two-phase startup: drain pending before reading new messages.
+// Pass startID "0" (or "0-0") to read from the beginning of the consumer's pending backlog.
+//
+// Blocking: Uses non-blocking XREADGROUP (same pattern as ReadMessages with negative Block).
+func (c *Client) ReadPendingMessages(ctx context.Context, auditType, consumerGroup, consumer string,
+	count int64, startID string) ([]DLQMessage, error) {
+	streamKey := fmt.Sprintf("audit:dlq:%s", auditType)
+
+	err := c.redisClient.XGroupCreateMkStream(ctx, streamKey, consumerGroup, "0").Err()
+	if err != nil && !isConsumerGroupExistsError(err) {
+		return nil, fmt.Errorf("failed to create consumer group: %w", err)
+	}
+
+	if count <= 0 {
+		count = 10
+	}
+
+	if startID == "" {
+		startID = "0"
+	}
+
+	// Block must be negative so go-redis omits BLOCK and the call returns immediately
+	// (see redis.XReadGroup: negative Block skips the block argument).
+	const noBlock time.Duration = -1
+
+	streams, err := c.redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    consumerGroup,
+		Consumer: consumer,
+		Streams:  []string{streamKey, startID},
+		Count:    count,
+		Block:    noBlock,
+	}).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
+		if isNoGroupError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read pending messages: %w", err)
+	}
+
+	var messages []DLQMessage
+	for _, stream := range streams {
+		for _, msg := range stream.Messages {
+			dlqMsg, parseErr := c.parseStreamMessage(msg)
+			if parseErr != nil {
+				c.logger.Error(parseErr, "Failed to unmarshal pending message",
+					"stream", streamKey,
+					"message_id", msg.ID)
+				continue
+			}
+			messages = append(messages, *dlqMsg)
+		}
 	}
 
 	return messages, nil
@@ -349,7 +541,8 @@ func (c *Client) MoveToDeadLetter(ctx context.Context, auditType string, msg *DL
 	// Add to dead letter stream
 	_, err = c.redisClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: deadLetterKey,
-		MaxLen: 10000, // Cap dead letter queue
+		MaxLen: c.maxLen,
+		Approx: true,
 		ID:     "*",
 		Values: map[string]interface{}{
 			"message":           string(messageJSON),
@@ -361,6 +554,7 @@ func (c *Client) MoveToDeadLetter(ctx context.Context, auditType string, msg *DL
 	if err != nil {
 		return fmt.Errorf("failed to write to dead letter: %w", err)
 	}
+	c.observeXAddSuccess(deadLetterKey)
 
 	// Remove from original DLQ stream
 	_, err = c.redisClient.XDel(ctx, sourceStreamKey, msg.ID).Result()
@@ -389,7 +583,7 @@ func (c *Client) IncrementRetryCount(ctx context.Context, auditType string, msg 
 
 	// Update the message
 	msg.AuditMessage.RetryCount++
-	msg.AuditMessage.LastError = retryError.Error()
+	msg.AuditMessage.LastError = SanitizeError(retryError)
 	msg.AuditMessage.Timestamp = time.Now() // Update timestamp for backoff calculation
 
 	// Re-serialize
@@ -401,7 +595,8 @@ func (c *Client) IncrementRetryCount(ctx context.Context, auditType string, msg 
 	// Add updated message to stream (new ID)
 	_, err = c.redisClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: streamKey,
-		MaxLen: 10000,
+		MaxLen: c.maxLen,
+		Approx: true,
 		ID:     "*",
 		Values: map[string]interface{}{
 			"message": string(messageJSON),
@@ -410,6 +605,7 @@ func (c *Client) IncrementRetryCount(ctx context.Context, auditType string, msg 
 	if err != nil {
 		return fmt.Errorf("failed to re-add message with incremented retry count: %w", err)
 	}
+	c.observeXAddSuccess(streamKey)
 
 	// Remove old message
 	_, err = c.redisClient.XDel(ctx, streamKey, msg.ID).Result()
@@ -434,7 +630,7 @@ func (c *Client) GetPendingMessages(ctx context.Context, auditType, consumerGrou
 
 	pending, err := c.redisClient.XPending(ctx, streamKey, consumerGroup).Result()
 	if err != nil {
-		if err == redis.Nil || isNoSuchKeyError(err) {
+		if errors.Is(err, redis.Nil) || isNoSuchKeyError(err) {
 			return 0, nil
 		}
 		return 0, fmt.Errorf("failed to get pending count: %w", err)
@@ -467,16 +663,16 @@ func isConsumerGroupExistsError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return err.Error() == "BUSYGROUP Consumer Group name already exists"
+	return strings.Contains(err.Error(), "BUSYGROUP")
 }
 
-// isNoSuchKeyError checks if the error indicates the stream doesn't exist.
+// isNoSuchKeyError checks if the error indicates the stream or consumer group doesn't exist.
 func isNoSuchKeyError(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Redis returns this error when XPending is called on a non-existent stream
-	return err.Error() == "NOGROUP No such key 'audit:dlq:events' or consumer group 'test-consumer-group' in XINFO GROUPS reply"
+	errStr := err.Error()
+	return strings.Contains(errStr, "NOGROUP") || strings.Contains(errStr, "no such key")
 }
 
 // isNoGroupError checks if the error indicates the stream or consumer group doesn't exist during XREADGROUP.
@@ -508,6 +704,15 @@ type DrainStats struct {
 	TimedOut               bool
 }
 
+// JoinErrors returns a single error combining all drain errors, or nil if none.
+// SRE-M2: Used by shutdown to propagate drain failures into shutdownErrors.
+func (s *DrainStats) JoinErrors() error {
+	if len(s.Errors) == 0 {
+		return nil
+	}
+	return errors.Join(s.Errors...)
+}
+
 // DrainWithTimeout attempts to process all pending DLQ messages within the given timeout.
 // This is called during graceful shutdown (DD-007 + DD-008) to ensure DLQ messages are
 // not lost when the service shuts down.
@@ -531,7 +736,11 @@ type DrainStats struct {
 // - error: Only returns error for critical failures (Redis unavailable, etc.)
 //
 // Business Requirement: BR-AUDIT-001 - Complete audit trail with no data loss
-func (c *Client) DrainWithTimeout(ctx context.Context, notificationRepo interface{}, eventsRepo interface{}) (*DrainStats, error) {
+func (c *Client) DrainWithTimeout(ctx context.Context, notificationRepo NotificationCreator, eventsRepo EventCreator) (*DrainStats, error) {
+	if notificationRepo == nil || eventsRepo == nil {
+		return &DrainStats{Errors: []error{fmt.Errorf("DrainWithTimeout: repos must not be nil (DLQ is a hard dependency)")}},
+			fmt.Errorf("DrainWithTimeout: repos must not be nil (DLQ is a hard dependency)")
+	}
 	startTime := time.Now()
 	stats := &DrainStats{}
 
@@ -546,7 +755,7 @@ func (c *Client) DrainWithTimeout(ctx context.Context, notificationRepo interfac
 		"dd", "DD-008-drain-start")
 
 	// Process notification DLQ stream
-	notificationStats, err := c.drainStream(ctx, "notifications", notificationRepo)
+	notificationStats, err := c.drainStream(ctx, "notifications", c.notificationWriter(notificationRepo))
 	if err != nil {
 		stats.Errors = append(stats.Errors, fmt.Errorf("notification drain error: %w", err))
 	}
@@ -560,14 +769,15 @@ func (c *Client) DrainWithTimeout(ctx context.Context, notificationRepo interfac
 		c.logger.Info("DLQ drain timed out after processing notifications",
 			"notifications_processed", stats.NotificationsProcessed,
 			"duration", stats.Duration,
+			"errors", len(stats.Errors),
 			"dd", "DD-008-drain-timeout")
-		return stats, nil
+		return stats, stats.JoinErrors()
 	default:
 		// Continue to events
 	}
 
 	// Process events DLQ stream
-	eventsStats, err := c.drainStream(ctx, "events", eventsRepo)
+	eventsStats, err := c.drainStream(ctx, "events", c.eventWriter(eventsRepo))
 	if err != nil {
 		stats.Errors = append(stats.Errors, fmt.Errorf("events drain error: %w", err))
 	}
@@ -593,62 +803,157 @@ func (c *Client) DrainWithTimeout(ctx context.Context, notificationRepo interfac
 		"errors", len(stats.Errors),
 		"dd", "DD-008-drain-complete")
 
-	return stats, nil
+	// DF-H1: Return joined errors so shutdown can surface drain failures
+	return stats, stats.JoinErrors()
 }
 
-// drainStream processes all messages from a specific DLQ stream
-func (c *Client) drainStream(ctx context.Context, auditType string, repo interface{}) (int, error) {
-	streamKey := c.getStreamKey(auditType)
-	processed := 0
+// drainBatchSize limits the number of messages read per XRangeN call during
+// drain to bound memory usage (PERF-3).
+const drainBatchSize int64 = 100
 
-	// Read all messages in stream (no consumer group needed for drain)
+// drainStream processes all messages from a specific DLQ stream using
+// cursor-based iteration with a bounded retry pass.
+//
+// #1048 DF-3: Only XDel after confirmed DB write success. Failed messages
+// remain in the stream for the next startup's retry worker to pick up.
+//
+// #1048 ARCH-F1: Two-pass drain ensures that messages skipped by the forward
+// cursor after a write failure get a second chance within the same shutdown
+// window. Pass 1 sweeps forward; if any writes fail, pass 2 restarts from "-"
+// to retry the survivors (XDel'd messages are gone, so only failures remain).
+// Bounded at 2 passes to prevent infinite loops on permanent failures.
+//
+// messageWriteFunc writes a single DLQ message to persistent storage.
+// ARCH-M1: Replaces the former interface{} + type-assertion pattern.
+type messageWriteFunc func(ctx context.Context, msg *DLQMessage) error
+
+// notificationWriter returns a messageWriteFunc that persists notifications.
+func (c *Client) notificationWriter(repo NotificationCreator) messageWriteFunc {
+	return func(ctx context.Context, msg *DLQMessage) error {
+		if len(msg.AuditMessage.Payload) > maxPayloadSize {
+			return fmt.Errorf("payload exceeds maximum size (%d > %d bytes)", len(msg.AuditMessage.Payload), maxPayloadSize)
+		}
+		var notifAudit models.NotificationAudit
+		if err := json.Unmarshal(msg.AuditMessage.Payload, &notifAudit); err != nil {
+			return fmt.Errorf("failed to unmarshal notification audit: %w", err)
+		}
+		_, err := repo.Create(ctx, &notifAudit)
+		return err
+	}
+}
+
+// eventWriter returns a messageWriteFunc that persists audit events.
+// Mirrors the original writeMessageToDB "events" path: unmarshal → validate → convert → create.
+func (c *Client) eventWriter(repo EventCreator) messageWriteFunc {
+	return func(ctx context.Context, msg *DLQMessage) error {
+		if len(msg.AuditMessage.Payload) > maxPayloadSize {
+			return fmt.Errorf("payload exceeds maximum size (%d > %d bytes)", len(msg.AuditMessage.Payload), maxPayloadSize)
+		}
+		var auditEvent audit.AuditEvent
+		if err := json.Unmarshal(msg.AuditMessage.Payload, &auditEvent); err != nil {
+			return fmt.Errorf("failed to unmarshal audit event: %w", err)
+		}
+		if len(auditEvent.EventData) == 0 {
+			auditEvent.EventData = []byte("{}")
+		}
+		if err := auditEvent.Validate(); err != nil {
+			return fmt.Errorf("drain: audit event validation failed: %w", err)
+		}
+		if err := ValidateEventData(auditEvent.EventData); err != nil {
+			return fmt.Errorf("drain: audit event EventData validation failed: %w", err)
+		}
+		repoEvent, err := repository.ConvertFromAuditEvent(&auditEvent)
+		if err != nil {
+			return fmt.Errorf("failed to convert audit event: %w", err)
+		}
+		_, err = repo.Create(ctx, repoEvent)
+		return err
+	}
+}
+
+// #1048 PERF-3: Uses XRangeN with cursor to avoid loading the entire stream
+// into memory at once.
+func (c *Client) drainStream(ctx context.Context, auditType string, writeFn messageWriteFunc) (int, error) {
+	streamKey := c.getStreamKey(auditType)
+	total := 0
+
+	n, hadFailures, err := c.drainStreamPass(ctx, streamKey, auditType, writeFn)
+	total += n
+	if err != nil {
+		return total, err
+	}
+
+	// Retry pass: if any writes failed, sweep from "-" once more.
+	// Successfully XDel'd messages won't reappear. Messages that fail
+	// a second time remain in Redis for the next startup's retry worker.
+	if hadFailures {
+		n, stillFailing, err := c.drainStreamPass(ctx, streamKey, auditType, writeFn)
+		total += n
+		if err != nil {
+			return total, err
+		}
+		// DF-H1: If messages still fail after second pass, report the failure
+		if stillFailing {
+			return total, fmt.Errorf("drain %s: messages remain after 2 passes (repo may be unavailable)", auditType)
+		}
+	}
+
+	return total, nil
+}
+
+// drainStreamPass performs a single forward sweep of the stream.
+// Returns the number of messages successfully written+deleted, whether any
+// write failures occurred, and any stream-level read error.
+func (c *Client) drainStreamPass(ctx context.Context, streamKey, auditType string, writeFn messageWriteFunc) (int, bool, error) {
+	processed := 0
+	hadFailures := false
+	cursor := "-"
+
 	for {
-		// Check timeout
 		select {
 		case <-ctx.Done():
-			return processed, nil
+			return processed, hadFailures, nil
 		default:
 		}
 
-		// Read next batch of messages (up to 100 at a time)
-		messages, err := c.redisClient.XRange(ctx, streamKey, "-", "+").Result()
+		messages, err := c.redisClient.XRangeN(ctx, streamKey, cursor, "+", drainBatchSize).Result()
 		if err != nil {
-			return processed, fmt.Errorf("failed to read stream: %w", err)
+			return processed, hadFailures, fmt.Errorf("failed to read stream: %w", err)
 		}
 
-		// No more messages
 		if len(messages) == 0 {
 			break
 		}
 
-		// Process each message
 		for _, msg := range messages {
-			// Check timeout before processing each message
 			select {
 			case <-ctx.Done():
-				return processed, nil
+				return processed, hadFailures, nil
 			default:
 			}
 
-			// Parse message
+			// Advance cursor past this message to prevent re-reading on the
+			// next outer-loop iteration. Failed messages are retried in pass 2.
+			cursor = "(" + msg.ID
+
 			dlqMsg, err := c.parseStreamMessage(msg)
 			if err != nil {
 				c.logger.Error(err, "Failed to parse DLQ message during drain",
 					"message_id", msg.ID,
 					"audit_type", auditType)
+				hadFailures = true
 				continue
 			}
 
-			// Write to database (best effort)
-			if err := c.writeMessageToDB(ctx, auditType, dlqMsg, repo); err != nil {
+			if err := writeFn(ctx, dlqMsg); err != nil {
 				c.logger.Error(err, "Failed to write DLQ message to database during drain",
 					"message_id", msg.ID,
 					"audit_type", auditType,
 					"correlation_id", dlqMsg.AuditMessage.CorrelationID())
-				// Continue processing other messages even if one fails
+				hadFailures = true
+				continue
 			}
 
-			// Remove message from stream (processed, whether successful or not)
 			if err := c.redisClient.XDel(ctx, streamKey, msg.ID).Err(); err != nil {
 				c.logger.Error(err, "Failed to delete DLQ message during drain",
 					"message_id", msg.ID,
@@ -659,67 +964,7 @@ func (c *Client) drainStream(ctx context.Context, auditType string, repo interfa
 		}
 	}
 
-	return processed, nil
-}
-
-// writeMessageToDB writes a DLQ message to the database
-// This is a helper for drainStream that handles the repository interface
-func (c *Client) writeMessageToDB(ctx context.Context, auditType string, msg *DLQMessage, repo interface{}) error {
-	// Skip write if repository is nil
-	if repo == nil {
-		return fmt.Errorf("repository is nil for audit type: %s", auditType)
-	}
-
-	switch auditType {
-	case "notifications":
-		// Try type assertion with method check
-		type NotificationCreator interface {
-			Create(context.Context, *models.NotificationAudit) (*models.NotificationAudit, error)
-		}
-
-		if notifRepo, ok := repo.(NotificationCreator); ok {
-			var audit models.NotificationAudit
-			if err := json.Unmarshal(msg.AuditMessage.Payload, &audit); err != nil {
-				return fmt.Errorf("failed to unmarshal notification audit: %w", err)
-			}
-			_, err := notifRepo.Create(ctx, &audit)
-			return err
-		}
-		return fmt.Errorf("repository does not implement NotificationCreator interface (type: %T)", repo)
-
-	case "events":
-		// Check for repository.AuditEventsRepository.Create method
-		type EventCreator interface {
-			Create(context.Context, *repository.AuditEvent) (*repository.AuditEvent, error)
-		}
-
-		if eventsRepo, ok := repo.(EventCreator); ok {
-			// Step 1: Unmarshal into audit.AuditEvent (DLQ storage format)
-			var auditEvent audit.AuditEvent
-			if err := json.Unmarshal(msg.AuditMessage.Payload, &auditEvent); err != nil {
-				return fmt.Errorf("failed to unmarshal audit event: %w", err)
-			}
-
-			// Step 2: Handle missing EventData (provide default empty JSON object)
-			if len(auditEvent.EventData) == 0 {
-				auditEvent.EventData = []byte("{}")
-			}
-
-			// Step 3: Convert to repository.AuditEvent using existing helper
-			repoEvent, err := helpers.ConvertToRepositoryAuditEvent(&auditEvent)
-			if err != nil {
-				return fmt.Errorf("failed to convert audit event: %w", err)
-			}
-
-			// Step 4: Write to database
-			_, err = eventsRepo.Create(ctx, repoEvent)
-			return err
-		}
-		return fmt.Errorf("repository does not implement EventCreator interface (type: %T)", repo)
-
-	default:
-		return fmt.Errorf("unknown audit type: %s", auditType)
-	}
+	return processed, hadFailures, nil
 }
 
 // getStreamKey returns the Redis stream key for a given audit type

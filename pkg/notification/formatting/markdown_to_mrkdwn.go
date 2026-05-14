@@ -32,8 +32,6 @@ var (
 	fencedLangTagRe = regexp.MustCompile("```[a-zA-Z0-9+\\-]+")
 	// emptyFencedBlockRe matches empty fenced code blocks (opening + closing with only whitespace)
 	emptyFencedBlockRe = regexp.MustCompile("(?m)```\\s*```")
-	// unbalancedTripleBacktickRe matches lone ``` not part of a fenced block
-	unbalancedTripleBacktickRe = regexp.MustCompile("```")
 	// inlineCodeRe matches inline code: `...`
 	inlineCodeRe = regexp.MustCompile("`[^`]+`")
 	// blockquoteRe matches > at start of line (blockquote syntax)

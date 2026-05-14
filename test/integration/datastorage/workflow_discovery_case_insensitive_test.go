@@ -102,11 +102,11 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 		Context("IT-DS-595-001: PascalCase environment query matches lowercase label", func() {
 			It("should find workflow with environment=['production'] when queried with 'Production'", func() {
 				createWorkflow("env-case", "ScaleReplicas",
-					[]string{"critical"}, "pod", []string{"production"}, "P0")
+					[]string{"critical"}, "v1/Pod", []string{"production"}, "P0")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   "v1/Pod",
 					Environment: "Production",
 					Priority:    "P0",
 				}
@@ -128,11 +128,11 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 		Context("IT-DS-595-002: PascalCase severity query matches lowercase label", func() {
 			It("should find workflow with severity=['critical'] when queried with 'Critical'", func() {
 				createWorkflow("sev-case", "RestartPod",
-					[]string{"critical"}, "pod", []string{"production"}, "P0")
+					[]string{"critical"}, "v1/Pod", []string{"production"}, "P0")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "Critical",
-					Component:   "pod",
+					Component:   "v1/Pod",
 					Environment: "production",
 					Priority:    "P0",
 				}
@@ -154,7 +154,7 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 		Context("IT-DS-595-003: lowercase priority query matches uppercase array label", func() {
 			It("should find workflow with priority=['P0','P1'] (raw SQL array) when queried with 'p0'", func() {
 				wf := createWorkflow("pri-case", "ScaleReplicas",
-					[]string{"critical"}, "pod", []string{"production"}, "P0")
+					[]string{"critical"}, "v1/Pod", []string{"production"}, "P0")
 
 				// Raw SQL UPDATE to store priority as a JSONB array
 				// (Go MandatoryLabels.Priority is string, so Create() stores scalar)
@@ -166,7 +166,7 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   "v1/Pod",
 					Environment: "production",
 					Priority:    "p0",
 				}
@@ -187,11 +187,11 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 		Context("IT-DS-595-004: PascalCase filters on all 4 mandatory labels", func() {
 			It("should find workflow when all labels have case mismatches", func() {
 				createWorkflow("full-repro", "ScaleReplicas",
-					[]string{"critical"}, "deployment", []string{"production"}, "P0")
+					[]string{"critical"}, "apps/v1/Deployment", []string{"production"}, "P0")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "Critical",
-					Component:   "Deployment",
+					Component:   "Apps/V1/Deployment",
 					Environment: "Production",
 					Priority:    "P0",
 				}
@@ -218,11 +218,11 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 		Context("IT-DS-595-005: wildcard labels match PascalCase queries", func() {
 			It("should find workflow with severity=['*'], environment=['*'] when queried with PascalCase", func() {
 				createWorkflow("wc-case", "RestartPod",
-					[]string{"*"}, "pod", []string{"*"}, "P0")
+					[]string{"*"}, "v1/Pod", []string{"*"}, "P0")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "Critical",
-					Component:   "pod",
+					Component:   "v1/Pod",
 					Environment: "Production",
 					Priority:    "P0",
 				}
@@ -243,11 +243,11 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 		Context("IT-DS-595-006: security gate passes with case-mismatched environment", func() {
 			It("should return non-nil workflow when environment='Production' queries ['production'] label", func() {
 				wf := createWorkflow("gate-case", "ScaleReplicas",
-					[]string{"critical"}, "pod", []string{"production"}, "P0")
+					[]string{"critical"}, "v1/Pod", []string{"production"}, "P0")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   "v1/Pod",
 					Environment: "Production",
 					Priority:    "P0",
 				}

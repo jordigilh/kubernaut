@@ -98,7 +98,7 @@ This test plan extends with execution_bundle-specific scenarios.
 | Tier | BR Coverage | Code Coverage Target | Scenarios | Focus |
 |------|-------------|---------------------|-----------|-------|
 | **Unit** | 100% of execution_bundle rename in HAPI | Validator, result parser, discovery tool response mapping | 8 | Field rename correctness, catalog-as-truth |
-| **Integration** | DS API contract | Deferred | TBD | Real DS returning `execution_bundle` |
+| **Integration** | DS API contract | Deferred | >=80% of integration-testable code when exercised (per testing strategy) | Real DS returning `execution_bundle` |
 
 ---
 
@@ -550,4 +550,4 @@ This test plan extends with execution_bundle-specific scenarios.
 |-----------|-------|------------|
 | `execution_bundle_test_plan_v1.0.md` (this dir) | Phase 1 - DataStorage | **Prerequisite**: DS must return `execution_bundle` in API |
 | This plan | Phase 2 - HAPI | Consumes DS `execution_bundle` |
-| Phase 3 (TBD) | AA/WFE CRD rename | Consumes HAPI output `selected_workflow["execution_bundle"]` |
+| Phase 3 (planned) | AA/WFE CRD rename | Consumes HAPI output `selected_workflow["execution_bundle"]` |

@@ -103,7 +103,7 @@ var deterministicModifiedYAML = func() string {
 		What:      "Modified deterministic UUID test workflow",
 		WhenToUse: "Testing supersede with new content",
 	}
-	crd.Spec.Labels.Component = []string{"deployment"}
+	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
 	crd.Spec.Execution.Bundle = "quay.io/kubernaut/workflows/rollback:v1.0.0@sha256:def456abc123def456abc123def456abc123def456abc123def456abc123def4"
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target deployment"},
@@ -124,7 +124,7 @@ var _ = Describe("Deterministic UUID Handler Integration (#548)", func() {
 		puller := oci.NewMockImagePuller(deterministicBaseYAML)
 		parser := schema.NewParser()
 		extractor := oci.NewSchemaExtractor(puller, parser)
-		return server.NewHandler(nil,
+		return server.NewHandler(
 			server.WithSchemaExtractor(extractor),
 			server.WithWorkflowContentIntegrityRepository(mockRepo),
 		)

@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
@@ -251,13 +252,13 @@ func (s *Server) handleGetEffectivenessScore(w http.ResponseWriter, r *http.Requ
 	// Query effectiveness audit events from the database
 	events, err := s.queryEffectivenessEvents(r.Context(), correlationID)
 	if err != nil {
-		s.logger.Error(err, "Failed to query effectiveness events",
+		s.logger.Error(err, "Failed to query effectiveness events (redacted from client)",
 			"correlation_id", correlationID)
 		writeValidationRFC7807Error(w, &validation.RFC7807Problem{
 			Type:     "https://kubernaut.ai/problems/effectiveness/query-error",
 			Title:    "Effectiveness Query Error",
 			Status:   http.StatusInternalServerError,
-			Detail:   "Failed to query effectiveness events: " + err.Error(),
+			Detail:   "An internal error occurred. Check server logs for details.",
 			Instance: r.URL.Path,
 		}, s)
 		return
@@ -303,9 +304,10 @@ func (s *Server) queryEffectivenessEvents(ctx context.Context, correlationID str
 	query := `SELECT event_type, event_data FROM audit_events
 		WHERE correlation_id = $1
 		AND event_category = 'effectiveness'
-		ORDER BY event_timestamp ASC, event_id ASC`
+		ORDER BY event_timestamp ASC, event_id ASC
+		LIMIT $2`
 
-	rows, err := s.db.QueryContext(ctx, query, correlationID)
+	rows, err := s.db.QueryContext(ctx, query, correlationID, helpers.MaxEffectivenessResults)
 	if err != nil {
 		return nil, err
 	}

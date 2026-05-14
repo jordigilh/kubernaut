@@ -37,7 +37,7 @@ var _ = Describe("Issue #674 Bug 4: Gateway LoadFromFile error propagation (BR-P
 	It("UT-GW-674-002: malformed YAML returns error", func() {
 		tmpFile, err := os.CreateTemp("", "gw-bad-config-*.yaml")
 		Expect(err).ToNot(HaveOccurred())
-		defer os.Remove(tmpFile.Name())
+		DeferCleanup(os.Remove, tmpFile.Name())
 
 		_, err = tmpFile.WriteString("{{{{invalid yaml content")
 		Expect(err).ToNot(HaveOccurred())
@@ -50,7 +50,7 @@ var _ = Describe("Issue #674 Bug 4: Gateway LoadFromFile error propagation (BR-P
 	It("UT-GW-674-003: valid YAML returns parsed config without error", func() {
 		tmpFile, err := os.CreateTemp("", "gw-good-config-*.yaml")
 		Expect(err).ToNot(HaveOccurred())
-		defer os.Remove(tmpFile.Name())
+		DeferCleanup(os.Remove, tmpFile.Name())
 
 		_, err = tmpFile.WriteString("server:\n  listenAddr: \":9090\"\n")
 		Expect(err).ToNot(HaveOccurred())

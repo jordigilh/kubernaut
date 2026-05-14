@@ -117,6 +117,10 @@ func (c *closableStub) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatRespo
 	return llm.ChatResponse{}, nil
 }
 
+func (c *closableStub) StreamChat(_ context.Context, _ llm.ChatRequest, _ func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	return llm.ChatResponse{}, nil
+}
+
 func (c *closableStub) Close() error {
 	if c.onClose != nil {
 		return c.onClose()

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/response"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
@@ -104,43 +105,83 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	scenarioName := cfg.ScenarioName
 	h.recordScenarioMetric(scenarioName, result.Method)
 
-	effectiveForceText := h.forceText
-	if cfg.ForceText != nil {
-		effectiveForceText = *cfg.ForceText
-	}
 	hasSplit := conversation.HasSubmitWithWorkflowTool(req.Tools)
 	resolved := isResolvedOutcome(cfg)
-	log.Printf("[mock-llm] scenario=%s outcome=%s workflowID=%q forceText=%v tools=%d hasSplitTool=%v isResolved=%v",
-		scenarioName, cfg.InvestigationOutcome, cfg.WorkflowID, effectiveForceText, len(req.Tools), hasSplit, resolved)
+	log.Printf("[mock-llm] scenario=%s mode=%s outcome=%s workflowID=%q tools=%d hasSplitTool=%v isResolved=%v",
+		scenarioName, h.mode, cfg.InvestigationOutcome, cfg.WorkflowID, len(req.Tools), hasSplit, resolved)
 
-	if effectiveForceText || len(req.Tools) == 0 {
-		if hasSplit && !resolved {
-			toolName := openai.ToolSubmitResultWithWorkflow
-			if cfg.WorkflowID == "" {
-				toolName = openai.ToolSubmitResultNoWorkflow
-			}
-			h.trackToolCall(toolName)
-			writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, toolName, cfg))
-		} else {
-			writeJSON(w, http.StatusOK, response.BuildForceTextResponse(model, cfg, req.Tools))
+	switch h.mode {
+	case config.ModeInteractive:
+		h.respondWithText(w, model, cfg)
+
+	case config.ModeAutonomous:
+		effectiveForceText := true
+		if cfg.ForceText != nil {
+			effectiveForceText = *cfg.ForceText
 		}
-		h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
-		return
+		if effectiveForceText || len(req.Tools) == 0 {
+			if hasSplit && !resolved {
+				h.respondWithSubmitToolCall(w, model, cfg)
+			} else {
+				h.respondWithText(w, model, cfg)
+			}
+		} else {
+			h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved)
+		}
+
+	default: // config.ModeFull
+		effectiveForceText := h.forceText
+		if cfg.ForceText != nil {
+			effectiveForceText = *cfg.ForceText
+		}
+		if effectiveForceText || len(req.Tools) == 0 {
+			if hasSplit && !resolved {
+				h.respondWithSubmitToolCall(w, model, cfg)
+			} else {
+				h.respondWithText(w, model, cfg)
+			}
+		} else {
+			h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved)
+		}
 	}
 
+	h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
+}
+
+// respondWithText writes a text-only response (no tool calls).
+func (h *handler) respondWithText(w http.ResponseWriter, model string, cfg scenarios.MockScenarioConfig) {
+	writeJSON(w, http.StatusOK, response.BuildTextResponse(model, cfg))
+}
+
+// respondWithSubmitToolCall writes the appropriate submit_result tool call.
+func (h *handler) respondWithSubmitToolCall(w http.ResponseWriter, model string, cfg scenarios.MockScenarioConfig) {
+	toolName := openai.ToolSubmitResultWithWorkflow
+	if cfg.WorkflowID == "" {
+		toolName = openai.ToolSubmitResultNoWorkflow
+	}
+	h.trackToolCall(toolName)
+	writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, toolName, cfg))
+}
+
+// handleFullDAG executes the complete DAG path for tool-calling scenarios.
+func (h *handler) handleFullDAG(
+	w http.ResponseWriter,
+	model string, cfg scenarios.MockScenarioConfig,
+	req openai.ChatCompletionRequest,
+	ctx *conversation.Context,
+	hasSplit, resolved bool,
+) {
 	if len(cfg.MultiToolCalls) > 0 && !hasToolResults(req.Messages) {
 		for _, tc := range cfg.MultiToolCalls {
 			h.trackToolCall(tc.Name)
 		}
 		writeJSON(w, http.StatusOK, response.BuildMultiToolCallResponse(model, cfg.MultiToolCalls))
-		h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
 		return
 	}
 
 	if cfg.ToolCallName != "" && !hasToolResults(req.Messages) {
 		h.trackToolCall(cfg.ToolCallName)
 		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, cfg.ToolCallName, cfg))
-		h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
 		return
 	}
 
@@ -164,17 +205,11 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, hr.ToolName, cfg))
 	default:
 		if hasSplit && !resolved {
-			toolName := openai.ToolSubmitResultWithWorkflow
-			if cfg.WorkflowID == "" {
-				toolName = openai.ToolSubmitResultNoWorkflow
-			}
-			h.trackToolCall(toolName)
-			writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, toolName, cfg))
+			h.respondWithSubmitToolCall(w, model, cfg)
 		} else {
 			writeJSON(w, http.StatusOK, response.BuildTextResponse(model, cfg))
 		}
 	}
-	h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
 }
 
 func (h *handler) trackToolCall(name string) {

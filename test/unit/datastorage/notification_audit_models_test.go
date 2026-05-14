@@ -47,7 +47,7 @@ var _ = Describe("NotificationAudit Model", func() {
 			RemediationID:   "test-remediation-1",
 			NotificationID:  "test-notification-1",
 			Recipient:       "test@example.com",
-			Channel:         "email",
+			Channel:         "slack",
 			MessageSummary:  "Test notification message",
 			Status:          "sent",
 			SentAt:          now,
@@ -67,7 +67,7 @@ var _ = Describe("NotificationAudit Model", func() {
 			Expect(audit.RemediationID).To(Equal("test-remediation-1"))
 			Expect(audit.NotificationID).To(Equal("test-notification-1"))
 			Expect(audit.Recipient).To(Equal("test@example.com"))
-			Expect(audit.Channel).To(Equal("email"))
+			Expect(audit.Channel).To(Equal("slack"))
 			Expect(audit.MessageSummary).To(Equal("Test notification message"))
 			Expect(audit.Status).To(Equal("sent"))
 			Expect(audit.SentAt).ToNot(BeZero())
@@ -109,12 +109,7 @@ var _ = Describe("NotificationAudit Model", func() {
 		})
 	})
 
-	Context("Channel Values", func() {
-		It("should accept 'email' channel", func() {
-			audit.Channel = "email"
-			Expect(audit.Channel).To(Equal("email"))
-		})
-
+	Context("Channel Values (migration 006)", func() {
 		It("should accept 'slack' channel", func() {
 			audit.Channel = "slack"
 			Expect(audit.Channel).To(Equal("slack"))
@@ -125,9 +120,24 @@ var _ = Describe("NotificationAudit Model", func() {
 			Expect(audit.Channel).To(Equal("pagerduty"))
 		})
 
-		It("should accept 'sms' channel", func() {
-			audit.Channel = "sms"
-			Expect(audit.Channel).To(Equal("sms"))
+		It("should accept 'teams' channel", func() {
+			audit.Channel = "teams"
+			Expect(audit.Channel).To(Equal("teams"))
+		})
+
+		It("should accept 'console' channel", func() {
+			audit.Channel = "console"
+			Expect(audit.Channel).To(Equal("console"))
+		})
+
+		It("should accept 'file' channel", func() {
+			audit.Channel = "file"
+			Expect(audit.Channel).To(Equal("file"))
+		})
+
+		It("should accept 'log' channel", func() {
+			audit.Channel = "log"
+			Expect(audit.Channel).To(Equal("log"))
 		})
 	})
 
@@ -183,7 +193,7 @@ var _ = Describe("NotificationAudit Model", func() {
 
 		It("should handle Channel up to 50 characters", func() {
 			// In practice, channel values are enum-constrained to short strings
-			audit.Channel = "email"
+			audit.Channel = "slack"
 			Expect(len(audit.Channel)).To(BeNumerically("<=", 50))
 		})
 	})

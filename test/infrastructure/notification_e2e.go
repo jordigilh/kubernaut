@@ -230,6 +230,11 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
 	}
 
+	// AU-9: Generate RSA signing certificate for audit exports
+	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate signing certificate: %w", err)
+	}
+
 	// Deploy mock-webhook before controller so DNS resolves when controller starts processing
 	_, _ = fmt.Fprintf(writer, "📨 Deploying mock-webhook (webhook sink with per-channel success/fail endpoints)...\n")
 	if err := deployNotificationMockWebhook(ctx, namespace, kubeconfigPath, writer); err != nil {

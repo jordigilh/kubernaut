@@ -19,13 +19,19 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
 )
 
 // ========================================
@@ -48,6 +54,14 @@ import (
 //
 // ========================================
 
+// PEL recovery tuning (#1048 Phase 5 / FedRAMP AU-2). Exported for unit test contract checks.
+const (
+	PelRecoveryClaimInterval = 30 * time.Second
+	PelRecoveryMinIdleTime   = 60 * time.Second
+	PelRecoveryClaimCount    = int64(10)
+	PelRecoveryMaxDeliveries = 5
+)
+
 // backoffIntervals defines the exponential backoff schedule per DD-009.
 // After 6 retries, messages are moved to dead letter for manual investigation.
 var backoffIntervals = []time.Duration{
@@ -66,6 +80,7 @@ type DLQRetryWorkerConfig struct {
 	MaxRetries    int
 	ConsumerGroup string
 	ConsumerName  string
+	ReadTimeout   time.Duration // #1088: bounded XREADGROUP block timeout (default 5s)
 }
 
 // DefaultDLQRetryWorkerConfig returns sensible defaults per DD-009.
@@ -76,45 +91,65 @@ func DefaultDLQRetryWorkerConfig() DLQRetryWorkerConfig {
 		MaxRetries:    6,
 		ConsumerGroup: "data-storage-retry-workers",
 		ConsumerName:  "worker-default",
+		ReadTimeout:   5 * time.Second,
 	}
 }
 
 // DLQRetryWorker processes DLQ messages and retries writes to PostgreSQL.
 // V1.0: Runs as goroutine inside Data Storage server (DD-007 lifecycle).
 type DLQRetryWorker struct {
-	dlqClient     *dlq.Client
-	auditRepo     *repository.AuditEventsRepository
-	logger        logr.Logger
-	consumerGroup string
-	consumerName  string
+	dlqClient        *dlq.Client
+	auditRepo        dlq.EventCreator
+	notificationRepo dlq.NotificationCreator
+	logger           logr.Logger
+	consumerGroup    string
+	consumerName     string
 
 	// Configuration
 	pollInterval     time.Duration
 	maxBatchSize     int64
 	maxRetriesPerMsg int
+	readTimeout      time.Duration
+
+	// #1048 Phase 4: Prometheus counter for DLQ validation failures (nil-safe)
+	validationMetrics *prometheus.CounterVec
 
 	// Lifecycle: cancel func interrupts blocking Redis reads on Stop()
 	cancel context.CancelFunc
 	doneCh chan struct{}
+
+	// #1048 Phase 5 / AU-2: after first processRetryBatch, PEL backlog was drained ahead of live ">" reads.
+	pelDrained bool
 }
 
 // NewDLQRetryWorker creates a new DLQ retry worker.
+// #1048 DF-1: Added notificationRepo parameter so notification DLQ messages
+// are persisted instead of silently dropped.
 func NewDLQRetryWorker(
 	dlqClient *dlq.Client,
-	auditRepo *repository.AuditEventsRepository,
+	auditRepo dlq.EventCreator,
+	notificationRepo dlq.NotificationCreator,
 	config DLQRetryWorkerConfig,
 	logger logr.Logger,
+	validationMetrics *prometheus.CounterVec,
 ) *DLQRetryWorker {
+	readTimeout := config.ReadTimeout
+	if readTimeout <= 0 {
+		readTimeout = 5 * time.Second
+	}
 	return &DLQRetryWorker{
-		dlqClient:        dlqClient,
-		auditRepo:        auditRepo,
-		logger:           logger.WithName("dlq-retry-worker"),
-		consumerGroup:    config.ConsumerGroup,
-		consumerName:     config.ConsumerName,
-		pollInterval:     config.PollInterval,
-		maxBatchSize:     config.MaxBatchSize,
-		maxRetriesPerMsg: config.MaxRetries,
-		doneCh:           make(chan struct{}),
+		dlqClient:         dlqClient,
+		auditRepo:         auditRepo,
+		notificationRepo:  notificationRepo,
+		logger:            logger.WithName("dlq-retry-worker"),
+		consumerGroup:     config.ConsumerGroup,
+		consumerName:      config.ConsumerName,
+		pollInterval:      config.PollInterval,
+		maxBatchSize:      config.MaxBatchSize,
+		maxRetriesPerMsg:  config.MaxRetries,
+		readTimeout:       readTimeout,
+		validationMetrics: validationMetrics,
+		doneCh:            make(chan struct{}),
 	}
 }
 
@@ -125,10 +160,24 @@ func NewDLQRetryWorker(
 func (w *DLQRetryWorker) Start(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	w.cancel = cancel
-	go w.retryLoop(ctx)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		w.retryLoop(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		w.runClaimJanitor(ctx)
+	}()
+	go func() {
+		wg.Wait()
+		close(w.doneCh)
+	}()
 	w.logger.Info("DLQ retry worker started (DD-009 V1.0)",
 		"poll_interval", w.pollInterval,
 		"max_batch_size", w.maxBatchSize,
+		"read_timeout", w.readTimeout,
 		"consumer_group", w.consumerGroup,
 	)
 }
@@ -145,8 +194,6 @@ func (w *DLQRetryWorker) Stop() {
 }
 
 func (w *DLQRetryWorker) retryLoop(ctx context.Context) {
-	defer close(w.doneCh)
-
 	ticker := time.NewTicker(w.pollInterval)
 	defer ticker.Stop()
 
@@ -165,20 +212,130 @@ func (w *DLQRetryWorker) processRetryBatch(ctx context.Context) {
 	// Process both audit types
 	auditTypes := []string{"events", "notifications"}
 
+	// Two-phase startup (AU-2): drain this consumer's PEL before reading new messages (">").
+	if !w.pelDrained {
+		for _, auditType := range auditTypes {
+			if ctx.Err() != nil {
+				return
+			}
+			w.drainPEL(ctx, auditType)
+		}
+		w.pelDrained = true
+	}
+
 	for _, auditType := range auditTypes {
-		messages, err := w.dlqClient.ReadMessages(ctx, auditType, w.consumerGroup, w.consumerName, -1)
+		messages, err := w.dlqClient.ReadMessages(ctx, auditType, w.consumerGroup, w.consumerName, w.maxBatchSize, w.readTimeout)
 		if err != nil {
 			w.logger.Error(err, "Failed to read from DLQ", "audit_type", auditType)
 			continue
 		}
 
 		for _, msg := range messages {
-			w.processMessage(ctx, auditType, msg)
+			_ = w.processMessage(ctx, auditType, msg)
 		}
 	}
 }
 
-func (w *DLQRetryWorker) processMessage(ctx context.Context, auditType string, msg *dlq.DLQMessage) {
+func (w *DLQRetryWorker) drainPEL(ctx context.Context, auditType string) {
+	w.logger.Info("PEL drain phase: processing previously unacknowledged messages",
+		"audit_type", auditType)
+
+	const pelDrainBatch = int64(10)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		messages, err := w.dlqClient.ReadPendingMessages(ctx, auditType,
+			w.consumerGroup, w.consumerName, pelDrainBatch, "0")
+		if err != nil {
+			w.logger.Error(err, "Failed to read pending messages during PEL drain",
+				"audit_type", auditType)
+			return
+		}
+
+		if len(messages) == 0 {
+			w.logger.Info("PEL drain complete: no more pending messages",
+				"audit_type", auditType)
+			return
+		}
+
+		progressed := false
+		for i := range messages {
+			msg := messages[i]
+			if w.processMessage(ctx, auditType, &msg) {
+				progressed = true
+			}
+		}
+		if !progressed {
+			w.logger.Info("PEL drain stalled on backoff; remaining entries remain pending until idle reclaim",
+				"audit_type", auditType)
+			return
+		}
+	}
+}
+
+func (w *DLQRetryWorker) runClaimJanitor(ctx context.Context) {
+	ticker := time.NewTicker(PelRecoveryClaimInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			w.claimOrphanedMessages(ctx)
+		}
+	}
+}
+
+func (w *DLQRetryWorker) claimOrphanedMessages(ctx context.Context) {
+	auditTypes := []string{"events", "notifications"}
+
+	var totalPending int64
+	for _, auditType := range auditTypes {
+		pending, err := w.dlqClient.GetPendingMessages(ctx, auditType, w.consumerGroup)
+		if err != nil {
+			w.logger.Error(err, "Failed to query PEL pending count (AU-2)",
+				"audit_type", auditType,
+				"consumer_group", w.consumerGroup)
+			continue
+		}
+		totalPending += pending
+	}
+	dsmetrics.DLQPelPending.Set(float64(totalPending))
+
+	for _, auditType := range auditTypes {
+		messages, _, err := w.dlqClient.AutoClaimMessages(ctx, auditType,
+			w.consumerGroup, w.consumerName, PelRecoveryMinIdleTime, "0-0", PelRecoveryClaimCount)
+		if err != nil {
+			w.logger.Error(err, "XAUTOCLAIM sweep failed (transient Redis issue)",
+				"audit_type", auditType)
+			continue
+		}
+
+		for i := range messages {
+			msg := messages[i]
+			if msg.AuditMessage.RetryCount > PelRecoveryMaxDeliveries {
+				w.logger.Info("Poison message detected in PEL, moving to dead letter",
+					"message_id", msg.ID,
+					"retry_count", msg.AuditMessage.RetryCount,
+					"audit_type", auditType)
+				w.moveToDeadLetter(ctx, auditType, &msg)
+				continue
+			}
+
+			w.processMessage(ctx, auditType, &msg)
+		}
+	}
+}
+
+// processMessage attempts to persist a DLQ entry. Returns false when the message was skipped
+// (for example backoff not elapsed). Returns true when a side-effect occurred (dead-letter,
+// retry increment, or ack attempted) so PEL drains avoid busy-spinning unready entries (AU-2).
+func (w *DLQRetryWorker) processMessage(ctx context.Context, auditType string, msg *dlq.DLQMessage) bool {
 	// Check if message is ready for retry (backoff period elapsed)
 	if !IsReadyForRetry(msg.AuditMessage.RetryCount, msg.AuditMessage.Timestamp) {
 		w.logger.V(1).Info("Message not ready for retry (backoff not elapsed)",
@@ -186,20 +343,20 @@ func (w *DLQRetryWorker) processMessage(ctx context.Context, auditType string, m
 			"retry_count", msg.AuditMessage.RetryCount,
 			"created_at", msg.AuditMessage.Timestamp,
 		)
-		return
+		return false
 	}
 
 	// Check if max retries exceeded
 	if msg.AuditMessage.RetryCount >= w.maxRetriesPerMsg {
 		w.moveToDeadLetter(ctx, auditType, msg)
-		return
+		return true
 	}
 
 	// Attempt write to PostgreSQL
 	err := w.writeToPostgres(ctx, auditType, msg)
 	if err != nil {
 		w.handleRetryFailure(ctx, auditType, msg, err)
-		return
+		return true
 	}
 
 	// Success - acknowledge message
@@ -208,72 +365,73 @@ func (w *DLQRetryWorker) processMessage(ctx context.Context, auditType string, m
 			"message_id", msg.ID,
 			"audit_type", auditType,
 		)
-	} else {
-		w.logger.Info("DLQ message processed successfully",
-			"message_id", msg.ID,
-			"audit_type", auditType,
-			"retry_count", msg.AuditMessage.RetryCount,
-			"correlation_id", msg.AuditMessage.CorrelationID(),
-		)
+		return true
 	}
+	w.logger.Info("DLQ message processed successfully",
+		"message_id", msg.ID,
+		"audit_type", auditType,
+		"retry_count", msg.AuditMessage.RetryCount,
+		"correlation_id", msg.AuditMessage.CorrelationID(),
+	)
+	return true
 }
 
+// writeToPostgres persists a DLQ message to PostgreSQL.
+// #1048 DF-1: Added "notifications" case (was silently returning nil).
+// #1048 DF-2: Replaced manual getString parsing with json.Unmarshal +
+// ConvertToRepositoryAuditEvent, aligning with the drain path in dlq/client.go.
 func (w *DLQRetryWorker) writeToPostgres(ctx context.Context, auditType string, msg *dlq.DLQMessage) error {
-	// Direct PostgreSQL write (bypass HTTP layer)
+	if len(msg.AuditMessage.Payload) > dlq.MaxPayloadSize() {
+		return fmt.Errorf("payload exceeds maximum size (%d > %d bytes)", len(msg.AuditMessage.Payload), dlq.MaxPayloadSize())
+	}
+
 	switch auditType {
 	case "events":
-		// Parse JSON payload and create audit event
-		event, err := w.parseAuditEventPayload(msg.AuditMessage.Payload)
+		if w.auditRepo == nil {
+			return fmt.Errorf("audit event repository not configured; cannot persist event DLQ message")
+		}
+		var auditEvent audit.AuditEvent
+		if err := json.Unmarshal(msg.AuditMessage.Payload, &auditEvent); err != nil {
+			w.incValidationMetric(auditType, "unmarshal_error")
+			return fmt.Errorf("failed to unmarshal audit event payload: %w", err)
+		}
+		if len(auditEvent.EventData) == 0 {
+			auditEvent.EventData = []byte("{}")
+		}
+		if err := auditEvent.Validate(); err != nil {
+			w.incValidationMetric(auditType, "field_validation")
+			return fmt.Errorf("audit event validation failed: %w", err)
+		}
+		if err := dlq.ValidateEventData(auditEvent.EventData); err != nil {
+			w.incValidationMetric(auditType, "size_or_depth")
+			return fmt.Errorf("audit event EventData validation failed: %w", err)
+		}
+		repoEvent, err := helpers.ConvertToRepositoryAuditEvent(&auditEvent)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to convert audit event: %w", err)
 		}
-		_, err = w.auditRepo.Create(ctx, event)
+		_, err = w.auditRepo.Create(ctx, repoEvent)
 		return err
-	default:
-		// For other types, log and skip
-		w.logger.Info("Unsupported audit type for DLQ retry",
-			"audit_type", auditType,
-			"message_id", msg.ID,
-		)
-		return nil
-	}
-}
 
-// parseAuditEventPayload parses JSON payload into AuditEvent.
-func (w *DLQRetryWorker) parseAuditEventPayload(payload []byte) (*repository.AuditEvent, error) {
-	var data map[string]interface{}
-	if err := json.Unmarshal(payload, &data); err != nil {
-		return nil, err
-	}
-
-	// Extract required fields
-	event := &repository.AuditEvent{
-		EventType:    getString(data, "event_type"),
-		EventAction:  getString(data, "event_action"),
-		EventOutcome: getString(data, "event_outcome"),
-		ActorType:    getString(data, "actor_type"),
-		ActorID:      getString(data, "actor_id"),
-	}
-
-	// Set defaults for missing fields
-	if event.EventAction == "" {
-		event.EventAction = getString(data, "operation")
-	}
-	if event.EventOutcome == "" {
-		event.EventOutcome = getString(data, "outcome")
-	}
-
-	return event, nil
-}
-
-// getString safely extracts a string from map.
-func getString(data map[string]interface{}, key string) string {
-	if v, ok := data[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
+	case "notifications":
+		if w.notificationRepo == nil {
+			return fmt.Errorf("notification repository not configured; cannot persist notification DLQ message")
 		}
+		var notifAudit models.NotificationAudit
+		if err := json.Unmarshal(msg.AuditMessage.Payload, &notifAudit); err != nil {
+			w.incValidationMetric(auditType, "unmarshal_error")
+			return fmt.Errorf("failed to unmarshal notification audit payload: %w", err)
+		}
+		if err := notifAudit.Validate(); err != nil {
+			w.incValidationMetric(auditType, "field_validation")
+			return fmt.Errorf("notification audit validation failed: %w", err)
+		}
+		_, err := w.notificationRepo.Create(ctx, &notifAudit)
+		return err
+
+	default:
+		return fmt.Errorf("unknown audit type for DLQ retry: %s", auditType)
 	}
-	return ""
 }
 
 func (w *DLQRetryWorker) handleRetryFailure(ctx context.Context, auditType string, msg *dlq.DLQMessage, writeErr error) {
@@ -282,12 +440,30 @@ func (w *DLQRetryWorker) handleRetryFailure(ctx context.Context, auditType strin
 		"audit_type", auditType,
 		"retry_count", msg.AuditMessage.RetryCount,
 		"correlation_id", msg.AuditMessage.CorrelationID(),
+		"event_type", extractPayloadField(msg.AuditMessage.Payload, "event_type"),
+		"payload_size", len(msg.AuditMessage.Payload),
 	)
 
-	// Increment retry count for next attempt (includes the error for tracking)
 	if err := w.dlqClient.IncrementRetryCount(ctx, auditType, msg, writeErr); err != nil {
 		w.logger.Error(err, "Failed to increment retry count", "message_id", msg.ID)
 	}
+}
+
+// extractPayloadField best-effort extracts a top-level string field from raw JSON payload.
+func extractPayloadField(payload json.RawMessage, field string) string {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &m); err != nil {
+		return ""
+	}
+	raw, ok := m[field]
+	if !ok {
+		return ""
+	}
+	var v string
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return ""
+	}
+	return v
 }
 
 func (w *DLQRetryWorker) moveToDeadLetter(ctx context.Context, auditType string, msg *dlq.DLQMessage) {
@@ -309,6 +485,15 @@ func (w *DLQRetryWorker) moveToDeadLetter(ctx context.Context, auditType string,
 		)
 	}
 }
+
+func (w *DLQRetryWorker) incValidationMetric(auditType, reason string) {
+	if w.validationMetrics != nil {
+		w.validationMetrics.WithLabelValues(auditType, reason).Inc()
+	}
+}
+
+// EventData validation is provided by dlq.ValidateEventData (Fix 7 / SC-5, SI-10).
+// Constants dlq.MaxEventDataSize and dlq.MaxEventDataDepth are the single source of truth.
 
 // ========================================
 // Helper Functions (Exported for Testing)

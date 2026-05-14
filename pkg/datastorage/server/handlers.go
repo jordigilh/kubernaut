@@ -40,37 +40,7 @@ func (s *Server) ReadinessHandler() http.HandlerFunc {
 	return s.handleReadiness
 }
 
-// handleHealth handles GET /health - overall health check
-// DD-AUTH-014: Verifies database connectivity and auth middleware configuration
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	// Check database connectivity
-	if err := s.db.Ping(); err != nil {
-		s.logger.Error(err, "Health check failed - database unreachable")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = fmt.Fprintf(w, `{"status":"unhealthy","database":"unreachable","error":"%s"}`, err.Error())
-		return
-	}
-
-	// DD-AUTH-014: Auth middleware readiness verified by non-nil check
-	// Per NewServer(), authenticator is guaranteed to be non-nil if server started
-	// We do NOT actively validate tokens here to avoid startup race conditions:
-	//   - In CI, envtest may not be fully ready when DataStorage starts
-	//   - Active validation with timeout causes health check to return 503
-	//   - Integration tests fail waiting for health to become OK
-	//
-	// Auth middleware handles per-request validation gracefully:
-	//   - Returns 401 if K8s API unreachable (client can retry)
-	//   - Returns 403 if token valid but unauthorized (client error)
-	//   - No need to block service startup on K8s API availability
-	//
-	// Health check purpose: Verify service CAN respond to requests
-	// Auth validation purpose: Verify request HAS valid credentials (per-request)
-
-	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprint(w, `{"status":"healthy","database":"connected","auth":"configured"}`)
-}
-
-// handleReadiness handles GET /health/ready - readiness probe for Kubernetes
+// handleReadiness handles GET /readyz - readiness probe for Kubernetes (port 8081)
 // DD-007: Returns 503 during shutdown to remove pod from endpoints
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	// DD-007: Check shutdown flag first
@@ -83,11 +53,20 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 
 	// Check database connectivity
 	if err := s.db.Ping(); err != nil {
-		s.logger.Info("Readiness probe failed - database unreachable",
-			"error", err)
+		s.logger.Error(err, "Readiness probe failed - database unreachable")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = fmt.Fprintf(w, `{"status":"not_ready","reason":"database_unreachable","error":"%s"}`, err.Error())
+		_, _ = fmt.Fprint(w, `{"status":"not_ready","reason":"database_unreachable"}`)
 		return
+	}
+
+	// #1088 Phase 7.3: Check Redis connectivity
+	if s.dlqClient != nil {
+		if err := s.dlqClient.HealthCheck(r.Context()); err != nil {
+			s.logger.Error(err, "Readiness probe failed - Redis unreachable")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = fmt.Fprint(w, `{"status":"not_ready","reason":"redis_unreachable"}`)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -106,15 +85,21 @@ func (s *Server) handleLiveness(w http.ResponseWriter, _ *http.Request) {
 
 // Middleware
 
-// panicRecoveryMiddleware catches panics and logs detailed information
+// PanicRecoveryMiddleware is the exported form of panicRecoveryMiddleware,
+// enabling unit tests outside this package to exercise the production code path.
+func (s *Server) PanicRecoveryMiddleware(next http.Handler) http.Handler {
+	return s.panicRecoveryMiddleware(next)
+}
+
+// panicRecoveryMiddleware catches panics, logs detailed information, and
+// returns HTTP 500 instead of re-panicking (SEC-M2).
 func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
 				requestID := middleware.GetReqID(r.Context())
 
-				// Log the panic with full details
-				s.logger.Error(fmt.Errorf("panic: %v", err), "🚨 PANIC RECOVERED",
+				s.logger.Error(fmt.Errorf("panic: %v", err), "PANIC RECOVERED",
 					"request_id", requestID,
 					"method", r.Method,
 					"path", r.URL.Path,
@@ -122,8 +107,10 @@ func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
 					"stack_trace", string(debug.Stack()),
 				)
 
-				// Let chi's Recoverer handle the response
-				panic(err)
+				// SEC-M2: Return 500 instead of re-panicking
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"type":"about:blank","title":"Internal Server Error","status":500,"detail":"unexpected error"}`))
 			}
 		}()
 
@@ -131,27 +118,32 @@ func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// loggingMiddleware logs HTTP requests with structured logging
+// LoggingMiddleware is the exported form of loggingMiddleware,
+// enabling unit tests outside this package to exercise the production code path.
+func (s *Server) LoggingMiddleware(next http.Handler) http.Handler {
+	return s.loggingMiddleware(next)
+}
+
+// loggingMiddleware logs HTTP requests with structured logging.
+// FED-M2: Includes authenticated user identity when available.
 func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-
-		// Get request ID from middleware.RequestID
 		requestID := middleware.GetReqID(r.Context())
-
-		// Create a response writer wrapper to capture status code
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
-		// Call next handler
 		next.ServeHTTP(ww, r)
 
-		// Log request with timing
 		duration := time.Since(start)
+		// FED-M2: Include authenticated principal in access log.
+		// X-Auth-Request-User is set by the auth middleware after successful authentication.
+		user := r.Header.Get("X-Auth-Request-User")
 		s.logger.Info("HTTP request",
 			"request_id", requestID,
 			"method", r.Method,
 			"path", r.URL.Path,
 			"remote_addr", r.RemoteAddr,
+			"user", user,
 			"status", ww.Status(),
 			"bytes", ww.BytesWritten(),
 			"duration", duration,

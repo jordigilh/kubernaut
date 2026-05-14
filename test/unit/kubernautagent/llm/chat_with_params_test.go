@@ -52,6 +52,10 @@ func (c *capturingClient) Chat(ctx context.Context, req llm.ChatRequest) (llm.Ch
 	return c.resp, c.err
 }
 
+func (c *capturingClient) StreamChat(ctx context.Context, req llm.ChatRequest, _ func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	return c.Chat(ctx, req)
+}
+
 func (c *capturingClient) Close() error { return nil }
 
 // countingErrorClient returns errors for the first N calls, then succeeds.
@@ -71,6 +75,10 @@ func (c *countingErrorClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.Ch
 		return llm.ChatResponse{}, fmt.Errorf("transient error attempt %d", c.totalCalls)
 	}
 	return c.successResp, nil
+}
+
+func (c *countingErrorClient) StreamChat(ctx context.Context, req llm.ChatRequest, _ func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	return c.Chat(ctx, req)
 }
 
 func (c *countingErrorClient) Close() error { return nil }

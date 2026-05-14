@@ -57,14 +57,22 @@ import (
 //   - 90%: ERROR log + critical metric (urgent action needed)
 //   - 95%: ERROR log + imminent overflow metric (immediate action required)
 func (c *Client) monitorDLQCapacity(ctx context.Context, stream, streamKey, _ string) {
-	// Get current DLQ depth
 	depth, err := c.GetDLQDepth(ctx, stream)
 	if err != nil || c.maxLen <= 0 {
-		// Skip monitoring if depth check fails or maxLen not configured
 		return
 	}
 
-	// Calculate capacity ratio (0.0 to 1.0)
+	// DF-C2: Detect MAXLEN trim. With approximate trimming, stream length
+	// at or slightly below maxLen indicates that Redis trimmed old entries.
+	if depth >= c.maxLen {
+		dlqTrimTotal.WithLabelValues(stream).Inc()
+		c.logger.Info("DLQ MAXLEN trim detected",
+			"stream", streamKey,
+			"depth", depth,
+			"max_len", c.maxLen,
+		)
+	}
+
 	capacityRatio := float64(depth) / float64(c.maxLen)
 
 	// Reset all alert gauges first, then set active ones

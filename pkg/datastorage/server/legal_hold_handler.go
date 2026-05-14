@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
 
@@ -69,8 +70,12 @@ func (s *Server) HandlePlaceLegalHold(w http.ResponseWriter, r *http.Request) {
 	// 1. Parse request body
 	var req PlaceLegalHoldRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, s.logger)
+			return
+		}
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid-request", "Invalid Request",
-			fmt.Sprintf("Invalid request body: %v", err), s.logger)
+			"request body is not valid JSON", s.logger)
 		return
 	}
 
@@ -88,7 +93,7 @@ func (s *Server) HandlePlaceLegalHold(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Extract X-Auth-Request-User header (placed_by) - REQUIRED for SOC2 compliance
-	// DD-AUTH-004: OAuth-proxy injects this header after validating JWT token + SAR
+	// DD-AUTH-014: OAuth-proxy injects this header after validating JWT token + SAR
 	// DD-AUTH-005: All services authenticate via oauth-proxy, which sets this header
 	placedBy := r.Header.Get("X-Auth-Request-User")
 	if placedBy == "" {
@@ -180,8 +185,12 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 	// 2. Parse request body (release_reason)
 	var req ReleaseLegalHoldRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, s.logger)
+			return
+		}
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid-request", "Invalid Request",
-			fmt.Sprintf("Invalid request body: %v", err), s.logger)
+			"request body is not valid JSON", s.logger)
 		return
 	}
 
@@ -192,7 +201,7 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// 3. Extract X-Auth-Request-User header (released_by) - REQUIRED for SOC2 compliance
-	// DD-AUTH-004: OAuth-proxy injects this header after validating JWT token + SAR
+	// DD-AUTH-014: OAuth-proxy injects this header after validating JWT token + SAR
 	// DD-AUTH-005: All services authenticate via oauth-proxy, which sets this header
 	releasedBy := r.Header.Get("X-Auth-Request-User")
 	if releasedBy == "" {

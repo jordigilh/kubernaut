@@ -74,7 +74,7 @@ func buildRWForReconciler(name, namespace, workflowID, actionType string) *rwv1a
 			Labels: rwv1alpha1.RemediationWorkflowLabels{
 				Severity:    []string{"critical"},
 				Environment: []string{"production"},
-				Component:   []string{"pod"},
+				Component:   []string{"v1/Pod"},
 				Priority:    "P1",
 			},
 			Execution: rwv1alpha1.RemediationWorkflowExecution{

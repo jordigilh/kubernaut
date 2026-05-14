@@ -10,17 +10,23 @@
 #   Production:  podman build --target production -t authwebhook:v1.0 -f docker/authwebhook.Dockerfile .
 #   Development: podman build --build-arg GOFLAGS=-cover -t authwebhook:dev -f docker/authwebhook.Dockerfile .
 
+ARG BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset:1.25
+ARG BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal:latest
+
 # ============================================================================
 # Stage 1: Build (native cross-compile, no QEMU needed for Go)
 # ============================================================================
-FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
+# SECURITY: Pin to specific digest on release. Run: skopeo inspect --format '{{.Digest}}' docker://registry.access.redhat.com/ubi10/go-toolset:1.25
+# Best practice: pass --build-arg BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset@sha256:<digest> in CI; digests change with each image release.
+FROM ${BUILDER_IMAGE} AS builder
+ENV GOTOOLCHAIN=auto
 
 # Build arguments for multi-architecture support
 ARG GOFLAGS=""
 ARG GOOS=linux
 ARG TARGETARCH
 ARG GOARCH=${TARGETARCH}
-ARG APP_VERSION=v1.4.0
+ARG APP_VERSION=v1.5.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
@@ -77,7 +83,7 @@ EXPOSE 9443
 ENTRYPOINT ["/authwebhook"]
 CMD []
 
-ARG APP_VERSION=v1.4.0
+ARG APP_VERSION=v1.5.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
@@ -102,7 +108,9 @@ LABEL name="kubernaut-authwebhook" \
 # Stage 2b: Development/E2E runtime (ubi10-minimal -- debug + coverage, DD-TEST-007)
 # Default stage when no --target is specified (backwards compatible with CI).
 # ============================================================================
-FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS development
+# SECURITY: Pin to specific digest on release. Run: skopeo inspect --format '{{.Digest}}' docker://registry.access.redhat.com/ubi10/ubi-minimal:latest
+# Best practice: pass --build-arg BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal@sha256:<digest> in CI; digests change with each image release.
+FROM ${BASE_IMAGE} AS development
 RUN microdnf update -y && \
 	microdnf install -y ca-certificates tzdata shadow-utils && \
 	microdnf clean all
@@ -114,7 +122,7 @@ EXPOSE 9443
 ENTRYPOINT ["/usr/local/bin/authwebhook"]
 CMD []
 
-ARG APP_VERSION=v1.4.0
+ARG APP_VERSION=v1.5.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \

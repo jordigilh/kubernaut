@@ -133,7 +133,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 	// ============================================================================
 	Describe("IT-KA-433-ENR-001: Full wiring chain — config to DS response + K8s owner chain", func() {
 		It("should return remediation history from real DS and owner chain from real K8s", func() {
-			target := fmt.Sprintf("it-enrichment/Pod/web-pod-1")
+			target := "it-enrichment/Pod/web-pod-1"
 			corrID1 := fmt.Sprintf("ro-enr001a-%s", testID)
 			corrID2 := fmt.Sprintf("ro-enr001b-%s", testID)
 			now := time.Now().Add(-2 * time.Hour)
@@ -229,7 +229,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 	// ============================================================================
 	Describe("IT-KA-433-ENR-003: Audit trace persistence — enrichment.completed", func() {
 		It("should persist enrichment.completed with structured EventData to real DS", func() {
-			target := fmt.Sprintf("it-enrichment/Pod/web-pod-1")
+			target := "it-enrichment/Pod/web-pod-1"
 			corrID := fmt.Sprintf("ro-enr003-%s", testID)
 			now := time.Now().Add(-1 * time.Hour)
 			incidentID := "incident-enr003-" + testID
@@ -435,7 +435,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 	// ============================================================================
 	Describe("IT-KA-433-ENR-008: Tier1 field fidelity — HealthChecks + MetricDeltas propagation", func() {
 		It("should propagate HealthChecks and MetricDeltas from EM events through DS to enrichment domain", func() {
-			target := fmt.Sprintf("it-enrichment/Pod/web-pod-1")
+			target := "it-enrichment/Pod/web-pod-1"
 			corrID := fmt.Sprintf("ro-enr008-%s", testID)
 			now := time.Now().Add(-1 * time.Hour)
 
@@ -522,7 +522,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 	// ============================================================================
 	Describe("IT-KA-433-ENR-009: No regression when currentSpecHash matches postRemediation hash", func() {
 		It("should return regressionDetected=false when queried with post-remediation hash", func() {
-			target := fmt.Sprintf("it-enrichment/Pod/web-pod-1")
+			target := "it-enrichment/Pod/web-pod-1"
 			corrID := fmt.Sprintf("ro-enr009-%s", testID)
 			now := time.Now().Add(-1 * time.Hour)
 

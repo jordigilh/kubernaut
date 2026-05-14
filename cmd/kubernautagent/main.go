@@ -22,9 +22,11 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -33,13 +35,16 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/restmapper"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -47,7 +52,7 @@ import (
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
-	"github.com/jordigilh/kubernaut/pkg/shared/transport"
+	sharedtransport "github.com/jordigilh/kubernaut/pkg/shared/transport"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	kaapi "github.com/jordigilh/kubernaut/internal/kubernautagent/api"
@@ -57,6 +62,11 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
+	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
+	mcpkg "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	mcpadapters "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/adapters"
+	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
@@ -70,9 +80,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/sanitization"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/rest"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func main() {
@@ -179,8 +191,6 @@ func main() {
 	resultParser := parser.NewResultParser(logger.WithName("parser"))
 	phaseTools := investigator.DefaultPhaseToolMap()
 
-	k8sInfra := initK8sInfra(logger)
-
 	// #1055: Create a single shared TokenSource for all DS-bound HTTP clients.
 	// Both the ogen DS client and the audit store share this cache, so a 401 on
 	// either side immediately invalidates the token for both.
@@ -194,8 +204,40 @@ func main() {
 			"token_path", cfg.Integrations.DataStorage.SATokenPath)
 	}
 
-	ds := initDSClients(cfg, k8sInfra, dsTokenSource, logger)
 	auditStore, auditCleanup := buildAuditStore(cfg, dsTokenSource, logger)
+	k8sCallAuditor := audit.NewK8sCallAuditor(auditStore, logger.WithName("k8s-call-audit"))
+
+	k8sInfra := initK8sInfra(logger, k8sCallAuditor)
+
+	// #891: SSAR self-check for impersonate permission. Interactive mode
+	// requires KA's SA to impersonate users (DD-AUTH-MCP-001). If denied,
+	// interactive is soft-disabled rather than failing requests at runtime.
+	interactiveReadiness := karbac.NewInteractiveReadiness()
+	var eventEmitter *karbac.EventEmitter
+	if cfg.Interactive.Enabled && k8sInfra != nil {
+		podName, podNS := karbac.DetectPodIdentity()
+		eventEmitter = karbac.NewEventEmitter(k8sInfra.clientset, podName, podNS)
+
+		ssarResult, ssarErr := karbac.CheckImpersonatePermission(context.Background(), k8sInfra.clientset)
+		if ssarErr != nil {
+			logger.Error(ssarErr, "SSAR check for impersonate failed; interactive mode soft-disabled")
+			interactiveReadiness.SetSoftDisabled("SSAR check failed: " + ssarErr.Error())
+			eventEmitter.EmitInteractiveSoftDisabled("SSAR check for impersonate failed: " + ssarErr.Error())
+		} else if !ssarResult.Allowed {
+			reason := "SA lacks impersonate permission"
+			if ssarResult.Reason != "" {
+				reason = ssarResult.Reason
+			}
+			logger.Info("interactive mode soft-disabled: SA lacks impersonate RBAC",
+				"reason", reason)
+			interactiveReadiness.SetSoftDisabled(reason)
+			eventEmitter.EmitInteractiveSoftDisabled(reason)
+		} else {
+			logger.Info("SSAR check passed: SA has impersonate permission")
+		}
+	}
+
+	ds := initDSClients(cfg, k8sInfra, dsTokenSource, logger)
 	reg := buildToolRegistry(cfg, logger, k8sInfra, ds)
 	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, logger)
 	sanitizer := buildSanitizationPipeline(cfg, logger)
@@ -251,6 +293,10 @@ func main() {
 		}
 	}
 
+	agentMetrics := kametrics.NewMetrics()
+
+	instrumentedAudit := audit.NewInstrumentedAuditStore(auditStore, agentMetrics.RecordAuditEventEmitted)
+
 	var scopeResolver investigator.ScopeResolver
 	if k8sInfra != nil {
 		scopeResolver = investigator.NewMapperScopeResolver(k8sInfra.mapper)
@@ -261,7 +307,7 @@ func main() {
 		Builder:       promptBuilder,
 		ResultParser:  resultParser,
 		Enricher:      enricher,
-		AuditStore:    auditStore,
+		AuditStore:    instrumentedAudit,
 		Logger:        logger,
 		MaxTurns:      cfg.AI.Investigation.MaxTurns,
 		PhaseTools:    phaseTools,
@@ -269,6 +315,7 @@ func main() {
 		ModelName:     llmRuntime.Model,
 		Swappable:     swappable,
 		ScopeResolver: scopeResolver,
+		Metrics:       agentMetrics,
 		Pipeline: investigator.Pipeline{
 			Sanitizer:         sanitizer,
 			AnomalyDetector:   anomalyDetector,
@@ -290,7 +337,7 @@ func main() {
 			Inner:                 inv,
 			Evaluator:             alignEvaluator,
 			VerdictTimeout:        cfg.AI.AlignmentCheck.VerdictTimeout,
-			AuditStore:            auditStore,
+			AuditStore:            instrumentedAudit,
 			Logger:                logger,
 			Mode:                  cfg.AI.AlignmentCheck.Mode,
 			CanaryForceEscalation: cfg.AI.AlignmentCheck.Canary.ForceEscalation,
@@ -304,9 +351,9 @@ func main() {
 	}
 
 	store := session.NewStore(cfg.Runtime.Session.TTL)
-	mgr := session.NewManager(store, logger, cfg.Runtime.Session.MaxConcurrentInvestigations)
+	mgr := session.NewManager(store, logger, instrumentedAudit, agentMetrics)
 
-	handler := kaserver.NewHandler(mgr, investigationRunner, logger)
+	handler := kaserver.NewHandler(mgr, investigationRunner, logger, agentMetrics)
 
 	ogenSrv, err := agentclient.NewServer(handler)
 	if err != nil {
@@ -316,7 +363,24 @@ func main() {
 
 	r := chi.NewRouter()
 
+	// authCleanupRef is set inside the chi route-setup closure and deferred here
+	// in the main scope so the JWKS cache goroutines live for the server's lifetime.
+	var authCleanupRef func()
+	defer func() {
+		if authCleanupRef != nil {
+			authCleanupRef()
+		}
+	}()
+
 	const maxRequestBodySize int64 = 1 << 20 // 1 MiB
+
+	apiRateLimiter := kaserver.NewRateLimiter(kaserver.RateLimitConfig{
+		RequestsPerSecond: cfg.Runtime.Server.RateLimit.RequestsPerSecond,
+		Burst:             cfg.Runtime.Server.RateLimit.Burst,
+		CleanupInterval:   cfg.Runtime.Server.RateLimit.CleanupInterval,
+		MaxAge:            cfg.Runtime.Server.RateLimit.MaxAge,
+	}, agentMetrics.HTTPRateLimitedTotal)
+	defer apiRateLimiter.Stop()
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler {
@@ -330,8 +394,15 @@ func main() {
 				"max_concurrent_requests", cfg.Runtime.Server.MaxConcurrentRequests)
 			r.Use(chimiddleware.Throttle(cfg.Runtime.Server.MaxConcurrentRequests))
 		}
+		r.Use(kaserver.HTTPMetricsMiddleware(agentMetrics))
+		r.Use(apiRateLimiter.Middleware)
 
-		authMw := newAuthMiddleware(k8sInfra, logger)
+		authMw, authCleanup := newAuthMiddleware(k8sInfra, cfg.Interactive, logger)
+		if authCleanup != nil {
+			// authCleanup is captured and deferred in the outer main() scope below
+			// (not here — this is a chi route-setup closure that returns immediately).
+			authCleanupRef = authCleanup
+		}
 		if authMw != nil {
 			r.Use(authMw.Handler)
 			logger.Info("auth middleware enabled (DD-AUTH-014)",
@@ -343,7 +414,40 @@ func main() {
 			logger.Info("auth middleware DISABLED (no in-cluster K8s config)")
 		}
 
-		r.Handle("/*", ogenSrv)
+		if cfg.Interactive.Enabled && interactiveReadiness.StatusString() != "soft_disabled" {
+			mcpHandler := buildMCPHandler(cfg, k8sInfra, ds, inv, enricher, mgr, authMw, agentMetrics, instrumentedAudit, logger)
+			if mcpHandler != nil {
+				// SEC-02: Per-user rate limiting for MCP interactive endpoint.
+				userRL := kaserver.NewUserRateLimiter(
+					kaserver.DefaultUserRateLimitConfig(cfg.Interactive.RateLimitPerUser),
+					agentMetrics.HTTPRateLimitedTotal,
+				)
+				defer userRL.Stop()
+
+				r.Route("/mcp", func(mcpRouter chi.Router) {
+					mcpRouter.Use(userRL.Middleware)
+					mcpRouter.Handle("/", kaserver.SSEHeadersMiddleware(mcpHandler))
+					mcpRouter.Handle("/*", kaserver.SSEHeadersMiddleware(mcpHandler))
+				})
+				interactiveReadiness.SetEnabled()
+				eventEmitter.EmitInteractiveEnabled()
+				logger.Info("MCP interactive route mounted",
+					"path", "/api/v1/mcp",
+					"rateLimitPerUser", cfg.Interactive.RateLimitPerUser,
+				)
+			} else {
+				interactiveReadiness.SetSoftDisabled("handler construction failed (check preceding errors)")
+				eventEmitter.EmitInteractiveSoftDisabled("MCP handler construction failed")
+				logger.Error(nil, "MCP interactive mode enabled but handler construction failed (check preceding errors)")
+			}
+		} else if cfg.Interactive.Enabled {
+			logger.Info("MCP interactive mode soft-disabled (SSAR check failed)",
+				"interactive_status", interactiveReadiness.StatusString(),
+				"reason", interactiveReadiness.Reason(),
+			)
+		}
+
+		r.Handle("/*", kaserver.SSEHeadersMiddleware(ogenSrv))
 	})
 
 	httpServer := &http.Server{
@@ -351,8 +455,9 @@ func main() {
 		Handler:           r,
 		ReadHeaderTimeout: 30 * time.Second,
 		ReadTimeout:       60 * time.Second,
-		WriteTimeout:      5 * time.Minute,
 		IdleTimeout:       120 * time.Second,
+		// WriteTimeout intentionally omitted: SSE/MCP streams are long-lived
+		// connections that would be killed by a finite WriteTimeout.
 	}
 
 	// Issue #493: Conditional TLS for the HTTP server
@@ -375,15 +480,22 @@ func main() {
 	// Dedicated health server (plain HTTP, never TLS). /config moved here from API port (SEC-4).
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/healthz", healthHandler)
-	healthMux.HandleFunc("/readyz", readinessHandler(&shutdownFlag, swappable, ds))
+	healthMux.HandleFunc("/readyz", readinessHandler(&shutdownFlag, swappable, ds, interactiveReadiness))
 	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
 	healthMux.Handle("/admin/loglevel", atomicLevel)
 	healthMux.HandleFunc("/openapi.json", kaapi.SpecHandler())
+	if !cfg.Runtime.Server.DisableProfiling {
+		healthMux.HandleFunc("/debug/pprof/", pprof.Index)
+		healthMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		healthMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		healthMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		healthMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	}
 	healthServer := &http.Server{
 		Addr:              cfg.Runtime.Server.HealthAddr,
 		Handler:           healthMux,
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       5 * time.Second,
+		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 	}
 	metricsMux := http.NewServeMux()
@@ -394,6 +506,7 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       30 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -485,6 +598,7 @@ func main() {
 	<-ctx.Done()
 	atomic.StoreInt32(&shutdownFlag, 1)
 	logger.Info("shutting down...")
+	mgr.Shutdown()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -492,9 +606,7 @@ func main() {
 	shutdownServer(shutdownCtx, healthServer, "health", logger)
 	shutdownServer(shutdownCtx, metricsServer, "metrics", logger)
 
-	logger.Info("draining in-flight investigations...")
-	mgr.DrainAndWait(8 * time.Second)
-
+	eventEmitter.Shutdown()
 	logger.Info("flushing audit store...")
 	auditCleanup()
 }
@@ -521,7 +633,10 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 //     (proxy for "LLM client was successfully initialized").
 //   - ds: if non-nil, verifies the ogen client is initialized (DS is
 //     a soft dependency — nil ds means DS is intentionally unconfigured).
-func readinessHandler(shutdownFlag *int32, swappable *llm.SwappableClient, ds *dsClients) http.HandlerFunc {
+//   - interactive: reports the interactive mode status (#891). This is
+//     informational (does not fail the probe) since autonomous mode
+//     continues to function even when interactive is soft-disabled.
+func readinessHandler(shutdownFlag *int32, swappable *llm.SwappableClient, ds *dsClients, interactive *karbac.InteractiveReadiness) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -552,7 +667,14 @@ func readinessHandler(shutdownFlag *int32, swappable *llm.SwappableClient, ds *d
 			return
 		}
 
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+		resp := map[string]string{
+			"status":           "ready",
+			"interactive_mode": interactive.StatusString(),
+		}
+		if reason := interactive.Reason(); reason != "" {
+			resp["interactive_reason"] = reason
+		}
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 }
 
@@ -574,7 +696,7 @@ func configHandler(cfg *kaconfig.Config, swappable *llm.SwappableClient) http.Ha
 func detectNamespace() string {
 	data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 	if err == nil && len(data) > 0 {
-		return string(data)
+		return strings.TrimSpace(string(data))
 	}
 	return "kubernaut-system"
 }
@@ -590,12 +712,26 @@ type k8sInfra struct {
 
 // initK8sInfra creates the shared Kubernetes clients. Returns nil when
 // running outside a cluster (e.g. local development).
-func initK8sInfra(logger logr.Logger) *k8sInfra {
+func initK8sInfra(logger logr.Logger, auditor sharedtransport.K8sCallAuditor) *k8sInfra {
 	kubeConfig, err := ctrl.GetConfig()
 	if err != nil {
 		logger.Info("K8s config not available, K8s tools and enricher disabled", "error", err)
 		return nil
 	}
+
+	// SEC-06 (#703): Wrap transport so interactive-mode tool calls impersonate
+	// the authenticated user. In autonomous mode (no user in context), the
+	// wrapper is a no-op and KA SA credentials are used directly.
+	// #898: K8sCallAuditor emits audit events for each impersonated API call.
+	kubeConfig.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
+		var opts []sharedtransport.ImpersonateOption
+		if auditor != nil {
+			opts = append(opts, sharedtransport.WithAuditor(auditor))
+		}
+		opts = append(opts, sharedtransport.WithLogger(logger))
+		return sharedtransport.NewImpersonatingRoundTripper(rt, opts...)
+	}
+
 	k8sClient, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
 		logger.Error(err, "failed to create K8s clientset")
@@ -691,7 +827,7 @@ func buildDSBaseTransport(caFile string, cbCfg kaconfig.CircuitBreakerCfg) (http
 		if err != nil {
 			return nil, fmt.Errorf("DS TLS transport: %w", err)
 		}
-		base = transport.NewRetryTransport(tlsTransport, transport.DefaultRetryConfig())
+		base = sharedtransport.NewRetryTransport(tlsTransport, sharedtransport.DefaultRetryConfig())
 	} else {
 		var err error
 		base, err = sharedtls.DefaultBaseTransportWithRetry()
@@ -699,7 +835,7 @@ func buildDSBaseTransport(caFile string, cbCfg kaconfig.CircuitBreakerCfg) (http
 			return nil, err
 		}
 	}
-	return transport.NewCircuitBreakerTransport(base, transport.CircuitBreakerConfig{
+	return sharedtransport.NewCircuitBreakerTransport(base, sharedtransport.CircuitBreakerConfig{
 		Enabled:          cbCfg.Enabled,
 		Name:             "datastorage",
 		MaxRequests:      cbCfg.MaxRequests,
@@ -984,22 +1120,300 @@ func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validato
 }
 
 // newAuthMiddleware creates the DD-AUTH-014 auth middleware using the shared k8sInfra clientset.
-func newAuthMiddleware(infra *k8sInfra, logger logr.Logger) *auth.Middleware {
+// DD-AUTH-MCP-001 v2.0: When JWT providers are configured, wraps K8sAuthenticator
+// in a CompositeAuthenticator for Pattern A + Pattern B coexistence.
+// Returns a cleanup function that stops JWKS background goroutines (nil if no JWT).
+func newAuthMiddleware(infra *k8sInfra, interactiveCfg kaconfig.InteractiveConfig, logger logr.Logger) (*auth.Middleware, func()) {
 	if infra == nil || infra.clientset == nil {
 		logger.Info("K8s infrastructure not available, auth middleware disabled")
-		return nil
+		return nil, nil
 	}
 
-	authenticator := auth.NewK8sAuthenticator(infra.clientset)
+	k8sAuth := auth.NewK8sAuthenticator(infra.clientset)
 	authorizer := auth.NewK8sAuthorizer(infra.clientset)
-
 	namespace := detectNamespace()
 
-	return auth.NewMiddleware(authenticator, authorizer, auth.MiddlewareConfig{
+	var authenticator auth.Authenticator = k8sAuth
+	var cleanup func()
+
+	if interactiveCfg.Enabled && len(interactiveCfg.JWTProviders) > 0 {
+		entries := make([]auth.JWTProviderEntry, len(interactiveCfg.JWTProviders))
+		for i, p := range interactiveCfg.JWTProviders {
+			entries[i] = auth.JWTProviderEntry{
+				Issuer:        p.Issuer,
+				JWKSURL:       p.JWKSURL,
+				Audience:      p.Audience,
+				UsernameClaim: p.ClaimMappings.Username,
+				GroupsClaim:   p.ClaimMappings.Groups,
+			}
+		}
+
+		for _, e := range entries {
+			if strings.HasPrefix(e.JWKSURL, "http://") {
+				logger.Info("WARNING: JWKS URL uses plain HTTP — vulnerable to MITM in production; enforce HTTPS via kubernaut-operator admission webhook (kubernaut-operator#46)",
+					"provider", e.Issuer, "jwksURL", e.JWKSURL)
+			}
+		}
+
+		jwtAuth, err := auth.NewJWTAuthenticator(entries, logger.WithName("jwt-auth"))
+		if err != nil {
+			logger.Error(err, "failed to create JWTAuthenticator; Pattern B disabled, Pattern A active")
+		} else {
+			authenticator = auth.NewCompositeAuthenticator(jwtAuth, k8sAuth)
+			cleanup = func() {
+				jwtAuth.Close()
+				logger.Info("JWTAuthenticator JWKS caches stopped")
+			}
+			logger.Info("CompositeAuthenticator enabled (Pattern A + Pattern B)",
+				"jwtProviders", len(entries),
+			)
+		}
+	}
+
+	mw := auth.NewMiddleware(authenticator, authorizer, auth.MiddlewareConfig{
 		Namespace:    namespace,
 		Resource:     "services",
 		ResourceName: "kubernaut-agent",
 		Verb:         "create",
 	}, logger)
+	return mw, cleanup
 }
 
+// buildMCPHandler constructs the fully-wired MCP interactive handler with all
+// tools registered. Returns nil if prerequisites are missing (K8s infra or DS).
+// PR6a: Production wiring for MCP interactive mode (BR-INTERACTIVE-001..008).
+func buildMCPHandler(
+	cfg *kaconfig.Config,
+	infra *k8sInfra,
+	ds *dsClients,
+	inv *investigator.Investigator,
+	enricher *enrichment.Enricher,
+	autoMgr *session.Manager,
+	authMw *auth.Middleware,
+	agentMetrics *kametrics.Metrics,
+	auditStore audit.AuditStore,
+	logger logr.Logger,
+) http.Handler {
+	if infra == nil || infra.kubeConfig == nil {
+		logger.Error(nil, "MCP interactive mode: K8s infrastructure unavailable")
+		return nil
+	}
+	if authMw == nil {
+		logger.Error(nil, "MCP interactive mode: auth middleware unavailable (DD-AUTH-MCP-001)")
+		return nil
+	}
+	// SEC-05: Investigator is required for the core investigate tool.
+	if inv == nil {
+		logger.Error(nil, "MCP interactive mode: investigator unavailable")
+		return nil
+	}
+
+	
+
+	// SEC-07: Build controller-runtime client with MCP-specific timeouts.
+	// Scheme includes remediationv1 for RR existence validation (HARM-004)
+	// and future NL signal intake (#714).
+	mcpScheme := k8sruntime.NewScheme()
+	_ = clientgoscheme.AddToScheme(mcpScheme)
+	_ = remediationv1.AddToScheme(mcpScheme)
+
+	mcpRestConfig := *infra.kubeConfig
+	mcpRestConfig.Timeout = 10 * time.Second
+	mcpRestConfig.QPS = 20
+	mcpRestConfig.Burst = 40
+
+	ctrlCli, err := ctrlclient.New(&mcpRestConfig, ctrlclient.Options{Scheme: mcpScheme})
+	if err != nil {
+		logger.Error(err, "MCP interactive mode: failed to create controller-runtime client")
+		return nil
+	}
+
+	namespace := detectNamespace()
+
+	// emitDisconnectAudit emits interactive.completed for non-tool session endings
+	// (disconnect, inactivity timeout, TTL expiry). M1: ensures all session-ending
+	// paths produce an audit trail, not just action=complete/cancel through InvestigateTool.
+	emitDisconnectAudit := func(sessionID, correlationID, reason string) {
+		event := audit.NewEvent(audit.EventTypeInteractiveCompleted, correlationID,
+			audit.WithSessionID(sessionID),
+		)
+		event.EventAction = audit.ActionInteractiveCompleted
+		event.EventOutcome = audit.OutcomeSuccess
+		event.Data["reason"] = reason
+		audit.StoreBestEffort(context.Background(), auditStore, event, logger.WithName("mcp-audit"))
+	}
+
+	// Session management via K8s Leases (single-driver guarantee).
+	leaseOpts := []mcpkg.LeaseOption{
+		mcpkg.WithSessionTTL(cfg.Interactive.SessionTTL),
+		mcpkg.WithInactivityTimeout(cfg.Interactive.InactivityTimeout),
+		mcpkg.WithMaxConcurrentSessions(cfg.Interactive.MaxConcurrentSessions),
+		mcpkg.WithSessionExpiredCallback(func(sessionID, rrID, reason string) {
+			emitDisconnectAudit(sessionID, rrID, reason)
+		}),
+	}
+	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(ctrlCli, namespace, logger, leaseOpts...)
+
+	// Context reconstruction from DS audit events (best-effort).
+	var recon mcpkg.ContextReconstructor
+	if ds != nil {
+		recon = mcpkg.NewDSContextReconstructor(ds.ogenClient, 10*time.Second, logger)
+	} else {
+		recon = &noopReconstructor{}
+		logger.Info("MCP interactive mode: DS unavailable — context reconstruction disabled")
+	}
+
+	// DelegatingEventStore: bridges MCP SDK session lifecycle to our disconnect
+	// handler. Wraps SDK's MemoryEventStore for stream resumption support.
+	eventStore := mcpkg.NewDelegatingEventStore()
+
+	// NotificationBus: in-memory pub/sub for audit event delivery (DD-INTERACTIVE-002).
+	notifBus := mcpkg.NewInMemoryNotificationBus(32)
+	_ = notifBus // Available for future tool-level publish/subscribe wiring.
+
+	// TimeoutManager: fires onExpire when a session goes inactive (SEC-04, HARM-03/04).
+	timeoutMgr := mcpkg.NewTimeoutManager(
+		cfg.Interactive.InactivityTimeout,
+		[]time.Duration{cfg.Interactive.InactivityTimeout - 2*time.Minute, cfg.Interactive.InactivityTimeout - 30*time.Second},
+		func(sessionID string) {
+			logger.Info("interactive session expired due to inactivity",
+				"session_id", sessionID)
+			// Snapshot correlationID before Release deletes the entry.
+			rrID, _ := leaseMgr.GetSessionInfo(sessionID)
+			if err := leaseMgr.Release(sessionID, "inactivity_timeout"); err != nil {
+				logger.Error(err, "failed to release expired session",
+					"session_id", sessionID)
+				return
+			}
+			emitDisconnectAudit(sessionID, rrID, "inactivity_timeout")
+			// T1-4: Decrement gauge on timeout expiry to prevent drift.
+			agentMetrics.RecordInteractiveSessionEnded()
+		},
+	)
+
+	// ReconstructionSpawner: rebuilds context and spawns autonomous investigation
+	// after an interactive session ends (INT-06, BR-INTERACTIVE-008).
+	reconRunner := mcpadapters.NewReconRunnerAdapter(inv)
+	reconSpawner := mcpkg.NewReconstructionSpawner(reconRunner, recon, logger)
+
+	// SessionClosedHandler: processes MCP disconnect events → release + reconstruct.
+	disconnectHandler := mcpkg.NewSessionClosedHandler(eventStore, func(mcpSessionID string) {
+		interactiveSessionID, ok := eventStore.LookupInteractiveSession(mcpSessionID)
+		if !ok {
+			logger.V(1).Info("MCP session closed without interactive mapping (autonomous or already released)",
+				"mcp_session_id", mcpSessionID)
+			return
+		}
+
+		// Clean up the MCP-to-interactive mapping now that we've retrieved it.
+		eventStore.DeleteMCPSession(mcpSessionID)
+
+		timeoutMgr.StopTracking(interactiveSessionID)
+
+		// T1-1: Snapshot session info BEFORE Release deletes the entry.
+		rrID, signalMeta := leaseMgr.GetSessionInfo(interactiveSessionID)
+
+		if err := leaseMgr.Release(interactiveSessionID, "disconnect"); err != nil {
+			logger.Info("failed to release disconnected session",
+				"session_id", interactiveSessionID,
+				"error", err.Error())
+			return
+		}
+
+		// Emit audit event for disconnect-driven completion (M1: timeout/TTL/disconnect paths).
+		emitDisconnectAudit(interactiveSessionID, rrID, "disconnect")
+
+		// T1-4: Decrement gauge on disconnect to prevent drift.
+		agentMetrics.RecordInteractiveSessionEnded()
+
+		// Spawn reconstruction in background (best-effort, BR-INTERACTIVE-008).
+		go func() {
+			reconCtx, reconCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer reconCancel()
+			_ = reconSpawner.SpawnReconstruct(reconCtx, &mcpkg.ReconstructionContext{
+				CorrelationID: rrID,
+				SessionID:     interactiveSessionID,
+				SignalMeta:    signalMeta,
+			})
+		}()
+	}, logger)
+
+	// Start disconnect handler goroutine. The handler terminates when the
+	// eventStore's closedSessions channel is closed during process exit,
+	// or via context cancellation if a parent context is provided.
+	go disconnectHandler.Run(context.Background())
+
+	// Build the InvestigatorRunner adapter.
+	investigatorRunner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
+
+	// SEC-HIGH-01: Per-session message rate limiter (maxMessageSize = 64KB).
+	sessionRateLimiter := mcpkg.NewSessionRateLimiter(cfg.Interactive.RateLimitPerUser, 64*1024)
+
+	// UX-01/02: Session notifier delivers timeout warnings to MCP clients.
+	sessionNotifier := mcpkg.NewSessionNotifier()
+
+	// HARM-004: Validate RR existence before creating interactive Leases.
+	rrChecker := mcptools.NewK8sRRExistenceChecker(ctrlCli, namespace)
+
+	// Build the InvestigateTool with optional dependencies.
+	investigateOpts := []mcptools.InvestigateOption{
+		mcptools.WithToolMetrics(agentMetrics),
+		mcptools.WithRateLimiter(sessionRateLimiter),
+		mcptools.WithTimeoutTracker(timeoutMgr),
+		mcptools.WithNotifyFunc(sessionNotifier.Notify),
+		mcptools.WithRRExistenceChecker(rrChecker),
+		mcptools.WithAuditStore(auditStore, logger.WithName("mcp-audit")),
+	}
+	if autoMgr != nil {
+		investigateOpts = append(investigateOpts, mcptools.WithAutonomousManager(autoMgr))
+	}
+	investigateTool := mcptools.NewInvestigateTool(leaseMgr, investigatorRunner, recon, investigateOpts...)
+
+	// Build the WorkflowCatalog adapter and SelectWorkflowTool.
+	// #1012: enrichment is now internalized into select_workflow via WithEnrichmentRunner.
+	var selectWfTool *mcptools.SelectWorkflowTool
+	if ds != nil {
+		wfQuerier := wfclient.NewOgenWorkflowQuerier(ds.ogenClient)
+		catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
+		swOpts := []mcptools.SelectWorkflowOption{
+			mcptools.WithLogger(logger.WithName("select-workflow")),
+		}
+		if enricher != nil {
+			swOpts = append(swOpts, mcptools.WithEnrichmentRunner(enricher))
+		}
+		selectWfTool = mcptools.NewSelectWorkflowTool(catalogAdapter, leaseMgr, swOpts...)
+	}
+
+	// Register tools with the MCP SDK server.
+	toolDeps := mcpkg.ToolDeps{}
+	toolDeps.Investigate = mcptools.InvestigateRegistration(investigateTool, eventStore, sessionNotifier)
+	if selectWfTool != nil {
+		toolDeps.SelectWorkflow = mcptools.SelectWorkflowRegistration(selectWfTool)
+	}
+
+	mcpHandler, _ := mcpkg.BootstrapMCP(mcpkg.MCPDeps{
+		AuthMiddleware: authMw.Handler,
+		Tools:          toolDeps,
+		EventStore:     eventStore,
+	})
+
+	logger.Info("MCP interactive mode fully wired",
+		"investigate", true,
+		"select_workflow", selectWfTool != nil,
+		"enrichment_in_select_workflow", enricher != nil,
+		"event_store", true,
+		"timeout_manager", true,
+		"disconnect_handler", true,
+		"reconstruction_spawner", true,
+		"notification_bus", true,
+	)
+
+	return mcpHandler
+}
+
+// noopReconstructor is a no-op ContextReconstructor used when DS is unavailable.
+type noopReconstructor struct{}
+
+func (n *noopReconstructor) Reconstruct(_ context.Context, _ string, _ string) ([]mcpkg.ConversationTurn, error) {
+	return nil, nil
+}

@@ -39,6 +39,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/vertex"
+	"github.com/go-logr/logr"
 	"golang.org/x/oauth2/google"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
@@ -49,6 +50,7 @@ type Option func(*clientOpts)
 
 type clientOpts struct {
 	extraSDKOpts []option.RequestOption
+	logger       logr.Logger
 	httpTimeout  time.Duration
 }
 
@@ -56,6 +58,12 @@ type clientOpts struct {
 // override for testing). Production code should not need this.
 func WithSDKOptions(opts ...option.RequestOption) Option {
 	return func(o *clientOpts) { o.extraSDKOpts = append(o.extraSDKOpts, opts...) }
+}
+
+// WithLogger injects a logr.Logger for diagnostic messages (e.g., malformed tool schemas).
+// If not provided, logging is silently discarded.
+func WithLogger(l logr.Logger) Option {
+	return func(o *clientOpts) { o.logger = l }
 }
 
 // WithHTTPTimeout sets an explicit timeout on the underlying HTTP client used
@@ -67,8 +75,9 @@ func WithHTTPTimeout(d time.Duration) Option {
 // Client implements llm.Client for Claude on Vertex AI using the official
 // Anthropic Go SDK with the vertex middleware.
 type Client struct {
-	sdk   anthropic.Client
-	model string
+	sdk    anthropic.Client
+	model  string
+	logger logr.Logger
 }
 
 // New creates a Client for Claude on Vertex AI.
@@ -90,7 +99,7 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 		location = "us-central1"
 	}
 
-	o := &clientOpts{}
+	o := &clientOpts{logger: logr.Discard()}
 	for _, fn := range opts {
 		fn(o)
 	}
@@ -125,7 +134,7 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 	sdkOpts = append(sdkOpts, o.extraSDKOpts...)
 	sdk := anthropic.NewClient(sdkOpts...)
 
-	return &Client{sdk: sdk, model: model}, nil
+	return &Client{sdk: sdk, model: model, logger: o.logger}, nil
 }
 
 // Chat translates a Kubernaut ChatRequest to the Anthropic Messages API,
@@ -206,7 +215,7 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 	if len(req.Tools) > 0 {
 		var tools []anthropic.ToolUnionParam
 		for _, td := range req.Tools {
-			schema := parseInputSchema(td.Parameters)
+			schema := parseInputSchema(td.Parameters, c.logger)
 			tools = append(tools, anthropic.ToolUnionParam{
 				OfTool: &anthropic.ToolParam{
 					Name:        td.Name,
@@ -221,12 +230,15 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 	return params
 }
 
-func parseInputSchema(raw json.RawMessage) anthropic.ToolInputSchemaParam {
+func parseInputSchema(raw json.RawMessage, logger logr.Logger) anthropic.ToolInputSchemaParam {
 	var s struct {
 		Properties any      `json:"properties"`
 		Required   []string `json:"required"`
 	}
-	_ = json.Unmarshal(raw, &s)
+	if err := json.Unmarshal(raw, &s); err != nil {
+		logger.Info("vertexanthropic: malformed tool parameter schema, using empty schema",
+			"error", err.Error())
+	}
 	return anthropic.ToolInputSchemaParam{
 		Properties: s.Properties,
 		Required:   s.Required,
@@ -322,6 +334,43 @@ func safeWithGoogleAuth(ctx context.Context, location, project string) (opt opti
 	opt = vertex.WithGoogleAuth(ctx, location, project,
 		"https://www.googleapis.com/auth/cloud-platform")
 	return opt, nil
+}
+
+// StreamChat uses the Anthropic SDK's Messages.NewStreaming to deliver text
+// deltas incrementally. The final ChatResponse is built from the accumulated
+// message, reusing the existing mapResponse path.
+func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	params := c.buildParams(req)
+	stream := c.sdk.Messages.NewStreaming(ctx, params)
+	acc := anthropic.Message{}
+	for stream.Next() {
+		event := stream.Current()
+		if err := acc.Accumulate(event); err != nil {
+			return llm.ChatResponse{}, fmt.Errorf("vertexanthropic: accumulate error: %w", err)
+		}
+		if delta, ok := extractTextDelta(event); ok && delta != "" {
+			if err := callback(llm.ChatStreamEvent{Delta: delta}); err != nil {
+				return llm.ChatResponse{}, err
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return llm.ChatResponse{}, fmt.Errorf("vertexanthropic: stream error: %w", err)
+	}
+	_ = callback(llm.ChatStreamEvent{Done: true})
+	return c.mapResponse(&acc), nil
+}
+
+// extractTextDelta extracts the text delta from a content_block_delta event.
+// Returns ("", false) for non-delta events or non-text deltas (e.g., tool input).
+func extractTextDelta(event anthropic.MessageStreamEventUnion) (string, bool) {
+	if event.Type != "content_block_delta" {
+		return "", false
+	}
+	if event.Delta.Text != "" {
+		return event.Delta.Text, true
+	}
+	return "", false
 }
 
 // Close is a no-op for the Anthropic SDK client which has no closeable

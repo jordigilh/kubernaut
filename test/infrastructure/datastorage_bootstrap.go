@@ -14,6 +14,8 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"github.com/jordigilh/kubernaut/pkg/cert"
 )
 
 // DSBootstrapConfig configures DataStorage infrastructure for integration tests
@@ -151,6 +153,10 @@ type DSBootstrapInfra struct {
 	DataStorageImageName string // Full image name with tag (e.g., kubernaut/datastorage:datastorage-gateway-1734278400)
 
 	Config DSBootstrapConfig // Original configuration (for reference)
+
+	// SigningCertDir holds the temp directory with tls.crt/tls.key for audit export signing.
+	// Mounted into the container at /etc/certs (AU-9).
+	SigningCertDir string
 
 	// SharedTestEnv holds envtest environment for cleanup (DD-AUTH-014)
 	// Only set if envtest was created in Phase 1 (for services needing DataStorage auth)
@@ -379,6 +385,15 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 		return nil, fmt.Errorf("redis failed to become ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Redis ready\n\n")
+
+	// Step 5.5: Generate signing certificate (AU-9: audit export signing)
+	_, _ = fmt.Fprintf(writer, "🔏 Generating signing certificate for audit exports (AU-9)...\n")
+	signingCertDir, err := generateBootstrapSigningCert(cfg.ServiceName, writer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate signing certificate: %w", err)
+	}
+	infra.SigningCertDir = signingCertDir
+	_, _ = fmt.Fprintf(writer, "   ✅ Signing certificate generated in %s\n\n", signingCertDir)
 
 	// Step 6: DataStorage
 	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
@@ -691,6 +706,11 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 		healthListenPort = 8081
 	}
 
+	// AU-9: Mount signing certificate for audit export signing
+	if infra.SigningCertDir != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:/etc/certs:ro", infra.SigningCertDir))
+	}
+
 	// Common configuration
 	args = append(args,
 		"-v", fmt.Sprintf("%s:/etc/datastorage:ro", configDir),
@@ -760,4 +780,38 @@ func waitForDSBootstrapHTTPHealth(infra *DSBootstrapInfra, timeout time.Duration
 	}
 
 	return fmt.Errorf("timeout waiting for %s/readyz to become healthy after %v", infra.HealthURL, timeout)
+}
+
+// generateBootstrapSigningCert creates a self-signed certificate for audit export signing.
+// AU-9: DataStorage requires a signing certificate at /etc/certs/{tls.crt, tls.key}.
+// Returns the path to the temp directory containing tls.crt and tls.key.
+func generateBootstrapSigningCert(serviceName string, writer io.Writer) (string, error) {
+	tmpDir, err := os.MkdirTemp("", fmt.Sprintf("ds-signing-%s-*", serviceName))
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	if err := os.Chmod(tmpDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to chmod temp dir: %w", err)
+	}
+
+	pair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
+		CommonName:       fmt.Sprintf("datastorage-signing-%s", serviceName),
+		Organization:     "Kubernaut Integration Tests",
+		DNSNames:         []string{"localhost"},
+		ValidityDuration: 24 * time.Hour,
+		KeySize:          2048,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate self-signed cert: %w", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "tls.crt"), pair.CertPEM, 0o644); err != nil {
+		return "", fmt.Errorf("failed to write tls.crt: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "tls.key"), pair.KeyPEM, 0o644); err != nil {
+		return "", fmt.Errorf("failed to write tls.key: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   🔏 Generated signing cert: CN=datastorage-signing-%s, validity=24h\n", serviceName)
+	return tmpDir, nil
 }

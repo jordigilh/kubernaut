@@ -68,8 +68,9 @@ rules:
 # Operator Role: Service-Level Access
 # ========================================
 # Purpose: Internal services (Gateway, AIAnalysis, etc.)
-# Permissions: Create audit events + query workflows
-# Note: This is the same as data-storage-client (maintained for backward compatibility)
+# Permissions: Create audit events, query workflows, verify chain (no legal hold write)
+# SEC-1: The Data Storage server uses verb "get" as base access for all /api/v1 routes.
+# Legal hold write (POST/DELETE) requires verb "update" (admin tier).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -79,8 +80,8 @@ metadata:
     component: rbac
     rbac.kubernaut.ai/role-tier: operator
 rules:
-  # OAuth-proxy SAR check for service operations
-  # Verb: "get" = Create audit events, query workflows (no export/legal hold)
+  # SAR verb "get" grants base access to all /api/v1 routes
+  # (create audit events, query events, verify chain, query workflows)
   - apiGroups: [""]
     resources: ["services"]
     resourceNames: ["data-storage-service"]
@@ -196,15 +197,18 @@ subjects:
 # | POST /api/v1/audit/*         | ❌      | ❌    | ✅       |
 # | GET /api/v1/workflows/*      | ❌      | ❌    | ✅       |
 #
-# OAuth-Proxy SAR Mapping:
-# ------------------------
-# auditor: Can "get" service → Read-only audit export
-# admin: Can "get" + "update" service → Export + legal hold management
-# operator: Can "get" service → Create audit events, query workflows
+# OAuth-Proxy SAR Mapping (SEC-1, v1.5):
+# ----------------------------------------
+# auditor: Can "get" service → Query, export, list legal holds
+# admin: Can "get" + "update" service → All auditor access + place/release legal holds
+# operator: Can "get" service → Create audit events, query events, verify chain, workflows
 #
-# Note: Fine-grained endpoint authorization requires DataStorage server
-# to validate X-Auth-Request-User permissions. In v1.0, oauth-proxy SAR
-# provides coarse-grained authorization at the service level.
+# The Data Storage server enforces two SAR tiers:
+#   - Base middleware (verb "get"): Applied to all /api/v1 routes
+#   - Admin middleware (verb "update"): Applied to POST/DELETE /audit/legal-hold
+#
+# Note: Auditor vs operator separation within "get" tier requires
+# application-level endpoint authorization (tracked for Phase 9).
 #
 # Authority: SOC2 AU-9 (Audit protection), Day 10.1 (RBAC for audit queries)
 # ========================================

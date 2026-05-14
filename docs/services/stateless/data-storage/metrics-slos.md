@@ -1,8 +1,8 @@
 # Data Storage Service - Metrics & SLOs
 
-**Version**: 1.0
-**Last Updated**: December 4, 2025
-**Status**: ✅ CURRENT
+**Version**: 1.1
+**Last Updated**: May 13, 2026
+**Status**: ⚠️ PARTIALLY STALE — Dual-write, cache, and embedding metrics (v1.0) are no longer implemented. See Current Metrics Inventory below for the authoritative metric set.
 **BR Coverage**: BR-STORAGE-019 (Logging and metrics)
 
 ---
@@ -306,7 +306,9 @@ The Data Storage Service Grafana dashboard includes:
 
 ---
 
-## Metrics Summary
+## Metrics Summary (v1.0 — STALE)
+
+> The table below reflects the v1.0 metric set (dual-write, cache, embedding). See the Current Metrics Inventory below for the authoritative set.
 
 | Category | Metric Count | Cardinality | Performance Impact |
 |----------|--------------|-------------|-------------------|
@@ -314,7 +316,32 @@ The Data Storage Service Grafana dashboard includes:
 | Histograms | 2 | ~30 unique labels | < 1% CPU |
 | **Total** | 9 | ~80 unique labels | < 1% overhead |
 
-**Cardinality Safety**: All metrics are designed with bounded cardinality (< 100 unique label combinations).
+---
+
+## Current Metrics Inventory (v1.1)
+
+Source of truth: `pkg/datastorage/metrics/metrics.go`
+
+| Metric Name | Type | Labels | Purpose | Issue |
+|-------------|------|--------|---------|-------|
+| `datastorage_write_duration_seconds` | Histogram | `table` | Write operation latency | #294 |
+| `datastorage_audit_lag_seconds` | Histogram | `service` | Time between event occurrence and audit write | #294 / GAP-10 |
+| `datastorage_validation_failures_total` | Counter | `source`, `reason` | OpenAPI middleware rejections | #1048 P4 |
+| `datastorage_dlq_validation_failures_total` | Counter | `audit_type`, `reason` | DLQ replay validation failures | #1048 P4 |
+| `datastorage_dlq_stream_xadd_total` | Counter | `stream` | XADD operations (MAXLEN~ trim correlation) | #1048 P5 |
+| `datastorage_workflow_validation_duration_seconds` | Histogram | `phase`, `result` | Workflow validation phase timing | #1070 |
+| `datastorage_dlq_drain_batch_total` | Counter | — | Shutdown drain batch operations | #1088 P7 |
+| `datastorage_retention_purge_total` | Counter | — | Retention purge operations | #1088 P7 |
+| `datastorage_dlq_pel_pending` | Gauge | — | PEL backlog depth | #1088 P7 |
+| `datastorage_shutdown_dlq_drain_errors_total` | Counter | — | Shutdown drain errors | #1088 P7 |
+
+**Total**: 10 metrics. All label sets are bounded (enum-like values). Target: < 5% overhead.
+
+**Cardinality Safety**: See `pkg/datastorage/metrics/metrics.go` cardinality guidelines.
+
+Additional capacity gauges in `pkg/datastorage/dlq/metrics.go`:
+- `datastorage_dlq_warning` — DLQ depth warning threshold breached
+- `datastorage_dlq_critical` — DLQ depth critical threshold breached
 
 ---
 
@@ -327,8 +354,9 @@ The Data Storage Service Grafana dashboard includes:
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Changelog**:
+- v1.1 (May 13, 2026): Mark v1.0 dual-write/cache/embedding metrics as stale; add Current Metrics Inventory from `metrics.go`; add DLQ capacity gauges
 - v1.0 (Dec 4, 2025): Initial document - consolidated SLI/SLO and metrics per SERVICE_DOCUMENTATION_GUIDE.md
 
 

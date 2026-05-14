@@ -335,6 +335,18 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "server": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "DataStorage server configuration",
+              "properties": {
+                "maxBodySize": { "type": "string", "default": "5242880", "description": "#1048 Phase 4 / SC-5: Maximum request body size in bytes" },
+                "maxConcurrentRequests": { "type": "integer", "default": 100, "description": "Maximum concurrent request limit" },
+                "readTimeout": { "type": "string", "default": "30s", "description": "Server read timeout" },
+                "corsAllowedOrigins": { "type": "array", "items": { "type": "string" }, "description": "#1048 Phase 4 / AC-4: CORS allowed origins" },
+                "signerCertDir": { "type": "string", "default": "/etc/certs", "description": "#1048 Phase 5 / AU-9: Directory containing signing cert (tls.crt, tls.key)" }
+              }
+            },
             "database": {
               "type": "object",
               "additionalProperties": false,
@@ -343,6 +355,37 @@
                 "maxOpenConns": { "type": "integer", "default": 100, "description": "Maximum open database connections" },
                 "maxIdleConns": { "type": "integer", "default": 20, "description": "Maximum idle database connections" },
                 "connMaxLifetime": { "type": "string", "default": "1h", "description": "Maximum connection lifetime" }
+              }
+            },
+            "redis": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Redis DLQ configuration",
+              "properties": {
+                "dlqMaxLen": { "type": "integer", "default": 10000, "description": "#1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound" },
+                "tls": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "#1048 Phase 5 / AU-9: Redis TLS client configuration",
+                  "properties": {
+                    "enabled": { "type": "boolean", "default": false, "description": "Enable TLS for Redis/Valkey connections" },
+                    "certFile": { "type": "string", "default": "", "description": "Client certificate file path (mTLS)" },
+                    "keyFile": { "type": "string", "default": "", "description": "Client key file path (mTLS)" },
+                    "caFile": { "type": "string", "default": "", "description": "CA bundle to verify Redis server" },
+                    "insecureSkipVerify": { "type": "boolean", "default": false, "description": "Skip TLS verification (dev/test only)" }
+                  }
+                }
+              }
+            },
+            "retention": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "#1048 Phase 5 / AU-11: Retention worker configuration (BR-AUDIT-009)",
+              "properties": {
+                "enabled": { "type": "boolean", "default": false, "description": "Enable periodic purge of expired audit events" },
+                "interval": { "type": "string", "default": "24h", "description": "How often the retention worker runs" },
+                "batchSize": { "type": "integer", "default": 1000, "description": "Max rows per DELETE batch" },
+                "defaultDays": { "type": "integer", "default": 2555, "description": "Application-level default retention in days (ADR-034: 7 years)" }
               }
             }
           }
@@ -748,6 +791,42 @@
               }
             }
           }
+        },
+        "interactive": {
+          "type": "object",
+          "description": "MCP interactive mode (#703): enables human-in-the-loop investigation sessions.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "Enable MCP interactive mode endpoint and Lease-based session management." },
+            "sessionTTL": { "type": "string", "default": "30m", "description": "Maximum duration for an interactive session before auto-release." },
+            "inactivityTimeout": { "type": "string", "default": "10m", "description": "Session timeout after last activity." },
+            "maxConcurrentSessions": { "type": "integer", "default": 5, "description": "Maximum concurrent interactive sessions per instance." },
+            "rateLimitPerUser": { "type": "integer", "default": 10, "description": "Maximum requests per second per authenticated user." },
+            "maxAnalyzingTimeout": { "type": "string", "default": "45m", "description": "Extended analyzing timeout for RO when an interactive session is active. Prevents RO from timing out a RemediationRequest while an operator is investigating." },
+            "jwtProviders": {
+              "type": "array",
+              "description": "JWT providers for Pattern B authentication (DD-AUTH-MCP-001 v2.0).",
+              "items": {
+                "type": "object",
+                "required": ["name", "issuer", "jwksURL", "audience"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string", "description": "Human-readable provider name." },
+                  "issuer": { "type": "string", "description": "JWT issuer URL (must match iss claim)." },
+                  "jwksURL": { "type": "string", "description": "JWKS endpoint URL for signature verification." },
+                  "audience": { "type": "string", "description": "Expected audience claim value." },
+                  "claimMappings": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "username": { "type": "string", "default": "preferred_username", "description": "JWT claim for username extraction." },
+                      "groups": { "type": "string", "default": "groups", "description": "JWT claim for groups extraction (supports dot-notation)." }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -908,6 +987,29 @@
             "enabled": { "type": "boolean", "default": false, "description": "Enable AlertManager integration for EM" },
             "url": { "type": "string", "default": "", "description": "AlertManager API base URL. OCP auto-detection deprecated v1.4 (Issue #848) — will be removed in v1.5." },
             "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS. OCP auto-detection deprecated v1.4 (Issue #848) — will be removed in v1.5." }
+          }
+        },
+        "prometheusRule": {
+          "type": "object",
+          "description": "PrometheusRule resource for interactive session SLO alerting (Issue #1005)",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "Create PrometheusRule for interactive session SLOs" },
+            "additionalLabels": { "type": "object", "default": {}, "description": "Additional labels for PrometheusRule (e.g. prometheus: kube-prometheus)" },
+            "thresholds": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "activeSessionsMax": { "type": "integer", "default": 10, "description": "Max concurrent interactive sessions before alerting" },
+                "activeSessionsFor": { "type": "string", "default": "5m", "description": "Duration threshold must be exceeded before firing" },
+                "leaseContentionRateMax": { "type": "number", "default": 0.1, "description": "Max Lease contention events/sec (5m rate)" },
+                "leaseContentionFor": { "type": "string", "default": "5m", "description": "Duration before firing" },
+                "commandDurationP99Max": { "type": "number", "default": 30, "description": "Max p99 command duration in seconds" },
+                "commandDurationFor": { "type": "string", "default": "10m", "description": "Duration before firing" },
+                "takeoverRateMax": { "type": "number", "default": 0.05, "description": "Max takeover events/sec (5m rate)" },
+                "takeoverRateFor": { "type": "string", "default": "15m", "description": "Duration before firing" }
+              }
+            }
           }
         }
       }

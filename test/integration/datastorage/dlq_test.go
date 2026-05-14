@@ -89,7 +89,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 			RemediationID:   "test-remediation-1",
 			NotificationID:  "test-notification-1",
 			Recipient:       "test@example.com",
-			Channel:         "email",
+			Channel:         "slack",
 			MessageSummary:  "Test notification message",
 			Status:          "sent",
 			SentAt:          time.Now(),
@@ -243,6 +243,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 				ResourceID:     "wf-123",
 				CorrelationID:  "remediation-999",
 				EventData:      []byte(`{"duration_ms":5000,"steps_completed":5}`),
+				RetentionDays:  2555,
 			}
 		})
 
@@ -288,40 +289,6 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 	})
 
 	// ============================================================================
-	// NEW TEST 2: Handler DLQ Fallback Integration
-	// ============================================================================
-	Describe("Audit Events Handler DLQ Fallback", func() {
-		BeforeEach(func() {
-			// Clean up DLQ
-			streamKey := "audit:dlq:events"
-			redisClient.Del(ctx, streamKey)
-
-			// Clean up database
-			_, err := db.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id LIKE 'test-dlq-fallback-%'")
-			Expect(err).ToNot(HaveOccurred())
-		})
-
-		Context("when database is unavailable", func() {
-			It("should fallback to DLQ and return HTTP 202 Accepted", func() {
-				// ✅ COVERAGE: This scenario is comprehensively tested in E2E Scenario 2
-				// (test/e2e/datastorage/02_dlq_fallback_test.go) where we can stop PostgreSQL
-				// and verify the complete DLQ fallback path including HTTP 202 response.
-				//
-				// Integration tests focus on DLQ client functionality in isolation.
-				// E2E tests validate the full handler integration with infrastructure failures.
-
-				// This test would require:
-				// 1. Stopping PostgreSQL
-				// 2. Making HTTP POST to /api/v1/audit/events
-				// 3. Verifying HTTP 202 response
-				// 4. Verifying message in Redis DLQ
-				//
-				// E2E Scenario 2 already covers this comprehensively
-			})
-		})
-	})
-
-	// ============================================================================
 	// NEW TEST 3: Stream Key Isolation
 	// ============================================================================
 	Describe("Stream Key Isolation", func() {
@@ -347,13 +314,14 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 				ResourceID:     "wf-isolation-test",
 				CorrelationID:  "remediation-isolation",
 				EventData:      []byte(`{"duration_ms":5000}`),
+				RetentionDays:  2555,
 			}
 
 			notificationAudit := &models.NotificationAudit{
 				RemediationID:   "remediation-isolation",
 				NotificationID:  "notif-isolation-test",
 				Recipient:       "ops@example.com",
-				Channel:         "email",
+				Channel:         "slack",
 				MessageSummary:  "Test isolation",
 				Status:          "delivered",
 				SentAt:          time.Now().UTC(),
@@ -429,24 +397,25 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 					ResourceID:     "wf-read-test",
 					CorrelationID:  "remediation-read-test",
 					EventData:      []byte(`{"duration_ms":5000}`),
+					RetentionDays:  2555,
 				}
 				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("test error"))
 				Expect(err).ToNot(HaveOccurred())
 
 				// ACT: Read messages
-				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 10, 2*time.Second)
 
 				// ASSERT
 				Expect(err).ToNot(HaveOccurred())
 				Expect(messages).To(HaveLen(1))
-				Expect(messages[0].ID).ToNot(BeEmpty())
+				Expect(messages[0].ID).To(MatchRegexp(`\d+-\d+`), "Redis stream ID format")
 				Expect(messages[0].AuditMessage.Type).To(Equal("audit_event"))
 				Expect(messages[0].AuditMessage.CorrelationID()).To(Equal("remediation-read-test"))
 			})
 
 			It("should return empty slice when DLQ is empty", func() {
 				// ACT: Read from empty DLQ
-				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 1*time.Second)
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 10, 1*time.Second)
 
 				// ASSERT
 				Expect(err).ToNot(HaveOccurred())
@@ -470,13 +439,14 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 						ResourceID:     fmt.Sprintf("wf-batch-%d", i),
 						CorrelationID:  fmt.Sprintf("remediation-batch-%d", i),
 						EventData:      []byte(`{"batch":true}`),
+						RetentionDays:  2555,
 					}
 					err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("batch error %d", i))
 					Expect(err).ToNot(HaveOccurred())
 				}
 
 				// ACT: Read all messages
-				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 10, 2*time.Second)
 
 				// ASSERT
 				Expect(err).ToNot(HaveOccurred())
@@ -502,11 +472,12 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 					ResourceID:     "wf-ack-test",
 					CorrelationID:  "remediation-ack-test",
 					EventData:      []byte(`{"ack":true}`),
+					RetentionDays:  2555,
 				}
 				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("ack test error"))
 				Expect(err).ToNot(HaveOccurred())
 
-				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 10, 2*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(messages).To(HaveLen(1))
 
@@ -541,11 +512,12 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 					ResourceID:     "wf-dead-letter-test",
 					CorrelationID:  "remediation-dead-letter-test",
 					EventData:      []byte(`{"dead_letter":true}`),
+					RetentionDays:  2555,
 				}
 				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("permanent failure"))
 				Expect(err).ToNot(HaveOccurred())
 
-				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 10, 2*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(messages).To(HaveLen(1))
 
@@ -586,11 +558,12 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 					ResourceID:     "wf-retry-count-test",
 					CorrelationID:  "remediation-retry-count-test",
 					EventData:      []byte(`{"retry_count_test":true}`),
+					RetentionDays:  2555,
 				}
 				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("retry error"))
 				Expect(err).ToNot(HaveOccurred())
 
-				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 2*time.Second)
+				messages, err := dlqClient.ReadMessages(ctx, "events", consumerGroup, consumerName, 10, 2*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(messages).To(HaveLen(1))
 				Expect(messages[0].AuditMessage.RetryCount).To(Equal(0))
@@ -607,7 +580,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 
 				// Read again with new consumer group
 				newConsumerGroup := fmt.Sprintf("test-consumer-group-verify-%d", time.Now().UnixNano())
-				updatedMessages, err := dlqClient.ReadMessages(ctx, "events", newConsumerGroup, consumerName, 2*time.Second)
+				updatedMessages, err := dlqClient.ReadMessages(ctx, "events", newConsumerGroup, consumerName, 10, 2*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedMessages).To(HaveLen(1))
 				Expect(updatedMessages[0].AuditMessage.RetryCount).To(Equal(1))

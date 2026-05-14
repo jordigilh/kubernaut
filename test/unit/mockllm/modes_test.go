@@ -86,19 +86,19 @@ var _ = Describe("Conversation Modes", func() {
 				{Type: "function", Function: openai.ToolDefinition{Name: "list_workflows"}},
 				{Type: "function", Function: openai.ToolDefinition{Name: "get_workflow"}},
 			}
-			mode := conversation.SelectMode(threeStepTools)
+			mode := conversation.SelectMode(threeStepTools) //nolint:staticcheck // testing deprecated API for backward compat
 			Expect(mode.Name()).To(Equal("three_step"))
 
 			legacyTools := []openai.Tool{
 				{Type: "function", Function: openai.ToolDefinition{Name: "search_workflow_catalog"}},
 			}
-			mode = conversation.SelectMode(legacyTools)
+			mode = conversation.SelectMode(legacyTools) //nolint:staticcheck // testing deprecated API for backward compat
 			Expect(mode.Name()).To(Equal("legacy"))
 
 			rcTools := append(threeStepTools, openai.Tool{
 				Type: "function", Function: openai.ToolDefinition{Name: "get_resource_context"},
 			})
-			mode = conversation.SelectMode(rcTools)
+			mode = conversation.SelectMode(rcTools) //nolint:staticcheck // testing deprecated API for backward compat
 			Expect(mode.Name()).To(Equal("three_step_rc"))
 		})
 	})

@@ -153,10 +153,10 @@ spec:
     whenNotToUse: "When the issue is a configuration error that will recur after restart"
   actionType: RestartDeployment
   labels:
-    severity: ["warning", "critical"]
-    environment: ["production", "staging", "development"]
-    component: Deployment
-    priority: high
+    severity: ["critical", "high"]
+    environment: ["production", "staging"]
+    component: ["apps/v1/Deployment"]
+    priority: P1
   execution:
     engine: tekton
     bundle: "ghcr.io/your-org/kubernaut-workflows/restart-deployment:v1.0.0@sha256:abc123..."

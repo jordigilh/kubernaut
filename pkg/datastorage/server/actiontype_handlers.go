@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
+	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
 
@@ -94,9 +95,13 @@ func (h *Handler) HandleCreateActionType(w http.ResponseWriter, r *http.Request)
 
 	var req actionTypeCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode action type create request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request",
-			"Bad Request", fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"Bad Request", "request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -114,8 +119,7 @@ func (h *Handler) HandleCreateActionType(w http.ResponseWriter, r *http.Request)
 	result, err := h.actionTypeRepo.Create(r.Context(), req.Name, req.Description, req.RegisteredBy)
 	if err != nil {
 		h.logger.Error(err, "Failed to create action type", "name", req.Name)
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error",
-			"Database Error", fmt.Sprintf("Failed to create action type: %v", err), h.logger)
+		response.WriteRFC7807InternalError(w, "database-error", "Database Error", err, h.logger)
 		return
 	}
 
@@ -190,9 +194,13 @@ func (h *Handler) HandleUpdateActionType(w http.ResponseWriter, r *http.Request)
 
 	var req actionTypeUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode action type update request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request",
-			"Bad Request", fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"Bad Request", "request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -215,8 +223,7 @@ func (h *Handler) HandleUpdateActionType(w http.ResponseWriter, r *http.Request)
 				"Action Type Disabled", fmt.Sprintf("Action type %q is disabled and cannot be updated", name), h.logger)
 			return
 		}
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error",
-			"Database Error", fmt.Sprintf("Failed to update action type: %v", err), h.logger)
+		response.WriteRFC7807InternalError(w, "database-error", "Database Error", err, h.logger)
 		return
 	}
 
@@ -270,9 +277,13 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 
 	var req actionTypeDisableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode action type disable request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request",
-			"Bad Request", fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"Bad Request", "request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -292,8 +303,7 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 				"Not Found", fmt.Sprintf("Action type %q not found", name), h.logger)
 			return
 		}
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error",
-			"Database Error", fmt.Sprintf("Failed to disable action type: %v", disableErr), h.logger)
+		response.WriteRFC7807InternalError(w, "database-error", "Database Error", disableErr, h.logger)
 		return
 	}
 
@@ -366,9 +376,8 @@ func (h *Handler) HandleGetActionTypeWorkflowCount(w http.ResponseWriter, r *htt
 
 	count, _, err := h.actionTypeRepo.CountActiveWorkflows(r.Context(), name)
 	if err != nil {
-		h.logger.Error(err, "Failed to count active workflows", "name", name)
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error",
-			"Database Error", fmt.Sprintf("Failed to count active workflows: %v", err), h.logger)
+		h.logger.Error(err, "Failed to count active workflows for action type", "name", name)
+		response.WriteRFC7807InternalError(w, "database-error", "Database Error", err, h.logger)
 		return
 	}
 

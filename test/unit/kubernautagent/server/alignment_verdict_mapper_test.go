@@ -40,8 +40,8 @@ var _ = Describe("Fix 7: UT-KA-SCHEMA-001 — AlignmentVerdict mapping in handle
 
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
-		manager = session.NewManager(store, logr.Discard())
-		handler = server.NewHandler(manager, nil, logr.Discard())
+		manager = session.NewManager(store, logr.Discard(), nil, nil)
+		handler = server.NewHandler(manager, nil, logr.Discard(), nil)
 	})
 
 	It("UT-KA-SCHEMA-001: maps AlignmentVerdict from InvestigationResult to IncidentResponse", func() {
@@ -85,7 +85,7 @@ var _ = Describe("Fix 7: UT-KA-SCHEMA-001 — AlignmentVerdict mapping in handle
 		params := agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{
 			SessionID: id,
 		}
-		resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(nil, params)
+		resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(context.TODO(), params)
 		Expect(err).NotTo(HaveOccurred())
 
 		incidentResp, ok := resp.(*agentclient.IncidentResponse)

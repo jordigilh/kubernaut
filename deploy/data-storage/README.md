@@ -67,31 +67,33 @@ curl http://localhost:8080/health
 
 #### 1. Update `secret.yaml` (CRITICAL)
 
+ADR-030 Section 6: Secrets are mounted as YAML files, not environment variables.
+
 ```yaml
-# ⚠️ CHANGE THESE IN PRODUCTION!
+# data-storage-db-secret
 stringData:
-  DB_USER: "your-db-user"
-  DB_PASSWORD: "your-secure-password"
-  EMBEDDING_API_KEY: "sk-your-openai-key"  # Optional
+  db-secrets.yaml: |
+    username: "your-db-user"
+    password: "your-secure-password"
+
+# data-storage-redis-secret
+stringData:
+  redis-secrets.yaml: |
+    password: "your-redis-password"
 ```
 
 #### 2. Update `configmap.yaml`
 
+Edit the `config.yaml` key with your cluster-specific values:
+
 ```yaml
-# Update database hostname
-  DB_HOST: "your-postgres-service"  # Change to your PostgreSQL service name
-
-# Enable Vector DB (optional)
-  VECTOR_DB_ENABLED: "true"
-  VECTOR_DB_HOST: "your-vector-db-service"
-
-# Enable embedding generation (optional)
-  EMBEDDING_ENABLED: "true"
-  EMBEDDING_API_KEY: "from-secret"
-
-# Enable caching (optional)
-  CACHE_ENABLED: "true"
-  CACHE_HOST: "your-redis-service"
+  config.yaml: |
+    database:
+      host: "your-postgres-service"  # Change to your PostgreSQL service name
+      port: 5432
+      name: "action_history"
+    redis:
+      addr: "your-redis-service:6379"
 ```
 
 #### 3. Update `deployment.yaml` replicas
@@ -335,14 +337,16 @@ kubectl delete -f deploy/data-storage/
 ### Secrets Management
 
 ```bash
-# Create secret from file (recommended for production)
-kubectl create secret generic data-storage-secret \
-  --from-literal=DB_USER=your-user \
-  --from-literal=DB_PASSWORD=your-password \
-  --from-literal=EMBEDDING_API_KEY=sk-your-key \
-  -n kubernaut
+# Create secrets from YAML files (ADR-030 Section 6)
+kubectl create secret generic data-storage-db-secret \
+  --from-file=db-secrets.yaml=<(echo -e "username: your-user\npassword: your-password") \
+  -n kubernaut-system
 
-# Or use external secrets operator (e.g., Sealed Secrets, Vault)
+kubectl create secret generic data-storage-redis-secret \
+  --from-file=redis-secrets.yaml=<(echo -e "password: your-redis-password") \
+  -n kubernaut-system
+
+# Or use SealedSecrets / ExternalSecrets operator for production
 ```
 
 ---
@@ -351,24 +355,21 @@ kubectl create secret generic data-storage-secret \
 
 ### Connection Pool Size
 
-Edit `configmap.yaml`:
+Edit the `database` section in `configmap.yaml`:
 
 ```yaml
-DB_MAX_CONNECTIONS: "100"  # Increase for higher concurrency
+database:
+  maxOpenConns: 100   # Increase for higher concurrency
+  maxIdleConns: 25
+  connMaxLifetime: "15m"
 ```
 
-### Query Timeouts
+### Server Timeouts
 
 ```yaml
-QUERY_TIMEOUT: "60s"   # Increase for slow queries
-WRITE_TIMEOUT: "30s"   # Increase for slow writes
-```
-
-### Embedding Cache
-
-```yaml
-CACHE_ENABLED: "true"
-CACHE_TTL: "15m"  # Increase for better hit rate
+server:
+  readTimeout: "30s"   # Increase for slow queries
+  writeTimeout: "30s"  # Increase for slow writes
 ```
 
 ---

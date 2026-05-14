@@ -6,9 +6,12 @@
 # Prerequisites: make cross-build-datastorage IMAGE_ARCH=arm64
 # Usage: make image-runtime-datastorage IMAGE_ARCH=arm64
 
+ARG BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal:latest
 ARG BINARY=bin/data-storage-arm64
 
-FROM --platform=linux/amd64 registry.access.redhat.com/ubi10/ubi-minimal:latest AS certs
+# SECURITY: Pin to specific digest on release. Run: skopeo inspect --format '{{.Digest}}' docker://registry.access.redhat.com/ubi10/ubi-minimal:latest
+# Best practice: pass --build-arg BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal@sha256:<digest> in CI; digests change with each image release.
+FROM --platform=linux/amd64 ${BASE_IMAGE} AS certs
 RUN microdnf install -y ca-certificates tzdata && microdnf clean all
 
 FROM scratch
@@ -19,7 +22,7 @@ ARG BINARY
 COPY ${BINARY} /data-storage
 COPY api/openapi/data-storage-v1.yaml /usr/local/share/kubernaut/api/openapi/data-storage-v1.yaml
 USER 65534
-EXPOSE 8080 9090
+EXPOSE 8080 8081 9090
 ENTRYPOINT ["/data-storage"]
 CMD []
 

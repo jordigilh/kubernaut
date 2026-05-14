@@ -109,7 +109,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 
 		It("UT-RO-1033-002: Safety-net timeout passes VerificationTimedOut to EmitCompletionAudit", func() {
 			rr := newRemediationRequest("ver-outcome-safety", "default", remediationv1.PhaseVerifying)
-			rr.ObjectMeta.CreationTimestamp = metav1.NewTime(time.Now().Add(-15 * time.Minute))
+			rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-15 * time.Minute))
 			rr.Status.Outcome = "Remediated"
 			startTime := metav1.NewTime(time.Now().Add(-15 * time.Minute))
 			rr.Status.StartTime = &startTime

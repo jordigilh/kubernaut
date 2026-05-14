@@ -100,7 +100,7 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 			failingPuller := oci.NewMockImagePullerWithFailingExists(schemaYAML, fmt.Errorf("bundle not found"))
 			extractor := oci.NewSchemaExtractor(failingPuller, schema.NewParser())
 
-			handler := server.NewHandler(nil,
+			handler := server.NewHandler(
 				server.WithActionTypeValidator(rejectingActionTypeValidator()),
 				server.WithSchemaExtractor(extractor),
 				server.WithDependencyValidator(
@@ -125,7 +125,7 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 			failingPuller := oci.NewMockImagePullerWithFailingExists(schemaYAML, fmt.Errorf("bundle not found"))
 			extractor := oci.NewSchemaExtractor(failingPuller, schema.NewParser())
 
-			handler := server.NewHandler(nil,
+			handler := server.NewHandler(
 				server.WithActionTypeValidator(rejectingActionTypeValidator()),
 				server.WithSchemaExtractor(extractor),
 				server.WithDependencyValidator(
@@ -158,7 +158,7 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 				},
 			}
 
-			handler := server.NewHandler(nil,
+			handler := server.NewHandler(
 				server.WithActionTypeValidator(acceptingValidator),
 				server.WithSchemaExtractor(extractor),
 				server.WithDependencyValidator(
@@ -189,7 +189,7 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 				},
 			}
 
-			handler := server.NewHandler(nil,
+			handler := server.NewHandler(
 				server.WithActionTypeValidator(acceptingValidator),
 				server.WithSchemaExtractor(extractor),
 				server.WithDependencyValidator(
@@ -220,7 +220,7 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 				},
 			}
 
-			handler := server.NewHandler(nil,
+			handler := server.NewHandler(
 				server.WithActionTypeValidator(acceptingValidator),
 				server.WithSchemaExtractor(extractor),
 				server.WithDependencyValidator(

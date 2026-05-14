@@ -143,7 +143,7 @@ func (h *VerifyingHandler) Handle(ctx context.Context, rr *remediationv1.Remedia
 
 	if rr.Status.VerificationDeadline != nil && time.Now().After(rr.Status.VerificationDeadline.Time) {
 		logger.Info("VerificationDeadline expired, timing out verification",
-			"deadline", rr.Status.VerificationDeadline.Time.Format(time.RFC3339))
+			"deadline", rr.Status.VerificationDeadline.Format(time.RFC3339))
 		if err := helpers.UpdateRemediationRequestStatus(ctx, h.k8sClient, rr, func(rr *remediationv1.RemediationRequest) error {
 			now := metav1.Now()
 			rr.Status.OverallPhase = phase.Completed

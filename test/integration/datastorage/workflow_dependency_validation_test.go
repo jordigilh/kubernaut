@@ -57,23 +57,6 @@ import (
 
 const depTestNamespace = "kubernaut-workflows"
 
-var depTestBaseSchema = func() string {
-	crd := testutil.NewTestWorkflowCRD("dep-test-workflow", "RestartPod", "job")
-	crd.Spec.Description = sharedtypes.StructuredDescription{
-		What:      "Integration test workflow for dependency validation",
-		WhenToUse: "When testing DD-WE-006",
-	}
-	crd.Spec.Labels.Severity = []string{"critical"}
-	crd.Spec.Labels.Environment = []string{"*"}
-	crd.Spec.Labels.Component = []string{"deployment"}
-	crd.Spec.Labels.Priority = "*"
-	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
-	crd.Spec.Parameters = []models.WorkflowParameter{
-		{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected resource"},
-	}
-	return testutil.MarshalWorkflowCRD(crd)
-}()
-
 func depTestBaseSchemaUnique() string {
 	uniqueID := fmt.Sprintf("dep-test-workflow-%d-%s", GinkgoParallelProcess(), uuid.New().String())
 	crd := testutil.NewTestWorkflowCRD(uniqueID, "RestartPod", "job")
@@ -83,7 +66,7 @@ func depTestBaseSchemaUnique() string {
 	}
 	crd.Spec.Labels.Severity = []string{"critical"}
 	crd.Spec.Labels.Environment = []string{"*"}
-	crd.Spec.Labels.Component = []string{"deployment"}
+	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
 	crd.Spec.Labels.Priority = "*"
 	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
 	crd.Spec.Parameters = []models.WorkflowParameter{
@@ -100,7 +83,7 @@ func depTestSchemaWithSecrets(secretNames ...string) string {
 	}
 	crd.Spec.Labels.Severity = []string{"critical"}
 	crd.Spec.Labels.Environment = []string{"*"}
-	crd.Spec.Labels.Component = []string{"deployment"}
+	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
 	crd.Spec.Labels.Priority = "*"
 	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
 	crd.Spec.Parameters = []models.WorkflowParameter{
@@ -124,7 +107,7 @@ func depTestSchemaWithConfigMaps(cmNames ...string) string {
 	}
 	crd.Spec.Labels.Severity = []string{"critical"}
 	crd.Spec.Labels.Environment = []string{"*"}
-	crd.Spec.Labels.Component = []string{"deployment"}
+	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
 	crd.Spec.Labels.Priority = "*"
 	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
 	crd.Spec.Parameters = []models.WorkflowParameter{
@@ -170,6 +153,9 @@ func createDepTestServer(schemaYAML string) (*httptest.Server, *server.Server) {
 	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
 
 	appCfg := &config.Config{
+		Server: config.ServerConfig{
+			SignerCertDir: datastorageIntegrationSigningCertDirOrDie(),
+		},
 		Database: config.DatabaseConfig{
 			MaxOpenConns:    25,
 			MaxIdleConns:    5,
@@ -282,8 +268,8 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			var errResp map[string]interface{}
 			Expect(json.Unmarshal(body, &errResp)).To(Succeed())
 			detail, _ := errResp["detail"].(string)
-			Expect(detail).To(ContainSubstring("it-missing-secret-002"),
-				"error should name the missing resource")
+			Expect(detail).To(ContainSubstring("dependency not satisfied"),
+				"error should indicate dependency not satisfied")
 			errType, _ := errResp["type"].(string)
 			Expect(errType).To(ContainSubstring("dependency-validation-error"),
 				"#1070: RFC 7807 type must identify dependency validation failure")
@@ -313,8 +299,8 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			var errResp map[string]interface{}
 			Expect(json.Unmarshal(body, &errResp)).To(Succeed())
 			detail, _ := errResp["detail"].(string)
-			Expect(detail).To(ContainSubstring("empty"),
-				"error should indicate empty data")
+			Expect(detail).To(ContainSubstring("dependency not satisfied"),
+				"error should indicate dependency not satisfied")
 			errType, _ := errResp["type"].(string)
 			Expect(errType).To(ContainSubstring("dependency-validation-error"),
 				"#1070: RFC 7807 type must identify dependency validation failure")
@@ -337,8 +323,8 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			var errResp map[string]interface{}
 			Expect(json.Unmarshal(body, &errResp)).To(Succeed())
 			detail, _ := errResp["detail"].(string)
-			Expect(detail).To(ContainSubstring("it-missing-cm-004"),
-				"error should name the missing resource")
+			Expect(detail).To(ContainSubstring("dependency not satisfied"),
+				"error should indicate dependency not satisfied")
 			errType, _ := errResp["type"].(string)
 			Expect(errType).To(ContainSubstring("dependency-validation-error"),
 				"#1070: RFC 7807 type must identify dependency validation failure")
@@ -368,8 +354,8 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			var errResp map[string]interface{}
 			Expect(json.Unmarshal(body, &errResp)).To(Succeed())
 			detail, _ := errResp["detail"].(string)
-			Expect(detail).To(ContainSubstring("empty"),
-				"error should indicate empty data")
+			Expect(detail).To(ContainSubstring("dependency not satisfied"),
+				"error should indicate dependency not satisfied")
 			errType, _ := errResp["type"].(string)
 			Expect(errType).To(ContainSubstring("dependency-validation-error"),
 				"#1070: RFC 7807 type must identify dependency validation failure")

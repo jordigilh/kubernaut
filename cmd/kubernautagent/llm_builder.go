@@ -107,7 +107,7 @@ func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) [
 // Issue #902: When tlsCaFile is set, uses sharedtls.NewTLSTransport as the
 // base instead of http.DefaultTransport.
 func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) http.RoundTripper {
-	var base http.RoundTripper = http.DefaultTransport
+	var base = http.DefaultTransport
 	needsCustom := false
 
 	if cfg.AI.LLM.TLSCaFile != "" {
@@ -171,8 +171,6 @@ func llmRuntimeReloadCallback(
 
 		rt, err := kaconfig.LoadLLMRuntime([]byte(newContent))
 		if err != nil {
-			logger.Error(err, "llm_runtime_reload failed: parse error",
-				"event", "llm_runtime_reload", "status", "error")
 			return fmt.Errorf("reload: parsing llm runtime config: %w", err)
 		}
 
@@ -189,8 +187,6 @@ func llmRuntimeReloadCallback(
 
 		newClient, err := buildLLMClientFromConfig(context.Background(), staticCfg, rt)
 		if err != nil {
-			logger.Error(err, "llm_runtime_reload failed: client build error",
-				"event", "llm_runtime_reload", "status", "error")
 			return fmt.Errorf("reload: building LLM client: %w", err)
 		}
 
@@ -199,8 +195,6 @@ func llmRuntimeReloadCallback(
 			TimeoutSeconds: rt.TimeoutSeconds,
 			MaxRetries:     rt.MaxRetries,
 		}); err != nil {
-			logger.Error(err, "llm_runtime_reload failed: swap error",
-				"event", "llm_runtime_reload", "status", "error")
 			return fmt.Errorf("reload: swapping client: %w", err)
 		}
 

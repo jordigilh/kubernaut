@@ -234,14 +234,6 @@ var _ = ReportAfterEach(func(report SpecReport) {
 	}
 })
 
-// setFPAuthHeader injects the suite-level Gateway Bearer token into an HTTP request.
-// Call this on every *http.Request that targets /api/v1/signals/* endpoints (BR-GATEWAY-036/037).
-func setFPAuthHeader(req *http.Request) {
-	if fpAuthToken != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", fpAuthToken))
-	}
-}
-
 var _ = SynchronizedAfterSuite(
 	// ALL processes: cleanup context
 	func() {

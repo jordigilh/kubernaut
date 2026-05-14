@@ -39,6 +39,6 @@
 //
 // # References
 //
-// - Implementation Plan: docs/development/SOC2/RR_RECONSTRUCTION_V1_1_IMPLEMENTATION_PLAN_JAN10.md
-// - Test Plan: docs/development/SOC2/SOC2_AUDIT_RR_RECONSTRUCTION_TEST_PLAN.md
+// - Design Decision: docs/architecture/decisions/DD-AUDIT-004-RR-RECONSTRUCTION-FIELD-MAPPING.md
+// - Business Requirement: BR-AUDIT-005 v2.0
 package reconstruction

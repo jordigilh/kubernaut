@@ -38,10 +38,60 @@ const (
 	EventTypeEnrichmentFailed    = "aiagent.enrichment.failed"
 	EventTypeAlignmentStep       = "aiagent.alignment.step"
 	EventTypeAlignmentVerdict    = "aiagent.alignment.verdict"
-	EventTypeShadowLLMRequest    = "aiagent.shadow.llm.request"
-	EventTypeShadowLLMResponse   = "aiagent.shadow.llm.response"
 	EventTypeGroundingRequest    = "aiagent.alignment.grounding.request"
 	EventTypeGroundingResponse   = "aiagent.alignment.grounding.response"
+
+	EventTypeSessionStarted   = "aiagent.session.started"
+	EventTypeSessionCancelled = "aiagent.session.cancelled"
+	EventTypeSessionCompleted = "aiagent.session.completed"
+	EventTypeSessionFailed    = "aiagent.session.failed"
+
+	// EventTypeInvestigationCancelled is emitted by the investigator when
+	// it detects context cancellation mid-investigation (BR-SESSION-001).
+	// Unlike EventTypeSessionCancelled (emitted by session.Manager at the
+	// session lifecycle level), this event carries investigation-internal
+	// state: the phase, turn number, and accumulated token usage at the
+	// point of cancellation. This enables SOC2 CC8.1 audit reconstruction
+	// of partial investigation progress.
+	EventTypeInvestigationCancelled = "aiagent.investigation.cancelled"
+
+	// EventTypeSessionObserved is emitted when an operator subscribes to an
+	// active investigation's SSE stream (BR-SESSION-005). Records who is
+	// observing which investigation for SOC2 CC8.1 audit trail.
+	EventTypeSessionObserved = "aiagent.session.observed"
+
+	// EventTypeSessionAccessDenied is emitted when an authenticated user
+	// attempts to access a session they do not own. Records the requesting
+	// user, target session, and endpoint for SOC2 CC8.1 failed-access audit.
+	EventTypeSessionAccessDenied = "aiagent.session.access_denied"
+
+	// EventTypeSessionSuspended is emitted when an autonomous investigation is
+	// suspended due to dynamic takeover (BR-INTERACTIVE-004). The session remains
+	// in a terminal state; reconstruction spawns a new session after interactive
+	// mode ends. DD-INTERACTIVE-002 identity transition: KA SA → human operator.
+	EventTypeSessionSuspended = "aiagent.session.suspended"
+
+	// EventTypeInteractiveStarted is emitted when a user acquires the interactive
+	// Lease and begins driving the investigation (BR-INTERACTIVE-004).
+	EventTypeInteractiveStarted = "aiagent.interactive.started"
+
+	// EventTypeInteractiveCompleted is emitted when an interactive session ends,
+	// either by explicit complete, cancel, disconnect, or timeout. Carries the
+	// reason in event data for SOC2 attribution.
+	EventTypeInteractiveCompleted = "aiagent.interactive.completed"
+
+	// EventTypeSessionResumed is emitted when autonomous investigation resumes
+	// after interactive session ends (cancel+reconstruct). The new session ID
+	// and reconstructed context are included in event data.
+	EventTypeSessionResumed = "aiagent.session.resumed"
+
+	// EventTypeInteractiveK8sCall is emitted for each impersonated K8s API call
+	// made during an interactive MCP session (BR-INTERACTIVE-003, BR-AUDIT-005).
+	// Provides per-request audit granularity for SOC2 CC8.1 compliance.
+	EventTypeInteractiveK8sCall = "aiagent.interactive.k8s_call"
+
+	EventTypeShadowLLMRequest  = "aiagent.shadow.llm.request"
+	EventTypeShadowLLMResponse = "aiagent.shadow.llm.response"
 )
 
 const (
@@ -62,6 +112,19 @@ const (
 	ActionGroundingResponse          = "grounding_response"
 	ActionTruncationDetected         = "truncation_detected"
 	ActionEnriched                   = "enriched"
+
+	ActionSessionStarted        = "session_started"
+	ActionSessionCancelled      = "session_cancelled"
+	ActionSessionCompleted      = "session_completed"
+	ActionSessionFailed         = "session_failed"
+	ActionInvestigationCancelled = "investigation_cancelled"
+	ActionSessionObserved       = "session_observed"
+	ActionSessionAccessDenied   = "session_access_denied"
+	ActionSessionSuspended      = "session_suspended"
+	ActionInteractiveStarted    = "interactive_started"
+	ActionInteractiveCompleted  = "interactive_completed"
+	ActionSessionResumed        = "session_resumed"
+	ActionInteractiveK8sCall    = "interactive_k8s_call"
 )
 
 const (
@@ -83,6 +146,18 @@ var AllEventTypes = []string{
 	EventTypeEnrichmentFailed,
 	EventTypeAlignmentStep,
 	EventTypeAlignmentVerdict,
+	EventTypeSessionStarted,
+	EventTypeSessionCancelled,
+	EventTypeSessionCompleted,
+	EventTypeSessionFailed,
+	EventTypeInvestigationCancelled,
+	EventTypeSessionObserved,
+	EventTypeSessionAccessDenied,
+	EventTypeSessionSuspended,
+	EventTypeInteractiveStarted,
+	EventTypeInteractiveCompleted,
+	EventTypeSessionResumed,
+	EventTypeInteractiveK8sCall,
 	EventTypeShadowLLMRequest,
 	EventTypeShadowLLMResponse,
 	EventTypeGroundingRequest,
@@ -96,6 +171,8 @@ type AuditEvent struct {
 	EventAction   string
 	EventOutcome  string
 	CorrelationID string
+	SessionID     string
+	ActingUser    string
 	ParentEventID *uuid.UUID
 	Data          map[string]interface{}
 	ActorID       string
@@ -105,6 +182,25 @@ type AuditEvent struct {
 // AuditStore is the interface for storing audit events (matches pkg/audit.AuditStore).
 type AuditStore interface {
 	StoreAudit(ctx context.Context, event *AuditEvent) error
+}
+
+// EventOption configures optional fields on an AuditEvent.
+type EventOption func(*AuditEvent)
+
+// WithSessionID attaches an interactive session identifier to the audit event.
+func WithSessionID(sessionID string) EventOption {
+	return func(e *AuditEvent) {
+		e.SessionID = sessionID
+	}
+}
+
+// WithActingUser attaches the identity of the user who triggered the event.
+// Used in interactive MCP sessions for SOC2 per-event user attribution
+// (BR-INTERACTIVE-005).
+func WithActingUser(user string) EventOption {
+	return func(e *AuditEvent) {
+		e.ActingUser = user
+	}
 }
 
 type actorContextKey struct{}
@@ -131,18 +227,26 @@ func ActorFromContext(ctx context.Context) (actorID, actorType string, ok bool) 
 }
 
 // NewEvent creates an AuditEvent with the correct event_category and a unique event_id.
-func NewEvent(eventType string, correlationID string) *AuditEvent {
+func NewEvent(eventType string, correlationID string, opts ...EventOption) *AuditEvent {
 	data := make(map[string]interface{})
 	data["event_id"] = uuid.New().String()
-	return &AuditEvent{
+	event := &AuditEvent{
 		EventType:     eventType,
 		EventCategory: EventCategory,
 		CorrelationID: correlationID,
 		Data:          data,
 	}
+	for _, opt := range opts {
+		opt(event)
+	}
+	return event
 }
 
 // StoreBestEffort stores an audit event without propagating errors (fire-and-forget).
+// The call is synchronous but non-blocking in practice: when backed by BufferedDSAuditStore,
+// StoreAudit enqueues to a buffered channel and returns immediately. Under extreme
+// back-pressure (buffer full), the enqueue fails and the event is dropped — this is
+// acceptable per ADR-038 (audit must never block business logic).
 // If the event has no ActorID/ActorType set, it inherits from the context (see WithActor).
 func StoreBestEffort(ctx context.Context, store AuditStore, event *AuditEvent, logger logr.Logger) {
 	if event.ActorID == "" || event.ActorType == "" {
@@ -158,4 +262,29 @@ func StoreBestEffort(ctx context.Context, store AuditStore, event *AuditEvent, l
 	if err := store.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "audit store failure (best-effort)", "event_type", event.EventType)
 	}
+}
+
+// InstrumentedAuditStore wraps an AuditStore to call a recorder after each
+// successful store. This enables BR-KA-OBSERVABILITY-001.7 audit pipeline
+// throughput metrics without changing StoreBestEffort callers.
+type InstrumentedAuditStore struct {
+	inner    AuditStore
+	recorder func(eventType string)
+}
+
+// NewInstrumentedAuditStore wraps an AuditStore. recorder is called on each
+// successful StoreAudit with the event type. recorder may be nil.
+func NewInstrumentedAuditStore(inner AuditStore, recorder func(eventType string)) AuditStore {
+	if recorder == nil {
+		return inner
+	}
+	return &InstrumentedAuditStore{inner: inner, recorder: recorder}
+}
+
+func (s *InstrumentedAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error {
+	err := s.inner.StoreAudit(ctx, event)
+	if err == nil {
+		s.recorder(event.EventType)
+	}
+	return err
 }

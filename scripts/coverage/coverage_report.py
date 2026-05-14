@@ -514,6 +514,40 @@ def output_json(services: list[ServiceCoverage]) -> str:
     return json.dumps(data, indent=2)
 
 
+def check_coverage_gate(services: list[ServiceCoverage], threshold: float) -> bool:
+    """Check that all services meet the per-tier coverage threshold.
+
+    Returns True if all services pass, False otherwise.
+    Prints details to stderr so stdout remains clean for piping.
+    """
+    passed = True
+    failures = []
+
+    for svc in services:
+        for tier_name, tier_value in [
+            ("unit_testable", svc.unit),
+            ("all_tiers", svc.all_tiers),
+        ]:
+            if tier_value == "-" or tier_value == "N/A":
+                continue
+            try:
+                pct = float(tier_value.replace("%", ""))
+            except ValueError:
+                continue
+            if pct < threshold:
+                passed = False
+                failures.append(f"  {svc.name}/{tier_name}: {tier_value} < {threshold}%")
+
+    if failures:
+        print(f"Coverage gate FAILED (threshold: {threshold}%):", file=sys.stderr)
+        for f in failures:
+            print(f, file=sys.stderr)
+    else:
+        print(f"Coverage gate PASSED (threshold: {threshold}%)", file=sys.stderr)
+
+    return passed
+
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -529,6 +563,10 @@ def main():
     parser.add_argument(
         "--service", default=None,
         help="Report for specific service only"
+    )
+    parser.add_argument(
+        "--check-gate", type=float, default=None, metavar="THRESHOLD",
+        help="Enforce minimum coverage (e.g. --check-gate 80). Exits non-zero if any service fails."
     )
     args = parser.parse_args()
 
@@ -546,6 +584,11 @@ def main():
         print(output_json(services))
     else:
         print(output_table(services))
+
+    # Coverage gate enforcement (#1088 Phase 9)
+    if args.check_gate is not None:
+        if not check_coverage_gate(services, args.check_gate):
+            sys.exit(1)
 
 
 if __name__ == "__main__":

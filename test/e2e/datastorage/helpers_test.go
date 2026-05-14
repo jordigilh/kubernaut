@@ -19,8 +19,6 @@ package datastorage
 import (
 	"context"
 	"fmt"
-	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,6 +45,7 @@ var e2eTestAllDetectedLabelsContent string
 
 func init() {
 	stub := testutil.NewTestWorkflowCRD("e2e-stub", "ScaleReplicas", "tekton")
+	stub.Spec.Labels.Component = []string{"v1/Pod"}
 	stub.Spec.Description.What = "Stub workflow for E2E test registration"
 	stub.Spec.Description.WhenToUse = "For E2E tests that need a valid CreateWorkflow request body"
 	stub.Spec.Labels.Priority = "P0"
@@ -62,6 +61,7 @@ func init() {
 	e2eTestWorkflowStubContent = testutil.MarshalWorkflowCRD(stub)
 
 	allLabels := testutil.NewTestWorkflowCRD("e2e-all-labels", "RestartPod", "tekton")
+	allLabels.Spec.Labels.Component = []string{"v1/Pod"}
 	allLabels.Spec.Description.What = "Workflow with all 8 detectedLabels fields for round-trip E2E testing"
 	allLabels.Spec.Description.WhenToUse = "E2E-DS-043-005: validates every detectedLabels field survives storage"
 	allLabels.Spec.Labels.Priority = "P0"
@@ -89,6 +89,7 @@ func init() {
 // Issue #330: Uses builder pattern instead of brittle fmt.Sprintf.
 func generateWorkflowContent(workflowName, version string) string {
 	crd := testutil.NewTestWorkflowCRD(workflowName, "ScaleReplicas", "tekton")
+	crd.Spec.Labels.Component = []string{"v1/Pod"}
 	crd.Spec.Version = version
 	crd.Spec.Description.What = fmt.Sprintf("Generated workflow %s v%s for E2E testing", workflowName, version)
 	crd.Spec.Description.WhenToUse = "E2E tests that need distinct workflow versions"
@@ -163,58 +164,6 @@ func postAuditEventBatch(
 		eventIDs[i] = id.String()
 	}
 	return eventIDs, nil
-}
-
-// createPostgresNetworkPartition creates a NetworkPolicy that blocks DataStorage → PostgreSQL traffic
-// This simulates a network partition / cross-AZ failure (more realistic than pod termination for HA scenarios)
-func createPostgresNetworkPartition(namespace, kubeconfigPath string) error {
-	networkPolicyYAML := fmt.Sprintf(`
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: block-datastorage-to-postgres
-  namespace: %s
-spec:
-  podSelector:
-    matchLabels:
-      app: postgresql
-  policyTypes:
-  - Ingress
-  ingress:
-  # Allow all traffic EXCEPT from DataStorage
-  - from:
-    - podSelector:
-        matchExpressions:
-        - key: app
-          operator: NotIn
-          values:
-          - datastorage
-`, namespace)
-
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(networkPolicyYAML)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to create NetworkPolicy in %s: %w, output: %s", namespace, err, output)
-	}
-
-	GinkgoWriter.Printf("✅ NetworkPolicy created: DataStorage → PostgreSQL traffic blocked in %s\n", namespace)
-	return nil
-}
-
-// deletePostgresNetworkPartition deletes the NetworkPolicy that blocks DataStorage → PostgreSQL traffic
-func deletePostgresNetworkPartition(namespace, kubeconfigPath string) error {
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "delete", "networkpolicy",
-		"-n", namespace,
-		"block-datastorage-to-postgres",
-		"--ignore-not-found=true")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to delete NetworkPolicy in %s: %w, output: %s", namespace, err, output)
-	}
-
-	GinkgoWriter.Printf("✅ NetworkPolicy deleted: DataStorage → PostgreSQL traffic restored in %s\n", namespace)
-	return nil
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

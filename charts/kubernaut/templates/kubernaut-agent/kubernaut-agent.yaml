@@ -88,6 +88,17 @@ rules:
   - apiGroups: ["monitoring.coreos.com"]
     resources: ["prometheusrules", "servicemonitors", "podmonitors", "probes"]
     verbs: ["get", "list", "watch"]
+  {{- if .Values.kubernautAgent.interactive.enabled }}
+  # ── Interactive Impersonation (#703, DD-AUTH-MCP-001) ──────────────────
+  # ACCEPTED RISK (SEC-06): Cluster-wide impersonate without resourceNames.
+  # Mitigation: Only granted when interactive.enabled=true; application-level
+  # identity validation in LeaseSessionManager.Takeover rejects empty usernames;
+  # per-user rate limiting bounds abuse surface. Future: scope via resourceNames
+  # if identity set is bounded.
+  - apiGroups: [""]
+    resources: ["users", "groups", "serviceaccounts"]
+    verbs: ["impersonate"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -118,6 +129,41 @@ subjects:
   - kind: ServiceAccount
     name: kubernaut-agent-sa
     namespace: {{ .Release.Namespace }}
+{{- if .Values.kubernautAgent.interactive.enabled }}
+---
+# HELM-03 (#703): Lease RBAC is namespace-scoped (least privilege).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubernaut-agent-interactive-leases
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    component: interactive
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernaut-agent-interactive-leases-binding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kubernaut-agent
+    component: interactive
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubernaut-agent-interactive-leases
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-agent-sa
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -197,6 +243,29 @@ data:
 {{- end }}
 {{- if .apiKey }}
           apiKey: {{ .apiKey }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.kubernautAgent.interactive.enabled }}
+    interactive:
+      enabled: true
+      sessionTTL: {{ .Values.kubernautAgent.interactive.sessionTTL | default "30m" | quote }}
+      inactivityTimeout: {{ .Values.kubernautAgent.interactive.inactivityTimeout | default "10m" | quote }}
+      maxConcurrentSessions: {{ .Values.kubernautAgent.interactive.maxConcurrentSessions | default 5 }}
+      rateLimitPerUser: {{ .Values.kubernautAgent.interactive.rateLimitPerUser | default 10 }}
+      maxAnalyzingTimeout: {{ .Values.kubernautAgent.interactive.maxAnalyzingTimeout | default "45m" | quote }}
+{{- with .Values.kubernautAgent.interactive.jwtProviders }}
+      jwtProviders:
+{{- range . }}
+        - name: {{ .name | quote }}
+          issuer: {{ .issuer | quote }}
+          jwksURL: {{ .jwksURL | quote }}
+          audience: {{ .audience | quote }}
+{{- if .claimMappings }}
+          claimMappings:
+            username: {{ .claimMappings.username | default "preferred_username" | quote }}
+            groups: {{ .claimMappings.groups | default "groups" | quote }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

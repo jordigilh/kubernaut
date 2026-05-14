@@ -114,9 +114,9 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		Context("IT-DS-017-001-001: active status filter", func() {
 			It("should return only action types that have active workflows", func() {
 				// Arrange: 2 active ScaleReplicas, 1 disabled RestartPod
-				createTestWorkflow("scale-1", "v1.0.0", "ScaleReplicas", "critical", "pod", "production", "P0", "Active")
-				createTestWorkflow("scale-2", "v1.0.0", "ScaleReplicas", "high", "deployment", "staging", "P1", "Active")
-				createTestWorkflow("restart-disabled", "v1.0.0", "RestartPod", "critical", "pod", "production", "P0", "Disabled")
+				createTestWorkflow("scale-1", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
+				createTestWorkflow("scale-2", "v1.0.0", "ScaleReplicas", "high", "apps/v1/Deployment", "staging", "P1", "Active")
+				createTestWorkflow("restart-disabled", "v1.0.0", "RestartPod", "critical", "v1/Pod", "production", "P0", "Disabled")
 
 				// Act: List available actions (no specific context filters to get all)
 				filters := &models.WorkflowDiscoveryFilters{}
@@ -137,8 +137,8 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		Context("GAP-WF-3: ListActions returns only latest version counts", func() {
 			It("should count only workflows with is_latest_version=true", func() {
 				// Arrange: Two versions of same workflow - only latest should be counted
-				createTestWorkflow("scale-v1", "v1.0.0", "ScaleReplicas", "critical", "pod", "production", "P0", "Active")
-				createTestWorkflow("scale-v1", "v1.1.0", "ScaleReplicas", "critical", "pod", "production", "P0", "Active")
+				createTestWorkflow("scale-v1", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
+				createTestWorkflow("scale-v1", "v1.1.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
 
 				filters := &models.WorkflowDiscoveryFilters{}
 
@@ -160,11 +160,11 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		Context("IT-DS-017-001-002: pagination returns correct slice", func() {
 			It("should paginate action types correctly", func() {
 				// Arrange: Create workflows spanning 5 action types (all active) - DD-WORKFLOW-016 V1.0
-				createTestWorkflow("scale-wf", "v1.0.0", "ScaleReplicas", "critical", "pod", "production", "P0", "Active")
-				createTestWorkflow("restart-wf", "v1.0.0", "RestartPod", "critical", "pod", "production", "P0", "Active")
-				createTestWorkflow("rollback-wf", "v1.0.0", "RollbackDeployment", "critical", "pod", "production", "P0", "Active")
-				createTestWorkflow("memory-wf", "v1.0.0", "IncreaseMemoryLimits", "critical", "pod", "production", "P0", "Active")
-				createTestWorkflow("restart-deploy-wf", "v1.0.0", "RestartDeployment", "critical", "pod", "production", "P0", "Active")
+				createTestWorkflow("scale-wf", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
+				createTestWorkflow("restart-wf", "v1.0.0", "RestartPod", "critical", "v1/Pod", "production", "P0", "Active")
+				createTestWorkflow("rollback-wf", "v1.0.0", "RollbackDeployment", "critical", "v1/Pod", "production", "P0", "Active")
+				createTestWorkflow("memory-wf", "v1.0.0", "IncreaseMemoryLimits", "critical", "v1/Pod", "production", "P0", "Active")
+				createTestWorkflow("restart-deploy-wf", "v1.0.0", "RestartDeployment", "critical", "v1/Pod", "production", "P0", "Active")
 
 				filters := &models.WorkflowDiscoveryFilters{}
 
@@ -199,14 +199,14 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		Context("IT-DS-017-001-003: filters by action_type AND signal context", func() {
 			It("should return only workflows matching both action_type and context filters", func() {
 				// Arrange
-				createTestWorkflow("scale-conservative", "v1.0.0", "ScaleReplicas", "critical", "pod", "production", "P0", "Active")
-				createTestWorkflow("scale-aggressive", "v1.0.0", "ScaleReplicas", "high", "deployment", "staging", "P1", "Active")
-				createTestWorkflow("restart-simple", "v1.0.0", "RestartPod", "critical", "pod", "production", "P0", "Active")
+				createTestWorkflow("scale-conservative", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
+				createTestWorkflow("scale-aggressive", "v1.0.0", "ScaleReplicas", "high", "apps/v1/Deployment", "staging", "P1", "Active")
+				createTestWorkflow("restart-simple", "v1.0.0", "RestartPod", "critical", "v1/Pod", "production", "P0", "Active")
 
 				// Act: Filter for ScaleReplicas + severity=critical
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   "v1/Pod",
 					Environment: "production",
 					Priority:    "P0",
 				}
@@ -227,13 +227,13 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 			It("should return only workflows with is_latest_version=true", func() {
 				// Arrange: Create two versions of same workflow (v1.0.0, v1.1.0)
 				// Create() sets v1.0.0 is_latest_version=true, then v1.1.0 creation flips v1.0.0 to false
-				createTestWorkflow("scale-v1", "v1.0.0", "ScaleReplicas", "critical", "pod", "production", "P0", "Active")
-				createTestWorkflow("scale-v1", "v1.1.0", "ScaleReplicas", "critical", "pod", "production", "P0", "Active")
+				createTestWorkflow("scale-v1", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
+				createTestWorkflow("scale-v1", "v1.1.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
 
 				// Act
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   "v1/Pod",
 					Environment: "production",
 					Priority:    "P0",
 				}
@@ -254,13 +254,13 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		Context("IT-DS-017-001-004: excludes disabled workflows", func() {
 			It("should not return disabled workflows", func() {
 				// Arrange: One active, one disabled -- same action_type
-				createTestWorkflow("scale-active", "v1.0.0", "ScaleReplicas", "critical", "pod", "production", "P0", "Active")
-				createTestWorkflow("scale-disabled", "v1.0.0", "ScaleReplicas", "critical", "pod", "production", "P0", "Disabled")
+				createTestWorkflow("scale-active", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
+				createTestWorkflow("scale-disabled", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Disabled")
 
 				// Act
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   "v1/Pod",
 					Environment: "production",
 					Priority:    "P0",
 				}
@@ -282,12 +282,12 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		Context("IT-DS-017-001-005: context match returns workflow", func() {
 			It("should return workflow when context filters match", func() {
 				// Arrange
-				wf := createTestWorkflow("scale-match", "v1.0.0", "ScaleReplicas", "critical", "pod", "production", "P0", "Active")
+				wf := createTestWorkflow("scale-match", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
 
 				// Act
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   "v1/Pod",
 					Environment: "production",
 					Priority:    "P0",
 				}
@@ -306,12 +306,12 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		Context("IT-DS-017-001-006: context mismatch returns nil (security gate)", func() {
 			It("should return nil when context filters do not match", func() {
 				// Arrange: workflow with severity=critical, environment=production
-				wf := createTestWorkflow("scale-mismatch", "v1.0.0", "ScaleReplicas", "critical", "pod", "production", "P0", "Active")
+				wf := createTestWorkflow("scale-mismatch", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
 
 				// Act: Query with mismatching context (severity=high, environment=staging)
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "high",
-					Component:   "deployment",
+					Component:   "apps/v1/Deployment",
 					Environment: "staging",
 					Priority:    "P1",
 				}
@@ -385,7 +385,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "Pod",
+					Component:   "v1/Pod",
 					Environment: "production",
 					Priority:    "P1",
 				}
@@ -409,7 +409,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "high",
-					Component:   "Deployment",
+					Component:   "apps/v1/Deployment",
 					Environment: "staging",
 					Priority:    "P3",
 				}
@@ -434,7 +434,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "Pod",
+					Component:   "v1/Pod",
 					Environment: "production",
 					Priority:    "P1",
 				}
@@ -459,7 +459,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "Pod",
+					Component:   "v1/Pod",
 					Environment: "production",
 					Priority:    "P1",
 				}
@@ -483,7 +483,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "Pod",
+					Component:   "v1/Pod",
 					Environment: "staging",
 					Priority:    "P1",
 				}
@@ -504,11 +504,11 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		Context("IT-DS-464-006: severity ['*'] matches via PostgreSQL JSONB ? operator", func() {
 			It("should match severity=['*'] when queried with severity=critical", func() {
 				createTestWorkflowWithArrayLabels("wc-sev", "v1.0.0", "RestartPod",
-					[]string{"*"}, "pod", []string{"production"}, "P0", "Active")
+					[]string{"*"}, "v1/Pod", []string{"production"}, "P0", "Active")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   "v1/Pod",
 					Environment: "production",
 					Priority:    "P0",
 				}
@@ -539,7 +539,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "high",
-					Component:   "Node",
+					Component:   "v1/Node",
 					Environment: "unknown",
 					Priority:    "P3",
 				}
@@ -560,7 +560,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "high",
-					Component:   "Node",
+					Component:   "v1/Node",
 					Environment: "unknown",
 					Priority:    "P3",
 				}
@@ -579,7 +579,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "high",
-					Component:   "Node",
+					Component:   "v1/Node",
 					Environment: "unknown",
 					Priority:    "P3",
 				}

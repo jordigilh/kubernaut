@@ -61,6 +61,7 @@ type ServerSettings struct {
 	ListenAddr            string              `yaml:"listenAddr"`              // Default: ":8080"
 	HealthAddr            string              `yaml:"healthAddr"`              // Default: ":8081" (Issue #753: dedicated health probe port)
 	MetricsAddr           string              `yaml:"metricsAddr"`             // Default: ":9090" (Issue #753: dedicated metrics port)
+	DisableProfiling      bool                `yaml:"disableProfiling"`        // Set true to suppress /debug/pprof/* on health port
 	MaxConcurrentRequests int                 `yaml:"maxConcurrentRequests"`   // Default: 100 (0 = unlimited)
 	ReadTimeout           time.Duration       `yaml:"readTimeout"`             // Default: 30s
 	WriteTimeout          time.Duration       `yaml:"writeTimeout"`            // Default: 30s

@@ -216,6 +216,11 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
 	}
 
+	// AU-9: Generate RSA signing certificate for audit exports
+	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, WorkflowExecutionNamespace, output); err != nil {
+		return fmt.Errorf("failed to generate signing certificate: %w", err)
+	}
+
 	// Deploy Data Storage (PostgreSQL/Redis already ready from Phase 2)
 	_, _ = fmt.Fprintf(output, "  💾 Deploying Data Storage service...\n")
 	if err := deployDataStorageWithConfig(clusterName, kubeconfigPath, output); err != nil {

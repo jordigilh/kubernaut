@@ -30,8 +30,13 @@ import (
 type ContextKey string
 
 const (
-	// UserContextKey is the context key for the authenticated user identity.
+	// UserContextKey is the context key for the authenticated user identity (string).
 	UserContextKey ContextKey = "user"
+
+	// UserInfoContextKey is the context key for the full authenticated user info
+	// including group memberships. Required for interactive MCP sessions (#703)
+	// where impersonation needs both username and groups.
+	UserInfoContextKey ContextKey = "userInfo"
 )
 
 // Middleware provides authentication and authorization for HTTP requests.
@@ -115,26 +120,33 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		// This header is a SOC2 trust anchor used by downstream services (DataStorage).
 		r.Header.Del("X-Auth-Request-User")
 
+		// Issue #703: Strip Kubernetes impersonation headers to prevent privilege escalation.
+		stripImpersonationHeaders(r)
+
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
+			m.logSecurityEvent(r, "missing_auth_header", "", http.StatusUnauthorized)
 			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Missing Authorization header")
 			return
 		}
 
 		if !strings.HasPrefix(authHeader, "Bearer ") {
+			m.logSecurityEvent(r, "invalid_auth_format", "", http.StatusUnauthorized)
 			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid Authorization header format")
 			return
 		}
 
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		if token == "" {
+			m.logSecurityEvent(r, "empty_bearer_token", "", http.StatusUnauthorized)
 			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Empty Bearer token")
 			return
 		}
 
-		user, err := m.authenticator.ValidateToken(r.Context(), token)
+		userInfo, err := m.authenticator.ValidateTokenFull(r.Context(), token)
 		if err != nil {
 			if errors.Is(err, ErrTokenInvalid) {
+				m.logSecurityEvent(r, "invalid_token", "", http.StatusUnauthorized)
 				m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
 				return
 			}
@@ -146,9 +158,11 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 			m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authentication service unavailable")
 			return
 		}
+		user := userInfo.Username
 
 		m.logger.V(2).Info("Token validated",
 			"user", user,
+			"providerType", userInfo.ProviderType,
 			"path", r.URL.Path,
 		)
 
@@ -171,14 +185,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		}
 
 		if !allowed {
-			m.logger.Info("Authorization denied",
-				"user", user,
-				"path", r.URL.Path,
-				"resource", m.config.Resource,
-				"resourceName", m.config.ResourceName,
-				"verb", m.config.Verb,
-			)
-			// Issue #673 C-2/M-2: Generic 403; RBAC details logged server-side only
+			m.logSecurityEvent(r, "authorization_denied", user, http.StatusForbidden)
 			m.writeError(w, http.StatusForbidden, "Forbidden", "Insufficient permissions")
 			return
 		}
@@ -189,6 +196,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		)
 
 		ctx := context.WithValue(r.Context(), UserContextKey, user)
+		ctx = context.WithValue(ctx, UserInfoContextKey, userInfo)
 		r.Header.Set("X-Auth-Request-User", user)
 
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -196,15 +204,63 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 }
 
 // GetUserFromContext extracts the authenticated user identity from the request context.
-// Returns empty string if user is not in context.
+// Returns empty string if the context is nil or the user is not in context.
 func GetUserFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
 	if user, ok := ctx.Value(UserContextKey).(string); ok {
 		return user
 	}
 	return ""
 }
 
+// GetUserInfoFromContext extracts the full authenticated user info (username + groups)
+// from the request context. Returns zero-value UserInfo if not present.
+// SEC-CRIT-02 (#703): Required for impersonation to propagate group memberships.
+func GetUserInfoFromContext(ctx context.Context) UserInfo {
+	if ctx == nil {
+		return UserInfo{}
+	}
+	if info, ok := ctx.Value(UserInfoContextKey).(UserInfo); ok {
+		return info
+	}
+	return UserInfo{}
+}
+
+// stripImpersonationHeaders removes all Kubernetes impersonation headers from the
+// request. This prevents clients from injecting Impersonate-User/Group/Uid/Extra-*
+// headers that could escalate privileges when KA constructs impersonating K8s
+// clients (#703, #895). Covers KEP-1513 Impersonate-Uid (K8s 1.22+).
+func stripImpersonationHeaders(r *http.Request) {
+	r.Header.Del("Impersonate-User")
+	r.Header.Del("Impersonate-Group")
+	r.Header.Del("Impersonate-Uid")
+	for key := range r.Header {
+		if strings.HasPrefix(strings.ToLower(key), "impersonate-extra-") {
+			r.Header.Del(key)
+		}
+	}
+}
+
 // writeError writes an RFC 7807 Problem Details JSON error response.
+// logSecurityEvent emits a structured security audit log entry for FedRAMP AU-2 compliance.
+// FED-M1: Every 401/403 must produce a traceable security event.
+func (m *Middleware) logSecurityEvent(r *http.Request, reason, user string, statusCode int) {
+	m.logger.Info("security_event",
+		"event_type", "authentication",
+		"reason", reason,
+		"user", user,
+		"status_code", statusCode,
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr,
+		"resource", m.config.Resource,
+		"resource_name", m.config.ResourceName,
+		"verb", m.config.Verb,
+	)
+}
+
 func (m *Middleware) writeError(w http.ResponseWriter, status int, title, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)

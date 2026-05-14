@@ -42,8 +42,8 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 
 	BeforeEach(func() {
 		store = session.NewStore(5 * time.Minute)
-		manager = session.NewManager(store, logr.Discard())
-		handler = server.NewHandler(manager, nil, logr.Discard())
+		manager = session.NewManager(store, logr.Discard(), nil, nil)
+		handler = server.NewHandler(manager, nil, logr.Discard(), nil)
 	})
 
 	Describe("UT-KA-433-HTTP-001: Error response has RFC 7807 fields (GAP-004)", func() {
@@ -524,6 +524,59 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 			Expect(ok).To(BeTrue(), "expected type assertion to *IncidentResponse to succeed (alternative_workflows mapping)")
 			Expect(incResp.AlternativeWorkflows).To(HaveLen(2),
 				"H2: alternative_workflows must be mapped to response")
+		})
+	})
+})
+
+// immediateInvestigator is a mock InvestigationRunner that returns a fixed result immediately.
+type immediateInvestigator struct {
+	result *katypes.InvestigationResult
+}
+
+func (m *immediateInvestigator) Investigate(_ context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	return m.result, nil
+}
+
+var _ = Describe("Handler metadata wiring — BR-AUDIT-070", func() {
+
+	Describe("UT-KA-PR9-D1: IncidentAnalyze populates signal_name and severity in session metadata", func() {
+		It("should store signal_name and severity from the request into session metadata", func() {
+			store := session.NewStore(5 * time.Minute)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
+			inv := &immediateInvestigator{result: &katypes.InvestigationResult{RCASummary: "test"}}
+			h := server.NewHandler(mgr, inv, logr.Discard(), nil)
+
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "inc-d1",
+				RemediationID:     "rem-d1",
+				SignalName:        "CrashLoopBackOff",
+				Severity:          agentclient.SeverityCritical,
+				ErrorMessage:      "container restarted",
+				ResourceKind:      "Pod",
+				ResourceName:      "api-server",
+				ResourceNamespace: "production",
+			}
+			resp, err := h.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(context.Background(), req)
+			Expect(err).NotTo(HaveOccurred())
+
+			accepted, ok := resp.(*agentclient.AnalyzeAccepted)
+			Expect(ok).To(BeTrue(), "response should be *AnalyzeAccepted")
+			sid := accepted.SessionID.String()
+			Expect(sid).NotTo(BeEmpty())
+
+			Eventually(func() session.Status {
+				s, _ := mgr.GetSession(sid)
+				return s.Status
+			}).Should(Equal(session.StatusCompleted))
+
+			sess, err := mgr.GetSession(sid)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Metadata).To(HaveKeyWithValue("signal_name", "CrashLoopBackOff"),
+				"handler must populate signal_name from the request signal")
+			Expect(sess.Metadata).To(HaveKeyWithValue("severity", "critical"),
+				"handler must populate severity from the request signal")
+			Expect(sess.Metadata).To(HaveKeyWithValue("incident_id", "inc-d1"))
+			Expect(sess.Metadata).To(HaveKeyWithValue("remediation_id", "rem-d1"))
 		})
 	})
 })

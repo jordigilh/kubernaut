@@ -650,7 +650,7 @@ jobs:
 
 - **Current Workflow**: `.github/workflows/defense-in-depth-tests.yml`
 - **Podman Crash Triage**: (internal development reference, removed in v1.0)
-- **Testing Strategy**: `docs/testing/DEFENSE_IN_DEPTH_CI_CD_STRATEGY.md`
+- **Testing Strategy**: `docs/testing/README.md` (defense-in-depth pyramid, per-tier coverage, validation commands)
 - **Service Catalog**: `docs/architecture/KUBERNAUT_CRD_ARCHITECTURE.md`
 
 ---

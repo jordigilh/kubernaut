@@ -369,6 +369,7 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		cfg.Server.HealthAddr,
 		server.LivenessHandler(),
 		server.ReadinessHandler(),
+		!cfg.Server.DisableProfiling,
 	)
 
 	metricsMux := http.NewServeMux()
@@ -383,6 +384,8 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		Addr:              cfg.Server.MetricsAddr,
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
 	}
 
 	if cfg.Server.TLS.Enabled() {
@@ -708,6 +711,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		cfg.Server.HealthAddr,
 		server.LivenessHandler(),
 		server.ReadinessHandler(),
+		!cfg.Server.DisableProfiling,
 	)
 
 	// Issue #753: Dedicated metrics server (plain HTTP, never TLS)
@@ -723,6 +727,8 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		Addr:              cfg.Server.MetricsAddr,
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
 	}
 
 	if cfg.Server.TLS.Enabled() {

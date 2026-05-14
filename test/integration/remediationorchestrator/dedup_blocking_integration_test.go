@@ -91,10 +91,11 @@ func injectTerminalStatus(name string, phase remediationv1.RemediationPhase) {
 			return err
 		}
 		fetched.Status.OverallPhase = phase
-		if phase == remediationv1.PhaseCompleted {
+		switch phase {
+		case remediationv1.PhaseCompleted:
 			fetched.Status.Outcome = "Remediated"
 			fetched.Status.CompletedAt = &now
-		} else if phase == remediationv1.PhaseFailed {
+		case remediationv1.PhaseFailed:
 			failPhase := remediationv1.FailurePhaseWorkflowExecution
 			failReason := "original failure"
 			fetched.Status.FailurePhase = &failPhase

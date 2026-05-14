@@ -33,7 +33,7 @@ var _ = Describe("Session Manager Panic Recovery — #1078", func() {
 	Describe("UT-KA-1078-001: Panicking InvestigateFunc transitions session to StatusFailed", func() {
 		It("should transition to StatusFailed when the investigation panics", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, logr.Discard())
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
 
 			id, err := mgr.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				panic("simulated nil pointer dereference in tool execution")
@@ -54,7 +54,7 @@ var _ = Describe("Session Manager Panic Recovery — #1078", func() {
 	Describe("UT-KA-1078-002: Panic error message is preserved in session result error field", func() {
 		It("should preserve the panic value in the session error", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, logr.Discard())
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
 
 			id, err := mgr.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				panic("custom panic message for forensic traceability")
@@ -75,7 +75,7 @@ var _ = Describe("Session Manager Panic Recovery — #1078", func() {
 	Describe("UT-KA-1078-003: Panic with nil recover value transitions to StatusFailed", func() {
 		It("should transition to StatusFailed even when panic value is nil", func() {
 			store := session.NewStore(30 * time.Minute)
-			mgr := session.NewManager(store, logr.Discard())
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
 
 			id, err := mgr.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
 				panic(nil)

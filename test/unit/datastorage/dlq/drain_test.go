@@ -19,6 +19,7 @@ package dlq
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
@@ -66,7 +67,7 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 		// Start mini Redis
 		var err error
 		miniRedis = miniredis.RunT(GinkgoT())
-		Expect(miniRedis).ToNot(BeNil())
+		Expect(miniRedis.Addr()).ToNot(BeEmpty(), "miniredis should be listening")
 
 		// Create Redis client
 		redisClient = redis.NewClient(&redis.Options{
@@ -143,7 +144,6 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 
 			// ASSERT: Drain completes successfully
 			Expect(err).ToNot(HaveOccurred())
-			Expect(stats).ToNot(BeNil())
 			Expect(stats.NotificationsProcessed).To(Equal(2), "should process 2 notification messages")
 			Expect(stats.EventsProcessed).To(Equal(0), "should process 0 event messages")
 			Expect(stats.TotalProcessed).To(Equal(2))
@@ -165,17 +165,35 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 			// ARRANGE: Add event messages to DLQ
 			event1 := &audit.AuditEvent{
 				EventID:        uuid.New(),
+				EventVersion:   "1.0",
 				EventType:      "test.event.occurred",
 				EventCategory:  "test",
+				EventAction:    "occurred",
+				EventOutcome:   "success",
+				ActorType:      "service",
+				ActorID:        "test-service",
+				ResourceType:   "test",
+				ResourceID:     "res-1",
 				EventTimestamp: time.Now(),
 				CorrelationID:  "test-correlation-1",
+				EventData:      []byte(`{"k":"v"}`),
+				RetentionDays:  2555,
 			}
 			event2 := &audit.AuditEvent{
 				EventID:        uuid.New(),
+				EventVersion:   "1.0",
 				EventType:      "test.event.completed",
 				EventCategory:  "test",
+				EventAction:    "completed",
+				EventOutcome:   "success",
+				ActorType:      "service",
+				ActorID:        "test-service",
+				ResourceType:   "test",
+				ResourceID:     "res-2",
 				EventTimestamp: time.Now(),
 				CorrelationID:  "test-correlation-2",
+				EventData:      []byte(`{"k":"v"}`),
+				RetentionDays:  2555,
 			}
 
 			err := dlqClient.EnqueueAuditEvent(ctx, event1, fmt.Errorf("test error"))
@@ -196,7 +214,6 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 
 			// ASSERT: Drain completes successfully
 			Expect(err).ToNot(HaveOccurred())
-			Expect(stats).ToNot(BeNil())
 			Expect(stats.NotificationsProcessed).To(Equal(0), "should process 0 notification messages")
 			Expect(stats.EventsProcessed).To(Equal(2), "should process 2 event messages")
 			Expect(stats.TotalProcessed).To(Equal(2))
@@ -227,10 +244,19 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 			}
 			event := &audit.AuditEvent{
 				EventID:        uuid.New(),
+				EventVersion:   "1.0",
 				EventType:      "test.event",
 				EventCategory:  "test",
+				EventAction:    "tested",
+				EventOutcome:   "success",
+				ActorType:      "service",
+				ActorID:        "test-service",
+				ResourceType:   "test",
+				ResourceID:     "res-1",
 				EventTimestamp: time.Now(),
 				CorrelationID:  "test-event",
+				EventData:      []byte(`{"k":"v"}`),
+				RetentionDays:  2555,
 			}
 
 			err := dlqClient.EnqueueNotificationAudit(ctx, notif, fmt.Errorf("test error"))
@@ -276,13 +302,12 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 			defer drainCancel()
 
 			// Add small delay to ensure context expires
-			time.Sleep(2 * time.Millisecond)
+			time.Sleep(2 * time.Millisecond) // ✅ APPROVED EXCEPTION: ensure context expires before drain completes
 
 			stats, err := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, mockEventsRepo)
 
 			// ASSERT: Timeout handled gracefully (no error, but marked as timed out)
 			Expect(err).ToNot(HaveOccurred(), "timeout should not return error")
-			Expect(stats).ToNot(BeNil())
 			Expect(stats.TimedOut).To(BeTrue(), "should indicate timeout occurred")
 			// Some messages may have been processed before timeout
 			Expect(stats.TotalProcessed).To(BeNumerically(">=", 0))
@@ -301,7 +326,6 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 
 			// ASSERT: Completes successfully with zero messages processed
 			Expect(err).ToNot(HaveOccurred())
-			Expect(stats).ToNot(BeNil())
 			Expect(stats.TotalProcessed).To(Equal(0))
 			Expect(stats.TimedOut).To(BeFalse())
 		})
@@ -332,6 +356,7 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 				ResourceType:   "workflow",
 				ResourceID:     "workflow-123",
 				EventData:      []byte(`{"workflow_id": "workflow-123", "step": "start"}`),
+				RetentionDays:  2555,
 			}
 
 			err := dlqClient.EnqueueAuditEvent(ctx, event1, fmt.Errorf("simulated DB error"))
@@ -350,7 +375,6 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 
 			// ASSERT: Drain completes successfully
 			Expect(err).ToNot(HaveOccurred())
-			Expect(stats).ToNot(BeNil())
 			Expect(stats.EventsProcessed).To(Equal(1), "should process 1 event message")
 			Expect(stats.TotalProcessed).To(Equal(1))
 			Expect(stats.TimedOut).To(BeFalse())
@@ -379,13 +403,17 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 // MOCK REPOSITORIES FOR TESTING
 // ========================================
 
-// MockNotificationRepository mocks notification repository for testing
+// MockNotificationRepository mocks notification repository for testing.
+// Mutex-protected to be safe under concurrent DLQRetryWorker goroutines.
 type MockNotificationRepository struct {
+	mu            sync.Mutex
 	createdAudits []models.NotificationAudit
 	createError   error
 }
 
 func (m *MockNotificationRepository) Create(ctx context.Context, audit *models.NotificationAudit) (*models.NotificationAudit, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.createError != nil {
 		return nil, m.createError
 	}
@@ -393,18 +421,26 @@ func (m *MockNotificationRepository) Create(ctx context.Context, audit *models.N
 	return audit, nil
 }
 
-// MockEventsRepository mocks events repository for testing
-// This now implements the CORRECT interface: repository.AuditEventsRepository.Create()
+func (m *MockNotificationRepository) CreatedCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.createdAudits)
+}
+
+// MockEventsRepository mocks events repository for testing.
+// Mutex-protected to be safe under concurrent DLQRetryWorker goroutines.
 type MockEventsRepository struct {
-	createdEvents []audit.AuditEvent // Keep tracking as audit.AuditEvent for test assertions
+	mu            sync.Mutex
+	createdEvents []audit.AuditEvent
 	createError   error
 }
 
 func (m *MockEventsRepository) Create(ctx context.Context, event *repository.AuditEvent) (*repository.AuditEvent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.createError != nil {
 		return nil, m.createError
 	}
-	// Convert back to audit.AuditEvent for test assertions
 	auditEvent := audit.AuditEvent{
 		EventID:        event.EventID,
 		EventVersion:   event.Version,
@@ -423,17 +459,32 @@ func (m *MockEventsRepository) Create(ctx context.Context, event *repository.Aud
 	return event, nil
 }
 
-// MockRepositoryEventsRepository mocks the CORRECT repository interface
-// This implements repository.AuditEventsRepository.Create() method signature
+func (m *MockEventsRepository) CreatedCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.createdEvents)
+}
+
+// MockRepositoryEventsRepository mocks the repository interface.
+// Mutex-protected to be safe under concurrent DLQRetryWorker goroutines.
 type MockRepositoryEventsRepository struct {
+	mu            sync.Mutex
 	createdEvents []*repository.AuditEvent
 	createError   error
 }
 
 func (m *MockRepositoryEventsRepository) Create(ctx context.Context, event *repository.AuditEvent) (*repository.AuditEvent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.createError != nil {
 		return nil, m.createError
 	}
 	m.createdEvents = append(m.createdEvents, event)
 	return event, nil
+}
+
+func (m *MockRepositoryEventsRepository) CreatedCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.createdEvents)
 }

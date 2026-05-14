@@ -21,6 +21,7 @@ limitations under the License.
 package ogenx
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -354,13 +355,13 @@ func (e *HTTPError) Error() string {
 	return strings.Join(parts, ": ")
 }
 
-// IsHTTPError returns true if the error is an HTTPError.
+// IsHTTPError returns true if the error is (or wraps) an HTTPError.
 func IsHTTPError(err error) bool {
-	_, ok := err.(*HTTPError)
-	return ok
+	var target *HTTPError
+	return errors.As(err, &target)
 }
 
-// GetHTTPError returns the HTTPError if err is an HTTPError, nil otherwise.
+// GetHTTPError returns the HTTPError if err is (or wraps) an HTTPError, nil otherwise.
 //
 // Useful for accessing structured error details:
 //
@@ -371,7 +372,8 @@ func IsHTTPError(err error) bool {
 //	    }
 //	}
 func GetHTTPError(err error) *HTTPError {
-	if httpErr, ok := err.(*HTTPError); ok {
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
 		return httpErr
 	}
 	return nil

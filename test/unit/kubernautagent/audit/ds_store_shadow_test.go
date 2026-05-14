@@ -132,7 +132,7 @@ var _ = Describe("DS Store — Shadow LLM Audit Event Mapping (#1059)", func() {
 			Expect(recorder.calls).To(HaveLen(1))
 
 			ed := recorder.calls[0].EventData
-			payload, ok := ed.GetAlignmentVerdictPayload()
+			payload, ok := ed.GetAIAgentAlignmentVerdictPayload()
 			Expect(ok).To(BeTrue(), "EventData must be AlignmentVerdictPayload")
 			Expect(payload.ShadowPromptTokens.Value).To(Equal(150))
 			Expect(payload.ShadowCompletionTokens.Value).To(Equal(250))
@@ -163,7 +163,7 @@ var _ = Describe("DS Store — Shadow LLM Audit Event Mapping (#1059)", func() {
 			Expect(recorder.calls).To(HaveLen(1))
 
 			ed := recorder.calls[0].EventData
-			payload, ok := ed.GetAlignmentVerdictPayload()
+			payload, ok := ed.GetAIAgentAlignmentVerdictPayload()
 			Expect(ok).To(BeTrue())
 			Expect(payload.ShadowPromptTokens.Set).To(BeFalse(), "shadow_prompt_tokens should not be set when zero")
 			Expect(payload.ShadowCompletionTokens.Set).To(BeFalse(), "shadow_completion_tokens should not be set when zero")

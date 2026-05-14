@@ -1058,19 +1058,6 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrlBuilder.Complete(r)
 }
 
-// sanitizeLabelValue makes a string safe for use as a Kubernetes label value
-// Label values must consist of alphanumeric characters, '-', '_' or '.'
-// and must start and end with an alphanumeric character
-func sanitizeLabelValue(s string) string {
-	// Replace forward slashes with double underscores
-	result := strings.ReplaceAll(s, "/", "__")
-	// Truncate to max 63 characters (K8s label value limit)
-	if len(result) > 63 {
-		result = result[:63]
-	}
-	return result
-}
-
 // handleJobAlreadyExists implements Issue #374 pre-execution cleanup for completed Jobs.
 // When a Job creation fails with AlreadyExists, this method checks if the existing Job
 // is in a terminal state. If so, it cleans up the stale Job and retries creation.
@@ -1766,41 +1753,6 @@ func (r *WorkflowExecutionReconciler) resolveExecutionEngine(_ context.Context, 
 		return wfe.Status.ExecutionEngine, nil
 	}
 	return "", fmt.Errorf("execution engine not resolved for WFE %s/%s — expected to be set during Pending phase", wfe.Namespace, wfe.Name)
-}
-
-// resolveExecutionBundle overrides wfe.Spec.WorkflowRef.ExecutionBundle with the
-// authoritative value from the DS catalog (defense-in-depth). Non-fatal: if the
-// querier is nil, the workflow ID is empty, or the catalog entry has no bundle,
-// the existing spec value is preserved.
-func (r *WorkflowExecutionReconciler) resolveExecutionBundle(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
-	if r.WorkflowQuerier == nil || wfe.Spec.WorkflowRef.WorkflowID == "" {
-		return nil
-	}
-
-	logger := log.FromContext(ctx)
-
-	meta, err := r.WorkflowQuerier.GetWorkflowSchemaMetadata(ctx, wfe.Spec.WorkflowRef.WorkflowID)
-	if err != nil {
-		return fmt.Errorf("failed to resolve execution bundle from DS for workflow %s: %w", wfe.Spec.WorkflowRef.WorkflowID, err)
-	}
-
-	if meta.ExecutionBundle == "" {
-		return nil
-	}
-
-	if wfe.Spec.WorkflowRef.ExecutionBundle != meta.ExecutionBundle {
-		logger.Info("Overriding execution bundle from DS catalog",
-			"specBundle", wfe.Spec.WorkflowRef.ExecutionBundle,
-			"catalogBundle", meta.ExecutionBundle,
-			"workflowID", wfe.Spec.WorkflowRef.WorkflowID,
-		)
-	}
-	wfe.Spec.WorkflowRef.ExecutionBundle = meta.ExecutionBundle
-	if meta.ExecutionBundleDigest != "" {
-		wfe.Spec.WorkflowRef.ExecutionBundleDigest = meta.ExecutionBundleDigest
-	}
-
-	return nil
 }
 
 // ========================================

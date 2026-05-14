@@ -29,7 +29,9 @@ import (
 )
 
 var (
+	// ErrActionTypeNotFound is returned when a query targets an action type that does not exist.
 	ErrActionTypeNotFound = errors.New("action type not found")
+	// ErrActionTypeDisabled is returned when an operation targets an action type that has been disabled.
 	ErrActionTypeDisabled = errors.New("action type is disabled")
 )
 
@@ -101,7 +103,7 @@ func (r *Repository) GetByName(ctx context.Context, actionType string) (*models.
 		actionType,
 	).StructScan(&at)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get action type %q: %w", actionType, err)
@@ -213,7 +215,7 @@ func (r *Repository) disableOnce(ctx context.Context, actionType string, disable
 		actionType,
 	).StructScan(&existing)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: %s", ErrActionTypeNotFound, actionType)
 		}
 		return nil, fmt.Errorf("check action type for disable: %w", err)
@@ -309,7 +311,7 @@ func (r *Repository) forceDisableOnce(ctx context.Context, actionType string, di
 		actionType,
 	).StructScan(&existing)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: %s", ErrActionTypeNotFound, actionType)
 		}
 		return nil, fmt.Errorf("check action type for force-disable: %w", err)

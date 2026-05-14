@@ -1,0 +1,60 @@
+---
+globs: "*_test.go,test/**/*,cmd/**/main.go"
+description: "Wiring verification audit — ensures all production code paths have integration tests proving they are reachable"
+---
+
+# Wiring Verification Audit
+
+## Trigger Prompt
+
+> "Perform a wiring verification audit: for every new code path, prove it has a production caller and an integration test that exercises the full chain from HTTP entry to observable output."
+
+When this prompt is issued (or as TDD Phase 4 after REFACTOR), execute the following protocol.
+
+## Protocol
+
+### Step 1: Trace every new production code path
+
+For each new or modified function, middleware, handler, or method:
+
+1. **Identify its CALLER in production** (not tests). If it has no production caller, it is **dead code** — flag it immediately.
+2. **Identify the ENTRY POINT** that reaches it (HTTP handler, controller reconcile, CLI command, signal handler).
+3. **Identify the EXIT POINT** (HTTP response, K8s status update, audit event stored, log emitted, channel send, SSE frame).
+
+### Step 2: Check each path has an integration test
+
+For each traced path, verify there is an integration test that exercises the **full chain** from entry point to exit point:
+
+| Wiring Type | Required Proof |
+|-------------|----------------|
+| HTTP middleware | IT using `httptest.Server` asserts middleware effect in HTTP response headers/body/status |
+| Handler endpoint | IT makes real HTTP request (not direct method call) and asserts response |
+| Context propagation | IT proves value set in middleware is consumed by downstream handler/manager |
+| Event/audit emission | IT triggers code path via HTTP and asserts event stored in audit store |
+| Channel/sink wiring | IT proves events sent to channel arrive at HTTP consumer (SSE body) |
+| Graceful shutdown | Process-level E2E sends SIGTERM and asserts cleanup |
+| Rate limiting | IT exceeds burst and asserts 429 |
+
+### Step 3: Write missing wiring ITs
+
+For each path missing coverage, write an integration test using `httptest.NewServer` with the **same router/middleware stack as `main.go`** to ensure CI parallel safety.
+
+### Step 4: Declare wiring confidence
+
+List every production code path and its corresponding wiring IT. If any path lacks an IT, document why (e.g., "timing property verified by code review of `subtle.ConstantTimeCompare`").
+
+## Critical Rule
+
+**Unit tests do NOT count as wiring proof.** A unit test that calls a function directly proves the function works in isolation. It does NOT prove the function is reachable from the entry point in production. Only integration tests that traverse the real middleware/handler/router stack count as wiring proof.
+
+## CI Parallel Safety
+
+- Use `httptest.NewServer` (`:0` port) — no port conflicts
+- Each test creates its own `Store`, `Manager`, `Handler` — no shared state
+- Process-level E2E uses subprocess with random port flag
+
+## When to Apply
+
+- **Mandatory**: After TDD REFACTOR phase for any PR that adds middleware, handlers, context propagation, event emission, or startup wiring
+- **On demand**: When triggered by the wiring verification prompt
+- **Pre-merge**: As part of comprehensive adversarial due diligence

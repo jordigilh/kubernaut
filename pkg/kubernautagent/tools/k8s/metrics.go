@@ -96,7 +96,8 @@ func (t *topPodsTool) Execute(ctx context.Context, args json.RawMessage) (string
 
 	var sb strings.Builder
 	sb.WriteString("NAMESPACE\tNAME\tCPU\tMEMORY\n")
-	for _, pm := range podMetrics.Items {
+	for i := range podMetrics.Items {
+		pm := &podMetrics.Items[i]
 		var cpuTotal, memTotal int64
 		for _, c := range pm.Containers {
 			cpuTotal += c.Usage.Cpu().MilliValue()
@@ -123,7 +124,8 @@ func (t *topNodesTool) Execute(ctx context.Context, args json.RawMessage) (strin
 
 	var sb strings.Builder
 	sb.WriteString("NAME\tCPU\tMEMORY\n")
-	for _, nm := range nodeMetrics.Items {
+	for i := range nodeMetrics.Items {
+		nm := &nodeMetrics.Items[i]
 		cpu := nm.Usage.Cpu().MilliValue()
 		mem := nm.Usage.Memory().Value()
 		fmt.Fprintf(&sb, "%s\t%dm\t%dMi\n", nm.Name, cpu, mem/(1024*1024))

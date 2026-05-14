@@ -569,6 +569,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 ---
 
+## Implementation Status (v1.5)
+
+As implemented in **`pkg/datastorage/server`** (`Server.Shutdown`), graceful shutdown aggregates non-fatal step failures via **`errors.Join`** so operators observe every partial failure instead of masking earlier errors. Sequence additions include **`DLQRetryWorker.Stop()`** before **`DrainWithTimeout`** (DD-009), **`RetentionWorker.Stop()`** ahead of **`sql.DB.Close()`** (FedRAMP **AU-11**, #1048), and **`config.Server.shutdownTimeout`** (YAML `shutdownTimeout`) budgeting **`http.Server.Shutdown`** alongside the propagation/poll timers.
+
+---
+
 ## References
 
 - **Kubernetes Pod Termination Lifecycle**: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination

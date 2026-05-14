@@ -39,7 +39,7 @@ var _ = Describe("ResolveGCPCredentialIndirection — #686", func() {
 		var err error
 		credDir, err = os.MkdirTemp("", "cred-resolver-test-*")
 		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() { os.RemoveAll(credDir) })
+		DeferCleanup(func() { Expect(os.RemoveAll(credDir)).To(Succeed()) })
 	})
 
 	// -- Passthrough scenarios --

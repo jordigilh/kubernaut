@@ -55,7 +55,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", Label("integration
 
 		It("IT-RO-265-001: terminal RR should have RetentionExpiryTime set by reconciler", func() {
 			By("Creating a RemediationRequest")
-			rr := createRemediationRequest(namespace, rrName)
+			_ = createRemediationRequest(namespace, rrName)
 
 			By("Waiting for RR to transition to Processing (SP created)")
 			Eventually(func() remediationv1.RemediationPhase {
@@ -125,14 +125,14 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", Label("integration
 				"Behavior: RetentionExpiryTime must be set on terminal RR within one reconcile cycle")
 
 			By("Verifying CompletedAt is set on terminal RR (#265 F3)")
-			rr = &remediationv1.RemediationRequest{}
+			rr := &remediationv1.RemediationRequest{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr)).To(Succeed())
 			Expect(rr.Status.CompletedAt).NotTo(BeNil(),
 				"Behavior: CompletedAt must be set on terminal phase (F3 fix)")
 
 			GinkgoWriter.Printf("✅ IT-RO-265-001: RetentionExpiryTime=%s, CompletedAt=%s\n",
-				rr.Status.RetentionExpiryTime.Time.Format(time.RFC3339),
-				rr.Status.CompletedAt.Time.Format(time.RFC3339))
+				rr.Status.RetentionExpiryTime.Format(time.RFC3339),
+				rr.Status.CompletedAt.Format(time.RFC3339))
 		})
 
 		It("IT-RO-265-002: RR with expired RetentionExpiryTime should be deleted", func() {

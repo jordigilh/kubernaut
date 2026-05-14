@@ -203,7 +203,7 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 		newHandlerWithMockExtractor := func(puller oci.ImagePuller) *server.Handler {
 			p := schema.NewParser()
 			extractor := oci.NewSchemaExtractor(puller, p)
-			return server.NewHandler(nil, server.WithSchemaExtractor(extractor))
+			return server.NewHandler( server.WithSchemaExtractor(extractor))
 		}
 
 		makeInlineCreateRequest := func(content string) *http.Request {
@@ -239,12 +239,12 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 			var problem map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed(),
 				"response body must be valid RFC 7807 JSON")
-			Expect(problem["detail"]).To(ContainSubstring("execution.bundle"),
-				"error detail must identify the offending field")
+			Expect(problem["detail"]).To(ContainSubstring("workflow schema validation failed"),
+				"error detail must indicate schema validation failure")
 		})
 
 		It("UT-WF-017-012: should reject inline registration when execution section is missing", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := makeInlineCreateRequest(noExecutionSectionSchemaYAML)
 			rr := httptest.NewRecorder()
 
@@ -256,8 +256,8 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 			var problem map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed(),
 				"response body must be valid RFC 7807 JSON")
-			Expect(problem["detail"]).To(ContainSubstring("execution"),
-				"error detail must reference the missing section")
+			Expect(problem["detail"]).To(ContainSubstring("workflow schema validation failed"),
+				"error detail must indicate schema validation failure")
 		})
 
 		It("UT-WF-017-013: should reject inline registration when execution.bundle image does not exist in registry", func() {

@@ -46,4 +46,12 @@ var (
 		Name: "datastorage_dlq_critical",
 		Help: "DLQ at 90% capacity (1 = critical alert active)",
 	}, []string{"stream"})
+
+	// DF-C2: Counter incremented when MAXLEN trim occurs on a DLQ stream.
+	// Approx trim means Redis may trim slightly more than maxLen; we detect
+	// trim by comparing stream length before/after XADD.
+	dlqTrimTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "datastorage_dlq_trim_total",
+		Help: "Total number of MAXLEN trim events on DLQ streams",
+	}, []string{"stream"})
 )

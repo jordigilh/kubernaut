@@ -332,7 +332,15 @@ var _ = SynchronizedAfterSuite(
 		// Otherwise: export logs on failure, then always delete cluster
 		preserveCluster := keepCluster == "true"
 
-		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
+		// Collect pod logs BEFORE coverage collection, which scales the
+		// deployment to 0 and waits for pod termination. If we collect
+		// after, the container is removed and its logs are lost.
+		if anyFailure {
+			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath,
+				sharedNamespace, "authwebhook", GinkgoWriter)
+		}
+
+		// DD-TEST-007: Collect E2E binary coverage AFTER log export but BEFORE cluster deletion
 		if coverageMode {
 			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
 				ServiceName:    "authwebhook",

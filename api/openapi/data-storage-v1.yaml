@@ -9,13 +9,13 @@ info:
     - BR-STORAGE-001 to BR-STORAGE-020: Audit write API
     - BR-STORAGE-021: Incident query API (READ)
     - BR-STORAGE-024: RFC 7807 error responses
-    - BR-AUDIT-006: Legal hold capability (SOC2 Gap #8)
+    - BR-AUDIT-004: Legal hold and retention policies (SOC2 Gap #8)
 
     **Design Decisions**:
     - ADR-031: OpenAPI 3.0+ specification for all stateless REST APIs
     - ADR-032: Data Access Layer Isolation (only Data Storage connects to PostgreSQL)
     - DD-009: Dead Letter Queue fallback on database errors
-    - DD-AUTH-004: OAuth-proxy sidecar for authentication/authorization
+    - DD-AUTH-014: Tiered SAR authorization
     - DD-AUTH-005: Client authentication pattern (ServiceAccount tokens)
 
     **Architecture**:
@@ -100,7 +100,7 @@ tags:
   - name: Audit Reconstruction API
     description: |
       RemediationRequest reconstruction from audit trail.
-      Implements BR-AUDIT-006 (SOC2 compliance).
+      Implements BR-RR-RECON-001 (SOC2 compliance).
   - name: Remediation History API
     description: |
       Remediation history context for LLM prompt enrichment.
@@ -141,7 +141,10 @@ paths:
           required: true
           schema:
             type: string
-          description: Kubernetes resource type (pod, deployment, node, etc.)
+          description: >-
+            Kubernetes resource GVK (apiVersion/Kind). Format: "group/version/Kind" for named groups
+            (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod").
+            Wildcard "*" matches all components. Issue #1051.
         - name: environment
           in: query
           required: true
@@ -248,7 +251,9 @@ paths:
           required: true
           schema:
             type: string
-          description: Kubernetes resource type
+          description: >-
+            Kubernetes resource GVK (apiVersion/Kind). Format: "group/version/Kind" for named groups
+            (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod"). Issue #1051.
         - name: environment
           in: query
           required: true
@@ -419,6 +424,10 @@ paths:
           in: query
           schema:
             type: string
+          description: >-
+            Kubernetes resource GVK filter (apiVersion/Kind). Format: "group/version/Kind"
+            (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod").
+            Wildcard "*" matches all components. Issue #1051.
         - name: workflow_name
           in: query
           schema:
@@ -488,7 +497,10 @@ paths:
           required: false
           schema:
             type: string
-          description: "Security gate: Kubernetes resource type"
+          description: >-
+            Security gate: Kubernetes resource GVK (apiVersion/Kind). Format:
+            "group/version/Kind" (e.g. "apps/v1/Deployment"), "version/Kind" for
+            core group (e.g. "v1/Pod"). Issue #1051.
         - name: environment
           in: query
           required: false
@@ -1203,7 +1215,7 @@ paths:
         Places a legal hold on all audit events for a given correlation_id.
         Events with legal hold cannot be deleted (enforced by database trigger).
 
-        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
         **SOC2 Gap**: Gap #8 (Legal Hold enforcement for Sarbanes-Oxley, HIPAA)
 
         **Behavior**:
@@ -1280,7 +1292,7 @@ paths:
       description: |
         Returns a list of all active legal holds across all audit events.
 
-        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
         **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
 
         **Behavior**:
@@ -1487,7 +1499,7 @@ paths:
         Releases a legal hold on all audit events for a given correlation_id.
         Events can be deleted after legal hold is released.
 
-        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
         **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
 
         **Behavior**:
@@ -1566,7 +1578,7 @@ paths:
       description: |
         Reconstructs a complete RemediationRequest CRD from audit trail events.
 
-        **Business Requirement**: BR-AUDIT-006 (SOC2 compliance)
+        **Business Requirement**: BR-RR-RECON-001 (SOC2 compliance)
 
         **Workflow**:
         1. Query audit events for given correlation_id
@@ -1645,9 +1657,93 @@ paths:
                     status: 404
                     detail: "No audit events found for correlation_id: nonexistent-correlation"
                     instance: "/api/v1/audit/remediation-requests/nonexistent-correlation/reconstruct"
+        '422':
+          description: |
+            Unprocessable Entity - audit data is present but the
+            RemediationRequest cannot be assembled or fails validation.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+              examples:
+                build_failed:
+                  summary: RR build failed from audit data
+                  value:
+                    type: "https://kubernaut.ai/problems/reconstruction/unprocessable"
+                    title: "Build Failed"
+                    status: 422
+                    detail: "Audit data present but RemediationRequest cannot be assembled"
+                    instance: "/api/v1/audit/remediation-requests/partial-data/reconstruct"
+                validation_failed:
+                  summary: Reconstructed RR fails validation
+                  value:
+                    type: "https://kubernaut.ai/problems/reconstruction/unprocessable"
+                    title: "Validation Failed"
+                    status: 422
+                    detail: "Reconstructed RemediationRequest does not pass validation rules"
+                    instance: "/api/v1/audit/remediation-requests/invalid-data/reconstruct"
         '500':
           description: |
             Internal Server Error - database or reconstruction logic failure.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/audit/verify-chain:
+    post:
+      tags:
+        - Audit Chain Verification API
+      summary: Verify hash chain integrity for a correlation_id
+      description: |
+        Verifies the integrity of audit event hash chains for a given correlation_id.
+        Returns verification status, any broken links, and tampered events.
+
+        **Compliance**:
+        - SOC 2 Type II: Tamper-evident audit logs (Trust Services Criteria CC8.1)
+        - NIST 800-53: AU-9 (Protection of Audit Information)
+        - Sarbanes-Oxley: Section 404 (Internal Controls)
+
+        **Business Requirement**: BR-AUDIT-007 (SOC2 Gap #9)
+
+        **Authentication**: Protected by OAuth-proxy in production/E2E.
+      operationId: verifyAuditChain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyChainRequest'
+            example:
+              correlation_id: "rr-prometheus-alert-highcpu-abc123"
+      responses:
+        '200':
+          description: |
+            Verification completed. Check `is_valid` to determine if the chain is intact.
+            Returns 200 even when tampering is detected (use `is_valid: false` to detect).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyChainResponse'
+        '400':
+          description: |
+            Bad Request - missing or invalid request body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+              examples:
+                missing_correlation_id:
+                  summary: Missing correlation_id field
+                  value:
+                    type: "https://kubernaut.ai/problems/missing-correlation-id"
+                    title: "Missing Required Field"
+                    status: 400
+                    detail: "Field 'correlation_id' is required"
+                    instance: "/api/v1/audit/verify-chain"
+        '500':
+          description: |
+            Internal Server Error - database or verification logic failure.
           content:
             application/problem+json:
               schema:
@@ -1830,106 +1926,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
-  /health:
-    get:
-      tags:
-        - Health
-      summary: Overall health check
-      description: |
-        Returns 200 if service is healthy (database and Redis reachable).
-        Used by Kubernetes liveness probe (DD-007).
-      operationId: healthCheck
-      responses:
-        '200':
-          description: Service is healthy
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [healthy]
-                example:
-                  status: "healthy"
-        '503':
-          description: Service is unhealthy
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [unhealthy]
-                  error:
-                    type: string
-                example:
-                  status: "unhealthy"
-                  error: "database connection failed"
-
-  /health/ready:
-    get:
-      tags:
-        - Health
-      summary: Readiness check
-      description: |
-        Returns 200 if service is ready to accept traffic.
-        Returns 503 during graceful shutdown (DD-007 4-step pattern).
-        Used by Kubernetes readiness probe.
-      operationId: readinessCheck
-      responses:
-        '200':
-          description: Service is ready
-        '503':
-          description: Service is shutting down (not ready for new requests)
-
-  /health/live:
-    get:
-      tags:
-        - Health
-      summary: Liveness check
-      description: |
-        Returns 200 if service process is alive.
-        Does not check dependencies.
-        Used by Kubernetes liveness probe.
-      operationId: livenessCheck
-      responses:
-        '200':
-          description: Service is alive
-
-  /metrics:
-    get:
-      tags:
-        - Metrics
-      summary: Prometheus metrics
-      description: |
-        Exposes Prometheus metrics in text format.
-
-        **Metrics Exposed** (BR-STORAGE-019, GAP-10):
-        - `datastorage_audit_traces_total{service,status}` - Audit write operations
-        - `datastorage_audit_lag_seconds{service}` - Time between event and audit write
-        - `datastorage_write_duration_seconds{table}` - Database write latency
-        - `datastorage_validation_failures_total{field,reason}` - Validation errors
-      operationId: getMetrics
-      responses:
-        '200':
-          description: Prometheus metrics
-          content:
-            text/plain:
-              schema:
-                type: string
-              example: |
-                # HELP datastorage_audit_traces_total Total number of audit traces written by service and status
-                # TYPE datastorage_audit_traces_total counter
-                datastorage_audit_traces_total{service="notification",status="success"} 42
-                datastorage_audit_traces_total{service="notification",status="dlq_fallback"} 3
-
-                # HELP datastorage_audit_lag_seconds Time lag between event occurrence and audit write in seconds
-                # TYPE datastorage_audit_lag_seconds histogram
-                datastorage_audit_lag_seconds_bucket{service="notification",le="0.1"} 10
-                datastorage_audit_lag_seconds_bucket{service="notification",le="0.5"} 35
-                datastorage_audit_lag_seconds_bucket{service="notification",le="1"} 42
+  # NOTE: /health, /health/ready, /health/live, and /metrics are served on a
+  # dedicated health server (port 8081) and are NOT part of the API server.
+  # See pkg/datastorage/health/ and DD-007 for details.
 
 components:
   schemas:
@@ -2180,7 +2179,7 @@ components:
       description: |
         Response for RemediationRequest reconstruction from audit trail.
         Contains the reconstructed RR in YAML format and validation results.
-        Implements BR-AUDIT-006 (SOC2 compliance).
+        Implements BR-RR-RECON-001 (SOC2 compliance).
       required:
         - remediation_request_yaml
         - validation
@@ -2280,6 +2279,66 @@ components:
           example:
             - "SignalAnnotations are missing (Gap #3) - annotations provide additional metadata"
 
+    VerifyChainRequest:
+      type: object
+      description: Request body for hash chain verification.
+      required:
+        - correlation_id
+      properties:
+        correlation_id:
+          type: string
+          description: The correlation ID whose event hash chain should be verified.
+          example: "rr-prometheus-alert-highcpu-abc123"
+
+    VerifyChainResponse:
+      type: object
+      description: |
+        Hash chain verification result. `is_valid: true` means the entire chain is intact.
+        When `is_valid: false`, the `tampered_events` array describes each broken link.
+      required:
+        - correlation_id
+        - is_valid
+        - total_events
+        - verified_events
+        - verification_time
+        - message
+      properties:
+        correlation_id:
+          type: string
+        is_valid:
+          type: boolean
+        total_events:
+          type: integer
+        verified_events:
+          type: integer
+        tampered_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/TamperedEvent'
+        verification_time:
+          type: string
+          format: date-time
+        message:
+          type: string
+
+    TamperedEvent:
+      type: object
+      description: Details about a single tampered event in the hash chain.
+      properties:
+        event_id:
+          type: string
+        event_timestamp:
+          type: string
+          format: date-time
+        expected_hash:
+          type: string
+        actual_hash:
+          type: string
+        previous_hash:
+          type: string
+        message:
+          type: string
+
     RFC7807Problem:
       type: object
       description: |
@@ -2370,7 +2429,7 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, approval, effectiveness, actiontype]
+          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, approval, effectiveness, actiontype, apifrontend]
           description: |
             Domain-level event category (ADR-034 v1.8, Issue #306).
             Per convention: event_category identifies the business domain of the event.
@@ -2387,6 +2446,7 @@ components:
             - approval: Remediation approval request decision events
             - effectiveness: Effectiveness assessment and monitoring events
             - actiontype: ActionType taxonomy lifecycle events (Issue #300)
+            - apifrontend: API Frontend service — triage, session, delegation, and user decision events (Issue #1021)
           example: gateway
         event_action:
           type: string
@@ -2433,6 +2493,26 @@ components:
         duration_ms:
           type: integer
           nullable: true
+        parent_event_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Parent row partition timestamp; required with parent_event_id so the FK hits the correct
+            audit_events partition (DATE derived at persistence—align with parent's event_timestamp).
+        error_code:
+          type: string
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        retention_days:
+          type: integer
+          nullable: true
+          description: Retention override in days; storage defaults to 2555 when omitted.
+        is_sensitive:
+          type: boolean
+          nullable: true
         event_data:
           description: |
             Service-specific event data as structured type.
@@ -2470,8 +2550,20 @@ components:
             - $ref: '#/components/schemas/LLMResponsePayload'
             - $ref: '#/components/schemas/LLMToolCallPayload'
             - $ref: '#/components/schemas/WorkflowValidationPayload'
-            - $ref: '#/components/schemas/AlignmentStepPayload'
-            - $ref: '#/components/schemas/AlignmentVerdictPayload'
+            - $ref: '#/components/schemas/AIAgentSessionStartedPayload'
+            - $ref: '#/components/schemas/AIAgentSessionCompletedPayload'
+            - $ref: '#/components/schemas/AIAgentSessionFailedPayload'
+            - $ref: '#/components/schemas/AIAgentSessionCancelledPayload'
+            - $ref: '#/components/schemas/AIAgentSessionSuspendedPayload'
+            - $ref: '#/components/schemas/AIAgentSessionResumedPayload'
+            - $ref: '#/components/schemas/AIAgentInteractiveStartedPayload'
+            - $ref: '#/components/schemas/AIAgentInteractiveCompletedPayload'
+            - $ref: '#/components/schemas/AIAgentInteractiveK8sCallPayload'
+            - $ref: '#/components/schemas/AIAgentSessionObservedPayload'
+            - $ref: '#/components/schemas/AIAgentSessionAccessDeniedPayload'
+            - $ref: '#/components/schemas/AIAgentInvestigationCancelledPayload'
+            - $ref: '#/components/schemas/AIAgentAlignmentStepPayload'
+            - $ref: '#/components/schemas/AIAgentAlignmentVerdictPayload'
             - $ref: '#/components/schemas/ShadowLLMRequestPayload'
             - $ref: '#/components/schemas/ShadowLLMResponsePayload'
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
@@ -2483,6 +2575,17 @@ components:
             - $ref: '#/components/schemas/ActionTypeCatalogReenabledPayload'
             - $ref: '#/components/schemas/ActionTypeCatalogDisableDeniedPayload'
             - $ref: '#/components/schemas/ActionTypeWebhookAuditPayload'
+            - $ref: '#/components/schemas/ApifrontendTriageStartedPayload'
+            - $ref: '#/components/schemas/ApifrontendTriageCompletedPayload'
+            - $ref: '#/components/schemas/ApifrontendRRCreatedPayload'
+            - $ref: '#/components/schemas/ApifrontendRRDeduplicatedPayload'
+            - $ref: '#/components/schemas/ApifrontendSessionCreatedPayload'
+            - $ref: '#/components/schemas/ApifrontendSessionCompletedPayload'
+            - $ref: '#/components/schemas/ApifrontendKADelegatedPayload'
+            - $ref: '#/components/schemas/ApifrontendKAResultReceivedPayload'
+            - $ref: '#/components/schemas/ApifrontendUserDecisionPayload'
+            - $ref: '#/components/schemas/ApifrontendAuthAccessDeniedPayload'
+            - $ref: '#/components/schemas/ApifrontendToolExecutedPayload'
           discriminator:
             propertyName: event_type
             mapping:
@@ -2554,8 +2657,20 @@ components:
               'aiagent.llm.response': '#/components/schemas/LLMResponsePayload'
               'aiagent.llm.tool_call': '#/components/schemas/LLMToolCallPayload'
               'aiagent.workflow.validation_attempt': '#/components/schemas/WorkflowValidationPayload'
-              'aiagent.alignment.step': '#/components/schemas/AlignmentStepPayload'
-              'aiagent.alignment.verdict': '#/components/schemas/AlignmentVerdictPayload'
+              'aiagent.session.started': '#/components/schemas/AIAgentSessionStartedPayload'
+              'aiagent.session.completed': '#/components/schemas/AIAgentSessionCompletedPayload'
+              'aiagent.session.failed': '#/components/schemas/AIAgentSessionFailedPayload'
+              'aiagent.session.cancelled': '#/components/schemas/AIAgentSessionCancelledPayload'
+              'aiagent.session.suspended': '#/components/schemas/AIAgentSessionSuspendedPayload'
+              'aiagent.session.resumed': '#/components/schemas/AIAgentSessionResumedPayload'
+              'aiagent.interactive.started': '#/components/schemas/AIAgentInteractiveStartedPayload'
+              'aiagent.interactive.completed': '#/components/schemas/AIAgentInteractiveCompletedPayload'
+              'aiagent.interactive.k8s_call': '#/components/schemas/AIAgentInteractiveK8sCallPayload'
+              'aiagent.session.observed': '#/components/schemas/AIAgentSessionObservedPayload'
+              'aiagent.session.access_denied': '#/components/schemas/AIAgentSessionAccessDeniedPayload'
+              'aiagent.investigation.cancelled': '#/components/schemas/AIAgentInvestigationCancelledPayload'
+              'aiagent.alignment.step': '#/components/schemas/AIAgentAlignmentStepPayload'
+              'aiagent.alignment.verdict': '#/components/schemas/AIAgentAlignmentVerdictPayload'
               'aiagent.shadow.llm.request': '#/components/schemas/ShadowLLMRequestPayload'
               'aiagent.shadow.llm.response': '#/components/schemas/ShadowLLMResponsePayload'
               'effectiveness.health.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
@@ -2576,6 +2691,17 @@ components:
               'actiontype.denied.create': '#/components/schemas/ActionTypeWebhookAuditPayload'
               'actiontype.denied.update': '#/components/schemas/ActionTypeWebhookAuditPayload'
               'actiontype.denied.delete': '#/components/schemas/ActionTypeWebhookAuditPayload'
+              'apifrontend.triage.started': '#/components/schemas/ApifrontendTriageStartedPayload'
+              'apifrontend.triage.completed': '#/components/schemas/ApifrontendTriageCompletedPayload'
+              'apifrontend.rr.created': '#/components/schemas/ApifrontendRRCreatedPayload'
+              'apifrontend.rr.deduplicated': '#/components/schemas/ApifrontendRRDeduplicatedPayload'
+              'apifrontend.session.created': '#/components/schemas/ApifrontendSessionCreatedPayload'
+              'apifrontend.session.completed': '#/components/schemas/ApifrontendSessionCompletedPayload'
+              'apifrontend.ka.delegated': '#/components/schemas/ApifrontendKADelegatedPayload'
+              'apifrontend.ka.result_received': '#/components/schemas/ApifrontendKAResultReceivedPayload'
+              'apifrontend.user.decision': '#/components/schemas/ApifrontendUserDecisionPayload'
+              'apifrontend.auth.access_denied': '#/components/schemas/ApifrontendAuthAccessDeniedPayload'
+              'apifrontend.tool.executed': '#/components/schemas/ApifrontendToolExecutedPayload'
           # Removed x-go-type override to use proper oneOf discriminator
           # Let oapi-codegen generate appropriate union type from oneOf schemas
 
@@ -2658,6 +2784,26 @@ components:
               format: date
               nullable: true
               description: "Date of the event (YYYY-MM-DD). Nullable to handle format mismatches from DataStorage."
+            event_hash:
+              type: string
+              nullable: true
+              description: SHA-256 chain hash computed at write time (query/export responses).
+            previous_event_hash:
+              type: string
+              nullable: true
+            legal_hold:
+              type: boolean
+              nullable: true
+            legal_hold_reason:
+              type: string
+              nullable: true
+            legal_hold_placed_by:
+              type: string
+              nullable: true
+            legal_hold_placed_at:
+              type: string
+              format: date-time
+              nullable: true
 
     # ========================================
     # WORKFLOW DISCOVERY SCHEMAS (DD-WORKFLOW-016, DD-HAPI-017)
@@ -2863,8 +3009,8 @@ components:
           example: "critical"
         component:
           type: string
-          description: "Component type (mandatory: pod, node, deployment, etc.)"
-          example: "pod"
+          description: "Kubernetes resource GVK (apiVersion/Kind, e.g. apps/v1/Deployment, v1/Pod). Issue #1051."
+          example: "apps/v1/Deployment"
         environment:
           type: string
           description: "Environment filter (mandatory, single value from Signal Processing)"
@@ -2907,7 +3053,7 @@ components:
           items:
             type: string
           minItems: 1
-          description: "Kubernetes resource type(s) this workflow targets (e.g., pod, deployment, node). Issue #790: now an array like severity/environment."
+          description: "Kubernetes resource GVK(s) this workflow targets in apiVersion/Kind format (e.g. apps/v1/Deployment, v1/Pod). Wildcard '*' matches all. Issues #790, #1051."
           example: [pod]
         environment:
           type: array
@@ -5610,10 +5756,286 @@ components:
           default: false
           description: Whether this is the final validation attempt
 
-    AlignmentStepPayload:
+    # ─── Session Lifecycle Payloads (BR-AUDIT-070, SOC2 CC7.2/CC8.1) ───
+
+    AIAgentSessionStartedPayload:
       type: object
-      required: [event_type, event_id, incident_id, step_index, step_kind]
-      description: Shadow agent alignment check step payload (aiagent.alignment.step). Emitted for each step flagged as suspicious during shadow evaluation.
+      required: [event_type, event_id, session_id]
+      description: Session started event payload (aiagent.session.started) - Emitted when a new investigation session begins (SOC2 CC7.2, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.started']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+        incident_id:
+          type: string
+          description: Incident correlation ID (remediation_id) linking to the triggering signal
+        signal_name:
+          type: string
+          description: Alert/signal name that triggered the investigation
+        severity:
+          type: string
+          description: Severity of the triggering signal
+        created_by:
+          type: string
+          description: Authenticated user identity that initiated the investigation
+
+    AIAgentSessionCompletedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Session completed event payload (aiagent.session.completed) - Emitted when investigation finishes successfully (SOC2 CC7.2, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.completed']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+
+    AIAgentSessionFailedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Session failed event payload (aiagent.session.failed) - Emitted when investigation encounters a fatal error (SOC2 CC7.2, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.failed']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+        error:
+          type: string
+          description: Error message from the failed investigation
+
+    AIAgentSessionCancelledPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Session cancelled event payload (aiagent.session.cancelled) - Emitted when an operator cancels an active investigation (SOC2 CC7.2, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.cancelled']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+
+    AIAgentSessionSuspendedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Session suspended event payload (aiagent.session.suspended) - Emitted when an autonomous investigation is suspended due to interactive takeover (BR-INTERACTIVE-004, SOC2 CC7.2)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.suspended']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+
+    AIAgentSessionResumedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Session resumed event payload (aiagent.session.resumed) - Emitted when autonomous investigation resumes after interactive session ends (BR-INTERACTIVE-004, SOC2 CC7.2)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.resumed']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+
+    AIAgentInteractiveStartedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Interactive session started payload (aiagent.interactive.started) - Emitted when a user acquires the interactive lease and begins driving the investigation (BR-INTERACTIVE-004, DD-INTERACTIVE-002)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.interactive.started']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Interactive session identifier
+
+    AIAgentInteractiveCompletedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Interactive session completed payload (aiagent.interactive.completed) - Emitted when an interactive session ends by complete, cancel, disconnect, or timeout (BR-INTERACTIVE-004, DD-INTERACTIVE-002)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.interactive.completed']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Interactive session identifier
+        reason:
+          type: string
+          description: Reason the interactive session ended (e.g., complete, disconnect, inactivity_timeout, ttl_expired)
+
+    AIAgentInteractiveK8sCallPayload:
+      type: object
+      required: [event_type, event_id, session_id, acting_user, resource, verb]
+      description: Interactive K8s API call audit payload (aiagent.interactive.k8s_call) - Emitted for each impersonated K8s API call during an interactive MCP session (BR-INTERACTIVE-003, BR-AUDIT-005)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.interactive.k8s_call']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Interactive session identifier
+        acting_user:
+          type: string
+          description: User identity performing the K8s call (from JWT/impersonation)
+        resource:
+          type: string
+          description: K8s resource type (e.g., pods, services, deployments)
+        verb:
+          type: string
+          description: K8s API verb (get, create, update, delete, patch)
+        namespace:
+          type: string
+          description: K8s namespace of the target resource (empty for cluster-scoped)
+        resource_name:
+          type: string
+          description: Name of the specific resource (empty for list operations)
+        http_status_code:
+          type: integer
+          description: HTTP status code from the K8s API server response
+        correlation_id:
+          type: string
+          description: Correlation ID linking to the parent remediation request
+
+    AIAgentSessionObservedPayload:
+      type: object
+      required: [event_type, event_id, session_id]
+      description: Session observed event payload (aiagent.session.observed) - Emitted when an operator subscribes to the SSE stream (SOC2 CC8.1, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.observed']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier
+        observer_user:
+          type: string
+          description: Authenticated user who subscribed to the session stream
+        session_owner:
+          type: string
+          description: User who owns the observed session (SEC-4 attribution)
+
+    AIAgentSessionAccessDeniedPayload:
+      type: object
+      required: [event_type, event_id, session_id, endpoint, requesting_user]
+      description: Session access denied event payload (aiagent.session.access_denied) - Emitted when a user attempts to access a session they do not own (SOC2 CC8.1, BR-AUDIT-070)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.session.access_denied']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Target session identifier
+        endpoint:
+          type: string
+          description: API endpoint that was accessed
+          example: "/api/v1/incident/session/{id}/status"
+        requesting_user:
+          type: string
+          description: Authenticated user who attempted the access
+        session_owner:
+          type: string
+          description: User who owns the target session
+
+    # ─── Investigation Cancellation Payload (BR-AUDIT-070, SOC2 CC8.1) ───
+
+    AIAgentInvestigationCancelledPayload:
+      type: object
+      required: [event_type, event_id, cancelled_phase, cancelled_at_turn]
+      description: Investigation-level cancellation event payload (aiagent.investigation.cancelled) - Carries investigator-internal state at cancellation point for forensic audit reconstruction (SOC2 CC8.1, BR-AUDIT-070). Distinct from session.cancelled which records the lifecycle transition.
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.investigation.cancelled']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        session_id:
+          type: string
+          description: Investigation session identifier for cross-event correlation (AUD-4)
+        cancelled_phase:
+          type: string
+          description: Investigation phase active at cancellation (rca or workflow_discovery)
+          example: "rca"
+        cancelled_at_turn:
+          type: integer
+          minimum: 0
+          description: LLM conversation turn number at cancellation
+        total_prompt_tokens:
+          type: integer
+          minimum: 0
+          description: Cumulative prompt tokens consumed before cancellation (cost attribution)
+        total_completion_tokens:
+          type: integer
+          minimum: 0
+          description: Cumulative completion tokens consumed before cancellation (cost attribution)
+        total_tokens:
+          type: integer
+          minimum: 0
+          description: Cumulative total tokens consumed before cancellation
+        accumulated_messages:
+          type: string
+          description: JSON-serialized conversation messages accumulated before cancellation (forensic RAG, capped at 64KB)
+
+    # ─── Alignment Payloads (BR-AUDIT-070, SOC2 CC7.2) ───
+
+    AIAgentAlignmentStepPayload:
+      type: object
+      required: [event_type, event_id, step_index, step_kind, explanation]
+      description: Alignment step event payload (aiagent.alignment.step) - Emitted per suspicious observation from the shadow agent alignment check (SOC2 CC7.2, BR-AUDIT-070)
       properties:
         event_type:
           type: string
@@ -5622,27 +6044,25 @@ components:
         event_id:
           type: string
           description: Unique event identifier
-        incident_id:
-          type: string
-          description: Incident correlation ID (signal name)
         step_index:
           type: integer
           minimum: 0
-          description: Index of the suspicious step in the investigation trace
+          description: Sequential index of the observed step
         step_kind:
           type: string
-          description: Kind of step (e.g., tool_result, llm_reasoning)
+          description: Kind of step observed (signal_input, tool_call, llm_response, etc.)
+          example: "tool_call"
         tool:
           type: string
-          description: Tool name used in the step (empty for non-tool steps)
+          description: Tool name if step_kind is tool_call
         explanation:
           type: string
-          description: Sanitized explanation of why the step was flagged
+          description: Shadow agent explanation of why the step was flagged as suspicious
 
-    AlignmentVerdictPayload:
+    AIAgentAlignmentVerdictPayload:
       type: object
-      required: [event_type, event_id, incident_id, result, flagged, total]
-      description: Shadow agent alignment verdict payload (aiagent.alignment.verdict). Emitted once per investigation after full shadow evaluation completes.
+      required: [event_type, event_id, result, flagged, total]
+      description: Alignment verdict event payload (aiagent.alignment.verdict) - Final verdict from the shadow agent alignment evaluation (SOC2 CC7.2, BR-AUDIT-070)
       properties:
         event_type:
           type: string
@@ -5651,16 +6071,13 @@ components:
         event_id:
           type: string
           description: Unique event identifier
-        incident_id:
-          type: string
-          description: Incident correlation ID (signal name)
         result:
           type: string
-          enum: ['aligned', 'suspicious']
-          description: Overall alignment verdict
+          description: Verdict result (aligned or suspicious)
+          example: "aligned"
         summary:
           type: string
-          description: Free-text summary of the shadow evaluation
+          description: Human-readable summary of the alignment verdict
         flagged:
           type: integer
           minimum: 0
@@ -6411,4 +6828,328 @@ components:
           type: string
         denial_operation:
           type: string
+
+    # ── Apifrontend Audit Payloads (Issue #1021) ──────────────────────────
+
+    ApifrontendTriageStartedPayload:
+      type: object
+      required: [event_type, session_id, persona]
+      description: Triage started event payload (apifrontend.triage.started) — user NL query received, triage LLM invocation begins (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.triage.started']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        persona:
+          type: string
+          enum: [sre, orchestrator, cicd, dashboard, audit, approver]
+          description: Detected/assigned persona from JWT role
+        model_name:
+          type: string
+          description: LLM model identifier used for triage
+        query_length:
+          type: integer
+          description: Length of user query in characters (not the query itself, for privacy)
+
+    ApifrontendTriageCompletedPayload:
+      type: object
+      required: [event_type, session_id, triage_outcome, triage_duration_ms]
+      description: Triage completed event payload (apifrontend.triage.completed) — triage finished with outcome (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.triage.completed']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        triage_outcome:
+          type: string
+          enum: [rr_created, no_issue_found, escalated, error]
+          description: Result of triage phase
+        triage_duration_ms:
+          type: integer
+          description: Wall-clock time for triage phase
+        tokens_input:
+          type: integer
+          description: Input tokens consumed during triage
+        tokens_output:
+          type: integer
+          description: Output tokens generated during triage
+        tools_called:
+          type: array
+          items:
+            type: string
+          description: Tools invoked during triage (names only)
+        tools_call_count:
+          type: integer
+          description: Total number of tool invocations
+
+    ApifrontendRRCreatedPayload:
+      type: object
+      required: [event_type, session_id, rr_name, rr_namespace, target_kind, target_name, fingerprint]
+      description: RemediationRequest created event payload (apifrontend.rr.created) — AF created an RR (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.rr.created']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        rr_name:
+          type: string
+          description: RemediationRequest CRD name
+        rr_namespace:
+          type: string
+          description: K8s namespace of the RR
+        target_kind:
+          type: string
+          description: Target resource kind (Deployment, StatefulSet, etc.)
+        target_name:
+          type: string
+          description: Target resource name
+        fingerprint:
+          type: string
+          description: Dedup fingerprint hash
+        signal_source:
+          type: string
+          description: How the signal was received (nl_query, alert_forward, etc.)
+
+    ApifrontendRRDeduplicatedPayload:
+      type: object
+      required: [event_type, session_id, fingerprint, existing_rr_name]
+      description: RR deduplicated event payload (apifrontend.rr.deduplicated) — RR creation skipped due to fingerprint match (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.rr.deduplicated']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        fingerprint:
+          type: string
+          description: The matching fingerprint hash
+        existing_rr_name:
+          type: string
+          description: Name of the existing RR that matched
+        existing_rr_namespace:
+          type: string
+          description: K8s namespace of the existing RR
+        lease_holder:
+          type: string
+          description: Identity of the Lease holder (for debugging)
+
+    ApifrontendSessionCreatedPayload:
+      type: object
+      required: [event_type, session_id, a2a_task_id, join_mode, user_identity]
+      description: Session created event payload (apifrontend.session.created) — InvestigationSession CRD created (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.session.created']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        a2a_task_id:
+          type: string
+          description: A2A task ID for client reconnection
+        rr_ref:
+          type: string
+          description: Reference to associated RemediationRequest (name)
+        join_mode:
+          type: string
+          enum: [start, takeover]
+          description: Whether user initiated or joined running investigation
+        user_identity:
+          type: string
+          description: Username from JWT (sub claim)
+        user_groups:
+          type: array
+          items:
+            type: string
+          description: User's group memberships from JWT
+
+    ApifrontendSessionCompletedPayload:
+      type: object
+      required: [event_type, session_id, terminal_phase, total_duration_ms]
+      description: Session completed event payload (apifrontend.session.completed) — session reached terminal state (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.session.completed']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        terminal_phase:
+          type: string
+          enum: [Completed, Cancelled, Failed]
+          description: Terminal state of the session
+        total_duration_ms:
+          type: integer
+          description: Total session wall-clock time
+        total_tokens_input:
+          type: integer
+          description: Total input tokens across all LLM calls
+        total_tokens_output:
+          type: integer
+          description: Total output tokens across all LLM calls
+        total_tool_calls:
+          type: integer
+          description: Total number of tool invocations
+        polls_count:
+          type: integer
+          description: Number of poll_investigation calls during this session
+        user_decision:
+          type: string
+          enum: [accept, reject, investigate_more, cancel, none]
+          description: Final user decision (if session reached decision phase)
+
+    ApifrontendKADelegatedPayload:
+      type: object
+      required: [event_type, session_id, ka_correlation_id, delegation_type]
+      description: KA delegation event payload (apifrontend.ka.delegated) — investigation delegated to Kubernaut Agent (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.ka.delegated']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        ka_correlation_id:
+          type: string
+          description: Correlation ID returned by KA's /analyze endpoint
+        delegation_type:
+          type: string
+          enum: [autonomous, interactive]
+          description: Whether delegated via REST (autonomous) or MCP (interactive)
+        rr_name:
+          type: string
+          description: Associated RemediationRequest name
+        rr_namespace:
+          type: string
+          description: Associated RemediationRequest namespace
+
+    ApifrontendKAResultReceivedPayload:
+      type: object
+      required: [event_type, session_id, ka_correlation_id, result_type]
+      description: KA result received event payload (apifrontend.ka.result_received) — RCA result received from KA (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.ka.result_received']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        ka_correlation_id:
+          type: string
+          description: Correlation ID linking to the delegation event
+        result_type:
+          type: string
+          enum: [rca_complete, rca_failed, timeout, cancelled]
+          description: Type of result received from KA
+        investigation_duration_ms:
+          type: integer
+          description: Time from delegation to result receipt
+        confidence:
+          type: number
+          format: float
+          description: RCA confidence score (0.0-1.0, if available)
+        workflow_candidates_count:
+          type: integer
+          description: Number of workflow candidates identified by KA
+
+    ApifrontendUserDecisionPayload:
+      type: object
+      required: [event_type, session_id, decision]
+      description: User decision event payload (apifrontend.user.decision) — user acted on RCA/options (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.user.decision']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        decision:
+          type: string
+          enum: [accept, reject, investigate_more, cancel]
+          description: User's decision on the RCA/options
+        workflow_id:
+          type: string
+          description: Selected workflow identifier (if decision is 'accept')
+        time_to_decision_ms:
+          type: integer
+          description: Time from RCA presentation (input-required) to user response
+        rr_name:
+          type: string
+          description: Associated RemediationRequest name
+
+    ApifrontendAuthAccessDeniedPayload:
+      type: object
+      required: [event_type, tool_name, user_role, required_roles, endpoint]
+      description: Auth access denied event payload (apifrontend.auth.access_denied) — tool invocation denied by RBAC (SOC2 CC6.1, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.auth.access_denied']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: Session ID if available (may be empty for pre-session auth failures)
+        tool_name:
+          type: string
+          description: MCP tool that was denied
+        user_role:
+          type: string
+          description: User's actual role from JWT
+        required_roles:
+          type: array
+          items:
+            type: string
+          description: Roles that would grant access to this tool
+        endpoint:
+          type: string
+          enum: [a2a, mcp]
+          description: Which protocol endpoint the request came through
+        reason:
+          type: string
+          description: Denial reason (rbac_policy, token_expired, invalid_scope, etc.)
+
+    ApifrontendToolExecutedPayload:
+      type: object
+      required: [event_type, session_id, tool_name, execution_duration_ms, tool_outcome]
+      description: Tool executed event payload (apifrontend.tool.executed) — MCP tool executed with outcome (SOC2 CC7.2, Issue #1021)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.tool.executed']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        tool_name:
+          type: string
+          description: Name of the executed MCP tool
+        execution_duration_ms:
+          type: integer
+          description: Tool execution wall-clock time
+        tool_outcome:
+          type: string
+          enum: [success, failure, timeout, denied]
+          description: Outcome of tool execution
+        error_code:
+          type: string
+          description: Error classification (if failure)
+        target_resource:
+          type: string
+          description: Resource the tool operated on (if applicable)
 

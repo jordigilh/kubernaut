@@ -155,11 +155,11 @@ var _ = Describe("CreateBatch Lock Ordering [BR-STORAGE-040]", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.Events).To(HaveLen(3))
 
-		Expect(result.Events[0].AuditEvent.PreviousEventHash).To(BeEmpty(),
+		Expect(result.Events[0].PreviousEventHash).To(BeEmpty(),
 			"first event in chain has no previous hash")
 		for i := 1; i < len(result.Events); i++ {
-			Expect(result.Events[i].AuditEvent.PreviousEventHash).To(
-				Equal(result.Events[i-1].AuditEvent.EventHash),
+			Expect(result.Events[i].PreviousEventHash).To(
+				Equal(result.Events[i-1].EventHash),
 				fmt.Sprintf("event %d previous_hash must chain to event %d hash", i, i-1))
 		}
 	})

@@ -116,7 +116,7 @@ BeforeEach(func() {
     // MOCK-MIGRATION: Use factory pattern for standardized business-compliant mocks
     mockFactory = mocks.NewMockFactory(nil)
     mockSLMClient = mockFactory.CreateLLMClient([]string{"ai-analysis-response"})
-    mockK8sClient = mocks.NewMockKubernetesClient() // TODO: Add to factory when available
+    mockK8sClient = mocks.NewMockKubernetesClient() // Illustrative: extend factory when K8s client is centralized; production tests use fake.NewClientBuilder() per ADR-004
 
     // Business requirements automatically integrated via factory
     // mockSLMClient now includes BR-AI-001 compliant confidence scores

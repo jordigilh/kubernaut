@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -31,24 +32,25 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/cert"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/adapter"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/retention"
 	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
-	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"      // Issue #756: FileWatcher for cert rotation
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"     // Issue #756: FileWatcher for cert rotation
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #493/#678: Conditional TLS
 )
 
@@ -56,7 +58,7 @@ import (
 // BR-STORAGE-021: REST API read endpoints
 // BR-STORAGE-024: RFC 7807 error responses
 //
-// DD-007: Kubernetes-aware graceful shutdown with 4-step pattern
+// DD-007: Kubernetes-aware graceful shutdown with 5-step pattern (see Shutdown method)
 // DD-AUTH-014: Middleware-based authentication and authorization
 type Server struct {
 	handler    *Handler
@@ -65,13 +67,18 @@ type Server struct {
 	httpServer *http.Server
 
 	// Issue #756: TLS cert hot-reload support
-	certReloader *sharedtls.CertReloader      // nil when TLS disabled
-	certWatcher  *hotreload.FileWatcher        // nil when TLS disabled
-	tlsCertDir   string                        // cert dir for FileWatcher path
+	certReloader *sharedtls.CertReloader // nil when TLS disabled
+	certWatcher  *hotreload.FileWatcher  // nil when TLS disabled
+	tlsCertDir   string                  // cert dir for FileWatcher path
 
 	// DD-007: Graceful shutdown coordination flag
 	// Thread-safe flag for readiness probe coordination during shutdown
 	isShuttingDown atomic.Bool
+
+	// endpointPropagationDelay is the time to wait for Kubernetes endpoint
+	// removal to propagate. Set via ServerConfig.GetEndpointPropagationDelay()
+	// (default: 5s, range: [1s, 30s]). Set to 0 in tests to avoid slow shutdown specs.
+	endpointPropagationDelay time.Duration
 
 	// BR-STORAGE-001 to BR-STORAGE-020: Audit write API dependencies
 	repository *repository.NotificationAuditRepository
@@ -97,6 +104,9 @@ type Server struct {
 	// Processes 202 Accepted events from Redis DLQ back to PostgreSQL
 	dlqRetryWorker *DLQRetryWorker
 
+	// #1048 Phase 5 / AU-11: Retention worker (background purge)
+	retentionWorker *retention.Worker
+
 	// DD-AUTH-014: Authentication and authorization via dependency injection
 	// Authenticator validates tokens (TokenReview)
 	// Authorizer checks permissions (SubjectAccessReview)
@@ -107,6 +117,15 @@ type Server struct {
 
 	// Issue #667 / BR-STORAGE-043: Maximum events per batch API request
 	maxBatchSize int
+
+	// #1048 Phase 4: OpenAPI validator created at startup (fail-hard)
+	openapiValidator *dsmiddleware.OpenAPIValidator
+
+	// #1048 Phase 4: Configurable CORS origins (ADR-030), default ["*"]
+	corsAllowedOrigins []string
+
+	// #1048 Phase 4: Max request body size in bytes (SC-5 DoS protection)
+	maxBodySize int64
 }
 
 func defaultMaxBatchSize(v int) int {
@@ -118,33 +137,27 @@ func defaultMaxBatchSize(v int) int {
 
 // DD-007 + DD-008 graceful shutdown constants
 const (
-	// endpointRemovalPropagationDelay is the time to wait for Kubernetes to propagate
-	// endpoint removal across all nodes. Industry best practice is 5 seconds.
-	// Kubernetes typically takes 1-3 seconds, but we wait longer to be safe.
-	endpointRemovalPropagationDelay = 5 * time.Second
-
 	// drainTimeout is the maximum time to wait for in-flight requests to complete
 	drainTimeout = 30 * time.Second
 
 	// dlqDrainTimeout is the maximum time to drain DLQ messages during shutdown (DD-008)
-	// This ensures audit messages in the DLQ are persisted before shutdown
 	dlqDrainTimeout = 10 * time.Second
 )
 
 // ServerDeps groups the dependencies required to create a Data Storage HTTP server.
 // Replaces the previous long positional parameter list for clarity and extensibility.
 type ServerDeps struct {
-	DBConnStr     string            // PostgreSQL connection string
-	RedisAddr     string            // Redis address for DLQ (format: "localhost:6379")
-	RedisPassword string            // Redis password (from mounted secret)
-	Logger        logr.Logger       // Structured logger
-	AppConfig     *config.Config    // Full application configuration (includes database pool settings)
-	ServerConfig  *Config           // Server-specific configuration (port, timeouts)
-	DLQMaxLen     int64             // Maximum DLQ stream length for capacity monitoring (Gap 3.3)
+	DBConnStr     string             // PostgreSQL connection string
+	RedisAddr     string             // Redis address for DLQ (format: "localhost:6379")
+	RedisPassword string             // Redis password (from mounted secret)
+	Logger        logr.Logger        // Structured logger
+	AppConfig     *config.Config     // Full application configuration (includes database pool settings)
+	ServerConfig  *Config            // Server-specific configuration (port, timeouts)
+	DLQMaxLen     int64              // Maximum DLQ stream length for capacity monitoring (Gap 3.3)
 	Authenticator auth.Authenticator // Token validator (DD-AUTH-014)
-	Authorizer    auth.Authorizer   // Permission checker (DD-AUTH-014)
-	AuthNamespace string            // Namespace for SAR checks (DD-AUTH-014)
-	HandlerOpts   []HandlerOption   // Optional handler options (e.g. WithDependencyValidator for DD-WE-006)
+	Authorizer    auth.Authorizer    // Permission checker (DD-AUTH-014)
+	AuthNamespace string             // Namespace for SAR checks (DD-AUTH-014)
+	HandlerOpts   []HandlerOption    // Optional handler options (e.g. WithDependencyValidator for DD-WE-006)
 }
 
 // NewServer creates a new Data Storage HTTP server.
@@ -176,9 +189,22 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
 
+	// #1048 Phase 4 / RES-M2: Track resources for cleanup on late-stage errors.
+	// On success the cleanup is disarmed; on failure all acquired resources are released
+	// in reverse order to prevent leaks during startup.
+	var cleanups []func()
+	success := false
+	defer func() {
+		if !success {
+			for i := len(cleanups) - 1; i >= 0; i-- {
+				cleanups[i]()
+			}
+		}
+	}()
+	cleanups = append(cleanups, func() { _ = db.Close() })
+
 	// Verify connection
 	if err := db.Ping(); err != nil {
-		_ = db.Close() // Best effort close on failed ping
 		return nil, fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
 
@@ -191,7 +217,6 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	if err := partition.EnsureMonthlyPartitions(
 		partitionCtx, db, clock.Now(), partition.DefaultLookaheadMonths, partition.AllTables(),
 	); err != nil {
-		_ = db.Close()
 		return nil, fmt.Errorf("failed to ensure monthly partitions at startup: %w", err)
 	}
 	logger.Info("Monthly partitions ensured",
@@ -200,23 +225,17 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	)
 
 	// Configure connection pool from config (not hardcoded)
-	// Bug fix: Use appCfg.Database values instead of hardcoded 25/5
-	// Issue discovered: 2026-01-14 - Integration tests with 12 parallel processes
-	// were bottlenecked by hardcoded max_open_conns=25
 	db.SetMaxOpenConns(appCfg.Database.MaxOpenConns)
 	db.SetMaxIdleConns(appCfg.Database.MaxIdleConns)
 
-	// Parse duration strings from config
 	connMaxLifetime, err := time.ParseDuration(appCfg.Database.ConnMaxLifetime)
 	if err != nil {
-		_ = db.Close()
 		return nil, fmt.Errorf("invalid connMaxLifetime: %w", err)
 	}
 	db.SetConnMaxLifetime(connMaxLifetime)
 
 	connMaxIdleTime, err := time.ParseDuration(appCfg.Database.ConnMaxIdleTime)
 	if err != nil {
-		_ = db.Close()
 		return nil, fmt.Errorf("invalid connMaxIdleTime: %w", err)
 	}
 	db.SetConnMaxIdleTime(connMaxIdleTime)
@@ -229,14 +248,23 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	)
 
 	// Connect to Redis for DLQ (DD-009)
-	redisClient := redis.NewClient(&redis.Options{
+	redisOpts := &redis.Options{
 		Addr:     deps.RedisAddr,
 		Password: deps.RedisPassword, // ADR-030: Password from mounted secret
-	})
+	}
+	if appCfg.Redis.TLS.Enabled {
+		redisTLS, err := appCfg.Redis.TLS.BuildTLSConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure Redis TLS: %w", err)
+		}
+		redisOpts.TLSConfig = redisTLS
+		logger.Info("Redis TLS enabled", "ca_file", appCfg.Redis.TLS.CAFile)
+	}
+	redisClient := redis.NewClient(redisOpts)
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {
-		_ = db.Close() // Clean up DB connection
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
+	cleanups = append(cleanups, func() { _ = redisClient.Close() })
 
 	logger.Info("Redis connection established",
 		"addr", deps.RedisAddr,
@@ -252,7 +280,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	}
 	dlqClient, err := dlq.NewClient(redisClient, logger, dlqMaxLen)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create DLQ client: %w", err)
+		return nil, fmt.Errorf("failed to create DLQ client: %w", err) // cleanups run via defer
 	}
 	validator := validation.NewNotificationAuditValidator()
 
@@ -260,12 +288,6 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		"repo_nil", repo == nil,
 		"dlq_client_nil", dlqClient == nil,
 		"validator_nil", validator == nil)
-
-	// Create ADR-033 action trace repository (BR-STORAGE-031-01, BR-STORAGE-031-02)
-	logger.V(1).Info("Creating ADR-033 action trace repository...")
-	actionTraceRepo := repository.NewActionTraceRepository(db, logger)
-	logger.V(1).Info("ADR-033 action trace repository created",
-		"action_trace_repo_nil", actionTraceRepo == nil)
 
 	// Create BR-STORAGE-033: Unified audit events repository (ADR-034)
 	// SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
@@ -287,9 +309,9 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		logger,                                 // Use logr.Logger directly (DD-005 v2.0)
 	)
 	if err != nil {
-		_ = db.Close() // Clean up DB connection
-		return nil, fmt.Errorf("failed to create audit store: %w", err)
+		return nil, fmt.Errorf("failed to create audit store: %w", err) // cleanups run via defer
 	}
+	cleanups = append(cleanups, func() { _ = auditStore.Close() })
 
 	logger.Info("Self-auditing audit store initialized (DD-STORAGE-012)",
 		"buffer_size", audit.DefaultConfig().BufferSize,
@@ -305,6 +327,9 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	logger.Info("Prometheus metrics initialized",
 		"namespace", "datastorage",
 	)
+
+	// #1048 Phase 5 / AU-11: DLQ stream XADD / MAXLEN~ trim observability.
+	dlqClient.SetXAddCounter(metrics.DLQStreamXAddTotal)
 
 	// BR-STORAGE-013, BR-STORAGE-014: Create workflow catalog dependencies
 	logger.V(1).Info("Creating workflow catalog dependencies...")
@@ -322,9 +347,6 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	// BR-WORKFLOW-007: ActionType taxonomy repository
 	actionTypeRepo := actiontyperepo.NewRepository(sqlxDB, logger)
 
-	// Create database adapter for READ API handlers
-	dbAdapter := adapter.NewDBAdapter(db, logger)
-
 	// DD-WE-006: Create OCI schema extractor for execution bundle validation
 	imagePuller := oci.NewCraneImagePuller(logger)
 	schemaParser := schema.NewParser()
@@ -341,7 +363,6 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	// Build handler options: fixed options + caller-provided options (e.g. WithDependencyValidator)
 	opts := []HandlerOption{
 		WithLogger(logger),
-		WithActionTraceRepository(actionTraceRepo),
 		WithWorkflowRepository(workflowRepo),
 		WithWorkflowLifecycleRepository(workflowRepo),
 		WithWorkflowContentIntegrityRepository(workflowRepo),
@@ -353,24 +374,45 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		WithActionTypeRepository(actionTypeRepo),
 	}
 	opts = append(opts, deps.HandlerOpts...)
-	handler := NewHandler(dbAdapter, opts...)
+	handler := NewHandler(opts...)
 
 	// SOC2 Day 9.1: Load signing certificate for audit exports
 	// BR-AUDIT-007: Digital signatures for tamper-evident audit exports
-	logger.V(1).Info("Loading signing certificate from /etc/certs...")
-	signer, err := loadSigningCertificate(logger)
+	signerCertDir := deps.AppConfig.Server.GetSignerCertDir()
+	logger.V(1).Info("Loading signing certificate...", "cert_dir", signerCertDir)
+	signer, err := loadSigningCertificate(logger, signerCertDir)
 	if err != nil {
-		_ = db.Close() // Clean up DB connection
-		return nil, fmt.Errorf("failed to load signing certificate: %w", err)
+		return nil, fmt.Errorf("failed to load signing certificate: %w", err) // cleanups run via defer
 	}
 	logger.Info("Signing certificate loaded successfully",
 		"algorithm", signer.GetAlgorithm(),
 		"fingerprint", signer.GetCertificateFingerprint())
 
+	// #1048 Phase 4 / BR-STORAGE-034: Initialize OpenAPI validator at startup (fail-hard).
+	// If the embedded spec is invalid the service MUST NOT start — running without
+	// request validation silently accepts malformed input.
+	openapiValidator, err := dsmiddleware.NewOpenAPIValidator(
+		logger.WithName("openapi-validator"),
+		metrics.ValidationFailures,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize OpenAPI validator: %w", err) // cleanups run via defer
+	}
+	logger.Info("OpenAPI validator initialized at startup (fail-hard)")
+
 	// DD-009 V1.0: Create DLQ retry worker (goroutine inside server)
+	// #1048 DF-1: Pass notification repo so notification DLQ messages are persisted
 	dlqWorkerConfig := DefaultDLQRetryWorkerConfig()
 	dlqWorkerConfig.ConsumerName = fmt.Sprintf("worker-%d", os.Getpid())
-	dlqRetryWorker := NewDLQRetryWorker(dlqClient, auditEventsRepo, dlqWorkerConfig, logger)
+	dlqRetryWorker := NewDLQRetryWorker(dlqClient, auditEventsRepo, repo, dlqWorkerConfig, logger, metrics.DLQValidationFailures)
+
+	retentionWorker := retention.NewWorker(db, retention.Config{
+		Enabled:              appCfg.Retention.Enabled,
+		Interval:             appCfg.Retention.GetInterval(),
+		BatchSize:            appCfg.Retention.GetBatchSize(),
+		DefaultDays:          appCfg.Retention.GetDefaultDays(),
+		PartitionDropEnabled: appCfg.Retention.PartitionDropEnabled,
+	}, logger)
 
 	// DS-FLAKY-003 FIX: Create server with handler assigned to httpServer
 	// This allows graceful shutdown to work in both Start() and httptest scenarios
@@ -385,18 +427,23 @@ func NewServer(deps ServerDeps) (*Server, error) {
 			WriteTimeout: serverCfg.WriteTimeout,
 			IdleTimeout:  120 * time.Second,
 		},
-		repository:      repo,
-		dlqClient:       dlqClient,
-		validator:       validator,
-		auditEventsRepo:        auditEventsRepo,
-		auditStore:             auditStore,
-		metrics:         metrics,
-		signer:          signer,
-		dlqRetryWorker: dlqRetryWorker,       // DD-009 V1.0: DLQ retry worker
-		authenticator:   deps.Authenticator, // DD-AUTH-014: Injected at runtime
-		authorizer:      deps.Authorizer,    // DD-AUTH-014: Injected at runtime
-		authNamespace:   deps.AuthNamespace,  // DD-AUTH-014: Dynamic namespace for SAR checks
-		maxBatchSize:    defaultMaxBatchSize(appCfg.Server.MaxBatchSize), // Issue #667 / BR-STORAGE-043
+		repository:               repo,
+		dlqClient:                dlqClient,
+		validator:                validator,
+		auditEventsRepo:          auditEventsRepo,
+		auditStore:               auditStore,
+		metrics:                  metrics,
+		signer:                   signer,
+		dlqRetryWorker:           dlqRetryWorker,                                  // DD-009 V1.0: DLQ retry worker
+		retentionWorker:          retentionWorker,                                 // #1048 Phase 5 / AU-11: retention purge
+		authenticator:            deps.Authenticator,                              // DD-AUTH-014: Injected at runtime
+		authorizer:               deps.Authorizer,                                 // DD-AUTH-014: Injected at runtime
+		authNamespace:            deps.AuthNamespace,                              // DD-AUTH-014: Dynamic namespace for SAR checks
+		maxBatchSize:             defaultMaxBatchSize(appCfg.Server.MaxBatchSize), // Issue #667 / BR-STORAGE-043
+		endpointPropagationDelay: appCfg.Server.GetEndpointPropagationDelay(),
+		openapiValidator:         openapiValidator,
+		corsAllowedOrigins:       appCfg.Server.GetCORSAllowedOrigins(),
+		maxBodySize:              appCfg.Server.GetMaxBodySize(),
 	}
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
@@ -405,8 +452,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	if serverCfg.TLS.Enabled() {
 		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(srv.httpServer, serverCfg.TLS.CertDir)
 		if tlsErr != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
+			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr) // cleanups run via defer
 		}
 		if isTLS {
 			srv.certReloader = reloader
@@ -415,6 +461,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		}
 	}
 
+	success = true
 	return srv, nil
 }
 
@@ -428,40 +475,26 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.RealIP)         // Get real client IP
 	r.Use(s.loggingMiddleware)       // Custom logging middleware
 	r.Use(s.panicRecoveryMiddleware) // Enhanced panic recovery with logging
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"}, // V1.0: Permissive CORS (configure via env var in production)
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+	// #1048 Phase 4 / SC-5: Request body size limit (DoS protection).
+	// Applied before OpenAPI validation so the body is capped before spec parsing.
+	r.Use(dsmiddleware.MaxBytesReaderMiddleware(s.maxBodySize, s.logger))
+
+	// AC-4: CORS with configurable origins (ADR-030).
+	// SEC-C1: go-chi/cors treats empty AllowedOrigins as "allow all".
+	// Use AllowOriginFunc to deny all cross-origin when list is empty.
+	corsOpts := cors.Options{
+		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
 		ExposedHeaders:   []string{"Link", "X-Request-ID"},
 		AllowCredentials: false,
 		MaxAge:           300,
-	}))
-
-	// BR-STORAGE-034: OpenAPI validation middleware
-	// DD-API-002: OpenAPI spec embedded in binary (zero-config deployment)
-	//
-	// Automatically validates all API requests against OpenAPI spec:
-	// - Validates required fields (including empty strings via minLength: 1)
-	// - Validates enum values, types, formats
-	// - Returns RFC 7807 errors for validation failures
-	// Routes not in spec (/health, /metrics) pass through without validation
-	openapiValidator, err := dsmiddleware.NewOpenAPIValidator(
-		s.logger.WithName("openapi-validator"),
-		nil, // Validation metrics removed per GitHub issue #294
-	)
-	if err != nil {
-		s.logger.Error(err, "Failed to initialize OpenAPI validator - continuing without validation")
-	} else {
-		r.Use(openapiValidator.Middleware)
-		s.logger.Info("OpenAPI validation middleware enabled")
 	}
-
-	// Issue #753: Health endpoints moved to dedicated :8081 server.
-	// See health.NewHealthServer in cmd/datastorage/main.go.
-
-	// BR-STORAGE-019: Prometheus metrics endpoint moved to dedicated server (Issue #283)
-	// Metrics are now served on a separate port (default :9090) for standardization.
-	// See cmd/datastorage/main.go for the dedicated metrics server.
+	if len(s.corsAllowedOrigins) > 0 {
+		corsOpts.AllowedOrigins = s.corsAllowedOrigins
+	} else {
+		corsOpts.AllowOriginFunc = func(_ *http.Request, _ string) bool { return false }
+	}
+	r.Use(cors.Handler(corsOpts))
 
 	// API v1 routes
 	s.logger.V(1).Info("Setting up API v1 routes",
@@ -471,79 +504,95 @@ func (s *Server) Handler() http.Handler {
 		"dlq_client_nil", s.dlqClient == nil)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		// DD-AUTH-014: Authentication and authorization middleware (MANDATORY)
-		// Applied to all /api/v1 routes (excludes /health, /metrics)
-		// Authority: DD-AUTH-011 (SAR with verb:"create" for all audit write operations)
-		// Note: authenticator/authorizer guaranteed non-nil by NewServer validation
-		authMiddleware := auth.NewMiddleware(
+		// SEC-H2: Auth runs BEFORE OpenAPI validation so unauthenticated
+		// requests get 401, not a 400 from spec validation.
+		// DD-AUTH-011: Base middleware requires SAR verb "get" — read access to DS.
+		baseAuthMiddleware := auth.NewMiddleware(
 			s.authenticator,
 			s.authorizer,
 			auth.MiddlewareConfig{
 				Namespace:    s.authNamespace,
 				Resource:     "services",
 				ResourceName: "data-storage-service",
-				Verb:         "create", // DD-AUTH-014: All services need audit write permissions
+				Verb:         "get",
 			},
 			s.logger,
 		)
-		r.Use(authMiddleware.Handler)
-		s.logger.Info("Auth middleware enabled (DD-AUTH-014)",
+		r.Use(baseAuthMiddleware.Handler)
+
+		// BR-STORAGE-034: OpenAPI validation after auth (SEC-H2)
+		r.Use(s.openapiValidator.Middleware)
+		s.logger.Info("Auth middleware enabled (DD-AUTH-014, SEC-1 tiered)",
 			"namespace", s.authNamespace,
 			"resource", "services",
 			"resourceName", "data-storage-service",
-			"verb", "create",
 		)
 
-		// DISABLED: Incident and ADR-033 success-rate endpoints are out of V1.0 scope.
-		// Not in OpenAPI spec. V1.0 tracks effectiveness per resource (via EM), not incidents.
-		// Evaluate for next release: https://github.com/jordigilh/kubernaut/issues/238
-		//
-		// r.Get("/incidents", s.handler.ListIncidents)                                                  // BR-STORAGE-021
-		// r.Get("/incidents/{id}", s.handler.GetIncident)                                               // BR-STORAGE-021
-		// r.Get("/incidents/aggregate/success-rate", s.handler.AggregateSuccessRate)    // BR-STORAGE-030
-		// r.Get("/incidents/aggregate/by-namespace", s.handler.AggregateByNamespace)    // BR-STORAGE-032
-		// r.Get("/incidents/aggregate/by-severity", s.handler.AggregateBySeverity)      // BR-STORAGE-033
-		// r.Get("/incidents/aggregate/trend", s.handler.AggregateIncidentTrend)         // BR-STORAGE-034
-		// r.Get("/success-rate/incident-type", s.handler.HandleGetSuccessRateByIncidentType)        // BR-STORAGE-031-01
-		// r.Get("/success-rate/workflow", s.handler.HandleGetSuccessRateByWorkflow)                  // BR-STORAGE-031-02
-		// r.Get("/success-rate/multi-dimensional", s.handler.HandleGetSuccessRateMultiDimensional)   // BR-STORAGE-031-05
+		// DD-AUTH-011: Write middleware requires SAR verb "create" — mutating operations.
+		// Layered on top of base "get" so callers need both read + write access.
+		writeAuthMiddleware := auth.NewMiddleware(
+			s.authenticator,
+			s.authorizer,
+			auth.MiddlewareConfig{
+				Namespace:    s.authNamespace,
+				Resource:     "services",
+				ResourceName: "data-storage-service",
+				Verb:         "create",
+			},
+			s.logger,
+		)
+
+		// DD-AUTH-011: Mutate middleware requires SAR verb "update" — PATCH operations
+		// and admin-only endpoints (legal hold management).
+		mutateAuthMiddleware := auth.NewMiddleware(
+			s.authenticator,
+			s.authorizer,
+			auth.MiddlewareConfig{
+				Namespace:    s.authNamespace,
+				Resource:     "services",
+				ResourceName: "data-storage-service",
+				Verb:         "update",
+			},
+			s.logger,
+		)
 
 		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
 		s.logger.V(1).Info("Registering POST /api/v1/audit/notifications handler")
-		r.Post("/audit/notifications", s.handleCreateNotificationAudit)
+		r.With(writeAuthMiddleware.Handler).Post("/audit/notifications", s.handleCreateNotificationAudit)
 
 		// BR-STORAGE-033: Unified audit events API (ADR-034)
 		// DD-STORAGE-010: Query API with offset-based pagination
 		s.logger.V(1).Info("Registering /api/v1/audit/events handlers (ADR-034, DD-STORAGE-010)")
-		r.Post("/audit/events", s.handleCreateAuditEvent)
+		r.With(writeAuthMiddleware.Handler).Post("/audit/events", s.handleCreateAuditEvent)
 		r.Get("/audit/events", s.handleQueryAuditEvents)
 
 		// DD-AUDIT-002: Batch audit events API for HTTPDataStorageClient.StoreBatch()
 		// BR-AUDIT-001: Complete audit trail with no data loss
 		s.logger.V(1).Info("Registering /api/v1/audit/events/batch handler (DD-AUDIT-002)")
-		r.Post("/audit/events/batch", s.handleCreateAuditEventsBatch)
+		r.With(writeAuthMiddleware.Handler).Post("/audit/events/batch", s.handleCreateAuditEventsBatch)
 
 		// SOC2 Gap #9: Tamper detection verification API (PostgreSQL-based)
 		// BR-AUDIT-005: Enterprise-Grade Audit Integrity
 		s.logger.V(1).Info("Registering /api/v1/audit/verify-chain handler (SOC2 Gap #9)")
-		r.Post("/audit/verify-chain", s.HandleVerifyChain)
+		r.With(writeAuthMiddleware.Handler).Post("/audit/verify-chain", s.HandleVerifyChain)
 
 		// SOC2 Gap #8: Legal Hold & Retention Policies
-		// BR-AUDIT-006: Legal hold capability for Sarbanes-Oxley and HIPAA compliance
-		s.logger.V(1).Info("Registering /api/v1/audit/legal-hold handlers (SOC2 Gap #8)")
-		r.Post("/audit/legal-hold", s.HandlePlaceLegalHold)
-		r.Delete("/audit/legal-hold/{correlation_id}", s.HandleReleaseLegalHold)
+		// BR-AUDIT-008: Legal hold capability for Sarbanes-Oxley and HIPAA compliance
+		// SEC-1/AC-6: GET uses base "get" verb; POST/DELETE require "update" (admin-only)
+		s.logger.V(1).Info("Registering /api/v1/audit/legal-hold handlers (SOC2 Gap #8, SEC-1 admin tier)")
 		r.Get("/audit/legal-hold", s.HandleListLegalHolds)
+		r.With(mutateAuthMiddleware.Handler).Post("/audit/legal-hold", s.HandlePlaceLegalHold)
+		r.With(mutateAuthMiddleware.Handler).Delete("/audit/legal-hold/{correlation_id}", s.HandleReleaseLegalHold)
 
 		// SOC2 Day 9: Signed Audit Export
 		// BR-AUDIT-007: Audit export with digital signatures for compliance verification
 		s.logger.V(1).Info("Registering /api/v1/audit/export handler (SOC2 Day 9)")
 		r.Get("/audit/export", s.HandleExportAuditEvents)
 
-		// BR-AUDIT-006: RemediationRequest Reconstruction from Audit Traces
+		// BR-RR-RECON-001: RemediationRequest Reconstruction from Audit Traces
 		// SOC2 compliance: Reconstruct complete RR CRDs from audit trail
-		s.logger.V(1).Info("Registering /api/v1/audit/remediation-requests/{correlation_id}/reconstruct handler (BR-AUDIT-006)")
-		r.Post("/audit/remediation-requests/{correlation_id}/reconstruct", s.handleReconstructRemediationRequestWrapper)
+		s.logger.V(1).Info("Registering /api/v1/audit/remediation-requests/{correlation_id}/reconstruct handler")
+		r.With(writeAuthMiddleware.Handler).Post("/audit/remediation-requests/{correlation_id}/reconstruct", s.handleReconstructRemediationRequestWrapper)
 
 		// BR-EM-001 to BR-EM-004: On-demand effectiveness scoring (DD-017 v2.1, ADR-EM-001 Principle 5)
 		s.logger.V(1).Info("Registering GET /api/v1/effectiveness/{correlation_id} handler")
@@ -557,7 +606,7 @@ func (s *Server) Handler() http.Handler {
 		// DD-WORKFLOW-005 v1.0: Direct REST API workflow registration
 		// DD-WORKFLOW-002 v3.0: UUID primary key for workflow retrieval
 		s.logger.V(1).Info("Registering /api/v1/workflows handlers (BR-STORAGE-013, DD-STORAGE-008)")
-		r.Post("/workflows", s.handler.HandleCreateWorkflow)
+		r.With(writeAuthMiddleware.Handler).Post("/workflows", s.handler.HandleCreateWorkflow)
 		r.Get("/workflows", s.handler.HandleListWorkflows)
 		// DD-WORKFLOW-016, DD-HAPI-017: Three-step workflow discovery protocol
 		// Step 1: List available action types (with signal context filters)
@@ -567,18 +616,18 @@ func (s *Server) Handler() http.Handler {
 		// Step 3 + existing: Get workflow by UUID (with optional security gate via context filters)
 		r.Get("/workflows/{workflowID}", s.handler.HandleGetWorkflowByID)
 		// DD-WORKFLOW-012: Update mutable fields (status, metrics) - immutable fields require new version
-		r.Patch("/workflows/{workflowID}", s.handler.HandleUpdateWorkflow)
+		r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}", s.handler.HandleUpdateWorkflow)
 		// DD-WORKFLOW-012: Convenience endpoint for disabling workflows
-		r.Patch("/workflows/{workflowID}/disable", s.handler.HandleDisableWorkflow)
+		r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}/disable", s.handler.HandleDisableWorkflow)
 		// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-1): Lifecycle endpoints for enable and deprecate
-		r.Patch("/workflows/{workflowID}/enable", s.handler.HandleEnableWorkflow)
-		r.Patch("/workflows/{workflowID}/deprecate", s.handler.HandleDeprecateWorkflow)
+		r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}/enable", s.handler.HandleEnableWorkflow)
+		r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}/deprecate", s.handler.HandleDeprecateWorkflow)
 
 		// BR-WORKFLOW-007: ActionType taxonomy CRUD (ADR-059, DD-ACTIONTYPE-001)
 		s.logger.V(1).Info("Registering /api/v1/action-types handlers (BR-WORKFLOW-007)")
-		r.Post("/action-types", s.handler.HandleCreateActionType)
-		r.Patch("/action-types/{name}", s.handler.HandleUpdateActionType)
-		r.Patch("/action-types/{name}/disable", s.handler.HandleDisableActionType)
+		r.With(writeAuthMiddleware.Handler).Post("/action-types", s.handler.HandleCreateActionType)
+		r.With(mutateAuthMiddleware.Handler).Patch("/action-types/{name}", s.handler.HandleUpdateActionType)
+		r.With(mutateAuthMiddleware.Handler).Patch("/action-types/{name}/disable", s.handler.HandleDisableActionType)
 		r.Get("/action-types/{name}/workflow-count", s.handler.HandleGetActionTypeWorkflowCount)
 	})
 
@@ -596,6 +645,7 @@ func (s *Server) Start() error {
 	// DD-009 V1.0: Start DLQ retry worker before accepting HTTP traffic
 	// Issue #667/M4: Use a server-scoped context instead of context.Background()
 	s.dlqRetryWorker.Start(context.Background())
+	s.retentionWorker.Start(context.Background())
 
 	// Issue #756: Start cert file watcher for hot-reload before accepting connections
 	if s.certReloader != nil {
@@ -620,23 +670,41 @@ func (s *Server) Start() error {
 	return s.httpServer.ListenAndServe()
 }
 
-// Shutdown gracefully shuts down the server following DD-007 pattern
-// DD-007: Kubernetes-Aware Graceful Shutdown (4-Step Pattern)
+// Shutdown gracefully shuts down the server following DD-007 + DD-008 pattern.
 //
-// This implements the production-proven pattern from Gateway/Context API services
-// to achieve ZERO request failures during rolling updates
+// Steps executed (all steps run regardless of prior errors):
+//  1. Set readiness flag (Kubernetes removes pod from endpoints)
+//  2. Wait for endpoint removal propagation
+//  3. Drain in-flight HTTP connections
+//     3.5 Stop DLQ retry worker (DD-009)
+//  4. Drain DLQ messages to PostgreSQL (DD-008)
+//  4.5. Stop retention worker (AU-11) after DLQ drain, before closing DB
+//  5. Close external resources (audit store, PostgreSQL)
+//
+// Returns a joined error if any step failed; individual step errors are
+// logged at the point of failure. The returned error supports errors.Is/As.
 func (s *Server) Shutdown(ctx context.Context) error {
-	s.logger.Info("Initiating DD-007 + DD-008 Kubernetes-aware graceful shutdown with DLQ drain")
+	shutdownID := uuid.New().String()
+	s.logger.Info("Initiating DD-007 + DD-008 Kubernetes-aware graceful shutdown with DLQ drain",
+		"shutdown_id", shutdownID)
+
+	var shutdownErrors []error
 
 	// STEP 1: Signal Kubernetes to remove pod from endpoints
-	s.shutdownStep1SetFlag()
+	s.shutdownStep1SetFlag(shutdownID)
 
 	// STEP 2: Wait for endpoint removal to propagate
-	s.shutdownStep2WaitForPropagation()
+	s.shutdownStep2WaitForPropagation(shutdownID)
 
 	// STEP 3: Drain in-flight HTTP connections
-	if err := s.shutdownStep3DrainConnections(ctx); err != nil {
-		return err
+	// #1048 Phase 3: Never skip subsequent cleanup steps. HTTP drain failure
+	// must not prevent DLQ drain or DB close — that would cause data loss
+	// (BR-AUDIT-001) and leak database connections.
+	if err := s.shutdownStep3DrainConnections(ctx, shutdownID); err != nil {
+		s.logger.Error(err, "HTTP connection drain failed, continuing with cleanup",
+			"shutdown_id", shutdownID,
+			"dd", "DD-007-step-3-error-non-fatal")
+		shutdownErrors = append(shutdownErrors, err)
 	}
 
 	// Issue #756: Stop cert file watcher after HTTP server is down
@@ -647,43 +715,67 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// STEP 3.5: Stop DLQ retry worker before draining (DD-009 V1.0)
 	s.dlqRetryWorker.Stop()
 
-	// STEP 4: Drain DLQ messages (DD-008)
-	s.shutdownStep4DrainDLQ(ctx)
+	// STEP 4: Drain DLQ messages (DD-008) — ARCH-M1: surface DLQ drain errors
+	if err := s.shutdownStep4DrainDLQ(ctx, shutdownID); err != nil {
+		s.logger.Error(err, "DLQ drain failed during shutdown, continuing with cleanup",
+			"shutdown_id", shutdownID,
+			"dd", "DD-008-step-4-error-non-fatal")
+		shutdownErrors = append(shutdownErrors, err)
+	}
+
+	// STEP 4.5: Stop retention worker before closing PostgreSQL (#1048 Phase 5 / AU-11)
+	s.retentionWorker.Stop()
 
 	// STEP 5: Close external resources (database)
-	if err := s.shutdownStep5CloseResources(); err != nil {
-		return err
+	if err := s.shutdownStep5CloseResources(shutdownID); err != nil {
+		shutdownErrors = append(shutdownErrors, err)
+	}
+
+	if len(shutdownErrors) > 0 {
+		s.logger.Info("DD-007 + DD-008 graceful shutdown completed with errors",
+			"shutdown_id", shutdownID,
+			"error_count", len(shutdownErrors),
+			"dd", "DD-007-DD-008-complete-with-errors")
+		return errors.Join(shutdownErrors...)
 	}
 
 	s.logger.Info("DD-007 + DD-008 graceful shutdown complete - all resources closed, DLQ drained",
+		"shutdown_id", shutdownID,
 		"dd", "DD-007-DD-008-complete-success")
 	return nil
 }
 
 // shutdownStep1SetFlag sets the shutdown flag to signal readiness probe
 // DD-007 STEP 1: This triggers Kubernetes endpoint removal
-func (s *Server) shutdownStep1SetFlag() {
+func (s *Server) shutdownStep1SetFlag(shutdownID string) {
 	s.isShuttingDown.Store(true)
 	s.logger.Info("Shutdown flag set - readiness probe now returns 503",
+		"shutdown_id", shutdownID,
 		"effect", "kubernetes_will_remove_from_endpoints",
 		"dd", "DD-007-step-1")
 }
 
 // shutdownStep2WaitForPropagation waits for Kubernetes endpoint removal to propagate
 // DD-007 STEP 2: Industry best practice is 5 seconds (Kubernetes typically takes 1-3s)
-func (s *Server) shutdownStep2WaitForPropagation() {
+func (s *Server) shutdownStep2WaitForPropagation(shutdownID string) {
+	delay := s.endpointPropagationDelay
 	s.logger.Info("Waiting for Kubernetes endpoint removal to propagate",
-		"delay", endpointRemovalPropagationDelay,
+		"shutdown_id", shutdownID,
+		"delay", delay,
 		"dd", "DD-007-step-2")
-	time.Sleep(endpointRemovalPropagationDelay)
+	if delay > 0 {
+		time.Sleep(delay)
+	}
 	s.logger.Info("Endpoint propagation complete - now draining connections",
+		"shutdown_id", shutdownID,
 		"dd", "DD-007-step-2-complete")
 }
 
 // shutdownStep3DrainConnections drains in-flight HTTP connections
 // DD-007 STEP 3: Gracefully close HTTP connections with timeout
-func (s *Server) shutdownStep3DrainConnections(ctx context.Context) error {
+func (s *Server) shutdownStep3DrainConnections(ctx context.Context, shutdownID string) error {
 	s.logger.Info("Draining in-flight HTTP connections",
+		"shutdown_id", shutdownID,
 		"drain_timeout", drainTimeout,
 		"dd", "DD-007-step-3")
 
@@ -700,51 +792,62 @@ func (s *Server) shutdownStep3DrainConnections(ctx context.Context) error {
 
 	if err := s.httpServer.Shutdown(drainCtx); err != nil {
 		s.logger.Error(err, "Error during HTTP connection drain",
+			"shutdown_id", shutdownID,
 			"dd", "DD-007-step-3-error")
 		return fmt.Errorf("HTTP connection drain failed: %w", err)
 	}
 
 	s.logger.Info("HTTP connections drained successfully",
+		"shutdown_id", shutdownID,
 		"dd", "DD-007-step-3-complete")
 	return nil
 }
 
 // shutdownStep4DrainDLQ drains pending DLQ messages before shutdown
 // DD-008 STEP 4: Ensure audit messages in DLQ are not lost
-func (s *Server) shutdownStep4DrainDLQ(ctx context.Context) {
+func (s *Server) shutdownStep4DrainDLQ(ctx context.Context, shutdownID string) error {
 	if s.dlqClient == nil {
 		s.logger.Info("DLQ client not available, skipping DLQ drain",
+			"shutdown_id", shutdownID,
 			"dd", "DD-008-step-4-skipped")
-		return
+		return nil
 	}
 
 	s.logger.Info("Draining DLQ messages before shutdown",
+		"shutdown_id", shutdownID,
 		"timeout", dlqDrainTimeout,
 		"dd", "DD-008-step-4")
 
-	// Create timeout context for DLQ drain
+	// Create timeout context for DLQ drain.
+	// Always start from context.Background() so the DLQ drain gets its full budget
+	// even if the parent context expired during HTTP drain (ARCH-M2).
 	drainCtx, cancel := context.WithTimeout(context.Background(), dlqDrainTimeout)
 	defer cancel()
 
-	// Override parent context if it would timeout sooner
+	// Use the parent context only if it has positive remaining time shorter than
+	// the DLQ budget — this prevents an expired parent from starving the drain.
 	if deadline, ok := ctx.Deadline(); ok {
-		if time.Until(deadline) < dlqDrainTimeout {
+		remaining := time.Until(deadline)
+		if remaining > 0 && remaining < dlqDrainTimeout {
 			drainCtx = ctx
 		}
 	}
 
 	// Drain DLQ with timeout
 	stats, err := s.dlqClient.DrainWithTimeout(drainCtx, s.repository, s.auditEventsRepo)
+	s.metrics.DLQDrainBatchTotal.Inc()
+
 	if err != nil {
+		s.metrics.ShutdownDLQDrainError.Inc()
 		s.logger.Error(err, "Error during DLQ drain (non-fatal, continuing shutdown)",
+			"shutdown_id", shutdownID,
 			"dd", "DD-008-step-4-error")
-		// Continue with shutdown even if DLQ drain fails
-		// (DLQ failures should not block graceful shutdown)
-		return
+		return fmt.Errorf("DLQ drain failed: %w", err)
 	}
 
 	// Log drain statistics
 	s.logger.Info("DLQ drain complete",
+		"shutdown_id", shutdownID,
 		"notifications_processed", stats.NotificationsProcessed,
 		"events_processed", stats.EventsProcessed,
 		"total_processed", stats.TotalProcessed,
@@ -755,44 +858,59 @@ func (s *Server) shutdownStep4DrainDLQ(ctx context.Context) {
 
 	// Log any errors encountered during drain (but don't fail shutdown)
 	for i, drainErr := range stats.Errors {
+		s.metrics.ShutdownDLQDrainError.Inc()
 		s.logger.Error(drainErr, "Error during DLQ drain processing",
+			"shutdown_id", shutdownID,
 			"error_index", i,
 			"dd", "DD-008-step-4-drain-error")
 	}
+	return nil
 }
 
 // shutdownStep5CloseResources closes external resources (database, audit store)
 // DD-007 STEP 5 (previously step 4): Clean up database connections and flush audit events
-func (s *Server) shutdownStep5CloseResources() error {
+func (s *Server) shutdownStep5CloseResources(shutdownID string) error {
 	s.logger.Info("Closing external resources (PostgreSQL, audit store)",
+		"shutdown_id", shutdownID,
 		"dd", "DD-007-step-5")
 
 	// BR-STORAGE-014: Flush remaining audit events before closing database
 	// This ensures no audit traces are lost during graceful shutdown
+	var step5Errors []error
+
 	if s.auditStore != nil {
 		s.logger.Info("Flushing remaining audit events (DD-STORAGE-012)",
+			"shutdown_id", shutdownID,
 			"dd", "DD-007-step-5-audit-flush")
 		if err := s.auditStore.Close(); err != nil {
 			s.logger.Error(err, "Failed to flush audit events",
+				"shutdown_id", shutdownID,
 				"dd", "DD-007-step-5-audit-error")
-			// Continue with shutdown even if audit flush fails
-			// (audit failures should not block graceful shutdown)
+			step5Errors = append(step5Errors, fmt.Errorf("failed to flush audit events: %w", err))
 		} else {
 			s.logger.Info("Audit events flushed successfully",
+				"shutdown_id", shutdownID,
 				"dd", "DD-007-step-5-audit-complete")
 		}
 	}
 
 	// Close PostgreSQL connection
-	if err := s.db.Close(); err != nil {
+	if s.db == nil {
+		s.logger.Info("No PostgreSQL connection to close — verify initialization",
+			"shutdown_id", shutdownID,
+			"severity", "warning",
+			"dd", "DD-007-step-5-no-db")
+	} else if err := s.db.Close(); err != nil {
 		s.logger.Error(err, "Failed to close PostgreSQL connection",
+			"shutdown_id", shutdownID,
 			"dd", "DD-007-step-5-error")
-		return fmt.Errorf("failed to close PostgreSQL: %w", err)
+		step5Errors = append(step5Errors, fmt.Errorf("failed to close PostgreSQL: %w", err))
 	}
 
 	s.logger.Info("All external resources closed",
+		"shutdown_id", shutdownID,
 		"dd", "DD-007-step-5-complete")
-	return nil
+	return errors.Join(step5Errors...)
 }
 
 // GetDLQClient returns the DLQ client for testing purposes
@@ -805,47 +923,33 @@ func (s *Server) GetDLQClient() *dlq.Client {
 // SOC2 Day 9.1: Digital signatures for audit exports
 // BR-AUDIT-007: Tamper-evident audit logs
 //
-// Certificate Location: /etc/certs/ (mounted from datastorage-signing-cert Secret)
-// - /etc/certs/tls.crt (PEM certificate)
-// - /etc/certs/tls.key (PEM private key)
+// Certificate files (under certDir, default /etc/certs from config):
+// - tls.crt (PEM certificate)
+// - tls.key (PEM private key)
 //
 // cert-manager Compatibility:
 // - Managed by Certificate CRD (deploy/data-storage/certificate.yaml)
 // - Auto-rotates 30 days before expiry
 // - Self-signed via selfsigned-issuer ClusterIssuer
 //
-// Fallback: If cert-manager not available, generate self-signed cert
-func loadSigningCertificate(logger logr.Logger) (*cert.Signer, error) {
-	certFile := "/etc/certs/tls.crt"
-	keyFile := "/etc/certs/tls.key"
+// #1048 Phase 5 / AU-9: Missing or invalid provisioning is a fatal startup error (no fallback).
+func loadSigningCertificate(logger logr.Logger, certDir string) (*cert.Signer, error) {
+	certFile := filepath.Join(certDir, "tls.crt")
+	keyFile := filepath.Join(certDir, "tls.key")
 
-	// Check if cert-manager provided certificate exists
-	_, statErr := os.Stat(certFile)
-	if os.IsNotExist(statErr) {
-		logger.Info("cert-manager certificate not found, generating self-signed certificate",
-			"cert_file", certFile)
-		return generateFallbackCertificate(logger)
+	if _, err := os.Stat(certFile); os.IsNotExist(err) {
+		return nil, fmt.Errorf("signing certificate not found at %s: cert-manager Certificate must be provisioned (AU-9)", certFile)
 	}
 
-	// Check if key file exists
 	if _, err := os.Stat(keyFile); os.IsNotExist(err) {
-		logger.Info("cert-manager key file not found, generating self-signed certificate",
-			"key_file", keyFile)
-		return generateFallbackCertificate(logger)
+		return nil, fmt.Errorf("signing key not found at %s: cert-manager Certificate must be provisioned (AU-9)", keyFile)
 	}
 
-	// Load certificate from cert-manager Secret
 	tlsCert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		// Fallback to self-signed if cert-manager cert is invalid/corrupt
-		logger.Info("cert-manager certificate invalid or corrupt, generating self-signed certificate",
-			"cert_file", certFile,
-			"key_file", keyFile,
-			"load_error", err.Error())
-		return generateFallbackCertificate(logger)
+		return nil, fmt.Errorf("signing certificate at %s is invalid or corrupt: %w", certFile, err)
 	}
 
-	// Create signer from TLS certificate
 	signer, err := cert.NewSignerFromTLSCertificate(&tlsCert)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create signer from certificate: %w", err)
@@ -855,40 +959,6 @@ func loadSigningCertificate(logger logr.Logger) (*cert.Signer, error) {
 		"cert_file", certFile,
 		"algorithm", signer.GetAlgorithm(),
 		"fingerprint", signer.GetCertificateFingerprint())
-
-	return signer, nil
-}
-
-// generateFallbackCertificate generates a self-signed certificate if cert-manager is unavailable
-// Used in development or when cert-manager is not yet installed
-func generateFallbackCertificate(logger logr.Logger) (*cert.Signer, error) {
-	logger.Info("Generating fallback self-signed certificate",
-		"validity", "1 year",
-		"key_size", "2048-bit RSA")
-
-	// Generate self-signed certificate
-	certPair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
-		CommonName:       "data-storage-service",
-		Organization:     "Kubernaut",
-		DNSNames:         []string{"data-storage-service", "data-storage-service.kubernaut-system.svc.cluster.local"},
-		ValidityDuration: 8760 * time.Hour, // 1 year (cert-manager default)
-		KeySize:          2048,             // cert-manager default
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate fallback certificate: %w", err)
-	}
-
-	// Create signer from generated certificate
-	signer, err := cert.NewSignerFromPEM(certPair.CertPEM, certPair.KeyPEM)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create signer from generated certificate: %w", err)
-	}
-
-	logger.Info("Fallback certificate generated successfully",
-		"algorithm", signer.GetAlgorithm(),
-		"fingerprint", signer.GetCertificateFingerprint(),
-		"not_before", certPair.NotBefore,
-		"not_after", certPair.NotAfter)
 
 	return signer, nil
 }

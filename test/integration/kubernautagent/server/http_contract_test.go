@@ -73,9 +73,9 @@ func (s *stubInvestigator) Investigate(ctx context.Context, sc katypes.SignalCon
 
 func newTestAPIServer(inv kaserver.InvestigationRunner) (*httptest.Server, *session.Manager) {
 	store := session.NewStore(24 * time.Hour)
-	mgr := session.NewManager(store, logr.Discard(), 8)
+	mgr := session.NewManager(store, logr.Discard(), nil, nil)
 
-	handler := kaserver.NewHandler(mgr, inv, logr.Discard())
+	handler := kaserver.NewHandler(mgr, inv, logr.Discard(), nil)
 	ogenSrv, err := agentclient.NewServer(handler)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -92,7 +92,7 @@ var _ = Describe("Kubernaut Agent incident API HTTP contract — BR-AI-952 / GAP
 		It("returns 202 and a UUID session_id", func() {
 			ts, mgr := newTestAPIServer(&stubInvestigator{})
 			defer ts.Close()
-			defer mgr.DrainAndWait(2 * time.Second)
+			_ = mgr
 
 			req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/incident/analyze", strings.NewReader(validIncidentJSON()))
 			Expect(err).NotTo(HaveOccurred())
@@ -118,7 +118,7 @@ var _ = Describe("Kubernaut Agent incident API HTTP contract — BR-AI-952 / GAP
 		It("responds with decoder error envelope (ogen DefaultErrorHandler)", func() {
 			ts, mgr := newTestAPIServer(&stubInvestigator{})
 			defer ts.Close()
-			defer mgr.DrainAndWait(2 * time.Second)
+			_ = mgr
 
 			req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/incident/analyze",
 				bytes.NewBufferString("{not-valid-json"))
@@ -142,7 +142,7 @@ var _ = Describe("Kubernaut Agent incident API HTTP contract — BR-AI-952 / GAP
 		It("reflects session state after POST", func() {
 			ts, mgr := newTestAPIServer(&stubInvestigator{})
 			defer ts.Close()
-			defer mgr.DrainAndWait(3 * time.Second)
+			_ = mgr
 
 			postReq, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/incident/analyze",
 				bytes.NewBufferString(validIncidentJSON()))
@@ -180,7 +180,7 @@ var _ = Describe("Kubernaut Agent incident API HTTP contract — BR-AI-952 / GAP
 		It("returns problem details for missing session", func() {
 			ts, mgr := newTestAPIServer(&stubInvestigator{})
 			defer ts.Close()
-			defer mgr.DrainAndWait(200 * time.Millisecond)
+			_ = mgr
 
 			id := uuid.NewString()
 			getResp, err := http.DefaultClient.Get(ts.URL + "/api/v1/incident/session/" + id)
@@ -203,7 +203,7 @@ var _ = Describe("Kubernaut Agent incident API HTTP contract — BR-AI-952 / GAP
 		It("returns incident response JSON", func() {
 			ts, mgr := newTestAPIServer(&stubInvestigator{})
 			defer ts.Close()
-			defer mgr.DrainAndWait(3 * time.Second)
+			_ = mgr
 
 			postReq, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/incident/analyze",
 				bytes.NewBufferString(validIncidentJSON()))
@@ -257,7 +257,7 @@ var _ = Describe("Kubernaut Agent incident API HTTP contract — BR-AI-952 / GAP
 			ts, mgr := newTestAPIServer(inv)
 			defer ts.Close()
 			defer close(resume)
-			defer mgr.DrainAndWait(3 * time.Second)
+			_ = mgr
 
 			postReq, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/incident/analyze",
 				bytes.NewBufferString(validIncidentJSON()))
@@ -286,7 +286,7 @@ var _ = Describe("Kubernaut Agent incident API HTTP contract — BR-AI-952 / GAP
 		It("rejects non-JSON Content-Type with 415", func() {
 			ts, mgr := newTestAPIServer(&stubInvestigator{})
 			defer ts.Close()
-			defer mgr.DrainAndWait(200 * time.Millisecond)
+			_ = mgr
 
 			req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/incident/analyze",
 				bytes.NewBufferString(validIncidentJSON()))

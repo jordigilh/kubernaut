@@ -115,7 +115,7 @@ var integrityModifiedYAML = func() string {
 		What:      "Rolls back a deployment experiencing CrashLoopBackOff",
 		WhenToUse: "When pods are crash-looping due to a bad config",
 	}
-	crd.Spec.Labels.Component = []string{"deployment"}
+	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
 	crd.Spec.Execution.Bundle = "quay.io/kubernaut/workflows/rollback:v1.0.0@sha256:def456abc123def456abc123def456abc123def456abc123def456abc123def4"
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target deployment"},
@@ -136,7 +136,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 		puller := oci.NewMockImagePuller(integrityBaseYAML)
 		parser := schema.NewParser()
 		extractor := oci.NewSchemaExtractor(puller, parser)
-		return server.NewHandler(nil,
+		return server.NewHandler(
 			server.WithSchemaExtractor(extractor),
 			server.WithWorkflowContentIntegrityRepository(mockRepo),
 		)
@@ -387,7 +387,7 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 			puller := oci.NewMockImagePuller(integrityBaseYAML)
 			parser := schema.NewParser()
 			extractor := oci.NewSchemaExtractor(puller, parser)
-			handler := server.NewHandler(nil,
+			handler := server.NewHandler(
 				server.WithSchemaExtractor(extractor),
 				server.WithWorkflowContentIntegrityRepository(raceRepo),
 			)

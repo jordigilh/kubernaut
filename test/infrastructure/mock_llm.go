@@ -82,6 +82,7 @@ type MockLLMConfig struct {
 	Network        string // Podman network for container-to-container communication (e.g., "aianalysis_test_network")
 	ConfigFilePath string // Optional: Host path to scenarios.yaml file (DD-TEST-011 v2.0)
 	GoldenDirPath  string // Optional: Host path to golden transcripts directory (BR-TESTING-001 Phase 7)
+	Mode           string // Optional: "interactive"|"autonomous"|"full" (MOCK_LLM_MODE env var)
 }
 
 // BuildMockLLMImage builds the Mock LLM container image for integration tests
@@ -158,6 +159,20 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	return uniqueImageName, nil
 }
 
+// GetMockLLMConfigForKA returns the Mock LLM configuration for KubernautAgent
+// MCP integration tests. Mode defaults to "interactive" because MCP IT exercises
+// conversational (text-only) LLM interactions.
+// Uses GenerateInfraImageName per DD-TEST-004 for unique image tags.
+func GetMockLLMConfigForKA() MockLLMConfig {
+	return MockLLMConfig{
+		ServiceName:   "ka",
+		Port:          MockLLMPortKA,
+		ContainerName: MockLLMContainerNameKA,
+		ImageTag:      GenerateInfraImageName("mock-llm", "ka"),
+		Mode:          "interactive",
+	}
+}
+
 // GetMockLLMConfigForAIAnalysis returns the Mock LLM configuration for AIAnalysis integration tests
 // Uses GenerateInfraImageName per DD-TEST-004 for unique image tags
 func GetMockLLMConfigForAIAnalysis() MockLLMConfig {
@@ -223,6 +238,11 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 		"-e", "MOCK_LLM_HOST=0.0.0.0",
 		"-e", fmt.Sprintf("MOCK_LLM_PORT=%d", internalPort),
 		"-e", "MOCK_LLM_FORCE_TEXT=true",
+	}
+
+	if config.Mode != "" {
+		args = append(args, "-e", fmt.Sprintf("MOCK_LLM_MODE=%s", config.Mode))
+		_, _ = fmt.Fprintf(writer, "   Mode: %s (MOCK_LLM_MODE)\n", config.Mode)
 	}
 
 	// Mount config file if specified (DD-TEST-011 v2.0)

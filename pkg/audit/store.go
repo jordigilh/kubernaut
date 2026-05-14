@@ -196,8 +196,11 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.A
 		return fmt.Errorf("invalid audit event: %w", err)
 	}
 
-	// F-3 SOC2 Fix: Validate event_type matches EventData discriminator (prevents spec drift)
-	if event.EventType != string(event.EventData.Type) {
+	// F-3 SOC2 Fix: Validate event_type matches EventData discriminator (prevents spec drift).
+	// Allow empty EventData.Type for event types that don't yet have a matching OpenAPI
+	// discriminator variant (e.g., interactive.started/completed, session.suspended/resumed).
+	// These events carry their semantics in the outer fields (event_type, session_id, etc.).
+	if event.EventData.Type != "" && event.EventType != string(event.EventData.Type) {
 		return fmt.Errorf("event_type mismatch: outer=%q, EventData.Type=%q — "+
 			"add event type to OpenAPI spec discriminator and use matching constructor",
 			event.EventType, event.EventData.Type)

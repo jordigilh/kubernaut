@@ -47,6 +47,10 @@ func (e *errorLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatRes
 	return llm.ChatResponse{}, e.err
 }
 
+func (e *errorLLMClient) StreamChat(_ context.Context, _ llm.ChatRequest, _ func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	return llm.ChatResponse{}, e.err
+}
+
 func (e *errorLLMClient) Close() error { return nil }
 
 var _ llm.Client = (*errorLLMClient)(nil)

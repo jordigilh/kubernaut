@@ -19,7 +19,7 @@ package helpers
 import (
 	"encoding/json"
 	"fmt"
-	"time"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -27,6 +27,10 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
+
+// MaxEffectivenessResults caps the number of rows returned by the
+// effectiveness query to prevent unbounded memory usage (PERF-H2).
+const MaxEffectivenessResults = 10000
 
 // ========================================
 // OPENAPI TYPE CONVERSION HELPERS
@@ -46,28 +50,44 @@ import (
 // This performs the conversion from the REST API request type (OpenAPI-generated)
 // to the internal audit event type used by the audit system.
 //
+// When authenticatedActorID is a human identity (non-ServiceAccount), server-side
+// attribution overrides client body actor fields to prevent spoofing (SEC-S1 / AU-3).
+//
+// When authenticatedActorID is a Kubernetes ServiceAccount (system:serviceaccount:*),
+// the client-submitted actor fields are preserved. Service accounts represent transport
+// credentials, not logical actors — the calling service's self-declared identity
+// (e.g., "signalprocessing-controller") is the meaningful audit actor.
+//
 // Parameters:
 //   - req: OpenAPI-generated audit event request
+//   - authenticatedActorID: trusted identity from auth middleware; SA identities preserve body fields
 //
 // Returns:
 //   - *audit.AuditEvent: Internal audit event ready for storage
 //   - error: Conversion error (e.g., invalid event_data JSON)
-func ConvertAuditEventRequest(req ogenclient.AuditEventRequest) (*audit.AuditEvent, error) {
+func ConvertAuditEventRequest(req ogenclient.AuditEventRequest, authenticatedActorID string) (*audit.AuditEvent, error) {
 	// Convert event_data from map to JSON bytes
 	eventDataJSON, err := json.Marshal(req.EventData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal event_data: %w", err)
 	}
 
-	// Extract optional fields with defaults
-	actorType := "service" // Default
-	if req.ActorType.IsSet() {
-		actorType = req.ActorType.Value
-	}
+	actorType := "service"
+	actorID := string(req.EventCategory) + "-service"
 
-	actorID := string(req.EventCategory) + "-service" // Default: category-service
-	if req.ActorID.IsSet() {
-		actorID = req.ActorID.Value
+	isServiceAccount := strings.HasPrefix(authenticatedActorID, "system:serviceaccount:")
+
+	if authenticatedActorID != "" && !isServiceAccount {
+		// SEC-S1 / AU-3: Override actor for human operators to prevent spoofing
+		actorType = "user"
+		actorID = authenticatedActorID
+	} else {
+		if req.ActorType.IsSet() {
+			actorType = req.ActorType.Value
+		}
+		if req.ActorID.IsSet() {
+			actorID = req.ActorID.Value
+		}
 	}
 
 	resourceType := string(req.EventCategory) // Default
@@ -81,6 +101,9 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest) (*audit.AuditEve
 	}
 
 	// Build internal audit event
+	// D1/DF-H1: RetentionDays MUST be set before DLQ serialization so that
+	// replay Validate() (which requires RetentionDays > 0) never rejects
+	// events that succeeded on the synchronous DB path.
 	event := &audit.AuditEvent{
 		EventID:        uuid.New(), // Generate new UUID
 		EventVersion:   req.Version,
@@ -95,6 +118,7 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest) (*audit.AuditEve
 		ResourceID:     resourceID,
 		CorrelationID:  req.CorrelationID,
 		EventData:      eventDataJSON,
+		RetentionDays:  2555, // SOC 2 / ISO 27001 default (7 years)
 	}
 
 	// Optional fields (ogen OptNil types)
@@ -120,71 +144,33 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest) (*audit.AuditEve
 		event.DurationMs = &durationValue
 	}
 
+	if req.ParentEventDate.IsSet() && !req.ParentEventDate.Null {
+		t := req.ParentEventDate.Value
+		event.ParentEventDate = &t
+	}
+	if req.ErrorCode.IsSet() && !req.ErrorCode.Null {
+		v := req.ErrorCode.Value
+		event.ErrorCode = &v
+	}
+	if req.ErrorMessage.IsSet() && !req.ErrorMessage.Null {
+		v := req.ErrorMessage.Value
+		event.ErrorMessage = &v
+	}
+	if req.RetentionDays.IsSet() && !req.RetentionDays.Null {
+		event.RetentionDays = req.RetentionDays.Value
+	}
+	if req.IsSensitive.IsSet() && !req.IsSensitive.Null {
+		event.IsSensitive = req.IsSensitive.Value
+	}
+
 	return event, nil
 }
 
-// ConvertToRepositoryAuditEvent converts internal audit event to repository type
-//
-// This is a straightforward conversion between the pkg/audit type and
-// pkg/datastorage/repository type.
-//
-// Parameters:
-//   - event: Internal audit event
-//
-// Returns:
-//   - *repository.AuditEvent: Repository audit event for database operations
-//   - error: Conversion error (e.g., invalid event_data JSON)
+// ConvertToRepositoryAuditEvent delegates to repository.ConvertFromAuditEvent.
+// ARCH-C1: Canonical implementation moved to repository package so dlq can
+// import it without an upward dependency on server/helpers.
 func ConvertToRepositoryAuditEvent(event *audit.AuditEvent) (*repository.AuditEvent, error) {
-	// Convert EventData from []byte to map[string]interface{}
-	var eventDataMap map[string]interface{}
-	if err := json.Unmarshal(event.EventData, &eventDataMap); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal event_data: %w", err)
-	}
-
-	// Extract pointer fields with defaults
-	resourceNamespace := ""
-	if event.Namespace != nil {
-		resourceNamespace = *event.Namespace
-	}
-
-	clusterID := ""
-	if event.ClusterName != nil {
-		clusterID = *event.ClusterName
-	}
-
-	severity := "info" // Default severity
-	if event.Severity != nil {
-		severity = *event.Severity
-	}
-
-	durationMs := 0 // Default duration
-	if event.DurationMs != nil {
-		durationMs = *event.DurationMs
-	}
-
-	return &repository.AuditEvent{
-		EventID:           event.EventID,
-		Version:           event.EventVersion, // Map EventVersion to Version (DB column event_version)
-		EventTimestamp:    event.EventTimestamp,
-		EventDate:         repository.DateOnly(event.EventTimestamp.Truncate(24 * time.Hour)), // Generated column, truncated to date
-		EventType:         event.EventType,
-		EventCategory:     event.EventCategory,
-		EventAction:       event.EventAction,
-		EventOutcome:      event.EventOutcome,
-		CorrelationID:     event.CorrelationID,
-		ParentEventID:     event.ParentEventID,
-		ResourceType:      event.ResourceType,
-		ResourceID:        event.ResourceID,
-		ResourceNamespace: resourceNamespace,
-		ClusterID:         clusterID,
-		Severity:          severity,
-		DurationMs:        durationMs,
-		ActorID:           event.ActorID,
-		ActorType:         event.ActorType,
-		EventData:         eventDataMap,
-		RetentionDays:     2555,  // Default: 7 years
-		IsSensitive:       false, // Default: not sensitive
-	}, nil
+	return repository.ConvertFromAuditEvent(event)
 }
 
 // ConvertToAuditEventResponse converts repository event to OpenAPI response

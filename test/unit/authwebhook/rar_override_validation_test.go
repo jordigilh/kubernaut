@@ -77,14 +77,14 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 		if oldRAR != nil {
 			rawOld, err := json.Marshal(oldRAR)
 			Expect(err).NotTo(HaveOccurred())
-			req.AdmissionRequest.OldObject = runtime.RawExtension{Raw: rawOld}
+			req.OldObject = runtime.RawExtension{Raw: rawOld}
 		} else {
 			emptyRAR := &remediationv1.RemediationApprovalRequest{
 				ObjectMeta: metav1.ObjectMeta{Name: rar.Name, Namespace: rar.Namespace},
 			}
 			rawOld, err := json.Marshal(emptyRAR)
 			Expect(err).NotTo(HaveOccurred())
-			req.AdmissionRequest.OldObject = runtime.RawExtension{Raw: rawOld}
+			req.OldObject = runtime.RawExtension{Raw: rawOld}
 		}
 
 		return req
@@ -136,7 +136,7 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 				Labels: remediationworkflowv1.RemediationWorkflowLabels{
 					Severity:    []string{"critical"},
 					Environment: []string{"production"},
-					Component:   []string{"Node"},
+					Component:   []string{"v1/Node"},
 					Priority:    "P1",
 				},
 				Execution: remediationworkflowv1.RemediationWorkflowExecution{

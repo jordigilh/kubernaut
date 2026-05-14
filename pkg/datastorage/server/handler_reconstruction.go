@@ -65,7 +65,7 @@ func (h *Handler) ReconstructRemediationRequest(
 			Type:   *typeURL,                      // url.URL (dereference pointer)
 			Title:  "Reconstruction Query Failed", // string (not OptString)
 			Status: 500,                           // int32
-			Detail: ogenclient.NewOptString(fmt.Sprintf("Failed to query audit events: %v", err)),
+			Detail: ogenclient.NewOptString("An internal error occurred. Check server logs for details."),
 		}, nil // Return error response as success (ogen pattern)
 	}
 
@@ -117,8 +117,8 @@ func (h *Handler) ReconstructRemediationRequest(
 			Type:   *typeURL,
 			Title:  "Reconstruction Failed",
 			Status: 400,
-			Detail: ogenclient.NewOptString(err.Error()),
-		}, nil // Return 400 as success (ogen pattern)
+			Detail: ogenclient.NewOptString("Required audit events are missing or incomplete for reconstruction"),
+		}, nil // Return 400 as success (ogen pattern); SEC-M2: generic detail, full error in logs
 	}
 
 	// Step 4: Build complete RemediationRequest CRD
@@ -126,13 +126,13 @@ func (h *Handler) ReconstructRemediationRequest(
 	if err != nil {
 		h.logger.Error(err, "Failed to build RemediationRequest",
 			"correlation_id", correlationID)
-		typeURL, _ := url.Parse("https://kubernaut.ai/problems/reconstruction/build-failed")
-		return &ogenclient.ReconstructRemediationRequestInternalServerError{
+		typeURL, _ := url.Parse("https://kubernaut.ai/problems/reconstruction/unprocessable")
+		return &ogenclient.ReconstructRemediationRequestBadRequest{
 			Type:   *typeURL,
 			Title:  "Build Failed",
-			Status: 500,
-			Detail: ogenclient.NewOptString(fmt.Sprintf("Failed to build RemediationRequest: %v", err)),
-		}, nil // Return 500 as success (ogen pattern)
+			Status: 422,
+			Detail: ogenclient.NewOptString("Audit data present but RemediationRequest cannot be assembled"),
+		}, nil
 	}
 
 	// Step 5: Validate reconstructed RR
@@ -140,13 +140,13 @@ func (h *Handler) ReconstructRemediationRequest(
 	if err != nil {
 		h.logger.Error(err, "Failed to validate RemediationRequest",
 			"correlation_id", correlationID)
-		typeURL, _ := url.Parse("https://kubernaut.ai/problems/reconstruction/validation-failed")
-		return &ogenclient.ReconstructRemediationRequestInternalServerError{
+		typeURL, _ := url.Parse("https://kubernaut.ai/problems/reconstruction/unprocessable")
+		return &ogenclient.ReconstructRemediationRequestBadRequest{
 			Type:   *typeURL,
 			Title:  "Validation Failed",
-			Status: 500,
-			Detail: ogenclient.NewOptString(fmt.Sprintf("Failed to validate RemediationRequest: %v", err)),
-		}, nil // Return 500 as success (ogen pattern)
+			Status: 422,
+			Detail: ogenclient.NewOptString("Reconstructed RemediationRequest does not pass validation rules"),
+		}, nil
 	}
 
 	// If completeness < 50%, return 400 error
@@ -173,7 +173,7 @@ func (h *Handler) ReconstructRemediationRequest(
 			Type:   *typeURL,
 			Title:  "YAML Marshaling Failed",
 			Status: 500,
-			Detail: ogenclient.NewOptString(fmt.Sprintf("Failed to marshal RemediationRequest to YAML: %v", err)),
+			Detail: ogenclient.NewOptString("An internal error occurred. Check server logs for details."),
 		}, nil // Return 500 as success (ogen pattern)
 	}
 

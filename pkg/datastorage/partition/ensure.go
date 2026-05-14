@@ -50,15 +50,9 @@ var AuditEventsTable = ParentTable{
 	ColumnName: "event_date",
 }
 
-// ResourceActionTracesTable is the partition definition for resource_action_traces.
-var ResourceActionTracesTable = ParentTable{
-	Name:       "resource_action_traces",
-	ColumnName: "action_timestamp",
-}
-
-// AllTables returns both partitioned tables that require monthly partitions.
+// AllTables returns the partitioned tables that require monthly partitions.
 func AllTables() []ParentTable {
-	return []ParentTable{AuditEventsTable, ResourceActionTracesTable}
+	return []ParentTable{AuditEventsTable}
 }
 
 // PartitionSpec describes a single monthly partition to be created.

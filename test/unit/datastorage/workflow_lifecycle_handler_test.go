@@ -83,7 +83,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 	// ========================================
 	Describe("PATCH /enable", func() {
 		It("should return 400 when reason is missing", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := reqWithWorkflowID(http.MethodPatch, "/enable", "{}", testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -97,7 +97,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 		})
 
 		It("should return 400 when reason is empty string", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := reqWithWorkflowID(http.MethodPatch, "/enable", `{"reason": ""}`, testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -115,7 +115,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 					return nil, nil
 				},
 			}
-			handler := server.NewHandler(nil, server.WithWorkflowLifecycleRepository(mock))
+			handler := server.NewHandler( server.WithWorkflowLifecycleRepository(mock))
 			req := reqWithWorkflowID(http.MethodPatch, "/enable", `{"reason": "Re-enabling for production use"}`, testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -150,7 +150,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 					return nil
 				},
 			}
-			handler := server.NewHandler(nil, server.WithWorkflowLifecycleRepository(mock))
+			handler := server.NewHandler( server.WithWorkflowLifecycleRepository(mock))
 			req := reqWithWorkflowID(http.MethodPatch, "/enable", `{"reason": "Re-enabling for production use"}`, testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -169,7 +169,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 	// ========================================
 	Describe("PATCH /deprecate", func() {
 		It("should return 400 when reason is missing", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := reqWithWorkflowID(http.MethodPatch, "/deprecate", "{}", testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -183,7 +183,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 		})
 
 		It("should return 400 when reason is empty string", func() {
-			handler := server.NewHandler(nil)
+			handler := server.NewHandler()
 			req := reqWithWorkflowID(http.MethodPatch, "/deprecate", `{"reason": ""}`, testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -201,7 +201,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 					return nil, nil
 				},
 			}
-			handler := server.NewHandler(nil, server.WithWorkflowLifecycleRepository(mock))
+			handler := server.NewHandler( server.WithWorkflowLifecycleRepository(mock))
 			req := reqWithWorkflowID(http.MethodPatch, "/deprecate", `{"reason": "Superseded by v2"}`, testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -236,7 +236,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 					return nil
 				},
 			}
-			handler := server.NewHandler(nil, server.WithWorkflowLifecycleRepository(mock))
+			handler := server.NewHandler( server.WithWorkflowLifecycleRepository(mock))
 			req := reqWithWorkflowID(http.MethodPatch, "/deprecate", `{"reason": "Superseded by v2"}`, testWorkflowID)
 			rr := httptest.NewRecorder()
 
@@ -247,6 +247,73 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 			Expect(json.NewDecoder(rr.Body).Decode(&resp)).To(Succeed())
 			Expect(resp.Status).To(Equal("Deprecated"))
 			Expect(resp.WorkflowID).To(Equal(testWorkflowID))
+		})
+	})
+
+	// ========================================
+	// DD-WORKFLOW-017: Terminal state enforcement (DF-M1)
+	// Deprecated and Superseded are terminal — no transitions out allowed.
+	// ========================================
+	Describe("DF-M1: Terminal state enforcement (DD-WORKFLOW-017)", func() {
+		terminalWorkflow := func(status string) *mockWorkflowLifecycleRepo {
+			return &mockWorkflowLifecycleRepo{
+				getByIDFn: func(_ context.Context, _ string) (*models.RemediationWorkflow, error) {
+					return &models.RemediationWorkflow{
+						WorkflowID:    testWorkflowID,
+						WorkflowName:  "terminal-workflow",
+						Version:       "v1.0.0",
+						SchemaVersion: "1.0",
+						Status:        status,
+					}, nil
+				},
+			}
+		}
+
+		It("should return 409 when enabling a Deprecated workflow", func() {
+			handler := server.NewHandler(server.WithWorkflowLifecycleRepository(terminalWorkflow("Deprecated")))
+			req := reqWithWorkflowID(http.MethodPatch, "/enable", `{"reason": "Attempt to re-enable"}`, testWorkflowID)
+			rr := httptest.NewRecorder()
+			handler.HandleEnableWorkflow(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusConflict),
+				"DD-WORKFLOW-017: Deprecated is terminal — enable must return 409")
+			var problem map[string]interface{}
+			Expect(json.NewDecoder(rr.Body).Decode(&problem)).To(Succeed())
+			Expect(problem["type"]).To(ContainSubstring("workflow-status-conflict"))
+		})
+
+		It("should return 409 when enabling a Superseded workflow", func() {
+			handler := server.NewHandler(server.WithWorkflowLifecycleRepository(terminalWorkflow("Superseded")))
+			req := reqWithWorkflowID(http.MethodPatch, "/enable", `{"reason": "Attempt to re-enable"}`, testWorkflowID)
+			rr := httptest.NewRecorder()
+			handler.HandleEnableWorkflow(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusConflict),
+				"DD-WORKFLOW-017: Superseded is terminal — enable must return 409")
+		})
+
+		It("should return 409 when deprecating a Superseded workflow", func() {
+			handler := server.NewHandler(server.WithWorkflowLifecycleRepository(terminalWorkflow("Superseded")))
+			req := reqWithWorkflowID(http.MethodPatch, "/deprecate", `{"reason": "Attempt to deprecate"}`, testWorkflowID)
+			rr := httptest.NewRecorder()
+			handler.HandleDeprecateWorkflow(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusConflict),
+				"DD-WORKFLOW-017: Superseded is terminal — deprecate must return 409")
+		})
+
+		It("should return 409 when deprecating an already-Deprecated workflow", func() {
+			handler := server.NewHandler(server.WithWorkflowLifecycleRepository(terminalWorkflow("Deprecated")))
+			req := reqWithWorkflowID(http.MethodPatch, "/deprecate", `{"reason": "Re-deprecate"}`, testWorkflowID)
+			rr := httptest.NewRecorder()
+			handler.HandleDeprecateWorkflow(rr, req)
+
+			// same-status → no-op allowed (not forbidden by guard), but deprecate handler
+			// doesn't have the same-status short-circuit. The guard says fromStatus==toStatus → false (allowed).
+			// So this should proceed to UpdateStatus as a no-op. BUT since "Deprecated"=="Deprecated" is
+			// allowed by the guard (returns false), this is a successful no-op call.
+			Expect(rr.Code).To(Equal(http.StatusOK),
+				"DD-WORKFLOW-017: same-status transition is a no-op, not forbidden")
 		})
 	})
 })

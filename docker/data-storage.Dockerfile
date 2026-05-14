@@ -8,10 +8,16 @@
 #   Production:  podman build --target production -t data-storage:v1.0 -f docker/data-storage.Dockerfile .
 #   Development: podman build --build-arg GOFLAGS=-cover -t data-storage:dev -f docker/data-storage.Dockerfile .
 
+ARG BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset:1.25
+ARG BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal:latest
+
 # ============================================================================
 # Stage 1: Build (native cross-compile, no QEMU needed for Go)
 # ============================================================================
-FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
+# SECURITY: Pin to specific digest on release. Run: skopeo inspect --format '{{.Digest}}' docker://registry.access.redhat.com/ubi10/go-toolset:1.25
+# Best practice: pass --build-arg BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset@sha256:<digest> in CI; digests change with each image release.
+FROM ${BUILDER_IMAGE} AS builder
+ENV GOTOOLCHAIN=auto
 
 # Auto-detect target architecture from --platform flag
 # Podman/Docker automatically set TARGETARCH when --platform is specified.
@@ -22,7 +28,7 @@ ARG GOOS=linux
 ARG GOARCH=${TARGETARCH}
 # Support coverage profiling for E2E tests (E2E_COVERAGE_COLLECTION.md)
 ARG GOFLAGS=""
-ARG APP_VERSION=v1.4.0
+ARG APP_VERSION=v1.5.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
@@ -57,7 +63,7 @@ COPY --chown=1001:0 . .
 # - Coverage: No -ldflags, -a, or -installsuffix (breaks coverage instrumentation)
 # - Production: Keep all optimizations for size/performance
 # NOTE: vendor/ excluded in .dockerignore, so we use -mod=mod
-# Toolchain pinned to go1.25.3 in go.mod to match UBI10 go-toolset:1.25
+# GOTOOLCHAIN=auto lets the builder download the exact Go patch required by go.mod
 RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	echo "Building with coverage instrumentation (simple build per DD-TEST-007)..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
@@ -86,11 +92,11 @@ COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /opt/app-root/src/data-storage /data-storage
 COPY --from=builder /opt/app-root/src/api/openapi/data-storage-v1.yaml /usr/local/share/kubernaut/api/openapi/data-storage-v1.yaml
 USER 65534
-EXPOSE 8080 9090
+EXPOSE 8080 8081 9090
 ENTRYPOINT ["/data-storage"]
 CMD []
 
-ARG APP_VERSION=v1.4.0
+ARG APP_VERSION=v1.5.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
@@ -115,7 +121,9 @@ LABEL name="kubernaut-data-storage" \
 # Stage 2b: Development/E2E runtime (ubi10-minimal -- debug + coverage, DD-TEST-007)
 # Default stage when no --target is specified (backwards compatible with CI).
 # ============================================================================
-FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS development
+# SECURITY: Pin to specific digest on release. Run: skopeo inspect --format '{{.Digest}}' docker://registry.access.redhat.com/ubi10/ubi-minimal:latest
+# Best practice: pass --build-arg BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal@sha256:<digest> in CI; digests change with each image release.
+FROM ${BASE_IMAGE} AS development
 RUN microdnf update -y && \
 	microdnf install -y ca-certificates tzdata shadow-utils && \
 	microdnf clean all
@@ -124,11 +132,11 @@ COPY --from=builder /opt/app-root/src/data-storage /usr/local/bin/data-storage
 COPY --from=builder /opt/app-root/src/api/openapi/data-storage-v1.yaml /usr/local/share/kubernaut/api/openapi/data-storage-v1.yaml
 RUN chmod +x /usr/local/bin/data-storage
 USER 1001
-EXPOSE 8080 9090
+EXPOSE 8080 8081 9090
 ENTRYPOINT ["/usr/local/bin/data-storage"]
 CMD []
 
-ARG APP_VERSION=v1.4.0
+ARG APP_VERSION=v1.5.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \

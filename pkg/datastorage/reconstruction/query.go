@@ -54,6 +54,7 @@ func QueryAuditEventsForReconstruction(
 			  'orchestrator.lifecycle.created'
 		  )
 		ORDER BY event_timestamp ASC, event_id ASC
+		LIMIT 1000
 	`
 
 	rows, err := db.QueryContext(ctx, query, correlationID)

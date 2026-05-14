@@ -3,7 +3,7 @@
 **AIOps Platform for Intelligent Kubernetes Remediation**
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/jordigilh/kubernaut)](https://goreportcard.com/report/github.com/jordigilh/kubernaut)
-[![Go Version](https://img.shields.io/badge/Go-1.25.6-blue.svg)](https://golang.org/dl/)
+[![Go Version](https://img.shields.io/badge/Go-1.25.10-blue.svg)](https://golang.org/dl/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.32+-blue.svg)](https://kubernetes.io/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml)
@@ -17,7 +17,7 @@ Kubernaut closes the loop from Kubernetes alert to automated remediation. When s
 <p align="center">
   <a href="https://jordigilh.github.io/kubernaut-docs/"><strong>Full Documentation</strong></a> &nbsp;·&nbsp;
   <a href="https://github.com/jordigilh/kubernaut-demo-scenarios"><strong>Demo Scenarios</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/jordigilh/kubernaut/releases/tag/v1.3.0"><strong>Latest Release</strong></a>
+  <a href="https://github.com/jordigilh/kubernaut/releases/tag/v1.4.0"><strong>Latest Release (v1.4.0)</strong></a>
 </p>
 
 ---
@@ -52,22 +52,19 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 ## Roadmap
 
-### v1.4 — Operator Overrides and Platform Hardening (current)
+### v1.5 — Agentic Integration ([current](https://github.com/jordigilh/kubernaut/issues/874))
 
-- **Prompt injection guardrails** — Shadow agent with a dedicated scanning model to protect the agentic pipeline against prompt injection attacks ([#601](https://github.com/jordigilh/kubernaut/issues/601))
-- **Operator workflow/parameter override** — Operators can override workflow selection and parameters during RAR approval, with authwebhook validation ([#594](https://github.com/jordigilh/kubernaut/issues/594))
-- **PagerDuty and Microsoft Teams** — New notification delivery channels alongside Slack and console ([#60](https://github.com/jordigilh/kubernaut/issues/60), [#593](https://github.com/jordigilh/kubernaut/issues/593))
-- **Unified monitoring config** — Single `monitoring:` Helm block replacing per-component Prometheus/AlertManager keys, with OCP auto-detection ([#463](https://github.com/jordigilh/kubernaut/issues/463))
-- **NetworkPolicies** — Default-deny network policies for all services based on the traffic matrix ([#285](https://github.com/jordigilh/kubernaut/issues/285))
+- **MCP Interactive Mode** — Human-in-the-loop investigation via MCP tools with lease-based session management, SSE streaming, dynamic takeover, and user impersonation ([#703](https://github.com/jordigilh/kubernaut/issues/703), [#823](https://github.com/jordigilh/kubernaut/issues/823))
+- **API Frontend service** — Unified external protocol layer (MCP + A2A) with OIDC authentication, natural language signal intake, and the Kubernaut Console web UI ([kubernaut-apifrontend](https://github.com/jordigilh/kubernaut-apifrontend))
 
-Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/milestone/5).
+Track progress on the [v1.5 milestone](https://github.com/jordigilh/kubernaut/milestone/6).
 
-**[Full roadmap](docs/roadmap/ROADMAP.md)** — Live Investigation Control, Agentic Integration (MCP/A2A), Collective Intelligence, Fleet Operations (ACM/AAP), and Operational Expansion (cost, security, non-K8s).
+**[Full roadmap](docs/roadmap/ROADMAP.md)** — Agentic Integration (A2A), Collective Intelligence, Fleet Operations (ACM/AAP), and Operational Expansion (cost, security, non-K8s). For past releases, see the [CHANGELOG](CHANGELOG.md).
 
 <p align="center">
   <img src="docs/architecture/diagrams/kubernaut-console-animated.gif" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
   <br/>
-  <em>On the roadmap — Kubernaut Console: investigate, chat, and remediate from a single UI</em>
+  <em>Coming in v1.5 — Kubernaut Console: investigate, chat, and remediate from a single UI</em>
 </p>
 
 ---
@@ -94,6 +91,7 @@ See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/latest/g
 | Repository | Description |
 |---|---|
 | [kubernaut-docs](https://github.com/jordigilh/kubernaut-docs) | Documentation website (MkDocs Material) |
+| [kubernaut-apifrontend](https://github.com/jordigilh/kubernaut-apifrontend) | API Frontend — MCP/A2A gateway with OIDC authentication |
 | [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) | Demo scenarios, scripts, and recordings |
 
 ---

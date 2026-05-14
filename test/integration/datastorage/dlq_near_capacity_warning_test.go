@@ -102,6 +102,7 @@ var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Serial, Label("gap-
 						ResourceID:     fmt.Sprintf("wf-normal-%d", i),
 						CorrelationID:  fmt.Sprintf("remediation-normal-%d", i),
 						EventData:      []byte(`{"normal":true}`),
+						RetentionDays:  2555,
 					}
 					err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("test error"))
 					Expect(err).ToNot(HaveOccurred())
@@ -140,6 +141,7 @@ var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Serial, Label("gap-
 						ResourceID:     fmt.Sprintf("wf-warning-%d", i),
 						CorrelationID:  fmt.Sprintf("remediation-warning-%d", i),
 						EventData:      []byte(`{"warning_threshold":true}`),
+						RetentionDays:  2555,
 					}
 					err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("test error"))
 					Expect(err).ToNot(HaveOccurred())
@@ -186,6 +188,7 @@ var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Serial, Label("gap-
 						ResourceID:     fmt.Sprintf("wf-critical-%d", i),
 						CorrelationID:  fmt.Sprintf("remediation-critical-%d", i),
 						EventData:      []byte(`{"critical_threshold":true}`),
+						RetentionDays:  2555,
 					}
 					err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("test error"))
 					Expect(err).ToNot(HaveOccurred())
@@ -233,6 +236,7 @@ var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Serial, Label("gap-
 						ResourceID:     fmt.Sprintf("wf-near-max-%d", i),
 						CorrelationID:  fmt.Sprintf("remediation-near-max-%d", i),
 						EventData:      []byte(`{"near_max":true}`),
+						RetentionDays:  2555,
 					}
 					err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("test error"))
 					Expect(err).ToNot(HaveOccurred())
@@ -300,6 +304,7 @@ var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Serial, Label("gap-
 							ResourceID:     fmt.Sprintf("wf-ratio-%d", i),
 							CorrelationID:  fmt.Sprintf("remediation-ratio-%d", i),
 							EventData:      []byte(`{"ratio_test":true}`),
+							RetentionDays:  2555,
 						}
 						err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("test error"))
 						Expect(err).ToNot(HaveOccurred())
@@ -350,6 +355,7 @@ var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Serial, Label("gap-
 					ResourceID:     fmt.Sprintf("wf-proactive-%d", i),
 					CorrelationID:  fmt.Sprintf("remediation-proactive-%d", i),
 					EventData:      []byte(`{"proactive_warning":true}`),
+					RetentionDays:  2555,
 				}
 				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("test error"))
 				Expect(err).ToNot(HaveOccurred())

@@ -34,6 +34,7 @@ import (
 // Authority: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
 // Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
 // Business Requirement: BR-HAPI-017-001 (Three-Step Tool Implementation)
+// Issue #1051: component values use GVK format (apiVersion/Kind)
 //
 // Test Plan: docs/testing/DD-HAPI-017/TEST_PLAN.md
 // Test IDs: UT-DS-017-001-001 through UT-DS-017-001-009, UT-DS-017-005-001
@@ -51,7 +52,7 @@ var _ = Describe("Workflow Discovery Handler Unit Tests", func() {
 		Context("UT-DS-017-001-003: context filter parameters parsed correctly", func() {
 			It("should parse all mandatory context filter query parameters", func() {
 				// Arrange
-				req := httptest.NewRequest(http.MethodGet, "/api/v1/workflows/actions?severity=critical&component=pod&environment=production&priority=P0", nil)
+				req := httptest.NewRequest(http.MethodGet, "/api/v1/workflows/actions?severity=critical&component=v1%2FPod&environment=production&priority=P0", nil)
 
 				// Act
 				filters, err := server.ParseDiscoveryFilters(req)
@@ -59,14 +60,14 @@ var _ = Describe("Workflow Discovery Handler Unit Tests", func() {
 				// Assert
 				Expect(err).ToNot(HaveOccurred())
 				Expect(filters.Severity).To(Equal("critical"))
-				Expect(filters.Component).To(Equal("pod"))
+				Expect(filters.Component).To(Equal("v1/Pod"))
 				Expect(filters.Environment).To(Equal("production"))
 				Expect(filters.Priority).To(Equal("P0"))
 			})
 
 			It("should parse remediation_id query parameter", func() {
 				// Arrange
-				req := httptest.NewRequest(http.MethodGet, "/api/v1/workflows/actions?severity=critical&component=pod&environment=production&priority=P0&remediation_id=rem-uuid-123", nil)
+				req := httptest.NewRequest(http.MethodGet, "/api/v1/workflows/actions?severity=critical&component=v1%2FPod&environment=production&priority=P0&remediation_id=rem-uuid-123", nil)
 
 				// Act
 				filters, err := server.ParseDiscoveryFilters(req)
@@ -79,7 +80,7 @@ var _ = Describe("Workflow Discovery Handler Unit Tests", func() {
 			It("should parse custom_labels JSON query parameter", func() {
 				// Arrange
 				customLabelsJSON := url.QueryEscape(`{"constraint":["cost-constrained"],"team":["payments"]}`)
-				req := httptest.NewRequest(http.MethodGet, "/api/v1/workflows/actions?severity=critical&component=pod&environment=production&priority=P0&custom_labels="+customLabelsJSON, nil)
+				req := httptest.NewRequest(http.MethodGet, "/api/v1/workflows/actions?severity=critical&component=v1%2FPod&environment=production&priority=P0&custom_labels="+customLabelsJSON, nil)
 
 				// Act
 				filters, err := server.ParseDiscoveryFilters(req)
@@ -192,7 +193,7 @@ var _ = Describe("Workflow Discovery Handler Unit Tests", func() {
 			It("should detect when context filters are present", func() {
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
-					Component:   "pod",
+					Component:   "v1/Pod",
 					Environment: "production",
 					Priority:    "P0",
 				}

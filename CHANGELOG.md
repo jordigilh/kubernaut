@@ -5,6 +5,141 @@ All notable changes to Kubernaut will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - Unreleased
+
+### Added
+
+#### MCP Interactive Mode (#703)
+
+- **Interactive investigation sessions** — Kubernaut Agent exposes a Model Context Protocol (MCP) endpoint (`POST /api/v1/mcp`) enabling human-in-the-loop investigation of remediation requests. Operators can guide, question, and direct the agent in real-time.
+- **Three MCP tools**: `kubernaut_investigate` (start/takeover/message/complete/cancel/status), `kubernaut_enrich` (K8s resource enrichment with impersonation), `kubernaut_select_workflow` (workflow catalog lookup and selection).
+- **Lease-based session management** — Single-driver exclusivity via Kubernetes coordination/v1 Leases with automatic TTL expiry and inactivity timeout.
+- **Dynamic takeover** — Operators can take over autonomous or stale interactive sessions, reconstructing conversation context from DataStorage audit events.
+- **User impersonation** — All K8s API calls during interactive sessions execute under the operator's identity, enforcing their RBAC permissions.
+- **Session notifications** — MCP log-level push notifications for inactivity warnings and session events via `InMemoryNotificationBus`.
+- **Per-user rate limiting** — Token-bucket rate limiter keyed by authenticated username with configurable requests-per-second.
+- **Prometheus metrics** — 4 interactive metrics: `aiagent_mcp_interactive_sessions_active`, `aiagent_mcp_interactive_command_duration_seconds`, `aiagent_mcp_interactive_takeover_total`, `aiagent_mcp_interactive_lease_contention_total`.
+- **Observer status endpoint** — Read-only `action=status` for checking investigation mode without Lease acquisition.
+- **Helm integration** — Feature-gated via `kubernautAgent.interactive.enabled`; auto-provisions Lease Role/RoleBinding and impersonate ClusterRole.
+
+#### Session Cancellation and SSE Streaming (#823)
+
+- **Session cancellation infrastructure** — `StatusCancelled` terminal state, `CancelInvestigation()` with context propagation, `Subscribe()` with lazy event channel.
+- **SOC2 CC8.1 audit trail** — 22 `aiagent.*` event types emitted fire-and-forget for session lifecycle, investigation cancellation, and alignment events.
+- **SSE streaming** — Token-level streaming via `StreamChat` on `llm.Client` interface, delivered through `LazySink` + `io.Pipe` SSE pipeline. Autonomous mode unchanged (no sink = no streaming).
+- **Object-level session authorization** — Session ownership tracking with `created_by` identity; cross-user access returns 404.
+- **Operational hardening** — Per-IP rate limiter, `Manager.Shutdown()` graceful cancellation, panic recovery in investigation goroutines, error sanitization at handler boundaries.
+
+#### Configuration 3-Domain Restructure
+
+- **Runtime/AI/Integrations** top-level domains with camelCase YAML tags across all config fields.
+- **Interactive top-level config** — `InteractiveConfig` struct with `sessionTTL`, `inactivityTimeout`, `maxConcurrentSessions`, `rateLimitPerUser`, `maxAnalyzingTimeout`.
+- **RO config hot-reload** — `FileWatcher`-based live reload of Remediation Orchestrator configuration (#835).
+
+#### Alignment Check (Shadow Agent)
+
+- **Shadow agent evaluator** — Parallel evaluation of investigation quality via alignment check with configurable `mode` (shadow/enforce) and `verdictTimeout`.
+- **Canary force-escalation** — `canary.forceEscalation` flag for testing alignment enforcement paths.
+- **Full-context grounding review for shadow agent** (#1096) — Added a second evaluation layer that reviews the entire RCA conversation through the shadow LLM in a single call, triggered at the RCA-to-workflow-discovery boundary. Detects distributed prompt injection that per-step isolation cannot catch (boiling frog attacks). Runs in parallel with workflow discovery for zero added latency. New `EvaluateGrounding` method on Evaluator, `StartGroundingReview`/`NotifyRCAComplete` integration points, `GroundingReview` config section, 2 new Prometheus metrics (`kubernaut_alignment_grounding_total`, `kubernaut_alignment_grounding_duration_seconds`), and 2 new audit event types (`aiagent.alignment.grounding.request`, `aiagent.alignment.grounding.response`). Gated behind `ai.alignmentCheck.groundingReview.enabled: true`. 29 unit tests covering observer integration, evaluator, config, metrics, and concurrency.
+- **Shadow agent alignment verdict schema** (#1076) — New `alignment_verdict` field on KA `IncidentResponse` (OpenAPI) and AA `AIAnalysisStatus` (CRD). Carries shadow agent verdict (`result`, `circuit_breaker_activated`, `summary`, `findings`) for ALL investigations. Enables structured reporting of shadow agent findings alongside primary LLM results.
+- **Circuit breaker for shadow agent enforcement** (#1076) — When shadow agent detects suspicious LLM content in enforce mode, the primary investigation is cancelled via `context.WithCancelCause(ErrCircuitBreaker)`. Shadow evaluations continue on parent context. New `alignmentCircuitBreakerTotal` Prometheus counter.
+- **LLMProxy bypass fix** (C-1) — `PinDecorator` on investigator ensures `LLMProxy` is re-applied around pinned `SwappableClient` snapshots, preventing unmonitored LLM traffic.
+- **RO alignment verdict notifications** (#1076) — Manual review notifications now render shadow agent findings prominently before (relegated) primary LLM RCA. Circuit breaker verdicts show `SUSPICIOUS (Circuit Breaker Activated)`. `alignment_check_failed` SubReason escalates to `NotificationPriorityCritical`.
+- **`ReviewContext` CRD fields** — `alignmentVerdict` and `circuitBreakerActivated` fields on NotificationRequest ReviewContext for routing rule support.
+
+#### Session Lifecycle (#1078)
+
+- **Session panic recovery** — Investigation goroutines now recover from panics, log stack traces, and transition to `StatusFailed`.
+- **Two-tier session TTL eviction** — Terminal sessions (`Completed`/`Failed`) evicted after `ttl`; non-terminal (`Pending`/`Running`) after configurable `maxSessionAge` (default `2×ttl`).
+- **AA investigation timeout** — Wall-clock cap (`DefaultMaxInvestigationDuration = 25min`) prevents unbounded investigation sessions. Transitions to `PhaseFailed` with `Reason=TransientError`.
+
+#### Logging Migration (#885)
+
+- **slog-to-logr migration** — Kubernaut Agent migrated from `log/slog` to `logr.Logger` for consistency with controller-runtime services. All internal packages, tests, and wiring updated.
+
+#### Observability
+
+- **pprof runtime profiling** — `/debug/pprof/*` endpoints registered on the shared health server (DataStorage, KA, Gateway). Enabled by default following `kube-apiserver --profiling` pattern; gated via `disableProfiling` config field for hardened environments. Zero overhead when not actively queried.
+- **Workflow validation duration metric** — New `datastorage_workflow_validation_duration_seconds` Prometheus histogram with `phase` and `result` labels for per-phase observability.
+
+#### Data Storage (PROD-L1)
+
+- **Helm autoscaler & PDB** — Horizontal Pod Autoscaler hooks and PodDisruptionBudget manifests for Data Storage workloads.
+- **Hash chain verification** — `POST /api/v1/audit/verify-chain` for tamper-evidence validation of chained audit hashes.
+- **Signed audit export** — `GET /api/v1/audit/export` for cryptographically packaged audit exports consumed by downstream compliance tooling.
+- **Batch FK parent lookups** — Batched lookups for parent event dates tighten composite FK integrity validation under load (batch write pathway).
+- **Workflow status transition validation** — Declarative state machine enforcement on workflow transitions before commits.
+
+#### Documentation & Standards
+
+- **ADR-060** — Architecture decision record documenting the parallel validation patterns and error priority contract.
+- **RFC 7807 type constraint** (UX-1) — OpenAPI `RFC7807Problem.type` field now uses a `pattern` constraint (`^https://kubernaut\.ai/problems/.+`) with documented common types across all Data Storage API specs.
+- **Concurrency guidelines** (DX-5) — Added concurrency patterns section to project guidelines documenting `errgroup`, typed-result-slot, and timeout budget patterns.
+- **DD-WE-006 v2.2** (DOC-4) — Added changelog entry noting dependency validation parallelization per Issue #1070.
+- **CONTRIBUTING.md Go version** (DX-4) — Updated prerequisite Go version from 1.25.3+ to 1.25.6+ to match `go.mod`.
+- **DD-008 v1.1** — Updated DLQ drain design doc: `terminationGracePeriodSeconds` 30s→90s, added last-reviewed date.
+- **Migration playbook** — Added type migration playbook to `migrations/README.md` documenting the column-type change workflow.
+- **Migration 010** — `010_timestamp_timezone_alignment.sql` aligns `legal_hold_placed_at` from `TIMESTAMP` to `TIMESTAMP WITH TIME ZONE`.
+
+### Changed
+
+- **VERSION** bumped to 1.5.0 with propagation to Chart.yaml, Dockerfiles, and airgap templates via `make sync-version`.
+- **golangci-lint CI gate** — Lint step is now blocking (removed `continue-on-error`). New issues must be clean before merge.
+- **Verdict label rename** (#1077) — `VerdictClean` constant changed from `"clean"` to `"aligned"` for OpenAPI/API consistency. **Breaking**: Prometheus `result` label changes from `result="clean"` to `result="aligned"` — update dashboard queries.
+- **Parallelized workflow validation** (#1070) — External validation checks (action-type taxonomy, OCI bundle existence, K8s dependency validation) now run concurrently during workflow registration, reducing registration latency from sum-of-three to max-of-three backend calls. Error priority contract preserved via typed-result-slot pattern (ADR-060).
+- **Concurrency cap on dependency validation** (#1070) — `ValidateDependencies` now limits concurrent K8s API calls to 10 via `errgroup.SetLimit`, preventing API server overload from schemas with many dependencies.
+- **Validation timeout budget** (#1070) — `validateExternalChecks` enforces a 10-second timeout to prevent degraded backends from consuming the full server WriteTimeout.
+- **Data Storage pod termination grace** — `terminationGracePeriodSeconds` increased **30 → 90s** so shutdown can complete DLQ/admission/retry windows before kubelet SIGKILL under load.
+- **Data Storage CORS default** — Moved from permissive wildcard to **deny-by-default** (empty allowed origin list emits no wildcard `Access-Control-Allow-Origin`; explicit opt-in origins required).
+- **Audit retention default** — Data Storage retention cron now ships **enabled by default** (previously opted-in/out per environment)—override via Helm/`ConfigMap` for shorter dev cycles.
+
+### Security
+
+- **MCP impersonation hardening** (#895, #896) — Hardened impersonation flow to eliminate double-auth and prevent header injection in interactive sessions.
+
+- **Empty username rejection** — `Takeover` rejects sessions with empty driver identity (SEC-01).
+- **Max concurrent sessions** — Atomic counter enforcement per agent instance (SEC-03).
+- **Session TTL and inactivity timeout** — Checked on every `GetDriver` call (SEC-04).
+- **Per-user rate limiting middleware** — 401 for unauthenticated, 429 with `Retry-After` for rate-exceeded (SEC-02).
+- **Impersonate-* header stripping** — Client-supplied impersonation headers stripped before processing.
+- **Explicit QPS/Burst/Timeout** on MCP controller-runtime client (SEC-07).
+- **Constant-time session ownership comparison** — Mitigates timing attacks on session authorization.
+- **Data Storage security auditing** — Structured security audit logs for **`401`**/**`403`** authz failures (**FedRAMP AU-2** alignment).
+- **Data Storage request containment** — `MaxBytesReaderMiddleware` rejects oversized payloads before OpenAPI/auth work (**SC‑5**) alongside hardened CORS defaults.
+- **Problem Details on panic paths** — API panic middleware now terminates with RFC **7807** JSON instead of bubbling raw panics to clients.
+
+### Helm
+
+- **Interactive mode ConfigMap** — `interactive:` block emitted when `kubernautAgent.interactive.enabled=true`.
+- **coordination/v1 Leases RBAC** — Namespace-scoped Role/RoleBinding (least privilege).
+- **Impersonate verb** — Cluster-wide impersonate for users/groups/serviceaccounts (gated by `interactive.enabled`).
+- **values.schema.json** — Strict validation for interactive configuration fields.
+
+### Fixed
+
+- **ParentEventDate propagation** — Guaranteed consistent parent-event linkage for composite foreign keys when batch-writing nested audit payloads.
+- **DLQ handler hygiene** — Sanitized DLQ error surfaces so Postgres/SQL engine details cannot leak upstream through retry responses/logs.
+- **CORS regression** — Empty allow-lists correctly reject cross-origin callers (no accidental allow-all serialization).
+- **Data races** — Fixed 2 races in `event_store_test.go` (buffered channels replacing bare variables) and 1 race in `session/manager.go` (shallow field reference used outside lock).
+- **errcheck lint violations** — 12 fixes across wiring, timeout, security integration tests and `vertexanthropic/client.go`.
+- **Duplicate declarations** — Removed duplicate `EventTypeTokenDelta` and `chatOrStream` from rebase.
+- **nil context guard** — `GetUserFromContext` returns "" safely on nil context.
+- **100 Go Mistakes audit** — Systematic remediation of 28 issues across Critical/High/Medium/Low tiers:
+  - Critical: `rows.Err()` checks after SQL iteration, `errors.Is` for sentinel comparisons.
+  - High: HTTP client/server timeouts (LLM 5min, DS 30s, health 10s), `sync.Map` eviction for `mcpToSession`, `strings.Clone` for substring memory leaks, `errors.Is` for Redis sentinel.
+  - Medium: `errors.As` for wrapped type assertions, epsilon comparison for floats, deterministic map iteration via `slices.Sort`, variable shadowing fix, pointer-based range loops for large K8s structs.
+  - Low: Modern `0o` octal literals, rune-aware UTF-8 truncation, godoc on exported sentinels.
+  - Tooling: `ineffassign` linter enabled in `.golangci.yml`.
+- **CI stability** — UUID-based namespace naming to prevent parallel test collisions, E2E RR fixture provisioning for HARM-004 tests, fullpipeline timeout alignment.
+- **Double logging** — Removed redundant `logger.Error` calls before `fmt.Errorf(... %w)` returns in `reconstruct.go` and `llm_builder.go`.
+- **RR existence check** (HARM-004) — `RRExistenceChecker` interface prevents Lease creation for non-existent RemediationRequests.
+- **Shadow agent false positive on standard K8s/OCP metadata** (#1094) — Refined shadow agent evaluation prompt to reduce false positives on standard Kubernetes and OpenShift metadata. Narrowed classification rule #4 to target imperative agent-manipulation intent rather than incidental keyword matches. Added explicit CLEAN whitelist for well-known annotation namespaces (`kubernetes.io/*`, `kubectl.kubernetes.io/*`, `openshift.io/*`, etc.), container spec commands, probe exec commands, K8s event lifecycle messages, RBAC verbs, and registry URLs. Added 3 new CLEAN few-shot examples (OCP Secret metadata, container commands/probes, K8s events) and 6 new test payloads (5 CLEAN + 1 adversarial SUSPICIOUS).
+- **Inconclusive RR flood prevention** (#1091) — `Inconclusive` outcomes (EA confirms alert still firing, `alertScore=0`) now trigger exponential backoff and 3-strikes blocking. `completeVerificationIfNeeded` increments `ConsecutiveFailureCount` and sets `NextAllowedExecution`. `CheckConsecutiveFailures` counts `Completed+Inconclusive` as a functional failure instead of a chain-breaker. Prevents 30+ RR flood for persistent alerts. **BR-ORCH-042.6 updated**.
+- **Request body size limit** — `HandleCreateWorkflow` now caps request body at 2 MiB via `http.MaxBytesReader` to prevent memory exhaustion from oversized payloads.
+- **Deployment manifest probe paths** — Fixed `deploy/data-storage/deployment.yaml` liveness and readiness probes from `/health` to `/healthz` and `/readyz` to match the health server implementation.
+- **OpenAPI domain mismatch** (UX-2) — Fixed `kubernaut.io` → `kubernaut.ai` in RFC 7807 problem type URIs across all OpenAPI specs (5 files). Domain now matches the URIs emitted by Go code.
+- **Copyright year** (COMPAT-3) — Updated copyright headers from 2025 to 2026 in test files modified by this PR.
+
 ## [1.4.0] - 2026-05-12
 
 ### Added
@@ -86,6 +221,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **gobreaker v1 to v2 migration** (#1087) — `github.com/sony/gobreaker` upgraded from v1.0.0 to v2.4.0. Generic type parameters eliminate unsafe `interface{}` type assertions. `ManagerConfig` API encapsulates gobreaker so consumers never import it directly.
 - **Generic delivery timeout** (#60, #593) — `SlackTimeout` renamed to `DeliveryTimeout` for channel-agnostic configuration.
 
+### Security
+
+- **MCP impersonation hardening** (#895, #896) — Hardened impersonation flow to eliminate double-auth and prevent header injection in interactive sessions.
+
 ### Fixed
 
 - **Shadow agent false positives on K8s/OCP metadata** (#1094) — Narrowed classification rule #4 to target imperative agent-manipulation intent. Added CLEAN whitelist for well-known K8s/OCP annotation namespaces, container commands, probe commands, event messages, RBAC verbs, and registry URLs.
@@ -122,7 +261,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **NetworkPolicy** (#285) — NetworkPolicies are now deployed for all services by default with a default-deny posture. Verify your cluster's CNI supports NetworkPolicy enforcement. Disable per-service with `networkPolicies.<service>.enabled: false`.
 
 [1.4.0]: https://github.com/jordigilh/kubernaut/compare/v1.3.2...v1.4.0
-
 ## [1.2.0] - 2026-04-06
 
 ### Added

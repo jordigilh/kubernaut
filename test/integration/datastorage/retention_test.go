@@ -72,10 +72,12 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, func() 
 			)
 		})
 
-		It("should not delete any rows when retention is disabled", func() {
+		It("should not delete any rows when retention is explicitly disabled", func() {
 			cfg := retention.DefaultConfig()
-			Expect(cfg.Enabled).To(BeFalse(), "retention must be disabled by default")
+			Expect(cfg.Enabled).To(BeTrue(), "retention is enabled by default (FED-C2 / AU-11)")
 
+			// Override to disabled for this test scenario
+			cfg.Enabled = false
 			// With retention disabled, even expired rows should remain
 			Expect(countByCorrID(corrID)).To(Equal(1))
 		})

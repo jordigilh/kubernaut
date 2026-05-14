@@ -18,105 +18,404 @@ package session
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
-	"runtime/debug"
-	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
-// ErrCapacityExhausted is returned when the maximum number of concurrent
-// investigations has been reached.
-var ErrCapacityExhausted = errors.New("investigation capacity exhausted")
-
 // InvestigateFunc is the function signature for running an investigation.
+// The interface{} return is intentional: the session subsystem is type-agnostic
+// because the result is ultimately JSON-marshaled for the HTTP response. Using
+// generics here would propagate type parameters through Manager/Store/Session
+// with no safety benefit (#8 conscious decision).
 type InvestigateFunc func(ctx context.Context) (*katypes.InvestigationResult, error)
 
 // Manager orchestrates investigation sessions, running each in a
 // background goroutine and tracking progress via the Store.
 type Manager struct {
-	store       *Store
-	logger      logr.Logger
-	sem         chan struct{}
-	wg          sync.WaitGroup
-	shutdownCtx context.Context
-	shutdownFn  context.CancelFunc
+	store      *Store
+	logger     logr.Logger
+	auditStore audit.AuditStore
+	metrics    *metrics.Metrics
 }
 
 // NewManager creates a session manager backed by the given store.
-// maxConcurrent limits the number of simultaneous investigations.
-func NewManager(store *Store, logger logr.Logger, maxConcurrent ...int) *Manager {
-	cap := 10
-	if len(maxConcurrent) > 0 && maxConcurrent[0] > 0 {
-		cap = maxConcurrent[0]
+// If auditStore is nil, a NopAuditStore is used (no audit events emitted).
+// metrics may be nil (all metric calls are nil-safe per OPS-1).
+func NewManager(store *Store, logger logr.Logger, auditStore audit.AuditStore, m *metrics.Metrics) *Manager {
+	if auditStore == nil {
+		auditStore = audit.NopAuditStore{}
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	return &Manager{
-		store:       store,
-		logger:      logger,
-		sem:         make(chan struct{}, cap),
-		shutdownCtx: ctx,
-		shutdownFn:  cancel,
-	}
+	return &Manager{store: store, logger: logger, auditStore: auditStore, metrics: m}
 }
+
+// eventChannelBuffer is the capacity of the per-session event channel.
+// 64 provides headroom for bursty LLM output (reasoning deltas + tool calls)
+// without blocking the investigation goroutine. The investigator uses
+// non-blocking send semantics (select/default) so a slow SSE consumer
+// cannot stall the investigation loop.
+const eventChannelBuffer = 64
 
 // StartInvestigation creates a new session and launches the investigation
 // function in a background goroutine. Returns the session ID immediately.
 // metadata is stored on the session for later retrieval (e.g., incident_id).
+// If the context carries an authenticated user (auth.UserContextKey), the
+// user identity is stored as "created_by" in session metadata for
+// object-level authorization checks.
 //
-// Returns ErrCapacityExhausted if the maximum concurrent investigations cap
-// has been reached. The goroutine uses context.Background() to ensure the
-// investigation outlives the originating HTTP request.
-func (m *Manager) StartInvestigation(_ context.Context, fn InvestigateFunc, metadata map[string]string) (string, error) {
-	select {
-	case m.sem <- struct{}{}:
-	default:
-		return "", ErrCapacityExhausted
-	}
-
+// The goroutine uses a cancellable child of context.Background() to ensure
+// the investigation outlives the originating HTTP request while remaining
+// cancellable via CancelInvestigation.
+//
+// A LazySink is placed on the context but starts with a nil channel.
+// EventSinkFromContext returns nil until Subscribe activates the sink,
+// ensuring autonomous investigations (no observer) use Chat (v1.4 parity).
+//
+// The goroutine includes recover() to catch panics in the investigation
+// function, transitioning the session to StatusFailed instead of crashing.
+//
+// Audit: emits aiagent.session.started after the session transitions to
+// StatusRunning, and aiagent.session.completed or aiagent.session.failed
+// when the goroutine finishes. Audit errors are fire-and-forget (ADR-038).
+func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, metadata map[string]string) (string, error) {
 	id, err := m.store.Create()
 	if err != nil {
-		<-m.sem
 		return "", err
 	}
-	if metadata != nil {
-		m.store.SetMetadata(id, metadata)
+	if metadata == nil {
+		metadata = make(map[string]string)
 	}
-	m.updateSession(id, StatusRunning, nil, nil)
+	if user := auth.GetUserFromContext(ctx); user != "" {
+		metadata["created_by"] = user
+	}
+	m.store.SetMetadata(id, metadata)
 
-	m.wg.Add(1)
+	correlationID := metadata["remediation_id"]
+	var startExtra []string
+	if v := metadata["incident_id"]; v != "" {
+		startExtra = append(startExtra, "incident_id", v)
+	}
+	if v := metadata["signal_name"]; v != "" {
+		startExtra = append(startExtra, "signal_name", v)
+	}
+	if v := metadata["severity"]; v != "" {
+		startExtra = append(startExtra, "severity", v)
+	}
+	if v := metadata["created_by"]; v != "" {
+		startExtra = append(startExtra, "created_by", v)
+	}
+
+	return m.launchInvestigation(ctx, id, fn, correlationID, metadata["signal_name"], metadata["severity"], startExtra)
+}
+
+// StartInvestigationWithContext creates a new session with typed SessionContext
+// and launches the investigation function in a background goroutine.
+// This is the typed alternative to StartInvestigation that preserves the full
+// SignalContext for interactive takeover. The Metadata map is populated from
+// SessionContext.ToMap() for backward compatibility with audit events and
+// existing code that reads Metadata.
+func (m *Manager) StartInvestigationWithContext(ctx context.Context, fn InvestigateFunc, sctx SessionContext) (string, error) {
+	if user := auth.GetUserFromContext(ctx); user != "" {
+		sctx.CreatedBy = user
+	}
+	metadata := sctx.ToMap()
+	id, err := m.store.Create()
+	if err != nil {
+		return "", err
+	}
+	m.store.SetMetadata(id, metadata)
+	m.store.SetContext(id, sctx)
+
+	correlationID := sctx.RemediationID
+	var startExtra []string
+	if sctx.IncidentID != "" {
+		startExtra = append(startExtra, "incident_id", sctx.IncidentID)
+	}
+	if sctx.Signal.Name != "" {
+		startExtra = append(startExtra, "signal_name", sctx.Signal.Name)
+	}
+	if sctx.Signal.Severity != "" {
+		startExtra = append(startExtra, "severity", sctx.Signal.Severity)
+	}
+	if sctx.CreatedBy != "" {
+		startExtra = append(startExtra, "created_by", sctx.CreatedBy)
+	}
+
+	return m.launchInvestigation(ctx, id, fn, correlationID, sctx.Signal.Name, sctx.Signal.Severity, startExtra)
+}
+
+// launchInvestigation is the shared goroutine launcher used by both
+// StartInvestigation and StartInvestigationWithContext. It wires the cancel
+// context, lazy sink, emits the started audit event, and spawns the goroutine.
+func (m *Manager) launchInvestigation(ctx context.Context, id string, fn InvestigateFunc, correlationID, signalName, severity string, startExtra []string) (string, error) {
+	bgCtx, cancelFn := context.WithCancel(context.Background())
+
+	ls := &LazySink{}
+	bgCtx = WithLazySink(bgCtx, ls)
+	bgCtx = WithSessionID(bgCtx, id)
+
+	m.store.mu.Lock()
+	sess := m.store.sessions[id]
+	sess.cancel = cancelFn
+	sess.lazySink = ls
+	m.store.mu.Unlock()
+
+	if updateErr := m.store.Update(id, StatusRunning, nil, nil); updateErr != nil {
+		m.logger.Error(updateErr, "failed to update session",
+			"session_id", id, "target_status", string(StatusRunning))
+	}
+
+	m.emitSessionEvent(ctx, audit.EventTypeSessionStarted, audit.ActionSessionStarted, audit.OutcomeSuccess, id, correlationID, nil, startExtra...)
+	m.metrics.RecordSessionStarted(signalName, severity)
+
 	go func() {
-		defer m.wg.Done()
-		defer func() { <-m.sem }()
-		defer func() {
-			if r := recover(); r != nil {
-				var panicErr error
-				if r == nil {
-					panicErr = fmt.Errorf("investigation panic: nil")
-				} else {
-					panicErr = fmt.Errorf("investigation panic: %v", r)
-				}
-				m.logger.Error(panicErr, "investigation goroutine panicked",
-					"session_id", id,
-					"stack", string(debug.Stack()),
-				)
-				m.updateSession(id, StatusFailed, nil, panicErr)
-			}
-		}()
-		result, fnErr := fn(m.shutdownCtx)
+		start := time.Now()
+		defer m.recordSessionMetrics(id, start)
+		defer m.closeEventChan(id)
+		defer m.recoverPanic(id, correlationID)
+
+		result, fnErr := fn(bgCtx)
+		m.emitCompleteEvent(id)
 		if fnErr != nil {
 			m.logger.Error(fnErr, "investigation failed", "session_id", id)
-			m.updateSession(id, StatusFailed, nil, fnErr)
+			if updateErr := m.store.Update(id, StatusFailed, nil, fnErr); updateErr != nil {
+				m.logger.Info("post-investigation status update rejected",
+					"session_id", id,
+					"attempted_status", string(StatusFailed),
+					"reason", updateErr.Error())
+				if bgCtx.Err() != nil {
+					m.storePartialResult(id, nil)
+				}
+			} else {
+				m.emitSessionEvent(context.Background(), audit.EventTypeSessionFailed, audit.ActionSessionFailed, audit.OutcomeFailure, id, correlationID, fnErr)
+			}
 			return
 		}
-		m.updateSession(id, StatusCompleted, result, nil)
+		if updateErr := m.store.Update(id, StatusCompleted, result, nil); updateErr != nil {
+			m.logger.Info("post-investigation status update rejected",
+				"session_id", id,
+				"attempted_status", string(StatusCompleted),
+				"reason", updateErr.Error())
+			if bgCtx.Err() != nil {
+				m.storePartialResult(id, result)
+			}
+		} else {
+			m.emitSessionEvent(context.Background(), audit.EventTypeSessionCompleted, audit.ActionSessionCompleted, audit.OutcomeSuccess, id, correlationID, nil)
+		}
 	}()
 
 	return id, nil
+}
+
+// CancelInvestigation stops a running investigation by cancelling its context
+// and transitioning its status to StatusCancelled. Returns ErrSessionNotFound
+// if the session does not exist, or ErrSessionTerminal if it has already
+// reached a terminal state.
+//
+// Audit: emits aiagent.session.cancelled after the status transition succeeds.
+func (m *Manager) CancelInvestigation(id string) error {
+	return m.terminateSession(id, audit.EventTypeSessionCancelled, audit.ActionSessionCancelled)
+}
+
+// SuspendInvestigation suspends a running autonomous investigation for interactive
+// takeover. Semantically identical to CancelInvestigation but emits
+// aiagent.session.suspended (DD-INTERACTIVE-002, BR-INTERACTIVE-004).
+// Added in v1.5 for dynamic takeover support (BR-INTERACTIVE-004).
+func (m *Manager) SuspendInvestigation(id string) error {
+	return m.terminateSession(id, audit.EventTypeSessionSuspended, audit.ActionSessionSuspended)
+}
+
+// terminateSession is the shared implementation for CancelInvestigation and
+// SuspendInvestigation. It cancels the session context, transitions to
+// StatusCancelled, and emits the specified audit event type.
+func (m *Manager) terminateSession(id, eventType, action string) error {
+	m.store.mu.Lock()
+
+	sess, ok := m.store.sessions[id]
+	if !ok {
+		m.store.mu.Unlock()
+		return ErrSessionNotFound
+	}
+	if IsTerminal(sess.Status) {
+		m.store.mu.Unlock()
+		return ErrSessionTerminal
+	}
+	if sess.cancel != nil {
+		sess.cancel()
+	}
+	sess.Status = StatusCancelled
+	correlationID := sess.Metadata["remediation_id"]
+	m.store.mu.Unlock()
+
+	m.emitSessionEvent(context.Background(), eventType, action, audit.OutcomeSuccess, id, correlationID, nil)
+	if eventType == audit.EventTypeSessionSuspended {
+		m.metrics.RecordSessionSuspended()
+	}
+	return nil
+}
+
+// TransitionToUserDriving transitions an autonomous investigation session to
+// user-driven mode. Cancels the investigation goroutine (stops autonomous work),
+// sets Status to StatusUserDriving, and writes acting_user and acting_user_groups
+// to session metadata for identity propagation to AA via the poll response.
+//
+// This replaces SuspendInvestigation in the takeover path. Unlike suspend, the
+// session remains pollable (StatusUserDriving is non-terminal) so AA can observe
+// the user's identity and session completion.
+//
+// Emits aiagent.session.suspended audit event for the autonomous → user transition.
+func (m *Manager) TransitionToUserDriving(id, username string, groups []string) error {
+	groupsJSON, err := json.Marshal(groups)
+	if err != nil {
+		return fmt.Errorf("marshal groups: %w", err)
+	}
+
+	m.store.mu.Lock()
+	sess, ok := m.store.sessions[id]
+	if !ok {
+		m.store.mu.Unlock()
+		return ErrSessionNotFound
+	}
+	if IsTerminal(sess.Status) {
+		m.store.mu.Unlock()
+		return ErrSessionTerminal
+	}
+
+	if sess.cancel != nil {
+		sess.cancel()
+	}
+	sess.Status = StatusUserDriving
+
+	if sess.Metadata == nil {
+		sess.Metadata = make(map[string]string)
+	}
+	sess.Metadata["acting_user"] = username
+	sess.Metadata["acting_user_groups"] = string(groupsJSON)
+	correlationID := sess.Metadata["remediation_id"]
+	m.store.mu.Unlock()
+
+	m.emitSessionEvent(context.Background(),
+		audit.EventTypeSessionSuspended, audit.ActionSessionSuspended,
+		audit.OutcomeSuccess, id, correlationID, nil,
+		"acting_user", username)
+
+	m.logger.Info("Session transitioned to user-driving",
+		"session_id", id, "acting_user", username,
+		"groups_count", len(groups))
+
+	return nil
+}
+
+// FindByRemediationID scans running sessions for one whose metadata
+// "remediation_id" matches the given rrID. Returns the session ID and true
+// if found, or ("", false) otherwise. Uses RLock for safe concurrent access.
+// BR-INTERACTIVE-004: enables dynamic takeover by mapping rrID → autonomous session.
+func (m *Manager) FindByRemediationID(rrID string) (string, bool) {
+	m.store.mu.RLock()
+	defer m.store.mu.RUnlock()
+	for id, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] == rrID && sess.Status == StatusRunning {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+// Subscribe returns a read-only channel that delivers investigation events
+// for the given session. The event sink is lazily created on the first
+// Subscribe call so that autonomous investigations (no observer) run without
+// an event sink, preserving v1.4 Chat behavior. The channel is closed when
+// the investigation ends.
+//
+// The context carries the authenticated user identity (via auth.UserContextKey)
+// which is recorded in the aiagent.session.observed audit event for SOC2 CC8.1
+// operator attribution.
+//
+// Returns ErrSessionNotFound if the session does not exist, or
+// ErrSessionTerminal if the investigation has already concluded.
+func (m *Manager) Subscribe(ctx context.Context, id string) (<-chan InvestigationEvent, error) {
+	m.store.mu.Lock()
+
+	sess, ok := m.store.sessions[id]
+	if !ok {
+		m.store.mu.Unlock()
+		return nil, ErrSessionNotFound
+	}
+	if IsTerminal(sess.Status) && sess.eventChan == nil {
+		m.store.mu.Unlock()
+		return nil, ErrSessionTerminal
+	}
+
+	if sess.eventChan == nil {
+		ch := make(chan InvestigationEvent, eventChannelBuffer)
+		sess.eventChan = ch
+		if sess.lazySink != nil {
+			sess.lazySink.Set(ch)
+		}
+	}
+
+	ch := sess.eventChan
+	correlationID := sess.Metadata["remediation_id"]
+	sessionOwner := sess.Metadata["created_by"]
+	m.store.mu.Unlock()
+
+	var extra []string
+	if user := auth.GetUserFromContext(ctx); user != "" {
+		extra = append(extra, "observer_user", user)
+	}
+	if sessionOwner != "" {
+		extra = append(extra, "session_owner", sessionOwner)
+	}
+	m.emitSessionEvent(ctx, audit.EventTypeSessionObserved, audit.ActionSessionObserved, audit.OutcomeSuccess, id, correlationID, nil, extra...)
+
+	return ch, nil
+}
+
+// closeEventChan closes the event channel for a session and sets it to nil,
+// signaling to observers that the investigation has concluded. The nil-check
+// guard prevents double-close panics.
+func (m *Manager) closeEventChan(id string) {
+	m.store.mu.Lock()
+	defer m.store.mu.Unlock()
+
+	sess, ok := m.store.sessions[id]
+	if !ok {
+		return
+	}
+	if sess.eventChan != nil {
+		close(sess.eventChan)
+		sess.eventChan = nil
+	}
+}
+
+// Shutdown cancels all running investigations to allow a clean process exit.
+// It fires the context cancellation for each active session and transitions
+// them to StatusCancelled. This is intended to be called from a SIGTERM
+// handler so that in-flight LLM calls are aborted promptly.
+func (m *Manager) Shutdown() {
+	m.store.mu.Lock()
+	var running []string
+	for id, sess := range m.store.sessions {
+		if sess.Status == StatusRunning || sess.Status == StatusPending {
+			if sess.cancel != nil {
+				sess.cancel()
+			}
+			sess.Status = StatusCancelled
+			running = append(running, id)
+		}
+	}
+	m.store.mu.Unlock()
+
+	for _, id := range running {
+		m.logger.Info("shutdown: cancelled investigation", "session_id", id)
+	}
 }
 
 // GetSession retrieves the current state of an investigation session.
@@ -124,27 +423,139 @@ func (m *Manager) GetSession(id string) (*Session, error) {
 	return m.store.Get(id)
 }
 
-// DrainAndWait signals all in-flight investigations to cancel and waits
-// until they complete or the timeout expires.
-func (m *Manager) DrainAndWait(timeout time.Duration) {
-	m.shutdownFn()
-	done := make(chan struct{})
-	go func() {
-		m.wg.Wait()
-		close(done)
-	}()
+// GetSessionContext retrieves only the typed SessionContext for a session.
+// Returns ErrSessionNotFound if the session does not exist.
+func (m *Manager) GetSessionContext(id string) (*SessionContext, error) {
+	sess, err := m.store.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	ctx := sess.Context
+	return &ctx, nil
+}
+
+// GetSignalForRemediation looks up the running session associated with the
+// given remediationID and returns its SignalContext. This enables interactive
+// tools (enrich, select_workflow) to inherit security gate parameters from the
+// autonomous investigation session. Returns ErrSessionNotFound if no running
+// session matches the rrID.
+func (m *Manager) GetSignalForRemediation(rrID string) (*katypes.SignalContext, error) {
+	sessionID, found := m.FindByRemediationID(rrID)
+	if !found {
+		return nil, ErrSessionNotFound
+	}
+	sess, err := m.store.Get(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	signal := sess.Context.Signal
+	return &signal, nil
+}
+
+// storePartialResult attaches a result to a session that is already in a
+// terminal state (e.g. StatusCancelled). Delegates to Store.SetResult which
+// does not change the session status — only the Result field. This preserves
+// partial investigation state for snapshot retrieval (BR-SESSION-002).
+func (m *Manager) storePartialResult(id string, result *katypes.InvestigationResult) {
+	m.store.SetResult(id, result)
+}
+
+// recoverPanic catches panics in the investigation goroutine, transitions the
+// session to StatusFailed, and logs with stack context. This prevents a
+// panicking LLM tool or parser from crashing the entire KA process.
+func (m *Manager) recoverPanic(id, correlationID string) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	m.logger.Error(fmt.Errorf("panic: %v", r), "investigation panic recovered",
+		"session_id", id,
+	)
+	if updateErr := m.store.Update(id, StatusFailed, nil, fmt.Errorf("panic: %v", r)); updateErr != nil {
+		m.logger.Error(updateErr, "failed to update session after panic",
+			"session_id", id, "target_status", string(StatusFailed))
+	}
+	m.emitSessionEvent(context.Background(), audit.EventTypeSessionFailed, audit.ActionSessionFailed, audit.OutcomeFailure, id, correlationID, fmt.Errorf("panic: %v", r))
+}
+
+// emitCompleteEvent sends an EventTypeComplete to the event sink (if active)
+// to signal the SSE consumer that the investigation has finished.
+func (m *Manager) emitCompleteEvent(id string) {
+	m.store.mu.RLock()
+	sess, ok := m.store.sessions[id]
+	var sink *LazySink
+	if ok {
+		sink = sess.lazySink
+	}
+	m.store.mu.RUnlock()
+
+	if sink == nil {
+		return
+	}
+	ch := sink.Get()
+	if ch == nil {
+		return
+	}
 	select {
-	case <-done:
-		m.logger.Info("all investigations drained")
-	case <-time.After(timeout):
-		m.logger.Error(nil, "drain timeout expired, some investigations may still be running",
-			"timeout", timeout)
+	case ch <- InvestigationEvent{Type: EventTypeComplete}:
+	default:
 	}
 }
 
-func (m *Manager) updateSession(id string, status Status, result *katypes.InvestigationResult, err error) {
-	if updateErr := m.store.Update(id, status, result, err); updateErr != nil {
-		m.logger.Error(updateErr, "failed to update session",
-			"session_id", id, "target_status", string(status))
+// EmitAccessDenied records a failed session access attempt for SOC2 CC8.1
+// failed-access audit trail. Includes correlationID and session_owner for
+// forensic cross-event correlation (SEC-2). Fire-and-forget per ADR-038.
+func (m *Manager) EmitAccessDenied(ctx context.Context, sessionID, endpoint, requestingUser string) {
+	m.store.mu.RLock()
+	sess := m.store.sessions[sessionID]
+	var correlationID, sessionOwner string
+	if sess != nil {
+		correlationID = sess.Metadata["remediation_id"]
+		sessionOwner = sess.Metadata["created_by"]
 	}
+	m.store.mu.RUnlock()
+
+	event := audit.NewEvent(audit.EventTypeSessionAccessDenied, correlationID, audit.WithSessionID(sessionID))
+	event.EventAction = audit.ActionSessionAccessDenied
+	event.EventOutcome = audit.OutcomeFailure
+	event.Data["endpoint"] = endpoint
+	event.Data["requesting_user"] = requestingUser
+	if sessionOwner != "" {
+		event.Data["session_owner"] = sessionOwner
+	}
+	audit.StoreBestEffort(ctx, m.auditStore, event, m.logger)
+}
+
+// recordSessionMetrics records session completion metrics when the investigation
+// goroutine exits. Reads final status from the store (COR-3) to handle the race
+// where a session is cancelled while the goroutine is still running.
+func (m *Manager) recordSessionMetrics(id string, start time.Time) {
+	duration := time.Since(start).Seconds()
+	m.store.mu.RLock()
+	sess := m.store.sessions[id]
+	var outcome string
+	if sess != nil {
+		outcome = string(sess.Status)
+	}
+	m.store.mu.RUnlock()
+	if outcome == "" {
+		outcome = "unknown"
+	}
+	m.metrics.RecordSessionCompleted(outcome, duration)
+}
+
+// emitSessionEvent builds and stores an audit event for a session lifecycle
+// transition. Optional extraData key-value pairs are merged into the event
+// data. Errors are fire-and-forget per ADR-038.
+func (m *Manager) emitSessionEvent(ctx context.Context, eventType, action, outcome, sessionID, correlationID string, fnErr error, extraData ...string) {
+	event := audit.NewEvent(eventType, correlationID, audit.WithSessionID(sessionID))
+	event.EventAction = action
+	event.EventOutcome = outcome
+	if fnErr != nil {
+		event.Data["error"] = fnErr.Error()
+	}
+	for i := 0; i+1 < len(extraData); i += 2 {
+		event.Data[extraData[i]] = extraData[i+1]
+	}
+	audit.StoreBestEffort(ctx, m.auditStore, event, m.logger)
 }

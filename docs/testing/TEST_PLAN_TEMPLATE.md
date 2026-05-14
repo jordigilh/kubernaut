@@ -343,9 +343,11 @@ Format: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
 [If tests must be implemented in a specific order due to dependencies or TDD sequencing,
 document the recommended order here.]
 
-1. **Phase 1**: [Core functionality tests — e.g., "Unit tests for DAG engine"]
-2. **Phase 2**: [Integration tests that depend on Phase 1 code]
-3. **Phase 3**: [E2E / container tests that depend on working image]
+1. **Phase 1 (RED)**: [Core functionality tests — e.g., "Unit tests for DAG engine"]
+2. **Phase 2 (GREEN)**: [Minimal implementation to pass Phase 1 tests]
+3. **Phase 3 (REFACTOR)**: [Code cleanup, duplication removal, naming improvements]
+4. **Phase 4 (WIRING VERIFICATION)**: [Integration tests proving all new code paths are reachable from production entry points — see `.cursor/rules/10-wiring-verification.mdc`]
+5. **Phase 5 (E2E)**: [End-to-end / container tests that depend on working image, if applicable]
 
 ---
 
@@ -381,7 +383,27 @@ go tool cover -func=coverage.out
 
 ---
 
-## 14. Existing Tests Requiring Updates (if applicable)
+## 14. Wiring Verification (TDD Phase 4)
+
+> **Authority**: `.cursor/rules/10-wiring-verification.mdc`
+>
+> After REFACTOR, trace every new production code path from entry point to exit point
+> and verify each has an integration test proving the wiring is connected.
+>
+> **Trigger prompt**: "Perform a wiring verification audit: for every new code path,
+> prove it has a production caller and an integration test that exercises the full
+> chain from HTTP entry to observable output."
+
+| Code Path | Entry Point | Exit Point | Wiring IT | Status |
+|-----------|-------------|------------|-----------|--------|
+| [function/middleware] | [HTTP endpoint / signal] | [response / audit event / SSE frame] | [IT-SVC-NNN-NNN] | Pending |
+
+**Unit tests do NOT count as wiring proof.** Only integration tests that traverse the
+real middleware/handler/router stack qualify.
+
+---
+
+## 15. Existing Tests Requiring Updates (if applicable)
 
 > When implementation changes behavior that existing tests assert on, document the
 > required updates here to prevent surprises during TDD GREEN phase.
@@ -392,7 +414,7 @@ go tool cover -func=coverage.out
 
 ---
 
-## 15. Changelog
+## 16. Changelog
 
 | Version | Date | Changes |
 |---------|------|---------|

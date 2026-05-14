@@ -90,7 +90,7 @@ var (
 
 ---
 
-### Integration Tests (<20% BRs, 50% Code Coverage)
+### Integration Tests (>50% BRs, >=80% Code Coverage)
 
 **Location**: `test/integration/`
 **Purpose**: Critical component interactions requiring real infrastructure
@@ -116,7 +116,7 @@ var (
 
 ---
 
-### E2E Tests (<10% BRs, 50% Code Coverage)
+### E2E Tests (<10% BRs, >=80% Code Coverage)
 
 **Location**: `test/e2e/`
 **Purpose**: Essential customer-facing workflows in production-like environments
@@ -138,7 +138,7 @@ var (
 // ✅ Mock LLM MAY be acceptable for test speed
 ```
 
-**See**: [E2E Testing Strategy](mdc:docs/testing/DEFENSE_IN_DEPTH_CI_CD_STRATEGY.md)
+**See**: [Testing documentation — strategy, pyramid, and CI validation](mdc:docs/testing/README.md)
 
 ---
 
@@ -275,7 +275,7 @@ make lint-tdd-compliance           # Check BDD framework, BR references
 - **[Testing Patterns Quick Reference](mdc:docs/testing/TESTING_PATTERNS_QUICK_REFERENCE.md)** - Daily development reference
 - **[Anti-Pattern Detection](mdc:docs/testing/ANTI_PATTERN_DETECTION.md)** - Violation detection and remediation
 - **[Integration/E2E No-Mocks Policy](mdc:docs/testing/INTEGRATION_E2E_NO_MOCKS_POLICY.md)** - Zero mocks mandate
-- **[CI/CD Strategy](mdc:docs/testing/DEFENSE_IN_DEPTH_CI_CD_STRATEGY.md)** - Defense-in-depth execution
+- **[Defense-in-depth testing (index)](mdc:docs/testing/README.md)** - Strategy, pyramid targets, documentation index, validation commands
 
 ---
 

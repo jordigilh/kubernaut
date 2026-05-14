@@ -16,6 +16,14 @@ data:
       metricsPort: 9090
       readTimeout: 30s
       writeTimeout: 30s
+      # #1048 Phase 4 / SC-5: Maximum request body size in bytes (default: 5242880 = 5 MiB)
+      maxBodySize: {{ .Values.datastorage.config.server.maxBodySize | default "5242880" | quote }}
+      # SEC-H3 / AC-4: CORS allowed origins (default: [] = reject all cross-origin)
+      corsAllowedOrigins:
+      {{- if .Values.datastorage.config.server.corsAllowedOrigins }}
+        {{- toYaml .Values.datastorage.config.server.corsAllowedOrigins | nindent 8 }}
+      {{- end }}
+      signerCertDir: {{ .Values.datastorage.config.server.signerCertDir | default "/etc/certs" | quote }}
       tls:
         certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
     database:
@@ -33,15 +41,21 @@ data:
       passwordKey: "password"
     redis:
       addr: {{ include "kubernaut.valkey.addr" . }}
-      db: 0
-      dlqStreamName: dlq-stream
-      dlqMaxLen: 1000
-      dlqConsumerGroup: dlq-group
+      dlqMaxLen: {{ .Values.datastorage.config.redis.dlqMaxLen | default "10000" }}
       secretsFile: "/etc/datastorage/secrets/valkey-secrets.yaml"
       passwordKey: "password"
+      tls:
+        enabled: {{ .Values.datastorage.config.redis.tls.enabled | default false }}
+        certFile: {{ .Values.datastorage.config.redis.tls.certFile | default "" | quote }}
+        keyFile: {{ .Values.datastorage.config.redis.tls.keyFile | default "" | quote }}
+        caFile: {{ .Values.datastorage.config.redis.tls.caFile | default "" | quote }}
+    retention:
+      enabled: {{ .Values.datastorage.config.retention.enabled | default true }}
+      interval: {{ .Values.datastorage.config.retention.interval | default "24h" | quote }}
+      batchSize: {{ .Values.datastorage.config.retention.batchSize | default 1000 }}
+      defaultDays: {{ .Values.datastorage.config.retention.defaultDays | default 2555 }}
     logging:
       level: {{ .Values.datastorage.logging.level | default "INFO" | upper | quote }}
-      format: json
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -71,6 +85,7 @@ spec:
         {{- include "kubernaut.podSecurityContext" .Values.datastorage | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.datastorage | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.datastorage "global" .Values.global) | nindent 6 }}
+      terminationGracePeriodSeconds: 90
       initContainers:
         - name: wait-for-postgres
           image: {{ .Values.postgresql.image }}
@@ -124,6 +139,11 @@ spec:
             - name: tls-certs
               mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
               readOnly: true
+            - name: signing-certs
+              mountPath: {{ .Values.datastorage.config.server.signerCertDir | default "/etc/certs" }}
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.datastorage.resources | nindent 12 }}
           readinessProbe:
@@ -163,6 +183,12 @@ spec:
           secret:
             secretName: datastorage-tls
             optional: true
+        - name: signing-certs
+          secret:
+            secretName: datastorage-signing-cert
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
 ---
 apiVersion: v1
 kind: Service

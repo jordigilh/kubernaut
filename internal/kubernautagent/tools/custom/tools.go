@@ -142,9 +142,17 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
+	component := signal.ComponentGVK()
+	gvkResolved := component != ""
+	if !gvkResolved {
+		component = strings.ToLower(signal.ResourceKind)
+	}
+	logr.FromContextOrDiscard(ctx).V(1).Info("list_available_actions: resolved component",
+		"component", component, "gvk_resolved", gvkResolved,
+		"remediation_id", signal.RemediationID)
 	params := ogenclient.ListAvailableActionsParams{
 		Severity:    ogenclient.ListAvailableActionsSeverity(signal.Severity),
-		Component:   strings.ToLower(signal.ResourceKind),
+		Component:   component,
 		Environment: signal.Environment,
 		Priority:    ogenclient.ListAvailableActionsPriority(signal.Priority),
 	}
@@ -197,10 +205,18 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
+	component := signal.ComponentGVK()
+	gvkResolved := component != ""
+	if !gvkResolved {
+		component = strings.ToLower(signal.ResourceKind)
+	}
+	logr.FromContextOrDiscard(ctx).V(1).Info("list_workflows: resolved component",
+		"component", component, "gvk_resolved", gvkResolved,
+		"remediation_id", signal.RemediationID)
 	params := ogenclient.ListWorkflowsByActionTypeParams{
 		ActionType:  a.ActionType,
 		Severity:    ogenclient.ListWorkflowsByActionTypeSeverity(signal.Severity),
-		Component:   strings.ToLower(signal.ResourceKind),
+		Component:   component,
 		Environment: signal.Environment,
 		Priority:    ogenclient.ListWorkflowsByActionTypePriority(signal.Priority),
 	}

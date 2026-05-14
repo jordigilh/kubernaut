@@ -621,7 +621,7 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 					},
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				Expect(json.NewEncoder(w).Encode(resp)).To(Succeed())
 			}))
 			defer server.Close()
 
@@ -637,7 +637,7 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 		})
 
 		It("UT-KA-800-FR-02: should propagate FinishReason 'length' (truncation) from OpenAI", func() {
-			content := `{"rca_summary":"trunca`
+			content := `{"rca_summary":"trunca"`
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				resp := openaitypes.ChatCompletionResponse{
 					ID:      "chatcmpl-fr02",
@@ -653,7 +653,7 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 					},
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				Expect(json.NewEncoder(w).Encode(resp)).To(Succeed())
 			}))
 			defer server.Close()
 

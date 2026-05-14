@@ -345,6 +345,11 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
 	}
 
+	// AU-9: Generate RSA signing certificate for audit exports
+	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, WorkflowExecutionNamespace, writer); err != nil {
+		return fmt.Errorf("failed to generate signing certificate: %w", err)
+	}
+
 	// Step 3: Create ServiceAccount + RBAC for WorkflowExecution controller audit writes (DD-AUTH-014)
 	// Per RCA (Jan 30, 2026): WE controller needs SA for DataStorage audit emission
 	// Pattern: Follow RemediationOrchestrator E2E infrastructure

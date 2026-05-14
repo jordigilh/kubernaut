@@ -23,6 +23,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-logr/logr"
+
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/tmc/langchaingo/llms"
@@ -48,6 +50,13 @@ type options struct {
 	bedrockRegion   string
 	httpClient      *http.Client
 	closeFn         func() error
+	logger          logr.Logger
+}
+
+// WithLogger injects a logr.Logger for diagnostic messages (e.g., malformed tool schemas).
+// If not provided, logging is silently discarded.
+func WithLogger(l logr.Logger) Option {
+	return func(o *options) { o.logger = l }
 }
 
 // WithAzureAPIVersion sets the Azure OpenAI API version (required for "azure" provider).
@@ -88,12 +97,13 @@ func WithCloser(fn func() error) Option {
 type Adapter struct {
 	model   llms.Model
 	closeFn func() error
+	logger  logr.Logger
 }
 
 // New creates a new LangChainGo adapter for the given provider.
 // Supported providers: "openai", "ollama", "azure", "vertex", "vertex_ai", "anthropic", "bedrock", "huggingface", "mistral".
 func New(provider, endpoint, model, apiKey string, opts ...Option) (*Adapter, error) {
-	o := &options{vertexLocation: "us-central1"}
+	o := &options{vertexLocation: "us-central1", logger: logr.Discard()}
 	for _, fn := range opts {
 		fn(o)
 	}
@@ -101,7 +111,7 @@ func New(provider, endpoint, model, apiKey string, opts ...Option) (*Adapter, er
 	if err != nil {
 		return nil, fmt.Errorf("langchaingo: %w", err)
 	}
-	return &Adapter{model: m, closeFn: o.closeFn}, nil
+	return &Adapter{model: m, closeFn: o.closeFn, logger: o.logger}, nil
 }
 
 func newModel(provider, endpoint, model, apiKey string, o *options) (llms.Model, error) {
@@ -204,7 +214,7 @@ func newModel(provider, endpoint, model, apiKey string, o *options) (llms.Model,
 func (a *Adapter) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
 
 	msgs := toMessages(req.Messages)
-	opts := buildCallOptions(req)
+	opts := buildCallOptions(req, a.logger)
 
 	cr, err := a.model.GenerateContent(ctx, msgs, opts...)
 	if err != nil {
@@ -260,14 +270,17 @@ func toMessageContent(m llm.Message) llms.MessageContent {
 	}
 }
 
-func buildCallOptions(req llm.ChatRequest) []llms.CallOption {
+func buildCallOptions(req llm.ChatRequest, logger logr.Logger) []llms.CallOption {
 	var opts []llms.CallOption
 	if len(req.Tools) > 0 {
 		tools := make([]llms.Tool, 0, len(req.Tools))
 		for _, td := range req.Tools {
 			var params any
 			if len(td.Parameters) > 0 {
-				_ = json.Unmarshal(td.Parameters, &params)
+				if err := json.Unmarshal(td.Parameters, &params); err != nil {
+					logger.Info("langchaingo: malformed tool parameter schema, using nil params",
+						"tool", td.Name, "error", err.Error())
+				}
 			}
 			tools = append(tools, llms.Tool{
 				Type: "function",
@@ -355,6 +368,23 @@ func normalizeStopReason(raw string) string {
 		}
 		return llm.FinishReasonStop
 	}
+}
+
+// StreamChat uses LangChainGo's WithStreamingFunc to forward text deltas
+// to the callback incrementally. The final ChatResponse is built from the
+// complete ContentResponse return value.
+func (a *Adapter) StreamChat(ctx context.Context, req llm.ChatRequest, callback func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	msgs := toMessages(req.Messages)
+	opts := buildCallOptions(req, a.logger)
+	opts = append(opts, llms.WithStreamingFunc(func(_ context.Context, chunk []byte) error {
+		return callback(llm.ChatStreamEvent{Delta: string(chunk)})
+	}))
+	resp, err := a.model.GenerateContent(ctx, msgs, opts...)
+	if err != nil {
+		return llm.ChatResponse{}, err
+	}
+	_ = callback(llm.ChatStreamEvent{Done: true})
+	return fromContentResponse(resp), nil
 }
 
 // Close releases resources held by the adapter. For providers with gRPC

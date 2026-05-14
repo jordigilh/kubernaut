@@ -44,7 +44,7 @@ var _ = Describe("Per-Scenario ForceText Override (BR-TESTING-657)", func() {
 			}
 
 			registry := scenarios.DefaultRegistryWithOverrides(overrides)
-			router := handlers.NewRouter(registry, true)
+			router := handlers.NewRouter(registry, true, "")
 			server := httptest.NewServer(router)
 			defer server.Close()
 
@@ -75,7 +75,7 @@ var _ = Describe("Per-Scenario ForceText Override (BR-TESTING-657)", func() {
 			}
 
 			registry := scenarios.DefaultRegistryWithOverrides(overrides)
-			router := handlers.NewRouter(registry, true)
+			router := handlers.NewRouter(registry, true, "")
 			server := httptest.NewServer(router)
 			defer server.Close()
 
@@ -106,7 +106,7 @@ var _ = Describe("Per-Scenario ForceText Override (BR-TESTING-657)", func() {
 			}
 
 			registry := scenarios.DefaultRegistryWithOverrides(overrides)
-			router := handlers.NewRouter(registry, false)
+			router := handlers.NewRouter(registry, false, "")
 			server := httptest.NewServer(router)
 			defer server.Close()
 
@@ -148,7 +148,7 @@ var _ = Describe("Custom Tool Call Handler Bypass (BR-TESTING-657)", func() {
 			}
 
 			registry := scenarios.DefaultRegistryWithOverrides(overrides)
-			router := handlers.NewRouter(registry, true)
+			router := handlers.NewRouter(registry, true, "")
 			server := httptest.NewServer(router)
 			defer server.Close()
 
@@ -194,7 +194,7 @@ var _ = Describe("Custom Tool Call Handler Bypass (BR-TESTING-657)", func() {
 			}
 
 			registry := scenarios.DefaultRegistryWithOverrides(overrides)
-			router := handlers.NewRouter(registry, true)
+			router := handlers.NewRouter(registry, true, "")
 			server := httptest.NewServer(router)
 			defer server.Close()
 
@@ -249,7 +249,7 @@ var _ = Describe("Custom Tool Call Handler Bypass (BR-TESTING-657)", func() {
 	Describe("IT-MOCK-657-006: No ToolCallName follows normal DAG path (backward compat)", func() {
 		It("should follow normal DAG path when no ToolCallName is set", func() {
 			registry := scenarios.DefaultRegistry()
-			router := handlers.NewRouter(registry, false)
+			router := handlers.NewRouter(registry, false, "")
 			server := httptest.NewServer(router)
 			defer server.Close()
 

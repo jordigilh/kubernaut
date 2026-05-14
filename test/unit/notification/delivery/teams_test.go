@@ -174,7 +174,7 @@ var _ = Describe("Microsoft Teams Delivery Channel (#593)", func() {
 			for _, code := range retryableCodes {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(code)
-					fmt.Fprint(w, "server error")
+					_, _ = fmt.Fprint(w, "server error")
 				}))
 
 				svc := delivery.NewTeamsDeliveryService(server.URL, 5*time.Second)
@@ -193,7 +193,7 @@ var _ = Describe("Microsoft Teams Delivery Channel (#593)", func() {
 			for _, code := range permanentCodes {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(code)
-					fmt.Fprint(w, "client error")
+					_, _ = fmt.Fprint(w, "client error")
 				}))
 
 				svc := delivery.NewTeamsDeliveryService(server.URL, 5*time.Second)

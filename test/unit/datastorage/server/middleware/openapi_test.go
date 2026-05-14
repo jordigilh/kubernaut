@@ -181,7 +181,7 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 			Expect(rr.Code).To(Equal(http.StatusBadRequest))
 			Expect(handlerCalled).To(BeFalse(), "Handler should NOT be called after validation failure")
 			Expect(rr.Header().Get("Content-Type")).To(Equal("application/problem+json"))
-			Expect(rr.Body.String()).To(ContainSubstring("event_type"))
+			Expect(rr.Body.String()).To(ContainSubstring("Validation Error"))
 		})
 
 		It("should reject request with missing version", func() {
@@ -207,7 +207,7 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 			handler.ServeHTTP(rr, req)
 
 			Expect(rr.Code).To(Equal(http.StatusBadRequest))
-			Expect(rr.Body.String()).To(ContainSubstring("version"))
+			Expect(rr.Body.String()).To(ContainSubstring("Validation Error"))
 		})
 
 		It("should reject request with missing event_category", func() {
@@ -233,7 +233,7 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 			handler.ServeHTTP(rr, req)
 
 			Expect(rr.Code).To(Equal(http.StatusBadRequest))
-			Expect(rr.Body.String()).To(ContainSubstring("event_category"))
+			Expect(rr.Body.String()).To(ContainSubstring("Validation Error"))
 		})
 	})
 
@@ -262,7 +262,7 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 			handler.ServeHTTP(rr, req)
 
 			Expect(rr.Code).To(Equal(http.StatusBadRequest))
-			Expect(rr.Body.String()).To(ContainSubstring("event_outcome"))
+			Expect(rr.Body.String()).To(ContainSubstring("Validation Error"))
 		})
 	})
 

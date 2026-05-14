@@ -105,6 +105,7 @@ func (h *handler) handleOllama(w http.ResponseWriter, r *http.Request) {
 type handler struct {
 	registry       *scenarios.Registry
 	forceText      bool
+	mode           string
 	tracker        *tracker.Tracker
 	headerRecorder *tracker.HeaderRecorder
 	faultInjector  *fault.Injector

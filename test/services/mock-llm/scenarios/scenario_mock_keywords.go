@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,9 +20,10 @@ import "github.com/jordigilh/kubernaut/pkg/shared/uuid"
 func noWorkflowFoundConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "no_workflow_found", SignalName: "MOCK_NO_WORKFLOW_FOUND", Severity: "critical",
-		Confidence: 0.0,
-		RootCause:            "No suitable workflow found in catalog for this signal type",
-		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "failing-pod",
+		Confidence:   0.0,
+		RootCause:    "No suitable workflow found in catalog for this signal type",
+		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "failing-pod",
+		APIVersion:           "v1",
 		InvestigationOutcome: "inconclusive",
 	}
 }
@@ -35,6 +36,7 @@ func lowConfidenceConfig() MockScenarioConfig {
 		Rationale:    "Multiple possible root causes identified; generic restart is safest but requires human judgment to confirm",
 		RootCause:    "Multiple possible root causes identified, requires human judgment",
 		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "ambiguous-pod",
+		APIVersion:   "v1",
 		Parameters:   map[string]string{"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"},
 		Contributing: []string{"ambiguous_root_cause", "multiple_correlated_signals"},
 		Alternatives: []MockAlternativeWorkflow{
@@ -49,9 +51,10 @@ func lowConfidenceConfig() MockScenarioConfig {
 func problemResolvedConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "problem_resolved", SignalName: "MOCK_PROBLEM_RESOLVED", Severity: "low",
-		Confidence: 0.85,
-		RootCause:            "Problem self-resolved through auto-scaling or transient condition cleared",
-		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "recovered-pod",
+		Confidence:   0.85,
+		RootCause:    "Problem self-resolved through auto-scaling or transient condition cleared",
+		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "recovered-pod",
+		APIVersion:           "v1",
 		Contributing:         []string{"Transient condition", "Auto-recovery"},
 		InvestigationOutcome: "problem_resolved",
 		IsActionable:         BoolPtr(false),
@@ -61,9 +64,10 @@ func problemResolvedConfig() MockScenarioConfig {
 func problemResolvedContradictionConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "problem_resolved_contradiction", SignalName: "MOCK_PROBLEM_RESOLVED_CONTRADICTION", Severity: "low",
-		Confidence: 0.85,
-		RootCause:            "Problem self-resolved. Transient OOM cleared after pod restart",
-		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "recovered-pod",
+		Confidence:   0.85,
+		RootCause:    "Problem self-resolved. Transient OOM cleared after pod restart",
+		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "recovered-pod",
+		APIVersion:           "v1",
 		Contributing:         []string{"Transient condition", "Auto-recovery"},
 		InvestigationOutcome: "problem_resolved",
 		IsActionable:         BoolPtr(false),
@@ -75,8 +79,9 @@ func maxRetriesExhaustedConfig() MockScenarioConfig {
 		ScenarioName: "max_retries_exhausted", SignalName: "MOCK_MAX_RETRIES_EXHAUSTED", Severity: "high",
 		WorkflowName: "nonexistent-invalid-workflow-xyz", WorkflowID: uuid.DeterministicUUID("nonexistent-invalid-workflow-xyz"),
 		WorkflowTitle: "Invalid Workflow", Confidence: 0.6,
-		RootCause:            "LLM analysis completed but selected an invalid workflow not present in the catalog.",
-		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "failed-analysis-pod",
+		RootCause:    "LLM analysis completed but selected an invalid workflow not present in the catalog.",
+		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "failed-analysis-pod",
+		APIVersion:           "v1",
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
 	}
@@ -85,10 +90,11 @@ func maxRetriesExhaustedConfig() MockScenarioConfig {
 func notActionableConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "not_actionable", SignalName: "MOCK_NOT_ACTIONABLE", Severity: "low",
-		Confidence:           0.0,
-		Rationale:            "Orphaned PVC from completed batch job; no active workload references it",
-		RootCause:            "Orphaned PVC from completed batch job — no active workload references this volume",
-		ResourceKind:         "PersistentVolumeClaim", ResourceNS: "production", ResourceName: "batch-job-pvc-expired",
+		Confidence:   0.0,
+		Rationale:    "Orphaned PVC from completed batch job; no active workload references it",
+		RootCause:    "Orphaned PVC from completed batch job — no active workload references this volume",
+		ResourceKind: "PersistentVolumeClaim", ResourceNS: "production", ResourceName: "batch-job-pvc-expired",
+		APIVersion:           "v1",
 		Contributing:         []string{"batch_job_completed", "pvc_retention_policy", "no_active_consumers"},
 		InvestigationOutcome: "predictive_no_action",
 		IsActionable:         BoolPtr(false),
@@ -103,6 +109,7 @@ func parallelToolsConfig() MockScenarioConfig {
 		WorkflowTitle: "Increase Memory Limits", Confidence: 0.9,
 		RootCause:    "Container OOMKilled due to memory limits below steady-state usage",
 		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "api-server-abc",
+		APIVersion:           "v1",
 		Parameters:           map[string]string{"NAMESPACE": "production", "POD_NAME": "api-server-abc"},
 		InvestigationOutcome: "actionable",
 		IsActionable:         &actionable,
@@ -120,8 +127,8 @@ func rcaIncompleteConfig() MockScenarioConfig {
 		ScenarioName: "rca_incomplete", SignalName: "MOCK_RCA_INCOMPLETE", Severity: "critical",
 		WorkflowName: "generic-restart-v1", WorkflowID: uuid.DeterministicUUID("generic-restart-v1"),
 		WorkflowTitle: "Generic Pod Restart", Confidence: 0.88,
-		RootCause:            "Root cause identified but affected resource could not be determined from signal context",
-		ResourceKind:         "Pod", ResourceNS: "production", ResourceName: "unreachable-pod",
+		RootCause:    "Root cause identified but affected resource could not be determined from signal context",
+		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "unreachable-pod",
 		APIVersion:           "v1",
 		OverrideResource:     true,
 		Parameters:           map[string]string{"NAMESPACE": "production", "POD_NAME": "unreachable-pod"},

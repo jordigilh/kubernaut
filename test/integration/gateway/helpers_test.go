@@ -1403,7 +1403,7 @@ func createNormalizedSignal(builder SignalBuilder) *types.NormalizedSignal {
 
 	signal := &types.NormalizedSignal{
 		Fingerprint: fingerprint,
-		SignalName:   builder.AlertName,
+		SignalName:  builder.AlertName,
 		Severity:    builder.Severity,
 		Namespace:   builder.Namespace,
 		Resource: types.ResourceIdentifier{
@@ -1451,30 +1451,6 @@ func getCounterValue(registry *prometheus.Registry, metricName string, labels ma
 			if labelsMatch(metric, labels) {
 				if metric.Counter != nil {
 					return metric.Counter.GetValue()
-				}
-			}
-		}
-	}
-
-	return 0
-}
-
-// getGaugeValue retrieves the current value of a Gauge metric
-func getGaugeValue(registry *prometheus.Registry, metricName string, labels map[string]string) float64 {
-	metricFamilies, err := registry.Gather()
-	if err != nil {
-		return 0
-	}
-
-	for _, mf := range metricFamilies {
-		if mf.GetName() != metricName {
-			continue
-		}
-
-		for _, metric := range mf.GetMetric() {
-			if labelsMatch(metric, labels) {
-				if metric.Gauge != nil {
-					return metric.Gauge.GetValue()
 				}
 			}
 		}

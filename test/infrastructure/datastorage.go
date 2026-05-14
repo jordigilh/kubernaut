@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/cert"
 	"github.com/jordigilh/kubernaut/test/testutil"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -464,7 +465,7 @@ func extractKubernautServiceLogs(logsDir, serviceName string, writer io.Writer) 
 // Based on SignalProcessing reference implementation (test/infrastructure/signalprocessing.go:246)
 // SetupDataStorageInfrastructureParallel sets up DataStorage E2E infrastructure with OAuth2-Proxy.
 // TD-E2E-001 Phase 1: OAuth2-Proxy pulled automatically from quay.io (no manual build/load).
-func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath, namespace, dataStorageImage string, writer io.Writer) error {
+func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath, namespace string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 DataStorage E2E Infrastructure (HYBRID PATTERN)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -527,6 +528,12 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		return fmt.Errorf("failed to generate inter-service TLS: %w", err)
 	}
 
+	// AU-9: Generate RSA signing certificate for audit exports (separate from ECDSA inter-service TLS)
+	_, _ = fmt.Fprintln(writer, "🔏 AU-9: Generating RSA signing certificate for audit exports...")
+	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate signing certificate: %w", err)
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Load image + Deploy infrastructure in PARALLEL
 	// ═══════════════════════════════════════════════════════════════════════
@@ -583,63 +590,38 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", r.name)
 	}
 
-	// Update dataStorageImage to use the actual built image name for deployment
-	dataStorageImage = dsImageName
-
 	_, _ = fmt.Fprintln(writer, "✅ Phase 3 complete - image loaded + infrastructure deployed")
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4: Deploy migrations + DataStorage service in PARALLEL (DD-TEST-002 MANDATE)
+	// PHASE 4: Apply migrations, THEN deploy DataStorage
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying migrations + DataStorage service in parallel...")
-	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies - DataStorage retries until migrations complete)")
+	// Migrations MUST complete before DS starts. The DS binary does not run
+	// goose — it expects the schema to exist and will fail on startup if
+	// tables like audit_events or workflows are missing (e.g.
+	// partition.EnsureMonthlyPartitions panics on missing relations).
+	// The retry loop in main.go is for *connectivity*, not schema readiness.
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Applying migrations then deploying DataStorage...")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~20-30 seconds")
 
-	type deployResult struct {
-		name string
-		err  error
+	_, _ = fmt.Fprintln(writer, "  🔄 Running goose migrations...")
+	if err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("migrations failed: %w", err)
 	}
-	deployResults := make(chan deployResult, 2)
+	_, _ = fmt.Fprintln(writer, "  ✅ Migrations applied")
 
-	// Launch migrations and DataStorage deployment concurrently
-	go func() {
-		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
-		err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
-		deployResults <- deployResult{"Migrations", err}
-	}()
-	go func() {
-		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
-		// TD-E2E-001 Phase 1: Deploy with OAuth2-Proxy sidecar (image from quay.io)
-		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer)
-		deployResults <- deployResult{"DataStorage", err}
-	}()
-
-	// Collect ALL results before proceeding (MANDATORY)
-	var deployErrors []error
-	for i := 0; i < 2; i++ {
-		result := <-deployResults
-		if result.err != nil {
-			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
-			deployErrors = append(deployErrors, result.err)
-		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
-		}
+	_, _ = fmt.Fprintln(writer, "  🔄 Deploying DataStorage service...")
+	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dsImageName, writer); err != nil {
+		return fmt.Errorf("DataStorage deployment failed: %w", err)
 	}
+	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage manifests applied")
 
-	if len(deployErrors) > 0 {
-		return fmt.Errorf("one or more deployments failed: %v", deployErrors)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
-
-	// Single wait for DataStorage to be ready (migrations complete first, then DataStorage connects)
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for DataStorage to be ready (Kubernetes reconciling dependencies)...")
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for DataStorage to be ready...")
 	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintf(writer, "✅ DataStorage E2E infrastructure ready in namespace %s\n", namespace)
-	_, _ = fmt.Fprintln(writer, "   Setup time optimized: ~23%% faster than sequential")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return nil
@@ -954,6 +936,19 @@ spec:
   selector:
     app: postgresql
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgresql-data
+  labels:
+    app: postgresql
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1000,10 +995,10 @@ spec:
           mountPath: /var/lib/postgresql/data
         resources:
           requests:
-            memory: 256Mi
+            memory: 512Mi
             cpu: 250m
           limits:
-            memory: 512Mi
+            memory: 1Gi
             cpu: 500m
         readinessProbe:
           exec:
@@ -1019,7 +1014,8 @@ spec:
           timeoutSeconds: 5
       volumes:
       - name: postgresql-data
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: postgresql-data
 `
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
@@ -1172,6 +1168,7 @@ data:
       healthPort: 8081
       readTimeout: 30s
       writeTimeout: 30s
+      signerCertDir: /etc/signing-certs
       tls:
         certDir: /etc/tls
     database:
@@ -1327,6 +1324,9 @@ spec:
           readOnly: true
         - name: tls-certs
           mountPath: /etc/tls
+          readOnly: true
+        - name: signing-certs
+          mountPath: /etc/signing-certs
           readOnly: true%[7]s
         resources:
           requests:
@@ -1359,6 +1359,9 @@ spec:
         secret:
           secretName: datastorage-tls
           optional: true
+      - name: signing-certs
+        secret:
+          secretName: datastorage-signing
       - name: secrets
         projected:
           sources:
@@ -2346,5 +2349,38 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 
 	_, _ = fmt.Fprintln(writer, "✅ DataStorage deployed with cert-manager certificate")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
+
+// GenerateSigningCertSecret creates a datastorage-signing K8s Secret with an RSA self-signed
+// certificate for audit export signing (AU-9). This is separate from the ECDSA inter-service
+// TLS certificates because the Signer requires RSA keys.
+func GenerateSigningCertSecret(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	pair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
+		CommonName:       "datastorage-signing",
+		Organization:     "Kubernaut",
+		DNSNames:         []string{"localhost"},
+		ValidityDuration: 24 * time.Hour,
+		KeySize:          2048,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to generate signing cert: %w", err)
+	}
+
+	manifest := fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: datastorage-signing
+type: kubernetes.io/tls
+stringData:
+  tls.crt: |
+%s
+  tls.key: |
+%s`, indentPEM(string(pair.CertPEM), 4), indentPEM(string(pair.KeyPEM), 4))
+
+	if err := kubectlApply(ctx, kubeconfigPath, namespace, manifest, writer); err != nil {
+		return fmt.Errorf("failed to create signing cert Secret: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ datastorage-signing Secret created (RSA 2048)")
 	return nil
 }

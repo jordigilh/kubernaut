@@ -85,11 +85,44 @@ type InvestigationResult struct {
 	// Populated by Validator.SelfCorrect when validation fails and retries occur.
 	ValidationAttemptsHistory []ValidationAttemptRecord `json:"validation_attempts_history,omitempty"`
 
+	// Cancelled indicates the investigation was aborted by operator action
+	// (BR-SESSION-001). When true, the result contains partial accumulated
+	// state up to the point of cancellation.
+	Cancelled bool `json:"cancelled,omitempty"`
+
+	// CancelledPhase records which investigation phase was active when
+	// cancellation occurred ("rca" or "workflow_discovery").
+	CancelledPhase string `json:"cancelled_phase,omitempty"`
+
+	// CancelledAtTurn records which LLM conversation turn was active when
+	// cancellation was detected. Together with CancelledPhase, this enables
+	// full audit reconstruction of investigation progress (SOC2 CC8.1).
+	CancelledAtTurn int `json:"cancelled_at_turn,omitempty"`
+
+	// AccumulatedMessages holds the LLM conversation accumulated before
+	// cancellation. Serialized into audit events for forensic post-mortem
+	// RAG (BR-AUDIT-070). Only populated when Cancelled is true.
+	AccumulatedMessages []map[string]interface{} `json:"accumulated_messages,omitempty"`
+
+	// TokenUsage holds cumulative token counts at the point of result
+	// construction. For cancelled investigations this captures spend up to
+	// cancellation; for completed investigations it captures total spend.
+	// Used for cost attribution and forensic audit (BR-AUDIT-070, CC6.1).
+	TokenUsage *TokenUsageSummary `json:"token_usage,omitempty"`
+
 	// AlignmentVerdict holds the shadow agent's alignment check result.
 	// Populated by InvestigatorWrapper for ALL investigations (aligned or suspicious).
 	// BR-AI-601, #1076: When CircuitBreakerActivated=true, the primary LLM results
 	// may be incomplete or compromised; shadow findings are the primary content.
 	AlignmentVerdict *AlignmentVerdictResult `json:"alignment_verdict,omitempty"`
+}
+
+// TokenUsageSummary holds cumulative token counts. Mirrors
+// investigator.TokenUsageSummary for cross-package use.
+type TokenUsageSummary struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 // ValidationAttemptRecord captures a single validation attempt during
@@ -110,19 +143,6 @@ type AlternativeWorkflow struct {
 	ExecutionBundle string  `json:"execution_bundle,omitempty"`
 	Confidence      float64 `json:"confidence"`
 	Rationale       string  `json:"rationale"`
-}
-
-// DueDiligenceReview captures the LLM's adversarial self-review across 8 dimensions.
-// Enforced by JSON schema in rcaResultSchemaJSON (Issue #847).
-type DueDiligenceReview struct {
-	CausalCompleteness    string `json:"causal_completeness"`
-	TargetAccuracy        string `json:"target_accuracy"`
-	EvidenceSufficiency   string `json:"evidence_sufficiency"`
-	AlternativeHypotheses string `json:"alternative_hypotheses"`
-	ScopeCompleteness     string `json:"scope_completeness"`
-	Proportionality       string `json:"proportionality"`
-	RegressionAwareness   string `json:"regression_awareness"`
-	ConfidenceCalibration string `json:"confidence_calibration"`
 }
 
 // AlignmentVerdictResult holds the shadow agent's overall verdict on an investigation.
@@ -153,6 +173,19 @@ type AlignmentFinding struct {
 	Explanation string `json:"explanation"`
 }
 
+// DueDiligenceReview captures the LLM's adversarial self-review across 8 dimensions.
+// Enforced by JSON schema in rcaResultSchemaJSON (Issue #847).
+type DueDiligenceReview struct {
+	CausalCompleteness    string `json:"causal_completeness"`
+	TargetAccuracy        string `json:"target_accuracy"`
+	EvidenceSufficiency   string `json:"evidence_sufficiency"`
+	AlternativeHypotheses string `json:"alternative_hypotheses"`
+	ScopeCompleteness     string `json:"scope_completeness"`
+	Proportionality       string `json:"proportionality"`
+	RegressionAwareness   string `json:"regression_awareness"`
+	ConfidenceCalibration string `json:"confidence_calibration"`
+}
+
 // RemediationTarget identifies the K8s resource to remediate.
 type RemediationTarget struct {
 	Kind      string `json:"kind"`
@@ -179,8 +212,9 @@ type SignalContext struct {
 	RemediationID string `json:"remediation_id,omitempty"`
 
 	// Resource targeting
-	ResourceKind string `json:"resource_kind,omitempty"`
-	ResourceName string `json:"resource_name,omitempty"`
+	ResourceKind       string `json:"resource_kind,omitempty"`
+	ResourceName       string `json:"resource_name,omitempty"`
+	ResourceAPIVersion string `json:"resource_api_version,omitempty"`
 
 	// Environment context
 	ClusterName      string `json:"cluster_name,omitempty"`
@@ -209,4 +243,15 @@ type SignalContext struct {
 	DeduplicationWindowMinutes *int   `json:"deduplication_window_minutes,omitempty"`
 	FirstSeen                  string `json:"first_seen,omitempty"`
 	LastSeen                   string `json:"last_seen,omitempty"`
+}
+
+// ComponentGVK returns the fully-qualified apiVersion/Kind string for workflow
+// component matching (Issue #1051). Returns empty string when either
+// ResourceAPIVersion or ResourceKind is not set, preventing silent mismatch
+// against workflow labels that use GVK format.
+func (s SignalContext) ComponentGVK() string {
+	if s.ResourceAPIVersion == "" || s.ResourceKind == "" {
+		return ""
+	}
+	return s.ResourceAPIVersion + "/" + s.ResourceKind
 }

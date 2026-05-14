@@ -56,6 +56,24 @@ func (p *LLMProxy) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatRespo
 	return resp, nil
 }
 
+// StreamChat delegates to the inner client's StreamChat, then submits the
+// response content for alignment evaluation via the context-scoped Observer.
+func (p *LLMProxy) StreamChat(ctx context.Context, req llm.ChatRequest, callback func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	resp, err := p.inner.StreamChat(ctx, req, callback)
+	if err != nil {
+		return resp, err
+	}
+	if obs := ObserverFromContext(ctx); obs != nil && resp.Message.Content != "" {
+		step := Step{
+			Index:   obs.NextStepIndex(),
+			Kind:    StepKindLLMReasoning,
+			Content: resp.Message.Content,
+		}
+		obs.SubmitAsync(ctx, step)
+	}
+	return resp, nil
+}
+
 // Close releases resources held by the inner client.
 func (p *LLMProxy) Close() error {
 	if p == nil || p.inner == nil {

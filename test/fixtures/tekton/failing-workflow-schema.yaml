@@ -15,7 +15,7 @@ labels:
   signalName: test
   severity: [low]
   environment: [test]
-  component: deployment
+  component: apps/v1/Deployment
   priority: P3
 
 customLabels:

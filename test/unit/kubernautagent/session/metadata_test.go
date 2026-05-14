@@ -33,15 +33,15 @@ var _ = Describe("Session Metadata — #433", func() {
 	Describe("UT-KA-433-METADATA-001: StartInvestigation propagates metadata to session", func() {
 		It("should store metadata on the session and make it retrievable", func() {
 			store := session.NewStore(5 * time.Minute)
-			manager := session.NewManager(store, logr.Discard())
+			manager := session.NewManager(store, logr.Discard(), nil, nil)
 
 			metadata := map[string]string{
 				"incident_id": "e2e-ka-001-oom",
 			}
 
 			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
-				time.Sleep(50 * time.Millisecond) // APPROVED EXCEPTION: simulated investigation work
-				return &katypes.InvestigationResult{RCASummary: "done"}, nil
+				time.Sleep(50 * time.Millisecond)
+				return &katypes.InvestigationResult{}, nil
 			}, metadata)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(id).NotTo(BeEmpty())
@@ -56,14 +56,14 @@ var _ = Describe("Session Metadata — #433", func() {
 	Describe("UT-KA-433-METADATA-002: Metadata persists after investigation completes", func() {
 		It("should retain metadata on a completed session", func() {
 			store := session.NewStore(5 * time.Minute)
-			manager := session.NewManager(store, logr.Discard())
+			manager := session.NewManager(store, logr.Discard(), nil, nil)
 
 			metadata := map[string]string{
 				"incident_id": "e2e-ka-002-crash",
 			}
 
 			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
-				return &katypes.InvestigationResult{RCASummary: "result"}, nil
+				return &katypes.InvestigationResult{}, nil
 			}, metadata)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -85,10 +85,10 @@ var _ = Describe("Session Metadata — #433", func() {
 	Describe("UT-KA-433-METADATA-003: Nil metadata does not cause issues", func() {
 		It("should handle nil metadata gracefully", func() {
 			store := session.NewStore(5 * time.Minute)
-			manager := session.NewManager(store, logr.Discard())
+			manager := session.NewManager(store, logr.Discard(), nil, nil)
 
 			id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
-				return &katypes.InvestigationResult{RCASummary: "result"}, nil
+				return &katypes.InvestigationResult{}, nil
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
 

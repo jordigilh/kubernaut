@@ -19,6 +19,7 @@ package prompt
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -337,6 +338,7 @@ func DetectDecliningEffectiveness(chain []enrichment.Tier1Entry) []string {
 			declining = append(declining, actionType)
 		}
 	}
+	slices.Sort(declining)
 	return declining
 }
 
@@ -370,6 +372,12 @@ func DetectCompletedButRecurring(entries []HistoryEntry, threshold int) []Recurr
 			})
 		}
 	}
+	slices.SortFunc(result, func(a, b RecurringPattern) int {
+		if a.ActionType != b.ActionType {
+			return strings.Compare(a.ActionType, b.ActionType)
+		}
+		return strings.Compare(a.SignalType, b.SignalType)
+	})
 	return result
 }
 

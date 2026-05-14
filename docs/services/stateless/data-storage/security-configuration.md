@@ -609,7 +609,7 @@ func (tr *TokenReviewer) ValidateToken(ctx context.Context, token string) (*auth
 
 - [ ] Audit trail persisted for all write operations
 - [ ] Immutable audit records (no updates, only inserts)
-- [ ] Data retention policy enforced (90-day default)
+- [x] Data retention policy enforced (2555-day / 7-year default per ADR-034)
 - [ ] GDPR compliance for sensitive data (if applicable)
 
 ---

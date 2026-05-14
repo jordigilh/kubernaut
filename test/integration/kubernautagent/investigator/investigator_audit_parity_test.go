@@ -73,6 +73,10 @@ func (m *shadowMockLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.Ch
 	}, nil
 }
 
+func (m *shadowMockLLMClient) StreamChat(ctx context.Context, req llm.ChatRequest, _ func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
+	return m.Chat(ctx, req)
+}
+
 func (m *shadowMockLLMClient) Close() error { return nil }
 
 func (m *shadowMockLLMClient) totalCalls() int {
@@ -86,6 +90,10 @@ type errorLLMClient struct {
 }
 
 func (e *errorLLMClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResponse, error) {
+	return llm.ChatResponse{}, e.err
+}
+
+func (e *errorLLMClient) StreamChat(_ context.Context, _ llm.ChatRequest, _ func(llm.ChatStreamEvent) error) (llm.ChatResponse, error) {
 	return llm.ChatResponse{}, e.err
 }
 

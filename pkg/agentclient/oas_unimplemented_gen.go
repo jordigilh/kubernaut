@@ -14,6 +14,16 @@ type UnimplementedHandler struct{}
 
 var _ Handler = UnimplementedHandler{}
 
+// CancelSessionAPIV1IncidentSessionSessionIDCancelPost implements cancel_session_api_v1_incident_session__session_id__cancel_post operation.
+//
+// Cancel a running investigation session.
+// Business Requirement: BR-SESSION-003 (Session cancellability).
+//
+// POST /api/v1/incident/session/{session_id}/cancel
+func (UnimplementedHandler) CancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx context.Context, params CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams) (r CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetConfigConfigGet implements get_config_config_get operation.
 //
 // Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
@@ -77,5 +87,25 @@ func (UnimplementedHandler) IncidentSessionStatusEndpointAPIV1IncidentSessionSes
 //
 // GET /readyz
 func (UnimplementedHandler) ReadinessCheckReadyzGet(ctx context.Context) (r jx.Raw, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet implements session_snapshot_api_v1_incident_session__session_id__snapshot_get operation.
+//
+// PR3 extends the response with CancelledResult fields (messages, turn, phase, tokens).
+// Business Requirement: BR-SESSION-004 (Session observability).
+//
+// GET /api/v1/incident/session/{session_id}/snapshot
+func (UnimplementedHandler) SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(ctx context.Context, params SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams) (r SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// SessionStreamAPIV1IncidentSessionSessionIDStreamGet implements session_stream_api_v1_incident_session__session_id__stream_get operation.
+//
+// Streams turn-level and token-level events in real time.
+// Business Requirement: BR-SESSION-005 (Real-time session streaming).
+//
+// GET /api/v1/incident/session/{session_id}/stream
+func (UnimplementedHandler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(ctx context.Context, params SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams) (r SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, _ error) {
 	return r, ht.ErrNotImplemented
 }

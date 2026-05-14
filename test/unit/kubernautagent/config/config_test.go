@@ -386,6 +386,80 @@ ai:
 		})
 	})
 
+	Describe("UT-KA-823-CFG-001: DefaultConfig includes rate limit defaults", func() {
+		It("should set rate limit defaults matching production values", func() {
+			cfg := config.DefaultConfig()
+			Expect(cfg.Runtime.Server.RateLimit.RequestsPerSecond).To(Equal(5.0))
+			Expect(cfg.Runtime.Server.RateLimit.Burst).To(Equal(10))
+			Expect(cfg.Runtime.Server.RateLimit.CleanupInterval).To(Equal(5 * time.Minute))
+			Expect(cfg.Runtime.Server.RateLimit.MaxAge).To(Equal(10 * time.Minute))
+		})
+	})
+
+	Describe("UT-KA-823-CFG-002: Validate rejects invalid rate limit values", func() {
+		It("should reject zero requestsPerSecond", func() {
+			yaml := []byte(`
+runtime:
+  server:
+    rateLimit:
+      requestsPerSecond: 0
+      burst: 10
+ai:
+  llm:
+    provider: "openai"
+  investigation:
+    maxTurns: 40
+`)
+			cfg, err := config.Load(yaml)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("runtime.server.rateLimit.requestsPerSecond must be positive")))
+		})
+
+		It("should reject zero burst", func() {
+			yaml := []byte(`
+runtime:
+  server:
+    rateLimit:
+      requestsPerSecond: 5
+      burst: 0
+ai:
+  llm:
+    provider: "openai"
+  investigation:
+    maxTurns: 40
+`)
+			cfg, err := config.Load(yaml)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("runtime.server.rateLimit.burst must be positive")))
+		})
+	})
+
+	Describe("UT-KA-823-CFG-003: Rate limit config parsed from YAML", func() {
+		It("should deserialize custom rate limit values", func() {
+			yaml := []byte(`
+runtime:
+  server:
+    rateLimit:
+      requestsPerSecond: 20
+      burst: 50
+      cleanupInterval: 10m
+      maxAge: 30m
+ai:
+  llm:
+    provider: "openai"
+  investigation:
+    maxTurns: 40
+`)
+			cfg, err := config.Load(yaml)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Runtime.Server.RateLimit.RequestsPerSecond).To(Equal(20.0))
+			Expect(cfg.Runtime.Server.RateLimit.Burst).To(Equal(50))
+			Expect(cfg.Runtime.Server.RateLimit.CleanupInterval).To(Equal(10 * time.Minute))
+			Expect(cfg.Runtime.Server.RateLimit.MaxAge).To(Equal(30 * time.Minute))
+			Expect(cfg.Validate()).NotTo(HaveOccurred())
+		})
+	})
+
 	Describe("UT-KA-CFG-OAUTH2-RESOLVE: ResolveOAuth2Credentials reads from mounted Secret files", func() {
 		It("should resolve clientID and clientSecret from files", func() {
 			dir, err := os.MkdirTemp("", "oauth2-test")

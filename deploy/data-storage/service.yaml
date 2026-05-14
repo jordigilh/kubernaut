@@ -1,22 +1,8 @@
-# ========================================
 # DD-AUTH-014: DataStorage Service with Middleware-Based Auth
-# No oauth-proxy sidecar - auth handled in DataStorage middleware
-# ========================================
-#
-# Service routes external requests directly to DataStorage:
-# - External clients → Service:8081 → DataStorage:8081
-#
-# Port Routing:
-# - Service port 8081 → Pod data-storage container port 8081 (direct)
-# - Metrics port 9090 → Pod data-storage container port 9090 (direct, no auth)
-#
-# Authentication Flow (in DataStorage middleware):
-# 1. Services send requests to data-storage-service:8081 with Bearer token
-# 2. Service routes directly to DataStorage container (port 8081)
-# 3. DataStorage middleware validates token (TokenReview API)
-# 4. DataStorage middleware checks permissions (SubjectAccessReview API)
-# 5. User identity injected into request context for audit logging
-# ========================================
+# Port Routing (aligned with Helm):
+# - API:     8080 → Pod 8080
+# - Health:  8081 → Pod 8081
+# - Metrics: 9090 → Pod 9090
 apiVersion: v1
 kind: Service
 metadata:
@@ -29,15 +15,17 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    # DD-AUTH-014: HTTP traffic routes directly to DataStorage (no proxy)
     - name: http
-      port: 8081
-      targetPort: http  # Routes directly to data-storage container 'http' port (8081)
+      port: 8080
+      targetPort: http
       protocol: TCP
-    # Metrics port routes directly to DataStorage (no authentication)
+    - name: health
+      port: 8081
+      targetPort: health
+      protocol: TCP
     - name: metrics
       port: 9090
-      targetPort: metrics  # Routes directly to data-storage container 'metrics' port (9090)
+      targetPort: metrics
       protocol: TCP
   selector:
     app: data-storage-service

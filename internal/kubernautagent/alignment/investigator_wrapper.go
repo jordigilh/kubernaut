@@ -170,7 +170,6 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 		if result == nil {
 			result = &katypes.InvestigationResult{}
 		}
-		err = nil
 	} else if err != nil {
 		return result, err
 	}

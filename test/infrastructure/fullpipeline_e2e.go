@@ -83,15 +83,6 @@ func skipMockLLM() bool {
 	return os.Getenv("SKIP_MOCK_LLM") != ""
 }
 
-// getEnvOrDefault returns the value of the environment variable named by key,
-// or fallback if the variable is unset or empty.
-func getEnvOrDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
 // fullPipelineImageConfig defines all images required for the full pipeline E2E.
 // Each entry maps to a BuildImageForKind call.
 var fullPipelineImageConfigs = []E2EImageConfig{
@@ -264,6 +255,11 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		return builtImages, nil, fmt.Errorf("failed to generate inter-service TLS: %w", err)
 	}
 
+	// AU-9: Generate RSA signing certificate for audit exports
+	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return builtImages, nil, fmt.Errorf("failed to generate signing certificate: %w", err)
+	}
+
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 5 complete (%s)\n", time.Since(phase5Start).Round(time.Second))
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -408,7 +404,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 
 	// A1: Kubernaut Agent RBAC (prerequisite for KA, fast kubectl apply)
 	go func() {
-		allResults <- waveResult{"KA-RBAC", deployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer)}
+		allResults <- waveResult{"KA-RBAC", DeployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer)}
 	}()
 
 	// A2: Mock LLM (Kubernaut Agent depends on this)
@@ -419,13 +415,13 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			allResults <- waveResult{"MockLLM", nil}
 			return
 		}
-		err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], seededUUIDs, writer)
+		err := DeployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], seededUUIDs, writer)
 		allResults <- waveResult{"MockLLM", err}
 	}()
 
 	// A2b: Mock LLM Shadow (alignment evaluation — KA config references mock-llm-shadow:8080)
 	go func() {
-		err := deployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], writer)
+		err := DeployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], writer)
 		allResults <- waveResult{"MockLLMShadow", err}
 	}()
 
@@ -494,7 +490,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// B1: Kubernaut Agent — wait for Mock LLM
 	go func() {
 		<-mockLLMReady
-		err := deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], writer)
+		err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
 		allResults <- waveResult{"KubernautAgent", err}
 	}()
 
@@ -969,6 +965,13 @@ spec:
 //   - kubeconfigPath: Path to kubeconfig
 //   - writer: Output writer for progress logging
 func DeployMemoryEater(ctx context.Context, targetNamespace, kubeconfigPath string, writer io.Writer) error {
+	return DeployMemoryEaterWithLimits(ctx, targetNamespace, kubeconfigPath, "50Mi", "20Mi", writer)
+}
+
+// DeployMemoryEaterWithLimits deploys a memory-eater with configurable resource limits.
+// Different limits produce a different spec_hash, isolating the deployment from
+// ineffective chain detection triggered by other tests with the same spec.
+func DeployMemoryEaterWithLimits(ctx context.Context, targetNamespace, kubeconfigPath, memLimit, memRequest string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  🐛 Deploying memory-eater in namespace %s...\n", targetNamespace)
 
 	manifest := fmt.Sprintf(`apiVersion: apps/v1
@@ -995,17 +998,13 @@ spec:
       - name: memory-eater
         image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0
         imagePullPolicy: IfNotPresent
-        # Positional args: initial_memory initial_duration target_memory target_duration hold_duration
-        # Consumes 40Mi initially for 1s, then grows to 60Mi over 1s, then exits (hold=0)
-        # Limit deliberately lower than target+runtime to trigger OOMKill (exit 137)
-        # The remediation workflow fixes this by increasing the memory limit
         args: ["40Mi", "1", "60Mi", "1", "0"]
         resources:
           limits:
-            memory: "50Mi"
+            memory: "%s"
           requests:
-            memory: "20Mi"
-`, targetNamespace)
+            memory: "%s"
+`, targetNamespace, memLimit, memRequest)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)

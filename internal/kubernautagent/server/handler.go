@@ -18,9 +18,11 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -31,6 +33,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -51,16 +54,19 @@ type Handler struct {
 	sessions     *session.Manager
 	investigator InvestigationRunner
 	logger       logr.Logger
+	metrics      *metrics.Metrics
 }
 
 var _ agentclient.Handler = (*Handler)(nil)
 
 // NewHandler creates a Kubernaut Agent ogen handler.
-func NewHandler(sessions *session.Manager, inv InvestigationRunner, logger logr.Logger) *Handler {
+// metrics may be nil (all metric calls are nil-safe per OPS-1).
+func NewHandler(sessions *session.Manager, inv InvestigationRunner, logger logr.Logger, m *metrics.Metrics) *Handler {
 	return &Handler{
 		sessions:     sessions,
 		investigator: inv,
 		logger:       logger,
+		metrics:      m,
 	}
 }
 
@@ -110,7 +116,10 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 	)
 
 	metadata := map[string]string{
-		"incident_id": req.IncidentID,
+		"incident_id":    req.IncidentID,
+		"remediation_id": req.RemediationID,
+		"signal_name":    signal.Name,
+		"severity":       signal.Severity,
 	}
 	sessionID, err := h.sessions.StartInvestigation(ctx, func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
 		bgCtx = audit.WithActor(bgCtx, actor, "User")
@@ -121,7 +130,7 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
 			Type:     "https://kubernaut.ai/problems/internal-error",
 			Title:    "Internal Server Error",
-			Detail:   "internal server error",
+			Detail:   "failed to start investigation",
 			Status:   500,
 			Instance: "/api/v1/incident/analyze",
 		}, nil
@@ -129,11 +138,11 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 
 	sid, err := uuid.Parse(sessionID)
 	if err != nil {
-		h.logger.Error(err, "invalid session UUID", "session_id", sessionID)
-		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
+		h.logger.Error(err, "invalid session ID format", "session_id", sessionID)
+		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError{
 			Type:     "https://kubernaut.ai/problems/internal-error",
 			Title:    "Internal Server Error",
-			Detail:   "internal server error",
+			Detail:   "invalid session ID",
 			Status:   500,
 			Instance: "/api/v1/incident/analyze",
 		}, nil
@@ -143,10 +152,11 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 
 // IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet implements GET /api/v1/incident/session/{session_id}.
 func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
-	_ context.Context,
+	ctx context.Context,
 	params agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams,
 ) (agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, error) {
-	sess, err := h.sessions.GetSession(params.SessionID)
+	endpoint := fmt.Sprintf("/api/v1/incident/session/%s", params.SessionID)
+	sess, err := h.getAuthorizedSession(ctx, params.SessionID, endpoint)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return &agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound{
@@ -154,17 +164,15 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 				Title:    "Session Not Found",
 				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
 				Status:   404,
-				Instance: fmt.Sprintf("/api/v1/incident/session/%s", params.SessionID),
+				Instance: endpoint,
 			}, nil
 		}
+		// Design: log+return-generic is intentional at handler boundaries (SOC2
+		// CC8.1). The logger captures the root cause for operators; the client
+		// receives a sanitized message with no internal details. This is NOT
+		// double handling (#52) — it is the boundary contract.
 		h.logger.Error(err, "session lookup failed", "session_id", params.SessionID)
-		return &agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetInternalServerError{
-			Type:     "https://kubernaut.ai/problems/internal-error",
-			Title:    "Internal Server Error",
-			Detail:   "internal server error",
-			Status:   500,
-			Instance: fmt.Sprintf("/api/v1/incident/session/%s", params.SessionID),
-		}, nil
+		return nil, errors.New("internal server error")
 	}
 
 	status := mapSessionStatusToAPI(sess.Status)
@@ -172,8 +180,16 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 		SessionID: sess.ID,
 		Status:    status,
 	}
-	if sess.Status == session.StatusFailed && sess.Error != nil {
-		resp.Error = agentclient.NewOptString(sess.Error.Error())
+	if sess.Status == session.StatusUserDriving && sess.Metadata != nil {
+		if u := sess.Metadata["acting_user"]; u != "" {
+			resp.ActingUser = agentclient.NewOptString(u)
+		}
+		if raw := sess.Metadata["acting_user_groups"]; raw != "" {
+			var groups []string
+			if err := json.Unmarshal([]byte(raw), &groups); err == nil {
+				resp.ActingUserGroups = groups
+			}
+		}
 	}
 	return resp, nil
 }
@@ -181,10 +197,11 @@ func (h *Handler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(
 // IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet implements
 // GET /api/v1/incident/session/{session_id}/result.
 func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(
-	_ context.Context,
+	ctx context.Context,
 	params agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams,
 ) (agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes, error) {
-	sess, err := h.sessions.GetSession(params.SessionID)
+	endpoint := fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID)
+	sess, err := h.getAuthorizedSession(ctx, params.SessionID, endpoint)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound{
@@ -192,29 +209,30 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 				Title:    "Session Not Found",
 				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
 				Status:   404,
-				Instance: fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID),
+				Instance: endpoint,
 			}, nil
 		}
 		h.logger.Error(err, "session lookup failed", "session_id", params.SessionID)
-		return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetInternalServerError{
-			Type:     "https://kubernaut.ai/problems/internal-error",
-			Title:    "Internal Server Error",
-			Detail:   "internal server error",
-			Status:   500,
-			Instance: fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID),
-		}, nil
+		return nil, errors.New("internal server error")
 	}
 
-	switch sess.Status {
-	case session.StatusCompleted:
-		// fall through to result mapping
-	case session.StatusFailed:
-		return mapFailedSessionToResponse(sess), nil
-	default:
+	if sess.Status != session.StatusCompleted {
 		return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{
 			Type:     "https://kubernaut.ai/problems/session-not-completed",
 			Title:    "Session Not Completed",
 			Detail:   fmt.Sprintf("session %s is %s, not completed", params.SessionID, mapSessionStatusToAPI(sess.Status)),
+			Status:   409,
+			Instance: fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID),
+		}, nil
+	}
+
+	result := sess.Result
+	if result == nil {
+		h.logger.Error(nil, "nil result in completed session", "session_id", sess.ID)
+		return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{
+			Type:     "https://kubernaut.ai/problems/session-not-completed",
+			Title:    "Session Not Completed",
+			Detail:   "session result is not an investigation result",
 			Status:   409,
 			Instance: fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID),
 		}, nil
@@ -225,8 +243,117 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 		incidentID = sess.Metadata["incident_id"]
 	}
 
-	resp := mapInvestigationResultToResponse(h.logger, sess.Result, incidentID)
+	resp := mapInvestigationResultToResponse(h.logger, result, incidentID)
 	return resp, nil
+}
+
+// CancelSessionAPIV1IncidentSessionSessionIDCancelPost implements POST /api/v1/incident/session/{session_id}/cancel.
+func (h *Handler) CancelSessionAPIV1IncidentSessionSessionIDCancelPost(
+	ctx context.Context,
+	params agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams,
+) (agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, error) {
+	endpoint := fmt.Sprintf("/api/v1/incident/session/%s/cancel", params.SessionID)
+	if _, authzErr := h.getAuthorizedSession(ctx, params.SessionID, endpoint); authzErr != nil {
+		if errors.Is(authzErr, session.ErrSessionNotFound) {
+			return &agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound{
+				Type:     "https://kubernaut.ai/problems/not-found",
+				Title:    "Session Not Found",
+				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
+				Status:   404,
+				Instance: endpoint,
+			}, nil
+		}
+		return nil, errors.New("internal server error")
+	}
+	err := h.sessions.CancelInvestigation(params.SessionID)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return &agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound{
+				Type:     "https://kubernaut.ai/problems/not-found",
+				Title:    "Session Not Found",
+				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
+				Status:   404,
+				Instance: fmt.Sprintf("/api/v1/incident/session/%s/cancel", params.SessionID),
+			}, nil
+		}
+		if errors.Is(err, session.ErrSessionTerminal) {
+			return &agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict{
+				Type:     "https://kubernaut.ai/problems/session-already-terminal",
+				Title:    "Session Already Terminal",
+				Detail:   fmt.Sprintf("session %s is already in a terminal state", params.SessionID),
+				Status:   409,
+				Instance: fmt.Sprintf("/api/v1/incident/session/%s/cancel", params.SessionID),
+			}, nil
+		}
+		h.logger.Error(err, "cancel session failed", "session_id", params.SessionID)
+		return nil, errors.New("internal server error")
+	}
+
+	return &agentclient.CancelSessionResponse{
+		SessionID: params.SessionID,
+		Status:    "cancelled",
+	}, nil
+}
+
+// SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet implements GET /api/v1/incident/session/{session_id}/snapshot.
+func (h *Handler) SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(
+	ctx context.Context,
+	params agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetParams,
+) (agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, error) {
+	endpoint := fmt.Sprintf("/api/v1/incident/session/%s/snapshot", params.SessionID)
+	sess, err := h.getAuthorizedSession(ctx, params.SessionID, endpoint)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return &agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetNotFound{
+				Type:     "https://kubernaut.ai/problems/not-found",
+				Title:    "Session Not Found",
+				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
+				Status:   404,
+				Instance: endpoint,
+			}, nil
+		}
+		h.logger.Error(err, "snapshot lookup failed", "session_id", params.SessionID)
+		return nil, errors.New("internal server error")
+	}
+
+	if !session.IsTerminal(sess.Status) {
+		return &agentclient.SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetConflict{
+			Type:     "https://kubernaut.ai/problems/session-in-progress",
+			Title:    "Session In Progress",
+			Detail:   fmt.Sprintf("session %s is %s; use the stream endpoint for live updates", params.SessionID, mapSessionStatusToAPI(sess.Status)),
+			Status:   409,
+			Instance: fmt.Sprintf("/api/v1/incident/session/%s/snapshot", params.SessionID),
+		}, nil
+	}
+
+	snap := &agentclient.SessionSnapshot{
+		SessionID: sess.ID,
+		Status:    mapSessionStatusToAPI(sess.Status),
+		CreatedAt: sess.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if sess.Metadata != nil {
+		md := agentclient.SessionSnapshotMetadata(sess.Metadata)
+		snap.Metadata.SetTo(md)
+	}
+	if sess.Error != nil {
+		snap.Error.SetTo(sess.Error.Error())
+	}
+	if ir := sess.Result; ir != nil {
+		if ir.CancelledPhase != "" {
+			snap.CancelledPhase.SetTo(ir.CancelledPhase)
+		}
+		if ir.CancelledAtTurn > 0 {
+			snap.CancelledAtTurn.SetTo(ir.CancelledAtTurn)
+		}
+		if ir.RCASummary != "" {
+			snap.RcaSummary.SetTo(ir.RCASummary)
+		}
+		if ir.TokenUsage != nil {
+			snap.TotalPromptTokens.SetTo(ir.TokenUsage.PromptTokens)
+			snap.TotalCompletionTokens.SetTo(ir.TokenUsage.CompletionTokens)
+		}
+	}
+	return snap, nil
 }
 
 // MapIncidentRequestToSignal converts an OpenAPI IncidentRequest to an internal SignalContext.
@@ -283,6 +410,128 @@ func MapIncidentRequestToSignal(req *agentclient.IncidentRequest) katypes.Signal
 	return sc
 }
 
+// SessionStreamAPIV1IncidentSessionSessionIDStreamGet implements
+// GET /api/v1/incident/session/{session_id}/stream.
+// Returns an SSE event stream via io.Pipe. The ogen encoder copies from the
+// pipe reader while a goroutine writes SSE-framed events from the session's
+// event channel into the pipe writer. The pipe is closed when the channel
+// closes (investigation ends) or the request context is cancelled (client
+// disconnect).
+func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
+	ctx context.Context,
+	params agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams,
+) (agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, error) {
+	endpoint := fmt.Sprintf("/api/v1/incident/session/%s/stream", params.SessionID)
+	if _, authzErr := h.getAuthorizedSession(ctx, params.SessionID, endpoint); authzErr != nil {
+		if errors.Is(authzErr, session.ErrSessionNotFound) {
+			return &agentclient.HTTPError{
+				Type:     "https://kubernaut.ai/problems/not-found",
+				Title:    "Session Not Found",
+				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
+				Status:   404,
+				Instance: endpoint,
+			}, nil
+		}
+		h.logger.Error(authzErr, "stream authz failed", "session_id", params.SessionID)
+		return nil, errors.New("internal server error")
+	}
+
+	ch, err := h.sessions.Subscribe(ctx, params.SessionID)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			return &agentclient.HTTPError{
+				Type:     "https://kubernaut.ai/problems/not-found",
+				Title:    "Session Not Found",
+				Detail:   fmt.Sprintf("session %s not found", params.SessionID),
+				Status:   404,
+				Instance: fmt.Sprintf("/api/v1/incident/session/%s/stream", params.SessionID),
+			}, nil
+		}
+		if errors.Is(err, session.ErrSessionTerminal) {
+			return &agentclient.HTTPError{
+				Type:     "https://kubernaut.ai/problems/session-terminal",
+				Title:    "Session Terminal",
+				Detail:   fmt.Sprintf("session %s has already concluded; use the snapshot endpoint", params.SessionID),
+				Status:   404,
+				Instance: fmt.Sprintf("/api/v1/incident/session/%s/stream", params.SessionID),
+			}, nil
+		}
+		h.logger.Error(err, "subscribe failed", "session_id", params.SessionID)
+		return nil, errors.New("internal server error")
+	}
+
+	pr, pw := io.Pipe()
+	go func() {
+		// CloseWithError(nil) behaves like Close but makes the intent explicit:
+		// the pipe writer is always closed when the goroutine exits, regardless
+		// of the exit path. The reader sees io.EOF. (#54 defer error handling)
+		defer func() { _ = pw.CloseWithError(nil) }()
+		defer func() {
+			if r := recover(); r != nil {
+				h.logger.Error(fmt.Errorf("panic: %v", r), "SSE writer panic recovered", "session_id", params.SessionID)
+			}
+		}()
+		seq := 1
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ev, ok := <-ch:
+				if !ok {
+					return
+				}
+				data, err := json.Marshal(ev)
+				if err != nil {
+					h.logger.Error(err, "SSE event marshal failed, skipping frame",
+						"session_id", params.SessionID, "event_type", ev.Type)
+					continue
+				}
+				frame := fmt.Sprintf("id: %d\nevent: %s\ndata: %s\n\n", seq, ev.Type, string(data))
+				if _, writeErr := pw.Write([]byte(frame)); writeErr != nil {
+					return
+				}
+				seq++
+			}
+		}
+	}()
+
+	return &agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK{Data: pr}, nil
+}
+
+// getAuthorizedSession retrieves a session and checks that the requesting user
+// is the session owner. Returns the session if authorized, or nil with
+// ErrSessionNotFound if the session doesn't exist or the user is not the owner.
+// When auth middleware is disabled (user is empty), ownership checks are skipped.
+// Denied access attempts are recorded via aiagent.session.access_denied for
+// SOC2 CC8.1 failed-access audit trail.
+func (h *Handler) getAuthorizedSession(ctx context.Context, sessionID, endpoint string) (*session.Session, error) {
+	sess, err := h.sessions.GetSession(sessionID)
+	if err != nil {
+		h.metrics.RecordAuthzDenied("session_not_found")
+		return nil, err
+	}
+
+	requestUser := auth.GetUserFromContext(ctx)
+	if requestUser == "" {
+		return sess, nil
+	}
+
+	owner := sess.Metadata["created_by"]
+	if owner != "" && subtle.ConstantTimeCompare([]byte(owner), []byte(requestUser)) != 1 {
+		h.metrics.RecordAuthzDenied("owner_mismatch")
+		h.sessions.EmitAccessDenied(ctx, sessionID, endpoint, requestUser)
+		return nil, session.ErrSessionNotFound
+	}
+
+	return sess, nil
+}
+
+// TestGetAuthorizedSession exposes getAuthorizedSession for unit tests.
+// It is not used in production code paths.
+func (h *Handler) TestGetAuthorizedSession(ctx context.Context, sessionID, endpoint string) (*session.Session, error) {
+	return h.getAuthorizedSession(ctx, sessionID, endpoint)
+}
+
 func mapSessionStatusToAPI(s session.Status) string {
 	switch s {
 	case session.StatusPending:
@@ -293,26 +542,12 @@ func mapSessionStatusToAPI(s session.Status) string {
 		return "completed"
 	case session.StatusFailed:
 		return "failed"
+	case session.StatusCancelled:
+		return "cancelled"
+	case session.StatusUserDriving:
+		return "user_driving"
 	default:
 		return "unknown"
-	}
-}
-
-func mapFailedSessionToResponse(sess *session.Session) *agentclient.IncidentResponse {
-	detail := "investigation failed"
-	if sess.Error != nil {
-		detail = "investigation failed"
-	}
-	var incidentID string
-	if sess.Metadata != nil {
-		incidentID = sess.Metadata["incident_id"]
-	}
-	return &agentclient.IncidentResponse{
-		IncidentID:       incidentID,
-		Analysis:         detail,
-		Confidence:       0,
-		Timestamp:        sess.CreatedAt.Format(time.RFC3339),
-		NeedsHumanReview: agentclient.NewOptBool(true),
 	}
 }
 
@@ -326,39 +561,32 @@ func mapInvestigationResultToResponse(log logr.Logger, r *katypes.InvestigationR
 
 	rca := agentclient.IncidentResponseRootCauseAnalysis{}
 	if r.RCASummary != "" {
-		if raw := marshalField(log, "summary", r.RCASummary); raw != nil {
-			rca["summary"] = raw
-		}
+		summaryRaw, _ := json.Marshal(r.RCASummary)
+		rca["summary"] = jx.Raw(summaryRaw)
 	}
 	if r.Severity != "" {
-		if raw := marshalField(log, "severity", r.Severity); raw != nil {
-			rca["severity"] = raw
-		}
+		sevRaw, _ := json.Marshal(r.Severity)
+		rca["severity"] = jx.Raw(sevRaw)
 	}
 	if r.RemediationTarget.Kind != "" {
-		if raw := marshalField(log, "remediationTarget", r.RemediationTarget); raw != nil {
-			rca["remediationTarget"] = raw
-		}
+		targetRaw, _ := json.Marshal(r.RemediationTarget)
+		rca["remediationTarget"] = jx.Raw(targetRaw)
 	}
 	if r.SignalName != "" {
-		if raw := marshalField(log, "signal_name", r.SignalName); raw != nil {
-			rca["signal_name"] = raw
-		}
+		snRaw, _ := json.Marshal(r.SignalName)
+		rca["signal_name"] = jx.Raw(snRaw)
 	}
 	if len(r.ContributingFactors) > 0 {
-		if raw := marshalField(log, "contributing_factors", r.ContributingFactors); raw != nil {
-			rca["contributing_factors"] = raw
-		}
+		cfRaw, _ := json.Marshal(r.ContributingFactors)
+		rca["contributing_factors"] = jx.Raw(cfRaw)
 	}
 	if len(r.CausalChain) > 0 {
-		if raw := marshalField(log, "causal_chain", r.CausalChain); raw != nil {
-			rca["causal_chain"] = raw
-		}
+		ccRaw, _ := json.Marshal(r.CausalChain)
+		rca["causal_chain"] = jx.Raw(ccRaw)
 	}
 	if r.DueDiligence != nil {
-		if raw := marshalField(log, "due_diligence", r.DueDiligence); raw != nil {
-			rca["due_diligence"] = raw
-		}
+		ddRaw, _ := json.Marshal(r.DueDiligence)
+		rca["due_diligence"] = jx.Raw(ddRaw)
 	}
 	resp.RootCauseAnalysis = rca
 
@@ -380,46 +608,37 @@ func mapInvestigationResultToResponse(log logr.Logger, r *katypes.InvestigationR
 
 	if r.WorkflowID != "" {
 		sw := agentclient.IncidentResponseSelectedWorkflow{}
-		if raw := marshalField(log, "workflow_id", r.WorkflowID); raw != nil {
-			sw["workflow_id"] = raw
-		}
+		wfIDRaw, _ := json.Marshal(r.WorkflowID)
+		sw["workflow_id"] = jx.Raw(wfIDRaw)
 		if len(r.Parameters) > 0 {
-			if raw := marshalField(log, "parameters", r.Parameters); raw != nil {
-				sw["parameters"] = raw
-			}
+			paramsRaw, _ := json.Marshal(r.Parameters)
+			sw["parameters"] = jx.Raw(paramsRaw)
 		}
-		if raw := marshalField(log, "confidence", r.Confidence); raw != nil {
-			sw["confidence"] = raw
-		}
+		confRaw, _ := json.Marshal(r.Confidence)
+		sw["confidence"] = jx.Raw(confRaw)
 		if r.ExecutionBundle != "" {
-			if raw := marshalField(log, "execution_bundle", r.ExecutionBundle); raw != nil {
-				sw["execution_bundle"] = raw
-			}
+			ebRaw, _ := json.Marshal(r.ExecutionBundle)
+			sw["execution_bundle"] = jx.Raw(ebRaw)
 		}
 		if r.ExecutionBundleDigest != "" {
-			if raw := marshalField(log, "execution_bundle_digest", r.ExecutionBundleDigest); raw != nil {
-				sw["execution_bundle_digest"] = raw
-			}
+			ebdRaw, _ := json.Marshal(r.ExecutionBundleDigest)
+			sw["execution_bundle_digest"] = jx.Raw(ebdRaw)
 		}
 		if r.ExecutionEngine != "" {
-			if raw := marshalField(log, "execution_engine", r.ExecutionEngine); raw != nil {
-				sw["execution_engine"] = raw
-			}
+			eeRaw, _ := json.Marshal(r.ExecutionEngine)
+			sw["execution_engine"] = jx.Raw(eeRaw)
 		}
 		if r.ServiceAccountName != "" {
-			if raw := marshalField(log, "service_account_name", r.ServiceAccountName); raw != nil {
-				sw["service_account_name"] = raw
-			}
+			saRaw, _ := json.Marshal(r.ServiceAccountName)
+			sw["service_account_name"] = jx.Raw(saRaw)
 		}
 		if r.WorkflowVersion != "" {
-			if raw := marshalField(log, "version", r.WorkflowVersion); raw != nil {
-				sw["version"] = raw
-			}
+			vRaw, _ := json.Marshal(r.WorkflowVersion)
+			sw["version"] = jx.Raw(vRaw)
 		}
 		if r.WorkflowRationale != "" {
-			if raw := marshalField(log, "rationale", r.WorkflowRationale); raw != nil {
-				sw["rationale"] = raw
-			}
+			rRaw, _ := json.Marshal(r.WorkflowRationale)
+			sw["rationale"] = jx.Raw(rRaw)
 		}
 		resp.SelectedWorkflow.SetTo(sw)
 	}
@@ -438,9 +657,8 @@ func mapInvestigationResultToResponse(log logr.Logger, r *katypes.InvestigationR
 	if len(r.DetectedLabels) > 0 {
 		dl := make(agentclient.IncidentResponseDetectedLabels, len(r.DetectedLabels))
 		for k, v := range r.DetectedLabels {
-			if raw := marshalField(log, "detected_label:"+k, v); raw != nil {
-				dl[k] = raw
-			}
+			raw, _ := json.Marshal(v)
+			dl[k] = jx.Raw(raw)
 		}
 		resp.DetectedLabels.SetTo(dl)
 	}
@@ -570,14 +788,4 @@ func mapHumanReviewReason(reason string) (agentclient.HumanReviewReason, bool) {
 	default:
 		return agentclient.HumanReviewReasonInvestigationInconclusive, true
 	}
-}
-
-// marshalField marshals v to JSON. On failure it logs the error and returns nil.
-func marshalField(log logr.Logger, key string, v interface{}) jx.Raw {
-	b, err := json.Marshal(v)
-	if err != nil {
-		log.Error(err, "failed to marshal response field", "field", key)
-		return nil
-	}
-	return jx.Raw(b)
 }

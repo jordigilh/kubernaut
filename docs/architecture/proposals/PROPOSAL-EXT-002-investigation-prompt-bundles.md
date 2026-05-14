@@ -251,7 +251,7 @@ metadata:
     kubernaut.ai/phase: <hook-point>
     kubernaut.ai/priority: "<integer>"   # execution order within a phase
 spec:
-  phase: <pre-investigation|investigation|post-investigation|rca-resolution|workflow-selection>
+  phase: <pre-investigation|investigation|rca-resolution|pre-workflow-selection|workflow-selection>
   agent:
     endpoint: <A2A endpoint URL>        # required for pre/post-investigation; optional for core phases (see 3.4)
     timeout: <duration>                 # default: 60s
@@ -278,7 +278,7 @@ spec:
 | `kind` | Yes | Must be `PromptBundle` |
 | `metadata.name` | Yes | Unique identifier for the bundle |
 | `metadata.labels` | No | Standard labels for filtering and ordering. `kubernaut.ai/phase` must match `spec.phase` |
-| `spec.phase` | Yes | The hook point where this bundle executes. The phase determines the execution model (see Section 3.4) |
+| `spec.phase` | Yes | The hook point where this recipe executes: `pre-investigation`, `investigation`, `rca-resolution`, `pre-workflow-selection`, or `workflow-selection`. The phase determines the execution model (see Section 3.4) |
 | `spec.agent` | Conditional | Remote agent configuration. Required for `pre-investigation` and `post-investigation` phases (always remote). Optional for core phases — when present, KA delegates to the agent instead of executing in-process (see Section 3.4, Target Architecture) |
 | `spec.agent.endpoint` | Yes (when `agent` present) | A2A endpoint URL. KA sends the rendered prompt and signal context as an A2A task. The remote agent must return an `execution-trace` artifact alongside the result (see Section 9.5) |
 | `spec.agent.timeout` | No | Maximum duration to wait for the remote agent to complete. Default: `60s` |
@@ -575,18 +575,18 @@ spec:
 
 ### 3.1 Phase Definitions
 
-The investigation pipeline consists of five ordered phases. Each phase has one or more prompt bundles that execute sequentially (ordered by `kubernaut.ai/priority`).
+The investigation pipeline consists of five ordered phases. Each phase has one or more Goose recipes that execute sequentially (ordered by `kubernaut.ai/priority`).
 
 ```
-pre-investigation --> investigation --> post-investigation --> rca-resolution --> workflow-selection
+pre-investigation --> investigation --> rca-resolution --> pre-workflow-selection --> workflow-selection
 ```
 
-| Phase | Purpose | Output Type | Required | Default Bundle |
+| Phase | Purpose | Output Type | Required | Default Recipe |
 |-------|---------|-------------|----------|----------------|
 | `pre-investigation` | Customer SOP checks before investigation (CMDB, change freeze, compliance) | Natural language | No | None |
 | `investigation` | Root cause analysis -- inspect pods, logs, metrics, produce diagnostic narrative | Natural language | Yes | `kubernaut-default-investigation` |
-| `post-investigation` | Customer SOP checks after RCA (enrich findings, cross-reference with internal systems) | Natural language | No | None |
 | `rca-resolution` | Structure the investigation narrative into the `InvestigationResult` that KA needs (remediation target, severity, confidence, signal name) | Structured JSON via `submit_result` | Yes | `kubernaut-default-rca-resolution` |
+| `pre-workflow-selection` | Customer constraints before workflow selection (change freeze, ITSM, policy checks). Runs after enrichment so recipes have full enrichment context. | Natural language | No | None |
 | `workflow-selection` | Select remediation workflow from catalog | Structured JSON via `submit_result` | Yes | `kubernaut-default-workflow-selection` |
 
 ### 3.2 Phase Execution Model
@@ -616,19 +616,19 @@ The current `Investigator.Investigate()` method in `internal/kubernautagent/inve
 The prompt bundle system wraps these invocations:
 
 ```
-[pre-investigation bundles]   <-- REMOTE: A2A delegation to customer agent
+[pre-investigation recipes]       <-- REMOTE: Goose recipe injection / A2A delegation
     |
     v (natural language outputs -> PriorPhaseOutputs)
-[investigation bundle]         <-- INLINE (v1.5) / REMOTE (target): replaces runRCA()
+[investigation recipe]             <-- INLINE (v1.5) / REMOTE (target): replaces runRCA()
     |
     v (natural language narrative -> PriorPhaseOutputs + .Investigation.RCANarrative)
-[post-investigation bundles]   <-- REMOTE: A2A delegation to customer agent
-    |
-    v (natural language outputs -> PriorPhaseOutputs)
-[rca-resolution bundle]        <-- INLINE (v1.5) / REMOTE (target): structures narrative
+[rca-resolution recipe]            <-- INLINE (v1.5) / REMOTE (target): structures narrative
     |
     v (structured InvestigationResult -> drives re-enrichment, severity, remediation target)
-[workflow-selection bundle]    <-- INLINE (v1.5) / REMOTE (target): replaces runWorkflowSelection()
+[pre-workflow-selection recipes]   <-- REMOTE: Goose recipe injection (enrichment context available)
+    |
+    v (natural language outputs -> PriorPhaseOutputs)
+[workflow-selection recipe]        <-- INLINE (v1.5) / REMOTE (target): replaces runWorkflowSelection()
     |
     v (structured InvestigationResult with workflow selection)
 ```
@@ -641,10 +641,10 @@ The phase determines whether a bundle executes inline (KA in-process) or remote 
 
 | Phase | Execution | Reason |
 |-------|-----------|--------|
-| `pre-investigation` | **Remote** | Customer SOPs accessing external systems. `spec.agent.endpoint` required. |
+| `pre-investigation` | **Remote** | Customer SOPs accessing external systems via Goose recipes. `spec.agent.endpoint` required. |
 | `investigation` | **Inline** | Uses KA's builtin K8s tools (get_pod_logs, get_events, query_prometheus). |
-| `post-investigation` | **Remote** | Customer SOPs accessing external systems. `spec.agent.endpoint` required. |
 | `rca-resolution` | **Inline** | Structures narrative via `submit_result`, parsed by KA's result handler. |
+| `pre-workflow-selection` | **Remote** | Customer constraints (change freeze, ITSM, policy) via Goose recipes. Runs after enrichment. `spec.agent.endpoint` required. |
 | `workflow-selection` | **Inline** | Queries workflow CRDs via KA's builtin tools (list_workflows, get_workflow). |
 
 **Target Architecture (v1.6+): KA as Pure Orchestrator**:
@@ -655,8 +655,8 @@ All phases execute remotely. KA's current builtin tools are extracted into stand
 |-------|-----------|---------------------|
 | `pre-investigation` | **Remote** | Customer-managed (CMDB, change-mgmt, etc.) |
 | `investigation` | **Remote** | `k8s-investigation-tools` (pod status, logs, events), `prometheus-tools` (metrics, queries) |
-| `post-investigation` | **Remote** | Customer-managed |
 | `rca-resolution` | **Remote** | None (structuring only) |
+| `pre-workflow-selection` | **Remote** | Customer-managed (ITSM, policy engines, change-mgmt) |
 | `workflow-selection` | **Remote** | `workflow-tools` (list/get workflows, list actions) |
 
 In the target architecture, KA's role narrows to:
@@ -764,19 +764,21 @@ The template data contract defines what fields are available to Go templates in 
     Phase: string           # Phase name (e.g., "pre-investigation")
     Output: string          # Natural language output from the bundle
 
-.Investigation:             # Available from post-investigation onward
+.Investigation:             # Available from rca-resolution onward
   RCANarrative: string      # Full natural language diagnostic narrative from investigation phase
-  RCASummary: string        # Structured RCA summary extracted by rca-resolution phase (available from workflow-selection onward)
+  RCASummary: string        # Structured RCA summary extracted by rca-resolution phase (available from pre-workflow-selection onward)
 ```
 
 ### 5.2 Field Availability by Phase
 
-| Field Group | pre-investigation | investigation | post-investigation | rca-resolution | workflow-selection |
+| Field Group | pre-investigation | investigation | rca-resolution | pre-workflow-selection | workflow-selection |
 |-------------|:-:|:-:|:-:|:-:|:-:|
 | `.Signal` | Yes | Yes | Yes | Yes | Yes |
 | `.Enrichment` | Yes | Yes | Yes | Yes | Yes |
 | `.PriorPhaseOutputs` | No | Yes | Yes | Yes | Yes |
 | `.Investigation` | No | No | Yes | Yes | Yes |
+
+The `pre-workflow-selection` phase has the richest data contract: all signal, enrichment, investigation, and RCA data is available. This is by design — Goose recipe prompt injections at this phase can make fully-informed decisions about workflow constraints.
 
 Referencing a field group not available for the current phase (e.g., `{{ .Investigation.RCANarrative }}` in `pre-investigation`) produces a hard error at template render time due to `missingkey=error`. The error message identifies the unavailable field and the phase, preventing silent misconfiguration.
 
@@ -1173,7 +1175,7 @@ The `signal_context` and `enrichment_context` fields ensure the remote agent has
 | Version | Capability | Notes |
 |---------|-----------|-------|
 | **v1.5** | Goose recipe format convergence | Customer-facing recipes use standard [Goose recipe format](https://github.com/aaif-goose/goose). KA provides structured context as Goose parameters, receives structured results via `response.json_schema`. Pending upstream support for structured parameter types (`object`, `array`) -- see [#883](https://github.com/jordigilh/kubernaut/issues/883). OCI distribution wraps standard Goose recipe YAML. |
-| **v1.5** | Hybrid execution: inline core phases + remote pre/post hooks via A2A | Phase executor is a single reusable component. Pre/post-investigation hooks always delegate to customer-managed A2A agents. Core phases (investigation, rca-resolution, workflow-selection) execute inline. `failClosed` default. |
+| **v1.5** | Hybrid execution: inline core phases + remote hooks via Goose recipes | Phase executor is a single reusable component. `pre-investigation` and `pre-workflow-selection` hooks delegate to customer-managed agents via Goose recipes. Core phases (investigation, rca-resolution, workflow-selection) execute inline. `failClosed` default. |
 | **v1.5** | Skills marketplace integration | External skill resolution via OCI pull for inline phases. Requires marketplace format to be stable. |
 | **v1.5** | Execution trace contract | Remote agents return structured execution traces (tool calls, LLM responses, token usage) as A2A artifacts. KA ingests these into the unified audit trail. |
 | **v1.6** | Domain cookbooks | Partner and customer-authored cookbooks for cost optimization (FinOps), security remediation, compliance drift, and capacity planning. Each cookbook replaces default investigation/workflow-selection recipes with domain-specific prompts and MCP tools. See [Strategic Vision](#strategic-vision-kubernaut-as-a-programmable-platform). |

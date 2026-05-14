@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-logr/logr"
 )
@@ -34,10 +35,11 @@ import (
 // RFC7807Problem represents an RFC 7807 Problem Details response
 // https://datatracker.ietf.org/doc/html/rfc7807
 type RFC7807Problem struct {
-	Type   string `json:"type"`
-	Title  string `json:"title"`
-	Status int    `json:"status"`
-	Detail string `json:"detail"`
+	Type     string `json:"type"`
+	Title    string `json:"title"`
+	Status   int    `json:"status"`
+	Detail   string `json:"detail"`
+	Instance string `json:"instance,omitempty"`
 }
 
 // WriteRFC7807Error writes an RFC 7807 Problem Details error response
@@ -51,10 +53,17 @@ type RFC7807Problem struct {
 //   - detail: Detailed error message
 //   - logger: Optional logger for encoding failures
 func WriteRFC7807Error(w http.ResponseWriter, status int, errorType, title, detail string, logger logr.Logger) {
+	// DD-004: Use kubernaut.ai/problems/* for RFC 7807 error type URIs.
+	// If errorType is already a full URI, use it as-is to prevent double-prefix.
+	trimmed := strings.TrimSpace(errorType)
+	typeURI := trimmed
+	lower := strings.ToLower(trimmed)
+	if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
+		typeURI = fmt.Sprintf("https://kubernaut.ai/problems/%s", trimmed)
+	}
+
 	problem := RFC7807Problem{
-		// DD-004: Use kubernaut.ai/problems/* for RFC 7807 error type URIs
-		// V1.0 Domain: kubernaut.ai (standardized across all services)
-		Type:   fmt.Sprintf("https://kubernaut.ai/problems/%s", errorType),
+		Type:   typeURI,
 		Title:  title,
 		Status: status,
 		Detail: detail,
@@ -75,6 +84,16 @@ func WriteRFC7807Error(w http.ResponseWriter, status int, errorType, title, deta
 			"status", status,
 		)
 	}
+}
+
+// WriteRFC7807InternalError writes a redacted RFC 7807 response for 5xx errors.
+// #1048 Phase 4 / SI-11: The real error is logged server-side but never exposed
+// to the client, preventing leakage of DB hostnames, driver errors, or stack traces.
+func WriteRFC7807InternalError(w http.ResponseWriter, errorType, title string, err error, logger logr.Logger) {
+	logger.Error(err, "Internal error (redacted from client response)",
+		"error_type", errorType)
+	WriteRFC7807Error(w, http.StatusInternalServerError, errorType, title,
+		"An internal error occurred. Check server logs for details.", logger)
 }
 
 // WriteRFC7807ErrorWithRequestID writes an RFC 7807 error with request ID in logs

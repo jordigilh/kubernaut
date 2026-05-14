@@ -40,6 +40,11 @@ TEST_TIMEOUT_UNIT ?= 5m
 TEST_TIMEOUT_INTEGRATION ?= 15m
 TEST_TIMEOUT_E2E ?= 30m
 
+# Race detector: enabled by default for unit and integration tests (#83 100go.co).
+# E2E targets test against a deployed binary so --race is not applicable.
+# Disable with: make test-unit-kubernautagent RACE_FLAG=
+RACE_FLAG ?= --race
+
 # Coverage Configuration: Exclude Generated Code
 # - DataStorage: Excludes pkg/datastorage/ogen-client (OpenAPI-generated) and mocks
 # - AgentClient: pkg/agentclient contains oas_*_gen.go (ogen-generated client)
@@ -53,7 +58,7 @@ TEST_TIMEOUT_E2E ?= 30m
 # DataStorage coverage packages (hand-written only, excludes generated)
 # DATASTORAGE_COVERPKG: Comma-separated list of packages for coverage instrumentation.
 # IMPORTANT: No spaces after commas — Go's --coverpkg treats spaces as part of the package name.
-DATASTORAGE_COVERPKG = github.com/jordigilh/kubernaut/pkg/datastorage/adapter/...,github.com/jordigilh/kubernaut/pkg/datastorage/audit/...,github.com/jordigilh/kubernaut/pkg/datastorage/config/...,github.com/jordigilh/kubernaut/pkg/datastorage/dlq/...,github.com/jordigilh/kubernaut/pkg/datastorage/metrics/...,github.com/jordigilh/kubernaut/pkg/datastorage/models/...,github.com/jordigilh/kubernaut/pkg/datastorage/partition/...,github.com/jordigilh/kubernaut/pkg/datastorage/query/...,github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sql/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sqlutil/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow/...,github.com/jordigilh/kubernaut/pkg/datastorage/schema/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/response/...,github.com/jordigilh/kubernaut/pkg/datastorage/validation/...
+DATASTORAGE_COVERPKG = github.com/jordigilh/kubernaut/pkg/datastorage/eventdata/...,github.com/jordigilh/kubernaut/pkg/datastorage/audit/...,github.com/jordigilh/kubernaut/pkg/datastorage/config/...,github.com/jordigilh/kubernaut/pkg/datastorage/dlq/...,github.com/jordigilh/kubernaut/pkg/datastorage/metrics/...,github.com/jordigilh/kubernaut/pkg/datastorage/models/...,github.com/jordigilh/kubernaut/pkg/datastorage/partition/...,github.com/jordigilh/kubernaut/pkg/datastorage/query/...,github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sql/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sqlutil/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow/...,github.com/jordigilh/kubernaut/pkg/datastorage/schema/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/response/...,github.com/jordigilh/kubernaut/pkg/datastorage/validation/...
 
 # Unit-testable package patterns (pure logic: config, validators, builders, formatters, metrics, classifiers)
 # Integration-testable patterns (I/O-dependent: handlers, servers, DB adapters, K8s clients, workers)
@@ -155,9 +160,20 @@ generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto
 	@echo "📋 Generating OpenAPI spec copies for embedding (DD-API-002)..."
 	@go generate ./pkg/datastorage/server/middleware/...
 	@go generate ./pkg/audit/...
+	@echo "📋 Generating DataStorage ogen client..."
+	@go generate ./pkg/datastorage/ogen-client/...
 	@echo "📋 Generating AgentClient (ogen)..."
 	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/agentclient/...
 	@echo "✅ Generation complete"
+
+.PHONY: gen-diff
+gen-diff: generate ## Verify generated files are up-to-date (CI gate)
+	@echo "🔍 Checking for uncommitted generated file changes..."
+	@if ! git diff --exit-code --name-only; then \
+		echo "❌ Generated files are out of date. Run 'make generate' and commit."; \
+		exit 1; \
+	fi
+	@echo "✅ Generated files are up-to-date"
 
 .PHONY: generate-datastorage-client
 generate-datastorage-client: ogen ## Generate DataStorage OpenAPI client from spec (DD-API-001)
@@ -220,7 +236,7 @@ test-unit-%: ginkgo ensure-coverage-dirs ## Run unit tests for specified service
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_$*.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/... ./test/unit/$*/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_$*.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/... ./test/unit/$*/...
 	@if [ -f coverage_unit_$*.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_$*.out"; \
@@ -246,7 +262,7 @@ test-unit-gateway: ginkgo ensure-coverage-dirs ## Run gateway unit tests (coverp
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 gateway - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_gateway.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/gateway/... ./test/unit/gateway/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_gateway.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/gateway/... ./test/unit/gateway/...
 	@if [ -f coverage_unit_gateway.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_gateway.out"; \
@@ -262,7 +278,7 @@ test-unit-shared-packages: ginkgo ensure-coverage-dirs ## Run unit tests for sha
 	@echo "🧪 shared-packages - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "   Packages: pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_shared-packages.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/audit/...,github.com/jordigilh/kubernaut/pkg/cache/...,github.com/jordigilh/kubernaut/pkg/http/...,github.com/jordigilh/kubernaut/pkg/k8sutil/...,github.com/jordigilh/kubernaut/pkg/shared/... ./test/unit/audit/... ./test/unit/cache/... ./test/unit/http/... ./test/unit/k8sutil/... ./test/unit/shared/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_shared-packages.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/audit/...,github.com/jordigilh/kubernaut/pkg/cache/...,github.com/jordigilh/kubernaut/pkg/http/...,github.com/jordigilh/kubernaut/pkg/k8sutil/...,github.com/jordigilh/kubernaut/pkg/shared/... ./test/unit/audit/... ./test/unit/cache/... ./test/unit/http/... ./test/unit/k8sutil/... ./test/unit/shared/...
 	@if [ -f coverage_unit_shared-packages.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_shared-packages.out"; \
@@ -275,7 +291,7 @@ test-unit-datastorage: ginkgo ensure-coverage-dirs ## Run datastorage unit tests
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 datastorage - Unit Tests ($(TEST_PROCS) procs) [coverage: hand-written code only]"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_datastorage.out --covermode=atomic --coverpkg=$(DATASTORAGE_COVERPKG) ./test/unit/datastorage/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_datastorage.out --covermode=atomic --coverpkg=$(DATASTORAGE_COVERPKG) ./test/unit/datastorage/...
 	@if [ -f coverage_unit_datastorage.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_datastorage.out"; \
@@ -292,7 +308,7 @@ test-integration-shared: ginkgo ensure-coverage-dirs ## Run integration tests fo
 	@echo "🧪 shared - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "   Packages: pkg/shared (TLS)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_shared.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/shared/... ./test/integration/shared/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_shared.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/shared/... ./test/integration/shared/...
 	@if [ -f coverage_integration_shared.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_integration_shared.out"; \
@@ -306,7 +322,7 @@ test-integration-%: generate ginkgo setup-envtest ensure-coverage-dirs ## Run in
 	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_$*.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/... ./test/integration/$*/...
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_$*.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/... ./test/integration/$*/...
 	@if [ -f coverage_integration_$*.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_integration_$*.out"; \
@@ -320,11 +336,24 @@ test-integration-kubernautagent: generate ginkgo setup-envtest ensure-coverage-d
 	@echo "🧪 kubernautagent - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_kubernautagent.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/integration/kubernautagent/...
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_kubernautagent.out --covermode=atomic --keep-going --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/integration/kubernautagent/...
 	@if [ -f coverage_integration_kubernautagent.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_integration_kubernautagent.out"; \
 		go tool cover -func=coverage_integration_kubernautagent.out | grep total || echo "No coverage data"; \
+	fi
+
+# KubernautAgent interactive-mode integration tests (label-filtered subset)
+.PHONY: test-integration-kubernautagent-interactive
+test-integration-kubernautagent-interactive: ginkgo ensure-coverage-dirs ## Run interactive-mode integration tests (label: interactive)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 kubernautagent-interactive - Integration Tests (label: interactive)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --label-filter="interactive" --coverprofile=coverage_integration_kubernautagent_interactive.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/...,github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools/... ./test/integration/kubernautagent/mcp/...
+	@if [ -f coverage_integration_kubernautagent_interactive.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_integration_kubernautagent_interactive.out"; \
+		go tool cover -func=coverage_integration_kubernautagent_interactive.out | grep total || echo "No coverage data"; \
 	fi
 
 # DataStorage integration tests: exclude generated code from coverage
@@ -334,7 +363,7 @@ test-integration-datastorage: generate ginkgo setup-envtest ensure-coverage-dirs
 	@echo "🧪 datastorage - Integration Tests ($(TEST_PROCS) procs) [coverage: hand-written code only]"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_datastorage.out --covermode=atomic --keep-going --coverpkg=$(DATASTORAGE_COVERPKG) ./test/integration/datastorage/...
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --coverprofile=coverage_integration_datastorage.out --covermode=atomic --keep-going --coverpkg=$(DATASTORAGE_COVERPKG) ./test/integration/datastorage/...
 	@if [ -f coverage_integration_datastorage.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_integration_datastorage.out"; \
@@ -670,7 +699,7 @@ test-unit-authwebhook: ginkgo ensure-coverage-dirs ## Run authentication webhook
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_authwebhook.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/authwebhook/... ./test/unit/authwebhook/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_authwebhook.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/authwebhook/... ./test/unit/authwebhook/...
 	@if [ -f coverage_unit_authwebhook.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_authwebhook.out"; \
@@ -780,7 +809,7 @@ CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
 CONTROLLER_TOOLS_VERSION ?= v0.19.0
-OGEN_VERSION ?= v1.18.0
+OGEN_VERSION ?= v1.20.1
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.1.0

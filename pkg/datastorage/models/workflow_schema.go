@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"gopkg.in/yaml.v3"
@@ -151,9 +152,11 @@ type WorkflowSchemaLabels struct {
 	// Examples: ["production"], ["staging", "production"], ["*"] (wildcard for all)
 	Environment []string `yaml:"environment" json:"environment" validate:"required,min=1"`
 
-	// Component is the Kubernetes resource type(s) this workflow remediates (REQUIRED)
-	// Examples: ["pod"], ["deployment", "statefulset"], ["*"] (wildcard for all)
+	// Component is the Kubernetes resource GVK(s) this workflow remediates (REQUIRED)
+	// Format: "apiVersion/Kind" — e.g. "apps/v1/Deployment", "v1/Pod" (core group omits group prefix)
+	// Examples: ["apps/v1/Deployment"], ["v1/Pod", "apps/v1/StatefulSet"], ["*"] (wildcard for all)
 	// Issue #790: Changed from string to []string to match severity/environment pattern
+	// Issue #1051: Changed from plain lowercase kind to fully-qualified GVK format
 	Component []string `yaml:"component" json:"component" validate:"required,min=1"`
 
 	// Priority is the business priority level (REQUIRED)
@@ -528,10 +531,48 @@ func (l *WorkflowSchemaLabels) ValidateMandatoryLabels() error {
 	if len(l.Component) == 0 {
 		return NewSchemaValidationError("labels.component", "component is required (at least one value)")
 	}
+	// #1051: validate GVK format for component values. Must be "apiVersion/Kind"
+	// (e.g. "apps/v1/Deployment", "v1/Pod") or "*" wildcard.
+	for _, comp := range l.Component {
+		if comp == "*" {
+			continue
+		}
+		if !isValidComponentGVK(comp) {
+			return NewSchemaValidationError("labels.component",
+				fmt.Sprintf("invalid component %q: must be in GVK format (e.g. \"apps/v1/Deployment\", \"v1/Pod\") or \"*\" wildcard", comp))
+		}
+	}
 	if l.Priority == "" {
 		return NewSchemaValidationError("labels.priority", "priority is required")
 	}
 	return nil
+}
+
+// isValidComponentGVK checks whether a component value follows the GVK format:
+// "version/Kind" for core group (e.g. "v1/Pod") or "group/version/Kind" for
+// named groups (e.g. "apps/v1/Deployment"). The Kind part must start with an
+// uppercase letter. Rejects control characters and NUL bytes (FedRAMP SI-10).
+// Issue #1051.
+func isValidComponentGVK(s string) bool {
+	parts := strings.Split(s, "/")
+	if len(parts) < 2 || len(parts) > 3 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" {
+			return false
+		}
+		for _, r := range part {
+			if r < 0x20 || r == 0x7f {
+				return false
+			}
+		}
+	}
+	kind := parts[len(parts)-1]
+	if kind[0] < 'A' || kind[0] > 'Z' {
+		return false
+	}
+	return true
 }
 
 // ValidateDescription checks if the structured description has required fields.

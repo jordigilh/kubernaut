@@ -45,7 +45,7 @@ func CheckHashDeferral(ea *eav1.EffectivenessAssessment) DeferralResult {
 		return DeferralResult{ShouldDefer: false}
 	}
 
-	deadline := ea.CreationTimestamp.Time.Add(ea.Spec.Config.HashComputeDelay.Duration)
+	deadline := ea.CreationTimestamp.Add(ea.Spec.Config.HashComputeDelay.Duration)
 	remaining := time.Until(deadline)
 	if remaining <= 0 {
 		return DeferralResult{ShouldDefer: false}

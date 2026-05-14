@@ -412,6 +412,16 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 		}
 	}
 
+	// #774: Populate identity from InteractiveSession status (user-driven flows).
+	// Nil for autonomous (alert-driven) flows; Rego policies handle absence
+	// with `default require_approval := true`.
+	if iss := analysis.Status.InteractiveSession; iss != nil && iss.ActingUser != "" {
+		input.Identity = &rego.IdentityInput{
+			User:   iss.ActingUser,
+			Groups: iss.ActingUserGroups,
+		}
+	}
+
 	return input
 }
 

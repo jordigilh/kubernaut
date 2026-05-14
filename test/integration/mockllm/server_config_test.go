@@ -40,7 +40,7 @@ var _ = Describe("Server Config Integration", func() {
 			Expect(cfg.ForceText).To(BeTrue())
 
 			registry := scenarios.DefaultRegistry()
-			router := handlers.NewRouter(registry, cfg.ForceText)
+			router := handlers.NewRouter(registry, cfg.ForceText, "")
 			server := httptest.NewServer(router)
 			defer server.Close()
 

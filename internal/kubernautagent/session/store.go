@@ -35,6 +35,16 @@ const (
 	StatusRunning   Status = "running"
 	StatusCompleted Status = "completed"
 	StatusFailed    Status = "failed"
+	// StatusCancelled indicates the investigation was stopped — either by explicit
+	// operator cancellation (CancelInvestigation) or interactive takeover suspension
+	// (SuspendInvestigation). Both share this terminal state; the audit event type
+	// distinguishes them (session.cancelled vs session.suspended).
+	StatusCancelled Status = "cancelled"
+
+	// StatusUserDriving indicates an interactive user has taken over the
+	// investigation via MCP dynamic takeover (BR-INTERACTIVE-004). The session
+	// remains pollable (NOT terminal) so AA can observe identity and completion.
+	StatusUserDriving Status = "user_driving"
 )
 
 // Session holds the state of a single investigation session.
@@ -44,14 +54,25 @@ type Session struct {
 	Result    *katypes.InvestigationResult
 	Error     error
 	CreatedAt time.Time
-	Metadata  map[string]string
+	Context   SessionContext
+	Metadata  map[string]string // Deprecated: use Context. Retained for backward compat.
+
+	// cancel, eventChan, and lazySink are manager-managed internal fields.
+	// They are NOT part of the public copy surface (clone excludes them).
+	cancel    context.CancelFunc
+	eventChan chan InvestigationEvent
+	lazySink  *LazySink
 }
 
 // ErrSessionNotFound is returned when a session ID does not exist in the store.
 var ErrSessionNotFound = errors.New("session not found")
 
+// ErrSessionTerminal is returned when an operation is attempted on a session
+// that has already reached a terminal state (completed, cancelled, or failed).
+var ErrSessionTerminal = errors.New("session is in terminal state")
+
 // Store provides thread-safe session storage with TTL-based cleanup.
-// Terminal sessions (Completed, Failed) are evicted at TTL.
+// Terminal sessions (Completed, Failed, Cancelled) are evicted at TTL.
 // Non-terminal sessions (Pending, Running) are evicted at MaxSessionAge
 // as a safety net to prevent unbounded memory growth.
 type Store struct {
@@ -113,18 +134,44 @@ func (s *Store) Get(id string) (*Session, error) {
 	return sess.clone(), nil
 }
 
+// clone returns an isolated copy of the session. Internal control fields
+// (cancel, eventChan) are excluded to prevent callers from interfering
+// with active investigations. SessionContext is a value type except for
+// SignalContext.SignalAnnotations and SignalLabels which are deep-copied.
 func (s *Session) clone() *Session {
 	cp := *s
+	cp.cancel = nil
+	cp.eventChan = nil
+	cp.lazySink = nil
 	if s.Metadata != nil {
 		cp.Metadata = make(map[string]string, len(s.Metadata))
 		for k, v := range s.Metadata {
 			cp.Metadata[k] = v
 		}
 	}
+	if s.Context.Signal.SignalAnnotations != nil {
+		cp.Context.Signal.SignalAnnotations = make(map[string]string, len(s.Context.Signal.SignalAnnotations))
+		for k, v := range s.Context.Signal.SignalAnnotations {
+			cp.Context.Signal.SignalAnnotations[k] = v
+		}
+	}
+	if s.Context.Signal.SignalLabels != nil {
+		cp.Context.Signal.SignalLabels = make(map[string]string, len(s.Context.Signal.SignalLabels))
+		for k, v := range s.Context.Signal.SignalLabels {
+			cp.Context.Signal.SignalLabels[k] = v
+		}
+	}
 	return &cp
 }
 
+// IsTerminal reports whether the given status represents a final state
+// that cannot be changed (completed, failed, or cancelled).
+func IsTerminal(st Status) bool {
+	return st == StatusCompleted || st == StatusFailed || st == StatusCancelled
+}
+
 // SetMetadata stores request-level metadata on an existing session.
+// Deprecated: Use SetContext for typed access. Retained for backward compatibility.
 func (s *Store) SetMetadata(id string, metadata map[string]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -133,7 +180,17 @@ func (s *Store) SetMetadata(id string, metadata map[string]string) {
 	}
 }
 
-// Update modifies an existing session.
+// SetContext stores typed SessionContext on an existing session.
+func (s *Store) SetContext(id string, ctx SessionContext) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess, ok := s.sessions[id]; ok {
+		sess.Context = ctx
+	}
+}
+
+// Update modifies an existing session. Returns ErrSessionTerminal if the
+// session has already reached a terminal state (completed, cancelled, failed).
 func (s *Store) Update(id string, status Status, result *katypes.InvestigationResult, err error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -141,10 +198,24 @@ func (s *Store) Update(id string, status Status, result *katypes.InvestigationRe
 	if !ok {
 		return ErrSessionNotFound
 	}
+	if IsTerminal(sess.Status) || sess.Status == StatusUserDriving {
+		return ErrSessionTerminal
+	}
 	sess.Status = status
 	sess.Result = result
 	sess.Error = err
 	return nil
+}
+
+// SetResult attaches a result to an existing session without changing its
+// status. Used to persist partial investigation state on cancelled sessions
+// where Store.Update would reject the status transition (BR-SESSION-002).
+func (s *Store) SetResult(id string, result *katypes.InvestigationResult) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess, ok := s.sessions[id]; ok {
+		sess.Result = result
+	}
 }
 
 // StartCleanupLoop runs Cleanup periodically until the context is cancelled.
@@ -163,11 +234,9 @@ func (s *Store) StartCleanupLoop(ctx context.Context, interval time.Duration) {
 	}()
 }
 
-// Cleanup removes sessions using two-tier eviction:
-//   - Terminal sessions (Completed, Failed): evicted when older than TTL
-//   - Non-terminal sessions (Pending, Running): evicted when older than MaxSessionAge
-//
-// Deleting from a map during range iteration is safe in Go.
+// Cleanup removes sessions using two-tier eviction (#1078):
+// - Terminal sessions (Completed, Failed, Cancelled) are evicted after TTL
+// - Non-terminal sessions (Pending, Running, UserDriving) are evicted after MaxSessionAge
 // Returns the number of sessions removed.
 func (s *Store) Cleanup() int {
 	now := time.Now()
@@ -178,7 +247,7 @@ func (s *Store) Cleanup() int {
 	defer s.mu.Unlock()
 	for id, sess := range s.sessions {
 		switch sess.Status {
-		case StatusCompleted, StatusFailed:
+		case StatusCompleted, StatusFailed, StatusCancelled:
 			if sess.CreatedAt.Before(terminalCutoff) {
 				delete(s.sessions, id)
 				removed++

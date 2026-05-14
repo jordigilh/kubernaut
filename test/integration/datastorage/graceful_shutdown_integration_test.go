@@ -27,6 +27,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -234,7 +235,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 			// Wait for DD-007 STEP 2 (endpoint propagation) to complete
 			// This ensures server has stopped accepting new connections
-			// Per TESTING_GUIDELINES.md: time.Sleep() is ACCEPTABLE here (testing timing behavior)
+			// ✅ APPROVED EXCEPTION: testing DD-007 endpoint propagation timing behavior
 			time.Sleep(6 * time.Second)
 
 			// Verify server stopped accepting connections (Eventually pattern)
@@ -499,13 +500,16 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 			// Start multiple concurrent requests
 			var wg sync.WaitGroup
+			var started sync.WaitGroup
 			successCount := make(chan int, 5)
 			errorCount := make(chan error, 5)
 
 			for i := 0; i < 5; i++ {
 				wg.Add(1)
+				started.Add(1)
 			go func(index int) {
 				defer wg.Done()
+				started.Done()
 				// DD-AUTH-014: Use authenticated request
 				resp, err := makeAuthenticatedRequest("GET", fmt.Sprintf("%s/api/v1/audit/events?limit=%d", testServer.URL, index+1))
 				if err != nil {
@@ -519,8 +523,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			}(i)
 			}
 
-			// Per TESTING_GUIDELINES.md: Use Eventually() to ensure requests are in-flight - brief delay to let requests start
-			time.Sleep(100 * time.Millisecond)
+			started.Wait()
 			// Initiate shutdown while multiple requests are in-flight
 			shutdownDone := make(chan error, 1)
 			go func() {
@@ -642,49 +645,54 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 	Context("Business Requirement: Shutdown Under Load", func() {
 		It("MUST handle shutdown gracefully under moderate load", func() {
-			// Business Scenario: Service under moderate load when SIGTERM arrives
-			// Expected: All requests complete, shutdown succeeds
+			// Business Scenario: Service under moderate load when SIGTERM arrives.
+			// Uses a gate middleware to guarantee all 10 requests are genuinely
+			// in-flight inside the handler before shutdown begins — eliminates
+			// timing sensitivity entirely.
 
-			testServer, healthServer, srv := createTestServerWithAccess()
-			defer testServer.Close()
+			_, healthServer, srv := createTestServerWithAccess()
 			defer healthServer.Close()
 
-			// Generate moderate load (10 concurrent requests)
+			const requestCount = 10
+
+			gate := &requestGate{
+				handler: srv.Handler(),
+				gate:    make(chan struct{}),
+			}
+			testServer := httptest.NewServer(gate)
+			defer testServer.Close()
+
+			url := testServer.URL + "/api/v1/audit/events?limit=10"
+
 			var wg sync.WaitGroup
-			successCount := make(chan int, 10)
-			errorCount := make(chan error, 10)
+			results := make(chan int, requestCount)
 
-			for i := 0; i < 10; i++ {
+			for i := 0; i < requestCount; i++ {
 				wg.Add(1)
-				go func(index int) {
+				go func() {
 					defer wg.Done()
-					// Mix of different endpoints
-					var url string
-					switch index % 3 {
-					case 0:
-						url = testServer.URL + "/api/v1/audit/events?limit=10"
-					case 1:
-						url = testServer.URL + "/api/v1/success-rate/multi-dimensional"
-					case 2:
-						url = healthServer.URL + "/readyz"
+					resp, err := makeAuthenticatedRequest("GET", url)
+					if err != nil {
+						return
 					}
-
-				// DD-AUTH-014: Use authenticated request
-				resp, err := makeAuthenticatedRequest("GET", url)
-				if err != nil {
-					errorCount <- err
-					return
-				}
-				defer func() { _ = resp.Body.Close() }()
-				if resp.StatusCode == 200 {
-					successCount <- 1
-				}
-				}(i)
+					defer func() { _ = resp.Body.Close() }()
+					results <- resp.StatusCode
+				}()
 			}
 
-			// Per TESTING_GUIDELINES.md: Use Eventually() to ensure requests are in-flight - brief delay to let requests start
-			time.Sleep(100 * time.Millisecond)
-			// Initiate shutdown under load
+			// Wait until all requests have arrived at the server and are
+			// blocked inside the gate middleware.
+			Eventually(func() int32 {
+				return gate.arrived.Load()
+			}, 10*time.Second, 50*time.Millisecond).Should(
+				BeNumerically("==", requestCount),
+				"all requests must reach the server before proceeding")
+
+			// Open the gate (requests proceed to handler) and initiate
+			// shutdown concurrently. The endpointPropagationDelay (5s)
+			// keeps DB/Redis alive while in-flight requests complete.
+			close(gate.gate)
+
 			shutdownDone := make(chan error, 1)
 			go func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -692,24 +700,19 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 				shutdownDone <- srv.Shutdown(ctx)
 			}()
 
-			// Wait for all requests to complete
 			wg.Wait()
-			close(successCount)
-			close(errorCount)
+			close(results)
 
-			// Business Outcome: Service handles load gracefully during shutdown
 			totalSuccess := 0
-			for range successCount {
-				totalSuccess++
+			for code := range results {
+				if code == http.StatusOK {
+					totalSuccess++
+				}
 			}
 
-			// Business outcome: At least half of requests complete successfully
-			// This demonstrates graceful handling - exact count depends on shutdown timing
-			// DD-007: Focus is on no errors, not on completing ALL requests
-			Expect(totalSuccess).To(BeNumerically(">=", 5),
-				"Service MUST handle moderate load gracefully during shutdown (DD-007)")
+			Expect(totalSuccess).To(Equal(requestCount),
+				"ALL in-flight requests MUST complete during graceful shutdown (DD-007)")
 
-			// Shutdown should complete successfully
 			err := <-shutdownDone
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -931,7 +934,8 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 				defer func() { _ = tempDB.Close() }()
 
 				notificationRepo := repository.NewNotificationAuditRepository(tempDB, logger)
-				_, err = dlqClient.DrainWithTimeout(drainCtx, notificationRepo, nil)
+				auditEventsRepo := repository.NewAuditEventsRepository(tempDB, logger)
+				_, err = dlqClient.DrainWithTimeout(drainCtx, notificationRepo, auditEventsRepo)
 				Expect(err).ToNot(HaveOccurred(), "DLQ drain should succeed")
 
 				GinkgoWriter.Printf("✅ DLQ drained successfully\n")
@@ -1013,6 +1017,22 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 // This allows tests to access internal server state (e.g., DLQ client) for validation
 // makeAuthenticatedRequest creates an HTTP request with Bearer token authentication
 // DD-AUTH-014: All DataStorage requests require authentication
+// requestGate is an http.Handler middleware that counts arriving requests
+// and blocks them until the gate channel is closed. This lets the test
+// guarantee that all N requests are genuinely in-flight inside the server
+// before triggering shutdown — removing all timing sensitivity.
+type requestGate struct {
+	handler http.Handler
+	arrived atomic.Int32
+	gate    chan struct{} // closed to release all blocked requests
+}
+
+func (g *requestGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	g.arrived.Add(1)
+	<-g.gate
+	g.handler.ServeHTTP(w, r)
+}
+
 // Token must match MockAuthenticator.ValidUsers configuration
 func makeAuthenticatedRequest(method, url string) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, nil)
@@ -1057,8 +1077,15 @@ func createTestServerWithAccess() (*httptest.Server, *httptest.Server, *server.S
 	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
 	redisPassword := "" // No password in test environment
 
-	// Create application config with database pool settings
+	// Create application config with database pool settings.
+	// EndpointPropagationDelay is set explicitly so the test documents
+	// the DD-007 STEP 2 window that keeps DB/Redis alive while in-flight
+	// requests drain during graceful shutdown.
 	appCfg := &config.Config{
+		Server: config.ServerConfig{
+			SignerCertDir:            datastorageIntegrationSigningCertDirOrDie(),
+			EndpointPropagationDelay: "5s",
+		},
 		Database: config.DatabaseConfig{
 			MaxOpenConns:    25,
 			MaxIdleConns:    5,
@@ -1107,7 +1134,7 @@ func createTestServerWithAccess() (*httptest.Server, *httptest.Server, *server.S
 	httpServer := httptest.NewServer(srv.Handler())
 
 	// Dedicated health server (Issue #753: health probes on separate port)
-	healthSrv := health.NewHealthServer(":0", srv.LivenessHandler(), srv.ReadinessHandler())
+	healthSrv := health.NewHealthServer(":0", srv.LivenessHandler(), srv.ReadinessHandler(), false)
 	healthTestServer := httptest.NewServer(healthSrv.Handler)
 
 	return httpServer, healthTestServer, srv

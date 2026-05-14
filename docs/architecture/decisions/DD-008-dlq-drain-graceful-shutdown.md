@@ -75,9 +75,9 @@ DataStorage service uses a Dead Letter Queue (DLQ) to store audit messages that 
 - ✅ **Graceful Degradation**: If timeout, at least some messages saved
 
 **Cons**:
-- ⚠️ **Partial Loss Possible**: If DLQ drain times out, remaining messages lost
+- ⚠️ **Partial Drain Possible**: If DLQ drain times out, remaining messages stay in Redis
   - **Mitigation**: 10 seconds is sufficient for typical DLQ depth
-  - **Rationale**: Better to save some than none
+  - **Note**: Messages are NOT lost — they remain in Redis and will be retried on next startup
 
 **Confidence**: 95% (approved - pragmatic balance)
 
@@ -88,7 +88,7 @@ DataStorage service uses a Dead Letter Queue (DLQ) to store audit messages that 
 **APPROVED: Alternative 3** - DLQ Drain with Timeout
 
 **Rationale**:
-1. **Kubernetes Compliance**: 10s timeout fits within typical `terminationGracePeriodSeconds` (30s)
+1. **Kubernetes Compliance**: 10s timeout fits within `terminationGracePeriodSeconds` (90s)
 2. **Best Effort Preservation**: Significantly reduces data loss compared to no drain
 3. **Operational Reality**: DLQ depth is typically low (monitored via metrics)
 4. **Graceful Degradation**: Partial drain is better than no drain
@@ -148,6 +148,9 @@ defer cancel()
 stats, err := s.dlqClient.DrainWithTimeout(ctx, s.repository, s.auditEventsRepo)
 
 // 3. For each stream (notifications, events):
+//    Two-pass cursor-based iteration (ARCH-F1 fix):
+//    Pass 1: forward sweep, XDel only after successful write
+//    Pass 2 (if any writes failed): retry from "-" for remaining messages
 for each message in stream {
     // Check timeout before processing
     if ctx.Done() { return processed, nil }
@@ -155,10 +158,13 @@ for each message in stream {
     // Parse message
     dlqMsg := parseStreamMessage(msg)
 
-    // Write to database (best effort)
-    writeMessageToDB(ctx, auditType, dlqMsg, repo)
+    // Write to database
+    if err := writeMessageToDB(ctx, auditType, dlqMsg, repo); err != nil {
+        // Message stays in Redis — NOT deleted (DF-3 fix)
+        continue
+    }
 
-    // Remove from DLQ
+    // Remove from DLQ only on success
     XDel(ctx, streamKey, msg.ID)
 
     processed++
@@ -180,13 +186,12 @@ return DrainStats{
 **If DLQ drain times out**:
 - ✅ Already-processed messages are persisted
 - ✅ Shutdown continues (timeout is non-fatal)
-- ⚠️ Remaining DLQ messages are lost
+- ✅ Remaining DLQ messages stay in Redis for the next startup's retry worker (#1048 DF-3)
 - 📊 Drain statistics logged for monitoring
 
-**Metrics** (via Prometheus):
-- `datastorage_dlq_drain_messages_processed_total` - Total messages drained
-- `datastorage_dlq_drain_timeout_total` - Number of drains that timed out
-- `datastorage_dlq_drain_duration_seconds` - Duration histogram
+**Metrics** (via Prometheus, see `pkg/datastorage/metrics/metrics.go`):
+- `datastorage_dlq_drain_batch_total` - Total DLQ drain batch operations during shutdown
+- `datastorage_shutdown_dlq_drain_errors_total` - Total DLQ drain errors during shutdown
 
 ---
 
@@ -204,8 +209,9 @@ return DrainStats{
 
 1. ⚠️ **Shutdown Delay**: Additional 10s maximum
    - **Mitigation**: Acceptable for audit completeness, configurable timeout
-2. ⚠️ **Partial Loss Possible**: If timeout, remaining messages lost
+2. ⚠️ **Partial Drain Possible**: If timeout, remaining messages stay in Redis
    - **Mitigation**: Typical DLQ depth low (monitored), 10s sufficient for most cases
+   - **Note**: Messages are NOT lost — they remain in Redis for the next startup's retry worker (#1048 DF-3)
 3. ⚠️ **Complexity**: Additional shutdown step
    - **Mitigation**: Well-tested (5/5 tests passing), clear logging
 
@@ -266,7 +272,7 @@ const (
 - HTTP drain: up to 30s (DD-007 Step 3)
 - **DLQ drain: up to 10s** (DD-008 Step 4) ← NEW
 - Resource close: ~1s (DD-007 Step 5)
-- **Total Max**: ~46s (within typical `terminationGracePeriodSeconds: 60s`)
+- **Total Max**: ~46s (within `terminationGracePeriodSeconds: 90s` per deployment.yaml)
 
 ---
 
@@ -302,9 +308,10 @@ const (
 
 ## 🎯 Implementation Status
 
-**Version**: V1.0
+**Version**: V1.1
 **Status**: ✅ Implemented and Tested
 **Date**: 2025-12-21
+**Last Reviewed**: 2026-05-14
 
 **Changes Made**:
 1. ✅ Added `DrainWithTimeout` method to DLQ client
@@ -314,6 +321,10 @@ const (
 5. ✅ Added logging and statistics tracking
 
 **Deployment**: Ready for V1.0 release
+
+### Implementation Status (v1.5)
+
+V1.5 wiring surfaces **DLQ drain failures** upward through `Server.Shutdown` (aggregated alongside HTTP drain/`sql.DB` close errors via `errors.Join`) while retaining **non-blocking cleanup** semantics so Postgres still closes after a failed bounded drain (#1048). **Capacity monitoring / near-cap gauges** (`dlq/monitoring.go`, `dlq/metrics.go`, `metrics.DLQ*`) expose depth pressure so draining alone is no longer the only DLQ lifecycle signal Helm/Prometheus observes.
 
 ---
 

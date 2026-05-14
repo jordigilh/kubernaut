@@ -37,6 +37,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
+	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 	deterministicuuid "github.com/jordigilh/kubernaut/pkg/datastorage/uuid"
 )
@@ -76,9 +77,13 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		SchemaImage  string `json:"schemaImage"` // legacy field — reject if present
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode workflow create request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -103,7 +108,7 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error(err, "Inline schema validation failed")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Schema Validation Error",
-			fmt.Sprintf("Invalid workflow schema: %v", err), h.logger)
+			"workflow schema validation failed; check the 'content' field for YAML/structural errors", h.logger)
 		return
 	}
 
@@ -336,7 +341,7 @@ func (h *Handler) validateExternalChecks(
 					status:    http.StatusBadRequest,
 					errorType: "bundle-not-found",
 					title:     "Execution Bundle Not Found",
-					detail:    fmt.Sprintf("execution.bundle image not found: %v", err),
+					detail:    "execution.bundle image could not be resolved; verify the image reference is correct",
 				})
 				return
 			}
@@ -361,8 +366,8 @@ func (h *Handler) validateExternalChecks(
 						status:    http.StatusBadRequest,
 						errorType: "dependency-validation-error",
 						title:     "Dependency Validation Error",
-						detail: fmt.Sprintf("Schema-declared dependency not satisfied: %v. Ensure all dependencies "+
-							"are provisioned in namespace %q before registering the workflow (DD-WE-006).", err, h.executionNamespace),
+					detail: fmt.Sprintf("Schema-declared dependency not satisfied in namespace %q; "+
+						"ensure all dependencies are provisioned before registering the workflow (DD-WE-006)", h.executionNamespace),
 					})
 					return
 				}
@@ -839,7 +844,7 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		h.logger.Error(err, "Invalid discovery filter parameters")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			err.Error(), h.logger)
+			"invalid discovery filter parameters", h.logger)
 		return
 	}
 
@@ -940,9 +945,13 @@ func (h *Handler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 	// Parse request body
 	var updateReq models.WorkflowUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&updateReq); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode workflow update request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -969,6 +978,11 @@ func (h *Handler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	// Apply mutable field updates
 	if updateReq.Status != nil {
+		if workflowCatalogStatusTransitionForbidden(workflow.Status, *updateReq.Status) {
+			response.WriteRFC7807Error(w, http.StatusConflict, "workflow-status-conflict", "Conflict",
+				fmt.Sprintf("invalid workflow status transition from %s to %s", workflow.Status, *updateReq.Status), h.logger)
+			return
+		}
 		workflow.Status = *updateReq.Status
 		if *updateReq.Status == "Disabled" {
 			now := time.Now()
@@ -1069,6 +1083,17 @@ func (h *Handler) emitAuditEventsAsync(events []*api.AuditEventRequest, kvs ...i
 	}()
 }
 
+// workflowCatalogStatusTransitionForbidden returns true when a catalog status PATCH should be rejected.
+// Valid: Active→Disabled, Active→Deprecated, Active→Superseded, Disabled→Active.
+// Terminal states (DD-WORKFLOW-017): Superseded and Deprecated cannot transition to any other status.
+// Same-status transitions are no-ops and always allowed.
+func workflowCatalogStatusTransitionForbidden(fromStatus, toStatus string) bool {
+	if fromStatus == toStatus {
+		return false
+	}
+	return fromStatus == "Superseded" || fromStatus == "Deprecated"
+}
+
 // getWorkflowLifecycleRepo returns the workflow lifecycle repository for enable/disable/deprecate.
 // Uses workflowLifecycleRepo when set (tests), otherwise workflowRepo.
 func (h *Handler) getWorkflowLifecycleRepo() WorkflowLifecycleRepository {
@@ -1093,9 +1118,13 @@ func (h *Handler) HandleEnableWorkflow(w http.ResponseWriter, r *http.Request) {
 	// Parse request body
 	var req models.WorkflowDisableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode workflow enable request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -1127,6 +1156,12 @@ func (h *Handler) HandleEnableWorkflow(w http.ResponseWriter, r *http.Request) {
 	if workflow == nil {
 		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
 			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+
+	if workflowCatalogStatusTransitionForbidden(workflow.Status, "Active") {
+		response.WriteRFC7807Error(w, http.StatusConflict, "workflow-status-conflict", "Conflict",
+			fmt.Sprintf("invalid workflow status transition from %s to Active", workflow.Status), h.logger)
 		return
 	}
 
@@ -1210,9 +1245,13 @@ func (h *Handler) HandleDeprecateWorkflow(w http.ResponseWriter, r *http.Request
 	// Parse request body
 	var req models.WorkflowDisableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode workflow deprecate request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -1244,6 +1283,13 @@ func (h *Handler) HandleDeprecateWorkflow(w http.ResponseWriter, r *http.Request
 	if workflow == nil {
 		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
 			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+
+	// DD-WORKFLOW-017: Superseded and Deprecated are terminal states
+	if workflowCatalogStatusTransitionForbidden(workflow.Status, "Deprecated") {
+		response.WriteRFC7807Error(w, http.StatusConflict, "workflow-status-conflict", "Status Transition Forbidden",
+			fmt.Sprintf("Cannot transition from %s to Deprecated", workflow.Status), h.logger)
 		return
 	}
 
@@ -1324,9 +1370,13 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 	// Parse request body
 	var disableReq models.WorkflowDisableRequest
 	if err := json.NewDecoder(r.Body).Decode(&disableReq); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to decode workflow disable request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -1358,6 +1408,12 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 	if workflow == nil {
 		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
 			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+
+	if workflowCatalogStatusTransitionForbidden(workflow.Status, "Disabled") {
+		response.WriteRFC7807Error(w, http.StatusConflict, "workflow-status-conflict", "Conflict",
+			fmt.Sprintf("invalid workflow status transition from %s to Disabled", workflow.Status), h.logger)
 		return
 	}
 
@@ -1452,7 +1508,7 @@ func (h *Handler) HandleListAvailableActions(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		h.logger.Error(err, "Invalid discovery filter parameters")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			err.Error(), h.logger)
+			"invalid discovery filter parameters", h.logger)
 		return
 	}
 
@@ -1522,7 +1578,7 @@ func (h *Handler) HandleListWorkflowsByActionType(w http.ResponseWriter, r *http
 	if err != nil {
 		h.logger.Error(err, "Invalid discovery filter parameters")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			err.Error(), h.logger)
+			"invalid discovery filter parameters", h.logger)
 		return
 	}
 

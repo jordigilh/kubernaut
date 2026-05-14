@@ -70,7 +70,7 @@ var _ = Describe("Inline Schema Workflow Registration (#299)", func() {
 		puller := oci.NewMockImagePuller(validInlineSchemaYAML)
 		parser := schema.NewParser()
 		extractor := oci.NewSchemaExtractor(puller, parser)
-		return server.NewHandler(nil,
+		return server.NewHandler(
 			server.WithSchemaExtractor(extractor),
 		)
 	}
@@ -154,7 +154,7 @@ spec:
   labels:
     severity: [critical]
     environment: [production]
-    component: [pod]
+    component: [v1/Pod]
     priority: P1
   execution:
     engine: job
@@ -174,7 +174,7 @@ spec:
 				Expect(rr.Code).To(Equal(http.StatusBadRequest))
 				var problem map[string]interface{}
 				Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed())
-				Expect(problem["detail"]).To(ContainSubstring("apiVersion"))
+				Expect(problem["detail"]).To(ContainSubstring("workflow schema validation failed"))
 			})
 		})
 
@@ -194,7 +194,7 @@ spec:
 				Expect(rr.Code).To(Equal(http.StatusBadRequest))
 				var problem map[string]interface{}
 				Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed())
-				Expect(problem["detail"]).To(ContainSubstring("kind"))
+				Expect(problem["detail"]).To(ContainSubstring("workflow schema validation failed"))
 			})
 		})
 	})

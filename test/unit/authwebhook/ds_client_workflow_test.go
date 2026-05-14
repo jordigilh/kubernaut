@@ -47,7 +47,7 @@ func validWorkflowJSON(workflowID string) map[string]interface{} {
 		"executionEngine": "tekton",
 		"labels": map[string]interface{}{
 			"severity":    []string{"critical"},
-			"component":   []string{"pod"},
+			"component":   []string{"v1/Pod"},
 			"environment": []string{"production"},
 			"priority":    "P0",
 		},

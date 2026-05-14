@@ -25,20 +25,47 @@ import (
 
 // Config holds the retention worker configuration, driven by Helm values.
 type Config struct {
-	Enabled              bool          // Master switch: disabled by default (BR-AUDIT-004)
+	Enabled              bool          // Master switch (FED-C2: true by default for AU-11)
 	Interval             time.Duration // How often the worker runs (default: 24h)
 	BatchSize            int           // Max rows per DELETE batch (default: 1000)
+	DefaultDays          int           // FED-H1: Category floor fallback for GREATEST() in purge SQL
 	PartitionDropEnabled bool          // Whether to attempt DROP PARTITION on empty months
 }
 
-// DefaultConfig returns the production default configuration (disabled).
+// DefaultConfig returns the production default configuration.
 func DefaultConfig() Config {
 	return Config{
-		Enabled:              false,
+		Enabled:              true,
 		Interval:             24 * time.Hour,
 		BatchSize:            1000,
+		DefaultDays:          DefaultRetentionDays,
 		PartitionDropEnabled: false,
 	}
+}
+
+// GetInterval returns Interval or the default when unset or non-positive.
+func (c Config) GetInterval() time.Duration {
+	if c.Interval <= 0 {
+		return DefaultConfig().Interval
+	}
+	return c.Interval
+}
+
+// GetBatchSize returns BatchSize or the default when unset or non-positive.
+func (c Config) GetBatchSize() int {
+	if c.BatchSize <= 0 {
+		return 1000
+	}
+	return c.BatchSize
+}
+
+// GetDefaultDays returns DefaultDays or the minimum retention floor.
+// FED-H1: Used as the $3 parameter in PurgeSQLBatched GREATEST().
+func (c Config) GetDefaultDays() int {
+	if c.DefaultDays <= 0 {
+		return DefaultRetentionDays
+	}
+	return c.DefaultDays
 }
 
 // MinRetentionDays is the minimum allowed retention period.
@@ -127,6 +154,17 @@ func ValidateRetentionDays(days int) error {
 const PurgeSQL = `DELETE FROM audit_events
 WHERE event_date + (retention_days * INTERVAL '1 day') < $1::DATE
   AND legal_hold = FALSE`
+
+// PurgeSQLBatched is PurgeSQL with a LIMIT clause for batched deletion.
+// FED-H1: Uses GREATEST(retention_days, $3) to enforce category-based minimum retention.
+// $3 is the category floor (defaultDays from config, or per-category policy).
+const PurgeSQLBatched = `DELETE FROM audit_events
+WHERE ctid IN (
+    SELECT ctid FROM audit_events
+    WHERE event_date + (GREATEST(retention_days, $3) * INTERVAL '1 day') < $1::DATE
+      AND legal_hold = FALSE
+    LIMIT $2
+)`
 
 // Clock is re-exported from the partition package for retention worker usage.
 type Clock = partition.Clock
