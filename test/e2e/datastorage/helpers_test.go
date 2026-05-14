@@ -220,6 +220,20 @@ func deletePostgresNetworkPartition(namespace, kubeconfigPath string) error {
 	return nil
 }
 
+// scalePostgresReplicas scales the postgres Deployment to the specified replica count.
+// Used instead of NetworkPolicy to simulate DB outage in dev/test environments.
+func scalePostgresReplicas(namespace, kubeconfigPath string, replicas int) error {
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "scale",
+		"deployment/postgres", "-n", namespace,
+		fmt.Sprintf("--replicas=%d", replicas))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to scale postgres to %d in %s: %w, output: %s", replicas, namespace, err, output)
+	}
+	GinkgoWriter.Printf("✅ PostgreSQL scaled to %d replicas in %s\n", replicas, namespace)
+	return nil
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // DD-API-001: OpenAPI Client Helper Functions
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

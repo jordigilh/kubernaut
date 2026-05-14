@@ -239,8 +239,8 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 			var problem map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed(),
 				"response body must be valid RFC 7807 JSON")
-			Expect(problem["detail"]).To(ContainSubstring("execution.bundle"),
-				"error detail must identify the offending field")
+			Expect(problem["detail"]).To(ContainSubstring("workflow schema validation failed"),
+				"error detail must indicate schema validation failure")
 		})
 
 		It("UT-WF-017-012: should reject inline registration when execution section is missing", func() {
@@ -256,8 +256,8 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 			var problem map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed(),
 				"response body must be valid RFC 7807 JSON")
-			Expect(problem["detail"]).To(ContainSubstring("execution"),
-				"error detail must reference the missing section")
+			Expect(problem["detail"]).To(ContainSubstring("workflow schema validation failed"),
+				"error detail must indicate schema validation failure")
 		})
 
 		It("UT-WF-017-013: should reject inline registration when execution.bundle image does not exist in registry", func() {

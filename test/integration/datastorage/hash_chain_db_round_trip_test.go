@@ -93,9 +93,6 @@ var _ = Describe("Hash Chain DB Round-Trip Investigation", func() {
 
 		GinkgoWriter.Printf("\nEvent created with hash: %s\n", created.EventHash)
 
-		// Wait for transaction to commit
-		time.Sleep(100 * time.Millisecond)
-
 		// ========================================
 		// STEP 3: Read back from PostgreSQL
 		// ========================================

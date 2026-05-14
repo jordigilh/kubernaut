@@ -302,7 +302,7 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 			defer drainCancel()
 
 			// Add small delay to ensure context expires
-			time.Sleep(2 * time.Millisecond)
+			time.Sleep(2 * time.Millisecond) // ✅ APPROVED EXCEPTION: ensure context expires before drain completes
 
 			stats, err := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, mockEventsRepo)
 

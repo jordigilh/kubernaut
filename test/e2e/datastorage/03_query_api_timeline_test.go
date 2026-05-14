@@ -147,7 +147,6 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 			eventID := createAuditEventOpenAPI(ctx, DSClient, event)
 			// Verify event was created
 			Expect(eventID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), "eventID must be a valid UUID")
-			time.Sleep(100 * time.Millisecond) // Small delay to ensure chronological order
 		}
 		testLogger.Info("✅ Created 4 Gateway events")
 
@@ -170,7 +169,6 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 			eventID := createAuditEventOpenAPI(ctx, DSClient, event)
 			// Verify event was created
 			Expect(eventID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), "eventID must be a valid UUID")
-			time.Sleep(100 * time.Millisecond)
 		}
 		testLogger.Info("✅ Created 3 AIAnalysis events")
 
@@ -193,7 +191,6 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 			eventID := createAuditEventOpenAPI(ctx, DSClient, event)
 			// Verify event was created
 			Expect(eventID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), "eventID must be a valid UUID")
-			time.Sleep(100 * time.Millisecond)
 		}
 		testLogger.Info("✅ Created 3 Workflow events")
 		testLogger.Info("✅ Total: 10 audit events created")

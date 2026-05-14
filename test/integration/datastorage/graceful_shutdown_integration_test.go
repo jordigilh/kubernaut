@@ -234,7 +234,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 			// Wait for DD-007 STEP 2 (endpoint propagation) to complete
 			// This ensures server has stopped accepting new connections
-			// Per TESTING_GUIDELINES.md: time.Sleep() is ACCEPTABLE here (testing timing behavior)
+			// ✅ APPROVED EXCEPTION: testing DD-007 endpoint propagation timing behavior
 			time.Sleep(6 * time.Second)
 
 			// Verify server stopped accepting connections (Eventually pattern)
@@ -499,13 +499,16 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 			// Start multiple concurrent requests
 			var wg sync.WaitGroup
+			var started sync.WaitGroup
 			successCount := make(chan int, 5)
 			errorCount := make(chan error, 5)
 
 			for i := 0; i < 5; i++ {
 				wg.Add(1)
+				started.Add(1)
 			go func(index int) {
 				defer wg.Done()
+				started.Done()
 				// DD-AUTH-014: Use authenticated request
 				resp, err := makeAuthenticatedRequest("GET", fmt.Sprintf("%s/api/v1/audit/events?limit=%d", testServer.URL, index+1))
 				if err != nil {
@@ -519,8 +522,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			}(i)
 			}
 
-			// Per TESTING_GUIDELINES.md: Use Eventually() to ensure requests are in-flight - brief delay to let requests start
-			time.Sleep(100 * time.Millisecond)
+			started.Wait()
 			// Initiate shutdown while multiple requests are in-flight
 			shutdownDone := make(chan error, 1)
 			go func() {
@@ -651,13 +653,16 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 			// Generate moderate load (10 concurrent requests)
 			var wg sync.WaitGroup
+			var started sync.WaitGroup
 			successCount := make(chan int, 10)
 			errorCount := make(chan error, 10)
 
 			for i := 0; i < 10; i++ {
 				wg.Add(1)
+				started.Add(1)
 				go func(index int) {
 					defer wg.Done()
+					started.Done()
 					// Mix of different endpoints
 					var url string
 					switch index % 3 {
@@ -682,8 +687,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 				}(i)
 			}
 
-			// Per TESTING_GUIDELINES.md: Use Eventually() to ensure requests are in-flight - brief delay to let requests start
-			time.Sleep(100 * time.Millisecond)
+			started.Wait()
 			// Initiate shutdown under load
 			shutdownDone := make(chan error, 1)
 			go func() {

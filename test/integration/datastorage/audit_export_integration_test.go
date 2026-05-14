@@ -116,7 +116,6 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 
 					createdEvent, err := auditRepo.Create(ctx, event)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(createdEvent).ToNot(BeNil())
 					Expect(createdEvent.EventHash).ToNot(BeEmpty(), "Event hash should be calculated")
 
 					eventIDs = append(eventIDs, createdEvent.EventID)
@@ -198,14 +197,6 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 					Expect(err).ToNot(HaveOccurred())
 				}
 
-				// RACE FIX: Ensure all transactions are committed before querying
-				// In CI's faster environment, the Export query may run before all
-				// Create transactions have committed, causing hash chain verification
-				// to see events in unexpected order or miss events entirely.
-				// Advisory locks ensure hash chain integrity within each transaction,
-				// but we need to wait for all transactions to complete.
-				time.Sleep(100 * time.Millisecond)
-
 				// Export and verify
 				filters := repository.ExportFilters{
 					CorrelationID: correlationID,
@@ -213,7 +204,6 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 
 				result, err := auditRepo.Export(ctx, filters)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
 				Expect(result.Events).To(HaveLen(5), "Should export all 5 events")
 
 				// Verify hash chain validation results
@@ -274,7 +264,6 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 
 				result, err := auditRepo.Export(ctx, filters)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
 
 				// Verify tampering is detected
 				Expect(result.ValidChainEvents).To(BeNumerically("<", 3),

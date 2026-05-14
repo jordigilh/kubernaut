@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
@@ -749,13 +750,17 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 // ========================================
 
 // SelectiveFailEventsRepository fails on a specific call index.
+// Mutex-protected to be safe under concurrent drain goroutines.
 type SelectiveFailEventsRepository struct {
+	mu            sync.Mutex
 	createdEvents []*repository.AuditEvent
 	failOnIndex   int
 	callCount     int
 }
 
 func (m *SelectiveFailEventsRepository) Create(ctx context.Context, event *repository.AuditEvent) (*repository.AuditEvent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	idx := m.callCount
 	m.callCount++
 	if idx == m.failOnIndex {
@@ -770,13 +775,17 @@ func (m *SelectiveFailEventsRepository) Create(ctx context.Context, event *repos
 // ========================================
 
 // TransientFailEventsRepository fails for the first N calls, then succeeds.
+// Mutex-protected to be safe under concurrent drain goroutines.
 type TransientFailEventsRepository struct {
+	mu              sync.Mutex
 	createdEvents   []*repository.AuditEvent
 	failFirstNCalls int
 	callCount       int
 }
 
 func (m *TransientFailEventsRepository) Create(_ context.Context, event *repository.AuditEvent) (*repository.AuditEvent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.callCount++
 	if m.callCount <= m.failFirstNCalls {
 		return nil, fmt.Errorf("transient failure on call %d", m.callCount)

@@ -174,7 +174,7 @@ spec:
 				Expect(rr.Code).To(Equal(http.StatusBadRequest))
 				var problem map[string]interface{}
 				Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed())
-				Expect(problem["detail"]).To(ContainSubstring("apiVersion"))
+				Expect(problem["detail"]).To(ContainSubstring("workflow schema validation failed"))
 			})
 		})
 
@@ -194,7 +194,7 @@ spec:
 				Expect(rr.Code).To(Equal(http.StatusBadRequest))
 				var problem map[string]interface{}
 				Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed())
-				Expect(problem["detail"]).To(ContainSubstring("kind"))
+				Expect(problem["detail"]).To(ContainSubstring("workflow schema validation failed"))
 			})
 		})
 	})

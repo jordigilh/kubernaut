@@ -53,16 +53,14 @@ import (
 // Note: DLQ write mechanics are tested in integration tier (dlq_test.go)
 // E2E focuses ONLY on end-to-end HTTP response behavior during network failures
 //
-// Outage Simulation: NetworkPolicy-based network partition (not pod termination)
-// - Simulates network failure between DataStorage and PostgreSQL
-// - PostgreSQL stays healthy (HA scenario in production)
-// - Tests realistic cross-AZ failure / network partition scenario
-// - Error type: "i/o timeout" (vs "connection refused" for pod crash)
+// Outage Simulation: Scale PostgreSQL to 0 replicas
+// - Kind/Helm is a dev environment — no NetworkPolicy overhead
+// - Error type: "connection refused" (immediate, no propagation delay)
+// - PostgreSQL is restored in defer (scale back to 1)
 //
-// Parallel Execution: ✅ ENABLED
-// - Uses NetworkPolicy for isolation (doesn't affect shared PostgreSQL)
-// - No infrastructure disruption for other parallel tests
-// - No data loss or migration re-application needed
+// Parallel Execution: ⚠️ SERIAL within DS E2E suite (scales shared PostgreSQL)
+// - Other DS tests must not run concurrently with this test
+// - PostgreSQL is restored in test cleanup
 
 var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outage", Label("e2e", "dlq", "p0"), Ordered, func() {
 	var (
@@ -138,13 +136,13 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			testCancel()
 		}
 
-		// NOTE: NetworkPolicy cleanup is handled within the test itself
+		// NOTE: PostgreSQL scale-up is handled by the test's defer
 		// NOTE: Do NOT cleanup the shared namespace - it's used by other tests
 		// The namespace cleanup is handled by SynchronizedAfterSuite
 		testLogger.Info("✅ DLQ test cleanup complete (shared namespace preserved)")
 	})
 
-	It("should preserve audit events during PostgreSQL network partition using DLQ", func() {
+	It("should preserve audit events during PostgreSQL outage using DLQ", func() {
 		var err error
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test: DLQ Fallback During Network Partition")
@@ -176,26 +174,28 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 		Expect(count).To(Equal(1), "Should have 1 baseline event in database")
 		testLogger.Info("✅ Baseline event verified in database")
 
-		// Step 2: Simulate PostgreSQL network partition (NetworkPolicy blocks DataStorage → PostgreSQL)
-		testLogger.Info("💥 Step 2: Creating NetworkPolicy to simulate network partition...")
-		testLogger.Info("   This simulates cross-AZ failure / network partition (HA PostgreSQL scenario)")
-		err = createPostgresNetworkPartition(testNamespace, kubeconfigPath)
+		// Step 2: Simulate PostgreSQL outage by scaling the deployment to 0
+		testLogger.Info("💥 Step 2: Scaling PostgreSQL to 0 replicas to simulate outage...")
+		err = scalePostgresReplicas(testNamespace, kubeconfigPath, 0)
 		Expect(err).ToNot(HaveOccurred())
-		testLogger.Info("✅ NetworkPolicy applied - DataStorage → PostgreSQL traffic blocked")
+		testLogger.Info("✅ PostgreSQL scaled to 0 — connections will be refused")
 
-		// Ensure NetworkPolicy is deleted even if test fails
+		// Ensure PostgreSQL is restored even if test fails
 		defer func() {
-			testLogger.Info("🔄 Restoring network connectivity (deleting NetworkPolicy)...")
-			if err := deletePostgresNetworkPartition(testNamespace, kubeconfigPath); err != nil {
-				testLogger.Error(err, "Failed to delete NetworkPolicy")
+			testLogger.Info("🔄 Restoring PostgreSQL (scaling back to 1)...")
+			if err := scalePostgresReplicas(testNamespace, kubeconfigPath, 1); err != nil {
+				testLogger.Error(err, "Failed to restore PostgreSQL")
 			} else {
-				testLogger.Info("✅ Network connectivity restored")
+				testLogger.Info("✅ PostgreSQL restored")
 			}
 		}()
 
-		// Give NetworkPolicy time to take effect
-		testLogger.Info("⏳ Waiting for network partition to take effect...")
-		time.Sleep(2 * time.Second)
+		// Wait until PostgreSQL is actually unreachable
+		testLogger.Info("⏳ Waiting for PostgreSQL to become unreachable...")
+		Eventually(func() error {
+			return db.Ping()
+		}, 10*time.Second, 500*time.Millisecond).ShouldNot(Succeed(),
+			"PostgreSQL should be unreachable after scaling to 0")
 
 		// Step 3: Attempt to write event during network partition → should fallback to DLQ
 		testLogger.Info("📨 Step 3: Writing event during network partition (should fallback to DLQ)...")
@@ -234,9 +234,8 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 		testLogger.Info("🔍 Step 4: Verifying DLQ fallback succeeded...")
 		testLogger.Info("✅ DLQ fallback test complete:")
 		testLogger.Info("   • Baseline event written successfully (201 Created)")
-		testLogger.Info("   • Network partition event accepted for DLQ processing (202 Accepted)")
-		testLogger.Info("   • Service handled network failure gracefully (i/o timeout)")
-		testLogger.Info("   • PostgreSQL stayed healthy (HA scenario)")
+		testLogger.Info("   • Outage event accepted for DLQ processing (201 or 202)")
+		testLogger.Info("   • Service handled DB outage gracefully")
 		testLogger.Info("")
 		testLogger.Info("⚠️  Note: Automatic DLQ recovery (DD-009) is tested in integration tier")
 		testLogger.Info("   This E2E test focuses on end-to-end network failure response behavior")

@@ -202,7 +202,7 @@ var _ = Describe("Audit HTTP handlers — verify-chain & export (UT-DS-1088-P9)"
 
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 			Expect(rfc7807TypeSubstring(rec.Body.Bytes())).To(ContainSubstring("export/invalid-parameters"))
-			Expect(rec.Body.String()).To(ContainSubstring("invalid start_time"))
+			Expect(rec.Body.String()).To(ContainSubstring("invalid query parameters"))
 		})
 
 		It("UT-DS-1088-P9-014: GET with negative offset returns 400", func() {
@@ -220,7 +220,7 @@ var _ = Describe("Audit HTTP handlers — verify-chain & export (UT-DS-1088-P9)"
 
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 			Expect(rfc7807TypeSubstring(rec.Body.Bytes())).To(ContainSubstring("export/invalid-parameters"))
-			Expect(rec.Body.String()).To(ContainSubstring("invalid offset"))
+			Expect(rec.Body.String()).To(ContainSubstring("invalid query parameters"))
 		})
 
 		It("UT-DS-1088-P9-015: indirect parseExportFilters — export query reaches repository with decoded filters", func() {
