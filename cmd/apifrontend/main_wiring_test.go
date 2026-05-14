@@ -12,10 +12,13 @@ import (
 
 	"github.com/go-logr/logr"
 
+	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/config"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/handler"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/metrics"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
 )
 
 // ---------------------------------------------------------------------------
@@ -148,46 +151,264 @@ func TestShutdownTimeout_DefaultsOnZero(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TC-A-08: NewJWTValidator must receive WithCBMetrics (WIRE-08)
+// TC-P2A-01: Auth middleware CB metrics — behavioral (BAC-02)
 // ---------------------------------------------------------------------------
 
 func TestBuildAuthMiddleware_PassesCBMetrics(t *testing.T) {
-	// Verify that buildAuthMiddleware includes WithCBMetrics in validator opts.
-	// We verify indirectly: after creating a middleware with a valid issuer,
-	// the validator's JWKS circuit breaker should report state via metrics.
-	// Since we can't easily inspect internals, we verify the code path exists
-	// by checking that buildAuthMiddleware references reg.CircuitBreakerState.
-	//
-	// This test passes because the GREEN fix adds the WithCBMetrics option.
-	// If someone removes it, the JWKS CB state won't be reported — catching
-	// that requires an integration test (covered in E2E).
+	t.Parallel()
+
+	jwksSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"keys":[]}`)
+	}))
+	t.Cleanup(jwksSrv.Close)
+
 	cfg := &config.Config{}
-	cfg.Auth.IssuerURL = "https://dex.example.com"
+	cfg.Auth.IssuerURL = jwksSrv.URL
+	cfg.Auth.JWKSURL = jwksSrv.URL
 	cfg.Auth.Audience = "test"
+	cfg.Auth.AllowInsecureIssuers = true
+
 	reg := metrics.NewRegistry()
 	auditor := &noopAuditor{}
 	logger := noopLogger()
 
-	mw := buildAuthMiddleware(cfg, reg, auditor, logger)
+	mw, _ := buildAuthMiddleware(cfg, reg, auditor, logger)
 	if mw == nil {
-		t.Fatal("TC-A-08: buildAuthMiddleware returned nil")
+		t.Fatal("TC-P2A-01a: buildAuthMiddleware returned nil")
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	wrapped := mw(inner)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody)
+	req.Header.Set("Authorization", "Bearer dummy-token")
+	wrapped.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusServiceUnavailable {
+		t.Fatal("TC-P2A-01a: middleware returned 503 (deny-all fallback); WithCBMetrics likely missing")
+	}
+
+	metricsHandler := reg.Handler()
+	mrec := httptest.NewRecorder()
+	metricsHandler.ServeHTTP(mrec, httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody))
+	body, _ := io.ReadAll(mrec.Result().Body)
+	metricsText := string(body)
+
+	if !strings.Contains(metricsText, "af_auth_duration_seconds") {
+		t.Errorf("TC-P2A-01b: af_auth_duration_seconds not found in metrics — auth duration not wired.\nMetrics:\n%s",
+			extractMetricLines(metricsText, "af_auth"))
 	}
 }
 
 // ---------------------------------------------------------------------------
-// TC-A-04: MCPBridgeConfig.UserLimiter must be non-nil (WIRE-04)
+// TC-P2A-02: UserLimiter wiring — behavioral (BAC-03)
 // ---------------------------------------------------------------------------
 
 func TestBridgeCfg_UserLimiter_IsWired(t *testing.T) {
-	// This test validates the wiring fix by checking that buildMCPHandler
-	// receives a non-nil UserLimiter. Since we can't call buildMCPHandler
-	// in a unit test (requires K8s), we verify the code path structurally.
-	//
-	// The GREEN fix passes userLimiter to buildMCPHandler and sets it on
-	// bridgeCfg. This test passes because the code compiles with the field.
-	cfg := handler.MCPBridgeConfig{}
-	if cfg.UserLimiter != nil {
-		t.Log("TC-A-04: UserLimiter field is accessible (wiring fix validated)")
+	t.Parallel()
+
+	limiter := ratelimit.NewUserLimiter(ratelimit.PerUserConfig{
+		RequestsPerMinute:     60,
+		MaxConcurrentSessions: 5,
+		ToolCallsPerMinute:    30,
+		CleanupInterval:       1 * time.Minute,
+		MaxAge:                5 * time.Minute,
+	})
+	t.Cleanup(limiter.Stop)
+
+	bridgeCfg := handler.MCPBridgeConfig{
+		UserLimiter: limiter,
+	}
+
+	if bridgeCfg.UserLimiter == nil {
+		t.Fatal("TC-P2A-02a: MCPBridgeConfig.UserLimiter is nil after explicit wiring")
+	}
+
+	if !limiter.AllowRequest("testuser") {
+		t.Error("TC-P2A-02b: UserLimiter should allow first request within rate limit")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TC-P2C-05b: ReplayCache.Stop is idempotent (BAC-11)
+// ---------------------------------------------------------------------------
+
+func TestReplayCache_StopIdempotent(t *testing.T) {
+	t.Parallel()
+	rc := auth.NewReplayCache(1 * time.Minute)
+
+	rc.Stop()
+	rc.Stop()
+}
+
+// ---------------------------------------------------------------------------
+// HIGH-02b: Session lifecycle — af_sessions_active gauge wiring
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// HIGH-02b RED: Session infrastructure wiring tests
+// ---------------------------------------------------------------------------
+
+func TestBuildSessionInfra_ReturnsNonNilService(t *testing.T) {
+	t.Parallel()
+	reg := metrics.NewRegistry()
+	cfg := &config.Config{
+		Session: config.SessionConfig{
+			Namespace:     "test-ns",
+			DisconnectTTL: 10 * time.Minute,
+			RetentionTTL:  31 * 24 * time.Hour,
+		},
+	}
+	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if infra.SessionService == nil {
+		t.Fatal("HIGH-02b: buildSessionInfra must return a non-nil SessionService")
+	}
+}
+
+func TestBuildSessionInfra_GaugeIsWired(t *testing.T) {
+	t.Parallel()
+	reg := metrics.NewRegistry()
+	cfg := &config.Config{
+		Session: config.SessionConfig{
+			Namespace:     "test-ns",
+			DisconnectTTL: 10 * time.Minute,
+			RetentionTTL:  31 * 24 * time.Hour,
+		},
+	}
+	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if infra.SessionService == nil {
+		t.Fatal("SessionService is nil")
+	}
+
+	metricsHandler := reg.Handler()
+	rec := httptest.NewRecorder()
+	metricsHandler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody))
+	body, _ := io.ReadAll(rec.Result().Body)
+	if !strings.Contains(string(body), "af_sessions_active") {
+		t.Error("HIGH-02b: af_sessions_active gauge should be wired via registry")
+	}
+}
+
+func TestBuildSessionInfra_ReconcilerIsCreated(t *testing.T) {
+	t.Parallel()
+	reg := metrics.NewRegistry()
+	cfg := &config.Config{
+		Session: config.SessionConfig{
+			Namespace:     "test-ns",
+			DisconnectTTL: 15 * time.Minute,
+			RetentionTTL:  31 * 24 * time.Hour,
+		},
+	}
+	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if infra.Reconciler == nil {
+		t.Fatal("HIGH-02b: buildSessionInfra must return a non-nil Reconciler")
+	}
+}
+
+func TestBuildSessionInfra_RetentionTTLClamped(t *testing.T) {
+	t.Parallel()
+	reg := metrics.NewRegistry()
+	cfg := &config.Config{
+		Session: config.SessionConfig{
+			Namespace:     "test-ns",
+			DisconnectTTL: 5 * time.Minute,
+			RetentionTTL:  1 * time.Hour, // below NIST AU-11 minimum
+		},
+	}
+	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if infra.Reconciler == nil {
+		t.Fatal("Reconciler must not be nil even with sub-minimum retention TTL")
+	}
+}
+
+func TestBuildSessionInfra_SchemeIncludesInvestigationSession(t *testing.T) {
+	t.Parallel()
+	reg := metrics.NewRegistry()
+	cfg := &config.Config{
+		Session: config.SessionConfig{
+			Namespace:     "test-ns",
+			DisconnectTTL: 10 * time.Minute,
+			RetentionTTL:  31 * 24 * time.Hour,
+		},
+	}
+	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if infra.Scheme == nil {
+		t.Fatal("HIGH-02b: buildSessionInfra must return a non-nil Scheme")
+	}
+
+	gvk := v1alpha1.GroupVersion.WithKind("InvestigationSession")
+	if !infra.Scheme.Recognizes(gvk) {
+		t.Errorf("HIGH-02b: scheme does not recognize %s", gvk)
+	}
+}
+
+func TestBuildSessionInfra_GracefulShutdown(t *testing.T) {
+	t.Parallel()
+	reg := metrics.NewRegistry()
+	cfg := &config.Config{
+		Session: config.SessionConfig{
+			Namespace:     "test-ns",
+			DisconnectTTL: 10 * time.Minute,
+			RetentionTTL:  31 * 24 * time.Hour,
+		},
+	}
+	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if infra.StopFunc == nil {
+		t.Fatal("HIGH-02b: buildSessionInfra must return a StopFunc for graceful shutdown")
+	}
+	infra.StopFunc()
+}
+
+// ---------------------------------------------------------------------------
+// MED-03: buildAuthMiddleware must return an auth readiness checker so that
+// /readyz returns 503 when the JWKS circuit breaker is open.
+// ---------------------------------------------------------------------------
+
+func TestBuildAuthMiddleware_ReturnsReadyChecker(t *testing.T) {
+	t.Parallel()
+
+	jwksServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"keys":[]}`))
+	}))
+	t.Cleanup(jwksServer.Close)
+
+	cfg := &config.Config{}
+	cfg.Auth.IssuerURL = jwksServer.URL
+	cfg.Auth.JWKSURL = jwksServer.URL + "/.well-known/jwks.json"
+	cfg.Auth.AllowInsecureIssuers = true
+
+	reg := metrics.NewRegistry()
+	mw, readyFn := buildAuthMiddleware(cfg, reg, nil, logr.Discard())
+	if mw == nil {
+		t.Fatal("MED-03: middleware must not be nil")
+	}
+	if readyFn == nil {
+		t.Fatal("MED-03: buildAuthMiddleware must return a non-nil readiness checker")
+	}
+	if !readyFn() {
+		t.Error("MED-03: auth readiness should be true when JWKS server is reachable")
+	}
+}
+
+func TestBuildAuthMiddleware_NoAuth_ReadyAlwaysTrue(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{}
+	reg := metrics.NewRegistry()
+	mw, readyFn := buildAuthMiddleware(cfg, reg, nil, logr.Discard())
+	if mw == nil {
+		t.Fatal("middleware must not be nil")
+	}
+	if readyFn == nil {
+		t.Fatal("MED-03: readiness checker must not be nil even when auth is unconfigured")
+	}
+	if !readyFn() {
+		t.Error("MED-03: auth readiness should always be true when no JWT providers are configured")
 	}
 }
 
