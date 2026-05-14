@@ -104,7 +104,7 @@ jobs:
       # ========================================
       - name: Upload E2E test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.service }}-e2e-results
           path: |
@@ -114,7 +114,7 @@ jobs:
 
       - name: Upload failure diagnostics (must-gather + Kind logs)
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.service }}-e2e-diagnostics-${{ github.run_id }}
           path: |

@@ -182,7 +182,7 @@ jobs:
 
       - name: Upload license report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: license-report
           path: licenses.csv
@@ -253,7 +253,7 @@ jobs:
       
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-unit-${{ matrix.service }}
           path: coverage-reports/unit-${{ matrix.service }}.txt
@@ -261,7 +261,7 @@ jobs:
 
       - name: Upload full coverage profile
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-profile-unit-${{ matrix.service }}
           path: |
@@ -493,7 +493,7 @@ jobs:
       
       - name: Upload integration test log on failure
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: integration-log-${{ matrix.service }}-${{ github.run_id }}
           path: integration-${{ matrix.service }}.log
@@ -520,7 +520,7 @@ jobs:
       
       - name: Upload integration coverage report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-integration-${{ matrix.service }}
           path: coverage-reports/integration-${{ matrix.service }}.txt
@@ -528,7 +528,7 @@ jobs:
 
       - name: Upload full integration coverage profile
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-profile-integration-${{ matrix.service }}
           path: coverage_integration_${{ matrix.service }}.out
@@ -555,7 +555,7 @@ jobs:
           fi
       - name: Upload must-gather logs as artifacts
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: must-gather-logs-integration-${{ matrix.service }}-${{ github.run_id }}
           path: must-gather-*.tar.gz
@@ -719,7 +719,7 @@ jobs:
       
       - name: Upload E2E coverage report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-e2e-${{ matrix.service }}
           path: coverage-reports/e2e-${{ matrix.service }}.txt
@@ -727,7 +727,7 @@ jobs:
 
       - name: Upload full E2E coverage profile
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-profile-e2e-${{ matrix.service }}
           path: coverage_e2e_${{ matrix.service }}.out
@@ -777,7 +777,7 @@ jobs:
           fi
       - name: Upload must-gather logs as artifacts
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: must-gather-logs-e2e-${{ matrix.service }}-${{ github.run_id }}
           path: must-gather-e2e-*.tar.gz
@@ -903,7 +903,7 @@ jobs:
 
       - name: Upload must-gather and Kind logs
         if: failure() || cancelled()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: helm-smoke-must-gather-${{ github.run_id }}
           path: |
