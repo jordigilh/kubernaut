@@ -769,8 +769,9 @@ func (c *Client) DrainWithTimeout(ctx context.Context, notificationRepo Notifica
 		c.logger.Info("DLQ drain timed out after processing notifications",
 			"notifications_processed", stats.NotificationsProcessed,
 			"duration", stats.Duration,
+			"errors", len(stats.Errors),
 			"dd", "DD-008-drain-timeout")
-		return stats, nil
+		return stats, stats.JoinErrors()
 	default:
 		// Continue to events
 	}
