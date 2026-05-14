@@ -278,7 +278,25 @@ var _ = SynchronizedAfterSuite(
 		}
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
+		// Detect setup failure: if setupSucceeded is false, BeforeSuite failed
+		setupFailed := !setupSucceeded
+		if setupFailed {
+			logger.Info("⚠️  Setup failure detected (setupSucceeded = false)")
+		}
+
+		// Determine cleanup strategy
+		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		defer infrastructure.CleanupFailureMarker(clusterName)
+
+		// Collect pod logs BEFORE coverage collection, which scales the
+		// deployment to 0 and waits for pod termination. If we collect
+		// after, the container is removed and its logs are lost.
+		if anyFailure {
+			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath,
+				"kubernaut-system", "gateway", GinkgoWriter)
+		}
+
+		// DD-TEST-007: Collect E2E binary coverage AFTER log export but BEFORE cluster deletion
 		if coverageMode {
 			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
 				ServiceName:    "gateway",
@@ -290,16 +308,6 @@ var _ = SynchronizedAfterSuite(
 				logger.Error(err, "Failed to collect E2E binary coverage (non-fatal)")
 			}
 		}
-
-		// Detect setup failure: if setupSucceeded is false, BeforeSuite failed
-		setupFailed := !setupSucceeded
-		if setupFailed {
-			logger.Info("⚠️  Setup failure detected (setupSucceeded = false)")
-		}
-
-		// Determine cleanup strategy
-		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
-		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("SKIP_CLEANUP") == "true" || os.Getenv("KEEP_CLUSTER") != ""
 
 		if preserveCluster {

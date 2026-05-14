@@ -269,7 +269,25 @@ var _ = SynchronizedAfterSuite(
 			})
 		}
 
-		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
+		// Detect setup failure: if k8sClient is nil, BeforeSuite failed
+		setupFailed := k8sClient == nil
+		if setupFailed {
+			logger.Info("⚠️  Setup failure detected (k8sClient is nil)")
+		}
+
+		// Determine cleanup strategy
+		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		defer infrastructure.CleanupFailureMarker(clusterName)
+
+		// Collect pod logs BEFORE coverage collection, which scales the
+		// deployment to 0 and waits for pod termination. If we collect
+		// after, the container is removed and its logs are lost.
+		if anyFailure {
+			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath,
+				controllerNamespace, "workflowexecution", GinkgoWriter)
+		}
+
+		// DD-TEST-007: Collect E2E binary coverage AFTER log export but BEFORE cluster deletion
 		if os.Getenv("E2E_COVERAGE") == "true" {
 			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
 				ServiceName:    "workflowexecution",
@@ -281,16 +299,6 @@ var _ = SynchronizedAfterSuite(
 				logger.Error(err, "Failed to collect E2E binary coverage (non-fatal)")
 			}
 		}
-
-		// Detect setup failure: if k8sClient is nil, BeforeSuite failed
-		setupFailed := k8sClient == nil
-		if setupFailed {
-			logger.Info("⚠️  Setup failure detected (k8sClient is nil)")
-		}
-
-		// Determine cleanup strategy
-		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
-		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
 
 		if preserveCluster {
