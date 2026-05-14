@@ -33,7 +33,7 @@ import (
 
 // ========================================
 // SOC2 Day 9.1: Signed Audit Export API
-// Authority: SOC2_WEEK2_COMPLETE_PLAN_V1_1_JAN07.md - Day 9.1
+// Authority: BR-AUDIT-007 (Audit Export API); aligns with SOC2/CC8.1-oriented export controls in OpenAPI
 // GET /api/v1/audit/export
 // ========================================
 //

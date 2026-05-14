@@ -807,7 +807,7 @@ context_api:
 
 **Storage Cost**: ~$0.37/month (PostgreSQL storage at $0.10/GB, 367.8 MB ≈ 0.37 GB)
 
-**Retention**: 90 days (default), 7 years (compliance)
+**Retention**: 2555 days (~7 years, ADR-034 SOC 2 / ISO 27001 default)
 
 **Assumptions**:
 - Average event size: 1 KB

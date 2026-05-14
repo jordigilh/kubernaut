@@ -14,15 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package metrics provides Prometheus metrics for the Data Storage service.
-//
-// Business Requirement: BR-STORAGE-019 (Logging and metrics for all operations)
-//
-// This package defines external-facing Prometheus metrics (GitHub issue #294):
-// - Write operation performance (WriteDuration)
-// - Audit lag observability (AuditLagSeconds)
-//
-// All metrics are automatically registered with Prometheus using promauto.
 package metrics
 
 import (

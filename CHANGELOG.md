@@ -62,6 +62,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **pprof runtime profiling** — `/debug/pprof/*` endpoints registered on the shared health server (DataStorage, KA, Gateway). Enabled by default following `kube-apiserver --profiling` pattern; gated via `disableProfiling` config field for hardened environments. Zero overhead when not actively queried.
 - **Workflow validation duration metric** — New `datastorage_workflow_validation_duration_seconds` Prometheus histogram with `phase` and `result` labels for per-phase observability.
 
+#### Data Storage (PROD-L1)
+
+- **Helm autoscaler & PDB** — Horizontal Pod Autoscaler hooks and PodDisruptionBudget manifests for Data Storage workloads.
+- **Hash chain verification** — `POST /api/v1/audit/verify-chain` for tamper-evidence validation of chained audit hashes.
+- **Signed audit export** — `GET /api/v1/audit/export` for cryptographically packaged audit exports consumed by downstream compliance tooling.
+- **Batch FK parent lookups** — Batched lookups for parent event dates tighten composite FK integrity validation under load (batch write pathway).
+- **Workflow status transition validation** — Declarative state machine enforcement on workflow transitions before commits.
+
 #### Documentation & Standards
 
 - **ADR-060** — Architecture decision record documenting the parallel validation patterns and error priority contract.
@@ -78,6 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Parallelized workflow validation** (#1070) — External validation checks (action-type taxonomy, OCI bundle existence, K8s dependency validation) now run concurrently during workflow registration, reducing registration latency from sum-of-three to max-of-three backend calls. Error priority contract preserved via typed-result-slot pattern (ADR-060).
 - **Concurrency cap on dependency validation** (#1070) — `ValidateDependencies` now limits concurrent K8s API calls to 10 via `errgroup.SetLimit`, preventing API server overload from schemas with many dependencies.
 - **Validation timeout budget** (#1070) — `validateExternalChecks` enforces a 10-second timeout to prevent degraded backends from consuming the full server WriteTimeout.
+- **Data Storage pod termination grace** — `terminationGracePeriodSeconds` increased **30 → 90s** so shutdown can complete DLQ/admission/retry windows before kubelet SIGKILL under load.
+- **Data Storage CORS default** — Moved from permissive wildcard to **deny-by-default** (empty allowed origin list emits no wildcard `Access-Control-Allow-Origin`; explicit opt-in origins required).
+- **Audit retention default** — Data Storage retention cron now ships **enabled by default** (previously opted-in/out per environment)—override via Helm/`ConfigMap` for shorter dev cycles.
 
 ### Security
 
@@ -90,6 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Impersonate-* header stripping** — Client-supplied impersonation headers stripped before processing.
 - **Explicit QPS/Burst/Timeout** on MCP controller-runtime client (SEC-07).
 - **Constant-time session ownership comparison** — Mitigates timing attacks on session authorization.
+- **Data Storage security auditing** — Structured security audit logs for **`401`**/**`403`** authz failures (**FedRAMP AU-2** alignment).
+- **Data Storage request containment** — `MaxBytesReaderMiddleware` rejects oversized payloads before OpenAPI/auth work (**SC‑5**) alongside hardened CORS defaults.
+- **Problem Details on panic paths** — API panic middleware now terminates with RFC **7807** JSON instead of bubbling raw panics to clients.
 
 ### Helm
 
@@ -100,6 +114,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **ParentEventDate propagation** — Guaranteed consistent parent-event linkage for composite foreign keys when batch-writing nested audit payloads.
+- **DLQ handler hygiene** — Sanitized DLQ error surfaces so Postgres/SQL engine details cannot leak upstream through retry responses/logs.
+- **CORS regression** — Empty allow-lists correctly reject cross-origin callers (no accidental allow-all serialization).
 - **Data races** — Fixed 2 races in `event_store_test.go` (buffered channels replacing bare variables) and 1 race in `session/manager.go` (shallow field reference used outside lock).
 - **errcheck lint violations** — 12 fixes across wiring, timeout, security integration tests and `vertexanthropic/client.go`.
 - **Duplicate declarations** — Removed duplicate `EventTypeTokenDelta` and `chatOrStream` from rebase.

@@ -14,9 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package eventdata provides shared EventData validation used by both
-// the DLQ client (pkg/datastorage/dlq) and InternalAuditClient (pkg/audit).
-// Extracted to break the import cycle between those packages.
 package eventdata
 
 import (

@@ -321,6 +321,10 @@ const (
 
 **Deployment**: Ready for V1.0 release
 
+### Implementation Status (v1.5)
+
+V1.5 wiring surfaces **DLQ drain failures** upward through `Server.Shutdown` (aggregated alongside HTTP drain/`sql.DB` close errors via `errors.Join`) while retaining **non-blocking cleanup** semantics so Postgres still closes after a failed bounded drain (#1048). **Capacity monitoring / near-cap gauges** (`dlq/monitoring.go`, `dlq/metrics.go`, `metrics.DLQ*`) expose depth pressure so draining alone is no longer the only DLQ lifecycle signal Helm/Prometheus observes.
+
 ---
 
 **Document Status**: ✅ Authoritative
