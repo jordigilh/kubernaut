@@ -36,8 +36,10 @@ import (
 //
 // Use Cases:
 // 1. Development/testing without cert-manager
-// 2. Emergency fallback if cert-manager unavailable
-// 3. Integration tests (generate on-demand)
+// 2. Integration tests (generate on-demand)
+//
+// Note: Data Storage enforces fail-hard on missing certs (#1048 Phase 5 / AU-9).
+// This generator is NOT used as a runtime fallback in production.
 //
 // cert-manager Compatibility:
 // - Same PEM format (tls.crt, tls.key)
