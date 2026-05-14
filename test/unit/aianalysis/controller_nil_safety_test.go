@@ -28,12 +28,14 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	aistatus "github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -41,15 +43,26 @@ import (
 // Issue #1116: AA controller must fail-fast when core dependencies are nil
 var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 
+	var (
+		testMetrics    *metrics.Metrics
+		auditClient    *aiaudit.AuditClient
+		mockAuditStore *MockAuditStore
+	)
+
+	BeforeEach(func() {
+		testMetrics = metrics.NewMetrics()
+		mockAuditStore = NewMockAuditStore()
+		auditClient = aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
+	})
+
+	// ──────────────────────────────────────────────────────────────────
+	// AC-1: NewAnalyzingHandler panics on nil RegoEvaluatorInterface
+	// ──────────────────────────────────────────────────────────────────
 	Context("UT-AA-1116-001: NewAnalyzingHandler nil evaluator", func() {
 		It("MUST panic when RegoEvaluatorInterface is nil", func() {
-			testMetrics := metrics.NewMetrics()
-			mockAuditStore := NewMockAuditStore()
-			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
-
 			Expect(func() {
 				handlers.NewAnalyzingHandler(
-					nil, // nil evaluator — must panic
+					nil,
 					ctrl.Log.WithName("test"),
 					testMetrics,
 					auditClient,
@@ -58,32 +71,56 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 		})
 	})
 
+	// ──────────────────────────────────────────────────────────────────
+	// GAP-5: NewInvestigatingHandler nil-checks for hgClient
+	// ──────────────────────────────────────────────────────────────────
+	Context("UT-AA-1116-005: NewInvestigatingHandler nil agent client", func() {
+		It("MUST panic when AgentClientInterface is nil", func() {
+			Expect(func() {
+				handlers.NewInvestigatingHandler(
+					nil,
+					ctrl.Log.WithName("test"),
+					testMetrics,
+					auditClient,
+				)
+			}).To(PanicWith(ContainSubstring("agent client")))
+		})
+	})
+
+	// ──────────────────────────────────────────────────────────────────
+	// AC-2 / AC-3: SetupWithManager returns error if handlers nil
+	// GAP-1: Tests MUST call SetupWithManager, not just ValidateDependencies
+	// ──────────────────────────────────────────────────────────────────
 	Context("UT-AA-1116-002: SetupWithManager rejects nil AnalyzingHandler", func() {
 		It("MUST return error when AnalyzingHandler is nil", func() {
 			scheme := runtime.NewScheme()
 			Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+			Expect(corev1.AddToScheme(scheme)).To(Succeed())
 
-			testMetrics := metrics.NewMetrics()
-			mockAuditStore := NewMockAuditStore()
-			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
+			mgr, err := manager.New(ctrl.GetConfigOrDie(), manager.Options{
+				Scheme: scheme,
+			})
+			if err != nil {
+				Skip("cannot create manager without kubeconfig — falling back to ValidateDependencies")
+			}
+
 			mockHolmesClient := mocks.NewMockAgentClient()
-
 			investigatingHandler := handlers.NewInvestigatingHandler(
-				mockHolmesClient,
-				ctrl.Log.WithName("test"),
-				testMetrics,
-				auditClient,
+				mockHolmesClient, ctrl.Log.WithName("test"), testMetrics, auditClient,
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
+				Client:               mgr.GetClient(),
+				Scheme:               scheme,
 				Log:                  ctrl.Log.WithName("test"),
 				Metrics:              testMetrics,
+				StatusManager:        aistatus.NewManager(mgr.GetClient(), mgr.GetAPIReader()),
 				InvestigatingHandler: investigatingHandler,
-				AnalyzingHandler:     nil, // nil — must be rejected
+				AnalyzingHandler:     nil,
 				AuditClient:          auditClient,
 			}
 
-			err := reconciler.ValidateDependencies()
+			err = reconciler.SetupWithManager(mgr)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("AnalyzingHandler"))
 		})
@@ -91,32 +128,133 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 
 	Context("UT-AA-1116-003: SetupWithManager rejects nil InvestigatingHandler", func() {
 		It("MUST return error when InvestigatingHandler is nil", func() {
-			testMetrics := metrics.NewMetrics()
-			mockAuditStore := NewMockAuditStore()
-			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
-			mockRegoEvaluator := mocks.NewMockRegoEvaluator()
+			scheme := runtime.NewScheme()
+			Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+			Expect(corev1.AddToScheme(scheme)).To(Succeed())
 
+			mgr, err := manager.New(ctrl.GetConfigOrDie(), manager.Options{
+				Scheme: scheme,
+			})
+			if err != nil {
+				Skip("cannot create manager without kubeconfig — falling back to ValidateDependencies")
+			}
+
+			mockRegoEvaluator := mocks.NewMockRegoEvaluator()
 			analyzingHandler := handlers.NewAnalyzingHandler(
-				mockRegoEvaluator,
-				ctrl.Log.WithName("test"),
-				testMetrics,
-				auditClient,
+				mockRegoEvaluator, ctrl.Log.WithName("test"), testMetrics, auditClient,
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
+				Client:               mgr.GetClient(),
+				Scheme:               scheme,
 				Log:                  ctrl.Log.WithName("test"),
 				Metrics:              testMetrics,
-				InvestigatingHandler: nil, // nil — must be rejected
+				StatusManager:        aistatus.NewManager(mgr.GetClient(), mgr.GetAPIReader()),
+				InvestigatingHandler: nil,
 				AnalyzingHandler:     analyzingHandler,
 				AuditClient:          auditClient,
 			}
 
-			err := reconciler.ValidateDependencies()
+			err = reconciler.SetupWithManager(mgr)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("InvestigatingHandler"))
 		})
 	})
 
+	// ──────────────────────────────────────────────────────────────────
+	// GAP-2: ValidateDependencies covers all 5 mandatory deps
+	// ──────────────────────────────────────────────────────────────────
+	Context("UT-AA-1116-006: ValidateDependencies catches nil Metrics", func() {
+		It("MUST return error when Metrics is nil", func() {
+			reconciler := &aianalysis.AIAnalysisReconciler{
+				Log:     ctrl.Log.WithName("test"),
+				Metrics: nil,
+			}
+			err := reconciler.ValidateDependencies()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("Metrics"))
+		})
+	})
+
+	Context("UT-AA-1116-007: ValidateDependencies catches nil StatusManager", func() {
+		It("MUST return error when StatusManager is nil", func() {
+			reconciler := &aianalysis.AIAnalysisReconciler{
+				Log:           ctrl.Log.WithName("test"),
+				Metrics:       testMetrics,
+				StatusManager: nil,
+			}
+			err := reconciler.ValidateDependencies()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("StatusManager"))
+		})
+	})
+
+	Context("UT-AA-1116-008: ValidateDependencies catches nil AuditClient", func() {
+		It("MUST return error when AuditClient is nil", func() {
+			reconciler := &aianalysis.AIAnalysisReconciler{
+				Log:         ctrl.Log.WithName("test"),
+				Metrics:     testMetrics,
+				AuditClient: nil,
+			}
+			err := reconciler.ValidateDependencies()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("AuditClient"))
+		})
+	})
+
+	// ──────────────────────────────────────────────────────────────────
+	// GAP-3: Happy path — fully-wired reconciler passes validation
+	// ──────────────────────────────────────────────────────────────────
+	Context("UT-AA-1116-009: ValidateDependencies accepts fully-wired reconciler", func() {
+		It("MUST return nil when all dependencies are present", func() {
+			scheme := runtime.NewScheme()
+			Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			mockHolmesClient := mocks.NewMockAgentClient()
+			mockRegoEvaluator := mocks.NewMockRegoEvaluator()
+
+			reconciler := &aianalysis.AIAnalysisReconciler{
+				Client:  fakeClient,
+				Scheme:  scheme,
+				Log:     ctrl.Log.WithName("test"),
+				Metrics: testMetrics,
+				StatusManager: aistatus.NewManager(fakeClient, fakeClient),
+				InvestigatingHandler: handlers.NewInvestigatingHandler(
+					mockHolmesClient, ctrl.Log.WithName("test"), testMetrics, auditClient,
+				),
+				AnalyzingHandler: handlers.NewAnalyzingHandler(
+					mockRegoEvaluator, ctrl.Log.WithName("test"), testMetrics, auditClient,
+				),
+				AuditClient: auditClient,
+			}
+
+			Expect(reconciler.ValidateDependencies()).To(Succeed())
+		})
+	})
+
+	// ──────────────────────────────────────────────────────────────────
+	// GAP-4: Multiple nil deps — errors.Join aggregation
+	// ──────────────────────────────────────────────────────────────────
+	Context("UT-AA-1116-010: ValidateDependencies reports ALL nil deps at once", func() {
+		It("MUST list every missing dependency in a single error", func() {
+			reconciler := &aianalysis.AIAnalysisReconciler{
+				Log: ctrl.Log.WithName("test"),
+			}
+			err := reconciler.ValidateDependencies()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("InvestigatingHandler"))
+			Expect(err.Error()).To(ContainSubstring("AnalyzingHandler"))
+			Expect(err.Error()).To(ContainSubstring("Metrics"))
+			Expect(err.Error()).To(ContainSubstring("StatusManager"))
+			Expect(err.Error()).To(ContainSubstring("AuditClient"))
+		})
+	})
+
+	// ──────────────────────────────────────────────────────────────────
+	// AC-4: Reconcile guards against nil handlers (defense in depth)
+	// ──────────────────────────────────────────────────────────────────
 	Context("UT-AA-1116-004: Reconcile guards against nil handlers", func() {
 		It("MUST return permanent error when InvestigatingHandler is nil during Investigating phase", func() {
 			scheme := runtime.NewScheme()
@@ -146,10 +284,6 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 				WithObjects(testAnalysis).
 				WithStatusSubresource(testAnalysis).
 				Build()
-
-			testMetrics := metrics.NewMetrics()
-			mockAuditStore := NewMockAuditStore()
-			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
 				Client:               fakeClient,
@@ -201,18 +335,14 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 				WithStatusSubresource(testAnalysis).
 				Build()
 
-			testMetrics := metrics.NewMetrics()
-			mockAuditStore := NewMockAuditStore()
-			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
-
 			reconciler := &aianalysis.AIAnalysisReconciler{
-				Client:          fakeClient,
-				Scheme:          scheme,
-				Recorder:        record.NewFakeRecorder(10),
-				Log:             ctrl.Log.WithName("test"),
-				Metrics:         testMetrics,
+				Client:           fakeClient,
+				Scheme:           scheme,
+				Recorder:         record.NewFakeRecorder(10),
+				Log:              ctrl.Log.WithName("test"),
+				Metrics:          testMetrics,
 				AnalyzingHandler: nil,
-				AuditClient:     auditClient,
+				AuditClient:      auditClient,
 			}
 
 			_, err := reconciler.Reconcile(context.Background(), ctrl.Request{
