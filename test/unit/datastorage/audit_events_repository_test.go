@@ -158,8 +158,7 @@ var _ = Describe("AuditEventsRepository - Query with Minimal Args", func() {
 
 				// Assertions
 				Expect(err).ToNot(HaveOccurred(), "Should not panic or error: "+description)
-				Expect(events).ToNot(BeNil())
-				Expect(pagination).ToNot(BeNil())
+				Expect(events).To(HaveLen(expectedTotal))
 				Expect(pagination.Total).To(Equal(expectedTotal))
 				Expect(mock.ExpectationsWereMet()).To(Succeed())
 			},
@@ -240,7 +239,9 @@ var _ = Describe("AuditEventsRepository - Query with Minimal Args", func() {
 				"signal_severity", "resource_type", "resource_id", "actor_type",
 				"actor_id", "parent_event_id", "event_data", "event_date",
 				"namespace", "cluster_name",
-				"duration_ms", "error_code", "error_message", // DD-TESTING-001: Added for schema consistency
+				"duration_ms", "error_code", "error_message",
+				"event_hash", "previous_event_hash", "retention_days", "is_sensitive", "parent_event_date",
+				"legal_hold", "legal_hold_reason", "legal_hold_placed_by", "legal_hold_placed_at",
 			}).
 				AddRow(
 					"550e8400-e29b-41d4-a716-446655440001", "1.0", "gateway.signal.received", "gateway",
@@ -249,7 +250,9 @@ var _ = Describe("AuditEventsRepository - Query with Minimal Args", func() {
 					sql.NullString{String: "gateway", Valid: true}, sql.NullString{String: "gateway-pod", Valid: true},
 					sql.NullString{}, []byte(`{}`), time.Now(),
 					sql.NullString{String: "audit-11-1767754293143527000", Valid: true}, sql.NullString{},
-					sql.NullInt64{}, sql.NullString{}, sql.NullString{}, // DD-TESTING-001: duration_ms, error_code, error_message
+					sql.NullInt64{}, sql.NullString{}, sql.NullString{},
+					sql.NullString{}, sql.NullString{}, sql.NullInt64{Int64: 2555, Valid: true}, sql.NullBool{}, nil,
+					false, sql.NullString{}, sql.NullString{}, nil,
 				).
 				AddRow(
 					"550e8400-e29b-41d4-a716-446655440002", "1.0", "gateway.crd.created", "gateway",
@@ -258,7 +261,9 @@ var _ = Describe("AuditEventsRepository - Query with Minimal Args", func() {
 					sql.NullString{String: "gateway", Valid: true}, sql.NullString{String: "gateway-pod", Valid: true},
 					sql.NullString{}, []byte(`{}`), time.Now(),
 					sql.NullString{String: "audit-11-1767754293143527000", Valid: true}, sql.NullString{},
-					sql.NullInt64{}, sql.NullString{}, sql.NullString{}, // DD-TESTING-001: duration_ms, error_code, error_message
+					sql.NullInt64{}, sql.NullString{}, sql.NullString{},
+					sql.NullString{}, sql.NullString{}, sql.NullInt64{Int64: 2555, Valid: true}, sql.NullBool{}, nil,
+					false, sql.NullString{}, sql.NullString{}, nil,
 				)
 
 			mock.ExpectQuery("SELECT \\* FROM audit_events").
@@ -269,7 +274,6 @@ var _ = Describe("AuditEventsRepository - Query with Minimal Args", func() {
 
 			Expect(err).ToNot(HaveOccurred(), "Should not panic or error - Gateway E2E Test 15 should pass!")
 			Expect(events).To(HaveLen(2), "Should return 2 events (signal.received + crd.created)")
-			Expect(pagination).ToNot(BeNil())
 			Expect(pagination.Total).To(Equal(2))
 
 			// Verify event types match Gateway E2E Test 15 expectations
