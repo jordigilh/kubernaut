@@ -1657,6 +1657,31 @@ paths:
                     status: 404
                     detail: "No audit events found for correlation_id: nonexistent-correlation"
                     instance: "/api/v1/audit/remediation-requests/nonexistent-correlation/reconstruct"
+        '422':
+          description: |
+            Unprocessable Entity - audit data is present but the
+            RemediationRequest cannot be assembled or fails validation.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+              examples:
+                build_failed:
+                  summary: RR build failed from audit data
+                  value:
+                    type: "https://kubernaut.ai/problems/reconstruction/unprocessable"
+                    title: "Build Failed"
+                    status: 422
+                    detail: "Audit data present but RemediationRequest cannot be assembled"
+                    instance: "/api/v1/audit/remediation-requests/partial-data/reconstruct"
+                validation_failed:
+                  summary: Reconstructed RR fails validation
+                  value:
+                    type: "https://kubernaut.ai/problems/reconstruction/unprocessable"
+                    title: "Validation Failed"
+                    status: 422
+                    detail: "Reconstructed RemediationRequest does not pass validation rules"
+                    instance: "/api/v1/audit/remediation-requests/invalid-data/reconstruct"
         '500':
           description: |
             Internal Server Error - database or reconstruction logic failure.

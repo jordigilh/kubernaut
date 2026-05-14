@@ -1000,6 +1000,19 @@ func encodeReconstructRemediationRequestResponse(response ReconstructRemediation
 
 		return nil
 
+	case *ReconstructRemediationRequestUnprocessableEntity:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(422)
+		span.SetStatus(codes.Error, http.StatusText(422))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
 	case *ReconstructRemediationRequestInternalServerError:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(500)

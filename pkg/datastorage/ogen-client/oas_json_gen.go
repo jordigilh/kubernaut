@@ -35071,6 +35071,44 @@ func (s *ReconstructRemediationRequestNotFound) UnmarshalJSON(data []byte) error
 	return s.Decode(d)
 }
 
+// Encode encodes ReconstructRemediationRequestUnprocessableEntity as json.
+func (s *ReconstructRemediationRequestUnprocessableEntity) Encode(e *jx.Encoder) {
+	unwrapped := (*RFC7807Problem)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes ReconstructRemediationRequestUnprocessableEntity from json.
+func (s *ReconstructRemediationRequestUnprocessableEntity) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ReconstructRemediationRequestUnprocessableEntity to nil")
+	}
+	var unwrapped RFC7807Problem
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = ReconstructRemediationRequestUnprocessableEntity(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ReconstructRemediationRequestUnprocessableEntity) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ReconstructRemediationRequestUnprocessableEntity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode implements json.Marshaler.
 func (s *ReconstructionResponse) Encode(e *jx.Encoder) {
 	e.ObjStart()

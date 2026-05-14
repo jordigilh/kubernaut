@@ -22269,6 +22269,10 @@ type ReconstructRemediationRequestNotFound RFC7807Problem
 
 func (*ReconstructRemediationRequestNotFound) reconstructRemediationRequestRes() {}
 
+type ReconstructRemediationRequestUnprocessableEntity RFC7807Problem
+
+func (*ReconstructRemediationRequestUnprocessableEntity) reconstructRemediationRequestRes() {}
+
 // Response for RemediationRequest reconstruction from audit trail.
 // Contains the reconstructed RR in YAML format and validation results.
 // Implements BR-RR-RECON-001 (SOC2 compliance).
