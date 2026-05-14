@@ -30,6 +30,10 @@ import (
 	"github.com/lib/pq"
 )
 
+// MaxROEventsBySpecHashResults caps the number of rows returned by
+// QueryROEventsBySpecHash to prevent unbounded result sets (PERF-H2).
+const MaxROEventsBySpecHashResults = 10000
+
 // RawAuditRow represents a single audit event row from the database.
 // Used as an intermediate representation before correlation logic in the handler.
 type RawAuditRow struct {
@@ -88,6 +92,13 @@ func scanRawRows(rows *sql.Rows) ([]RawAuditRow, error) {
 // DD-HAPI-016 v1.1 Step 2: Query Tier 1 — EM component events.
 // Same query pattern as queryEffectivenessEvents in effectiveness_handler.go
 // but batched across multiple correlation IDs.
+//
+// PERF-H1 (per-correlation skew risk): A global LIMIT on a batch query can
+// starve later correlations when early ones have disproportionately many events.
+// The limit is scaled as 100 * len(correlationIDs) with a 50,000 hard cap.
+// If a production deployment observes truncated results (logged at V(1)),
+// consider increasing the per-correlation factor or switching to a
+// per-correlation subquery with LATERAL JOIN.
 func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 	ctx context.Context,
 	correlationIDs []string,
@@ -167,6 +178,11 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 //   - idx_audit_events_post_remediation_spec_hash (migration 004)
 //
 // DD-HAPI-016 v1.4: Both tiers query by spec hash (#586).
+//
+// PERF-H2 Monitoring: Run EXPLAIN ANALYZE periodically in production to verify
+// idx_audit_events_pre_remediation_spec_hash and idx_audit_events_post_remediation_spec_hash
+// are used. If the planner falls back to a sequential scan, consider adding a composite
+// index on (event_timestamp, pre_remediation_spec_hash) to cover the ORDER BY.
 func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 	ctx context.Context,
 	specHash string,
@@ -174,7 +190,7 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 	until time.Time,
 ) ([]RawAuditRow, error) {
 	// PERF-H2: LIMIT prevents unbounded result sets.
-	const maxROResults = 10000
+	const maxROResults = MaxROEventsBySpecHashResults
 	query := `SELECT event_type, event_data, event_timestamp, correlation_id
 		FROM audit_events
 		WHERE event_type = 'remediation.workflow_created'

@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 
@@ -114,10 +115,15 @@ var _ = Describe("Phase 11: Performance Hardening", func() {
 		})
 	})
 
-	Context("PERF-H2: Effectiveness query has LIMIT", func() {
+	Context("PERF-H2: Effectiveness and RO queries have LIMIT", func() {
 		It("UT-DS-1088-GA-210: MaxEffectivenessResults constant is bounded", func() {
 			Expect(helpers.MaxEffectivenessResults).To(Equal(10000),
-				"PERF-H2: production cap must be exactly 10000")
+				"PERF-H2: effectiveness production cap must be exactly 10000")
+		})
+
+		It("UT-DS-1088-GA-211: MaxROEventsBySpecHashResults constant is bounded", func() {
+			Expect(repository.MaxROEventsBySpecHashResults).To(Equal(10000),
+				"PERF-H2: RO spec-hash query cap must be exactly 10000")
 		})
 	})
 })

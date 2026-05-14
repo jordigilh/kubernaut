@@ -103,7 +103,7 @@ var _ = Describe("Data Storage lifecycle Phase 9 (ET-DS-1088-LC)", Ordered, func
 		if parseErr != nil {
 			_, parseErr = time.Parse(time.RFC3339, body["timestamp"])
 		}
-		Expect(parseErr).ToNot(HaveOccurred(), "Health payload should embed an RFC3333-style timestamp")
+		Expect(parseErr).ToNot(HaveOccurred(), "Health payload should embed an RFC3339-style timestamp")
 
 		respReady, err := httpHealth.Get(healthURL + "/readyz")
 		Expect(err).ToNot(HaveOccurred())
