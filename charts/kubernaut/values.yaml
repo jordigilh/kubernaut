@@ -93,11 +93,6 @@ datastorage:
     enabled: true
     minAvailable: 1
     # maxUnavailable: ""
-  hpa:
-    enabled: false
-    minReplicas: 1
-    maxReplicas: 5
-    targetCPUUtilization: 70
   logging:
     level: "INFO"
   dbExistingSecret: ""  # DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret.

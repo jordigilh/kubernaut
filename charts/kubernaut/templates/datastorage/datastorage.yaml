@@ -66,9 +66,7 @@ metadata:
     app: datastorage
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.datastorage.hpa.enabled }}
   replicas: {{ .Values.datastorage.replicas }}
-  {{- end }}
   selector:
     matchLabels:
       app: datastorage
