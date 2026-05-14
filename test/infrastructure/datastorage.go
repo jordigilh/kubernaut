@@ -596,57 +596,35 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "✅ Phase 3 complete - image loaded + infrastructure deployed")
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4: Deploy migrations + DataStorage service in PARALLEL (DD-TEST-002 MANDATE)
+	// PHASE 4: Apply migrations, THEN deploy DataStorage
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying migrations + DataStorage service in parallel...")
-	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies - DataStorage retries until migrations complete)")
+	// Migrations MUST complete before DS starts. The DS binary does not run
+	// goose — it expects the schema to exist and will fail on startup if
+	// tables like audit_events or workflows are missing (e.g.
+	// partition.EnsureMonthlyPartitions panics on missing relations).
+	// The retry loop in main.go is for *connectivity*, not schema readiness.
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Applying migrations then deploying DataStorage...")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~20-30 seconds")
 
-	type deployResult struct {
-		name string
-		err  error
+	_, _ = fmt.Fprintln(writer, "  🔄 Running goose migrations...")
+	if err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("migrations failed: %w", err)
 	}
-	deployResults := make(chan deployResult, 2)
+	_, _ = fmt.Fprintln(writer, "  ✅ Migrations applied")
 
-	// Launch migrations and DataStorage deployment concurrently
-	go func() {
-		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
-		err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
-		deployResults <- deployResult{"Migrations", err}
-	}()
-	go func() {
-		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
-		// TD-E2E-001 Phase 1: Deploy with OAuth2-Proxy sidecar (image from quay.io)
-		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer)
-		deployResults <- deployResult{"DataStorage", err}
-	}()
-
-	// Collect ALL results before proceeding (MANDATORY)
-	var deployErrors []error
-	for i := 0; i < 2; i++ {
-		result := <-deployResults
-		if result.err != nil {
-			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
-			deployErrors = append(deployErrors, result.err)
-		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
-		}
+	_, _ = fmt.Fprintln(writer, "  🔄 Deploying DataStorage service...")
+	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
+		return fmt.Errorf("DataStorage deployment failed: %w", err)
 	}
+	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage manifests applied")
 
-	if len(deployErrors) > 0 {
-		return fmt.Errorf("one or more deployments failed: %v", deployErrors)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
-
-	// Single wait for DataStorage to be ready (migrations complete first, then DataStorage connects)
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for DataStorage to be ready (Kubernetes reconciling dependencies)...")
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for DataStorage to be ready...")
 	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintf(writer, "✅ DataStorage E2E infrastructure ready in namespace %s\n", namespace)
-	_, _ = fmt.Fprintln(writer, "   Setup time optimized: ~23%% faster than sequential")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return nil
