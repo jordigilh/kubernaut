@@ -211,32 +211,29 @@ var _ = Describe("BR-DS-004: DLQ Fallback HTTP 202 (Integration)", func() {
 		By("Disconnecting the TCP proxy to simulate DB failure")
 		proxy.Disconnect()
 
-		By("Waiting for connection pool to detect dead connections")
-		time.Sleep(500 * time.Millisecond)
+		By("Sending audit events until connection pool detects dead connections (HTTP 202)")
+		var lastStatus int
+		Eventually(func() int {
+			cid := fmt.Sprintf("dlq-fallback-outage-%d-%s", GinkgoParallelProcess(), generateTestUUID())
+			body := buildAuditEventJSON(cid, "gateway.signal.received", "outage_write")
+			resp, err := httpClient.Post(ts.URL+"/api/v1/audit/events", "application/json", bytes.NewReader(body))
+			if err != nil {
+				return 0
+			}
+			resp.Body.Close()
+			lastStatus = resp.StatusCode
+			return resp.StatusCode
+		}, "10s", "200ms").Should(Equal(http.StatusAccepted),
+			fmt.Sprintf("Expected HTTP 202 (DLQ fallback) after proxy disconnect, last status: %d", lastStatus))
 
-		By("Sending audit event during DB outage — expecting HTTP 202 (DLQ fallback)")
-		outageCorrelationID := fmt.Sprintf("dlq-fallback-outage-%d-%s", GinkgoParallelProcess(), generateTestUUID())
-		outageBody := buildAuditEventJSON(outageCorrelationID, "gateway.signal.received", "outage_write")
-		resp, err = httpClient.Post(ts.URL+"/api/v1/audit/events", "application/json", bytes.NewReader(outageBody))
-		Expect(err).ToNot(HaveOccurred())
-		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		Expect(resp.StatusCode).To(SatisfyAny(
-			Equal(http.StatusAccepted),  // 202: DLQ fallback (expected)
-			Equal(http.StatusCreated),   // 201: connection pool had a surviving connection (acceptable)
-		), "Expected 201 or 202, got %d: %s", resp.StatusCode, string(respBody))
-
-		if resp.StatusCode == http.StatusAccepted {
-			By("Verifying event was enqueued to Redis DLQ")
-			Eventually(func() int64 {
-				depth, err := redisClient.XLen(ctx, "audit:dlq:events").Result()
-				if err != nil {
-					return 0
-				}
-				return depth
-			}, "5s").Should(BeNumerically(">=", 1), "DLQ should contain at least one event")
-		}
+		By("Verifying event was enqueued to Redis DLQ")
+		Eventually(func() int64 {
+			depth, err := redisClient.XLen(ctx, "audit:dlq:events").Result()
+			if err != nil {
+				return 0
+			}
+			return depth
+		}, "5s").Should(BeNumerically(">=", 1), "DLQ should contain at least one event")
 	})
 })
 
