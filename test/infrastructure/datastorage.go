@@ -936,6 +936,19 @@ spec:
   selector:
     app: postgresql
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgresql-data
+  labels:
+    app: postgresql
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -982,10 +995,10 @@ spec:
           mountPath: /var/lib/postgresql/data
         resources:
           requests:
-            memory: 256Mi
+            memory: 512Mi
             cpu: 250m
           limits:
-            memory: 512Mi
+            memory: 1Gi
             cpu: 500m
         readinessProbe:
           exec:
@@ -1001,7 +1014,8 @@ spec:
           timeoutSeconds: 5
       volumes:
       - name: postgresql-data
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: postgresql-data
 `
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
