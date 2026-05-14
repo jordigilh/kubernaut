@@ -125,11 +125,14 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					WithStatusSubresource(sp).
 					Build()
 
+				auditClient := spaudit.NewAuditClient(&mockAuditStore{}, logr.Discard())
+
 				reconciler := &controller.SignalProcessingReconciler{
 					Client:          fakeClient,
 					Scheme:          scheme,
 					StatusManager:   spstatus.NewManager(fakeClient, fakeClient),
 					Metrics:         spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditManager:    spaudit.NewManager(auditClient),
 					PolicyEvaluator: newDefaultMockPolicyEvaluator(),
 				}
 
