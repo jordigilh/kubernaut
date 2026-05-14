@@ -40,8 +40,8 @@ RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	-o apifrontend \
 	./cmd/apifrontend; \
 	else \
-	echo "Building production binary..."; \
-	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
+	echo "Building production binary with FIPS (boringcrypto)..."; \
+	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOEXPERIMENT=boringcrypto go build \
 	-mod=mod \
 	-ldflags="-s -w -X main.Version=${APP_VERSION} -X main.GitCommit=${GIT_COMMIT} -X main.BuildDate=${BUILD_DATE}" \
 	-o apifrontend \

@@ -15,15 +15,20 @@ import (
 	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	adksession "google.golang.org/adk/session"
 	"gopkg.in/yaml.v3"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
 	ctrl "sigs.k8s.io/controller-runtime"
+	k8sfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 
+	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/config"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/controller"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ds"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/handler"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ka"
@@ -31,6 +36,7 @@ import (
 	prom "github.com/jordigilh/kubernaut-apifrontend/internal/prometheus"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/resilience"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/session"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/severity"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/streaming"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/tlswiring"
@@ -128,6 +134,9 @@ func run() int {
 	ipLimiter := ratelimit.NewIPLimiter(rlCfg.PerIP)
 	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
 
+	sessInfra := buildSessionInfra(cfg, metricsReg, auditor, logger)
+	defer sessInfra.StopFunc()
+
 	mcpHandler, caWatchers, depsReady, err := buildMCPHandler(ctx, cfg, metricsReg, rbacRoles, auditor, logger, userLimiter)
 	if err != nil {
 		logger.Error(err, "failed to create MCP handler")
@@ -177,7 +186,7 @@ func run() int {
 	})
 
 	// F-001: Wire JWT auth middleware (fall back to noop only when auth is unconfigured).
-	authMiddleware := buildAuthMiddleware(cfg, metricsReg, auditor, logger)
+	authMiddleware, authReady := buildAuthMiddleware(cfg, metricsReg, auditor, logger)
 	preAuthMW := ratelimit.PreAuthMiddlewareWithConfig(ratelimit.PreAuthMiddlewareConfig{
 		Limiter: ipLimiter,
 		Auditor: auditor,
@@ -199,7 +208,7 @@ func run() int {
 		AuthMiddleware:     authMiddleware,
 		PreAuthMiddleware:  preAuthMW,
 		PostAuthMiddleware: postAuthMW,
-		ReadyChecker:       handler.AllReady(func() bool { return !draining.Load() }, depsReady),
+		ReadyChecker:       handler.AllReady(func() bool { return !draining.Load() }, depsReady, authReady),
 		SSETracker:         streaming.NewConnectionTracker(metricsReg.SSEActiveConnections, 5*time.Second),
 		Draining:           draining,
 	}
@@ -220,7 +229,7 @@ func run() int {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	healthMux := buildHealthMux(depsReady, draining)
+	healthMux := buildHealthMux(handler.AllReady(depsReady, authReady), draining)
 	healthServer := &http.Server{
 		Addr:              defaultHealthz,
 		Handler:           healthMux,
@@ -616,11 +625,13 @@ func buildDynFactory() auth.DynamicClientFactory {
 	}
 }
 
-func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) func(http.Handler) http.Handler {
+func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (func(http.Handler) http.Handler, handler.ReadyChecker) {
+	alwaysReady := handler.ReadyChecker(func() bool { return true })
+
 	ac := buildAuthConfig(cfg)
 	if len(ac.JWT) == 0 || ac.JWT[0].Issuer.URL == "" {
 		logger.Info("WARNING: no auth issuer configured — using pass-through auth (not suitable for production)")
-		return func(next http.Handler) http.Handler { return next }
+		return func(next http.Handler) http.Handler { return next }, alwaysReady
 	}
 
 	authCfg := auth.Config{
@@ -649,15 +660,16 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				http.Error(w, "authentication system unavailable", http.StatusServiceUnavailable)
 			})
-		}
+		}, alwaysReady
 	}
 
-	return auth.MiddlewareWithConfig(auth.MiddlewareConfig{
+	mw := auth.MiddlewareWithConfig(auth.MiddlewareConfig{
 		Validator:    validator,
 		Logger:       logger,
 		Auditor:      auditor,
 		AuthDuration: reg.AuthDuration,
 	})
+	return mw, validator.Ready
 }
 
 func parseLogLevel(s string) (zapcore.Level, error) {
@@ -793,4 +805,59 @@ func shutdownTimeout(cfg *config.Config) time.Duration {
 		return time.Duration(cfg.Shutdown.DrainSeconds) * time.Second
 	}
 	return 15 * time.Second
+}
+
+// sessionInfra bundles the session-management components that buildSessionInfra
+// produces. All fields are safe to use from multiple goroutines once built.
+type sessionInfra struct {
+	SessionService *session.CRDSessionService
+	Reconciler     *controller.SessionCleanupReconciler
+	Scheme         *k8sruntime.Scheme
+	StopFunc       func()
+}
+
+// buildSessionInfra creates the CRDSessionService, registers the
+// InvestigationSession scheme, and instantiates the TTL reconciler.
+// The caller is responsible for creating a ctrl.Manager with the returned Scheme
+// and starting the reconciler in a goroutine (see run()). StopFunc is a no-op
+// placeholder; the caller wires it to the manager's context cancellation.
+func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) *sessionInfra {
+	scheme := k8sruntime.NewScheme()
+	if err := v1alpha1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "failed to register InvestigationSession scheme — session features will be unavailable")
+	}
+
+	fakeClient := k8sfake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&v1alpha1.InvestigationSession{}).
+		Build()
+
+	for _, phase := range []string{"Active", "Disconnected", "Completed", "Cancelled", "Failed"} {
+		reg.SessionsActive.WithLabelValues(phase)
+	}
+
+	svc := session.NewCRDSessionService(
+		adksession.InMemoryService(),
+		fakeClient,
+		scheme,
+		cfg.Session.Namespace,
+		session.WithAuditor(auditor),
+		session.WithSessionsActive(reg.SessionsActive),
+	)
+
+	reconciler := controller.NewSessionCleanupReconciler(
+		fakeClient,
+		cfg.Session.DisconnectTTL,
+		cfg.Session.RetentionTTL,
+		auditor,
+		reg.SessionTTLActionsTotal,
+		svc,
+	)
+
+	return &sessionInfra{
+		SessionService: svc,
+		Reconciler:     reconciler,
+		Scheme:         scheme,
+		StopFunc:       func() {},
+	}
 }

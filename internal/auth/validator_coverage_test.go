@@ -111,7 +111,7 @@ func TestWithCBMetrics_GaugeUpdatesOnStateChange(t *testing.T) {
 
 	// Check that the gauge was set (state=2 means open)
 	var m dto.Metric
-	depLabel := "jwks_" + srv.URL
+	depLabel := jwksDependencyLabel(srv.URL)
 	g, err := gauge.GetMetricWithLabelValues(depLabel)
 	if err != nil {
 		t.Fatalf("could not get metric: %v", err)

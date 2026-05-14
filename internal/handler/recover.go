@@ -31,7 +31,7 @@ func RecoverMiddleware(reg *metrics.Registry, logger logr.Logger) func(http.Hand
 
 					httputil.WriteProblem(w, http.StatusInternalServerError,
 						"Internal Server Error",
-						fmt.Sprintf("unexpected panic: %v", rv))
+						"an unexpected internal error occurred")
 				}
 			}()
 			next.ServeHTTP(w, r)

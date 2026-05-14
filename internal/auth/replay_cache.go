@@ -15,10 +15,11 @@ import (
 // implement MissingJTI(string) bool and Seen(string) bool against Redis.
 // See: https://github.com/jordigilh/kubernaut-apifrontend/issues/TBD
 type ReplayCache struct {
-	mu      sync.RWMutex
-	entries map[string]time.Time
-	ttl     time.Duration
-	done    chan struct{}
+	mu       sync.RWMutex
+	entries  map[string]time.Time
+	ttl      time.Duration
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
 // NewReplayCache creates a jti replay cache. The ttl should match or exceed
@@ -56,9 +57,9 @@ func (c *ReplayCache) Seen(jti string) bool {
 	return false
 }
 
-// Stop terminates the background eviction goroutine.
+// Stop terminates the background eviction goroutine. Safe to call multiple times.
 func (c *ReplayCache) Stop() {
-	close(c.done)
+	c.stopOnce.Do(func() { close(c.done) })
 }
 
 func (c *ReplayCache) evictLoop() {

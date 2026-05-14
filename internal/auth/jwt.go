@@ -267,6 +267,9 @@ func validateExpiry(claims map[string]interface{}) error {
 	if !ok {
 		return ErrMissingExpiry
 	}
+	if math.IsNaN(exp) || math.IsInf(exp, 0) {
+		return fmt.Errorf("%w: exp claim is not a finite number", ErrMalformedToken)
+	}
 	if time.Unix(int64(exp), 0).Before(time.Now()) {
 		return ErrTokenExpired
 	}
