@@ -6,8 +6,8 @@
 #
 # Build:
 #   podman build --platform linux/amd64 \
-#     --build-arg APP_VERSION=v3.27.0 \
-#     -t quay.io/kubernaut-ai/db-migrate:v3.27.0-amd64 \
+#     --build-arg APP_VERSION=v3.27.1 \
+#     -t quay.io/kubernaut-ai/db-migrate:v3.27.1-amd64 \
 #     -f docker/db-migrate.Dockerfile .
 #
 # Multi-arch: TARGETARCH is set from --platform for the goose compile step.
@@ -19,7 +19,7 @@ ARG BUILD_DATE=unknown
 FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS goose-builder
 ARG TARGETARCH
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}
-RUN go install github.com/pressly/goose/v3/cmd/goose@v3.27.0
+RUN go install github.com/pressly/goose/v3/cmd/goose@v3.27.1
 
 FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS production
 
