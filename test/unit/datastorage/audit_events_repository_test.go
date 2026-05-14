@@ -96,6 +96,9 @@ var _ = Describe("AuditEventsRepository - Query with Minimal Args", func() {
 		"signal_severity", "resource_type", "resource_id", "actor_type",
 		"actor_id", "parent_event_id", "event_data", "event_date",
 		"namespace", "cluster_name",
+		"duration_ms", "error_code", "error_message",
+		"event_hash", "previous_event_hash", "retention_days", "is_sensitive", "parent_event_date",
+		"legal_hold", "legal_hold_reason", "legal_hold_placed_by", "legal_hold_placed_at",
 	}
 
 	Context("Query with minimal filter arguments (Bug Fix: Array Slice Panic)", func() {
@@ -156,9 +159,10 @@ var _ = Describe("AuditEventsRepository - Query with Minimal Args", func() {
 				// Execute query
 				events, pagination, err := repo.Query(ctx, queryStr, countStr, args)
 
-				// Assertions
+				// Assertions: mock returns empty row set, so events is empty;
+				// pagination.Total reflects the COUNT query result.
 				Expect(err).ToNot(HaveOccurred(), "Should not panic or error: "+description)
-				Expect(events).To(HaveLen(expectedTotal))
+				Expect(events).To(BeEmpty())
 				Expect(pagination.Total).To(Equal(expectedTotal))
 				Expect(mock.ExpectationsWereMet()).To(Succeed())
 			},
