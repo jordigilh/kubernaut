@@ -1,27 +1,70 @@
 roles:
   sre:
-    - kubernaut_investigate
+    - kubernaut_list_remediations
+    - kubernaut_get_remediation
+    - kubernaut_submit_signal
+    - kubernaut_approve
+    - kubernaut_cancel_remediation
+    - kubernaut_watch
+    - kubernaut_start_investigation
+    - kubernaut_poll_investigation
     - kubernaut_select_workflow
-    - kubernaut_get_session
+    - kubernaut_present_decision
     - kubernaut_list_workflows
-    - kubernaut_get_remediation_request
-    - kubernaut_list_remediation_requests
-    - ds_store_event
-    - ds_query_events
-    - ds_get_timeline
-    - k8s_get_resource
-    - k8s_list_resources
-    - k8s_describe_resource
-  developer:
-    - kubernaut_investigate
-    - kubernaut_get_session
+    - kubernaut_get_remediation_history
+    - kubernaut_get_effectiveness
+    - kubernaut_get_audit_trail
+    - af_list_events
+    - af_get_pods
+    - af_get_workloads
+    - af_resolve_owner
+    - af_check_existing_rr
+    - af_create_rr
+
+  ai-orchestrator:
+    - kubernaut_list_remediations
+    - kubernaut_get_remediation
+    - kubernaut_submit_signal
+    - kubernaut_approve
+    - kubernaut_cancel_remediation
+    - kubernaut_watch
+    - kubernaut_start_investigation
+    - kubernaut_poll_investigation
+    - kubernaut_select_workflow
+    - kubernaut_present_decision
+    - af_list_events
+    - af_get_pods
+    - af_get_workloads
+    - af_resolve_owner
+    - af_check_existing_rr
+    - af_create_rr
+
+  cicd:
+    - kubernaut_submit_signal
+    - kubernaut_list_remediations
+    - kubernaut_get_remediation
+    - kubernaut_watch
+
+  observability:
+    - kubernaut_list_remediations
+    - kubernaut_get_remediation
+    - kubernaut_watch
+    - kubernaut_get_effectiveness
     - kubernaut_list_workflows
-    - ds_query_events
-    - ds_get_timeline
-    - k8s_get_resource
-    - k8s_list_resources
-  viewer:
-    - kubernaut_get_session
-    - ds_query_events
-    - k8s_get_resource
-    - k8s_list_resources
+    - af_list_events
+    - af_get_pods
+    - af_get_workloads
+
+  l3-audit:
+    - kubernaut_list_remediations
+    - kubernaut_get_remediation
+    - kubernaut_list_workflows
+    - kubernaut_get_remediation_history
+    - kubernaut_get_effectiveness
+    - kubernaut_get_audit_trail
+
+  remediation-approver:
+    - kubernaut_approve
+    - kubernaut_list_remediations
+    - kubernaut_get_remediation
+    - kubernaut_watch

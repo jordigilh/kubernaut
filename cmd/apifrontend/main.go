@@ -72,21 +72,36 @@ func run() int {
 
 	metricsReg := metrics.NewRegistry()
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	// F-004 + DP-01: Wire audit emitter to DS-backed writer with CA-pinned transport.
 	var auditWriter audit.Writer = &logAuditWriter{logger: logger.WithName("audit-writer")}
 	if cfg.Agent.DSBaseURL != "" {
-		auditDSTransport, _, _ := tlswiring.CAReloadableTransport(cfg.Agent.DSTLSCaFile, logger.WithName("ds-audit-ca"))
+		auditDSTransport, auditDSWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.DSTLSCaFile, logger.WithName("ds-audit-ca"))
+		if err != nil {
+			logger.Error(err, "DS audit CA transport failed — refusing to start with broken TLS")
+			return 1
+		}
+		if auditDSWatcher != nil {
+			if err := auditDSWatcher.Start(ctx); err != nil {
+				logger.Error(err, "DS audit CA watcher failed to start")
+				return 1
+			}
+			defer auditDSWatcher.Stop()
+		}
 		dsCfg := ds.OgenClientConfig{
 			BaseURL:   cfg.Agent.DSBaseURL,
 			Timeout:   cfg.Resilience.DS.RequestTimeout,
 			Transport: auditDSTransport,
 		}
-		if dsAuditClient, err := ds.NewOgenClient(dsCfg); err == nil {
-			auditWriter = &dsAuditWriterAdapter{client: dsAuditClient, logger: logger.WithName("ds-audit")}
-			logger.Info("audit trail wired to Data Store backend", "dsURL", cfg.Agent.DSBaseURL)
-		} else {
-			logger.Info("DS audit client unavailable, using log-based audit writer", "error", err)
+		dsAuditClient, err := ds.NewOgenClient(dsCfg)
+		if err != nil {
+			logger.Error(err, "DS audit client creation failed — refusing to start")
+			return 1
 		}
+		auditWriter = &dsAuditWriterAdapter{client: dsAuditClient, logger: logger.WithName("ds-audit")}
+		logger.Info("audit trail wired to Data Store backend", "dsURL", cfg.Agent.DSBaseURL)
 	}
 
 	auditor := audit.NewBufferedEmitter(audit.BufferConfig{
@@ -97,10 +112,23 @@ func run() int {
 	})
 	auditor.Start()
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+	// F-005 + SM-01/SM-02/CFG-01: Wire all rate limit config fields.
+	rlCfg := ratelimit.DefaultConfig()
+	rlCfg.PerIP.RequestsPerSecond = float64(cfg.RateLimit.IPRequestsPerSec)
+	rlCfg.PerIP.Burst = cfg.RateLimit.IPRequestsPerSec * 2
+	if cfg.RateLimit.UserRequestsPerSec > 0 {
+		rlCfg.PerUser.RequestsPerMinute = cfg.RateLimit.UserRequestsPerSec * 60
+	}
+	if cfg.RateLimit.MaxConcurrentSessions > 0 {
+		rlCfg.PerUser.MaxConcurrentSessions = cfg.RateLimit.MaxConcurrentSessions
+	}
+	if cfg.RateLimit.ToolCallsPerMinute > 0 {
+		rlCfg.PerUser.ToolCallsPerMinute = cfg.RateLimit.ToolCallsPerMinute
+	}
+	ipLimiter := ratelimit.NewIPLimiter(rlCfg.PerIP)
+	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
 
-	mcpHandler, caWatchers, depsReady, err := buildMCPHandler(ctx, cfg, metricsReg, rbacRoles, auditor, logger)
+	mcpHandler, caWatchers, depsReady, err := buildMCPHandler(ctx, cfg, metricsReg, rbacRoles, auditor, logger, userLimiter)
 	if err != nil {
 		logger.Error(err, "failed to create MCP handler")
 		return 1
@@ -131,11 +159,13 @@ func run() int {
 	}
 
 	agentCardHandler, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
-		Name:        "kubernaut-apifrontend",
-		Description: "Kubernaut AI-driven remediation API Frontend",
-		URL:         cfg.AgentCard.URL,
-		Version:     version(),
-		Skills:      handler.DefaultAgentSkills(),
+		Name:         "kubernaut-apifrontend",
+		Description:  "Kubernaut AI-driven remediation API Frontend",
+		URL:          cfg.AgentCard.URL,
+		Version:      version(),
+		Skills:       handler.DefaultAgentSkills(),
+		RBACRoles:    handler.RBACRoles(rbacRoles),
+		GroupMapping: handler.GroupMapping(cfg.RBAC.GroupMapping),
 	})
 	if err != nil {
 		logger.Error(err, "failed to create agent card handler")
@@ -148,22 +178,6 @@ func run() int {
 
 	// F-001: Wire JWT auth middleware (fall back to noop only when auth is unconfigured).
 	authMiddleware := buildAuthMiddleware(cfg, metricsReg, auditor, logger)
-
-	// F-005 + SM-01/SM-02/CFG-01: Wire all rate limit config fields.
-	rlCfg := ratelimit.DefaultConfig()
-	rlCfg.PerIP.RequestsPerSecond = float64(cfg.RateLimit.IPRequestsPerSec)
-	rlCfg.PerIP.Burst = cfg.RateLimit.IPRequestsPerSec * 2
-	if cfg.RateLimit.UserRequestsPerSec > 0 {
-		rlCfg.PerUser.RequestsPerMinute = cfg.RateLimit.UserRequestsPerSec * 60
-	}
-	if cfg.RateLimit.MaxConcurrentSessions > 0 {
-		rlCfg.PerUser.MaxConcurrentSessions = cfg.RateLimit.MaxConcurrentSessions
-	}
-	if cfg.RateLimit.ToolCallsPerMinute > 0 {
-		rlCfg.PerUser.ToolCallsPerMinute = cfg.RateLimit.ToolCallsPerMinute
-	}
-	ipLimiter := ratelimit.NewIPLimiter(rlCfg.PerIP)
-	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
 	preAuthMW := ratelimit.PreAuthMiddlewareWithConfig(ratelimit.PreAuthMiddlewareConfig{
 		Limiter: ipLimiter,
 		Auditor: auditor,
@@ -178,6 +192,7 @@ func run() int {
 	draining := &atomic.Bool{}
 	routerCfg := handler.RouterConfig{
 		MetricsRegistry:    metricsReg,
+		Logger:             logger,
 		A2AHandler:         a2aHandler,
 		MCPHandler:         mcpHandler,
 		AgentCardHandler:   agentCardHandler,
@@ -205,20 +220,7 @@ func run() int {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	healthMux := http.NewServeMux()
-	healthMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprint(w, `{"status":"healthy"}`)
-	})
-	healthMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if draining.Load() {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = fmt.Fprint(w, `{"status":"draining"}`)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprint(w, `{"status":"ready"}`)
-	})
+	healthMux := buildHealthMux(depsReady, draining)
 	healthServer := &http.Server{
 		Addr:              defaultHealthz,
 		Handler:           healthMux,
@@ -282,8 +284,12 @@ func run() int {
 	draining.Store(true)
 	logger.Info("shutting down...")
 
-	shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	shutCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout(cfg))
 	defer cancel()
+
+	if tracker := routerCfg.SSETracker; tracker != nil {
+		tracker.DrainAll(shutCtx)
+	}
 	shutdownServer(shutCtx, httpServer, "API", logger)
 	shutdownServer(shutCtx, healthServer, "health", logger)
 	shutdownServer(shutCtx, metricsServer, "metrics", logger)
@@ -292,6 +298,10 @@ func run() int {
 	if err := auditor.Close(shutCtx); err != nil {
 		logger.Error(err, "failed to flush audit buffer on shutdown")
 	}
+
+	// WIRE-16: Stop background goroutines in limiters to prevent leaks.
+	ipLimiter.Stop()
+	userLimiter.Stop()
 
 	logger.Info("shutdown complete")
 	return 0
@@ -377,7 +387,7 @@ type caWatcherEntry struct {
 	watcher *hotreload.FileWatcher
 }
 
-func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metrics.Registry, rbacRoles map[string][]string, auditor audit.Emitter, logger logr.Logger) (http.Handler, []caWatcherEntry, func() bool, error) {
+func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metrics.Registry, rbacRoles map[string][]string, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, []caWatcherEntry, func() bool, error) {
 	var caWatchers []caWatcherEntry
 
 	dsTransport, dsWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.DSTLSCaFile, logger.WithName("ds-ca"))
@@ -472,11 +482,31 @@ func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metric
 			severityCfg.LLMConfidence = 0.7
 		}
 
-		triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"))
+		triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"), &severity.TriagerMetrics{
+			Total:    metricsReg.SeverityTriageTotal,
+			Duration: metricsReg.SeverityTriageDuration,
+			Errors:   metricsReg.SeverityTriageErrorsTotal,
+		})
 		logger.Info("severity triage enabled", "prometheusURL", cfg.SeverityTriage.PrometheusURL)
 	}
 
-	kaClient := ka.NewClient(ka.Config{BaseURL: cfg.Agent.KABaseURL, BaseTransport: kaTransport})
+	kaClient := ka.NewClient(ka.Config{
+		BaseURL:            cfg.Agent.KABaseURL,
+		BaseTransport:      kaTransport,
+		Timeout:            cfg.Resilience.KA.RequestTimeout,
+		CBMaxRequests:      cfg.Resilience.KA.CBMaxRequests,
+		CBInterval:         cfg.Resilience.KA.CBInterval,
+		CBTimeout:          cfg.Resilience.KA.CBTimeout,
+		CBFailureThreshold: cfg.Resilience.KA.CBFailureThreshold,
+		RetryMax:           cfg.Resilience.KA.RetryMax,
+		RetryInitBackoff:   cfg.Resilience.KA.RetryInitBackoff,
+		RetryMaxBackoff:    cfg.Resilience.KA.RetryMaxBackoff,
+		RetryableStatuses:  cfg.Resilience.KA.RetryableStatuses,
+	}, &ka.ClientMetrics{
+		StateGauge:   metricsReg.CircuitBreakerState,
+		DurationHist: metricsReg.DownstreamDuration,
+		RetryCounter: metricsReg.DownstreamRetryTotal,
+	})
 
 	bridgeCfg := &handler.MCPBridgeConfig{
 		DynFactory:         buildDynFactory(),
@@ -490,6 +520,7 @@ func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metric
 		Metrics:            bridgeMetricsFrom(metricsReg),
 		ToolTimeout:        30 * time.Second,
 		MaxConcurrentTools: 10,
+		UserLimiter:        userLimiter,
 	}
 
 	mcpSessionTimeout := cfg.MCP.SessionIdleTimeout
@@ -548,6 +579,7 @@ func buildResilientTransport(base http.RoundTripper, depCfg *config.DependencyCo
 	}
 	cbt := resilience.NewCircuitBreakerTransport(retryRT, &resilience.CircuitBreakerConfig{
 		Name:             name,
+		DependencyName:   name,
 		MaxRequests:      cbMaxReqs,
 		Interval:         cbInterval,
 		Timeout:          cbTimeout,
@@ -592,7 +624,8 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 	}
 
 	authCfg := auth.Config{
-		JWT: make([]auth.ProviderConfig, 0, len(ac.JWT)),
+		JWT:                  make([]auth.ProviderConfig, 0, len(ac.JWT)),
+		AllowInsecureIssuers: cfg.Auth.AllowInsecureIssuers,
 	}
 	for _, jp := range ac.JWT {
 		authCfg.JWT = append(authCfg.JWT, auth.ProviderConfig{
@@ -608,6 +641,7 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 	if cfg.Auth.EnableReplayProtection {
 		validatorOpts = append(validatorOpts, auth.WithReplayCache(auth.NewReplayCache(10*time.Minute)))
 	}
+	validatorOpts = append(validatorOpts, auth.WithCBMetrics(reg.CircuitBreakerState))
 	validator, err := auth.NewJWTValidator(authCfg, validatorOpts...)
 	if err != nil {
 		logger.Error(err, "failed to create JWT validator — falling back to deny-all")
@@ -734,4 +768,29 @@ func (w *dsAuditWriterAdapter) WriteAuditEvents(ctx context.Context, events []*a
 		return err
 	}
 	return nil
+}
+
+// buildHealthMux constructs the health server mux with dependency-aware readyz.
+// WIRE-01: /readyz must check depsReady, not just draining.
+func buildHealthMux(depsReady handler.ReadyChecker, draining *atomic.Bool) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `{"status":"healthy"}`)
+	})
+	checker := depsReady
+	if checker == nil {
+		checker = func() bool { return true }
+	}
+	mux.Handle("/readyz", handler.ReadyzHandlerFunc(checker, draining))
+	return mux
+}
+
+// shutdownTimeout returns the configured drain timeout or a sensible default.
+// WIRE-07: must honour cfg.Shutdown.DrainSeconds instead of hardcoded 15s.
+func shutdownTimeout(cfg *config.Config) time.Duration {
+	if cfg.Shutdown.DrainSeconds > 0 {
+		return time.Duration(cfg.Shutdown.DrainSeconds) * time.Second
+	}
+	return 15 * time.Second
 }

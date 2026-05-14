@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 
@@ -12,8 +13,6 @@ import (
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
 	"github.com/google/cel-go/cel"
 	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/jordigilh/kubernaut-apifrontend/internal/security"
 )
 
 // ErrUnknownIssuer is returned when a token's issuer doesn't match any configured provider.
@@ -33,6 +32,10 @@ var ErrCELValidation = errors.New("user validation rule failed")
 
 // ErrCircuitOpen is returned when the JWKS circuit breaker is open and no cached keys exist.
 var ErrCircuitOpen = errors.New("JWKS circuit breaker open: authentication unavailable")
+
+// ErrTokenReplayed is returned when a token's jti claim has already been seen.
+// Distinct from ErrTokenExpired so metrics and logs can distinguish replay attacks.
+var ErrTokenReplayed = errors.New("token replayed")
 
 type compiledRule struct {
 	program cel.Program
@@ -196,7 +199,7 @@ func (v *JWTValidator) Validate(ctx context.Context, rawToken string) (*UserIden
 			return nil, fmt.Errorf("%w: token missing required jti claim for replay protection", ErrMalformedToken)
 		}
 		if v.replayCache.Seen(jti) {
-			return nil, fmt.Errorf("%w: token jti already used", ErrTokenExpired)
+			return nil, fmt.Errorf("%w: token jti already used", ErrTokenReplayed)
 		}
 	}
 
@@ -277,7 +280,10 @@ func validateNotBefore(claims map[string]interface{}) error {
 	}
 	nbf, ok := raw.(float64)
 	if !ok {
-		return nil // non-numeric nbf ignored (lenient)
+		return fmt.Errorf("%w: nbf claim must be numeric, got %T", ErrMalformedToken, raw)
+	}
+	if math.IsNaN(nbf) || math.IsInf(nbf, 0) {
+		return fmt.Errorf("%w: nbf claim is not a finite number", ErrMalformedToken)
 	}
 	if time.Now().Before(time.Unix(int64(nbf), 0)) {
 		return ErrNotYetValid
@@ -320,7 +326,7 @@ func buildIdentity(claims map[string]interface{}, issuer, rawToken string) *User
 		username = extractStringClaim(claims, "sub")
 	}
 	identity := &UserIdentity{
-		Username: security.SanitizeClaimValue(username),
+		Username: SanitizeClaimValue(username),
 		Groups:   sanitizeGroups(extractGroupsClaim(claims)),
 		Issuer:   issuer,
 		RawToken: rawToken,
@@ -337,7 +343,7 @@ func sanitizeGroups(groups []string) []string {
 	}
 	sanitized := make([]string, len(groups))
 	for i, g := range groups {
-		sanitized[i] = security.SanitizeClaimValue(g)
+		sanitized[i] = SanitizeClaimValue(g)
 	}
 	return sanitized
 }

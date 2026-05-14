@@ -168,7 +168,7 @@ spec:
     - name: apifrontend.dependencies
       rules:
         - alert: ApifrontendDependencyLatencyHigh
-          expr: histogram_quantile(0.95, sum(rate(af_downstream_request_duration_seconds_bucket{job="apifrontend"}[5m])) by (le)) > 2
+          expr: histogram_quantile(0.95, sum(rate(af_downstream_request_duration_seconds_bucket{job="apifrontend"}[5m])) by (le, dependency)) > 2
           for: 5m
           labels:
             severity: warning

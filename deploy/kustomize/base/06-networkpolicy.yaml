@@ -56,11 +56,11 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
-    # Prometheus (for severity triage queries)
+    # Prometheus (for severity triage queries) — must match config.yaml prometheusURL namespace
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: kubernaut-system
+              kubernetes.io/metadata.name: monitoring
       ports:
         - port: 9090
           protocol: TCP

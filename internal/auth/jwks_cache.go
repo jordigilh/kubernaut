@@ -193,8 +193,10 @@ func (c *JWKSCache) fetchJWKS(ctx context.Context, issuerURL string) (*jose.JSON
 		return nil, fmt.Errorf("JWKS endpoint returned %d", resp.StatusCode)
 	}
 
+	const maxJWKSBytes int64 = 1 << 20 // 1 MiB
+	limitedBody := http.MaxBytesReader(nil, resp.Body, maxJWKSBytes)
 	var keySet jose.JSONWebKeySet
-	if err := json.NewDecoder(resp.Body).Decode(&keySet); err != nil {
+	if err := json.NewDecoder(limitedBody).Decode(&keySet); err != nil {
 		return nil, fmt.Errorf("decode JWKS: %w", err)
 	}
 

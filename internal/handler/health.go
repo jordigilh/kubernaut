@@ -28,10 +28,10 @@ func handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("ok"))
 }
 
-// readyzHandler returns a handler that responds 503 when the checker reports
+// ReadyzHandlerFunc returns a handler that responds 503 when the checker reports
 // not ready or when the service is draining (shutting down). This ensures
 // load balancers stop sending new traffic during graceful shutdown.
-func readyzHandler(checker func() bool, draining *atomic.Bool) http.HandlerFunc {
+func ReadyzHandlerFunc(checker func() bool, draining *atomic.Bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		if draining != nil && draining.Load() {
 			httputil.WriteProblem(w, http.StatusServiceUnavailable,

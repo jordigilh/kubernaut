@@ -48,6 +48,7 @@ type Registry struct {
 	AuditEventsTotal          *prometheus.CounterVec
 	SessionTTLActionsTotal    *prometheus.CounterVec
 	MCPRBACDeniedTotal        *prometheus.CounterVec
+	HTTPPanicsTotal           prometheus.Counter
 	SSEActiveConnections      prometheus.Gauge
 	AuditBufferOverflow       prometheus.Counter
 	SeverityTriageTotal       *prometheus.CounterVec
@@ -136,6 +137,12 @@ func NewRegistry() *Registry {
 		Help:      "Total MCP tool calls denied by RBAC policy.",
 	}, []string{"tool"})
 
+	r.HTTPPanicsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "af",
+		Name:      "http_panics_total",
+		Help:      "Total HTTP handler panics recovered.",
+	})
+
 	r.SSEActiveConnections = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "af",
 		Name:      "sse_active_connections",
@@ -178,6 +185,7 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.AuditEventsTotal)
 	reg.MustRegister(r.SessionTTLActionsTotal)
 	reg.MustRegister(r.MCPRBACDeniedTotal)
+	reg.MustRegister(r.HTTPPanicsTotal)
 	reg.MustRegister(r.SSEActiveConnections)
 	reg.MustRegister(r.AuditBufferOverflow)
 	reg.MustRegister(r.SeverityTriageTotal)
