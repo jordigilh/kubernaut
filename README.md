@@ -20,7 +20,7 @@ graph LR
 
 ## Prerequisites
 
-- Go 1.25+
+- Go 1.26+
 - [Ginkgo](https://onsi.github.io/ginkgo/) (test runner)
 - [golangci-lint](https://golangci-lint.run/) v2.11+
 - [controller-gen](https://book.kubebuilder.io/reference/controller-gen) (code generation)
