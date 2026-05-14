@@ -465,7 +465,7 @@ func extractKubernautServiceLogs(logsDir, serviceName string, writer io.Writer) 
 // Based on SignalProcessing reference implementation (test/infrastructure/signalprocessing.go:246)
 // SetupDataStorageInfrastructureParallel sets up DataStorage E2E infrastructure with OAuth2-Proxy.
 // TD-E2E-001 Phase 1: OAuth2-Proxy pulled automatically from quay.io (no manual build/load).
-func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath, namespace, dataStorageImage string, writer io.Writer) error {
+func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath, namespace string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 DataStorage E2E Infrastructure (HYBRID PATTERN)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -590,9 +590,6 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", r.name)
 	}
 
-	// Update dataStorageImage to use the actual built image name for deployment
-	dataStorageImage = dsImageName
-
 	_, _ = fmt.Fprintln(writer, "✅ Phase 3 complete - image loaded + infrastructure deployed")
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -613,7 +610,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "  ✅ Migrations applied")
 
 	_, _ = fmt.Fprintln(writer, "  🔄 Deploying DataStorage service...")
-	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
+	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dsImageName, writer); err != nil {
 		return fmt.Errorf("DataStorage deployment failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage manifests applied")

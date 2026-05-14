@@ -174,9 +174,7 @@ var _ = SynchronizedBeforeSuite(
 		// Saves ~1 minute per E2E run (~23% faster)
 		logger.Info("🚀 Setting up DataStorage E2E infrastructure (PARALLEL MODE)...")
 		logger.Info("   Expected: ~3.6 min (vs ~4.7 min sequential)")
-		// Generate unique image name per DD-TEST-001 compliant naming
-		dataStorageImage := infrastructure.GenerateInfraImageName("datastorage", "datastorage-e2e")
-		err = infrastructure.SetupDataStorageInfrastructureParallel(ctx, clusterName, kubeconfigPath, sharedNamespace, dataStorageImage, GinkgoWriter)
+		err = infrastructure.SetupDataStorageInfrastructureParallel(ctx, clusterName, kubeconfigPath, sharedNamespace, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Issue #753: Wait for Data Storage health endpoint via dedicated health port (plain HTTP)
