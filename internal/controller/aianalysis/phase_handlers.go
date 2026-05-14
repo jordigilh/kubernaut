@@ -165,9 +165,11 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 		return result, nil
 	}
 
-	// Stub fallback (for tests without handler wiring)
-	log.Info("No InvestigatingHandler configured - using stub")
-	return ctrl.Result{}, nil
+	// Issue #1116: Fail loudly — a nil handler means the controller was
+	// misconfigured. SetupWithManager should have caught this, but defense
+	// in depth prevents silent data loss.
+	log.Error(nil, "InvestigatingHandler is nil — investigation phase cannot execute (BR-AI-023)")
+	return ctrl.Result{}, fmt.Errorf("InvestigatingHandler is nil: cannot execute Investigating phase")
 }
 
 // reconcileAnalyzing handles AIAnalysis in Analyzing phase.
@@ -246,9 +248,11 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 		return result, nil
 	}
 
-	// Stub fallback (for tests without handler wiring)
-	log.Info("No AnalyzingHandler configured - using stub")
-	return ctrl.Result{}, nil
+	// Issue #1116: Fail loudly — a nil handler means the controller was
+	// misconfigured. SetupWithManager should have caught this, but defense
+	// in depth prevents silent data loss.
+	log.Error(nil, "AnalyzingHandler is nil — Rego evaluation cannot execute (BR-AI-012, BR-AI-030)")
+	return ctrl.Result{}, fmt.Errorf("AnalyzingHandler is nil: cannot execute Analyzing phase")
 }
 
 // ========================================

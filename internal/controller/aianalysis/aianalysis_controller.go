@@ -24,6 +24,8 @@ package aianalysis
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -209,6 +211,30 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 // BR-AI-017: Track reconciliation outcomes and failures
 // DD-AUDIT-003: Record audit events for terminal states
 
+// ValidateDependencies verifies that all mandatory dependencies are non-nil.
+// Returns a joined error listing every missing dependency.
+// Issue #1116: Prevents the controller from silently skipping core business
+// logic (Rego evaluation, investigation) when handlers are nil.
+func (r *AIAnalysisReconciler) ValidateDependencies() error {
+	var errs []error
+	if r.InvestigatingHandler == nil {
+		errs = append(errs, fmt.Errorf("InvestigatingHandler is nil: investigation phase will be skipped (BR-AI-023)"))
+	}
+	if r.AnalyzingHandler == nil {
+		errs = append(errs, fmt.Errorf("AnalyzingHandler is nil: Rego policy evaluation will be skipped (BR-AI-012, BR-AI-030)"))
+	}
+	if r.Metrics == nil {
+		errs = append(errs, fmt.Errorf("Metrics is nil: observability will panic on phase transitions (DD-METRICS-001)"))
+	}
+	if r.StatusManager == nil {
+		errs = append(errs, fmt.Errorf("StatusManager is nil: atomic status updates will panic (DD-PERF-001)"))
+	}
+	if r.AuditClient == nil {
+		errs = append(errs, fmt.Errorf("AuditClient is nil: audit trail will panic on phase transitions (DD-AUDIT-003)"))
+	}
+	return errors.Join(errs...)
+}
+
 // SetupWithManager sets up the controller with the Manager.
 //
 // DD-CONTROLLER-001: Uses a custom predicate that filters Update events to only
@@ -216,7 +242,12 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 // changed (meaningful status transition). Status-only updates that only touch
 // poll tracking fields (PollCount, LastPolled) do NOT trigger re-reconciles,
 // allowing RequeueAfter backoff intervals to work correctly.
+//
+// Issue #1116: Validates all mandatory dependencies before registering.
 func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := r.ValidateDependencies(); err != nil {
+		return fmt.Errorf("AIAnalysis controller has nil dependencies: %w", err)
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&aianalysisv1.AIAnalysis{}).
 		WithEventFilter(aiAnalysisUpdatePredicate()).

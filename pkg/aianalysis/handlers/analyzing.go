@@ -54,6 +54,9 @@ func NewAnalyzingHandler(evaluator RegoEvaluatorInterface, log logr.Logger, m *m
 	if m == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")
 	}
+	if evaluator == nil {
+		panic("evaluator cannot be nil: Rego policy evaluation is mandatory (BR-AI-012, BR-AI-030)")
+	}
 	return &AnalyzingHandler{
 		evaluator:   evaluator,
 		metrics:     m,
