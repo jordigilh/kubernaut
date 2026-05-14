@@ -847,6 +847,7 @@ var _ = Describe("#1048 QE-H1: Drain context cancellation branches", func() {
 				ResourceType:  "test",
 				ResourceID:    fmt.Sprintf("res-%d", i),
 				EventData:     []byte(`{"k":"v"}`),
+				RetentionDays: 2555,
 			}
 			err := dlqClient.EnqueueAuditEvent(ctx, event, fmt.Errorf("test"))
 			Expect(err).ToNot(HaveOccurred())
@@ -892,6 +893,7 @@ var _ = Describe("#1048 QE-H1: Drain context cancellation branches", func() {
 				ResourceType:  "test",
 				ResourceID:    fmt.Sprintf("res-%d", i),
 				EventData:     []byte(`{"k":"v"}`),
+				RetentionDays: 2555,
 			}
 			err := dlqClient.EnqueueAuditEvent(ctx, event, fmt.Errorf("test"))
 			Expect(err).ToNot(HaveOccurred())
@@ -1029,6 +1031,7 @@ var _ = Describe("#1048 QE-M2: DLQ branch coverage", func() {
 				ResourceType:  "test",
 				ResourceID:    fmt.Sprintf("res-%d", i),
 				EventData:     []byte(`{"k":"v"}`),
+				RetentionDays: 2555,
 			}
 			err := dlqClient.EnqueueAuditEvent(ctx, event, fmt.Errorf("test"))
 			Expect(err).ToNot(HaveOccurred())

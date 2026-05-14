@@ -17,9 +17,13 @@ limitations under the License.
 package datastorage
 
 import (
+	"os"
+	"path/filepath"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/cert"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 )
 
@@ -71,9 +75,18 @@ var _ = Describe("UT-DS-1048-P5: Redis TLS Configuration", func() {
 
 	Describe("UT-DS-1048-P5-064: TLS always validates server certificate (SC-8)", func() {
 		It("should never set InsecureSkipVerify on the tls.Config", func() {
+			// Use a temp CA file with a self-signed cert
+			pair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
+				CommonName: "test-ca",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			tmpDir := GinkgoT().TempDir()
+			caFile := filepath.Join(tmpDir, "ca.crt")
+			Expect(os.WriteFile(caFile, pair.CertPEM, 0600)).To(Succeed())
+
 			cfg := config.RedisTLSConfig{
 				Enabled: true,
-				CAFile:  "/etc/redis/ca.crt",
+				CAFile:  caFile,
 			}
 			tlsCfg, err := cfg.BuildTLSConfig()
 			Expect(err).NotTo(HaveOccurred())

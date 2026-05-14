@@ -184,7 +184,7 @@ spec:
             optional: true
         - name: signing-certs
           secret:
-            secretName: datastorage-signing
+            secretName: datastorage-signing-cert
 ---
 apiVersion: v1
 kind: Service

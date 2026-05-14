@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
@@ -144,6 +145,27 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 			s.logger.Info("Batch conversion failed", "index", i, "error", err)
 			response.WriteRFC7807Error(w, http.StatusBadRequest, "conversion_error", "Conversion Error", fmt.Sprintf("event at index %d: %s", i, err.Error()), s.logger)
 			return
+		}
+
+		// D2/SI-10: Validate EventData size and depth (consistent with DLQ replay)
+		if err := dlq.ValidateEventData(internalEvent.EventData); err != nil {
+			s.logger.Info("Batch EventData validation failed", "index", i, "error", err)
+			response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error",
+				fmt.Sprintf("event at index %d: event_data exceeds size or nesting depth limits", i), s.logger)
+			return
+		}
+		// D4/SI-10: Verify parent_event_id FK (parity with single-event handler)
+		if req.ParentEventID.IsSet() {
+			parentEventID := req.ParentEventID.Value
+			var parentDate time.Time
+			if fkErr := s.db.QueryRowContext(ctx,
+				"SELECT event_date FROM audit_events WHERE event_id = $1",
+				&parentEventID).Scan(&parentDate); fkErr != nil {
+				s.logger.Info("Batch parent event not found", "index", i, "parent_event_id", parentEventID.String())
+				response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error",
+					fmt.Sprintf("event at index %d: parent event does not exist", i), s.logger)
+				return
+			}
 		}
 		auditEvents = append(auditEvents, internalEvent)
 

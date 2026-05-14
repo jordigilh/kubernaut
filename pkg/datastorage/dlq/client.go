@@ -211,7 +211,16 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 
 // EnqueueAuditEvent adds a generic AuditEvent record to the DLQ.
 // This is called when the primary write to PostgreSQL fails for unified audit events.
+// D3/SI-10: Validates the event before enqueue to prevent replay rejection.
 func (c *Client) EnqueueAuditEvent(ctx context.Context, audit *audit.AuditEvent, originalError error) error {
+	// D3: Validate before enqueue so replay never rejects payloads we accepted
+	if err := audit.Validate(); err != nil {
+		return fmt.Errorf("DLQ enqueue rejected: audit event invalid: %w", err)
+	}
+	if err := ValidateEventData(audit.EventData); err != nil {
+		return fmt.Errorf("DLQ enqueue rejected: EventData invalid: %w", err)
+	}
+
 	// Serialize audit payload
 	payloadJSON, err := json.Marshal(audit)
 	if err != nil {

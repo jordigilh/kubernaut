@@ -58,8 +58,8 @@ var _ = Describe("Metrics Struct", func() {
 			families, err := registry.Gather()
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(families).To(HaveLen(6),
-				"Registry should contain 6 gathered metric families (2 observed histograms + 4 Phase 7 counters/gauges)")
+			Expect(families).To(HaveLen(7),
+				"Registry should contain 7 gathered metric families (2 observed histograms + 4 Phase 7 counters/gauges + 1 SRE-1 retention gauge)")
 
 			metricNames := make(map[string]bool)
 			for _, family := range families {
@@ -72,6 +72,7 @@ var _ = Describe("Metrics Struct", func() {
 			Expect(metricNames).To(HaveKey(metrics.MetricNameRetentionPurgeTotal))
 			Expect(metricNames).To(HaveKey(metrics.MetricNameDLQPelPending))
 			Expect(metricNames).To(HaveKey(metrics.MetricNameShutdownDLQDrainError))
+			Expect(metricNames).To(HaveKey(metrics.MetricNameRetentionEnabled))
 		})
 	})
 

@@ -507,27 +507,27 @@ func (s *Server) Handler() http.Handler {
 		"dlq_client_nil", s.dlqClient == nil)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		// DD-AUTH-014: Authentication and authorization middleware (MANDATORY)
-		// Applied to all /api/v1 routes (excludes /health, /metrics)
-		// Authority: DD-AUTH-011 (SAR with verb:"create" for all audit write operations)
-		// Note: authenticator/authorizer guaranteed non-nil by NewServer validation
-		authMiddleware := auth.NewMiddleware(
+		// SEC-1 / DD-AUTH-014: Tiered SAR authorization (AC-6 least privilege)
+		// Base middleware: verb "get" — matches auditor + operator ClusterRoles
+		// Legal hold routes use a nested group with verb "update" (admin-only)
+		// Authority: deploy/data-storage/audit-rbac.yaml, DD-AUTH-011
+		baseAuthMiddleware := auth.NewMiddleware(
 			s.authenticator,
 			s.authorizer,
 			auth.MiddlewareConfig{
 				Namespace:    s.authNamespace,
 				Resource:     "services",
 				ResourceName: "data-storage-service",
-				Verb:         "create", // DD-AUTH-014: All services need audit write permissions
+				Verb:         "get", // Base access: auditor + operator + admin
 			},
 			s.logger,
 		)
-		r.Use(authMiddleware.Handler)
-		s.logger.Info("Auth middleware enabled (DD-AUTH-014)",
+		r.Use(baseAuthMiddleware.Handler)
+		s.logger.Info("Auth middleware enabled (DD-AUTH-014, SEC-1 tiered)",
 			"namespace", s.authNamespace,
 			"resource", "services",
 			"resourceName", "data-storage-service",
-			"verb", "create",
+			"verb", "get",
 		)
 
 		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
@@ -551,20 +551,32 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/audit/verify-chain", s.HandleVerifyChain)
 
 		// SOC2 Gap #8: Legal Hold & Retention Policies
-		// BR-AUDIT-006: Legal hold capability for Sarbanes-Oxley and HIPAA compliance
-		s.logger.V(1).Info("Registering /api/v1/audit/legal-hold handlers (SOC2 Gap #8)")
-		r.Post("/audit/legal-hold", s.HandlePlaceLegalHold)
-		r.Delete("/audit/legal-hold/{correlation_id}", s.HandleReleaseLegalHold)
+		// BR-AUDIT-008: Legal hold capability for Sarbanes-Oxley and HIPAA compliance
+		// SEC-1/AC-6: GET uses base "get" verb; POST/DELETE require additional "update" (admin-only)
+		s.logger.V(1).Info("Registering /api/v1/audit/legal-hold handlers (SOC2 Gap #8, SEC-1 admin tier)")
+		adminAuthMiddleware := auth.NewMiddleware(
+			s.authenticator,
+			s.authorizer,
+			auth.MiddlewareConfig{
+				Namespace:    s.authNamespace,
+				Resource:     "services",
+				ResourceName: "data-storage-service",
+				Verb:         "update", // Admin-only: legal hold management
+			},
+			s.logger,
+		)
 		r.Get("/audit/legal-hold", s.HandleListLegalHolds)
+		r.With(adminAuthMiddleware.Handler).Post("/audit/legal-hold", s.HandlePlaceLegalHold)
+		r.With(adminAuthMiddleware.Handler).Delete("/audit/legal-hold/{correlation_id}", s.HandleReleaseLegalHold)
 
 		// SOC2 Day 9: Signed Audit Export
 		// BR-AUDIT-007: Audit export with digital signatures for compliance verification
 		s.logger.V(1).Info("Registering /api/v1/audit/export handler (SOC2 Day 9)")
 		r.Get("/audit/export", s.HandleExportAuditEvents)
 
-		// BR-AUDIT-006: RemediationRequest Reconstruction from Audit Traces
+		// BR-RR-RECON-001: RemediationRequest Reconstruction from Audit Traces
 		// SOC2 compliance: Reconstruct complete RR CRDs from audit trail
-		s.logger.V(1).Info("Registering /api/v1/audit/remediation-requests/{correlation_id}/reconstruct handler (BR-AUDIT-006)")
+		s.logger.V(1).Info("Registering /api/v1/audit/remediation-requests/{correlation_id}/reconstruct handler")
 		r.Post("/audit/remediation-requests/{correlation_id}/reconstruct", s.handleReconstructRemediationRequestWrapper)
 
 		// BR-EM-001 to BR-EM-004: On-demand effectiveness scoring (DD-017 v2.1, ADR-EM-001 Principle 5)

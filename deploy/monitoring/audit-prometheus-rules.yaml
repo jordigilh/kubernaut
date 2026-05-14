@@ -98,7 +98,7 @@ data:
                 3. Verify DLQ depth after pod restart (XLEN)
 
           - alert: RetentionPurgeStalled
-            expr: increase(datastorage_retention_purge_total[1h]) == 0
+            expr: increase(datastorage_retention_purge_total[1h]) == 0 and on() datastorage_retention_enabled == 1
             for: 10m
             labels:
               severity: warning

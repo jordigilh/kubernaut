@@ -98,6 +98,9 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest, authenticatedAct
 	}
 
 	// Build internal audit event
+	// D1/DF-H1: RetentionDays MUST be set before DLQ serialization so that
+	// replay Validate() (which requires RetentionDays > 0) never rejects
+	// events that succeeded on the synchronous DB path.
 	event := &audit.AuditEvent{
 		EventID:        uuid.New(), // Generate new UUID
 		EventVersion:   req.Version,
@@ -112,6 +115,7 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest, authenticatedAct
 		ResourceID:     resourceID,
 		CorrelationID:  req.CorrelationID,
 		EventData:      eventDataJSON,
+		RetentionDays:  2555, // SOC 2 / ISO 27001 default (7 years)
 	}
 
 	// Optional fields (ogen OptNil types)

@@ -185,7 +185,7 @@ The Data Storage service requires an RSA 2048-bit signing certificate (`tls.crt`
 
 ### Certificate Location
 
-- **Helm/dev**: Kubernetes Secret `datastorage-signing`, mounted at `signerCertDir` (default: `/etc/certs`)
+- **Helm/dev**: Kubernetes Secret `datastorage-signing-cert`, mounted at `signerCertDir` (default: `/etc/certs`)
 - **Production (operator)**: Managed by `kubernaut-operator` ([#90](https://github.com/jordigilh/kubernaut-operator/issues/90))
 
 ### Symptoms
@@ -198,18 +198,18 @@ The Data Storage service requires an RSA 2048-bit signing certificate (`tls.crt`
 
 1. Check the signing secret exists:
    ```bash
-   kubectl get secret datastorage-signing -n kubernaut-system
+   kubectl get secret datastorage-signing-cert -n kubernaut-system
    ```
 
 2. Check certificate expiry:
    ```bash
-   kubectl get secret datastorage-signing -n kubernaut-system -o jsonpath='{.data.tls\.crt}' | \
+   kubectl get secret datastorage-signing-cert -n kubernaut-system -o jsonpath='{.data.tls\.crt}' | \
      base64 -d | openssl x509 -noout -enddate
    ```
 
 3. Verify the key is RSA (not ECDSA):
    ```bash
-   kubectl get secret datastorage-signing -n kubernaut-system -o jsonpath='{.data.tls\.key}' | \
+   kubectl get secret datastorage-signing-cert -n kubernaut-system -o jsonpath='{.data.tls\.key}' | \
      base64 -d | openssl rsa -check -noout
    ```
 
@@ -218,7 +218,7 @@ The Data Storage service requires an RSA 2048-bit signing certificate (`tls.crt`
 1. **Regenerate the certificate** (Helm environments):
    The `tls-cert-job` Helm hook automatically generates a new RSA 2048-bit certificate if the secret is missing or within 30 days of expiry. Force regeneration:
    ```bash
-   kubectl delete secret datastorage-signing -n kubernaut-system
+   kubectl delete secret datastorage-signing-cert -n kubernaut-system
    helm upgrade kubernaut charts/kubernaut -n kubernaut-system
    ```
 
@@ -303,13 +303,13 @@ The DLQ retry worker uses a Pending Entries List (PEL) recovery mechanism to rec
 1. Check pending messages:
    ```bash
    kubectl exec -n kubernaut-system deploy/valkey -- \
-     redis-cli XPENDING audit:dlq:events datastorage-group - + 10
+     redis-cli XPENDING audit:dlq:events data-storage-retry-workers - + 10
    ```
 
 2. Check dead-letter stream:
    ```bash
    kubectl exec -n kubernaut-system deploy/valkey -- \
-     redis-cli XLEN audit:dead-letter:audit_events
+     redis-cli XLEN audit:dead-letter:events
    ```
 
 3. Look for poison message patterns in logs:
@@ -321,12 +321,12 @@ The DLQ retry worker uses a Pending Entries List (PEL) recovery mechanism to rec
 
 1. **Poison messages** (delivery count > 5) are automatically moved to the dead-letter stream. Investigate the root cause (e.g., malformed event data, PostgreSQL constraint violation).
 
-2. **If XAUTOCLAIM is not supported** (Valkey < 6.2), the worker logs a warning at startup. Upgrade Valkey.
+2. **If XAUTOCLAIM is not supported** (Valkey < 6.2), the worker logs an error per sweep. Upgrade Valkey.
 
 3. **Manual recovery** — acknowledge stuck messages if they are known to be processed:
    ```bash
    kubectl exec -n kubernaut-system deploy/valkey -- \
-     redis-cli XACK audit:dlq:events datastorage-group <message-id>
+     redis-cli XACK audit:dlq:events data-storage-retry-workers <message-id>
    ```
 
 ---
@@ -366,7 +366,7 @@ Shutdown step order:
 3. Check DLQ depth after restart (non-zero means messages survived the drain):
    ```bash
    kubectl exec -n kubernaut-system deploy/valkey -- redis-cli XLEN audit:dlq:events
-   kubectl exec -n kubernaut-system deploy/valkey -- redis-cli XLEN audit:dlq:audit_notifications
+   kubectl exec -n kubernaut-system deploy/valkey -- redis-cli XLEN audit:dlq:notifications
    ```
 
 4. Check PostgreSQL connectivity at shutdown time (drain fails if DB is unreachable):

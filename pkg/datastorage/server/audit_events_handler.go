@@ -24,6 +24,7 @@ import (
 	"time"
 
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -129,6 +130,15 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 			"event_type", req.EventType,
 			"correlation_id", req.CorrelationID)
 		response.WriteRFC7807InternalError(w, "conversion_error", "Conversion Error", err, s.logger)
+		return
+	}
+
+	// D2/SI-10: Validate EventData size and depth (defense-in-depth, consistent with DLQ replay)
+	if err := dlq.ValidateEventData(auditEvent.EventData); err != nil {
+		s.logger.Info("EventData validation failed", "error", err,
+			"correlation_id", req.CorrelationID)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error",
+			"event_data exceeds size or nesting depth limits", s.logger)
 		return
 	}
 

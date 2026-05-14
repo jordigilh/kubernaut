@@ -66,7 +66,7 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 		// Start mini Redis
 		var err error
 		miniRedis = miniredis.RunT(GinkgoT())
-		Expect(miniRedis).ToNot(BeNil())
+		Expect(miniRedis.Addr()).ToNot(BeEmpty(), "miniredis should be listening")
 
 		// Create Redis client
 		redisClient = redis.NewClient(&redis.Options{
@@ -143,7 +143,6 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 
 			// ASSERT: Drain completes successfully
 			Expect(err).ToNot(HaveOccurred())
-			Expect(stats).ToNot(BeNil())
 			Expect(stats.NotificationsProcessed).To(Equal(2), "should process 2 notification messages")
 			Expect(stats.EventsProcessed).To(Equal(0), "should process 0 event messages")
 			Expect(stats.TotalProcessed).To(Equal(2))
@@ -165,17 +164,35 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 			// ARRANGE: Add event messages to DLQ
 			event1 := &audit.AuditEvent{
 				EventID:        uuid.New(),
+				EventVersion:   "1.0",
 				EventType:      "test.event.occurred",
 				EventCategory:  "test",
+				EventAction:    "occurred",
+				EventOutcome:   "success",
+				ActorType:      "service",
+				ActorID:        "test-service",
+				ResourceType:   "test",
+				ResourceID:     "res-1",
 				EventTimestamp: time.Now(),
 				CorrelationID:  "test-correlation-1",
+				EventData:      []byte(`{"k":"v"}`),
+				RetentionDays:  2555,
 			}
 			event2 := &audit.AuditEvent{
 				EventID:        uuid.New(),
+				EventVersion:   "1.0",
 				EventType:      "test.event.completed",
 				EventCategory:  "test",
+				EventAction:    "completed",
+				EventOutcome:   "success",
+				ActorType:      "service",
+				ActorID:        "test-service",
+				ResourceType:   "test",
+				ResourceID:     "res-2",
 				EventTimestamp: time.Now(),
 				CorrelationID:  "test-correlation-2",
+				EventData:      []byte(`{"k":"v"}`),
+				RetentionDays:  2555,
 			}
 
 			err := dlqClient.EnqueueAuditEvent(ctx, event1, fmt.Errorf("test error"))
@@ -196,7 +213,6 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 
 			// ASSERT: Drain completes successfully
 			Expect(err).ToNot(HaveOccurred())
-			Expect(stats).ToNot(BeNil())
 			Expect(stats.NotificationsProcessed).To(Equal(0), "should process 0 notification messages")
 			Expect(stats.EventsProcessed).To(Equal(2), "should process 2 event messages")
 			Expect(stats.TotalProcessed).To(Equal(2))
@@ -227,10 +243,19 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 			}
 			event := &audit.AuditEvent{
 				EventID:        uuid.New(),
+				EventVersion:   "1.0",
 				EventType:      "test.event",
 				EventCategory:  "test",
+				EventAction:    "tested",
+				EventOutcome:   "success",
+				ActorType:      "service",
+				ActorID:        "test-service",
+				ResourceType:   "test",
+				ResourceID:     "res-1",
 				EventTimestamp: time.Now(),
 				CorrelationID:  "test-event",
+				EventData:      []byte(`{"k":"v"}`),
+				RetentionDays:  2555,
 			}
 
 			err := dlqClient.EnqueueNotificationAudit(ctx, notif, fmt.Errorf("test error"))
@@ -282,7 +307,6 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 
 			// ASSERT: Timeout handled gracefully (no error, but marked as timed out)
 			Expect(err).ToNot(HaveOccurred(), "timeout should not return error")
-			Expect(stats).ToNot(BeNil())
 			Expect(stats.TimedOut).To(BeTrue(), "should indicate timeout occurred")
 			// Some messages may have been processed before timeout
 			Expect(stats.TotalProcessed).To(BeNumerically(">=", 0))
@@ -301,7 +325,6 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 
 			// ASSERT: Completes successfully with zero messages processed
 			Expect(err).ToNot(HaveOccurred())
-			Expect(stats).ToNot(BeNil())
 			Expect(stats.TotalProcessed).To(Equal(0))
 			Expect(stats.TimedOut).To(BeFalse())
 		})
@@ -332,6 +355,7 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 				ResourceType:   "workflow",
 				ResourceID:     "workflow-123",
 				EventData:      []byte(`{"workflow_id": "workflow-123", "step": "start"}`),
+				RetentionDays:  2555,
 			}
 
 			err := dlqClient.EnqueueAuditEvent(ctx, event1, fmt.Errorf("simulated DB error"))
@@ -350,7 +374,6 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 
 			// ASSERT: Drain completes successfully
 			Expect(err).ToNot(HaveOccurred())
-			Expect(stats).ToNot(BeNil())
 			Expect(stats.EventsProcessed).To(Equal(1), "should process 1 event message")
 			Expect(stats.TotalProcessed).To(Equal(1))
 			Expect(stats.TimedOut).To(BeFalse())

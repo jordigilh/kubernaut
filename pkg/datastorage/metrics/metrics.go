@@ -63,6 +63,9 @@ const (
 	MetricNameRetentionPurgeTotal   = "datastorage_retention_purge_total"
 	MetricNameDLQPelPending         = "datastorage_dlq_pel_pending"
 	MetricNameShutdownDLQDrainError = "datastorage_shutdown_dlq_drain_errors_total"
+
+	// SRE-1 / AU-11: Guards RetentionPurgeStalled alert when retention is disabled
+	MetricNameRetentionEnabled = "datastorage_retention_enabled"
 )
 
 // Write operation metrics
@@ -142,6 +145,10 @@ var (
 		Name: MetricNameShutdownDLQDrainError,
 		Help: "Total DLQ drain errors during shutdown",
 	})
+	RetentionEnabled = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: MetricNameRetentionEnabled,
+		Help: "1 when retention worker is enabled, 0 when disabled (guards RetentionPurgeStalled alert)",
+	})
 )
 
 // Workflow validation phase metrics (Issue #1070)
@@ -190,7 +197,7 @@ var (
 
 // Metrics Summary:
 //
-// Total Metrics: 10 (external-facing per GitHub issue #294, #1048, #1070, #1088)
+// Total Metrics: 11 (external-facing per GitHub issue #294, #1048, #1070, #1088)
 // - WriteDuration (Histogram with labels) - write operation performance
 // - AuditLagSeconds (Histogram with labels) - audit lag observability
 // - ValidationFailures (Counter with labels) - OpenAPI validation rejections (#1048)
@@ -201,6 +208,7 @@ var (
 // - RetentionPurgeTotal (Counter) - retention purge operations (#1088 Phase 7)
 // - DLQPelPending (Gauge) - PEL backlog depth (#1088 Phase 7)
 // - ShutdownDLQDrainError (Counter) - shutdown drain errors (#1088 Phase 7)
+// - RetentionEnabled (Gauge) - retention worker enabled flag (SRE-1 / AU-11)
 //
 // Performance Target: < 5% overhead
 // BR Coverage: BR-STORAGE-001, 002, 007, 008, 012, 013, 019
@@ -265,6 +273,9 @@ type Metrics struct {
 	DLQPelPending         prometheus.Gauge   // PEL pending entries
 	ShutdownDLQDrainError prometheus.Counter // DLQ drain errors during shutdown
 
+	// SRE-1 / AU-11: Guards RetentionPurgeStalled alert
+	RetentionEnabled prometheus.Gauge // 1 when enabled, 0 when disabled
+
 	// Store registry for testing
 	registry prometheus.Registerer
 }
@@ -297,6 +308,7 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 		m.RetentionPurgeTotal = RetentionPurgeTotal
 		m.DLQPelPending = DLQPelPending
 		m.ShutdownDLQDrainError = ShutdownDLQDrainError
+		m.RetentionEnabled = RetentionEnabled
 	} else {
 		// Testing: Create isolated metrics with custom registry
 		// Testing: Create isolated metrics with full names (DD-005 V3.0: Pattern B)
@@ -367,6 +379,10 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 			Name: MetricNameShutdownDLQDrainError,
 			Help: "Total DLQ drain errors during shutdown",
 		})
+		m.RetentionEnabled = prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: MetricNameRetentionEnabled,
+			Help: "1 when retention worker is enabled, 0 when disabled",
+		})
 
 		reg.MustRegister(
 			m.AuditLagSeconds,
@@ -379,6 +395,7 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 			m.RetentionPurgeTotal,
 			m.DLQPelPending,
 			m.ShutdownDLQDrainError,
+			m.RetentionEnabled,
 		)
 	}
 
