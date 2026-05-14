@@ -137,7 +137,7 @@ var _ = Describe("#1048 Phase 3: Shutdown Ordering", func() {
 			srv.dlqClient = nil
 
 			ctx := context.Background()
-			Expect(func() { srv.shutdownStep4DrainDLQ(ctx, "test-shutdown-id") }).ToNot(Panic())
+			Expect(func() { _ = srv.shutdownStep4DrainDLQ(ctx, "test-shutdown-id") }).ToNot(Panic())
 		})
 
 		It("UT-DS-1048-SD-005: should not panic on DB close and complete all steps (QE-M3)", func() {

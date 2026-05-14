@@ -95,8 +95,8 @@ var _ = Describe("Phase 10: Security Controls", func() {
 			r.Use(func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if r.Header.Get("Authorization") == "" {
-						w.WriteHeader(http.StatusUnauthorized)
-						fmt.Fprint(w, `{"status":401,"title":"Unauthorized"}`)
+					w.WriteHeader(http.StatusUnauthorized)
+					_, _ = fmt.Fprint(w, `{"status":401,"title":"Unauthorized"}`)
 						return
 					}
 					next.ServeHTTP(w, r)
