@@ -29,9 +29,9 @@ func RecoverMiddleware(reg *metrics.Registry, logger logr.Logger) func(http.Hand
 						reg.HTTPPanicsTotal.Inc()
 					}
 
-				httputil.WriteProblem(w, http.StatusInternalServerError,
-					"Internal Server Error",
-					"an unexpected internal error occurred")
+					httputil.WriteProblem(w, http.StatusInternalServerError,
+						"Internal Server Error",
+						"an unexpected internal error occurred")
 				}
 			}()
 			next.ServeHTTP(w, r)
