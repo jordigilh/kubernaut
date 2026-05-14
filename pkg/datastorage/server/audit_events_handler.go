@@ -142,7 +142,9 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// 4. Handle parent_event_id FK constraint (query parent's event_date) - OGEN-MIGRATION: OptNilUUID
+	// 4. Handle parent_event_id FK constraint (query parent's event_date)
+	// DF-C2: Set BOTH ParentEventID and ParentEventDate so the composite FK
+	// (parent_event_id, parent_event_date) is fully satisfied.
 	if req.ParentEventID.IsSet() {
 		parentEventID := req.ParentEventID.Value
 		var parentDate time.Time
@@ -155,6 +157,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		auditEvent.ParentEventID = &parentEventID
+		auditEvent.ParentEventDate = &parentDate
 	}
 
 	// 5. Convert to repository type

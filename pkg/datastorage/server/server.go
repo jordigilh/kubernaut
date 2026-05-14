@@ -480,14 +480,21 @@ func (s *Server) Handler() http.Handler {
 	r.Use(dsmiddleware.MaxBytesReaderMiddleware(s.maxBodySize, s.logger))
 
 	// AC-4: CORS with configurable origins (ADR-030).
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   s.corsAllowedOrigins,
+	// SEC-C1: go-chi/cors treats empty AllowedOrigins as "allow all".
+	// Use AllowOriginFunc to deny all cross-origin when list is empty.
+	corsOpts := cors.Options{
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
 		ExposedHeaders:   []string{"Link", "X-Request-ID"},
 		AllowCredentials: false,
 		MaxAge:           300,
-	}))
+	}
+	if len(s.corsAllowedOrigins) > 0 {
+		corsOpts.AllowedOrigins = s.corsAllowedOrigins
+	} else {
+		corsOpts.AllowOriginFunc = func(_ *http.Request, _ string) bool { return false }
+	}
+	r.Use(cors.Handler(corsOpts))
 
 	// API v1 routes
 	s.logger.V(1).Info("Setting up API v1 routes",

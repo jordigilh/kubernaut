@@ -84,11 +84,12 @@ func SanitizeError(err error) string {
 		return ""
 	}
 	msg := err.Error()
-	// Redact SQL-like patterns
-	for _, prefix := range []string{"pq:", "sql:", "driver:"} {
-		if strings.HasPrefix(msg, prefix) {
-			msg = "database write failed"
-			break
+	lower := strings.ToLower(msg)
+	// SEC-H1: Redact any error containing SQL/driver-specific patterns,
+	// not just prefix matches. Covers pq, pgx, lib/pq, SQLSTATE, etc.
+	for _, pattern := range []string{"pq:", "pgx:", "sql:", "driver:", "sqlstate", "error:", "fatal:", "connection refused", "connection reset"} {
+		if strings.Contains(lower, pattern) {
+			return "database write failed"
 		}
 	}
 	if len(msg) > maxLastErrorLen {
@@ -225,8 +226,7 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 	// Gap 3.3 REFACTOR: Monitor DLQ capacity using extracted monitoring function
 	c.monitorDLQCapacity(ctx, "notifications", streamKey, "notification_audit")
 
-	// Log success
-	c.logNotificationEnqueueSuccess(c.logger, audit.NotificationID, originalError.Error())
+	c.logNotificationEnqueueSuccess(c.logger, audit.NotificationID, SanitizeError(originalError))
 
 	return nil
 }
@@ -284,8 +284,7 @@ func (c *Client) EnqueueAuditEvent(ctx context.Context, audit *audit.AuditEvent,
 	// Gap 3.3 REFACTOR: Monitor DLQ capacity using extracted monitoring function
 	c.monitorDLQCapacity(ctx, "events", streamKey, "audit_event")
 
-	// Log success
-	c.logEnqueueSuccess(c.logger, "audit_event", audit.EventID.String(), originalError.Error())
+	c.logEnqueueSuccess(c.logger, "audit_event", audit.EventID.String(), SanitizeError(originalError))
 
 	return nil
 }

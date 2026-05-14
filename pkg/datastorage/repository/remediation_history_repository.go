@@ -95,9 +95,13 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 	// Include event_type column so BuildEffectivenessResponse can route events correctly.
 	// The event_data JSONB may not contain event_type (E2E tests insert it only as a column),
 	// so we merge the column value into EventData to ensure downstream consumers always see it.
-	// PERF-H3: LIMIT prevents unbounded result sets when many
-	// EM events exist across the correlated RO chain.
-	const maxEMBatchResults = 10000
+	// PERF-H1: LIMIT scaled per correlation to prevent global skew
+	// where early correlations consume all rows and later ones get none.
+	// Each correlation typically has ~10 EM events; 100x is generous headroom.
+	maxEMBatchResults := 100 * len(correlationIDs)
+	if maxEMBatchResults > 50000 {
+		maxEMBatchResults = 50000
+	}
 	query := `SELECT correlation_id, event_type, event_data
 		FROM audit_events
 		WHERE correlation_id = ANY($1)
