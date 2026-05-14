@@ -104,7 +104,7 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 				Labels: rwv1alpha1.RemediationWorkflowLabels{
 					Severity:    []string{"critical"},
 					Environment: []string{"production"},
-					Component:   []string{"pod"},
+					Component:   []string{"v1/Pod"},
 					Priority:    "P1",
 				},
 				Execution: rwv1alpha1.RemediationWorkflowExecution{

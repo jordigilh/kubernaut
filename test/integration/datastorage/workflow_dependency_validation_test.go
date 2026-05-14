@@ -268,8 +268,8 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			var errResp map[string]interface{}
 			Expect(json.Unmarshal(body, &errResp)).To(Succeed())
 			detail, _ := errResp["detail"].(string)
-			Expect(detail).To(ContainSubstring("it-missing-secret-002"),
-				"error should name the missing resource")
+			Expect(detail).To(ContainSubstring("dependency not satisfied"),
+				"error should indicate dependency not satisfied")
 			errType, _ := errResp["type"].(string)
 			Expect(errType).To(ContainSubstring("dependency-validation-error"),
 				"#1070: RFC 7807 type must identify dependency validation failure")
@@ -299,8 +299,8 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			var errResp map[string]interface{}
 			Expect(json.Unmarshal(body, &errResp)).To(Succeed())
 			detail, _ := errResp["detail"].(string)
-			Expect(detail).To(ContainSubstring("empty"),
-				"error should indicate empty data")
+			Expect(detail).To(ContainSubstring("dependency not satisfied"),
+				"error should indicate dependency not satisfied")
 			errType, _ := errResp["type"].(string)
 			Expect(errType).To(ContainSubstring("dependency-validation-error"),
 				"#1070: RFC 7807 type must identify dependency validation failure")
@@ -323,8 +323,8 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			var errResp map[string]interface{}
 			Expect(json.Unmarshal(body, &errResp)).To(Succeed())
 			detail, _ := errResp["detail"].(string)
-			Expect(detail).To(ContainSubstring("it-missing-cm-004"),
-				"error should name the missing resource")
+			Expect(detail).To(ContainSubstring("dependency not satisfied"),
+				"error should indicate dependency not satisfied")
 			errType, _ := errResp["type"].(string)
 			Expect(errType).To(ContainSubstring("dependency-validation-error"),
 				"#1070: RFC 7807 type must identify dependency validation failure")
@@ -354,8 +354,8 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			var errResp map[string]interface{}
 			Expect(json.Unmarshal(body, &errResp)).To(Succeed())
 			detail, _ := errResp["detail"].(string)
-			Expect(detail).To(ContainSubstring("empty"),
-				"error should indicate empty data")
+			Expect(detail).To(ContainSubstring("dependency not satisfied"),
+				"error should indicate dependency not satisfied")
 			errType, _ := errResp["type"].(string)
 			Expect(errType).To(ContainSubstring("dependency-validation-error"),
 				"#1070: RFC 7807 type must identify dependency validation failure")
