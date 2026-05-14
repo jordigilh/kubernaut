@@ -404,7 +404,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 
 	// A1: Kubernaut Agent RBAC (prerequisite for KA, fast kubectl apply)
 	go func() {
-		allResults <- waveResult{"KA-RBAC", deployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer)}
+		allResults <- waveResult{"KA-RBAC", DeployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer)}
 	}()
 
 	// A2: Mock LLM (Kubernaut Agent depends on this)
@@ -415,13 +415,13 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			allResults <- waveResult{"MockLLM", nil}
 			return
 		}
-		err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], seededUUIDs, writer)
+		err := DeployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], seededUUIDs, writer)
 		allResults <- waveResult{"MockLLM", err}
 	}()
 
 	// A2b: Mock LLM Shadow (alignment evaluation — KA config references mock-llm-shadow:8080)
 	go func() {
-		err := deployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], writer)
+		err := DeployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], writer)
 		allResults <- waveResult{"MockLLMShadow", err}
 	}()
 
@@ -490,7 +490,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// B1: Kubernaut Agent — wait for Mock LLM
 	go func() {
 		<-mockLLMReady
-		err := deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
+		err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
 		allResults <- waveResult{"KubernautAgent", err}
 	}()
 

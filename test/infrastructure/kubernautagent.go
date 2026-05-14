@@ -195,7 +195,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// PHASE 5: Seed workflows + deploy Mock LLM (same as AIAnalysis E2E Phase 4c/4d)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🌱 PHASE 5: Seeding workflows and deploying Mock LLM...")
-	if err := createKAE2EServiceAccount(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := CreateKAE2EServiceAccount(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create E2E service account: %w", err)
 	}
 
@@ -226,12 +226,12 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows\n", len(workflowUUIDs))
 
-	if err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, images["mock-llm"], workflowUUIDs, writer); err != nil {
+	if err := DeployMockLLMInNamespace(ctx, namespace, kubeconfigPath, images["mock-llm"], workflowUUIDs, writer); err != nil {
 		return fmt.Errorf("failed to deploy Mock LLM: %w", err)
 	}
 
 	// Deploy shadow alignment evaluation instance (same image, mode: shadow)
-	if err := deployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, images["mock-llm"], writer); err != nil {
+	if err := DeployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, images["mock-llm"], writer); err != nil {
 		return fmt.Errorf("failed to deploy Mock LLM Shadow: %w", err)
 	}
 
@@ -281,10 +281,10 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// PHASE 6: Deploy Kubernaut Agent
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🤖 PHASE 6: Deploying Kubernaut Agent...")
-	if err := deployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := DeployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy KA RBAC: %w", err)
 	}
-	if err := deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, images["kubernautagent"], true, writer); err != nil {
+	if err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, images["kubernautagent"], true, writer); err != nil {
 		return fmt.Errorf("failed to deploy Kubernaut Agent: %w", err)
 	}
 
@@ -702,9 +702,9 @@ subjects:
 	return nil
 }
 
-// deployKubernautAgentServiceRBAC creates the ServiceAccount and RBAC for KA pods.
+// DeployKubernautAgentServiceRBAC creates the ServiceAccount and RBAC for KA pods.
 // Mirrors the KA RBAC pattern (DD-AUTH-014) with KA-specific names.
-func deployKubernautAgentServiceRBAC(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func DeployKubernautAgentServiceRBAC(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	rbacManifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: ServiceAccount
@@ -847,10 +847,10 @@ subjects:
 	return nil
 }
 
-// deployKubernautAgentOnly deploys the Go Kubernaut Agent as a Deployment + NodePort Service.
+// DeployKubernautAgentOnly deploys the Go Kubernaut Agent as a Deployment + NodePort Service.
 // Same port mapping as legacy HolmesGPT API / KA (30088 → 8080, host 8088) for API contract parity.
 // enableJWT controls whether jwtProviders are included in the config (requires DEX to be deployed).
-func deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, imageTag string, enableJWT bool, writer io.Writer) error {
+func DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, imageTag string, enableJWT bool, writer io.Writer) error {
 	imagePullPolicy := GetImagePullPolicy()
 
 	// DD-TEST-007: Build GOCOVERDIR YAML snippets for binary coverage instrumentation

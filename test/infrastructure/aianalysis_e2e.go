@@ -418,21 +418,21 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	deployResults := make(chan deployResult, 4)
 
 	go func() {
-		err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], workflowUUIDs, writer)
+		err := DeployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], workflowUUIDs, writer)
 		deployResults <- deployResult{"Mock LLM", err}
 	}()
 
 	go func() {
-		err := deployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], writer)
+		err := DeployMockLLMShadowInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], writer)
 		deployResults <- deployResult{"Mock LLM Shadow", err}
 	}()
 
 	go func() {
-		if rbacErr := deployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); rbacErr != nil {
+		if rbacErr := DeployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); rbacErr != nil {
 			deployResults <- deployResult{"Kubernaut Agent", rbacErr}
 			return
 		}
-		err := deployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
+		err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
 		deployResults <- deployResult{"Kubernaut Agent", err}
 	}()
 
