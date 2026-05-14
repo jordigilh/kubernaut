@@ -660,22 +660,23 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			for i := 0; i < 10; i++ {
 				wg.Add(1)
 				started.Add(1)
-				go func(index int) {
-					defer wg.Done()
-					started.Done()
-					// Mix of different endpoints
-					var url string
-					switch index % 3 {
-					case 0:
-						url = testServer.URL + "/api/v1/audit/events?limit=10"
-					case 1:
-						url = testServer.URL + "/api/v1/success-rate/multi-dimensional"
-					case 2:
-						url = healthServer.URL + "/readyz"
-					}
+			go func(index int) {
+				defer wg.Done()
+				// Mix of different endpoints
+				var url string
+				switch index % 3 {
+				case 0:
+					url = testServer.URL + "/api/v1/audit/events?limit=10"
+				case 1:
+					url = testServer.URL + "/api/v1/success-rate/multi-dimensional"
+				case 2:
+					url = healthServer.URL + "/readyz"
+				}
 
-				// DD-AUTH-014: Use authenticated request
-				resp, err := makeAuthenticatedRequest("GET", url)
+			// Signal ready right before the request so the barrier
+			// ensures requests are about to be dispatched.
+			started.Done()
+			resp, err := makeAuthenticatedRequest("GET", url)
 				if err != nil {
 					errorCount <- err
 					return
