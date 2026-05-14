@@ -3,7 +3,7 @@
 **AIOps Platform for Intelligent Kubernetes Remediation**
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/jordigilh/kubernaut)](https://goreportcard.com/report/github.com/jordigilh/kubernaut)
-[![Go Version](https://img.shields.io/badge/Go-1.25.6-blue.svg)](https://golang.org/dl/)
+[![Go Version](https://img.shields.io/badge/Go-1.25.10-blue.svg)](https://golang.org/dl/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.32+-blue.svg)](https://kubernetes.io/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml)
@@ -52,31 +52,19 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 ## Roadmap
 
-### v1.5 — Live Investigation Control and MCP Integration (current)
+### v1.5 — Agentic Integration ([current](https://github.com/jordigilh/kubernaut/issues/874))
 
-- **MCP Interactive Mode** — Kubernaut Agent exposes an MCP endpoint for human-in-the-loop investigation with lease-based session management, dynamic takeover, and user impersonation ([#703](https://github.com/jordigilh/kubernaut/issues/703))
-- **SSE streaming and session cancellation** — Real-time token-level streaming, session cancellation with context propagation, and object-level session authorization ([#823](https://github.com/jordigilh/kubernaut/issues/823))
-- **Data Storage service hardening** — FedRAMP AU compliance (audit signing, DLQ reliability, retention worker, Redis TLS), AppSec fixes, and production runbooks ([#1048](https://github.com/jordigilh/kubernaut/issues/1048))
-- **Operational hardening** — Per-user rate limiting, graceful shutdown, panic recovery, session lifecycle management, and Go Mistakes audit remediation
+- **MCP Interactive Mode** — Human-in-the-loop investigation via MCP tools with lease-based session management, SSE streaming, dynamic takeover, and user impersonation ([#703](https://github.com/jordigilh/kubernaut/issues/703), [#823](https://github.com/jordigilh/kubernaut/issues/823))
+- **API Frontend service** — Unified external protocol layer (MCP + A2A) with OIDC authentication, natural language signal intake, and the Kubernaut Console web UI ([kubernaut-apifrontend](https://github.com/jordigilh/kubernaut-apifrontend))
 
 Track progress on the [v1.5 milestone](https://github.com/jordigilh/kubernaut/milestone/6).
 
-### v1.4 — Operator Overrides and Platform Hardening (released)
-
-- **Prompt injection guardrails** — Shadow agent with a dedicated scanning model ([#601](https://github.com/jordigilh/kubernaut/issues/601))
-- **Operator workflow/parameter override** — RAR approval overrides with authwebhook validation ([#594](https://github.com/jordigilh/kubernaut/issues/594))
-- **PagerDuty and Microsoft Teams** — New notification delivery channels ([#60](https://github.com/jordigilh/kubernaut/issues/60), [#593](https://github.com/jordigilh/kubernaut/issues/593))
-- **Inter-service TLS** — TLS wired between all 10 services with configurable security profiles ([#748](https://github.com/jordigilh/kubernaut/issues/748))
-- **NetworkPolicies** — Default-deny network policies for all services ([#285](https://github.com/jordigilh/kubernaut/issues/285))
-
-See the [v1.4.0 release notes](https://github.com/jordigilh/kubernaut/releases/tag/v1.4.0).
-
-**[Full roadmap](docs/roadmap/ROADMAP.md)** — Agentic Integration (A2A), Collective Intelligence, Fleet Operations (ACM/AAP), and Operational Expansion (cost, security, non-K8s).
+**[Full roadmap](docs/roadmap/ROADMAP.md)** — Agentic Integration (A2A), Collective Intelligence, Fleet Operations (ACM/AAP), and Operational Expansion (cost, security, non-K8s). For past releases, see the [CHANGELOG](CHANGELOG.md).
 
 <p align="center">
   <img src="docs/architecture/diagrams/kubernaut-console-animated.gif" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
   <br/>
-  <em>On the roadmap — Kubernaut Console: investigate, chat, and remediate from a single UI</em>
+  <em>Coming in v1.5 — Kubernaut Console: investigate, chat, and remediate from a single UI</em>
 </p>
 
 ---
@@ -103,6 +91,7 @@ See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/latest/g
 | Repository | Description |
 |---|---|
 | [kubernaut-docs](https://github.com/jordigilh/kubernaut-docs) | Documentation website (MkDocs Material) |
+| [kubernaut-apifrontend](https://github.com/jordigilh/kubernaut-apifrontend) | API Frontend — MCP/A2A gateway with OIDC authentication |
 | [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) | Demo scenarios, scripts, and recordings |
 
 ---
