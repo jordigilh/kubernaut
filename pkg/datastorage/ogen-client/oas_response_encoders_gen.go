@@ -3,7 +3,6 @@
 package api
 
 import (
-	"io"
 	"net/http"
 
 	"github.com/go-faster/errors"
@@ -656,22 +655,6 @@ func encodeGetEffectivenessScoreResponse(response GetEffectivenessScoreRes, w ht
 	}
 }
 
-func encodeGetMetricsResponse(response GetMetricsOK, w http.ResponseWriter, span trace.Span) error {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
-
-	writer := w
-	if closer, ok := response.Data.(io.Closer); ok {
-		defer closer.Close()
-	}
-	if _, err := io.Copy(writer, response); err != nil {
-		return errors.Wrap(err, "write")
-	}
-
-	return nil
-}
-
 func encodeGetRemediationHistoryContextResponse(response GetRemediationHistoryContextRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
 	case *RemediationHistoryContext:
@@ -750,39 +733,6 @@ func encodeGetWorkflowByIDResponse(response GetWorkflowByIDRes, w http.ResponseW
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(500)
 		span.SetStatus(codes.Error, http.StatusText(500))
-
-		e := new(jx.Encoder)
-		response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		return nil
-
-	default:
-		return errors.Errorf("unexpected response type: %T", response)
-	}
-}
-
-func encodeHealthCheckResponse(response HealthCheckRes, w http.ResponseWriter, span trace.Span) error {
-	switch response := response.(type) {
-	case *HealthCheckOK:
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
-
-		e := new(jx.Encoder)
-		response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		return nil
-
-	case *HealthCheckServiceUnavailable:
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(503)
-		span.SetStatus(codes.Error, http.StatusText(503))
 
 		e := new(jx.Encoder)
 		response.Encode(e)
@@ -936,13 +886,6 @@ func encodeListWorkflowsByActionTypeResponse(response ListWorkflowsByActionTypeR
 	}
 }
 
-func encodeLivenessCheckResponse(response *LivenessCheckOK, w http.ResponseWriter, span trace.Span) error {
-	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
-
-	return nil
-}
-
 func encodePlaceLegalHoldResponse(response PlaceLegalHoldRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
 	case *PlaceLegalHoldOK:
@@ -1014,25 +957,6 @@ func encodeQueryAuditEventsResponse(response *AuditEventsQueryResponse, w http.R
 	}
 
 	return nil
-}
-
-func encodeReadinessCheckResponse(response ReadinessCheckRes, w http.ResponseWriter, span trace.Span) error {
-	switch response := response.(type) {
-	case *ReadinessCheckOK:
-		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
-
-		return nil
-
-	case *ReadinessCheckServiceUnavailable:
-		w.WriteHeader(503)
-		span.SetStatus(codes.Error, http.StatusText(503))
-
-		return nil
-
-	default:
-		return errors.Errorf("unexpected response type: %T", response)
-	}
 }
 
 func encodeReconstructRemediationRequestResponse(response ReconstructRemediationRequestRes, w http.ResponseWriter, span trace.Span) error {
@@ -1218,6 +1142,52 @@ func encodeUpdateWorkflowResponse(response UpdateWorkflowRes, w http.ResponseWri
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(404)
 		span.SetStatus(codes.Error, http.StatusText(404))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeVerifyAuditChainResponse(response VerifyAuditChainRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *VerifyChainResponse:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *VerifyAuditChainBadRequest:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(400)
+		span.SetStatus(codes.Error, http.StatusText(400))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *VerifyAuditChainInternalServerError:
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(500)
+		span.SetStatus(codes.Error, http.StatusText(500))
 
 		e := new(jx.Encoder)
 		response.Encode(e)

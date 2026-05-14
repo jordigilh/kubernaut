@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
-	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -173,17 +173,6 @@ type Invoker interface {
 	//
 	// GET /api/v1/effectiveness/{correlation_id}
 	GetEffectivenessScore(ctx context.Context, params GetEffectivenessScoreParams) (GetEffectivenessScoreRes, error)
-	// GetMetrics invokes getMetrics operation.
-	//
-	// Exposes Prometheus metrics in text format.
-	// **Metrics Exposed** (BR-STORAGE-019, GAP-10):
-	// - `datastorage_audit_traces_total{service,status}` - Audit write operations
-	// - `datastorage_audit_lag_seconds{service}` - Time between event and audit write
-	// - `datastorage_write_duration_seconds{table}` - Database write latency
-	// - `datastorage_validation_failures_total{field,reason}` - Validation errors.
-	//
-	// GET /metrics
-	GetMetrics(ctx context.Context) (GetMetricsOK, error)
 	// GetRemediationHistoryContext invokes getRemediationHistoryContext operation.
 	//
 	// Returns structured remediation history context for LLM prompt enrichment.
@@ -221,13 +210,6 @@ type Invoker interface {
 	//
 	// GET /api/v1/workflows/{workflow_id}
 	GetWorkflowByID(ctx context.Context, params GetWorkflowByIDParams) (GetWorkflowByIDRes, error)
-	// HealthCheck invokes healthCheck operation.
-	//
-	// Returns 200 if service is healthy (database and Redis reachable).
-	// Used by Kubernetes liveness probe (DD-007).
-	//
-	// GET /health
-	HealthCheck(ctx context.Context) (HealthCheckRes, error)
 	// ListAvailableActions invokes listAvailableActions operation.
 	//
 	// Step 1 of the three-step workflow discovery protocol.
@@ -247,7 +229,7 @@ type Invoker interface {
 	// ListLegalHolds invokes listLegalHolds operation.
 	//
 	// Returns a list of all active legal holds across all audit events.
-	// **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+	// **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
 	// **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
 	// **Behavior**:
 	// - Success: Returns 200 OK with array of active legal holds
@@ -283,19 +265,11 @@ type Invoker interface {
 	//
 	// GET /api/v1/workflows/actions/{action_type}
 	ListWorkflowsByActionType(ctx context.Context, params ListWorkflowsByActionTypeParams) (ListWorkflowsByActionTypeRes, error)
-	// LivenessCheck invokes livenessCheck operation.
-	//
-	// Returns 200 if service process is alive.
-	// Does not check dependencies.
-	// Used by Kubernetes liveness probe.
-	//
-	// GET /health/live
-	LivenessCheck(ctx context.Context) error
 	// PlaceLegalHold invokes placeLegalHold operation.
 	//
 	// Places a legal hold on all audit events for a given correlation_id.
 	// Events with legal hold cannot be deleted (enforced by database trigger).
-	// **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+	// **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
 	// **SOC2 Gap**: Gap #8 (Legal Hold enforcement for Sarbanes-Oxley, HIPAA)
 	// **Behavior**:
 	// - Success: Returns 200 OK with legal hold metadata
@@ -315,18 +289,10 @@ type Invoker interface {
 	//
 	// GET /api/v1/audit/events
 	QueryAuditEvents(ctx context.Context, params QueryAuditEventsParams) (*AuditEventsQueryResponse, error)
-	// ReadinessCheck invokes readinessCheck operation.
-	//
-	// Returns 200 if service is ready to accept traffic.
-	// Returns 503 during graceful shutdown (DD-007 4-step pattern).
-	// Used by Kubernetes readiness probe.
-	//
-	// GET /health/ready
-	ReadinessCheck(ctx context.Context) (ReadinessCheckRes, error)
 	// ReconstructRemediationRequest invokes reconstructRemediationRequest operation.
 	//
 	// Reconstructs a complete RemediationRequest CRD from audit trail events.
-	// **Business Requirement**: BR-AUDIT-006 (SOC2 compliance)
+	// **Business Requirement**: BR-RR-RECON-001 (SOC2 compliance)
 	// **Workflow**:
 	// 1. Query audit events for given correlation_id
 	// 2. Parse gateway and orchestrator events
@@ -349,7 +315,7 @@ type Invoker interface {
 	//
 	// Releases a legal hold on all audit events for a given correlation_id.
 	// Events can be deleted after legal hold is released.
-	// **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+	// **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
 	// **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
 	// **Behavior**:
 	// - Success: Returns 200 OK with release metadata
@@ -379,6 +345,19 @@ type Invoker interface {
 	//
 	// PATCH /api/v1/workflows/{workflow_id}
 	UpdateWorkflow(ctx context.Context, request *WorkflowUpdateRequest, params UpdateWorkflowParams) (UpdateWorkflowRes, error)
+	// VerifyAuditChain invokes verifyAuditChain operation.
+	//
+	// Verifies the integrity of audit event hash chains for a given correlation_id.
+	// Returns verification status, any broken links, and tampered events.
+	// **Compliance**:
+	// - SOC 2 Type II: Tamper-evident audit logs (Trust Services Criteria CC8.1)
+	// - NIST 800-53: AU-9 (Protection of Audit Information)
+	// - Sarbanes-Oxley: Section 404 (Internal Controls)
+	// **Business Requirement**: BR-AUDIT-007 (SOC2 Gap #9)
+	// **Authentication**: Protected by OAuth-proxy in production/E2E.
+	//
+	// POST /api/v1/audit/verify-chain
+	VerifyAuditChain(ctx context.Context, request *VerifyChainRequest) (VerifyAuditChainRes, error)
 }
 
 // Client implements OAS client.
@@ -386,10 +365,6 @@ type Client struct {
 	serverURL *url.URL
 	baseClient
 }
-
-var _ Handler = struct {
-	*Client
-}{}
 
 // NewClient initializes new Client defined by OAS.
 func NewClient(serverURL string, opts ...ClientOption) (*Client, error) {
@@ -492,7 +467,8 @@ func (c *Client) sendCreateActionType(ctx context.Context, request *ActionTypeCr
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeCreateActionTypeResponse(resp)
@@ -573,7 +549,8 @@ func (c *Client) sendCreateAuditEvent(ctx context.Context, request *AuditEventRe
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeCreateAuditEventResponse(resp)
@@ -649,7 +626,8 @@ func (c *Client) sendCreateAuditEventsBatch(ctx context.Context, request []Audit
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeCreateAuditEventsBatchResponse(resp)
@@ -736,7 +714,8 @@ func (c *Client) sendCreateNotificationAudit(ctx context.Context, request *Notif
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeCreateNotificationAuditResponse(resp)
@@ -818,7 +797,8 @@ func (c *Client) sendCreateWorkflow(ctx context.Context, request *CreateWorkflow
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeCreateWorkflowResponse(resp)
@@ -915,7 +895,8 @@ func (c *Client) sendDeprecateWorkflow(ctx context.Context, request *WorkflowLif
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeDeprecateWorkflowResponse(resp)
@@ -1012,7 +993,8 @@ func (c *Client) sendDisableActionType(ctx context.Context, request *ActionTypeD
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeDisableActionTypeResponse(resp)
@@ -1109,7 +1091,8 @@ func (c *Client) sendDisableWorkflow(ctx context.Context, request *WorkflowLifec
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeDisableWorkflowResponse(resp)
@@ -1206,7 +1189,8 @@ func (c *Client) sendEnableWorkflow(ctx context.Context, request *WorkflowLifecy
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeEnableWorkflowResponse(resp)
@@ -1462,7 +1446,8 @@ func (c *Client) sendExportAuditEvents(ctx context.Context, params ExportAuditEv
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeExportAuditEventsResponse(resp)
@@ -1557,7 +1542,8 @@ func (c *Client) sendGetActionTypeWorkflowCount(ctx context.Context, params GetA
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetActionTypeWorkflowCountResponse(resp)
@@ -1660,88 +1646,11 @@ func (c *Client) sendGetEffectivenessScore(ctx context.Context, params GetEffect
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetEffectivenessScoreResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// GetMetrics invokes getMetrics operation.
-//
-// Exposes Prometheus metrics in text format.
-// **Metrics Exposed** (BR-STORAGE-019, GAP-10):
-// - `datastorage_audit_traces_total{service,status}` - Audit write operations
-// - `datastorage_audit_lag_seconds{service}` - Time between event and audit write
-// - `datastorage_write_duration_seconds{table}` - Database write latency
-// - `datastorage_validation_failures_total{field,reason}` - Validation errors.
-//
-// GET /metrics
-func (c *Client) GetMetrics(ctx context.Context) (GetMetricsOK, error) {
-	res, err := c.sendGetMetrics(ctx)
-	return res, err
-}
-
-func (c *Client) sendGetMetrics(ctx context.Context) (res GetMetricsOK, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("getMetrics"),
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/metrics"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, GetMetricsOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [1]string
-	pathParts[0] = "/metrics"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "GET", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	defer resp.Body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeGetMetricsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -1922,7 +1831,8 @@ func (c *Client) sendGetRemediationHistoryContext(ctx context.Context, params Ge
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetRemediationHistoryContextResponse(resp)
@@ -2144,84 +2054,11 @@ func (c *Client) sendGetWorkflowByID(ctx context.Context, params GetWorkflowByID
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetWorkflowByIDResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// HealthCheck invokes healthCheck operation.
-//
-// Returns 200 if service is healthy (database and Redis reachable).
-// Used by Kubernetes liveness probe (DD-007).
-//
-// GET /health
-func (c *Client) HealthCheck(ctx context.Context) (HealthCheckRes, error) {
-	res, err := c.sendHealthCheck(ctx)
-	return res, err
-}
-
-func (c *Client) sendHealthCheck(ctx context.Context) (res HealthCheckRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("healthCheck"),
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/health"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, HealthCheckOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [1]string
-	pathParts[0] = "/health"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "GET", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	defer resp.Body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeHealthCheckResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -2446,7 +2283,8 @@ func (c *Client) sendListAvailableActions(ctx context.Context, params ListAvaila
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeListAvailableActionsResponse(resp)
@@ -2460,7 +2298,7 @@ func (c *Client) sendListAvailableActions(ctx context.Context, params ListAvaila
 // ListLegalHolds invokes listLegalHolds operation.
 //
 // Returns a list of all active legal holds across all audit events.
-// **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+// **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
 // **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
 // **Behavior**:
 // - Success: Returns 200 OK with array of active legal holds
@@ -2527,7 +2365,8 @@ func (c *Client) sendListLegalHolds(ctx context.Context) (res *ListLegalHoldsOK,
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeListLegalHoldsResponse(resp)
@@ -2724,7 +2563,8 @@ func (c *Client) sendListWorkflows(ctx context.Context, params ListWorkflowsPara
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeListWorkflowsResponse(resp)
@@ -2972,85 +2812,11 @@ func (c *Client) sendListWorkflowsByActionType(ctx context.Context, params ListW
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeListWorkflowsByActionTypeResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// LivenessCheck invokes livenessCheck operation.
-//
-// Returns 200 if service process is alive.
-// Does not check dependencies.
-// Used by Kubernetes liveness probe.
-//
-// GET /health/live
-func (c *Client) LivenessCheck(ctx context.Context) error {
-	_, err := c.sendLivenessCheck(ctx)
-	return err
-}
-
-func (c *Client) sendLivenessCheck(ctx context.Context) (res *LivenessCheckOK, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("livenessCheck"),
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/health/live"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, LivenessCheckOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [1]string
-	pathParts[0] = "/health/live"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "GET", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	defer resp.Body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeLivenessCheckResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -3062,7 +2828,7 @@ func (c *Client) sendLivenessCheck(ctx context.Context) (res *LivenessCheckOK, e
 //
 // Places a legal hold on all audit events for a given correlation_id.
 // Events with legal hold cannot be deleted (enforced by database trigger).
-// **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+// **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
 // **SOC2 Gap**: Gap #8 (Legal Hold enforcement for Sarbanes-Oxley, HIPAA)
 // **Behavior**:
 // - Success: Returns 200 OK with legal hold metadata
@@ -3135,7 +2901,8 @@ func (c *Client) sendPlaceLegalHold(ctx context.Context, request *PlaceLegalHold
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodePlaceLegalHoldResponse(resp)
@@ -3365,7 +3132,8 @@ func (c *Client) sendQueryAuditEvents(ctx context.Context, params QueryAuditEven
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeQueryAuditEventsResponse(resp)
@@ -3376,85 +3144,10 @@ func (c *Client) sendQueryAuditEvents(ctx context.Context, params QueryAuditEven
 	return result, nil
 }
 
-// ReadinessCheck invokes readinessCheck operation.
-//
-// Returns 200 if service is ready to accept traffic.
-// Returns 503 during graceful shutdown (DD-007 4-step pattern).
-// Used by Kubernetes readiness probe.
-//
-// GET /health/ready
-func (c *Client) ReadinessCheck(ctx context.Context) (ReadinessCheckRes, error) {
-	res, err := c.sendReadinessCheck(ctx)
-	return res, err
-}
-
-func (c *Client) sendReadinessCheck(ctx context.Context) (res ReadinessCheckRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("readinessCheck"),
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/health/ready"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ReadinessCheckOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [1]string
-	pathParts[0] = "/health/ready"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "GET", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	defer resp.Body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeReadinessCheckResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
 // ReconstructRemediationRequest invokes reconstructRemediationRequest operation.
 //
 // Reconstructs a complete RemediationRequest CRD from audit trail events.
-// **Business Requirement**: BR-AUDIT-006 (SOC2 compliance)
+// **Business Requirement**: BR-RR-RECON-001 (SOC2 compliance)
 // **Workflow**:
 // 1. Query audit events for given correlation_id
 // 2. Parse gateway and orchestrator events
@@ -3548,7 +3241,8 @@ func (c *Client) sendReconstructRemediationRequest(ctx context.Context, params R
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeReconstructRemediationRequestResponse(resp)
@@ -3563,7 +3257,7 @@ func (c *Client) sendReconstructRemediationRequest(ctx context.Context, params R
 //
 // Releases a legal hold on all audit events for a given correlation_id.
 // Events can be deleted after legal hold is released.
-// **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+// **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
 // **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
 // **Behavior**:
 // - Success: Returns 200 OK with release metadata
@@ -3654,7 +3348,8 @@ func (c *Client) sendReleaseLegalHold(ctx context.Context, request *ReleaseLegal
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeReleaseLegalHoldResponse(resp)
@@ -3750,7 +3445,8 @@ func (c *Client) sendUpdateActionType(ctx context.Context, request *ActionTypeUp
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeUpdateActionTypeResponse(resp)
@@ -3846,10 +3542,95 @@ func (c *Client) sendUpdateWorkflow(ctx context.Context, request *WorkflowUpdate
 	if err != nil {
 		return res, errors.Wrap(err, "do request")
 	}
-	defer resp.Body.Close()
+	body := resp.Body
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeUpdateWorkflowResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// VerifyAuditChain invokes verifyAuditChain operation.
+//
+// Verifies the integrity of audit event hash chains for a given correlation_id.
+// Returns verification status, any broken links, and tampered events.
+// **Compliance**:
+// - SOC 2 Type II: Tamper-evident audit logs (Trust Services Criteria CC8.1)
+// - NIST 800-53: AU-9 (Protection of Audit Information)
+// - Sarbanes-Oxley: Section 404 (Internal Controls)
+// **Business Requirement**: BR-AUDIT-007 (SOC2 Gap #9)
+// **Authentication**: Protected by OAuth-proxy in production/E2E.
+//
+// POST /api/v1/audit/verify-chain
+func (c *Client) VerifyAuditChain(ctx context.Context, request *VerifyChainRequest) (VerifyAuditChainRes, error) {
+	res, err := c.sendVerifyAuditChain(ctx, request)
+	return res, err
+}
+
+func (c *Client) sendVerifyAuditChain(ctx context.Context, request *VerifyChainRequest) (res VerifyAuditChainRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("verifyAuditChain"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/v1/audit/verify-chain"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, VerifyAuditChainOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/api/v1/audit/verify-chain"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeVerifyAuditChainRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeVerifyAuditChainResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

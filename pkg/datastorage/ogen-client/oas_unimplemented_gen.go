@@ -195,20 +195,6 @@ func (UnimplementedHandler) GetEffectivenessScore(ctx context.Context, params Ge
 	return r, ht.ErrNotImplemented
 }
 
-// GetMetrics implements getMetrics operation.
-//
-// Exposes Prometheus metrics in text format.
-// **Metrics Exposed** (BR-STORAGE-019, GAP-10):
-// - `datastorage_audit_traces_total{service,status}` - Audit write operations
-// - `datastorage_audit_lag_seconds{service}` - Time between event and audit write
-// - `datastorage_write_duration_seconds{table}` - Database write latency
-// - `datastorage_validation_failures_total{field,reason}` - Validation errors.
-//
-// GET /metrics
-func (UnimplementedHandler) GetMetrics(ctx context.Context) (r GetMetricsOK, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // GetRemediationHistoryContext implements getRemediationHistoryContext operation.
 //
 // Returns structured remediation history context for LLM prompt enrichment.
@@ -252,16 +238,6 @@ func (UnimplementedHandler) GetWorkflowByID(ctx context.Context, params GetWorkf
 	return r, ht.ErrNotImplemented
 }
 
-// HealthCheck implements healthCheck operation.
-//
-// Returns 200 if service is healthy (database and Redis reachable).
-// Used by Kubernetes liveness probe (DD-007).
-//
-// GET /health
-func (UnimplementedHandler) HealthCheck(ctx context.Context) (r HealthCheckRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // ListAvailableActions implements listAvailableActions operation.
 //
 // Step 1 of the three-step workflow discovery protocol.
@@ -284,7 +260,7 @@ func (UnimplementedHandler) ListAvailableActions(ctx context.Context, params Lis
 // ListLegalHolds implements listLegalHolds operation.
 //
 // Returns a list of all active legal holds across all audit events.
-// **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+// **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
 // **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
 // **Behavior**:
 // - Success: Returns 200 OK with array of active legal holds
@@ -329,22 +305,11 @@ func (UnimplementedHandler) ListWorkflowsByActionType(ctx context.Context, param
 	return r, ht.ErrNotImplemented
 }
 
-// LivenessCheck implements livenessCheck operation.
-//
-// Returns 200 if service process is alive.
-// Does not check dependencies.
-// Used by Kubernetes liveness probe.
-//
-// GET /health/live
-func (UnimplementedHandler) LivenessCheck(ctx context.Context) error {
-	return ht.ErrNotImplemented
-}
-
 // PlaceLegalHold implements placeLegalHold operation.
 //
 // Places a legal hold on all audit events for a given correlation_id.
 // Events with legal hold cannot be deleted (enforced by database trigger).
-// **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+// **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
 // **SOC2 Gap**: Gap #8 (Legal Hold enforcement for Sarbanes-Oxley, HIPAA)
 // **Behavior**:
 // - Success: Returns 200 OK with legal hold metadata
@@ -370,21 +335,10 @@ func (UnimplementedHandler) QueryAuditEvents(ctx context.Context, params QueryAu
 	return r, ht.ErrNotImplemented
 }
 
-// ReadinessCheck implements readinessCheck operation.
-//
-// Returns 200 if service is ready to accept traffic.
-// Returns 503 during graceful shutdown (DD-007 4-step pattern).
-// Used by Kubernetes readiness probe.
-//
-// GET /health/ready
-func (UnimplementedHandler) ReadinessCheck(ctx context.Context) (r ReadinessCheckRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // ReconstructRemediationRequest implements reconstructRemediationRequest operation.
 //
 // Reconstructs a complete RemediationRequest CRD from audit trail events.
-// **Business Requirement**: BR-AUDIT-006 (SOC2 compliance)
+// **Business Requirement**: BR-RR-RECON-001 (SOC2 compliance)
 // **Workflow**:
 // 1. Query audit events for given correlation_id
 // 2. Parse gateway and orchestrator events
@@ -410,7 +364,7 @@ func (UnimplementedHandler) ReconstructRemediationRequest(ctx context.Context, p
 //
 // Releases a legal hold on all audit events for a given correlation_id.
 // Events can be deleted after legal hold is released.
-// **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+// **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
 // **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
 // **Behavior**:
 // - Success: Returns 200 OK with release metadata
@@ -446,5 +400,21 @@ func (UnimplementedHandler) UpdateActionType(ctx context.Context, req *ActionTyp
 //
 // PATCH /api/v1/workflows/{workflow_id}
 func (UnimplementedHandler) UpdateWorkflow(ctx context.Context, req *WorkflowUpdateRequest, params UpdateWorkflowParams) (r UpdateWorkflowRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// VerifyAuditChain implements verifyAuditChain operation.
+//
+// Verifies the integrity of audit event hash chains for a given correlation_id.
+// Returns verification status, any broken links, and tampered events.
+// **Compliance**:
+// - SOC 2 Type II: Tamper-evident audit logs (Trust Services Criteria CC8.1)
+// - NIST 800-53: AU-9 (Protection of Audit Information)
+// - Sarbanes-Oxley: Section 404 (Internal Controls)
+// **Business Requirement**: BR-AUDIT-007 (SOC2 Gap #9)
+// **Authentication**: Protected by OAuth-proxy in production/E2E.
+//
+// POST /api/v1/audit/verify-chain
+func (UnimplementedHandler) VerifyAuditChain(ctx context.Context, req *VerifyChainRequest) (r VerifyAuditChainRes, _ error) {
 	return r, ht.ErrNotImplemented
 }

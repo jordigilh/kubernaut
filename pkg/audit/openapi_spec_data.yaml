@@ -9,13 +9,13 @@ info:
     - BR-STORAGE-001 to BR-STORAGE-020: Audit write API
     - BR-STORAGE-021: Incident query API (READ)
     - BR-STORAGE-024: RFC 7807 error responses
-    - BR-AUDIT-006: Legal hold capability (SOC2 Gap #8)
+    - BR-AUDIT-004: Legal hold and retention policies (SOC2 Gap #8)
 
     **Design Decisions**:
     - ADR-031: OpenAPI 3.0+ specification for all stateless REST APIs
     - ADR-032: Data Access Layer Isolation (only Data Storage connects to PostgreSQL)
     - DD-009: Dead Letter Queue fallback on database errors
-    - DD-AUTH-004: OAuth-proxy sidecar for authentication/authorization
+    - DD-AUTH-014: Tiered SAR authorization
     - DD-AUTH-005: Client authentication pattern (ServiceAccount tokens)
 
     **Architecture**:
@@ -100,7 +100,7 @@ tags:
   - name: Audit Reconstruction API
     description: |
       RemediationRequest reconstruction from audit trail.
-      Implements BR-AUDIT-006 (SOC2 compliance).
+      Implements BR-RR-RECON-001 (SOC2 compliance).
   - name: Remediation History API
     description: |
       Remediation history context for LLM prompt enrichment.
@@ -141,7 +141,10 @@ paths:
           required: true
           schema:
             type: string
-          description: Kubernetes resource type (pod, deployment, node, etc.)
+          description: >-
+            Kubernetes resource GVK (apiVersion/Kind). Format: "group/version/Kind" for named groups
+            (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod").
+            Wildcard "*" matches all components. Issue #1051.
         - name: environment
           in: query
           required: true
@@ -248,7 +251,9 @@ paths:
           required: true
           schema:
             type: string
-          description: Kubernetes resource type
+          description: >-
+            Kubernetes resource GVK (apiVersion/Kind). Format: "group/version/Kind" for named groups
+            (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod"). Issue #1051.
         - name: environment
           in: query
           required: true
@@ -419,6 +424,10 @@ paths:
           in: query
           schema:
             type: string
+          description: >-
+            Kubernetes resource GVK filter (apiVersion/Kind). Format: "group/version/Kind"
+            (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod").
+            Wildcard "*" matches all components. Issue #1051.
         - name: workflow_name
           in: query
           schema:
@@ -488,7 +497,10 @@ paths:
           required: false
           schema:
             type: string
-          description: "Security gate: Kubernetes resource type"
+          description: >-
+            Security gate: Kubernetes resource GVK (apiVersion/Kind). Format:
+            "group/version/Kind" (e.g. "apps/v1/Deployment"), "version/Kind" for
+            core group (e.g. "v1/Pod"). Issue #1051.
         - name: environment
           in: query
           required: false
@@ -1203,7 +1215,7 @@ paths:
         Places a legal hold on all audit events for a given correlation_id.
         Events with legal hold cannot be deleted (enforced by database trigger).
 
-        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
         **SOC2 Gap**: Gap #8 (Legal Hold enforcement for Sarbanes-Oxley, HIPAA)
 
         **Behavior**:
@@ -1280,7 +1292,7 @@ paths:
       description: |
         Returns a list of all active legal holds across all audit events.
 
-        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
         **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
 
         **Behavior**:
@@ -1487,7 +1499,7 @@ paths:
         Releases a legal hold on all audit events for a given correlation_id.
         Events can be deleted after legal hold is released.
 
-        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **Business Requirement**: BR-AUDIT-004 (Legal Hold & Retention)
         **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
 
         **Behavior**:
@@ -1566,7 +1578,7 @@ paths:
       description: |
         Reconstructs a complete RemediationRequest CRD from audit trail events.
 
-        **Business Requirement**: BR-AUDIT-006 (SOC2 compliance)
+        **Business Requirement**: BR-RR-RECON-001 (SOC2 compliance)
 
         **Workflow**:
         1. Query audit events for given correlation_id
@@ -1648,6 +1660,65 @@ paths:
         '500':
           description: |
             Internal Server Error - database or reconstruction logic failure.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/audit/verify-chain:
+    post:
+      tags:
+        - Audit Chain Verification API
+      summary: Verify hash chain integrity for a correlation_id
+      description: |
+        Verifies the integrity of audit event hash chains for a given correlation_id.
+        Returns verification status, any broken links, and tampered events.
+
+        **Compliance**:
+        - SOC 2 Type II: Tamper-evident audit logs (Trust Services Criteria CC8.1)
+        - NIST 800-53: AU-9 (Protection of Audit Information)
+        - Sarbanes-Oxley: Section 404 (Internal Controls)
+
+        **Business Requirement**: BR-AUDIT-007 (SOC2 Gap #9)
+
+        **Authentication**: Protected by OAuth-proxy in production/E2E.
+      operationId: verifyAuditChain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyChainRequest'
+            example:
+              correlation_id: "rr-prometheus-alert-highcpu-abc123"
+      responses:
+        '200':
+          description: |
+            Verification completed. Check `is_valid` to determine if the chain is intact.
+            Returns 200 even when tampering is detected (use `is_valid: false` to detect).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyChainResponse'
+        '400':
+          description: |
+            Bad Request - missing or invalid request body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+              examples:
+                missing_correlation_id:
+                  summary: Missing correlation_id field
+                  value:
+                    type: "https://kubernaut.ai/problems/missing-correlation-id"
+                    title: "Missing Required Field"
+                    status: 400
+                    detail: "Field 'correlation_id' is required"
+                    instance: "/api/v1/audit/verify-chain"
+        '500':
+          description: |
+            Internal Server Error - database or verification logic failure.
           content:
             application/problem+json:
               schema:
@@ -1830,106 +1901,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
-  /health:
-    get:
-      tags:
-        - Health
-      summary: Overall health check
-      description: |
-        Returns 200 if service is healthy (database and Redis reachable).
-        Used by Kubernetes liveness probe (DD-007).
-      operationId: healthCheck
-      responses:
-        '200':
-          description: Service is healthy
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [healthy]
-                example:
-                  status: "healthy"
-        '503':
-          description: Service is unhealthy
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [unhealthy]
-                  error:
-                    type: string
-                example:
-                  status: "unhealthy"
-                  error: "database connection failed"
-
-  /health/ready:
-    get:
-      tags:
-        - Health
-      summary: Readiness check
-      description: |
-        Returns 200 if service is ready to accept traffic.
-        Returns 503 during graceful shutdown (DD-007 4-step pattern).
-        Used by Kubernetes readiness probe.
-      operationId: readinessCheck
-      responses:
-        '200':
-          description: Service is ready
-        '503':
-          description: Service is shutting down (not ready for new requests)
-
-  /health/live:
-    get:
-      tags:
-        - Health
-      summary: Liveness check
-      description: |
-        Returns 200 if service process is alive.
-        Does not check dependencies.
-        Used by Kubernetes liveness probe.
-      operationId: livenessCheck
-      responses:
-        '200':
-          description: Service is alive
-
-  /metrics:
-    get:
-      tags:
-        - Metrics
-      summary: Prometheus metrics
-      description: |
-        Exposes Prometheus metrics in text format.
-
-        **Metrics Exposed** (BR-STORAGE-019, GAP-10):
-        - `datastorage_audit_traces_total{service,status}` - Audit write operations
-        - `datastorage_audit_lag_seconds{service}` - Time between event and audit write
-        - `datastorage_write_duration_seconds{table}` - Database write latency
-        - `datastorage_validation_failures_total{field,reason}` - Validation errors
-      operationId: getMetrics
-      responses:
-        '200':
-          description: Prometheus metrics
-          content:
-            text/plain:
-              schema:
-                type: string
-              example: |
-                # HELP datastorage_audit_traces_total Total number of audit traces written by service and status
-                # TYPE datastorage_audit_traces_total counter
-                datastorage_audit_traces_total{service="notification",status="success"} 42
-                datastorage_audit_traces_total{service="notification",status="dlq_fallback"} 3
-
-                # HELP datastorage_audit_lag_seconds Time lag between event occurrence and audit write in seconds
-                # TYPE datastorage_audit_lag_seconds histogram
-                datastorage_audit_lag_seconds_bucket{service="notification",le="0.1"} 10
-                datastorage_audit_lag_seconds_bucket{service="notification",le="0.5"} 35
-                datastorage_audit_lag_seconds_bucket{service="notification",le="1"} 42
+  # NOTE: /health, /health/ready, /health/live, and /metrics are served on a
+  # dedicated health server (port 8081) and are NOT part of the API server.
+  # See pkg/datastorage/health/ and DD-007 for details.
 
 components:
   schemas:
@@ -2180,7 +2154,7 @@ components:
       description: |
         Response for RemediationRequest reconstruction from audit trail.
         Contains the reconstructed RR in YAML format and validation results.
-        Implements BR-AUDIT-006 (SOC2 compliance).
+        Implements BR-RR-RECON-001 (SOC2 compliance).
       required:
         - remediation_request_yaml
         - validation
@@ -2279,6 +2253,66 @@ components:
             Helps identify gaps in reconstruction.
           example:
             - "SignalAnnotations are missing (Gap #3) - annotations provide additional metadata"
+
+    VerifyChainRequest:
+      type: object
+      description: Request body for hash chain verification.
+      required:
+        - correlation_id
+      properties:
+        correlation_id:
+          type: string
+          description: The correlation ID whose event hash chain should be verified.
+          example: "rr-prometheus-alert-highcpu-abc123"
+
+    VerifyChainResponse:
+      type: object
+      description: |
+        Hash chain verification result. `is_valid: true` means the entire chain is intact.
+        When `is_valid: false`, the `tampered_events` array describes each broken link.
+      required:
+        - correlation_id
+        - is_valid
+        - total_events
+        - verified_events
+        - verification_time
+        - message
+      properties:
+        correlation_id:
+          type: string
+        is_valid:
+          type: boolean
+        total_events:
+          type: integer
+        verified_events:
+          type: integer
+        tampered_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/TamperedEvent'
+        verification_time:
+          type: string
+          format: date-time
+        message:
+          type: string
+
+    TamperedEvent:
+      type: object
+      description: Details about a single tampered event in the hash chain.
+      properties:
+        event_id:
+          type: string
+        event_timestamp:
+          type: string
+          format: date-time
+        expected_hash:
+          type: string
+        actual_hash:
+          type: string
+        previous_hash:
+          type: string
+        message:
+          type: string
 
     RFC7807Problem:
       type: object
@@ -2483,8 +2517,8 @@ components:
             - $ref: '#/components/schemas/AIAgentSessionObservedPayload'
             - $ref: '#/components/schemas/AIAgentSessionAccessDeniedPayload'
             - $ref: '#/components/schemas/AIAgentInvestigationCancelledPayload'
-            - $ref: '#/components/schemas/AlignmentStepPayload'
-            - $ref: '#/components/schemas/AlignmentVerdictPayload'
+            - $ref: '#/components/schemas/AIAgentAlignmentStepPayload'
+            - $ref: '#/components/schemas/AIAgentAlignmentVerdictPayload'
             - $ref: '#/components/schemas/ShadowLLMRequestPayload'
             - $ref: '#/components/schemas/ShadowLLMResponsePayload'
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
@@ -2590,8 +2624,8 @@ components:
               'aiagent.session.observed': '#/components/schemas/AIAgentSessionObservedPayload'
               'aiagent.session.access_denied': '#/components/schemas/AIAgentSessionAccessDeniedPayload'
               'aiagent.investigation.cancelled': '#/components/schemas/AIAgentInvestigationCancelledPayload'
-              'aiagent.alignment.step': '#/components/schemas/AlignmentStepPayload'
-              'aiagent.alignment.verdict': '#/components/schemas/AlignmentVerdictPayload'
+              'aiagent.alignment.step': '#/components/schemas/AIAgentAlignmentStepPayload'
+              'aiagent.alignment.verdict': '#/components/schemas/AIAgentAlignmentVerdictPayload'
               'aiagent.shadow.llm.request': '#/components/schemas/ShadowLLMRequestPayload'
               'aiagent.shadow.llm.response': '#/components/schemas/ShadowLLMResponsePayload'
               'effectiveness.health.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
@@ -2910,8 +2944,8 @@ components:
           example: "critical"
         component:
           type: string
-          description: "Component type (mandatory: pod, node, deployment, etc.)"
-          example: "pod"
+          description: "Kubernetes resource GVK (apiVersion/Kind, e.g. apps/v1/Deployment, v1/Pod). Issue #1051."
+          example: "apps/v1/Deployment"
         environment:
           type: string
           description: "Environment filter (mandatory, single value from Signal Processing)"
@@ -2954,7 +2988,7 @@ components:
           items:
             type: string
           minItems: 1
-          description: "Kubernetes resource type(s) this workflow targets (e.g., pod, deployment, node). Issue #790: now an array like severity/environment."
+          description: "Kubernetes resource GVK(s) this workflow targets in apiVersion/Kind format (e.g. apps/v1/Deployment, v1/Pod). Wildcard '*' matches all. Issues #790, #1051."
           example: [pod]
         environment:
           type: array
@@ -5933,7 +5967,7 @@ components:
 
     # ─── Alignment Payloads (BR-AUDIT-070, SOC2 CC7.2) ───
 
-    AlignmentStepPayload:
+    AIAgentAlignmentStepPayload:
       type: object
       required: [event_type, event_id, step_index, step_kind, explanation]
       description: Alignment step event payload (aiagent.alignment.step) - Emitted per suspicious observation from the shadow agent alignment check (SOC2 CC7.2, BR-AUDIT-070)
@@ -5960,7 +5994,7 @@ components:
           type: string
           description: Shadow agent explanation of why the step was flagged as suspicious
 
-    AlignmentVerdictPayload:
+    AIAgentAlignmentVerdictPayload:
       type: object
       required: [event_type, event_id, result, flagged, total]
       description: Alignment verdict event payload (aiagent.alignment.verdict) - Final verdict from the shadow agent alignment evaluation (SOC2 CC7.2, BR-AUDIT-070)

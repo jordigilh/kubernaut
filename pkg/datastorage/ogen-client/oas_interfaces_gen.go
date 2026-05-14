@@ -49,10 +49,6 @@ type GetWorkflowByIDRes interface {
 	getWorkflowByIDRes()
 }
 
-type HealthCheckRes interface {
-	healthCheckRes()
-}
-
 type ListAvailableActionsRes interface {
 	listAvailableActionsRes()
 }
@@ -69,10 +65,6 @@ type PlaceLegalHoldRes interface {
 	placeLegalHoldRes()
 }
 
-type ReadinessCheckRes interface {
-	readinessCheckRes()
-}
-
 type ReconstructRemediationRequestRes interface {
 	reconstructRemediationRequestRes()
 }
@@ -87,4 +79,8 @@ type UpdateActionTypeRes interface {
 
 type UpdateWorkflowRes interface {
 	updateWorkflowRes()
+}
+
+type VerifyAuditChainRes interface {
+	verifyAuditChainRes()
 }

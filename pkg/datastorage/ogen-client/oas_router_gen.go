@@ -10,6 +10,51 @@ import (
 	"github.com/ogen-go/ogen/uri"
 )
 
+var (
+	rn1AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn13AllowedHeaders = map[string]string{
+		"PATCH": "Content-Type",
+	}
+	rn14AllowedHeaders = map[string]string{
+		"PATCH": "Content-Type",
+	}
+	rn3AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn4AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn27AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn34AllowedHeaders = map[string]string{
+		"DELETE": "Content-Type",
+	}
+	rn6AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn35AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn8AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn10AllowedHeaders = map[string]string{
+		"PATCH": "Content-Type",
+	}
+	rn11AllowedHeaders = map[string]string{
+		"PATCH": "Content-Type",
+	}
+	rn16AllowedHeaders = map[string]string{
+		"PATCH": "Content-Type",
+	}
+	rn18AllowedHeaders = map[string]string{
+		"PATCH": "Content-Type",
+	}
+)
+
 func (s *Server) cutPrefix(path string) (string, bool) {
 	prefix := s.cfg.Prefix
 	if prefix == "" {
@@ -49,9 +94,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		switch elem[0] {
-		case '/': // Prefix: "/"
+		case '/': // Prefix: "/api/v1/"
 
-			if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+			if l := len("/api/v1/"); len(elem) >= l && elem[0:l] == "/api/v1/" {
 				elem = elem[l:]
 			} else {
 				break
@@ -61,9 +106,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			switch elem[0] {
-			case 'a': // Prefix: "api/v1/"
+			case 'a': // Prefix: "a"
 
-				if l := len("api/v1/"); len(elem) >= l && elem[0:l] == "api/v1/" {
+				if l := len("a"); len(elem) >= l && elem[0:l] == "a" {
 					elem = elem[l:]
 				} else {
 					break
@@ -73,395 +118,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 				switch elem[0] {
-				case 'a': // Prefix: "a"
+				case 'c': // Prefix: "ction-types"
 
-					if l := len("a"); len(elem) >= l && elem[0:l] == "a" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					if len(elem) == 0 {
-						break
-					}
-					switch elem[0] {
-					case 'c': // Prefix: "ction-types"
-
-						if l := len("ction-types"); len(elem) >= l && elem[0:l] == "ction-types" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						if len(elem) == 0 {
-							switch r.Method {
-							case "POST":
-								s.handleCreateActionTypeRequest([0]string{}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, "POST")
-							}
-
-							return
-						}
-						switch elem[0] {
-						case '/': // Prefix: "/"
-
-							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							// Param: "name"
-							// Match until "/"
-							idx := strings.IndexByte(elem, '/')
-							if idx < 0 {
-								idx = len(elem)
-							}
-							args[0] = elem[:idx]
-							elem = elem[idx:]
-
-							if len(elem) == 0 {
-								switch r.Method {
-								case "PATCH":
-									s.handleUpdateActionTypeRequest([1]string{
-										args[0],
-									}, elemIsEscaped, w, r)
-								default:
-									s.notAllowed(w, r, "PATCH")
-								}
-
-								return
-							}
-							switch elem[0] {
-							case '/': // Prefix: "/"
-
-								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									break
-								}
-								switch elem[0] {
-								case 'd': // Prefix: "disable"
-
-									if l := len("disable"); len(elem) >= l && elem[0:l] == "disable" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch r.Method {
-										case "PATCH":
-											s.handleDisableActionTypeRequest([1]string{
-												args[0],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, "PATCH")
-										}
-
-										return
-									}
-
-								case 'w': // Prefix: "workflow-count"
-
-									if l := len("workflow-count"); len(elem) >= l && elem[0:l] == "workflow-count" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch r.Method {
-										case "GET":
-											s.handleGetActionTypeWorkflowCountRequest([1]string{
-												args[0],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, "GET")
-										}
-
-										return
-									}
-
-								}
-
-							}
-
-						}
-
-					case 'u': // Prefix: "udit/"
-
-						if l := len("udit/"); len(elem) >= l && elem[0:l] == "udit/" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						if len(elem) == 0 {
-							break
-						}
-						switch elem[0] {
-						case 'e': // Prefix: "e"
-
-							if l := len("e"); len(elem) >= l && elem[0:l] == "e" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								break
-							}
-							switch elem[0] {
-							case 'v': // Prefix: "vents"
-
-								if l := len("vents"); len(elem) >= l && elem[0:l] == "vents" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									switch r.Method {
-									case "GET":
-										s.handleQueryAuditEventsRequest([0]string{}, elemIsEscaped, w, r)
-									case "POST":
-										s.handleCreateAuditEventRequest([0]string{}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, "GET,POST")
-									}
-
-									return
-								}
-								switch elem[0] {
-								case '/': // Prefix: "/batch"
-
-									if l := len("/batch"); len(elem) >= l && elem[0:l] == "/batch" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch r.Method {
-										case "POST":
-											s.handleCreateAuditEventsBatchRequest([0]string{}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, "POST")
-										}
-
-										return
-									}
-
-								}
-
-							case 'x': // Prefix: "xport"
-
-								if l := len("xport"); len(elem) >= l && elem[0:l] == "xport" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									// Leaf node.
-									switch r.Method {
-									case "GET":
-										s.handleExportAuditEventsRequest([0]string{}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, "GET")
-									}
-
-									return
-								}
-
-							}
-
-						case 'l': // Prefix: "legal-hold"
-
-							if l := len("legal-hold"); len(elem) >= l && elem[0:l] == "legal-hold" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								switch r.Method {
-								case "GET":
-									s.handleListLegalHoldsRequest([0]string{}, elemIsEscaped, w, r)
-								case "POST":
-									s.handlePlaceLegalHoldRequest([0]string{}, elemIsEscaped, w, r)
-								default:
-									s.notAllowed(w, r, "GET,POST")
-								}
-
-								return
-							}
-							switch elem[0] {
-							case '/': // Prefix: "/"
-
-								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								// Param: "correlation_id"
-								// Leaf parameter, slashes are prohibited
-								idx := strings.IndexByte(elem, '/')
-								if idx >= 0 {
-									break
-								}
-								args[0] = elem
-								elem = ""
-
-								if len(elem) == 0 {
-									// Leaf node.
-									switch r.Method {
-									case "DELETE":
-										s.handleReleaseLegalHoldRequest([1]string{
-											args[0],
-										}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, "DELETE")
-									}
-
-									return
-								}
-
-							}
-
-						case 'n': // Prefix: "notifications"
-
-							if l := len("notifications"); len(elem) >= l && elem[0:l] == "notifications" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								// Leaf node.
-								switch r.Method {
-								case "POST":
-									s.handleCreateNotificationAuditRequest([0]string{}, elemIsEscaped, w, r)
-								default:
-									s.notAllowed(w, r, "POST")
-								}
-
-								return
-							}
-
-						case 'r': // Prefix: "remediation-requests/"
-
-							if l := len("remediation-requests/"); len(elem) >= l && elem[0:l] == "remediation-requests/" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							// Param: "correlation_id"
-							// Match until "/"
-							idx := strings.IndexByte(elem, '/')
-							if idx < 0 {
-								idx = len(elem)
-							}
-							args[0] = elem[:idx]
-							elem = elem[idx:]
-
-							if len(elem) == 0 {
-								break
-							}
-							switch elem[0] {
-							case '/': // Prefix: "/reconstruct"
-
-								if l := len("/reconstruct"); len(elem) >= l && elem[0:l] == "/reconstruct" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									// Leaf node.
-									switch r.Method {
-									case "POST":
-										s.handleReconstructRemediationRequestRequest([1]string{
-											args[0],
-										}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, "POST")
-									}
-
-									return
-								}
-
-							}
-
-						}
-
-					}
-
-				case 'e': // Prefix: "effectiveness/"
-
-					if l := len("effectiveness/"); len(elem) >= l && elem[0:l] == "effectiveness/" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					// Param: "correlation_id"
-					// Leaf parameter, slashes are prohibited
-					idx := strings.IndexByte(elem, '/')
-					if idx >= 0 {
-						break
-					}
-					args[0] = elem
-					elem = ""
-
-					if len(elem) == 0 {
-						// Leaf node.
-						switch r.Method {
-						case "GET":
-							s.handleGetEffectivenessScoreRequest([1]string{
-								args[0],
-							}, elemIsEscaped, w, r)
-						default:
-							s.notAllowed(w, r, "GET")
-						}
-
-						return
-					}
-
-				case 'r': // Prefix: "remediation-history/context"
-
-					if l := len("remediation-history/context"); len(elem) >= l && elem[0:l] == "remediation-history/context" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					if len(elem) == 0 {
-						// Leaf node.
-						switch r.Method {
-						case "GET":
-							s.handleGetRemediationHistoryContextRequest([0]string{}, elemIsEscaped, w, r)
-						default:
-							s.notAllowed(w, r, "GET")
-						}
-
-						return
-					}
-
-				case 'w': // Prefix: "workflows"
-
-					if l := len("workflows"); len(elem) >= l && elem[0:l] == "workflows" {
+					if l := len("ction-types"); len(elem) >= l && elem[0:l] == "ction-types" {
 						elem = elem[l:]
 					} else {
 						break
@@ -469,12 +128,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 					if len(elem) == 0 {
 						switch r.Method {
-						case "GET":
-							s.handleListWorkflowsRequest([0]string{}, elemIsEscaped, w, r)
 						case "POST":
-							s.handleCreateWorkflowRequest([0]string{}, elemIsEscaped, w, r)
+							s.handleCreateActionTypeRequest([0]string{}, elemIsEscaped, w, r)
 						default:
-							s.notAllowed(w, r, "GET,POST")
+							s.notAllowed(w, r, notAllowedParams{
+								allowedMethods: "POST",
+								allowedHeaders: rn1AllowedHeaders,
+								acceptPost:     "application/json",
+								acceptPatch:    "",
+							})
 						}
 
 						return
@@ -488,65 +150,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							break
 						}
 
-						if len(elem) == 0 {
-							break
-						}
-						switch elem[0] {
-						case 'a': // Prefix: "actions"
-							origElem := elem
-							if l := len("actions"); len(elem) >= l && elem[0:l] == "actions" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								switch r.Method {
-								case "GET":
-									s.handleListAvailableActionsRequest([0]string{}, elemIsEscaped, w, r)
-								default:
-									s.notAllowed(w, r, "GET")
-								}
-
-								return
-							}
-							switch elem[0] {
-							case '/': // Prefix: "/"
-
-								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								// Param: "action_type"
-								// Leaf parameter, slashes are prohibited
-								idx := strings.IndexByte(elem, '/')
-								if idx >= 0 {
-									break
-								}
-								args[0] = elem
-								elem = ""
-
-								if len(elem) == 0 {
-									// Leaf node.
-									switch r.Method {
-									case "GET":
-										s.handleListWorkflowsByActionTypeRequest([1]string{
-											args[0],
-										}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, "GET")
-									}
-
-									return
-								}
-
-							}
-
-							elem = origElem
-						}
-						// Param: "workflow_id"
+						// Param: "name"
 						// Match until "/"
 						idx := strings.IndexByte(elem, '/')
 						if idx < 0 {
@@ -557,16 +161,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 						if len(elem) == 0 {
 							switch r.Method {
-							case "GET":
-								s.handleGetWorkflowByIDRequest([1]string{
-									args[0],
-								}, elemIsEscaped, w, r)
 							case "PATCH":
-								s.handleUpdateWorkflowRequest([1]string{
+								s.handleUpdateActionTypeRequest([1]string{
 									args[0],
 								}, elemIsEscaped, w, r)
 							default:
-								s.notAllowed(w, r, "GET,PATCH")
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "PATCH",
+									allowedHeaders: rn13AllowedHeaders,
+									acceptPost:     "",
+									acceptPatch:    "application/json",
+								})
 							}
 
 							return
@@ -584,67 +189,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								break
 							}
 							switch elem[0] {
-							case 'd': // Prefix: "d"
+							case 'd': // Prefix: "disable"
 
-								if l := len("d"); len(elem) >= l && elem[0:l] == "d" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									break
-								}
-								switch elem[0] {
-								case 'e': // Prefix: "eprecate"
-
-									if l := len("eprecate"); len(elem) >= l && elem[0:l] == "eprecate" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch r.Method {
-										case "PATCH":
-											s.handleDeprecateWorkflowRequest([1]string{
-												args[0],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, "PATCH")
-										}
-
-										return
-									}
-
-								case 'i': // Prefix: "isable"
-
-									if l := len("isable"); len(elem) >= l && elem[0:l] == "isable" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch r.Method {
-										case "PATCH":
-											s.handleDisableWorkflowRequest([1]string{
-												args[0],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, "PATCH")
-										}
-
-										return
-									}
-
-								}
-
-							case 'e': // Prefix: "enable"
-
-								if l := len("enable"); len(elem) >= l && elem[0:l] == "enable" {
+								if l := len("disable"); len(elem) >= l && elem[0:l] == "disable" {
 									elem = elem[l:]
 								} else {
 									break
@@ -654,11 +201,43 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									// Leaf node.
 									switch r.Method {
 									case "PATCH":
-										s.handleEnableWorkflowRequest([1]string{
+										s.handleDisableActionTypeRequest([1]string{
 											args[0],
 										}, elemIsEscaped, w, r)
 									default:
-										s.notAllowed(w, r, "PATCH")
+										s.notAllowed(w, r, notAllowedParams{
+											allowedMethods: "PATCH",
+											allowedHeaders: rn14AllowedHeaders,
+											acceptPost:     "",
+											acceptPatch:    "application/json",
+										})
+									}
+
+									return
+								}
+
+							case 'w': // Prefix: "workflow-count"
+
+								if l := len("workflow-count"); len(elem) >= l && elem[0:l] == "workflow-count" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch r.Method {
+									case "GET":
+										s.handleGetActionTypeWorkflowCountRequest([1]string{
+											args[0],
+										}, elemIsEscaped, w, r)
+									default:
+										s.notAllowed(w, r, notAllowedParams{
+											allowedMethods: "GET",
+											allowedHeaders: nil,
+											acceptPost:     "",
+											acceptPatch:    "",
+										})
 									}
 
 									return
@@ -670,11 +249,342 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 					}
 
+				case 'u': // Prefix: "udit/"
+
+					if l := len("udit/"); len(elem) >= l && elem[0:l] == "udit/" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						break
+					}
+					switch elem[0] {
+					case 'e': // Prefix: "e"
+
+						if l := len("e"); len(elem) >= l && elem[0:l] == "e" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							break
+						}
+						switch elem[0] {
+						case 'v': // Prefix: "vents"
+
+							if l := len("vents"); len(elem) >= l && elem[0:l] == "vents" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								switch r.Method {
+								case "GET":
+									s.handleQueryAuditEventsRequest([0]string{}, elemIsEscaped, w, r)
+								case "POST":
+									s.handleCreateAuditEventRequest([0]string{}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "GET,POST",
+										allowedHeaders: rn3AllowedHeaders,
+										acceptPost:     "application/json",
+										acceptPatch:    "",
+									})
+								}
+
+								return
+							}
+							switch elem[0] {
+							case '/': // Prefix: "/batch"
+
+								if l := len("/batch"); len(elem) >= l && elem[0:l] == "/batch" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch r.Method {
+									case "POST":
+										s.handleCreateAuditEventsBatchRequest([0]string{}, elemIsEscaped, w, r)
+									default:
+										s.notAllowed(w, r, notAllowedParams{
+											allowedMethods: "POST",
+											allowedHeaders: rn4AllowedHeaders,
+											acceptPost:     "application/json",
+											acceptPatch:    "",
+										})
+									}
+
+									return
+								}
+
+							}
+
+						case 'x': // Prefix: "xport"
+
+							if l := len("xport"); len(elem) >= l && elem[0:l] == "xport" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch r.Method {
+								case "GET":
+									s.handleExportAuditEventsRequest([0]string{}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "GET",
+										allowedHeaders: nil,
+										acceptPost:     "",
+										acceptPatch:    "",
+									})
+								}
+
+								return
+							}
+
+						}
+
+					case 'l': // Prefix: "legal-hold"
+
+						if l := len("legal-hold"); len(elem) >= l && elem[0:l] == "legal-hold" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							switch r.Method {
+							case "GET":
+								s.handleListLegalHoldsRequest([0]string{}, elemIsEscaped, w, r)
+							case "POST":
+								s.handlePlaceLegalHoldRequest([0]string{}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "GET,POST",
+									allowedHeaders: rn27AllowedHeaders,
+									acceptPost:     "application/json",
+									acceptPatch:    "",
+								})
+							}
+
+							return
+						}
+						switch elem[0] {
+						case '/': // Prefix: "/"
+
+							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							// Param: "correlation_id"
+							// Leaf parameter, slashes are prohibited
+							idx := strings.IndexByte(elem, '/')
+							if idx >= 0 {
+								break
+							}
+							args[0] = elem
+							elem = ""
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch r.Method {
+								case "DELETE":
+									s.handleReleaseLegalHoldRequest([1]string{
+										args[0],
+									}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "DELETE",
+										allowedHeaders: rn34AllowedHeaders,
+										acceptPost:     "",
+										acceptPatch:    "",
+									})
+								}
+
+								return
+							}
+
+						}
+
+					case 'n': // Prefix: "notifications"
+
+						if l := len("notifications"); len(elem) >= l && elem[0:l] == "notifications" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch r.Method {
+							case "POST":
+								s.handleCreateNotificationAuditRequest([0]string{}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "POST",
+									allowedHeaders: rn6AllowedHeaders,
+									acceptPost:     "application/json",
+									acceptPatch:    "",
+								})
+							}
+
+							return
+						}
+
+					case 'r': // Prefix: "remediation-requests/"
+
+						if l := len("remediation-requests/"); len(elem) >= l && elem[0:l] == "remediation-requests/" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						// Param: "correlation_id"
+						// Match until "/"
+						idx := strings.IndexByte(elem, '/')
+						if idx < 0 {
+							idx = len(elem)
+						}
+						args[0] = elem[:idx]
+						elem = elem[idx:]
+
+						if len(elem) == 0 {
+							break
+						}
+						switch elem[0] {
+						case '/': // Prefix: "/reconstruct"
+
+							if l := len("/reconstruct"); len(elem) >= l && elem[0:l] == "/reconstruct" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch r.Method {
+								case "POST":
+									s.handleReconstructRemediationRequestRequest([1]string{
+										args[0],
+									}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "POST",
+										allowedHeaders: nil,
+										acceptPost:     "",
+										acceptPatch:    "",
+									})
+								}
+
+								return
+							}
+
+						}
+
+					case 'v': // Prefix: "verify-chain"
+
+						if l := len("verify-chain"); len(elem) >= l && elem[0:l] == "verify-chain" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch r.Method {
+							case "POST":
+								s.handleVerifyAuditChainRequest([0]string{}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "POST",
+									allowedHeaders: rn35AllowedHeaders,
+									acceptPost:     "application/json",
+									acceptPatch:    "",
+								})
+							}
+
+							return
+						}
+
+					}
+
 				}
 
-			case 'h': // Prefix: "health"
+			case 'e': // Prefix: "effectiveness/"
 
-				if l := len("health"); len(elem) >= l && elem[0:l] == "health" {
+				if l := len("effectiveness/"); len(elem) >= l && elem[0:l] == "effectiveness/" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				// Param: "correlation_id"
+				// Leaf parameter, slashes are prohibited
+				idx := strings.IndexByte(elem, '/')
+				if idx >= 0 {
+					break
+				}
+				args[0] = elem
+				elem = ""
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch r.Method {
+					case "GET":
+						s.handleGetEffectivenessScoreRequest([1]string{
+							args[0],
+						}, elemIsEscaped, w, r)
+					default:
+						s.notAllowed(w, r, notAllowedParams{
+							allowedMethods: "GET",
+							allowedHeaders: nil,
+							acceptPost:     "",
+							acceptPatch:    "",
+						})
+					}
+
+					return
+				}
+
+			case 'r': // Prefix: "remediation-history/context"
+
+				if l := len("remediation-history/context"); len(elem) >= l && elem[0:l] == "remediation-history/context" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch r.Method {
+					case "GET":
+						s.handleGetRemediationHistoryContextRequest([0]string{}, elemIsEscaped, w, r)
+					default:
+						s.notAllowed(w, r, notAllowedParams{
+							allowedMethods: "GET",
+							allowedHeaders: nil,
+							acceptPost:     "",
+							acceptPatch:    "",
+						})
+					}
+
+					return
+				}
+
+			case 'w': // Prefix: "workflows"
+
+				if l := len("workflows"); len(elem) >= l && elem[0:l] == "workflows" {
 					elem = elem[l:]
 				} else {
 					break
@@ -683,9 +593,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				if len(elem) == 0 {
 					switch r.Method {
 					case "GET":
-						s.handleHealthCheckRequest([0]string{}, elemIsEscaped, w, r)
+						s.handleListWorkflowsRequest([0]string{}, elemIsEscaped, w, r)
+					case "POST":
+						s.handleCreateWorkflowRequest([0]string{}, elemIsEscaped, w, r)
 					default:
-						s.notAllowed(w, r, "GET")
+						s.notAllowed(w, r, notAllowedParams{
+							allowedMethods: "GET,POST",
+							allowedHeaders: rn8AllowedHeaders,
+							acceptPost:     "application/json",
+							acceptPatch:    "",
+						})
 					}
 
 					return
@@ -703,68 +620,212 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						break
 					}
 					switch elem[0] {
-					case 'l': // Prefix: "live"
-
-						if l := len("live"); len(elem) >= l && elem[0:l] == "live" {
+					case 'a': // Prefix: "actions"
+						origElem := elem
+						if l := len("actions"); len(elem) >= l && elem[0:l] == "actions" {
 							elem = elem[l:]
 						} else {
 							break
 						}
 
 						if len(elem) == 0 {
-							// Leaf node.
 							switch r.Method {
 							case "GET":
-								s.handleLivenessCheckRequest([0]string{}, elemIsEscaped, w, r)
+								s.handleListAvailableActionsRequest([0]string{}, elemIsEscaped, w, r)
 							default:
-								s.notAllowed(w, r, "GET")
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "GET",
+									allowedHeaders: nil,
+									acceptPost:     "",
+									acceptPatch:    "",
+								})
 							}
 
 							return
 						}
+						switch elem[0] {
+						case '/': // Prefix: "/"
 
-					case 'r': // Prefix: "ready"
+							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+								elem = elem[l:]
+							} else {
+								break
+							}
 
-						if l := len("ready"); len(elem) >= l && elem[0:l] == "ready" {
+							// Param: "action_type"
+							// Leaf parameter, slashes are prohibited
+							idx := strings.IndexByte(elem, '/')
+							if idx >= 0 {
+								break
+							}
+							args[0] = elem
+							elem = ""
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch r.Method {
+								case "GET":
+									s.handleListWorkflowsByActionTypeRequest([1]string{
+										args[0],
+									}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "GET",
+										allowedHeaders: nil,
+										acceptPost:     "",
+										acceptPatch:    "",
+									})
+								}
+
+								return
+							}
+
+						}
+
+						elem = origElem
+					}
+					// Param: "workflow_id"
+					// Match until "/"
+					idx := strings.IndexByte(elem, '/')
+					if idx < 0 {
+						idx = len(elem)
+					}
+					args[0] = elem[:idx]
+					elem = elem[idx:]
+
+					if len(elem) == 0 {
+						switch r.Method {
+						case "GET":
+							s.handleGetWorkflowByIDRequest([1]string{
+								args[0],
+							}, elemIsEscaped, w, r)
+						case "PATCH":
+							s.handleUpdateWorkflowRequest([1]string{
+								args[0],
+							}, elemIsEscaped, w, r)
+						default:
+							s.notAllowed(w, r, notAllowedParams{
+								allowedMethods: "GET,PATCH",
+								allowedHeaders: rn10AllowedHeaders,
+								acceptPost:     "",
+								acceptPatch:    "application/json",
+							})
+						}
+
+						return
+					}
+					switch elem[0] {
+					case '/': // Prefix: "/"
+
+						if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 							elem = elem[l:]
 						} else {
 							break
 						}
 
 						if len(elem) == 0 {
-							// Leaf node.
-							switch r.Method {
-							case "GET":
-								s.handleReadinessCheckRequest([0]string{}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, "GET")
+							break
+						}
+						switch elem[0] {
+						case 'd': // Prefix: "d"
+
+							if l := len("d"); len(elem) >= l && elem[0:l] == "d" {
+								elem = elem[l:]
+							} else {
+								break
 							}
 
-							return
+							if len(elem) == 0 {
+								break
+							}
+							switch elem[0] {
+							case 'e': // Prefix: "eprecate"
+
+								if l := len("eprecate"); len(elem) >= l && elem[0:l] == "eprecate" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch r.Method {
+									case "PATCH":
+										s.handleDeprecateWorkflowRequest([1]string{
+											args[0],
+										}, elemIsEscaped, w, r)
+									default:
+										s.notAllowed(w, r, notAllowedParams{
+											allowedMethods: "PATCH",
+											allowedHeaders: rn11AllowedHeaders,
+											acceptPost:     "",
+											acceptPatch:    "application/json",
+										})
+									}
+
+									return
+								}
+
+							case 'i': // Prefix: "isable"
+
+								if l := len("isable"); len(elem) >= l && elem[0:l] == "isable" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch r.Method {
+									case "PATCH":
+										s.handleDisableWorkflowRequest([1]string{
+											args[0],
+										}, elemIsEscaped, w, r)
+									default:
+										s.notAllowed(w, r, notAllowedParams{
+											allowedMethods: "PATCH",
+											allowedHeaders: rn16AllowedHeaders,
+											acceptPost:     "",
+											acceptPatch:    "application/json",
+										})
+									}
+
+									return
+								}
+
+							}
+
+						case 'e': // Prefix: "enable"
+
+							if l := len("enable"); len(elem) >= l && elem[0:l] == "enable" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch r.Method {
+								case "PATCH":
+									s.handleEnableWorkflowRequest([1]string{
+										args[0],
+									}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "PATCH",
+										allowedHeaders: rn18AllowedHeaders,
+										acceptPost:     "",
+										acceptPatch:    "application/json",
+									})
+								}
+
+								return
+							}
+
 						}
 
 					}
 
-				}
-
-			case 'm': // Prefix: "metrics"
-
-				if l := len("metrics"); len(elem) >= l && elem[0:l] == "metrics" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch r.Method {
-					case "GET":
-						s.handleGetMetricsRequest([0]string{}, elemIsEscaped, w, r)
-					default:
-						s.notAllowed(w, r, "GET")
-					}
-
-					return
 				}
 
 			}
@@ -855,9 +916,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 			break
 		}
 		switch elem[0] {
-		case '/': // Prefix: "/"
+		case '/': // Prefix: "/api/v1/"
 
-			if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+			if l := len("/api/v1/"); len(elem) >= l && elem[0:l] == "/api/v1/" {
 				elem = elem[l:]
 			} else {
 				break
@@ -867,9 +928,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 				break
 			}
 			switch elem[0] {
-			case 'a': // Prefix: "api/v1/"
+			case 'a': // Prefix: "a"
 
-				if l := len("api/v1/"); len(elem) >= l && elem[0:l] == "api/v1/" {
+				if l := len("a"); len(elem) >= l && elem[0:l] == "a" {
 					elem = elem[l:]
 				} else {
 					break
@@ -879,462 +940,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 					break
 				}
 				switch elem[0] {
-				case 'a': // Prefix: "a"
+				case 'c': // Prefix: "ction-types"
 
-					if l := len("a"); len(elem) >= l && elem[0:l] == "a" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					if len(elem) == 0 {
-						break
-					}
-					switch elem[0] {
-					case 'c': // Prefix: "ction-types"
-
-						if l := len("ction-types"); len(elem) >= l && elem[0:l] == "ction-types" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						if len(elem) == 0 {
-							switch method {
-							case "POST":
-								r.name = CreateActionTypeOperation
-								r.summary = "Create or re-enable an action type"
-								r.operationID = "createActionType"
-								r.operationGroup = ""
-								r.pathPattern = "/api/v1/action-types"
-								r.args = args
-								r.count = 0
-								return r, true
-							default:
-								return
-							}
-						}
-						switch elem[0] {
-						case '/': // Prefix: "/"
-
-							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							// Param: "name"
-							// Match until "/"
-							idx := strings.IndexByte(elem, '/')
-							if idx < 0 {
-								idx = len(elem)
-							}
-							args[0] = elem[:idx]
-							elem = elem[idx:]
-
-							if len(elem) == 0 {
-								switch method {
-								case "PATCH":
-									r.name = UpdateActionTypeOperation
-									r.summary = "Update action type description"
-									r.operationID = "updateActionType"
-									r.operationGroup = ""
-									r.pathPattern = "/api/v1/action-types/{name}"
-									r.args = args
-									r.count = 1
-									return r, true
-								default:
-									return
-								}
-							}
-							switch elem[0] {
-							case '/': // Prefix: "/"
-
-								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									break
-								}
-								switch elem[0] {
-								case 'd': // Prefix: "disable"
-
-									if l := len("disable"); len(elem) >= l && elem[0:l] == "disable" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch method {
-										case "PATCH":
-											r.name = DisableActionTypeOperation
-											r.summary = "Soft-disable an action type"
-											r.operationID = "disableActionType"
-											r.operationGroup = ""
-											r.pathPattern = "/api/v1/action-types/{name}/disable"
-											r.args = args
-											r.count = 1
-											return r, true
-										default:
-											return
-										}
-									}
-
-								case 'w': // Prefix: "workflow-count"
-
-									if l := len("workflow-count"); len(elem) >= l && elem[0:l] == "workflow-count" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch method {
-										case "GET":
-											r.name = GetActionTypeWorkflowCountOperation
-											r.summary = "Get active workflow count for an action type"
-											r.operationID = "getActionTypeWorkflowCount"
-											r.operationGroup = ""
-											r.pathPattern = "/api/v1/action-types/{name}/workflow-count"
-											r.args = args
-											r.count = 1
-											return r, true
-										default:
-											return
-										}
-									}
-
-								}
-
-							}
-
-						}
-
-					case 'u': // Prefix: "udit/"
-
-						if l := len("udit/"); len(elem) >= l && elem[0:l] == "udit/" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						if len(elem) == 0 {
-							break
-						}
-						switch elem[0] {
-						case 'e': // Prefix: "e"
-
-							if l := len("e"); len(elem) >= l && elem[0:l] == "e" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								break
-							}
-							switch elem[0] {
-							case 'v': // Prefix: "vents"
-
-								if l := len("vents"); len(elem) >= l && elem[0:l] == "vents" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									switch method {
-									case "GET":
-										r.name = QueryAuditEventsOperation
-										r.summary = "Query audit events"
-										r.operationID = "queryAuditEvents"
-										r.operationGroup = ""
-										r.pathPattern = "/api/v1/audit/events"
-										r.args = args
-										r.count = 0
-										return r, true
-									case "POST":
-										r.name = CreateAuditEventOperation
-										r.summary = "Create unified audit event"
-										r.operationID = "createAuditEvent"
-										r.operationGroup = ""
-										r.pathPattern = "/api/v1/audit/events"
-										r.args = args
-										r.count = 0
-										return r, true
-									default:
-										return
-									}
-								}
-								switch elem[0] {
-								case '/': // Prefix: "/batch"
-
-									if l := len("/batch"); len(elem) >= l && elem[0:l] == "/batch" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch method {
-										case "POST":
-											r.name = CreateAuditEventsBatchOperation
-											r.summary = "Create audit events batch"
-											r.operationID = "createAuditEventsBatch"
-											r.operationGroup = ""
-											r.pathPattern = "/api/v1/audit/events/batch"
-											r.args = args
-											r.count = 0
-											return r, true
-										default:
-											return
-										}
-									}
-
-								}
-
-							case 'x': // Prefix: "xport"
-
-								if l := len("xport"); len(elem) >= l && elem[0:l] == "xport" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									// Leaf node.
-									switch method {
-									case "GET":
-										r.name = ExportAuditEventsOperation
-										r.summary = "Export audit events with digital signature"
-										r.operationID = "exportAuditEvents"
-										r.operationGroup = ""
-										r.pathPattern = "/api/v1/audit/export"
-										r.args = args
-										r.count = 0
-										return r, true
-									default:
-										return
-									}
-								}
-
-							}
-
-						case 'l': // Prefix: "legal-hold"
-
-							if l := len("legal-hold"); len(elem) >= l && elem[0:l] == "legal-hold" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								switch method {
-								case "GET":
-									r.name = ListLegalHoldsOperation
-									r.summary = "List all active legal holds"
-									r.operationID = "listLegalHolds"
-									r.operationGroup = ""
-									r.pathPattern = "/api/v1/audit/legal-hold"
-									r.args = args
-									r.count = 0
-									return r, true
-								case "POST":
-									r.name = PlaceLegalHoldOperation
-									r.summary = "Place legal hold on audit events"
-									r.operationID = "placeLegalHold"
-									r.operationGroup = ""
-									r.pathPattern = "/api/v1/audit/legal-hold"
-									r.args = args
-									r.count = 0
-									return r, true
-								default:
-									return
-								}
-							}
-							switch elem[0] {
-							case '/': // Prefix: "/"
-
-								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								// Param: "correlation_id"
-								// Leaf parameter, slashes are prohibited
-								idx := strings.IndexByte(elem, '/')
-								if idx >= 0 {
-									break
-								}
-								args[0] = elem
-								elem = ""
-
-								if len(elem) == 0 {
-									// Leaf node.
-									switch method {
-									case "DELETE":
-										r.name = ReleaseLegalHoldOperation
-										r.summary = "Release legal hold on audit events"
-										r.operationID = "releaseLegalHold"
-										r.operationGroup = ""
-										r.pathPattern = "/api/v1/audit/legal-hold/{correlation_id}"
-										r.args = args
-										r.count = 1
-										return r, true
-									default:
-										return
-									}
-								}
-
-							}
-
-						case 'n': // Prefix: "notifications"
-
-							if l := len("notifications"); len(elem) >= l && elem[0:l] == "notifications" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								// Leaf node.
-								switch method {
-								case "POST":
-									r.name = CreateNotificationAuditOperation
-									r.summary = "Create notification audit record"
-									r.operationID = "createNotificationAudit"
-									r.operationGroup = ""
-									r.pathPattern = "/api/v1/audit/notifications"
-									r.args = args
-									r.count = 0
-									return r, true
-								default:
-									return
-								}
-							}
-
-						case 'r': // Prefix: "remediation-requests/"
-
-							if l := len("remediation-requests/"); len(elem) >= l && elem[0:l] == "remediation-requests/" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							// Param: "correlation_id"
-							// Match until "/"
-							idx := strings.IndexByte(elem, '/')
-							if idx < 0 {
-								idx = len(elem)
-							}
-							args[0] = elem[:idx]
-							elem = elem[idx:]
-
-							if len(elem) == 0 {
-								break
-							}
-							switch elem[0] {
-							case '/': // Prefix: "/reconstruct"
-
-								if l := len("/reconstruct"); len(elem) >= l && elem[0:l] == "/reconstruct" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									// Leaf node.
-									switch method {
-									case "POST":
-										r.name = ReconstructRemediationRequestOperation
-										r.summary = "Reconstruct RemediationRequest from audit trail"
-										r.operationID = "reconstructRemediationRequest"
-										r.operationGroup = ""
-										r.pathPattern = "/api/v1/audit/remediation-requests/{correlation_id}/reconstruct"
-										r.args = args
-										r.count = 1
-										return r, true
-									default:
-										return
-									}
-								}
-
-							}
-
-						}
-
-					}
-
-				case 'e': // Prefix: "effectiveness/"
-
-					if l := len("effectiveness/"); len(elem) >= l && elem[0:l] == "effectiveness/" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					// Param: "correlation_id"
-					// Leaf parameter, slashes are prohibited
-					idx := strings.IndexByte(elem, '/')
-					if idx >= 0 {
-						break
-					}
-					args[0] = elem
-					elem = ""
-
-					if len(elem) == 0 {
-						// Leaf node.
-						switch method {
-						case "GET":
-							r.name = GetEffectivenessScoreOperation
-							r.summary = "Compute weighted effectiveness score on demand"
-							r.operationID = "getEffectivenessScore"
-							r.operationGroup = ""
-							r.pathPattern = "/api/v1/effectiveness/{correlation_id}"
-							r.args = args
-							r.count = 1
-							return r, true
-						default:
-							return
-						}
-					}
-
-				case 'r': // Prefix: "remediation-history/context"
-
-					if l := len("remediation-history/context"); len(elem) >= l && elem[0:l] == "remediation-history/context" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					if len(elem) == 0 {
-						// Leaf node.
-						switch method {
-						case "GET":
-							r.name = GetRemediationHistoryContextOperation
-							r.summary = "Get remediation history context for a target resource"
-							r.operationID = "getRemediationHistoryContext"
-							r.operationGroup = ""
-							r.pathPattern = "/api/v1/remediation-history/context"
-							r.args = args
-							r.count = 0
-							return r, true
-						default:
-							return
-						}
-					}
-
-				case 'w': // Prefix: "workflows"
-
-					if l := len("workflows"); len(elem) >= l && elem[0:l] == "workflows" {
+					if l := len("ction-types"); len(elem) >= l && elem[0:l] == "ction-types" {
 						elem = elem[l:]
 					} else {
 						break
@@ -1342,21 +950,12 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 					if len(elem) == 0 {
 						switch method {
-						case "GET":
-							r.name = ListWorkflowsOperation
-							r.summary = "List workflows"
-							r.operationID = "listWorkflows"
-							r.operationGroup = ""
-							r.pathPattern = "/api/v1/workflows"
-							r.args = args
-							r.count = 0
-							return r, true
 						case "POST":
-							r.name = CreateWorkflowOperation
-							r.summary = "Register workflow from inline schema"
-							r.operationID = "createWorkflow"
+							r.name = CreateActionTypeOperation
+							r.summary = "Create or re-enable an action type"
+							r.operationID = "createActionType"
 							r.operationGroup = ""
-							r.pathPattern = "/api/v1/workflows"
+							r.pathPattern = "/api/v1/action-types"
 							r.args = args
 							r.count = 0
 							return r, true
@@ -1373,73 +972,7 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							break
 						}
 
-						if len(elem) == 0 {
-							break
-						}
-						switch elem[0] {
-						case 'a': // Prefix: "actions"
-							origElem := elem
-							if l := len("actions"); len(elem) >= l && elem[0:l] == "actions" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								switch method {
-								case "GET":
-									r.name = ListAvailableActionsOperation
-									r.summary = "List available action types"
-									r.operationID = "listAvailableActions"
-									r.operationGroup = ""
-									r.pathPattern = "/api/v1/workflows/actions"
-									r.args = args
-									r.count = 0
-									return r, true
-								default:
-									return
-								}
-							}
-							switch elem[0] {
-							case '/': // Prefix: "/"
-
-								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								// Param: "action_type"
-								// Leaf parameter, slashes are prohibited
-								idx := strings.IndexByte(elem, '/')
-								if idx >= 0 {
-									break
-								}
-								args[0] = elem
-								elem = ""
-
-								if len(elem) == 0 {
-									// Leaf node.
-									switch method {
-									case "GET":
-										r.name = ListWorkflowsByActionTypeOperation
-										r.summary = "List workflows for action type"
-										r.operationID = "listWorkflowsByActionType"
-										r.operationGroup = ""
-										r.pathPattern = "/api/v1/workflows/actions/{action_type}"
-										r.args = args
-										r.count = 1
-										return r, true
-									default:
-										return
-									}
-								}
-
-							}
-
-							elem = origElem
-						}
-						// Param: "workflow_id"
+						// Param: "name"
 						// Match until "/"
 						idx := strings.IndexByte(elem, '/')
 						if idx < 0 {
@@ -1450,21 +983,12 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 						if len(elem) == 0 {
 							switch method {
-							case "GET":
-								r.name = GetWorkflowByIDOperation
-								r.summary = "Get workflow by UUID (with optional security gate)"
-								r.operationID = "getWorkflowByID"
-								r.operationGroup = ""
-								r.pathPattern = "/api/v1/workflows/{workflow_id}"
-								r.args = args
-								r.count = 1
-								return r, true
 							case "PATCH":
-								r.name = UpdateWorkflowOperation
-								r.summary = "Update workflow mutable fields"
-								r.operationID = "updateWorkflow"
+								r.name = UpdateActionTypeOperation
+								r.summary = "Update action type description"
+								r.operationID = "updateActionType"
 								r.operationGroup = ""
-								r.pathPattern = "/api/v1/workflows/{workflow_id}"
+								r.pathPattern = "/api/v1/action-types/{name}"
 								r.args = args
 								r.count = 1
 								return r, true
@@ -1485,73 +1009,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								break
 							}
 							switch elem[0] {
-							case 'd': // Prefix: "d"
+							case 'd': // Prefix: "disable"
 
-								if l := len("d"); len(elem) >= l && elem[0:l] == "d" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									break
-								}
-								switch elem[0] {
-								case 'e': // Prefix: "eprecate"
-
-									if l := len("eprecate"); len(elem) >= l && elem[0:l] == "eprecate" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch method {
-										case "PATCH":
-											r.name = DeprecateWorkflowOperation
-											r.summary = "Deprecate workflow"
-											r.operationID = "deprecateWorkflow"
-											r.operationGroup = ""
-											r.pathPattern = "/api/v1/workflows/{workflow_id}/deprecate"
-											r.args = args
-											r.count = 1
-											return r, true
-										default:
-											return
-										}
-									}
-
-								case 'i': // Prefix: "isable"
-
-									if l := len("isable"); len(elem) >= l && elem[0:l] == "isable" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch method {
-										case "PATCH":
-											r.name = DisableWorkflowOperation
-											r.summary = "Disable workflow"
-											r.operationID = "disableWorkflow"
-											r.operationGroup = ""
-											r.pathPattern = "/api/v1/workflows/{workflow_id}/disable"
-											r.args = args
-											r.count = 1
-											return r, true
-										default:
-											return
-										}
-									}
-
-								}
-
-							case 'e': // Prefix: "enable"
-
-								if l := len("enable"); len(elem) >= l && elem[0:l] == "enable" {
+								if l := len("disable"); len(elem) >= l && elem[0:l] == "disable" {
 									elem = elem[l:]
 								} else {
 									break
@@ -1561,11 +1021,36 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 									// Leaf node.
 									switch method {
 									case "PATCH":
-										r.name = EnableWorkflowOperation
-										r.summary = "Enable workflow"
-										r.operationID = "enableWorkflow"
+										r.name = DisableActionTypeOperation
+										r.summary = "Soft-disable an action type"
+										r.operationID = "disableActionType"
 										r.operationGroup = ""
-										r.pathPattern = "/api/v1/workflows/{workflow_id}/enable"
+										r.pathPattern = "/api/v1/action-types/{name}/disable"
+										r.args = args
+										r.count = 1
+										return r, true
+									default:
+										return
+									}
+								}
+
+							case 'w': // Prefix: "workflow-count"
+
+								if l := len("workflow-count"); len(elem) >= l && elem[0:l] == "workflow-count" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch method {
+									case "GET":
+										r.name = GetActionTypeWorkflowCountOperation
+										r.summary = "Get active workflow count for an action type"
+										r.operationID = "getActionTypeWorkflowCount"
+										r.operationGroup = ""
+										r.pathPattern = "/api/v1/action-types/{name}/workflow-count"
 										r.args = args
 										r.count = 1
 										return r, true
@@ -1580,11 +1065,350 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 					}
 
+				case 'u': // Prefix: "udit/"
+
+					if l := len("udit/"); len(elem) >= l && elem[0:l] == "udit/" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						break
+					}
+					switch elem[0] {
+					case 'e': // Prefix: "e"
+
+						if l := len("e"); len(elem) >= l && elem[0:l] == "e" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							break
+						}
+						switch elem[0] {
+						case 'v': // Prefix: "vents"
+
+							if l := len("vents"); len(elem) >= l && elem[0:l] == "vents" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								switch method {
+								case "GET":
+									r.name = QueryAuditEventsOperation
+									r.summary = "Query audit events"
+									r.operationID = "queryAuditEvents"
+									r.operationGroup = ""
+									r.pathPattern = "/api/v1/audit/events"
+									r.args = args
+									r.count = 0
+									return r, true
+								case "POST":
+									r.name = CreateAuditEventOperation
+									r.summary = "Create unified audit event"
+									r.operationID = "createAuditEvent"
+									r.operationGroup = ""
+									r.pathPattern = "/api/v1/audit/events"
+									r.args = args
+									r.count = 0
+									return r, true
+								default:
+									return
+								}
+							}
+							switch elem[0] {
+							case '/': // Prefix: "/batch"
+
+								if l := len("/batch"); len(elem) >= l && elem[0:l] == "/batch" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch method {
+									case "POST":
+										r.name = CreateAuditEventsBatchOperation
+										r.summary = "Create audit events batch"
+										r.operationID = "createAuditEventsBatch"
+										r.operationGroup = ""
+										r.pathPattern = "/api/v1/audit/events/batch"
+										r.args = args
+										r.count = 0
+										return r, true
+									default:
+										return
+									}
+								}
+
+							}
+
+						case 'x': // Prefix: "xport"
+
+							if l := len("xport"); len(elem) >= l && elem[0:l] == "xport" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch method {
+								case "GET":
+									r.name = ExportAuditEventsOperation
+									r.summary = "Export audit events with digital signature"
+									r.operationID = "exportAuditEvents"
+									r.operationGroup = ""
+									r.pathPattern = "/api/v1/audit/export"
+									r.args = args
+									r.count = 0
+									return r, true
+								default:
+									return
+								}
+							}
+
+						}
+
+					case 'l': // Prefix: "legal-hold"
+
+						if l := len("legal-hold"); len(elem) >= l && elem[0:l] == "legal-hold" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							switch method {
+							case "GET":
+								r.name = ListLegalHoldsOperation
+								r.summary = "List all active legal holds"
+								r.operationID = "listLegalHolds"
+								r.operationGroup = ""
+								r.pathPattern = "/api/v1/audit/legal-hold"
+								r.args = args
+								r.count = 0
+								return r, true
+							case "POST":
+								r.name = PlaceLegalHoldOperation
+								r.summary = "Place legal hold on audit events"
+								r.operationID = "placeLegalHold"
+								r.operationGroup = ""
+								r.pathPattern = "/api/v1/audit/legal-hold"
+								r.args = args
+								r.count = 0
+								return r, true
+							default:
+								return
+							}
+						}
+						switch elem[0] {
+						case '/': // Prefix: "/"
+
+							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							// Param: "correlation_id"
+							// Leaf parameter, slashes are prohibited
+							idx := strings.IndexByte(elem, '/')
+							if idx >= 0 {
+								break
+							}
+							args[0] = elem
+							elem = ""
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch method {
+								case "DELETE":
+									r.name = ReleaseLegalHoldOperation
+									r.summary = "Release legal hold on audit events"
+									r.operationID = "releaseLegalHold"
+									r.operationGroup = ""
+									r.pathPattern = "/api/v1/audit/legal-hold/{correlation_id}"
+									r.args = args
+									r.count = 1
+									return r, true
+								default:
+									return
+								}
+							}
+
+						}
+
+					case 'n': // Prefix: "notifications"
+
+						if l := len("notifications"); len(elem) >= l && elem[0:l] == "notifications" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch method {
+							case "POST":
+								r.name = CreateNotificationAuditOperation
+								r.summary = "Create notification audit record"
+								r.operationID = "createNotificationAudit"
+								r.operationGroup = ""
+								r.pathPattern = "/api/v1/audit/notifications"
+								r.args = args
+								r.count = 0
+								return r, true
+							default:
+								return
+							}
+						}
+
+					case 'r': // Prefix: "remediation-requests/"
+
+						if l := len("remediation-requests/"); len(elem) >= l && elem[0:l] == "remediation-requests/" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						// Param: "correlation_id"
+						// Match until "/"
+						idx := strings.IndexByte(elem, '/')
+						if idx < 0 {
+							idx = len(elem)
+						}
+						args[0] = elem[:idx]
+						elem = elem[idx:]
+
+						if len(elem) == 0 {
+							break
+						}
+						switch elem[0] {
+						case '/': // Prefix: "/reconstruct"
+
+							if l := len("/reconstruct"); len(elem) >= l && elem[0:l] == "/reconstruct" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch method {
+								case "POST":
+									r.name = ReconstructRemediationRequestOperation
+									r.summary = "Reconstruct RemediationRequest from audit trail"
+									r.operationID = "reconstructRemediationRequest"
+									r.operationGroup = ""
+									r.pathPattern = "/api/v1/audit/remediation-requests/{correlation_id}/reconstruct"
+									r.args = args
+									r.count = 1
+									return r, true
+								default:
+									return
+								}
+							}
+
+						}
+
+					case 'v': // Prefix: "verify-chain"
+
+						if l := len("verify-chain"); len(elem) >= l && elem[0:l] == "verify-chain" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch method {
+							case "POST":
+								r.name = VerifyAuditChainOperation
+								r.summary = "Verify hash chain integrity for a correlation_id"
+								r.operationID = "verifyAuditChain"
+								r.operationGroup = ""
+								r.pathPattern = "/api/v1/audit/verify-chain"
+								r.args = args
+								r.count = 0
+								return r, true
+							default:
+								return
+							}
+						}
+
+					}
+
 				}
 
-			case 'h': // Prefix: "health"
+			case 'e': // Prefix: "effectiveness/"
 
-				if l := len("health"); len(elem) >= l && elem[0:l] == "health" {
+				if l := len("effectiveness/"); len(elem) >= l && elem[0:l] == "effectiveness/" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				// Param: "correlation_id"
+				// Leaf parameter, slashes are prohibited
+				idx := strings.IndexByte(elem, '/')
+				if idx >= 0 {
+					break
+				}
+				args[0] = elem
+				elem = ""
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch method {
+					case "GET":
+						r.name = GetEffectivenessScoreOperation
+						r.summary = "Compute weighted effectiveness score on demand"
+						r.operationID = "getEffectivenessScore"
+						r.operationGroup = ""
+						r.pathPattern = "/api/v1/effectiveness/{correlation_id}"
+						r.args = args
+						r.count = 1
+						return r, true
+					default:
+						return
+					}
+				}
+
+			case 'r': // Prefix: "remediation-history/context"
+
+				if l := len("remediation-history/context"); len(elem) >= l && elem[0:l] == "remediation-history/context" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch method {
+					case "GET":
+						r.name = GetRemediationHistoryContextOperation
+						r.summary = "Get remediation history context for a target resource"
+						r.operationID = "getRemediationHistoryContext"
+						r.operationGroup = ""
+						r.pathPattern = "/api/v1/remediation-history/context"
+						r.args = args
+						r.count = 0
+						return r, true
+					default:
+						return
+					}
+				}
+
+			case 'w': // Prefix: "workflows"
+
+				if l := len("workflows"); len(elem) >= l && elem[0:l] == "workflows" {
 					elem = elem[l:]
 				} else {
 					break
@@ -1593,11 +1417,20 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 				if len(elem) == 0 {
 					switch method {
 					case "GET":
-						r.name = HealthCheckOperation
-						r.summary = "Overall health check"
-						r.operationID = "healthCheck"
+						r.name = ListWorkflowsOperation
+						r.summary = "List workflows"
+						r.operationID = "listWorkflows"
 						r.operationGroup = ""
-						r.pathPattern = "/health"
+						r.pathPattern = "/api/v1/workflows"
+						r.args = args
+						r.count = 0
+						return r, true
+					case "POST":
+						r.name = CreateWorkflowOperation
+						r.summary = "Register workflow from inline schema"
+						r.operationID = "createWorkflow"
+						r.operationGroup = ""
+						r.pathPattern = "/api/v1/workflows"
 						r.args = args
 						r.count = 0
 						return r, true
@@ -1618,23 +1451,22 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						break
 					}
 					switch elem[0] {
-					case 'l': // Prefix: "live"
-
-						if l := len("live"); len(elem) >= l && elem[0:l] == "live" {
+					case 'a': // Prefix: "actions"
+						origElem := elem
+						if l := len("actions"); len(elem) >= l && elem[0:l] == "actions" {
 							elem = elem[l:]
 						} else {
 							break
 						}
 
 						if len(elem) == 0 {
-							// Leaf node.
 							switch method {
 							case "GET":
-								r.name = LivenessCheckOperation
-								r.summary = "Liveness check"
-								r.operationID = "livenessCheck"
+								r.name = ListAvailableActionsOperation
+								r.summary = "List available action types"
+								r.operationID = "listAvailableActions"
 								r.operationGroup = ""
-								r.pathPattern = "/health/live"
+								r.pathPattern = "/api/v1/workflows/actions"
 								r.args = args
 								r.count = 0
 								return r, true
@@ -1642,59 +1474,184 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								return
 							}
 						}
+						switch elem[0] {
+						case '/': // Prefix: "/"
 
-					case 'r': // Prefix: "ready"
+							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+								elem = elem[l:]
+							} else {
+								break
+							}
 
-						if l := len("ready"); len(elem) >= l && elem[0:l] == "ready" {
+							// Param: "action_type"
+							// Leaf parameter, slashes are prohibited
+							idx := strings.IndexByte(elem, '/')
+							if idx >= 0 {
+								break
+							}
+							args[0] = elem
+							elem = ""
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch method {
+								case "GET":
+									r.name = ListWorkflowsByActionTypeOperation
+									r.summary = "List workflows for action type"
+									r.operationID = "listWorkflowsByActionType"
+									r.operationGroup = ""
+									r.pathPattern = "/api/v1/workflows/actions/{action_type}"
+									r.args = args
+									r.count = 1
+									return r, true
+								default:
+									return
+								}
+							}
+
+						}
+
+						elem = origElem
+					}
+					// Param: "workflow_id"
+					// Match until "/"
+					idx := strings.IndexByte(elem, '/')
+					if idx < 0 {
+						idx = len(elem)
+					}
+					args[0] = elem[:idx]
+					elem = elem[idx:]
+
+					if len(elem) == 0 {
+						switch method {
+						case "GET":
+							r.name = GetWorkflowByIDOperation
+							r.summary = "Get workflow by UUID (with optional security gate)"
+							r.operationID = "getWorkflowByID"
+							r.operationGroup = ""
+							r.pathPattern = "/api/v1/workflows/{workflow_id}"
+							r.args = args
+							r.count = 1
+							return r, true
+						case "PATCH":
+							r.name = UpdateWorkflowOperation
+							r.summary = "Update workflow mutable fields"
+							r.operationID = "updateWorkflow"
+							r.operationGroup = ""
+							r.pathPattern = "/api/v1/workflows/{workflow_id}"
+							r.args = args
+							r.count = 1
+							return r, true
+						default:
+							return
+						}
+					}
+					switch elem[0] {
+					case '/': // Prefix: "/"
+
+						if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 							elem = elem[l:]
 						} else {
 							break
 						}
 
 						if len(elem) == 0 {
-							// Leaf node.
-							switch method {
-							case "GET":
-								r.name = ReadinessCheckOperation
-								r.summary = "Readiness check"
-								r.operationID = "readinessCheck"
-								r.operationGroup = ""
-								r.pathPattern = "/health/ready"
-								r.args = args
-								r.count = 0
-								return r, true
-							default:
-								return
+							break
+						}
+						switch elem[0] {
+						case 'd': // Prefix: "d"
+
+							if l := len("d"); len(elem) >= l && elem[0:l] == "d" {
+								elem = elem[l:]
+							} else {
+								break
 							}
+
+							if len(elem) == 0 {
+								break
+							}
+							switch elem[0] {
+							case 'e': // Prefix: "eprecate"
+
+								if l := len("eprecate"); len(elem) >= l && elem[0:l] == "eprecate" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch method {
+									case "PATCH":
+										r.name = DeprecateWorkflowOperation
+										r.summary = "Deprecate workflow"
+										r.operationID = "deprecateWorkflow"
+										r.operationGroup = ""
+										r.pathPattern = "/api/v1/workflows/{workflow_id}/deprecate"
+										r.args = args
+										r.count = 1
+										return r, true
+									default:
+										return
+									}
+								}
+
+							case 'i': // Prefix: "isable"
+
+								if l := len("isable"); len(elem) >= l && elem[0:l] == "isable" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch method {
+									case "PATCH":
+										r.name = DisableWorkflowOperation
+										r.summary = "Disable workflow"
+										r.operationID = "disableWorkflow"
+										r.operationGroup = ""
+										r.pathPattern = "/api/v1/workflows/{workflow_id}/disable"
+										r.args = args
+										r.count = 1
+										return r, true
+									default:
+										return
+									}
+								}
+
+							}
+
+						case 'e': // Prefix: "enable"
+
+							if l := len("enable"); len(elem) >= l && elem[0:l] == "enable" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch method {
+								case "PATCH":
+									r.name = EnableWorkflowOperation
+									r.summary = "Enable workflow"
+									r.operationID = "enableWorkflow"
+									r.operationGroup = ""
+									r.pathPattern = "/api/v1/workflows/{workflow_id}/enable"
+									r.args = args
+									r.count = 1
+									return r, true
+								default:
+									return
+								}
+							}
+
 						}
 
 					}
 
-				}
-
-			case 'm': // Prefix: "metrics"
-
-				if l := len("metrics"); len(elem) >= l && elem[0:l] == "metrics" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch method {
-					case "GET":
-						r.name = GetMetricsOperation
-						r.summary = "Prometheus metrics"
-						r.operationID = "getMetrics"
-						r.operationGroup = ""
-						r.pathPattern = "/metrics"
-						r.args = args
-						r.count = 0
-						return r, true
-					default:
-						return
-					}
 				}
 
 			}

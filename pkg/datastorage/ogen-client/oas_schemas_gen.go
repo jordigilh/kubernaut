@@ -4,7 +4,6 @@ package api
 
 import (
 	"fmt"
-	"io"
 	"net/url"
 	"time"
 
@@ -14240,20 +14239,6 @@ type GetEffectivenessScoreNotFound RFC7807Problem
 
 func (*GetEffectivenessScoreNotFound) getEffectivenessScoreRes() {}
 
-type GetMetricsOK struct {
-	Data io.Reader
-}
-
-// Read reads data from the Data reader.
-//
-// Kept to satisfy the io.Reader interface.
-func (s GetMetricsOK) Read(p []byte) (n int, err error) {
-	if s.Data == nil {
-		return 0, io.EOF
-	}
-	return s.Data.Read(p)
-}
-
 type GetRemediationHistoryContextBadRequest RFC7807Problem
 
 func (*GetRemediationHistoryContextBadRequest) getRemediationHistoryContextRes() {}
@@ -14420,117 +14405,6 @@ func (s *HashComparisonData) SetPostRemediationSpecHash(val OptString) {
 // SetHashMatch sets the value of HashMatch.
 func (s *HashComparisonData) SetHashMatch(val OptNilBool) {
 	s.HashMatch = val
-}
-
-type HealthCheckOK struct {
-	Status OptHealthCheckOKStatus `json:"status"`
-}
-
-// GetStatus returns the value of Status.
-func (s *HealthCheckOK) GetStatus() OptHealthCheckOKStatus {
-	return s.Status
-}
-
-// SetStatus sets the value of Status.
-func (s *HealthCheckOK) SetStatus(val OptHealthCheckOKStatus) {
-	s.Status = val
-}
-
-func (*HealthCheckOK) healthCheckRes() {}
-
-type HealthCheckOKStatus string
-
-const (
-	HealthCheckOKStatusHealthy HealthCheckOKStatus = "healthy"
-)
-
-// AllValues returns all HealthCheckOKStatus values.
-func (HealthCheckOKStatus) AllValues() []HealthCheckOKStatus {
-	return []HealthCheckOKStatus{
-		HealthCheckOKStatusHealthy,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s HealthCheckOKStatus) MarshalText() ([]byte, error) {
-	switch s {
-	case HealthCheckOKStatusHealthy:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *HealthCheckOKStatus) UnmarshalText(data []byte) error {
-	switch HealthCheckOKStatus(data) {
-	case HealthCheckOKStatusHealthy:
-		*s = HealthCheckOKStatusHealthy
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-type HealthCheckServiceUnavailable struct {
-	Status OptHealthCheckServiceUnavailableStatus `json:"status"`
-	Error  OptString                              `json:"error"`
-}
-
-// GetStatus returns the value of Status.
-func (s *HealthCheckServiceUnavailable) GetStatus() OptHealthCheckServiceUnavailableStatus {
-	return s.Status
-}
-
-// GetError returns the value of Error.
-func (s *HealthCheckServiceUnavailable) GetError() OptString {
-	return s.Error
-}
-
-// SetStatus sets the value of Status.
-func (s *HealthCheckServiceUnavailable) SetStatus(val OptHealthCheckServiceUnavailableStatus) {
-	s.Status = val
-}
-
-// SetError sets the value of Error.
-func (s *HealthCheckServiceUnavailable) SetError(val OptString) {
-	s.Error = val
-}
-
-func (*HealthCheckServiceUnavailable) healthCheckRes() {}
-
-type HealthCheckServiceUnavailableStatus string
-
-const (
-	HealthCheckServiceUnavailableStatusUnhealthy HealthCheckServiceUnavailableStatus = "unhealthy"
-)
-
-// AllValues returns all HealthCheckServiceUnavailableStatus values.
-func (HealthCheckServiceUnavailableStatus) AllValues() []HealthCheckServiceUnavailableStatus {
-	return []HealthCheckServiceUnavailableStatus{
-		HealthCheckServiceUnavailableStatusUnhealthy,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s HealthCheckServiceUnavailableStatus) MarshalText() ([]byte, error) {
-	switch s {
-	case HealthCheckServiceUnavailableStatusUnhealthy:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *HealthCheckServiceUnavailableStatus) UnmarshalText(data []byte) error {
-	switch HealthCheckServiceUnavailableStatus(data) {
-	case HealthCheckServiceUnavailableStatusUnhealthy:
-		*s = HealthCheckServiceUnavailableStatusUnhealthy
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }
 
 // Complete IncidentResponse structure from HolmesGPT API (DD-AUDIT-004 - strongly typed, no
@@ -15969,9 +15843,6 @@ func (s *ListWorkflowsStatus) UnmarshalText(data []byte) error {
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
-
-// LivenessCheckOK is response for LivenessCheck operation.
-type LivenessCheckOK struct{}
 
 // 4 mandatory workflow labels (Issue #274: signalName removed per DD-WORKFLOW-016).
 // Ref: #/components/schemas/MandatoryLabels
@@ -18767,98 +18638,6 @@ func (o OptHashComparisonData) Get() (v HashComparisonData, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptHashComparisonData) Or(d HashComparisonData) HashComparisonData {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptHealthCheckOKStatus returns new OptHealthCheckOKStatus with value set to v.
-func NewOptHealthCheckOKStatus(v HealthCheckOKStatus) OptHealthCheckOKStatus {
-	return OptHealthCheckOKStatus{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptHealthCheckOKStatus is optional HealthCheckOKStatus.
-type OptHealthCheckOKStatus struct {
-	Value HealthCheckOKStatus
-	Set   bool
-}
-
-// IsSet returns true if OptHealthCheckOKStatus was set.
-func (o OptHealthCheckOKStatus) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptHealthCheckOKStatus) Reset() {
-	var v HealthCheckOKStatus
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptHealthCheckOKStatus) SetTo(v HealthCheckOKStatus) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptHealthCheckOKStatus) Get() (v HealthCheckOKStatus, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptHealthCheckOKStatus) Or(d HealthCheckOKStatus) HealthCheckOKStatus {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptHealthCheckServiceUnavailableStatus returns new OptHealthCheckServiceUnavailableStatus with value set to v.
-func NewOptHealthCheckServiceUnavailableStatus(v HealthCheckServiceUnavailableStatus) OptHealthCheckServiceUnavailableStatus {
-	return OptHealthCheckServiceUnavailableStatus{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptHealthCheckServiceUnavailableStatus is optional HealthCheckServiceUnavailableStatus.
-type OptHealthCheckServiceUnavailableStatus struct {
-	Value HealthCheckServiceUnavailableStatus
-	Set   bool
-}
-
-// IsSet returns true if OptHealthCheckServiceUnavailableStatus was set.
-func (o OptHealthCheckServiceUnavailableStatus) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptHealthCheckServiceUnavailableStatus) Reset() {
-	var v HealthCheckServiceUnavailableStatus
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptHealthCheckServiceUnavailableStatus) SetTo(v HealthCheckServiceUnavailableStatus) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptHealthCheckServiceUnavailableStatus) Get() (v HealthCheckServiceUnavailableStatus, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptHealthCheckServiceUnavailableStatus) Or(d HealthCheckServiceUnavailableStatus) HealthCheckServiceUnavailableStatus {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -22135,7 +21914,11 @@ func (s *QueryMetadata) SetFilters(val OptWorkflowSearchFilters) {
 // Ref: #/components/schemas/RFC7807Problem
 type RFC7807Problem struct {
 	// URI reference identifying the problem type.
-	// Dereferenceable URI when possible.
+	// All types follow the pattern https://kubernaut.ai/problems/{error-type}.
+	// Common types: validation-error, not-found, internal-error,
+	// service-unavailable, conflict, database-error, bad-request.
+	// Domain-specific types use path prefixes: reconstruction/*,
+	// effectiveness/*, audit/*, remediation-history/*.
 	Type url.URL `json:"type"`
 	// Short, human-readable summary of the problem type.
 	// Should not change from occurrence to occurrence.
@@ -22228,16 +22011,6 @@ func (s *RFC7807ProblemFieldErrors) init() RFC7807ProblemFieldErrors {
 	return m
 }
 
-// ReadinessCheckOK is response for ReadinessCheck operation.
-type ReadinessCheckOK struct{}
-
-func (*ReadinessCheckOK) readinessCheckRes() {}
-
-// ReadinessCheckServiceUnavailable is response for ReadinessCheck operation.
-type ReadinessCheckServiceUnavailable struct{}
-
-func (*ReadinessCheckServiceUnavailable) readinessCheckRes() {}
-
 type ReconstructRemediationRequestBadRequest RFC7807Problem
 
 func (*ReconstructRemediationRequestBadRequest) reconstructRemediationRequestRes() {}
@@ -22252,7 +22025,7 @@ func (*ReconstructRemediationRequestNotFound) reconstructRemediationRequestRes()
 
 // Response for RemediationRequest reconstruction from audit trail.
 // Contains the reconstructed RR in YAML format and validation results.
-// Implements BR-AUDIT-006 (SOC2 compliance).
+// Implements BR-RR-RECON-001 (SOC2 compliance).
 // Ref: #/components/schemas/ReconstructionResponse
 type ReconstructionResponse struct {
 	// Complete RemediationRequest CRD in YAML format.
@@ -26885,6 +26658,77 @@ func (s *StructuredDescription) SetPreconditions(val OptString) {
 	s.Preconditions = val
 }
 
+// Details about a single tampered event in the hash chain.
+// Ref: #/components/schemas/TamperedEvent
+type TamperedEvent struct {
+	EventID        OptString   `json:"event_id"`
+	EventTimestamp OptDateTime `json:"event_timestamp"`
+	ExpectedHash   OptString   `json:"expected_hash"`
+	ActualHash     OptString   `json:"actual_hash"`
+	PreviousHash   OptString   `json:"previous_hash"`
+	Message        OptString   `json:"message"`
+}
+
+// GetEventID returns the value of EventID.
+func (s *TamperedEvent) GetEventID() OptString {
+	return s.EventID
+}
+
+// GetEventTimestamp returns the value of EventTimestamp.
+func (s *TamperedEvent) GetEventTimestamp() OptDateTime {
+	return s.EventTimestamp
+}
+
+// GetExpectedHash returns the value of ExpectedHash.
+func (s *TamperedEvent) GetExpectedHash() OptString {
+	return s.ExpectedHash
+}
+
+// GetActualHash returns the value of ActualHash.
+func (s *TamperedEvent) GetActualHash() OptString {
+	return s.ActualHash
+}
+
+// GetPreviousHash returns the value of PreviousHash.
+func (s *TamperedEvent) GetPreviousHash() OptString {
+	return s.PreviousHash
+}
+
+// GetMessage returns the value of Message.
+func (s *TamperedEvent) GetMessage() OptString {
+	return s.Message
+}
+
+// SetEventID sets the value of EventID.
+func (s *TamperedEvent) SetEventID(val OptString) {
+	s.EventID = val
+}
+
+// SetEventTimestamp sets the value of EventTimestamp.
+func (s *TamperedEvent) SetEventTimestamp(val OptDateTime) {
+	s.EventTimestamp = val
+}
+
+// SetExpectedHash sets the value of ExpectedHash.
+func (s *TamperedEvent) SetExpectedHash(val OptString) {
+	s.ExpectedHash = val
+}
+
+// SetActualHash sets the value of ActualHash.
+func (s *TamperedEvent) SetActualHash(val OptString) {
+	s.ActualHash = val
+}
+
+// SetPreviousHash sets the value of PreviousHash.
+func (s *TamperedEvent) SetPreviousHash(val OptString) {
+	s.PreviousHash = val
+}
+
+// SetMessage sets the value of Message.
+func (s *TamperedEvent) SetMessage(val OptString) {
+	s.Message = val
+}
+
 // Timeout configuration for RemediationRequest (BR-ORCH-027/028, Gap.
 // Ref: #/components/schemas/TimeoutConfig
 type TimeoutConfig struct {
@@ -27005,6 +26849,116 @@ func (s *ValidationResult) SetErrors(val []string) {
 func (s *ValidationResult) SetWarnings(val []string) {
 	s.Warnings = val
 }
+
+type VerifyAuditChainBadRequest RFC7807Problem
+
+func (*VerifyAuditChainBadRequest) verifyAuditChainRes() {}
+
+type VerifyAuditChainInternalServerError RFC7807Problem
+
+func (*VerifyAuditChainInternalServerError) verifyAuditChainRes() {}
+
+// Request body for hash chain verification.
+// Ref: #/components/schemas/VerifyChainRequest
+type VerifyChainRequest struct {
+	// The correlation ID whose event hash chain should be verified.
+	CorrelationID string `json:"correlation_id"`
+}
+
+// GetCorrelationID returns the value of CorrelationID.
+func (s *VerifyChainRequest) GetCorrelationID() string {
+	return s.CorrelationID
+}
+
+// SetCorrelationID sets the value of CorrelationID.
+func (s *VerifyChainRequest) SetCorrelationID(val string) {
+	s.CorrelationID = val
+}
+
+// Hash chain verification result. `is_valid: true` means the entire chain is intact.
+// When `is_valid: false`, the `tampered_events` array describes each broken link.
+// Ref: #/components/schemas/VerifyChainResponse
+type VerifyChainResponse struct {
+	CorrelationID    string          `json:"correlation_id"`
+	IsValid          bool            `json:"is_valid"`
+	TotalEvents      int             `json:"total_events"`
+	VerifiedEvents   int             `json:"verified_events"`
+	TamperedEvents   []TamperedEvent `json:"tampered_events"`
+	VerificationTime time.Time       `json:"verification_time"`
+	Message          string          `json:"message"`
+}
+
+// GetCorrelationID returns the value of CorrelationID.
+func (s *VerifyChainResponse) GetCorrelationID() string {
+	return s.CorrelationID
+}
+
+// GetIsValid returns the value of IsValid.
+func (s *VerifyChainResponse) GetIsValid() bool {
+	return s.IsValid
+}
+
+// GetTotalEvents returns the value of TotalEvents.
+func (s *VerifyChainResponse) GetTotalEvents() int {
+	return s.TotalEvents
+}
+
+// GetVerifiedEvents returns the value of VerifiedEvents.
+func (s *VerifyChainResponse) GetVerifiedEvents() int {
+	return s.VerifiedEvents
+}
+
+// GetTamperedEvents returns the value of TamperedEvents.
+func (s *VerifyChainResponse) GetTamperedEvents() []TamperedEvent {
+	return s.TamperedEvents
+}
+
+// GetVerificationTime returns the value of VerificationTime.
+func (s *VerifyChainResponse) GetVerificationTime() time.Time {
+	return s.VerificationTime
+}
+
+// GetMessage returns the value of Message.
+func (s *VerifyChainResponse) GetMessage() string {
+	return s.Message
+}
+
+// SetCorrelationID sets the value of CorrelationID.
+func (s *VerifyChainResponse) SetCorrelationID(val string) {
+	s.CorrelationID = val
+}
+
+// SetIsValid sets the value of IsValid.
+func (s *VerifyChainResponse) SetIsValid(val bool) {
+	s.IsValid = val
+}
+
+// SetTotalEvents sets the value of TotalEvents.
+func (s *VerifyChainResponse) SetTotalEvents(val int) {
+	s.TotalEvents = val
+}
+
+// SetVerifiedEvents sets the value of VerifiedEvents.
+func (s *VerifyChainResponse) SetVerifiedEvents(val int) {
+	s.VerifiedEvents = val
+}
+
+// SetTamperedEvents sets the value of TamperedEvents.
+func (s *VerifyChainResponse) SetTamperedEvents(val []TamperedEvent) {
+	s.TamperedEvents = val
+}
+
+// SetVerificationTime sets the value of VerificationTime.
+func (s *VerifyChainResponse) SetVerificationTime(val time.Time) {
+	s.VerificationTime = val
+}
+
+// SetMessage sets the value of Message.
+func (s *VerifyChainResponse) SetMessage(val string) {
+	s.Message = val
+}
+
+func (*VerifyChainResponse) verifyAuditChainRes() {}
 
 // Audit payload for workflow catalog creation (datastorage.workflow.created).
 // Ref: #/components/schemas/WorkflowCatalogCreatedPayload
