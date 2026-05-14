@@ -130,6 +130,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv := newJWKSServer(kp.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -162,6 +163,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv := newJWKSServer(kp.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -191,6 +193,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv := newJWKSServer(kp.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -226,6 +229,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv := newJWKSServer(kp.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -254,6 +258,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv := newJWKSServer(kp.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -282,6 +287,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv := newJWKSServer(kp.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -310,6 +316,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv := newJWKSServer(kp.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -339,6 +346,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv := newJWKSServer(kp.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -370,6 +378,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv2 := newJWKSServer(kp2.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -408,6 +417,7 @@ var _ = Describe("Auth", func() {
 
 			It("UT-AF-002-006: duplicate issuers produce config error", func() {
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{URL: "https://sso.example.com", Audiences: []string{"aud"}},
@@ -428,6 +438,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv := newJWKSServer(kp.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -463,6 +474,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv := newJWKSServer(kp.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -500,6 +512,7 @@ var _ = Describe("Auth", func() {
 				DeferCleanup(srv.Close)
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -541,6 +554,7 @@ var _ = Describe("Auth", func() {
 				DeferCleanup(srv.Close)
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -581,6 +595,7 @@ var _ = Describe("Auth", func() {
 				failSrv := newFailingJWKSServer()
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -626,6 +641,7 @@ var _ = Describe("Auth", func() {
 				DeferCleanup(srv.Close)
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -680,6 +696,7 @@ var _ = Describe("Auth", func() {
 				DeferCleanup(srv.Close)
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -734,6 +751,7 @@ var _ = Describe("Auth", func() {
 				DeferCleanup(srv.Close)
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -773,6 +791,7 @@ var _ = Describe("Auth", func() {
 
 				issuerURL := "https://fake-issuer.example.com"
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -808,6 +827,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv := newJWKSServer(kp.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -871,6 +891,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv := newJWKSServer(kp.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{
@@ -911,6 +932,7 @@ var _ = Describe("Auth", func() {
 				jwksSrv := newJWKSServer(kp.jwks())
 
 				cfg := auth.Config{
+					AllowInsecureIssuers: true,
 					JWT: []auth.ProviderConfig{
 						{
 							Issuer: auth.IssuerConfig{

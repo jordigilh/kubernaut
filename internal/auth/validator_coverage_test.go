@@ -81,6 +81,7 @@ func TestWithCBMetrics_GaugeUpdatesOnStateChange(t *testing.T) {
 	_ = keySet
 
 	cfg := Config{
+		AllowInsecureIssuers: true,
 		JWT: []ProviderConfig{
 			{Issuer: IssuerConfig{URL: srv.URL, Audiences: []string{"aud"}}},
 		},
@@ -143,6 +144,7 @@ func TestWithReplayCache_RejectsReplayedToken(t *testing.T) {
 	defer rc.Stop()
 
 	cfg := Config{
+		AllowInsecureIssuers: true,
 		JWT: []ProviderConfig{
 			{Issuer: IssuerConfig{URL: srv.URL, Audiences: []string{"aud"}}},
 		},
@@ -197,6 +199,7 @@ func TestWithReplayCache_RequiresJTI(t *testing.T) {
 	defer rc.Stop()
 
 	cfg := Config{
+		AllowInsecureIssuers: true,
 		JWT: []ProviderConfig{
 			{Issuer: IssuerConfig{URL: srv.URL, Audiences: []string{"aud"}}},
 		},

@@ -31,6 +31,7 @@ var _ = Describe("Adversarial OIDC", func() {
 		kp = newTestKeyPair("adv-key-1")
 		jwksSrv = newJWKSServer(kp.jwks())
 		cfg = auth.Config{
+			AllowInsecureIssuers: true,
 			JWT: []auth.ProviderConfig{
 				{
 					Issuer: auth.IssuerConfig{
@@ -103,6 +104,7 @@ var _ = Describe("Adversarial OIDC", func() {
 			ecSrv := newJWKSServer(ecJWKS)
 
 			ecCfg := auth.Config{
+				AllowInsecureIssuers: true,
 				JWT: []auth.ProviderConfig{
 					{Issuer: auth.IssuerConfig{URL: ecSrv.URL, Audiences: []string{"kubernaut-agent"}}},
 				},
@@ -309,6 +311,7 @@ var _ = Describe("Adversarial OIDC", func() {
 			jwksSrv2 := newJWKSServer(kp2.jwks())
 
 			multiCfg := auth.Config{
+				AllowInsecureIssuers: true,
 				JWT: []auth.ProviderConfig{
 					{Issuer: auth.IssuerConfig{URL: jwksSrv.URL, Audiences: []string{"kubernaut-agent"}}},
 					{Issuer: auth.IssuerConfig{URL: jwksSrv2.URL, Audiences: []string{"kubernaut-agent"}}},

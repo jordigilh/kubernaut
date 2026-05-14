@@ -13,7 +13,7 @@ func TestReadyz_Returns503WhenOneCheckerFails(t *testing.T) {
 		func() bool { return true },
 		func() bool { return false }, // Simulates KA CB open
 	)
-	h := readyzHandler(checker, nil)
+	h := ReadyzHandlerFunc(checker, nil)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody)
 	h.ServeHTTP(rec, req)
@@ -33,7 +33,7 @@ func TestReadyz_Returns200WhenAllCheckersPass(t *testing.T) {
 		func() bool { return true }, // DS CB
 		func() bool { return true }, // K8s CB
 	)
-	h := readyzHandler(checker, nil)
+	h := ReadyzHandlerFunc(checker, nil)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody)
 	h.ServeHTTP(rec, req)
@@ -47,7 +47,7 @@ func TestReadyz_Returns200WhenHalfOpen(t *testing.T) {
 	checker := AllReady(
 		func() bool { return true }, // half-open returns true per Healthy() semantics
 	)
-	h := readyzHandler(checker, nil)
+	h := ReadyzHandlerFunc(checker, nil)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody)
 	h.ServeHTTP(rec, req)
@@ -75,7 +75,7 @@ func TestReadyz_Returns503ForEachCBOpen(t *testing.T) {
 				func() bool { return tt.ds },
 				func() bool { return tt.k8s },
 			)
-			h := readyzHandler(checker, nil)
+			h := ReadyzHandlerFunc(checker, nil)
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody)
 			h.ServeHTTP(rec, req)
@@ -90,7 +90,7 @@ func TestReadyz_Returns503WhenDraining(t *testing.T) {
 	checker := AllReady(func() bool { return true })
 	var draining atomic.Bool
 	draining.Store(true)
-	h := readyzHandler(checker, &draining)
+	h := ReadyzHandlerFunc(checker, &draining)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody)
 	h.ServeHTTP(rec, req)
