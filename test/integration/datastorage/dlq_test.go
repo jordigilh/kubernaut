@@ -243,6 +243,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 				ResourceID:     "wf-123",
 				CorrelationID:  "remediation-999",
 				EventData:      []byte(`{"duration_ms":5000,"steps_completed":5}`),
+				RetentionDays:  2555,
 			}
 		})
 
@@ -347,6 +348,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 				ResourceID:     "wf-isolation-test",
 				CorrelationID:  "remediation-isolation",
 				EventData:      []byte(`{"duration_ms":5000}`),
+				RetentionDays:  2555,
 			}
 
 			notificationAudit := &models.NotificationAudit{
@@ -429,6 +431,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 					ResourceID:     "wf-read-test",
 					CorrelationID:  "remediation-read-test",
 					EventData:      []byte(`{"duration_ms":5000}`),
+					RetentionDays:  2555,
 				}
 				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("test error"))
 				Expect(err).ToNot(HaveOccurred())
@@ -470,6 +473,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 						ResourceID:     fmt.Sprintf("wf-batch-%d", i),
 						CorrelationID:  fmt.Sprintf("remediation-batch-%d", i),
 						EventData:      []byte(`{"batch":true}`),
+						RetentionDays:  2555,
 					}
 					err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("batch error %d", i))
 					Expect(err).ToNot(HaveOccurred())
@@ -502,6 +506,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 					ResourceID:     "wf-ack-test",
 					CorrelationID:  "remediation-ack-test",
 					EventData:      []byte(`{"ack":true}`),
+					RetentionDays:  2555,
 				}
 				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("ack test error"))
 				Expect(err).ToNot(HaveOccurred())
@@ -541,6 +546,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 					ResourceID:     "wf-dead-letter-test",
 					CorrelationID:  "remediation-dead-letter-test",
 					EventData:      []byte(`{"dead_letter":true}`),
+					RetentionDays:  2555,
 				}
 				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("permanent failure"))
 				Expect(err).ToNot(HaveOccurred())
@@ -586,6 +592,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 					ResourceID:     "wf-retry-count-test",
 					CorrelationID:  "remediation-retry-count-test",
 					EventData:      []byte(`{"retry_count_test":true}`),
+					RetentionDays:  2555,
 				}
 				err := dlqClient.EnqueueAuditEvent(ctx, auditEvent, fmt.Errorf("retry error"))
 				Expect(err).ToNot(HaveOccurred())
