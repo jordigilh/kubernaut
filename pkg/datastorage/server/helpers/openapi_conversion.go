@@ -144,6 +144,25 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest, authenticatedAct
 		event.DurationMs = &durationValue
 	}
 
+	if req.ParentEventDate.IsSet() && !req.ParentEventDate.Null {
+		t := req.ParentEventDate.Value
+		event.ParentEventDate = &t
+	}
+	if req.ErrorCode.IsSet() && !req.ErrorCode.Null {
+		v := req.ErrorCode.Value
+		event.ErrorCode = &v
+	}
+	if req.ErrorMessage.IsSet() && !req.ErrorMessage.Null {
+		v := req.ErrorMessage.Value
+		event.ErrorMessage = &v
+	}
+	if req.RetentionDays.IsSet() && !req.RetentionDays.Null {
+		event.RetentionDays = req.RetentionDays.Value
+	}
+	if req.IsSensitive.IsSet() && !req.IsSensitive.Null {
+		event.IsSensitive = req.IsSensitive.Value
+	}
+
 	return event, nil
 }
 

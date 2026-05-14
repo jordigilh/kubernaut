@@ -5915,6 +5915,14 @@ type AuditEvent struct {
 	ClusterName   OptNilString `json:"cluster_name"`
 	Severity      OptNilString `json:"severity"`
 	DurationMs    OptNilInt    `json:"duration_ms"`
+	// Parent row partition timestamp; required with parent_event_id so the FK hits the correct
+	// audit_events partition (DATE derived at persistence—align with parent's event_timestamp).
+	ParentEventDate OptNilDateTime `json:"parent_event_date"`
+	ErrorCode       OptNilString   `json:"error_code"`
+	ErrorMessage    OptNilString   `json:"error_message"`
+	// Retention override in days; storage defaults to 2555 when omitted.
+	RetentionDays OptNilInt  `json:"retention_days"`
+	IsSensitive   OptNilBool `json:"is_sensitive"`
 	// Service-specific event data as structured type.
 	// V2.0: Typed schemas documented below for API validation.
 	// Go client uses interface{} for clean code ergonomics.
@@ -5923,6 +5931,13 @@ type AuditEvent struct {
 	EventID   OptUUID             `json:"event_id"`
 	// Date of the event (YYYY-MM-DD). Nullable to handle format mismatches from DataStorage.
 	EventDate OptNilDate `json:"event_date"`
+	// SHA-256 chain hash computed at write time (query/export responses).
+	EventHash         OptNilString   `json:"event_hash"`
+	PreviousEventHash OptNilString   `json:"previous_event_hash"`
+	LegalHold         OptNilBool     `json:"legal_hold"`
+	LegalHoldReason   OptNilString   `json:"legal_hold_reason"`
+	LegalHoldPlacedBy OptNilString   `json:"legal_hold_placed_by"`
+	LegalHoldPlacedAt OptNilDateTime `json:"legal_hold_placed_at"`
 }
 
 // GetVersion returns the value of Version.
@@ -6005,6 +6020,31 @@ func (s *AuditEvent) GetDurationMs() OptNilInt {
 	return s.DurationMs
 }
 
+// GetParentEventDate returns the value of ParentEventDate.
+func (s *AuditEvent) GetParentEventDate() OptNilDateTime {
+	return s.ParentEventDate
+}
+
+// GetErrorCode returns the value of ErrorCode.
+func (s *AuditEvent) GetErrorCode() OptNilString {
+	return s.ErrorCode
+}
+
+// GetErrorMessage returns the value of ErrorMessage.
+func (s *AuditEvent) GetErrorMessage() OptNilString {
+	return s.ErrorMessage
+}
+
+// GetRetentionDays returns the value of RetentionDays.
+func (s *AuditEvent) GetRetentionDays() OptNilInt {
+	return s.RetentionDays
+}
+
+// GetIsSensitive returns the value of IsSensitive.
+func (s *AuditEvent) GetIsSensitive() OptNilBool {
+	return s.IsSensitive
+}
+
 // GetEventData returns the value of EventData.
 func (s *AuditEvent) GetEventData() AuditEventEventData {
 	return s.EventData
@@ -6018,6 +6058,36 @@ func (s *AuditEvent) GetEventID() OptUUID {
 // GetEventDate returns the value of EventDate.
 func (s *AuditEvent) GetEventDate() OptNilDate {
 	return s.EventDate
+}
+
+// GetEventHash returns the value of EventHash.
+func (s *AuditEvent) GetEventHash() OptNilString {
+	return s.EventHash
+}
+
+// GetPreviousEventHash returns the value of PreviousEventHash.
+func (s *AuditEvent) GetPreviousEventHash() OptNilString {
+	return s.PreviousEventHash
+}
+
+// GetLegalHold returns the value of LegalHold.
+func (s *AuditEvent) GetLegalHold() OptNilBool {
+	return s.LegalHold
+}
+
+// GetLegalHoldReason returns the value of LegalHoldReason.
+func (s *AuditEvent) GetLegalHoldReason() OptNilString {
+	return s.LegalHoldReason
+}
+
+// GetLegalHoldPlacedBy returns the value of LegalHoldPlacedBy.
+func (s *AuditEvent) GetLegalHoldPlacedBy() OptNilString {
+	return s.LegalHoldPlacedBy
+}
+
+// GetLegalHoldPlacedAt returns the value of LegalHoldPlacedAt.
+func (s *AuditEvent) GetLegalHoldPlacedAt() OptNilDateTime {
+	return s.LegalHoldPlacedAt
 }
 
 // SetVersion sets the value of Version.
@@ -6100,6 +6170,31 @@ func (s *AuditEvent) SetDurationMs(val OptNilInt) {
 	s.DurationMs = val
 }
 
+// SetParentEventDate sets the value of ParentEventDate.
+func (s *AuditEvent) SetParentEventDate(val OptNilDateTime) {
+	s.ParentEventDate = val
+}
+
+// SetErrorCode sets the value of ErrorCode.
+func (s *AuditEvent) SetErrorCode(val OptNilString) {
+	s.ErrorCode = val
+}
+
+// SetErrorMessage sets the value of ErrorMessage.
+func (s *AuditEvent) SetErrorMessage(val OptNilString) {
+	s.ErrorMessage = val
+}
+
+// SetRetentionDays sets the value of RetentionDays.
+func (s *AuditEvent) SetRetentionDays(val OptNilInt) {
+	s.RetentionDays = val
+}
+
+// SetIsSensitive sets the value of IsSensitive.
+func (s *AuditEvent) SetIsSensitive(val OptNilBool) {
+	s.IsSensitive = val
+}
+
 // SetEventData sets the value of EventData.
 func (s *AuditEvent) SetEventData(val AuditEventEventData) {
 	s.EventData = val
@@ -6113,6 +6208,36 @@ func (s *AuditEvent) SetEventID(val OptUUID) {
 // SetEventDate sets the value of EventDate.
 func (s *AuditEvent) SetEventDate(val OptNilDate) {
 	s.EventDate = val
+}
+
+// SetEventHash sets the value of EventHash.
+func (s *AuditEvent) SetEventHash(val OptNilString) {
+	s.EventHash = val
+}
+
+// SetPreviousEventHash sets the value of PreviousEventHash.
+func (s *AuditEvent) SetPreviousEventHash(val OptNilString) {
+	s.PreviousEventHash = val
+}
+
+// SetLegalHold sets the value of LegalHold.
+func (s *AuditEvent) SetLegalHold(val OptNilBool) {
+	s.LegalHold = val
+}
+
+// SetLegalHoldReason sets the value of LegalHoldReason.
+func (s *AuditEvent) SetLegalHoldReason(val OptNilString) {
+	s.LegalHoldReason = val
+}
+
+// SetLegalHoldPlacedBy sets the value of LegalHoldPlacedBy.
+func (s *AuditEvent) SetLegalHoldPlacedBy(val OptNilString) {
+	s.LegalHoldPlacedBy = val
+}
+
+// SetLegalHoldPlacedAt sets the value of LegalHoldPlacedAt.
+func (s *AuditEvent) SetLegalHoldPlacedAt(val OptNilDateTime) {
+	s.LegalHoldPlacedAt = val
 }
 
 // Domain-level event category (ADR-034 v1.8, Issue #306).
@@ -8680,6 +8805,14 @@ type AuditEventRequest struct {
 	ClusterName   OptNilString `json:"cluster_name"`
 	Severity      OptNilString `json:"severity"`
 	DurationMs    OptNilInt    `json:"duration_ms"`
+	// Parent row partition timestamp; required with parent_event_id so the FK hits the correct
+	// audit_events partition (DATE derived at persistence—align with parent's event_timestamp).
+	ParentEventDate OptNilDateTime `json:"parent_event_date"`
+	ErrorCode       OptNilString   `json:"error_code"`
+	ErrorMessage    OptNilString   `json:"error_message"`
+	// Retention override in days; storage defaults to 2555 when omitted.
+	RetentionDays OptNilInt  `json:"retention_days"`
+	IsSensitive   OptNilBool `json:"is_sensitive"`
 	// Service-specific event data as structured type.
 	// V2.0: Typed schemas documented below for API validation.
 	// Go client uses interface{} for clean code ergonomics.
@@ -8767,6 +8900,31 @@ func (s *AuditEventRequest) GetDurationMs() OptNilInt {
 	return s.DurationMs
 }
 
+// GetParentEventDate returns the value of ParentEventDate.
+func (s *AuditEventRequest) GetParentEventDate() OptNilDateTime {
+	return s.ParentEventDate
+}
+
+// GetErrorCode returns the value of ErrorCode.
+func (s *AuditEventRequest) GetErrorCode() OptNilString {
+	return s.ErrorCode
+}
+
+// GetErrorMessage returns the value of ErrorMessage.
+func (s *AuditEventRequest) GetErrorMessage() OptNilString {
+	return s.ErrorMessage
+}
+
+// GetRetentionDays returns the value of RetentionDays.
+func (s *AuditEventRequest) GetRetentionDays() OptNilInt {
+	return s.RetentionDays
+}
+
+// GetIsSensitive returns the value of IsSensitive.
+func (s *AuditEventRequest) GetIsSensitive() OptNilBool {
+	return s.IsSensitive
+}
+
 // GetEventData returns the value of EventData.
 func (s *AuditEventRequest) GetEventData() AuditEventRequestEventData {
 	return s.EventData
@@ -8850,6 +9008,31 @@ func (s *AuditEventRequest) SetSeverity(val OptNilString) {
 // SetDurationMs sets the value of DurationMs.
 func (s *AuditEventRequest) SetDurationMs(val OptNilInt) {
 	s.DurationMs = val
+}
+
+// SetParentEventDate sets the value of ParentEventDate.
+func (s *AuditEventRequest) SetParentEventDate(val OptNilDateTime) {
+	s.ParentEventDate = val
+}
+
+// SetErrorCode sets the value of ErrorCode.
+func (s *AuditEventRequest) SetErrorCode(val OptNilString) {
+	s.ErrorCode = val
+}
+
+// SetErrorMessage sets the value of ErrorMessage.
+func (s *AuditEventRequest) SetErrorMessage(val OptNilString) {
+	s.ErrorMessage = val
+}
+
+// SetRetentionDays sets the value of RetentionDays.
+func (s *AuditEventRequest) SetRetentionDays(val OptNilInt) {
+	s.RetentionDays = val
+}
+
+// SetIsSensitive sets the value of IsSensitive.
+func (s *AuditEventRequest) SetIsSensitive(val OptNilBool) {
+	s.IsSensitive = val
 }
 
 // SetEventData sets the value of EventData.
@@ -19224,6 +19407,69 @@ func (o OptNilDate) Get() (v time.Time, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilDate) Or(d time.Time) time.Time {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilDateTime returns new OptNilDateTime with value set to v.
+func NewOptNilDateTime(v time.Time) OptNilDateTime {
+	return OptNilDateTime{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilDateTime is optional nullable time.Time.
+type OptNilDateTime struct {
+	Value time.Time
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilDateTime was set.
+func (o OptNilDateTime) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilDateTime) Reset() {
+	var v time.Time
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilDateTime) SetTo(v time.Time) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilDateTime) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilDateTime) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v time.Time
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilDateTime) Get() (v time.Time, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilDateTime) Or(d time.Time) time.Time {
 	if v, ok := o.Get(); ok {
 		return v
 	}

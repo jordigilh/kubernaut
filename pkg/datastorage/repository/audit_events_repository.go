@@ -117,10 +117,19 @@ func (d DateOnly) Value() (interface{}, error) {
 //
 // ========================================
 
-// AuditEvent represents a single audit event for the unified audit_events table
-// This is the domain model for audit events across all services
-// AUTHORITATIVE SOURCE: Updated from 26 to 27 columns (added parent_event_date for FK constraint)
-// See: ADR-034 (updated 2025-11-18), migration 013
+// AuditEvent is the PostgreSQL persistence model for the unified audit_events table (ADR-034).
+//
+// Triple alignment (authority: migrations/001_v1_schema.sql + incremental 002–010; pkg/shared/assets/migrations/;
+// REST contract api/openapi/data-storage-v1.yaml — AuditEventRequest for writes; AuditEvent for query payloads):
+//
+// Columns on this model match INSERT statements and pkg/datastorage/query Build() SELECT column order.
+//
+// Persisted audit_events columns not represented on this struct (left NULL unless future writers add them):
+// actor_ip INET, resource_name, event_metadata JSONB, trace_id, span_id. Upstream callers may populate
+// these via pkg/audit.AuditEvent; repository conversion/INSERT paths omit them intentionally today.
+//
+// Type mapping: legal_hold_placed_at and event_timestamp map to PostgreSQL TIMESTAMP WITH TIME ZONE (UTC);
+// event_date and parent_event_date map to DATE (partition keys); ParentEventDate uses *time.Time in JSON for API ergonomics.
 type AuditEvent struct {
 	// ========================================
 	// PRIMARY IDENTIFIERS (4 columns)
@@ -782,6 +791,13 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 		var severity, namespace, clusterName sql.NullString
 		var errorCode, errorMessage sql.NullString // DD-TESTING-001: Error fields
 		var durationMs sql.NullInt64               // DD-TESTING-001: Performance tracking (BR-SP-090)
+		var eventHash, previousEventHash sql.NullString
+		var retentionDays sql.NullInt64
+		var isSensitive sql.NullBool
+		var parentEventDate sql.NullTime
+		var legalHold sql.NullBool
+		var legalHoldReason, legalHoldPlacedBy sql.NullString
+		var legalHoldPlacedAt sql.NullTime
 
 		err := rows.Scan(
 			&event.EventID,
@@ -805,6 +821,15 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 			&durationMs,   // DD-TESTING-001: Added for top-level field validation
 			&errorCode,    // DD-TESTING-001: Added for error validation
 			&errorMessage, // DD-TESTING-001: Added for error validation
+			&eventHash,
+			&previousEventHash,
+			&retentionDays,
+			&isSensitive,
+			&parentEventDate,
+			&legalHold,
+			&legalHoldReason,
+			&legalHoldPlacedBy,
+			&legalHoldPlacedAt,
 		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to scan audit event: %w", err)
@@ -847,6 +872,35 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 		}
 		if errorMessage.Valid {
 			event.ErrorMessage = errorMessage.String
+		}
+		if eventHash.Valid {
+			event.EventHash = eventHash.String
+		}
+		if previousEventHash.Valid {
+			event.PreviousEventHash = previousEventHash.String
+		}
+		if retentionDays.Valid {
+			event.RetentionDays = int(retentionDays.Int64)
+		}
+		if isSensitive.Valid {
+			event.IsSensitive = isSensitive.Bool
+		}
+		if parentEventDate.Valid {
+			ts := parentEventDate.Time
+			event.ParentEventDate = &ts
+		}
+		if legalHold.Valid {
+			event.LegalHold = legalHold.Bool
+		}
+		if legalHoldReason.Valid {
+			event.LegalHoldReason = legalHoldReason.String
+		}
+		if legalHoldPlacedBy.Valid {
+			event.LegalHoldPlacedBy = legalHoldPlacedBy.String
+		}
+		if legalHoldPlacedAt.Valid {
+			ts := legalHoldPlacedAt.Time
+			event.LegalHoldPlacedAt = &ts
 		}
 
 		// Unmarshal event_data JSONB

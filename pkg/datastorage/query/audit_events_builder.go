@@ -178,7 +178,8 @@ func (b *AuditEventsQueryBuilder) Build() (string, []interface{}, error) {
 	// DD-TESTING-001: Include ALL optional fields for comprehensive audit validation
 	sql := "SELECT event_id, event_version, event_type, event_category, event_action, correlation_id, event_timestamp, event_outcome, severity, " +
 		"resource_type, resource_id, actor_type, actor_id, parent_event_id, event_data, event_date, namespace, cluster_name, " +
-		"duration_ms, error_code, error_message " + // Added missing optional fields (BR-SP-090: performance tracking)
+		"duration_ms, error_code, error_message, event_hash, previous_event_hash, retention_days, is_sensitive, parent_event_date, " +
+		"legal_hold, legal_hold_reason, legal_hold_placed_by, legal_hold_placed_at " +
 		"FROM audit_events WHERE 1=1"
 
 	// Count active filters

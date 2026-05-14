@@ -2468,6 +2468,26 @@ components:
         duration_ms:
           type: integer
           nullable: true
+        parent_event_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Parent row partition timestamp; required with parent_event_id so the FK hits the correct
+            audit_events partition (DATE derived at persistence—align with parent's event_timestamp).
+        error_code:
+          type: string
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        retention_days:
+          type: integer
+          nullable: true
+          description: Retention override in days; storage defaults to 2555 when omitted.
+        is_sensitive:
+          type: boolean
+          nullable: true
         event_data:
           description: |
             Service-specific event data as structured type.
@@ -2739,6 +2759,26 @@ components:
               format: date
               nullable: true
               description: "Date of the event (YYYY-MM-DD). Nullable to handle format mismatches from DataStorage."
+            event_hash:
+              type: string
+              nullable: true
+              description: SHA-256 chain hash computed at write time (query/export responses).
+            previous_event_hash:
+              type: string
+              nullable: true
+            legal_hold:
+              type: boolean
+              nullable: true
+            legal_hold_reason:
+              type: string
+              nullable: true
+            legal_hold_placed_by:
+              type: string
+              nullable: true
+            legal_hold_placed_at:
+              type: string
+              format: date-time
+              nullable: true
 
     # ========================================
     # WORKFLOW DISCOVERY SCHEMAS (DD-WORKFLOW-016, DD-HAPI-017)

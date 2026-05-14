@@ -11479,6 +11479,36 @@ func (s *AuditEvent) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ParentEventDate.Set {
+			e.FieldStart("parent_event_date")
+			s.ParentEventDate.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.ErrorCode.Set {
+			e.FieldStart("error_code")
+			s.ErrorCode.Encode(e)
+		}
+	}
+	{
+		if s.ErrorMessage.Set {
+			e.FieldStart("error_message")
+			s.ErrorMessage.Encode(e)
+		}
+	}
+	{
+		if s.RetentionDays.Set {
+			e.FieldStart("retention_days")
+			s.RetentionDays.Encode(e)
+		}
+	}
+	{
+		if s.IsSensitive.Set {
+			e.FieldStart("is_sensitive")
+			s.IsSensitive.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("event_data")
 		s.EventData.Encode(e)
 	}
@@ -11494,9 +11524,45 @@ func (s *AuditEvent) encodeFields(e *jx.Encoder) {
 			s.EventDate.Encode(e, json.EncodeDate)
 		}
 	}
+	{
+		if s.EventHash.Set {
+			e.FieldStart("event_hash")
+			s.EventHash.Encode(e)
+		}
+	}
+	{
+		if s.PreviousEventHash.Set {
+			e.FieldStart("previous_event_hash")
+			s.PreviousEventHash.Encode(e)
+		}
+	}
+	{
+		if s.LegalHold.Set {
+			e.FieldStart("legal_hold")
+			s.LegalHold.Encode(e)
+		}
+	}
+	{
+		if s.LegalHoldReason.Set {
+			e.FieldStart("legal_hold_reason")
+			s.LegalHoldReason.Encode(e)
+		}
+	}
+	{
+		if s.LegalHoldPlacedBy.Set {
+			e.FieldStart("legal_hold_placed_by")
+			s.LegalHoldPlacedBy.Encode(e)
+		}
+	}
+	{
+		if s.LegalHoldPlacedAt.Set {
+			e.FieldStart("legal_hold_placed_at")
+			s.LegalHoldPlacedAt.Encode(e, json.EncodeDateTime)
+		}
+	}
 }
 
-var jsonFieldsNameOfAuditEvent = [19]string{
+var jsonFieldsNameOfAuditEvent = [30]string{
 	0:  "version",
 	1:  "event_type",
 	2:  "event_timestamp",
@@ -11513,9 +11579,20 @@ var jsonFieldsNameOfAuditEvent = [19]string{
 	13: "cluster_name",
 	14: "severity",
 	15: "duration_ms",
-	16: "event_data",
-	17: "event_id",
-	18: "event_date",
+	16: "parent_event_date",
+	17: "error_code",
+	18: "error_message",
+	19: "retention_days",
+	20: "is_sensitive",
+	21: "event_data",
+	22: "event_id",
+	23: "event_date",
+	24: "event_hash",
+	25: "previous_event_hash",
+	26: "legal_hold",
+	27: "legal_hold_reason",
+	28: "legal_hold_placed_by",
+	29: "legal_hold_placed_at",
 }
 
 // Decode decodes AuditEvent from json.
@@ -11523,7 +11600,7 @@ func (s *AuditEvent) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode AuditEvent to nil")
 	}
-	var requiredBitSet [3]uint8
+	var requiredBitSet [4]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -11697,8 +11774,58 @@ func (s *AuditEvent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"duration_ms\"")
 			}
+		case "parent_event_date":
+			if err := func() error {
+				s.ParentEventDate.Reset()
+				if err := s.ParentEventDate.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"parent_event_date\"")
+			}
+		case "error_code":
+			if err := func() error {
+				s.ErrorCode.Reset()
+				if err := s.ErrorCode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"error_code\"")
+			}
+		case "error_message":
+			if err := func() error {
+				s.ErrorMessage.Reset()
+				if err := s.ErrorMessage.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"error_message\"")
+			}
+		case "retention_days":
+			if err := func() error {
+				s.RetentionDays.Reset()
+				if err := s.RetentionDays.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"retention_days\"")
+			}
+		case "is_sensitive":
+			if err := func() error {
+				s.IsSensitive.Reset()
+				if err := s.IsSensitive.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"is_sensitive\"")
+			}
 		case "event_data":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				if err := s.EventData.Decode(d); err != nil {
 					return err
@@ -11727,6 +11854,66 @@ func (s *AuditEvent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"event_date\"")
 			}
+		case "event_hash":
+			if err := func() error {
+				s.EventHash.Reset()
+				if err := s.EventHash.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_hash\"")
+			}
+		case "previous_event_hash":
+			if err := func() error {
+				s.PreviousEventHash.Reset()
+				if err := s.PreviousEventHash.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"previous_event_hash\"")
+			}
+		case "legal_hold":
+			if err := func() error {
+				s.LegalHold.Reset()
+				if err := s.LegalHold.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"legal_hold\"")
+			}
+		case "legal_hold_reason":
+			if err := func() error {
+				s.LegalHoldReason.Reset()
+				if err := s.LegalHoldReason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"legal_hold_reason\"")
+			}
+		case "legal_hold_placed_by":
+			if err := func() error {
+				s.LegalHoldPlacedBy.Reset()
+				if err := s.LegalHoldPlacedBy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"legal_hold_placed_by\"")
+			}
+		case "legal_hold_placed_at":
+			if err := func() error {
+				s.LegalHoldPlacedAt.Reset()
+				if err := s.LegalHoldPlacedAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"legal_hold_placed_at\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -11736,10 +11923,11 @@ func (s *AuditEvent) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [3]uint8{
+	for i, mask := range [4]uint8{
 		0b00111111,
 		0b00000100,
-		0b00000001,
+		0b00100000,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -15626,12 +15814,42 @@ func (s *AuditEventRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ParentEventDate.Set {
+			e.FieldStart("parent_event_date")
+			s.ParentEventDate.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.ErrorCode.Set {
+			e.FieldStart("error_code")
+			s.ErrorCode.Encode(e)
+		}
+	}
+	{
+		if s.ErrorMessage.Set {
+			e.FieldStart("error_message")
+			s.ErrorMessage.Encode(e)
+		}
+	}
+	{
+		if s.RetentionDays.Set {
+			e.FieldStart("retention_days")
+			s.RetentionDays.Encode(e)
+		}
+	}
+	{
+		if s.IsSensitive.Set {
+			e.FieldStart("is_sensitive")
+			s.IsSensitive.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("event_data")
 		s.EventData.Encode(e)
 	}
 }
 
-var jsonFieldsNameOfAuditEventRequest = [17]string{
+var jsonFieldsNameOfAuditEventRequest = [22]string{
 	0:  "version",
 	1:  "event_type",
 	2:  "event_timestamp",
@@ -15648,7 +15866,12 @@ var jsonFieldsNameOfAuditEventRequest = [17]string{
 	13: "cluster_name",
 	14: "severity",
 	15: "duration_ms",
-	16: "event_data",
+	16: "parent_event_date",
+	17: "error_code",
+	18: "error_message",
+	19: "retention_days",
+	20: "is_sensitive",
+	21: "event_data",
 }
 
 // Decode decodes AuditEventRequest from json.
@@ -15830,8 +16053,58 @@ func (s *AuditEventRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"duration_ms\"")
 			}
+		case "parent_event_date":
+			if err := func() error {
+				s.ParentEventDate.Reset()
+				if err := s.ParentEventDate.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"parent_event_date\"")
+			}
+		case "error_code":
+			if err := func() error {
+				s.ErrorCode.Reset()
+				if err := s.ErrorCode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"error_code\"")
+			}
+		case "error_message":
+			if err := func() error {
+				s.ErrorMessage.Reset()
+				if err := s.ErrorMessage.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"error_message\"")
+			}
+		case "retention_days":
+			if err := func() error {
+				s.RetentionDays.Reset()
+				if err := s.RetentionDays.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"retention_days\"")
+			}
+		case "is_sensitive":
+			if err := func() error {
+				s.IsSensitive.Reset()
+				if err := s.IsSensitive.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"is_sensitive\"")
+			}
 		case "event_data":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				if err := s.EventData.Decode(d); err != nil {
 					return err
@@ -15852,7 +16125,7 @@ func (s *AuditEventRequest) Decode(d *jx.Decoder) error {
 	for i, mask := range [3]uint8{
 		0b00111111,
 		0b00000100,
-		0b00000001,
+		0b00100000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -31862,6 +32135,57 @@ func (s OptNilDate) MarshalJSON() ([]byte, error) {
 func (s *OptNilDate) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d, json.DecodeDate)
+}
+
+// Encode encodes time.Time as json.
+func (o OptNilDateTime) Encode(e *jx.Encoder, format func(*jx.Encoder, time.Time)) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	format(e, o.Value)
+}
+
+// Decode decodes time.Time from json.
+func (o *OptNilDateTime) Decode(d *jx.Decoder, format func(*jx.Decoder) (time.Time, error)) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilDateTime to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v time.Time
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	v, err := format(d)
+	if err != nil {
+		return err
+	}
+	o.Value = v
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilDateTime) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e, json.EncodeDateTime)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilDateTime) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d, json.DecodeDateTime)
 }
 
 // Encode encodes float64 as json.
