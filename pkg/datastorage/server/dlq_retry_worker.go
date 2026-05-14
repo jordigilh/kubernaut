@@ -17,11 +17,9 @@ limitations under the License.
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strconv"
 	"sync"
 	"time"
@@ -404,7 +402,7 @@ func (w *DLQRetryWorker) writeToPostgres(ctx context.Context, auditType string, 
 			w.incValidationMetric(auditType, "field_validation")
 			return fmt.Errorf("audit event validation failed: %w", err)
 		}
-		if err := validateEventData(auditEvent.EventData); err != nil {
+		if err := dlq.ValidateEventData(auditEvent.EventData); err != nil {
 			w.incValidationMetric(auditType, "size_or_depth")
 			return fmt.Errorf("audit event EventData validation failed: %w", err)
 		}
@@ -494,51 +492,8 @@ func (w *DLQRetryWorker) incValidationMetric(auditType, reason string) {
 	}
 }
 
-// ========================================
-// EventData Validation (Fix 7 / SC-5, SI-10)
-// ========================================
-
-const (
-	maxEventDataSize  = 256 * 1024 // 256 KB — consistent with gateway MaxRequestBodySize
-	maxEventDataDepth = 10         // prevent billion-laughs / recursive JSON attacks
-)
-
-// validateEventData checks EventData size and JSON nesting depth.
-// Uses a streaming json.Decoder (token-by-token) to count depth without
-// loading the full structure into memory.
-func validateEventData(data []byte) error {
-	if len(data) > maxEventDataSize {
-		return fmt.Errorf("EventData exceeds maximum size (%d > %d bytes)", len(data), maxEventDataSize)
-	}
-	if len(data) == 0 {
-		return nil
-	}
-	return validateJSONDepth(data, maxEventDataDepth)
-}
-
-// validateJSONDepth walks JSON tokens and returns an error if nesting exceeds maxDepth.
-func validateJSONDepth(data []byte, maxDepth int) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	var depth int
-	for {
-		t, err := dec.Token()
-		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return fmt.Errorf("invalid JSON in EventData: %w", err)
-		}
-		switch t {
-		case json.Delim('{'), json.Delim('['):
-			depth++
-			if depth > maxDepth {
-				return fmt.Errorf("EventData JSON nesting depth exceeds maximum (%d)", maxDepth)
-			}
-		case json.Delim('}'), json.Delim(']'):
-			depth--
-		}
-	}
-}
+// EventData validation is provided by dlq.ValidateEventData (Fix 7 / SC-5, SI-10).
+// Constants dlq.MaxEventDataSize and dlq.MaxEventDataDepth are the single source of truth.
 
 // ========================================
 // Helper Functions (Exported for Testing)

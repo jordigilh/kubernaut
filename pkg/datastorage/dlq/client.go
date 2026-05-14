@@ -902,6 +902,12 @@ func (c *Client) writeMessageToDB(ctx context.Context, auditType string, msg *DL
 		if len(auditEvent.EventData) == 0 {
 			auditEvent.EventData = []byte("{}")
 		}
+		if err := auditEvent.Validate(); err != nil {
+			return fmt.Errorf("drain: audit event validation failed: %w", err)
+		}
+		if err := ValidateEventData(auditEvent.EventData); err != nil {
+			return fmt.Errorf("drain: audit event EventData validation failed: %w", err)
+		}
 		repoEvent, err := helpers.ConvertToRepositoryAuditEvent(&auditEvent)
 		if err != nil {
 			return fmt.Errorf("failed to convert audit event: %w", err)

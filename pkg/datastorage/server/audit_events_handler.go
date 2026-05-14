@@ -106,7 +106,8 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		s.logger.Info("Invalid JSON in request body", "error", err, "remote_addr", r.RemoteAddr)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_request", "Invalid Request", err.Error(), s.logger)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_request", "Invalid Request",
+			"The request body could not be parsed as valid JSON", s.logger)
 		return
 	}
 
@@ -153,7 +154,8 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		// Conversion errors are client-side validation errors (e.g., invalid event_data JSON)
 		// Return 400 Bad Request, not 500 Internal Server Error
 		s.logger.Info("Invalid event_data format", "error", err)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_event_data", "Invalid Event Data", err.Error(), s.logger)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_event_data", "Invalid Event Data",
+			"The event_data field could not be processed; check JSON structure and field types", s.logger)
 		return
 	}
 

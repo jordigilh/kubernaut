@@ -126,7 +126,7 @@ var _ = Describe("#1048 Phase 3: Shutdown Ordering", func() {
 
 			Expect(srv.isShuttingDown.Load()).To(BeFalse(), "should start as not shutting down")
 
-			srv.shutdownStep1SetFlag()
+			srv.shutdownStep1SetFlag("test-shutdown-id")
 
 			Expect(srv.isShuttingDown.Load()).To(BeTrue(), "flag should be set after step 1")
 		})

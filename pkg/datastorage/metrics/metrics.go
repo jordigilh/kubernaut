@@ -128,7 +128,7 @@ var (
 var (
 	DLQDrainBatchTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: MetricNameDLQDrainBatchTotal,
-		Help: "Total DLQ drain batch operations during shutdown",
+		Help: "Total DLQ drain invocations during shutdown (one per shutdown cycle, not per XRange batch)",
 	})
 	RetentionPurgeTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: MetricNameRetentionPurgeTotal,

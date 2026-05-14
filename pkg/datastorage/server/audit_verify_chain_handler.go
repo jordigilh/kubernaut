@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -52,13 +53,14 @@ type VerifyChainRequest struct {
 
 // VerifyChainResponse contains the verification results
 type VerifyChainResponse struct {
-	CorrelationID    string                 `json:"correlation_id"`
-	IsValid          bool                   `json:"is_valid"`
-	TotalEvents      int                    `json:"total_events"`
-	VerifiedEvents   int                    `json:"verified_events"`
-	TamperedEvents   []TamperedEvent        `json:"tampered_events,omitempty"`
-	VerificationTime time.Time              `json:"verification_time"`
-	Message          string                 `json:"message"`
+	CorrelationID    string          `json:"correlation_id"`
+	IsValid          bool            `json:"is_valid"`
+	TotalEvents      int             `json:"total_events"`
+	VerifiedEvents   int             `json:"verified_events"`
+	SkippedNullHash  int             `json:"skipped_null_hash,omitempty"`
+	TamperedEvents   []TamperedEvent `json:"tampered_events,omitempty"`
+	VerificationTime time.Time       `json:"verification_time"`
+	Message          string          `json:"message"`
 }
 
 // TamperedEvent contains details about a tampered event
@@ -103,6 +105,14 @@ func (s *Server) HandleVerifyChain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	const maxCorrelationIDLen = 256
+	if len(req.CorrelationID) > maxCorrelationIDLen {
+		response.WriteRFC7807Error(w, http.StatusBadRequest,
+			"invalid-correlation-id", "Invalid Correlation ID",
+			"Field 'correlation_id' exceeds maximum length of 256 characters", s.logger)
+		return
+	}
+
 	// Verify chain
 	resp, err := s.verifyHashChain(ctx, req.CorrelationID)
 	if err != nil {
@@ -123,9 +133,19 @@ func (s *Server) HandleVerifyChain(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// maxVerifyChainEvents caps the number of events loaded for a single
+// verify-chain request to bound memory and query time. A correlation_id
+// with more events than this limit must be verified via export/offline tooling.
+const maxVerifyChainEvents = 10000
+
 // verifyHashChain performs the actual hash chain verification
 func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*VerifyChainResponse, error) {
-	// Query all events for this correlation_id, ordered by timestamp
+	var skippedNullHash int
+	countQuery := `SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1 AND event_hash IS NULL`
+	if err := s.db.QueryRowContext(ctx, countQuery, correlationID).Scan(&skippedNullHash); err != nil {
+		return nil, fmt.Errorf("failed to count NULL-hash events: %w", err)
+	}
+
 	query := `
 		SELECT
 			event_id, event_timestamp, event_type,
@@ -141,9 +161,10 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 		WHERE correlation_id = $1
 		  AND event_hash IS NOT NULL
 		ORDER BY event_timestamp ASC, event_id ASC
+		LIMIT $2
 	`
 
-	rows, err := s.db.QueryContext(ctx, query, correlationID)
+	rows, err := s.db.QueryContext(ctx, query, correlationID, maxVerifyChainEvents+1)
 	if err != nil {
 		return nil, err
 	}
@@ -208,12 +229,16 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 		return nil, err
 	}
 
-	// Verify hash chain
+	if len(events) > maxVerifyChainEvents {
+		return nil, fmt.Errorf("correlation_id has more than %d hashed events; use export/offline verification", maxVerifyChainEvents)
+	}
+
 	response := &VerifyChainResponse{
 		CorrelationID:    correlationID,
 		IsValid:          true,
 		TotalEvents:      len(events),
 		VerifiedEvents:   0,
+		SkippedNullHash:  skippedNullHash,
 		TamperedEvents:   []TamperedEvent{},
 		VerificationTime: time.Now().UTC(),
 	}
@@ -281,6 +306,9 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 		response.Message = "Hash chain verified successfully: no tampering detected"
 	} else {
 		response.Message = "Hash chain verification FAILED: tampering detected"
+	}
+	if skippedNullHash > 0 {
+		response.Message += fmt.Sprintf(" (%d events without hashes were excluded from verification)", skippedNullHash)
 	}
 
 	return response, nil

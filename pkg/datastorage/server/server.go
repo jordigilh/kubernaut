@@ -58,7 +58,7 @@ import (
 // BR-STORAGE-021: REST API read endpoints
 // BR-STORAGE-024: RFC 7807 error responses
 //
-// DD-007: Kubernetes-aware graceful shutdown with 4-step pattern
+// DD-007: Kubernetes-aware graceful shutdown with 5-step pattern (see Shutdown method)
 // DD-AUTH-014: Middleware-based authentication and authorization
 type Server struct {
 	handler    *Handler
@@ -664,10 +664,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	var shutdownErrors []error
 
 	// STEP 1: Signal Kubernetes to remove pod from endpoints
-	s.shutdownStep1SetFlag()
+	s.shutdownStep1SetFlag(shutdownID)
 
 	// STEP 2: Wait for endpoint removal to propagate
-	s.shutdownStep2WaitForPropagation()
+	s.shutdownStep2WaitForPropagation(shutdownID)
 
 	// STEP 3: Drain in-flight HTTP connections
 	// #1048 Phase 3: Never skip subsequent cleanup steps. HTTP drain failure
@@ -720,24 +720,27 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 // shutdownStep1SetFlag sets the shutdown flag to signal readiness probe
 // DD-007 STEP 1: This triggers Kubernetes endpoint removal
-func (s *Server) shutdownStep1SetFlag() {
+func (s *Server) shutdownStep1SetFlag(shutdownID string) {
 	s.isShuttingDown.Store(true)
 	s.logger.Info("Shutdown flag set - readiness probe now returns 503",
+		"shutdown_id", shutdownID,
 		"effect", "kubernetes_will_remove_from_endpoints",
 		"dd", "DD-007-step-1")
 }
 
 // shutdownStep2WaitForPropagation waits for Kubernetes endpoint removal to propagate
 // DD-007 STEP 2: Industry best practice is 5 seconds (Kubernetes typically takes 1-3s)
-func (s *Server) shutdownStep2WaitForPropagation() {
+func (s *Server) shutdownStep2WaitForPropagation(shutdownID string) {
 	delay := s.endpointPropagationDelay
 	s.logger.Info("Waiting for Kubernetes endpoint removal to propagate",
+		"shutdown_id", shutdownID,
 		"delay", delay,
 		"dd", "DD-007-step-2")
 	if delay > 0 {
 		time.Sleep(delay)
 	}
 	s.logger.Info("Endpoint propagation complete - now draining connections",
+		"shutdown_id", shutdownID,
 		"dd", "DD-007-step-2-complete")
 }
 

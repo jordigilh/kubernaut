@@ -88,7 +88,8 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 		}
 
 		s.logger.Info("Invalid JSON array in request body", "error", err)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_request", "Invalid Request", "request body must be a JSON array: "+err.Error(), s.logger)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_request", "Invalid Request",
+			"The request body must be a valid JSON array of audit event objects", s.logger)
 		return
 	}
 
