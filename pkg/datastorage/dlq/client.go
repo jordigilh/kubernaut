@@ -31,7 +31,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers"
 )
 
 // ========================================
@@ -73,6 +72,30 @@ type NotificationCreator interface {
 // maxPayloadSize caps the DLQ message payload that will be unmarshalled,
 // preventing unbounded memory allocation from oversized messages (SI-10).
 const maxPayloadSize = 1 << 20 // 1 MiB
+
+// maxLastErrorLen caps the LastError field to prevent internal error
+// details (SQL, driver info) from leaking into the DLQ stream (SEC-L1).
+const maxLastErrorLen = 256
+
+// SanitizeError truncates and redacts error strings stored in DLQ LastError.
+// SEC-L1: Prevents raw SQL/driver details from persisting in Redis.
+func SanitizeError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	// Redact SQL-like patterns
+	for _, prefix := range []string{"pq:", "sql:", "driver:"} {
+		if strings.HasPrefix(msg, prefix) {
+			msg = "database write failed"
+			break
+		}
+	}
+	if len(msg) > maxLastErrorLen {
+		msg = msg[:maxLastErrorLen] + "..."
+	}
+	return msg
+}
 
 // MaxPayloadSize returns the maximum allowed DLQ payload size in bytes.
 func MaxPayloadSize() int { return maxPayloadSize }
@@ -168,13 +191,12 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 		return fmt.Errorf("failed to marshal audit payload: %w", err)
 	}
 
-	// Create DLQ message
 	auditMsg := AuditMessage{
 		Type:       "notification_audit",
 		Payload:    payloadJSON,
 		Timestamp:  time.Now(),
 		RetryCount: 0,
-		LastError:  originalError.Error(),
+		LastError:  SanitizeError(originalError),
 	}
 
 	// Serialize message
@@ -233,7 +255,7 @@ func (c *Client) EnqueueAuditEvent(ctx context.Context, audit *audit.AuditEvent,
 		Payload:    payloadJSON,
 		Timestamp:  time.Now(),
 		RetryCount: 0,
-		LastError:  originalError.Error(),
+		LastError:  SanitizeError(originalError),
 	}
 
 	// Serialize message
@@ -557,7 +579,7 @@ func (c *Client) IncrementRetryCount(ctx context.Context, auditType string, msg 
 
 	// Update the message
 	msg.AuditMessage.RetryCount++
-	msg.AuditMessage.LastError = retryError.Error()
+	msg.AuditMessage.LastError = SanitizeError(retryError)
 	msg.AuditMessage.Timestamp = time.Now() // Update timestamp for backoff calculation
 
 	// Re-serialize
@@ -678,6 +700,15 @@ type DrainStats struct {
 	TimedOut               bool
 }
 
+// JoinErrors returns a single error combining all drain errors, or nil if none.
+// SRE-M2: Used by shutdown to propagate drain failures into shutdownErrors.
+func (s *DrainStats) JoinErrors() error {
+	if len(s.Errors) == 0 {
+		return nil
+	}
+	return errors.Join(s.Errors...)
+}
+
 // DrainWithTimeout attempts to process all pending DLQ messages within the given timeout.
 // This is called during graceful shutdown (DD-007 + DD-008) to ensure DLQ messages are
 // not lost when the service shuts down.
@@ -763,7 +794,8 @@ func (c *Client) DrainWithTimeout(ctx context.Context, notificationRepo Notifica
 		"errors", len(stats.Errors),
 		"dd", "DD-008-drain-complete")
 
-	return stats, nil
+	// DF-H1: Return joined errors so shutdown can surface drain failures
+	return stats, stats.JoinErrors()
 }
 
 // drainBatchSize limits the number of messages read per XRangeN call during
@@ -798,10 +830,14 @@ func (c *Client) drainStream(ctx context.Context, auditType string, repo interfa
 	// Successfully XDel'd messages won't reappear. Messages that fail
 	// a second time remain in Redis for the next startup's retry worker.
 	if hadFailures {
-		n, _, err = c.drainStreamPass(ctx, streamKey, auditType, repo)
+		n, stillFailing, err := c.drainStreamPass(ctx, streamKey, auditType, repo)
 		total += n
 		if err != nil {
 			return total, err
+		}
+		// DF-H1: If messages still fail after second pass, report the failure
+		if stillFailing {
+			return total, fmt.Errorf("drain %s: messages remain after 2 passes (repo may be unavailable)", auditType)
 		}
 	}
 
@@ -917,7 +953,7 @@ func (c *Client) writeMessageToDB(ctx context.Context, auditType string, msg *DL
 		if err := ValidateEventData(auditEvent.EventData); err != nil {
 			return fmt.Errorf("drain: audit event EventData validation failed: %w", err)
 		}
-		repoEvent, err := helpers.ConvertToRepositoryAuditEvent(&auditEvent)
+		repoEvent, err := repository.ConvertFromAuditEvent(&auditEvent)
 		if err != nil {
 			return fmt.Errorf("failed to convert audit event: %w", err)
 		}

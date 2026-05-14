@@ -16,53 +16,20 @@ limitations under the License.
 
 package dlq
 
-import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
-)
+import "github.com/jordigilh/kubernaut/pkg/datastorage/eventdata"
 
 const (
-	// MaxEventDataSize caps EventData payload size (consistent with gateway MaxRequestBodySize).
-	MaxEventDataSize = 256 * 1024 // 256 KB
-	// MaxEventDataDepth prevents billion-laughs / recursive JSON attacks.
-	MaxEventDataDepth = 10
+	MaxEventDataSize  = eventdata.MaxEventDataSize
+	MaxEventDataDepth = eventdata.MaxEventDataDepth
 )
 
-// ValidateEventData checks EventData size and JSON nesting depth.
-// Uses a streaming json.Decoder (token-by-token) to count depth without
-// loading the full structure into memory.
+// ValidateEventData delegates to the shared eventdata package.
+// Kept for backward compatibility with existing callers.
 func ValidateEventData(data []byte) error {
-	if len(data) > MaxEventDataSize {
-		return fmt.Errorf("EventData exceeds maximum size (%d > %d bytes)", len(data), MaxEventDataSize)
-	}
-	if len(data) == 0 {
-		return nil
-	}
-	return ValidateJSONDepth(data, MaxEventDataDepth)
+	return eventdata.ValidateEventData(data)
 }
 
-// ValidateJSONDepth walks JSON tokens and returns an error if nesting exceeds maxDepth.
+// ValidateJSONDepth delegates to the shared eventdata package.
 func ValidateJSONDepth(data []byte, maxDepth int) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	var depth int
-	for {
-		t, err := dec.Token()
-		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return fmt.Errorf("invalid JSON in EventData: %w", err)
-		}
-		switch t {
-		case json.Delim('{'), json.Delim('['):
-			depth++
-			if depth > maxDepth {
-				return fmt.Errorf("EventData JSON nesting depth exceeds maximum (%d)", maxDepth)
-			}
-		case json.Delim('}'), json.Delim(']'):
-			depth--
-		}
-	}
+	return eventdata.ValidateJSONDepth(data, maxDepth)
 }

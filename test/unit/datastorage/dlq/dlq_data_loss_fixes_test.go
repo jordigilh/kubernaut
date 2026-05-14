@@ -114,15 +114,12 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 			}
 			worker := server.NewDLQRetryWorker(dlqClient, nil, mockNotifRepo, workerConfig, logger, nil)
 
-			// ACT: Start and let the worker process one cycle
 			worker.Start(ctx)
-			// ✅ APPROVED EXCEPTION: Waiting for goroutine-based retry worker poll cycle
-			time.Sleep(300 * time.Millisecond)
-			worker.Stop()
-
-			// ASSERT: Notification was persisted (not silently dropped)
-			Expect(mockNotifRepo.createdAudits).To(HaveLen(1),
+			Eventually(func() int {
+				return len(mockNotifRepo.createdAudits)
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Equal(1),
 				"DF-1: notification retry must persist via NotificationAuditRepository.Create, not silently drop")
+			worker.Stop()
 			Expect(mockNotifRepo.createdAudits[0].RemediationID).To(Equal("remediation-df1-test"))
 			Expect(mockNotifRepo.createdAudits[0].Channel).To(Equal("slack"))
 		})
@@ -158,18 +155,13 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 			}
 			worker := server.NewDLQRetryWorker(dlqClient, nil, failingNotifRepo, workerConfig, logger, nil)
 
-			// ACT: Let worker attempt processing
 			worker.Start(ctx)
-			// ✅ APPROVED EXCEPTION: Waiting for goroutine-based retry worker poll cycle
-			time.Sleep(300 * time.Millisecond)
-			worker.Stop()
-
-			// ASSERT: Message should NOT have been ACKed (it's still pending)
-			// The message remains in the DLQ for future retry
-			depth, err := dlqClient.GetDLQDepth(ctx, "notifications")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(depth).To(BeNumerically(">=", 1),
+			Eventually(func() int64 {
+				depth, _ := dlqClient.GetDLQDepth(ctx, "notifications")
+				return depth
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(BeNumerically(">=", 1),
 				"DF-1: failed notification write must NOT ack the message")
+			worker.Stop()
 		})
 	})
 
@@ -241,15 +233,12 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 			}
 			worker := server.NewDLQRetryWorker(dlqClient, mockEventsRepo, nil, workerConfig, logger, nil)
 
-			// ACT: Process one cycle
 			worker.Start(ctx)
-			// ✅ APPROVED EXCEPTION: Waiting for goroutine-based retry worker poll cycle
-			time.Sleep(300 * time.Millisecond)
-			worker.Stop()
-
-			// ASSERT: Event was persisted with ALL fields intact
-			Expect(mockEventsRepo.createdEvents).To(HaveLen(1),
+			Eventually(func() int {
+				return len(mockEventsRepo.createdEvents)
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Equal(1),
 				"DF-2: retry worker must persist events using proper unmarshal")
+			worker.Stop()
 
 			persisted := mockEventsRepo.createdEvents[0]
 			Expect(persisted.EventID).To(Equal(eventID), "EventID must round-trip")
@@ -306,13 +295,11 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 			worker := server.NewDLQRetryWorker(dlqClient, mockEventsRepo, nil, workerConfig, logger, nil)
 
 			worker.Start(ctx)
-			// ✅ APPROVED EXCEPTION: Waiting for goroutine-based retry worker poll cycle
-			time.Sleep(300 * time.Millisecond)
-			worker.Stop()
-
-			// ASSERT: Event persisted with default empty EventData
-			Expect(mockEventsRepo.createdEvents).To(HaveLen(1),
+			Eventually(func() int {
+				return len(mockEventsRepo.createdEvents)
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Equal(1),
 				"DF-2: empty EventData must not cause parsing failure")
+			worker.Stop()
 		})
 	})
 
@@ -431,10 +418,11 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 			// ACT: Drain (two passes, both fail)
 			drainCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			stats, err := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, failingRepo)
+			stats, drainErr := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, failingRepo)
 
-			// ASSERT: No messages processed
-			Expect(err).ToNot(HaveOccurred())
+			// ASSERT: DF-H1: Drain returns error when messages fail both passes
+			Expect(drainErr).To(HaveOccurred(),
+				"DF-H1: DrainWithTimeout must return error when messages remain after 2 passes")
 			Expect(stats.EventsProcessed).To(Equal(0))
 
 			// ASSERT: Both messages still in Redis for next startup
@@ -508,16 +496,11 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 			}
 			worker := server.NewDLQRetryWorker(dlqClient, nil, nil, workerConfig, logger, nil)
 
-			// ACT: Start and let the worker attempt processing (must not panic)
 			worker.Start(ctx)
-			// ✅ APPROVED EXCEPTION: Waiting for goroutine-based retry worker poll cycle
-			time.Sleep(300 * time.Millisecond)
-			worker.Stop()
-
-			// ASSERT: Message is NOT ACK'd (still in DLQ for retry after repo is configured)
-			depth, err := dlqClient.GetDLQDepth(ctx, "events")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(depth).To(BeNumerically(">=", 1),
+			Eventually(func() int64 {
+				depth, _ := dlqClient.GetDLQDepth(ctx, "events")
+				return depth
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(BeNumerically(">=", 1),
 				"SRE-M1: nil auditRepo must return error, message stays in DLQ for retry")
 		})
 	})
@@ -590,10 +573,11 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 			// ACT: Drain with failing repo
 			drainCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-			stats, err := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, failingRepo)
+			stats, drainErr := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, failingRepo)
 
-			// ASSERT: Drain completes without panic
-			Expect(err).ToNot(HaveOccurred())
+			// ASSERT: DF-H1: Drain returns error when all writes fail
+			Expect(drainErr).To(HaveOccurred(),
+				"DF-H1: DrainWithTimeout must return error when messages remain after 2 passes")
 			Expect(stats.TotalProcessed).To(Equal(0),
 				"no messages should be marked as processed when all writes fail")
 
@@ -686,11 +670,12 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 			defer cancel()
 
 			start := time.Now()
-			stats, err := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, failingRepo)
+			stats, drainErr := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, failingRepo)
 			elapsed := time.Since(start)
 
-			// ASSERT: Completes quickly (cursor advances past failed message)
-			Expect(err).ToNot(HaveOccurred())
+			// ASSERT: Completes quickly and returns error (DF-H1)
+			Expect(drainErr).To(HaveOccurred(),
+				"DF-H1: DrainWithTimeout must return error when messages remain")
 			Expect(stats.TotalProcessed).To(Equal(0))
 			Expect(elapsed).To(BeNumerically("<", 1*time.Second),
 				"DF-3: drain must not spin in infinite loop on DB failure; cursor must advance")
@@ -958,10 +943,11 @@ var _ = Describe("#1048 QE-M2: DLQ branch coverage", func() {
 		// ACT
 		drainCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		stats, err := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, successRepo)
+		stats, drainErr := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, successRepo)
 
-		// ASSERT: No error returned, but message stays in DLQ (parse failed)
-		Expect(err).ToNot(HaveOccurred())
+		// ASSERT: DF-H1: Drain returns error for unrecoverable malformed messages
+		Expect(drainErr).To(HaveOccurred(),
+			"DF-H1: malformed message remains after 2 passes → drain must report error")
 		Expect(stats.EventsProcessed).To(Equal(0))
 
 		depth, err := dlqClient.GetDLQDepth(ctx, "events")
@@ -1000,10 +986,11 @@ var _ = Describe("#1048 QE-M2: DLQ branch coverage", func() {
 		// ACT
 		drainCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		stats, err := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, successRepo)
+		stats, drainErr := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, successRepo)
 
-		// ASSERT: Oversized payload rejected, message stays
-		Expect(err).ToNot(HaveOccurred())
+		// ASSERT: DF-H1: Oversized payload remains after 2 passes → drain reports error
+		Expect(drainErr).To(HaveOccurred(),
+			"DF-H1: oversized message remains after 2 passes → drain must report error")
 		Expect(stats.EventsProcessed).To(Equal(0))
 
 		depth, err := dlqClient.GetDLQDepth(ctx, "events")

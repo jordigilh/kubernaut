@@ -120,6 +120,7 @@ func (w *Worker) executePurge(ctx context.Context) {
 			PurgeSQLBatched,
 			now,
 			w.config.GetBatchSize(),
+			w.config.GetDefaultDays(), // FED-H1: category floor for GREATEST()
 		)
 		if err != nil {
 			w.logger.Error(err, "Retention purge batch failed",
