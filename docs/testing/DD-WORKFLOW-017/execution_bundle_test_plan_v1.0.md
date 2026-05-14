@@ -79,7 +79,7 @@ cover OCI extraction and action type FK validation. This test plan extends with 
 | Tier | BR Coverage | Code Coverage Target | Scenarios | Focus |
 |------|-------------|---------------------|-----------|-------|
 | **Unit** | 100% of execution.bundle validation logic | 100% of `Validate()` bundle path + handler rejection path + bundle existence check | 12 (8 schema + 4 handler) | Parser validation, handler error propagation, bundle existence |
-| **Integration** | DB storage and API responses | Deferred to GREEN phase | TBD | Repository SQL, API field presence |
+| **Integration** | DB storage and API responses | Deferred to GREEN phase | >=80% of integration-testable code when exercised (per testing strategy) | Repository SQL, API field presence |
 
 ---
 

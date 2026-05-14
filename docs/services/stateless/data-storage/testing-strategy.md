@@ -30,7 +30,7 @@ Data Storage Service requires **Podman containers** for integration tests becaus
 
 **Container Sharing**: Shared PostgreSQL/Redis containers for integration tests (efficiency)
 
-**Reference**: [Stateless Services Integration Test Strategy](../INTEGRATION_TEST_STRATEGY.md#3-data-storage-service--podman)
+**Reference**: [Approved integration test architecture (Hybrid Envtest / Kind / Podman)](../../crd-controllers/testing/integration-test-architecture.md)
 
 ---
 
@@ -446,8 +446,8 @@ Data Storage Service is a critical component in Kubernaut's **microservices arch
 - **Embedding pipeline**: Full embedding generation and storage flow
 - **Data consistency**: Ensure audit records are correctly persisted across both databases
 
-**Per project spec** (`.cursor/rules/03-testing-strategy.mdc` line 72):
-> "**Coverage Mandate**: **>50% of total business requirements due to microservices architecture**"
+**Per project spec** ([`.cursor/rules/03-testing-strategy.mdc`](../../../../.cursor/rules/03-testing-strategy.mdc) — Integration tier):
+> **BR coverage**: >50% of ALL BRs at integration tier (critical interactions), plus **>=80% of integration-testable code** measured via `scripts/coverage/coverage_report.py`.
 
 ### **Test Framework**: Ginkgo + Real PostgreSQL + Real Vector DB
 
@@ -847,10 +847,10 @@ make bootstrap-dev
 
 | Metric | Target | Current |
 |--------|--------|---------|
-| **Unit Test Coverage** | 70%+ | TBD |
-| **Integration Test Coverage** | >50% | TBD |
-| **E2E Test Coverage** | 10-15% | TBD |
-| **Test Execution Time** | < 5 min | TBD |
+| **Unit Test Coverage** | 70%+ BR foundation; >=80% of unit-testable code (per-tier) | Track with `make coverage-report` (`scripts/coverage/coverage_report.py`) |
+| **Integration Test Coverage** | >50% BR interactions; >=80% of integration-testable code | Same; suites under `test/integration/datastorage/` (Podman/Docker-backed DBs) |
+| **E2E Test Coverage** | <10% BR journeys; >=80% of full-service tier where exercised | Kind-based targets when enabled; tracked in CI |
+| **Test Execution Time** | < 5 min (unit-focused local run) | Varies by tier: unit (`pkg/datastorage/...`) typically minutes locally; integration + E2E longer |
 
 ---
 

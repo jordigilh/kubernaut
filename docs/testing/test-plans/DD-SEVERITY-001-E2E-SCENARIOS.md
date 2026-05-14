@@ -530,8 +530,8 @@ Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 | All 4 E2E scenarios passing | 4/4 | ⏸️ Pending |
 | Gateway tests 005 & 006 passing | 10/10 | ⏸️ Pending |
 | RO integration tests passing | 5/5 | ✅ Complete |
-| E2E execution time | <120s/scenario | ⏸️ TBD |
-| Kind cluster stable | No crashes | ⏸️ TBD |
+| E2E execution time | <120s/scenario | Target; measure when E2E suite runs in CI |
+| Kind cluster stable | No crashes | Target; observed in Kind CI when E2E enabled |
 | Documentation updated | All docs | ⏸️ Pending |
 | DD-SEVERITY-001 marked 100% complete | Full implementation | ⏸️ Pending |
 
