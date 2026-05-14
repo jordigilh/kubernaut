@@ -276,6 +276,61 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 				total, len(eventTypes))
 		})
 
+		It("#1111: should emit EA created and workflow created events when lifecycle completes", func() {
+			// These events require the full lifecycle to progress through AA/KA → WFE → EA.
+			// In E2E, if the mock LLM doesn't produce tool_call responses, the lifecycle
+			// may not reach Executing. We verify events IF the lifecycle progressed far enough.
+			By("Querying for orchestrator audit events (best-effort lifecycle gate)")
+			var events []dsgen.AuditEvent
+			var err error
+
+			// Wait for at least lifecycle.started (proves basic audit wiring)
+			Eventually(func() bool {
+				events, _, err = queryAuditEvents(correlationID)
+				if err != nil {
+					return false
+				}
+				for _, event := range events {
+					if event.EventType == roaudit.EventTypeLifecycleStarted {
+						return true
+					}
+				}
+				return false
+			}, 2*time.Minute, 2*time.Second).Should(BeTrue(),
+				"Expected lifecycle.started event (basic audit wiring)")
+
+			eventTypes := make(map[string]bool)
+			for _, event := range events {
+				eventTypes[event.EventType] = true
+			}
+
+			if eventTypes[roaudit.EventTypeRemediationWorkflowCreated] {
+				for _, event := range events {
+					if event.EventType == roaudit.EventTypeRemediationWorkflowCreated {
+						Expect(event.CorrelationID).To(Equal(correlationID),
+							"workflow_created must have RR name as correlation_id")
+						break
+					}
+				}
+				GinkgoWriter.Printf("✅ E2E: remediation.workflow_created confirmed\n")
+			} else {
+				GinkgoWriter.Printf("⚠️  E2E: remediation.workflow_created not found — lifecycle may not have reached Executing\n")
+			}
+
+			if eventTypes[roaudit.EventTypeEACreated] {
+				for _, event := range events {
+					if event.EventType == roaudit.EventTypeEACreated {
+						Expect(event.CorrelationID).To(Equal(correlationID),
+							"ea.created must have RR name as correlation_id")
+						break
+					}
+				}
+				GinkgoWriter.Printf("✅ E2E: orchestrator.ea.created confirmed\n")
+			} else {
+				GinkgoWriter.Printf("⚠️  E2E: orchestrator.ea.created not found — lifecycle may not have reached EA creation\n")
+			}
+		})
+
 		It("should handle audit service unavailability gracefully during startup", func() {
 			// ADR-032 §2: P0 services MUST crash if audit cannot be initialized
 			// This test validates that IF DataStorage is unreachable at RO startup,

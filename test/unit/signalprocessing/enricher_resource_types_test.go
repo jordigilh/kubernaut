@@ -25,6 +25,7 @@ package signalprocessing
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -37,6 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
@@ -484,6 +486,107 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 				Expect(result.Workload.Name).To(Equal("api-server-v2-abc123"))
 				Expect(result.Workload.Labels["app"]).To(Equal("api-server"))
 				Expect(result.Workload.Labels["version"]).To(Equal("v2"))
+			})
+		})
+	})
+
+	// ========================================
+	// PHASE 2 TDD RED: Issue #1110 SP Readiness Audit
+	// Findings: BLAST-A4, BLAST-A5, D4
+	// BR-SP-112: Cluster-Scoped Resource Label Exposure
+	// ========================================
+
+	Describe("Issue #1110 Phase 2: Cluster-Scoped Resource Handling", func() {
+
+		// BLAST-A4 (High): enrichNodeSignal has no degraded mode on NotFound
+		// Authority: DD-017 Principle 3 — Graceful degradation
+		Describe("BLAST-A4: enrichNodeSignal degraded mode on NotFound", func() {
+			It("UT-SP-1110-017: Node NotFound returns DegradedMode=true instead of error", func() {
+				k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, nil, logger, m, 5*time.Second, 5*time.Minute)
+
+				signal := &signalprocessingv1alpha1.SignalData{
+					Name:       "node-notfound-signal",
+					TargetType: "kubernetes",
+					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+						Kind: "Node",
+						Name: "deleted-node",
+					},
+				}
+
+				result, err := k8sEnricher.Enrich(ctx, signal)
+
+				Expect(err).ToNot(HaveOccurred(),
+					"BLAST-A4: Node NotFound MUST NOT return error — should enter degraded mode like Pod/Deployment")
+				Expect(result.DegradedMode).To(BeTrue(),
+					"BLAST-A4: DegradedMode MUST be true when Node is not found")
+				Expect(result.Namespace).To(BeNil(),
+					"BLAST-A4: Node is cluster-scoped — Namespace MUST remain nil")
+			})
+
+			It("UT-SP-1110-018: Node API error (non-NotFound) still returns error", func() {
+				errFunc := interceptor.Funcs{
+					Get: func(ctx context.Context, client client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if _, ok := obj.(*corev1.Node); ok {
+							return fmt.Errorf("etcd unavailable")
+						}
+						return nil
+					},
+				}
+				k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(errFunc).Build()
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, nil, logger, m, 5*time.Second, 5*time.Minute)
+
+				signal := &signalprocessingv1alpha1.SignalData{
+					Name:       "node-api-error-signal",
+					TargetType: "kubernetes",
+					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+						Kind: "Node",
+						Name: "some-node",
+					},
+				}
+
+				_, err := k8sEnricher.Enrich(ctx, signal)
+
+				Expect(err).To(HaveOccurred(),
+					"BLAST-A4: Non-NotFound API errors MUST still propagate")
+			})
+		})
+
+		// BLAST-A5 (High): enrichNamespaceOnly fails for cluster-scoped kinds
+		// Authority: DD-017 Principle 3 — Graceful degradation
+		Describe("BLAST-A5: enrichNamespaceOnly for cluster-scoped kinds", func() {
+			It("UT-SP-1110-019: unknown cluster-scoped kind with empty namespace returns degraded context", func() {
+				k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, nil, logger, m, 5*time.Second, 5*time.Minute)
+
+				signal := &signalprocessingv1alpha1.SignalData{
+					Name:       "pv-signal",
+					TargetType: "kubernetes",
+					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+						Kind:      "PersistentVolume",
+						Name:      "data-pv-01",
+						Namespace: "", // cluster-scoped — no namespace
+					},
+				}
+
+				result, err := k8sEnricher.Enrich(ctx, signal)
+
+				Expect(err).ToNot(HaveOccurred(),
+					"BLAST-A5: Cluster-scoped unknown kind MUST NOT error on empty namespace")
+				Expect(result.DegradedMode).To(BeTrue(),
+					"BLAST-A5: Should enter degraded mode for unknown cluster-scoped kind")
+			})
+		})
+
+		// D4 (Low): Enricher intentional panic on nil metrics — specification test
+		Describe("D4: NewK8sEnricher nil metrics panic", func() {
+			It("UT-SP-1110-020: NewK8sEnricher panics when metrics is nil", func() {
+				Expect(func() {
+					enricher.NewK8sEnricher(
+						fake.NewClientBuilder().WithScheme(scheme).Build(),
+						nil, logger, nil, 5*time.Second, 5*time.Minute,
+					)
+				}).To(Panic(), "D4: NewK8sEnricher MUST panic on nil metrics — metrics are mandatory")
 			})
 		})
 	})

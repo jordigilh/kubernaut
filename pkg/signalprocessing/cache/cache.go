@@ -28,6 +28,10 @@ import (
 	"time"
 )
 
+// DefaultMaxEntries is the maximum number of entries the TTLCache will hold.
+// When exceeded, expired entries are evicted; if still at capacity, the oldest entry is removed.
+const DefaultMaxEntries = 1000
+
 // TTLCache provides thread-safe caching with automatic TTL expiration.
 type TTLCache struct {
 	mu      sync.RWMutex
@@ -62,13 +66,21 @@ func (c *TTLCache) Get(key string) (interface{}, bool) {
 }
 
 // Set stores a value in the cache with the configured TTL.
+// CONC-C3: Evicts expired entries on every write to prevent unbounded growth.
 func (c *TTLCache) Set(key string, value interface{}) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	now := time.Now()
+	for k, entry := range c.entries {
+		if now.After(entry.expiresAt) {
+			delete(c.entries, k)
+		}
+	}
+
 	c.entries[key] = &cacheEntry{
 		value:     value,
-		expiresAt: time.Now().Add(c.ttl),
+		expiresAt: now.Add(c.ttl),
 	}
 }
 

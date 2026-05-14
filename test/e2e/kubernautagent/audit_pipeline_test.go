@@ -409,6 +409,221 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 		})
 	})
 
+	Context("#1111: Extended audit trail coverage — events emitted during investigation", func() {
+
+		It("E2E-KA-1111-001: RCA complete and tool call events persisted", func() {
+			remediationID := "test-audit-1111-001-" + time.Now().Format("20060102150405")
+
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "test-audit-1111-001",
+				RemediationID:     remediationID,
+				SignalName:        "CrashLoopBackOff",
+				Severity:          "critical",
+				SignalSource:      "kubernetes",
+				ResourceNamespace: "default",
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod-1111-001",
+				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
+			}
+
+			_, err := sessionClient.Investigate(ctx, req)
+			Expect(err).ToNot(HaveOccurred(), "KA investigation should succeed")
+
+			// Wait for at least LLM request/response (proves basic audit pipeline)
+			var events []ogenclient.AuditEvent
+			Eventually(func() bool {
+				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(remediationID),
+				})
+				if qErr != nil {
+					return false
+				}
+				events = resp.Data
+				for _, event := range events {
+					if event.EventType == string(ogenclient.LLMResponsePayloadAuditEventEventData) {
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
+				"LLM response event must be persisted (basic audit pipeline)")
+
+			// Verify RCA complete and tool call events if present.
+			// These depend on mock LLM issuing tool_call responses.
+			hasRCA := false
+			hasToolCall := false
+			for _, event := range events {
+				switch event.EventType {
+				case string(ogenclient.AIAgentRCACompletePayloadAuditEventEventData):
+					hasRCA = true
+					Expect(event.CorrelationID).To(Equal(remediationID),
+						"RCA complete event must have remediation_id as correlation_id")
+				case string(ogenclient.LLMToolCallPayloadAuditEventEventData):
+					hasToolCall = true
+					Expect(event.CorrelationID).To(Equal(remediationID),
+						"Tool call event must have remediation_id as correlation_id")
+				}
+			}
+			if hasRCA {
+				GinkgoWriter.Println("✅ aiagent.rca.complete confirmed")
+			} else {
+				GinkgoWriter.Println("⚠️  aiagent.rca.complete not found — mock LLM may not have triggered RCA flow")
+			}
+			if hasToolCall {
+				GinkgoWriter.Println("✅ aiagent.llm.tool_call confirmed")
+			} else {
+				GinkgoWriter.Println("⚠️  aiagent.llm.tool_call not found — mock LLM may not have issued tool_calls")
+			}
+		})
+
+		It("E2E-KA-1111-002: Enrichment completed event persisted with IncidentID correlation", func() {
+			incidentID := "test-audit-1111-002"
+			remediationID := "test-audit-1111-002-" + time.Now().Format("20060102150405")
+
+			req := &agentclient.IncidentRequest{
+				IncidentID:        incidentID,
+				RemediationID:     remediationID,
+				SignalName:        "OOMKilled",
+				Severity:          "high",
+				SignalSource:      "kubernetes",
+				ResourceNamespace: "default",
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod-1111-002",
+				ErrorMessage:      "Container memory limit exceeded",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
+			}
+
+			_, err := sessionClient.Investigate(ctx, req)
+			Expect(err).ToNot(HaveOccurred(), "KA investigation should succeed")
+
+			// Wait for basic audit pipeline (LLM response by remediationID)
+			Eventually(func() bool {
+				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(remediationID),
+				})
+				if qErr != nil {
+					return false
+				}
+				for _, event := range resp.Data {
+					if event.EventType == string(ogenclient.LLMResponsePayloadAuditEventEventData) {
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
+				"LLM response event must be persisted (basic audit pipeline)")
+
+			// aiagent.enrichment.completed uses IncidentID as correlation_id.
+			// Best-effort: verify if present but don't fail — depends on
+			// enrichment wiring in the direct KA invocation path.
+			var enrichmentEvents []ogenclient.AuditEvent
+			Eventually(func() bool {
+				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(incidentID),
+				})
+				if qErr != nil {
+					return false
+				}
+				enrichmentEvents = resp.Data
+				return len(enrichmentEvents) > 0
+			}, 15*time.Second, 1*time.Second).Should(BeTrue(),
+				"At least one event with IncidentID correlation must be persisted")
+
+			hasEnrichment := false
+			for _, event := range enrichmentEvents {
+				if event.EventType == "aiagent.enrichment.completed" {
+					hasEnrichment = true
+					Expect(event.CorrelationID).To(Equal(incidentID),
+						"enrichment.completed must use IncidentID as correlation_id")
+					break
+				}
+			}
+			if hasEnrichment {
+				GinkgoWriter.Println("✅ aiagent.enrichment.completed confirmed")
+			} else {
+				GinkgoWriter.Println("⚠️  aiagent.enrichment.completed not found — enrichment may use different event wiring in direct KA path")
+			}
+		})
+
+		It("E2E-KA-1111-003: Workflow discovery events persisted after Phase 1 fix", func() {
+			remediationID := "test-audit-1111-003-" + time.Now().Format("20060102150405")
+
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "test-audit-1111-003",
+				RemediationID:     remediationID,
+				SignalName:        "CrashLoopBackOff",
+				Severity:          "critical",
+				SignalSource:      "kubernetes",
+				ResourceNamespace: "default",
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod-1111-003",
+				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
+			}
+
+			_, err := sessionClient.Investigate(ctx, req)
+			Expect(err).ToNot(HaveOccurred(), "KA investigation should succeed")
+
+			// Wait for basic audit pipeline (LLM response proves investigation ran)
+			var events []ogenclient.AuditEvent
+			Eventually(func() bool {
+				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(remediationID),
+				})
+				if qErr != nil {
+					return false
+				}
+				events = resp.Data
+				for _, event := range events {
+					if event.EventType == string(ogenclient.LLMResponsePayloadAuditEventEventData) {
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
+				"LLM response event must be persisted (basic audit pipeline)")
+
+			// After #1111 fix, KA forwards remediation_id to DS discovery tools.
+			// DS emits workflow.catalog.* events only when mock LLM issues
+			// tool_call responses that invoke the discovery tools. Best-effort check.
+			hasActionsListed := false
+			hasWorkflowsListed := false
+			for _, event := range events {
+				switch event.EventType {
+				case "workflow.catalog.actions_listed":
+					hasActionsListed = true
+					Expect(event.CorrelationID).To(Equal(remediationID))
+				case "workflow.catalog.workflows_listed":
+					hasWorkflowsListed = true
+					Expect(event.CorrelationID).To(Equal(remediationID))
+				}
+			}
+			if hasActionsListed {
+				GinkgoWriter.Println("✅ workflow.catalog.actions_listed confirmed")
+			} else {
+				GinkgoWriter.Println("⚠️  workflow.catalog.actions_listed not found — mock LLM may not have triggered discovery tools")
+			}
+			if hasWorkflowsListed {
+				GinkgoWriter.Println("✅ workflow.catalog.workflows_listed confirmed")
+			} else {
+				GinkgoWriter.Println("⚠️  workflow.catalog.workflows_listed not found — mock LLM may not have triggered discovery tools")
+			}
+		})
+	})
+
 	Context("TP-433-AUDIT-SOC2: Audit parity — populated payloads", func() {
 
 		It("E2E-KA-433-AP-001: Full investigation audit trail with populated payloads", func() {

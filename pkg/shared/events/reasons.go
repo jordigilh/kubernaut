@@ -228,6 +228,15 @@ const (
 	// Type: Warning
 	// Priority: P4
 	EventReasonEnrichmentDegraded = "EnrichmentDegraded"
+
+	// EventReasonUnsupportedTargetType is emitted when a non-kubernetes targetType
+	// is received. Enrichment proceeds in degraded mode.
+	// Type: Warning
+	EventReasonUnsupportedTargetType = "UnsupportedTargetType"
+
+	// EventReasonEnrichmentFailed is emitted when K8s enrichment fails completely.
+	// Type: Warning
+	EventReasonEnrichmentFailed = "EnrichmentFailed"
 )
 
 // ============================================================

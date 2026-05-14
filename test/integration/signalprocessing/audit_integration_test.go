@@ -629,16 +629,17 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				phaseTransitionCount = countAuditEvents(spaudit.EventTypePhaseTransition, correlationID)
 
 				// Poll until we have at least the expected number of phase transitions
-				g.Expect(phaseTransitionCount).To(BeNumerically(">=", 4),
-					"BR-SP-090: Must have at least 4 phase transitions")
+				g.Expect(phaseTransitionCount).To(BeNumerically(">=", 5),
+					"BR-SP-090: Must have at least 5 phase transitions")
 			}, 120*time.Second, 500*time.Millisecond).Should(Succeed(),
 				"BR-SP-090: SignalProcessing MUST emit phase transition events")
 
 			By("8. Validate exact event count for 'phase.transition' (DD-TESTING-001 compliance)")
-			// Business requirement: SP has 5 phases (Pending→Enriching→Classifying→Categorizing→Completed)
-			// Therefore: Exactly 4 phase transitions per successful processing
-			Expect(phaseTransitionCount).To(Equal(4),
-				"BR-SP-090: MUST emit exactly 4 phase transitions: Pending→Enriching→Classifying→Categorizing→Completed")
+			// Business requirement: SP has 5 phases (""→Pending→Enriching→Classifying→Categorizing→Completed)
+			// O2 (#1110): Initial ""→Pending transition is now audited
+			// Therefore: Exactly 5 phase transitions per successful processing
+			Expect(phaseTransitionCount).To(Equal(5),
+				"BR-SP-090: MUST emit exactly 5 phase transitions: \"\"→Pending→Enriching→Classifying→Categorizing→Completed")
 
 			By("9. Fetch first 'phase.transition' event for detailed validation")
 			event, err := getFirstAuditEvent(spaudit.EventTypePhaseTransition, correlationID)

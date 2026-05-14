@@ -34,6 +34,7 @@ package signalprocessing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -131,6 +132,11 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
+	// O5: Defense-in-depth nil guard for PolicyEvaluator (after resource exists)
+	if r.PolicyEvaluator == nil {
+		return ctrl.Result{}, fmt.Errorf("PolicyEvaluator is nil - SP controller misconfigured (should be caught by SetupWithManager)")
+	}
+
 	// ========================================
 	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001)
 	// ========================================
@@ -162,8 +168,12 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		logger.Error(err, "Failed to initialize status")
 		return ctrl.Result{}, err
 	}
-	// Requeue after short delay to process Pending phase
-	// Using RequeueAfter instead of deprecated Requeue field
+
+	// O2 (BR-SP-090): Record phase transition audit for "" → Pending
+	if r.AuditManager != nil {
+		r.AuditManager.RecordPhaseTransition(ctx, sp, "", string(signalprocessingv1alpha1.PhasePending))
+	}
+
 	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 }
 
@@ -207,8 +217,9 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return r.handleTransientError(ctx, sp, err, logger)
 	}
 
-	// On success, reset consecutive failures
-	if err == nil && result.Requeue {
+	// BR-SP-111: On success, reset consecutive failures
+	// E1 fix: Success paths use RequeueAfter (not Requeue), so check both.
+	if err == nil && (result.Requeue || result.RequeueAfter > 0) {
 		if resetErr := r.resetConsecutiveFailures(ctx, sp, logger); resetErr != nil {
 			logger.V(1).Info("Failed to reset consecutive failures (non-fatal)", "error", resetErr)
 		}
@@ -334,8 +345,11 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 	if signal.TargetType != "" && signal.TargetType != "kubernetes" {
 		logger.Info("Non-kubernetes targetType received; enrichment will run in degraded mode",
 			"targetType", signal.TargetType)
-		r.Recorder.Eventf(sp, "Warning", "UnsupportedTargetType",
-			"targetType %q is not yet supported for enrichment (V2.0); proceeding in degraded mode", signal.TargetType)
+		// E3: Guard against nil Recorder
+		if r.Recorder != nil {
+			r.Recorder.Eventf(sp, corev1.EventTypeWarning, events.EventReasonUnsupportedTargetType,
+				"targetType %q is not yet supported for enrichment (V2.0); proceeding in degraded mode", signal.TargetType)
+		}
 	}
 
 	targetNs := signal.TargetResource.Namespace
@@ -363,7 +377,21 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		}
 
 		if r.AuditManager != nil {
-			_ = r.AuditManager.RecordError(ctx, sp, "Enriching", err)
+			if auditErr := r.AuditManager.RecordError(ctx, sp, "Enriching", err); auditErr != nil {
+				logger.Error(auditErr, "Failed to record enrichment error audit event",
+					"name", sp.Name, "namespace", sp.Namespace, "phase", "Enriching")
+			}
+		}
+
+		// O6 (DD-EVENT-001): Emit Warning K8s event on hard enrichment failure
+		if r.Recorder != nil {
+			var enrichFailMsg string
+			if targetNs == "" {
+				enrichFailMsg = fmt.Sprintf("K8s enrichment failed for %s %s: %v", targetKind, targetName, err)
+			} else {
+				enrichFailMsg = fmt.Sprintf("K8s enrichment failed for %s %s/%s: %v", targetKind, targetNs, targetName, err)
+			}
+			r.Recorder.Event(sp, corev1.EventTypeWarning, events.EventReasonEnrichmentFailed, enrichFailMsg)
 		}
 
 		return ctrl.Result{}, fmt.Errorf("enrichment failed: %w", err)
@@ -381,22 +409,19 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		}
 	}
 
-	// Fallback: Extract from namespace labels if Rego Engine not available or failed
-	if len(customLabels) == 0 && k8sCtx.Namespace != nil {
-		// Extract team label from namespace labels (production)
-		if team, ok := k8sCtx.Namespace.Labels["kubernaut.ai/team"]; ok && team != "" {
+	// BLAST-A2 (BR-SP-112 R2): Fallback label source — namespace first, then workload.
+	if len(customLabels) == 0 {
+		fallbackLabels := extractBusinessLabels(k8sCtx)
+		if team, ok := fallbackLabels["kubernaut.ai/team"]; ok && team != "" {
 			customLabels["team"] = []string{team}
 		}
-		// Extract tier label (BR-SP-102: multi-key extraction support)
-		if tier, ok := k8sCtx.Namespace.Labels["kubernaut.ai/tier"]; ok && tier != "" {
+		if tier, ok := fallbackLabels["kubernaut.ai/tier"]; ok && tier != "" {
 			customLabels["tier"] = []string{tier}
 		}
-		// Extract cost-center label (BR-SP-102: use correct key name)
-		if cost, ok := k8sCtx.Namespace.Labels["kubernaut.ai/cost-center"]; ok && cost != "" {
+		if cost, ok := fallbackLabels["kubernaut.ai/cost-center"]; ok && cost != "" {
 			customLabels["cost-center"] = []string{cost}
 		}
-		// Extract region label
-		if region, ok := k8sCtx.Namespace.Labels["kubernaut.ai/region"]; ok && region != "" {
+		if region, ok := fallbackLabels["kubernaut.ai/region"]; ok && region != "" {
 			customLabels["region"] = []string{region}
 		}
 	}
@@ -410,12 +435,23 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 	if k8sCtx.DegradedMode {
 		// Degraded mode - enrichment succeeded but with partial context
 		enrichmentReason = spconditions.ReasonDegradedMode
-		enrichmentMessage = fmt.Sprintf("Enrichment completed in degraded mode: %s %s/%s (K8s API unavailable)",
-			targetKind, targetNs, targetName)
+		// BLAST-B2: Use clean format for cluster-scoped resources (no empty namespace prefix)
+		if targetNs == "" {
+			enrichmentMessage = fmt.Sprintf("Enrichment completed in degraded mode: %s %s (K8s API unavailable)",
+				targetKind, targetName)
+		} else {
+			enrichmentMessage = fmt.Sprintf("Enrichment completed in degraded mode: %s %s/%s (K8s API unavailable)",
+				targetKind, targetNs, targetName)
+		}
 	} else {
 		enrichmentReason = ""
-		enrichmentMessage = fmt.Sprintf("K8s context enriched: %s %s/%s",
-			targetKind, targetNs, targetName)
+		if targetNs == "" {
+			enrichmentMessage = fmt.Sprintf("K8s context enriched: %s %s",
+				targetKind, targetName)
+		} else {
+			enrichmentMessage = fmt.Sprintf("K8s context enriched: %s %s/%s",
+				targetKind, targetNs, targetName)
+		}
 	}
 
 	// ========================================
@@ -525,7 +561,10 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	// by the enriching phase. If KubernetesContext is nil or Namespace is nil after
 	// FreshGet, enrichment data hasn't propagated to the API server yet.
 	k8sCtx := sp.Status.KubernetesContext
-	if k8sCtx == nil || k8sCtx.Namespace == nil {
+	// BLAST-A3 (BR-SP-112 R3): nil Namespace is valid for cluster-scoped resources (e.g., Node).
+	// Only apply the #437 guard when namespace is expected (namespace-scoped kinds).
+	isClusterScoped := sp.Spec.Signal.TargetResource.Namespace == ""
+	if k8sCtx == nil || (!isClusterScoped && k8sCtx.Namespace == nil) {
 		enrichmentDone := spconditions.IsConditionTrue(sp, spconditions.ConditionEnrichmentComplete)
 		if !enrichmentDone {
 			safetyValveExceeded := sp.Status.StartTime != nil && time.Since(sp.Status.StartTime.Time) > 30*time.Second
@@ -571,15 +610,22 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		r.Metrics.IncrementProcessingTotal("classifying", "failure")
 		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
 
-		// BR-SP-110: Set ClassificationComplete=False condition (best-effort)
+		// S2: Non-transient classification errors transition to PhaseFailed
 		if updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+			sp.Status.ObservedGeneration = sp.Generation
+			sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
+			sp.Status.Error = fmt.Sprintf("environment classification failed: %v", err)
 			spconditions.SetClassificationComplete(sp, false, spconditions.ReasonClassificationFailed, err.Error())
+			spconditions.SetCategorizationComplete(sp, false, spconditions.ReasonCategorizationFailed, "Skipped due to classification failure")
+			spconditions.SetProcessingComplete(sp, false, spconditions.ReasonProcessingFailed, "Signal processing failed during classification")
+			spconditions.SetReady(sp, false, spconditions.ReasonNotReady, "Signal processing failed")
 			return nil
 		}); updateErr != nil {
-			logger.Error(updateErr, "Failed to persist ClassificationComplete=False condition")
+			logger.Error(updateErr, "Failed to transition to PhaseFailed on environment classification error")
+			return ctrl.Result{}, updateErr
 		}
-
-		return ctrl.Result{}, err
+		r.Metrics.IncrementProcessingTotal("completed", "failure")
+		return ctrl.Result{}, nil
 	}
 
 	// 2. Priority Assignment (BR-SP-070-072) - MANDATORY
@@ -588,15 +634,22 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		r.Metrics.IncrementProcessingTotal("classifying", "failure")
 		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
 
-		// BR-SP-110: Set ClassificationComplete=False condition (best-effort)
+		// S2: Non-transient priority errors transition to PhaseFailed
 		if updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+			sp.Status.ObservedGeneration = sp.Generation
+			sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
+			sp.Status.Error = fmt.Sprintf("priority assignment failed: %v", err)
 			spconditions.SetClassificationComplete(sp, false, spconditions.ReasonClassificationFailed, err.Error())
+			spconditions.SetCategorizationComplete(sp, false, spconditions.ReasonCategorizationFailed, "Skipped due to classification failure")
+			spconditions.SetProcessingComplete(sp, false, spconditions.ReasonProcessingFailed, "Signal processing failed during classification")
+			spconditions.SetReady(sp, false, spconditions.ReasonNotReady, "Signal processing failed")
 			return nil
 		}); updateErr != nil {
-			logger.Error(updateErr, "Failed to persist ClassificationComplete=False condition")
+			logger.Error(updateErr, "Failed to transition to PhaseFailed on priority assignment error")
+			return ctrl.Result{}, updateErr
 		}
-
-		return ctrl.Result{}, err
+		r.Metrics.IncrementProcessingTotal("completed", "failure")
+		return ctrl.Result{}, nil
 	}
 
 	// 3. Severity Determination (BR-SP-105, DD-SEVERITY-001) - MANDATORY
@@ -606,6 +659,8 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		if err != nil {
 			r.Metrics.IncrementProcessingTotal("classifying", "failure")
 			r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
+			// O3: Record terminal failure at the "completed" level for dashboard rollup
+			r.Metrics.IncrementProcessingTotal("completed", "failure")
 			logger.Error(err, "Severity determination failed - transitioning to Failed phase",
 				"externalSeverity", signal.Severity,
 				"hint", "Check Rego policy has else clause for unmapped values")
@@ -615,6 +670,9 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 				sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
 				sp.Status.Error = fmt.Sprintf("policy evaluation failed: %v", err)
 				spconditions.SetClassificationComplete(sp, false, spconditions.ReasonRegoEvaluationError, err.Error())
+				// S1 (DD-SP-002): Set all downstream conditions to False on terminal failure
+				spconditions.SetCategorizationComplete(sp, false, spconditions.ReasonCategorizationFailed, "Skipped due to classification failure")
+				spconditions.SetProcessingComplete(sp, false, spconditions.ReasonProcessingFailed, "Signal processing failed during classification")
 				spconditions.SetReady(sp, false, spconditions.ReasonNotReady, "Signal processing failed")
 				return nil
 			})
@@ -626,6 +684,14 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 			if r.Recorder != nil {
 				r.Recorder.Event(sp, corev1.EventTypeWarning, events.EventReasonPolicyEvaluationFailed,
 					fmt.Sprintf("Rego policy evaluation failed for external severity %q: %v", signal.Severity, err))
+			}
+
+			// O1 (BR-SP-090): Emit error audit event on classification failure
+			if r.AuditManager != nil {
+				if auditErr := r.AuditManager.RecordError(ctx, sp, "Classifying", err); auditErr != nil {
+					logger.Error(auditErr, "Failed to record classification error audit event",
+						"name", sp.Name, "namespace", sp.Namespace, "phase", "Classifying")
+				}
 			}
 
 			return ctrl.Result{}, nil
@@ -711,7 +777,10 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	// **Refactoring**: 2026-01-22 - Phase 3: Use AuditManager
 	if r.AuditManager != nil && severityResult != nil {
 		durationMs := int(time.Since(classifyingStart).Milliseconds())
-		_ = r.AuditManager.RecordClassificationDecision(ctx, sp, durationMs)
+		if auditErr := r.AuditManager.RecordClassificationDecision(ctx, sp, durationMs); auditErr != nil {
+			logger.Error(auditErr, "Failed to record classification decision audit event",
+				"name", sp.Name, "namespace", sp.Namespace, "phase", "Classifying")
+		}
 	}
 
 	// Record phase transition audit event (BR-SP-090)
@@ -900,14 +969,16 @@ func (r *SignalProcessingReconciler) classifyBusiness(k8sCtx *signalprocessingv1
 		SLARequirement: signalprocessingv1alpha1.SLARequirementBronze,
 	}
 
-	// Extract business unit from labels
-	if k8sCtx != nil && k8sCtx.Namespace != nil {
-		if bu, ok := k8sCtx.Namespace.Labels["kubernaut.ai/business-unit"]; ok {
+	// BLAST-A1 (BR-SP-112 R1): Extract business unit from namespace labels first,
+	// then fall back to workload labels for cluster-scoped resources (e.g., Node).
+	if k8sCtx != nil {
+		labels := extractBusinessLabels(k8sCtx)
+		if bu, ok := labels["kubernaut.ai/business-unit"]; ok {
 			result.BusinessUnit = bu
-		} else if team, ok := k8sCtx.Namespace.Labels["kubernaut.ai/team"]; ok {
+		} else if team, ok := labels["kubernaut.ai/team"]; ok {
 			result.BusinessUnit = team
 		}
-		if owner, ok := k8sCtx.Namespace.Labels["kubernaut.ai/service-owner"]; ok {
+		if owner, ok := labels["kubernaut.ai/service-owner"]; ok {
 			result.ServiceOwner = owner
 		}
 	}
@@ -929,10 +1000,26 @@ func (r *SignalProcessingReconciler) classifyBusiness(k8sCtx *signalprocessingv1
 	return result
 }
 
+// extractBusinessLabels returns the best available labels for business classification.
+// Namespace labels take priority; workload labels are used as fallback for cluster-scoped resources.
+func extractBusinessLabels(k8sCtx *signalprocessingv1alpha1.KubernetesContext) map[string]string {
+	if k8sCtx.Namespace != nil && len(k8sCtx.Namespace.Labels) > 0 {
+		return k8sCtx.Namespace.Labels
+	}
+	if k8sCtx.Workload != nil && len(k8sCtx.Workload.Labels) > 0 {
+		return k8sCtx.Workload.Labels
+	}
+	return nil
+}
+
 // SetupWithManager sets up the controller with the Manager.
 // DD-CONTROLLER-001: ObservedGeneration provides idempotency without blocking status updates
 // GenerationChangedPredicate removed to allow phase progression via status updates
+// O5: PolicyEvaluator nil check — fail-fast at startup
 func (r *SignalProcessingReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.PolicyEvaluator == nil {
+		return fmt.Errorf("PolicyEvaluator is nil - cannot register SP controller without policy evaluator")
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&signalprocessingv1alpha1.SignalProcessing{}).
 		Named(fmt.Sprintf("signalprocessing-%s", "controller")).
@@ -1047,8 +1134,8 @@ func isTransientError(err error) bool {
 		return true
 	}
 
-	// Context deadline/cancellation (often network issues)
-	if err == context.DeadlineExceeded || err == context.Canceled {
+	// E2 fix: Use errors.Is for wrapped context errors
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return true
 	}
 

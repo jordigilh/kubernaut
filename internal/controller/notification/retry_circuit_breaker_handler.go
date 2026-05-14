@@ -83,7 +83,7 @@ func (r *NotificationRequestReconciler) channelAlreadySucceeded(notification *no
 
 // getChannelAttemptCount returns the number of delivery attempts for a specific channel.
 // BR-NOT-052: Automatic Retry - tracks per-channel attempts for retry limit enforcement
-// DD-NOT-008: Includes in-flight attempts to prevent "6 attempts instead of 5" bug
+// DD-NOT-008: Includes in-flight attempts via reserve-then-check TOCTOU fix
 func (r *NotificationRequestReconciler) getChannelAttemptCount(notification *notificationv1alpha1.NotificationRequest, channel string) int {
 	// Count persisted attempts from status
 	persistedCount := 0

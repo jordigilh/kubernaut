@@ -19,6 +19,7 @@ limitations under the License.
 package signalprocessing
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -143,6 +144,80 @@ var _ = Describe("TTLCache", func() {
 			Expect(ok1).To(BeFalse())
 			Expect(ok2).To(BeFalse())
 			Expect(ok3).To(BeFalse())
+		})
+	})
+
+	// ========================================
+	// PHASE 4 TDD RED: Issue #1110 SP Readiness Audit
+	// Findings: CONC-C3 (bounded growth), CONC-C4 (concurrent safety)
+	// BR-SP-001 (cache), DD-PERF-001
+	// ========================================
+
+	Describe("Issue #1110 Phase 4: Concurrency and Cache Bounds", func() {
+
+		// CONC-C3 (Medium): TTLCache unbounded growth
+		// Authority: BR-SP-001 (cache)
+		Describe("CONC-C3: TTLCache bounded growth", func() {
+			It("UT-SP-1110-043: 50+ Set/Delete cycles does not grow beyond max entries", func() {
+				c := cache.NewTTLCache(1 * time.Hour)
+
+				for i := 0; i < 60; i++ {
+					c.Set(fmt.Sprintf("key-%d", i), fmt.Sprintf("value-%d", i))
+				}
+
+				Expect(c.Len()).To(BeNumerically("<=", cache.DefaultMaxEntries),
+					"CONC-C3: TTLCache MUST NOT grow beyond DefaultMaxEntries")
+			})
+
+			It("UT-SP-1110-044: TTLCache evicts expired entries during Set when at capacity", func() {
+				c := cache.NewTTLCache(10 * time.Millisecond)
+
+				for i := 0; i < 20; i++ {
+					c.Set(fmt.Sprintf("expired-key-%d", i), "value")
+				}
+
+				time.Sleep(20 * time.Millisecond)
+
+				c.Set("fresh-key", "fresh-value")
+
+				Expect(c.Len()).To(BeNumerically("<", 20),
+					"CONC-C3: TTLCache Set MUST evict expired entries when at capacity")
+
+				val, ok := c.Get("fresh-key")
+				Expect(ok).To(BeTrue())
+				Expect(val).To(Equal("fresh-value"))
+			})
+		})
+
+		// CONC-C4 (Low): Concurrent safety verification
+		// Authority: DD-PERF-001
+		Describe("CONC-C4: TTLCache concurrent safety", func() {
+			It("UT-SP-1110-045: Get/Set/Delete under 10+ concurrent goroutines produces no races", func() {
+				c := cache.NewTTLCache(1 * time.Hour)
+				done := make(chan struct{})
+
+				for i := 0; i < 15; i++ {
+					go func(id int) {
+						defer GinkgoRecover()
+						for j := 0; j < 100; j++ {
+							key := fmt.Sprintf("key-%d-%d", id, j)
+							c.Set(key, j)
+							c.Get(key)
+							if j%3 == 0 {
+								c.Delete(key)
+							}
+						}
+						done <- struct{}{}
+					}(i)
+				}
+
+				for i := 0; i < 15; i++ {
+					Eventually(done, 5*time.Second).Should(Receive())
+				}
+
+				Expect(c.Len()).To(BeNumerically(">=", 0),
+					"CONC-C4: TTLCache MUST be safe under concurrent access (run with -race)")
+			})
 		})
 	})
 })

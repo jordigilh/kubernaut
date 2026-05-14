@@ -231,22 +231,23 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 		mockConsoleCallCount := mockConsoleService.GetCallCount()
 
 		GinkgoWriter.Printf("\n🔍 DEBUG: Mock Call Counts:\n")
-		GinkgoWriter.Printf("  File service calls: %d (expected: 5-6 per DD-NOT-008 rapid reconciliation)\n", mockFileCallCount)
-		GinkgoWriter.Printf("  Console service calls: %d (expected: 1-2 per DD-NOT-008 rapid reconciliation)\n", mockConsoleCallCount)
+		GinkgoWriter.Printf("  File service calls: %d (expected: 5, tolerates 6)\n", mockFileCallCount)
+		GinkgoWriter.Printf("  Console service calls: %d (expected: 1)\n", mockConsoleCallCount)
 		GinkgoWriter.Printf("  Status.DeliveryAttempts length: %d (expected: 6 total = 1 console + 5 file)\n", len(notification.Status.DeliveryAttempts))
-		GinkgoWriter.Printf("\n🔍 BR-NOT-052: MaxAttempts=5 enforced via STATUS (not mock calls)\n\n")
+		GinkgoWriter.Printf("\n🔍 BR-NOT-052: MaxAttempts=5 enforced via STATUS (authoritative)\n\n")
 
-		// DD-NOT-008: Integration tests may see 1 extra call per channel due to rapid reconciliation
-		// before singleflight deduplication kicks in. The STATUS correctly records only 5 file attempts.
-		// Production: singleflight + in-flight tracking prevent duplicate PERSISTED attempts (BR-NOT-052)
+		// DD-NOT-008: The reserve-then-check pattern prevents the TOCTOU
+		// race where concurrent reconciles both pass the max-attempts gate.
+		// However, a brief delivery-to-persistence gap can allow one extra
+		// Deliver call per channel when a reconcile reads stale persisted
+		// count before AtomicStatusUpdate completes. The STATUS correctly
+		// enforces MaxAttempts via dedup in AtomicStatusUpdate.
 		Expect(mockFileCallCount).To(BeNumerically(">=", 5),
-			"File service should be called at least 5 times (BR-NOT-052: MaxAttempts=5 per channel)")
+			"BR-NOT-052: File service must be called at least 5 times (MaxAttempts=5)")
 		Expect(mockFileCallCount).To(BeNumerically("<=", 6),
-			"DD-NOT-008: Allow 1 extra call due to rapid reconciliation in test environment")
-		Expect(mockConsoleCallCount).To(BeNumerically(">=", 1),
-			"Console service should be called at least once")
-		Expect(mockConsoleCallCount).To(BeNumerically("<=", 2),
-			"DD-NOT-008: Allow 1 extra call due to rapid reconciliation in test environment")
+			"DD-NOT-008: At most 1 extra call from delivery-to-persistence gap")
+		Expect(mockConsoleCallCount).To(Equal(1),
+			"Console service must be called exactly once (succeeds on first attempt)")
 
 			// ========================================
 			// CLEANUP: Remove test notification

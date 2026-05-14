@@ -52,6 +52,7 @@ type fakeWorkflowDS struct {
 	listWorkflowsParams   ogenclient.ListWorkflowsByActionTypeParams
 	listWorkflowsResponse *ogenclient.WorkflowDiscoveryResponse
 
+	getWorkflowParams ogenclient.GetWorkflowByIDParams
 }
 
 func (f *fakeWorkflowDS) ListAvailableActions(_ context.Context, params ogenclient.ListAvailableActionsParams) (ogenclient.ListAvailableActionsRes, error) {
@@ -64,7 +65,8 @@ func (f *fakeWorkflowDS) ListWorkflowsByActionType(_ context.Context, params oge
 	return f.listWorkflowsResponse, nil
 }
 
-func (f *fakeWorkflowDS) GetWorkflowByID(_ context.Context, _ ogenclient.GetWorkflowByIDParams) (ogenclient.GetWorkflowByIDRes, error) {
+func (f *fakeWorkflowDS) GetWorkflowByID(_ context.Context, params ogenclient.GetWorkflowByIDParams) (ogenclient.GetWorkflowByIDRes, error) {
+	f.getWorkflowParams = params
 	return &ogenclient.RemediationWorkflow{}, nil
 }
 
