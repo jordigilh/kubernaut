@@ -978,6 +978,11 @@ func (h *Handler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	// Apply mutable field updates
 	if updateReq.Status != nil {
+		if workflowCatalogStatusTransitionForbidden(workflow.Status, *updateReq.Status) {
+			response.WriteRFC7807Error(w, http.StatusConflict, "workflow-status-conflict", "Conflict",
+				fmt.Sprintf("invalid workflow status transition from %s to %s", workflow.Status, *updateReq.Status), h.logger)
+			return
+		}
 		workflow.Status = *updateReq.Status
 		if *updateReq.Status == "Disabled" {
 			now := time.Now()
@@ -1078,6 +1083,16 @@ func (h *Handler) emitAuditEventsAsync(events []*api.AuditEventRequest, kvs ...i
 	}()
 }
 
+// workflowCatalogStatusTransitionForbidden returns true when a catalog status PATCH should be rejected.
+// Valid: Active→Disabled, Active→Superseded, Disabled→Active; any→same status (no-op).
+// Forbidden (409): Superseded→Active, Superseded→Disabled — superseded workflows are terminal for those paths.
+func workflowCatalogStatusTransitionForbidden(fromStatus, toStatus string) bool {
+	if fromStatus == toStatus {
+		return false
+	}
+	return fromStatus == "Superseded" && (toStatus == "Active" || toStatus == "Disabled")
+}
+
 // getWorkflowLifecycleRepo returns the workflow lifecycle repository for enable/disable/deprecate.
 // Uses workflowLifecycleRepo when set (tests), otherwise workflowRepo.
 func (h *Handler) getWorkflowLifecycleRepo() WorkflowLifecycleRepository {
@@ -1140,6 +1155,12 @@ func (h *Handler) HandleEnableWorkflow(w http.ResponseWriter, r *http.Request) {
 	if workflow == nil {
 		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
 			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+
+	if workflowCatalogStatusTransitionForbidden(workflow.Status, "Active") {
+		response.WriteRFC7807Error(w, http.StatusConflict, "workflow-status-conflict", "Conflict",
+			fmt.Sprintf("invalid workflow status transition from %s to Active", workflow.Status), h.logger)
 		return
 	}
 
@@ -1379,6 +1400,12 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 	if workflow == nil {
 		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
 			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+
+	if workflowCatalogStatusTransitionForbidden(workflow.Status, "Disabled") {
+		response.WriteRFC7807Error(w, http.StatusConflict, "workflow-status-conflict", "Conflict",
+			fmt.Sprintf("invalid workflow status transition from %s to Disabled", workflow.Status), h.logger)
 		return
 	}
 

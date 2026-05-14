@@ -204,6 +204,8 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 		}
 	}
 
+	s.warnOutOfOrderTimestamps(auditEvents)
+
 	// 4. Persist batch atomically (transaction)
 	s.logger.V(1).Info("Writing batch to database", "count", len(repositoryEvents))
 
@@ -280,6 +282,29 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 	}
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		s.logger.Error(err, "failed to encode batch response")
+	}
+}
+
+// warnOutOfOrderTimestamps logs when events in the same batch share a correlation_id
+// but appear in strictly decreasing timestamp order (soft check for clock skew; batch is still accepted).
+func (s *Server) warnOutOfOrderTimestamps(events []*audit.AuditEvent) {
+	byCorrelation := make(map[string][]time.Time)
+	for _, e := range events {
+		if e == nil {
+			continue
+		}
+		byCorrelation[e.CorrelationID] = append(byCorrelation[e.CorrelationID], e.EventTimestamp)
+	}
+	for corrID, timestamps := range byCorrelation {
+		for i := 1; i < len(timestamps); i++ {
+			if timestamps[i].Before(timestamps[i-1]) {
+				s.logger.Info("out-of-order event timestamps in batch",
+					"correlation_id", corrID,
+					"event_index", i,
+					"current_ts", timestamps[i],
+					"previous_ts", timestamps[i-1])
+			}
+		}
 	}
 }
 

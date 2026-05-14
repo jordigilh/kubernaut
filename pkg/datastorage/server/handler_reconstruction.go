@@ -126,13 +126,13 @@ func (h *Handler) ReconstructRemediationRequest(
 	if err != nil {
 		h.logger.Error(err, "Failed to build RemediationRequest",
 			"correlation_id", correlationID)
-		typeURL, _ := url.Parse("https://kubernaut.ai/problems/reconstruction/build-failed")
+		typeURL, _ := url.Parse("https://kubernaut.ai/problems/reconstruction/unprocessable")
 		return &ogenclient.ReconstructRemediationRequestInternalServerError{
 			Type:   *typeURL,
 			Title:  "Build Failed",
-			Status: 500,
-			Detail: ogenclient.NewOptString("An internal error occurred. Check server logs for details."),
-		}, nil // Return 500 as success (ogen pattern)
+			Status: 422,
+			Detail: ogenclient.NewOptString(err.Error()),
+		}, nil // Return 422 — data present but RR cannot be reconstructed (Chi wrapper honors Status)
 	}
 
 	// Step 5: Validate reconstructed RR
@@ -140,13 +140,13 @@ func (h *Handler) ReconstructRemediationRequest(
 	if err != nil {
 		h.logger.Error(err, "Failed to validate RemediationRequest",
 			"correlation_id", correlationID)
-		typeURL, _ := url.Parse("https://kubernaut.ai/problems/reconstruction/validation-failed")
+		typeURL, _ := url.Parse("https://kubernaut.ai/problems/reconstruction/unprocessable")
 		return &ogenclient.ReconstructRemediationRequestInternalServerError{
 			Type:   *typeURL,
 			Title:  "Validation Failed",
-			Status: 500,
-			Detail: ogenclient.NewOptString("An internal error occurred. Check server logs for details."),
-		}, nil // Return 500 as success (ogen pattern)
+			Status: 422,
+			Detail: ogenclient.NewOptString(err.Error()),
+		}, nil // Return 422 — reconstructed RR fails validation rules
 	}
 
 	// If completeness < 50%, return 400 error

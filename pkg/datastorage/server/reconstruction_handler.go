@@ -128,7 +128,7 @@ func (s *Server) handleReconstructRemediationRequestWrapper(w http.ResponseWrite
 		)
 
 	case *ogenclient.ReconstructRemediationRequestInternalServerError:
-		// 500 error
+		// Uses Status from handler (typically 500; build/validation paths use 422)
 		response.WriteRFC7807Error(w, int(resp.Status),
 			resp.Type.String(),
 			resp.Title,
