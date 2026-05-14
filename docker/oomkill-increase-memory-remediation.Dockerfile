@@ -17,7 +17,11 @@
 # Build:
 #   podman build -f docker/oomkill-increase-memory-remediation.Dockerfile -t oomkill-increase-memory:latest .
 #
-FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
+ARG BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal:latest
+
+# SECURITY: Pin to specific digest on release. Run: skopeo inspect --format '{{.Digest}}' docker://registry.access.redhat.com/ubi10/ubi-minimal:latest
+# Best practice: pass --build-arg BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal@sha256:<digest> in CI; digests change with each image release.
+FROM ${BASE_IMAGE}
 
 # Install kubectl from the official Kubernetes repository
 # Use ARG for architecture so the image builds for both arm64 and amd64

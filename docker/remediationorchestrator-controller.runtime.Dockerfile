@@ -3,9 +3,12 @@
 # Prerequisites: make cross-build-remediationorchestrator IMAGE_ARCH=arm64
 # Usage: make image-runtime-remediationorchestrator IMAGE_ARCH=arm64
 
+ARG BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal:latest
 ARG BINARY=bin/remediationorchestrator-controller-arm64
 
-FROM --platform=linux/amd64 registry.access.redhat.com/ubi10/ubi-minimal:latest AS certs
+# SECURITY: Pin to specific digest on release. Run: skopeo inspect --format '{{.Digest}}' docker://registry.access.redhat.com/ubi10/ubi-minimal:latest
+# Best practice: pass --build-arg BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal@sha256:<digest> in CI; digests change with each image release.
+FROM --platform=linux/amd64 ${BASE_IMAGE} AS certs
 RUN microdnf install -y ca-certificates tzdata && microdnf clean all
 
 FROM scratch

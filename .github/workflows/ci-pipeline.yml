@@ -399,6 +399,14 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
 
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/kubernaut/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}
+          format: cyclonedx-json
+          output-file: sbom-${{ matrix.image_name }}.cdx.json
+          artifact-name: sbom-${{ matrix.image_name }}
+
   # ========================================
   # STAGE 3: INTEGRATION TESTS
   # Waits for BOTH unit-tests AND build-and-push-images to complete
