@@ -609,9 +609,11 @@ var _ = Describe("BufferedAuditStore", func() {
 				return mockClient.AttemptCount()
 			}, "15s").Should(BeNumerically(">=", 3))
 
-			// Verify auth-specific log message appears
-			hasAuthLog := logSink.hasErrorContaining("auth") || logSink.hasErrorContaining("token")
-			Expect(hasAuthLog).To(BeTrue(),
+			// Verify auth-specific log message appears.
+			// Use Eventually because the log is written after StoreBatch returns.
+			Eventually(func() bool {
+				return logSink.hasErrorContaining("auth") || logSink.hasErrorContaining("token")
+			}, "5s").Should(BeTrue(),
 				"401 errors should produce auth-specific log messages for SRE diagnosis")
 		})
 
@@ -646,9 +648,12 @@ var _ = Describe("BufferedAuditStore", func() {
 			// Batch should be dropped (not stuck in infinite loop)
 			Expect(mockClient.BatchCount()).To(Equal(0), "Batch should be dropped after max retries")
 
-			// "AUDIT DATA LOSS" log should appear
-			hasDropLog := logSink.hasErrorContaining("Dropping") || logSink.hasErrorContaining("max retries")
-			Expect(hasDropLog).To(BeTrue(),
+			// "AUDIT DATA LOSS" log should appear.
+			// Use Eventually because the log is written by the background writer goroutine
+			// AFTER StoreBatch returns (which is when AttemptCount is incremented).
+			Eventually(func() bool {
+				return logSink.hasErrorContaining("Dropping") || logSink.hasErrorContaining("max retries")
+			}, "5s").Should(BeTrue(),
 				"Persistent 401 should produce batch-drop log for SRE diagnosis")
 		})
 	})
