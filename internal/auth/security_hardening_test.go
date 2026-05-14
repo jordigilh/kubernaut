@@ -2,8 +2,8 @@ package auth
 
 import (
 	"context"
-	"crypto/rsa"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"math"
@@ -361,7 +361,7 @@ func TestSanitizeClaimValue_InvalidUTF8(t *testing.T) {
 func TestJWKSCache_FetchBodySizeLimit_ExactBoundary(t *testing.T) {
 	// TC-B-01c: body at exactly 1 MiB should be accepted (boundary)
 	body := make([]byte, 1<<20)
-	copy(body, []byte(`{"keys":[]}`))
+	copy(body, `{"keys":[]}`)
 	srv := jwksServerWith(t, body, http.StatusOK)
 	defer srv.Close()
 

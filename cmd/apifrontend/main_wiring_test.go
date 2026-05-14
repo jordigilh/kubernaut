@@ -28,7 +28,7 @@ func TestHealthMuxReadyz_DepsHealthy(t *testing.T) {
 	mux := buildHealthMux(depsReady, draining)
 
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
 	if rec.Code != http.StatusOK {
 		t.Errorf("TC-A-01a: expected 200 when deps healthy, got %d", rec.Code)
 	}
@@ -40,7 +40,7 @@ func TestHealthMuxReadyz_DepsUnhealthy(t *testing.T) {
 	mux := buildHealthMux(depsReady, draining)
 
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("TC-A-01b: expected 503 when deps unhealthy, got %d", rec.Code)
 	}
@@ -53,7 +53,7 @@ func TestHealthMuxReadyz_Draining(t *testing.T) {
 	mux := buildHealthMux(depsReady, draining)
 
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("TC-A-01d: expected 503 when draining, got %d", rec.Code)
 	}
@@ -64,7 +64,7 @@ func TestHealthMuxReadyz_NilDepsReady(t *testing.T) {
 	mux := buildHealthMux(nil, draining)
 
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
 	if rec.Code != http.StatusOK {
 		t.Errorf("TC-A-01f: expected 200 when depsReady nil (fail-open), got %d", rec.Code)
 	}
@@ -73,7 +73,7 @@ func TestHealthMuxReadyz_NilDepsReady(t *testing.T) {
 func TestHealthMuxHealthz_AlwaysOK(t *testing.T) {
 	mux := buildHealthMux(nil, &atomic.Bool{})
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", http.NoBody))
 	if rec.Code != http.StatusOK {
 		t.Errorf("TC-A-01c: healthz should always return 200, got %d", rec.Code)
 	}
@@ -106,13 +106,13 @@ func TestBuildResilientTransport_DependencyNameInMetrics(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		resp, err := client.Get(backend.URL)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	}
 
 	metricsHandler := reg.Handler()
 	mrec := httptest.NewRecorder()
-	metricsHandler.ServeHTTP(mrec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	metricsHandler.ServeHTTP(mrec, httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody))
 	body, _ := io.ReadAll(mrec.Result().Body)
 	metricsText := string(body)
 
@@ -211,8 +211,8 @@ func extractMetricLines(metricsText, prefix string) string {
 type noopAuditor struct{}
 
 func (n *noopAuditor) Emit(_ context.Context, _ *audit.Event) {}
-func (n *noopAuditor) Start()                         {}
-func (n *noopAuditor) Close(_ context.Context) error  { return nil }
+func (n *noopAuditor) Start()                                 {}
+func (n *noopAuditor) Close(_ context.Context) error          { return nil }
 
 func noopLogger() logr.Logger {
 	return logr.Discard()

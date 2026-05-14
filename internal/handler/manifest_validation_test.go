@@ -66,9 +66,12 @@ var _ = Describe("ServiceMonitor manifest", func() {
 	})
 
 	It("TC-A-02c: selector.matchLabels must be consistent with metadata", func() {
-		spec := smData["spec"].(map[string]interface{})
-		selector := spec["selector"].(map[string]interface{})
-		matchLabels := selector["matchLabels"].(map[string]interface{})
+		spec, ok := smData["spec"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "spec must be a map")
+		selector, ok := spec["selector"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "spec.selector must be a map")
+		matchLabels, ok := selector["matchLabels"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "spec.selector.matchLabels must be a map")
 		Expect(matchLabels).To(HaveKey("app.kubernetes.io/name"))
 	})
 })
@@ -147,26 +150,26 @@ var _ = Describe("PrometheusRule manifest", func() {
 var _ = Describe("RBAC tool name alignment", func() {
 	// Registered MCP tool names from mcp_bridge.go (canonical list)
 	registeredTools := map[string]bool{
-		"kubernaut_list_remediations":      true,
-		"kubernaut_get_remediation":        true,
-		"kubernaut_submit_signal":          true,
-		"kubernaut_approve":                true,
-		"kubernaut_cancel_remediation":     true,
-		"kubernaut_watch":                  true,
-		"kubernaut_start_investigation":    true,
-		"kubernaut_poll_investigation":     true,
-		"kubernaut_select_workflow":        true,
-		"kubernaut_present_decision":       true,
-		"kubernaut_list_workflows":         true,
+		"kubernaut_list_remediations":       true,
+		"kubernaut_get_remediation":         true,
+		"kubernaut_submit_signal":           true,
+		"kubernaut_approve":                 true,
+		"kubernaut_cancel_remediation":      true,
+		"kubernaut_watch":                   true,
+		"kubernaut_start_investigation":     true,
+		"kubernaut_poll_investigation":      true,
+		"kubernaut_select_workflow":         true,
+		"kubernaut_present_decision":        true,
+		"kubernaut_list_workflows":          true,
 		"kubernaut_get_remediation_history": true,
-		"kubernaut_get_effectiveness":      true,
-		"kubernaut_get_audit_trail":        true,
-		"af_list_events":                   true,
-		"af_get_pods":                      true,
-		"af_get_workloads":                 true,
-		"af_resolve_owner":                 true,
-		"af_check_existing_rr":             true,
-		"af_create_rr":                     true,
+		"kubernaut_get_effectiveness":       true,
+		"kubernaut_get_audit_trail":         true,
+		"af_list_events":                    true,
+		"af_get_pods":                       true,
+		"af_get_workloads":                  true,
+		"af_resolve_owner":                  true,
+		"af_check_existing_rr":              true,
+		"af_create_rr":                      true,
 	}
 
 	It("TC-A-RBAC-01a: every tool in deploy rbac_roles.yaml must exist in bridge registration", func() {
