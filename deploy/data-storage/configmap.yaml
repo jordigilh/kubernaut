@@ -6,7 +6,9 @@ metadata:
 data:
   config.yaml: |
     server:
-      port: 8081  # DD-AUTH-004: Internal port (oauth-proxy listens on 8080, proxies to 8081)
+      port: 8080  # DD-AUTH-014: Direct access (no proxy)
+      healthPort: 8081
+      metricsPort: 9090
       host: "0.0.0.0"
       readTimeout: "30s"
       writeTimeout: "30s"
@@ -15,8 +17,7 @@ data:
       maxBodySize: "5242880"
       # #1048 Phase 4 / AC-4: CORS allowed origins. Use ["*"] only in dev.
       # Production should list explicit origins, e.g. ["https://dashboard.kubernaut.ai"]
-      corsAllowedOrigins:
-        - "*"
+      corsAllowedOrigins: []
       # #1048 Phase 5 / AU-9: Directory containing signing certificate (tls.crt, tls.key)
       # Default: /etc/certs. Override for Helm environments where cert-manager mounts differ.
       # signerCertDir: "/etc/certs"

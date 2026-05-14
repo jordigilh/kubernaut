@@ -117,8 +117,8 @@ func (h *Handler) ReconstructRemediationRequest(
 			Type:   *typeURL,
 			Title:  "Reconstruction Failed",
 			Status: 400,
-			Detail: ogenclient.NewOptString(err.Error()),
-		}, nil // Return 400 as success (ogen pattern)
+			Detail: ogenclient.NewOptString("Required audit events are missing or incomplete for reconstruction"),
+		}, nil // Return 400 as success (ogen pattern); SEC-M2: generic detail, full error in logs
 	}
 
 	// Step 4: Build complete RemediationRequest CRD
@@ -131,8 +131,8 @@ func (h *Handler) ReconstructRemediationRequest(
 			Type:   *typeURL,
 			Title:  "Build Failed",
 			Status: 422,
-			Detail: ogenclient.NewOptString(err.Error()),
-		}, nil // Return 422 — data present but RR cannot be reconstructed (Chi wrapper honors Status)
+			Detail: ogenclient.NewOptString("Audit data present but RemediationRequest cannot be assembled"),
+		}, nil // Return 422; SEC-M2: generic detail, full error in logs
 	}
 
 	// Step 5: Validate reconstructed RR
@@ -145,8 +145,8 @@ func (h *Handler) ReconstructRemediationRequest(
 			Type:   *typeURL,
 			Title:  "Validation Failed",
 			Status: 422,
-			Detail: ogenclient.NewOptString(err.Error()),
-		}, nil // Return 422 — reconstructed RR fails validation rules
+			Detail: ogenclient.NewOptString("Reconstructed RemediationRequest does not pass validation rules"),
+		}, nil // Return 422; SEC-M2: generic detail, full error in logs
 	}
 
 	// If completeness < 50%, return 400 error

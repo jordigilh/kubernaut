@@ -311,5 +311,5 @@ func mustRFC3339(s string) time.Time {
 	return t
 }
 
-// maxVerifyChainQueryLimit duplicates server.verifyHashChain's LIMIT binding (maxVerifyChainEvents+1).
-func maxVerifyChainQueryLimit() int { return 10001 }
+// maxVerifyChainQueryLimit returns the production LIMIT binding (MaxVerifyChainEvents+1).
+func maxVerifyChainQueryLimit() int { return server.MaxVerifyChainEvents + 1 }

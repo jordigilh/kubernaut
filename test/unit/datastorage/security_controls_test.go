@@ -17,14 +17,16 @@ limitations under the License.
 package datastorage
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"runtime/debug"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/go-logr/logr/funcr"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -40,26 +42,23 @@ import (
 var _ = Describe("Phase 10: Security Controls", func() {
 
 	Describe("UT-DS-1088-GA-120: Panic recovery returns 500, does not re-panic", func() {
-		It("should return 500 when handler panics instead of crashing", func() {
-			// SEC-M2: Panic in handler must return 500, not re-panic.
-			// The current panicRecoveryMiddleware re-panics after logging (panic(err)),
-			// which is wrong. This test verifies the fix returns 500 instead.
-			safeRecoveryMiddleware := func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					defer func() {
-						if err := recover(); err != nil {
-							_ = debug.Stack() // capture stack for logging
-							w.WriteHeader(http.StatusInternalServerError)
-							fmt.Fprint(w, `{"status":500,"title":"Internal Server Error","detail":"unexpected error"}`)
-						}
-					}()
-					next.ServeHTTP(w, r)
-				})
-			}
+		It("should return 500 with problem+json when handler panics", func() {
+			// SEC-M2: Uses the production NewMinimalAuditHandlersHTTPServer to obtain
+			// a real *Server, then wraps a panicking handler with the production
+			// panicRecoveryMiddleware method. This ensures the test exercises the
+			// actual recovery code path, not a stand-in.
+			logBuf := &bytes.Buffer{}
+			testLogger := funcr.New(func(prefix, args string) {
+				fmt.Fprintf(logBuf, "%s %s\n", prefix, args)
+			}, funcr.Options{Verbosity: 1})
+
+			srv := server.NewMinimalAuditHandlersHTTPServer(server.MinimalAuditHandlersHTTPServerDeps{
+				Logger: testLogger,
+			})
 
 			r := chi.NewRouter()
 			r.Use(chimw.RequestID)
-			r.Use(safeRecoveryMiddleware)
+			r.Use(srv.PanicRecoveryMiddleware)
 			r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
 				panic("deliberate test panic")
 			})
@@ -70,6 +69,11 @@ var _ = Describe("Phase 10: Security Controls", func() {
 
 			Expect(rec.Code).To(Equal(http.StatusInternalServerError),
 				"SEC-M2: panicking handler must return 500")
+			Expect(rec.Header().Get("Content-Type")).To(Equal("application/problem+json"))
+			Expect(rec.Body.String()).To(ContainSubstring(`"unexpected error"`),
+				"SEC-M2: response must not leak panic details")
+			Expect(logBuf.String()).To(ContainSubstring("PANIC RECOVERED"),
+				"SEC-M2: panic must be logged server-side")
 		})
 	})
 
@@ -114,12 +118,59 @@ var _ = Describe("Phase 10: Security Controls", func() {
 
 	Describe("UT-DS-1088-GA-160: HTTP access log includes authenticated principal", func() {
 		It("should include user field in access log when X-Auth-Request-User is present", func() {
-			// FED-M2: The logging middleware should include the authenticated user identity.
-			// We test that the loggingMiddleware reads X-Auth-Request-User from context
-			// or header and includes it in the log output.
-			// This is a behavioral contract test — the actual logging is verified
-			// by checking that the middleware compiles with the "user" field.
-			Expect(true).To(BeTrue(), "placeholder: verified in Green phase with actual middleware change")
+			// FED-M2: The loggingMiddleware reads X-Auth-Request-User from the
+			// request header and includes it in structured log output.
+			logBuf := &bytes.Buffer{}
+			testLogger := funcr.New(func(prefix, args string) {
+				fmt.Fprintf(logBuf, "%s %s\n", prefix, args)
+			}, funcr.Options{Verbosity: 1})
+
+			srv := server.NewMinimalAuditHandlersHTTPServer(server.MinimalAuditHandlersHTTPServerDeps{
+				Logger: testLogger,
+			})
+
+			r := chi.NewRouter()
+			r.Use(chimw.RequestID)
+			r.Use(srv.LoggingMiddleware)
+			r.Get("/api/v1/test", func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})
+
+			req := httptest.NewRequest("GET", "/api/v1/test", nil)
+			req.Header.Set("X-Auth-Request-User", "test-principal@kubernaut.ai")
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(logBuf.String()).To(ContainSubstring("test-principal@kubernaut.ai"),
+				"FED-M2: access log must include authenticated principal")
+			Expect(logBuf.String()).To(ContainSubstring("HTTP request"),
+				"FED-M2: access log must include HTTP request marker")
+		})
+
+		It("should log empty user when X-Auth-Request-User is absent", func() {
+			logBuf := &bytes.Buffer{}
+			testLogger := funcr.New(func(prefix, args string) {
+				fmt.Fprintf(logBuf, "%s %s\n", prefix, args)
+			}, funcr.Options{Verbosity: 1})
+
+			srv := server.NewMinimalAuditHandlersHTTPServer(server.MinimalAuditHandlersHTTPServerDeps{
+				Logger: testLogger,
+			})
+
+			r := chi.NewRouter()
+			r.Use(srv.LoggingMiddleware)
+			r.Get("/api/v1/test", func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})
+
+			req := httptest.NewRequest("GET", "/api/v1/test", nil)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(logBuf.String()).To(ContainSubstring(`"user"=""`),
+				"FED-M2: access log must include empty user when header is absent")
 		})
 	})
 })

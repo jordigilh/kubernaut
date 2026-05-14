@@ -1084,13 +1084,14 @@ func (h *Handler) emitAuditEventsAsync(events []*api.AuditEventRequest, kvs ...i
 }
 
 // workflowCatalogStatusTransitionForbidden returns true when a catalog status PATCH should be rejected.
-// Valid: Active→Disabled, Active→Superseded, Disabled→Active; any→same status (no-op).
-// Forbidden (409): Superseded→Active, Superseded→Disabled — superseded workflows are terminal for those paths.
+// Valid: Active→Disabled, Active→Deprecated, Active→Superseded, Disabled→Active.
+// Terminal states (DD-WORKFLOW-017): Superseded and Deprecated cannot transition to any other status.
+// Same-status transitions are no-ops and always allowed.
 func workflowCatalogStatusTransitionForbidden(fromStatus, toStatus string) bool {
 	if fromStatus == toStatus {
 		return false
 	}
-	return fromStatus == "Superseded" && (toStatus == "Active" || toStatus == "Disabled")
+	return fromStatus == "Superseded" || fromStatus == "Deprecated"
 }
 
 // getWorkflowLifecycleRepo returns the workflow lifecycle repository for enable/disable/deprecate.
@@ -1282,6 +1283,13 @@ func (h *Handler) HandleDeprecateWorkflow(w http.ResponseWriter, r *http.Request
 	if workflow == nil {
 		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
 			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return
+	}
+
+	// DD-WORKFLOW-017: Superseded and Deprecated are terminal states
+	if workflowCatalogStatusTransitionForbidden(workflow.Status, "Deprecated") {
+		response.WriteRFC7807Error(w, http.StatusConflict, "workflow-status-conflict", "Status Transition Forbidden",
+			fmt.Sprintf("Cannot transition from %s to Deprecated", workflow.Status), h.logger)
 		return
 	}
 

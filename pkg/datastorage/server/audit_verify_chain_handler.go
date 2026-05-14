@@ -133,10 +133,10 @@ func (s *Server) HandleVerifyChain(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// maxVerifyChainEvents caps the number of events loaded for a single
+// MaxVerifyChainEvents caps the number of events loaded for a single
 // verify-chain request to bound memory and query time. A correlation_id
 // with more events than this limit must be verified via export/offline tooling.
-const maxVerifyChainEvents = 10000
+const MaxVerifyChainEvents = 10000
 
 // verifyHashChain performs the actual hash chain verification
 func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*VerifyChainResponse, error) {
@@ -164,7 +164,7 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 		LIMIT $2
 	`
 
-	rows, err := s.db.QueryContext(ctx, query, correlationID, maxVerifyChainEvents+1)
+	rows, err := s.db.QueryContext(ctx, query, correlationID, MaxVerifyChainEvents+1)
 	if err != nil {
 		return nil, err
 	}
@@ -229,8 +229,8 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 		return nil, err
 	}
 
-	if len(events) > maxVerifyChainEvents {
-		return nil, fmt.Errorf("correlation_id has more than %d hashed events; use export/offline verification", maxVerifyChainEvents)
+	if len(events) > MaxVerifyChainEvents {
+		return nil, fmt.Errorf("correlation_id has more than %d hashed events; use export/offline verification", MaxVerifyChainEvents)
 	}
 
 	response := &VerifyChainResponse{

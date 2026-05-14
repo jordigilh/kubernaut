@@ -85,6 +85,12 @@ func (s *Server) handleLiveness(w http.ResponseWriter, _ *http.Request) {
 
 // Middleware
 
+// PanicRecoveryMiddleware is the exported form of panicRecoveryMiddleware,
+// enabling unit tests outside this package to exercise the production code path.
+func (s *Server) PanicRecoveryMiddleware(next http.Handler) http.Handler {
+	return s.panicRecoveryMiddleware(next)
+}
+
 // panicRecoveryMiddleware catches panics, logs detailed information, and
 // returns HTTP 500 instead of re-panicking (SEC-M2).
 func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
@@ -110,6 +116,12 @@ func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// LoggingMiddleware is the exported form of loggingMiddleware,
+// enabling unit tests outside this package to exercise the production code path.
+func (s *Server) LoggingMiddleware(next http.Handler) http.Handler {
+	return s.loggingMiddleware(next)
 }
 
 // loggingMiddleware logs HTTP requests with structured logging.

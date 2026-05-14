@@ -83,15 +83,41 @@ var _ = Describe("Phase 11: Performance Hardening", func() {
 		})
 	})
 
+	Context("SEC-M1: SanitizeError covers credential/DSN patterns", func() {
+		DescribeTable("UT-DS-1088-GA-263: redacts sensitive patterns",
+			func(errMsg string) {
+				sanitized := dlq.SanitizeError(errors.New(errMsg))
+				Expect(sanitized).To(Equal("database write failed"),
+					"SEC-M1: error containing sensitive pattern must be redacted")
+			},
+			Entry("password in error", "invalid password for user admin"),
+			Entry("secret in error", "secret key expired: rotate immediately"),
+			Entry("token in error", "token verification failed: invalid signature"),
+			Entry("postgres DSN", "postgres://user:pass@host:5432/db connection failed"),
+			Entry("postgresql DSN", "postgresql://admin@localhost?sslmode=disable"),
+			Entry("redis DSN", "redis://default:mypass@redis:6379/0 timeout"),
+		)
+
+		It("UT-DS-1088-GA-264: rune-safe truncation preserves valid UTF-8", func() {
+			// Build a string with multi-byte runes that would split at byte boundary
+			runes := make([]rune, 260)
+			for i := range runes {
+				runes[i] = '日' // 3-byte UTF-8 character
+			}
+			sanitized := dlq.SanitizeError(errors.New(string(runes)))
+			Expect(sanitized).To(HaveSuffix("..."))
+			// Verify output is valid UTF-8 by checking rune count
+			for _, r := range sanitized {
+				Expect(r).NotTo(Equal(rune(0xFFFD)),
+					"DF-L2: truncated string must not contain replacement characters")
+			}
+		})
+	})
+
 	Context("PERF-H2: Effectiveness query has LIMIT", func() {
-		It("UT-DS-1088-GA-210: queryEffectivenessEvents query string contains LIMIT", func() {
-			// Verified via code inspection: the query must contain LIMIT.
-			// This is a structural contract test; the actual limit is enforced
-			// by the repository/handler SQL.
-			// NOTE: Actual SQL limit is validated by integration tests.
-			// This unit test verifies the constant exists and is reasonable.
-			Expect(helpers.MaxEffectivenessResults).To(BeNumerically(">=", 1000))
-			Expect(helpers.MaxEffectivenessResults).To(BeNumerically("<=", 50000))
+		It("UT-DS-1088-GA-210: MaxEffectivenessResults constant is bounded", func() {
+			Expect(helpers.MaxEffectivenessResults).To(Equal(10000),
+				"PERF-H2: production cap must be exactly 10000")
 		})
 	})
 })
