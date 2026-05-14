@@ -289,40 +289,6 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 	})
 
 	// ============================================================================
-	// NEW TEST 2: Handler DLQ Fallback Integration
-	// ============================================================================
-	Describe("Audit Events Handler DLQ Fallback", func() {
-		BeforeEach(func() {
-			// Clean up DLQ
-			streamKey := "audit:dlq:events"
-			redisClient.Del(ctx, streamKey)
-
-			// Clean up database
-			_, err := db.ExecContext(ctx, "DELETE FROM audit_events WHERE correlation_id LIKE 'test-dlq-fallback-%'")
-			Expect(err).ToNot(HaveOccurred())
-		})
-
-		Context("when database is unavailable", func() {
-			It("should fallback to DLQ and return HTTP 202 Accepted", func() {
-				// ✅ COVERAGE: This scenario is comprehensively tested in E2E Scenario 2
-				// (test/e2e/datastorage/02_dlq_fallback_test.go) where we can stop PostgreSQL
-				// and verify the complete DLQ fallback path including HTTP 202 response.
-				//
-				// Integration tests focus on DLQ client functionality in isolation.
-				// E2E tests validate the full handler integration with infrastructure failures.
-
-				// This test would require:
-				// 1. Stopping PostgreSQL
-				// 2. Making HTTP POST to /api/v1/audit/events
-				// 3. Verifying HTTP 202 response
-				// 4. Verifying message in Redis DLQ
-				//
-				// E2E Scenario 2 already covers this comprehensively
-			})
-		})
-	})
-
-	// ============================================================================
 	// NEW TEST 3: Stream Key Isolation
 	// ============================================================================
 	Describe("Stream Key Isolation", func() {
