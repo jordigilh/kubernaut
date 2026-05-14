@@ -31,7 +31,7 @@ var _ = Describe("Panic Recovery Middleware (HANDLER-01)", func() {
 		wrapped := handler.RecoverMiddleware(reg, logr.Discard())(inner)
 
 		rec := httptest.NewRecorder()
-		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", nil))
+		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", http.NoBody))
 
 		Expect(rec.Code).To(Equal(http.StatusInternalServerError))
 		Expect(rec.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"))
@@ -49,7 +49,7 @@ var _ = Describe("Panic Recovery Middleware (HANDLER-01)", func() {
 		wrapped := handler.RecoverMiddleware(reg, logr.Discard())(inner)
 
 		rec := httptest.NewRecorder()
-		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", nil))
+		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", http.NoBody))
 
 		Expect(rec.Code).To(Equal(http.StatusInternalServerError))
 		Expect(rec.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"))
@@ -63,7 +63,7 @@ var _ = Describe("Panic Recovery Middleware (HANDLER-01)", func() {
 		wrapped := handler.RecoverMiddleware(reg, logr.Discard())(inner)
 
 		rec := httptest.NewRecorder()
-		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", nil))
+		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", http.NoBody))
 
 		Expect(rec.Code).To(Equal(http.StatusInternalServerError))
 	})
@@ -76,7 +76,7 @@ var _ = Describe("Panic Recovery Middleware (HANDLER-01)", func() {
 		wrapped := handler.RecoverMiddleware(reg, logr.Discard())(inner)
 
 		rec := httptest.NewRecorder()
-		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", nil))
+		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", http.NoBody))
 
 		Expect(rec.Code).To(Equal(http.StatusInternalServerError))
 		Expect(rec.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"))
@@ -91,7 +91,7 @@ var _ = Describe("Panic Recovery Middleware (HANDLER-01)", func() {
 		wrapped := handler.RecoverMiddleware(reg, logr.Discard())(inner)
 
 		rec := httptest.NewRecorder()
-		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", nil))
+		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", http.NoBody))
 
 		Expect(rec.Code).To(Equal(http.StatusOK))
 		Expect(rec.Body.String()).To(Equal("ok"))
@@ -108,7 +108,7 @@ var _ = Describe("Panic Recovery Middleware (HANDLER-01)", func() {
 		wrapped := handler.RecoverMiddleware(reg, logr.Discard())(inner)
 
 		rec := httptest.NewRecorder()
-		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", nil))
+		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", http.NoBody))
 
 		// httptest.ResponseRecorder allows double WriteHeader; in production
 		// the second status write is silently dropped. The key guarantee is
@@ -136,7 +136,7 @@ var _ = Describe("Panic Recovery Middleware (HANDLER-01)", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody))
 		Expect(rec.Code).To(Equal(http.StatusInternalServerError))
 		Expect(rec.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"))
 		Expect(testutil.ToFloat64(reg.HTTPPanicsTotal)).To(Equal(1.0))
@@ -155,7 +155,7 @@ var _ = Describe("Panic Recovery Middleware (HANDLER-01)", func() {
 			go func() {
 				defer wg.Done()
 				rec := httptest.NewRecorder()
-				wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", nil))
+				wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", http.NoBody))
 				if rec.Code == http.StatusInternalServerError {
 					recovered.Add(1)
 				}

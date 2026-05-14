@@ -165,7 +165,7 @@ var _ = Describe("KA REST Client Resilience", func() {
 		scrapeMetrics := func(reg *prometheus.Registry) string {
 			h := promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
 			rec := httptest.NewRecorder()
-			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody))
 			body, _ := io.ReadAll(rec.Result().Body)
 			return string(body)
 		}

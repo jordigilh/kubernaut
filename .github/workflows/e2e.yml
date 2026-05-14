@@ -79,7 +79,7 @@ jobs:
 
       - name: Port-forward AF and DEX
         run: |
-          kubectl port-forward -n ${{ env.NAMESPACE }} svc/apifrontend 18443:8443 &
+          kubectl port-forward -n ${{ env.NAMESPACE }} svc/apifrontend 18443:8443 18081:8081 &
           kubectl port-forward -n ${{ env.NAMESPACE }} svc/dex 15556:5556 &
           # Wait for port-forwards to be ready
           for i in $(seq 1 30); do
@@ -111,6 +111,7 @@ jobs:
         env:
           AF_E2E_BASE_URL: https://localhost:18443
           AF_E2E_CA_CERT: ${{ env.CERT_DIR }}/ca.crt
+          AF_E2E_HEALTH_URL: http://localhost:18081
           AF_E2E_DEX_URL: http://localhost:15556/dex
           AF_E2E_CLIENT_ID: kubernaut-apifrontend
           AF_E2E_CLIENT_SECRET: e2e-client-secret
