@@ -597,6 +597,38 @@ func TestDefaultConfig_ExtendedDefaults(t *testing.T) {
 	}
 }
 
+// --- TC-P2C-03: DefaultConfig field assertions (BAC-11) ---
+
+func TestDefaultConfig_Port(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultConfig()
+	if cfg.Server.Port != 8443 {
+		t.Errorf("TC-P2C-03a: DefaultConfig().Server.Port = %d, want 8443", cfg.Server.Port)
+	}
+}
+
+func TestDefaultConfig_DrainSeconds(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultConfig()
+	if cfg.Shutdown.DrainSeconds != 15 {
+		t.Errorf("TC-P2C-03b: DefaultConfig().Shutdown.DrainSeconds = %d, want 15", cfg.Shutdown.DrainSeconds)
+	}
+}
+
+func TestDefaultConfig_ResilienceNonZero(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultConfig()
+	if cfg.Resilience.KA.CBFailureThreshold <= 0 {
+		t.Errorf("TC-P2C-03c: KA CB threshold should be > 0, got %d", cfg.Resilience.KA.CBFailureThreshold)
+	}
+	if cfg.Resilience.DS.CBFailureThreshold <= 0 {
+		t.Errorf("TC-P2C-03c: DS CB threshold should be > 0, got %d", cfg.Resilience.DS.CBFailureThreshold)
+	}
+	if cfg.Resilience.K8s.CBFailureThreshold <= 0 {
+		t.Errorf("TC-P2C-03c: K8s CB threshold should be > 0, got %d", cfg.Resilience.K8s.CBFailureThreshold)
+	}
+}
+
 // --- Tier 6: Extended Validation (v2) ---
 
 func TestValidate_AuthIssuerURLNoScheme(t *testing.T) {

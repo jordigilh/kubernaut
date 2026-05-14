@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
 
 	"github.com/go-jose/go-jose/v4"
+	josejwt "github.com/go-jose/go-jose/v4/jwt"
 )
 
 // ---------------------------------------------------------------------------
@@ -40,6 +42,44 @@ func jwksServerWith(t *testing.T, body []byte, status int) *httptest.Server {
 		w.WriteHeader(status)
 		_, _ = w.Write(body)
 	}))
+}
+
+type stdTestKeyPair struct {
+	private *rsa.PrivateKey
+	keyID   string
+}
+
+func generateTestKeyPair(t *testing.T) *stdTestKeyPair {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate RSA key: %v", err)
+	}
+	return &stdTestKeyPair{private: key, keyID: "test-key-1"}
+}
+
+func (kp *stdTestKeyPair) publicJWKS() jose.JSONWebKeySet {
+	return jose.JSONWebKeySet{
+		Keys: []jose.JSONWebKey{
+			{Key: &kp.private.PublicKey, KeyID: kp.keyID, Algorithm: string(jose.RS256), Use: "sig"},
+		},
+	}
+}
+
+func (kp *stdTestKeyPair) signToken(t *testing.T, claims interface{}) string {
+	t.Helper()
+	signer, err := jose.NewSigner(
+		jose.SigningKey{Algorithm: jose.RS256, Key: kp.private},
+		(&jose.SignerOptions{}).WithHeader(jose.HeaderKey("kid"), kp.keyID),
+	)
+	if err != nil {
+		t.Fatalf("create signer: %v", err)
+	}
+	raw, err := josejwt.Signed(signer).Claims(claims).Serialize()
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	return raw
 }
 
 func validJWKSBytes(t *testing.T) []byte {
@@ -449,6 +489,358 @@ func TestAuthConfig_JWKSURLScheme_JavaScriptRejected(t *testing.T) {
 	}
 	if err != nil && !strings.Contains(err.Error(), "JWKS URL") {
 		t.Errorf("TC-P1-06e: error should mention JWKS URL, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TC-P2B-02b: data: scheme rejected
+// ---------------------------------------------------------------------------
+
+func TestAuthConfig_IssuerScheme_DataScheme(t *testing.T) {
+	t.Parallel()
+	cfg := &Config{JWT: []ProviderConfig{{Issuer: IssuerConfig{URL: "data:text/html,<script>alert(1)</script>", Audiences: []string{"test"}}}}}
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("TC-P2B-02b: expected validation error for data: issuer URL, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TC-P2B-02d: empty issuer URL rejected
+// ---------------------------------------------------------------------------
+
+func TestAuthConfig_IssuerScheme_EmptyURL(t *testing.T) {
+	t.Parallel()
+	cfg := &Config{JWT: []ProviderConfig{{Issuer: IssuerConfig{URL: "", Audiences: []string{"test"}}}}}
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("TC-P2B-02d: expected validation error for empty issuer URL, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TC-P2B-03a/b: nbf=0 (epoch) and nbf=-1 (before epoch)
+// ---------------------------------------------------------------------------
+
+func TestValidateNotBefore_Epoch(t *testing.T) {
+	t.Parallel()
+	claims := map[string]interface{}{"nbf": float64(0)}
+	err := validateNotBefore(claims)
+	if err != nil {
+		t.Errorf("TC-P2B-03a: nbf=0 (Unix epoch) is in the past, should accept; got %v", err)
+	}
+}
+
+func TestValidateNotBefore_NegativeOne(t *testing.T) {
+	t.Parallel()
+	claims := map[string]interface{}{"nbf": float64(-1)}
+	err := validateNotBefore(claims)
+	if err != nil {
+		t.Errorf("TC-P2B-03b: nbf=-1 (before epoch) is in the past, should accept; got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TC-P2B-04a/b/d: Replay through full Validate path
+// ---------------------------------------------------------------------------
+
+func TestValidate_ReplayedJTI_ReturnsErrTokenReplayed(t *testing.T) {
+	t.Parallel()
+
+	kp := generateTestKeyPair(t)
+	jwksSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(kp.publicJWKS())
+	}))
+	t.Cleanup(jwksSrv.Close)
+
+	cfg := Config{
+		AllowInsecureIssuers: true,
+		JWT: []ProviderConfig{{
+			Issuer: IssuerConfig{
+				URL:       jwksSrv.URL,
+				JWKSURL:   jwksSrv.URL,
+				Audiences: []string{"test"},
+			},
+		}},
+	}
+	rc := NewReplayCache(10 * time.Minute)
+	t.Cleanup(rc.Stop)
+
+	v, err := NewJWTValidator(cfg, WithReplayCache(rc))
+	if err != nil {
+		t.Fatalf("NewJWTValidator: %v", err)
+	}
+
+	token := kp.signToken(t, map[string]interface{}{
+		"iss": jwksSrv.URL,
+		"aud": "test",
+		"sub": "alice",
+		"jti": "unique-jti-001",
+		"exp": float64(time.Now().Add(1 * time.Hour).Unix()),
+		"iat": float64(time.Now().Unix()),
+	})
+
+	ctx := context.Background()
+
+	_, err = v.Validate(ctx, token)
+	if err != nil {
+		t.Fatalf("TC-P2B-04a: first validation should succeed, got %v", err)
+	}
+
+	_, err = v.Validate(ctx, token)
+	if !errors.Is(err, ErrTokenReplayed) {
+		t.Errorf("TC-P2B-04a: replayed token should return ErrTokenReplayed, got %v", err)
+	}
+}
+
+func TestValidate_DifferentJTI_Passes(t *testing.T) {
+	t.Parallel()
+
+	kp := generateTestKeyPair(t)
+	jwksSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(kp.publicJWKS())
+	}))
+	t.Cleanup(jwksSrv.Close)
+
+	cfg := Config{
+		AllowInsecureIssuers: true,
+		JWT: []ProviderConfig{{
+			Issuer: IssuerConfig{
+				URL:       jwksSrv.URL,
+				JWKSURL:   jwksSrv.URL,
+				Audiences: []string{"test"},
+			},
+		}},
+	}
+	rc := NewReplayCache(10 * time.Minute)
+	t.Cleanup(rc.Stop)
+
+	v, err := NewJWTValidator(cfg, WithReplayCache(rc))
+	if err != nil {
+		t.Fatalf("NewJWTValidator: %v", err)
+	}
+
+	ctx := context.Background()
+	for i, jti := range []string{"jti-a", "jti-b", "jti-c"} {
+		token := kp.signToken(t, map[string]interface{}{
+			"iss": jwksSrv.URL,
+			"aud": "test",
+			"sub": "alice",
+			"jti": jti,
+			"exp": float64(time.Now().Add(1 * time.Hour).Unix()),
+			"iat": float64(time.Now().Unix()),
+		})
+		_, err = v.Validate(ctx, token)
+		if err != nil {
+			t.Errorf("TC-P2B-04b[%d]: different JTI %q should pass, got %v", i, jti, err)
+		}
+	}
+}
+
+func TestValidate_MissingJTI_WithReplayEnabled(t *testing.T) {
+	t.Parallel()
+
+	kp := generateTestKeyPair(t)
+	jwksSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(kp.publicJWKS())
+	}))
+	t.Cleanup(jwksSrv.Close)
+
+	cfg := Config{
+		AllowInsecureIssuers: true,
+		JWT: []ProviderConfig{{
+			Issuer: IssuerConfig{
+				URL:       jwksSrv.URL,
+				JWKSURL:   jwksSrv.URL,
+				Audiences: []string{"test"},
+			},
+		}},
+	}
+	rc := NewReplayCache(10 * time.Minute)
+	t.Cleanup(rc.Stop)
+
+	v, err := NewJWTValidator(cfg, WithReplayCache(rc))
+	if err != nil {
+		t.Fatalf("NewJWTValidator: %v", err)
+	}
+
+	token := kp.signToken(t, map[string]interface{}{
+		"iss": jwksSrv.URL,
+		"aud": "test",
+		"sub": "alice",
+		"exp": float64(time.Now().Add(1 * time.Hour).Unix()),
+		"iat": float64(time.Now().Unix()),
+	})
+
+	_, err = v.Validate(context.Background(), token)
+	if err == nil {
+		t.Error("TC-P2B-04d: token missing jti with replay enabled should fail")
+	}
+	if !errors.Is(err, ErrMalformedToken) {
+		t.Errorf("TC-P2B-04d: expected ErrMalformedToken wrapping, got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TC-P2B-05a: Multi-group sanitization
+// ---------------------------------------------------------------------------
+
+func TestSanitizeClaimValue_MultiGroupSpecialChars(t *testing.T) {
+	t.Parallel()
+
+	inputs := []string{"\x00admin", "sre\u202E", "valid"}
+	for _, input := range inputs {
+		got := SanitizeClaimValue(input)
+		if !utf8.ValidString(got) {
+			t.Errorf("TC-P2B-05a: output %q is not valid UTF-8", got)
+		}
+		if strings.ContainsRune(got, 0) {
+			t.Errorf("TC-P2B-05a: output %q still contains null byte", got)
+		}
+		if strings.ContainsRune(got, '\u202E') {
+			t.Errorf("TC-P2B-05a: output %q still contains RTLO", got)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TC-P2B-05b: 1 MB claim value truncated without OOM
+// ---------------------------------------------------------------------------
+
+func TestSanitizeClaimValue_1MBInput(t *testing.T) {
+	t.Parallel()
+	huge := strings.Repeat("x", 1<<20)
+	got := SanitizeClaimValue(huge)
+	if len(got) > 256 {
+		t.Errorf("TC-P2B-05b: expected truncation to ≤256 chars, got %d", len(got))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TC-P2B-06a/b: Concurrent JWKS refresh with -race
+// ---------------------------------------------------------------------------
+
+func TestJWKSCache_ConcurrentGetKeys(t *testing.T) {
+	t.Parallel()
+
+	body := validJWKSBytes(t)
+	srv := jwksServerWith(t, body, http.StatusOK)
+	defer srv.Close()
+
+	cache := NewJWKSCache(srv.Client(), []string{srv.URL}, WithRefreshInterval(0))
+
+	const goroutines = 10
+	errs := make(chan error, goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			_, err := cache.GetKeys(context.Background(), srv.URL)
+			errs <- err
+		}()
+	}
+
+	for i := 0; i < goroutines; i++ {
+		if err := <-errs; err != nil {
+			t.Errorf("TC-P2B-06a: goroutine %d: %v", i, err)
+		}
+	}
+}
+
+func TestJWKSCache_ConcurrentGetKeys_FailingServer(t *testing.T) {
+	t.Parallel()
+
+	var callCount atomic.Int32
+	ks := testJWKSKeySet(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := callCount.Add(1)
+		if n%2 == 0 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ks)
+	}))
+	defer srv.Close()
+
+	cache := NewJWKSCache(srv.Client(), []string{srv.URL}, WithRefreshInterval(0))
+
+	const goroutines = 10
+	done := make(chan struct{}, goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			_, _ = cache.GetKeys(context.Background(), srv.URL)
+		}()
+	}
+
+	for i := 0; i < goroutines; i++ {
+		<-done
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TC-P3-05: NaN/Inf exp claim rejection (MED-05)
+// ---------------------------------------------------------------------------
+
+func TestValidateExpiry_NaN(t *testing.T) {
+	t.Parallel()
+	claims := map[string]interface{}{"exp": math.NaN()}
+	err := validateExpiry(claims)
+	if !errors.Is(err, ErrMalformedToken) {
+		t.Errorf("TC-P3-05a: NaN exp should return ErrMalformedToken, got %v", err)
+	}
+}
+
+func TestValidateExpiry_PosInf(t *testing.T) {
+	t.Parallel()
+	claims := map[string]interface{}{"exp": math.Inf(1)}
+	err := validateExpiry(claims)
+	if !errors.Is(err, ErrMalformedToken) {
+		t.Errorf("TC-P3-05b: +Inf exp should return ErrMalformedToken, got %v", err)
+	}
+}
+
+func TestValidateExpiry_NegInf(t *testing.T) {
+	t.Parallel()
+	claims := map[string]interface{}{"exp": math.Inf(-1)}
+	err := validateExpiry(claims)
+	if !errors.Is(err, ErrMalformedToken) {
+		t.Errorf("TC-P3-05c: -Inf exp should return ErrMalformedToken, got %v", err)
+	}
+}
+
+func TestValidateExpiry_FutureValid(t *testing.T) {
+	t.Parallel()
+	claims := map[string]interface{}{"exp": float64(time.Now().Add(1 * time.Hour).Unix())}
+	err := validateExpiry(claims)
+	if err != nil {
+		t.Errorf("TC-P3-05d: future exp should be accepted, got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TC-P3-02: JWKS CB Label uses SHA256 prefix (MED-02)
+// ---------------------------------------------------------------------------
+
+func TestJWKSCBLabel_NotFullURL(t *testing.T) {
+	t.Parallel()
+	label := jwksDependencyLabel("https://long.issuer.example.com/protocol/openid-connect/certs")
+	if strings.Contains(label, "://") {
+		t.Errorf("TC-P3-02a: CB label should NOT contain full URL, got %q", label)
+	}
+	if !strings.HasPrefix(label, "jwks_") {
+		t.Errorf("TC-P3-02a: CB label should start with 'jwks_', got %q", label)
+	}
+}
+
+func TestJWKSCBLabel_DifferentURLsProduceDifferentLabels(t *testing.T) {
+	t.Parallel()
+	labelA := jwksDependencyLabel("https://issuer-a.example.com/jwks")
+	labelB := jwksDependencyLabel("https://issuer-b.example.com/jwks")
+	if labelA == labelB {
+		t.Errorf("TC-P3-02b: different URLs should produce different labels: %q == %q", labelA, labelB)
 	}
 }
 
