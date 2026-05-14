@@ -1,15 +1,14 @@
 # Audit Service - Prometheus Alert Rules
 # F-5 SOC2 Fix: Deploy Audit Prometheus Alerting Rules
 #
-# These alerts monitor the audit event pipeline defined in pkg/audit/metrics.go.
-# All services using the shared audit library expose these metrics.
+# These alerts monitor the audit event pipeline defined in pkg/audit/metrics.go
+# and the Data Storage service metrics defined in pkg/datastorage/metrics/metrics.go.
 #
 # Key Metrics:
 # - audit_events_dropped_total: Events dropped due to buffer full
-#
-# Note: Buffer utilization, batch failure, and write metrics were removed
-# in GitHub #294 (internal-only metrics cleanup). The remaining alert
-# monitors drops, which is the most actionable signal.
+# - datastorage_dlq_pel_pending: DLQ PEL backlog depth (#1088 Phase 7)
+# - datastorage_shutdown_dlq_drain_errors_total: Shutdown drain errors (#1088 Phase 7)
+# - datastorage_retention_purge_total: Retention purge operations (#1088 Phase 7)
 
 apiVersion: v1
 kind: ConfigMap
@@ -52,3 +51,65 @@ data:
                 3. Check PostgreSQL connectivity and performance
                 4. Consider increasing buffer size in audit config (current default: 10000)
                 5. Check if PostgreSQL is under pressure
+
+          # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          # DATA STORAGE ALERTS (#1088 Phase 7 — Checkpoint B / H3)
+          # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          - alert: DLQPELBacklogHigh
+            expr: datastorage_dlq_pel_pending > 100
+            for: 5m
+            labels:
+              severity: warning
+              component: datastorage
+            annotations:
+              summary: "DLQ PEL backlog is high ({{ $value }} pending messages)"
+              description: |
+                The DLQ Pending Entry List has {{ $value }} messages that have
+                been read but not yet acknowledged. This may indicate the retry
+                worker is stuck, PostgreSQL is slow, or messages are failing
+                validation repeatedly.
+
+                **Runbook**: RB-DS-005 (PEL Stuck Messages)
+                **Actions**:
+                1. Check DLQ retry worker logs for errors
+                2. Check PostgreSQL connectivity and query performance
+                3. Look for poison messages (delivery count > 5)
+
+          - alert: ShutdownDrainErrors
+            expr: increase(datastorage_shutdown_dlq_drain_errors_total[10m]) > 0
+            for: 1m
+            labels:
+              severity: warning
+              component: datastorage
+            annotations:
+              summary: "DLQ drain errors during recent pod shutdown"
+              description: |
+                Errors occurred while draining DLQ messages to PostgreSQL during
+                graceful shutdown. Messages that failed to drain remain in Redis
+                and will be retried by the next pod's retry worker.
+
+                **Runbook**: RB-DS-006 (Shutdown DLQ Drain Issues)
+                **Actions**:
+                1. Correlate with shutdown_id in logs
+                2. Check PostgreSQL availability at shutdown time
+                3. Verify DLQ depth after pod restart (XLEN)
+
+          - alert: RetentionPurgeStalled
+            expr: increase(datastorage_retention_purge_total[1h]) == 0
+            for: 10m
+            labels:
+              severity: warning
+              component: datastorage
+            annotations:
+              summary: "Retention worker has not purged in over 1 hour"
+              description: |
+                The retention worker has not completed a purge cycle in the last
+                hour. This may indicate the worker has stopped, PostgreSQL is
+                unreachable, or all events are under legal hold.
+
+                **Runbook**: RB-DS-002 (Retention Worker Not Purging)
+                **Actions**:
+                1. Check retention worker logs for errors
+                2. Verify retention_operations table for recent runs
+                3. Check if events exist past retention_days threshold
