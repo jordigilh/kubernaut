@@ -83,7 +83,7 @@ var (
 		prometheus.HistogramOpts{
 			Name: MetricNameWriteDuration, // DD-005 V3.0: Pattern B (full name),
 			Help: "Duration of write operations in seconds",
-			// Buckets: 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s
+			// prometheus.DefBuckets: 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"table"},

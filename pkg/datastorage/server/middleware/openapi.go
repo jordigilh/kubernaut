@@ -134,7 +134,7 @@ func (v *OpenAPIValidator) Middleware(next http.Handler) http.Handler {
 		options := &openapi3filter.Options{
 			// Enable strict validation
 			ExcludeRequestBody:    false, // Validate request body
-			ExcludeResponseBody:   true,  // Don't validate responses (performance)
+			ExcludeResponseBody:   true,  // FED-L1: Intentionally disabled for performance; see DD-AUTH-014
 			IncludeResponseStatus: false,
 
 			// Collect all validation errors, not just the first one
