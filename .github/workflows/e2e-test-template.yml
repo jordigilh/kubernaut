@@ -76,7 +76,7 @@ jobs:
       # ========================================
       - name: Run ${{ inputs.service }} E2E tests
         id: test
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         with:
           timeout_minutes: ${{ inputs.timeout }}
           max_attempts: 2
