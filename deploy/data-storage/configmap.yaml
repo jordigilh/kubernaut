@@ -45,3 +45,12 @@ data:
       secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
       passwordKey: "password"
 
+    # #1048 Phase 5 / AU-11: Retention worker configuration
+    # Purges audit events past their retention period while respecting legal holds.
+    # Default: enabled in production (2555 days per ADR-034 SOC 2 / ISO 27001).
+    retention:
+      enabled: true
+      interval: "24h"
+      batchSize: 1000
+      defaultDays: 2555
+

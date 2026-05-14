@@ -55,11 +55,10 @@ spec:
           env:
             - name: CONFIG_PATH
               value: /etc/datastorage/config.yaml
-          envFrom:
-            - configMapRef:
-                name: data-storage-config
-            - secretRef:
-                name: data-storage-secret
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           resources:
             requests:
               cpu: 100m
@@ -93,22 +92,40 @@ spec:
               drop:
                 - ALL
           volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-            # SOC2 Day 9.1: Signing certificate for audit export
+            - name: config
+              mountPath: /etc/datastorage
+              readOnly: true
+            - name: secrets
+              mountPath: /etc/datastorage/secrets
+              readOnly: true
             - name: signing-cert
               mountPath: /etc/certs
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
       volumes:
-        - name: tmp
-          emptyDir: {}
-        # DD-AUTH-014: No oauth-proxy volumes needed (middleware-based auth)
-        # SOC2 Day 9.1: Signing certificate (managed by cert-manager)
-        # Certificate: deploy/data-storage/certificate.yaml
-        # Format: tls.crt, tls.key (cert-manager compatible)
+        - name: config
+          configMap:
+            name: data-storage-config
+        - name: secrets
+          projected:
+            sources:
+              - secret:
+                  name: data-storage-db-secret
+                  items:
+                    - key: db-secrets.yaml
+                      path: db-secrets.yaml
+              - secret:
+                  name: data-storage-redis-secret
+                  items:
+                    - key: redis-secrets.yaml
+                      path: redis-secrets.yaml
         - name: signing-cert
           secret:
             secretName: datastorage-signing-cert
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
       restartPolicy: Always
       terminationGracePeriodSeconds: 90
 

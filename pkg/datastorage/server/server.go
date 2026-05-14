@@ -859,6 +859,8 @@ func (s *Server) shutdownStep5CloseResources(shutdownID string) error {
 
 	// BR-STORAGE-014: Flush remaining audit events before closing database
 	// This ensures no audit traces are lost during graceful shutdown
+	var step5Errors []error
+
 	if s.auditStore != nil {
 		s.logger.Info("Flushing remaining audit events (DD-STORAGE-012)",
 			"shutdown_id", shutdownID,
@@ -867,6 +869,7 @@ func (s *Server) shutdownStep5CloseResources(shutdownID string) error {
 			s.logger.Error(err, "Failed to flush audit events",
 				"shutdown_id", shutdownID,
 				"dd", "DD-007-step-5-audit-error")
+			step5Errors = append(step5Errors, fmt.Errorf("failed to flush audit events: %w", err))
 		} else {
 			s.logger.Info("Audit events flushed successfully",
 				"shutdown_id", shutdownID,
@@ -884,13 +887,13 @@ func (s *Server) shutdownStep5CloseResources(shutdownID string) error {
 		s.logger.Error(err, "Failed to close PostgreSQL connection",
 			"shutdown_id", shutdownID,
 			"dd", "DD-007-step-5-error")
-		return fmt.Errorf("failed to close PostgreSQL: %w", err)
+		step5Errors = append(step5Errors, fmt.Errorf("failed to close PostgreSQL: %w", err))
 	}
 
 	s.logger.Info("All external resources closed",
 		"shutdown_id", shutdownID,
 		"dd", "DD-007-step-5-complete")
-	return nil
+	return errors.Join(step5Errors...)
 }
 
 // GetDLQClient returns the DLQ client for testing purposes
