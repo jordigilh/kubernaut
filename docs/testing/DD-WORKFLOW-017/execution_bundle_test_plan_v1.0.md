@@ -33,6 +33,10 @@ during workflow registration in the DataStorage service (Issue #89):
 - OCI 1.1 subject/referrers integration (Issue #105)
 - DB migration and repository SQL (covered during GREEN phase, not unit-testable)
 
+### Cross-Repo Dependencies
+
+- **kubernaut-operator**: Workflow lifecycle state transitions (Deprecated, Superseded terminal states) are enforced in DS handlers. The operator must honour the same terminal-state semantics when reconciling WorkflowCatalog CRDs. See kubernaut-operator v1.5 milestone for related issues.
+
 ### Design Decisions
 
 **Decision date**: 2026-02-17

@@ -18,21 +18,24 @@ description: "Testing coverage standards - AUTHORITATIVE reference to prevent in
 ### **MANDATORY Percentages (Microservices Architecture)**
 
 ```markdown
-- **Unit Tests**: 70%+ coverage (ALL unit-testable BRs)
-- **Integration Tests**: >50% coverage (microservices coordination)
-- **E2E Tests**: 10-15% coverage (critical user journeys)
+- **Unit Tests**: >=80% of unit-testable code coverage (ALL unit-testable BRs)
+- **Integration Tests**: >=80% of integration-testable code coverage (microservices coordination)
+- **E2E Tests**: >=80% of full service code coverage (critical user journeys)
+- **All Tiers**: >=80% merged (line-by-line dedup across all tiers)
 ```
 
-### **Why >50% Integration Coverage is Required**
+### **Why >=80% Per-Tier Coverage is Required**
 
-Kubernaut's microservices architecture requires high integration test coverage for:
+Kubernaut's microservices architecture requires high per-tier test coverage for:
 - ✅ **CRD-based coordination** between 10+ services
 - ✅ **Watch-based status propagation** (difficult to unit test)
 - ✅ **Owner reference lifecycle management**
 - ✅ **Cross-service error handling**
 - ✅ **Service discovery and communication patterns**
 
-**Authoritative Source**: [03-testing-strategy.mdc lines 72-86](mdc:.cursor/rules/03-testing-strategy.mdc)
+Coverage is measured **per tier against the tier-specific code subset** (see `scripts/coverage/coverage_report.py`).
+
+**Authoritative Source**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
 
 ---
 
@@ -41,15 +44,15 @@ Kubernaut's microservices architecture requires high integration test coverage f
 ### **Old/Monolithic Standards (DO NOT USE)**
 
 ```markdown
-❌ Unit Tests: 70%
-❌ Integration Tests: <20% or 20%  ← WRONG FOR MICROSERVICES
-❌ E2E Tests: <10%
+❌ Unit Tests: 70% (flat, not per-tier)
+❌ Integration Tests: <20% or 20% or >50%  ← WRONG: must be >=80% of integration-testable code
+❌ E2E Tests: <10% or 10-15%  ← WRONG: must be >=80% of full service code
 ```
 
 **Why This is Wrong**:
-- ❌ Based on monolithic application patterns
+- ❌ Based on monolithic application patterns or outdated flat percentages
+- ❌ Does not measure per-tier against tier-specific code subsets
 - ❌ Insufficient for CRD controller testing requirements
-- ❌ Does not account for microservices coordination needs
 - ❌ Inadequate for watch-based patterns and K8s API testing
 
 ---
@@ -75,20 +78,20 @@ Kubernaut's microservices architecture requires high integration test coverage f
 
 ## 🔍 **Detection Commands**
 
-### **Find Incorrect "<20%" References**
+### **Find Incorrect Flat-Percentage References**
 ```bash
-# Find files with incorrect integration coverage
-grep -r "Integration.*<20%\|Integration.*20%" \
+# Find files with outdated coverage numbers
+grep -rE "Integration.*(>50%|<20%|20%)" \
   --include="*.md" \
   --include="*_test.go" \
   --exclude-dir="archive" \
   . | grep -v "archive/"
 ```
 
-### **Verify Correct ">50%" Usage**
+### **Verify Correct ">=80%" Usage**
 ```bash
-# Find files with correct integration coverage
-grep -r "Integration.*>50%" \
+# Find files with correct per-tier coverage
+grep -rE ">=80%" \
   --include="*.md" \
   --include="*_test.go" \
   .
@@ -102,35 +105,35 @@ grep -r "Integration.*>50%" \
 ```markdown
 ### Testing Strategy
 
-Kubernaut follows a **defense-in-depth testing pyramid**:
+Kubernaut follows a **defense-in-depth testing pyramid** with **>=80% per-tier code coverage**:
 
-- **Unit Tests**: **70%+ coverage** - Extensive business logic with external mocks only
-- **Integration Tests**: **>50% coverage** - Cross-service coordination, CRD-based flows, microservices architecture
-- **E2E Tests**: **10-15% coverage** - Critical end-to-end user journeys
+- **Unit Tests**: >=80% of unit-testable code (pure logic: config, validators, scoring, builders)
+- **Integration Tests**: >=80% of integration-testable code (I/O: reconciler, K8s clients, HTTP handlers)
+- **E2E Tests**: >=80% of full service code (full stack execution)
+- **All Tiers**: >=80% merged (line-by-line dedup across all tiers)
 
-**Rationale**: Microservices architecture with CRD-based coordination requires high integration coverage for validating service interactions, watch-based patterns, and Kubernetes API behavior.
+**Rationale**: Coverage is measured per tier against the tier-specific code subset.
 ```
 
 ### **For Test File Comments**
 ```go
 // Defense-in-Depth Strategy (per 03-testing-strategy.mdc):
-// - Unit tests (70%+): Business logic in isolation
-// - Integration tests (>50%): Infrastructure interaction, microservices coordination
-// - E2E tests (10-15%): Complete workflow validation
+// - Unit tests (>=80% of unit-testable code): Business logic in isolation
+// - Integration tests (>=80% of integration-testable code): Infrastructure interaction
+// - E2E tests (>=80% of full service code): Complete workflow validation
 ```
 
 ### **For Service Implementation Plans**
 ```markdown
-**Unit Tests (70%+)**:
+**Unit Tests (>=80% of unit-testable code)**:
 - **MOCK**: External dependencies only (Redis, LLM, etc.)
 - **REAL**: All business logic components
 
-**Integration Tests (>50%)**:
+**Integration Tests (>=80% of integration-testable code)**:
 - **MOCK**: NONE - Use real services in Kind cluster
 - **REAL**: Cross-service interactions, CRD coordination, K8s API
-- **RATIONALE**: Microservices architecture with CRD-based coordination requires high integration coverage
 
-**E2E Tests (10-15%)**:
+**E2E Tests (>=80% of full service code)**:
 - **MOCK**: Minimal
 - **REAL**: Complete end-to-end workflows
 ```
@@ -157,16 +160,16 @@ Before generating or modifying any testing documentation, AI MUST:
 **Validation Checkpoint**:
 ```
 ✅ TESTING COVERAGE DOCUMENTATION CHECKPOINT:
-- [ ] Used ">50%" for integration tests ✅/❌
-- [ ] Avoided "<20%" or "20%" for integration ✅/❌
-- [ ] Referenced microservices architecture rationale ✅/❌
+- [ ] Used ">=80%" per-tier coverage (not flat percentages) ✅/❌
+- [ ] Avoided outdated "<20%", "20%", ">50%", "70%+", "10-15%" ✅/❌
+- [ ] Referenced per-tier code subset rationale ✅/❌
 - [ ] Cited authoritative source (03-testing-strategy.mdc) ✅/❌
 
 ❌ STOP: Cannot generate documentation until ALL checkboxes are ✅
 ```
 
 **RULE VIOLATION DETECTION**:
-If ANY checkbox is ❌ → "🚨 TESTING COVERAGE STANDARD VIOLATION: Documentation uses incorrect integration coverage - DEVELOPMENT STOPPED"
+If ANY checkbox is ❌ → "🚨 TESTING COVERAGE STANDARD VIOLATION: Documentation uses incorrect coverage standards - DEVELOPMENT STOPPED"
 
 ---
 
@@ -174,9 +177,10 @@ If ANY checkbox is ❌ → "🚨 TESTING COVERAGE STANDARD VIOLATION: Documentat
 
 | Aspect | Correct Standard | Incorrect (Avoid) | Rationale |
 |--------|-----------------|-------------------|-----------|
-| **Unit** | 70%+ | 70% (exact) | ALL unit-testable BRs, not just 70% |
-| **Integration** | **>50%** | <20% or 20% | **Microservices coordination** |
-| **E2E** | 10-15% | <10% | Range accounts for service type |
+| **Unit** | >=80% of unit-testable code | 70%+ (flat) | Per-tier measurement against code subset |
+| **Integration** | >=80% of integration-testable code | <20%, 20%, >50% | Per-tier measurement against code subset |
+| **E2E** | >=80% of full service code | <10%, 10-15% | Per-tier measurement against code subset |
+| **All Tiers** | >=80% merged | — | Line-by-line dedup across all tiers |
 
 ---
 
@@ -209,9 +213,9 @@ If ANY checkbox is ❌ → "🚨 TESTING COVERAGE STANDARD VIOLATION: Documentat
 ## ✅ **Success Criteria**
 
 This rule is successful when:
-- ✅ All new documentation uses ">50%" for integration tests
-- ✅ Zero instances of "<20%" or "20%" in non-archived documentation
-- ✅ All service documentation references microservices rationale
+- ✅ All new documentation uses ">=80%" per-tier coverage
+- ✅ Zero instances of outdated flat percentages in non-archived documentation
+- ✅ All service documentation references per-tier code subset rationale
 - ✅ AI assistant blocks incorrect coverage documentation
 
 ---

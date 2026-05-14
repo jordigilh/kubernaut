@@ -297,3 +297,29 @@ Applied during TDD Refactor phases:
 - [ ] Helm template renders cleanly
 - [ ] OpenAPI spec and embedded spec in sync
 - [ ] **Go/no-go for GA**
+
+---
+
+## 9. Suspension and Resumption Criteria (IEEE 829 §8)
+
+### Suspension Criteria
+- Build failure (`go build ./...`) blocks all test execution
+- Critical security vulnerability discovered during testing (CVE)
+- External dependency outage (PostgreSQL, Redis) preventing integration tests
+- Test environment instability (Kind cluster failures)
+
+### Resumption Criteria
+- Build restored to clean state
+- CVE patched and verified
+- Infrastructure restored and smoke-tested
+- Kind cluster reprovisioned with `make e2e-setup`
+
+---
+
+## 10. Approvals (IEEE 829 §10)
+
+| Role | Name | Date | Signature |
+|------|------|------|-----------|
+| Test Plan Author | AI Assistant | 2026-05-13 | — |
+| Technical Lead | — | — | Pending |
+| QE Lead | — | — | Pending |

@@ -48,16 +48,16 @@ This directory contains all test plans related to **BR-HAPI-197** (Human Review 
 
 ## 📊 **Overall Coverage Strategy (Defense-in-Depth)**
 
-### **Unit Tests** (70%+ Coverage)
+### **Unit Tests** (>=80% of unit-testable code)
 - **AIAnalysis**: 18 tests (CRD schema, response processor, metrics)
 - **RO**: Covered in remediationorchestrator test plan — routing logic, notification creation (implementation in progress)
 
-### **Integration Tests** (50% Coverage)
+### **Integration Tests** (>=80% of integration-testable code)
 - **AIAnalysis**: 8 tests (HAPI → CRD flow)
 - **RO**: Covered in RO plan — AIAnalysis → NotificationRequest flow (planned / in progress per plan)
 - **Cross-Service**: Covered in integration_test_plan — full cascade scenarios (planned)
 
-### **E2E Tests** (<10% Coverage)
+### **E2E Tests** (>=80% of full service code)
 - **AIAnalysis**: 3 tests (Complete business workflows)
 - **RO**: Covered in RO / cross-service plans — end-to-end remediation journeys (planned)
 

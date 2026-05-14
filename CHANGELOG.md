@@ -77,6 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Concurrency guidelines** (DX-5) — Added concurrency patterns section to project guidelines documenting `errgroup`, typed-result-slot, and timeout budget patterns.
 - **DD-WE-006 v2.2** (DOC-4) — Added changelog entry noting dependency validation parallelization per Issue #1070.
 - **CONTRIBUTING.md Go version** (DX-4) — Updated prerequisite Go version from 1.25.3+ to 1.25.6+ to match `go.mod`.
+- **DD-008 v1.1** — Updated DLQ drain design doc: `terminationGracePeriodSeconds` 30s→90s, added last-reviewed date.
+- **Migration playbook** — Added type migration playbook to `migrations/README.md` documenting the column-type change workflow.
+- **Migration 010** — `010_timestamp_timezone_alignment.sql` aligns `legal_hold_placed_at` from `TIMESTAMP` to `TIMESTAMP WITH TIME ZONE`.
 
 ### Changed
 

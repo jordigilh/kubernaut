@@ -29,6 +29,20 @@ Across numbered migrations **`001_v1_schema.sql`** through **`009_retention_defa
 
 ---
 
+## Type migration playbook
+
+When changing a column type (e.g. `TIMESTAMP` → `TIMESTAMP WITH TIME ZONE`):
+
+1. **New migration file**: Create `NNN_<description>.sql` with `ALTER TABLE ... ALTER COLUMN ... TYPE ... USING ...`.
+2. **`USING` clause**: Always include a `USING` expression for safe conversion (e.g. `USING col AT TIME ZONE 'UTC'` for TZ alignment).
+3. **Dependent code**: Search for the old type in repository code, builders, and test fixtures. Update Go types if the Go↔SQL mapping changes (e.g. `time.Time` already handles both, but `sql.NullTime` may need attention).
+4. **Sync embedded copy**: Update `pkg/shared/assets/migrations/` to mirror the new migration.
+5. **Validate**: Run `go build ./...` and the full unit test suite to catch any column-count or type-assertion mismatches in mock rows.
+
+Reference: migration `010_timestamp_timezone_alignment.sql` follows this pattern for `legal_hold_placed_at`.
+
+---
+
 ## Embedded copies
 
 Operational and test code may load SQL from **`pkg/shared/assets/migrations/`**. Keep that tree in sync with top-level **`migrations/`** when adding new versions (same filename and body).

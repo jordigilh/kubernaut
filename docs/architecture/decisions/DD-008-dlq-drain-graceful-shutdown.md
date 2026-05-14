@@ -88,7 +88,7 @@ DataStorage service uses a Dead Letter Queue (DLQ) to store audit messages that 
 **APPROVED: Alternative 3** - DLQ Drain with Timeout
 
 **Rationale**:
-1. **Kubernetes Compliance**: 10s timeout fits within typical `terminationGracePeriodSeconds` (30s)
+1. **Kubernetes Compliance**: 10s timeout fits within `terminationGracePeriodSeconds` (90s)
 2. **Best Effort Preservation**: Significantly reduces data loss compared to no drain
 3. **Operational Reality**: DLQ depth is typically low (monitored via metrics)
 4. **Graceful Degradation**: Partial drain is better than no drain
@@ -272,7 +272,7 @@ const (
 - HTTP drain: up to 30s (DD-007 Step 3)
 - **DLQ drain: up to 10s** (DD-008 Step 4) ← NEW
 - Resource close: ~1s (DD-007 Step 5)
-- **Total Max**: ~46s (within typical `terminationGracePeriodSeconds: 60s`)
+- **Total Max**: ~46s (within `terminationGracePeriodSeconds: 90s` per deployment.yaml)
 
 ---
 
@@ -308,9 +308,10 @@ const (
 
 ## 🎯 Implementation Status
 
-**Version**: V1.0
+**Version**: V1.1
 **Status**: ✅ Implemented and Tested
 **Date**: 2025-12-21
+**Last Reviewed**: 2026-05-14
 
 **Changes Made**:
 1. ✅ Added `DrainWithTimeout` method to DLQ client
