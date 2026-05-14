@@ -50,7 +50,7 @@ data:
         keyFile: {{ .Values.datastorage.config.redis.tls.keyFile | default "" | quote }}
         caFile: {{ .Values.datastorage.config.redis.tls.caFile | default "" | quote }}
     retention:
-      enabled: {{ .Values.datastorage.config.retention.enabled | default false }}
+      enabled: {{ .Values.datastorage.config.retention.enabled | default true }}
       interval: {{ .Values.datastorage.config.retention.interval | default "24h" | quote }}
       batchSize: {{ .Values.datastorage.config.retention.batchSize | default 1000 }}
       defaultDays: {{ .Values.datastorage.config.retention.defaultDays | default 2555 }}
@@ -66,7 +66,9 @@ metadata:
     app: datastorage
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.datastorage.hpa.enabled }}
   replicas: {{ .Values.datastorage.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       app: datastorage
