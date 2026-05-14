@@ -506,6 +506,7 @@ func (s *Server) Handler() http.Handler {
 	r.Route("/api/v1", func(r chi.Router) {
 		// SEC-H2: Auth runs BEFORE OpenAPI validation so unauthenticated
 		// requests get 401, not a 400 from spec validation.
+		// DD-AUTH-011: Base middleware requires SAR verb "get" — read access to DS.
 		baseAuthMiddleware := auth.NewMiddleware(
 			s.authenticator,
 			s.authorizer,
@@ -525,47 +526,63 @@ func (s *Server) Handler() http.Handler {
 			"namespace", s.authNamespace,
 			"resource", "services",
 			"resourceName", "data-storage-service",
-			"verb", "get",
 		)
 
-		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
-		s.logger.V(1).Info("Registering POST /api/v1/audit/notifications handler")
-		r.Post("/audit/notifications", s.handleCreateNotificationAudit)
-
-		// BR-STORAGE-033: Unified audit events API (ADR-034)
-		// DD-STORAGE-010: Query API with offset-based pagination
-		s.logger.V(1).Info("Registering /api/v1/audit/events handlers (ADR-034, DD-STORAGE-010)")
-		r.Post("/audit/events", s.handleCreateAuditEvent)
-		r.Get("/audit/events", s.handleQueryAuditEvents)
-
-		// DD-AUDIT-002: Batch audit events API for HTTPDataStorageClient.StoreBatch()
-		// BR-AUDIT-001: Complete audit trail with no data loss
-		s.logger.V(1).Info("Registering /api/v1/audit/events/batch handler (DD-AUDIT-002)")
-		r.Post("/audit/events/batch", s.handleCreateAuditEventsBatch)
-
-		// SOC2 Gap #9: Tamper detection verification API (PostgreSQL-based)
-		// BR-AUDIT-005: Enterprise-Grade Audit Integrity
-		s.logger.V(1).Info("Registering /api/v1/audit/verify-chain handler (SOC2 Gap #9)")
-		r.Post("/audit/verify-chain", s.HandleVerifyChain)
-
-		// SOC2 Gap #8: Legal Hold & Retention Policies
-		// BR-AUDIT-008: Legal hold capability for Sarbanes-Oxley and HIPAA compliance
-		// SEC-1/AC-6: GET uses base "get" verb; POST/DELETE require additional "update" (admin-only)
-		s.logger.V(1).Info("Registering /api/v1/audit/legal-hold handlers (SOC2 Gap #8, SEC-1 admin tier)")
-		adminAuthMiddleware := auth.NewMiddleware(
+		// DD-AUTH-011: Write middleware requires SAR verb "create" — mutating operations.
+		// Layered on top of base "get" so callers need both read + write access.
+		writeAuthMiddleware := auth.NewMiddleware(
 			s.authenticator,
 			s.authorizer,
 			auth.MiddlewareConfig{
 				Namespace:    s.authNamespace,
 				Resource:     "services",
 				ResourceName: "data-storage-service",
-				Verb:         "update", // Admin-only: legal hold management
+				Verb:         "create",
 			},
 			s.logger,
 		)
+
+		// DD-AUTH-011: Mutate middleware requires SAR verb "update" — PATCH operations
+		// and admin-only endpoints (legal hold management).
+		mutateAuthMiddleware := auth.NewMiddleware(
+			s.authenticator,
+			s.authorizer,
+			auth.MiddlewareConfig{
+				Namespace:    s.authNamespace,
+				Resource:     "services",
+				ResourceName: "data-storage-service",
+				Verb:         "update",
+			},
+			s.logger,
+		)
+
+		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
+		s.logger.V(1).Info("Registering POST /api/v1/audit/notifications handler")
+		r.With(writeAuthMiddleware.Handler).Post("/audit/notifications", s.handleCreateNotificationAudit)
+
+		// BR-STORAGE-033: Unified audit events API (ADR-034)
+		// DD-STORAGE-010: Query API with offset-based pagination
+		s.logger.V(1).Info("Registering /api/v1/audit/events handlers (ADR-034, DD-STORAGE-010)")
+		r.With(writeAuthMiddleware.Handler).Post("/audit/events", s.handleCreateAuditEvent)
+		r.Get("/audit/events", s.handleQueryAuditEvents)
+
+		// DD-AUDIT-002: Batch audit events API for HTTPDataStorageClient.StoreBatch()
+		// BR-AUDIT-001: Complete audit trail with no data loss
+		s.logger.V(1).Info("Registering /api/v1/audit/events/batch handler (DD-AUDIT-002)")
+		r.With(writeAuthMiddleware.Handler).Post("/audit/events/batch", s.handleCreateAuditEventsBatch)
+
+		// SOC2 Gap #9: Tamper detection verification API (PostgreSQL-based)
+		// BR-AUDIT-005: Enterprise-Grade Audit Integrity
+		s.logger.V(1).Info("Registering /api/v1/audit/verify-chain handler (SOC2 Gap #9)")
+		r.With(writeAuthMiddleware.Handler).Post("/audit/verify-chain", s.HandleVerifyChain)
+
+		// SOC2 Gap #8: Legal Hold & Retention Policies
+		// BR-AUDIT-008: Legal hold capability for Sarbanes-Oxley and HIPAA compliance
+		// SEC-1/AC-6: GET uses base "get" verb; POST/DELETE require "update" (admin-only)
+		s.logger.V(1).Info("Registering /api/v1/audit/legal-hold handlers (SOC2 Gap #8, SEC-1 admin tier)")
 		r.Get("/audit/legal-hold", s.HandleListLegalHolds)
-		r.With(adminAuthMiddleware.Handler).Post("/audit/legal-hold", s.HandlePlaceLegalHold)
-		r.With(adminAuthMiddleware.Handler).Delete("/audit/legal-hold/{correlation_id}", s.HandleReleaseLegalHold)
+		r.With(mutateAuthMiddleware.Handler).Post("/audit/legal-hold", s.HandlePlaceLegalHold)
+		r.With(mutateAuthMiddleware.Handler).Delete("/audit/legal-hold/{correlation_id}", s.HandleReleaseLegalHold)
 
 		// SOC2 Day 9: Signed Audit Export
 		// BR-AUDIT-007: Audit export with digital signatures for compliance verification
@@ -575,7 +592,7 @@ func (s *Server) Handler() http.Handler {
 		// BR-RR-RECON-001: RemediationRequest Reconstruction from Audit Traces
 		// SOC2 compliance: Reconstruct complete RR CRDs from audit trail
 		s.logger.V(1).Info("Registering /api/v1/audit/remediation-requests/{correlation_id}/reconstruct handler")
-		r.Post("/audit/remediation-requests/{correlation_id}/reconstruct", s.handleReconstructRemediationRequestWrapper)
+		r.With(writeAuthMiddleware.Handler).Post("/audit/remediation-requests/{correlation_id}/reconstruct", s.handleReconstructRemediationRequestWrapper)
 
 		// BR-EM-001 to BR-EM-004: On-demand effectiveness scoring (DD-017 v2.1, ADR-EM-001 Principle 5)
 		s.logger.V(1).Info("Registering GET /api/v1/effectiveness/{correlation_id} handler")
@@ -589,7 +606,7 @@ func (s *Server) Handler() http.Handler {
 		// DD-WORKFLOW-005 v1.0: Direct REST API workflow registration
 		// DD-WORKFLOW-002 v3.0: UUID primary key for workflow retrieval
 		s.logger.V(1).Info("Registering /api/v1/workflows handlers (BR-STORAGE-013, DD-STORAGE-008)")
-		r.Post("/workflows", s.handler.HandleCreateWorkflow)
+		r.With(writeAuthMiddleware.Handler).Post("/workflows", s.handler.HandleCreateWorkflow)
 		r.Get("/workflows", s.handler.HandleListWorkflows)
 		// DD-WORKFLOW-016, DD-HAPI-017: Three-step workflow discovery protocol
 		// Step 1: List available action types (with signal context filters)
@@ -599,18 +616,18 @@ func (s *Server) Handler() http.Handler {
 		// Step 3 + existing: Get workflow by UUID (with optional security gate via context filters)
 		r.Get("/workflows/{workflowID}", s.handler.HandleGetWorkflowByID)
 		// DD-WORKFLOW-012: Update mutable fields (status, metrics) - immutable fields require new version
-		r.Patch("/workflows/{workflowID}", s.handler.HandleUpdateWorkflow)
+		r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}", s.handler.HandleUpdateWorkflow)
 		// DD-WORKFLOW-012: Convenience endpoint for disabling workflows
-		r.Patch("/workflows/{workflowID}/disable", s.handler.HandleDisableWorkflow)
+		r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}/disable", s.handler.HandleDisableWorkflow)
 		// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-1): Lifecycle endpoints for enable and deprecate
-		r.Patch("/workflows/{workflowID}/enable", s.handler.HandleEnableWorkflow)
-		r.Patch("/workflows/{workflowID}/deprecate", s.handler.HandleDeprecateWorkflow)
+		r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}/enable", s.handler.HandleEnableWorkflow)
+		r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}/deprecate", s.handler.HandleDeprecateWorkflow)
 
 		// BR-WORKFLOW-007: ActionType taxonomy CRUD (ADR-059, DD-ACTIONTYPE-001)
 		s.logger.V(1).Info("Registering /api/v1/action-types handlers (BR-WORKFLOW-007)")
-		r.Post("/action-types", s.handler.HandleCreateActionType)
-		r.Patch("/action-types/{name}", s.handler.HandleUpdateActionType)
-		r.Patch("/action-types/{name}/disable", s.handler.HandleDisableActionType)
+		r.With(writeAuthMiddleware.Handler).Post("/action-types", s.handler.HandleCreateActionType)
+		r.With(mutateAuthMiddleware.Handler).Patch("/action-types/{name}", s.handler.HandleUpdateActionType)
+		r.With(mutateAuthMiddleware.Handler).Patch("/action-types/{name}/disable", s.handler.HandleDisableActionType)
 		r.Get("/action-types/{name}/workflow-count", s.handler.HandleGetActionTypeWorkflowCount)
 	})
 
