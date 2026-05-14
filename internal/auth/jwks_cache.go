@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -104,7 +105,7 @@ func NewJWKSCache(client *http.Client, jwksURLs []string, opts ...JWKSCacheOptio
 			},
 		}
 		if cfg.cbGauge != nil {
-			depLabel := fmt.Sprintf("jwks_%s", jwksURL)
+			depLabel := jwksDependencyLabel(jwksURL)
 			settings.OnStateChange = func(_ string, _, to gobreaker.State) {
 				cfg.cbGauge.WithLabelValues(depLabel).Set(float64(to))
 			}
@@ -172,6 +173,13 @@ func (c *JWKSCache) Healthy() bool {
 		}
 	}
 	return true
+}
+
+// jwksDependencyLabel returns the Prometheus label value for a JWKS dependency.
+// Uses a SHA256 prefix hash to avoid excessively long metric labels.
+func jwksDependencyLabel(jwksURL string) string {
+	h := sha256.Sum256([]byte(jwksURL))
+	return fmt.Sprintf("jwks_%x", h[:6])
 }
 
 func (c *JWKSCache) fetchJWKS(ctx context.Context, issuerURL string) (*jose.JSONWebKeySet, error) {

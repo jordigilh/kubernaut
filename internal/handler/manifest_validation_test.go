@@ -300,3 +300,17 @@ var _ = Describe("NetworkPolicy manifest", func() {
 		}
 	})
 })
+
+// ---------------------------------------------------------------------------
+// TC-P3-07: Dockerfile FIPS boringcrypto (MED-10, BAC-14)
+// ---------------------------------------------------------------------------
+
+var _ = Describe("Dockerfile FIPS Compliance", func() {
+	It("TC-P3-07a: Dockerfile sets GOEXPERIMENT=boringcrypto", func() {
+		dockerfilePath := filepath.Join(repoRoot(), "Dockerfile")
+		content, err := os.ReadFile(dockerfilePath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(content)).To(ContainSubstring("GOEXPERIMENT=boringcrypto"),
+			"TC-P3-07a: Dockerfile must set GOEXPERIMENT=boringcrypto for FIPS compliance")
+	})
+})

@@ -167,3 +167,40 @@ var _ = Describe("Panic Recovery Middleware (HANDLER-01)", func() {
 		Expect(testutil.ToFloat64(reg.HTTPPanicsTotal)).To(Equal(10.0))
 	})
 })
+
+var _ = Describe("Panic Message Security (MED-04)", func() {
+	It("TC-P3-04a: problem+json detail does NOT contain panic value", func() {
+		reg := metrics.NewRegistry()
+		mw := handler.RecoverMiddleware(reg, logr.Discard())
+		inner := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+			panic("secret-internal-state-xyz")
+		})
+		wrapped := mw(inner)
+
+		rec := httptest.NewRecorder()
+		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", http.NoBody))
+
+		Expect(rec.Code).To(Equal(http.StatusInternalServerError))
+		var problem map[string]interface{}
+		Expect(json.NewDecoder(rec.Body).Decode(&problem)).To(Succeed())
+		detail, _ := problem["detail"].(string)
+		Expect(detail).NotTo(ContainSubstring("secret-internal-state-xyz"),
+			"TC-P3-04a: panic value MUST NOT appear in response detail field — information leak")
+	})
+
+	It("TC-P3-04b: problem+json title is generic 'Internal Server Error'", func() {
+		reg := metrics.NewRegistry()
+		mw := handler.RecoverMiddleware(reg, logr.Discard())
+		inner := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+			panic("anything")
+		})
+		wrapped := mw(inner)
+
+		rec := httptest.NewRecorder()
+		wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", http.NoBody))
+
+		var problem map[string]interface{}
+		Expect(json.NewDecoder(rec.Body).Decode(&problem)).To(Succeed())
+		Expect(problem["title"]).To(Equal("Internal Server Error"))
+	})
+})
