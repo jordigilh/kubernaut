@@ -60,6 +60,14 @@ type BatchAuditEventCreatedResponse struct {
 	Message  string   `json:"message"`
 }
 
+// BatchAuditEventAcceptedResponse is returned when batch DB write fails
+// but all events were successfully queued to DLQ for async retry (DD-009).
+type BatchAuditEventAcceptedResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	Count   int    `json:"count"`
+}
+
 // handleCreateAuditEventsBatch handles POST /api/v1/audit/events/batch
 // DD-AUDIT-002: StoreBatch interface must accept arrays
 // BR-AUDIT-001: Complete audit trail with no data loss
@@ -162,20 +170,49 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 	s.metrics.WriteDuration.WithLabelValues("audit_events_batch").Observe(duration)
 
 	if err != nil {
-		s.logger.Error(err, "Batch database write failed",
+		s.logger.Error(err, "Batch database write failed, attempting per-item DLQ fallback",
 			"count", len(auditEvents),
 			"duration_seconds", duration)
 
-		// Note: DLQ fallback would go here for 5xx errors (GAP-10)
-		// Per DD-009: Only 5xx errors should trigger DLQ, not 4xx
+		// DD-009: DLQ fallback on database errors (per-item, mirroring single-event path)
+		dlqCtx, dlqCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer dlqCancel()
 
-		writeValidationRFC7807Error(w, &validation.RFC7807Problem{
-			Type:     "https://kubernaut.ai/problems/database-error",
-			Title:    "Database Error",
-			Status:   http.StatusInternalServerError,
-			Detail:   "Failed to write audit events batch to database",
-			Instance: r.URL.Path,
-		}, s)
+		var dlqSuccessCount, dlqFailCount int
+		for i, auditEvent := range auditEvents {
+			if dlqErr := s.dlqClient.EnqueueAuditEvent(dlqCtx, auditEvent, err); dlqErr != nil {
+				s.logger.Error(dlqErr, "DLQ fallback failed for batch item — data loss risk",
+					"index", i,
+					"event_type", auditEvent.EventType,
+					"correlation_id", auditEvent.CorrelationID)
+				dlqFailCount++
+			} else {
+				dlqSuccessCount++
+			}
+		}
+
+		if dlqFailCount > 0 {
+			s.logger.Error(err, "Batch DLQ fallback partially failed",
+				"dlq_success", dlqSuccessCount,
+				"dlq_failed", dlqFailCount,
+				"total", len(auditEvents))
+			writeValidationRFC7807Error(w, &validation.RFC7807Problem{
+				Type:     "https://kubernaut.ai/problems/database-error",
+				Title:    "Database Error",
+				Status:   http.StatusInternalServerError,
+				Detail:   fmt.Sprintf("Batch write failed; %d of %d events queued to DLQ, %d lost", dlqSuccessCount, len(auditEvents), dlqFailCount),
+				Instance: r.URL.Path,
+			}, s)
+			return
+		}
+
+		s.logger.Info("Batch DLQ fallback succeeded — all events queued",
+			"count", dlqSuccessCount)
+		response.WriteJSON(w, http.StatusAccepted, BatchAuditEventAcceptedResponse{
+			Status:  "accepted",
+			Message: fmt.Sprintf("%d audit events queued for async processing via DLQ", dlqSuccessCount),
+			Count:   dlqSuccessCount,
+		}, s.logger)
 		return
 	}
 
