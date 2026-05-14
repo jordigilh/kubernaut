@@ -22,7 +22,7 @@ ARG BINARY
 COPY ${BINARY} /data-storage
 COPY api/openapi/data-storage-v1.yaml /usr/local/share/kubernaut/api/openapi/data-storage-v1.yaml
 USER 65534
-EXPOSE 8080 9090
+EXPOSE 8080 8081 9090
 ENTRYPOINT ["/data-storage"]
 CMD []
 
