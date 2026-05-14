@@ -27,22 +27,20 @@ var _ = Describe("UT-DS-1048-P5: Redis TLS Configuration", func() {
 	Describe("UT-DS-1048-P5-060: RedisTLSConfig parsing", func() {
 		It("should have all TLS fields accessible", func() {
 			cfg := config.RedisTLSConfig{
-				Enabled:            true,
-				CertFile:           "/etc/redis/tls.crt",
-				KeyFile:            "/etc/redis/tls.key",
-				CAFile:             "/etc/redis/ca.crt",
-				InsecureSkipVerify: false,
+				Enabled:  true,
+				CertFile: "/etc/redis/tls.crt",
+				KeyFile:  "/etc/redis/tls.key",
+				CAFile:   "/etc/redis/ca.crt",
 			}
 			Expect(cfg.Enabled).To(BeTrue())
 			Expect(cfg.CertFile).To(Equal("/etc/redis/tls.crt"))
 			Expect(cfg.KeyFile).To(Equal("/etc/redis/tls.key"))
 			Expect(cfg.CAFile).To(Equal("/etc/redis/ca.crt"))
-			Expect(cfg.InsecureSkipVerify).To(BeFalse())
 		})
 	})
 
 	Describe("UT-DS-1048-P5-061: TLS enabled without cert paths", func() {
-		It("should fail validation when TLS enabled without caFile and insecureSkipVerify is false", func() {
+		It("should fail validation when TLS enabled without caFile (SC-8)", func() {
 			cfg := &config.Config{
 				Server: config.ServerConfig{Port: 8080, Host: "0.0.0.0"},
 				Database: config.DatabaseConfig{
@@ -71,16 +69,16 @@ var _ = Describe("UT-DS-1048-P5: Redis TLS Configuration", func() {
 		})
 	})
 
-	Describe("UT-DS-1048-P5-064: InsecureSkipVerify propagated", func() {
-		It("should propagate InsecureSkipVerify when TLS enabled", func() {
+	Describe("UT-DS-1048-P5-064: TLS always validates server certificate (SC-8)", func() {
+		It("should never set InsecureSkipVerify on the tls.Config", func() {
 			cfg := config.RedisTLSConfig{
-				Enabled:            true,
-				InsecureSkipVerify: true,
+				Enabled: true,
+				CAFile:  "/etc/redis/ca.crt",
 			}
 			tlsCfg, err := cfg.BuildTLSConfig()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(tlsCfg).NotTo(BeNil())
-			Expect(tlsCfg.InsecureSkipVerify).To(BeTrue())
+			Expect(tlsCfg.InsecureSkipVerify).To(BeFalse())
 		})
 	})
 
@@ -104,7 +102,7 @@ var _ = Describe("UT-DS-1048-P5: Redis TLS Configuration", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
-		It("should pass validation when TLS enabled with insecureSkipVerify", func() {
+		It("should fail validation when TLS enabled without caFile (no insecureSkipVerify bypass)", func() {
 			cfg := &config.Config{
 				Server: config.ServerConfig{Port: 8080, Host: "0.0.0.0"},
 				Database: config.DatabaseConfig{
@@ -114,13 +112,13 @@ var _ = Describe("UT-DS-1048-P5: Redis TLS Configuration", func() {
 				Redis: config.RedisConfig{
 					Addr: "localhost:6379",
 					TLS: config.RedisTLSConfig{
-						Enabled:            true,
-						InsecureSkipVerify: true,
+						Enabled: true,
 					},
 				},
 			}
 			err := cfg.Validate()
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("SC-8"))
 		})
 	})
 })

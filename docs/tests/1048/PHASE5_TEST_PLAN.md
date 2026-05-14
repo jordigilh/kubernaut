@@ -292,7 +292,7 @@ Wraps `redis.XAutoClaim` and returns claimed messages + new start ID for cursor-
 | UT-DS-1048-P5-061 | Unit | RED | `TLS.Enabled = true` without cert paths → startup error | Error returned from NewServer |
 | UT-DS-1048-P5-062 | Unit | RED | `TLS.Enabled = false` → `redis.Options.TLSConfig` is nil | Plaintext connection |
 | UT-DS-1048-P5-063 | Unit | GREEN | `TLS.Enabled = true` with valid paths → `tls.Config` populated | TLSConfig has CA, cert, key |
-| UT-DS-1048-P5-064 | Unit | GREEN | `TLS.InsecureSkipVerify` propagated to `tls.Config` | Field set correctly |
+| UT-DS-1048-P5-064 | Unit | GREEN | TLS always validates server cert (SC-8); `InsecureSkipVerify` is never set | `tls.Config.InsecureSkipVerify == false` |
 | UT-DS-1048-P5-065 | Unit | REFACTOR | Config validation: TLS enabled requires at minimum `caFile` | Validation error on missing CA |
 
 **Test File**: `test/unit/datastorage/redis_tls_test.go` (new)
@@ -309,8 +309,7 @@ redis:
     enabled: false
     certFile: ""       # Client cert (mTLS)
     keyFile: ""        # Client key (mTLS)
-    caFile: ""         # CA bundle to verify server
-    insecureSkipVerify: false
+    caFile: ""         # CA bundle to verify server (SC-8: required when enabled)
 ```
 
 **Note**: Integration tests for actual TLS handshake require a TLS-enabled Redis/Valkey instance. This depends on operator issue #89. Until then, unit tests validate config wiring and `tls.Config` construction.

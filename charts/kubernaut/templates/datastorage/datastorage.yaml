@@ -51,7 +51,6 @@ data:
         certFile: {{ .Values.datastorage.config.redis.tls.certFile | default "" | quote }}
         keyFile: {{ .Values.datastorage.config.redis.tls.keyFile | default "" | quote }}
         caFile: {{ .Values.datastorage.config.redis.tls.caFile | default "" | quote }}
-        insecureSkipVerify: {{ .Values.datastorage.config.redis.tls.insecureSkipVerify | default false }}
     retention:
       enabled: {{ .Values.datastorage.config.retention.enabled | default false }}
       interval: {{ .Values.datastorage.config.retention.interval | default "24h" | quote }}

@@ -120,8 +120,7 @@ datastorage:
         enabled: false
         certFile: ""
         keyFile: ""
-        caFile: ""
-        insecureSkipVerify: false
+        caFile: ""  # SC-8: required when enabled; mount self-signed CA via Helm/operator
     # #1048 Phase 5 / AU-11: Retention worker configuration (BR-AUDIT-009)
     retention:
       enabled: false

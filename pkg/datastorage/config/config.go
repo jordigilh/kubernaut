@@ -116,12 +116,13 @@ type DatabaseConfig struct {
 }
 
 // RedisTLSConfig selects TLS settings for Redis/Valkey client connections (#1048 Phase 5 / AU-9).
+// SC-8: TLS always validates the server certificate. For self-signed certs,
+// mount the CA via caFile (Helm: redis.tls.caFile, Operator: kubernaut-operator#89).
 type RedisTLSConfig struct {
-	Enabled            bool   `yaml:"enabled"`
-	CertFile           string `yaml:"certFile"`
-	KeyFile            string `yaml:"keyFile"`
-	CAFile             string `yaml:"caFile"`
-	InsecureSkipVerify bool   `yaml:"insecureSkipVerify"`
+	Enabled  bool   `yaml:"enabled"`
+	CertFile string `yaml:"certFile"`
+	KeyFile  string `yaml:"keyFile"`
+	CAFile   string `yaml:"caFile"`
 }
 
 // BuildTLSConfig returns a tls.Config when TLS is enabled, or nil if disabled.
@@ -131,7 +132,7 @@ func (t *RedisTLSConfig) BuildTLSConfig() (*tls.Config, error) {
 	}
 
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: t.InsecureSkipVerify, //nolint:gosec // G402: operator-controlled flag for dev/test environments
+		MinVersion: tls.VersionTLS12,
 	}
 
 	if t.CAFile != "" {
@@ -400,8 +401,8 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("redis address required")
 	}
 	if c.Redis.TLS.Enabled {
-		if c.Redis.TLS.CAFile == "" && !c.Redis.TLS.InsecureSkipVerify {
-			return fmt.Errorf("redis TLS enabled but no caFile specified and insecureSkipVerify is false")
+		if c.Redis.TLS.CAFile == "" {
+			return fmt.Errorf("redis TLS enabled but no caFile specified; mount the CA certificate (SC-8)")
 		}
 	}
 

@@ -42,8 +42,7 @@ redis:
     enabled: false
     # certFile: ""       # Client cert for mTLS (optional)
     # keyFile: ""        # Client key for mTLS (optional)
-    # caFile: ""         # CA bundle to verify Valkey server
-    # insecureSkipVerify: false
+    # caFile: ""         # CA bundle to verify Valkey server (SC-8: required when enabled)
 
 # #1048 Phase 5 / AU-11, BR-AUDIT-009: Audit data retention enforcement
 retention:

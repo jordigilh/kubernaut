@@ -264,12 +264,12 @@ When Redis TLS is enabled (`redis.tls.enabled: true`), the Data Storage service 
 
 2. **Check certificate paths** match the mounted secret paths.
 
-3. **For dev/test**, set `insecureSkipVerify: true` to bypass CA verification:
+3. **For dev/test with self-signed certs**, mount the CA file and set `caFile` (SC-8: `insecureSkipVerify` was removed):
    ```yaml
    redis:
      tls:
        enabled: true
-       insecureSkipVerify: true
+       caFile: "/etc/redis/ca.crt"
    ```
 
 ---
