@@ -117,7 +117,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	s.logger.V(1).Info("Validating business rules...")
 	if err := helpers.ValidateAuditEventRequest(&req); err != nil {
 		s.logger.Info("Business validation failed", "error", err)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", err.Error(), s.logger)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", "audit event request failed validation", s.logger)
 		return
 	}
 
@@ -309,7 +309,7 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 			"error", err,
 			"query", r.URL.RawQuery)
 		writeValidationRFC7807Error(w, validation.NewValidationErrorProblem("query parameters", map[string]string{
-			"query": err.Error(),
+			"query": "invalid query parameters",
 		}), s)
 		return
 	}
@@ -321,7 +321,7 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 		s.logger.Info("Failed to build query",
 			"error", err)
 		writeValidationRFC7807Error(w, validation.NewValidationErrorProblem("query parameters", map[string]string{
-			"pagination": err.Error(),
+			"pagination": "invalid pagination parameters",
 		}), s)
 		return
 	}

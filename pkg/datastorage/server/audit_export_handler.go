@@ -86,7 +86,7 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 		s.logger.Error(err, "Invalid export query parameters")
 		response.WriteRFC7807Error(w, http.StatusBadRequest,
 			"export/invalid-parameters", "Validation Error",
-			fmt.Sprintf("Invalid query parameters: %v", err), s.logger)
+			"invalid query parameters", s.logger)
 		return
 	}
 

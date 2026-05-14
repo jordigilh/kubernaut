@@ -83,7 +83,7 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		}
 		h.logger.Error(err, "Failed to decode workflow create request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -108,7 +108,7 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error(err, "Inline schema validation failed")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Schema Validation Error",
-			fmt.Sprintf("Invalid workflow schema: %v", err), h.logger)
+			"workflow schema validation failed; check the 'content' field for YAML/structural errors", h.logger)
 		return
 	}
 
@@ -341,7 +341,7 @@ func (h *Handler) validateExternalChecks(
 					status:    http.StatusBadRequest,
 					errorType: "bundle-not-found",
 					title:     "Execution Bundle Not Found",
-					detail:    fmt.Sprintf("execution.bundle image not found: %v", err),
+					detail:    "execution.bundle image could not be resolved; verify the image reference is correct",
 				})
 				return
 			}
@@ -366,8 +366,8 @@ func (h *Handler) validateExternalChecks(
 						status:    http.StatusBadRequest,
 						errorType: "dependency-validation-error",
 						title:     "Dependency Validation Error",
-						detail: fmt.Sprintf("Schema-declared dependency not satisfied: %v. Ensure all dependencies "+
-							"are provisioned in namespace %q before registering the workflow (DD-WE-006).", err, h.executionNamespace),
+					detail: fmt.Sprintf("Schema-declared dependency not satisfied in namespace %q; "+
+						"ensure all dependencies are provisioned before registering the workflow (DD-WE-006)", h.executionNamespace),
 					})
 					return
 				}
@@ -844,7 +844,7 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		h.logger.Error(err, "Invalid discovery filter parameters")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			err.Error(), h.logger)
+			"invalid discovery filter parameters", h.logger)
 		return
 	}
 
@@ -951,7 +951,7 @@ func (h *Handler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		}
 		h.logger.Error(err, "Failed to decode workflow update request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -1124,7 +1124,7 @@ func (h *Handler) HandleEnableWorkflow(w http.ResponseWriter, r *http.Request) {
 		}
 		h.logger.Error(err, "Failed to decode workflow enable request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -1251,7 +1251,7 @@ func (h *Handler) HandleDeprecateWorkflow(w http.ResponseWriter, r *http.Request
 		}
 		h.logger.Error(err, "Failed to decode workflow deprecate request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -1376,7 +1376,7 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 		}
 		h.logger.Error(err, "Failed to decode workflow disable request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -1508,7 +1508,7 @@ func (h *Handler) HandleListAvailableActions(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		h.logger.Error(err, "Invalid discovery filter parameters")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			err.Error(), h.logger)
+			"invalid discovery filter parameters", h.logger)
 		return
 	}
 
@@ -1578,7 +1578,7 @@ func (h *Handler) HandleListWorkflowsByActionType(w http.ResponseWriter, r *http
 	if err != nil {
 		h.logger.Error(err, "Invalid discovery filter parameters")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			err.Error(), h.logger)
+			"invalid discovery filter parameters", h.logger)
 		return
 	}
 

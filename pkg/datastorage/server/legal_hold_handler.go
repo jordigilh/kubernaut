@@ -75,7 +75,7 @@ func (s *Server) HandlePlaceLegalHold(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid-request", "Invalid Request",
-			fmt.Sprintf("Invalid request body: %v", err), s.logger)
+			"request body is not valid JSON", s.logger)
 		return
 	}
 
@@ -190,7 +190,7 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid-request", "Invalid Request",
-			fmt.Sprintf("Invalid request body: %v", err), s.logger)
+			"request body is not valid JSON", s.logger)
 		return
 	}
 

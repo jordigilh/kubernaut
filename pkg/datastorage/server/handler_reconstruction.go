@@ -127,12 +127,12 @@ func (h *Handler) ReconstructRemediationRequest(
 		h.logger.Error(err, "Failed to build RemediationRequest",
 			"correlation_id", correlationID)
 		typeURL, _ := url.Parse("https://kubernaut.ai/problems/reconstruction/unprocessable")
-		return &ogenclient.ReconstructRemediationRequestInternalServerError{
+		return &ogenclient.ReconstructRemediationRequestBadRequest{
 			Type:   *typeURL,
 			Title:  "Build Failed",
 			Status: 422,
 			Detail: ogenclient.NewOptString("Audit data present but RemediationRequest cannot be assembled"),
-		}, nil // Return 422; SEC-M2: generic detail, full error in logs
+		}, nil
 	}
 
 	// Step 5: Validate reconstructed RR
@@ -141,12 +141,12 @@ func (h *Handler) ReconstructRemediationRequest(
 		h.logger.Error(err, "Failed to validate RemediationRequest",
 			"correlation_id", correlationID)
 		typeURL, _ := url.Parse("https://kubernaut.ai/problems/reconstruction/unprocessable")
-		return &ogenclient.ReconstructRemediationRequestInternalServerError{
+		return &ogenclient.ReconstructRemediationRequestBadRequest{
 			Type:   *typeURL,
 			Title:  "Validation Failed",
 			Status: 422,
 			Detail: ogenclient.NewOptString("Reconstructed RemediationRequest does not pass validation rules"),
-		}, nil // Return 422; SEC-M2: generic detail, full error in logs
+		}, nil
 	}
 
 	// If completeness < 50%, return 400 error

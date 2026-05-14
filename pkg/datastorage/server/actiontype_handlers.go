@@ -101,7 +101,7 @@ func (h *Handler) HandleCreateActionType(w http.ResponseWriter, r *http.Request)
 		}
 		h.logger.Error(err, "Failed to decode action type create request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request",
-			"Bad Request", fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"Bad Request", "request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -200,7 +200,7 @@ func (h *Handler) HandleUpdateActionType(w http.ResponseWriter, r *http.Request)
 		}
 		h.logger.Error(err, "Failed to decode action type update request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request",
-			"Bad Request", fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"Bad Request", "request body is not valid JSON", h.logger)
 		return
 	}
 
@@ -283,7 +283,7 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 		}
 		h.logger.Error(err, "Failed to decode action type disable request")
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request",
-			"Bad Request", fmt.Sprintf("Invalid request body: %v", err), h.logger)
+			"Bad Request", "request body is not valid JSON", h.logger)
 		return
 	}
 

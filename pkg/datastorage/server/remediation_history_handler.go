@@ -93,7 +93,7 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 		if err != nil {
 			response.WriteRFC7807Error(w, http.StatusBadRequest,
 				"invalid-parameter", "Invalid Parameter",
-				fmt.Sprintf("tier1Window must be a valid Go duration string: %s", err), h.logger)
+				"tier1Window must be a valid duration string (e.g. '24h', '7d')", h.logger)
 			return
 		}
 		tier1Window = parsed
@@ -105,7 +105,7 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 		if err != nil {
 			response.WriteRFC7807Error(w, http.StatusBadRequest,
 				"invalid-parameter", "Invalid Parameter",
-				fmt.Sprintf("tier2Window must be a valid Go duration string: %s", err), h.logger)
+				"tier2Window must be a valid duration string (e.g. '24h', '7d')", h.logger)
 			return
 		}
 		tier2Window = parsed

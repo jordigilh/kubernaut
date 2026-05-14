@@ -86,7 +86,8 @@ type ServerConfig struct {
 	// (default: 5242880 = 5 MiB, range: 1048576–52428800 = 1–50 MiB)
 	MaxBodySize string `yaml:"maxBodySize,omitempty"`
 
-	// #1048 Phase 4 / AC-4: CORS allowed origins (default: ["*"] with startup warning)
+	// #1048 Phase 4 / AC-4: CORS allowed origins.
+	// Empty list denies all cross-origin requests (secure default).
 	CORSAllowedOrigins []string `yaml:"corsAllowedOrigins,omitempty"`
 
 	// #1048 Phase 5 / AU-9: Directory containing signing certificate (tls.crt, tls.key)
@@ -422,6 +423,11 @@ func (c *Config) Validate() error {
 		}
 		if !c.Redis.TLS.Enabled {
 			return fmt.Errorf("redis TLS must be enabled in production (SC-8); set redis.tls.enabled=true")
+		}
+		for _, origin := range c.Server.CORSAllowedOrigins {
+			if origin == "*" {
+				return fmt.Errorf("CORS wildcard origin '*' is not allowed in production (AC-4); use explicit origins")
+			}
 		}
 	}
 

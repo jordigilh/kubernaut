@@ -250,7 +250,7 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 
 	// Verify each event's hash
 	previousHash := ""
-	for i, event := range events {
+	for _, event := range events {
 		// Calculate expected hash
 		expectedHash, err := calculateExpectedHash(previousHash, event)
 		if err != nil {
@@ -283,19 +283,6 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 			})
 		} else {
 			response.VerifiedEvents++
-		}
-
-		// First event should have empty previous_hash
-		if i == 0 && previousHash != "" {
-			response.IsValid = false
-			response.TamperedEvents = append(response.TamperedEvents, TamperedEvent{
-				EventID:        event.EventID.String(),
-				EventTimestamp: event.EventTimestamp,
-				ExpectedHash:   "",
-				ActualHash:     "",
-				PreviousHash:   previousHash,
-				Message:        "First event in chain should have empty previous_event_hash",
-			})
 		}
 
 		// Update previous hash for next iteration

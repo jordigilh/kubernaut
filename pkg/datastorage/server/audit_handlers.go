@@ -77,9 +77,10 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 		s.logger.Info("Invalid JSON in request body",
 			"error", err,
 			"remote_addr", r.RemoteAddr)
+		s.logger.Info("JSON decode failed", "error", err)
 		writeValidationRFC7807Error(w, validation.NewValidationErrorProblem(
 			"notification_audit",
-			map[string]string{"body": "invalid JSON: " + err.Error()},
+			map[string]string{"body": "request body is not valid JSON"},
 		), s)
 		return
 	}
@@ -101,8 +102,7 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 		if errors.As(err, &valErr) {
 			fieldErrors = valErr.FieldErrors
 		} else {
-			// Fallback for unexpected error type
-			fieldErrors = map[string]string{"error": err.Error()}
+			fieldErrors = map[string]string{"error": "validation failed"}
 		}
 
 		writeValidationRFC7807Error(w, validation.NewValidationErrorProblem(

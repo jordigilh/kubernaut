@@ -61,9 +61,9 @@ var _ = Describe("ServerConfig AppSec fields (#1048 Phase 4)", func() {
 	})
 
 	Describe("GetCORSAllowedOrigins", func() {
-		It("UT-DS-1048-CF-006: should return [\"*\"] when empty", func() {
+		It("UT-DS-1048-CF-006: should return empty when not configured (deny-all default)", func() {
 			cfg := config.ServerConfig{}
-			Expect(cfg.GetCORSAllowedOrigins()).To(Equal([]string{"*"}))
+			Expect(cfg.GetCORSAllowedOrigins()).To(BeEmpty())
 		})
 
 		It("UT-DS-1048-CF-007: should return configured origins", func() {

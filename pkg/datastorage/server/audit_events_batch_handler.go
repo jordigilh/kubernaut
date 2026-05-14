@@ -143,14 +143,16 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 	for i, req := range requests {
 		if err := helpers.ValidateAuditEventRequest(&req); err != nil {
 			s.logger.Info("Batch validation failed", "index", i, "error", err)
-			response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", fmt.Sprintf("event at index %d: %s", i, err.Error()), s.logger)
+			response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error",
+				fmt.Sprintf("event at index %d failed validation", i), s.logger)
 			return
 		}
 
 		internalEvent, err := helpers.ConvertAuditEventRequest(req, authenticatedActorID)
 		if err != nil {
 			s.logger.Info("Batch conversion failed", "index", i, "error", err)
-			response.WriteRFC7807Error(w, http.StatusBadRequest, "conversion_error", "Conversion Error", fmt.Sprintf("event at index %d: %s", i, err.Error()), s.logger)
+			response.WriteRFC7807Error(w, http.StatusBadRequest, "conversion_error", "Conversion Error",
+				fmt.Sprintf("event at index %d could not be converted", i), s.logger)
 			return
 		}
 
@@ -169,7 +171,8 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 		repoEvent, err := helpers.ConvertToRepositoryAuditEvent(internalEvent)
 		if err != nil {
 			s.logger.Info("Batch repository conversion failed - invalid event_data", "index", i, "error", err)
-			response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_event_data", "Invalid Event Data", fmt.Sprintf("event at index %d: %s", i, err.Error()), s.logger)
+			response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_event_data", "Invalid Event Data",
+				fmt.Sprintf("event at index %d has invalid event_data", i), s.logger)
 			return
 		}
 		repositoryEvents = append(repositoryEvents, repoEvent)
