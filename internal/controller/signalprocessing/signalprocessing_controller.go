@@ -170,8 +170,10 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	// O2 (BR-SP-090): Record phase transition audit for "" → Pending
-	if r.AuditManager != nil {
-		r.AuditManager.RecordPhaseTransition(ctx, sp, "", string(signalprocessingv1alpha1.PhasePending))
+	// ADR-032: Audit is MANDATORY - return error if not configured
+	if err := r.recordPhaseTransitionAudit(ctx, sp, "", string(signalprocessingv1alpha1.PhasePending)); err != nil {
+		logger.Error(err, "Failed to record initial phase transition audit")
+		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
