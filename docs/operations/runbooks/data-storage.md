@@ -68,15 +68,18 @@ With defaults:
 
 ### Alert Threshold
 
-```
-DLQ depth / dlqMaxLen > 0.95 sustained for 5 minutes
-```
+Two Prometheus alerts fire based on capacity gauges set by the DLQ client:
+
+| Alert | Metric | Threshold | For |
+|-------|--------|-----------|-----|
+| `DLQCapacityWarning` | `datastorage_dlq_warning == 1` | 80% capacity | 5m |
+| `DLQCapacityCritical` | `datastorage_dlq_critical == 1` | 90% capacity | 2m |
 
 ### Diagnosis
 
 1. Check DLQ stream depth:
    ```bash
-   kubectl exec -n kubernaut-system deploy/valkey -- redis-cli XLEN audit:dlq:audit_events
+   kubectl exec -n kubernaut-system deploy/valkey -- redis-cli XLEN audit:dlq:events
    ```
 
 2. Check DLQ retry worker logs for errors:
@@ -111,7 +114,7 @@ DLQ depth / dlqMaxLen > 0.95 sustained for 5 minutes
 - Monitor `datastorage_dlq_stream_xadd_total` rate alongside DLQ depth
 - Monitor `datastorage_dlq_pel_pending` for PEL backlog growth (Phase 7)
 - Monitor `datastorage_retention_purge_total` to confirm retention worker is active (Phase 7)
-- Set up alerting on `DLQ depth / dlqMaxLen > 0.95`
+- Alerts `DLQCapacityWarning` (80%) and `DLQCapacityCritical` (90%) are deployed via `audit-prometheus-rules` ConfigMap
 - Size `dlqMaxLen` based on expected peak write rate and acceptable RPO
 
 ---
@@ -300,7 +303,7 @@ The DLQ retry worker uses a Pending Entries List (PEL) recovery mechanism to rec
 1. Check pending messages:
    ```bash
    kubectl exec -n kubernaut-system deploy/valkey -- \
-     redis-cli XPENDING audit:dlq:audit_events datastorage-group - + 10
+     redis-cli XPENDING audit:dlq:events datastorage-group - + 10
    ```
 
 2. Check dead-letter stream:
@@ -323,7 +326,7 @@ The DLQ retry worker uses a Pending Entries List (PEL) recovery mechanism to rec
 3. **Manual recovery** — acknowledge stuck messages if they are known to be processed:
    ```bash
    kubectl exec -n kubernaut-system deploy/valkey -- \
-     redis-cli XACK audit:dlq:audit_events datastorage-group <message-id>
+     redis-cli XACK audit:dlq:events datastorage-group <message-id>
    ```
 
 ---
@@ -362,7 +365,7 @@ Shutdown step order:
 
 3. Check DLQ depth after restart (non-zero means messages survived the drain):
    ```bash
-   kubectl exec -n kubernaut-system deploy/valkey -- redis-cli XLEN audit:dlq:audit_events
+   kubectl exec -n kubernaut-system deploy/valkey -- redis-cli XLEN audit:dlq:events
    kubectl exec -n kubernaut-system deploy/valkey -- redis-cli XLEN audit:dlq:audit_notifications
    ```
 
@@ -380,7 +383,7 @@ Shutdown step order:
 3. **Large DLQ backlog** — if DLQ depth is very high at shutdown time, the 10s drain budget may not be enough. Consider draining the backlog before initiating a rolling update:
    ```bash
    # Check current backlog
-   kubectl exec -n kubernaut-system deploy/valkey -- redis-cli XLEN audit:dlq:audit_events
+   kubectl exec -n kubernaut-system deploy/valkey -- redis-cli XLEN audit:dlq:events
    # Wait for the retry worker to reduce it before deploying
    ```
 
