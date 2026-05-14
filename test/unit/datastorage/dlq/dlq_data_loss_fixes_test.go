@@ -116,7 +116,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 
 			worker.Start(ctx)
 			Eventually(func() int {
-				return len(mockNotifRepo.createdAudits)
+				return mockNotifRepo.CreatedCount()
 			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Equal(1),
 				"DF-1: notification retry must persist via NotificationAuditRepository.Create, not silently drop")
 			worker.Stop()
@@ -235,7 +235,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 
 			worker.Start(ctx)
 			Eventually(func() int {
-				return len(mockEventsRepo.createdEvents)
+				return mockEventsRepo.CreatedCount()
 			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Equal(1),
 				"DF-2: retry worker must persist events using proper unmarshal")
 			worker.Stop()
@@ -296,7 +296,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 
 			worker.Start(ctx)
 			Eventually(func() int {
-				return len(mockEventsRepo.createdEvents)
+				return mockEventsRepo.CreatedCount()
 			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Equal(1),
 				"DF-2: empty EventData must not cause parsing failure")
 			worker.Stop()

@@ -19,6 +19,7 @@ package dlq
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
@@ -402,13 +403,17 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 // MOCK REPOSITORIES FOR TESTING
 // ========================================
 
-// MockNotificationRepository mocks notification repository for testing
+// MockNotificationRepository mocks notification repository for testing.
+// Mutex-protected to be safe under concurrent DLQRetryWorker goroutines.
 type MockNotificationRepository struct {
+	mu            sync.Mutex
 	createdAudits []models.NotificationAudit
 	createError   error
 }
 
 func (m *MockNotificationRepository) Create(ctx context.Context, audit *models.NotificationAudit) (*models.NotificationAudit, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.createError != nil {
 		return nil, m.createError
 	}
@@ -416,18 +421,26 @@ func (m *MockNotificationRepository) Create(ctx context.Context, audit *models.N
 	return audit, nil
 }
 
-// MockEventsRepository mocks events repository for testing
-// This now implements the CORRECT interface: repository.AuditEventsRepository.Create()
+func (m *MockNotificationRepository) CreatedCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.createdAudits)
+}
+
+// MockEventsRepository mocks events repository for testing.
+// Mutex-protected to be safe under concurrent DLQRetryWorker goroutines.
 type MockEventsRepository struct {
-	createdEvents []audit.AuditEvent // Keep tracking as audit.AuditEvent for test assertions
+	mu            sync.Mutex
+	createdEvents []audit.AuditEvent
 	createError   error
 }
 
 func (m *MockEventsRepository) Create(ctx context.Context, event *repository.AuditEvent) (*repository.AuditEvent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.createError != nil {
 		return nil, m.createError
 	}
-	// Convert back to audit.AuditEvent for test assertions
 	auditEvent := audit.AuditEvent{
 		EventID:        event.EventID,
 		EventVersion:   event.Version,
@@ -446,17 +459,32 @@ func (m *MockEventsRepository) Create(ctx context.Context, event *repository.Aud
 	return event, nil
 }
 
-// MockRepositoryEventsRepository mocks the CORRECT repository interface
-// This implements repository.AuditEventsRepository.Create() method signature
+func (m *MockEventsRepository) CreatedCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.createdEvents)
+}
+
+// MockRepositoryEventsRepository mocks the repository interface.
+// Mutex-protected to be safe under concurrent DLQRetryWorker goroutines.
 type MockRepositoryEventsRepository struct {
+	mu            sync.Mutex
 	createdEvents []*repository.AuditEvent
 	createError   error
 }
 
 func (m *MockRepositoryEventsRepository) Create(ctx context.Context, event *repository.AuditEvent) (*repository.AuditEvent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.createError != nil {
 		return nil, m.createError
 	}
 	m.createdEvents = append(m.createdEvents, event)
 	return event, nil
+}
+
+func (m *MockRepositoryEventsRepository) CreatedCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.createdEvents)
 }
