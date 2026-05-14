@@ -40,9 +40,13 @@ func (r *TokenReviewer) Validate(ctx context.Context, token string) (*UserIdenti
 		return nil, fmt.Errorf("%w: token review: not authenticated", ErrMalformedToken)
 	}
 
+	groups := make([]string, len(result.Status.User.Groups))
+	for i, g := range result.Status.User.Groups {
+		groups[i] = SanitizeClaimValue(g)
+	}
 	return &UserIdentity{
-		Username: result.Status.User.Username,
-		Groups:   result.Status.User.Groups,
+		Username: SanitizeClaimValue(result.Status.User.Username),
+		Groups:   groups,
 		RawToken: token,
 	}, nil
 }

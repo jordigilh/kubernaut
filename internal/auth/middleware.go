@@ -145,6 +145,8 @@ func emitAuthFailure(ctx context.Context, emitter audit.Emitter, userID, sourceI
 
 func classifyAuthError(err error) string {
 	switch {
+	case errors.Is(err, ErrTokenReplayed):
+		return "token_replayed"
 	case errors.Is(err, ErrTokenExpired):
 		return "token_expired"
 	case errors.Is(err, ErrNotYetValid):

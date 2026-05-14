@@ -27,6 +27,14 @@ type Config struct {
 	Resilience     ResilienceConfig     `yaml:"resilience"`
 	RBAC           RBACConfig           `yaml:"rbac"`
 	SeverityTriage SeverityTriageConfig `yaml:"severityTriage"`
+	Session        SessionConfig        `yaml:"session"`
+}
+
+// SessionConfig holds InvestigationSession CRD controller settings.
+type SessionConfig struct {
+	Namespace     string        `yaml:"namespace"`
+	DisconnectTTL time.Duration `yaml:"disconnectTTL"`
+	RetentionTTL  time.Duration `yaml:"retentionTTL"`
 }
 
 // SeverityTriageConfig holds settings for the Prometheus-based severity triage pipeline.
@@ -68,6 +76,7 @@ type AuthConfig struct {
 	JWKSURL                string `yaml:"jwksURL,omitempty"`
 	Audience               string `yaml:"audience"`
 	EnableReplayProtection bool   `yaml:"enableReplayProtection,omitempty"`
+	AllowInsecureIssuers   bool   `yaml:"allowInsecureIssuers,omitempty"`
 }
 
 // LoggingConfig holds structured logging settings.

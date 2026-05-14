@@ -9,6 +9,8 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	prom "github.com/jordigilh/kubernaut-apifrontend/internal/prometheus"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/severity"
@@ -540,6 +542,107 @@ var _ = Describe("Triage Orchestrator", func() {
 			for err := range errs {
 				Expect(err).NotTo(HaveOccurred())
 			}
+		})
+	})
+
+	Describe("Metrics Instrumentation (TC-P1-04)", func() {
+		var (
+			total    *prometheus.CounterVec
+			duration *prometheus.HistogramVec
+			errVec   *prometheus.CounterVec
+		)
+
+		newMetrics := func() *severity.TriagerMetrics {
+			total = prometheus.NewCounterVec(prometheus.CounterOpts{
+				Name: "af_severity_triage_total",
+			}, []string{"tier", "severity"})
+			duration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+				Name:    "af_severity_triage_duration_seconds",
+				Buckets: prometheus.DefBuckets,
+			}, []string{"tier"})
+			errVec = prometheus.NewCounterVec(prometheus.CounterOpts{
+				Name: "af_severity_triage_errors_total",
+			}, []string{"tier", "error_type"})
+			return &severity.TriagerMetrics{
+				Total:    total,
+				Duration: duration,
+				Errors:   errVec,
+			}
+		}
+
+		It("TC-P1-04a: successful Tier 1 triage records total + duration", func() {
+			m := newMetrics()
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "severity": "critical"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard(), m)
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(testutil.ToFloat64(total.WithLabelValues("firing_alert", "critical"))).To(Equal(1.0))
+			Expect(testutil.CollectAndCount(duration)).To(BeNumerically(">", 0))
+		})
+
+		It("TC-P1-04b: Tier 3 LLM failure records error counter", func() {
+			m := newMetrics()
+			mockProm := &mockPromClient{}
+			llm := &mockLLM{pureErr: errors.New("vertex unavailable")}
+			triager := severity.NewTriager(mockProm, llm, defaultCfg, logr.Discard(), m)
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).To(HaveOccurred())
+
+			Expect(testutil.ToFloat64(errVec.WithLabelValues("llm_triage", "llm_failure"))).To(Equal(1.0))
+			Expect(testutil.ToFloat64(total.WithLabelValues("llm_triage", ""))).To(Equal(0.0))
+		})
+
+		It("TC-P1-04c: disabled triage emits no metrics", func() {
+			m := newMetrics()
+			disabledCfg := defaultCfg
+			disabledCfg.Enabled = false
+			mockProm := &mockPromClient{}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, disabledCfg, logr.Discard(), m)
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(testutil.CollectAndCount(total)).To(Equal(0))
+			Expect(testutil.CollectAndCount(duration)).To(Equal(0))
+			Expect(testutil.CollectAndCount(errVec)).To(Equal(0))
+		})
+
+		It("TC-P1-04d: Tier 2 rule_evaluation success records total", func() {
+			m := newMetrics()
+			mockProm := &mockPromClient{
+				ruleGroups: []prom.RuleGroup{{
+					Rules: []prom.Rule{{
+						Name:   "HighErrorRate",
+						Query:  `rate(http_errors{namespace="prod"}[5m]) > 0.1`,
+						State:  "inactive",
+						Labels: map[string]string{"severity": "high"},
+					}},
+				}},
+				queryResult: &prom.QueryResult{Samples: []prom.Sample{{Value: 0.5}}},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard(), m)
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(testutil.ToFloat64(total.WithLabelValues("rule_evaluation", "high"))).To(Equal(1.0))
+		})
+
+		It("TC-P1-04e: duration histogram has observations on success", func() {
+			m := newMetrics()
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "X", "namespace": "prod", "severity": "low"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard(), m)
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(testutil.CollectAndCount(duration)).To(BeNumerically(">", 0))
 		})
 	})
 })

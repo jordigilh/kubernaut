@@ -8,6 +8,7 @@ metadata:
     app.kubernetes.io/name: kubernaut-apifrontend
     app.kubernetes.io/component: apifrontend
 spec:
+  jobLabel: app.kubernetes.io/name
   selector:
     matchLabels:
       app.kubernetes.io/name: kubernaut-apifrontend
@@ -17,6 +18,10 @@ spec:
       path: /metrics
       interval: 15s
       scheme: http
+      relabelings:
+        - sourceLabels: [__address__]
+          targetLabel: job
+          replacement: apifrontend
   namespaceSelector:
     matchNames:
       - kubernaut-system

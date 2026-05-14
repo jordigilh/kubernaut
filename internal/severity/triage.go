@@ -3,8 +3,10 @@ package severity
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 
 	prom "github.com/jordigilh/kubernaut-apifrontend/internal/prometheus"
 )
@@ -35,6 +37,13 @@ func DefaultConfig() Config {
 	}
 }
 
+// TriagerMetrics holds optional Prometheus collectors for triage observability.
+type TriagerMetrics struct {
+	Total    *prometheus.CounterVec
+	Duration *prometheus.HistogramVec
+	Errors   *prometheus.CounterVec
+}
+
 // Triager orchestrates the multi-tier severity triage pipeline.
 type Triager struct {
 	promClient prom.Client
@@ -42,24 +51,30 @@ type Triager struct {
 	config     Config
 	logger     logr.Logger
 	cache      *RulesCache
+	metrics    *TriagerMetrics
 }
 
 // NewTriager creates a new Triager instance.
 // Panics if llm is nil — the pipeline requires an LLM fallback to guarantee a result.
-func NewTriager(promClient prom.Client, llm LLMTriager, cfg Config, logger logr.Logger) *Triager {
+// An optional TriagerMetrics may be passed to enable Prometheus instrumentation.
+func NewTriager(promClient prom.Client, llm LLMTriager, cfg Config, logger logr.Logger, m ...*TriagerMetrics) *Triager {
 	if llm == nil {
 		panic("NewTriager: LLMTriager must not be nil — the triage pipeline requires an LLM fallback")
 	}
 	if logger.GetSink() == nil {
 		logger = logr.Discard()
 	}
-	return &Triager{
+	t := &Triager{
 		promClient: promClient,
 		llm:        llm,
 		config:     cfg,
 		logger:     logger,
 		cache:      NewRulesCache(cfg.CacheTTLSeconds),
 	}
+	if len(m) > 0 && m[0] != nil {
+		t.metrics = m[0]
+	}
+	return t
 }
 
 // Triage runs the severity triage pipeline: Tier 1 -> 1.5 -> 2 -> 2.5/3.
@@ -69,6 +84,38 @@ func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, 
 		return TriageResult{}, nil
 	}
 
+	start := time.Now()
+	result, err := t.triagePipeline(ctx, input)
+	t.recordMetrics(result, err, time.Since(start))
+	return result, err
+}
+
+func (t *Triager) recordMetrics(result TriageResult, err error, elapsed time.Duration) {
+	if t.metrics == nil {
+		return
+	}
+	tier := string(result.Source)
+	if err != nil {
+		if tier == "" {
+			tier = string(SourceLLMTriage)
+		}
+		if t.metrics.Errors != nil {
+			t.metrics.Errors.WithLabelValues(tier, "llm_failure").Inc()
+		}
+		return
+	}
+	if tier == "" {
+		return
+	}
+	if t.metrics.Total != nil {
+		t.metrics.Total.WithLabelValues(tier, result.Severity).Inc()
+	}
+	if t.metrics.Duration != nil {
+		t.metrics.Duration.WithLabelValues(tier).Observe(elapsed.Seconds())
+	}
+}
+
+func (t *Triager) triagePipeline(ctx context.Context, input TriageInput) (TriageResult, error) {
 	if err := ctx.Err(); err != nil {
 		return TriageResult{}, err
 	}

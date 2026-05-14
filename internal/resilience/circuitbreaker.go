@@ -65,6 +65,13 @@ func NewCircuitBreakerTransport(next http.RoundTripper, cfg *CircuitBreakerConfi
 
 	cb := gobreaker.NewCircuitBreaker[*http.Response](settings)
 
+	if cfg.StateGauge != nil {
+		cfg.StateGauge.WithLabelValues(cfg.DependencyName).Set(float64(gobreaker.StateClosed))
+	}
+	if cfg.DurationHist != nil && cfg.DependencyName != "" {
+		cfg.DurationHist.WithLabelValues(cfg.DependencyName, "2xx")
+	}
+
 	statuses := defaultFailureStatuses
 	if len(cfg.FailureStatuses) > 0 {
 		statuses = cfg.FailureStatuses

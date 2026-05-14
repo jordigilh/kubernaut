@@ -53,8 +53,9 @@ type ValidationRule struct {
 
 // Config is the top-level authentication configuration.
 type Config struct {
-	JWT        []ProviderConfig     `yaml:"jwt,omitempty"`
-	Kubernetes KubernetesAuthConfig `yaml:"kubernetes,omitempty"`
+	JWT                  []ProviderConfig     `yaml:"jwt,omitempty"`
+	Kubernetes           KubernetesAuthConfig `yaml:"kubernetes,omitempty"`
+	AllowInsecureIssuers bool                 `yaml:"allowInsecureIssuers,omitempty"`
 }
 
 // KubernetesAuthConfig enables TokenReview-based authentication.
@@ -69,13 +70,15 @@ func (c *Config) Validate() error {
 		if p.Issuer.URL == "" {
 			return fmt.Errorf("jwt[%d]: issuer URL must not be empty", i)
 		}
+		if err := validateIssuerURL(p.Issuer.URL, c.AllowInsecureIssuers); err != nil {
+			return fmt.Errorf("jwt[%d]: %w", i, err)
+		}
 		if len(p.Issuer.Audiences) == 0 {
 			return fmt.Errorf("jwt[%d]: audiences must not be empty (would reject all tokens)", i)
 		}
 		if p.Issuer.JWKSURL != "" {
-			u, err := url.Parse(p.Issuer.JWKSURL)
-			if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-				return fmt.Errorf("jwt[%d]: invalid JWKS URL %q (must be http or https)", i, p.Issuer.JWKSURL)
+			if err := validateIssuerURL(p.Issuer.JWKSURL, c.AllowInsecureIssuers); err != nil {
+				return fmt.Errorf("jwt[%d]: JWKS URL: %w", i, err)
 			}
 		}
 		for j, rule := range p.UserValidationRules {
@@ -89,6 +92,34 @@ func (c *Config) Validate() error {
 		seen[p.Issuer.URL] = struct{}{}
 	}
 	return nil
+}
+
+const maxIssuerURLLen = 4096
+
+func validateIssuerURL(rawURL string, allowInsecure bool) error {
+	if len(rawURL) > maxIssuerURLLen {
+		return fmt.Errorf("issuer URL exceeds %d characters", maxIssuerURLLen)
+	}
+	for _, b := range []byte(rawURL) {
+		if b == 0 {
+			return fmt.Errorf("issuer URL contains null byte")
+		}
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid issuer URL %q: %w", rawURL, err)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if allowInsecure {
+			return nil
+		}
+		return fmt.Errorf("issuer URL %q uses http; https required (set AllowInsecureIssuer for dev/test)", rawURL)
+	default:
+		return fmt.Errorf("issuer URL %q has unsupported scheme %q (must be https)", rawURL, u.Scheme)
+	}
 }
 
 // LoadConfigFromFile reads and parses a Config from a YAML file.

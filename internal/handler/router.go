@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/logr"
+
 	"github.com/jordigilh/kubernaut-apifrontend/internal/metrics"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/requestid"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/streaming"
@@ -15,6 +17,7 @@ import (
 // RouterConfig holds all dependencies needed to construct the HTTP router.
 type RouterConfig struct {
 	MetricsRegistry    *metrics.Registry
+	Logger             logr.Logger
 	A2AHandler         http.Handler
 	MCPHandler         http.Handler
 	AgentCardHandler   http.Handler
@@ -68,7 +71,7 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", handleHealthz)
-	mux.HandleFunc("GET /readyz", readyzHandler(cfg.ReadyChecker, cfg.Draining))
+	mux.HandleFunc("GET /readyz", ReadyzHandlerFunc(cfg.ReadyChecker, cfg.Draining))
 	mux.Handle("GET /metrics", cfg.MetricsRegistry.Handler())
 	mux.Handle("GET /.well-known/agent-card.json", cfg.AgentCardHandler)
 
@@ -91,7 +94,12 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 	mux.Handle("POST /a2a/invoke", a2aChain)
 	mux.Handle("POST /mcp", mcpChain)
 
-	return requestid.Middleware(metricsMiddleware(cfg.MetricsRegistry, securityHeadersMiddleware(mux))), nil
+	recoverLogger := cfg.Logger
+	if recoverLogger.GetSink() == nil {
+		recoverLogger = logr.Discard()
+	}
+	return RecoverMiddleware(cfg.MetricsRegistry, recoverLogger.WithName("panic-recovery"))(
+		requestid.Middleware(metricsMiddleware(cfg.MetricsRegistry, securityHeadersMiddleware(mux)))), nil
 }
 
 // maxBodyMiddleware limits request body size to prevent resource exhaustion.
