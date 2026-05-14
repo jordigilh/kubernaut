@@ -410,6 +410,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		Enabled:              appCfg.Retention.Enabled,
 		Interval:             appCfg.Retention.GetInterval(),
 		BatchSize:            appCfg.Retention.GetBatchSize(),
+		DefaultDays:          appCfg.Retention.GetDefaultDays(),
 		PartitionDropEnabled: appCfg.Retention.PartitionDropEnabled,
 	}, logger)
 
@@ -478,8 +479,7 @@ func (s *Server) Handler() http.Handler {
 	// Applied before OpenAPI validation so the body is capped before spec parsing.
 	r.Use(dsmiddleware.MaxBytesReaderMiddleware(s.maxBodySize, s.logger))
 
-	// #1048 Phase 4 / AC-4: CORS with configurable origins (ADR-030).
-	// AllowedMethods includes PATCH and DELETE for workflow/action-type/legal-hold routes.
+	// AC-4: CORS with configurable origins (ADR-030).
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   s.corsAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
@@ -489,16 +489,6 @@ func (s *Server) Handler() http.Handler {
 		MaxAge:           300,
 	}))
 
-	// BR-STORAGE-034: OpenAPI validation middleware (fail-hard, initialized in NewServer)
-	r.Use(s.openapiValidator.Middleware)
-
-	// Issue #753: Health endpoints moved to dedicated :8081 server.
-	// See health.NewHealthServer in cmd/datastorage/main.go.
-
-	// BR-STORAGE-019: Prometheus metrics endpoint moved to dedicated server (Issue #283)
-	// Metrics are now served on a separate port (default :9090) for standardization.
-	// See cmd/datastorage/main.go for the dedicated metrics server.
-
 	// API v1 routes
 	s.logger.V(1).Info("Setting up API v1 routes",
 		"handler_nil", s.handler == nil,
@@ -507,10 +497,8 @@ func (s *Server) Handler() http.Handler {
 		"dlq_client_nil", s.dlqClient == nil)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		// SEC-1 / DD-AUTH-014: Tiered SAR authorization (AC-6 least privilege)
-		// Base middleware: verb "get" — matches auditor + operator ClusterRoles
-		// Legal hold routes use a nested group with verb "update" (admin-only)
-		// Authority: deploy/data-storage/audit-rbac.yaml, DD-AUTH-011
+		// SEC-H2: Auth runs BEFORE OpenAPI validation so unauthenticated
+		// requests get 401, not a 400 from spec validation.
 		baseAuthMiddleware := auth.NewMiddleware(
 			s.authenticator,
 			s.authorizer,
@@ -518,11 +506,14 @@ func (s *Server) Handler() http.Handler {
 				Namespace:    s.authNamespace,
 				Resource:     "services",
 				ResourceName: "data-storage-service",
-				Verb:         "get", // Base access: auditor + operator + admin
+				Verb:         "get",
 			},
 			s.logger,
 		)
 		r.Use(baseAuthMiddleware.Handler)
+
+		// BR-STORAGE-034: OpenAPI validation after auth (SEC-H2)
+		r.Use(s.openapiValidator.Middleware)
 		s.logger.Info("Auth middleware enabled (DD-AUTH-014, SEC-1 tiered)",
 			"namespace", s.authNamespace,
 			"resource", "services",

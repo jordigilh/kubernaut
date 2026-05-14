@@ -85,15 +85,15 @@ func (s *Server) handleLiveness(w http.ResponseWriter, _ *http.Request) {
 
 // Middleware
 
-// panicRecoveryMiddleware catches panics and logs detailed information
+// panicRecoveryMiddleware catches panics, logs detailed information, and
+// returns HTTP 500 instead of re-panicking (SEC-M2).
 func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
 				requestID := middleware.GetReqID(r.Context())
 
-				// Log the panic with full details
-				s.logger.Error(fmt.Errorf("panic: %v", err), "🚨 PANIC RECOVERED",
+				s.logger.Error(fmt.Errorf("panic: %v", err), "PANIC RECOVERED",
 					"request_id", requestID,
 					"method", r.Method,
 					"path", r.URL.Path,
@@ -101,8 +101,10 @@ func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
 					"stack_trace", string(debug.Stack()),
 				)
 
-				// Let chi's Recoverer handle the response
-				panic(err)
+				// SEC-M2: Return 500 instead of re-panicking
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"type":"about:blank","title":"Internal Server Error","status":500,"detail":"unexpected error"}`))
 			}
 		}()
 
@@ -110,27 +112,26 @@ func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// loggingMiddleware logs HTTP requests with structured logging
+// loggingMiddleware logs HTTP requests with structured logging.
+// FED-M2: Includes authenticated user identity when available.
 func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-
-		// Get request ID from middleware.RequestID
 		requestID := middleware.GetReqID(r.Context())
-
-		// Create a response writer wrapper to capture status code
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
-		// Call next handler
 		next.ServeHTTP(ww, r)
 
-		// Log request with timing
 		duration := time.Since(start)
+		// FED-M2: Include authenticated principal in access log.
+		// X-Auth-Request-User is set by the auth middleware after successful authentication.
+		user := r.Header.Get("X-Auth-Request-User")
 		s.logger.Info("HTTP request",
 			"request_id", requestID,
 			"method", r.Method,
 			"path", r.URL.Path,
 			"remote_addr", r.RemoteAddr,
+			"user", user,
 			"status", ww.Status(),
 			"bytes", ww.BytesWritten(),
 			"duration", duration,

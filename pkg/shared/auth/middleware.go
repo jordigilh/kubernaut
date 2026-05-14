@@ -125,17 +125,20 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
+			m.logSecurityEvent(r, "missing_auth_header", "", http.StatusUnauthorized)
 			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Missing Authorization header")
 			return
 		}
 
 		if !strings.HasPrefix(authHeader, "Bearer ") {
+			m.logSecurityEvent(r, "invalid_auth_format", "", http.StatusUnauthorized)
 			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid Authorization header format")
 			return
 		}
 
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		if token == "" {
+			m.logSecurityEvent(r, "empty_bearer_token", "", http.StatusUnauthorized)
 			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Empty Bearer token")
 			return
 		}
@@ -143,6 +146,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		userInfo, err := m.authenticator.ValidateTokenFull(r.Context(), token)
 		if err != nil {
 			if errors.Is(err, ErrTokenInvalid) {
+				m.logSecurityEvent(r, "invalid_token", "", http.StatusUnauthorized)
 				m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
 				return
 			}
@@ -181,14 +185,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		}
 
 		if !allowed {
-			m.logger.Info("Authorization denied",
-				"user", user,
-				"path", r.URL.Path,
-				"resource", m.config.Resource,
-				"resourceName", m.config.ResourceName,
-				"verb", m.config.Verb,
-			)
-			// Issue #673 C-2/M-2: Generic 403; RBAC details logged server-side only
+			m.logSecurityEvent(r, "authorization_denied", user, http.StatusForbidden)
 			m.writeError(w, http.StatusForbidden, "Forbidden", "Insufficient permissions")
 			return
 		}
@@ -247,6 +244,23 @@ func stripImpersonationHeaders(r *http.Request) {
 }
 
 // writeError writes an RFC 7807 Problem Details JSON error response.
+// logSecurityEvent emits a structured security audit log entry for FedRAMP AU-2 compliance.
+// FED-M1: Every 401/403 must produce a traceable security event.
+func (m *Middleware) logSecurityEvent(r *http.Request, reason, user string, statusCode int) {
+	m.logger.Info("security_event",
+		"event_type", "authentication",
+		"reason", reason,
+		"user", user,
+		"status_code", statusCode,
+		"method", r.Method,
+		"path", r.URL.Path,
+		"remote_addr", r.RemoteAddr,
+		"resource", m.config.Resource,
+		"resource_name", m.config.ResourceName,
+		"verb", m.config.Verb,
+	)
+}
+
 func (m *Middleware) writeError(w http.ResponseWriter, status int, title, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
