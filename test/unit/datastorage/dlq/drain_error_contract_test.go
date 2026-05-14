@@ -30,6 +30,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
 
 // ========================================
@@ -41,6 +42,10 @@ import (
 //
 // DF-H1: DrainWithTimeout must return an error when messages fail
 // SRE-M2: Shutdown must propagate drain errors
+//
+// NOTE: DrainWithTimeout requires non-nil repos. DLQ is a hard
+// dependency — if repos are unavailable, DS must not start.
+// Tests use a FailingEventsRepository to simulate DB-down scenarios.
 // ========================================
 
 var _ = Describe("Phase 9C: Drain Error Contract (DF-H1, SRE-M2)", func() {
@@ -91,20 +96,23 @@ var _ = Describe("Phase 9C: Drain Error Contract (DF-H1, SRE-M2)", func() {
 			drainCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 
-			// Drain with nil repos — every message will fail to persist
-			stats, err := dlqClient.DrainWithTimeout(drainCtx, nil, nil)
+			// DB is down during drain — repos exist but all writes fail
+			failingRepo := &PermanentFailEventsRepository{}
+			mockNotifRepo := &MockNotificationRepository{}
+			stats, drainErr := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, failingRepo)
 
 			// DF-H1: DrainWithTimeout MUST return an error when messages fail
 			Expect(stats).ToNot(BeIdenticalTo(nil), "stats should be returned even on error")
+			Expect(drainErr).To(HaveOccurred(),
+				"DF-H1: drain must report error when DB writes permanently fail")
 			Expect(len(stats.Errors)).To(BeNumerically(">", 0),
-				"drain should report errors when repos are nil and messages exist")
+				"drain should accumulate errors when per-message writes fail")
 		})
 	})
 
 	Describe("UT-DS-1088-GA-021: Drain errors propagate to shutdown", func() {
 		It("should join drain errors into a single error for shutdown consumption", func() {
 			// SRE-M2: DrainWithTimeout must return errors.Join when failures occur
-			// The shutdown logic in server.go must surface this to shutdownErrors
 			ctx := context.Background()
 
 			validEvent := &audit.AuditEvent{
@@ -126,12 +134,25 @@ var _ = Describe("Phase 9C: Drain Error Contract (DF-H1, SRE-M2)", func() {
 			drainCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 
-			stats, _ := dlqClient.DrainWithTimeout(drainCtx, nil, nil)
-			if stats != nil && len(stats.Errors) > 0 {
-				// Verify errors can be joined (this is what shutdown will do)
-				joinedErr := stats.JoinErrors()
-				Expect(joinedErr).ToNot(Succeed(), "joined errors should produce a non-nil error")
-			}
+			failingRepo := &PermanentFailEventsRepository{}
+			mockNotifRepo := &MockNotificationRepository{}
+			stats, drainErr := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, failingRepo)
+
+			// SRE-M2: errors.Join produces a single error for shutdown
+			Expect(drainErr).To(HaveOccurred(),
+				"SRE-M2: drain must return joined error for shutdown propagation")
+			Expect(stats.Errors).To(HaveLen(1),
+				"SRE-M2: events drain error should be captured in stats.Errors")
+			joinedErr := stats.JoinErrors()
+			Expect(joinedErr).To(HaveOccurred(),
+				"SRE-M2: JoinErrors must produce non-nil error")
 		})
 	})
 })
+
+// PermanentFailEventsRepository always returns an error — simulates DB-down.
+type PermanentFailEventsRepository struct{}
+
+func (r *PermanentFailEventsRepository) Create(_ context.Context, _ *repository.AuditEvent) (*repository.AuditEvent, error) {
+	return nil, fmt.Errorf("permanent database failure")
+}

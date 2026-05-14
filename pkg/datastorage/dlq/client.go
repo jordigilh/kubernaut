@@ -78,22 +78,27 @@ const maxPayloadSize = 1 << 20 // 1 MiB
 const maxLastErrorLen = 256
 
 // SanitizeError truncates and redacts error strings stored in DLQ LastError.
-// SEC-L1: Prevents raw SQL/driver details from persisting in Redis.
+// SEC-L1 / SEC-M1: Prevents raw SQL/driver/credential details from persisting in Redis.
 func SanitizeError(err error) string {
 	if err == nil {
 		return ""
 	}
 	msg := err.Error()
 	lower := strings.ToLower(msg)
-	// SEC-H1: Redact any error containing SQL/driver-specific patterns,
-	// not just prefix matches. Covers pq, pgx, lib/pq, SQLSTATE, etc.
-	for _, pattern := range []string{"pq:", "pgx:", "sql:", "driver:", "sqlstate", "error:", "fatal:", "connection refused", "connection reset"} {
+	// SEC-H1 / SEC-M1: Redact any error containing SQL/driver/credential patterns.
+	for _, pattern := range []string{
+		"pq:", "pgx:", "sql:", "driver:", "sqlstate",
+		"error:", "fatal:",
+		"connection refused", "connection reset",
+		"password", "secret", "token",
+		"postgres://", "postgresql://", "redis://",
+	} {
 		if strings.Contains(lower, pattern) {
 			return "database write failed"
 		}
 	}
 	if len(msg) > maxLastErrorLen {
-		msg = msg[:maxLastErrorLen] + "..."
+		msg = string([]rune(msg)[:maxLastErrorLen]) + "..."
 	}
 	return msg
 }
@@ -732,6 +737,10 @@ func (s *DrainStats) JoinErrors() error {
 //
 // Business Requirement: BR-AUDIT-001 - Complete audit trail with no data loss
 func (c *Client) DrainWithTimeout(ctx context.Context, notificationRepo NotificationCreator, eventsRepo EventCreator) (*DrainStats, error) {
+	if notificationRepo == nil || eventsRepo == nil {
+		return &DrainStats{Errors: []error{fmt.Errorf("DrainWithTimeout: repos must not be nil (DLQ is a hard dependency)")}},
+			fmt.Errorf("DrainWithTimeout: repos must not be nil (DLQ is a hard dependency)")
+	}
 	startTime := time.Now()
 	stats := &DrainStats{}
 
@@ -746,7 +755,7 @@ func (c *Client) DrainWithTimeout(ctx context.Context, notificationRepo Notifica
 		"dd", "DD-008-drain-start")
 
 	// Process notification DLQ stream
-	notificationStats, err := c.drainStream(ctx, "notifications", notificationRepo)
+	notificationStats, err := c.drainStream(ctx, "notifications", c.notificationWriter(notificationRepo))
 	if err != nil {
 		stats.Errors = append(stats.Errors, fmt.Errorf("notification drain error: %w", err))
 	}
@@ -767,7 +776,7 @@ func (c *Client) DrainWithTimeout(ctx context.Context, notificationRepo Notifica
 	}
 
 	// Process events DLQ stream
-	eventsStats, err := c.drainStream(ctx, "events", eventsRepo)
+	eventsStats, err := c.drainStream(ctx, "events", c.eventWriter(eventsRepo))
 	if err != nil {
 		stats.Errors = append(stats.Errors, fmt.Errorf("events drain error: %w", err))
 	}
@@ -813,13 +822,61 @@ const drainBatchSize int64 = 100
 // to retry the survivors (XDel'd messages are gone, so only failures remain).
 // Bounded at 2 passes to prevent infinite loops on permanent failures.
 //
+// messageWriteFunc writes a single DLQ message to persistent storage.
+// ARCH-M1: Replaces the former interface{} + type-assertion pattern.
+type messageWriteFunc func(ctx context.Context, msg *DLQMessage) error
+
+// notificationWriter returns a messageWriteFunc that persists notifications.
+func (c *Client) notificationWriter(repo NotificationCreator) messageWriteFunc {
+	return func(ctx context.Context, msg *DLQMessage) error {
+		if len(msg.AuditMessage.Payload) > maxPayloadSize {
+			return fmt.Errorf("payload exceeds maximum size (%d > %d bytes)", len(msg.AuditMessage.Payload), maxPayloadSize)
+		}
+		var notifAudit models.NotificationAudit
+		if err := json.Unmarshal(msg.AuditMessage.Payload, &notifAudit); err != nil {
+			return fmt.Errorf("failed to unmarshal notification audit: %w", err)
+		}
+		_, err := repo.Create(ctx, &notifAudit)
+		return err
+	}
+}
+
+// eventWriter returns a messageWriteFunc that persists audit events.
+// Mirrors the original writeMessageToDB "events" path: unmarshal → validate → convert → create.
+func (c *Client) eventWriter(repo EventCreator) messageWriteFunc {
+	return func(ctx context.Context, msg *DLQMessage) error {
+		if len(msg.AuditMessage.Payload) > maxPayloadSize {
+			return fmt.Errorf("payload exceeds maximum size (%d > %d bytes)", len(msg.AuditMessage.Payload), maxPayloadSize)
+		}
+		var auditEvent audit.AuditEvent
+		if err := json.Unmarshal(msg.AuditMessage.Payload, &auditEvent); err != nil {
+			return fmt.Errorf("failed to unmarshal audit event: %w", err)
+		}
+		if len(auditEvent.EventData) == 0 {
+			auditEvent.EventData = []byte("{}")
+		}
+		if err := auditEvent.Validate(); err != nil {
+			return fmt.Errorf("drain: audit event validation failed: %w", err)
+		}
+		if err := ValidateEventData(auditEvent.EventData); err != nil {
+			return fmt.Errorf("drain: audit event EventData validation failed: %w", err)
+		}
+		repoEvent, err := repository.ConvertFromAuditEvent(&auditEvent)
+		if err != nil {
+			return fmt.Errorf("failed to convert audit event: %w", err)
+		}
+		_, err = repo.Create(ctx, repoEvent)
+		return err
+	}
+}
+
 // #1048 PERF-3: Uses XRangeN with cursor to avoid loading the entire stream
 // into memory at once.
-func (c *Client) drainStream(ctx context.Context, auditType string, repo interface{}) (int, error) {
+func (c *Client) drainStream(ctx context.Context, auditType string, writeFn messageWriteFunc) (int, error) {
 	streamKey := c.getStreamKey(auditType)
 	total := 0
 
-	n, hadFailures, err := c.drainStreamPass(ctx, streamKey, auditType, repo)
+	n, hadFailures, err := c.drainStreamPass(ctx, streamKey, auditType, writeFn)
 	total += n
 	if err != nil {
 		return total, err
@@ -829,7 +886,7 @@ func (c *Client) drainStream(ctx context.Context, auditType string, repo interfa
 	// Successfully XDel'd messages won't reappear. Messages that fail
 	// a second time remain in Redis for the next startup's retry worker.
 	if hadFailures {
-		n, stillFailing, err := c.drainStreamPass(ctx, streamKey, auditType, repo)
+		n, stillFailing, err := c.drainStreamPass(ctx, streamKey, auditType, writeFn)
 		total += n
 		if err != nil {
 			return total, err
@@ -846,7 +903,7 @@ func (c *Client) drainStream(ctx context.Context, auditType string, repo interfa
 // drainStreamPass performs a single forward sweep of the stream.
 // Returns the number of messages successfully written+deleted, whether any
 // write failures occurred, and any stream-level read error.
-func (c *Client) drainStreamPass(ctx context.Context, streamKey, auditType string, repo interface{}) (int, bool, error) {
+func (c *Client) drainStreamPass(ctx context.Context, streamKey, auditType string, writeFn messageWriteFunc) (int, bool, error) {
 	processed := 0
 	hadFailures := false
 	cursor := "-"
@@ -887,7 +944,7 @@ func (c *Client) drainStreamPass(ctx context.Context, streamKey, auditType strin
 				continue
 			}
 
-			if err := c.writeMessageToDB(ctx, auditType, dlqMsg, repo); err != nil {
+			if err := writeFn(ctx, dlqMsg); err != nil {
 				c.logger.Error(err, "Failed to write DLQ message to database during drain",
 					"message_id", msg.ID,
 					"audit_type", auditType,
@@ -907,61 +964,6 @@ func (c *Client) drainStreamPass(ctx context.Context, streamKey, auditType strin
 	}
 
 	return processed, hadFailures, nil
-}
-
-// writeMessageToDB writes a DLQ message to the database.
-// Uses the package-level EventCreator/NotificationCreator interfaces (ARCH-M2).
-// SI-10: Rejects payloads exceeding maxPayloadSize before unmarshalling.
-func (c *Client) writeMessageToDB(ctx context.Context, auditType string, msg *DLQMessage, repo interface{}) error {
-	if repo == nil {
-		return fmt.Errorf("repository is nil for audit type: %s", auditType)
-	}
-
-	if len(msg.AuditMessage.Payload) > maxPayloadSize {
-		return fmt.Errorf("payload exceeds maximum size (%d > %d bytes)", len(msg.AuditMessage.Payload), maxPayloadSize)
-	}
-
-	switch auditType {
-	case "notifications":
-		notifRepo, ok := repo.(NotificationCreator)
-		if !ok {
-			return fmt.Errorf("repository does not implement NotificationCreator interface (type: %T)", repo)
-		}
-		var notifAudit models.NotificationAudit
-		if err := json.Unmarshal(msg.AuditMessage.Payload, &notifAudit); err != nil {
-			return fmt.Errorf("failed to unmarshal notification audit: %w", err)
-		}
-		_, err := notifRepo.Create(ctx, &notifAudit)
-		return err
-
-	case "events":
-		eventsRepo, ok := repo.(EventCreator)
-		if !ok {
-			return fmt.Errorf("repository does not implement EventCreator interface (type: %T)", repo)
-		}
-		var auditEvent audit.AuditEvent
-		if err := json.Unmarshal(msg.AuditMessage.Payload, &auditEvent); err != nil {
-			return fmt.Errorf("failed to unmarshal audit event: %w", err)
-		}
-		if len(auditEvent.EventData) == 0 {
-			auditEvent.EventData = []byte("{}")
-		}
-		if err := auditEvent.Validate(); err != nil {
-			return fmt.Errorf("drain: audit event validation failed: %w", err)
-		}
-		if err := ValidateEventData(auditEvent.EventData); err != nil {
-			return fmt.Errorf("drain: audit event EventData validation failed: %w", err)
-		}
-		repoEvent, err := repository.ConvertFromAuditEvent(&auditEvent)
-		if err != nil {
-			return fmt.Errorf("failed to convert audit event: %w", err)
-		}
-		_, err = eventsRepo.Create(ctx, repoEvent)
-		return err
-
-	default:
-		return fmt.Errorf("unknown audit type: %s", auditType)
-	}
 }
 
 // getStreamKey returns the Redis stream key for a given audit type

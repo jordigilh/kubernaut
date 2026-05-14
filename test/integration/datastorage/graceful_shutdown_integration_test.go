@@ -931,7 +931,8 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 				defer func() { _ = tempDB.Close() }()
 
 				notificationRepo := repository.NewNotificationAuditRepository(tempDB, logger)
-				_, err = dlqClient.DrainWithTimeout(drainCtx, notificationRepo, nil)
+				auditEventsRepo := repository.NewAuditEventsRepository(tempDB, logger)
+				_, err = dlqClient.DrainWithTimeout(drainCtx, notificationRepo, auditEventsRepo)
 				Expect(err).ToNot(HaveOccurred(), "DLQ drain should succeed")
 
 				GinkgoWriter.Printf("✅ DLQ drained successfully\n")
