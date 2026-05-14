@@ -65,7 +65,7 @@ jobs:
     outputs:
       code_changed: ${{ steps.filter.outputs.code }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v4
         id: filter
         with:
@@ -102,7 +102,7 @@ jobs:
     timeout-minutes: 8
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           submodules: true
 
@@ -148,7 +148,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           submodules: true
 
@@ -211,7 +211,7 @@ jobs:
           - shared-packages  # pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           submodules: true
 
@@ -336,7 +336,7 @@ jobs:
             context: .
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           submodules: true
 
@@ -470,7 +470,7 @@ jobs:
             service_name: "Kubernaut Agent"
             timeout: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
       - uses: actions/setup-go@v6
@@ -638,7 +638,7 @@ jobs:
             service_name: "Full Pipeline"
             timeout: 50
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
@@ -821,7 +821,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -935,7 +935,7 @@ jobs:
       pull-requests: write  # required for sticky-pull-request-comment to post/update PR comment
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Download coverage summary reports
         if: always()
