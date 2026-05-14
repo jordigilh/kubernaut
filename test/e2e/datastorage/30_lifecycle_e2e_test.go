@@ -195,8 +195,21 @@ var _ = Describe("Data Storage lifecycle Phase 9 (ET-DS-1088-LC)", Ordered, func
 		})
 		Expect(verifyErr).ToNot(HaveOccurred())
 
-		verifyData, ok := verifyRes.(*dsgen.VerifyChainResponse)
-		Expect(ok).To(BeTrue(), "Verify-chain must return typed success payloads")
+		var verifyData *dsgen.VerifyChainResponse
+		switch r := verifyRes.(type) {
+		case *dsgen.VerifyChainResponse:
+			verifyData = r
+		case *dsgen.VerifyAuditChainBadRequest:
+			p := dsgen.RFC7807Problem(*r)
+			Fail(fmt.Sprintf("verify-chain returned 400 BadRequest: type=%s title=%s detail=%v status=%d",
+				p.Type.String(), p.Title, p.Detail, p.Status))
+		case *dsgen.VerifyAuditChainInternalServerError:
+			p := dsgen.RFC7807Problem(*r)
+			Fail(fmt.Sprintf("verify-chain returned 500 InternalServerError: type=%s title=%s detail=%v status=%d",
+				p.Type.String(), p.Title, p.Detail, p.Status))
+		default:
+			Fail(fmt.Sprintf("verify-chain returned unexpected type %T", verifyRes))
+		}
 
 		Expect(verifyData.CorrelationID).To(Equal(correlationID))
 		Expect(verifyData.IsValid).To(BeTrue())
