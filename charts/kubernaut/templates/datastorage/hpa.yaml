@@ -1,0 +1,24 @@
+{{- if .Values.datastorage.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: datastorage
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: datastorage
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: datastorage
+  minReplicas: {{ .Values.datastorage.hpa.minReplicas | default 1 }}
+  maxReplicas: {{ .Values.datastorage.hpa.maxReplicas | default 5 }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.datastorage.hpa.targetCPUUtilization | default 70 }}
+{{- end }}

@@ -90,9 +90,14 @@ gateway:
 datastorage:
   replicas: 1
   pdb:
-    enabled: false
-    # minAvailable: 1
+    enabled: true
+    minAvailable: 1
     # maxUnavailable: ""
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilization: 70
   logging:
     level: "INFO"
   dbExistingSecret: ""  # DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret.
@@ -101,10 +106,9 @@ datastorage:
       # #1048 Phase 4 / SC-5: Maximum request body size in bytes.
       # Clamped to [1048576, 52428800] (1–50 MiB). Plain integer only.
       maxBodySize: "5242880"
-      # #1048 Phase 4 / AC-4: CORS allowed origins.
-      # Override with explicit origins for production (e.g., ["https://dashboard.example.com"]).
-      corsAllowedOrigins:
-        - "*"
+      # SEC-H3 / AC-4: CORS allowed origins (default: [] = reject all cross-origin).
+      # Configure explicit origins for browser-based access (e.g., ["https://dashboard.example.com"]).
+      corsAllowedOrigins: []
       # #1048 Phase 5 / AU-9: Directory containing signing cert (tls.crt, tls.key).
       signerCertDir: "/etc/certs"
     database:
@@ -121,9 +125,10 @@ datastorage:
         certFile: ""
         keyFile: ""
         caFile: ""  # SC-8: required when enabled; mount self-signed CA via Helm/operator
-    # #1048 Phase 5 / AU-11: Retention worker configuration (BR-AUDIT-009)
+    # FED-C2 / AU-11: Retention enabled by default for compliance.
+    # Set enabled: false explicitly for development environments.
     retention:
-      enabled: false
+      enabled: true
       interval: "24h"
       batchSize: 1000
       defaultDays: 2555

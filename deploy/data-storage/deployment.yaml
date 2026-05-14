@@ -44,15 +44,17 @@ spec:
           ports:
             # DD-AUTH-014: Direct access (no proxy)
             - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: health
               containerPort: 8081
               protocol: TCP
             - name: metrics
               containerPort: 9090
               protocol: TCP
           env:
-            # DD-AUTH-014: DataStorage listens on 8081 (direct access)
-            - name: SERVER_PORT
-              value: "8081"
+            - name: CONFIG_PATH
+              value: /etc/datastorage/config.yaml
           envFrom:
             - configMapRef:
                 name: data-storage-config

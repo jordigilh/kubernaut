@@ -7,9 +7,9 @@ server:
   # #1048 Phase 4 / SC-5: Maximum request body size in bytes (default: 5242880 = 5 MiB)
   # Clamped to [1048576, 52428800] (1–50 MiB). Plain integer only.
   maxBodySize: "5242880"
-  # #1048 Phase 4 / AC-4: CORS allowed origins (default: ["*"])
-  corsAllowedOrigins:
-    - "*"
+  # SEC-H3 / AC-4: CORS allowed origins (default: [] = reject all cross-origin)
+  # Configure explicit origins for browser-based access.
+  corsAllowedOrigins: []
   # #1048 Phase 5 / AU-9: Directory containing signing certificate (tls.crt, tls.key)
   # Default: /etc/certs. Override for Helm environments where cert-manager mounts differ.
   # signerCertDir: "/etc/certs"
@@ -45,8 +45,10 @@ redis:
     # caFile: ""         # CA bundle to verify Valkey server (SC-8: required when enabled)
 
 # #1048 Phase 5 / AU-11, BR-AUDIT-009: Audit data retention enforcement
+# FED-C2: Retention enabled by default for FedRAMP AU-11 compliance.
+# Set enabled: false explicitly for development environments.
 retention:
-  enabled: false         # Opt-in: destructive operation (BR-AUDIT-004 safe default)
+  enabled: true          # AU-11: enforced by default; set false for dev only
   interval: "24h"        # How often the worker runs
   batchSize: 1000        # Max rows per DELETE batch
   defaultDays: 2555      # ADR-034: 7 years (SOC 2 / ISO 27001)

@@ -18,12 +18,10 @@ data:
       writeTimeout: 30s
       # #1048 Phase 4 / SC-5: Maximum request body size in bytes (default: 5242880 = 5 MiB)
       maxBodySize: {{ .Values.datastorage.config.server.maxBodySize | default "5242880" | quote }}
-      # #1048 Phase 4 / AC-4: CORS allowed origins
+      # SEC-H3 / AC-4: CORS allowed origins (default: [] = reject all cross-origin)
       corsAllowedOrigins:
       {{- if .Values.datastorage.config.server.corsAllowedOrigins }}
         {{- toYaml .Values.datastorage.config.server.corsAllowedOrigins | nindent 8 }}
-      {{- else }}
-        - "*"
       {{- end }}
       signerCertDir: {{ .Values.datastorage.config.server.signerCertDir | default "/etc/certs" | quote }}
       tls:
@@ -87,6 +85,7 @@ spec:
         {{- include "kubernaut.podSecurityContext" .Values.datastorage | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.datastorage | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.datastorage "global" .Values.global) | nindent 6 }}
+      terminationGracePeriodSeconds: 90
       initContainers:
         - name: wait-for-postgres
           image: {{ .Values.postgresql.image }}
@@ -143,6 +142,8 @@ spec:
             - name: signing-certs
               mountPath: {{ .Values.datastorage.config.server.signerCertDir | default "/etc/certs" }}
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.datastorage.resources | nindent 12 }}
           readinessProbe:
@@ -185,6 +186,9 @@ spec:
         - name: signing-certs
           secret:
             secretName: datastorage-signing-cert
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
 ---
 apiVersion: v1
 kind: Service

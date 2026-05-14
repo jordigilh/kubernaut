@@ -49,6 +49,10 @@ import (
 
 // Config represents the complete Data Storage service configuration
 type Config struct {
+	// Environment controls security defaults: "production" enforces TLS and restrictive CORS.
+	// FED-C1/SC-8: In production, sslMode=disable and redis.tls.enabled=false are rejected.
+	Environment string `yaml:"environment,omitempty"`
+
 	Server    ServerConfig    `yaml:"server"`
 	Logging   LoggingConfig   `yaml:"logging"`
 	Database  DatabaseConfig  `yaml:"database"`
@@ -58,6 +62,11 @@ type Config struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+}
+
+// IsProduction returns true when the environment is set to "production".
+func (c *Config) IsProduction() bool {
+	return strings.EqualFold(c.Environment, "production")
 }
 
 // ServerConfig contains HTTP server configuration
@@ -406,6 +415,16 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// FED-C1/SC-8: In production, reject insecure transport configurations.
+	if c.IsProduction() {
+		if c.Database.SSLMode == "" || c.Database.SSLMode == "disable" {
+			return fmt.Errorf("database sslMode must not be 'disable' in production (SC-8); use verify-full or verify-ca")
+		}
+		if !c.Redis.TLS.Enabled {
+			return fmt.Errorf("redis TLS must be enabled in production (SC-8); set redis.tls.enabled=true")
+		}
+	}
+
 	// Validate retention configuration
 	if c.Retention.Interval != "" {
 		if _, err := time.ParseDuration(c.Retention.Interval); err != nil {
@@ -589,12 +608,9 @@ func (c *ServerConfig) GetMaxBodySize() int64 {
 }
 
 // GetCORSAllowedOrigins returns the configured CORS origins.
-// #1048 Phase 4 / AC-4: Defaults to ["*"] for backward compatibility.
-// Operators should configure explicit origins for production.
+// SEC-H3/AC-4: Defaults to empty (reject all cross-origin requests).
+// Operators must configure explicit origins for browser-based access.
 func (c *ServerConfig) GetCORSAllowedOrigins() []string {
-	if len(c.CORSAllowedOrigins) == 0 {
-		return []string{"*"}
-	}
 	return c.CORSAllowedOrigins
 }
 

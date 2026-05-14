@@ -140,9 +140,10 @@ var _ = Describe("Phase 7: Configurable Endpoint Propagation Delay (TP-1088-P1)"
 	})
 
 	Describe("ServerConfig.GetCORSAllowedOrigins", func() {
-		It("UT-DS-1088-P7-022a: default must be wildcard when field is empty", func() {
+		It("UT-DS-1088-P7-022a: SEC-H3: default must be empty (reject all) when field is unset", func() {
 			cfg := config.ServerConfig{}
-			Expect(cfg.GetCORSAllowedOrigins()).To(Equal([]string{"*"}))
+			Expect(cfg.GetCORSAllowedOrigins()).To(BeEmpty(),
+				"SEC-H3: CORS default must be empty (reject all cross-origin requests)")
 		})
 
 		It("UT-DS-1088-P7-022b: must return configured origins", func() {
