@@ -97,12 +97,15 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 			Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
 			Expect(corev1.AddToScheme(scheme)).To(Succeed())
 
-			mgr, err := manager.New(ctrl.GetConfigOrDie(), manager.Options{
-				Scheme: scheme,
-			})
+			cfg, err := ctrl.GetConfig()
 			if err != nil {
 				Skip("cannot create manager without kubeconfig — falling back to ValidateDependencies")
 			}
+
+			mgr, err := manager.New(cfg, manager.Options{
+				Scheme: scheme,
+			})
+			Expect(err).ToNot(HaveOccurred())
 
 			mockHolmesClient := mocks.NewMockAgentClient()
 			investigatingHandler := handlers.NewInvestigatingHandler(
@@ -132,12 +135,15 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 			Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
 			Expect(corev1.AddToScheme(scheme)).To(Succeed())
 
-			mgr, err := manager.New(ctrl.GetConfigOrDie(), manager.Options{
-				Scheme: scheme,
-			})
+			cfg, err := ctrl.GetConfig()
 			if err != nil {
 				Skip("cannot create manager without kubeconfig — falling back to ValidateDependencies")
 			}
+
+			mgr, err := manager.New(cfg, manager.Options{
+				Scheme: scheme,
+			})
+			Expect(err).ToNot(HaveOccurred())
 
 			mockRegoEvaluator := mocks.NewMockRegoEvaluator()
 			analyzingHandler := handlers.NewAnalyzingHandler(
