@@ -106,6 +106,9 @@ func NewFullRouterWithMetrics(
 	mux.HandleFunc("/v1/chat/completions", h.handleOpenAI)
 	mux.HandleFunc("/chat/completions", h.handleOpenAI)
 
+	// Gemini endpoint (issue #1157: AF A2A integration via google-adk genai SDK)
+	mux.HandleFunc("/v1beta/models/", h.handleGemini)
+
 	// Ollama endpoints
 	mux.HandleFunc("/api/chat", h.handleOllama)
 	mux.HandleFunc("/api/generate", h.handleOllama)
