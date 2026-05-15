@@ -18,8 +18,12 @@ ARG BUILD_DATE=unknown
 
 FROM --platform=$BUILDPLATFORM golang:1.25.10-bookworm AS goose-builder
 ARG TARGETARCH
-ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GOBIN=/go/bin
-RUN go install github.com/pressly/goose/v3/cmd/goose@v3.27.1
+ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}
+RUN GOMODCACHE=$(mktemp -d) && \
+    cd "$GOMODCACHE" && \
+    go mod init tmp && \
+    go get github.com/pressly/goose/v3/cmd/goose@v3.27.1 && \
+    go build -o /go/bin/goose github.com/pressly/goose/v3/cmd/goose
 
 FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS production
 
