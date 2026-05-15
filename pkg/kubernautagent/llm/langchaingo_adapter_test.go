@@ -72,7 +72,7 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 
 		It("UT-KA-433-202: should create an adapter for the vertex provider", func() {
 			_, thisFile, _, _ := runtime.Caller(0)
-			fixturesDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "fixtures")
+			fixturesDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "test", "fixtures")
 			credPath := filepath.Join(fixturesDir, "gcp-mock-credentials.json")
 			Expect(credPath).To(BeAnExistingFile(), "GCP mock credentials fixture must exist")
 

@@ -27,7 +27,7 @@ import (
 
 func projectRoot() string {
 	_, filename, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(filename), "..", "..", "..")
+	return filepath.Join(filepath.Dir(filename), "..", "..")
 }
 
 // Issue #644 supersedes #635: Revised column layout following pipeline flow.

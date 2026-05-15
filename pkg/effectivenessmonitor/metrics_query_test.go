@@ -27,7 +27,7 @@ import (
 
 func emReconcilerPath() string {
 	_, filename, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(filename), "..", "..", "..",
+	return filepath.Join(filepath.Dir(filename), "..", "..",
 		"internal", "controller", "effectivenessmonitor", "assess_components.go")
 }
 

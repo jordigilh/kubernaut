@@ -434,7 +434,7 @@ receivers:
 			if projectRoot == "" {
 				cwd, err := os.Getwd()
 				Expect(err).NotTo(HaveOccurred())
-				projectRoot = filepath.Join(cwd, "..", "..", "..")
+				projectRoot = filepath.Join(cwd, "..", "..")
 			}
 
 			searchPaths := []string{

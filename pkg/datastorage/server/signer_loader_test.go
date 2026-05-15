@@ -21,7 +21,6 @@ package server
 import (
 	"os"
 	"path/filepath"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -29,11 +28,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/cert"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
-
-func TestSignerLoader(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Signer Loader Suite")
-}
 
 var _ = Describe("#1048 Phase 5 / AU-9: loadSigningCertificate fail-hard", func() {
 	var logger = kubelog.NewLogger(kubelog.DefaultOptions())

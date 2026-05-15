@@ -291,7 +291,7 @@ test-unit-datastorage: ginkgo ensure-coverage-dirs ## Run datastorage unit tests
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 datastorage - Unit Tests ($(TEST_PROCS) procs) [coverage: hand-written code only]"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_datastorage.out --covermode=atomic --coverpkg=$(DATASTORAGE_COVERPKG) ./pkg/datastorage/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_datastorage.out --covermode=atomic --output-dir=. --coverpkg=$(DATASTORAGE_COVERPKG) ./pkg/datastorage/...
 	@if [ -f coverage_unit_datastorage.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_datastorage.out"; \

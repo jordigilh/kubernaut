@@ -40,7 +40,7 @@ var _ = Describe("Vertex AI + Claude Adapter — #684", func() {
 
 		It("UT-KA-684-102: existing vertex (Gemini) provider still works with credentials JSON", func() {
 			_, thisFile, _, _ := runtime.Caller(0)
-			fixturesDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "fixtures")
+			fixturesDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "test", "fixtures")
 			credPath := filepath.Join(fixturesDir, "gcp-mock-credentials.json")
 			Expect(credPath).To(BeAnExistingFile())
 

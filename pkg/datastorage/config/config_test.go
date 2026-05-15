@@ -33,7 +33,7 @@ var _ = Describe("DataStorage Configuration", func() {
 			// which was silently ignored by yaml.Unmarshal (struct tags use camelCase)
 			// This test verifies the fix is correct and the config loads properly
 
-			configPath := "../../../../config/data-storage.yaml"
+			configPath := "../../../config/data-storage.yaml"
 
 			// Verify file exists
 			_, err := os.Stat(configPath)
@@ -72,7 +72,7 @@ var _ = Describe("DataStorage Configuration", func() {
 
 	Context("when loading integration testing config file", func() {
 		It("should correctly parse camelCase YAML keys", func() {
-			configPath := "../../../../config/integration-testing.yaml"
+			configPath := "../../../config/integration-testing.yaml"
 
 			// Load config
 			cfg, err := config.LoadFromFile(configPath)

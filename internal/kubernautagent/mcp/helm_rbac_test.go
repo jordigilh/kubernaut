@@ -29,7 +29,7 @@ var _ = Describe("Helm RBAC — PR4 H1 BR-INTERACTIVE-001", func() {
 	var helmTemplate string
 
 	BeforeEach(func() {
-		data, err := os.ReadFile("../../../../charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml")
+		data, err := os.ReadFile("../../../charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml")
 		Expect(err).NotTo(HaveOccurred())
 		helmTemplate = string(data)
 	})
