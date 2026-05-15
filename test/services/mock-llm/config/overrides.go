@@ -39,10 +39,21 @@ type ScenarioOverride struct {
 	ToolCalls  []ToolCallOverride `yaml:"tool_calls,omitempty"`
 }
 
+// KeywordScenarioOverride defines a keyword-matched scenario loadable from YAML.
+// When mock-LLM receives a prompt containing any of the listed keywords,
+// it returns the configured tool call — enabling consumers (e.g., AF E2E tests)
+// to inject prompt→tool_call mappings without modifying mock-LLM source code.
+type KeywordScenarioOverride struct {
+	Name     string           `yaml:"name"`
+	Keywords []string         `yaml:"keywords"`
+	ToolCall ToolCallOverride `yaml:"tool_call"`
+}
+
 // Overrides holds the parsed YAML override configuration.
 type Overrides struct {
-	Mode      string                      `yaml:"mode"`
-	Scenarios map[string]ScenarioOverride `yaml:"scenarios"`
+	Mode             string                      `yaml:"mode"`
+	Scenarios        map[string]ScenarioOverride `yaml:"scenarios"`
+	KeywordScenarios []KeywordScenarioOverride   `yaml:"keyword_scenarios,omitempty"`
 }
 
 // LoadYAMLOverrides reads a YAML overrides file. If the path is empty or the

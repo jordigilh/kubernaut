@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
 )
 
 var _ = Describe("YAML Scenario Overrides", func() {
@@ -176,6 +177,112 @@ var _ = Describe("YAML Scenario Overrides", func() {
 			Expect(injection.ToolCall.Arguments).To(HaveKeyWithValue("kind", "ConfigMap"))
 			Expect(injection.ToolCall.Arguments).To(HaveKeyWithValue("name", "poisoned-cm"))
 			Expect(injection.ToolCall.Arguments).To(HaveKeyWithValue("namespace", "test-ns"))
+		})
+	})
+
+	Describe("UT-MOCK-1157-001: keyword_scenarios parsed from YAML override config", func() {
+		It("should parse keyword_scenarios with tool_call mappings", func() {
+			yamlContent := `keyword_scenarios:
+  - name: "af_start_investigation"
+    keywords: ["start investigation", "begin investigation"]
+    tool_call:
+      name: "kubernaut_start_investigation"
+      arguments:
+        namespace: "default"
+        pod_name: "nginx"
+  - name: "af_get_pods"
+    keywords: ["get pods", "get all pods"]
+    tool_call:
+      name: "af_get_pods"
+      arguments:
+        namespace: "default"
+`
+			tmpDir := GinkgoT().TempDir()
+			yamlPath := filepath.Join(tmpDir, "overrides.yaml")
+			Expect(os.WriteFile(yamlPath, []byte(yamlContent), 0644)).To(Succeed())
+
+			overrides, err := config.LoadYAMLOverrides(yamlPath)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(overrides.KeywordScenarios).To(HaveLen(2))
+
+			ks0 := overrides.KeywordScenarios[0]
+			Expect(ks0.Name).To(Equal("af_start_investigation"))
+			Expect(ks0.Keywords).To(ConsistOf("start investigation", "begin investigation"))
+			Expect(ks0.ToolCall.Name).To(Equal("kubernaut_start_investigation"))
+			Expect(ks0.ToolCall.Arguments).To(HaveKeyWithValue("namespace", "default"))
+			Expect(ks0.ToolCall.Arguments).To(HaveKeyWithValue("pod_name", "nginx"))
+
+			ks1 := overrides.KeywordScenarios[1]
+			Expect(ks1.Name).To(Equal("af_get_pods"))
+			Expect(ks1.Keywords).To(ConsistOf("get pods", "get all pods"))
+			Expect(ks1.ToolCall.Name).To(Equal("af_get_pods"))
+		})
+	})
+
+	Describe("UT-MOCK-1157-002: keyword_scenarios registered in DefaultRegistryFull", func() {
+		It("should detect keyword scenario and return matching tool call config", func() {
+			yamlContent := `keyword_scenarios:
+  - name: "af_start_investigation"
+    keywords: ["start investigation"]
+    tool_call:
+      name: "kubernaut_start_investigation"
+      arguments:
+        namespace: "default"
+        pod_name: "nginx"
+`
+			tmpDir := GinkgoT().TempDir()
+			yamlPath := filepath.Join(tmpDir, "overrides.yaml")
+			Expect(os.WriteFile(yamlPath, []byte(yamlContent), 0644)).To(Succeed())
+
+			overrides, err := config.LoadYAMLOverrides(yamlPath)
+			Expect(err).NotTo(HaveOccurred())
+
+			registry := scenarios.DefaultRegistryFull(overrides, "")
+			result := registry.Detect(&scenarios.DetectionContext{
+				Content: "start investigation on pod nginx in default namespace",
+				AllText: "start investigation on pod nginx in default namespace",
+			})
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("af_start_investigation"))
+
+			withCfg, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue())
+			cfg := withCfg.Config()
+			Expect(cfg.ToolCallName).To(Equal("kubernaut_start_investigation"))
+			Expect(cfg.ToolCallArgs).To(HaveKeyWithValue("namespace", "default"))
+			Expect(cfg.ToolCallArgs).To(HaveKeyWithValue("pod_name", "nginx"))
+		})
+	})
+
+	Describe("UT-MOCK-1157-003: keyword_scenarios coexist with scenario overrides", func() {
+		It("should handle both scenarios and keyword_scenarios in the same YAML", func() {
+			yamlContent := `scenarios:
+  oomkilled:
+    workflow_id: "custom-uuid"
+keyword_scenarios:
+  - name: "af_get_pods"
+    keywords: ["get pods"]
+    tool_call:
+      name: "af_get_pods"
+      arguments:
+        namespace: "kube-system"
+`
+			tmpDir := GinkgoT().TempDir()
+			yamlPath := filepath.Join(tmpDir, "overrides.yaml")
+			Expect(os.WriteFile(yamlPath, []byte(yamlContent), 0644)).To(Succeed())
+
+			overrides, err := config.LoadYAMLOverrides(yamlPath)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(overrides.Scenarios).To(HaveKey("oomkilled"))
+			Expect(overrides.KeywordScenarios).To(HaveLen(1))
+
+			registry := scenarios.DefaultRegistryFull(overrides, "")
+			result := registry.Detect(&scenarios.DetectionContext{
+				Content: "get pods in kube-system",
+				AllText: "get pods in kube-system",
+			})
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("af_get_pods"))
 		})
 	})
 

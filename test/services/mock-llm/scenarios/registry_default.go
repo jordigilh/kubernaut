@@ -101,6 +101,17 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 				applyOverride(cs, ov)
 			}
 		}
+
+		// Register keyword scenarios from YAML config (e.g., AF E2E tool fixtures).
+		for _, ks := range overrides.KeywordScenarios {
+			cfg := MockScenarioConfig{
+				ScenarioName: ks.Name,
+				ToolCallName: ks.ToolCall.Name,
+				ToolCallArgs: ks.ToolCall.Arguments,
+				ForceText:    BoolPtr(false),
+			}
+			r.Register(mockKeywordScenarioMulti(ks.Name, ks.Keywords, cfg))
+		}
 	}
 	return r
 }
