@@ -169,7 +169,7 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 	// misconfigured. SetupWithManager should have caught this, but defense
 	// in depth prevents silent data loss.
 	log.Error(nil, "InvestigatingHandler is nil — investigation phase cannot execute (BR-AI-023)")
-	return ctrl.Result{}, fmt.Errorf("InvestigatingHandler is nil: cannot execute Investigating phase")
+	return ctrl.Result{}, fmt.Errorf("investigatingHandler is nil: cannot execute investigating phase")
 }
 
 // reconcileAnalyzing handles AIAnalysis in Analyzing phase.
@@ -252,7 +252,7 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 	// misconfigured. SetupWithManager should have caught this, but defense
 	// in depth prevents silent data loss.
 	log.Error(nil, "AnalyzingHandler is nil — Rego evaluation cannot execute (BR-AI-012, BR-AI-030)")
-	return ctrl.Result{}, fmt.Errorf("AnalyzingHandler is nil: cannot execute Analyzing phase")
+	return ctrl.Result{}, fmt.Errorf("analyzingHandler is nil: cannot execute analyzing phase")
 }
 
 // ========================================

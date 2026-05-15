@@ -218,19 +218,19 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 func (r *AIAnalysisReconciler) ValidateDependencies() error {
 	var errs []error
 	if r.InvestigatingHandler == nil {
-		errs = append(errs, fmt.Errorf("InvestigatingHandler is nil: investigation phase will be skipped (BR-AI-023)"))
+		errs = append(errs, fmt.Errorf("investigatingHandler is nil: investigation phase will be skipped (BR-AI-023)"))
 	}
 	if r.AnalyzingHandler == nil {
-		errs = append(errs, fmt.Errorf("AnalyzingHandler is nil: Rego policy evaluation will be skipped (BR-AI-012, BR-AI-030)"))
+		errs = append(errs, fmt.Errorf("analyzingHandler is nil: Rego policy evaluation will be skipped (BR-AI-012, BR-AI-030)"))
 	}
 	if r.Metrics == nil {
-		errs = append(errs, fmt.Errorf("Metrics is nil: observability will panic on phase transitions (DD-METRICS-001)"))
+		errs = append(errs, fmt.Errorf("metrics is nil: observability will panic on phase transitions (DD-METRICS-001)"))
 	}
 	if r.StatusManager == nil {
-		errs = append(errs, fmt.Errorf("StatusManager is nil: atomic status updates will panic (DD-PERF-001)"))
+		errs = append(errs, fmt.Errorf("statusManager is nil: atomic status updates will panic (DD-PERF-001)"))
 	}
 	if r.AuditClient == nil {
-		errs = append(errs, fmt.Errorf("AuditClient is nil: audit trail will panic on phase transitions (DD-AUDIT-003)"))
+		errs = append(errs, fmt.Errorf("auditClient is nil: audit trail will panic on phase transitions (DD-AUDIT-003)"))
 	}
 	return errors.Join(errs...)
 }
@@ -246,7 +246,7 @@ func (r *AIAnalysisReconciler) ValidateDependencies() error {
 // Issue #1116: Validates all mandatory dependencies before registering.
 func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := r.ValidateDependencies(); err != nil {
-		return fmt.Errorf("AIAnalysis controller has nil dependencies: %w", err)
+		return fmt.Errorf("aianalysis controller has nil dependencies: %w", err)
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&aianalysisv1.AIAnalysis{}).

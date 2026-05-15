@@ -122,7 +122,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 
 			err = reconciler.SetupWithManager(mgr)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("AnalyzingHandler"))
+			Expect(err.Error()).To(ContainSubstring("analyzingHandler"))
 		})
 	})
 
@@ -157,7 +157,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 
 			err = reconciler.SetupWithManager(mgr)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("InvestigatingHandler"))
+			Expect(err.Error()).To(ContainSubstring("investigatingHandler"))
 		})
 	})
 
@@ -172,7 +172,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 			}
 			err := reconciler.ValidateDependencies()
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Metrics"))
+			Expect(err.Error()).To(ContainSubstring("metrics"))
 		})
 	})
 
@@ -185,7 +185,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 			}
 			err := reconciler.ValidateDependencies()
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("StatusManager"))
+			Expect(err.Error()).To(ContainSubstring("statusManager"))
 		})
 	})
 
@@ -198,7 +198,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 			}
 			err := reconciler.ValidateDependencies()
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("AuditClient"))
+			Expect(err.Error()).To(ContainSubstring("auditClient"))
 		})
 	})
 
@@ -244,11 +244,11 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 			}
 			err := reconciler.ValidateDependencies()
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("InvestigatingHandler"))
-			Expect(err.Error()).To(ContainSubstring("AnalyzingHandler"))
-			Expect(err.Error()).To(ContainSubstring("Metrics"))
-			Expect(err.Error()).To(ContainSubstring("StatusManager"))
-			Expect(err.Error()).To(ContainSubstring("AuditClient"))
+			Expect(err.Error()).To(ContainSubstring("investigatingHandler"))
+			Expect(err.Error()).To(ContainSubstring("analyzingHandler"))
+			Expect(err.Error()).To(ContainSubstring("metrics"))
+			Expect(err.Error()).To(ContainSubstring("statusManager"))
+			Expect(err.Error()).To(ContainSubstring("auditClient"))
 		})
 	})
 
@@ -303,7 +303,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 			})
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("InvestigatingHandler"))
+			Expect(err.Error()).To(ContainSubstring("investigatingHandler"))
 		})
 
 		It("MUST return permanent error when AnalyzingHandler is nil during Analyzing phase", func() {
@@ -353,7 +353,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 			})
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("AnalyzingHandler"))
+			Expect(err.Error()).To(ContainSubstring("analyzingHandler"))
 		})
 	})
 })
