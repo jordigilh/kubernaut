@@ -78,8 +78,7 @@ get_service_dirs() {
     # Controller code
     [ -d "internal/controller/$service" ] && dirs+=("internal/controller/$service")
 
-    # Unit tests
-    [ -d "test/unit/$service" ] && dirs+=("test/unit/$service")
+    # Unit tests (colocated with production code in pkg/ and internal/)
 
     # Integration tests
     [ -d "test/integration/$service" ] && dirs+=("test/integration/$service")

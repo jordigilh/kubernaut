@@ -53,9 +53,9 @@ description: "Testing strategy and patterns for kubernaut's defense-in-depth app
 
 ### Unit Tests (70%+ BRs, >=80% Unit-Testable Code Coverage)
 
-**Location**: `test/unit/`
+**Location**: Colocated with production code in `pkg/` and `internal/` (e.g., `pkg/gateway/server_test.go`). Uses `package <name>_test` naming (black-box).
 **Purpose**: Extensive business logic validation covering ALL unit-testable business requirements
-**Execution**: `make test`
+**Execution**: `make test-unit-<service>` or `go test ./pkg/<service>/...`
 **Framework**: **Ginkgo/Gomega BDD** (MANDATORY - no standard Go testing)
 **Confidence**: 85-90%
 

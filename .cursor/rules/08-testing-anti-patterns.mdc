@@ -240,14 +240,14 @@ It("should process workflow and return ready status (BR-WF-001)", func() {
 ### **Step 3: Validate Fix**
 
 ```bash
-# Re-run tests
-go test ./test/unit/workflow/... -v
+# Re-run tests (unit tests are colocated with production code)
+go test ./pkg/workflow/... -v
 
 # Re-run anti-pattern detection
 ./scripts/validation/check-test-anti-patterns.sh
 
 # Verify BR reference added
-grep "BR-WF-001" test/unit/workflow/engine_test.go
+grep "BR-WF-001" pkg/workflow/engine_test.go
 ```
 
 ---
