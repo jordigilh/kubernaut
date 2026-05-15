@@ -59,14 +59,6 @@ var getWorkflowSchemaJSON = json.RawMessage(`{
 	"required": ["workflow_id"]
 }`)
 
-// ListAvailableActionsSchema returns the JSON schema for list_available_actions.
-func ListAvailableActionsSchema() json.RawMessage { return listAvailableActionsSchema }
-
-// ListWorkflowsSchema returns the JSON schema for list_workflows.
-func ListWorkflowsSchema() json.RawMessage { return listWorkflowsSchemaJSON }
-
-// GetWorkflowSchema returns the JSON schema for get_workflow.
-func GetWorkflowSchema() json.RawMessage { return getWorkflowSchemaJSON }
 
 // WorkflowDiscoveryClient is the subset of the ogen-generated DS client used by the
 // three workflow discovery tools. Satisfied by *ogenclient.Client. Defined here
@@ -163,7 +155,7 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 		params.DetectedLabels = ogenclient.NewOptString(signal.DetectedLabelsJSON)
 	}
 	if a.Page != "" && a.Cursor != "" {
-		offset, limit := DecodeCursor(a.Cursor)
+		offset, limit := decodeCursor(a.Cursor)
 		params.Offset = ogenclient.NewOptInt(offset)
 		params.Limit = ogenclient.NewOptInt(limit)
 	}
@@ -177,7 +169,7 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 	if err != nil {
 		return "", fmt.Errorf("marshaling action types response: %w", err)
 	}
-	return string(TransformPagination(data)), nil
+	return string(transformPagination(data)), nil
 }
 
 // --- list_workflows ---
@@ -227,7 +219,7 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 		params.DetectedLabels = ogenclient.NewOptString(signal.DetectedLabelsJSON)
 	}
 	if a.Page != "" && a.Cursor != "" {
-		offset, limit := DecodeCursor(a.Cursor)
+		offset, limit := decodeCursor(a.Cursor)
 		params.Offset = ogenclient.NewOptInt(offset)
 		params.Limit = ogenclient.NewOptInt(limit)
 	}
@@ -241,7 +233,7 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 	if err != nil {
 		return "", fmt.Errorf("marshaling workflows response: %w", err)
 	}
-	return string(TransformPagination(data)), nil
+	return string(transformPagination(data)), nil
 }
 
 // --- get_workflow ---
@@ -295,12 +287,12 @@ func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (st
 	return string(data), nil
 }
 
-// StripPaginationIfComplete removes the "pagination" field from a JSON response
+// stripPaginationIfComplete removes the "pagination" field from a JSON response
 // when hasMore is false, meaning all results fit in one page. This avoids the
 // LLM wasting tool calls trying to paginate when there are no more pages.
 // When hasMore is true, the pagination metadata is preserved so the LLM knows
 // it is seeing a subset.
-func StripPaginationIfComplete(data json.RawMessage) json.RawMessage {
+func stripPaginationIfComplete(data json.RawMessage) json.RawMessage {
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(data, &obj); err != nil {
 		return data
@@ -348,10 +340,10 @@ func EncodeCursor(offset, limit int) string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// DecodeCursor decodes an opaque cursor token into offset and limit.
+// decodeCursor decodes an opaque cursor token into offset and limit.
 // Returns safe defaults (0, 10) on any failure (invalid base64, non-JSON, tampered values).
 // Mirrors DS ParsePagination clamping for defense-in-depth.
-func DecodeCursor(token string) (offset int, limit int) {
+func decodeCursor(token string) (offset int, limit int) {
 	if token == "" {
 		return 0, defaultPaginationLimit
 	}
@@ -379,11 +371,11 @@ func DecodeCursor(token string) (offset int, limit int) {
 	return p.Offset, p.Limit
 }
 
-// TransformPagination converts DS PaginationMetadata (totalCount, offset, limit, hasMore)
+// transformPagination converts DS PaginationMetadata (totalCount, offset, limit, hasMore)
 // into LLM-facing cursor-based pagination (hasNext, nextCursor, hasPrevious, previousCursor).
 // Single-page results (offset=0, hasMore=false) have pagination stripped entirely.
 // DD-WORKFLOW-016 v1.4: totalCount is never exposed to the LLM.
-func TransformPagination(data json.RawMessage) json.RawMessage {
+func transformPagination(data json.RawMessage) json.RawMessage {
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(data, &obj); err != nil {
 		return data
