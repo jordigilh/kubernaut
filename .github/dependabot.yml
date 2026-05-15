@@ -17,13 +17,9 @@ updates:
       - dependency-name: "sigs.k8s.io/*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
-      k8s:
+      all-go-deps:
         patterns:
-          - "k8s.io/*"
-          - "sigs.k8s.io/*"
-      prometheus:
-        patterns:
-          - "github.com/prometheus/*"
+          - "*"
 
   - package-ecosystem: github-actions
     directory: /
@@ -36,6 +32,10 @@ updates:
       - ci
     commit-message:
       prefix: "ci"
+    groups:
+      all-actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: docker
     directory: /build
@@ -48,3 +48,7 @@ updates:
       - docker
     commit-message:
       prefix: "docker"
+    groups:
+      all-docker:
+        patterns:
+          - "*"
