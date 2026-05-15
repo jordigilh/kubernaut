@@ -42,6 +42,10 @@ on:
     branches: [ main, 'release/**' ]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   # CRITICAL: Kind must use Podman (we don't have Docker in our CI)
   # This ensures all Kind commands (create, load, etc.) use Podman as the provider
