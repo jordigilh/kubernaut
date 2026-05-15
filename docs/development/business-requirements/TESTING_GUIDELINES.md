@@ -10,6 +10,12 @@ This document provides clear guidance on **when** and **how** to use each type o
 
 ## 📋 **Changelog**
 
+### Version 2.8.0 (2026-05-15)
+- **CRITICAL**: Unit tests migrated from `test/unit/` to colocated layout alongside production code in `pkg/` and `internal/` (Issue #50)
+- **NAMING**: Unit tests now use black-box `package <name>_test` naming convention (Go idiomatic)
+- **LOCATION**: Unit tests run via `make test-unit-<service>` or `go test ./pkg/<service>/...`
+- **REFERENCE**: See `docs/testing/TEST_PACKAGE_NAMING_STANDARD.md` v2.0 for the updated authoritative standard
+
 ### Version 2.7.0 (2026-02-09)
 - **CRITICAL**: Replaced cumulative code coverage model (70%/50%/50%) with **per-tier testable code coverage model (>=80% per tier)**
 - **RATIONALE**: TDD mandate -- every business requirement must have corresponding tests. If a feature has no test, it risks not being implemented. Coverage is measured against the tier-specific code subset, not all code.

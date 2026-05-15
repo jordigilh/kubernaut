@@ -28,7 +28,7 @@ make lint                     # Run linters
 1. Implement interface in [pkg/ai/llm/](mdc:pkg/ai/llm/)
 2. Add configuration in [config/](mdc:config/) YAML files
 3. Update [pkg/ai/holmesgpt/client.go](mdc:pkg/ai/holmesgpt/client.go) for integration
-4. Add tests in [test/unit/ai/](mdc:test/unit/ai/) and [test/integration/ai/](mdc:test/integration/ai/)
+4. Add tests colocated with the code in `pkg/ai/` (e.g., `pkg/ai/llm/provider_test.go`) and [test/integration/ai/](mdc:test/integration/ai/)
 
 ### Adding New Kubernetes Action
 1. Implement in [pkg/platform/executor/executor.go](mdc:pkg/platform/executor/executor.go)
@@ -40,7 +40,7 @@ make lint                     # Run linters
 1. **MANDATORY**: Follow TDD workflow - write tests first per [00-project-guidelines.mdc](mdc:.cursor/rules/00-project-guidelines.mdc)
 2. Map to specific business requirement (BR-[CATEGORY]-[NUMBER] format)
 3. Identify test tier: Unit (algorithmic), Integration (cross-component), or E2E (workflow)
-4. Add test in appropriate [test/](mdc:test/) subdirectory
+4. Add unit tests colocated with code in `pkg/` or `internal/` (e.g., `pkg/<service>/feature_test.go`)
 5. Use Ginkgo/Gomega BDD framework with clear business requirement naming
 6. Update confidence metrics in test documentation
 
