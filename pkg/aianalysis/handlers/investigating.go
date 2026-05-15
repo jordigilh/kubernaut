@@ -112,6 +112,9 @@ func NewInvestigatingHandler(hgClient AgentClientInterface, log logr.Logger, m *
 	if m == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")
 	}
+	if hgClient == nil {
+		panic("agent client cannot be nil: KA investigation requires a configured agent client (BR-AI-023)")
+	}
 	handlerLog := log.WithName("investigating-handler")
 	h := &InvestigatingHandler{
 		kaClient:            hgClient,
