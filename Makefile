@@ -236,7 +236,7 @@ test-unit-%: ginkgo ensure-coverage-dirs ## Run unit tests for specified service
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_$*.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/... ./test/unit/$*/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_$*.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/... ./pkg/$*/... ./internal/controller/$*/...
 	@if [ -f coverage_unit_$*.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_$*.out"; \
@@ -249,7 +249,7 @@ test-unit-kubernautagent: ginkgo ensure-coverage-dirs ## Run kubernaut agent uni
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 kubernautagent - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./test/unit/kubernautagent/...
+	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./pkg/kubernautagent/... ./internal/kubernautagent/...
 	@if [ -f coverage_unit_kubernautagent.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_kubernautagent.out"; \
@@ -262,7 +262,7 @@ test-unit-gateway: ginkgo ensure-coverage-dirs ## Run gateway unit tests (coverp
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 gateway - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_gateway.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/gateway/... ./test/unit/gateway/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_gateway.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/gateway/... ./pkg/gateway/...
 	@if [ -f coverage_unit_gateway.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_gateway.out"; \
@@ -278,7 +278,7 @@ test-unit-shared-packages: ginkgo ensure-coverage-dirs ## Run unit tests for sha
 	@echo "🧪 shared-packages - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "   Packages: pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_shared-packages.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/audit/...,github.com/jordigilh/kubernaut/pkg/cache/...,github.com/jordigilh/kubernaut/pkg/http/...,github.com/jordigilh/kubernaut/pkg/k8sutil/...,github.com/jordigilh/kubernaut/pkg/shared/... ./test/unit/audit/... ./test/unit/cache/... ./test/unit/http/... ./test/unit/k8sutil/... ./test/unit/shared/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_shared-packages.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/audit/...,github.com/jordigilh/kubernaut/pkg/cache/...,github.com/jordigilh/kubernaut/pkg/http/...,github.com/jordigilh/kubernaut/pkg/k8sutil/...,github.com/jordigilh/kubernaut/pkg/shared/... ./pkg/audit/... ./pkg/cache/redis/... ./pkg/http/cors/... ./pkg/k8sutil/... ./pkg/shared/...
 	@if [ -f coverage_unit_shared-packages.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_shared-packages.out"; \
@@ -291,7 +291,7 @@ test-unit-datastorage: ginkgo ensure-coverage-dirs ## Run datastorage unit tests
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 datastorage - Unit Tests ($(TEST_PROCS) procs) [coverage: hand-written code only]"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_datastorage.out --covermode=atomic --coverpkg=$(DATASTORAGE_COVERPKG) ./test/unit/datastorage/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_datastorage.out --covermode=atomic --coverpkg=$(DATASTORAGE_COVERPKG) ./pkg/datastorage/...
 	@if [ -f coverage_unit_datastorage.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_datastorage.out"; \
@@ -657,10 +657,9 @@ clean-%-test-ports: ## Kill processes on test ports for service
 .PHONY: test-coverage-%
 test-coverage-%: ## Run unit tests with coverage for service
 	@echo "📊 Running unit tests with coverage for $*..."
-	@cd test/unit/$* && \
-		go test -v -coverprofile=coverage.out -covermode=atomic ./... && \
-		go tool cover -html=coverage.out -o coverage.html
-	@echo "✅ Coverage report: test/unit/$*/coverage.html"
+	@go test -v -coverprofile=coverage_$*.out -covermode=atomic ./pkg/$*/...
+	@go tool cover -html=coverage_$*.out -o coverage_$*.html
+	@echo "✅ Coverage report: coverage_$*.html"
 
 .PHONY: validate-openapi-datastorage
 validate-openapi-datastorage: ## Validate Data Storage OpenAPI spec syntax (CI - ADR-031)
@@ -699,7 +698,7 @@ test-unit-authwebhook: ginkgo ensure-coverage-dirs ## Run authentication webhook
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_authwebhook.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/authwebhook/... ./test/unit/authwebhook/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_authwebhook.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/authwebhook/... ./pkg/authwebhook/...
 	@if [ -f coverage_unit_authwebhook.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_authwebhook.out"; \
