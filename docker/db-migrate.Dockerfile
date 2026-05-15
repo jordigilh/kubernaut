@@ -16,9 +16,9 @@ ARG APP_VERSION=unknown
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
-FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS goose-builder
+FROM --platform=$BUILDPLATFORM golang:1.25.10-bookworm AS goose-builder
 ARG TARGETARCH
-ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}
+ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GOBIN=/go/bin
 RUN go install github.com/pressly/goose/v3/cmd/goose@v3.27.1
 
 FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS production
