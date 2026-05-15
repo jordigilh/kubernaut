@@ -17,18 +17,11 @@ limitations under the License.
 package sanitization_test
 
 import (
-	"testing"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 )
-
-func TestSanitizerFallback(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Gateway Sanitizer Fallback & Graceful Degradation Suite")
-}
 
 // ==============================================
 // Graceful Degradation Tests: Log Sanitization Failure Handling

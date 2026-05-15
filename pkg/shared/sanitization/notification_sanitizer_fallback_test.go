@@ -1,18 +1,11 @@
 package sanitization_test
 
 import (
-	"testing"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 )
-
-func TestSanitizerFallback(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Sanitizer Fallback & Graceful Degradation Suite")
-}
 
 // ==============================================
 // Graceful Degradation Tests: Category E - Data Sanitization Failure Handling
