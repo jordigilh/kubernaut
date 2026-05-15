@@ -3841,8 +3841,9 @@ components:
 
         # Gap #8: TimeoutConfig (BR-AUDIT-005, orchestrator.lifecycle.created)
         timeout_config:
-          $ref: '#/components/schemas/TimeoutConfig'
           description: Timeout configuration for RR reconstruction (Gap #8)
+          allOf:
+            - $ref: '#/components/schemas/TimeoutConfig'
 
         # Pre-remediation hash fields (remediation.workflow_created, DD-EM-002)
         pre_remediation_spec_hash:
@@ -4437,11 +4438,13 @@ components:
           format: date-time
           description: When the modification occurred
         old_timeout_config:
-          $ref: '#/components/schemas/TimeoutConfig'
           description: Previous timeout configuration
+          allOf:
+            - $ref: '#/components/schemas/TimeoutConfig'
         new_timeout_config:
-          $ref: '#/components/schemas/TimeoutConfig'
           description: New timeout configuration after operator modification
+          allOf:
+            - $ref: '#/components/schemas/TimeoutConfig'
 
     RemediationWorkflowWebhookAuditPayload:
       type: object
