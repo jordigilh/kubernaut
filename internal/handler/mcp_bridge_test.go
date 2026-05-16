@@ -1251,14 +1251,12 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			localMetrics := newBridgeMetrics()
 			localAuditor := &fakeAuditor{}
 
-			// slowFactory holds the semaphore for 500ms while the tool timeout
-			// is only 200ms, guaranteeing that queued callers exhaust their
-			// budget and receive a throttle response.
-			slowFactory := auth.DynamicClientFactory(func(ctx context.Context) (dynamic.Interface, error) {
-				select {
-				case <-ctx.Done():
-				case <-time.After(500 * time.Millisecond):
-				}
+			// slowFactory unconditionally holds the semaphore for 2s (ignoring
+			// ctx cancellation) while the tool timeout is only 500ms.  This
+			// guarantees the semaphore is still held when waiters' contexts
+			// expire, producing deterministic throttle responses.
+			slowFactory := auth.DynamicClientFactory(func(_ context.Context) (dynamic.Interface, error) {
+				time.Sleep(2 * time.Second)
 				return fakeK8s, nil
 			})
 
@@ -1272,7 +1270,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 					RBACRoles:          map[string][]string{"*": {"*"}},
 					Auditor:            localAuditor,
 					Metrics:            localMetrics,
-					ToolTimeout:        200 * time.Millisecond,
+					ToolTimeout:        500 * time.Millisecond,
 					MaxConcurrentTools: 1,
 				},
 			}
