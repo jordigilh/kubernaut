@@ -137,24 +137,32 @@ jobs:
             echo "::warning::E2E coverage ${{ env.E2E_COVERAGE_PERCENT }}% is below ${THRESHOLD}% threshold"
           fi
 
-      - name: Collect logs on failure
+      - name: Collect must-gather on failure
         if: failure()
         run: |
+          mkdir -p /tmp/e2e-must-gather
           KUBECONFIG="$HOME/.kube/apifrontend-e2e-config"
           if [ -f "$KUBECONFIG" ]; then
-            echo "=== AF Pod Logs ==="
-            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} logs deployment/apifrontend --tail=200 || true
-            echo "=== KA Pod Logs ==="
-            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} logs deployment/kubernaut-agent --tail=200 || true
-            echo "=== DS Pod Logs ==="
-            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} logs deployment/data-storage --tail=100 || true
-            echo "=== Events ==="
-            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} get events --sort-by='.lastTimestamp' || true
-            echo "=== Pod Status ==="
-            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} get pods -o wide || true
+            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} get pods -o wide 2>&1 | tee /tmp/e2e-must-gather/pods.txt || true
+            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} get events --sort-by='.lastTimestamp' 2>&1 | tee /tmp/e2e-must-gather/events.txt || true
+            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} get svc -o wide 2>&1 | tee /tmp/e2e-must-gather/services.txt || true
+            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} describe pods 2>&1 | tee /tmp/e2e-must-gather/pod-describe.txt || true
+            for deploy in apifrontend kubernaut-agent data-storage dex mock-llm prometheus; do
+              kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} logs "deployment/$deploy" --all-containers --tail=500 2>&1 | tee "/tmp/e2e-must-gather/${deploy}.log" || true
+            done
+            kubectl --kubeconfig="$KUBECONFIG" get crds 2>&1 | tee /tmp/e2e-must-gather/crds.txt || true
+            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} get investigationsessions -o yaml 2>&1 | tee /tmp/e2e-must-gather/investigationsessions.yaml || true
           else
-            echo "No kubeconfig found — cluster may not have been created"
+            echo "No kubeconfig found — cluster may not have been created" | tee /tmp/e2e-must-gather/no-kubeconfig.txt
           fi
+
+      - name: Upload must-gather
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-must-gather-logs
+          path: /tmp/e2e-must-gather/
+          retention-days: 7
 
       - name: Cleanup Kind cluster
         if: always()

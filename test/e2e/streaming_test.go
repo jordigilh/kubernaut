@@ -162,6 +162,10 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 
 	It("TC-E2E-STREAM-03: Client disconnect -> session phase transitions to Disconnected", func() {
 		kctlCtx := context.Background()
+		// Pre-check: InvestigationSession CRD must be installed.
+		if _, err := kubectlOut(kctlCtx, "get", "crd", "investigationsessions.apifrontend.kubernaut.ai"); err != nil {
+			Skip("InvestigationSession CRD not installed — skipping session lifecycle test")
+		}
 		before := sessionNameSnapshot(kctlCtx)
 
 		streamCtx, streamCancel := context.WithCancel(context.Background())
