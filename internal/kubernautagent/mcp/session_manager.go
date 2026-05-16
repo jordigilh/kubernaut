@@ -337,6 +337,17 @@ func (m *LeaseSessionManager) IsDriverActive(rrID string) bool {
 	return ok
 }
 
+// ActiveSessionIDs returns the session IDs of all active sessions.
+// Used by SessionDrainer during graceful shutdown (BR-OPS-013).
+func (m *LeaseSessionManager) ActiveSessionIDs() []string {
+	var ids []string
+	m.sessions.Range(func(key, _ any) bool {
+		ids = append(ids, key.(string))
+		return true
+	})
+	return ids
+}
+
 func leaseName(rrID string) string {
 	name := leasePrefix + rrID
 	if len(name) > 63 {
