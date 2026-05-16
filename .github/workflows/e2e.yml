@@ -103,7 +103,7 @@ jobs:
           E2E_COVERAGE: "true"
           KIND_EXPERIMENTAL_PROVIDER: podman
         run: |
-          ginkgo -v --timeout=50m ./test/e2e/
+          ginkgo -v --procs=$(nproc) --timeout=50m ./test/e2e/
 
       - name: Collect E2E coverage
         if: success() || failure()
