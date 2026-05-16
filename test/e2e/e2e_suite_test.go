@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -32,19 +33,15 @@ var _ = SynchronizedBeforeSuite(
 
 		if os.Getenv("AF_E2E_SKIP_INFRA") == "true" {
 			_, _ = fmt.Fprintln(GinkgoWriter, "Skipping infra deployment (AF_E2E_SKIP_INFRA=true)")
-			// Return the CA cert path so other procs can use it.
-			return []byte(os.Getenv("AF_E2E_CA_CERT"))
+			return []byte(kubeconfigPath)
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 		defer cancel()
 
-		// Full infrastructure setup: kubernaut stack (KA+DS+PostgreSQL+Redis+
-		// mock-LLM+DEX+CRDs) + AF image + kustomize deploy.
 		err = infrastructure.SetupE2EInfrastructure(ctx, e2eClusterName, kubeconfigPath, e2eNamespace, GinkgoWriter)
 		Expect(err).NotTo(HaveOccurred(), "E2E infrastructure setup failed")
 
-		// Deploy Prometheus for severity triage pipeline testing (G12).
 		if os.Getenv("AF_E2E_SKIP_PROMETHEUS") != "true" {
 			_, _ = fmt.Fprintln(GinkgoWriter, "\nDeploying Prometheus for severity triage testing...")
 			err = infrastructure.DeployPrometheusForSeverityTriage(ctx, e2eNamespace, kubeconfigPath, GinkgoWriter)
@@ -75,22 +72,21 @@ var _ = SynchronizedBeforeSuite(
 		_, _ = fmt.Fprintln(GinkgoWriter, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		_, _ = fmt.Fprintln(GinkgoWriter, "E2E Infrastructure Ready")
 		_, _ = fmt.Fprintln(GinkgoWriter, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		// Pass the CA cert path to all procs so they can build TLS clients.
-		return []byte(os.Getenv("AF_E2E_CA_CERT"))
+		return []byte(kubeconfigPath)
 	},
-	func(data []byte) {
-		baseURL = getEnvOrDefault("AF_E2E_BASE_URL", "https://localhost:18443")
-		caCertPath = getEnvOrDefault("AF_E2E_CA_CERT", string(data))
-		dexURL = getEnvOrDefault("AF_E2E_DEX_URL", "http://localhost:15556/dex")
-		clientID = getEnvOrDefault("AF_E2E_CLIENT_ID", "kubernaut-apifrontend")
-		clientSecret = getEnvOrDefault("AF_E2E_CLIENT_SECRET", "e2e-client-secret")
-		username = getEnvOrDefault("AF_E2E_USERNAME", "e2e-user@kubernaut.ai")
-		password = getEnvOrDefault("AF_E2E_PASSWORD", "password")
+	func(_ []byte) {
+		baseURL = "https://localhost:18443"
+		caCertPath = filepath.Join(os.TempDir(), "apifrontend-e2e-certs", "ca.crt")
+		dexURL = "http://localhost:15556/dex"
+		clientID = "kubernaut-apifrontend"
+		clientSecret = "e2e-client-secret"
+		username = "e2e-user@kubernaut.ai"
+		password = "password"
 		httpClient = newTLSClient(caCertPath)
 
-		healthURL := getEnvOrDefault("AF_E2E_HEALTH_URL", "http://localhost:18081")
+		healthURL := "http://localhost:18081"
 		Eventually(func() error {
-			resp, err := http.Get(healthURL + "/healthz") //nolint:gosec // E2E health probe, no TLS needed
+			resp, err := http.Get(healthURL + "/healthz") //nolint:gosec,noctx // E2E health probe
 			if err != nil {
 				return err
 			}
@@ -106,8 +102,6 @@ var _ = SynchronizedBeforeSuite(
 var _ = SynchronizedAfterSuite(
 	func() {},
 	func() {
-		// DD-TEST-007: Collect binary coverage data when E2E_COVERAGE=true.
-		// Ref: https://go.dev/doc/build-cover
 		if os.Getenv("E2E_COVERAGE") == "true" {
 			_, _ = fmt.Fprintln(GinkgoWriter, "\nCollecting E2E binary coverage data (DD-TEST-007)...")
 			profilePath, err := infrastructure.CollectE2EBinaryCoverage(e2eClusterName, GinkgoWriter)
