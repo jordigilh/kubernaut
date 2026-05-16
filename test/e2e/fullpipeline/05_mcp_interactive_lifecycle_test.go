@@ -18,6 +18,7 @@ package fullpipeline
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -28,7 +29,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -40,17 +45,22 @@ import (
 //
 // Validates v1.5 MCP functionality end-to-end:
 //   - FP-MCP-001: OOMKill -> autonomous -> takeover -> message -> complete
+//   - FP-MCP-002: Fresh interactive session (AF-style direct RR creation)
 //   - FP-MCP-003: Status lifecycle (autonomous -> not_found) via MCP
+//   - FP-MCP-005: select_workflow with real DS catalog
 //   - FP-MCP-006: BR-007 CRD observability (InteractiveSession + CompletedAt)
+//   - FP-MCP-008: Reconnect via TCP proxy disconnect
+//   - FP-MCP-009: Concurrent takeover contention (second user rejected)
 //
 // Uses a single OOMKill trigger shared across ordered specs for efficiency.
-// BR: BR-INTERACTIVE-001, BR-INTERACTIVE-004, BR-INTERACTIVE-007
+// BR: BR-INTERACTIVE-001, BR-INTERACTIVE-004, BR-INTERACTIVE-005, BR-INTERACTIVE-007
 var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e", "fullpipeline", "interactive", "mcp"), Ordered, func() {
 
 	var (
 		testNamespace       string
 		mcpSession          *mcpsdk.ClientSession
 		interactiveSAToken  string
+		contentionSAToken   string
 		tlsTransport        http.RoundTripper
 		remediationRequest  *remediationv1.RemediationRequest
 		aaName              string
@@ -66,6 +76,12 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 			ctx, namespace, "fp-mcp-interactive-sa", kubeconfigPath, GinkgoWriter,
 		)
 		Expect(err).NotTo(HaveOccurred(), "interactive SA creation")
+
+		By("Creating contention SA for FP-MCP-009 (second user)")
+		contentionSAToken, err = infrastructure.CreateInteractiveE2ESA(
+			ctx, namespace, "fp-mcp-contention-sa", kubeconfigPath, GinkgoWriter,
+		)
+		Expect(err).NotTo(HaveOccurred(), "contention SA creation")
 
 		By("Setting up TLS transport for MCP")
 		tlsTransport, err = infrastructure.NewTLSAwareTransport(kubeconfigPath)
@@ -213,6 +229,85 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 		Expect(aa.Status.InteractiveSession.SessionID).NotTo(BeEmpty())
 	})
 
+	It("FP-MCP-008: reconnect via proxy disconnect", func() {
+		By("Closing current MCP session")
+		Expect(mcpSession.Close()).To(Succeed())
+		mcpSession = nil
+
+		By("Creating TCP proxy to KA NodePort")
+		proxy, err := infrastructure.NewInterruptibleProxy("localhost:8088")
+		Expect(err).NotTo(HaveOccurred())
+		defer proxy.Close()
+
+		proxyEndpoint := fmt.Sprintf("https://%s/api/v1/mcp", proxy.Addr())
+		GinkgoWriter.Printf("  Proxy endpoint: %s\n", proxyEndpoint)
+
+		By("Connecting MCP through proxy")
+		proxyCtx, proxyCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer proxyCancel()
+		proxiedSession, connErr := infrastructure.ConnectMCPClient(proxyCtx, infrastructure.MCPClientConfig{
+			Endpoint:     proxyEndpoint,
+			SAToken:      interactiveSAToken,
+			TLSTransport: tlsTransport,
+		})
+		Expect(connErr).NotTo(HaveOccurred(), "MCP connect through proxy")
+
+		By("Disconnecting all proxy connections (simulates network partition)")
+		proxy.DisconnectAll()
+		_ = proxiedSession.Close()
+
+		By("Creating new direct MCP session (bypass proxy)")
+		directCtx, directCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer directCancel()
+		mcpSession, err = infrastructure.ConnectMCPClient(directCtx, infrastructure.MCPClientConfig{
+			Endpoint:     infrastructure.MCPEndpointForKAE2E(),
+			SAToken:      interactiveSAToken,
+			TLSTransport: tlsTransport,
+		})
+		Expect(err).NotTo(HaveOccurred(), "direct MCP reconnect")
+
+		By("Calling action: reconnect")
+		reconCtx, reconCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer reconCancel()
+		result, reconErr := infrastructure.CallInvestigate(reconCtx, mcpSession, map[string]any{
+			"rr_id":  remediationRequest.Name,
+			"action": "reconnect",
+		})
+		Expect(reconErr).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse(), "reconnect should succeed")
+
+		text := infrastructure.ExtractToolResultText(result)
+		GinkgoWriter.Printf("  Reconnect response: %s\n", text)
+		Expect(text).To(ContainSubstring("reconnected"))
+	})
+
+	It("FP-MCP-009: concurrent takeover contention (second user rejected)", func() {
+		By("Connecting User B MCP session")
+		userBCtx, userBCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer userBCancel()
+		userBSession, err := infrastructure.ConnectMCPClient(userBCtx, infrastructure.MCPClientConfig{
+			Endpoint:     infrastructure.MCPEndpointForKAE2E(),
+			SAToken:      contentionSAToken,
+			TLSTransport: tlsTransport,
+		})
+		Expect(err).NotTo(HaveOccurred(), "User B MCP connect")
+		defer func() { _ = userBSession.Close() }()
+
+		By("User B attempts takeover on same RR — should be rejected")
+		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer callCancel()
+		result, callErr := infrastructure.CallInvestigate(callCtx, userBSession, map[string]any{
+			"rr_id":  remediationRequest.Name,
+			"action": "takeover",
+		})
+		Expect(callErr).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeTrue(), "takeover by User B should fail — session active for User A")
+
+		text := infrastructure.ExtractToolResultText(result)
+		GinkgoWriter.Printf("  Contention response: %s\n", text)
+		Expect(text).To(ContainSubstring("session_active"))
+	})
+
 	It("FP-MCP-001: send message via MCP after takeover", func() {
 		callCtx, callCancel := context.WithTimeout(ctx, 60*time.Second)
 		defer callCancel()
@@ -228,6 +323,26 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 		text := infrastructure.ExtractToolResultText(result)
 		GinkgoWriter.Printf("  Message response (first 200 chars): %.200s\n", text)
 		Expect(text).NotTo(BeEmpty(), "LLM response must not be empty")
+	})
+
+	It("FP-MCP-005: select_workflow with real DS catalog", func() {
+		Expect(workflowUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"),
+			"workflow catalog must be seeded")
+		workflowID := workflowUUIDs["oomkill-increase-memory-v1:production"]
+
+		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer callCancel()
+
+		result, err := infrastructure.CallSelectWorkflow(callCtx, mcpSession, map[string]any{
+			"rr_id":       remediationRequest.Name,
+			"workflow_id": workflowID,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse(), "select_workflow should succeed")
+
+		text := infrastructure.ExtractToolResultText(result)
+		GinkgoWriter.Printf("  SelectWorkflow response (first 300 chars): %.300s\n", text)
+		Expect(text).To(ContainSubstring("workflow_selected"))
 	})
 
 	It("FP-MCP-001: complete interactive session via MCP", func() {
@@ -273,5 +388,99 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 		Expect(json.Unmarshal([]byte(text), &status)).To(Succeed())
 		Expect(status["mode"]).To(Equal("not_found"),
 			"session should be not_found after complete (lease released)")
+	})
+
+	// ── FP-MCP-002: Fresh interactive session (AF-initiated path) ──
+	// Creates an RR CRD directly (mirroring AF's af_create_rr), then exercises
+	// the full interactive lifecycle without relying on an existing autonomous session.
+
+	It("FP-MCP-002: fresh start — create RR directly and start interactive session", func() {
+		By("Creating RR CRD directly (AF-style)")
+		rrName := fmt.Sprintf("rr-fp-mcp-002-%d", time.Now().UnixMilli())
+		fingerprint := fmt.Sprintf("%x", sha256.Sum256([]byte(testNamespace+"/Deployment/fp-mcp-002-target")))
+		now := metav1.Now()
+
+		rr := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "kubernaut.ai/v1alpha1",
+				"kind":       "RemediationRequest",
+				"metadata": map[string]interface{}{
+					"name":      rrName,
+					"namespace": namespace,
+				},
+				"spec": map[string]interface{}{
+					"signalFingerprint": fingerprint,
+					"signalName":        "af-manual-Deployment-fp-mcp-002-target",
+					"signalType":        "alert",
+					"severity":          "high",
+					"targetType":        "kubernetes",
+					"firingTime":        now.UTC().Format(time.RFC3339),
+					"receivedTime":      now.UTC().Format(time.RFC3339),
+					"targetResource": map[string]interface{}{
+						"kind":      "Deployment",
+						"name":      "fp-mcp-002-target",
+						"namespace": testNamespace,
+					},
+				},
+			},
+		}
+		rrGVR := schema.GroupVersionResource{
+			Group:    "kubernaut.ai",
+			Version:  "v1alpha1",
+			Resource: "remediationrequests",
+		}
+
+		cfg, cfgErr := config.GetConfig()
+		Expect(cfgErr).NotTo(HaveOccurred())
+		dynClient, dynErr := dynamic.NewForConfig(cfg)
+		Expect(dynErr).NotTo(HaveOccurred())
+
+		createCtx, createCancel := context.WithTimeout(ctx, 15*time.Second)
+		defer createCancel()
+		_, err := dynClient.Resource(rrGVR).Namespace(namespace).Create(createCtx, rr, metav1.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred(), "direct RR CRD creation")
+		GinkgoWriter.Printf("  Created RR: %s\n", rrName)
+
+		By("Calling action: start on the new RR")
+		startCtx, startCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer startCancel()
+		result, startErr := infrastructure.CallInvestigate(startCtx, mcpSession, map[string]any{
+			"rr_id":  rrName,
+			"action": "start",
+		})
+		Expect(startErr).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse(), "start should succeed")
+
+		text := infrastructure.ExtractToolResultText(result)
+		GinkgoWriter.Printf("  Start response: %s\n", text)
+		Expect(text).To(SatisfyAny(
+			ContainSubstring("started"),
+			ContainSubstring("takeover_started"),
+		), "should start fresh or implicitly take over if autonomous was faster")
+
+		By("Sending message in fresh session")
+		msgCtx, msgCancel := context.WithTimeout(ctx, 60*time.Second)
+		defer msgCancel()
+		msgResult, msgErr := infrastructure.CallInvestigate(msgCtx, mcpSession, map[string]any{
+			"rr_id":   rrName,
+			"action":  "message",
+			"message": "What resources are affected by this deployment issue?",
+		})
+		Expect(msgErr).NotTo(HaveOccurred())
+		Expect(msgResult.IsError).To(BeFalse(), "message should succeed")
+		msgText := infrastructure.ExtractToolResultText(msgResult)
+		GinkgoWriter.Printf("  Message response (first 200 chars): %.200s\n", msgText)
+		Expect(msgText).NotTo(BeEmpty())
+
+		By("Completing fresh session")
+		completeCtx, completeCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer completeCancel()
+		completeResult, completeErr := infrastructure.CallInvestigate(completeCtx, mcpSession, map[string]any{
+			"rr_id":  rrName,
+			"action": "complete",
+		})
+		Expect(completeErr).NotTo(HaveOccurred())
+		Expect(completeResult.IsError).To(BeFalse(), "complete should succeed")
+		Expect(infrastructure.ExtractToolResultText(completeResult)).To(ContainSubstring("completed"))
 	})
 })
