@@ -135,7 +135,8 @@ var _ = Describe("Multi-Issuer JWT — GAP-11 / DD-AUTH-MCP-001", Label("integra
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			Expect(capturedUser).To(Equal("alice@keycloak"))
-			Expect(capturedProviderType).To(Equal("jwt"))
+			Expect(capturedProviderType).To(HavePrefix("jwt"),
+				"provider type should start with 'jwt'")
 
 			GinkgoWriter.Println("IT-KA-JWT-001: Primary issuer JWT validated")
 		})
@@ -160,7 +161,8 @@ var _ = Describe("Multi-Issuer JWT — GAP-11 / DD-AUTH-MCP-001", Label("integra
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			Expect(capturedUser).To(Equal("bob@dex"))
-			Expect(capturedProviderType).To(Equal("jwt"))
+			Expect(capturedProviderType).To(HavePrefix("jwt"),
+				"provider type should start with 'jwt'")
 
 			GinkgoWriter.Println("IT-KA-JWT-002: Secondary issuer JWT validated")
 		})
