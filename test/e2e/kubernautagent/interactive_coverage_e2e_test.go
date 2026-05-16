@@ -560,5 +560,167 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 			GinkgoWriter.Println("SNAP-007: Cancelled session snapshot validated")
 		})
 	})
+
+	// ---------------------------------------------------------------
+	// E2E-KA-STATUS-001: action:status returns "not_found" for unknown RR
+	// BR: BR-INTERACTIVE-001
+	// ---------------------------------------------------------------
+	Describe("E2E-KA-STATUS-001: Status returns not_found for unknown RR", func() {
+		It("should return mode=not_found for a non-existent remediation [E2E-KA-STATUS-001]", func() {
+			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
+				Endpoint:     mcpEndpoint,
+				SAToken:      saToken,
+				TLSTransport: tlsTransport,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			defer session.Close()
+
+			result, err := infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  "rr-nonexistent-status-001",
+				"action": "status",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			text := infrastructure.ExtractToolResultText(result)
+			GinkgoWriter.Printf("Status result: %s\n", text)
+
+			var outer map[string]interface{}
+			Expect(json.Unmarshal([]byte(text), &outer)).To(Succeed(),
+				"tool result should be valid JSON")
+			Expect(outer["status"]).To(Equal("status"))
+
+			var status map[string]interface{}
+			Expect(json.Unmarshal([]byte(outer["response"].(string)), &status)).To(Succeed(),
+				"response field should contain valid JSON StatusOutput")
+			Expect(status["mode"]).To(Equal("not_found"),
+				"mode should be not_found for unknown RR")
+
+			GinkgoWriter.Println("STATUS-001: not_found mode validated")
+		})
+	})
+
+	// ---------------------------------------------------------------
+	// E2E-KA-STATUS-002: action:status returns "interactive" during active session
+	// BR: BR-INTERACTIVE-001
+	// ---------------------------------------------------------------
+	Describe("E2E-KA-STATUS-002: Status returns interactive during active session", func() {
+		It("should return mode=interactive with driver info [E2E-KA-STATUS-002]", func() {
+			rrID := fmt.Sprintf("rr-status002-%d", time.Now().UnixNano())
+			createTestRemediationRequest(ctx, rrID)
+
+			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
+				Endpoint:     mcpEndpoint,
+				SAToken:      saToken,
+				TLSTransport: tlsTransport,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			defer session.Close()
+
+			By("Starting an interactive session")
+			startResult, err := infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(startResult).NotTo(BeNil())
+
+			By("Querying status while session is active")
+			result, err := infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"action": "status",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			text := infrastructure.ExtractToolResultText(result)
+			GinkgoWriter.Printf("Status result: %s\n", text)
+
+			var outer map[string]interface{}
+			Expect(json.Unmarshal([]byte(text), &outer)).To(Succeed())
+			Expect(outer["status"]).To(Equal("status"))
+
+			var status map[string]interface{}
+			Expect(json.Unmarshal([]byte(outer["response"].(string)), &status)).To(Succeed(),
+				"response field should contain valid JSON StatusOutput")
+			Expect(status["mode"]).To(Equal("interactive"),
+				"mode should be interactive during active session")
+			Expect(status["driver"]).NotTo(BeEmpty(),
+				"driver should contain the session owner identity")
+
+			By("Cleaning up — completing the session")
+			_, _ = infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"action": "complete",
+			})
+
+			GinkgoWriter.Println("STATUS-002: interactive mode validated")
+		})
+	})
+
+	// ---------------------------------------------------------------
+	// E2E-KA-STATUS-003: action:status returns "autonomous" during autonomous investigation
+	// BR: BR-INTERACTIVE-001
+	// ---------------------------------------------------------------
+	Describe("E2E-KA-STATUS-003: Status returns autonomous during autonomous investigation", func() {
+		It("should return mode=autonomous while investigation runs [E2E-KA-STATUS-003]", func() {
+			rrID := fmt.Sprintf("rr-status003-%d", time.Now().UnixNano())
+			createTestRemediationRequest(ctx, rrID)
+
+			By("Starting an autonomous investigation via REST")
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "test-status003",
+				RemediationID:     rrID,
+				SignalName:        "CrashLoopBackOff",
+				Severity:          agentclient.SeverityHigh,
+				SignalSource:      "kubernetes",
+				ResourceNamespace: sharedNamespace,
+				ResourceKind:      "Pod",
+				ResourceName:      "status003-pod",
+				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
+			}
+			_, err := sessionClient.SubmitInvestigation(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Waiting briefly for autonomous investigation to start")
+			time.Sleep(2 * time.Second)
+
+			By("Querying status via MCP")
+			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
+				Endpoint:     mcpEndpoint,
+				SAToken:      saToken,
+				TLSTransport: tlsTransport,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			defer session.Close()
+
+			result, err := infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"action": "status",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			text := infrastructure.ExtractToolResultText(result)
+			GinkgoWriter.Printf("Status result: %s\n", text)
+
+			var outer map[string]interface{}
+			Expect(json.Unmarshal([]byte(text), &outer)).To(Succeed())
+			Expect(outer["status"]).To(Equal("status"))
+
+			var status map[string]interface{}
+			Expect(json.Unmarshal([]byte(outer["response"].(string)), &status)).To(Succeed(),
+				"response field should contain valid JSON StatusOutput")
+			Expect(status["mode"]).To(Equal("autonomous"),
+				"mode should be autonomous while investigation runs")
+
+			GinkgoWriter.Println("STATUS-003: autonomous mode validated")
+		})
+	})
 })
 
