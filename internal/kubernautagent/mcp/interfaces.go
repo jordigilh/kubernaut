@@ -68,6 +68,10 @@ type InteractiveSession struct {
 	StartedAt     time.Time
 	CompletedAt   *time.Time
 	Reason        string
+	// Reconnected is true when Takeover returned an existing session for the
+	// same user (e.g., after network loss). Callers use this to skip
+	// one-time operations like audit emission and autonomous transition.
+	Reconnected bool
 }
 
 // SessionManager manages interactive session lifecycle: takeover, release, and

@@ -260,6 +260,16 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		return InvestigateOutput{}, fmt.Errorf("start session: %w", err)
 	}
 
+	if sess.Reconnected {
+		if t.timeoutTracker != nil {
+			t.timeoutTracker.ResetInactivity(sess.SessionID)
+		}
+		return InvestigateOutput{
+			SessionID: sess.SessionID,
+			Status:    "reconnected",
+		}, nil
+	}
+
 	if t.metrics != nil {
 		t.metrics.RecordInteractiveSessionStarted()
 		t.metrics.RecordInteractiveTakeover("start_success")
@@ -303,6 +313,16 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 		return InvestigateOutput{}, fmt.Errorf("takeover session: %w", err)
 	}
 
+	if sess.Reconnected {
+		if t.timeoutTracker != nil {
+			t.timeoutTracker.ResetInactivity(sess.SessionID)
+		}
+		return InvestigateOutput{
+			SessionID: sess.SessionID,
+			Status:    "reconnected",
+		}, nil
+	}
+
 	// Lease acquired — now safe to transition autonomous investigation to user-driven.
 	// #774: TransitionToUserDriving replaces SuspendInvestigation so that:
 	// 1. The session enters StatusUserDriving (pollable, not terminal)
@@ -318,8 +338,6 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 					}
 					return InvestigateOutput{}, fmt.Errorf("transition autonomous session to user-driving: %w", err)
 				}
-				// ErrSessionTerminal after lease acquired: autonomous already finished,
-				// proceed with interactive session (takeover still valid).
 			}
 		}
 	}
@@ -396,6 +414,16 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 	response, err := t.runner.RunInteractiveTurn(ctx, messages, input.RRID)
 	if err != nil {
 		return InvestigateOutput{}, fmt.Errorf("interactive turn failed: %w", err)
+	}
+
+	// Reset inactivity timer AFTER the LLM call completes. The pre-call reset
+	// (above) prevents timeout during user think-time; this post-call reset
+	// prevents timeout during slow LLM responses that exceed the inactivity
+	// window. Without this, a 90s LLM response with a 60s timeout would
+	// expire the session mid-turn.
+	t.sessions.TouchActivity(input.RRID)
+	if t.timeoutTracker != nil {
+		t.timeoutTracker.ResetInactivity(sess.SessionID)
 	}
 
 	return InvestigateOutput{
