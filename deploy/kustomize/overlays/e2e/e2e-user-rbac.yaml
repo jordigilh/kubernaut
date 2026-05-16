@@ -1,0 +1,100 @@
+# Kubernetes RBAC for impersonated E2E users.
+# AF uses K8s impersonation — when a user calls af_get_pods etc., AF
+# impersonates that user. The impersonated identity needs these permissions.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: e2e-user-k8s-tools
+rules:
+  # af_get_pods
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  # af_list_events
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list"]
+  # af_get_workloads
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["list"]
+  # af_resolve_owner
+  - apiGroups: [""]
+    resources: ["pods", "replicationcontrollers"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets", "deployments", "statefulsets", "daemonsets"]
+    verbs: ["get"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get"]
+  # af_create_rr / af_check_existing_rr / kubernaut_cancel_remediation
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests/status"]
+    verbs: ["get", "update", "patch"]
+  # remediation approvals
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationapprovalrequests"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationapprovalrequests/status"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-sre-k8s-tools
+subjects:
+  - kind: Group
+    name: sre
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: e2e-user-k8s-tools
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-ai-orchestrator-k8s-tools
+subjects:
+  - kind: Group
+    name: ai-orchestrator
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: e2e-user-k8s-tools
+  apiGroup: rbac.authorization.k8s.io
+---
+# Observability group uses a namespace-scoped RoleBinding (not ClusterRoleBinding)
+# to verify that K8s RBAC correctly restricts access to specific namespaces.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: e2e-observability-k8s-tools
+  namespace: kubernaut-system
+subjects:
+  - kind: Group
+    name: observability
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: e2e-user-k8s-tools
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-remediation-approver-k8s-tools
+subjects:
+  - kind: Group
+    name: remediation-approver
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: e2e-user-k8s-tools
+  apiGroup: rbac.authorization.k8s.io

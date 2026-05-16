@@ -72,6 +72,8 @@ jobs:
     timeout-minutes: 30
     env:
       KIND_EXPERIMENTAL_PROVIDER: podman
+      IMAGE_REGISTRY: ghcr.io/jordigilh/kubernaut
+      IMAGE_TAG: main-e5db85e6c4bdb184c50ca26429e440f465b5b612  # v1.5.0-rc1
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 

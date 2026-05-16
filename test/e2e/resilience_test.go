@@ -477,8 +477,8 @@ spec:
 			req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, baseURL+"/mcp", strings.NewReader(callBody))
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", "Bearer "+token)
 			req.Header.Set("Accept", "application/json, text/event-stream")
+			req.Header.Set("Authorization", "Bearer "+token)
 			req.Header.Set("Mcp-Session-Id", sid)
 
 			resp, err := httpClient.Do(req)

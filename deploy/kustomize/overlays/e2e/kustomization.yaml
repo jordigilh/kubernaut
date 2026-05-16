@@ -9,7 +9,7 @@ metadata:
 resources:
   - ../../base
   - dex.yaml
-  - mock-llm.yaml
+  - e2e-user-rbac.yaml
   - https://raw.githubusercontent.com/jordigilh/kubernaut/main/config/crd/bases/kubernaut.ai_remediationrequests.yaml
   - https://raw.githubusercontent.com/jordigilh/kubernaut/main/config/crd/bases/kubernaut.ai_remediationapprovalrequests.yaml
 
@@ -33,6 +33,27 @@ patches:
       kind: ServiceMonitor
       metadata:
         name: apifrontend
+  - patch: |
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: apifrontend
+      spec:
+        type: NodePort
+        ports:
+        - name: https
+          port: 8443
+          targetPort: https
+          nodePort: 30443
+          protocol: TCP
+        - name: health
+          port: 8081
+          targetPort: health
+          nodePort: 30081
+          protocol: TCP
+    target:
+      kind: Service
+      name: apifrontend
   - path: patch-deployment.yaml
     target:
       kind: Deployment
@@ -58,29 +79,39 @@ patches:
           to:
             - podSelector:
                 matchLabels:
-                  app.kubernetes.io/name: kubernaut-agent
-          ports:
-            - port: 8443
-              protocol: TCP
-      - op: add
-        path: /spec/egress/-
-        value:
-          to:
-            - podSelector:
-                matchLabels:
-                  app.kubernetes.io/name: data-storage
-          ports:
-            - port: 8443
-              protocol: TCP
-      - op: add
-        path: /spec/egress/-
-        value:
-          to:
-            - podSelector:
-                matchLabels:
-                  app.kubernetes.io/name: mock-llm
+                  app: kubernaut-agent
           ports:
             - port: 8080
+              protocol: TCP
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+            - podSelector:
+                matchLabels:
+                  app: datastorage
+          ports:
+            - port: 8080
+              protocol: TCP
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+            - podSelector:
+                matchLabels:
+                  app: mock-llm
+          ports:
+            - port: 8080
+              protocol: TCP
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+            - podSelector:
+                matchLabels:
+                  app: prometheus
+          ports:
+            - port: 9090
               protocol: TCP
     target:
       kind: NetworkPolicy
@@ -95,7 +126,4 @@ configMapGenerator:
 images:
   - name: quay.io/jordigilh/kubernaut-apifrontend
     newName: localhost/kubernaut-apifrontend
-    newTag: e2e
-  - name: ghcr.io/jordigilh/kubernaut/mock-llm
-    newName: localhost/mock-llm
     newTag: e2e

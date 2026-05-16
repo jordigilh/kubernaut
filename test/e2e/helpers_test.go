@@ -61,13 +61,27 @@ func buildJSONRPC(id, method string, params map[string]interface{}) string {
 	return string(b)
 }
 
-// a2aTasksSend builds a tasks/send JSON-RPC payload with a user text message.
+// a2aTasksSend builds a message/send JSON-RPC payload with a user text message.
 func a2aTasksSend(id, text string) string {
-	return buildJSONRPC(id, "tasks/send", map[string]interface{}{
+	return buildJSONRPC(id, "message/send", map[string]interface{}{
 		"message": map[string]interface{}{
-			"role": "user",
+			"messageId": "msg-" + id,
+			"role":      "user",
 			"parts": []map[string]interface{}{
-				{"type": "text", "text": text},
+				{"kind": "text", "text": text},
+			},
+		},
+	})
+}
+
+// a2aMessageStream builds a message/stream JSON-RPC payload (SSE variant).
+func a2aMessageStream(id, text string) string {
+	return buildJSONRPC(id, "message/stream", map[string]interface{}{
+		"message": map[string]interface{}{
+			"messageId": "msg-" + id,
+			"role":      "user",
+			"parts": []map[string]interface{}{
+				{"kind": "text", "text": text},
 			},
 		},
 	})
@@ -90,8 +104,8 @@ type rpcError struct {
 type a2aTaskResult struct {
 	ID     string `json:"id"`
 	Status struct {
-		State   string `json:"state"`
-		Message string `json:"message,omitempty"`
+		State   string          `json:"state"`
+		Message json.RawMessage `json:"message,omitempty"`
 	} `json:"status"`
 }
 
@@ -169,6 +183,7 @@ func initMCPSession(token string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := httpClient.Do(req)
@@ -191,6 +206,7 @@ func mcpPOST(token, sessionID, jsonBody string) (body []byte, statusCode int, er
 		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+token)
 	if sessionID != "" {
 		req.Header.Set("Mcp-Session-Id", sessionID)

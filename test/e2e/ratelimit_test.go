@@ -117,6 +117,10 @@ var _ = Describe("Rate Limiting (G14/G15/G16)", Ordered, Label("e2e", "phase5", 
 					"arguments": map[string]interface{}{"namespace": "default"},
 				}))
 				Expect(e).NotTo(HaveOccurred())
+				if code == http.StatusTooManyRequests {
+					limited = true
+					break
+				}
 				Expect(code).To(BeNumerically("<", 400))
 				text, _, perr := parseMCPToolPayload(unwrapSSEDataLine(raw))
 				Expect(perr).NotTo(HaveOccurred())
@@ -148,6 +152,10 @@ var _ = Describe("Rate Limiting (G14/G15/G16)", Ordered, Label("e2e", "phase5", 
 					"arguments": map[string]interface{}{"namespace": "default"},
 				}))
 				Expect(e).NotTo(HaveOccurred())
+				if code == http.StatusTooManyRequests {
+					exhausted = true
+					break
+				}
 				Expect(code).To(BeNumerically("<", 400))
 				text, _, perr := parseMCPToolPayload(unwrapSSEDataLine(raw))
 				Expect(perr).NotTo(HaveOccurred())

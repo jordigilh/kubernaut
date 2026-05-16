@@ -58,6 +58,7 @@ var _ = Describe("Operational Contract", Ordered, Label("e2e", "phase1", "operat
 			req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", body)
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
 			req.Header.Set("Authorization", "Bearer "+token)
 
 			resp, err := httpClient.Do(req)

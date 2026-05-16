@@ -43,16 +43,25 @@ func CreateAFKindCluster(kubeconfigPath string, writer io.Writer) error {
 	return kinfra.CreateKindClusterWithConfig(opts, writer)
 }
 
-// BuildAFImage builds the apifrontend container image using kubernaut's
-// canonical BuildImageForKind.
+// BuildAFImage builds the apifrontend container image locally.
+// Unlike kubernaut stack images, AF is never pulled from a registry —
+// it is always built from the current source tree.
 func BuildAFImage(writer io.Writer) (string, error) {
-	cfg := kinfra.E2EImageConfig{
-		ServiceName:      "apifrontend",
-		ImageName:        "kubernaut-apifrontend",
-		DockerfilePath:   "Dockerfile",
-		BuildContextPath: getAFProjectRoot(),
+	projectRoot := getAFProjectRoot()
+	imageName := "localhost/kubernaut-apifrontend:e2e"
+
+	_, _ = fmt.Fprintf(writer, "  Building AF image: %s\n", imageName)
+	cmd := exec.Command("podman", "build",
+		"--no-cache",
+		"-t", imageName,
+		"-f", filepath.Join(projectRoot, "Dockerfile"),
+		projectRoot)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("podman build failed: %w", err)
 	}
-	return kinfra.BuildImageForKind(cfg, writer)
+	return imageName, nil
 }
 
 // BuildMockLLMImage builds the mock-LLM image from the kubernaut repo using

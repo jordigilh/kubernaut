@@ -52,3 +52,7 @@ nodes:
   - containerPort: 30556
     hostPort: 5556
     protocol: TCP
+  # Prometheus - Severity triage pipeline testing
+  - containerPort: 30190
+    hostPort: 9190
+    protocol: TCP

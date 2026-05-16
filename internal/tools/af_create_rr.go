@@ -105,6 +105,9 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 			triageResult = &result
 		}
 	}
+	if args.Severity == "" {
+		args.Severity = "medium"
+	}
 
 	fingerprint := rrFingerprint(args.Namespace, args.Kind, args.Name)
 

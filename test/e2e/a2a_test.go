@@ -272,6 +272,19 @@ var _ = Describe("A2A Handler (E2E)", Ordered, Label("e2e", "a2a"), func() {
 		})
 
 		It("TC-E2E-A2A-MET-04: af_mcp_rbac_denied_total has observations from RBAC denials", func() {
+			// Trigger an MCP RBAC denial: observability persona calling af_create_rr (not in their role)
+			obsToken, err := fetchDEXTokenForPersona("observability")
+			Expect(err).NotTo(HaveOccurred())
+			obsSID, err := initMCPSession(obsToken)
+			if err == nil && obsSID != "" {
+				body := buildJSONRPC("met04-rbac-deny", "tools/call", map[string]interface{}{
+					"name":      "af_create_rr",
+					"arguments": map[string]interface{}{"namespace": "default", "name": "x", "kind": "Deployment", "description": "denied"},
+				})
+				_, _, _ = mcpPOST(obsToken, obsSID, body)
+			}
+			time.Sleep(1 * time.Second)
+
 			metrics := scrapeMetrics()
 			Expect(metrics).To(ContainSubstring("af_mcp_rbac_denied_total"),
 				"RBAC denied counter should exist after denied tool calls")
@@ -397,8 +410,8 @@ var _ = Describe("A2A Handler (E2E)", Ordered, Label("e2e", "a2a"), func() {
 				"unknown method should return Method Not Found")
 		})
 
-		It("TC-E2E-A2A-ERR-03: tasks/send with empty params returns error", func() {
-			payload := buildJSONRPC("err-03", "tasks/send", map[string]interface{}{})
+		It("TC-E2E-A2A-ERR-03: message/send with empty params returns error", func() {
+			payload := buildJSONRPC("err-03", "message/send", map[string]interface{}{})
 			resp, err := a2aInvoke(httpClient, baseURL, sreToken, payload)
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
@@ -426,7 +439,7 @@ var _ = Describe("A2A Handler (E2E)", Ordered, Label("e2e", "a2a"), func() {
 				"tasks/get for nonexistent task should return error")
 		})
 
-		It("TC-E2E-A2A-ERR-05: tasks/send with empty message text returns error or empty response", func() {
+		It("TC-E2E-A2A-ERR-05: message/send with empty message text returns error or empty response", func() {
 			payload := a2aTasksSend("err-05", "")
 			resp, err := a2aInvoke(httpClient, baseURL, sreToken, payload)
 			Expect(err).NotTo(HaveOccurred())
@@ -488,7 +501,7 @@ var _ = Describe("A2A Handler (E2E)", Ordered, Label("e2e", "a2a"), func() {
 	// ===================================================================
 	Context("Category 6: Session Lifecycle", func() {
 
-		It("TC-E2E-A2A-SESS-01: tasks/send creates a new task with unique ID", func() {
+		It("TC-E2E-A2A-SESS-01: message/send creates a new task with unique ID", func() {
 			resp, err := a2aInvoke(httpClient, baseURL, sreToken,
 				a2aTasksSend("sess-01", "What is your name?"))
 			Expect(err).NotTo(HaveOccurred())

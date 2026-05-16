@@ -33,6 +33,7 @@ var _ = Describe("K8s Read Tools (G6)", Ordered, Label("e2e", "phase2", "g6"), f
 		req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(initBody))
 		Expect(err).NotTo(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
 		req.Header.Set("Authorization", "Bearer "+authToken)
 
 		resp, err := httpClient.Do(req)
@@ -55,6 +56,7 @@ var _ = Describe("K8s Read Tools (G6)", Ordered, Label("e2e", "phase2", "g6"), f
 			return "", err
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
 		req.Header.Set("Authorization", "Bearer "+authToken)
 		req.Header.Set("Mcp-Session-Id", mcpSessionID)
 
@@ -226,6 +228,7 @@ var _ = Describe("K8s Read Tools (G6)", Ordered, Label("e2e", "phase2", "g6"), f
 		initReq, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(obsInit))
 		Expect(err).NotTo(HaveOccurred())
 		initReq.Header.Set("Content-Type", "application/json")
+		initReq.Header.Set("Accept", "application/json, text/event-stream")
 		initReq.Header.Set("Authorization", "Bearer "+obsToken)
 		initResp, err := httpClient.Do(initReq)
 		Expect(err).NotTo(HaveOccurred())
@@ -244,6 +247,7 @@ var _ = Describe("K8s Read Tools (G6)", Ordered, Label("e2e", "phase2", "g6"), f
 		req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(callBody))
 		Expect(err).NotTo(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
 		req.Header.Set("Authorization", "Bearer "+obsToken)
 		req.Header.Set("Mcp-Session-Id", obsSession)
 

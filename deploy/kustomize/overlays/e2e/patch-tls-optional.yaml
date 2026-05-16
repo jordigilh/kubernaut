@@ -5,6 +5,15 @@ metadata:
 spec:
   template:
     spec:
+      containers:
+        - name: apifrontend
+          volumeMounts:
+            - name: inter-service-ca
+              mountPath: /etc/apifrontend/inter-service-ca
+              readOnly: true
+          env:
+            - name: TLS_CA_FILE
+              value: /etc/apifrontend/tls-ca/ca.crt
       volumes:
         - name: tls-server
           secret:
@@ -14,3 +23,6 @@ spec:
           secret:
             secretName: apifrontend-ca
             optional: true
+        - name: inter-service-ca
+          configMap:
+            name: inter-service-ca

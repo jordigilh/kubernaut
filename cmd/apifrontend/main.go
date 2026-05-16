@@ -948,6 +948,10 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 	for _, phase := range []string{"Active", "Disconnected", "Completed", "Cancelled", "Failed"} {
 		reg.SessionsActive.WithLabelValues(phase)
 	}
+	for _, action := range []string{"cancel", "delete", "disconnect"} {
+		reg.SessionTTLActionsTotal.WithLabelValues(action)
+	}
+	reg.MCPRBACDeniedTotal.WithLabelValues("__prime__")
 
 	var k8sClient client.Client
 	var stopFunc func()

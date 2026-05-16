@@ -16,6 +16,7 @@ data:
     oauth2:
       skipApprovalScreen: true
       passwordConnector: local
+      responseTypes: ["code", "token", "id_token"]
 
     staticClients:
       - id: kubernaut-apifrontend
@@ -75,13 +76,14 @@ metadata:
   name: dex
   namespace: kubernaut-system
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app.kubernetes.io/name: dex
   ports:
     - name: http
       port: 5556
       targetPort: 5556
+      nodePort: 30556
       protocol: TCP
 ---
 apiVersion: apps/v1
@@ -107,11 +109,12 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1001
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: dex
-          image: ghcr.io/dexidp/dex:v2.41.1@sha256:bc7cfce7c17f52864e2bb2a4dc1d2f86a41e3019f6d42e81d92a301fad0c8a1d
+          image: ghcr.io/dexidp/dex:v2.45.1
           command: ["dex", "serve", "/etc/dex/config.yaml"]
           ports:
             - name: http

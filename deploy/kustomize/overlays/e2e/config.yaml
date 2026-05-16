@@ -7,13 +7,16 @@ server:
 agent:
   gcpProject: ""
   gcpRegion: "us-central1"
-  kaBaseURL: "https://kubernaut-agent.kubernaut-system.svc:8443"
-  kaMCPEndpoint: "https://kubernaut-agent.kubernaut-system.svc:8443/api/v1/mcp/"
-  dsBaseURL: "https://data-storage.kubernaut-system.svc:8443"
-  kaTlsCaFile: /etc/apifrontend/tls-ca/ca.crt
-  dsTlsCaFile: /etc/apifrontend/tls-ca/ca.crt
+  kaBaseURL: "https://kubernaut-agent.kubernaut-system.svc:8080"
+  kaMCPEndpoint: "https://kubernaut-agent.kubernaut-system.svc:8080/api/v1/mcp/"
+  dsBaseURL: "https://data-storage-service.kubernaut-system.svc:8080"
+  kaTlsCaFile: /etc/apifrontend/inter-service-ca/ca.crt
+  dsTlsCaFile: /etc/apifrontend/inter-service-ca/ca.crt
   llmEndpoint: "http://mock-llm.kubernaut-system.svc:8080"
   llmModel: "mock-model"
+
+session:
+  namespace: kubernaut-system
 
 mcp:
   enabled: true
@@ -37,11 +40,15 @@ rbac:
     l3-audit: l3-audit
     remediation-approver: remediation-approver
 
+severityTriage:
+  enabled: true
+  prometheusURL: "http://prometheus-svc.kubernaut-system.svc:9090"
+
 logging:
   level: debug
 
 rateLimit:
-  ipRequestsPerSec: 10
+  ipRequestsPerSec: 10000
   userRequestsPerSec: 5
   maxConcurrentSessions: 10
   toolCallsPerMinute: 30

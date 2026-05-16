@@ -62,13 +62,20 @@ func (d *ServiceDecorator) Create(ctx context.Context, req *adksession.CreateReq
 		return nil, fmt.Errorf("session creation requires authenticated user identity")
 	}
 
+	joinMode := v1alpha1.SessionJoinModeStart
+	rrRef := sc.RemediationRef
+	if rrRef.Name == "" {
+		rrRef = v1alpha1.ObjectRef{Name: "pending", Namespace: "kubernaut-system"}
+	}
+
 	cfg := &CreateConfig{
 		A2ATaskID: sc.TaskID,
 		UserIdentity: v1alpha1.SessionUser{
 			Username: identity.Username,
 			Groups:   identity.Groups,
 		},
-		RemediationRef: sc.RemediationRef,
+		JoinMode:       joinMode,
+		RemediationRef: rrRef,
 	}
 
 	if req.State == nil {

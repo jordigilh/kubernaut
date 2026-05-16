@@ -31,6 +31,9 @@ var _ = Describe("Unwired Code Gaps (E2E)", Ordered, Label("e2e", "phase1", "unw
 			return nil, err
 		}
 		req.Header.Set("Content-Type", "application/json")
+		if path == "/mcp" {
+			req.Header.Set("Accept", "application/json, text/event-stream")
+		}
 		req.Header.Set("Authorization", "Bearer "+authToken)
 		return httpClient.Do(req)
 	}
@@ -40,7 +43,7 @@ var _ = Describe("Unwired Code Gaps (E2E)", Ordered, Label("e2e", "phase1", "unw
 	// kubernaut#1157 landed — A2A handler is live with mock-LLM Gemini backend.
 	// -------------------------------------------------------------------
 	It("TC-E2E-UNWIRED-001: POST /a2a/invoke returns JSON-RPC response (not 501)", func() {
-		body := `{"jsonrpc":"2.0","method":"tasks/send","id":"unwired-001","params":{"id":"probe","message":{"role":"user","parts":[{"type":"text","text":"hello"}]}}}`
+		body := `{"jsonrpc":"2.0","method":"message/send","id":"unwired-001","params":{"message":{"messageId":"msg-unwired-001","role":"user","parts":[{"kind":"text","text":"hello"}]}}}`
 		resp, err := authenticatedPost("/a2a/invoke", body)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
@@ -69,6 +72,7 @@ var _ = Describe("Unwired Code Gaps (E2E)", Ordered, Label("e2e", "phase1", "unw
 			strings.NewReader(`{"jsonrpc":"2.0","method":"tools/list","id":"unwired-002","params":{}}`))
 		Expect(err).NotTo(HaveOccurred())
 		listReq.Header.Set("Content-Type", "application/json")
+		listReq.Header.Set("Accept", "application/json, text/event-stream")
 		listReq.Header.Set("Authorization", "Bearer "+authToken)
 		if sessionID != "" {
 			listReq.Header.Set("Mcp-Session-Id", sessionID)
