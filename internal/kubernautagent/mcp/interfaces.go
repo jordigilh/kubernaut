@@ -21,6 +21,8 @@ package mcp
 import (
 	"context"
 	"time"
+
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // NotificationType distinguishes notification categories on the bus.
@@ -72,6 +74,36 @@ type InteractiveSession struct {
 	// same user (e.g., after network loss). Callers use this to skip
 	// one-time operations like audit emission and autonomous transition.
 	Reconnected bool
+
+	// RCAResult holds the structured RCA extracted from the interactive conversation
+	// when discover_workflows is called. Used by select_workflow and complete_no_action
+	// to build the final InvestigationResult for the HTTP session store.
+	RCAResult *katypes.InvestigationResult
+
+	// DiscoveryResult holds the Phase 3 workflow discovery recommendations.
+	// Cleared by any subsequent message to prevent stale recommendations.
+	DiscoveryResult *WorkflowDiscoveryResult
+}
+
+// WorkflowDiscoveryResult holds the Phase 3 recommendations returned to the user
+// by discover_workflows. Contains the selected + alternative workflows along with
+// the full InvestigationResult for final assembly in select_workflow.
+type WorkflowDiscoveryResult struct {
+	// Recommended is the top-ranked workflow.
+	Recommended *DiscoveredWorkflow `json:"recommended,omitempty"`
+	// Alternatives are additional workflows the user may choose from.
+	Alternatives []DiscoveredWorkflow `json:"alternatives,omitempty"`
+	// FullResult is the complete InvestigationResult from Phase 3 (includes RCA +
+	// workflow selection). Used to build the final result for the HTTP session.
+	FullResult *katypes.InvestigationResult `json:"-"`
+}
+
+// DiscoveredWorkflow represents a single workflow recommendation from Phase 3.
+type DiscoveredWorkflow struct {
+	WorkflowID      string  `json:"workflow_id"`
+	ExecutionBundle string  `json:"execution_bundle,omitempty"`
+	Confidence      float64 `json:"confidence"`
+	Rationale       string  `json:"rationale"`
 }
 
 // SessionManager manages interactive session lifecycle: takeover, release, and

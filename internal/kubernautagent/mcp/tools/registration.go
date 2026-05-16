@@ -33,7 +33,7 @@ func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.Dele
 	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
 		mcpsdk.AddTool(server, &mcpsdk.Tool{
 			Name:        "kubernaut_investigate",
-			Description: "Investigate a remediation request interactively. Actions: start, takeover, message, complete, cancel, status, reconnect.",
+			Description: "Investigate a remediation request interactively. Actions: start, takeover, message, complete, cancel, status, reconnect, discover_workflows.",
 		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input InvestigateInput) (*mcpsdk.CallToolResult, InvestigateOutput, error) {
 			user := userFromCtx(ctx)
 			output, err := tool.Handle(ctx, input, user)
@@ -63,8 +63,23 @@ func SelectWorkflowRegistration(tool *SelectWorkflowTool) mcpinternal.ToolRegist
 	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
 		mcpsdk.AddTool(server, &mcpsdk.Tool{
 			Name:        "kubernaut_select_workflow",
-			Description: "Select a remediation workflow from the catalog during an interactive investigation.",
+			Description: "Select a remediation workflow from the catalog during an interactive investigation. Requires a prior discover_workflows call.",
 		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input SelectWorkflowInput) (*mcpsdk.CallToolResult, SelectWorkflowOutput, error) {
+			user := userFromCtx(ctx)
+			output, err := tool.Handle(ctx, input, user)
+			return nil, output, err
+		})
+	}
+}
+
+// CompleteNoActionRegistration returns a ToolRegistration that registers the
+// kubernaut_complete_no_action tool with the MCP SDK server.
+func CompleteNoActionRegistration(tool *CompleteNoActionTool) mcpinternal.ToolRegistration {
+	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
+		mcpsdk.AddTool(server, &mcpsdk.Tool{
+			Name:        "kubernaut_complete_no_action",
+			Description: "Complete an interactive investigation without selecting a workflow. Use when no remediation action is needed.",
+		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input CompleteNoActionInput) (*mcpsdk.CallToolResult, CompleteNoActionOutput, error) {
 			user := userFromCtx(ctx)
 			output, err := tool.Handle(ctx, input, user)
 			return nil, output, err

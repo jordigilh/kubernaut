@@ -169,6 +169,8 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 		return map[string]interface{}{
 			"kind": cfg.ResourceKind, "name": cfg.ResourceName, "namespace": cfg.ResourceNS,
 		}
+	case openai.ToolSubmitResult:
+		return rcaOnlyJSON(cfg)
 	case openai.ToolSubmitResultWithWorkflow:
 		return analysisJSON(cfg)
 	case openai.ToolSubmitResultNoWorkflow:
@@ -243,6 +245,43 @@ func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 		obj["alternative_workflows"] = alts
 	}
 
+	if cfg.InvestigationOutcome != "" {
+		obj["investigation_outcome"] = cfg.InvestigationOutcome
+	}
+	if cfg.IsActionable != nil {
+		obj["actionable"] = *cfg.IsActionable
+	}
+	return obj
+}
+
+// rcaOnlyJSON builds a structured RCA-only response for the submit_result tool
+// (Phase 1 RCA extraction). Matches the RCAResultSchema expected by KA's parser.
+// Used when discover_workflows triggers RCA extraction from interactive conversation.
+func rcaOnlyJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
+	rca := map[string]interface{}{
+		"summary":              cfg.RootCause,
+		"severity":             cfg.Severity,
+		"signal_name":          cfg.SignalName,
+		"contributing_factors": contributingSlice(cfg),
+	}
+	if cfg.ResourceKind != "" {
+		rt := map[string]string{
+			"kind":      cfg.ResourceKind,
+			"name":      cfg.ResourceName,
+			"namespace": cfg.ResourceNS,
+		}
+		if cfg.APIVersion != "" {
+			rt["api_version"] = cfg.APIVersion
+		}
+		rca["remediation_target"] = rt
+	}
+
+	obj := map[string]interface{}{
+		"root_cause_analysis":    rca,
+		"severity":               cfg.Severity,
+		"confidence":             cfg.Confidence,
+		"investigation_outcome":  "actionable",
+	}
 	if cfg.InvestigationOutcome != "" {
 		obj["investigation_outcome"] = cfg.InvestigationOutcome
 	}

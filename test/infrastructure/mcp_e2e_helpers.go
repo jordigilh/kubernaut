@@ -84,6 +84,14 @@ func CallSelectWorkflow(ctx context.Context, session *mcpsdk.ClientSession, args
 	})
 }
 
+// CallCompleteNoAction calls the kubernaut_complete_no_action MCP tool with the given arguments.
+func CallCompleteNoAction(ctx context.Context, session *mcpsdk.ClientSession, args map[string]any) (*mcpsdk.CallToolResult, error) {
+	return session.CallTool(ctx, &mcpsdk.CallToolParams{
+		Name:      "kubernaut_complete_no_action",
+		Arguments: args,
+	})
+}
+
 // ExtractToolResultText extracts the text content from an MCP CallToolResult.
 // Returns the concatenated text from all TextContent blocks.
 func ExtractToolResultText(result *mcpsdk.CallToolResult) string {

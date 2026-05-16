@@ -244,6 +244,90 @@ func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.
 	return inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, nil, correlationID, client, modelName, runtimeParams)
 }
 
+// RunRCAExtractionFromConversation appends a submit-RCA prompt to an existing
+// conversation and runs a single LLM call with only submit_result as the
+// available tool. Returns the parsed InvestigationResult (RCA only, no workflow).
+// Used by discover_workflows to extract structured RCA from interactive history.
+func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, messages []llm.Message, correlationID string) (*katypes.InvestigationResult, error) {
+	_ = correlationID // reserved for future audit event emission
+	client := inv.client
+	var runtimeParams llm.RuntimeParams
+	if inv.swappable != nil {
+		pinned := inv.swappable.Snapshot()
+		if inv.pinDecorator != nil {
+			client = inv.pinDecorator(pinned)
+			if client == nil {
+				client = llm.NewInstrumentedClient(pinned)
+			}
+		} else {
+			client = llm.NewInstrumentedClient(pinned)
+		}
+		runtimeParams = inv.swappable.RuntimeParameters()
+	}
+
+	submitOnlyTools := []llm.ToolDefinition{
+		{
+			Name:        SubmitResultToolName,
+			Description: "Submit your root cause analysis findings as a structured result.",
+			Parameters:  parser.RCAResultSchema(),
+		},
+	}
+
+	messages = append(messages, llm.Message{
+		Role:    "user",
+		Content: "Based on your investigation so far, please submit your root cause analysis findings using the submit_result tool.",
+	})
+
+	req := llm.ChatRequest{
+		Messages: messages,
+		Tools:    submitOnlyTools,
+	}
+
+	resp, err := llm.ChatWithParams(ctx, client, req, runtimeParams)
+	if err != nil {
+		return nil, fmt.Errorf("RCA extraction LLM call: %w", err)
+	}
+
+	var content string
+	if len(resp.ToolCalls) > 0 && resp.ToolCalls[0].Name == SubmitResultToolName {
+		content = resp.ToolCalls[0].Arguments
+	} else {
+		content = resp.Message.Content
+	}
+
+	result, parseErr := inv.resultParser.Parse(content)
+	if parseErr != nil {
+		return nil, fmt.Errorf("RCA extraction parse: %w", parseErr)
+	}
+	return result, nil
+}
+
+// RunWorkflowDiscoveryFromRCA executes Phase 3 (workflow selection) using a
+// structured RCA result. This reuses the exact autonomous Phase 3 pipeline
+// (BuildPhase1Context + runWorkflowSelection) so that interactive and
+// autonomous workflow discovery produce consistent results.
+func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *prompt.EnrichmentData, correlationID string) (*katypes.InvestigationResult, error) {
+	client := inv.client
+	modelName := inv.modelName
+	var runtimeParams llm.RuntimeParams
+	if inv.swappable != nil {
+		pinned := inv.swappable.Snapshot()
+		if inv.pinDecorator != nil {
+			client = inv.pinDecorator(pinned)
+			if client == nil {
+				client = llm.NewInstrumentedClient(pinned)
+			}
+		} else {
+			client = llm.NewInstrumentedClient(pinned)
+		}
+		modelName = inv.swappable.ModelName()
+		runtimeParams = inv.swappable.RuntimeParameters()
+	}
+
+	p1Ctx := BuildPhase1Context(rcaResult)
+	return inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, enrichData, p1Ctx, nil, correlationID, client, modelName, runtimeParams)
+}
+
 // Investigate runs the two-invocation investigation and returns the result.
 // Per BR-AUDIT-005, all audit events use signal.RemediationID as correlation ID
 // so that DataStorage queries by remediation_id return the full investigation trail.

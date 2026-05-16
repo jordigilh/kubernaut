@@ -106,9 +106,19 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	h.recordScenarioMetric(scenarioName, result.Method)
 
 	hasSplit := conversation.HasSubmitWithWorkflowTool(req.Tools)
+	hasSubmitOnly := conversation.HasSubmitResultOnly(req.Tools)
 	resolved := isResolvedOutcome(cfg)
-	log.Printf("[mock-llm] scenario=%s mode=%s outcome=%s workflowID=%q tools=%d hasSplitTool=%v isResolved=%v",
-		scenarioName, h.mode, cfg.InvestigationOutcome, cfg.WorkflowID, len(req.Tools), hasSplit, resolved)
+	log.Printf("[mock-llm] scenario=%s mode=%s outcome=%s workflowID=%q tools=%d hasSplitTool=%v hasSubmitOnly=%v isResolved=%v",
+		scenarioName, h.mode, cfg.InvestigationOutcome, cfg.WorkflowID, len(req.Tools), hasSplit, hasSubmitOnly, resolved)
+
+	// RCA extraction mode: when the only tool is submit_result, the caller
+	// wants a structured RCA (e.g. discover_workflows). Respond immediately
+	// with a submit_result tool call regardless of mode or forceText.
+	if hasSubmitOnly {
+		h.respondWithRCAExtraction(w, model, cfg)
+		h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
+		return
+	}
 
 	switch h.mode {
 	case config.ModeInteractive:
@@ -151,6 +161,13 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 // respondWithText writes a text-only response (no tool calls).
 func (h *handler) respondWithText(w http.ResponseWriter, model string, cfg scenarios.MockScenarioConfig) {
 	writeJSON(w, http.StatusOK, response.BuildTextResponse(model, cfg))
+}
+
+// respondWithRCAExtraction writes a submit_result tool call with structured RCA.
+// Used when discover_workflows triggers RCA extraction from an interactive session.
+func (h *handler) respondWithRCAExtraction(w http.ResponseWriter, model string, cfg scenarios.MockScenarioConfig) {
+	h.trackToolCall(openai.ToolSubmitResult)
+	writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, openai.ToolSubmitResult, cfg))
 }
 
 // respondWithSubmitToolCall writes the appropriate submit_result tool call.

@@ -28,7 +28,9 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/transport"
 )
 
@@ -42,6 +44,37 @@ type LLMMessage struct {
 // Implemented by the real Investigator.RunInteractiveTurn via an adapter.
 type InvestigatorRunner interface {
 	RunInteractiveTurn(ctx context.Context, messages []LLMMessage, correlationID string) (string, error)
+	// RunRCAExtraction appends a submit-RCA prompt to the conversation and
+	// runs a single LLM call with submit_result as the only available tool.
+	// Returns the parsed structured RCA as an InvestigationResult.
+	RunRCAExtraction(ctx context.Context, messages []LLMMessage, correlationID string) (*katypes.InvestigationResult, error)
+	// RunWorkflowDiscovery runs the autonomous Phase 3 pipeline (workflow
+	// selection) using the structured RCA, signal context, and enrichment data.
+	// Returns the full InvestigationResult including the selected workflow.
+	RunWorkflowDiscovery(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *prompt.EnrichmentData, correlationID string) (*katypes.InvestigationResult, error)
+}
+
+// SignalContextResolver resolves the SignalContext and EnrichmentData for a
+// given remediation ID. Used by discover_workflows to obtain the signal
+// parameters needed for Phase 3 workflow discovery.
+type SignalContextResolver interface {
+	ResolveSignalContext(ctx context.Context, rrID string) (*katypes.SignalContext, error)
+	ResolveEnrichmentData(ctx context.Context, rrID string) (*prompt.EnrichmentData, error)
+}
+
+// HTTPSessionCompleter bridges MCP tool completion to the HTTP session store.
+// select_workflow and complete_no_action use this to transition the session
+// from StatusUserDriving to StatusCompleted with the final InvestigationResult.
+type HTTPSessionCompleter interface {
+	FindUserDrivingByRemediationID(rrID string) (string, bool)
+	CompleteUserDriving(id string, result *katypes.InvestigationResult) error
+}
+
+// SessionMutexProvider exposes per-rrID mutexes for concurrency control.
+// Shared by InvestigateTool, SelectWorkflowTool, and CompleteNoActionTool
+// to prevent races on InteractiveSession state (DiscoveryResult, RCAResult).
+type SessionMutexProvider interface {
+	GetSessionMutex(rrID string) *sync.Mutex
 }
 
 // AutonomousSessionManager provides lookup, suspension, and user-driving
@@ -91,21 +124,23 @@ func (NopAutonomousManager) SuspendInvestigation(string) error                  
 func (NopAutonomousManager) TransitionToUserDriving(string, string, []string) error       { return nil }
 
 // InvestigateTool handles the kubernaut_investigate MCP tool actions:
-// start, message, complete, cancel, takeover. BR-INTERACTIVE-001, BR-INTERACTIVE-004.
+// start, message, complete, cancel, takeover, discover_workflows.
+// BR-INTERACTIVE-001, BR-INTERACTIVE-004.
 type InvestigateTool struct {
-	sessions       mcpinternal.SessionManager
-	runner         InvestigatorRunner
-	recon          mcpinternal.ContextReconstructor
-	autoMgr        AutonomousSessionManager
-	rrChecker      RRExistenceChecker
-	metrics        ToolMetrics
-	rateLimiter    MessageRateLimiter
-	timeoutTracker TimeoutTracker
-	auditStore     audit.AuditStore
-	logger         logr.Logger
-	notifyFn       func(sessionID, msg string) // optional: delivers timeout warnings to client
-	sessionMu      sync.Map                    // rrID -> *sync.Mutex (per-session serialization)
-	reconHistory   sync.Map                    // rrID -> []LLMMessage (reconstructed context for LLM)
+	sessions        mcpinternal.SessionManager
+	runner          InvestigatorRunner
+	recon           mcpinternal.ContextReconstructor
+	autoMgr         AutonomousSessionManager
+	signalResolver  SignalContextResolver
+	rrChecker       RRExistenceChecker
+	metrics         ToolMetrics
+	rateLimiter     MessageRateLimiter
+	timeoutTracker  TimeoutTracker
+	auditStore      audit.AuditStore
+	logger          logr.Logger
+	notifyFn        func(sessionID, msg string) // optional: delivers timeout warnings to client
+	sessionMu       sync.Map                    // rrID -> *sync.Mutex (per-session serialization)
+	reconHistory    sync.Map                    // rrID -> []LLMMessage (reconstructed context for LLM)
 }
 
 // InvestigateOption configures optional dependencies for InvestigateTool.
@@ -157,6 +192,16 @@ func WithNotifyFunc(fn func(sessionID, msg string)) InvestigateOption {
 	}
 }
 
+// WithSignalContextResolver sets the resolver for obtaining SignalContext and
+// EnrichmentData for Phase 3 workflow discovery.
+func WithSignalContextResolver(resolver SignalContextResolver) InvestigateOption {
+	return func(t *InvestigateTool) {
+		if resolver != nil {
+			t.signalResolver = resolver
+		}
+	}
+}
+
 // WithAuditStore enables audit event emission for interactive session lifecycle
 // events (BR-INTERACTIVE-003, DD-INTERACTIVE-002).
 func WithAuditStore(store audit.AuditStore, logger logr.Logger) InvestigateOption {
@@ -193,6 +238,12 @@ func (t *InvestigateTool) getSessionMutex(rrID string) *sync.Mutex {
 	return val.(*sync.Mutex)
 }
 
+// GetSessionMutex implements SessionMutexProvider, exposing the per-rrID mutex
+// for use by SelectWorkflowTool and CompleteNoActionTool.
+func (t *InvestigateTool) GetSessionMutex(rrID string) *sync.Mutex {
+	return t.getSessionMutex(rrID)
+}
+
 // Handle dispatches the input to the correct action handler.
 func (t *InvestigateTool) Handle(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
 	if err := ValidateInput(input); err != nil {
@@ -226,6 +277,8 @@ func (t *InvestigateTool) dispatch(ctx context.Context, input InvestigateInput, 
 		return t.handleStatus(input)
 	case ActionReconnect:
 		return t.handleReconnect(input, user)
+	case ActionDiscoverWorkflows:
+		return t.handleDiscoverWorkflows(ctx, input, user)
 	default:
 		return InvestigateOutput{}, ErrInvalidAction
 	}
@@ -408,6 +461,13 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 	// K8s call audit events to this interactive session.
 	ctx = transport.WithAuditSessionID(ctx, sess.SessionID)
 
+	// Clear DiscoveryResult before the LLM call: any message after
+	// discover_workflows invalidates stale recommendations, forcing re-discovery
+	// before select_workflow can be called.
+	if sess.DiscoveryResult != nil {
+		sess.DiscoveryResult = nil
+	}
+
 	// PROD-02: Prepend reconstructed context turns so the LLM has full history.
 	messages := t.buildMessagesWithContext(input.RRID, input.Message)
 
@@ -532,6 +592,123 @@ func (t *InvestigateTool) handleReconnect(input InvestigateInput, user mcpintern
 		SessionID: sess.SessionID,
 		Status:    "reconnected",
 	}, nil
+}
+
+func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
+	mu := t.getSessionMutex(input.RRID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !t.sessions.IsDriverActive(input.RRID) {
+		return InvestigateOutput{}, ErrCodeNotDriving
+	}
+
+	sess, err := t.sessions.GetDriver(input.RRID)
+	if err != nil {
+		if errors.Is(err, mcpinternal.ErrSessionExpired) {
+			return InvestigateOutput{}, ErrCodeSessionExpired
+		}
+		return InvestigateOutput{}, ErrCodeNotDriving
+	}
+	if sess == nil {
+		return InvestigateOutput{}, ErrCodeNotDriving
+	}
+
+	if sess.ActingUser.Username != user.Username {
+		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", sess.ActingUser.Username)
+	}
+
+	// Reset inactivity timer before the (potentially long) LLM calls.
+	t.sessions.TouchActivity(input.RRID)
+	if t.timeoutTracker != nil {
+		t.timeoutTracker.ResetInactivity(sess.SessionID)
+	}
+
+	// Step 1: RCA extraction — prompt the LLM to submit structured RCA from
+	// the interactive conversation history.
+	messages := t.buildMessagesWithContext(input.RRID, "")
+	if len(messages) > 0 && messages[len(messages)-1].Content == "" {
+		messages = messages[:len(messages)-1]
+	}
+
+	rcaResult, err := t.runner.RunRCAExtraction(ctx, messages, input.RRID)
+	if err != nil {
+		return InvestigateOutput{}, fmt.Errorf("rca extraction failed: %w", err)
+	}
+
+	// Step 2: Resolve signal context for Phase 3.
+	var signal katypes.SignalContext
+	var enrichData *prompt.EnrichmentData
+	if t.signalResolver != nil {
+		resolved, resolveErr := t.signalResolver.ResolveSignalContext(ctx, input.RRID)
+		if resolveErr == nil && resolved != nil {
+			signal = *resolved
+		}
+		enrichResolved, enrichErr := t.signalResolver.ResolveEnrichmentData(ctx, input.RRID)
+		if enrichErr == nil {
+			enrichData = enrichResolved
+		}
+	}
+
+	// Step 3: Run Phase 3 workflow discovery using the structured RCA.
+	workflowResult, err := t.runner.RunWorkflowDiscovery(ctx, signal, rcaResult, enrichData, input.RRID)
+	if err != nil {
+		return InvestigateOutput{}, fmt.Errorf("workflow discovery failed: %w", err)
+	}
+
+	// Step 4: Store results on the interactive session.
+	sess.RCAResult = rcaResult
+	sess.DiscoveryResult = extractDiscoveryResult(workflowResult)
+
+	// Reset inactivity timer after the LLM calls complete.
+	t.sessions.TouchActivity(input.RRID)
+	if t.timeoutTracker != nil {
+		t.timeoutTracker.ResetInactivity(sess.SessionID)
+	}
+
+	// Build the JSON response for the user.
+	discoveryJSON, err := json.Marshal(sess.DiscoveryResult)
+	if err != nil {
+		return InvestigateOutput{}, fmt.Errorf("marshal discovery result: %w", err)
+	}
+
+	return InvestigateOutput{
+		SessionID: sess.SessionID,
+		Status:    "workflows_discovered",
+		Response:  string(discoveryJSON),
+	}, nil
+}
+
+// extractDiscoveryResult builds a WorkflowDiscoveryResult from the Phase 3
+// InvestigationResult, separating the selected workflow from alternatives.
+func extractDiscoveryResult(result *katypes.InvestigationResult) *mcpinternal.WorkflowDiscoveryResult {
+	if result == nil {
+		return &mcpinternal.WorkflowDiscoveryResult{}
+	}
+
+	dr := &mcpinternal.WorkflowDiscoveryResult{
+		FullResult: result,
+	}
+
+	if result.WorkflowID != "" {
+		dr.Recommended = &mcpinternal.DiscoveredWorkflow{
+			WorkflowID:      result.WorkflowID,
+			ExecutionBundle: result.ExecutionBundle,
+			Confidence:      result.Confidence,
+			Rationale:       result.WorkflowRationale,
+		}
+	}
+
+	for _, alt := range result.AlternativeWorkflows {
+		dr.Alternatives = append(dr.Alternatives, mcpinternal.DiscoveredWorkflow{
+			WorkflowID:      alt.WorkflowID,
+			ExecutionBundle: alt.ExecutionBundle,
+			Confidence:      alt.Confidence,
+			Rationale:       alt.Rationale,
+		})
+	}
+
+	return dr
 }
 
 func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {

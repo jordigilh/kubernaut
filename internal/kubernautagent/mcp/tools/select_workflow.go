@@ -24,6 +24,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/transport"
 )
 
@@ -140,8 +141,30 @@ func WithPreSelectionHook(hook PreSelectionHook) SelectWorkflowOption {
 type SelectWorkflowTool struct {
 	catalog           WorkflowCatalog
 	sessions          mcpinternal.SessionManager
+	httpCompleter     HTTPSessionCompleter
+	mutexProvider     SessionMutexProvider
 	preSelectionHooks []PreSelectionHook
 	logger            logr.Logger
+}
+
+// WithHTTPSessionCompleter enables session completion (auto-complete) for the
+// select_workflow tool. When set, selecting a workflow writes the final result
+// to the HTTP session store and releases the MCP lease.
+func WithHTTPSessionCompleter(completer HTTPSessionCompleter) SelectWorkflowOption {
+	return func(t *SelectWorkflowTool) {
+		if completer != nil {
+			t.httpCompleter = completer
+		}
+	}
+}
+
+// WithMutexProvider enables per-rrID mutex sharing for concurrency safety.
+func WithMutexProvider(provider SessionMutexProvider) SelectWorkflowOption {
+	return func(t *SelectWorkflowTool) {
+		if provider != nil {
+			t.mutexProvider = provider
+		}
+	}
 }
 
 // WithLogger sets the logger for the tool. Hooks use this logger to emit
@@ -163,6 +186,11 @@ func NewSelectWorkflowTool(catalog WorkflowCatalog, sessions mcpinternal.Session
 
 // Handle executes the workflow selection after validating input and session.
 //
+// v1.5: requires a prior discover_workflows call (strict gating). The workflow_id
+// must be one of the IDs from the discovery result. After selection, the tool
+// auto-completes the session by writing the final InvestigationResult to the HTTP
+// session store and releasing the MCP lease.
+//
 // The pre-workflow-selection pipeline runs all registered hooks in order before
 // catalog lookup. In v1.5, enrichment is the only hook. Future releases add
 // Goose recipe prompt injection as subsequent hooks — see PROPOSAL-EXT-003 §3.3
@@ -170,6 +198,12 @@ func NewSelectWorkflowTool(catalog WorkflowCatalog, sessions mcpinternal.Session
 func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInput, user mcpinternal.UserInfo) (SelectWorkflowOutput, error) {
 	if err := validateSelectWorkflowInput(input); err != nil {
 		return SelectWorkflowOutput{}, err
+	}
+
+	if t.mutexProvider != nil {
+		mu := t.mutexProvider.GetSessionMutex(input.RRID)
+		mu.Lock()
+		defer mu.Unlock()
 	}
 
 	if !t.sessions.IsDriverActive(input.RRID) {
@@ -185,6 +219,16 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 		return SelectWorkflowOutput{}, fmt.Errorf("caller is not the active driver for this session")
 	}
 
+	// v1.5 strict gating: require prior discover_workflows call.
+	if driver.DiscoveryResult == nil {
+		return SelectWorkflowOutput{}, fmt.Errorf("discover_workflows must be called before select_workflow")
+	}
+
+	// v1.5 strict validation: workflow_id must be from the discovery results.
+	if !isWorkflowInDiscoveryResult(input.WorkflowID, driver.DiscoveryResult) {
+		return SelectWorkflowOutput{}, fmt.Errorf("workflow_id %q not found in discovery results; call discover_workflows to refresh", input.WorkflowID)
+	}
+
 	pctx := &PreSelectionContext{}
 	for _, hook := range t.preSelectionHooks {
 		if err := hook(ctx, input, user, pctx); err != nil {
@@ -197,6 +241,25 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 		return SelectWorkflowOutput{}, fmt.Errorf("workflow catalog lookup failed: %w", err)
 	}
 
+	// Auto-complete: build final InvestigationResult from RCA + selected workflow,
+	// write to HTTP session store, and release the MCP lease.
+	if t.httpCompleter != nil && driver.RCAResult != nil {
+		finalResult := buildFinalResult(driver.RCAResult, workflow)
+		httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(input.RRID)
+		if found {
+			if completeErr := t.httpCompleter.CompleteUserDriving(httpSessionID, finalResult); completeErr != nil {
+				t.logger.Error(completeErr, "failed to complete HTTP session",
+					"rr_id", input.RRID, "http_session_id", httpSessionID)
+			}
+		}
+
+		if releaseErr := t.sessions.Release(driver.SessionID, "workflow_selected"); releaseErr != nil {
+			if !errors.Is(releaseErr, mcpinternal.ErrSessionNotFound) {
+				t.logger.Error(releaseErr, "failed to release MCP lease", "session_id", driver.SessionID)
+			}
+		}
+	}
+
 	return SelectWorkflowOutput{
 		Status:     "workflow_selected",
 		Workflow:   workflow,
@@ -204,6 +267,35 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 		Confidence: 1.0,
 		Rationale:  "User-selected via interactive mode",
 	}, nil
+}
+
+// isWorkflowInDiscoveryResult checks if the given workflow_id is in the
+// discovery result (recommended or alternatives).
+func isWorkflowInDiscoveryResult(workflowID string, dr *mcpinternal.WorkflowDiscoveryResult) bool {
+	if dr.Recommended != nil && dr.Recommended.WorkflowID == workflowID {
+		return true
+	}
+	for _, alt := range dr.Alternatives {
+		if alt.WorkflowID == workflowID {
+			return true
+		}
+	}
+	return false
+}
+
+// buildFinalResult constructs the final InvestigationResult by merging the RCA
+// with the selected workflow details from the catalog.
+func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflow) *katypes.InvestigationResult {
+	result := *rca
+	if workflow != nil {
+		result.WorkflowID = workflow.WorkflowID
+		result.ExecutionEngine = workflow.ExecutionEngine
+		result.ExecutionBundle = workflow.ExecutionBundle
+		result.ServiceAccountName = workflow.ServiceAccountName
+		result.WorkflowVersion = workflow.Version
+		result.WorkflowRationale = "User-selected via interactive mode"
+	}
+	return &result
 }
 
 func validateSelectWorkflowInput(input SelectWorkflowInput) error {

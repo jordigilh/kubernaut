@@ -452,6 +452,45 @@ func (m *Manager) GetSignalForRemediation(rrID string) (*katypes.SignalContext, 
 	return &signal, nil
 }
 
+// CompleteUserDriving transitions a user-driven session to completed with the
+// given result. This bridges the MCP tool completion path to the HTTP session
+// store so AA's poll mechanism picks up the result.
+func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationResult) error {
+	if err := m.store.CompleteUserDriving(id, result); err != nil {
+		return err
+	}
+	m.store.mu.RLock()
+	sess := m.store.sessions[id]
+	var correlationID string
+	if sess != nil && sess.Metadata != nil {
+		correlationID = sess.Metadata["remediation_id"]
+	}
+	m.store.mu.RUnlock()
+
+	m.emitSessionEvent(context.Background(),
+		audit.EventTypeSessionCompleted, audit.ActionSessionCompleted,
+		audit.OutcomeSuccess, id, correlationID, nil,
+		"completion_mode", "user_driving")
+	m.logger.Info("User-driven session completed",
+		"session_id", id, "has_workflow", result != nil && result.WorkflowID != "")
+	return nil
+}
+
+// FindUserDrivingByRemediationID scans user-driving sessions for one whose
+// metadata "remediation_id" matches the given rrID. Returns the session ID and
+// true if found. Used by select_workflow and complete_no_action to locate the
+// HTTP session for result propagation.
+func (m *Manager) FindUserDrivingByRemediationID(rrID string) (string, bool) {
+	m.store.mu.RLock()
+	defer m.store.mu.RUnlock()
+	for id, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] == rrID && sess.Status == StatusUserDriving {
+			return id, true
+		}
+	}
+	return "", false
+}
+
 // storePartialResult attaches a result to a session that is already in a
 // terminal state (e.g. StatusCancelled). Delegates to Store.SetResult which
 // does not change the session status — only the Result field. This preserves

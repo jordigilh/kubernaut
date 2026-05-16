@@ -19,6 +19,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -216,6 +217,25 @@ func (s *Store) SetResult(id string, result *katypes.InvestigationResult) {
 	if sess, ok := s.sessions[id]; ok {
 		sess.Result = result
 	}
+}
+
+// CompleteUserDriving transitions a session from StatusUserDriving to
+// StatusCompleted with the given InvestigationResult. This is the only path
+// that allows a user-driven session to reach completion (Update blocks this
+// transition). Used by select_workflow and complete_no_action MCP tools.
+func (s *Store) CompleteUserDriving(id string, result *katypes.InvestigationResult) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[id]
+	if !ok {
+		return ErrSessionNotFound
+	}
+	if sess.Status != StatusUserDriving {
+		return fmt.Errorf("cannot complete: status is %s, expected %s", sess.Status, StatusUserDriving)
+	}
+	sess.Status = StatusCompleted
+	sess.Result = result
+	return nil
 }
 
 // StartCleanupLoop runs Cleanup periodically until the context is cancelled.

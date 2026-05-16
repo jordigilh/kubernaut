@@ -72,8 +72,9 @@ type ToolRegistration func(server *mcpsdk.Server, userFromCtx func(context.Conte
 // ToolDeps holds optional tool registration functions.
 // nil fields are skipped during registration.
 type ToolDeps struct {
-	Investigate    ToolRegistration
-	SelectWorkflow ToolRegistration
+	Investigate       ToolRegistration
+	SelectWorkflow    ToolRegistration
+	CompleteNoAction  ToolRegistration
 }
 
 // MCPDeps holds the dependencies needed to bootstrap the MCP server.
@@ -108,6 +109,10 @@ func (s *MCPServer) registerTools(deps ToolDeps) {
 	}
 	if deps.SelectWorkflow != nil {
 		deps.SelectWorkflow(s.server, userFn)
+		s.toolCount.Add(1)
+	}
+	if deps.CompleteNoAction != nil {
+		deps.CompleteNoAction(s.server, userFn)
 		s.toolCount.Add(1)
 	}
 }
