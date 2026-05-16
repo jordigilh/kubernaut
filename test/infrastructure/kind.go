@@ -97,7 +97,7 @@ func ApplyKustomize(ctx context.Context, kubeconfigPath, kustomizePath string, w
 func GenerateCerts(certDir string, writer io.Writer) error {
 	projectRoot := getAFProjectRoot()
 	script := filepath.Join(projectRoot, "deploy/kustomize/overlays/e2e/generate-certs.sh")
-	cmd := exec.Command("bash", script, certDir)
+	cmd := exec.Command("bash", script, certDir) //nolint:gosec // G204: test infra, script path from project root
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
@@ -131,7 +131,7 @@ func CreateTLSSecrets(ctx context.Context, kubeconfigPath, namespace, certDir st
 		{"apifrontend-tls", "tls.crt", "tls.key"},
 	}
 	for _, s := range secrets {
-		dryRunCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		dryRunCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infra
 			"create", "secret", "tls", s.name,
 			"--cert="+filepath.Join(certDir, s.certFile),
 			"--key="+filepath.Join(certDir, s.keyFile),
@@ -149,7 +149,7 @@ func CreateTLSSecrets(ctx context.Context, kubeconfigPath, namespace, certDir st
 		}
 	}
 
-	dryRunCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+	dryRunCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infra
 		"create", "secret", "generic", "apifrontend-ca",
 		"--from-file=ca.crt="+filepath.Join(certDir, "ca.crt"),
 		"-n", namespace, "--dry-run=client", "-o", "yaml")
@@ -166,7 +166,7 @@ func CreateTLSSecrets(ctx context.Context, kubeconfigPath, namespace, certDir st
 
 // WaitForDeploymentRollout waits for a deployment to become ready.
 func WaitForDeploymentRollout(ctx context.Context, kubeconfigPath, namespace, name string, timeout time.Duration, writer io.Writer) error {
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infra
 		"rollout", "status", "deployment/"+name, "-n", namespace,
 		fmt.Sprintf("--timeout=%ds", int(timeout.Seconds())))
 	cmd.Stdout = writer

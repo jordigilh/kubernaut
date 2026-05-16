@@ -34,3 +34,4 @@ sbom.cdx.json
 # Local environment / secrets
 *.env.local
 test-llm-*.env
+scripts/coverage/__pycache__/

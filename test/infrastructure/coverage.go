@@ -20,7 +20,7 @@ import (
 // Returns the path to the merged coverage profile, or an error.
 func CollectE2EBinaryCoverage(clusterName string, writer io.Writer) (string, error) {
 	localDir := filepath.Join(os.TempDir(), "af-e2e-coverage")
-	if err := os.MkdirAll(localDir, 0o755); err != nil {
+	if err := os.MkdirAll(localDir, 0o750); err != nil { //nolint:gosec // G301: test dir, not production
 		return "", fmt.Errorf("create local coverage dir: %w", err)
 	}
 
@@ -30,7 +30,7 @@ func CollectE2EBinaryCoverage(clusterName string, writer io.Writer) (string, err
 	nodeName := clusterName + "-control-plane"
 
 	// Copy coverage data from the Kind node
-	cpCmd := exec.Command("podman", "cp", nodeName+":/coverdata/.", localDir)
+	cpCmd := exec.Command("podman", "cp", nodeName+":/coverdata/.", localDir) //nolint:gosec // G204: test infra, args from test constants
 	cpCmd.Stdout = writer
 	cpCmd.Stderr = writer
 	if err := cpCmd.Run(); err != nil {
@@ -50,7 +50,7 @@ func CollectE2EBinaryCoverage(clusterName string, writer io.Writer) (string, err
 
 	// Merge into a text profile
 	profilePath := filepath.Join(os.TempDir(), "coverage_e2e_apifrontend_binary.out")
-	mergeCmd := exec.Command("go", "tool", "covdata", "textfmt", "-i="+localDir, "-o="+profilePath)
+	mergeCmd := exec.Command("go", "tool", "covdata", "textfmt", "-i="+localDir, "-o="+profilePath) //nolint:gosec // G204: test infra
 	mergeCmd.Stdout = writer
 	mergeCmd.Stderr = writer
 	if err := mergeCmd.Run(); err != nil {
@@ -60,7 +60,7 @@ func CollectE2EBinaryCoverage(clusterName string, writer io.Writer) (string, err
 	_, _ = fmt.Fprintf(writer, "Coverage profile written to %s\n", profilePath)
 
 	// Print summary
-	funcCmd := exec.Command("go", "tool", "cover", "-func="+profilePath)
+	funcCmd := exec.Command("go", "tool", "cover", "-func="+profilePath) //nolint:gosec // G204: test infra
 	funcCmd.Stdout = writer
 	funcCmd.Stderr = writer
 	_ = funcCmd.Run()

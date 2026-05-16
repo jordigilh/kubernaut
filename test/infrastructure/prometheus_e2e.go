@@ -44,7 +44,7 @@ func SeedTriageAlertRules(ctx context.Context, namespace, kubeconfigPath string,
 
 	patchJSON := fmt.Sprintf(`{"data":{"af-severity-triage.yml":%q}}`, rulesYAML)
 
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infra, args from test constants
 		"patch", "configmap", "prometheus-rules",
 		"-n", namespace,
 		"--type=merge",
