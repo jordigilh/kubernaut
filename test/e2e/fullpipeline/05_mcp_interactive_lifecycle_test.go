@@ -1,0 +1,277 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package fullpipeline
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// E2E-FP-MCP: Interactive MCP lifecycle through the full remediation pipeline.
+//
+// Validates v1.5 MCP functionality end-to-end:
+//   - FP-MCP-001: OOMKill -> autonomous -> takeover -> message -> complete
+//   - FP-MCP-003: Status lifecycle (autonomous -> not_found) via MCP
+//   - FP-MCP-006: BR-007 CRD observability (InteractiveSession + CompletedAt)
+//
+// Uses a single OOMKill trigger shared across ordered specs for efficiency.
+// BR: BR-INTERACTIVE-001, BR-INTERACTIVE-004, BR-INTERACTIVE-007
+var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e", "fullpipeline", "interactive", "mcp"), Ordered, func() {
+
+	var (
+		testNamespace       string
+		mcpSession          *mcpsdk.ClientSession
+		interactiveSAToken  string
+		tlsTransport        http.RoundTripper
+		remediationRequest  *remediationv1.RemediationRequest
+		aaName              string
+	)
+
+	BeforeAll(func() {
+		Expect(ctx).NotTo(BeNil(), "suite ctx must be initialized")
+		Expect(kubeconfigPath).NotTo(BeEmpty(), "kubeconfigPath must be set")
+
+		By("Creating interactive SA with KA client + Lease RBAC")
+		var err error
+		interactiveSAToken, err = infrastructure.CreateInteractiveE2ESA(
+			ctx, namespace, "fp-mcp-interactive-sa", kubeconfigPath, GinkgoWriter,
+		)
+		Expect(err).NotTo(HaveOccurred(), "interactive SA creation")
+
+		By("Setting up TLS transport for MCP")
+		tlsTransport, err = infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(err).NotTo(HaveOccurred(), "TLS transport for MCP")
+
+		By("Creating test namespace for OOMKill trigger")
+		testNamespace = fmt.Sprintf("fp-mcp-lifecycle-%d", time.Now().Unix())
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   testNamespace,
+				Labels: map[string]string{"kubernaut.ai/managed": "true"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+		By("Deploying memory-eater pod (triggers OOMKill -> pipeline)")
+		Expect(infrastructure.DeployMemoryEater(ctx, testNamespace, kubeconfigPath, GinkgoWriter)).To(Succeed())
+
+		By("Waiting for OOMKill event")
+		Eventually(func() bool {
+			pods := &corev1.PodList{}
+			if err := apiReader.List(ctx, pods, client.InNamespace(testNamespace),
+				client.MatchingLabels{"app": "memory-eater"}); err != nil {
+				return false
+			}
+			for _, pod := range pods.Items {
+				for _, cs := range pod.Status.ContainerStatuses {
+					if (cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.Reason == "OOMKilled") ||
+						(cs.State.Terminated != nil && cs.State.Terminated.Reason == "OOMKilled") ||
+						(cs.RestartCount > 0 && cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff") {
+						return true
+					}
+				}
+			}
+			return false
+		}, 2*time.Minute, 2*time.Second).Should(BeTrue(), "memory-eater should OOMKill")
+
+		By("Waiting for RemediationRequest created by Gateway")
+		Eventually(func() bool {
+			rrList := &remediationv1.RemediationRequestList{}
+			if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
+				return false
+			}
+			for i := range rrList.Items {
+				rr := &rrList.Items[i]
+				if rr.Spec.TargetResource.Namespace == testNamespace {
+					remediationRequest = rr
+					GinkgoWriter.Printf("  Found RR: %s\n", rr.Name)
+					return true
+				}
+			}
+			return false
+		}, timeout, interval).Should(BeTrue(), "Gateway should create RR for OOMKill")
+
+		By("Waiting for AIAnalysis to reach Investigating phase (autonomous investigation running)")
+		Eventually(func() string {
+			aaList := &aianalysisv1.AIAnalysisList{}
+			if err := apiReader.List(ctx, aaList, client.InNamespace(namespace)); err != nil {
+				return ""
+			}
+			for _, aa := range aaList.Items {
+				if aa.Spec.RemediationRequestRef.Name == remediationRequest.Name {
+					aaName = aa.Name
+					GinkgoWriter.Printf("  AA %s phase: %s\n", aa.Name, aa.Status.Phase)
+					return aa.Status.Phase
+				}
+			}
+			return ""
+		}, timeout, interval).Should(SatisfyAny(
+			Equal("Investigating"),
+			Equal("Analyzing"),
+			Equal("Completed"),
+		), "AIAnalysis should reach Investigating or later")
+
+		By("Connecting MCP SDK client to KA")
+		connectCtx, connectCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer connectCancel()
+		mcpSession, err = infrastructure.ConnectMCPClient(connectCtx, infrastructure.MCPClientConfig{
+			Endpoint:     infrastructure.MCPEndpointForKAE2E(),
+			SAToken:      interactiveSAToken,
+			TLSTransport: tlsTransport,
+		})
+		Expect(err).NotTo(HaveOccurred(), "MCP SDK connect to KA")
+	})
+
+	AfterAll(func() {
+		if mcpSession != nil {
+			_ = mcpSession.Close()
+		}
+		if testNamespace != "" {
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
+			_ = k8sClient.Delete(ctx, ns)
+		}
+	})
+
+	It("FP-MCP-003a: status returns autonomous or not_found for pipeline-triggered RR", func() {
+		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer callCancel()
+
+		result, err := infrastructure.CallInvestigate(callCtx, mcpSession, map[string]any{
+			"rr_id":  remediationRequest.Name,
+			"action": "status",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse(), "status should not return error")
+
+		text := infrastructure.ExtractToolResultText(result)
+		GinkgoWriter.Printf("  Status response: %s\n", text)
+
+		var status map[string]interface{}
+		Expect(json.Unmarshal([]byte(text), &status)).To(Succeed())
+		Expect(status["mode"]).To(SatisfyAny(
+			Equal("autonomous"),
+			Equal("not_found"),
+		), "RR should be autonomous (or already completed)")
+	})
+
+	It("FP-MCP-001: takeover pipeline-triggered RR via MCP", func() {
+		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer callCancel()
+
+		result, err := infrastructure.CallInvestigate(callCtx, mcpSession, map[string]any{
+			"rr_id":  remediationRequest.Name,
+			"action": "takeover",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse(), "takeover should succeed")
+
+		text := infrastructure.ExtractToolResultText(result)
+		GinkgoWriter.Printf("  Takeover response: %s\n", text)
+		Expect(text).To(ContainSubstring("takeover_started"))
+	})
+
+	It("FP-MCP-006a: CRD InteractiveSession populated after takeover", func() {
+		aa := &aianalysisv1.AIAnalysis{}
+		Eventually(func(g Gomega) {
+			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
+			g.Expect(aa.Status.InteractiveSession).NotTo(BeNil(),
+				"BR-007: InteractiveSession must be populated after takeover")
+		}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+		GinkgoWriter.Printf("  InteractiveSession: driver=%s, sessionID=%s\n",
+			aa.Status.InteractiveSession.ActingUser, aa.Status.InteractiveSession.SessionID)
+		Expect(aa.Status.InteractiveSession.ActingUser).NotTo(BeEmpty())
+		Expect(aa.Status.InteractiveSession.SessionID).NotTo(BeEmpty())
+	})
+
+	It("FP-MCP-001: send message via MCP after takeover", func() {
+		callCtx, callCancel := context.WithTimeout(ctx, 60*time.Second)
+		defer callCancel()
+
+		result, err := infrastructure.CallInvestigate(callCtx, mcpSession, map[string]any{
+			"rr_id":   remediationRequest.Name,
+			"action":  "message",
+			"message": "What caused the OOMKill? Show me the pod resource limits.",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse(), "message should succeed")
+
+		text := infrastructure.ExtractToolResultText(result)
+		GinkgoWriter.Printf("  Message response (first 200 chars): %.200s\n", text)
+		Expect(text).NotTo(BeEmpty(), "LLM response must not be empty")
+	})
+
+	It("FP-MCP-001: complete interactive session via MCP", func() {
+		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer callCancel()
+
+		result, err := infrastructure.CallInvestigate(callCtx, mcpSession, map[string]any{
+			"rr_id":  remediationRequest.Name,
+			"action": "complete",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse(), "complete should succeed")
+
+		text := infrastructure.ExtractToolResultText(result)
+		Expect(text).To(ContainSubstring("completed"))
+	})
+
+	It("FP-MCP-006b: CRD CompletedAt populated after complete", func() {
+		aa := &aianalysisv1.AIAnalysis{}
+		Eventually(func(g Gomega) {
+			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
+			g.Expect(aa.Status.InteractiveSession).NotTo(BeNil())
+			g.Expect(aa.Status.InteractiveSession.CompletedAt).NotTo(BeNil(),
+				"BR-007: CompletedAt must be set after interactive complete")
+		}, 30*time.Second, 1*time.Second).Should(Succeed())
+
+		GinkgoWriter.Printf("  CompletedAt: %s\n", aa.Status.InteractiveSession.CompletedAt.Time)
+	})
+
+	It("FP-MCP-003b: status returns not_found after interactive session completed", func() {
+		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer callCancel()
+
+		result, err := infrastructure.CallInvestigate(callCtx, mcpSession, map[string]any{
+			"rr_id":  remediationRequest.Name,
+			"action": "status",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse())
+
+		text := infrastructure.ExtractToolResultText(result)
+		var status map[string]interface{}
+		Expect(json.Unmarshal([]byte(text), &status)).To(Succeed())
+		Expect(status["mode"]).To(Equal("not_found"),
+			"session should be not_found after complete (lease released)")
+	})
+})
