@@ -180,6 +180,7 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 
 			sess, err := connectMCP(stack.Server, "alice@example.com")
 			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = sess.Close() }()
 
 			result, err := callInvestigate(sess, map[string]any{
 				"rr_id":  "rr-cov-08",
@@ -213,6 +214,7 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 
 			sess, err := connectMCP(stack.Server, "alice@example.com")
 			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = sess.Close() }()
 
 			result, err := callInvestigate(sess, map[string]any{
 				"rr_id":  "rr-cov-09",
@@ -248,6 +250,7 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 
 			sess, err := connectMCP(stack.Server, "alice@example.com")
 			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = sess.Close() }()
 
 			result, err := callInvestigate(sess, map[string]any{
 				"rr_id":  "rr-cov-10",

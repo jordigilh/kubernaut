@@ -41,6 +41,7 @@ var _ = Describe("Timeout Wiring — GAP-8 / BR-INTERACTIVE-003", Label("integra
 
 			sess, err := connectMCP(stack.Server, "alice@example.com")
 			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = sess.Close() }()
 
 			By("starting a session")
 			result, err := callInvestigate(sess, map[string]any{
@@ -88,6 +89,7 @@ var _ = Describe("Timeout Wiring — GAP-8 / BR-INTERACTIVE-003", Label("integra
 			var notificationReceived bool
 			sess, err := connectMCP(stack.Server, "alice@example.com")
 			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = sess.Close() }()
 
 			result, err := callInvestigate(sess, map[string]any{
 				"rr_id":  "rr-timeout-002",
@@ -132,6 +134,7 @@ var _ = Describe("Timeout Wiring — GAP-8 / BR-INTERACTIVE-003", Label("integra
 
 			sess, err := connectMCP(stack.Server, "alice@example.com")
 			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = sess.Close() }()
 
 			result, err := callInvestigate(sess, map[string]any{
 				"rr_id":  "rr-timeout-003",
