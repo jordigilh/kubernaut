@@ -1,95 +1,207 @@
-// Package infrastructure provides helpers for managing Kind clusters
-// and verifying deployment readiness in E2E tests.
+// Package infrastructure provides AF-specific E2E helpers that build on
+// kubernaut's shared test/infrastructure package.
+// When the repos merge, this file becomes unnecessary — callers import
+// kubernaut's package directly.
 package infrastructure
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
+
+	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 const (
-	// DefaultClusterName is the Kind cluster name used for E2E testing.
 	DefaultClusterName = "apifrontend-e2e"
-	// DefaultKindConfig is the path to the Kind cluster configuration.
-	DefaultKindConfig = "deploy/kustomize/overlays/e2e/kind-config.yaml"
+	DefaultKindConfig  = "deploy/kustomize/overlays/e2e/kind-config.yaml"
+	DefaultNamespace   = "kubernaut-system"
 )
 
-// KindCluster manages the lifecycle of a Kind cluster for E2E tests.
-type KindCluster struct {
-	Name       string
-	ConfigPath string
-	Kubeconfig string
+// CreateAFKindCluster creates the AF E2E Kind cluster using kubernaut's
+// canonical CreateKindClusterWithConfig.
+func CreateAFKindCluster(kubeconfigPath string, writer io.Writer) error {
+	opts := kinfra.KindClusterOptions{
+		ClusterName:               DefaultClusterName,
+		KubeconfigPath:            kubeconfigPath,
+		ConfigPath:                DefaultKindConfig,
+		WaitTimeout:               "5m",
+		DeleteExisting:            true,
+		CleanupOrphanedContainers: true,
+		UsePodman:                 true,
+		ProjectRootAsWorkingDir:   true,
+	}
+	return kinfra.CreateKindClusterWithConfig(opts, writer)
 }
 
-// NewKindCluster creates a KindCluster with the given name and config path.
-func NewKindCluster(name, configPath string) *KindCluster {
-	if name == "" {
-		name = DefaultClusterName
+// BuildAFImage builds the apifrontend container image using kubernaut's
+// canonical BuildImageForKind.
+func BuildAFImage(writer io.Writer) (string, error) {
+	cfg := kinfra.E2EImageConfig{
+		ServiceName:      "apifrontend",
+		ImageName:        "kubernaut-apifrontend",
+		DockerfilePath:   "Dockerfile",
+		BuildContextPath: getAFProjectRoot(),
 	}
-	if configPath == "" {
-		configPath = DefaultKindConfig
-	}
-	return &KindCluster{
-		Name:       name,
-		ConfigPath: configPath,
-	}
+	return kinfra.BuildImageForKind(cfg, writer)
 }
 
-// Create provisions the Kind cluster and waits for the control plane.
-func (k *KindCluster) Create(ctx context.Context) error {
-	args := []string{"create", "cluster", "--name", k.Name, "--config", k.ConfigPath, "--wait", "60s"}
-	cmd := exec.CommandContext(ctx, "kind", args...) // #nosec G204 -- test infrastructure, args are controlled
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("kind create cluster: %w", err)
+// BuildMockLLMImage builds the mock-LLM image from the kubernaut repo using
+// kubernaut's canonical BuildImageForKind.
+func BuildMockLLMImage(writer io.Writer) (string, error) {
+	kubernautRepo := kubernautRepoPath()
+	if _, err := os.Stat(filepath.Join(kubernautRepo, "go.mod")); err != nil {
+		return "", fmt.Errorf("kubernaut repo not found at %s — cannot build mock-LLM locally", kubernautRepo)
 	}
-	k.Kubeconfig = fmt.Sprintf("kind-%s", k.Name)
-	return nil
+	cfg := kinfra.E2EImageConfig{
+		ServiceName:      "mock-llm",
+		ImageName:        "mock-llm",
+		DockerfilePath:   "test/services/mock-llm/go.Dockerfile",
+		BuildContextPath: kubernautRepo,
+	}
+	return kinfra.BuildImageForKind(cfg, writer)
 }
 
-// Delete tears down the Kind cluster.
-func (k *KindCluster) Delete(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "kind", "delete", "cluster", "--name", k.Name) // #nosec G204 -- test infrastructure
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+// LoadImageToKind delegates to kubernaut's canonical implementation.
+func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Writer) error {
+	return kinfra.LoadImageToKind(imageName, serviceName, clusterName, writer)
+}
+
+// DeleteCluster tears down the AF E2E Kind cluster.
+func DeleteCluster(writer io.Writer) error {
+	cmd := exec.Command("kind", "delete", "cluster", "--name", DefaultClusterName)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
 	return cmd.Run()
 }
 
-// LoadImage loads a container image into the Kind cluster's node.
-func (k *KindCluster) LoadImage(ctx context.Context, image string) error {
-	cmd := exec.CommandContext(ctx, "kind", "load", "docker-image", image, "--name", k.Name) // #nosec G204 -- test infrastructure
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+// ApplyKustomize applies a kustomize overlay to the cluster.
+func ApplyKustomize(ctx context.Context, kubeconfigPath, kustomizePath string, writer io.Writer) error {
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"apply", "-k", kustomizePath)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("kind load docker-image %s: %w", image, err)
+		return fmt.Errorf("kubectl apply -k %s failed: %w", kustomizePath, err)
 	}
 	return nil
 }
 
-// KubeconfigContext returns the kubectl context name for this cluster.
-func (k *KindCluster) KubeconfigContext() string {
-	return fmt.Sprintf("kind-%s", k.Name)
+// GenerateCerts runs the AF cert generation script.
+func GenerateCerts(certDir string, writer io.Writer) error {
+	projectRoot := getAFProjectRoot()
+	script := filepath.Join(projectRoot, "deploy/kustomize/overlays/e2e/generate-certs.sh")
+	cmd := exec.Command("bash", script, certDir)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("generate-certs.sh failed: %w", err)
+	}
+	return nil
 }
 
-// WaitForReady polls the cluster until at least one node reports Ready.
-func (k *KindCluster) WaitForReady(ctx context.Context, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		cmd := exec.CommandContext(ctx, "kubectl", "--context", k.KubeconfigContext(),
-			"get", "nodes", "-o", "jsonpath={.items[0].status.conditions[?(@.type=='Ready')].status}") // #nosec G204 -- test infrastructure
-		out, err := cmd.Output()
-		if err == nil && string(out) == "True" {
-			return nil
+// CreateNamespace creates a namespace (idempotent via dry-run + apply).
+func CreateNamespace(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	dryRunCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"create", "namespace", namespace, "--dry-run=client", "-o", "yaml")
+	yamlData, err := dryRunCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to generate namespace YAML: %w", err)
+	}
+	applyCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	applyCmd.Stdin = strings.NewReader(string(yamlData))
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+	return applyCmd.Run()
+}
+
+// CreateTLSSecrets creates the TLS secrets required by AF from the cert directory.
+func CreateTLSSecrets(ctx context.Context, kubeconfigPath, namespace, certDir string, writer io.Writer) error {
+	secrets := []struct {
+		name     string
+		certFile string
+		keyFile  string
+	}{
+		{"apifrontend-tls", "tls.crt", "tls.key"},
+	}
+	for _, s := range secrets {
+		dryRunCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"create", "secret", "tls", s.name,
+			"--cert="+filepath.Join(certDir, s.certFile),
+			"--key="+filepath.Join(certDir, s.keyFile),
+			"-n", namespace, "--dry-run=client", "-o", "yaml")
+		yamlData, err := dryRunCmd.Output()
+		if err != nil {
+			return fmt.Errorf("failed to generate TLS secret %s: %w", s.name, err)
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(2 * time.Second):
+		applyCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+		applyCmd.Stdin = strings.NewReader(string(yamlData))
+		applyCmd.Stdout = writer
+		applyCmd.Stderr = writer
+		if err := applyCmd.Run(); err != nil {
+			return fmt.Errorf("failed to apply TLS secret %s: %w", s.name, err)
 		}
 	}
-	return fmt.Errorf("kind cluster %s not ready after %v", k.Name, timeout)
+
+	dryRunCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"create", "secret", "generic", "apifrontend-ca",
+		"--from-file=ca.crt="+filepath.Join(certDir, "ca.crt"),
+		"-n", namespace, "--dry-run=client", "-o", "yaml")
+	yamlData, err := dryRunCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to generate CA secret: %w", err)
+	}
+	applyCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	applyCmd.Stdin = strings.NewReader(string(yamlData))
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+	return applyCmd.Run()
+}
+
+// WaitForDeploymentRollout waits for a deployment to become ready.
+func WaitForDeploymentRollout(ctx context.Context, kubeconfigPath, namespace, name string, timeout time.Duration, writer io.Writer) error {
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"rollout", "status", "deployment/"+name, "-n", namespace,
+		fmt.Sprintf("--timeout=%ds", int(timeout.Seconds())))
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("deployment/%s not ready: %w", name, err)
+	}
+	return nil
+}
+
+func getAFProjectRoot() string {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if ok {
+		return filepath.Dir(filepath.Dir(filepath.Dir(currentFile)))
+	}
+	candidates := []string{".", "..", "../..", "../../.."}
+	for _, dir := range candidates {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			absPath, _ := filepath.Abs(dir)
+			return absPath
+		}
+	}
+	return "."
+}
+
+func kubernautRepoPath() string {
+	projectRoot := getAFProjectRoot()
+	candidate := filepath.Join(projectRoot, "..", "kubernaut")
+	if _, err := os.Stat(filepath.Join(candidate, "go.mod")); err == nil {
+		abs, _ := filepath.Abs(candidate)
+		return abs
+	}
+	gopath := os.Getenv("GOPATH")
+	if gopath == "" {
+		gopath = filepath.Join(os.Getenv("HOME"), "go")
+	}
+	return filepath.Join(gopath, "src/github.com/jordigilh/kubernaut")
 }
