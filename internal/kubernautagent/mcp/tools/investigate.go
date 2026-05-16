@@ -263,13 +263,7 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	}
 
 	if sess.Reconnected {
-		if t.timeoutTracker != nil {
-			t.timeoutTracker.ResetInactivity(sess.SessionID)
-		}
-		return InvestigateOutput{
-			SessionID: sess.SessionID,
-			Status:    "reconnected",
-		}, nil
+		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", user.Username)
 	}
 
 	if t.metrics != nil {

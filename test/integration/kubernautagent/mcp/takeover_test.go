@@ -325,8 +325,13 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 					"investigation hacking via tainted LLM context")
 
 			By("Verifying autonomous session was NOT restarted (no new session for same RR)")
+			// FindByRemediationID only returns StatusRunning sessions by design;
+			// after TransitionToUserDriving the status is StatusUserDriving, so it
+			// correctly won't be found. The session itself is confirmed present via
+			// GetSession above. Verify no NEW running session was started.
 			_, found := mgr.FindByRemediationID("rr-sec-takeover-001")
-			Expect(found).To(BeTrue(), "original autonomous session should still be findable")
+			Expect(found).To(BeFalse(),
+				"no StatusRunning session should exist — original is in user_driving, no new one was started")
 
 			GinkgoWriter.Println("SEC-TAKEOVER-001: Takeover abandonment validated — autonomous NOT resumed")
 		})
