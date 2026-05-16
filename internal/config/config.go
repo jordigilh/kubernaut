@@ -118,6 +118,16 @@ type AgentConfig struct {
 	DSBaseURL     string `yaml:"dsBaseURL"`
 	KATLSCaFile   string `yaml:"kaTlsCaFile,omitempty"`
 	DSTLSCaFile   string `yaml:"dsTlsCaFile,omitempty"`
+	// LLMEndpoint is the base URL of a Gemini-compatible LLM endpoint.
+	// When set, AF wires the A2A handler with a real ADK agent backed by this
+	// endpoint. When empty, POST /a2a/invoke returns 501.
+	LLMEndpoint string `yaml:"llmEndpoint,omitempty"`
+	// LLMModel is the model name passed in generateContent requests.
+	LLMModel string `yaml:"llmModel,omitempty"`
+	// LLMAPIKey is the API key for the LLM endpoint, populated from the
+	// LLM_API_KEY environment variable during ResolveDefaults. Never persisted
+	// in config files.
+	LLMAPIKey string `yaml:"-"`
 }
 
 // MCPConfig holds Model Context Protocol feature flags.
@@ -353,9 +363,14 @@ func validateDependencyConfig(prefix string, cfg *DependencyConfig) error {
 
 // ResolveDefaults fills in derived fields that depend on other config values.
 // For example, AgentCard.URL is derived from Server.Port if left empty.
+// LLMAPIKey is populated from the LLM_API_KEY environment variable (never
+// persisted in config files — secrets stay out of YAML).
 func (c *Config) ResolveDefaults() {
 	if c.AgentCard.URL == "" {
 		c.AgentCard.URL = fmt.Sprintf("https://localhost:%d", c.Server.Port)
+	}
+	if c.Agent.LLMAPIKey == "" {
+		c.Agent.LLMAPIKey = os.Getenv("LLM_API_KEY")
 	}
 }
 

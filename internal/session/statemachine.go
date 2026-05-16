@@ -6,6 +6,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	k8sretry "k8s.io/client-go/util/retry"
 
 	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
@@ -82,44 +83,48 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 	}
 
 	nn := types.NamespacedName{Name: crdName, Namespace: s.namespace}
-	var crd v1alpha1.InvestigationSession
-	if err := s.client.Get(ctx, nn, &crd); err != nil {
-		return fmt.Errorf("get session for phase update: %w", err)
-	}
+	reader := s.getReader()
 
-	from := crd.Status.Phase
-	if err := ValidateTransition(from, to); err != nil {
-		return fmt.Errorf("phase transition: %w", err)
-	}
+	var from v1alpha1.SessionPhase
+	err := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		var crd v1alpha1.InvestigationSession
+		if err := reader.Get(ctx, nn, &crd); err != nil {
+			return fmt.Errorf("get session for phase update: %w", err)
+		}
 
-	now := metav1.Now()
+		from = crd.Status.Phase
+		if err := ValidateTransition(from, to); err != nil {
+			return fmt.Errorf("phase transition: %w", err)
+		}
 
-	crd.Status.Phase = to
-	crd.Status.Message = message
-	crd.Labels[LabelPhase] = string(to)
+		now := metav1.Now()
+		crd.Status.Phase = to
+		crd.Status.Message = message
 
-	switch {
-	case IsTerminal(to):
-		crd.Status.CompletedAt = &now
-	case to == v1alpha1.SessionPhaseDisconnected:
-		crd.Status.DisconnectedAt = &now
-		crd.Status.ConnectionState = v1alpha1.ConnectionStateDisconnected
-	case from == v1alpha1.SessionPhaseDisconnected && to == v1alpha1.SessionPhaseActive:
-		crd.Status.ReconnectedAt = &now
-		crd.Status.ConnectionState = v1alpha1.ConnectionStateConnected
-	}
+		switch {
+		case IsTerminal(to):
+			crd.Status.CompletedAt = &now
+		case to == v1alpha1.SessionPhaseDisconnected:
+			crd.Status.DisconnectedAt = &now
+			crd.Status.ConnectionState = v1alpha1.ConnectionStateDisconnected
+		case from == v1alpha1.SessionPhaseDisconnected && to == v1alpha1.SessionPhaseActive:
+			crd.Status.ReconnectedAt = &now
+			crd.Status.ConnectionState = v1alpha1.ConnectionStateConnected
+		}
 
-	if err := s.client.Status().Update(ctx, &crd); err != nil {
-		return fmt.Errorf("update session status: %w", err)
-	}
+		if err := s.client.Status().Update(ctx, &crd); err != nil {
+			return err
+		}
 
-	// Re-read to get updated resourceVersion, then update labels
-	if err := s.client.Get(ctx, nn, &crd); err != nil {
-		return fmt.Errorf("re-read session for label update: %w", err)
-	}
-	crd.Labels[LabelPhase] = string(to)
-	if err := s.client.Update(ctx, &crd); err != nil {
-		return fmt.Errorf("update session labels: %w", err)
+		// Update phase label (requires separate Update due to status subresource split)
+		if err := reader.Get(ctx, nn, &crd); err != nil {
+			return fmt.Errorf("re-read session for label update: %w", err)
+		}
+		crd.Labels[LabelPhase] = string(to)
+		return s.client.Update(ctx, &crd)
+	})
+	if err != nil {
+		return err
 	}
 
 	s.logger.InfoContext(ctx, "session phase updated",

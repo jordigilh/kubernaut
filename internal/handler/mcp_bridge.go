@@ -97,16 +97,6 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandleGetRemediation(ctx, client, args)
 		})
 
-	registerTool(srv, cfg, sem, "kubernaut_submit_signal", "Submit a signal to an active remediation",
-		func(ctx context.Context, args tools.SubmitSignalArgs) (any, error) {
-			client, err := cfg.DynFactory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			username := usernameFromCtx(ctx)
-			return tools.HandleSubmitSignal(ctx, client, args, username, cfg.Triager)
-		})
-
 	registerTool(srv, cfg, sem, "kubernaut_approve", "Approve a remediation action",
 		func(ctx context.Context, args tools.ApproveArgs) (any, error) {
 			client, err := cfg.DynFactory(ctx)
@@ -431,9 +421,10 @@ func emitAudit(ctx context.Context, cfg *MCPBridgeConfig, toolName string, event
 		detail[k] = v
 	}
 	cfg.Auditor.Emit(ctx, &audit.Event{
-		Type:   eventType,
-		UserID: username,
-		Detail: detail,
+		Timestamp: time.Now(),
+		Type:      eventType,
+		UserID:    username,
+		Detail:    detail,
 	})
 }
 

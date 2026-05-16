@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,13 +18,11 @@ import (
 	"google.golang.org/adk/tool/functiontool"
 
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
-	"github.com/jordigilh/kubernaut-apifrontend/internal/severity"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/validate"
 )
 
 var rrGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
 var rarGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationapprovalrequests"}
-var spGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "signalprocessings"}
 
 // ListRemediationsArgs defines the input for kubernaut_list_remediations.
 type ListRemediationsArgs struct {
@@ -57,50 +56,25 @@ func HandleListRemediations(ctx context.Context, client dynamic.Interface, args 
 	if err := validate.Namespace(args.Namespace); err != nil {
 		return ListRemediationsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
-	if args.Kind != "" {
-		if err := validate.LabelValue(args.Kind); err != nil {
-			return ListRemediationsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-		}
-	}
-	if args.Name != "" {
-		if err := validate.LabelValue(args.Name); err != nil {
-			return ListRemediationsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-		}
-	}
-
-	opts := metav1.ListOptions{}
-
-	var labelSelectors []string
-	if args.Kind != "" {
-		labelSelectors = append(labelSelectors, "kubernaut.ai/target-kind="+args.Kind)
-	}
-	if args.Name != "" {
-		labelSelectors = append(labelSelectors, "kubernaut.ai/target-name="+args.Name)
-	}
-	if len(labelSelectors) > 0 {
-		sel := ""
-		for i, s := range labelSelectors {
-			if i > 0 {
-				sel += ","
-			}
-			sel += s
-		}
-		opts.LabelSelector = sel
-	}
-
-	list, err := client.Resource(rrGVR).Namespace(args.Namespace).List(ctx, opts)
+	list, err := client.Resource(rrGVR).Namespace(args.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return ListRemediationsResult{}, ToUserFriendlyError(err)
 	}
 
 	var result []RemediationSummary
 	for _, item := range list.Items {
-		phase, _, _ := unstructured.NestedString(item.Object, "status", "phase")
+		phase, _, _ := unstructured.NestedString(item.Object, "status", "overallPhase")
 		if args.Phase != "" && phase != args.Phase {
 			continue
 		}
-		kind, _, _ := unstructured.NestedString(item.Object, "spec", "targetRef", "kind")
-		target, _, _ := unstructured.NestedString(item.Object, "spec", "targetRef", "name")
+		kind, _, _ := unstructured.NestedString(item.Object, "spec", "targetResource", "kind")
+		target, _, _ := unstructured.NestedString(item.Object, "spec", "targetResource", "name")
+		if args.Kind != "" && kind != args.Kind {
+			continue
+		}
+		if args.Name != "" && target != args.Name {
+			continue
+		}
 		result = append(result, RemediationSummary{
 			ID:        item.GetNamespace() + "/" + item.GetName(),
 			Namespace: item.GetNamespace(),
@@ -160,9 +134,9 @@ func HandleGetRemediation(ctx context.Context, client dynamic.Interface, args Ge
 		return GetRemediationResult{}, ToUserFriendlyError(err)
 	}
 
-	phase, _, _ := unstructured.NestedString(obj.Object, "status", "phase")
-	kind, _, _ := unstructured.NestedString(obj.Object, "spec", "targetRef", "kind")
-	target, _, _ := unstructured.NestedString(obj.Object, "spec", "targetRef", "name")
+	phase, _, _ := unstructured.NestedString(obj.Object, "status", "overallPhase")
+	kind, _, _ := unstructured.NestedString(obj.Object, "spec", "targetResource", "kind")
+	target, _, _ := unstructured.NestedString(obj.Object, "spec", "targetResource", "name")
 
 	return GetRemediationResult{
 		ID:        ns + "/" + name,
@@ -181,117 +155,6 @@ func NewGetRemediationTool(client dynamic.Interface) (tool.Tool, error) {
 		Description: "Get detailed information about a specific remediation by namespace/name or rr_id",
 	}, func(ctx tool.Context, args GetRemediationArgs) (GetRemediationResult, error) {
 		return HandleGetRemediation(ctx, client, args)
-	})
-}
-
-// SubmitSignalArgs defines the input for kubernaut_submit_signal.
-type SubmitSignalArgs struct {
-	Namespace   string `json:"namespace"`
-	Kind        string `json:"kind"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Severity    string `json:"severity,omitempty"`
-}
-
-// SubmitSignalResult is the output of kubernaut_submit_signal.
-type SubmitSignalResult struct {
-	SignalName string `json:"signal_name"`
-	Message    string `json:"message"`
-}
-
-// HandleSubmitSignal implements the kubernaut_submit_signal logic.
-// If severity is empty and a triager is available, severity is determined via triage pipeline.
-//
-//nolint:gocritic // hugeParam: args passed by value for simplicity; not performance-critical
-func HandleSubmitSignal(ctx context.Context, client dynamic.Interface, args SubmitSignalArgs, username string, triager *severity.Triager) (SubmitSignalResult, error) {
-	if client == nil {
-		return SubmitSignalResult{}, ErrK8sUnavailable
-	}
-	if err := validate.Namespace(args.Namespace); err != nil {
-		return SubmitSignalResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-	}
-	if err := validate.Kind(args.Kind); err != nil {
-		return SubmitSignalResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-	}
-	if err := validate.ResourceName(args.Name); err != nil {
-		return SubmitSignalResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-	}
-	if args.Severity != "" && !validSeverities[args.Severity] {
-		return SubmitSignalResult{}, fmt.Errorf("%w: severity must be one of critical, high, medium, low, info", ErrInvalidInput)
-	}
-
-	var triageResult *severity.TriageResult
-	if args.Severity == "" && triager != nil {
-		input := severity.TriageInput{
-			Namespace:   args.Namespace,
-			Kind:        args.Kind,
-			Name:        args.Name,
-			Description: args.Description,
-			Labels:      map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
-		}
-		result, err := triager.Triage(ctx, input)
-		if err != nil {
-			return SubmitSignalResult{}, fmt.Errorf("severity triage failed: %w", err)
-		}
-		if result.Severity != "" {
-			args.Severity = result.Severity
-			triageResult = &result
-		}
-	}
-
-	signalName := fmt.Sprintf("sp-%s-%s-%d", args.Kind, args.Name, time.Now().UnixMilli())
-
-	spec := map[string]interface{}{
-		"kind":        args.Kind,
-		"name":        args.Name,
-		"description": args.Description,
-		"severity":    args.Severity,
-		"reportedBy":  username,
-	}
-
-	if triageResult != nil {
-		signalLabels := map[string]interface{}{
-			"severity_source": string(triageResult.Source),
-		}
-		if triageResult.AlertName != "" {
-			signalLabels["severity_alert_name"] = triageResult.AlertName
-		}
-		if triageResult.RuleName != "" {
-			signalLabels["severity_rule_name"] = triageResult.RuleName
-		}
-		spec["signalLabels"] = signalLabels
-	}
-
-	sp := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"apiVersion": "kubernaut.ai/v1alpha1",
-			"kind":       "SignalProcessing",
-			"metadata": map[string]interface{}{
-				"name":      signalName,
-				"namespace": args.Namespace,
-			},
-			"spec": spec,
-		},
-	}
-
-	created, err := client.Resource(spGVR).Namespace(args.Namespace).Create(ctx, sp, metav1.CreateOptions{})
-	if err != nil {
-		return SubmitSignalResult{}, ToUserFriendlyError(err)
-	}
-
-	return SubmitSignalResult{
-		SignalName: created.GetName(),
-		Message:    fmt.Sprintf("Signal submitted by %s for %s/%s", username, args.Kind, args.Name),
-	}, nil
-}
-
-// NewSubmitSignalTool creates the kubernaut_submit_signal tool.
-func NewSubmitSignalTool(client dynamic.Interface, triager *severity.Triager) (tool.Tool, error) {
-	return functiontool.New(functiontool.Config{
-		Name:        "kubernaut_submit_signal",
-		Description: "Submit a new incident signal for triage and potential remediation",
-	}, func(ctx tool.Context, args SubmitSignalArgs) (SubmitSignalResult, error) {
-		return HandleSubmitSignal(ctx, client, args, usernameFromContext(ctx), triager)
 	})
 }
 
@@ -326,22 +189,30 @@ func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveAr
 	if args.Decision == "" {
 		return ApproveResult{}, fmt.Errorf("%w: decision must not be empty", ErrInvalidInput)
 	}
+	// CRD enum requires capitalized values: Approved, Rejected, Expired
+	normalizedDecision := strings.ToUpper(args.Decision[:1]) + strings.ToLower(args.Decision[1:])
 	_, err := client.Resource(rarGVR).Namespace(args.Namespace).Get(ctx, args.RARName, metav1.GetOptions{})
 	if err != nil {
 		return ApproveResult{}, ToUserFriendlyError(err)
 	}
 
-	patch := map[string]interface{}{
-		"status": map[string]interface{}{
-			"phase":     args.Decision,
-			"decidedBy": username,
-			"reason":    args.Reason,
-		},
+	now := time.Now().UTC().Format(time.RFC3339)
+	statusPatch := map[string]interface{}{
+		"decision":  normalizedDecision,
+		"decidedBy": username,
+		"decidedAt": now,
+	}
+	if args.Reason != "" {
+		statusPatch["decisionMessage"] = args.Reason
 	}
 	if args.WorkflowOverride != "" {
-		if statusMap, ok := patch["status"].(map[string]interface{}); ok {
-			statusMap["workflowOverride"] = args.WorkflowOverride
+		statusPatch["workflowOverride"] = map[string]interface{}{
+			"workflowName": args.WorkflowOverride,
+			"rationale":    "User override via kubernaut_approve",
 		}
+	}
+	patch := map[string]interface{}{
+		"status": statusPatch,
 	}
 
 	patchBytes, err := json.Marshal(patch)
@@ -409,14 +280,18 @@ func HandleCancelRemediation(ctx context.Context, client dynamic.Interface, args
 		return CancelRemediationResult{}, ToUserFriendlyError(err)
 	}
 
-	phase, _, _ := unstructured.NestedString(obj.Object, "status", "phase")
-	if IsTerminalPhase(phase) {
-		return CancelRemediationResult{}, fmt.Errorf("%w: remediation %s/%s is in terminal state %q", ErrAlreadyTerminal, ns, name, phase)
+	overallPhase, _, _ := unstructured.NestedString(obj.Object, "status", "overallPhase")
+	if IsTerminalPhase(overallPhase) {
+		return CancelRemediationResult{}, fmt.Errorf("%w: remediation %s/%s is in terminal state %q", ErrAlreadyTerminal, ns, name, overallPhase)
 	}
 
+	now := time.Now().UTC().Format(time.RFC3339)
 	patch := map[string]interface{}{
 		"status": map[string]interface{}{
-			"phase": "Cancelled",
+			"overallPhase":   "Cancelled",
+			"completedAt":    now,
+			"lastModifiedAt": now,
+			"message":        "Cancelled by user via kubernaut_cancel_remediation",
 		},
 	}
 	patchBytes, err := json.Marshal(patch)
@@ -507,7 +382,7 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 				if !ok {
 					continue
 				}
-				phase, _, _ := unstructured.NestedString(obj.Object, "status", "phase")
+				phase, _, _ := unstructured.NestedString(obj.Object, "status", "overallPhase")
 				events = append(events, WatchEvent{
 					Timestamp: time.Now().UTC().Format(time.RFC3339),
 					Resource:  "RemediationRequest",

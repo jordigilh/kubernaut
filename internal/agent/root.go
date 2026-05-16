@@ -79,6 +79,7 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 	a, err := llmagent.New(llmagent.Config{
 		Name:                "kubernaut-apifrontend",
 		Description:         "Kubernaut API Frontend agent for incident triage and remediation",
+		Model:               cfg.LLMModel,
 		Tools:               allTools,
 		Instruction:         cfg.Instruction,
 		BeforeToolCallbacks: []llmagent.BeforeToolCallback{newRBACGuard(cfg.Auditor), beforeMetrics},
@@ -117,7 +118,6 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 	constructors := []toolConstructor{
 		{"list_remediations", func() (tool.Tool, error) { return tools.NewListRemediationsTool(k8s) }},
 		{"get_remediation", func() (tool.Tool, error) { return tools.NewGetRemediationTool(k8s) }},
-		{"submit_signal", func() (tool.Tool, error) { return tools.NewSubmitSignalTool(k8s, nil) }},
 		{"approve", func() (tool.Tool, error) { return tools.NewApproveTool(k8s) }},
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},

@@ -58,6 +58,7 @@ type CreateConfig struct {
 type CRDSessionService struct {
 	delegate       adksession.Service
 	client         client.Client
+	apiReader      client.Reader
 	scheme         *runtime.Scheme
 	namespace      string
 	logger         *slog.Logger
@@ -99,6 +100,23 @@ func WithSessionsActive(g *prometheus.GaugeVec) Option {
 	return func(s *CRDSessionService) { s.sessionsActive = g }
 }
 
+// WithAPIReader injects a cache-bypassing reader (DD-STATUS-001 pattern from
+// kubernaut). When set, UpdatePhase uses it for the initial Get to avoid
+// stale-cache reads that break optimistic locking.
+func WithAPIReader(r client.Reader) Option {
+	return func(s *CRDSessionService) { s.apiReader = r }
+}
+
+// getReader returns the cache-bypassing apiReader if available, falling back
+// to the cached client. This mirrors kubernaut's DD-STATUS-001 pattern where
+// all read-before-write operations use an uncached reader.
+func (s *CRDSessionService) getReader() client.Reader {
+	if s.apiReader != nil {
+		return s.apiReader
+	}
+	return s.client
+}
+
 // Create creates an InvestigationSession CRD and delegates session creation
 // to the in-memory service. The CRD creation config is read from
 // req.State[StateKeyCreateConfig].
@@ -138,7 +156,9 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 	}
 
 	if cfg != nil {
-		crd.OwnerReferences = []metav1.OwnerReference{cfg.OwnerRef}
+		if cfg.OwnerRef.Name != "" {
+			crd.OwnerReferences = []metav1.OwnerReference{cfg.OwnerRef}
+		}
 		crd.Labels[LabelUser] = sanitizeLabelValue(cfg.UserIdentity.Username)
 		crd.Labels[LabelRRName] = sanitizeLabelValue(cfg.RemediationRef.Name)
 		crd.Spec = v1alpha1.InvestigationSessionSpec{
@@ -149,10 +169,12 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 		}
 	}
 
+	desiredStatus := crd.Status
 	if err := s.client.Create(ctx, crd); err != nil {
 		return nil, fmt.Errorf("create InvestigationSession CRD: %w", err)
 	}
 
+	crd.Status = desiredStatus
 	if err := s.client.Status().Update(ctx, crd); err != nil {
 		if delErr := s.client.Delete(ctx, crd); delErr != nil {
 			s.logger.WarnContext(ctx, "CRD rollback failed after status update error",
@@ -217,11 +239,11 @@ func (s *CRDSessionService) Delete(ctx context.Context, req *adksession.DeleteRe
 		crdName = req.SessionID
 	}
 
-	// Read actual phase before deletion so the gauge decrement is accurate.
 	nn := types.NamespacedName{Name: crdName, Namespace: s.namespace}
+	reader := s.getReader()
 	var existing v1alpha1.InvestigationSession
 	phase := string(v1alpha1.SessionPhaseActive) // fallback
-	if err := s.client.Get(ctx, nn, &existing); err == nil {
+	if err := reader.Get(ctx, nn, &existing); err == nil {
 		phase = string(existing.Status.Phase)
 	}
 
@@ -267,8 +289,9 @@ func (s *CRDSessionService) AppendEvent(ctx context.Context, sess adksession.Ses
 	s.mu.RUnlock()
 
 	if ok {
+		reader := s.getReader()
 		var crd v1alpha1.InvestigationSession
-		if err := s.client.Get(ctx, types.NamespacedName{Name: crdName, Namespace: s.namespace}, &crd); err == nil {
+		if err := reader.Get(ctx, types.NamespacedName{Name: crdName, Namespace: s.namespace}, &crd); err == nil {
 			_ = s.client.Status().Update(ctx, &crd)
 		}
 	}
@@ -287,8 +310,9 @@ func (s *CRDSessionService) GetSessionPhase(ctx context.Context, sessionID strin
 		crdName = sessionID
 	}
 
+	reader := s.getReader()
 	var crd v1alpha1.InvestigationSession
-	if err := s.client.Get(ctx, types.NamespacedName{Name: crdName, Namespace: s.namespace}, &crd); err != nil {
+	if err := reader.Get(ctx, types.NamespacedName{Name: crdName, Namespace: s.namespace}, &crd); err != nil {
 		return "", fmt.Errorf("get session phase: %w", err)
 	}
 	return crd.Status.Phase, nil

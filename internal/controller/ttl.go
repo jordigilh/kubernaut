@@ -64,6 +64,15 @@ func NewSessionCleanupReconciler(c client.Client, disconnectTTL, retentionTTL ti
 	}
 }
 
+// SetupWithManager registers the SessionCleanupReconciler with a controller-runtime
+// Manager, watching InvestigationSession resources for changes.
+func (r *SessionCleanupReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&v1alpha1.InvestigationSession{}).
+		Named("session-cleanup").
+		Complete(r)
+}
+
 // Reconcile implements controller-runtime's Reconciler interface.
 func (r *SessionCleanupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var sess v1alpha1.InvestigationSession
@@ -122,20 +131,30 @@ func (r *SessionCleanupReconciler) handleDisconnected(ctx context.Context, sess 
 		return ctrl.Result{}, fmt.Errorf("validate disconnect TTL transition: %w", err)
 	}
 
-	now := metav1.Now()
-	sess.Status.Phase = v1alpha1.SessionPhaseCancelled
-	sess.Status.CompletedAt = &now
-	sess.Status.Message = "auto-cancelled: disconnect TTL expired"
-	if sess.Labels == nil {
-		sess.Labels = make(map[string]string)
-	}
-	sess.Labels[session.LabelPhase] = string(v1alpha1.SessionPhaseCancelled)
+	// Delegate to service for phase transition — ensures gauge, audit, and
+	// crdIndex side effects are applied consistently (DD-STATUS-001 pattern).
+	if r.sessionService != nil {
+		if err := r.sessionService.UpdatePhase(ctx, sess.Name,
+			v1alpha1.SessionPhaseCancelled,
+			"auto-cancelled: disconnect TTL expired", ""); err != nil {
+			return ctrl.Result{}, fmt.Errorf("auto-cancel disconnected session: %w", err)
+		}
+	} else {
+		now := metav1.Now()
+		sess.Status.Phase = v1alpha1.SessionPhaseCancelled
+		sess.Status.CompletedAt = &now
+		sess.Status.Message = "auto-cancelled: disconnect TTL expired"
+		if sess.Labels == nil {
+			sess.Labels = make(map[string]string)
+		}
+		sess.Labels[session.LabelPhase] = string(v1alpha1.SessionPhaseCancelled)
 
-	if err := r.client.Status().Update(ctx, sess); err != nil {
-		return ctrl.Result{}, fmt.Errorf("cancel disconnected session: %w", err)
-	}
-	if err := r.client.Update(ctx, sess); err != nil {
-		return ctrl.Result{}, fmt.Errorf("update disconnected session labels: %w", err)
+		if err := r.client.Status().Update(ctx, sess); err != nil {
+			return ctrl.Result{}, fmt.Errorf("cancel disconnected session: %w", err)
+		}
+		if err := r.client.Update(ctx, sess); err != nil {
+			return ctrl.Result{}, fmt.Errorf("update disconnected session labels: %w", err)
+		}
 	}
 
 	r.logger.InfoContext(ctx, "session auto-cancelled",

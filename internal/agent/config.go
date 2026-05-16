@@ -6,6 +6,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/client-go/dynamic"
 
+	"google.golang.org/adk/model"
+
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ds"
@@ -47,6 +49,10 @@ type AgentConfig struct {
 	// ImpersonatingClientFactory creates per-request impersonated dynamic clients
 	// for read-only triage tools (SEC-05). If nil, triage tools fall back to K8sClient.
 	ImpersonatingClientFactory auth.DynamicClientFactory
+	// LLMModel is the model backend for the ADK agent. When non-nil, the agent
+	// uses this model for generateContent calls. When nil, the agent is created
+	// without a model (tools-only mode for MCP bridge).
+	LLMModel model.LLM
 }
 
 // Option applies a configuration override to AgentConfig.

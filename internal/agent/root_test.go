@@ -28,7 +28,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(20))
+			Expect(tools).To(HaveLen(19))
 		})
 
 		It("UT-AF-100-003: with nil model config returns error", func() {
@@ -78,7 +78,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(20))
+			Expect(tools).To(HaveLen(19))
 		})
 
 		It("UT-AF-100-008: present_decision is marked IsLongRunning", func() {
@@ -121,7 +121,7 @@ var _ = Describe("Root Agent", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			filtered := agentpkg.FilterToolsByRole("sre", tools)
-			Expect(filtered).To(HaveLen(20))
+			Expect(filtered).To(HaveLen(19))
 
 			filtered = agentpkg.FilterToolsByRole("unknown-role", tools)
 			Expect(filtered).To(BeEmpty())
@@ -145,7 +145,7 @@ var _ = Describe("Root Agent", func() {
 			for _, t := range union {
 				names[t.Name()] = true
 			}
-			Expect(names).To(HaveKey("kubernaut_submit_signal"))     // from cicd
+			Expect(names).To(HaveKey("kubernaut_list_remediations")) // from cicd
 			Expect(names).To(HaveKey("kubernaut_get_audit_trail"))   // from l3-audit
 			Expect(names).To(HaveKey("kubernaut_list_remediations")) // from both
 		})
