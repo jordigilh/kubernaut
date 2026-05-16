@@ -138,6 +138,119 @@ func newTLSClient(caCertPath string) *http.Client {
 	}
 }
 
+// unwrapSSEDataLine extracts the JSON payload from an SSE "data:" line.
+// MCP Streamable HTTP responses may be SSE-wrapped.
+func unwrapSSEDataLine(raw []byte) string {
+	s := string(raw)
+	if !strings.Contains(s, "data:") {
+		return strings.TrimSpace(s)
+	}
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if strings.HasPrefix(line, "data:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		}
+	}
+	return strings.TrimSpace(s)
+}
+
+// initMCPSession performs the MCP initialize handshake and returns the session ID.
+func initMCPSession(token string) (string, error) {
+	body := buildJSONRPC("init-1", "initialize", map[string]interface{}{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]interface{}{},
+		"clientInfo": map[string]interface{}{
+			"name":    "e2e",
+			"version": "1.0",
+		},
+	})
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		return "", fmt.Errorf("MCP initialize: HTTP %d", resp.StatusCode)
+	}
+	return resp.Header.Get("Mcp-Session-Id"), nil
+}
+
+// mcpPOST sends a JSON-RPC request to the MCP endpoint with auth + session headers.
+func mcpPOST(token, sessionID, jsonBody string) (body []byte, statusCode int, err error) {
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(jsonBody))
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err = io.ReadAll(resp.Body)
+	statusCode = resp.StatusCode
+	return body, statusCode, err
+}
+
+// parseMCPToolPayload extracts tool result text from a JSON-RPC MCP response.
+func parseMCPToolPayload(payload string) (text string, toolIsError bool, err error) {
+	var root map[string]interface{}
+	if err := json.Unmarshal([]byte(payload), &root); err != nil {
+		return "", false, fmt.Errorf("parse MCP JSON: %w", err)
+	}
+	if e, ok := root["error"]; ok && e != nil {
+		return "", false, fmt.Errorf("json-rpc error: %v", e)
+	}
+	res, ok := root["result"].(map[string]interface{})
+	if !ok {
+		return payload, false, nil
+	}
+	toolIsError, _ = res["isError"].(bool)
+	text = extractMCPResultText(root)
+	return text, toolIsError, nil
+}
+
+// extractMCPResultText walks result.content[0].text in a CallToolResult.
+func extractMCPResultText(root map[string]interface{}) string {
+	res, _ := root["result"].(map[string]interface{})
+	if res == nil {
+		return ""
+	}
+	content, _ := res["content"].([]interface{})
+	if len(content) == 0 {
+		return ""
+	}
+	first, _ := content[0].(map[string]interface{})
+	if first == nil {
+		return ""
+	}
+	t, _ := first["text"].(string)
+	return t
+}
+
+// parseJSONStringField extracts a string field from a JSON object string.
+func parseJSONStringField(jsonStr, field string) string {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
+		return ""
+	}
+	v, _ := m[field].(string)
+	return v
+}
+
 // fetchDEXToken performs an OAuth2 Resource Owner Password Credentials grant
 // against DEX to obtain a valid ID token for E2E testing.
 func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (string, error) {

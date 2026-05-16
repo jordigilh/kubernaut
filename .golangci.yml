@@ -10,10 +10,24 @@ linters:
     - gocritic
     - misspell
     - revive
+    - gosec
 
   exclusions:
     paths:
       - "api/apifrontend/v1alpha1/zz_generated.*"
+    rules:
+      - path: "(_test\\.go|^test/)"
+        linters:
+          - errcheck
+        text: "Error return value of.*Close.*is not checked"
+      - path: "(^test/|_test\\.go)"
+        linters:
+          - gosec
+        text: "G101|G1(07|12|15)|G20[124]|G30[1246]|G40[24]"
+      - path: "^test/"
+        linters:
+          - staticcheck
+        text: "ST1001"
 
   settings:
     errcheck:

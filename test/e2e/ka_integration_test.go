@@ -424,32 +424,6 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Ordered, Label("
 	})
 })
 
-// extractMCPResultText navigates the MCP JSON-RPC response to get text content.
-func extractMCPResultText(result map[string]interface{}) string {
-	rpcResult, ok := result["result"]
-	if !ok {
-		return ""
-	}
-	rm, ok := rpcResult.(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	content, ok := rm["content"]
-	if !ok {
-		return ""
-	}
-	contentArr, ok := content.([]interface{})
-	if !ok || len(contentArr) == 0 {
-		return ""
-	}
-	firstItem, ok := contentArr[0].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	text, _ := firstItem["text"].(string)
-	return text
-}
-
 // extractSessionID navigates the MCP JSON-RPC response to find a session_id.
 func extractSessionID(result map[string]interface{}) string {
 	text := extractMCPResultText(result)

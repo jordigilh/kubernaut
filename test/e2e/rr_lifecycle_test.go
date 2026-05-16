@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -14,86 +13,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
-
-func unwrapSSEDataLine(raw []byte) string {
-	s := string(raw)
-	if !strings.Contains(s, "data:") {
-		return strings.TrimSpace(s)
-	}
-	for _, line := range strings.Split(s, "\n") {
-		line = strings.TrimRight(line, "\r")
-		if strings.HasPrefix(line, "data:") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		}
-	}
-	return strings.TrimSpace(s)
-}
-
-func initMCPSession(token string) (string, error) {
-	body := buildJSONRPC("init-1", "initialize", map[string]interface{}{
-		"protocolVersion": "2024-11-05",
-		"capabilities":    map[string]interface{}{},
-		"clientInfo": map[string]interface{}{
-			"name":    "e2e",
-			"version": "1.0",
-		},
-	})
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, resp.Body)
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		return "", fmt.Errorf("MCP initialize: HTTP %d", resp.StatusCode)
-	}
-	return resp.Header.Get("Mcp-Session-Id"), nil
-}
-
-func mcpPOST(token, sessionID, jsonBody string) (body []byte, statusCode int, err error) {
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(jsonBody))
-	if err != nil {
-		return nil, 0, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	if sessionID != "" {
-		req.Header.Set("Mcp-Session-Id", sessionID)
-	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err = io.ReadAll(resp.Body)
-	statusCode = resp.StatusCode
-	return body, statusCode, err
-}
-
-func parseMCPToolPayload(payload string) (text string, toolIsError bool, err error) {
-	var root map[string]interface{}
-	if err := json.Unmarshal([]byte(payload), &root); err != nil {
-		return "", false, fmt.Errorf("parse MCP JSON: %w", err)
-	}
-	if e, ok := root["error"]; ok && e != nil {
-		return "", false, fmt.Errorf("json-rpc error: %v", e)
-	}
-	res, ok := root["result"].(map[string]interface{})
-	if !ok {
-		return payload, false, nil
-	}
-	toolIsError, _ = res["isError"].(bool)
-	text = extractMCPResultText(root)
-	return text, toolIsError, nil
-}
 
 func kubectlApplyYAML(manifest string) error {
 	kubeconfigPath := getEnvOrDefault("KUBECONFIG", os.Getenv("HOME")+"/.kube/config")
@@ -522,15 +441,6 @@ var _ = Describe("RAR Flow (G5)", Ordered, Label("e2e", "phase2", "g5"), func() 
 		Expect(strings.ToLower(atext)).To(ContainSubstring("approved"))
 	})
 })
-
-func parseJSONStringField(text, field string) string {
-	var m map[string]interface{}
-	if json.Unmarshal([]byte(text), &m) != nil {
-		return ""
-	}
-	s, _ := m[field].(string)
-	return s
-}
 
 func rrNameFromRRID(rrid string) string {
 	parts := strings.SplitN(rrid, "/", 2)

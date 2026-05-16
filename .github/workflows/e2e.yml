@@ -42,9 +42,8 @@ jobs:
 
       - name: Setup envtest binaries
         run: |
-          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-          setup-envtest use --bin-dir /usr/local/kubebuilder/bin
-          echo "KUBEBUILDER_ASSETS=/usr/local/kubebuilder/bin" >> "$GITHUB_ENV"
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.23
+          echo "KUBEBUILDER_ASSETS=$($(go env GOPATH)/bin/setup-envtest use -p path)" >> "$GITHUB_ENV"
 
       - name: Run integration tests (real containers)
         run: make test-integration-containers
