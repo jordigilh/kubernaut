@@ -32,7 +32,8 @@ var _ = SynchronizedBeforeSuite(
 
 		if os.Getenv("AF_E2E_SKIP_INFRA") == "true" {
 			_, _ = fmt.Fprintln(GinkgoWriter, "Skipping infra deployment (AF_E2E_SKIP_INFRA=true)")
-			return nil
+			// Return the CA cert path so other procs can use it.
+			return []byte(os.Getenv("AF_E2E_CA_CERT"))
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
@@ -74,11 +75,12 @@ var _ = SynchronizedBeforeSuite(
 		_, _ = fmt.Fprintln(GinkgoWriter, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		_, _ = fmt.Fprintln(GinkgoWriter, "E2E Infrastructure Ready")
 		_, _ = fmt.Fprintln(GinkgoWriter, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		return nil
+		// Pass the CA cert path to all procs so they can build TLS clients.
+		return []byte(os.Getenv("AF_E2E_CA_CERT"))
 	},
-	func(_ []byte) {
+	func(data []byte) {
 		baseURL = getEnvOrDefault("AF_E2E_BASE_URL", "https://localhost:18443")
-		caCertPath = getEnvOrDefault("AF_E2E_CA_CERT", "")
+		caCertPath = getEnvOrDefault("AF_E2E_CA_CERT", string(data))
 		dexURL = getEnvOrDefault("AF_E2E_DEX_URL", "http://localhost:15556/dex")
 		clientID = getEnvOrDefault("AF_E2E_CLIENT_ID", "kubernaut-apifrontend")
 		clientSecret = getEnvOrDefault("AF_E2E_CLIENT_SECRET", "e2e-client-secret")
@@ -86,8 +88,9 @@ var _ = SynchronizedBeforeSuite(
 		password = getEnvOrDefault("AF_E2E_PASSWORD", "password")
 		httpClient = newTLSClient(caCertPath)
 
+		healthURL := getEnvOrDefault("AF_E2E_HEALTH_URL", "http://localhost:18081")
 		Eventually(func() error {
-			resp, err := httpClient.Get(baseURL + "/healthz")
+			resp, err := http.Get(healthURL + "/healthz") //nolint:gosec // E2E health probe, no TLS needed
 			if err != nil {
 				return err
 			}
