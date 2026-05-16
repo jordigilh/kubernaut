@@ -7,6 +7,7 @@ metadata:
     description: "API Frontend base manifests - platform-agnostic configuration"
 
 resources:
+  - 09-investigationsession-crd.yaml
   - 00-namespace.yaml
   - 01-serviceaccount.yaml
   - 02-rbac.yaml

@@ -12,6 +12,8 @@ agent:
   dsBaseURL: "https://data-storage.kubernaut-system.svc:8443"
   kaTlsCaFile: /etc/apifrontend/tls-ca/ca.crt
   dsTlsCaFile: /etc/apifrontend/tls-ca/ca.crt
+  llmEndpoint: "http://mock-llm.kubernaut-system.svc:8080"
+  llmModel: "mock-model"
 
 mcp:
   enabled: true
@@ -25,6 +27,15 @@ auth:
   jwksURL: "http://dex.kubernaut-system.svc:5556/dex/keys"
   audience: "kubernaut-apifrontend"
   allowInsecureIssuers: true
+
+rbac:
+  groupMapping:
+    sre: sre
+    ai-orchestrator: ai-orchestrator
+    cicd: cicd
+    observability: observability
+    l3-audit: l3-audit
+    remediation-approver: remediation-approver
 
 logging:
   level: debug

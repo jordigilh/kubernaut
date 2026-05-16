@@ -48,66 +48,53 @@ test: test-unit ## Run unit tests (alias)
 
 .PHONY: test-unit
 test-unit: fmt vet ## Run all unit tests with race detection and coverage
-	$(GINKGO) -v --race --coverpkg=$(COVERPKGS) --coverprofile=cover.out ./internal/...
+	$(GINKGO) -v --race --coverpkg=$(COVERPKGS) --coverprofile=coverage_unit_apifrontend.out ./internal/...
 
 .PHONY: test-integration
 test-integration: ## Run integration tests (matches CI runner)
-	$(GINKGO) -v --race --tags=integration --coverpkg=$(COVERPKGS) --coverprofile=cover-integration.out ./internal/...
+	$(GINKGO) -v --race --tags=integration --coverpkg=$(COVERPKGS) --coverprofile=coverage_integration_apifrontend.out ./internal/...
 
 .PHONY: test-bridge
 test-bridge: fmt vet ## Run MCP bridge tests (pass GINKGO_LABEL="tier1" to filter)
-	$(GINKGO) -v --race $(if $(GINKGO_LABEL),--label-filter="$(GINKGO_LABEL) && bridge",--label-filter="bridge") --coverpkg=$(COVERPKGS) --coverprofile=cover-bridge.out ./internal/handler/...
+	$(GINKGO) -v --race $(if $(GINKGO_LABEL),--label-filter="$(GINKGO_LABEL) && bridge",--label-filter="bridge") --coverpkg=$(COVERPKGS) --coverprofile=coverage_bridge_apifrontend.out ./internal/handler/...
+
+.PHONY: test-integration-containers
+test-integration-containers: ## Run integration tests with real DS+KA containers (Podman)
+	$(GINKGO) -v --race --timeout=15m --coverpkg=$(COVERPKGS) --coverprofile=coverage_integration_apifrontend.out ./test/integration/...
 
 .PHONY: test-all
 test-all: test-unit test-integration ## Run unit + integration tests
 
 ##@ E2E
 
-E2E_IMAGE ?= localhost/kubernaut-apifrontend:e2e
 E2E_CLUSTER_NAME ?= apifrontend-e2e
-E2E_KIND_CONFIG ?= deploy/kustomize/overlays/e2e/kind-config.yaml
-E2E_CERT_DIR ?= /tmp/apifrontend-e2e-certs
-E2E_BASE_URL ?= https://localhost:18443
-E2E_DEX_URL ?= http://localhost:15556/dex
 E2E_NAMESPACE ?= kubernaut-system
 
-.PHONY: e2e-setup
-e2e-setup: ## Create Kind cluster, build image, generate certs, deploy AF + DEX
-	@which kind >/dev/null 2>&1 || { echo "kind not found — install: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"; exit 1; }
-	$(CONTAINER_TOOL) build --target production -t $(E2E_IMAGE) .
-	kind create cluster --name $(E2E_CLUSTER_NAME) --config $(E2E_KIND_CONFIG) --wait 60s
-	kind load docker-image $(E2E_IMAGE) --name $(E2E_CLUSTER_NAME)
-	bash deploy/kustomize/overlays/e2e/generate-certs.sh $(E2E_CERT_DIR)
-	kubectl --context kind-$(E2E_CLUSTER_NAME) create namespace $(E2E_NAMESPACE) --dry-run=client -o yaml | kubectl --context kind-$(E2E_CLUSTER_NAME) apply -f -
-	kubectl --context kind-$(E2E_CLUSTER_NAME) create secret tls apifrontend-tls --cert=$(E2E_CERT_DIR)/tls.crt --key=$(E2E_CERT_DIR)/tls.key -n $(E2E_NAMESPACE) --dry-run=client -o yaml | kubectl --context kind-$(E2E_CLUSTER_NAME) apply -f -
-	kubectl --context kind-$(E2E_CLUSTER_NAME) create secret generic apifrontend-ca --from-file=ca.crt=$(E2E_CERT_DIR)/ca.crt -n $(E2E_NAMESPACE) --dry-run=client -o yaml | kubectl --context kind-$(E2E_CLUSTER_NAME) apply -f -
-	kubectl --context kind-$(E2E_CLUSTER_NAME) apply -k deploy/kustomize/overlays/e2e/
-	kubectl --context kind-$(E2E_CLUSTER_NAME) rollout status deployment/dex -n $(E2E_NAMESPACE) --timeout=90s
-	kubectl --context kind-$(E2E_CLUSTER_NAME) rollout status deployment/apifrontend -n $(E2E_NAMESPACE) --timeout=120s
-
-.PHONY: deploy-e2e
-deploy-e2e: ## Rebuild image and redeploy AF to existing E2E cluster
-	$(CONTAINER_TOOL) build --target production -t $(E2E_IMAGE) .
-	kind load docker-image $(E2E_IMAGE) --name $(E2E_CLUSTER_NAME)
-	kubectl --context kind-$(E2E_CLUSTER_NAME) rollout restart deployment/apifrontend -n $(E2E_NAMESPACE)
-	kubectl --context kind-$(E2E_CLUSTER_NAME) rollout status deployment/apifrontend -n $(E2E_NAMESPACE) --timeout=120s
-
 .PHONY: test-e2e
-test-e2e: ## Run E2E tests (requires port-forward to AF:18443 and DEX:15556)
-	AF_E2E_BASE_URL=$(E2E_BASE_URL) \
-	AF_E2E_CA_CERT=$(E2E_CERT_DIR)/ca.crt \
-	AF_E2E_DEX_URL=$(E2E_DEX_URL) \
+test-e2e: ## Run E2E tests (full lifecycle: build, cluster, deploy, test, teardown)
+	$(GINKGO) -v --race --timeout=20m --coverpkg=$(COVERPKGS) --coverprofile=coverage_e2e_apifrontend.out ./test/e2e/
+
+.PHONY: test-e2e-reuse
+test-e2e-reuse: ## Run E2E tests against an existing cluster (skip infra setup/teardown)
+	AF_E2E_SKIP_INFRA=true \
+	AF_E2E_BASE_URL=https://localhost:18443 \
+	AF_E2E_CA_CERT=/tmp/apifrontend-e2e-certs/ca.crt \
+	AF_E2E_DEX_URL=http://localhost:15556/dex \
 	AF_E2E_CLIENT_ID=kubernaut-apifrontend \
 	AF_E2E_CLIENT_SECRET=e2e-client-secret \
 	AF_E2E_USERNAME=e2e-user@kubernaut.ai \
 	AF_E2E_PASSWORD=password \
-	$(GINKGO) -v --timeout=5m --label-filter="phase1" ./test/e2e/
+	$(GINKGO) -v --race --timeout=5m --coverpkg=$(COVERPKGS) --coverprofile=coverage_e2e_apifrontend.out ./test/e2e/
+
+.PHONY: e2e-teardown
+e2e-teardown: ## Delete the E2E Kind cluster
+	kind delete cluster --name $(E2E_CLUSTER_NAME)
 
 .PHONY: e2e-port-forward
-e2e-port-forward: ## Start port-forwards for AF and DEX (waits for readiness)
+e2e-port-forward: ## Start port-forwards for AF and DEX (for test-e2e-reuse)
 	kubectl --context kind-$(E2E_CLUSTER_NAME) port-forward -n $(E2E_NAMESPACE) svc/apifrontend 18443:8443 &
 	kubectl --context kind-$(E2E_CLUSTER_NAME) port-forward -n $(E2E_NAMESPACE) svc/dex 15556:5556 &
-	@for i in $$(seq 1 30); do curl -s --cacert $(E2E_CERT_DIR)/ca.crt https://localhost:18443/healthz >/dev/null 2>&1 && break || sleep 1; done
+	@for i in $$(seq 1 30); do curl -s --cacert /tmp/apifrontend-e2e-certs/ca.crt https://localhost:18443/healthz >/dev/null 2>&1 && break || sleep 1; done
 	@for i in $$(seq 1 30); do curl -sf http://localhost:15556/dex/healthz >/dev/null 2>&1 && break || sleep 1; done
 	@echo "Port-forwards ready: AF=https://localhost:18443, DEX=http://localhost:15556/dex"
 
@@ -159,13 +146,25 @@ manifests: ## Generate CRD manifests and RBAC
 ##@ Coverage
 
 .PHONY: coverage-report
-coverage-report: test-unit ## Generate HTML coverage report
-	go tool cover -html=cover.out -o coverage.html
-	@echo "Coverage report: coverage.html"
+coverage-report: ## Show per-tier coverage breakdown (table)
+	@python3 scripts/coverage/coverage_report.py
+
+.PHONY: coverage-report-markdown
+coverage-report-markdown: ## Generate markdown coverage report for GitHub PR comments
+	@python3 scripts/coverage/coverage_report.py --format markdown
 
 .PHONY: coverage-report-json
-coverage-report-json: test-unit ## Print coverage by function
-	go tool cover -func=cover.out
+coverage-report-json: ## Generate JSON coverage report for CI/CD integration
+	@python3 scripts/coverage/coverage_report.py --format json
+
+.PHONY: coverage-html
+coverage-html: ## Generate HTML coverage report from unit test profile
+	go tool cover -html=coverage_unit_apifrontend.out -o coverage.html
+	@echo "Coverage report: coverage.html"
+
+.PHONY: coverage-func
+coverage-func: ## Print per-function coverage from unit test profile
+	go tool cover -func=coverage_unit_apifrontend.out
 
 ##@ Performance
 
@@ -267,4 +266,4 @@ image-scan:
 
 .PHONY: clean
 clean: ## Remove build artifacts and coverage files
-	rm -rf bin/ cover.out cover-integration.out cover-bridge.out coverage.html sbom.cdx.json
+	rm -rf bin/ coverage_*.out cover.out cover-integration.out cover-bridge.out cover-it.out coverage.html sbom.cdx.json

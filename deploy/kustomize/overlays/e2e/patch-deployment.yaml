@@ -9,6 +9,9 @@ spec:
       containers:
         - name: apifrontend
           imagePullPolicy: IfNotPresent
+          env:
+            - name: LLM_API_KEY
+              value: "mock-key"
           resources:
             requests:
               cpu: 50m

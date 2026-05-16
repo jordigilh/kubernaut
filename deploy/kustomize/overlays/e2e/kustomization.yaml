@@ -9,6 +9,9 @@ metadata:
 resources:
   - ../../base
   - dex.yaml
+  - mock-llm.yaml
+  - https://raw.githubusercontent.com/jordigilh/kubernaut/main/config/crd/bases/kubernaut.ai_remediationrequests.yaml
+  - https://raw.githubusercontent.com/jordigilh/kubernaut/main/config/crd/bases/kubernaut.ai_remediationapprovalrequests.yaml
 
 # Prometheus Operator CRDs are not available in bare Kind clusters
 patches:
@@ -49,6 +52,36 @@ patches:
           ports:
             - port: 5556
               protocol: TCP
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: kubernaut-agent
+          ports:
+            - port: 8443
+              protocol: TCP
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: data-storage
+          ports:
+            - port: 8443
+              protocol: TCP
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: mock-llm
+          ports:
+            - port: 8080
+              protocol: TCP
     target:
       kind: NetworkPolicy
       name: apifrontend
@@ -62,4 +95,7 @@ configMapGenerator:
 images:
   - name: quay.io/jordigilh/kubernaut-apifrontend
     newName: localhost/kubernaut-apifrontend
+    newTag: e2e
+  - name: ghcr.io/jordigilh/kubernaut/mock-llm
+    newName: localhost/mock-llm
     newTag: e2e

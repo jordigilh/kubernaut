@@ -1,0 +1,257 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-llm
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: mock-llm
+    app.kubernetes.io/component: test-infrastructure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mock-llm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mock-llm
+        app.kubernetes.io/component: test-infrastructure
+    spec:
+      containers:
+        - name: mock-llm
+          image: ghcr.io/jordigilh/kubernaut/mock-llm:pr-1161
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          env:
+            - name: MOCK_LLM_HOST
+              value: "0.0.0.0"
+            - name: MOCK_LLM_PORT
+              value: "8080"
+            - name: MOCK_LLM_FORCE_TEXT
+              value: "false"
+            - name: MOCK_LLM_CONFIG_PATH
+              value: "/etc/mock-llm/config.yaml"
+          volumeMounts:
+            - name: mock-llm-config
+              mountPath: /etc/mock-llm
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1001
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: mock-llm-config
+          configMap:
+            name: mock-llm-config
+      securityContext:
+        fsGroup: 1001
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-llm-config
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: mock-llm
+    app.kubernetes.io/component: test-infrastructure
+data:
+  config.yaml: |
+    # AF-specific keyword→tool_call mappings for E2E testing.
+    # mock-LLM matches prompt keywords and returns the corresponding tool call.
+    keyword_scenarios:
+      - name: "af_start_investigation"
+        keywords: ["start investigation"]
+        tool_call:
+          name: "kubernaut_start_investigation"
+          arguments:
+            namespace: "default"
+            pod_name: "nginx"
+
+      - name: "af_poll_investigation"
+        keywords: ["investigation status", "check investigation", "poll investigation"]
+        tool_call:
+          name: "kubernaut_poll_investigation"
+          arguments:
+            session_id: "sess-001"
+
+      - name: "af_select_workflow"
+        keywords: ["select workflow", "select the restart workflow"]
+        tool_call:
+          name: "kubernaut_select_workflow"
+          arguments:
+            workflow_id: "restart-v1"
+            remediation_id: "rr-001"
+
+      - name: "af_present_decision"
+        keywords: ["present decision", "present remediation options", "remediation options"]
+        tool_call:
+          name: "present_decision"
+          arguments:
+            session_id: "sess-002"
+            options: "restart,scale-up,rollback"
+
+      - name: "af_list_remediations"
+        keywords: ["list remediations", "list all remediations"]
+        tool_call:
+          name: "kubernaut_list_remediations"
+          arguments:
+            namespace: "default"
+
+      - name: "af_get_remediation"
+        keywords: ["get details for remediation", "get remediation"]
+        tool_call:
+          name: "kubernaut_get_remediation"
+          arguments:
+            namespace: "payments"
+            name: "rr-test"
+
+      - name: "af_approve"
+        keywords: ["approve the remediation", "approve remediation"]
+        tool_call:
+          name: "kubernaut_approve"
+          arguments:
+            namespace: "payments"
+            name: "rr-test"
+
+      - name: "af_cancel_remediation"
+        keywords: ["cancel the remediation", "cancel remediation"]
+        tool_call:
+          name: "kubernaut_cancel_remediation"
+          arguments:
+            namespace: "payments"
+            name: "rr-test"
+
+      - name: "af_watch"
+        keywords: ["watch the progress", "watch remediation"]
+        tool_call:
+          name: "kubernaut_watch"
+          arguments:
+            namespace: "payments"
+            name: "rr-test"
+
+      - name: "af_list_workflows"
+        keywords: ["list workflows", "available remediation workflows", "list all available"]
+        tool_call:
+          name: "kubernaut_list_workflows"
+          arguments:
+            action_type: "remediation"
+
+      - name: "af_get_remediation_history"
+        keywords: ["remediation history", "get remediation history"]
+        tool_call:
+          name: "kubernaut_get_remediation_history"
+          arguments:
+            namespace: "payments"
+
+      - name: "af_get_effectiveness"
+        keywords: ["effectiveness", "remediation effectiveness"]
+        tool_call:
+          name: "kubernaut_get_effectiveness"
+          arguments: {}
+
+      - name: "af_get_audit_trail"
+        keywords: ["audit trail", "get the audit trail"]
+        tool_call:
+          name: "kubernaut_get_audit_trail"
+          arguments:
+            remediation_id: "rr-audit"
+
+      - name: "af_list_events"
+        keywords: ["list events", "list kubernetes events"]
+        tool_call:
+          name: "af_list_events"
+          arguments:
+            namespace: "kubernaut-system"
+
+      - name: "af_get_pods"
+        keywords: ["get pods", "get all pods"]
+        tool_call:
+          name: "af_get_pods"
+          arguments:
+            namespace: "default"
+
+      - name: "af_get_workloads"
+        keywords: ["get workloads"]
+        tool_call:
+          name: "af_get_workloads"
+          arguments:
+            namespace: "default"
+
+      - name: "af_resolve_owner"
+        keywords: ["resolve owner", "resolve the owner"]
+        tool_call:
+          name: "af_resolve_owner"
+          arguments:
+            namespace: "default"
+            kind: "Pod"
+            name: "nginx-abc123"
+
+      - name: "af_check_existing_rr"
+        keywords: ["check existing", "remediation already exists", "check if a remediation"]
+        tool_call:
+          name: "af_check_existing_rr"
+          arguments:
+            namespace: "prod"
+            kind: "Deployment"
+            name: "web"
+
+      - name: "af_create_rr"
+        keywords: ["create a remediation request", "create remediation"]
+        tool_call:
+          name: "af_create_rr"
+          arguments:
+            namespace: "prod"
+            kind: "Deployment"
+            name: "web"
+            description: "E2E test remediation request"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-llm
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: mock-llm
+    app.kubernetes.io/component: test-infrastructure
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: mock-llm
