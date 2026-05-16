@@ -24,6 +24,7 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func() {
@@ -104,11 +105,14 @@ var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func(
 
 	Describe("TOOL-011: All tools produce error messages with tool context", func() {
 		It("should include semantic context (not just generic errors)", func() {
+			wfID := "wf-001"
 			sessions := &mockSessionManager{
 				isActive: true,
 				getDriverResult: &mcpinternal.InteractiveSession{
-					SessionID:  "sess-011",
-					ActingUser: mcpinternal.UserInfo{Username: "alice"},
+					SessionID:       "sess-011",
+					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:       &katypes.InvestigationResult{RCASummary: "test"},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
 				},
 			}
 
@@ -120,7 +124,7 @@ var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func(
 			)
 			_, enrichErr := swToolEnrich.Handle(context.Background(), mcptools.SelectWorkflowInput{
 				RRID:       "rr-011",
-				WorkflowID: "wf-001",
+				WorkflowID: wfID,
 				Kind:       "Pod",
 				Name:       "test",
 				Namespace:  "default",
@@ -135,7 +139,7 @@ var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func(
 			)
 			_, swErr := swTool.Handle(context.Background(), mcptools.SelectWorkflowInput{
 				RRID:       "rr-011",
-				WorkflowID: "wf-001",
+				WorkflowID: wfID,
 			}, mcpinternal.UserInfo{Username: "alice"})
 			Expect(swErr.Error()).To(ContainSubstring("workflow"),
 				"select_workflow error should contain tool-specific context")
@@ -144,16 +148,19 @@ var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func(
 
 	Describe("TOOL-012: SelectWorkflow sets confidence=1.0 and rationale for human selection", func() {
 		It("should always set confidence=1.0 and standard rationale for user-selected workflows", func() {
+			wfID := "wf-012"
 			sessions := &mockSessionManager{
 				isActive: true,
 				getDriverResult: &mcpinternal.InteractiveSession{
-					SessionID:  "sess-012",
-					ActingUser: mcpinternal.UserInfo{Username: "alice"},
+					SessionID:       "sess-012",
+					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:       &katypes.InvestigationResult{RCASummary: "test"},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
 				},
 			}
 			catalog := &mockWorkflowCatalog{
 				workflow: &mcptools.CatalogWorkflow{
-					WorkflowID:   "wf-012",
+					WorkflowID:   wfID,
 					WorkflowName: "restart-pod",
 					ActionType:   "restart",
 					Version:      "v1.0.0",
@@ -163,7 +170,7 @@ var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func(
 			tool := mcptools.NewSelectWorkflowTool(catalog, sessions)
 			output, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
 				RRID:       "rr-012",
-				WorkflowID: "wf-012",
+				WorkflowID: wfID,
 			}, mcpinternal.UserInfo{Username: "alice"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.Confidence).To(Equal(1.0),

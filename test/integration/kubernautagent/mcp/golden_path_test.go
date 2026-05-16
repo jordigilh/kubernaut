@@ -29,6 +29,8 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 type goldenPathRunner struct {
@@ -41,6 +43,14 @@ func (r *goldenPathRunner) RunInteractiveTurn(_ context.Context, _ []mcptools.LL
 		time.Sleep(r.delay)
 	}
 	return r.response, nil
+}
+
+func (r *goldenPathRunner) RunRCAExtraction(_ context.Context, _ []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
+}
+
+func (r *goldenPathRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA", WorkflowID: "mock-wf"}, nil
 }
 
 type goldenPathRecon struct{}

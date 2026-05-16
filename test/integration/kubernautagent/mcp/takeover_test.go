@@ -32,6 +32,7 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -48,6 +49,14 @@ func (m *delayedMockRunner) RunInteractiveTurn(_ context.Context, _ []tools.LLMM
 	m.calls.Add(1)
 	time.Sleep(m.delay)
 	return m.response, nil
+}
+
+func (m *delayedMockRunner) RunRCAExtraction(_ context.Context, _ []tools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
+}
+
+func (m *delayedMockRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA", WorkflowID: "mock-wf"}, nil
 }
 
 // mockReconIT mocks ContextReconstructor for integration tests.

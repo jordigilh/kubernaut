@@ -47,7 +47,9 @@ import (
 //   - FP-MCP-001: OOMKill -> autonomous -> takeover -> message -> complete
 //   - FP-MCP-002: Fresh interactive session (AF-style direct RR creation)
 //   - FP-MCP-003: Status lifecycle (autonomous -> not_found) via MCP
-//   - FP-MCP-005: select_workflow with real DS catalog
+//   - FP-MCP-005a: discover_workflows before select_workflow
+//   - FP-MCP-005b: select_workflow with real DS catalog (requires prior discover_workflows)
+//   - FP-MCP-005c: complete_no_action through full pipeline (AA routes to Completed/WorkflowNotNeeded)
 //   - FP-MCP-006: BR-007 CRD observability (InteractiveSession + CompletedAt)
 //   - FP-MCP-008: Reconnect via TCP proxy disconnect
 //   - FP-MCP-009: Concurrent takeover contention (second user rejected)
@@ -325,7 +327,23 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 		Expect(text).NotTo(BeEmpty(), "LLM response must not be empty")
 	})
 
-	It("FP-MCP-005: select_workflow with real DS catalog", func() {
+	It("FP-MCP-005a: discover_workflows before select_workflow", func() {
+		callCtx, callCancel := context.WithTimeout(ctx, 60*time.Second)
+		defer callCancel()
+
+		result, err := infrastructure.CallInvestigate(callCtx, mcpSession, map[string]any{
+			"rr_id":  remediationRequest.Name,
+			"action": "discover_workflows",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse(), "discover_workflows should succeed")
+
+		text := infrastructure.ExtractToolResultText(result)
+		GinkgoWriter.Printf("  DiscoverWorkflows response (first 300 chars): %.300s\n", text)
+		Expect(text).To(ContainSubstring("workflows_discovered"))
+	})
+
+	It("FP-MCP-005b: select_workflow with real DS catalog (requires prior discover_workflows)", func() {
 		Expect(workflowUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"),
 			"workflow catalog must be seeded")
 		workflowID := workflowUUIDs["oomkill-increase-memory-v1:production"]
@@ -482,5 +500,131 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 		Expect(completeErr).NotTo(HaveOccurred())
 		Expect(completeResult.IsError).To(BeFalse(), "complete should succeed")
 		Expect(infrastructure.ExtractToolResultText(completeResult)).To(ContainSubstring("completed"))
+	})
+})
+
+// FP-MCP-005c: complete_no_action through full pipeline.
+//
+// Creates a fresh RR, starts an interactive session, sends a message, then calls
+// complete_no_action. Validates that AA eventually sees the result and routes
+// to Completed/WorkflowNotNeeded/NotActionable (not Failed/WorkflowResolutionFailed).
+var _ = Describe("FP-MCP-005c: complete_no_action through full pipeline", Label("e2e", "fullpipeline", "interactive", "mcp"), func() {
+
+	It("should complete with no workflow and AA should route to Completed/WorkflowNotNeeded", func() {
+		By("Creating fresh RR for complete_no_action test")
+		rrName := fmt.Sprintf("rr-fp-mcp-005c-%d", time.Now().UnixMilli())
+		fingerprint := fmt.Sprintf("%x", sha256.Sum256([]byte("fp-mcp-005c-"+rrName)))
+		now := metav1.Now()
+
+		rr := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "kubernaut.ai/v1alpha1",
+				"kind":       "RemediationRequest",
+				"metadata": map[string]interface{}{
+					"name":      rrName,
+					"namespace": namespace,
+				},
+				"spec": map[string]interface{}{
+					"signalFingerprint": fingerprint,
+					"signalName":        "manual-test-complete-no-action",
+					"signalType":        "alert",
+					"severity":          "medium",
+					"targetType":        "kubernetes",
+					"firingTime":        now.UTC().Format(time.RFC3339),
+					"receivedTime":      now.UTC().Format(time.RFC3339),
+					"targetResource": map[string]interface{}{
+						"kind":      "Deployment",
+						"name":      "fp-mcp-005c-target",
+						"namespace": namespace,
+					},
+				},
+			},
+		}
+		rrGVR := schema.GroupVersionResource{
+			Group:    "kubernaut.ai",
+			Version:  "v1alpha1",
+			Resource: "remediationrequests",
+		}
+
+		cfg, cfgErr := config.GetConfig()
+		Expect(cfgErr).NotTo(HaveOccurred())
+		dynClient, dynErr := dynamic.NewForConfig(cfg)
+		Expect(dynErr).NotTo(HaveOccurred())
+
+		createCtx, createCancel := context.WithTimeout(ctx, 15*time.Second)
+		defer createCancel()
+		_, err := dynClient.Resource(rrGVR).Namespace(namespace).Create(createCtx, rr, metav1.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred(), "direct RR CRD creation for 005c")
+
+		By("Setting up MCP session")
+		saToken, err := infrastructure.GetServiceAccountToken(ctx, namespace, "kubernaut-agent-e2e-sa", kubeconfigPath)
+		Expect(err).NotTo(HaveOccurred())
+		tlsTransport, err := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		Expect(err).NotTo(HaveOccurred())
+
+		connectCtx, connectCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer connectCancel()
+		mcpSess, err := infrastructure.ConnectMCPClient(connectCtx, infrastructure.MCPClientConfig{
+			Endpoint:     infrastructure.MCPEndpointForKAE2E(),
+			SAToken:      saToken,
+			TLSTransport: tlsTransport,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = mcpSess.Close() }()
+
+		By("Starting interactive session")
+		startCtx, startCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer startCancel()
+		result, err := infrastructure.CallInvestigate(startCtx, mcpSess, map[string]any{
+			"rr_id":  rrName,
+			"action": "start",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse())
+
+		By("Sending a message")
+		msgCtx, msgCancel := context.WithTimeout(ctx, 60*time.Second)
+		defer msgCancel()
+		result, err = infrastructure.CallInvestigate(msgCtx, mcpSess, map[string]any{
+			"rr_id":   rrName,
+			"action":  "message",
+			"message": "This looks like a transient issue, no action needed",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse())
+
+		By("Calling complete_no_action")
+		cnaCtx, cnaCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cnaCancel()
+		result, err = infrastructure.CallCompleteNoAction(cnaCtx, mcpSess, map[string]any{
+			"rr_id":  rrName,
+			"reason": "transient issue, no remediation needed",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).NotTo(BeNil())
+		Expect(result.IsError).To(BeFalse(), "complete_no_action should succeed")
+
+		cnaText := infrastructure.ExtractToolResultText(result)
+		GinkgoWriter.Printf("  complete_no_action response: %s\n", cnaText)
+		Expect(cnaText).To(ContainSubstring("completed_no_action"))
+
+		By("Verifying AA routes to Completed/WorkflowNotNeeded (not Failed)")
+		Eventually(func(g Gomega) {
+			aaList := &aianalysisv1.AIAnalysisList{}
+			g.Expect(apiReader.List(ctx, aaList, client.InNamespace(namespace))).To(Succeed())
+			for _, aa := range aaList.Items {
+				if aa.Spec.RemediationRequestRef.Name == rrName {
+					GinkgoWriter.Printf("  AA %s phase=%s reason=%s\n", aa.Name, aa.Status.Phase, aa.Status.Reason)
+					g.Expect(aa.Status.Phase).To(Equal("Completed"),
+						"AA should complete (not fail) when user explicitly declines workflows")
+					g.Expect(aa.Status.Reason).To(Equal("WorkflowNotNeeded"),
+						"AA reason should be WorkflowNotNeeded for complete_no_action")
+					return
+				}
+			}
+			g.Expect(false).To(BeTrue(), "AIAnalysis for RR %s not found", rrName)
+		}, 2*time.Minute, 3*time.Second).Should(Succeed())
+
+		GinkgoWriter.Println("FP-MCP-005c: complete_no_action pipeline validated")
 	})
 })

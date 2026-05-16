@@ -30,7 +30,9 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // recordingAuditStore captures audit events for assertion in regression tests.
@@ -176,6 +178,14 @@ func (m *takeoverRunner) RunInteractiveTurn(_ context.Context, _ []tools.LLMMess
 		time.Sleep(m.delay)
 	}
 	return m.response, m.err
+}
+
+func (m *takeoverRunner) RunRCAExtraction(_ context.Context, _ []tools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
+}
+
+func (m *takeoverRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA", WorkflowID: "mock-wf"}, nil
 }
 
 // takeoverRecon mocks mcpinternal.ContextReconstructor for takeover tests.

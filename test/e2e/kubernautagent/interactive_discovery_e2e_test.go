@@ -1,0 +1,229 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package kubernautagent
+
+import (
+	"fmt"
+	"net/http"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+)
+
+// E2E-KA-DISC: Interactive Workflow Discovery lifecycle tests.
+//
+// These tests validate the discover_workflows, select_workflow gating, and
+// complete_no_action tools against the real Kind cluster with real KA + MockLLM.
+//
+// Tests:
+//   E2E-KA-DISC-001: start -> message -> discover_workflows -> select_workflow
+//   E2E-KA-DISC-002: start -> complete_no_action with reason
+//   E2E-KA-DISC-003: select_workflow without discover_workflows (gating)
+var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka", "interactive", "discovery"), func() {
+
+	var (
+		mcpEndpoint  string
+		tlsTransport http.RoundTripper
+		saToken      string
+	)
+
+	BeforeEach(func() {
+		mcpEndpoint = infrastructure.MCPEndpointForKAE2E()
+		tlsTransport = testauth.NewRetryOn429Transport(http.DefaultTransport)
+
+		var err error
+		saToken, err = infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "kubernaut-agent-e2e-sa", kubeconfigPath)
+		Expect(err).NotTo(HaveOccurred(), "should get E2E SA token")
+	})
+
+	Describe("E2E-KA-DISC-001: Full discovery lifecycle", func() {
+		It("should execute start -> message -> discover_workflows -> select_workflow", func() {
+			rrID := fmt.Sprintf("rr-disc001-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, rrID)
+
+			By("Connecting MCP client")
+			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
+				Endpoint:     mcpEndpoint,
+				SAToken:      saToken,
+				TLSTransport: tlsTransport,
+			})
+			Expect(err).NotTo(HaveOccurred(), "MCP client should connect")
+			defer session.Close()
+
+			By("Starting interactive session")
+			result, err := infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.IsError).To(BeFalse(), "start should succeed")
+
+			By("Verifying Lease exists")
+			clientset, err := getKubernetesClientset()
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func() bool {
+				lease, err := clientset.CoordinationV1().Leases(sharedNamespace).Get(
+					ctx, leaseNameForRR(rrID), metav1.GetOptions{})
+				return err == nil && lease.Spec.HolderIdentity != nil
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+
+			By("Sending investigative message")
+			result, err = infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":   rrID,
+				"action":  "message",
+				"message": "What is the root cause of this OOMKill event?",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+			Expect(infrastructure.ExtractToolResultText(result)).NotTo(BeEmpty())
+
+			By("Discovering workflows via LLM")
+			result, err = infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"action": "discover_workflows",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			discoverText := infrastructure.ExtractToolResultText(result)
+			GinkgoWriter.Printf("discover_workflows result: %s\n", discoverText)
+			Expect(result.IsError).To(BeFalse(), "discover_workflows should succeed")
+
+			By("Selecting a workflow from discovery results")
+			result, err = infrastructure.CallSelectWorkflow(ctx, session, map[string]any{
+				"rr_id":       rrID,
+				"workflow_id": "oomkill-increase-memory-v1",
+			})
+			if err == nil && result != nil {
+				selectText := infrastructure.ExtractToolResultText(result)
+				GinkgoWriter.Printf("select_workflow result: %s\n", selectText)
+			}
+
+			By("Verifying Lease released after auto-complete")
+			Eventually(func() bool {
+				_, err := clientset.CoordinationV1().Leases(sharedNamespace).Get(
+					ctx, leaseNameForRR(rrID), metav1.GetOptions{})
+				return err != nil
+			}, 15*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Lease should be deleted after select_workflow auto-complete")
+
+			GinkgoWriter.Println("E2E-KA-DISC-001: Full discovery lifecycle completed")
+		})
+	})
+
+	Describe("E2E-KA-DISC-002: complete_no_action with reason", func() {
+		It("should complete with no workflow and release the Lease", func() {
+			rrID := fmt.Sprintf("rr-disc002-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, rrID)
+
+			By("Connecting MCP client")
+			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
+				Endpoint:     mcpEndpoint,
+				SAToken:      saToken,
+				TLSTransport: tlsTransport,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			defer session.Close()
+
+			By("Starting interactive session")
+			result, err := infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("Completing with no action")
+			result, err = infrastructure.CallCompleteNoAction(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"reason": "false alarm, no remediation needed",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.IsError).To(BeFalse(), "complete_no_action should succeed")
+
+			cnaText := infrastructure.ExtractToolResultText(result)
+			GinkgoWriter.Printf("complete_no_action result: %s\n", cnaText)
+			Expect(cnaText).To(ContainSubstring("completed_no_action"))
+
+			By("Verifying Lease released")
+			clientset, err := getKubernetesClientset()
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func() bool {
+				_, err := clientset.CoordinationV1().Leases(sharedNamespace).Get(
+					ctx, leaseNameForRR(rrID), metav1.GetOptions{})
+				return err != nil
+			}, 15*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Lease should be deleted after complete_no_action")
+
+			GinkgoWriter.Println("E2E-KA-DISC-002: complete_no_action lifecycle completed")
+		})
+	})
+
+	Describe("E2E-KA-DISC-003: select_workflow gating without discover_workflows", func() {
+		It("should reject select_workflow when discover_workflows was not called", func() {
+			rrID := fmt.Sprintf("rr-disc003-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, rrID)
+
+			By("Connecting MCP client")
+			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
+				Endpoint:     mcpEndpoint,
+				SAToken:      saToken,
+				TLSTransport: tlsTransport,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			defer session.Close()
+
+			By("Starting interactive session")
+			result, err := infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("Attempting select_workflow without discover_workflows")
+			result, err = infrastructure.CallSelectWorkflow(ctx, session, map[string]any{
+				"rr_id":       rrID,
+				"workflow_id": "wf-attempt-no-discovery",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.IsError).To(BeTrue(),
+				"select_workflow must fail when discover_workflows was not called")
+
+			errorText := infrastructure.ExtractToolResultText(result)
+			Expect(errorText).To(ContainSubstring("discover_workflows"),
+				"error should mention discover_workflows as prerequisite")
+			GinkgoWriter.Printf("Gating error: %s\n", errorText)
+
+			By("Cleaning up session")
+			_, _ = infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"action": "cancel",
+			})
+
+			GinkgoWriter.Println("E2E-KA-DISC-003: select_workflow gating validated")
+		})
+	})
+})

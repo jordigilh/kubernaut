@@ -93,6 +93,7 @@ type realStackOpts struct {
 	warningIntervals  []time.Duration
 	maxSessions       int
 	sessionTTL        time.Duration
+	customRunner      tools.InvestigatorRunner // if set, bypasses the real investigator
 }
 
 func defaultRealStackOpts() realStackOpts {
@@ -118,25 +119,30 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 
 	logrLogger := logr.Discard()
 
-	// Real LLM client via langchaingo -> Podman Mock LLM (mode=interactive)
-	llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
-	Expect(err).ToNot(HaveOccurred(), "langchaingo adapter should build against Mock LLM at %s", sharedMockLLMEndpoint)
-	stack.LLMClient = llmAdapter
+	var runner tools.InvestigatorRunner
+	if opts.customRunner != nil {
+		runner = opts.customRunner
+	} else {
+		// Real LLM client via langchaingo -> Podman Mock LLM (mode=interactive)
+		llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
+		Expect(err).ToNot(HaveOccurred(), "langchaingo adapter should build against Mock LLM at %s", sharedMockLLMEndpoint)
+		stack.LLMClient = llmAdapter
 
-	// Real investigator.Investigator
-	promptBuilder, err := prompt.NewBuilder()
-	Expect(err).ToNot(HaveOccurred(), "prompt builder should build")
+		// Real investigator.Investigator
+		promptBuilder, err := prompt.NewBuilder()
+		Expect(err).ToNot(HaveOccurred(), "prompt builder should build")
 
-	inv := investigator.New(investigator.Config{
-		Client:       llmAdapter,
-		Builder:      promptBuilder,
-		ResultParser: parser.NewResultParser(),
-		AuditStore:   audit.NopAuditStore{},
-		Logger:       logrLogger,
-		MaxTurns:     15,
-		ModelName:    "test-model",
-	})
-	runner := adapters.NewInvestigatorRunnerAdapter(inv)
+		inv := investigator.New(investigator.Config{
+			Client:       llmAdapter,
+			Builder:      promptBuilder,
+			ResultParser: parser.NewResultParser(),
+			AuditStore:   audit.NopAuditStore{},
+			Logger:       logrLogger,
+			MaxTurns:     15,
+			ModelName:    "test-model",
+		})
+		runner = adapters.NewInvestigatorRunnerAdapter(inv)
+	}
 
 	// Real DSContextReconstructor via ogenclient -> Podman DataStorage
 	Expect(sharedDSClient).ToNot(BeNil(), "shared DS client must be initialized by suite")

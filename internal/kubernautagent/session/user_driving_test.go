@@ -155,3 +155,98 @@ var _ = Describe("StatusUserDriving — #774, BR-INTERACTIVE-001, BR-INTERACTIVE
 		})
 	})
 })
+
+var _ = Describe("session.Store.CompleteUserDriving — interactive pipeline bridge", func() {
+
+	Describe("UT-KA-CUD-001: CompleteUserDriving transitions user_driving to completed", func() {
+		It("should set status to completed with the provided result", func() {
+			store := session.NewStore(1 * time.Hour)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
+
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}, map[string]string{"remediation_id": "rr-cud-001"})
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func() session.Status {
+				s, _ := mgr.GetSession(id)
+				return s.Status
+			}).Should(Equal(session.StatusRunning))
+
+			err = mgr.TransitionToUserDriving(id, "alice", nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			result := &katypes.InvestigationResult{
+				RCASummary: "pod crashed due to OOM",
+				WorkflowID: "restart-pod-v1",
+				Confidence: 0.95,
+			}
+			err = mgr.CompleteUserDriving(id, result)
+			Expect(err).NotTo(HaveOccurred())
+
+			sess, err := mgr.GetSession(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Status).To(Equal(session.StatusCompleted))
+			Expect(sess.Result).NotTo(BeNil())
+			Expect(sess.Result.WorkflowID).To(Equal("restart-pod-v1"))
+		})
+	})
+
+	Describe("UT-KA-CUD-002: CompleteUserDriving rejects non-user_driving session", func() {
+		It("should return error when session is in running state", func() {
+			store := session.NewStore(1 * time.Hour)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
+
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}, map[string]string{})
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func() session.Status {
+				s, _ := mgr.GetSession(id)
+				return s.Status
+			}).Should(Equal(session.StatusRunning))
+
+			err = mgr.CompleteUserDriving(id, &katypes.InvestigationResult{})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("expected user_driving"))
+		})
+	})
+
+	Describe("UT-KA-CUD-003: CompleteUserDriving returns ErrSessionNotFound for unknown ID", func() {
+		It("should return not found error", func() {
+			store := session.NewStore(1 * time.Hour)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
+
+			err := mgr.CompleteUserDriving("nonexistent", &katypes.InvestigationResult{})
+			Expect(err).To(MatchError(session.ErrSessionNotFound))
+		})
+	})
+
+	Describe("UT-KA-CUD-004: FindUserDrivingByRemediationID locates user-driving session", func() {
+		It("should find the session by remediation_id when in user_driving status", func() {
+			store := session.NewStore(1 * time.Hour)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
+
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}, map[string]string{"remediation_id": "rr-find-001"})
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func() session.Status {
+				s, _ := mgr.GetSession(id)
+				return s.Status
+			}).Should(Equal(session.StatusRunning))
+
+			err = mgr.TransitionToUserDriving(id, "bob", nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			foundID, found := mgr.FindUserDrivingByRemediationID("rr-find-001")
+			Expect(found).To(BeTrue())
+			Expect(foundID).To(Equal(id))
+
+			_, notFound := mgr.FindUserDrivingByRemediationID("rr-nonexistent")
+			Expect(notFound).To(BeFalse())
+		})
+	})
+})

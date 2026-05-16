@@ -25,6 +25,8 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 type mockSessionManager struct {
@@ -65,6 +67,14 @@ type mockInvestigatorRunner struct {
 
 func (m *mockInvestigatorRunner) RunInteractiveTurn(_ context.Context, _ []mcptools.LLMMessage, _ string) (string, error) {
 	return m.response, m.err
+}
+
+func (m *mockInvestigatorRunner) RunRCAExtraction(_ context.Context, _ []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA", Confidence: 0.9}, nil
+}
+
+func (m *mockInvestigatorRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA", WorkflowID: "mock-workflow", Confidence: 0.85}, nil
 }
 
 type mockContextReconstructor struct {
@@ -460,6 +470,220 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			var mcpErr *mcptools.MCPError
 			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
 			Expect(mcpErr.Code).To(Equal("session_active"))
+		})
+	})
+})
+
+// mockSignalResolver implements mcptools.SignalContextResolver for UTs.
+type mockSignalResolver struct {
+	signal  *katypes.SignalContext
+	enrich  *prompt.EnrichmentData
+	signalErr error
+	enrichErr error
+}
+
+func (m *mockSignalResolver) ResolveSignalContext(_ context.Context, _ string) (*katypes.SignalContext, error) {
+	if m.signal != nil {
+		return m.signal, m.signalErr
+	}
+	return &katypes.SignalContext{Severity: "critical"}, m.signalErr
+}
+
+func (m *mockSignalResolver) ResolveEnrichmentData(_ context.Context, _ string) (*prompt.EnrichmentData, error) {
+	if m.enrich != nil {
+		return m.enrich, m.enrichErr
+	}
+	return &prompt.EnrichmentData{}, m.enrichErr
+}
+
+var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
+
+	Describe("UT-KA-DW-001: discover_workflows stores RCA + DiscoveryResult", func() {
+		It("should return recommendations and store both results on session", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-001",
+				CorrelationID: "rr-dw-001",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{
+				{Role: "user", Content: "my pod is crashing"},
+				{Role: "assistant", Content: "I see OOM errors"},
+			}}
+			resolver := &mockSignalResolver{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver))
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-001",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"))
+
+			Expect(sess.RCAResult).NotTo(BeNil(), "RCA result should be stored on session")
+			Expect(sess.DiscoveryResult).NotTo(BeNil(), "Discovery result should be stored on session")
+		})
+	})
+
+	Describe("UT-KA-DW-002: discover_workflows rejects non-driver", func() {
+		It("should reject caller who is not the active driver", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-dw-002",
+					CorrelationID: "rr-dw-002",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-002",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "bob"})
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Describe("UT-KA-DW-003: discover_workflows rejects when no session", func() {
+		It("should reject when no active session exists", func() {
+			sessionMgr := &mockSessionManager{isActive: false}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-003",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+		})
+	})
+})
+
+var _ = Describe("kubernaut_investigate — discover_workflows additional scenarios", func() {
+
+	Describe("UT-KA-DW-004: discover_workflows called twice overwrites previous results", func() {
+		It("should succeed and overwrite RCA + DiscoveryResult on re-discovery", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-004",
+				CorrelationID: "rr-dw-004",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				RCAResult:     &katypes.InvestigationResult{RCASummary: "stale RCA"},
+				DiscoveryResult: &mcpinternal.WorkflowDiscoveryResult{
+					Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "stale-wf"},
+				},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{
+				{Role: "user", Content: "my pod is crashing"},
+			}}
+			resolver := &mockSignalResolver{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver))
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-004",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"))
+
+			Expect(sess.RCAResult).NotTo(BeNil())
+			Expect(sess.RCAResult.RCASummary).To(Equal("mock RCA"),
+				"RCA should be overwritten with fresh extraction result")
+			Expect(sess.DiscoveryResult).NotTo(BeNil())
+			Expect(sess.DiscoveryResult.Recommended).NotTo(BeNil())
+			Expect(sess.DiscoveryResult.Recommended.WorkflowID).To(Equal("mock-workflow"),
+				"DiscoveryResult should be overwritten with fresh discovery result")
+		})
+	})
+
+	Describe("UT-KA-RECONNECT-DW: reconnect after discover_workflows preserves session state", func() {
+		It("should allow select_workflow after reconnect without re-discovery", func() {
+			wfID := "wf-reconnect-test"
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-reconnect-dw",
+				CorrelationID: "rr-reconnect-dw",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				RCAResult:     &katypes.InvestigationResult{RCASummary: "OOM crash", Confidence: 0.9},
+				DiscoveryResult: &mcpinternal.WorkflowDiscoveryResult{
+					Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: wfID, Confidence: 0.85},
+				},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+
+			investigateTool := mcptools.NewInvestigateTool(sessionMgr, &mockInvestigatorRunner{}, &mockContextReconstructor{}, mcptools.NopAutonomousManager{})
+			reconnectOut, err := investigateTool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-reconnect-dw",
+				Action: mcptools.ActionReconnect,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(reconnectOut.Status).To(Equal("reconnected"))
+
+			Expect(sess.DiscoveryResult).NotTo(BeNil(),
+				"DiscoveryResult must survive reconnect")
+			Expect(sess.RCAResult).NotTo(BeNil(),
+				"RCAResult must survive reconnect")
+
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{WorkflowID: wfID, WorkflowName: "restart-pod"},
+			}
+			selectTool := mcptools.NewSelectWorkflowTool(catalog, sessionMgr)
+			selectOut, err := selectTool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-reconnect-dw",
+				WorkflowID: wfID,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(selectOut.Status).To(Equal("workflow_selected"))
+		})
+	})
+})
+
+var _ = Describe("kubernaut_investigate — DiscoveryResult invalidation on message", func() {
+
+	Describe("UT-KA-INVAL-001: message clears DiscoveryResult", func() {
+		It("should clear DiscoveryResult after a message is sent", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-inval-001",
+				CorrelationID: "rr-inval-001",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				DiscoveryResult: &mcpinternal.WorkflowDiscoveryResult{
+					Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "wf-stale"},
+				},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{response: "Updated analysis shows..."}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:    "rr-inval-001",
+				Action:  mcptools.ActionMessage,
+				Message: "actually it might be a network issue",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("message_received"))
+
+			Expect(sess.DiscoveryResult).To(BeNil(),
+				"DiscoveryResult must be cleared after a message to prevent stale recommendations")
 		})
 	})
 })
