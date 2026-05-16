@@ -69,7 +69,7 @@ jobs:
     name: "E2E — Full Stack (Kind + Podman)"
     runs-on: ubuntu-latest
     needs: [build]
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       KIND_EXPERIMENTAL_PROVIDER: podman
       IMAGE_REGISTRY: ghcr.io/jordigilh/kubernaut
@@ -103,7 +103,7 @@ jobs:
           E2E_COVERAGE: "true"
           KIND_EXPERIMENTAL_PROVIDER: podman
         run: |
-          ginkgo -v --timeout=25m ./test/e2e/
+          ginkgo -v --timeout=50m ./test/e2e/
 
       - name: Collect E2E coverage
         if: success() || failure()

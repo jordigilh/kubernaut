@@ -227,7 +227,7 @@ spec:
 			"-o", "jsonpath={.status.reconnectedAt}")
 		if reAt == "" {
 			now := time.Now().UTC().Format(time.RFC3339)
-			patchActive := fmt.Sprintf(`{"status":{"phase":"Active","message":"e2e reconnect","connectionState":"Connected","reconnectedAt":"%s"}}`, now)
+			patchActive := fmt.Sprintf(`{"status":{"phase":"Active","message":"e2e reconnect","connectionState":"Connected","reconnectedAt":%q}}`, now)
 			patchOut2, patchErr2 := kubectl(ctx, "patch", "investigationsession", isName, "-n", namespace,
 				"--type=merge", "--subresource=status", "-p", patchActive)
 			Expect(patchErr2).NotTo(HaveOccurred(), patchOut2)

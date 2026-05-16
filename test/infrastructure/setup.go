@@ -32,7 +32,7 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 
 	// Pre-create coverdata directory so Kind hostPath mount succeeds.
 	coverdataDir := filepath.Join(projectRoot, "coverdata")
-	if err := os.MkdirAll(coverdataDir, 0o777); err != nil { //nolint:gosec
+	if err := os.MkdirAll(coverdataDir, 0o777); err != nil { //nolint:gosec // G301: world-readable dir needed for Kind volume mount
 		_, _ = fmt.Fprintf(writer, "  WARNING: failed to create coverdata dir: %v\n", err)
 	}
 
@@ -169,7 +169,7 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 	}
 	_, _ = fmt.Fprintln(writer, "  Deploying Redis...")
 	if err := deployRedis(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("Redis deploy failed: %w", err)
+		return fmt.Errorf("redis deploy failed: %w", err)
 	}
 
 	// Apply database migrations before DS starts (DS requires audit_events table)
@@ -603,7 +603,7 @@ func applyDatabaseMigrations(ctx context.Context, kubeconfigPath, namespace stri
 		return nil
 	}
 
-	sqlData, err := os.ReadFile(migrationFile) //nolint:gosec
+	sqlData, err := os.ReadFile(migrationFile) //nolint:gosec // G304: path from test constants
 	if err != nil {
 		return fmt.Errorf("read migration file: %w", err)
 	}
@@ -649,14 +649,13 @@ func deployMockLLM(ctx context.Context, kubeconfigPath, namespace, mockLLMImage 
 	mockLLMManifest := filepath.Join(projectRoot, "deploy", "kustomize", "overlays", "e2e", "mock-llm.yaml")
 
 	// Read the manifest and replace the image reference
-	data, err := os.ReadFile(mockLLMManifest) //nolint:gosec
+	data, err := os.ReadFile(mockLLMManifest) //nolint:gosec // G304: path from test constants
 	if err != nil {
 		return fmt.Errorf("failed to read mock-llm.yaml: %w", err)
 	}
 
 	manifest := strings.ReplaceAll(string(data), "ghcr.io/jordigilh/kubernaut/mock-llm:pr-1161", mockLLMImage)
-	// Ensure IfNotPresent so it uses the pre-loaded image
-	manifest = strings.ReplaceAll(manifest, "imagePullPolicy: IfNotPresent", "imagePullPolicy: IfNotPresent")
+	manifest = strings.ReplaceAll(manifest, "imagePullPolicy: Always", "imagePullPolicy: IfNotPresent")
 
 	return kubectlApplyStdin(ctx, kubeconfigPath, manifest, writer)
 }
@@ -712,7 +711,7 @@ func patchKAJWTAudience(ctx context.Context, kubeconfigPath, namespace string, w
 }
 
 func kubectlApplyStdin(ctx context.Context, kubeconfigPath, manifest string, writer io.Writer) error {
-	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-") //nolint:gosec
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-") //nolint:gosec // G204: args from test constants
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer

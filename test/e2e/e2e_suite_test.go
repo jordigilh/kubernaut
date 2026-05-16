@@ -57,15 +57,13 @@ var _ = SynchronizedBeforeSuite(
 				}); ierr != nil {
 					_, _ = fmt.Fprintf(GinkgoWriter, "  WARNING: CPU metric injection failed: %v\n", ierr)
 				}
-			if ierr := infrastructure.InjectOTLPMetrics(ctx, promURL, "e2e_memory_usage_percent", 90, map[string]string{
-				"namespace": "default", "kind": "Deployment", "name": "test-pending-target",
-			}); ierr != nil {
-				_, _ = fmt.Fprintf(GinkgoWriter, "  WARNING: Memory metric injection failed: %v\n", ierr)
-			}
-			// NOTE: e2e_disk_usage_percent is NOT injected here. It is injected at
-			// test time in TC-E2E-SEV-03 to exploit the timing window between
-			// injection and the next rule evaluation cycle (5s), so that the rule
-			// is still "inactive" while the instant query finds live data.
+				if ierr := infrastructure.InjectOTLPMetrics(ctx, promURL, "e2e_memory_usage_percent", 90, map[string]string{
+					"namespace": "default", "kind": "Deployment", "name": "test-pending-target",
+				}); ierr != nil {
+					_, _ = fmt.Fprintf(GinkgoWriter, "  WARNING: Memory metric injection failed: %v\n", ierr)
+				}
+				// NOTE: e2e_disk_usage_percent is NOT injected here — injected at test
+				// time in TC-E2E-SEV-03 to exploit the rule evaluation timing window.
 				_, _ = fmt.Fprintln(GinkgoWriter, "  Waiting for HighCPU alert to fire...")
 				if werr := infrastructure.WaitForPrometheusRuleState(ctx, promURL, "HighCPU", infrastructure.RuleStateFiring, 60*time.Second); werr != nil {
 					_, _ = fmt.Fprintf(GinkgoWriter, "  WARNING: HighCPU did not reach firing state: %v\n", werr)
