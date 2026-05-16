@@ -194,8 +194,40 @@ jobs:
           AF_E2E_KA_IMAGE: ghcr.io/jordigilh/kubernaut/kubernautagent:pr-828
           AF_E2E_DS_IMAGE: ghcr.io/jordigilh/kubernaut/datastorage:pr-828
           AF_E2E_MOCKLLM_IMAGE: ghcr.io/jordigilh/kubernaut/mock-llm:pr-828
+          E2E_COVERAGE: "true"
         run: |
           ginkgo -v --timeout=10m --label-filter="phase1" ./test/e2e/
+
+      - name: Collect E2E coverage
+        if: success() || failure()
+        run: |
+          COVER_DIR="/tmp/e2e-coverage"
+          mkdir -p "$COVER_DIR"
+          # Copy coverage profiles from AF pod's GOCOVERDIR mount
+          AF_POD=$(kubectl -n ${{ env.NAMESPACE }} get pods -l app.kubernetes.io/name=kubernaut-apifrontend -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+          if [ -n "$AF_POD" ]; then
+            kubectl cp "${{ env.NAMESPACE }}/$AF_POD:/tmp/coverage" "$COVER_DIR" -c apifrontend 2>/dev/null || true
+          fi
+          if ls "$COVER_DIR"/*.* >/dev/null 2>&1; then
+            echo "=== E2E Coverage ==="
+            go tool covdata percent -i="$COVER_DIR" 2>&1 | tee /tmp/e2e-coverage-summary.txt
+            # Extract total percentage for gate
+            TOTAL=$(go tool covdata percent -i="$COVER_DIR" 2>/dev/null | grep -oP '\d+\.\d+%' | tail -1 | tr -d '%')
+            echo "E2E_COVERAGE_PERCENT=$TOTAL" >> "$GITHUB_ENV"
+          else
+            echo "No coverage profiles collected (binary may not be coverage-instrumented)"
+            echo "E2E_COVERAGE_PERCENT=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: Coverage gate (80%)
+        if: env.E2E_COVERAGE_PERCENT != '0'
+        run: |
+          THRESHOLD=80
+          ACTUAL=$(echo "${{ env.E2E_COVERAGE_PERCENT }}" | cut -d. -f1)
+          echo "E2E coverage: ${{ env.E2E_COVERAGE_PERCENT }}% (threshold: ${THRESHOLD}%)"
+          if [ "$ACTUAL" -lt "$THRESHOLD" ]; then
+            echo "::warning::E2E coverage ${{ env.E2E_COVERAGE_PERCENT }}% is below ${THRESHOLD}% threshold"
+          fi
 
       - name: Collect logs on failure
         if: failure()
