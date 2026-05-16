@@ -393,4 +393,73 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 				"non-driver complete must be rejected with session_active")
 		})
 	})
+
+	Describe("UT-KA-RECONNECT-ACTION-001: action=reconnect returns existing session for same user", func() {
+		It("should return status=reconnected with the existing session ID", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-reconnect-existing",
+					CorrelationID: "rr-reconnect",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-reconnect",
+				Action: mcptools.ActionReconnect,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("reconnected"))
+			Expect(output.SessionID).To(Equal("sess-reconnect-existing"))
+		})
+	})
+
+	Describe("UT-KA-RECONNECT-ACTION-002: action=reconnect fails when no session exists", func() {
+		It("should return MCPError not_driving", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: false,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-no-session",
+				Action: mcptools.ActionReconnect,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("not_driving"))
+		})
+	})
+
+	Describe("UT-KA-RECONNECT-ACTION-003: action=reconnect rejected for different user", func() {
+		It("should return MCPError session_active with driver identity", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-reconnect-owned",
+					CorrelationID: "rr-reconnect-diff",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-reconnect-diff",
+				Action: mcptools.ActionReconnect,
+			}, mcpinternal.UserInfo{Username: "bob"})
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("session_active"))
+		})
+	})
 })

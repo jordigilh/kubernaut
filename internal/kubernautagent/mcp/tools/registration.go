@@ -33,7 +33,7 @@ func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.Dele
 	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
 		mcpsdk.AddTool(server, &mcpsdk.Tool{
 			Name:        "kubernaut_investigate",
-			Description: "Investigate a remediation request interactively. Actions: start, takeover, message, complete, cancel, status.",
+			Description: "Investigate a remediation request interactively. Actions: start, takeover, message, complete, cancel, status, reconnect.",
 		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input InvestigateInput) (*mcpsdk.CallToolResult, InvestigateOutput, error) {
 			user := userFromCtx(ctx)
 			output, err := tool.Handle(ctx, input, user)
@@ -41,7 +41,7 @@ func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.Dele
 				if eventStore != nil {
 					eventStore.RegisterMCPSession(req.Session.ID(), output.SessionID)
 				}
-				if notifier != nil && (output.Status == "started" || output.Status == "takeover_started") {
+				if notifier != nil && (output.Status == "started" || output.Status == "takeover_started" || output.Status == "reconnected") {
 					sess := req.Session
 					notifier.Register(output.SessionID, func(msg string) {
 						_ = sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{

@@ -218,6 +218,8 @@ func (t *InvestigateTool) dispatch(ctx context.Context, input InvestigateInput, 
 		return t.handleCancel(input, user)
 	case ActionStatus:
 		return t.handleStatus(input)
+	case ActionReconnect:
+		return t.handleReconnect(input, user)
 	default:
 		return InvestigateOutput{}, ErrInvalidAction
 	}
@@ -504,6 +506,37 @@ func (t *InvestigateTool) handleStatus(input InvestigateInput) (InvestigateOutpu
 	return InvestigateOutput{
 		Status:   "status",
 		Response: string(data),
+	}, nil
+}
+
+func (t *InvestigateTool) handleReconnect(input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
+	if !t.sessions.IsDriverActive(input.RRID) {
+		return InvestigateOutput{}, ErrCodeNotDriving
+	}
+
+	sess, err := t.sessions.GetDriver(input.RRID)
+	if err != nil {
+		if errors.Is(err, mcpinternal.ErrSessionExpired) {
+			return InvestigateOutput{}, ErrCodeSessionExpired
+		}
+		return InvestigateOutput{}, ErrCodeNotDriving
+	}
+	if sess == nil {
+		return InvestigateOutput{}, ErrCodeNotDriving
+	}
+
+	if sess.ActingUser.Username != user.Username {
+		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", sess.ActingUser.Username)
+	}
+
+	t.sessions.TouchActivity(input.RRID)
+	if t.timeoutTracker != nil {
+		t.timeoutTracker.ResetInactivity(sess.SessionID)
+	}
+
+	return InvestigateOutput{
+		SessionID: sess.SessionID,
+		Status:    "reconnected",
 	}, nil
 }
 

@@ -21,7 +21,7 @@ import "errors"
 // InvestigateInput is the JSON schema for the kubernaut_investigate MCP tool.
 type InvestigateInput struct {
 	RRID    string `json:"rr_id"`
-	Action  string `json:"action"` // start, message, complete, cancel
+	Action  string `json:"action"` // start, message, complete, cancel, takeover, status, reconnect
 	Message string `json:"message,omitempty"`
 }
 
@@ -48,12 +48,13 @@ type StatusOutput struct {
 
 // Valid actions for the kubernaut_investigate tool.
 const (
-	ActionStart    = "start"
-	ActionMessage  = "message"
-	ActionComplete = "complete"
-	ActionCancel   = "cancel"
-	ActionTakeover = "takeover"
-	ActionStatus   = "status"
+	ActionStart     = "start"
+	ActionMessage   = "message"
+	ActionComplete  = "complete"
+	ActionCancel    = "cancel"
+	ActionTakeover  = "takeover"
+	ActionStatus    = "status"
+	ActionReconnect = "reconnect"
 )
 
 var (
@@ -76,7 +77,7 @@ func ValidateInput(input InvestigateInput) error {
 		return ErrMissingRRID
 	}
 	switch input.Action {
-	case ActionStart, ActionComplete, ActionCancel, ActionTakeover, ActionStatus:
+	case ActionStart, ActionComplete, ActionCancel, ActionTakeover, ActionStatus, ActionReconnect:
 		return nil
 	case ActionMessage:
 		if input.Message == "" {
