@@ -1,0 +1,54 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  # DD-TEST-007: Mount coverage directory for E2E coverage collection
+  extraMounts:
+  - hostPath: ./coverdata
+    containerPath: /coverdata
+    readOnly: false
+  extraPortMappings:
+  # AF API (TLS) — E2E tests connect here
+  - containerPort: 30443
+    hostPort: 18443
+    protocol: TCP
+  # AF health port
+  - containerPort: 30081
+    hostPort: 18081
+    protocol: TCP
+  # AF metrics port
+  - containerPort: 30090
+    hostPort: 19090
+    protocol: TCP
+  # Kubernaut Agent (KA) - Per DD-TEST-001 v2.9
+  - containerPort: 30088
+    hostPort: 8088
+    protocol: TCP
+  # Kubernaut Agent health - Issue #753
+  - containerPort: 30188
+    hostPort: 28088
+    protocol: TCP
+  # Kubernaut Agent metrics - Issue #753
+  - containerPort: 30988
+    hostPort: 9088
+    protocol: TCP
+  # Data Storage - Per DD-TEST-001 v2.5
+  - containerPort: 30089
+    hostPort: 8089
+    protocol: TCP
+  # Data Storage health - Issue #753
+  - containerPort: 30281
+    hostPort: 28089
+    protocol: TCP
+  # PostgreSQL - Per DD-TEST-001 v1.8
+  - containerPort: 30439
+    hostPort: 30439
+    protocol: TCP
+  # Redis - Per DD-TEST-001 v1.8
+  - containerPort: 30387
+    hostPort: 30387
+    protocol: TCP
+  # DEX OIDC Provider - E2E JWT/OIDC testing
+  - containerPort: 30556
+    hostPort: 5556
+    protocol: TCP

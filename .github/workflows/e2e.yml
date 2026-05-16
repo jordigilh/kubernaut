@@ -77,7 +77,9 @@ jobs:
     name: "Phase 1 — AF + KA + DS Integration"
     runs-on: ubuntu-latest
     needs: [build, integration]
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      KIND_EXPERIMENTAL_PROVIDER: podman
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -86,132 +88,44 @@ jobs:
           go-version: '1.26'
           cache: true
 
-      - name: Install Kind
+      - name: Install Kind v0.30.0
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64
+          curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/v0.30.0/kind-linux-amd64"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Install Podman
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq podman
+          podman --version
 
       - name: Install Ginkgo
         run: go install github.com/onsi/ginkgo/v2/ginkgo@v2.28.3
 
-      - name: Build E2E image
-        run: docker build --target production -t ${{ env.E2E_IMAGE }} .
-
-      - name: Create Kind cluster
-        run: |
-          kind create cluster \
-            --name ${{ env.KIND_CLUSTER_NAME }} \
-            --config deploy/kustomize/overlays/e2e/kind-config.yaml \
-            --wait 60s
-
-      - name: Load image into Kind
-        run: kind load docker-image ${{ env.E2E_IMAGE }} --name ${{ env.KIND_CLUSTER_NAME }}
-
-      - name: Generate TLS certificates
-        run: |
-          bash deploy/kustomize/overlays/e2e/generate-certs.sh ${{ env.CERT_DIR }}
-
-      - name: Create TLS secrets
-        run: |
-          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          # AF TLS
-          kubectl create secret tls apifrontend-tls \
-            --cert=${{ env.CERT_DIR }}/tls.crt \
-            --key=${{ env.CERT_DIR }}/tls.key \
-            -n ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic apifrontend-ca \
-            --from-file=ca.crt=${{ env.CERT_DIR }}/ca.crt \
-            -n ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          # KA TLS
-          kubectl create secret tls kubernaut-agent-tls \
-            --cert=${{ env.CERT_DIR }}/ka-tls.crt \
-            --key=${{ env.CERT_DIR }}/ka-tls.key \
-            -n ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          # DS TLS
-          kubectl create secret tls data-storage-tls \
-            --cert=${{ env.CERT_DIR }}/ds-tls.crt \
-            --key=${{ env.CERT_DIR }}/ds-tls.key \
-            -n ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          # Shared CA ConfigMap for inter-service trust
-          kubectl create configmap inter-service-ca \
-            --from-file=ca.crt=${{ env.CERT_DIR }}/ca.crt \
-            -n ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Deploy E2E stack (AF + DEX)
-        run: |
-          kubectl apply -k deploy/kustomize/overlays/e2e/
-          kubectl rollout status deployment/dex -n ${{ env.NAMESPACE }} --timeout=90s
-          kubectl rollout status deployment/apifrontend -n ${{ env.NAMESPACE }} --timeout=120s
-
-      - name: Wait for DEX readiness
-        run: |
-          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=dex \
-            -n ${{ env.NAMESPACE }} --timeout=60s
-
-      - name: Port-forward AF and DEX
-        run: |
-          kubectl port-forward -n ${{ env.NAMESPACE }} svc/apifrontend 18443:8443 18081:8081 &
-          kubectl port-forward -n ${{ env.NAMESPACE }} svc/dex 15556:5556 &
-          # Wait for port-forwards to be ready
-          for i in $(seq 1 30); do
-            if curl -s --cacert ${{ env.CERT_DIR }}/ca.crt https://localhost:18443/healthz >/dev/null 2>&1; then
-              echo "AF port-forward ready"
-              break
-            fi
-            if [ "$i" -eq 30 ]; then
-              echo "AF port-forward failed after 30 retries"
-              kubectl -n ${{ env.NAMESPACE }} logs deployment/apifrontend --tail=50
-              exit 1
-            fi
-            sleep 1
-          done
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:15556/dex/healthz >/dev/null 2>&1; then
-              echo "DEX port-forward ready"
-              break
-            fi
-            if [ "$i" -eq 30 ]; then
-              echo "DEX port-forward failed after 30 retries"
-              kubectl -n ${{ env.NAMESPACE }} logs deployment/dex --tail=50
-              exit 1
-            fi
-            sleep 1
-          done
-
       - name: Run E2E tests
         env:
-          AF_E2E_BASE_URL: https://localhost:18443
-          AF_E2E_CA_CERT: ${{ env.CERT_DIR }}/ca.crt
-          AF_E2E_HEALTH_URL: http://localhost:18081
-          AF_E2E_DEX_URL: http://localhost:15556/dex
-          AF_E2E_CLIENT_ID: kubernaut-apifrontend
-          AF_E2E_CLIENT_SECRET: e2e-client-secret
-          AF_E2E_USERNAME: e2e-user@kubernaut.ai
-          AF_E2E_PASSWORD: password
-          CERT_DIR: ${{ env.CERT_DIR }}
-          AF_E2E_NAMESPACE: ${{ env.NAMESPACE }}
-          AF_E2E_KA_IMAGE: ghcr.io/jordigilh/kubernaut/kubernautagent:pr-828
-          AF_E2E_DS_IMAGE: ghcr.io/jordigilh/kubernaut/datastorage:pr-828
-          AF_E2E_MOCKLLM_IMAGE: ghcr.io/jordigilh/kubernaut/mock-llm:pr-828
           E2E_COVERAGE: "true"
+          KIND_EXPERIMENTAL_PROVIDER: podman
         run: |
-          ginkgo -v --timeout=10m --label-filter="phase1" ./test/e2e/
+          ginkgo -v --timeout=25m ./test/e2e/
 
       - name: Collect E2E coverage
         if: success() || failure()
         run: |
           COVER_DIR="/tmp/e2e-coverage"
           mkdir -p "$COVER_DIR"
-          # Copy coverage profiles from AF pod's GOCOVERDIR mount
-          AF_POD=$(kubectl -n ${{ env.NAMESPACE }} get pods -l app.kubernetes.io/name=kubernaut-apifrontend -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-          if [ -n "$AF_POD" ]; then
-            kubectl cp "${{ env.NAMESPACE }}/$AF_POD:/tmp/coverage" "$COVER_DIR" -c apifrontend 2>/dev/null || true
+          KUBECONFIG="$HOME/.kube/apifrontend-e2e-config"
+          if [ -f "$KUBECONFIG" ]; then
+            AF_POD=$(kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} get pods -l app.kubernetes.io/name=kubernaut-apifrontend -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+            if [ -n "$AF_POD" ]; then
+              kubectl --kubeconfig="$KUBECONFIG" cp "${{ env.NAMESPACE }}/$AF_POD:/tmp/coverage" "$COVER_DIR" -c apifrontend 2>/dev/null || true
+            fi
           fi
           if ls "$COVER_DIR"/*.* >/dev/null 2>&1; then
             echo "=== E2E Coverage ==="
             go tool covdata percent -i="$COVER_DIR" 2>&1 | tee /tmp/e2e-coverage-summary.txt
-            # Extract total percentage for gate
             TOTAL=$(go tool covdata percent -i="$COVER_DIR" 2>/dev/null | grep -oP '\d+\.\d+%' | tail -1 | tr -d '%')
             echo "E2E_COVERAGE_PERCENT=$TOTAL" >> "$GITHUB_ENV"
           else
@@ -232,24 +146,30 @@ jobs:
       - name: Collect logs on failure
         if: failure()
         run: |
-          echo "=== AF Pod Logs ==="
-          kubectl -n ${{ env.NAMESPACE }} logs deployment/apifrontend --tail=200 || true
-          echo "=== DEX Pod Logs ==="
-          kubectl -n ${{ env.NAMESPACE }} logs deployment/dex --tail=100 || true
-          echo "=== KA Pod Logs ==="
-          kubectl -n ${{ env.NAMESPACE }} logs deployment/kubernaut-agent --tail=200 || true
-          echo "=== DS Pod Logs ==="
-          kubectl -n ${{ env.NAMESPACE }} logs deployment/data-storage --tail=100 || true
-          echo "=== mock-LLM Pod Logs ==="
-          kubectl -n ${{ env.NAMESPACE }} logs deployment/mock-llm --tail=50 || true
-          echo "=== Events ==="
-          kubectl -n ${{ env.NAMESPACE }} get events --sort-by='.lastTimestamp' || true
-          echo "=== Pod Status ==="
-          kubectl -n ${{ env.NAMESPACE }} get pods -o wide || true
+          KUBECONFIG="$HOME/.kube/apifrontend-e2e-config"
+          if [ -f "$KUBECONFIG" ]; then
+            echo "=== AF Pod Logs ==="
+            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} logs deployment/apifrontend --tail=200 || true
+            echo "=== KA Pod Logs ==="
+            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} logs deployment/kubernaut-agent --tail=200 || true
+            echo "=== DS Pod Logs ==="
+            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} logs deployment/data-storage --tail=100 || true
+            echo "=== Events ==="
+            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} get events --sort-by='.lastTimestamp' || true
+            echo "=== Pod Status ==="
+            kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} get pods -o wide || true
+          else
+            echo "No kubeconfig found — cluster may not have been created"
+          fi
 
       - name: Cleanup Kind cluster
         if: always()
-        run: kind delete cluster --name ${{ env.KIND_CLUSTER_NAME }}
+        run: kind delete cluster --name ${{ env.KIND_CLUSTER_NAME }} 2>/dev/null || true
+
+      - name: Cleanup Podman resources
+        if: always()
+        run: |
+          podman ps -a --filter "name=apifrontend-e2e" --format "{{.Names}}" | xargs -r podman rm -f 2>/dev/null || true
 
   build:
     runs-on: ubuntu-latest
