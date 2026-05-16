@@ -21,7 +21,7 @@ var _ = Describe("InvestigationSession CRD (E2E)", Ordered, Label("e2e", "phase1
 
 	BeforeAll(func() {
 		namespace = getEnvOrDefault("AF_E2E_NAMESPACE", "kubernaut-system")
-		kubeconfigPath = getEnvOrDefault("KUBECONFIG", os.Getenv("HOME")+"/.kube/config")
+		kubeconfigPath = os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
 	})
 
 	kubectl := func(args ...string) (string, error) {

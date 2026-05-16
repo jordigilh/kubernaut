@@ -15,7 +15,7 @@ import (
 )
 
 func kubectlApplyYAML(manifest string) error {
-	kubeconfigPath := getEnvOrDefault("KUBECONFIG", os.Getenv("HOME")+"/.kube/config")
+	kubeconfigPath := os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
 	cmd := exec.CommandContext(context.Background(), "kubectl", //nolint:gosec // G702: kubeconfig path from controlled E2E env
 		"--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -333,7 +333,7 @@ var _ = Describe("RAR Flow (G5)", Ordered, Label("e2e", "phase2", "g5"), func() 
 		rarName := "e2e-rar-g5-01"
 		Expect(kubectlApplyYAML(remediationApprovalManifest(rrNamespace, rarName, rrName))).To(Succeed())
 		DeferCleanup(func() {
-			kubeconfigPath := getEnvOrDefault("KUBECONFIG", os.Getenv("HOME")+"/.kube/config")
+			kubeconfigPath := os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
 			_, _ = exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 				"delete", "remediationapprovalrequest", rarName, "-n", rrNamespace, "--ignore-not-found").CombinedOutput()
 		})
@@ -419,7 +419,7 @@ var _ = Describe("RAR Flow (G5)", Ordered, Label("e2e", "phase2", "g5"), func() 
 		rarName := "e2e-rar-g5-03"
 		Expect(kubectlApplyYAML(remediationApprovalManifest(rrNamespace, rarName, rrName))).To(Succeed())
 		DeferCleanup(func() {
-			kubeconfigPath := getEnvOrDefault("KUBECONFIG", os.Getenv("HOME")+"/.kube/config")
+			kubeconfigPath := os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
 			_, _ = exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 				"delete", "remediationapprovalrequest", rarName, "-n", rrNamespace, "--ignore-not-found").CombinedOutput()
 		})

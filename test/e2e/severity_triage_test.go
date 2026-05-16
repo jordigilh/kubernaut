@@ -104,7 +104,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Ordered, Label("e2e", "phase4
 	}
 
 	e2eKubeconfigPath := func() string {
-		return getEnvOrDefault("KUBECONFIG", os.Getenv("HOME")+"/.kube/config")
+		return os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
 	}
 
 	sumSeverityTriageTotal := func(metricsText string) float64 {

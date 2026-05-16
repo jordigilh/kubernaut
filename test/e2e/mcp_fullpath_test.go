@@ -155,7 +155,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Ordered, Label("e2e", "phase2"
 		rarName := fmt.Sprintf("e2e-rar-g1-%d", time.Now().UnixNano())
 		Expect(kubectlApplyYAML(remediationApprovalManifest(rrNamespace, rarName, rrName))).To(Succeed())
 		DeferCleanup(func() {
-			kubeconfigPath := getEnvOrDefault("KUBECONFIG", os.Getenv("HOME")+"/.kube/config")
+			kubeconfigPath := os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
 			_, _ = exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 				"delete", "remediationapprovalrequest", rarName, "-n", rrNamespace, "--ignore-not-found").CombinedOutput()
 		})
