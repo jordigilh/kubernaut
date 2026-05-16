@@ -60,15 +60,16 @@ Each service has a corresponding package under `pkg/`:
 - [internal/config/](mdc:internal/config/) - Shared configuration types
 - [internal/version/](mdc:internal/version/) - Build version info
 
-### Testing (`test/`)
+### Testing
 
 Three-tier testing strategy (80% per-tier coverage target):
 
-- [test/unit/](mdc:test/unit/) - Pure logic tests (per-service subdirs)
+- **Unit tests**: Colocated with production code in `pkg/` and `internal/` (e.g., `pkg/gateway/server_test.go`). Uses `_test` suffix package naming (black-box). Run via `go test ./pkg/...` or `make test-unit-<service>`.
 - [test/integration/](mdc:test/integration/) - Cross-component with real I/O (per-service subdirs)
 - [test/e2e/](mdc:test/e2e/) - Full Kind cluster tests (per-service subdirs)
 - [test/infrastructure/](mdc:test/infrastructure/) - Shared test infrastructure helpers
 - [test/shared/](mdc:test/shared/) - Shared test validators and helpers
+- [test/services/](mdc:test/services/) - Test service implementations (e.g., mock-llm)
 
 ## Documentation (`docs/`)
 

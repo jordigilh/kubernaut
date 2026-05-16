@@ -1,0 +1,316 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package routing_test
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
+)
+
+// ========================================
+// RO SCOPE BLOCKING UNIT TESTS
+// ========================================
+//
+// Business Requirements:
+//   - BR-SCOPE-010: RO Scope Blocking
+//   - ADR-053: Resource Scope Management Architecture
+//
+// Test IDs: UT-RO-010-001 through UT-RO-010-009
+
+var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
+	var (
+		ctx    context.Context
+		config routing.Config
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		config = routing.Config{
+			ConsecutiveFailureThreshold: 3,
+			ConsecutiveFailureCooldown:  3600, // 1 hour
+			RecentlyRemediatedCooldown:  300,  // 5 minutes
+			ExponentialBackoffBase:      60,   // 1 minute
+			ExponentialBackoffMax:       600,  // 10 minutes
+			ExponentialBackoffMaxExponent: 4,
+			ScopeBackoffBase:            5,    // 5 seconds (ADR-053)
+			ScopeBackoffMax:             300,  // 5 minutes (ADR-053)
+		}
+	})
+
+	// makeRR creates a test RemediationRequest with the given target resource
+	makeRR := func(namespace, name, kind, targetName string) *remediationv1.RemediationRequest {
+		return &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace,
+				Name:      name,
+				UID:       types.UID(fmt.Sprintf("uid-%s", name)),
+			},
+			Spec: remediationv1.RemediationRequestSpec{
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind: kind,
+					Name: targetName,
+				},
+				SignalFingerprint: "fp-scope-test",
+			},
+		}
+	}
+
+	// makeFakeClient creates a minimal fake client for scope tests
+	makeFakeClient := func() *fake.ClientBuilder {
+		scheme := runtime.NewScheme()
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1.AddToScheme(scheme)).To(Succeed())
+		return fake.NewClientBuilder().WithScheme(scheme)
+	}
+
+	// ─────────────────────────────────────────────
+	// CheckUnmanagedResource Tests
+	// ─────────────────────────────────────────────
+
+	Context("CheckUnmanagedResource", func() {
+
+		// UT-RO-010-001: Block unmanaged resource
+		It("UT-RO-010-001: should block when resource is unmanaged", func() {
+			fakeClient := makeFakeClient().Build()
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, &mocks.NeverManagedScopeChecker{})
+			rr := makeRR("test-ns", "test-rr", "Deployment", "payment-api")
+
+			blocked := engine.CheckUnmanagedResource(ctx, rr)
+			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonUnmanagedResource)))
+			Expect(blocked.Blocked).To(BeTrue())
+			// Backoff should be >= 4s (5s base with -10% jitter)
+			Expect(blocked.RequeueAfter).To(BeNumerically(">=", 4*time.Second))
+			Expect(blocked.RequeueAfter).To(BeNumerically("<=", 6*time.Second))
+		})
+
+		// UT-RO-010-002: Pass managed resource
+		It("UT-RO-010-002: should pass when resource is managed", func() {
+			fakeClient := makeFakeClient().Build()
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, &mocks.AlwaysManagedScopeChecker{})
+			rr := makeRR("test-ns", "test-rr", "Deployment", "payment-api")
+
+			blocked := engine.CheckUnmanagedResource(ctx, rr)
+			Expect(blocked).To(BeNil(), "Managed resource should not be blocked")
+		})
+
+		// UT-RO-010-003: Check #1 Priority — scope evaluated before all other checks
+		It("UT-RO-010-003: should evaluate scope before all other checks", func() {
+			fakeClient := makeFakeClient().Build()
+			// Use NeverManagedScopeChecker — scope should reject before ConsecutiveFailures
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, &mocks.NeverManagedScopeChecker{})
+			rr := makeRR("test-ns", "test-rr", "Deployment", "payment-api")
+			// Set high consecutive failures that would trigger ConsecutiveFailures check
+			rr.Status.ConsecutiveFailureCount = 100
+
+			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "wf-001", "test-ns/deployment/payment-api", "", "")
+			Expect(err).ToNot(HaveOccurred())
+			// MUST be UnmanagedResource, NOT ConsecutiveFailures — proving scope is Check #1
+			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonUnmanagedResource)))
+		})
+
+		// UT-RO-010-004: Backoff increases with retry count
+		It("UT-RO-010-004: backoff should increase with retry count", func() {
+			fakeClient := makeFakeClient().Build()
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, &mocks.NeverManagedScopeChecker{})
+
+			// Test escalating backoff: 5s, 10s, 20s, 40s, 80s, 160s, 300s (cap)
+			var previousBackoff time.Duration
+			for _, retryCount := range []int32{0, 1, 2, 3, 4, 5, 6, 7} {
+				rr := makeRR("test-ns", fmt.Sprintf("rr-%d", retryCount), "Deployment", "app")
+				rr.Status.ConsecutiveFailureCount = retryCount
+
+				blocked := engine.CheckUnmanagedResource(ctx, rr)
+				Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonUnmanagedResource)))
+
+				if retryCount > 0 && previousBackoff < 300*time.Second {
+					// Each step should be >= previous (with jitter tolerance)
+					Expect(blocked.RequeueAfter).To(BeNumerically(">=", previousBackoff*80/100),
+						"Backoff should increase: retry %d got %s, previous %s",
+						retryCount, blocked.RequeueAfter, previousBackoff)
+				}
+				previousBackoff = blocked.RequeueAfter
+			}
+
+			// Final backoff should be capped at ~300s (with jitter)
+			Expect(previousBackoff).To(BeNumerically("<=", 330*time.Second),
+				"Backoff should be capped at 300s (5 min)")
+		})
+
+		// UT-RO-010-005: Scope infra error passes through
+		It("UT-RO-010-005: should block when scope checker returns error (fail-closed)", func() {
+			fakeClient := makeFakeClient().Build()
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config,
+				&mocks.ErrorScopeChecker{Err: fmt.Errorf("cache not ready")})
+			rr := makeRR("test-ns", "test-rr", "Deployment", "payment-api")
+
+			blocked := engine.CheckUnmanagedResource(ctx, rr)
+			Expect(blocked).ToNot(BeNil(), "BR-SCOPE-013: Scope infra error must block — fail-closed")
+			Expect(blocked.Blocked).To(BeTrue())
+			Expect(blocked.Message).To(ContainSubstring("Scope validation error"))
+			Expect(blocked.Message).To(ContainSubstring("cache not ready"))
+			Expect(blocked.RequeueAfter).To(BeNumerically(">", 0),
+				"Should requeue with backoff to retry when scope infra recovers")
+		})
+
+		// UT-RO-010-006: NewRoutingEngine panics on nil ScopeChecker
+		It("UT-RO-010-006: should panic when ScopeChecker is nil", func() {
+			fakeClient := makeFakeClient().Build()
+			Expect(func() {
+				routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, nil)
+			}).To(Panic())
+		})
+
+		// UT-RO-010-007: BlockingCondition has correct reason and message
+		It("UT-RO-010-007: should produce correct blocking condition fields", func() {
+			fakeClient := makeFakeClient().Build()
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, &mocks.NeverManagedScopeChecker{})
+			rr := makeRR("kubernaut-system", "rr-prod", "Deployment", "payment-api")
+			rr.Spec.TargetResource.Namespace = "production"
+
+			blocked := engine.CheckUnmanagedResource(ctx, rr)
+			Expect(blocked.Reason).To(Equal("UnmanagedResource"))
+			Expect(blocked.Message).To(ContainSubstring("production/Deployment/payment-api"))
+			Expect(blocked.Message).To(ContainSubstring("kubernaut.ai/managed=true"))
+		})
+
+		// UT-RO-010-008: BlockingCondition has BlockedUntil set
+		It("UT-RO-010-008: should set BlockedUntil in blocking condition", func() {
+			fakeClient := makeFakeClient().Build()
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, &mocks.NeverManagedScopeChecker{})
+			rr := makeRR("test-ns", "test-rr", "Deployment", "payment-api")
+
+			blocked := engine.CheckUnmanagedResource(ctx, rr)
+			// BlockedUntil should be in the future
+			Expect(blocked.BlockedUntil.After(time.Now().Add(-1 * time.Second))).To(BeTrue())
+		})
+
+		// ============================================================
+		// ADR-057: Bug fix — CheckUnmanagedResource must use
+		// TargetResource.Namespace, not rr.Namespace (CRD namespace)
+		// ============================================================
+
+		// UT-RO-057-001: RR in kubernaut-system with target in managed workload NS
+		It("UT-RO-057-001: should evaluate scope using target resource namespace, not CRD namespace", func() {
+			// BUSINESS OUTCOME: RO correctly routes RRs for workload resources even
+			// when the RR itself lives in kubernaut-system (per ADR-057 consolidation)
+			fakeClient := makeFakeClient().Build()
+			var capturedNamespace string
+			checker := &capturingScopeChecker{
+				managed: true,
+				onCall: func(ns, kind, name string) {
+					capturedNamespace = ns
+				},
+			}
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, checker)
+			rr := makeRR("kubernaut-system", "rr-node-crash", "Pod", "payment-api-789")
+			rr.Spec.TargetResource.Namespace = "production"
+
+			blocked := engine.CheckUnmanagedResource(ctx, rr)
+			Expect(blocked).To(BeNil(), "Managed target resource should not be blocked")
+			Expect(capturedNamespace).To(Equal("production"),
+				"IsManaged must receive target resource namespace 'production', not CRD namespace 'kubernaut-system'")
+		})
+
+		// UT-RO-057-002: RR in kubernaut-system with target in unmanaged workload NS
+		It("UT-RO-057-002: should block when target resource namespace is unmanaged", func() {
+			// BUSINESS OUTCOME: RO correctly blocks remediation for unmanaged resources
+			fakeClient := makeFakeClient().Build()
+			var capturedNamespace string
+			checker := &capturingScopeChecker{
+				managed: false,
+				onCall: func(ns, kind, name string) {
+					capturedNamespace = ns
+				},
+			}
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, checker)
+			rr := makeRR("kubernaut-system", "rr-staging-pod", "Deployment", "checkout-svc")
+			rr.Spec.TargetResource.Namespace = "staging"
+
+			blocked := engine.CheckUnmanagedResource(ctx, rr)
+			Expect(blocked).NotTo(BeNil())
+			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonUnmanagedResource)))
+			Expect(capturedNamespace).To(Equal("staging"),
+				"IsManaged must receive target resource namespace 'staging', not CRD namespace 'kubernaut-system'")
+		})
+
+		// UT-RO-057-003: RR in kubernaut-system with cluster-scoped target (Node)
+		It("UT-RO-057-003: should use empty namespace for cluster-scoped targets", func() {
+			// BUSINESS OUTCOME: Cluster-scoped resources (Nodes) are evaluated by
+			// resource label only — empty namespace is passed to scope checker
+			fakeClient := makeFakeClient().Build()
+			var capturedNamespace string
+			checker := &capturingScopeChecker{
+				managed: true,
+				onCall: func(ns, kind, name string) {
+					capturedNamespace = ns
+				},
+			}
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, checker)
+			rr := makeRR("kubernaut-system", "rr-node-issue", "Node", "worker-1")
+			// TargetResource.Namespace is empty for cluster-scoped resources
+
+			blocked := engine.CheckUnmanagedResource(ctx, rr)
+			Expect(blocked).To(BeNil())
+			Expect(capturedNamespace).To(BeEmpty(),
+				"Cluster-scoped resources must pass empty namespace to scope checker")
+		})
+
+		// UT-RO-010-009: Backoff uses default config when not specified
+		It("UT-RO-010-009: should use default backoff when config not specified", func() {
+			fakeClient := makeFakeClient().Build()
+			// Config with zero scope backoff values — should use defaults (5s/300s)
+			zeroConfig := routing.Config{
+				ConsecutiveFailureThreshold: 3,
+				ConsecutiveFailureCooldown:  3600,
+				// ScopeBackoffBase and ScopeBackoffMax left as 0 — defaults should apply
+			}
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", zeroConfig, &mocks.NeverManagedScopeChecker{})
+			rr := makeRR("test-ns", "test-rr", "Deployment", "app")
+
+			blocked := engine.CheckUnmanagedResource(ctx, rr)
+			// Default base is 5s, so with 10% jitter: 4.5s - 5.5s
+			Expect(blocked.RequeueAfter).To(BeNumerically(">=", 4*time.Second))
+			Expect(blocked.RequeueAfter).To(BeNumerically("<=", 6*time.Second))
+		})
+	})
+})
+
+// capturingScopeChecker captures the namespace parameter for assertion.
+type capturingScopeChecker struct {
+	managed bool
+	onCall  func(namespace, kind, name string)
+}
+
+func (c *capturingScopeChecker) IsManaged(_ context.Context, namespace, kind, name string) (bool, error) {
+	if c.onCall != nil {
+		c.onCall(namespace, kind, name)
+	}
+	return c.managed, nil
+}

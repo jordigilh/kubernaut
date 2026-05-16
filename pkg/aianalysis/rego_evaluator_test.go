@@ -1,0 +1,355 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package aianalysis_test
+
+import (
+	"context"
+	"path/filepath"
+	"runtime"
+
+	"github.com/go-logr/logr"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
+)
+
+// ptr returns a pointer to the given float64 value (#225 test helper)
+func ptr(v float64) *float64 { return &v }
+
+// BR-AI-011: Rego policy evaluation tests
+var _ = Describe("RegoEvaluator", func() {
+	var (
+		evaluator *rego.Evaluator
+		ctx       context.Context
+		cancel    context.CancelFunc
+	)
+
+	// Helper to get testdata path relative to this test file
+	getTestdataPath := func(subpath string) string {
+		_, filename, _, _ := runtime.Caller(0)
+		dir := filepath.Dir(filename)
+		return filepath.Join(dir, "testdata", subpath)
+	}
+
+	BeforeEach(func() {
+		ctx, cancel = context.WithCancel(context.Background())
+	})
+
+	AfterEach(func() {
+		// Cancel context to stop goroutines
+		if cancel != nil {
+			cancel()
+		}
+		// Note: Not calling evaluator.Stop() as context cancellation handles cleanup
+	})
+
+	// BR-AI-011: Policy evaluation
+	Describe("Evaluate", func() {
+		Context("with valid policy and input", func() {
+			BeforeEach(func() {
+				evaluator = rego.NewEvaluator(rego.Config{
+					PolicyPath: getTestdataPath("policies/approval.rego"),
+				}, logr.Discard())
+
+				// ADR-050: Startup validation required
+				err := evaluator.StartHotReload(ctx)
+				Expect(err).NotTo(HaveOccurred(), "Policy should load successfully")
+			})
+
+			// BR-AI-013, #206: Production with clean state and confidence >= 0.8 → auto-approve
+			It("should auto-approve production environment with clean state and high confidence", func() {
+				input := &rego.PolicyInput{
+					Environment: "production",
+					RemediationTarget: &rego.RemediationTargetInput{
+						Kind: "Deployment", Name: "api", Namespace: "production",
+					},
+					Confidence: 0.85,
+					DetectedLabels: map[string]interface{}{
+						"gitOpsManaged": true,
+						"pdbProtected":  true,
+					},
+					FailedDetections: []string{},
+					Warnings:         []string{},
+				}
+
+				result, err := evaluator.Evaluate(ctx, input)
+
+				Expect(err).NotTo(HaveOccurred())
+				// #206: 85% >= 80% threshold → auto-approve
+				Expect(result.ApprovalRequired).To(BeFalse(), "85%% confidence >= 80%% threshold should auto-approve (#206)")
+				Expect(result.Degraded).To(BeFalse(), "Should not be in degraded mode")
+			})
+
+		})
+
+		// BR-AI-013: Approval scenarios using DescribeTable
+		Context("determines approval requirement", func() {
+			BeforeEach(func() {
+				evaluator = rego.NewEvaluator(rego.Config{
+					PolicyPath: getTestdataPath("policies/approval.rego"),
+				}, logr.Discard())
+
+				// ADR-050: Startup validation required
+				err := evaluator.StartHotReload(ctx)
+				Expect(err).NotTo(HaveOccurred(), "Policy should load successfully")
+			})
+
+			DescribeTable("based on environment and data quality",
+				func(env string, remediationTarget *rego.RemediationTargetInput, confidence float64, failedDetections []string, warnings []string, expectedApproval bool) {
+					input := &rego.PolicyInput{
+						Environment:      env,
+						RemediationTarget: remediationTarget,
+						Confidence:       confidence,
+						FailedDetections: failedDetections,
+						Warnings:         warnings,
+					}
+
+					result, err := evaluator.Evaluate(ctx, input)
+
+					Expect(err).NotTo(HaveOccurred())
+					Expect(result.ApprovalRequired).To(Equal(expectedApproval))
+				},
+				// BR-AI-085-005: Missing remediation target = approval required (default-deny)
+				Entry("production + missing remediation target",
+					"production", (*rego.RemediationTargetInput)(nil), 0.9, nil, nil, true),
+			Entry("production + failed detections + high confidence → auto-approve",
+				"production", &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.9, []string{"gitOpsManaged"}, nil, false),
+			Entry("production + warnings + high confidence → auto-approve",
+				"production", &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.9, nil, []string{"High memory pressure"}, false),
+				Entry("production + low confidence",
+					"production", &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.6, nil, nil, true),
+
+				// Non-production = auto-approve (regardless of issues)
+				Entry("development + missing affected resource",
+					"development", (*rego.RemediationTargetInput)(nil), 0.5, []string{"gitOpsManaged"}, nil, true),
+				Entry("staging + any state",
+					"staging", &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "staging"}, 0.8, nil, nil, false),
+
+			// Production + high confidence + clean state → auto-approve
+			Entry("production + clean state + high confidence → auto-approve",
+				"production", &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.9, nil, nil, false),
+			)
+
+		// #206: Confidence-based auto-approval for production environments
+		// When confidence >= 0.8 and no critical safety conditions, production should auto-approve
+		DescribeTable("confidence-based auto-approval in production",
+			func(confidence float64, remediationTarget *rego.RemediationTargetInput, failedDetections []string, warnings []string, expectedApproval bool, expectedReasonSubstring string) {
+				input := &rego.PolicyInput{
+					Environment:      "production",
+					RemediationTarget: remediationTarget,
+					Confidence:       confidence,
+					FailedDetections: failedDetections,
+					Warnings:         warnings,
+				}
+
+				result, err := evaluator.Evaluate(ctx, input)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.ApprovalRequired).To(Equal(expectedApproval),
+					"confidence=%.2f, failedDetections=%v, warnings=%v → approvalRequired should be %v",
+					confidence, failedDetections, warnings, expectedApproval)
+				if expectedReasonSubstring != "" {
+					Expect(result.Reason).To(ContainSubstring(expectedReasonSubstring))
+				}
+			},
+			// #206: High confidence (>= 0.8) + clean state → auto-approve
+			Entry("UT-AIA-CONF-001: high confidence + clean state → auto-approve",
+				0.95, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				[]string{}, []string{},
+				false, "Auto-approved"),
+			Entry("UT-AIA-CONF-002: confidence exactly 0.8 + clean state → auto-approve (#206)",
+				0.8, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				[]string{}, []string{},
+				false, "Auto-approved"),
+			Entry("UT-AIA-CONF-002b: confidence 0.85 + clean state → auto-approve (#206)",
+				0.85, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				[]string{}, []string{},
+				false, "Auto-approved"),
+			// High confidence + failed detections → auto-approve (minor data quality issues)
+			Entry("UT-AIA-CONF-003: high confidence + failed detections → auto-approve",
+				0.95, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				[]string{"gitOpsManaged"}, []string{},
+				false, "Auto-approved"),
+			// High confidence + warnings → auto-approve
+			Entry("UT-AIA-CONF-004: high confidence + warnings → auto-approve",
+				0.92, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				[]string{}, []string{"High memory pressure"},
+				false, "Auto-approved"),
+			// #206: Low confidence (< 0.8) → still require approval
+			Entry("UT-AIA-CONF-005: confidence 0.79 (just below threshold) → require approval (#206)",
+				0.79, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				[]string{}, []string{},
+				true, "Production environment"),
+			Entry("UT-AIA-CONF-006: low confidence 0.6 → require approval",
+				0.6, &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				[]string{}, []string{},
+				true, "Production environment"),
+			// Safety: missing affected resource → ALWAYS require approval regardless of confidence
+			Entry("UT-AIA-CONF-007: high confidence + missing remediation target → require approval",
+				0.99, (*rego.RemediationTargetInput)(nil),
+				[]string{}, []string{},
+				true, "Missing remediation target"),
+		)
+
+		// BR-AI-013: Policy evaluation based on environment and severity
+		DescribeTable("based on environment and severity",
+				func(severity string, env string, expectedApproval bool) {
+					input := &rego.PolicyInput{
+						Environment: env,
+						RemediationTarget: &rego.RemediationTargetInput{
+							Kind: "Deployment", Name: "api", Namespace: env,
+						},
+						Confidence: 0.9, // High confidence
+						Severity:   severity,
+					}
+
+					result, err := evaluator.Evaluate(ctx, input)
+
+					Expect(err).NotTo(HaveOccurred())
+					Expect(result.ApprovalRequired).To(Equal(expectedApproval))
+				},
+			// Production + high confidence (0.9) → auto-approve regardless of severity
+			Entry("production + warning severity + high confidence = auto-approve",
+				"warning", "production", false),
+			Entry("production + critical severity + high confidence = auto-approve",
+				"critical", "production", false),
+
+				// Non-production = auto-approve
+				Entry("development + warning = auto-approve",
+					"warning", "development", false),
+				Entry("staging + warning = auto-approve",
+					"warning", "staging", false),
+				Entry("development + critical = auto-approve",
+					"critical", "development", false),
+				Entry("staging + P0 = auto-approve",
+					"P0", "staging", false),
+			)
+
+		// #225: Configurable confidence threshold via input.confidence_threshold
+		// The Rego policy should read confidence_threshold from input when provided,
+		// falling back to its built-in default (0.8) when not provided.
+		DescribeTable("configurable confidence threshold (#225)",
+			func(confidence float64, threshold *float64, expectedApproval bool, desc string) {
+				input := &rego.PolicyInput{
+					Environment: "production",
+					RemediationTarget: &rego.RemediationTargetInput{
+						Kind: "Deployment", Name: "api", Namespace: "production",
+					},
+					Confidence:          confidence,
+					ConfidenceThreshold: threshold,
+					FailedDetections:    []string{},
+					Warnings:            []string{},
+				}
+
+				result, err := evaluator.Evaluate(ctx, input)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.ApprovalRequired).To(Equal(expectedApproval), desc)
+			},
+			Entry("UT-AIA-THR-001: threshold 0.9, confidence 0.85 → require approval",
+				0.85, ptr(0.9), true,
+				"0.85 < 0.9 threshold → low confidence → require approval"),
+			Entry("UT-AIA-THR-002: threshold 0.7, confidence 0.85 → auto-approve",
+				0.85, ptr(0.7), false,
+				"0.85 >= 0.7 threshold → high confidence → auto-approve"),
+			Entry("UT-AIA-THR-003: threshold 0.8 (explicit), confidence 0.8 → auto-approve",
+				0.8, ptr(0.8), false,
+				"0.8 >= 0.8 explicit threshold → auto-approve (same as default)"),
+			Entry("UT-AIA-THR-004: no threshold (nil), confidence 0.85 → auto-approve (Rego default 0.8)",
+				0.85, (*float64)(nil), false,
+				"nil threshold → Rego default 0.8 → 0.85 >= 0.8 → auto-approve"),
+			Entry("UT-AIA-THR-005: no threshold (nil), confidence 0.79 → require approval (Rego default 0.8)",
+				0.79, (*float64)(nil), true,
+				"nil threshold → Rego default 0.8 → 0.79 < 0.8 → require approval"),
+			Entry("UT-AIA-THR-006: threshold 0.95, confidence 0.92 → require approval",
+				0.92, ptr(0.95), true,
+				"0.92 < 0.95 threshold → stricter policy → require approval"),
+			Entry("UT-AIA-THR-007: threshold 0.5, confidence 0.6 → auto-approve",
+				0.6, ptr(0.5), false,
+				"0.6 >= 0.5 threshold → permissive policy → auto-approve"),
+		)
+
+		// BR-AI-013: Signal context in policy input
+		Context("handles signal context fields", func() {
+				It("should pass all signal context fields to policy", func() {
+					input := &rego.PolicyInput{
+						SignalType:       "OOMKilled",
+						Severity:         "critical",
+						Environment:      "development",
+						BusinessPriority: "P0",
+						TargetResource: rego.TargetResourceInput{
+							Kind:      "Pod",
+							Name:      "test-pod",
+							Namespace: "default",
+						},
+						RemediationTarget: &rego.RemediationTargetInput{
+							Kind: "Deployment", Name: "api", Namespace: "default",
+						},
+						Confidence: 0.9,
+					}
+
+					result, err := evaluator.Evaluate(ctx, input)
+
+					// Development + critical = auto-approve
+					Expect(err).NotTo(HaveOccurred())
+					Expect(result.ApprovalRequired).To(BeFalse())
+				})
+			})
+		})
+
+		// BR-AI-014: Graceful degradation - missing policy
+		Context("when policy file is missing", func() {
+			BeforeEach(func() {
+				evaluator = rego.NewEvaluator(rego.Config{
+					PolicyPath: "nonexistent/path/policy.rego",
+				}, logr.Discard())
+			})
+
+			It("should default to manual approval (graceful degradation)", func() {
+				result, err := evaluator.Evaluate(ctx, &rego.PolicyInput{
+					Environment: "production",
+				})
+
+				// Should not error - graceful degradation
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.ApprovalRequired).To(BeTrue())
+				Expect(result.Degraded).To(BeTrue())
+			})
+		})
+
+		// BR-AI-014: Graceful degradation - syntax error
+		Context("when policy has syntax error", func() {
+			BeforeEach(func() {
+				evaluator = rego.NewEvaluator(rego.Config{
+					PolicyPath: getTestdataPath("invalid_policies/invalid.rego"),
+				}, logr.Discard())
+			})
+
+			It("should default to manual approval (graceful degradation)", func() {
+				result, err := evaluator.Evaluate(ctx, &rego.PolicyInput{
+					Environment: "production",
+				})
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.ApprovalRequired).To(BeTrue())
+				Expect(result.Degraded).To(BeTrue())
+				Expect(result.Reason).To(ContainSubstring("Policy"))
+			})
+		})
+	})
+})
