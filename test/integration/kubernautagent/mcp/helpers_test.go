@@ -217,7 +217,8 @@ func (s *realMCPTestStack) Close() {
 // getMockLLMRequestCount queries the Mock LLM's verification API for total request count.
 func getMockLLMRequestCount() int {
 	GinkgoHelper()
-	resp, err := http.Get(sharedMockLLMEndpoint + "/api/test/request-count")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(sharedMockLLMEndpoint + "/api/test/request-count")
 	Expect(err).NotTo(HaveOccurred(), "Mock LLM request-count should be reachable")
 	defer resp.Body.Close()
 	Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -298,6 +299,7 @@ func (t *authedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // ---------------------------------------------------------------------------
 
 // connectMCP creates an MCP SDK client session connected to the test server.
+// Uses a 10s deadline as defense-in-depth against SSE handshake hangs.
 func connectMCP(ts *httptest.Server, username string) (*mcpsdk.ClientSession, error) {
 	mcpClient := mcpsdk.NewClient(&mcpsdk.Implementation{
 		Name:    "integration-test-client",
@@ -308,12 +310,17 @@ func connectMCP(ts *httptest.Server, username string) (*mcpsdk.ClientSession, er
 		Endpoint:   ts.URL + "/mcp",
 		HTTPClient: authedHTTPClient(username),
 	}
-	return mcpClient.Connect(context.Background(), transport, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return mcpClient.Connect(ctx, transport, nil)
 }
 
 // callInvestigate is a helper that calls kubernaut_investigate with the given args.
+// Uses a 30s deadline to bound the investigator -> Mock LLM round-trip.
 func callInvestigate(session *mcpsdk.ClientSession, args map[string]any) (*mcpsdk.CallToolResult, error) {
-	return session.CallTool(context.Background(), &mcpsdk.CallToolParams{
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return session.CallTool(ctx, &mcpsdk.CallToolParams{
 		Name:      "kubernaut_investigate",
 		Arguments: args,
 	})

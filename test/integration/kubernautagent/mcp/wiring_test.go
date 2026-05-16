@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	. "github.com/onsi/ginkgo/v2"
@@ -30,6 +31,8 @@ import (
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 )
+
+var httpTestClient = &http.Client{Timeout: 10 * time.Second}
 
 func fakeAuthMiddleware(user string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -75,7 +78,7 @@ var _ = Describe("MCP Route Wiring — #703 BR-INTERACTIVE-001", func() {
 			req.Header.Set("Accept", "application/json, text/event-stream")
 			req.Header.Set("Authorization", "Bearer test-token")
 
-			resp, err := http.DefaultClient.Do(req)
+			resp, err := httpTestClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -98,7 +101,7 @@ var _ = Describe("MCP Route Wiring — #703 BR-INTERACTIVE-001", func() {
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 
-			resp, err := http.DefaultClient.Do(req)
+			resp, err := httpTestClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -119,7 +122,7 @@ var _ = Describe("MCP Route Wiring — #703 BR-INTERACTIVE-001", func() {
 			req.Header.Set("Accept", "application/json, text/event-stream")
 			req.Header.Set("Authorization", "Bearer test-token")
 
-			resp, err := http.DefaultClient.Do(req)
+			resp, err := httpTestClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -163,7 +166,7 @@ var _ = Describe("MCP Auth Architecture — #895/#896 BR-SECURITY-896", func() {
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 
-			resp, err := http.DefaultClient.Do(req)
+			resp, err := httpTestClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -201,7 +204,7 @@ var _ = Describe("MCP Auth Architecture — #895/#896 BR-SECURITY-896", func() {
 			req.Header.Set("Accept", "application/json, text/event-stream")
 			req.Header.Set("Authorization", "Bearer test-token")
 
-			resp, err := http.DefaultClient.Do(req)
+			resp, err := httpTestClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -243,7 +246,7 @@ var _ = Describe("MCP Auth Architecture — #895/#896 BR-SECURITY-896", func() {
 			req.Header.Set("Accept", "application/json, text/event-stream")
 			req.Header.Set("Authorization", "Bearer test-token")
 
-			resp, err := http.DefaultClient.Do(req)
+			resp, err := httpTestClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
 
