@@ -848,7 +848,7 @@ type bearerTokenTransport struct {
 }
 
 func (t *bearerTokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	token, err := os.ReadFile(t.tokenFile) // #nosec G304 -- path from operator-controlled config
+	token, err := os.ReadFile(t.tokenFile) //nolint:gosec // G304/G703 -- path from operator-controlled config
 	if err != nil {
 		return nil, fmt.Errorf("reading bearer token: %w", err)
 	}
@@ -994,7 +994,7 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 				logger.Error(setupErr, "failed to register session reconciler with manager")
 				k8sClient, stopFunc = buildFakeSessionClient(scheme)
 			} else {
-				mgrCtx, mgrCancel := context.WithCancel(context.Background())
+				mgrCtx, mgrCancel := context.WithCancel(context.Background()) //nolint:gosec // G118 false positive: mgrCancel is assigned to stopFunc below
 				go func() {
 					if startErr := mgr.Start(mgrCtx); startErr != nil {
 						logger.Error(startErr, "session controller manager exited with error")

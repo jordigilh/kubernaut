@@ -23,7 +23,6 @@ linters:
       - path: "(^test/|_test\\.go)"
         linters:
           - gosec
-        text: "G101|G1(07|12|15)|G20[124]|G30[1246]|G40[24]"
       - path: "^test/"
         linters:
           - staticcheck

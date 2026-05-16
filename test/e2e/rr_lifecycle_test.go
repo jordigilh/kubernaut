@@ -16,7 +16,7 @@ import (
 
 func kubectlApplyYAML(manifest string) error {
 	kubeconfigPath := getEnvOrDefault("KUBECONFIG", os.Getenv("HOME")+"/.kube/config")
-	cmd := exec.CommandContext(context.Background(), "kubectl",
+	cmd := exec.CommandContext(context.Background(), "kubectl", //nolint:gosec // G702: kubeconfig path from controlled E2E env
 		"--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	out, err := cmd.CombinedOutput()
