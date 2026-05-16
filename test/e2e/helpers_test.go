@@ -9,7 +9,109 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 )
+
+// persona holds credentials for a DEX E2E user with a specific RBAC role.
+type persona struct {
+	Email    string
+	Password string
+	Role     string
+}
+
+// e2ePersonas defines all 6 RBAC personas available in E2E.
+var e2ePersonas = map[string]persona{
+	"sre":                  {Email: "sre@kubernaut.ai", Password: "password", Role: "sre"},
+	"ai-orchestrator":      {Email: "orchestrator@kubernaut.ai", Password: "password", Role: "ai-orchestrator"},
+	"cicd":                 {Email: "cicd@kubernaut.ai", Password: "password", Role: "cicd"},
+	"observability":        {Email: "observability@kubernaut.ai", Password: "password", Role: "observability"},
+	"l3-audit":             {Email: "auditor@kubernaut.ai", Password: "password", Role: "l3-audit"},
+	"remediation-approver": {Email: "approver@kubernaut.ai", Password: "password", Role: "remediation-approver"},
+}
+
+// fetchDEXTokenForPersona obtains a JWT for the given persona role.
+func fetchDEXTokenForPersona(role string) (string, error) {
+	p, ok := e2ePersonas[role]
+	if !ok {
+		return "", fmt.Errorf("unknown persona role: %s", role)
+	}
+	return fetchDEXToken(dexURL, clientID, clientSecret, p.Email, p.Password)
+}
+
+// a2aInvoke sends a JSON-RPC request to POST /a2a/invoke with the given auth token.
+func a2aInvoke(client *http.Client, base, token, body string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodPost, base+"/a2a/invoke", strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	return client.Do(req)
+}
+
+// buildJSONRPC builds a JSON-RPC 2.0 request string.
+func buildJSONRPC(id, method string, params map[string]interface{}) string {
+	payload := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  method,
+		"id":      id,
+		"params":  params,
+	}
+	b, _ := json.Marshal(payload)
+	return string(b)
+}
+
+// a2aTasksSend builds a tasks/send JSON-RPC payload with a user text message.
+func a2aTasksSend(id, text string) string {
+	return buildJSONRPC(id, "tasks/send", map[string]interface{}{
+		"message": map[string]interface{}{
+			"role": "user",
+			"parts": []map[string]interface{}{
+				{"type": "text", "text": text},
+			},
+		},
+	})
+}
+
+// rpcResponse represents a JSON-RPC 2.0 response.
+type rpcResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      string          `json:"id"`
+	Result  json.RawMessage `json:"result"`
+	Error   *rpcError       `json:"error"`
+}
+
+type rpcError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// a2aTaskResult represents the task object in an A2A response.
+type a2aTaskResult struct {
+	ID     string `json:"id"`
+	Status struct {
+		State   string `json:"state"`
+		Message string `json:"message,omitempty"`
+	} `json:"status"`
+}
+
+// parseRPCResponse reads and parses a JSON-RPC response from an http.Response.
+func parseRPCResponse(resp *http.Response) (rpcResponse, error) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return rpcResponse{}, err
+	}
+	var r rpcResponse
+	err = json.Unmarshal(body, &r)
+	return r, err
+}
+
+// extractTaskFromResult unmarshals the result field into an a2aTaskResult.
+func extractTaskFromResult(raw json.RawMessage) (a2aTaskResult, error) {
+	var task a2aTaskResult
+	err := json.Unmarshal(raw, &task)
+	return task, err
+}
 
 func getEnvOrDefault(key, defaultValue string) string {
 	if v := os.Getenv(key); v != "" {
