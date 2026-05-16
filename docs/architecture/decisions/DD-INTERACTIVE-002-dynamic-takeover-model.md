@@ -296,6 +296,9 @@ No spec changes. No annotation changes. Every RR is takeover-capable by default.
 | Rapid connect/disconnect creates many reconstruct cycles | Low | Low | Each reconstruct is independent; Lease prevents concurrent drivers |
 | Global timeout too short for complex interactive investigations | Medium | Medium | Documented as hard cap; operator-tunable via config |
 | SEC-TAKEOVER-001: Investigation hacking via takeover-then-abandon | Medium | Critical | Takeover is a one-way door; autonomous goroutine cancelled permanently. No resume-on-disconnect in v1.5. User must complete or session times out; RO creates fresh RR. See Connection Flow diagram. |
+| Concurrent `action: start` requests for same RR (double-click) | Low | Low | K8s Lease `Create` is atomic — exactly one request wins. Losing request gets `ErrLeaseHeld`. Local `rrIndex` check may race with `rrIndex.Store`, but K8s is the source of truth and no data corruption results. User sees a clear "session active" error. No fix needed in v1.5. |
+| KA pod restart with orphaned K8s Lease | Medium | Medium | v1.5: `tryReclaimExpiredLease` checks `AcquireTime + LeaseDurationSeconds`; if expired, deletes the orphaned Lease and allows a fresh `Takeover`. Non-expired Leases from live pods are not reclaimed. |
+| User network disconnect during interactive session | High | Medium | v1.5: Same-user reconnect — `Takeover` detects existing session held by the same username and returns it with `Reconnected=true`, resetting the inactivity timer. No new Lease or audit event is emitted. Different user still gets `ErrLeaseHeld`. |
 
 ---
 
