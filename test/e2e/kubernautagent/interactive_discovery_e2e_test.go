@@ -17,6 +17,7 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -109,15 +110,26 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 			GinkgoWriter.Printf("discover_workflows result: %s\n", discoverText)
 			Expect(result.IsError).To(BeFalse(), "discover_workflows should succeed")
 
-			By("Selecting a workflow from discovery results")
+			By("Extracting recommended workflow_id from discovery results")
+			var discoverData map[string]any
+			Expect(json.Unmarshal([]byte(discoverText), &discoverData)).To(Succeed(),
+				"discover_workflows should return valid JSON")
+			recommended, ok := discoverData["recommended"].(map[string]any)
+			Expect(ok).To(BeTrue(), "discovery result should have a recommended workflow")
+			recommendedID, ok := recommended["workflow_id"].(string)
+			Expect(ok).To(BeTrue(), "recommended workflow should have a workflow_id")
+			GinkgoWriter.Printf("Using recommended workflow_id: %s\n", recommendedID)
+
+			By("Selecting the recommended workflow from discovery results")
 			result, err = infrastructure.CallSelectWorkflow(ctx, session, map[string]any{
 				"rr_id":       rrID,
-				"workflow_id": "oomkill-increase-memory-v1",
+				"workflow_id": recommendedID,
 			})
-			if err == nil && result != nil {
-				selectText := infrastructure.ExtractToolResultText(result)
-				GinkgoWriter.Printf("select_workflow result: %s\n", selectText)
-			}
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			selectText := infrastructure.ExtractToolResultText(result)
+			GinkgoWriter.Printf("select_workflow result: %s\n", selectText)
+			Expect(result.IsError).To(BeFalse(), "select_workflow should succeed with recommended workflow")
 
 			By("Verifying Lease released after auto-complete")
 			Eventually(func() bool {

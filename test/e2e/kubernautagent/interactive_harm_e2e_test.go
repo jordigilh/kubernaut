@@ -185,7 +185,7 @@ var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios"
 				"namespace":   "production",
 			})
 
-			By("Asserting that the tool invocation fails due to RBAC/impersonation restriction")
+			By("Asserting that the tool invocation fails — v1.5 discovery gating rejects before RBAC check")
 			if err != nil {
 				Expect(err.Error()).To(Or(
 					ContainSubstring("forbidden"),
@@ -194,7 +194,8 @@ var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios"
 					ContainSubstring("RBAC"),
 					ContainSubstring("cannot"),
 					ContainSubstring("enrich failed"),
-				), "error should indicate forbidden/impersonation failure")
+					ContainSubstring("discover_workflows"),
+				), "error should indicate forbidden/impersonation or discovery gating failure")
 			} else {
 				Expect(result).NotTo(BeNil())
 				if result.IsError {
@@ -204,9 +205,10 @@ var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios"
 						ContainSubstring("impersonate"),
 						ContainSubstring("unauthorized"),
 						ContainSubstring("enrich failed"),
-					), "tool error should indicate RBAC restriction")
+						ContainSubstring("discover_workflows"),
+					), "tool error should indicate RBAC restriction or discovery gating")
 				} else {
-					Fail("enrichment should NOT succeed with a limited-RBAC SA (no RBAC in production namespace)")
+					Fail("select_workflow should NOT succeed without prior discover_workflows or with a limited-RBAC SA")
 				}
 			}
 		})

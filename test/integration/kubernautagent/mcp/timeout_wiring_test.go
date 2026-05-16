@@ -18,6 +18,7 @@ package mcp_test
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -86,8 +87,8 @@ var _ = Describe("Timeout Wiring — GAP-8 / BR-INTERACTIVE-003", Label("integra
 			stack := newRealMCPTestStack(sharedK8sClient, nsName, opts)
 			defer stack.Close()
 
-			var notificationReceived bool
-			sess, err := connectMCP(stack.Server, "alice@example.com")
+		var notificationReceived atomic.Bool
+		sess, err := connectMCP(stack.Server, "alice@example.com")
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = sess.Close() }()
 
@@ -104,13 +105,13 @@ var _ = Describe("Timeout Wiring — GAP-8 / BR-INTERACTIVE-003", Label("integra
 			Expect(ok).To(BeTrue(), "start response should contain session_id")
 
 			stack.Notifier.Register(sessionID, func(msg string) {
-				notificationReceived = true
+				notificationReceived.Store(true)
 			})
 
 			By("waiting for the warning interval (1s into 4s timeout)")
 			time.Sleep(2 * time.Second)
 
-			Expect(notificationReceived).To(BeTrue(),
+			Expect(notificationReceived.Load()).To(BeTrue(),
 				"warning notification should fire before session expires")
 
 			By("completing session before full expiry")

@@ -166,13 +166,14 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 				"namespace":   "production",
 			})
 
-			By("Step 5: Asserting impersonation-gated operation fails")
+			By("Step 5: Asserting operation fails — v1.5 discovery gating rejects before RBAC check")
 			if err != nil {
 				Expect(err.Error()).To(Or(
 					ContainSubstring("forbidden"),
 					ContainSubstring("impersonate"),
 					ContainSubstring("unauthorized"),
 					ContainSubstring("Access denied"),
+					ContainSubstring("discover_workflows"),
 				))
 			} else {
 				Expect(result).NotTo(BeNil())
@@ -183,9 +184,10 @@ var _ = Describe("CP-5 INT: Interactive Flow Lifecycle Tests", Label("e2e", "ka"
 						ContainSubstring("impersonate"),
 						ContainSubstring("unauthorized"),
 						ContainSubstring("Access denied"),
-					), "tool error should indicate RBAC restriction")
+						ContainSubstring("discover_workflows"),
+					), "tool error should indicate RBAC restriction or discovery gating")
 				} else {
-					Fail("enrichment should fail for a limited-RBAC SA")
+					Fail("select_workflow should fail without prior discover_workflows or with limited RBAC")
 				}
 			}
 

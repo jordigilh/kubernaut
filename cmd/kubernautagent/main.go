@@ -1393,12 +1393,20 @@ func buildMCPHandler(
 		selectWfTool = mcptools.NewSelectWorkflowTool(catalogAdapter, leaseMgr, swOpts...)
 	}
 
+	// Build the CompleteNoActionTool.
+	completeNoActionTool := mcptools.NewCompleteNoActionTool(leaseMgr,
+		mcptools.WithCompleteNoActionLogger(logger.WithName("complete-no-action")),
+		mcptools.WithCompleteNoActionHTTPCompleter(autoMgr),
+		mcptools.WithCompleteNoActionMutexProvider(investigateTool),
+	)
+
 	// Register tools with the MCP SDK server.
 	toolDeps := mcpkg.ToolDeps{}
 	toolDeps.Investigate = mcptools.InvestigateRegistration(investigateTool, eventStore, sessionNotifier)
 	if selectWfTool != nil {
 		toolDeps.SelectWorkflow = mcptools.SelectWorkflowRegistration(selectWfTool)
 	}
+	toolDeps.CompleteNoAction = mcptools.CompleteNoActionRegistration(completeNoActionTool)
 
 	mcpHandler, _ := mcpkg.BootstrapMCP(mcpkg.MCPDeps{
 		AuthMiddleware: authMw.Handler,
@@ -1411,6 +1419,7 @@ func buildMCPHandler(
 	logger.Info("MCP interactive mode fully wired",
 		"investigate", true,
 		"select_workflow", selectWfTool != nil,
+		"complete_no_action", true,
 		"enrichment_in_select_workflow", enricher != nil,
 		"event_store", true,
 		"timeout_manager", true,
