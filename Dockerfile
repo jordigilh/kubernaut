@@ -33,9 +33,10 @@ RUN go mod download
 COPY --chown=1001:0 . .
 
 RUN if [ "${GOFLAGS}" = "-cover" ]; then \
-	echo "Building with coverage instrumentation..."; \
+	echo "Building with coverage instrumentation + e2e tag..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
 	-mod=mod \
+	-tags e2e \
 	-ldflags="-X main.Version=${APP_VERSION} -X main.GitCommit=${GIT_COMMIT} -X main.BuildDate=${BUILD_DATE}" \
 	-o apifrontend \
 	./cmd/apifrontend; \
