@@ -404,44 +404,30 @@ def calc_per_package_breakdown(config: dict) -> list[dict]:
 # ============================================================================
 
 def output_markdown(config: dict) -> str:
-    """Generate markdown table matching kubernaut's PR comment format."""
+    """Generate markdown table matching kubernaut's PR comment format.
+
+    Coverage is composed from the percentage of lines covered by at least
+    one tier — not "best single tier." The All Tiers column merges coverage
+    profiles at block granularity: if ANY tier covered a block, it counts.
+    """
     unit_ut = calc_tier_coverage("unit", "unit", config)
-    unit_it = calc_tier_coverage("unit", "integration", config)
-    it_ut = calc_tier_coverage("integration", "unit", config)
     it_it = calc_tier_coverage("integration", "integration", config)
     e2e_all = calc_tier_coverage("e2e", "all", config)
     all_tiers = calc_all_tiers(config)
 
-    # Best per-scope across tiers
-    def best(a: str, b: str) -> str:
-        def to_float(s: str) -> float:
-            try:
-                return float(s.replace("%", ""))
-            except (ValueError, AttributeError):
-                return -1.0
-        va, vb = to_float(a), to_float(b)
-        if va < 0 and vb < 0:
-            return "-"
-        return a if va >= vb else b
-
-    best_ut = best(unit_ut, it_ut)
-    best_it = best(unit_it, it_it)
-
     lines = [
         "## Coverage Report (By Test Tier)",
         "",
-        "| Scope | Unit Tests | Integration Tests | E2E | Best |",
-        "|-------|-----------|-------------------|-----|------|",
-        f"| Unit-Testable | {unit_ut} | {it_ut} | - | {best_ut} |",
-        f"| Integration-Testable | {unit_it} | {it_it} | - | {best_it} |",
-        f"| All Code | - | - | {e2e_all} | {all_tiers} |",
+        "| Scope | Unit-Testable | Integration-Testable | E2E | All Tiers |",
+        "|-------|---------------|----------------------|-----|-----------|",
+        f"| apifrontend | {unit_ut} | {it_it} | {e2e_all} | {all_tiers} |",
         "",
         "### Column Definitions",
         "",
-        "- **Unit-Testable**: Pure logic code (config, validators, tools, agents, session, severity triage, resilience)",
-        "- **Integration-Testable**: I/O-dependent code (MCP handler, KA/DS clients, launcher, controller, TLS); auth excluded — tested by UT+E2E",
-        "- **E2E**: End-to-end test coverage (full MCP workflows in Kind cluster)",
-        "- **All Code / All Tiers**: Line-by-line merge across all tiers (any tier covering a line counts)",
+        "- **Unit-Testable**: Coverage of pure logic code from unit tests (config, validators, tools, agents, session, severity triage, resilience)",
+        "- **Integration-Testable**: Coverage of I/O-dependent code from integration tests (MCP handler, KA/DS clients, launcher, controller, TLS)",
+        "- **E2E**: Coverage from end-to-end tests (full MCP workflows in Kind cluster)",
+        "- **All Tiers**: Merged coverage — line-by-line deduplication across all tiers (any tier covering a line counts)",
         "",
         "### Quality Targets",
         "",
@@ -461,8 +447,6 @@ def output_markdown(config: dict) -> str:
 def output_table(config: dict) -> str:
     """Generate terminal-friendly table output with per-package breakdown."""
     unit_ut = calc_tier_coverage("unit", "unit", config)
-    unit_it = calc_tier_coverage("unit", "integration", config)
-    it_ut = calc_tier_coverage("integration", "unit", config)
     it_it = calc_tier_coverage("integration", "integration", config)
     e2e_all = calc_tier_coverage("e2e", "all", config)
     all_tiers = calc_all_tiers(config)
@@ -472,11 +456,9 @@ def output_table(config: dict) -> str:
         "  APIFRONTEND COVERAGE REPORT (By Test Tier)",
         "=" * 90,
         "",
-        f"  {'Scope':<25} {'Unit Tests':<15} {'IT Tests':<15} {'E2E':<10} {'All Tiers':<10}",
+        f"  {'Service':<25} {'Unit-Testable':<15} {'Integration':<15} {'E2E':<10} {'All Tiers':<10}",
         "  " + "-" * 75,
-        f"  {'Unit-Testable':<25} {unit_ut:<15} {it_ut:<15} {'-':<10} {'-':<10}",
-        f"  {'Integration-Testable':<25} {unit_it:<15} {it_it:<15} {'-':<10} {'-':<10}",
-        f"  {'All Code':<25} {'-':<15} {'-':<15} {e2e_all:<10} {all_tiers:<10}",
+        f"  {'apifrontend':<25} {unit_ut:<15} {it_it:<15} {e2e_all:<10} {all_tiers:<10}",
         "",
     ]
 
@@ -501,9 +483,10 @@ def output_table(config: dict) -> str:
         "",
         "  " + "=" * 75,
         "  COLUMN DEFINITIONS:",
-        "    Unit-Testable: Pure logic (config, validators, tools, agent, session, severity, resilience)",
-        "    Integration-Testable: I/O code (handler, ka, ds, launcher, controller, tlswiring); auth excluded — tested by UT+E2E",
-        "    All Tiers: Line-by-line merged coverage — any tier covering a line counts",
+        "    Unit-Testable:   Coverage of pure logic from unit tests",
+        "    Integration:     Coverage of I/O code from integration tests",
+        "    E2E:             Coverage from end-to-end tests (Kind cluster)",
+        "    All Tiers:       Line-by-line merged — any tier covering a block counts (composed coverage)",
         "",
         "  QUALITY TARGETS:",
         "    Unit-Testable:        >= 80%",
