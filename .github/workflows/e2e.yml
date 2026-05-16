@@ -73,10 +73,10 @@ jobs:
           podman rm -f apifrontend_ka_test apifrontend_mockllm_test apifrontend_datastorage_test apifrontend_redis_test apifrontend_postgres_test 2>/dev/null || true
           podman network rm apifrontend_test_network 2>/dev/null || true
 
-  e2e-phase1:
-    name: "Phase 1 — AF + KA + DS Integration"
+  e2e:
+    name: "E2E — Full Stack (Kind + Podman)"
     runs-on: ubuntu-latest
-    needs: [build, integration]
+    needs: [build]
     timeout-minutes: 30
     env:
       KIND_EXPERIMENTAL_PROVIDER: podman
