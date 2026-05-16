@@ -111,10 +111,15 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 			Expect(result.IsError).To(BeFalse(), "discover_workflows should succeed")
 
 			By("Extracting recommended workflow_id from discovery results")
-			var discoverData map[string]any
-			Expect(json.Unmarshal([]byte(discoverText), &discoverData)).To(Succeed(),
+			var outerData map[string]any
+			Expect(json.Unmarshal([]byte(discoverText), &outerData)).To(Succeed(),
 				"discover_workflows should return valid JSON")
-			recommended, ok := discoverData["recommended"].(map[string]any)
+			responseStr, ok := outerData["response"].(string)
+			Expect(ok).To(BeTrue(), "discovery result should have a response field")
+			var innerData map[string]any
+			Expect(json.Unmarshal([]byte(responseStr), &innerData)).To(Succeed(),
+				"response field should contain valid JSON")
+			recommended, ok := innerData["recommended"].(map[string]any)
 			Expect(ok).To(BeTrue(), "discovery result should have a recommended workflow")
 			recommendedID, ok := recommended["workflow_id"].(string)
 			Expect(ok).To(BeTrue(), "recommended workflow should have a workflow_id")

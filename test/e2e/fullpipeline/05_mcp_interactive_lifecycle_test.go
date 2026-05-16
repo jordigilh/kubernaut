@@ -556,9 +556,10 @@ var _ = Describe("FP-MCP-005c: complete_no_action through full pipeline", Label(
 		_, err := dynClient.Resource(rrGVR).Namespace(namespace).Create(createCtx, rr, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), "direct RR CRD creation for 005c")
 
-		By("Setting up MCP session")
-		saToken, err := infrastructure.GetServiceAccountToken(ctx, namespace, "kubernaut-agent-e2e-sa", kubeconfigPath)
-		Expect(err).NotTo(HaveOccurred())
+		By("Setting up MCP session — creating SA with interactive RBAC")
+		saToken, err := infrastructure.CreateInteractiveE2ESA(
+			ctx, namespace, "fp-mcp-005c-sa", kubeconfigPath, GinkgoWriter)
+		Expect(err).NotTo(HaveOccurred(), "interactive SA creation for 005c")
 		tlsTransport, err := infrastructure.NewTLSAwareTransport(kubeconfigPath)
 		Expect(err).NotTo(HaveOccurred())
 
