@@ -77,7 +77,7 @@ var _ = SynchronizedBeforeSuite(
 	func(_ []byte) {
 		baseURL = "https://localhost:18443"
 		caCertPath = filepath.Join(os.TempDir(), "apifrontend-e2e-certs", "ca.crt")
-		dexURL = "http://localhost:15556/dex"
+		dexURL = "http://localhost:5556/dex"
 		clientID = "kubernaut-apifrontend"
 		clientSecret = "e2e-client-secret"
 		username = "e2e-user@kubernaut.ai"
