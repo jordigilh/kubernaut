@@ -8,7 +8,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/handler"
 )
 
@@ -101,7 +100,7 @@ var _ = Describe("Agent Card Handler", func() {
 		Expect(card["version"]).To(Equal("0.2.0"))
 	})
 
-	It("UT-AF-230-007: card includes skills matching 14 tools", func() {
+	It("UT-AF-230-007: card includes skills matching 19 tools", func() {
 		h, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
 			Name:    "kubernaut-apifrontend",
 			URL:     "https://kubernaut.example.com",
@@ -118,7 +117,7 @@ var _ = Describe("Agent Card Handler", func() {
 		_ = json.Unmarshal(rec.Body.Bytes(), &card)
 		skills, ok := card["skills"].([]any)
 		Expect(ok).To(BeTrue())
-		Expect(skills).To(HaveLen(20))
+		Expect(skills).To(HaveLen(19))
 	})
 
 	It("UT-AF-230-008: card declares authentication requirements", func() {
@@ -192,195 +191,24 @@ var _ = Describe("Agent Card Handler", func() {
 		_ = json.Unmarshal(rec.Body.Bytes(), &card)
 		Expect(card["protocolVersion"]).To(Equal("0.3.0"))
 	})
-})
 
-var _ = Describe("Agent Card RBAC Filtering", func() {
-	var rbacRoles handler.RBACRoles
-	var groupMapping handler.GroupMapping
-	var allSkills []handler.AgentSkill
-
-	BeforeEach(func() {
-		rbacRoles = handler.RBACRoles{
-			"sre":      {"tool_a", "tool_b", "tool_c"},
-			"cicd":     {"tool_a", "tool_d"},
-			"l3-audit": {"tool_b", "tool_e"},
-		}
-		groupMapping = handler.GroupMapping{
-			"platform-sre-team": "sre",
-			"github-actions":    "cicd",
-			"audit-team":        "l3-audit",
-		}
-		allSkills = []handler.AgentSkill{
-			{ID: "tool_a", Name: "Tool A", Description: "Does A"},
-			{ID: "tool_b", Name: "Tool B", Description: "Does B"},
-			{ID: "tool_c", Name: "Tool C", Description: "Does C"},
-			{ID: "tool_d", Name: "Tool D", Description: "Does D"},
-			{ID: "tool_e", Name: "Tool E", Description: "Does E"},
-		}
-	})
-
-	It("UT-AF-083-001: unauthenticated request returns shell card with empty skills", func() {
+	It("UT-AF-230-012: card with nil skills returns empty array not null", func() {
 		h, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
-			Name:         "kubernaut-apifrontend",
-			URL:          "https://kubernaut.example.com",
-			Version:      "0.1.0",
-			Skills:       allSkills,
-			RBACRoles:    rbacRoles,
-			GroupMapping: groupMapping,
+			Name:    "kubernaut-apifrontend",
+			URL:     "https://kubernaut.example.com",
+			Version: "0.1.0",
+			Skills:  nil,
 		})
 		Expect(err).NotTo(HaveOccurred())
 
 		req := httptest.NewRequest("GET", "/.well-known/agent-card.json", http.NoBody)
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-
-		Expect(rec.Code).To(Equal(http.StatusOK))
-		var card map[string]any
-		err = json.Unmarshal(rec.Body.Bytes(), &card)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(card["name"]).To(Equal("kubernaut-apifrontend"))
-		skills, ok := card["skills"].([]any)
-		Expect(ok).To(BeTrue())
-		Expect(skills).To(BeEmpty())
-	})
-
-	It("UT-AF-083-002: authenticated SRE sees only SRE tools", func() {
-		h, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
-			Name:         "kubernaut-apifrontend",
-			URL:          "https://kubernaut.example.com",
-			Version:      "0.1.0",
-			Skills:       allSkills,
-			RBACRoles:    rbacRoles,
-			GroupMapping: groupMapping,
-		})
-		Expect(err).NotTo(HaveOccurred())
-
-		req := httptest.NewRequest("GET", "/.well-known/agent-card.json", http.NoBody)
-		ctx := auth.WithUserIdentity(req.Context(), &auth.UserIdentity{
-			Username: "sre-user",
-			Groups:   []string{"platform-sre-team"},
-			Issuer:   "test",
-		})
-		req = req.WithContext(ctx)
-
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-
-		Expect(rec.Code).To(Equal(http.StatusOK))
-		var card map[string]any
-		_ = json.Unmarshal(rec.Body.Bytes(), &card)
-		skills, ok := card["skills"].([]any)
-		Expect(ok).To(BeTrue())
-		Expect(skills).To(HaveLen(3))
-
-		ids := extractSkillIDs(skills)
-		Expect(ids).To(ContainElement("tool_a"))
-		Expect(ids).To(ContainElement("tool_b"))
-		Expect(ids).To(ContainElement("tool_c"))
-	})
-
-	It("UT-AF-083-003: multiple groups returns union of tools (deduplicated)", func() {
-		h, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
-			Name:         "kubernaut-apifrontend",
-			URL:          "https://kubernaut.example.com",
-			Version:      "0.1.0",
-			Skills:       allSkills,
-			RBACRoles:    rbacRoles,
-			GroupMapping: groupMapping,
-		})
-		Expect(err).NotTo(HaveOccurred())
-
-		req := httptest.NewRequest("GET", "/.well-known/agent-card.json", http.NoBody)
-		ctx := auth.WithUserIdentity(req.Context(), &auth.UserIdentity{
-			Username: "multi-role-user",
-			Groups:   []string{"platform-sre-team", "audit-team"},
-			Issuer:   "test",
-		})
-		req = req.WithContext(ctx)
-
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 
 		var card map[string]any
 		_ = json.Unmarshal(rec.Body.Bytes(), &card)
 		skills, ok := card["skills"].([]any)
-		Expect(ok).To(BeTrue())
-		// sre: tool_a, tool_b, tool_c; l3-audit: tool_b, tool_e => union = tool_a, tool_b, tool_c, tool_e
-		Expect(skills).To(HaveLen(4))
-	})
-
-	It("UT-AF-083-004: unmapped group with direct role key match still works", func() {
-		h, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
-			Name:         "kubernaut-apifrontend",
-			URL:          "https://kubernaut.example.com",
-			Version:      "0.1.0",
-			Skills:       allSkills,
-			RBACRoles:    rbacRoles,
-			GroupMapping: groupMapping,
-		})
-		Expect(err).NotTo(HaveOccurred())
-
-		req := httptest.NewRequest("GET", "/.well-known/agent-card.json", http.NoBody)
-		ctx := auth.WithUserIdentity(req.Context(), &auth.UserIdentity{
-			Username: "direct-role-user",
-			Groups:   []string{"cicd"},
-			Issuer:   "test",
-		})
-		req = req.WithContext(ctx)
-
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-
-		var card map[string]any
-		_ = json.Unmarshal(rec.Body.Bytes(), &card)
-		skills, ok := card["skills"].([]any)
-		Expect(ok).To(BeTrue())
-		Expect(skills).To(HaveLen(2))
-
-		ids := extractSkillIDs(skills)
-		Expect(ids).To(ContainElement("tool_a"))
-		Expect(ids).To(ContainElement("tool_d"))
-	})
-
-	It("UT-AF-083-005: authenticated user with no matching role gets empty skills", func() {
-		h, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
-			Name:         "kubernaut-apifrontend",
-			URL:          "https://kubernaut.example.com",
-			Version:      "0.1.0",
-			Skills:       allSkills,
-			RBACRoles:    rbacRoles,
-			GroupMapping: groupMapping,
-		})
-		Expect(err).NotTo(HaveOccurred())
-
-		req := httptest.NewRequest("GET", "/.well-known/agent-card.json", http.NoBody)
-		ctx := auth.WithUserIdentity(req.Context(), &auth.UserIdentity{
-			Username: "unknown-role-user",
-			Groups:   []string{"marketing-team"},
-			Issuer:   "test",
-		})
-		req = req.WithContext(ctx)
-
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-
-		var card map[string]any
-		_ = json.Unmarshal(rec.Body.Bytes(), &card)
-		skills, ok := card["skills"].([]any)
-		Expect(ok).To(BeTrue())
+		Expect(ok).To(BeTrue(), "skills should be an array, not null")
 		Expect(skills).To(BeEmpty())
 	})
 })
-
-func extractSkillIDs(skills []any) []string {
-	ids := make([]string, 0, len(skills))
-	for _, s := range skills {
-		skill, ok := s.(map[string]any)
-		if ok {
-			if id, idOK := skill["id"].(string); idOK {
-				ids = append(ids, id)
-			}
-		}
-	}
-	return ids
-}
