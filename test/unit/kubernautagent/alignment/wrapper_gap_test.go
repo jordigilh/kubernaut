@@ -474,3 +474,241 @@ var _ = Describe("GAP-15: Concurrent EvaluateStep race detection — BR-AI-601",
 		})
 	})
 })
+
+var _ = Describe("Grounding review through InvestigatorWrapper — #1096 wrapper-level", func() {
+
+	Describe("UT-SA-GROUNDING-001: Grounding review pass does not trigger circuit breaker", func() {
+		It("should complete normally with no alignment warnings when grounding passes", func() {
+			innerRes := &katypes.InvestigationResult{
+				RCASummary: "valid rca", Confidence: 0.95, HumanReviewNeeded: false,
+			}
+			inner := &mockInvestigationRunnerWithObserver{
+				result: innerRes,
+				onInvestigate: func(ctx context.Context) {
+					obs := alignment.ObserverFromContext(ctx)
+					if obs != nil {
+						obs.StartGroundingReview([]llm.Message{
+							{Role: "user", Content: "investigate OOM"},
+							{Role: "assistant", Content: "checking pods"},
+						})
+					}
+				},
+			}
+
+			dualCleanGrounded := llm.ChatResponse{
+				Message: llm.Message{Role: "assistant", Content: `{"suspicious":false,"grounded":true,"explanation":"clean and well-grounded"}`},
+			}
+			client := &concurrentMockLLMClient{responses: []llm.ChatResponse{
+				suspiciousResponse(), // canary → suspicious (pass)
+				dualCleanGrounded,    // signal step OR grounding (concurrent — dual-valid response)
+				dualCleanGrounded,    // signal step OR grounding (concurrent — dual-valid response)
+			}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 500, MaxRetries: 1,
+			}, "")
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:            inner,
+				Evaluator:        evaluator,
+				VerdictTimeout:   5 * time.Second,
+				Logger:           logr.Discard(),
+				Mode:             config.AlignmentModeEnforce,
+				GroundingEnabled: true,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			sig := katypes.SignalContext{Name: "oom", Namespace: "prod", Severity: "high", Message: "OOMKilled"}
+			res, err := wrapper.Investigate(context.Background(), sig)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res.HumanReviewNeeded).To(BeFalse(),
+				"grounded + clean steps must not trigger human review")
+			Expect(res.AlignmentVerdict).NotTo(BeNil())
+			Expect(res.AlignmentVerdict.Result).To(Equal(string(alignment.VerdictClean)))
+			Expect(res.AlignmentVerdict.GroundingReview).NotTo(BeNil())
+			Expect(res.AlignmentVerdict.GroundingReview.Grounded).To(BeTrue())
+		})
+	})
+
+	Describe("UT-SA-GROUNDING-002: Grounding review timeout triggers fail-closed behavior", func() {
+		It("should escalate to human review when grounding times out in enforce mode", func() {
+			innerRes := &katypes.InvestigationResult{
+				RCASummary: "valid rca", Confidence: 0.95, HumanReviewNeeded: false,
+			}
+			inner := &mockInvestigationRunnerWithObserver{
+				result: innerRes,
+				onInvestigate: func(ctx context.Context) {
+					obs := alignment.ObserverFromContext(ctx)
+					if obs != nil {
+						obs.StartGroundingReview([]llm.Message{
+							{Role: "user", Content: "investigate"},
+							{Role: "assistant", Content: "checking"},
+						})
+					}
+				},
+			}
+
+			responses := []llm.ChatResponse{
+				suspiciousResponse(), // canary → pass
+				cleanResponse(),      // signal step → clean
+			}
+			client := &mockLLMClient{responses: responses}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout:       50 * time.Millisecond, // grounding will timeout
+				MaxStepTokens: 500,
+				MaxRetries:    1,
+			}, "")
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:            inner,
+				Evaluator:        evaluator,
+				VerdictTimeout:   200 * time.Millisecond,
+				Logger:           logr.Discard(),
+				Mode:             config.AlignmentModeEnforce,
+				GroundingEnabled: true,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			sig := katypes.SignalContext{Name: "test", Namespace: "ns", Severity: "high", Message: "m"}
+			res, err := wrapper.Investigate(context.Background(), sig)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res.AlignmentVerdict).NotTo(BeNil())
+			Expect(res.AlignmentVerdict.Result).To(Equal("suspicious"),
+				"grounding timeout must produce suspicious verdict via fail-closed")
+			Expect(res.HumanReviewNeeded).To(BeTrue(),
+				"enforce mode + suspicious verdict must escalate to human review")
+		})
+	})
+
+	Describe("UT-SA-GROUNDING-003: Grounding review fail triggers escalation in enforce mode", func() {
+		It("should set HumanReviewNeeded when grounding returns ungrounded", func() {
+			innerRes := &katypes.InvestigationResult{
+				RCASummary: "valid rca", Confidence: 0.95, HumanReviewNeeded: false,
+			}
+			inner := &mockInvestigationRunnerWithObserver{
+				result: innerRes,
+				onInvestigate: func(ctx context.Context) {
+					obs := alignment.ObserverFromContext(ctx)
+					if obs != nil {
+						obs.StartGroundingReview([]llm.Message{
+							{Role: "user", Content: "investigate"},
+							{Role: "assistant", Content: "RCA: everything is fine"},
+						})
+					}
+				},
+			}
+
+			dualCleanUngrounded := llm.ChatResponse{
+				Message: llm.Message{Role: "assistant", Content: `{"suspicious":false,"grounded":false,"explanation":"reasoning drift detected"}`},
+			}
+			client := &concurrentMockLLMClient{responses: []llm.ChatResponse{
+				suspiciousResponse(),  // canary → pass
+				dualCleanUngrounded,   // signal step OR grounding (concurrent — dual-valid response)
+				dualCleanUngrounded,   // signal step OR grounding (concurrent — dual-valid response)
+			}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 500, MaxRetries: 1,
+			}, "")
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:            inner,
+				Evaluator:        evaluator,
+				VerdictTimeout:   5 * time.Second,
+				Logger:           logr.Discard(),
+				Mode:             config.AlignmentModeEnforce,
+				GroundingEnabled: true,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			sig := katypes.SignalContext{Name: "test", Namespace: "ns", Severity: "high", Message: "m"}
+			res, err := wrapper.Investigate(context.Background(), sig)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res.HumanReviewNeeded).To(BeTrue(),
+				"ungrounded verdict in enforce mode must escalate to human review")
+			Expect(res.AlignmentVerdict.GroundingReview).NotTo(BeNil())
+			Expect(res.AlignmentVerdict.GroundingReview.Grounded).To(BeFalse())
+			Expect(res.AlignmentVerdict.GroundingReview.Explanation).To(ContainSubstring("drift"))
+		})
+	})
+
+	Describe("UT-SA-MONITOR-001: Monitor mode logs verdict but does not cancel investigation", func() {
+		It("should populate AlignmentVerdict as suspicious but not escalate in monitor mode", func() {
+			innerRes := &katypes.InvestigationResult{
+				RCASummary: "valid rca", Confidence: 0.95, HumanReviewNeeded: false,
+			}
+			inner := &mockInvestigationRunnerWithObserver{
+				result: innerRes,
+				onInvestigate: func(ctx context.Context) {
+					obs := alignment.ObserverFromContext(ctx)
+					if obs != nil {
+						obs.StartGroundingReview([]llm.Message{
+							{Role: "user", Content: "investigate"},
+							{Role: "assistant", Content: "conclusions not supported"},
+						})
+					}
+				},
+			}
+
+			dualCleanUngrounded := llm.ChatResponse{
+				Message: llm.Message{Role: "assistant", Content: `{"suspicious":false,"grounded":false,"explanation":"reasoning drift"}`},
+			}
+			client := &concurrentMockLLMClient{responses: []llm.ChatResponse{
+				suspiciousResponse(),  // canary → pass
+				dualCleanUngrounded,   // signal step OR grounding (concurrent — dual-valid response)
+				dualCleanUngrounded,   // signal step OR grounding (concurrent — dual-valid response)
+			}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 500, MaxRetries: 1,
+			}, "")
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:            inner,
+				Evaluator:        evaluator,
+				VerdictTimeout:   5 * time.Second,
+				Logger:           logr.Discard(),
+				Mode:             config.AlignmentModeMonitor,
+				GroundingEnabled: true,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
+			res, err := wrapper.Investigate(context.Background(), sig)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res.HumanReviewNeeded).To(BeFalse(),
+				"monitor mode must NOT escalate to human review even with suspicious verdict")
+			Expect(res.AlignmentVerdict).NotTo(BeNil(),
+				"alignment verdict must still be populated for observability")
+			Expect(res.AlignmentVerdict.Result).To(Equal(string(alignment.VerdictSuspicious)),
+				"verdict should reflect the ungrounded finding")
+		})
+	})
+
+	Describe("UT-SA-CANARY-001: Canary failure triggers forceEscalation", func() {
+		It("should force human review when canary fails with forceEscalation=true", func() {
+			innerRes := &katypes.InvestigationResult{
+				RCASummary: "rca", Confidence: 0.9, HumanReviewNeeded: false,
+			}
+			inner := &mockInvestigationRunner{result: innerRes}
+
+			client := &mockLLMClient{responses: []llm.ChatResponse{
+				cleanResponse(), // canary → clean (FAIL: shadow didn't flag malicious)
+				cleanResponse(), // signal step → clean
+			}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxRetries: 1,
+			}, "")
+			wrapper, err := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
+				Inner:                 inner,
+				Evaluator:             evaluator,
+				VerdictTimeout:        5 * time.Second,
+				Logger:                logr.Discard(),
+				Mode:                  config.AlignmentModeMonitor,
+				CanaryForceEscalation: true,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			sig := katypes.SignalContext{Name: "s", Namespace: "ns", Severity: "high", Message: "m"}
+			res, err := wrapper.Investigate(context.Background(), sig)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res.HumanReviewNeeded).To(BeTrue(),
+				"canary failure with forceEscalation=true must escalate even in monitor mode")
+			Expect(res.Warnings).To(ContainElement(ContainSubstring("canary")),
+				"warnings must explain the canary failure")
+		})
+	})
+})

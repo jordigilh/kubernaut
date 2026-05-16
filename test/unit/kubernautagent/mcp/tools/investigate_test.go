@@ -76,6 +76,12 @@ func (m *mockContextReconstructor) Reconstruct(_ context.Context, _, _ string) (
 	return m.turns, m.err
 }
 
+type rejectingRateLimiter struct{}
+
+func (r *rejectingRateLimiter) Allow(_ string, _ int) error {
+	return mcpinternal.ErrRateLimited
+}
+
 var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func() {
 
 	Describe("UT-KA-703-K01: Tool validates input schema", func() {
@@ -282,6 +288,109 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			}, mcpinternal.UserInfo{Username: "alice"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out.Status).To(Equal("started"))
+		})
+	})
+
+	Describe("UT-KA-703-K10: action=message returns session_expired when GetDriver returns ErrSessionExpired", func() {
+		It("should return MCPError with code session_expired (SEC-04)", func() {
+			sessionMgr := &mockSessionManager{
+				isActive:     true,
+				getDriverErr: mcpinternal.ErrSessionExpired,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:    "rr-expired",
+				Action:  mcptools.ActionMessage,
+				Message: "hello",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("session_expired"),
+				"expired session must return structured session_expired code for AF error handling")
+		})
+	})
+
+	Describe("UT-KA-703-K11: action=message returns rate_limited when rate limiter rejects", func() {
+		It("should return MCPError with code rate_limited (SEC-HIGH-01)", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-rl",
+					CorrelationID: "rr-rl",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+			rl := &rejectingRateLimiter{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.WithRateLimiter(rl))
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:    "rr-rl",
+				Action:  mcptools.ActionMessage,
+				Message: "trigger rate limit",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("rate_limited"),
+				"rate-limited message must return structured rate_limited code for AF retry logic")
+		})
+	})
+
+	Describe("UT-KA-703-K12: action=cancel rejected when non-driver calls it", func() {
+		It("should return MCPError session_active with driver identity (SEC-CRIT-01)", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-cancel-authz",
+					CorrelationID: "rr-cancel-authz",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-cancel-authz",
+				Action: mcptools.ActionCancel,
+			}, mcpinternal.UserInfo{Username: "mallory"})
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("session_active"),
+				"non-driver cancel must be rejected with session_active")
+		})
+	})
+
+	Describe("UT-KA-703-K13: action=complete rejected when non-driver calls it", func() {
+		It("should return MCPError session_active with driver identity (SEC-CRIT-01)", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-complete-authz",
+					CorrelationID: "rr-complete-authz",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-complete-authz",
+				Action: mcptools.ActionComplete,
+			}, mcpinternal.UserInfo{Username: "mallory"})
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("session_active"),
+				"non-driver complete must be rejected with session_active")
 		})
 	})
 })

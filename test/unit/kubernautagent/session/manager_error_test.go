@@ -72,4 +72,53 @@ var _ = Describe("UT-KA-948: Session manager logs store.Update errors — BR-AUD
 			)
 		})
 	})
+
+	Describe("UT-KA-RACE-001: storePartialResult preserves result when cancel races with completion", func() {
+		It("should attach the result to the session despite terminal status (BR-SESSION-002)", func() {
+			var mu sync.Mutex
+			var logLines []string
+			logger := funcr.New(func(prefix, args string) {
+				mu.Lock()
+				defer mu.Unlock()
+				logLines = append(logLines, prefix+" "+args)
+			}, funcr.Options{Verbosity: 10})
+
+			store := session.NewStore(5 * time.Minute)
+			mgr := session.NewManager(store, logger, audit.NopAuditStore{}, metrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			gate := make(chan struct{})
+			done := make(chan struct{})
+			expectedResult := &katypes.InvestigationResult{
+				RCASummary: "partial result from cancelled investigation",
+			}
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				<-gate
+				close(done)
+				return expectedResult, nil
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mgr.CancelInvestigation(id)).To(Succeed())
+
+			close(gate)
+			Eventually(done, 2*time.Second).Should(BeClosed())
+
+			Eventually(func() string {
+				mu.Lock()
+				defer mu.Unlock()
+				return strings.Join(logLines, "\n")
+			}, 2*time.Second, 5*time.Millisecond).Should(
+				ContainSubstring("post-investigation status update rejected"))
+
+			time.Sleep(50 * time.Millisecond)
+
+			snap, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(snap.Status)).To(Equal("cancelled"),
+				"session should remain in cancelled status")
+			Expect(snap.Result).NotTo(BeNil(),
+				"partial result must be preserved via storePartialResult for snapshot retrieval")
+			Expect(snap.Result.RCASummary).To(Equal("partial result from cancelled investigation"))
+		})
+	})
 })
