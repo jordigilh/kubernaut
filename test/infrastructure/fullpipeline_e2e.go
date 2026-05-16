@@ -807,12 +807,15 @@ data:
     kubeBurst: 100
     route:
       routes:
-        # Forward K8s events from fp-e2e-* (K8s event test) and fp-approval-* (approval lifecycle test)
-        # fp-am-* namespaces excluded to prevent K8s event duplication in AlertManager test
+        # Forward K8s events from fp-e2e-* (K8s event test), fp-approval-* (approval lifecycle),
+        # and fp-mcp-* (MCP interactive lifecycle) namespaces to Gateway.
+        # fp-am-* namespaces excluded to prevent K8s event duplication in AlertManager test.
         - match:
             - namespace: "fp-e2e-*"
               receiver: gateway-webhook
             - namespace: "fp-approval-*"
+              receiver: gateway-webhook
+            - namespace: "fp-mcp-*"
               receiver: gateway-webhook
           drop:
             - type: "Normal"
