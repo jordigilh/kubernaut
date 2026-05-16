@@ -1386,6 +1386,8 @@ func buildMCPHandler(
 		catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
 		swOpts := []mcptools.SelectWorkflowOption{
 			mcptools.WithLogger(logger.WithName("select-workflow")),
+			mcptools.WithHTTPSessionCompleter(autoMgr),
+			mcptools.WithMutexProvider(investigateTool),
 		}
 		if enricher != nil {
 			swOpts = append(swOpts, mcptools.WithEnrichmentRunner(enricher))
