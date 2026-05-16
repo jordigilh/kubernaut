@@ -222,7 +222,7 @@ func run() int {
 		PreAuthMiddleware:  preAuthMW,
 		PostAuthMiddleware: postAuthMW,
 		ReadyChecker:       handler.AllReady(func() bool { return !draining.Load() }, depsReady, authReady),
-		SSETracker:         streaming.NewConnectionTracker(metricsReg.SSEActiveConnections, 5*time.Second),
+		SSETracker:         buildSSETracker(cfg, metricsReg),
 		Draining:           draining,
 	}
 	router, err := handler.NewRouter(routerCfg)
@@ -915,6 +915,14 @@ func shutdownTimeout(cfg *config.Config) time.Duration {
 		return time.Duration(cfg.Shutdown.DrainSeconds) * time.Second
 	}
 	return 15 * time.Second
+}
+
+func buildSSETracker(cfg *config.Config, metricsReg *metrics.Registry) *streaming.ConnectionTracker {
+	tracker := streaming.NewConnectionTracker(metricsReg.SSEActiveConnections, 5*time.Second)
+	if cfg.Server.MaxSSEConnections > 0 {
+		tracker.MaxConnections = cfg.Server.MaxSSEConnections
+	}
+	return tracker
 }
 
 // sessionInfra bundles the session-management components that buildSessionInfra

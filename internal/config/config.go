@@ -99,8 +99,9 @@ type ShutdownConfig struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port int             `yaml:"port"`
-	TLS  ServerTLSConfig `yaml:"tls"`
+	Port              int             `yaml:"port"`
+	TLS               ServerTLSConfig `yaml:"tls"`
+	MaxSSEConnections int             `yaml:"maxSSEConnections,omitempty"`
 }
 
 // ServerTLSConfig extends the shared TLS config with a Required flag for FedRAMP compliance.

@@ -42,9 +42,11 @@ type CreateRRArgs struct {
 
 // CreateRRResult is the output of af_create_rr.
 type CreateRRResult struct {
-	RRID          string `json:"rr_id"`
-	Message       string `json:"message"`
-	AlreadyExists bool   `json:"already_exists,omitempty"`
+	RRID           string `json:"rr_id"`
+	Message        string `json:"message"`
+	AlreadyExists  bool   `json:"already_exists,omitempty"`
+	Severity       string `json:"severity,omitempty"`
+	SeveritySource string `json:"severity_source,omitempty"`
 }
 
 // rrCreateGroup provides singleflight deduplication per fingerprint.
@@ -158,7 +160,7 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 			spec["signalLabels"] = signalLabels
 		}
 
-		rr := &unstructured.Unstructured{
+		rrObj := &unstructured.Unstructured{
 			Object: map[string]interface{}{
 				"apiVersion": "kubernaut.ai/v1alpha1",
 				"kind":       "RemediationRequest",
@@ -170,15 +172,22 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 			},
 		}
 
-		created, createErr := client.Resource(rrGVR).Namespace(args.Namespace).Create(ctx, rr, metav1.CreateOptions{})
+		created, createErr := client.Resource(rrGVR).Namespace(args.Namespace).Create(ctx, rrObj, metav1.CreateOptions{})
 		if createErr != nil {
 			return nil, ToUserFriendlyError(createErr)
 		}
 
-		return &CreateRRResult{
+		out := &CreateRRResult{
 			RRID:    created.GetNamespace() + "/" + created.GetName(),
 			Message: fmt.Sprintf("RemediationRequest created for %s/%s by %s", args.Kind, args.Name, username),
-		}, nil
+		}
+		if triageResult != nil {
+			out.Severity = triageResult.Severity
+			out.SeveritySource = string(triageResult.Source)
+		} else if args.Severity != "" {
+			out.Severity = args.Severity
+		}
+		return out, nil
 	})
 
 	if err != nil {

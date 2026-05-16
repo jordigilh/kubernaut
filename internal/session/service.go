@@ -150,8 +150,9 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 			},
 		},
 		Status: v1alpha1.InvestigationSessionStatus{
-			Phase:     v1alpha1.SessionPhaseActive,
-			StartedAt: &now,
+			Phase:           v1alpha1.SessionPhaseActive,
+			ConnectionState: v1alpha1.ConnectionStateConnected,
+			StartedAt:       &now,
 		},
 	}
 
