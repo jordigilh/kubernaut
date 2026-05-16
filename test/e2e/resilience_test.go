@@ -316,9 +316,7 @@ spec:
 				Fail("MCP tool call should not hang indefinitely when KA is partitioned")
 			}
 
-			Eventually(func() string {
-				return scrapeMetrics()
-			}, 90*time.Second, 2*time.Second).Should(MatchRegexp(`af_circuit_breaker_state\{[^}]*dependency="ka"[^}]*\} 2`),
+			Eventually(scrapeMetrics, 90*time.Second, 2*time.Second).Should(MatchRegexp(`af_circuit_breaker_state\{[^}]*dependency="ka"[^}]*\} 2`),
 				"KA circuit breaker should be open (state 2) while AF cannot reach KA")
 
 			tmp, tErr := os.CreateTemp("", "e2e-netpol-orig-*.yaml")
@@ -559,14 +557,14 @@ spec:
 			DeferCleanup(func() {
 				rpatch := strings.NewReplacer("\n", "\\n", "\"", "\\\"").Replace(yamlText)
 				_, _ = kubectlWithResilienceKubeconfig("patch", "cm", cm, "-n", e2eNamespace, "--type", "merge",
-					"-p", fmt.Sprintf(`{"data":{"config.yaml":"%s"}}`, rpatch)).CombinedOutput()
+					"-p", `{"data":{"config.yaml":"`+rpatch+`"}}`).CombinedOutput()
 				_, _ = kubectlWithResilienceKubeconfig("rollout", "restart", "deployment/apifrontend", "-n", e2eNamespace).CombinedOutput()
 				_, _ = kubectlWithResilienceKubeconfig("rollout", "status", "deployment/apifrontend", "-n", e2eNamespace, "--timeout=180s").CombinedOutput()
 			})
 
 			escaped := strings.NewReplacer("\n", "\\n", "\"", "\\\"").Replace(patched)
 			pOut, err := kubectlWithResilienceKubeconfig("patch", "cm", cm, "-n", e2eNamespace, "--type", "merge",
-				"-p", fmt.Sprintf(`{"data":{"config.yaml":"%s"}}`, escaped)).CombinedOutput()
+				"-p", `{"data":{"config.yaml":"`+escaped+`"}}`).CombinedOutput()
 			Expect(err).NotTo(HaveOccurred(), string(pOut))
 
 			podName, err := kubectlWithResilienceKubeconfig("get", "pods", "-n", e2eNamespace,

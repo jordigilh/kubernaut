@@ -68,7 +68,7 @@ var _ = Describe("DS Audit Sink (G8)", Ordered, Label("e2e", "phase4", "g8"), fu
 	}
 
 	fetchAuditBody := func() ([]byte, int, error) {
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, dsAuditURL, nil)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, dsAuditURL, http.NoBody)
 		if err != nil {
 			return nil, 0, err
 		}

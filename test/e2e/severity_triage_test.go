@@ -191,4 +191,3 @@ var _ = Describe("Severity Triage Pipeline (G12)", Ordered, Label("e2e", "phase4
 			"af_severity_triage_total should be incremented after triage calls")
 	})
 })
-
