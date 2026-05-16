@@ -383,7 +383,7 @@ func (m *LeaseSessionManager) tryReclaimExpiredLease(ctx context.Context, name, 
 		return false
 	}
 
-	expiry := existing.Spec.AcquireTime.Time.Add(
+	expiry := existing.Spec.AcquireTime.Add(
 		time.Duration(*existing.Spec.LeaseDurationSeconds) * time.Second,
 	)
 	if time.Now().Before(expiry) {
@@ -427,7 +427,7 @@ func (m *LeaseSessionManager) ReconcileOrphanedLeases(ctx context.Context) int {
 			continue
 		}
 
-		expiry := lease.Spec.AcquireTime.Time.Add(
+		expiry := lease.Spec.AcquireTime.Add(
 			time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second,
 		)
 		if now.Before(expiry) {
