@@ -130,6 +130,13 @@ var _ = Describe("DS Audit Sink (G8)", Ordered, Label("e2e", "phase4", "g8"), fu
 	})
 
 	It("TC-E2E-AUDIT-02: DS unavailable -> audit failure logged, request succeeds", func() {
+		// Pre-check: verify the data-storage deployment exists and we can reach it.
+		dsOut, dsErr := kubectl(context.Background(), "get", "deployment/data-storage",
+			"-n", namespace, "-o", "name")
+		if dsErr != nil {
+			Skip(fmt.Sprintf("data-storage deployment not accessible in namespace %s: %s (%v)", namespace, dsOut, dsErr))
+		}
+
 		DeferCleanup(func() {
 			_, _ = kubectl(context.Background(), "scale", "deployment/data-storage",
 				"-n", namespace, "--replicas=1")
@@ -137,9 +144,9 @@ var _ = Describe("DS Audit Sink (G8)", Ordered, Label("e2e", "phase4", "g8"), fu
 				"-n", namespace, "--timeout=120s")
 		})
 
-		_, err := kubectl(context.Background(), "scale", "deployment/data-storage",
+		scaleOut, err := kubectl(context.Background(), "scale", "deployment/data-storage",
 			"-n", namespace, "--replicas=0")
-		Expect(err).NotTo(HaveOccurred())
+		Expect(err).NotTo(HaveOccurred(), "kubectl scale failed: %s", scaleOut)
 		time.Sleep(2 * time.Second)
 
 		text, err := mcpToolCall("af_get_pods", map[string]interface{}{

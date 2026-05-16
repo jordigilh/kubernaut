@@ -29,10 +29,10 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
     verbs: ["get"]
-  # af_create_rr / af_check_existing_rr / kubernaut_cancel_remediation
+  # af_create_rr / af_check_existing_rr / kubernaut_cancel_remediation / kubernaut_watch
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
-    verbs: ["get", "list", "create", "update", "patch"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests/status"]
     verbs: ["get", "update", "patch"]
