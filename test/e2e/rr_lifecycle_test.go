@@ -58,7 +58,7 @@ func initMCPSession(token string) (string, error) {
 	return resp.Header.Get("Mcp-Session-Id"), nil
 }
 
-func mcpPOST(token, sessionID, jsonBody string) ([]byte, int, error) {
+func mcpPOST(token, sessionID, jsonBody string) (body []byte, statusCode int, err error) {
 	req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(jsonBody))
 	if err != nil {
 		return nil, 0, err
@@ -73,8 +73,9 @@ func mcpPOST(token, sessionID, jsonBody string) ([]byte, int, error) {
 		return nil, 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	b, err := io.ReadAll(resp.Body)
-	return b, resp.StatusCode, err
+	body, err = io.ReadAll(resp.Body)
+	statusCode = resp.StatusCode
+	return body, statusCode, err
 }
 
 func parseMCPToolPayload(payload string) (text string, toolIsError bool, err error) {
@@ -270,8 +271,12 @@ var _ = Describe("RR CRD Lifecycle (G4)", Ordered, Label("e2e", "phase2", "g4"),
 		Expect(json.Unmarshal([]byte(text), &out)).To(Succeed())
 		Expect(out).To(HaveKey("namespace"))
 		Expect(out).To(HaveKey("name"))
-		Expect(out["kind"].(string)).NotTo(BeEmpty())
-		Expect(out["target"].(string)).NotTo(BeEmpty())
+		kind, ok := out["kind"].(string)
+		Expect(ok).To(BeTrue(), "kind should be a string")
+		Expect(kind).NotTo(BeEmpty())
+		target, ok := out["target"].(string)
+		Expect(ok).To(BeTrue(), "target should be a string")
+		Expect(target).NotTo(BeEmpty())
 	})
 
 	It("TC-E2E-RR-06: af_create_rr twice is idempotent (dedup / already_exists)", func() {

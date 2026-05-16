@@ -19,9 +19,12 @@ import (
 )
 
 const (
+	// DefaultClusterName is the Kind cluster name for apifrontend E2E tests.
 	DefaultClusterName = "apifrontend-e2e"
-	DefaultKindConfig  = "deploy/kustomize/overlays/e2e/kind-config.yaml"
-	DefaultNamespace   = "kubernaut-system"
+	// DefaultKindConfig is the path to the Kind config file, relative to the repo root.
+	DefaultKindConfig = "deploy/kustomize/overlays/e2e/kind-config.yaml"
+	// DefaultNamespace is the Kubernetes namespace for AF E2E workloads.
+	DefaultNamespace = "kubernaut-system"
 )
 
 // CreateAFKindCluster creates the AF E2E Kind cluster using kubernaut's
@@ -96,7 +99,7 @@ func ApplyKustomize(ctx context.Context, kubeconfigPath, kustomizePath string, w
 // GenerateCerts runs the AF cert generation script.
 func GenerateCerts(certDir string, writer io.Writer) error {
 	projectRoot := getAFProjectRoot()
-	script := filepath.Join(projectRoot, "deploy/kustomize/overlays/e2e/generate-certs.sh")
+	script := projectRoot + "/deploy/kustomize/overlays/e2e/generate-certs.sh"
 	cmd := exec.Command("bash", script, certDir) //nolint:gosec // G204: test infra, script path from project root
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -203,5 +206,5 @@ func kubernautRepoPath() string {
 	if gopath == "" {
 		gopath = filepath.Join(os.Getenv("HOME"), "go")
 	}
-	return filepath.Join(gopath, "src/github.com/jordigilh/kubernaut")
+	return filepath.Join(gopath, "src", "github.com", "jordigilh", "kubernaut")
 }

@@ -73,7 +73,7 @@ func SeedTriageAlertRules(ctx context.Context, namespace, kubeconfigPath string,
 	waitCmd.Stdout = writer
 	waitCmd.Stderr = writer
 	if err := waitCmd.Run(); err != nil {
-		return fmt.Errorf("Prometheus not ready after restart: %w", err)
+		return fmt.Errorf("prometheus not ready after restart: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Prometheus ready with AF severity triage alert rules")
@@ -84,8 +84,11 @@ func SeedTriageAlertRules(ctx context.Context, namespace, kubeconfigPath string,
 type PrometheusRuleState string
 
 const (
-	RuleStateFiring   PrometheusRuleState = "firing"
-	RuleStatePending  PrometheusRuleState = "pending"
+	// RuleStateFiring means the alerting rule is actively firing.
+	RuleStateFiring PrometheusRuleState = "firing"
+	// RuleStatePending means the rule is pending (threshold met, not yet firing).
+	RuleStatePending PrometheusRuleState = "pending"
+	// RuleStateInactive means the rule is not pending or firing.
 	RuleStateInactive PrometheusRuleState = "inactive"
 )
 
@@ -157,7 +160,7 @@ func WaitForPrometheusRuleState(ctx context.Context, prometheusURL, ruleName str
 
 // InjectOTLPMetrics sends metrics to Prometheus via the OTLP HTTP endpoint.
 // Requires Prometheus started with --web.enable-otlp-receiver.
-func InjectOTLPMetrics(ctx context.Context, prometheusURL string, metricName string, value float64, labels map[string]string) error {
+func InjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, value float64, labels map[string]string) error {
 	labelAttrs := make([]map[string]any, 0, len(labels))
 	for k, v := range labels {
 		labelAttrs = append(labelAttrs, map[string]any{

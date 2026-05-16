@@ -60,6 +60,7 @@ type SessionStatus struct {
 	Error     string `json:"error,omitempty"`
 }
 
+// UnmarshalJSON accepts SessionStatus payloads where "status" is either a JSON string or number.
 func (s *SessionStatus) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		SessionID string          `json:"session_id"`

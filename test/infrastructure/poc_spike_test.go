@@ -202,10 +202,29 @@ func TestPOCSpike3_MockLLMGeminiTextPrompt(t *testing.T) {
 		t.Fatal("POC-SPIKE-03: response missing candidates array")
 	}
 
-	candidate := candidates[0].(map[string]any)
-	content := candidate["content"].(map[string]any)
-	parts := content["parts"].([]any)
-	text := parts[0].(map[string]any)["text"].(string)
+	candidate, ok := candidates[0].(map[string]any)
+	if !ok {
+		t.Fatal("POC-SPIKE-03: candidate[0] is not an object")
+	}
+	content, ok := candidate["content"].(map[string]any)
+	if !ok {
+		t.Fatal("POC-SPIKE-03: candidate.content is not an object")
+	}
+	parts, ok := content["parts"].([]any)
+	if !ok {
+		t.Fatal("POC-SPIKE-03: candidate.content.parts is not an array")
+	}
+	if len(parts) == 0 {
+		t.Fatal("POC-SPIKE-03: candidate.content.parts is empty")
+	}
+	part0, ok := parts[0].(map[string]any)
+	if !ok {
+		t.Fatal("POC-SPIKE-03: parts[0] is not an object")
+	}
+	text, ok := part0["text"].(string)
+	if !ok {
+		t.Fatal("POC-SPIKE-03: parts[0].text is not a string")
+	}
 
 	if text == "" {
 		t.Fatal("POC-SPIKE-03: response text is empty — mock-LLM did not handle text prompt")

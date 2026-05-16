@@ -12,11 +12,3 @@ func newForbiddenError(resource string) *errors.StatusError {
 		nil,
 	)
 }
-
-func newConflictError(resource string) *errors.StatusError {
-	return errors.NewConflict(
-		schema.GroupResource{Group: "kubernaut.ai", Resource: resource},
-		"",
-		nil,
-	)
-}

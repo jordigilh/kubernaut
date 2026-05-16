@@ -88,7 +88,7 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\nPHASE 5: Deploying AF via kustomize...")
 
-	kustomizePath := filepath.Join(projectRoot, "deploy/kustomize/overlays/e2e")
+	kustomizePath := projectRoot + "/deploy/kustomize/overlays/e2e"
 	if err := ApplyKustomize(ctx, kubeconfigPath, kustomizePath, writer); err != nil {
 		return fmt.Errorf("failed to apply kustomize overlay: %w", err)
 	}

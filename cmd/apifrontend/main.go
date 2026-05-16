@@ -1039,10 +1039,11 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 	}
 }
 
-func buildFakeSessionClient(scheme *k8sruntime.Scheme) (client.Client, func()) {
-	c := k8sfake.NewClientBuilder().
+func buildFakeSessionClient(scheme *k8sruntime.Scheme) (c client.Client, cleanup func()) {
+	c = k8sfake.NewClientBuilder().
 		WithScheme(scheme).
 		WithStatusSubresource(&v1alpha1.InvestigationSession{}).
 		Build()
-	return c, func() {}
+	cleanup = func() {}
+	return c, cleanup
 }

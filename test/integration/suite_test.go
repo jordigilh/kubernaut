@@ -288,9 +288,9 @@ timeoutSeconds: 120
 		payload := fmt.Sprintf("%s\n%s\n%s\n%s\n%s",
 			authConfig.Token,
 			k8sCfg.Host,
-			base64.StdEncoding.EncodeToString(k8sCfg.TLSClientConfig.CertData),
-			base64.StdEncoding.EncodeToString(k8sCfg.TLSClientConfig.KeyData),
-			base64.StdEncoding.EncodeToString(k8sCfg.TLSClientConfig.CAData),
+			base64.StdEncoding.EncodeToString(k8sCfg.CertData),
+			base64.StdEncoding.EncodeToString(k8sCfg.KeyData),
+			base64.StdEncoding.EncodeToString(k8sCfg.CAData),
 		)
 		return []byte(payload)
 	},
