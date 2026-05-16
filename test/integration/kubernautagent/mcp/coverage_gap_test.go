@@ -51,7 +51,7 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 			runner := &delayedMockRunner{delay: 0, response: "response"}
 			recon := &mockReconIT{}
-			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon, mcptools.WithAutonomousManager(autoMgr))
+			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon, autoMgr)
 
 			user := mcpinternal.UserInfo{Username: "alice@example.com"}
 			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
@@ -67,7 +67,7 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 			runner := &delayedMockRunner{delay: 0, response: "response"}
 			recon := &mockReconIT{}
-			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon, mcptools.NopAutonomousManager{})
 
 			alice := mcpinternal.UserInfo{Username: "alice@example.com"}
 			bob := mcpinternal.UserInfo{Username: "bob@example.com"}
@@ -88,22 +88,6 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 		})
 	})
 
-	Describe("IT-KA-COV-003: takeover without autoMgr (nil autoMgr path)", func() {
-		It("should succeed when no autonomous session manager is configured", func() {
-			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
-			runner := &delayedMockRunner{delay: 0, response: "response"}
-			recon := &mockReconIT{}
-			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon)
-
-			user := mcpinternal.UserInfo{Username: "alice@example.com"}
-			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
-				RRID: "rr-cov-03", Action: mcptools.ActionTakeover,
-			}, user)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(out.Status).To(Equal("takeover_started"))
-		})
-	})
-
 	Describe("IT-KA-COV-004: message after TTL expiry returns session_expired", func() {
 		It("should return session_expired when the lease TTL has been exceeded", func() {
 			ttl := 1 * time.Second
@@ -111,7 +95,7 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 				mcpinternal.WithSessionTTL(ttl))
 			runner := &delayedMockRunner{delay: 0, response: "response"}
 			recon := &mockReconIT{}
-			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon, mcptools.NopAutonomousManager{})
 
 			user := mcpinternal.UserInfo{Username: "alice@example.com"}
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{

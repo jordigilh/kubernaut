@@ -1376,10 +1376,7 @@ func buildMCPHandler(
 		mcptools.WithRRExistenceChecker(rrChecker),
 		mcptools.WithAuditStore(auditStore, logger.WithName("mcp-audit")),
 	}
-	if autoMgr != nil {
-		investigateOpts = append(investigateOpts, mcptools.WithAutonomousManager(autoMgr))
-	}
-	investigateTool := mcptools.NewInvestigateTool(leaseMgr, investigatorRunner, recon, investigateOpts...)
+	investigateTool := mcptools.NewInvestigateTool(leaseMgr, investigatorRunner, recon, autoMgr, investigateOpts...)
 
 	// Build the WorkflowCatalog adapter and SelectWorkflowTool.
 	// #1012: enrichment is now internalized into select_workflow via WithEnrichmentRunner.

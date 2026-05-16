@@ -89,7 +89,7 @@ var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001"
 		autoMgr = &goldenPathAutoMgr{}
 
 		sessMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
-		tool = mcptools.NewInvestigateTool(sessMgr, runner, recon, mcptools.WithAutonomousManager(autoMgr))
+		tool = mcptools.NewInvestigateTool(sessMgr, runner, recon, autoMgr)
 	})
 
 	Describe("IT-KA-GOLDEN-001: Full lifecycle: status -> takeover -> message -> status -> complete", func() {

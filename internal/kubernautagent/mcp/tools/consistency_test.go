@@ -33,7 +33,7 @@ var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func(
 			inactiveSessions := &mockSessionManager{isActive: false}
 
 			// Investigate (message action requires active session)
-			invTool := mcptools.NewInvestigateTool(inactiveSessions, nil, nil)
+			invTool := mcptools.NewInvestigateTool(inactiveSessions, nil, nil, mcptools.NopAutonomousManager{})
 			_, invErr := invTool.Handle(context.Background(), mcptools.InvestigateInput{
 				Action:  "message",
 				RRID:    "rr-consist-001",
@@ -84,7 +84,7 @@ var _ = Describe("CP-4 Tool Completeness Gate — Cross-Tool Consistency", func(
 	Describe("TOOL-010: All tools validate rr_id as mandatory consistently", func() {
 		It("should reject empty rr_id across all tools", func() {
 			// Investigate
-			invTool := mcptools.NewInvestigateTool(nil, nil, nil)
+			invTool := mcptools.NewInvestigateTool(nil, nil, nil, mcptools.NopAutonomousManager{})
 			_, invErr := invTool.Handle(context.Background(), mcptools.InvestigateInput{
 				Action: "start",
 				RRID:   "",

@@ -117,7 +117,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-start",
 				Action: mcptools.ActionStart,
@@ -136,7 +136,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-held",
 				Action: mcptools.ActionStart,
@@ -161,7 +161,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{response: "The root cause is..."}
 			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:    "rr-msg",
 				Action:  mcptools.ActionMessage,
@@ -179,7 +179,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:    "rr-nosess",
 				Action:  mcptools.ActionMessage,
@@ -205,7 +205,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-complete",
 				Action: mcptools.ActionComplete,
@@ -230,7 +230,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-cancel",
 				Action: mcptools.ActionCancel,
@@ -254,7 +254,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{err: errors.New("LLM unavailable")}
 			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:    "rr-err",
 				Action:  mcptools.ActionMessage,
@@ -281,7 +281,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 				},
 			}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-recon",
 				Action: mcptools.ActionStart,
@@ -300,7 +300,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:    "rr-expired",
 				Action:  mcptools.ActionMessage,
@@ -328,7 +328,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			recon := &mockContextReconstructor{}
 			rl := &rejectingRateLimiter{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.WithRateLimiter(rl))
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{}, mcptools.WithRateLimiter(rl))
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:    "rr-rl",
 				Action:  mcptools.ActionMessage,
@@ -355,7 +355,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-cancel-authz",
 				Action: mcptools.ActionCancel,
@@ -381,7 +381,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-complete-authz",
 				Action: mcptools.ActionComplete,
@@ -407,7 +407,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-reconnect",
 				Action: mcptools.ActionReconnect,
@@ -426,7 +426,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-no-session",
 				Action: mcptools.ActionReconnect,
@@ -451,7 +451,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-reconnect-diff",
 				Action: mcptools.ActionReconnect,

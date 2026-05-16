@@ -50,7 +50,7 @@ var _ = Describe("RR existence checker — HARM-004 hardening", func() {
 			recon := &mockContextReconstructor{}
 			checker := &fakeRRChecker{exists: false, err: errors.New("API server timeout")}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.WithRRExistenceChecker(checker))
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{}, mcptools.WithRRExistenceChecker(checker))
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-api-timeout",
 				Action: mcptools.ActionStart,
@@ -76,7 +76,7 @@ var _ = Describe("RR existence checker — HARM-004 hardening", func() {
 			recon := &mockContextReconstructor{}
 			checker := &fakeRRChecker{exists: true, err: nil}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.WithRRExistenceChecker(checker))
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{}, mcptools.WithRRExistenceChecker(checker))
 			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-exists",
 				Action: mcptools.ActionStart,

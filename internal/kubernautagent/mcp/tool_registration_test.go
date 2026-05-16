@@ -30,7 +30,7 @@ import (
 
 // stubInvestigate returns a minimal InvestigateTool for registration tests.
 func stubInvestigate() *mcptools.InvestigateTool {
-	return mcptools.NewInvestigateTool(nil, nil, nil)
+	return mcptools.NewInvestigateTool(nil, nil, nil, mcptools.NopAutonomousManager{})
 }
 
 // stubSelectWorkflow returns a minimal SelectWorkflowTool for registration tests.

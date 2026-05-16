@@ -224,7 +224,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		}
 		runner = &takeoverRunner{response: "LLM response here"}
 		recon = &takeoverRecon{}
-		tool = tools.NewInvestigateTool(sessMgr, runner, recon, tools.WithAutonomousManager(autoMgr))
+		tool = tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr)
 		ctx = context.Background()
 	})
 
@@ -410,8 +410,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		It("should emit RecordInteractiveTakeover(start_failed) on ErrLeaseHeld", func() {
 			metrics := &recordingToolMetrics{}
 			sessMgr.takeoverErr = mcpinternal.ErrLeaseHeld
-			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithToolMetrics(metrics),
 			)
 
@@ -428,8 +427,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		It("should emit RecordInteractiveTakeover(start_failed) on generic session error", func() {
 			metrics := &recordingToolMetrics{}
 			sessMgr.takeoverErr = errors.New("k8s API unavailable")
-			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithToolMetrics(metrics),
 			)
 
@@ -445,8 +443,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		It("should emit RecordInteractiveTakeover(start_failed) on max sessions", func() {
 			metrics := &recordingToolMetrics{}
 			sessMgr.takeoverErr = mcpinternal.ErrMaxSessionsReached
-			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithToolMetrics(metrics),
 			)
 
@@ -465,8 +462,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		It("should emit RecordInteractiveTakeover(takeover_race_lost) on ErrLeaseHeld", func() {
 			metrics := &recordingToolMetrics{}
 			sessMgr.takeoverErr = mcpinternal.ErrLeaseHeld
-			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithToolMetrics(metrics),
 			)
 
@@ -483,8 +479,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		It("should emit RecordInteractiveTakeover(takeover_failed) on generic session error", func() {
 			metrics := &recordingToolMetrics{}
 			sessMgr.takeoverErr = errors.New("k8s API unavailable")
-			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithToolMetrics(metrics),
 			)
 
@@ -500,8 +495,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		It("should emit RecordInteractiveTakeover(takeover_failed) when transition fails", func() {
 			metrics := &recordingToolMetrics{}
 			autoMgr.transitionErr = errors.New("context manager unavailable")
-			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithToolMetrics(metrics),
 			)
 
@@ -521,8 +515,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 	Describe("UT-KA-TAKE-H3: Complete emits audit when Release returns ErrSessionNotFound (H3 regression)", func() {
 		It("should emit interactive.completed audit even when session was already released", func() {
 			auditRecorder := &recordingAuditStore{}
-			toolWithAudit := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithAudit := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithAuditStore(auditRecorder, logr.Discard()),
 			)
 

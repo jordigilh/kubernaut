@@ -113,7 +113,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 			runner := &delayedMockRunner{delay: 10 * time.Millisecond, response: "interactive response"}
 			recon := &mockReconIT{}
-			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, tools.WithAutonomousManager(autoMgr))
+			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, autoMgr)
 
 			user := mcpinternal.UserInfo{Username: "sre-operator@example.com"}
 			input := tools.InvestigateInput{
@@ -157,7 +157,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			}, map[string]string{"remediation_id": "rr-concurrent-001"})
 			Expect(err).NotTo(HaveOccurred())
 
-			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, tools.WithAutonomousManager(autoMgr))
+			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, autoMgr)
 			user := mcpinternal.UserInfo{Username: "alice@example.com"}
 
 			takeoverInput := tools.InvestigateInput{
@@ -277,8 +277,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 
 			runner := &delayedMockRunner{delay: 10 * time.Millisecond, response: "interactive response"}
 			recon := &mockReconIT{}
-			tool := tools.NewInvestigateTool(leaseMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, autoMgr,
 				tools.WithTimeoutTracker(timeoutMgr),
 			)
 

@@ -81,6 +81,15 @@ type TimeoutTracker interface {
 	StopTracking(sessionID string)
 }
 
+// NopAutonomousManager is a no-op implementation for tests that exercise
+// actions unrelated to autonomous session management (start, message, etc.).
+type NopAutonomousManager struct{}
+
+func (NopAutonomousManager) FindByRemediationID(string) (string, bool)                   { return "", false }
+func (NopAutonomousManager) CancelInvestigation(string) error                             { return nil }
+func (NopAutonomousManager) SuspendInvestigation(string) error                            { return nil }
+func (NopAutonomousManager) TransitionToUserDriving(string, string, []string) error       { return nil }
+
 // InvestigateTool handles the kubernaut_investigate MCP tool actions:
 // start, message, complete, cancel, takeover. BR-INTERACTIVE-001, BR-INTERACTIVE-004.
 type InvestigateTool struct {
@@ -101,15 +110,6 @@ type InvestigateTool struct {
 
 // InvestigateOption configures optional dependencies for InvestigateTool.
 type InvestigateOption func(*InvestigateTool)
-
-// WithAutonomousManager enables autonomous session takeover.
-func WithAutonomousManager(mgr AutonomousSessionManager) InvestigateOption {
-	return func(t *InvestigateTool) {
-		if mgr != nil {
-			t.autoMgr = mgr
-		}
-	}
-}
 
 // WithToolMetrics enables metrics recording on tool operations (PROD-01).
 func WithToolMetrics(m ToolMetrics) InvestigateOption {
@@ -169,11 +169,17 @@ func WithAuditStore(store audit.AuditStore, logger logr.Logger) InvestigateOptio
 }
 
 // NewInvestigateTool creates the tool handler with its dependencies.
-func NewInvestigateTool(sessions mcpinternal.SessionManager, runner InvestigatorRunner, recon mcpinternal.ContextReconstructor, opts ...InvestigateOption) *InvestigateTool {
+// autoMgr is required — KA always runs with an autonomous session manager.
+// Passing nil will panic to surface wiring bugs immediately.
+func NewInvestigateTool(sessions mcpinternal.SessionManager, runner InvestigatorRunner, recon mcpinternal.ContextReconstructor, autoMgr AutonomousSessionManager, opts ...InvestigateOption) *InvestigateTool {
+	if autoMgr == nil {
+		panic("NewInvestigateTool: autoMgr must not be nil — KA requires an autonomous session manager")
+	}
 	t := &InvestigateTool{
 		sessions: sessions,
 		runner:   runner,
 		recon:    recon,
+		autoMgr:  autoMgr,
 	}
 	for _, opt := range opts {
 		opt(t)
@@ -324,16 +330,14 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 	// 1. The session enters StatusUserDriving (pollable, not terminal)
 	// 2. Identity (username + groups) is written to session metadata
 	// 3. AA poll response carries identity → Rego input.identity
-	if t.autoMgr != nil {
-		autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
-		if found {
-			if err := t.autoMgr.TransitionToUserDriving(autoSessionID, user.Username, user.Groups); err != nil {
-				if !errors.Is(err, session.ErrSessionTerminal) {
-					if t.metrics != nil {
-						t.metrics.RecordInteractiveTakeover("takeover_failed")
-					}
-					return InvestigateOutput{}, fmt.Errorf("transition autonomous session to user-driving: %w", err)
+	autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
+	if found {
+		if err := t.autoMgr.TransitionToUserDriving(autoSessionID, user.Username, user.Groups); err != nil {
+			if !errors.Is(err, session.ErrSessionTerminal) {
+				if t.metrics != nil {
+					t.metrics.RecordInteractiveTakeover("takeover_failed")
 				}
+				return InvestigateOutput{}, fmt.Errorf("transition autonomous session to user-driving: %w", err)
 			}
 		}
 	}
@@ -482,12 +486,8 @@ func (t *InvestigateTool) handleStatus(input InvestigateInput) (InvestigateOutpu
 		if driver != nil {
 			status.Driver = driver.ActingUser.Username
 		}
-	} else if t.autoMgr != nil {
-		if _, found := t.autoMgr.FindByRemediationID(input.RRID); found {
-			status.Mode = StatusModeAutonomous
-		} else {
-			status.Mode = StatusModeNotFound
-		}
+	} else if _, found := t.autoMgr.FindByRemediationID(input.RRID); found {
+		status.Mode = StatusModeAutonomous
 	} else {
 		status.Mode = StatusModeNotFound
 	}
