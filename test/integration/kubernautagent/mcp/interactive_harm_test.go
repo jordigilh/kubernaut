@@ -293,7 +293,9 @@ var _ = Describe("Interactive Session Security — HARM BR-INTERACTIVE-002/003",
 			transport := &mcpsdk.StreamableClientTransport{
 				Endpoint: stack.Server.URL + "/mcp",
 			}
-			_, err := client.Connect(context.Background(), transport, nil)
+			connectCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, err := client.Connect(connectCtx, transport, nil)
 			Expect(err).To(HaveOccurred())
 		})
 	})
