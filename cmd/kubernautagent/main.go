@@ -1262,6 +1262,10 @@ func buildMCPHandler(
 	}
 	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(ctrlCli, namespace, logger, leaseOpts...)
 
+	if n := leaseMgr.ReconcileOrphanedLeases(context.Background()); n > 0 {
+		logger.Info("startup: reclaimed orphaned interactive Leases", "count", n)
+	}
+
 	// Context reconstruction from DS audit events (best-effort).
 	var recon mcpkg.ContextReconstructor
 	if ds != nil {

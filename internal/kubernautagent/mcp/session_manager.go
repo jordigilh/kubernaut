@@ -405,6 +405,59 @@ func (m *LeaseSessionManager) tryReclaimExpiredLease(ctx context.Context, name, 
 	return true
 }
 
+// ReconcileOrphanedLeases scans for K8s Leases with the interactive prefix in
+// the namespace and deletes any that have expired. This handles the pod-restart
+// scenario where in-memory session state is lost but K8s Leases persist, blocking
+// new sessions until TTL expiry. Should be called once at startup.
+func (m *LeaseSessionManager) ReconcileOrphanedLeases(ctx context.Context) int {
+	leaseList := &coordinationv1.LeaseList{}
+	if err := m.client.List(ctx, leaseList, client.InNamespace(m.namespace)); err != nil {
+		m.logger.Error(err, "failed to list Leases for orphan reconciliation")
+		return 0
+	}
+
+	reclaimed := 0
+	now := time.Now()
+	for i := range leaseList.Items {
+		lease := &leaseList.Items[i]
+		if len(lease.Name) <= len(leasePrefix) || lease.Name[:len(leasePrefix)] != leasePrefix {
+			continue
+		}
+		if lease.Spec.AcquireTime == nil || lease.Spec.LeaseDurationSeconds == nil {
+			continue
+		}
+
+		expiry := lease.Spec.AcquireTime.Time.Add(
+			time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second,
+		)
+		if now.Before(expiry) {
+			continue
+		}
+
+		rrID := lease.Name[len(leasePrefix):]
+		if err := m.client.Delete(ctx, lease); err != nil {
+			m.logger.Error(err, "failed to delete orphaned Lease during reconciliation",
+				"lease", lease.Name, "rr_id", rrID,
+			)
+			continue
+		}
+
+		reclaimed++
+		m.logger.Info("reconciled orphaned Lease at startup",
+			"lease", lease.Name, "rr_id", rrID,
+			"expired_at", expiry.Format(time.RFC3339),
+		)
+	}
+
+	if reclaimed > 0 {
+		m.logger.Info("orphaned Lease reconciliation complete",
+			"reclaimed", reclaimed,
+			"total_scanned", len(leaseList.Items),
+		)
+	}
+	return reclaimed
+}
+
 func leaseName(rrID string) string {
 	name := leasePrefix + rrID
 	if len(name) > 63 {

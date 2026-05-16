@@ -327,6 +327,72 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 		})
 	})
 
+	Describe("UT-KA-RECONCILE-001: ReconcileOrphanedLeases cleans up expired Leases at startup", func() {
+		It("should delete expired Leases and leave non-expired ones", func() {
+			mgrConcrete := mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger,
+				mcpinternal.WithSessionTTL(30*time.Minute),
+			)
+
+			By("Creating two orphaned Leases: one expired, one still valid")
+			pastAcquire := metav1.NewMicroTime(time.Now().Add(-2 * time.Hour))
+			recentAcquire := metav1.NewMicroTime(time.Now())
+			leaseDuration := int32(1800)
+
+			expiredLease := &coordinationv1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubernaut-interactive-rr-reconcile-expired",
+					Namespace: namespace,
+				},
+				Spec: coordinationv1.LeaseSpec{
+					HolderIdentity:       strPtr("dead-session-1"),
+					LeaseDurationSeconds: &leaseDuration,
+					AcquireTime:          &pastAcquire,
+				},
+			}
+			liveLease := &coordinationv1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubernaut-interactive-rr-reconcile-live",
+					Namespace: namespace,
+				},
+				Spec: coordinationv1.LeaseSpec{
+					HolderIdentity:       strPtr("live-session-1"),
+					LeaseDurationSeconds: &leaseDuration,
+					AcquireTime:          &recentAcquire,
+				},
+			}
+			unrelatedLease := &coordinationv1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "some-other-lease",
+					Namespace: namespace,
+				},
+				Spec: coordinationv1.LeaseSpec{
+					HolderIdentity:       strPtr("unrelated"),
+					LeaseDurationSeconds: &leaseDuration,
+					AcquireTime:          &pastAcquire,
+				},
+			}
+			Expect(k8sClient.Create(ctx, expiredLease)).To(Succeed())
+			Expect(k8sClient.Create(ctx, liveLease)).To(Succeed())
+			Expect(k8sClient.Create(ctx, unrelatedLease)).To(Succeed())
+
+			By("Running reconciliation")
+			reclaimed := mgrConcrete.ReconcileOrphanedLeases(ctx)
+			Expect(reclaimed).To(Equal(1), "should reclaim exactly the expired interactive Lease")
+
+			By("Verifying live Lease and unrelated Lease still exist")
+			leaseList := &coordinationv1.LeaseList{}
+			Expect(k8sClient.List(ctx, leaseList, client.InNamespace(namespace))).To(Succeed())
+
+			var names []string
+			for _, l := range leaseList.Items {
+				names = append(names, l.Name)
+			}
+			Expect(names).To(ContainElement("kubernaut-interactive-rr-reconcile-live"))
+			Expect(names).To(ContainElement("some-other-lease"))
+			Expect(names).NotTo(ContainElement("kubernaut-interactive-rr-reconcile-expired"))
+		})
+	})
+
 	Describe("UT-KA-ORPHAN-001: Takeover reclaims expired orphaned K8s Lease", func() {
 		It("should reclaim an expired Lease and create a new session", func() {
 			mgrConcrete := mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logger,
