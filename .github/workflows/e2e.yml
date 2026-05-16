@@ -32,14 +32,6 @@ jobs:
           go-version: '1.26'
           cache: true
 
-      - name: Install Ginkgo
-        run: go install github.com/onsi/ginkgo/v2/ginkgo@v2.28.3
-
-      - name: Verify Podman
-        run: |
-          podman --version
-          podman info --format '{{.Host.OCIRuntime.Name}}'
-
       - name: Setup envtest binaries
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.23
