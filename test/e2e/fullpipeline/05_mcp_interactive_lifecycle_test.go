@@ -282,10 +282,10 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 			"action": "reconnect",
 		})
 		Expect(reconErr).NotTo(HaveOccurred())
-		Expect(result.IsError).To(BeFalse(), "reconnect should succeed")
 
 		text := infrastructure.ExtractToolResultText(result)
-		GinkgoWriter.Printf("  Reconnect response: %s\n", text)
+		GinkgoWriter.Printf("  Reconnect response (isError=%v): %s\n", result.IsError, text)
+		Expect(result.IsError).To(BeFalse(), "reconnect should succeed; got: %s", text)
 		Expect(text).To(ContainSubstring("reconnected"))
 	})
 
