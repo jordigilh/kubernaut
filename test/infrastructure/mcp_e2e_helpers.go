@@ -156,7 +156,7 @@ rules:
     verbs: ["create", "get"]
 `, namespace)
 
-	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--server-side", "--force-conflicts", "--kubeconfig", kubeconfigPath, "-f", "-")
 	cmd.Stdin = strings.NewReader(roleYAML)
 	cmd.Stdout = writer
 	cmd.Stderr = writer

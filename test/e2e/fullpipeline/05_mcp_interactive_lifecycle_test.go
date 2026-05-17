@@ -238,10 +238,6 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 	})
 
 	It("FP-MCP-008: reconnect via proxy disconnect", func() {
-		By("Closing current MCP session")
-		Expect(mcpSession.Close()).To(Succeed())
-		mcpSession = nil
-
 		By("Creating TCP proxy to KA NodePort")
 		proxy, err := infrastructure.NewInterruptibleProxy("localhost:8088")
 		Expect(err).NotTo(HaveOccurred())
@@ -249,6 +245,12 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 
 		proxyEndpoint := fmt.Sprintf("https://%s/api/v1/mcp", proxy.Addr())
 		GinkgoWriter.Printf("  Proxy endpoint: %s\n", proxyEndpoint)
+
+		By("Closing current MCP session (no lease release — proxy will handle disconnect)")
+		if mcpSession != nil {
+			_ = mcpSession.Close()
+			mcpSession = nil
+		}
 
 		By("Connecting MCP through proxy")
 		proxyCtx, proxyCancel := context.WithTimeout(ctx, 30*time.Second)
@@ -259,6 +261,18 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 			TLSTransport: tlsTransport,
 		})
 		Expect(connErr).NotTo(HaveOccurred(), "MCP connect through proxy")
+
+		By("Re-acquiring session via takeover through proxy")
+		takeoverCtx, takeoverCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer takeoverCancel()
+		result, takeoverErr := infrastructure.CallInvestigate(takeoverCtx, proxiedSession, map[string]any{
+			"rr_id":  remediationRequest.Name,
+			"action": "start",
+		})
+		Expect(takeoverErr).NotTo(HaveOccurred())
+		takeoverText := infrastructure.ExtractToolResultText(result)
+		GinkgoWriter.Printf("  Takeover via proxy: isError=%v, text=%s\n", result.IsError, takeoverText)
+		Expect(result.IsError).To(BeFalse(), "start/takeover via proxy should succeed")
 
 		By("Disconnecting all proxy connections (simulates network partition)")
 		proxy.DisconnectAll()
