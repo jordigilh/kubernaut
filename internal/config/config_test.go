@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // validConfig returns a Config that passes Validate() for use as a base in tests.
@@ -946,5 +947,70 @@ func TestValidate_SeverityTriageValidConfig(t *testing.T) {
 	err := cfg.Validate()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_SessionNamespaceRequiredWhenTTLsSet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		namespace string
+		disconn   time.Duration
+		retention time.Duration
+		wantErr   bool
+	}{
+		{
+			name:      "empty namespace with disconnectTTL rejects",
+			namespace: "",
+			disconn:   5 * time.Minute,
+			wantErr:   true,
+		},
+		{
+			name:      "empty namespace with retentionTTL rejects",
+			namespace: "",
+			retention: 720 * time.Hour,
+			wantErr:   true,
+		},
+		{
+			name:      "empty namespace with both TTLs rejects",
+			namespace: "",
+			disconn:   10 * time.Minute,
+			retention: 720 * time.Hour,
+			wantErr:   true,
+		},
+		{
+			name:      "set namespace with TTLs passes",
+			namespace: "kubernaut-system",
+			disconn:   10 * time.Minute,
+			retention: 720 * time.Hour,
+			wantErr:   false,
+		},
+		{
+			name:      "empty namespace with zero TTLs passes",
+			namespace: "",
+			disconn:   0,
+			retention: 0,
+			wantErr:   false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := validConfig()
+			cfg.Session.Namespace = tc.namespace
+			cfg.Session.DisconnectTTL = tc.disconn
+			cfg.Session.RetentionTTL = tc.retention
+			err := cfg.Validate()
+			if tc.wantErr && err == nil {
+				t.Fatal("expected validation error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantErr && err != nil && !strings.Contains(err.Error(), "session.namespace") {
+				t.Errorf("error = %q, want to contain 'session.namespace'", err.Error())
+			}
+		})
 	}
 }

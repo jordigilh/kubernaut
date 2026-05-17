@@ -19,6 +19,8 @@ agent:
 
 session:
   namespace: kubernaut-system
+  disconnectTTL: 2m
+  retentionTTL: 720h
 
 mcp:
   enabled: true

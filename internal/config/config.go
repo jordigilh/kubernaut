@@ -277,6 +277,16 @@ func (c *Config) Validate() error {
 	if err := c.validateSeverityTriage(); err != nil {
 		return err
 	}
+	if err := c.validateSession(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Config) validateSession() error {
+	if c.Session.Namespace == "" && (c.Session.DisconnectTTL > 0 || c.Session.RetentionTTL > 0) {
+		return fmt.Errorf("session.namespace must be set when session TTLs are configured")
+	}
 	return nil
 }
 

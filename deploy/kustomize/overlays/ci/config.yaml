@@ -13,6 +13,11 @@ agent:
   kaTlsCaFile: /etc/apifrontend/tls-ca/ca.crt
   dsTlsCaFile: /etc/apifrontend/tls-ca/ca.crt
 
+session:
+  namespace: kubernaut-system
+  disconnectTTL: 5m
+  retentionTTL: 720h
+
 mcp:
   enabled: true
 

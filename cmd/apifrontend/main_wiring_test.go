@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -645,6 +646,37 @@ func extractMetricLines(metricsText, prefix string) string {
 		return "(no lines with prefix " + prefix + ")"
 	}
 	return strings.Join(lines, "\n")
+}
+
+// TC-WIRING-08: K8sClient() is safe for concurrent access (sync.Once guards lazy init).
+func TestBackendDeps_K8sClient_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	deps := &backendDeps{}
+
+	const goroutines = 50
+	results := make([]dynamic.Interface, goroutines)
+	start := make(chan struct{})
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := range goroutines {
+		go func(idx int) {
+			defer wg.Done()
+			<-start
+			results[idx] = deps.K8sClient()
+		}(i)
+	}
+
+	close(start)
+	wg.Wait()
+
+	// All goroutines must observe the same value (nil when no kubeconfig is available in test)
+	for i := 1; i < goroutines; i++ {
+		if results[i] != results[0] {
+			t.Fatalf("goroutine %d got different K8sClient result than goroutine 0", i)
+		}
+	}
 }
 
 type noopAuditor struct{}
