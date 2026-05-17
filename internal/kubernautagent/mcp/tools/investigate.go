@@ -763,7 +763,7 @@ func extractDiscoveryResult(result *katypes.InvestigationResult) *mcpinternal.Wo
 			ExecutionBundle: result.ExecutionBundle,
 			Confidence:      result.Confidence,
 			Rationale:       result.WorkflowRationale,
-			Parameters:      result.Parameters,
+			Parameters:      cloneParameterMap(result.Parameters),
 		}
 	}
 
@@ -775,7 +775,7 @@ func extractDiscoveryResult(result *katypes.InvestigationResult) *mcpinternal.Wo
 				ExecutionBundle: alt.ExecutionBundle,
 				Confidence:      alt.Confidence,
 				Rationale:       alt.Rationale,
-				Parameters:      alt.Parameters,
+				Parameters:      cloneParameterMap(alt.Parameters),
 			})
 		}
 	}

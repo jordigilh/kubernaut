@@ -4,7 +4,7 @@
 **Date**: May 2026
 **Status**: Authoritative
 **GitHub Issue**: [#1169](https://github.com/jordigilh/kubernaut/issues/1169)
-**Related BRs**: BR-INTERACTIVE-001, BR-INTERACTIVE-005
+**Related BRs**: BR-INTERACTIVE-001, BR-INTERACTIVE-005, BR-INTERACTIVE-009
 
 ---
 

@@ -245,6 +245,10 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 	// write to HTTP session store, and release the MCP lease.
 	if t.httpCompleter != nil && driver.RCAResult != nil {
 		finalResult := buildFinalResult(driver.RCAResult, workflow, driver.DiscoveryResult)
+		if finalResult.Parameters == nil && driver.DiscoveryResult != nil {
+			t.logger.V(1).Info("no discovered parameters resolved for selected workflow",
+				"rr_id", input.RRID, "workflow_id", input.WorkflowID)
+		}
 		httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(input.RRID)
 		if found {
 			if completeErr := t.httpCompleter.CompleteUserDriving(httpSessionID, finalResult); completeErr != nil {
