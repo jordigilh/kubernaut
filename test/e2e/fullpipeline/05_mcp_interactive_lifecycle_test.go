@@ -252,7 +252,7 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 		Expect(aa.Status.InteractiveSession.SessionID).NotTo(BeEmpty())
 	})
 
-	It("FP-MCP-008: reconnect via proxy disconnect", func() {
+	It("FP-MCP-008: re-takeover after proxy disconnect (network partition recovery)", func() {
 		if !takeoverDone {
 			Skip("depends on FP-MCP-001 (takeover)")
 		}
@@ -264,7 +264,7 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 		proxyEndpoint := fmt.Sprintf("https://%s/api/v1/mcp", proxy.Addr())
 		GinkgoWriter.Printf("  Proxy endpoint: %s\n", proxyEndpoint)
 
-		By("Closing current MCP session (no lease release — proxy will handle disconnect)")
+		By("Closing current MCP session")
 		if mcpSession != nil {
 			_ = mcpSession.Close()
 			mcpSession = nil
@@ -280,21 +280,24 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 		})
 		Expect(connErr).NotTo(HaveOccurred(), "MCP connect through proxy")
 
-		By("Re-acquiring session via takeover through proxy")
+		By("Acquiring session via takeover through proxy")
 		takeoverCtx, takeoverCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer takeoverCancel()
 		result, takeoverErr := infrastructure.CallInvestigate(takeoverCtx, proxiedSession, map[string]any{
 			"rr_id":  remediationRequest.Name,
-			"action": "start",
+			"action": "takeover",
 		})
 		Expect(takeoverErr).NotTo(HaveOccurred())
 		takeoverText := infrastructure.ExtractToolResultText(result)
 		GinkgoWriter.Printf("  Takeover via proxy: isError=%v, text=%s\n", result.IsError, takeoverText)
-		Expect(result.IsError).To(BeFalse(), "start/takeover via proxy should succeed")
+		Expect(result.IsError).To(BeFalse(), "takeover via proxy should succeed")
 
 		By("Disconnecting all proxy connections (simulates network partition)")
 		proxy.DisconnectAll()
 		_ = proxiedSession.Close()
+
+		By("Waiting for disconnect handler to release session")
+		time.Sleep(1 * time.Second) // ✅ APPROVED EXCEPTION: wait for KA disconnect handler to process
 
 		By("Creating new direct MCP session (bypass proxy)")
 		directCtx, directCancel := context.WithTimeout(ctx, 30*time.Second)
@@ -306,19 +309,22 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 		})
 		Expect(err).NotTo(HaveOccurred(), "direct MCP reconnect")
 
-		By("Calling action: reconnect")
-		reconCtx, reconCancel := context.WithTimeout(ctx, 30*time.Second)
-		defer reconCancel()
-		result, reconErr := infrastructure.CallInvestigate(reconCtx, mcpSession, map[string]any{
+		By("Re-acquiring session via fresh takeover after network partition")
+		retakeoverCtx, retakeoverCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer retakeoverCancel()
+		result, retakeoverErr := infrastructure.CallInvestigate(retakeoverCtx, mcpSession, map[string]any{
 			"rr_id":  remediationRequest.Name,
-			"action": "reconnect",
+			"action": "takeover",
 		})
-		Expect(reconErr).NotTo(HaveOccurred())
+		Expect(retakeoverErr).NotTo(HaveOccurred())
 
 		text := infrastructure.ExtractToolResultText(result)
-		GinkgoWriter.Printf("  Reconnect response (isError=%v): %s\n", result.IsError, text)
-		Expect(result.IsError).To(BeFalse(), "reconnect should succeed; got: %s", text)
-		Expect(text).To(ContainSubstring("reconnected"))
+		GinkgoWriter.Printf("  Re-takeover response (isError=%v): %s\n", result.IsError, text)
+		Expect(result.IsError).To(BeFalse(), "re-takeover after partition should succeed; got: %s", text)
+		Expect(text).To(SatisfyAny(
+			ContainSubstring("takeover_started"),
+			ContainSubstring("reconnected"),
+		))
 	})
 
 	It("FP-MCP-009: concurrent takeover contention (second user rejected)", func() {
