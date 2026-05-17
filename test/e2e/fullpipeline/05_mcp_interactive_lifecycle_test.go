@@ -299,13 +299,11 @@ var _ = Describe("FP-MCP-008: re-takeover after proxy disconnect", Label("e2e", 
 		proxyEndpoint := fmt.Sprintf("https://%s/api/v1/mcp", proxy.Addr())
 
 		By("Connecting MCP through proxy and acquiring session")
-		proxyCtx, proxyCancel := context.WithTimeout(ctx, 30*time.Second)
-		defer proxyCancel()
-		proxiedSession, err := infrastructure.ConnectMCPClient(proxyCtx, infrastructure.MCPClientConfig{
+		proxiedSession, err := infrastructure.ConnectMCPClientWithRetry(ctx, infrastructure.MCPClientConfig{
 			Endpoint:     proxyEndpoint,
 			SAToken:      saToken,
 			TLSTransport: tlsTransport,
-		})
+		}, GinkgoWriter)
 		Expect(err).NotTo(HaveOccurred(), "MCP connect through proxy")
 
 		takeoverCtx, takeoverCancel := context.WithTimeout(ctx, 30*time.Second)
@@ -325,13 +323,11 @@ var _ = Describe("FP-MCP-008: re-takeover after proxy disconnect", Label("e2e", 
 		time.Sleep(1 * time.Second) // ✅ APPROVED EXCEPTION: wait for KA disconnect handler to process
 
 		By("Creating new direct MCP session")
-		directCtx, directCancel := context.WithTimeout(ctx, 30*time.Second)
-		defer directCancel()
-		directSession, err := infrastructure.ConnectMCPClient(directCtx, infrastructure.MCPClientConfig{
+		directSession, err := infrastructure.ConnectMCPClientWithRetry(ctx, infrastructure.MCPClientConfig{
 			Endpoint:     infrastructure.MCPEndpointForKAE2E(),
 			SAToken:      saToken,
 			TLSTransport: tlsTransport,
-		})
+		}, GinkgoWriter)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = directSession.Close() }()
 

@@ -76,6 +76,34 @@ func ConnectMCPClient(ctx context.Context, cfg MCPClientConfig) (*mcpsdk.ClientS
 	return client.Connect(ctx, transport, nil)
 }
 
+// ConnectMCPClientWithRetry wraps ConnectMCPClient with exponential backoff on
+// 429 (Too Many Requests). Matches KA's Retry-After: 1 header semantics.
+func ConnectMCPClientWithRetry(ctx context.Context, cfg MCPClientConfig, writer io.Writer) (*mcpsdk.ClientSession, error) {
+	backoff := 2 * time.Second
+	const maxRetries = 5
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		session, err := ConnectMCPClient(connectCtx, cfg)
+		cancel()
+		if err == nil {
+			return session, nil
+		}
+		if !strings.Contains(err.Error(), "Too Many Requests") || attempt == maxRetries {
+			return nil, err
+		}
+		if writer != nil {
+			_, _ = fmt.Fprintf(writer, "  ⏳ MCP connect got 429, retrying in %v (attempt %d/%d)\n", backoff, attempt+1, maxRetries)
+		}
+		select {
+		case <-time.After(backoff):
+			backoff *= 2
+		case <-ctx.Done():
+			return nil, fmt.Errorf("context cancelled during 429 backoff: %w", ctx.Err())
+		}
+	}
+	return nil, fmt.Errorf("unreachable")
+}
+
 // CallInvestigate calls the kubernaut_investigate MCP tool with the given arguments.
 func CallInvestigate(ctx context.Context, session *mcpsdk.ClientSession, args map[string]any) (*mcpsdk.CallToolResult, error) {
 	return session.CallTool(ctx, &mcpsdk.CallToolParams{
@@ -173,11 +201,41 @@ rules:
 
 // CreateDirectRR creates a RemediationRequest CRD directly (bypassing the OOMKill
 // pipeline) for tests that don't need the full event->Gateway->SP->RO flow.
-// Returns the RR name. The RR targets a synthetic Deployment in the given namespace.
+// Returns the RR name. A managed namespace is created for the target resource so
+// that the RO routing engine does not block the RR as UnmanagedResource.
 func CreateDirectRR(ctx context.Context, namespace, testID string) (string, error) {
 	rrName := fmt.Sprintf("rr-%s-%d", testID, time.Now().UnixMilli())
 	fingerprint := fmt.Sprintf("%x", sha256.Sum256([]byte(testID+"-"+rrName)))
 	now := metav1.Now()
+
+	cfg, err := config.GetConfig()
+	if err != nil {
+		return "", fmt.Errorf("get kubeconfig: %w", err)
+	}
+	dynClient, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		return "", fmt.Errorf("create dynamic client: %w", err)
+	}
+
+	targetNS := fmt.Sprintf("fp-%s-%d", testID, time.Now().UnixMilli())
+	nsGVR := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
+	nsObj := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "Namespace",
+			"metadata": map[string]interface{}{
+				"name": targetNS,
+				"labels": map[string]interface{}{
+					"kubernaut.ai/managed": "true",
+				},
+			},
+		},
+	}
+	nsCtx, nsCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer nsCancel()
+	if _, err := dynClient.Resource(nsGVR).Create(nsCtx, nsObj, metav1.CreateOptions{}); err != nil {
+		return "", fmt.Errorf("create managed namespace %s: %w", targetNS, err)
+	}
 
 	rr := &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -198,19 +256,10 @@ func CreateDirectRR(ctx context.Context, namespace, testID string) (string, erro
 				"targetResource": map[string]interface{}{
 					"kind":      "Deployment",
 					"name":      fmt.Sprintf("%s-target", testID),
-					"namespace": namespace,
+					"namespace": targetNS,
 				},
 			},
 		},
-	}
-
-	cfg, err := config.GetConfig()
-	if err != nil {
-		return "", fmt.Errorf("get kubeconfig: %w", err)
-	}
-	dynClient, err := dynamic.NewForConfig(cfg)
-	if err != nil {
-		return "", fmt.Errorf("create dynamic client: %w", err)
 	}
 
 	rrGVR := schema.GroupVersionResource{
@@ -237,6 +286,8 @@ type MCPSessionSetup struct {
 
 // SetupMCPSession creates a ServiceAccount with interactive RBAC, sets up TLS,
 // and connects an MCP client session. Returns the session and a cleanup function.
+// Retries on 429 (Too Many Requests) with exponential backoff, matching KA's
+// per-IP (5 rps) and per-user (10 rps) rate limiters.
 func SetupMCPSession(ctx context.Context, namespace, saName, kubeconfigPath string, writer io.Writer) (*MCPSessionSetup, error) {
 	token, err := CreateInteractiveE2ESA(ctx, namespace, saName, kubeconfigPath, writer)
 	if err != nil {
@@ -248,15 +299,32 @@ func SetupMCPSession(ctx context.Context, namespace, saName, kubeconfigPath stri
 		return nil, fmt.Errorf("TLS transport: %w", err)
 	}
 
-	connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	session, err := ConnectMCPClient(connectCtx, MCPClientConfig{
+	cfg := MCPClientConfig{
 		Endpoint:     MCPEndpointForKAE2E(),
 		SAToken:      token,
 		TLSTransport: tlsTransport,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("MCP connect: %w", err)
+	}
+
+	var session *mcpsdk.ClientSession
+	backoff := 2 * time.Second
+	const maxRetries = 5
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		session, err = ConnectMCPClient(connectCtx, cfg)
+		cancel()
+		if err == nil {
+			break
+		}
+		if !strings.Contains(err.Error(), "Too Many Requests") || attempt == maxRetries {
+			return nil, fmt.Errorf("MCP connect: %w", err)
+		}
+		_, _ = fmt.Fprintf(writer, "  ⏳ MCP connect got 429, retrying in %v (attempt %d/%d)\n", backoff, attempt+1, maxRetries)
+		select {
+		case <-time.After(backoff):
+			backoff *= 2
+		case <-ctx.Done():
+			return nil, fmt.Errorf("MCP connect: context cancelled during 429 backoff: %w", ctx.Err())
+		}
 	}
 
 	return &MCPSessionSetup{
