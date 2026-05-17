@@ -352,11 +352,14 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 	})
 
 	// ---------------------------------------------------------------
-	// E2E-KA-SSE-002: SSE subscribe after session completed returns 404
+	// E2E-KA-SSE-002: SSE subscribe after session completed returns synthetic SSE stream
 	// BR: BR-SESSION-002
+	// Production behavior: terminal sessions return 200 with a synthetic SSE
+	// "complete" event so reconnecting clients (e.g. AF after a dropped
+	// connection) always receive a valid SSE stream.
 	// ---------------------------------------------------------------
-	Describe("E2E-KA-SSE-002: SSE subscribe after session completed returns 404", func() {
-		It("should return 404 when subscribing to completed session stream [E2E-KA-SSE-002]", func() {
+	Describe("E2E-KA-SSE-002: SSE subscribe after session completed returns SSE complete event", func() {
+		It("should return 200 with SSE complete event when subscribing to completed session stream [E2E-KA-SSE-002]", func() {
 			By("Submitting investigation and waiting for completion")
 			req := &agentclient.IncidentRequest{
 				IncidentID:        "test-sse-002",
@@ -397,10 +400,12 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 			defer func() { _ = resp.Body.Close() }()
 			body, _ := io.ReadAll(resp.Body)
 
-			Expect(resp.StatusCode).To(Equal(http.StatusNotFound),
-				"SSE subscribe after completion should return 404, got body: %s", string(body))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK),
+				"SSE subscribe after completion should return 200 with SSE stream, got body: %s", string(body))
+			Expect(string(body)).To(ContainSubstring("event: complete"),
+				"SSE stream for terminal session must contain a synthetic 'complete' event")
 
-			GinkgoWriter.Println("SSE-002: Subscribe after completed returns 404 validated")
+			GinkgoWriter.Println("SSE-002: Subscribe after completed returns SSE complete event validated")
 		})
 	})
 

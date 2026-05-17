@@ -143,20 +143,12 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			return false
 		}, 2*time.Minute, 2*time.Second).Should(BeTrue(), "memory-eater should OOMKill")
 
-		// Scale deployment to 0 immediately after OOMKill detection to prevent
-		// subsequent restarts from generating additional RRs. Without this, the
-		// RO's IneffectiveChain detection can block WE creation if 3+ RRs
-		// accumulate for the same target before the test's specific RR is processed.
-		dep := &appsv1.Deployment{}
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: "memory-eater", Namespace: testNamespace}, dep)).To(Succeed())
-		zero := int32(0)
-		dep.Spec.Replicas = &zero
-		Expect(k8sClient.Update(ctx, dep)).To(Succeed())
-		GinkgoWriter.Println("  ✅ Scaled memory-eater to 0 replicas (prevent RR storm)")
-
 		// ================================================================
 		// Step 3: Verify RemediationRequest created by Gateway
 		// ================================================================
+		// NOTE: Scale-to-zero happens AFTER the RR is found (below). The Gateway
+		// needs the pod to continue restarting so it emits BackOff/OOMKill events
+		// that trigger RR creation. Scaling too early prevents the event.
 		By("Step 3: Waiting for RemediationRequest to be created by Gateway")
 		var remediationRequest *remediationv1.RemediationRequest
 		Eventually(func() bool {
@@ -182,6 +174,17 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			}
 			return false
 		}, timeout, interval).Should(BeTrue(), "RemediationRequest should be created by Gateway")
+
+		// Scale deployment to 0 AFTER the first RR is found. This prevents
+		// subsequent restarts from generating additional RRs that could trigger
+		// the RO's IneffectiveChain detection (threshold: 3 ineffective RRs for
+		// the same target), which would block WorkflowExecution creation.
+		dep := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: "memory-eater", Namespace: testNamespace}, dep)).To(Succeed())
+		zero := int32(0)
+		dep.Spec.Replicas = &zero
+		Expect(k8sClient.Update(ctx, dep)).To(Succeed())
+		GinkgoWriter.Println("  ✅ Scaled memory-eater to 0 replicas (prevent RR storm)")
 
 		// ================================================================
 		// Step 4: Verify SignalProcessing enriched the signal

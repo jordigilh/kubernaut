@@ -198,6 +198,17 @@ var _ = Describe("FP-MCP-001: full interactive lifecycle", Label("e2e", "fullpip
 
 var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2e", "fullpipeline", "interactive", "mcp"), func() {
 	It("should populate InteractiveSession after takeover and CompletedAt after complete", func() {
+		// MCP session setup BEFORE RR creation minimizes the window between
+		// AA entering Investigating and the takeover call. With a fast mock LLM
+		// the autonomous investigation completes in ~200ms; the AA controller's
+		// predicate-triggered re-reconcile can poll KA and see "completed"
+		// before ForceTransitionToUserDriving runs. Pre-creating the MCP session
+		// removes ~3s of SA/RBAC/connect overhead from that critical window.
+		By("Setting up MCP session (pre-RR creation to minimize race window)")
+		setup, err := infrastructure.SetupMCPSession(ctx, namespace, "fp-mcp-006-sa", kubeconfigPath, GinkgoWriter)
+		Expect(err).NotTo(HaveOccurred())
+		defer setup.Cleanup()
+
 		By("Creating direct RR")
 		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "fp-mcp-006")
 		Expect(err).NotTo(HaveOccurred())
@@ -216,14 +227,9 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 				}
 			}
 			return false
-		}, timeout, interval).Should(BeTrue(), "AIAnalysis should reach Investigating phase for RR")
+		}, timeout, 1*time.Second).Should(BeTrue(), "AIAnalysis should reach Investigating phase for RR")
 
-		By("Setting up MCP session")
-		setup, err := infrastructure.SetupMCPSession(ctx, namespace, "fp-mcp-006-sa", kubeconfigPath, GinkgoWriter)
-		Expect(err).NotTo(HaveOccurred())
-		defer setup.Cleanup()
-
-		By("Takeover")
+		By("Takeover (immediately — MCP session already set up, beat the first poll)")
 		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer callCancel()
 		result, err := infrastructure.CallInvestigate(callCtx, setup.Session, map[string]any{

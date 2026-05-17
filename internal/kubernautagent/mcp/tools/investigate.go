@@ -353,14 +353,20 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	if found {
 		if transErr := t.autoMgr.TransitionToUserDriving(autoSessionID, user.Username, user.Groups); transErr != nil {
 			if errors.Is(transErr, session.ErrSessionTerminal) {
-				_ = t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups)
+				if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
+					t.logger.Error(forceErr, "start: force-transition to user-driving failed",
+						"rr_id", input.RRID, "auto_session_id", autoSessionID)
+				}
 			} else {
 				t.logger.Error(transErr, "start: transition autonomous session to user-driving",
 					"rr_id", input.RRID, "auto_session_id", autoSessionID)
 			}
 		}
 	} else {
-		_ = t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups)
+		if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
+			t.logger.Error(forceErr, "start: force-transition to user-driving (no running session found)",
+				"rr_id", input.RRID)
+		}
 	}
 
 	if t.metrics != nil {
@@ -425,9 +431,10 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 	if found {
 		if err := t.autoMgr.TransitionToUserDriving(autoSessionID, user.Username, user.Groups); err != nil {
 			if errors.Is(err, session.ErrSessionTerminal) {
-				// Investigation already completed; force-reopen as user-driving
-				// so the AA controller can observe the interactive session info.
-				_ = t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups)
+				if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
+					t.logger.Error(forceErr, "takeover: force-transition to user-driving failed",
+						"rr_id", input.RRID, "auto_session_id", autoSessionID)
+				}
 			} else {
 				if t.metrics != nil {
 					t.metrics.RecordInteractiveTakeover("takeover_failed")
@@ -436,9 +443,10 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 			}
 		}
 	} else {
-		// No running session found — investigation may have already completed
-		// or not yet started. Attempt force transition by rrID.
-		_ = t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups)
+		if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
+			t.logger.Error(forceErr, "takeover: force-transition to user-driving (no running session found)",
+				"rr_id", input.RRID)
+		}
 	}
 
 	if t.metrics != nil {
