@@ -228,9 +228,10 @@ func (r *llmResponse) resolvedRCA() *llmRCA {
 }
 
 type llmAlternative struct {
-	WorkflowID string  `json:"workflow_id"`
-	Confidence float64 `json:"confidence"`
-	Rationale  string  `json:"rationale"`
+	WorkflowID string                 `json:"workflow_id"`
+	Confidence float64                `json:"confidence"`
+	Rationale  string                 `json:"rationale"`
+	Parameters map[string]interface{} `json:"parameters,omitempty"`
 }
 
 type llmRCA struct {
@@ -466,6 +467,7 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 			WorkflowID: alt.WorkflowID,
 			Confidence: alt.Confidence,
 			Rationale:  alt.Rationale,
+			Parameters: alt.Parameters,
 		})
 	}
 

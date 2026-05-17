@@ -139,10 +139,11 @@ type ValidationAttemptRecord struct {
 // Matches the OpenAPI AlternativeWorkflow schema (ADR-045 v1.2).
 // Alternatives are for CONTEXT and AUDIT only, not for automatic fallback execution.
 type AlternativeWorkflow struct {
-	WorkflowID      string  `json:"workflow_id"`
-	ExecutionBundle string  `json:"execution_bundle,omitempty"`
-	Confidence      float64 `json:"confidence"`
-	Rationale       string  `json:"rationale"`
+	WorkflowID      string                 `json:"workflow_id"`
+	ExecutionBundle string                 `json:"execution_bundle,omitempty"`
+	Confidence      float64                `json:"confidence"`
+	Rationale       string                 `json:"rationale"`
+	Parameters      map[string]interface{} `json:"parameters,omitempty"`
 }
 
 // AlignmentVerdictResult holds the shadow agent's overall verdict on an investigation.
