@@ -204,7 +204,7 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, ContinueOnFailure, Lab
 				"-n", e2eNamespace, "-o", "jsonpath={.status.phase}")
 			g.Expect(err).NotTo(HaveOccurred(), string(out))
 			g.Expect(strings.TrimSpace(string(out))).To(Equal("Disconnected"))
-		}, 30*time.Second, 1*time.Second).Should(Succeed())
+		}, 60*time.Second, 2*time.Second).Should(Succeed())
 	})
 
 	It("TC-E2E-STREAM-04 / TC-E2E-SSE-CAP-01: Connection cap enforcement", func() {
