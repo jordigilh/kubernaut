@@ -56,7 +56,7 @@ spec:
 `, rarName, namespace, rrName, namespace, rarName, rrName, now)
 }
 
-var _ = Describe("RR CRD Lifecycle (G4)", Ordered, Label("e2e", "phase2", "g4"), func() {
+var _ = Describe("RR CRD Lifecycle (G4)", Ordered, ContinueOnFailure, Label("e2e", "phase2", "g4"), func() {
 	var authToken string
 	var mcpSessionID string
 
@@ -302,7 +302,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Ordered, Label("e2e", "phase2", "g4"),
 	})
 })
 
-var _ = Describe("RAR Flow (G5)", Ordered, Label("e2e", "phase2", "g5"), func() {
+var _ = Describe("RAR Flow (G5)", Ordered, ContinueOnFailure, Label("e2e", "phase2", "g5"), func() {
 
 	const rrNamespace = "default"
 

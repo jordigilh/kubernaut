@@ -14,7 +14,7 @@ import (
 // accidental wiring changes are caught. When a gap is closed, the test
 // should be updated to assert the new behavior.
 
-var _ = Describe("Unwired Code Gaps (E2E)", Ordered, Label("e2e", "phase1", "unwired-gaps"), func() {
+var _ = Describe("Unwired Code Gaps (E2E)", Ordered, ContinueOnFailure, Label("e2e", "phase1", "unwired-gaps"), func() {
 
 	var authToken string
 

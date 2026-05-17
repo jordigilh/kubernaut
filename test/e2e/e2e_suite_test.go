@@ -95,7 +95,19 @@ var _ = SynchronizedBeforeSuite(
 				return fmt.Errorf("healthz returned %d", resp.StatusCode)
 			}
 			return nil
-		}, 60*time.Second, 2*time.Second).Should(Succeed(), "AF should become healthy")
+		}, 60*time.Second, 2*time.Second).Should(Succeed(), "AF should become healthy on HTTP")
+
+		Eventually(func() error {
+			resp, err := httpClient.Get(baseURL + "/healthz")
+			if err != nil {
+				return fmt.Errorf("TLS healthz failed: %w", err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("TLS healthz returned %d", resp.StatusCode)
+			}
+			return nil
+		}, 30*time.Second, 2*time.Second).Should(Succeed(), "AF should be reachable over TLS (https://localhost:18443)")
 	},
 )
 

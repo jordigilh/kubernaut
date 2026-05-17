@@ -18,7 +18,7 @@ import (
 // Signature is intentionally invalid — exercising rejection after (or instead of) expiry checks.
 const expiredCallerJWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjEwMDAwMDAwMDAsInN1YiI6ImUyZS1leHBpcmVkIiwiaWF0IjoxMDAwMDAwMDAwfQ.invalidsignature"
 
-var _ = Describe("JWT Delegation to KA (G7)", Ordered, Label("e2e", "phase4", "g7"), func() {
+var _ = Describe("JWT Delegation to KA (G7)", Ordered, ContinueOnFailure, Label("e2e", "phase4", "g7"), func() {
 	var (
 		kubeconfigPath string
 		namespace      string

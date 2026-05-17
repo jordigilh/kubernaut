@@ -17,7 +17,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3", "g3"), func() {
+var _ = Describe("Investigation Streaming (G3)", Ordered, ContinueOnFailure, Label("e2e", "phase3", "g3"), func() {
 	const sreUsername = "sre@kubernaut.ai"
 
 	var (

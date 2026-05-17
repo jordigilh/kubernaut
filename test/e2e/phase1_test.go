@@ -21,7 +21,7 @@ var (
 	httpClient   *http.Client
 )
 
-var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "phase1"), func() {
+var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, ContinueOnFailure, Label("e2e", "phase1"), func() {
 
 	Context("Health Probes", func() {
 		It("should return 200 on /healthz", func() {

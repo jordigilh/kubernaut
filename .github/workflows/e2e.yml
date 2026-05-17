@@ -102,6 +102,7 @@ jobs:
         env:
           E2E_COVERAGE: "true"
           KIND_EXPERIMENTAL_PROVIDER: podman
+          AF_E2E_SKIP_TEARDOWN: "true"
         run: |
           ginkgo -v --procs=$(nproc) --timeout=50m ./test/e2e/
 

@@ -16,7 +16,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("DS Audit Sink (G8)", Ordered, Label("e2e", "phase4", "g8"), func() {
+var _ = Describe("DS Audit Sink (G8)", Ordered, ContinueOnFailure, Label("e2e", "phase4", "g8"), func() {
 	var (
 		kubeconfigPath string
 		namespace      string

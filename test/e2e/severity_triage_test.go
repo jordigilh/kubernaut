@@ -16,7 +16,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Severity Triage Pipeline (G12)", Ordered, Label("e2e", "phase4", "g12"), func() {
+var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, Label("e2e", "phase4", "g12"), func() {
 	var authToken, mcpSessionID string
 	var prometheusReachable bool
 

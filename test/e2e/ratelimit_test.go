@@ -43,7 +43,7 @@ func userRateLimitRejections(metricsBody string) float64 {
 	return sum
 }
 
-var _ = Describe("Rate Limiting (G14/G15/G16)", Ordered, Label("e2e", "phase5", "ratelimit"), func() {
+var _ = Describe("Rate Limiting (G14/G15/G16)", Ordered, ContinueOnFailure, Label("e2e", "phase5", "ratelimit"), func() {
 
 	Context("TC-E2E-RATELIMIT-USER-01 (G14)", func() {
 		It("authenticated user exceeds request rate → HTTP 429 + user-tier rate limit metric", func() {

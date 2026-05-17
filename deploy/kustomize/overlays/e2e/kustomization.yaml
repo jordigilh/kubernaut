@@ -4,7 +4,7 @@ kind: Kustomization
 metadata:
   name: apifrontend-e2e
   annotations:
-    description: "E2E overlay — realistic AF in Kind with TLS, DEX OIDC, and NetworkPolicy"
+    description: "E2E overlay — realistic AF in Kind with TLS and DEX OIDC"
 
 resources:
   - ../../base
@@ -31,6 +31,16 @@ patches:
       $patch: delete
       apiVersion: monitoring.coreos.com/v1
       kind: ServiceMonitor
+      metadata:
+        name: apifrontend
+  # NetworkPolicy is for OCP / kubernaut-operator; not needed in Kind E2E
+  - target:
+      kind: NetworkPolicy
+      name: apifrontend
+    patch: |
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
       metadata:
         name: apifrontend
   - patch: |
@@ -61,60 +71,6 @@ patches:
   - path: patch-tls-optional.yaml
     target:
       kind: Deployment
-      name: apifrontend
-  - patch: |-
-      - op: add
-        path: /spec/egress/-
-        value:
-          to:
-            - podSelector:
-                matchLabels:
-                  app.kubernetes.io/name: dex
-          ports:
-            - port: 5556
-              protocol: TCP
-      - op: add
-        path: /spec/egress/-
-        value:
-          to:
-            - podSelector:
-                matchLabels:
-                  app: kubernaut-agent
-          ports:
-            - port: 8080
-              protocol: TCP
-      - op: add
-        path: /spec/egress/-
-        value:
-          to:
-            - podSelector:
-                matchLabels:
-                  app: datastorage
-          ports:
-            - port: 8080
-              protocol: TCP
-      - op: add
-        path: /spec/egress/-
-        value:
-          to:
-            - podSelector:
-                matchLabels:
-                  app: mock-llm
-          ports:
-            - port: 8080
-              protocol: TCP
-      - op: add
-        path: /spec/egress/-
-        value:
-          to:
-            - podSelector:
-                matchLabels:
-                  app: prometheus
-          ports:
-            - port: 9090
-              protocol: TCP
-    target:
-      kind: NetworkPolicy
       name: apifrontend
 
 configMapGenerator:

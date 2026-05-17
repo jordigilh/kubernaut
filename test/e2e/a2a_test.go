@@ -17,7 +17,7 @@ import (
 // Gated on mock-LLM Gemini endpoint (kubernaut#1157): if /a2a/invoke returns 501
 // the entire suite is skipped with a clear message.
 
-var _ = Describe("A2A Handler (E2E)", Ordered, Label("e2e", "a2a"), func() {
+var _ = Describe("A2A Handler (E2E)", Ordered, ContinueOnFailure, Label("e2e", "a2a"), func() {
 
 	var (
 		sreToken           string

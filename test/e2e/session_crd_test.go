@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("InvestigationSession CRD (E2E)", Ordered, Label("e2e", "phase1", "session-crd"), func() {
+var _ = Describe("InvestigationSession CRD (E2E)", Ordered, ContinueOnFailure, Label("e2e", "phase1", "session-crd"), func() {
 
 	var (
 		namespace      string

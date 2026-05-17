@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("K8s Read Tools (G6)", Ordered, Label("e2e", "phase2", "g6"), func() {
+var _ = Describe("K8s Read Tools (G6)", Ordered, ContinueOnFailure, Label("e2e", "phase2", "g6"), func() {
 	var authToken string
 	var mcpSessionID string
 

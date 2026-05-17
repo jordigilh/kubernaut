@@ -69,7 +69,7 @@ func configMapNameForApifrontend() string {
 	return "apifrontend-config"
 }
 
-var _ = Describe("Resilience and Operational (G17/G20/G9/G10/G11)", Ordered, Label("e2e", "phase5-6"), func() {
+var _ = Describe("Resilience and Operational (G17/G20/G9/G10/G11)", Ordered, ContinueOnFailure, Label("e2e", "phase5-6"), func() {
 
 	Context("TC-E2E-PANIC-01 (G17)", func() {
 		It("POST /debug/panic returns 500 problem+json and increments af_http_panics_total", func() {
