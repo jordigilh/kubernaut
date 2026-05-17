@@ -2,14 +2,17 @@ package infrastructure
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib" //nolint:revive // registers pgx driver for database/sql
 	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -192,9 +195,13 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 		return fmt.Errorf("redis not ready: %w", err)
 	}
 
-	// DS handles its own schema via DS_AUTO_MIGRATE=true (goose-based).
-	// Manual psql migrations conflict with goose version tracking and cause
-	// CrashLoopBackOff ("relation already exists").
+	// Apply database schema before DS starts — DS expects audit_events table
+	// for partition creation on boot. DS_AUTO_MIGRATE is disabled (see deployment)
+	// to avoid goose conflicting with our raw psql schema application.
+	_, _ = fmt.Fprintln(writer, "  Applying database migrations...")
+	if err := applyDatabaseMigrations(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("database migrations failed: %w", err)
+	}
 
 	// Deploy DataStorage with RBAC (inline manifests)
 	_, _ = fmt.Fprintln(writer, "  Deploying DataStorage RBAC + service...")
@@ -555,8 +562,6 @@ spec:
           value: /etc/datastorage/config.yaml
         - name: POD_NAMESPACE
           value: %[1]s
-        - name: DS_AUTO_MIGRATE
-          value: "true"
         volumeMounts:
         - name: config
           mountPath: /etc/datastorage
@@ -608,6 +613,110 @@ spec:
                 path: redis-secrets.yaml
 `, namespace, dsImage, pullPolicy)
 	return kubectlApplyStdin(ctx, kubeconfigPath, manifest, writer)
+}
+
+// findMigrationsDir locates the kubernaut migrations directory: first in a sibling
+// checkout (local dev), then in the Go module cache (CI).
+func findMigrationsDir(writer io.Writer) (string, error) {
+	// Try sibling checkout (local dev: ../kubernaut/migrations/)
+	kubernautRoot := filepath.Join(filepath.Dir(getAFProjectRoot()), "kubernaut")
+	candidate := filepath.Join(kubernautRoot, "migrations")
+	if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+		_, _ = fmt.Fprintf(writer, "    Using migrations from sibling checkout: %s\n", candidate)
+		return candidate, nil
+	}
+
+	// Try Go module cache (CI: go list -m resolves the cached module)
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/jordigilh/kubernaut").Output()
+	if err == nil {
+		modDir := strings.TrimSpace(string(out))
+		candidate = filepath.Join(modDir, "migrations")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			_, _ = fmt.Fprintf(writer, "    Using migrations from Go module cache: %s\n", candidate)
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("kubernaut migrations/ not found in sibling dir or Go module cache")
+}
+
+// applyDatabaseMigrations applies all goose migrations to PostgreSQL via port-forward.
+// Matches kubernaut/test/infrastructure.ApplyAllMigrations: goose provider + version tracking.
+// DS requires audit_events (and other tables) before it can create partitions on boot.
+func applyDatabaseMigrations(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	migrationsDir, err := findMigrationsDir(writer)
+	if err != nil {
+		return err
+	}
+
+	// Get PostgreSQL pod name
+	getPodCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"-n", namespace, "get", "pod", "-l", "app=postgresql",
+		"-o", "jsonpath={.items[0].metadata.name}")
+	podNameBytes, err := getPodCmd.Output()
+	if err != nil {
+		return fmt.Errorf("get postgresql pod name: %w", err)
+	}
+	podName := strings.TrimSpace(string(podNameBytes))
+
+	// Start port-forward (same pattern as kinfra.startPortForward)
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		return fmt.Errorf("find available port: %w", err)
+	}
+	localPort := listener.Addr().(*net.TCPAddr).Port //nolint:errcheck // net.Listener.Addr never fails
+	_ = listener.Close()
+
+	_, _ = fmt.Fprintf(writer, "    Port-forwarding to %s (localhost:%d → 5432)...\n", podName, localPort)
+	pfCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"port-forward", "-n", namespace, podName, fmt.Sprintf("%d:5432", localPort))
+	if err := pfCmd.Start(); err != nil {
+		return fmt.Errorf("start port-forward: %w", err)
+	}
+	defer func() {
+		_ = pfCmd.Process.Kill()
+		_ = pfCmd.Wait()
+	}()
+
+	// Wait for port-forward to be ready
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, dialErr := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", localPort), time.Second)
+		if dialErr == nil {
+			_ = conn.Close()
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Open database connection via port-forward
+	connStr := fmt.Sprintf("host=localhost port=%d user=slm_user password=slm_password dbname=action_history sslmode=disable", localPort)
+	db, err := sql.Open("pgx", connStr)
+	if err != nil {
+		return fmt.Errorf("open postgres connection: %w", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	if err := db.PingContext(ctx); err != nil {
+		return fmt.Errorf("ping postgres: %w", err)
+	}
+
+	// Run goose migrations (same as kinfra.RunGooseMigrations)
+	if err := kinfra.RunGooseMigrations(ctx, db, migrationsDir, writer); err != nil {
+		return fmt.Errorf("goose migrations: %w", err)
+	}
+
+	// Grant permissions (same as kinfra.applyGooseMigrationsE2E)
+	grantSQL := `
+		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
+		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
+		GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;
+	`
+	if _, grantErr := db.ExecContext(ctx, grantSQL); grantErr != nil {
+		_, _ = fmt.Fprintf(writer, "    ⚠️  Grant permissions (may already exist): %v\n", grantErr)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    ✅ Database migrations applied (goose)")
+	return nil
 }
 
 // deployMockLLM deploys the mock-LLM service with the AF keyword scenarios ConfigMap.
