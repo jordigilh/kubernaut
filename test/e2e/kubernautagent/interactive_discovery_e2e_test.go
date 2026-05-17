@@ -125,24 +125,23 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 			Expect(ok).To(BeTrue(), "recommended workflow should have a workflow_id")
 			GinkgoWriter.Printf("Using recommended workflow_id: %s\n", recommendedID)
 
-			By("Verifying recommended workflow has parameters (#1169)")
+			By("Verifying recommended workflow has oomkilled scenario parameters (#1169)")
 			recParams, _ := recommended["parameters"].(map[string]any)
-			Expect(recParams).NotTo(BeEmpty(),
-				"recommended workflow must include LLM-provided parameters (#1169)")
+			Expect(recParams).To(HaveKey("MEMORY_LIMIT_NEW"),
+				"recommended workflow must include MEMORY_LIMIT_NEW from oomkilled scenario (#1169)")
 			GinkgoWriter.Printf("Recommended parameters: %v\n", recParams)
 
-			By("Verifying alternatives have parameters (#1169)")
+			By("Verifying alternatives exist with parameters (#1169)")
 			alts, _ := innerData["alternatives"].([]any)
 			Expect(alts).NotTo(BeEmpty(),
 				"oomkilled scenario must return at least one alternative (#1169)")
-			for i, a := range alts {
-				altMap, _ := a.(map[string]any)
-				if altMap != nil {
-					altParams, _ := altMap["parameters"].(map[string]any)
-					GinkgoWriter.Printf("Alternative[%d] (%s) parameters: %v\n",
-						i, altMap["workflow_id"], altParams)
-				}
-			}
+			alt0, _ := alts[0].(map[string]any)
+			Expect(alt0).NotTo(BeNil())
+			alt0Params, _ := alt0["parameters"].(map[string]any)
+			Expect(alt0Params).To(HaveKey("REPLICA_COUNT"),
+				"first alternative must include REPLICA_COUNT from oomkilled scenario (#1169)")
+			GinkgoWriter.Printf("Alternative[0] (%s) parameters: %v\n",
+				alt0["workflow_id"], alt0Params)
 
 			By("Selecting the recommended workflow from discovery results")
 			result, err = infrastructure.CallSelectWorkflow(ctx, session, map[string]any{
@@ -321,6 +320,8 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 			GinkgoWriter.Printf("Selecting alternative workflow_id: %s\n", altID)
 
 			altParams, _ := alt0["parameters"].(map[string]any)
+			Expect(altParams).NotTo(BeEmpty(),
+				"alternative workflow must include LLM-provided parameters (#1169)")
 			GinkgoWriter.Printf("Alternative parameters: %v\n", altParams)
 
 			By("Selecting the alternative workflow")
