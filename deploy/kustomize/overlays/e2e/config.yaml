@@ -45,6 +45,10 @@ rbac:
 severityTriage:
   enabled: true
   prometheusURL: "http://prometheus-svc.kubernaut-system.svc:9090"
+  maxQueriesPerCall: 10
+  maxRulesEvaluated: 100
+  cacheTTLSeconds: 30
+  llmConfidence: 0.7
 
 logging:
   level: debug
