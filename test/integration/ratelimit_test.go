@@ -32,7 +32,7 @@ var _ = Describe("Rate Limiting — Handler-Level (IT-RL)", func() {
 
 			var saw429 bool
 			for i := 0; i < 20; i++ {
-				req := httptest.NewRequest("POST", "/a2a/invoke", nil)
+				req := httptest.NewRequest("POST", "/a2a/invoke", http.NoBody)
 				req.RemoteAddr = "10.0.0.1:12345"
 				rec := httptest.NewRecorder()
 				h.ServeHTTP(rec, req)
@@ -65,7 +65,7 @@ var _ = Describe("Rate Limiting — Handler-Level (IT-RL)", func() {
 			user := &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}}
 			var saw429 bool
 			for i := 0; i < 20; i++ {
-				req := httptest.NewRequest("POST", "/mcp", nil)
+				req := httptest.NewRequest("POST", "/mcp", http.NoBody)
 				ctx := auth.WithUserIdentity(req.Context(), user)
 				req = req.WithContext(ctx)
 				rec := httptest.NewRecorder()
@@ -98,7 +98,7 @@ var _ = Describe("Rate Limiting — Handler-Level (IT-RL)", func() {
 			// Exhaust SRE budget
 			var sreBlocked bool
 			for i := 0; i < 20; i++ {
-				req := httptest.NewRequest("POST", "/mcp", nil)
+				req := httptest.NewRequest("POST", "/mcp", http.NoBody)
 				ctx := auth.WithUserIdentity(req.Context(), sre)
 				req = req.WithContext(ctx)
 				rec := httptest.NewRecorder()
@@ -111,7 +111,7 @@ var _ = Describe("Rate Limiting — Handler-Level (IT-RL)", func() {
 			Expect(sreBlocked).To(BeTrue(), "SRE budget should be exhausted")
 
 			// CICD should still pass
-			req := httptest.NewRequest("POST", "/mcp", nil)
+			req := httptest.NewRequest("POST", "/mcp", http.NoBody)
 			ctx := auth.WithUserIdentity(req.Context(), cicd)
 			req = req.WithContext(ctx)
 			rec := httptest.NewRecorder()
