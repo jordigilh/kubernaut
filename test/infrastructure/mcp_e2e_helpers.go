@@ -104,25 +104,50 @@ func ConnectMCPClientWithRetry(ctx context.Context, cfg MCPClientConfig, writer 
 	return nil, fmt.Errorf("unreachable")
 }
 
+// callToolWithRetry wraps a tool call with retry-on-429 backoff.
+func callToolWithRetry(ctx context.Context, session *mcpsdk.ClientSession, params *mcpsdk.CallToolParams) (*mcpsdk.CallToolResult, error) {
+	backoff := 2 * time.Second
+	const maxRetries = 5
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		result, err := session.CallTool(ctx, params)
+		if err == nil {
+			return result, nil
+		}
+		if !strings.Contains(err.Error(), "Too Many Requests") || attempt == maxRetries {
+			return nil, err
+		}
+		select {
+		case <-time.After(backoff):
+			backoff *= 2
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return nil, fmt.Errorf("unreachable")
+}
+
 // CallInvestigate calls the kubernaut_investigate MCP tool with the given arguments.
+// Retries on 429 (Too Many Requests) with exponential backoff.
 func CallInvestigate(ctx context.Context, session *mcpsdk.ClientSession, args map[string]any) (*mcpsdk.CallToolResult, error) {
-	return session.CallTool(ctx, &mcpsdk.CallToolParams{
+	return callToolWithRetry(ctx, session, &mcpsdk.CallToolParams{
 		Name:      "kubernaut_investigate",
 		Arguments: args,
 	})
 }
 
 // CallSelectWorkflow calls the kubernaut_select_workflow MCP tool with the given arguments.
+// Retries on 429 (Too Many Requests) with exponential backoff.
 func CallSelectWorkflow(ctx context.Context, session *mcpsdk.ClientSession, args map[string]any) (*mcpsdk.CallToolResult, error) {
-	return session.CallTool(ctx, &mcpsdk.CallToolParams{
+	return callToolWithRetry(ctx, session, &mcpsdk.CallToolParams{
 		Name:      "kubernaut_select_workflow",
 		Arguments: args,
 	})
 }
 
 // CallCompleteNoAction calls the kubernaut_complete_no_action MCP tool with the given arguments.
+// Retries on 429 (Too Many Requests) with exponential backoff.
 func CallCompleteNoAction(ctx context.Context, session *mcpsdk.ClientSession, args map[string]any) (*mcpsdk.CallToolResult, error) {
-	return session.CallTool(ctx, &mcpsdk.CallToolParams{
+	return callToolWithRetry(ctx, session, &mcpsdk.CallToolParams{
 		Name:      "kubernaut_complete_no_action",
 		Arguments: args,
 	})

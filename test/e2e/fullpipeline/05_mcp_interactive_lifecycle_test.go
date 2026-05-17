@@ -202,7 +202,7 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "fp-mcp-006")
 		Expect(err).NotTo(HaveOccurred())
 
-		By("Waiting for AIAnalysis to appear")
+		By("Waiting for AIAnalysis to reach Investigating phase")
 		var aaName string
 		Eventually(func() bool {
 			aaList := &aianalysisv1.AIAnalysisList{}
@@ -212,11 +212,11 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 			for _, aa := range aaList.Items {
 				if aa.Spec.RemediationRequestRef.Name == rrName {
 					aaName = aa.Name
-					return true
+					return string(aa.Status.Phase) == "Investigating"
 				}
 			}
 			return false
-		}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created for RR")
+		}, timeout, interval).Should(BeTrue(), "AIAnalysis should reach Investigating phase for RR")
 
 		By("Setting up MCP session")
 		setup, err := infrastructure.SetupMCPSession(ctx, namespace, "fp-mcp-006-sa", kubeconfigPath, GinkgoWriter)
