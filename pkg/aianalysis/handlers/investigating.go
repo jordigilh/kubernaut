@@ -466,13 +466,16 @@ func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context,
 	now := metav1.Now()
 	session.LastPolled = &now
 
-	// #774: Propagate identity from KA poll response to CR status.
-	if status.ActingUser != "" || len(status.ActingUserGroups) > 0 {
+	// #774: Propagate identity and session ID from KA poll response to CR status.
+	if status.ActingUser != "" || len(status.ActingUserGroups) > 0 || status.SessionID != "" {
 		if analysis.Status.InteractiveSession == nil {
 			analysis.Status.InteractiveSession = &aianalysisv1.InteractiveSessionInfo{}
 		}
 		analysis.Status.InteractiveSession.ActingUser = status.ActingUser
 		analysis.Status.InteractiveSession.ActingUserGroups = status.ActingUserGroups
+		if status.SessionID != "" {
+			analysis.Status.InteractiveSession.SessionID = status.SessionID
+		}
 	}
 
 	h.log.Info("Session under user control, continuing to poll",
