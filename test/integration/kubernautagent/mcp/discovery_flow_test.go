@@ -402,8 +402,12 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(output["status"]).To(Equal("completed_no_action"))
 
 			Expect(completer.completedResult).NotTo(BeNil())
-			Expect(completer.completedResult.RCASummary).NotTo(BeEmpty(),
-				"should propagate the RCA summary from discover_workflows extraction")
+			Expect(completer.completedResult.RCASummary).To(
+				Equal("Unable to determine specific root cause"),
+				"must propagate exact RCA from extraction step, not the complete_no_action fallback")
+			Expect(completer.completedResult.RCASummary).NotTo(
+				Equal("Investigation completed without workflow selection"),
+				"must NOT use the complete_no_action no-discovery fallback")
 		})
 	})
 
