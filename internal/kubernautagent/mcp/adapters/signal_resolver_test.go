@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -81,12 +82,14 @@ var _ = Describe("K8sSignalContextResolver — #1175", func() {
 	})
 
 	Describe("UT-KA-1175-SCR-002: returns error when RR does not exist", func() {
-		It("should return an error for a non-existent RR", func() {
+		It("should return a NotFound error for a non-existent RR", func() {
 			cli := fake.NewClientBuilder().WithScheme(scheme).Build()
 			resolver := adapters.NewK8sSignalContextResolver(cli, "kubernaut-system")
 
 			_, err := resolver.ResolveSignalContext(context.Background(), "rr-nonexistent")
 			Expect(err).To(HaveOccurred())
+			Expect(errors.IsNotFound(err)).To(BeTrue(),
+				"should wrap a K8s NotFound error, got: %v", err)
 		})
 	})
 
@@ -98,6 +101,37 @@ var _ = Describe("K8sSignalContextResolver — #1175", func() {
 			ed, err := resolver.ResolveEnrichmentData(context.Background(), "rr-any")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ed).NotTo(BeNil())
+		})
+	})
+
+	Describe("UT-KA-1175-SCR-005: RR in different namespace returns NotFound", func() {
+		It("should not resolve an RR from another namespace", func() {
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-other-ns",
+					Namespace: "other-namespace",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: "bbbb",
+					SignalName:        "CrashLoop",
+					Severity:          "high",
+					SignalType:        "alert",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind: "Pod", Name: "crash-pod", Namespace: "other-namespace",
+					},
+					FiringTime:   metav1.Now(),
+					ReceivedTime: metav1.Now(),
+				},
+			}
+
+			cli := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr).Build()
+			resolver := adapters.NewK8sSignalContextResolver(cli, "kubernaut-system")
+
+			_, err := resolver.ResolveSignalContext(context.Background(), "rr-other-ns")
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsNotFound(err)).To(BeTrue(),
+				"RR in a different namespace must not be resolved")
 		})
 	})
 

@@ -708,11 +708,17 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	var enrichData *prompt.EnrichmentData
 	if t.signalResolver != nil {
 		resolved, resolveErr := t.signalResolver.ResolveSignalContext(ctx, input.RRID)
-		if resolveErr == nil && resolved != nil {
+		if resolveErr != nil {
+			t.logger.V(1).Info("signal context resolution failed, using empty context",
+				"rr_id", input.RRID, "error", resolveErr)
+		} else if resolved != nil {
 			signal = *resolved
 		}
 		enrichResolved, enrichErr := t.signalResolver.ResolveEnrichmentData(ctx, input.RRID)
-		if enrichErr == nil {
+		if enrichErr != nil {
+			t.logger.V(1).Info("enrichment data resolution failed",
+				"rr_id", input.RRID, "error", enrichErr)
+		} else {
 			enrichData = enrichResolved
 		}
 	}
