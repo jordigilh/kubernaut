@@ -60,7 +60,7 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 	Describe("E2E-KA-DISC-001: Full discovery lifecycle", func() {
 		It("should execute start -> message -> discover_workflows -> select_workflow", func() {
 			rrID := fmt.Sprintf("rr-disc001-%d", time.Now().Unix())
-			createTestRemediationRequest(ctx, rrID)
+			createTestRemediationRequest(ctx, rrID, withSignalName("OOMKilled"))
 
 			By("Connecting MCP client")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
@@ -128,21 +128,19 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 			By("Verifying recommended workflow has parameters (#1169)")
 			recParams, _ := recommended["parameters"].(map[string]any)
 			Expect(recParams).NotTo(BeEmpty(),
-				"recommended workflow must include LLM-provided parameters in discovery response (#1169)")
+				"recommended workflow must include LLM-provided parameters (#1169)")
 			GinkgoWriter.Printf("Recommended parameters: %v\n", recParams)
 
 			By("Verifying alternatives have parameters (#1169)")
 			alts, _ := innerData["alternatives"].([]any)
-			if len(alts) > 0 {
-				for i, a := range alts {
-					altMap, _ := a.(map[string]any)
-					if altMap != nil {
-						altParams, _ := altMap["parameters"].(map[string]any)
-						if len(altParams) > 0 {
-							GinkgoWriter.Printf("Alternative[%d] (%s) parameters: %v\n",
-								i, altMap["workflow_id"], altParams)
-						}
-					}
+			Expect(alts).NotTo(BeEmpty(),
+				"oomkilled scenario must return at least one alternative (#1169)")
+			for i, a := range alts {
+				altMap, _ := a.(map[string]any)
+				if altMap != nil {
+					altParams, _ := altMap["parameters"].(map[string]any)
+					GinkgoWriter.Printf("Alternative[%d] (%s) parameters: %v\n",
+						i, altMap["workflow_id"], altParams)
 				}
 			}
 
@@ -268,7 +266,7 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 	Describe("E2E-KA-DISC-004: select alternative workflow propagates parameters through real KA (#1169)", func() {
 		It("should discover alternatives with parameters and successfully select one", func() {
 			rrID := fmt.Sprintf("rr-disc004-%d", time.Now().Unix())
-			createTestRemediationRequest(ctx, rrID)
+			createTestRemediationRequest(ctx, rrID, withSignalName("OOMKilled"))
 
 			By("Connecting MCP client")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
