@@ -565,10 +565,10 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 	})
 
 	// ---------------------------------------------------------------
-	// IT-WIRE-15: GET /stream on terminal session returns 404
+	// IT-WIRE-15: GET /stream on terminal session returns SSE complete
 	// ---------------------------------------------------------------
-	Describe("IT-WIRE-15: Stream on completed session returns 404 (ErrSessionTerminal)", func() {
-		It("GET /stream returns 404 after investigation completes", func() {
+	Describe("IT-WIRE-15: Stream on completed session returns SSE complete event", func() {
+		It("GET /stream returns 200 with SSE complete event after investigation completes", func() {
 			h := newTestHarness()
 			defer h.Close()
 
@@ -581,8 +581,14 @@ var _ = Describe("Wiring Integration Tests — #823", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
 
-			Expect(resp.StatusCode).To(Equal(http.StatusNotFound),
-				"stream on terminal session must return 404 per ErrSessionTerminal mapping")
+			Expect(resp.StatusCode).To(Equal(http.StatusOK),
+				"terminal session should return SSE stream, not 404")
+			body, readErr := io.ReadAll(resp.Body)
+			Expect(readErr).NotTo(HaveOccurred())
+			Expect(string(body)).To(ContainSubstring("event: complete"),
+				"SSE stream should contain a complete event")
+			Expect(string(body)).To(ContainSubstring("done"),
+				"SSE complete event should carry the RCASummary")
 		})
 	})
 
