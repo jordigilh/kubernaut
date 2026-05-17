@@ -290,6 +290,9 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 	})
 
 	It("FP-MCP-009: concurrent takeover contention (second user rejected)", func() {
+		By("Waiting briefly for MCP server rate limiter to reset")
+		time.Sleep(2 * time.Second) // ✅ APPROVED EXCEPTION: deliberate delay to avoid 429 rate limit
+
 		By("Connecting User B MCP session")
 		userBCtx, userBCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer userBCancel()
