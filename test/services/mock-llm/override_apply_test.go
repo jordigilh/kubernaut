@@ -55,6 +55,38 @@ var _ = Describe("Override Application (BR-TESTING-657)", func() {
 		})
 	})
 
+	Describe("UT-MOCK-1169-005: alternative workflow UUIDs are replaced from overrides", func() {
+		It("should replace the deterministic alternative UUID with the DS-assigned UUID", func() {
+			overrides := &config.Overrides{
+				Scenarios: map[string]config.ScenarioOverride{
+					"generic-restart-v1:production": {
+						WorkflowID: "real-ds-uuid-for-generic-restart",
+					},
+				},
+			}
+
+			registry := scenarios.DefaultRegistryWithOverrides(overrides)
+			ctx := &scenarios.DetectionContext{
+				Content:    "- Signal Name: OOMKilled\n- Namespace: default",
+				AllText:    "- Signal Name: OOMKilled\n- Namespace: default",
+				SignalName: "",
+			}
+			result := registry.Detect(ctx)
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("oomkilled"))
+
+			cfgScenario, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+			Expect(ok).To(BeTrue())
+
+			cfg := cfgScenario.Config()
+			Expect(cfg.Alternatives).NotTo(BeEmpty(),
+				"oomkilled scenario must have at least one alternative")
+			Expect(cfg.Alternatives[0].WorkflowName).To(Equal("generic-restart-v1"))
+			Expect(cfg.Alternatives[0].WorkflowID).To(Equal("real-ds-uuid-for-generic-restart"),
+				"alternative UUID should be replaced by the override from DataStorage")
+		})
+	})
+
 	Describe("UT-MOCK-657-004: applyOverride applies ToolCall fields to MockScenarioConfig", func() {
 		It("should propagate ToolCallName and ToolCallArgs from override to scenario config", func() {
 			forceText := false
