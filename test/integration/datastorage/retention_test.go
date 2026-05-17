@@ -30,7 +30,7 @@ import (
 
 // BR-AUDIT-009: Retention policies for audit data
 // BR-AUDIT-004: Immutability / integrity of audit records
-var _ = Describe("Retention Enforcement — Integration Tests", Ordered, func() {
+var _ = Describe("Retention Enforcement — Integration Tests", Ordered, ContinueOnFailure, func() {
 
 	// Insert a synthetic expired audit event for tests.
 	// Uses a date within the static partition range (2026-03 to 2028-12).

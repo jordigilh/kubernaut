@@ -53,7 +53,7 @@ import (
 // Business Requirements:
 // - BR-GATEWAY-004: Fingerprint-based deduplication
 // - BR-GATEWAY-029: Deterministic fingerprint generation
-var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Label("fingerprint", "integration"), func() {
+var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, ContinueOnFailure, Label("fingerprint", "integration"), func() {
 	var (
 		testLogger    logr.Logger
 		testNamespace string

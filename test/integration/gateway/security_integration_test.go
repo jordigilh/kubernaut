@@ -55,7 +55,7 @@ func (a *alwaysManagedScope) IsManaged(_ context.Context, _, _, _ string) (bool,
 
 var _ sharedscope.ScopeChecker = &alwaysManagedScope{}
 
-var _ = Describe("Issue #673 C-ADV-2: Generic Processing Error (BR-GATEWAY-182)", Ordered, func() {
+var _ = Describe("Issue #673 C-ADV-2: Generic Processing Error (BR-GATEWAY-182)", Ordered, ContinueOnFailure, func() {
 
 	var (
 		testServer *httptest.Server

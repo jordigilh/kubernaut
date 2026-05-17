@@ -51,7 +51,7 @@ import (
 // The scoring logic (SearchByLabels) is covered by integration tests
 // (IT-DS-043-005) at the repository level.
 
-var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Ordered, Label("e2e", "datastorage", "detected-labels"), func() {
+var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Ordered, ContinueOnFailure, Label("e2e", "datastorage", "detected-labels"), func() {
 	var (
 		testCtx              context.Context
 		testCancel           context.CancelFunc
@@ -282,7 +282,7 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 // Uses a dedicated OCI fixture (detected-labels-all-fields) with all 8 fields populated
 // to verify the entire production pipeline preserves every field.
 
-var _ = Describe("E2E-DS-043-005: All 8 DetectedLabels Fields OCI -> DB -> HTTP Round-Trip", Ordered, Label("e2e", "datastorage", "detected-labels"), func() {
+var _ = Describe("E2E-DS-043-005: All 8 DetectedLabels Fields OCI -> DB -> HTTP Round-Trip", Ordered, ContinueOnFailure, Label("e2e", "datastorage", "detected-labels"), func() {
 	var (
 		allFieldsCtx        context.Context
 		allFieldsCancel     context.CancelFunc

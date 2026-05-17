@@ -65,7 +65,7 @@ import (
 // - NFR-SCOPE-001: No performance degradation for managed signals
 // ========================================
 
-var _ = Describe("Test 37: BR-SCOPE-002 Gateway Scope Filtering (E2E)", Ordered, Label("scope", "e2e"), func() {
+var _ = Describe("Test 37: BR-SCOPE-002 Gateway Scope Filtering (E2E)", Ordered, ContinueOnFailure, Label("scope", "e2e"), func() {
 	var (
 		testLogger  logr.Logger
 		httpClient  *http.Client

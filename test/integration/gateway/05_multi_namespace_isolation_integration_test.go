@@ -51,7 +51,7 @@ import (
 //
 // Business Requirements:
 // - BR-GATEWAY-011: Multi-tenant isolation with per-namespace buffers
-var _ = Describe("Test 05: Multi-Namespace Isolation (Integration)", Ordered, Label("multi-namespace", "integration"), func() {
+var _ = Describe("Test 05: Multi-Namespace Isolation (Integration)", Ordered, ContinueOnFailure, Label("multi-namespace", "integration"), func() {
 	var (
 		testLogger     logr.Logger
 		testNamespace1 string

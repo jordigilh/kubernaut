@@ -57,7 +57,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
-var _ = Describe("Owner Chain Deduplication (#270, BR-GATEWAY-004)", Ordered, Label("owner-chain", "dedup", "integration"), func() {
+var _ = Describe("Owner Chain Deduplication (#270, BR-GATEWAY-004)", Ordered, ContinueOnFailure, Label("owner-chain", "dedup", "integration"), func() {
 	var (
 		testLogger    logr.Logger
 		testNamespace string

@@ -51,7 +51,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 )
 
-var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, func() {
+var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, ContinueOnFailure, func() {
 
 	Context("Timeout enforcement", func() {
 		var (

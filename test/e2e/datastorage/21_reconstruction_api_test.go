@@ -65,7 +65,7 @@ import (
 //
 // ========================================
 
-var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "reconstruction-api", "p0"), Ordered, func() {
+var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "reconstruction-api", "p0"), Ordered, ContinueOnFailure, func() {
 	var (
 		testCtx       context.Context
 		correlationID string

@@ -37,7 +37,7 @@ import (
 //
 // Business Requirements:
 // - BR-HTTP-015: Gateway must provide CORS and security policy enforcement
-var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e", "gateway", "cors"), func() {
+var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, ContinueOnFailure, Label("e2e", "gateway", "cors"), func() {
 	var (
 		testCancel context.CancelFunc
 		testLogger logr.Logger // DD-005: Use logr.Logger

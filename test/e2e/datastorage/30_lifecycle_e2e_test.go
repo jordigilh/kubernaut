@@ -48,7 +48,7 @@ import (
 // /readyz (readiness); callers use healthURL + /healthz for “health UP”.
 // ============================================================
 
-var _ = Describe("Data Storage lifecycle Phase 9 (ET-DS-1088-LC)", Ordered, func() {
+var _ = Describe("Data Storage lifecycle Phase 9 (ET-DS-1088-LC)", Ordered, ContinueOnFailure, func() {
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc

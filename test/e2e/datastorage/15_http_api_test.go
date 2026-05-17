@@ -34,7 +34,7 @@ import (
 // These tests validate the complete HTTP → Repository → PostgreSQL flow
 // using a real Data Storage Service container (Podman, ADR-016)
 
-var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Ordered, func() {
+var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Ordered, ContinueOnFailure, func() {
 	var (
 		// DD-AUTH-014: Use shared authenticated HTTPClient from suite setup
 		validAudit *models.NotificationAudit

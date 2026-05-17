@@ -31,7 +31,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
-var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
+var _ = Describe("Test 20: Security Headers & Observability", Ordered, ContinueOnFailure, func() {
 	var (
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger

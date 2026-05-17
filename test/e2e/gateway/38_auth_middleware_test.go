@@ -40,7 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Gateway Auth Middleware E2E (BR-GATEWAY-036, BR-GATEWAY-037)", Ordered, func() {
+var _ = Describe("Gateway Auth Middleware E2E (BR-GATEWAY-036, BR-GATEWAY-037)", Ordered, ContinueOnFailure, func() {
 
 	var (
 		authorizedToken   string

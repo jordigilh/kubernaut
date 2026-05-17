@@ -29,7 +29,7 @@ import (
 // BR-AUDIT-029: Automatic partition management for audit storage
 // Tests use far-future dates (2029+) to avoid overlap with static partitions
 // from 001_v1_schema.sql (which covers 2026-03 through 2028-12).
-var _ = Describe("Partition Ensure — Integration Tests", Ordered, func() {
+var _ = Describe("Partition Ensure — Integration Tests", Ordered, ContinueOnFailure, func() {
 
 	// Far-future instant: no static partitions exist for 2029
 	futureNow := time.Date(2029, time.March, 15, 10, 0, 0, 0, time.UTC)

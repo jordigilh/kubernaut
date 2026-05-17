@@ -30,7 +30,7 @@ import (
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
-var _ = Describe("CP-5 COMPAT: Backward Compatibility Tests", Label("e2e", "ka", "interactive", "compat"), Ordered, func() {
+var _ = Describe("CP-5 COMPAT: Backward Compatibility Tests", Label("e2e", "ka", "interactive", "compat"), Ordered, ContinueOnFailure, func() {
 
 	var (
 		mcpEndpoint  string

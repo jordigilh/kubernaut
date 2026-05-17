@@ -53,7 +53,7 @@ import (
 // Business Requirements:
 // - BR-GATEWAY-005: Deduplication must prevent duplicate CRDs for same incident
 // - BR-GATEWAY-006: Deduplication window = CRD lifecycle (not arbitrary TTL)
-var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, Label("deduplication", "integration"), func() {
+var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, ContinueOnFailure, Label("deduplication", "integration"), func() {
 	var (
 		testLogger    logr.Logger
 		testNamespace string

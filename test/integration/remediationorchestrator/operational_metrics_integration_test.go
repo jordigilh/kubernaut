@@ -45,7 +45,7 @@ import (
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 )
 
-var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, Ordered, func() {
+var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, Ordered, ContinueOnFailure, func() {
 	// Integration Test Strategy (following AIAnalysis pattern):
 	// - Metrics verified via REGISTRY INSPECTION (not HTTP endpoint)
 	// - Direct access to controller-runtime's Prometheus registry

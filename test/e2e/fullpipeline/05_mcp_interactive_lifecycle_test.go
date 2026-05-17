@@ -56,7 +56,7 @@ import (
 //
 // Uses a single OOMKill trigger shared across ordered specs for efficiency.
 // BR: BR-INTERACTIVE-001, BR-INTERACTIVE-004, BR-INTERACTIVE-005, BR-INTERACTIVE-007
-var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e", "fullpipeline", "interactive", "mcp"), Ordered, func() {
+var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e", "fullpipeline", "interactive", "mcp"), Ordered, ContinueOnFailure, func() {
 
 	var (
 		testNamespace       string
@@ -66,6 +66,10 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 		tlsTransport        http.RoundTripper
 		remediationRequest  *remediationv1.RemediationRequest
 		aaName              string
+
+		takeoverDone          bool
+		discoverWorkflowsDone bool
+		sessionCompleted      bool
 	)
 
 	BeforeAll(func() {
@@ -221,9 +225,13 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 		text := infrastructure.ExtractToolResultText(result)
 		GinkgoWriter.Printf("  Takeover response: %s\n", text)
 		Expect(text).To(ContainSubstring("takeover_started"))
+		takeoverDone = true
 	})
 
 	It("FP-MCP-006a: CRD InteractiveSession populated after takeover", func() {
+		if !takeoverDone {
+			Skip("depends on FP-MCP-001 (takeover)")
+		}
 		aa := &aianalysisv1.AIAnalysis{}
 		Eventually(func(g Gomega) {
 			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
@@ -238,6 +246,9 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 	})
 
 	It("FP-MCP-008: reconnect via proxy disconnect", func() {
+		if !takeoverDone {
+			Skip("depends on FP-MCP-001 (takeover)")
+		}
 		By("Creating TCP proxy to KA NodePort")
 		proxy, err := infrastructure.NewInterruptibleProxy("localhost:8088")
 		Expect(err).NotTo(HaveOccurred())
@@ -304,6 +315,9 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 	})
 
 	It("FP-MCP-009: concurrent takeover contention (second user rejected)", func() {
+		if !takeoverDone {
+			Skip("depends on FP-MCP-001 (takeover)")
+		}
 		By("Waiting briefly for MCP server rate limiter to reset")
 		time.Sleep(2 * time.Second) // ✅ APPROVED EXCEPTION: deliberate delay to avoid 429 rate limit
 
@@ -334,6 +348,9 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 	})
 
 	It("FP-MCP-001: send message via MCP after takeover", func() {
+		if !takeoverDone {
+			Skip("depends on FP-MCP-001 (takeover)")
+		}
 		callCtx, callCancel := context.WithTimeout(ctx, 60*time.Second)
 		defer callCancel()
 
@@ -351,6 +368,9 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 	})
 
 	It("FP-MCP-005a: discover_workflows before select_workflow", func() {
+		if !takeoverDone {
+			Skip("depends on FP-MCP-001 (takeover)")
+		}
 		callCtx, callCancel := context.WithTimeout(ctx, 60*time.Second)
 		defer callCancel()
 
@@ -364,9 +384,13 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 		text := infrastructure.ExtractToolResultText(result)
 		GinkgoWriter.Printf("  DiscoverWorkflows response (first 300 chars): %.300s\n", text)
 		Expect(text).To(ContainSubstring("workflows_discovered"))
+		discoverWorkflowsDone = true
 	})
 
 	It("FP-MCP-005b: select_workflow with real DS catalog (requires prior discover_workflows)", func() {
+		if !discoverWorkflowsDone {
+			Skip("depends on FP-MCP-005a (discover_workflows)")
+		}
 		Expect(workflowUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"),
 			"workflow catalog must be seeded")
 		workflowID := workflowUUIDs["oomkill-increase-memory-v1:production"]
@@ -387,6 +411,9 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 	})
 
 	It("FP-MCP-001: complete interactive session via MCP", func() {
+		if !takeoverDone {
+			Skip("depends on FP-MCP-001 (takeover)")
+		}
 		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer callCancel()
 
@@ -399,9 +426,13 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 
 		text := infrastructure.ExtractToolResultText(result)
 		Expect(text).To(ContainSubstring("completed"))
+		sessionCompleted = true
 	})
 
 	It("FP-MCP-006b: CRD CompletedAt populated after complete", func() {
+		if !sessionCompleted {
+			Skip("depends on FP-MCP-001 (complete)")
+		}
 		aa := &aianalysisv1.AIAnalysis{}
 		Eventually(func(g Gomega) {
 			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
@@ -414,6 +445,9 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 	})
 
 	It("FP-MCP-003b: status returns not_found after interactive session completed", func() {
+		if !sessionCompleted {
+			Skip("depends on FP-MCP-001 (complete)")
+		}
 		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer callCancel()
 

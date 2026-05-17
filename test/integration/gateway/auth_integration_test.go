@@ -41,7 +41,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
-var _ = Describe("Gateway Authentication & Authorization (BR-GATEWAY-036, BR-GATEWAY-037)", Ordered, func() {
+var _ = Describe("Gateway Authentication & Authorization (BR-GATEWAY-036, BR-GATEWAY-037)", Ordered, ContinueOnFailure, func() {
 
 	var (
 		testServer        *httptest.Server

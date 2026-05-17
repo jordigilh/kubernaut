@@ -57,7 +57,7 @@ func projectRoot() string {
 	return wd
 }
 
-var _ = Describe("Container Contract", Ordered, func() {
+var _ = Describe("Container Contract", Ordered, ContinueOnFailure, func() {
 	var tool string
 
 	BeforeAll(func() {

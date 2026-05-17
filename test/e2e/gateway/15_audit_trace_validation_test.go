@@ -49,7 +49,7 @@ import (
 //
 // This test validates the E2E integration between Gateway and Data Storage
 // for audit trail functionality, ensuring production-ready audit compliance.
-var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func() {
+var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, ContinueOnFailure, func() {
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc

@@ -62,7 +62,7 @@ import (
 // - Complete infrastructure isolation
 // - No data pollution between tests
 
-var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)", Label("e2e", "workflow-version", "p0"), Ordered, func() {
+var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)", Label("e2e", "workflow-version", "p0"), Ordered, ContinueOnFailure, func() {
 	var (
 		testCancel context.CancelFunc
 		testLogger logr.Logger

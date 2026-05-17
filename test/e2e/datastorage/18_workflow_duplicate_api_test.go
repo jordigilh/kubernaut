@@ -34,7 +34,7 @@ import (
 // RFC 9110 Section 15.5.10: Duplicate resources must return 409 Conflict, not 500 Internal Server Error
 // This test validates the fix for KA team's bug report
 
-var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", Ordered, func() {
+var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", Ordered, ContinueOnFailure, func() {
 	Context("DS-BUG-001: Duplicate workflow creation", func() {
 		// DS-BUG-001 Fix Verification: The original bug was that duplicate workflow creation
 		// returned 500 Internal Server Error. The fix uses BR-WORKFLOW-006 ContentHash-based

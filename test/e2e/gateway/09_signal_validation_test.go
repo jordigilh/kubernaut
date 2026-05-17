@@ -37,7 +37,7 @@ import (
 // BEHAVIOR: Gateway validates incoming payloads and rejects malformed ones
 // CORRECTNESS: Invalid payloads return HTTP 400, valid payloads return 201/202
 // BR-SCOPE-002: Valid payload step requires a managed namespace for scope validation
-var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Ordered, func() {
+var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Ordered, ContinueOnFailure, func() {
 	var (
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger
