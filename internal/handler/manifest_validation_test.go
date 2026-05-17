@@ -152,7 +152,6 @@ var _ = Describe("RBAC tool name alignment", func() {
 	registeredTools := map[string]bool{
 		"kubernaut_list_remediations":       true,
 		"kubernaut_get_remediation":         true,
-		"kubernaut_submit_signal":           true,
 		"kubernaut_approve":                 true,
 		"kubernaut_cancel_remediation":      true,
 		"kubernaut_watch":                   true,

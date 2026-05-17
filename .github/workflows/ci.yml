@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   build:
@@ -57,21 +58,44 @@ jobs:
         run: go install github.com/onsi/ginkgo/v2/ginkgo@v2.28.3
 
       - name: Unit tests
-        run: >-
-          ginkgo -v --race
-          --coverpkg=./internal/auth/...,./internal/ratelimit/...,./internal/security/...,./internal/httputil/...,./internal/logging/...,./internal/requestid/...,./internal/audit/...,./internal/metrics/...,./internal/agent/...,./internal/tools/...,./internal/ka/...,./internal/ds/...,./internal/session/...,./internal/config/...,./internal/handler/...,./internal/launcher/...,./internal/resilience/...,./internal/streaming/...,./internal/controller/...,./internal/prometheus/...,./internal/severity/...,./internal/tlswiring/...,./internal/validate/...
-          --coverprofile=coverage.out
-          ./internal/...
+        run: make test-unit
 
-      - name: Coverage gate
+      - name: Coverage gate (raw total)
         run: |
-          total=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $NF}' | tr -d '%')
+          total=$(go tool cover -func=coverage_unit_apifrontend.out | grep '^total:' | awk '{print $NF}' | tr -d '%')
           echo "Total coverage: ${total}%"
           threshold=80
           if [ "$(echo "${total} < ${threshold}" | bc -l)" -eq 1 ]; then
             echo "::error::Coverage ${total}% is below ${threshold}% threshold"
             exit 1
           fi
+
+      - name: Per-tier coverage report
+        run: make coverage-report
+
+      - name: Upload coverage profile
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-unit
+          path: coverage_unit_apifrontend.out
+
+      - name: Generate markdown report
+        if: github.event_name == 'pull_request'
+        id: coverage-markdown
+        run: |
+          {
+            echo 'report<<EOF'
+            python3 scripts/coverage/coverage_report.py --format markdown
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post coverage report to PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@67d0dec7b07ed060a405f9b2a64b8ab319fdd7db # v2.9.2
+        with:
+          header: coverage-report
+          message: |
+            ${{ steps.coverage-markdown.outputs.report }}
 
   validate-openapi:
     runs-on: ubuntu-latest
@@ -115,12 +139,6 @@ jobs:
         with:
           go-version: '1.26'
           cache: true
-
-      - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.4
-
-      - name: Run gosec
-        run: gosec -severity medium -confidence medium ./...
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4

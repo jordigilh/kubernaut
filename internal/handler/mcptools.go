@@ -5,7 +5,6 @@ package handler
 var mcpToolRegistry = []MCPToolDef{
 	{Name: "kubernaut_list_remediations", Description: "List active and recent remediations"},
 	{Name: "kubernaut_get_remediation", Description: "Get details of a specific remediation"},
-	{Name: "kubernaut_submit_signal", Description: "Submit a signal to an active remediation"},
 	{Name: "kubernaut_approve", Description: "Approve a remediation action"},
 	{Name: "kubernaut_cancel_remediation", Description: "Cancel an active remediation"},
 	{Name: "kubernaut_watch", Description: "Watch for remediation state changes"},

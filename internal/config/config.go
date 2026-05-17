@@ -99,8 +99,9 @@ type ShutdownConfig struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port int             `yaml:"port"`
-	TLS  ServerTLSConfig `yaml:"tls"`
+	Port              int             `yaml:"port"`
+	TLS               ServerTLSConfig `yaml:"tls"`
+	MaxSSEConnections int             `yaml:"maxSSEConnections,omitempty"`
 }
 
 // ServerTLSConfig extends the shared TLS config with a Required flag for FedRAMP compliance.
@@ -111,13 +112,24 @@ type ServerTLSConfig struct {
 
 // AgentConfig holds ADK agent and backend connectivity settings.
 type AgentConfig struct {
-	GCPProject    string `yaml:"gcpProject"`
-	GCPRegion     string `yaml:"gcpRegion"`
-	KABaseURL     string `yaml:"kaBaseURL"`
-	KAMCPEndpoint string `yaml:"kaMCPEndpoint"`
-	DSBaseURL     string `yaml:"dsBaseURL"`
-	KATLSCaFile   string `yaml:"kaTlsCaFile,omitempty"`
-	DSTLSCaFile   string `yaml:"dsTlsCaFile,omitempty"`
+	GCPProject        string `yaml:"gcpProject"`
+	GCPRegion         string `yaml:"gcpRegion"`
+	KABaseURL         string `yaml:"kaBaseURL"`
+	KAMCPEndpoint     string `yaml:"kaMCPEndpoint"`
+	DSBaseURL         string `yaml:"dsBaseURL"`
+	DSBearerTokenFile string `yaml:"dsBearerTokenFile,omitempty"`
+	KATLSCaFile       string `yaml:"kaTlsCaFile,omitempty"`
+	DSTLSCaFile       string `yaml:"dsTlsCaFile,omitempty"`
+	// LLMEndpoint is the base URL of a Gemini-compatible LLM endpoint.
+	// When set, AF wires the A2A handler with a real ADK agent backed by this
+	// endpoint. When empty, POST /a2a/invoke returns 501.
+	LLMEndpoint string `yaml:"llmEndpoint,omitempty"`
+	// LLMModel is the model name passed in generateContent requests.
+	LLMModel string `yaml:"llmModel,omitempty"`
+	// LLMAPIKey is the API key for the LLM endpoint, populated from the
+	// LLM_API_KEY environment variable during ResolveDefaults. Never persisted
+	// in config files.
+	LLMAPIKey string `yaml:"-"`
 }
 
 // MCPConfig holds Model Context Protocol feature flags.
@@ -239,6 +251,11 @@ func (c *Config) Validate() error {
 	if err := validateURL("agent.dsBaseURL", c.Agent.DSBaseURL); err != nil {
 		return err
 	}
+	if c.Agent.DSBearerTokenFile != "" {
+		if _, err := os.Stat(c.Agent.DSBearerTokenFile); err != nil {
+			return fmt.Errorf("agent.dsBearerTokenFile %q is not accessible: %w", c.Agent.DSBearerTokenFile, err)
+		}
+	}
 	if err := c.validateAuth(); err != nil {
 		return err
 	}
@@ -259,6 +276,16 @@ func (c *Config) Validate() error {
 	}
 	if err := c.validateSeverityTriage(); err != nil {
 		return err
+	}
+	if err := c.validateSession(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Config) validateSession() error {
+	if c.Session.Namespace == "" && (c.Session.DisconnectTTL > 0 || c.Session.RetentionTTL > 0) {
+		return fmt.Errorf("session.namespace must be set when session TTLs are configured")
 	}
 	return nil
 }
@@ -353,9 +380,14 @@ func validateDependencyConfig(prefix string, cfg *DependencyConfig) error {
 
 // ResolveDefaults fills in derived fields that depend on other config values.
 // For example, AgentCard.URL is derived from Server.Port if left empty.
+// LLMAPIKey is populated from the LLM_API_KEY environment variable (never
+// persisted in config files — secrets stay out of YAML).
 func (c *Config) ResolveDefaults() {
 	if c.AgentCard.URL == "" {
 		c.AgentCard.URL = fmt.Sprintf("https://localhost:%d", c.Server.Port)
+	}
+	if c.Agent.LLMAPIKey == "" {
+		c.Agent.LLMAPIKey = os.Getenv("LLM_API_KEY")
 	}
 }
 

@@ -52,6 +52,18 @@ var _ = Describe("KA REST Client", func() {
 		Expect(status.Status).To(Equal("investigating"))
 	})
 
+	It("UT-AF-110-002b: SessionStatus unmarshals numeric status from KA v1.5", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			// KA v1.5 may return status as a number instead of a string
+			_, _ = w.Write([]byte(`{"session_id":"sess-num","status":200}`))
+		}))
+		client := ka.NewClient(ka.Config{BaseURL: server.URL})
+		status, err := client.Status(ctx, "sess-num")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status.SessionID).To(Equal("sess-num"))
+		Expect(status.Status).To(Equal("200"))
+	})
+
 	It("UT-AF-110-003: GET /api/v1/incident/session/{id}/result returns IncidentResponse", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			Expect(r.URL.Path).To(Equal("/api/v1/incident/session/sess-123/result"))

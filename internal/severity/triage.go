@@ -319,12 +319,18 @@ func (t *Triager) fetchRules(ctx context.Context) ([]prom.RuleGroup, error) {
 	return groups, nil
 }
 
-// labelsOverlap returns true if any key in target matches the same key in alert.
+// labelsOverlap returns true if every key present in both maps has an equal
+// value and at least one such key exists. A single mismatched key rejects the
+// pair, preventing cross-namespace false positives (e.g. kind=Deployment alone).
 func labelsOverlap(alertLabels, targetLabels map[string]string) bool {
+	matched := 0
 	for k, v := range targetLabels {
-		if alertVal, exists := alertLabels[k]; exists && alertVal == v {
-			return true
+		if alertVal, exists := alertLabels[k]; exists {
+			if alertVal != v {
+				return false
+			}
+			matched++
 		}
 	}
-	return false
+	return matched > 0
 }

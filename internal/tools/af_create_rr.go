@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/sync/singleflight"
@@ -41,9 +42,11 @@ type CreateRRArgs struct {
 
 // CreateRRResult is the output of af_create_rr.
 type CreateRRResult struct {
-	RRID          string `json:"rr_id"`
-	Message       string `json:"message"`
-	AlreadyExists bool   `json:"already_exists,omitempty"`
+	RRID           string `json:"rr_id"`
+	Message        string `json:"message"`
+	AlreadyExists  bool   `json:"already_exists,omitempty"`
+	Severity       string `json:"severity,omitempty"`
+	SeveritySource string `json:"severity_source,omitempty"`
 }
 
 // rrCreateGroup provides singleflight deduplication per fingerprint.
@@ -56,7 +59,7 @@ var rrCreateGroup singleflight.Group
 
 func rrFingerprint(namespace, kind, name string) string {
 	h := sha256.Sum256([]byte(namespace + "/" + kind + "/" + name))
-	return fmt.Sprintf("%x", h[:16])
+	return fmt.Sprintf("%x", h)
 }
 
 // HandleCreateRR creates a RemediationRequest CRD with singleflight deduplication.
@@ -102,6 +105,9 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 			triageResult = &result
 		}
 	}
+	if args.Severity == "" {
+		args.Severity = "medium"
+	}
 
 	fingerprint := rrFingerprint(args.Namespace, args.Kind, args.Name)
 
@@ -122,20 +128,26 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 			}, nil
 		}
 
-		rrName := fmt.Sprintf("rr-%s-%s-%d", args.Kind, args.Name, time.Now().UnixMilli())
+		rrName := fmt.Sprintf("rr-%s-%s-%d", strings.ToLower(args.Kind), strings.ToLower(args.Name), time.Now().UnixMilli())
 		if len(rrName) > 63 {
 			rrName = rrName[:63]
 		}
 
+		now := time.Now().UTC().Format(time.RFC3339)
+
 		spec := map[string]interface{}{
-			"targetRef": map[string]interface{}{
+			"signalName":        fmt.Sprintf("af-manual-%s-%s", args.Kind, args.Name),
+			"signalType":        "alert",
+			"signalFingerprint": fingerprint,
+			"severity":          args.Severity,
+			"firingTime":        now,
+			"receivedTime":      now,
+			"targetType":        "kubernetes",
+			"targetResource": map[string]interface{}{
 				"kind":      args.Kind,
 				"name":      args.Name,
 				"namespace": args.Namespace,
 			},
-			"severity":    args.Severity,
-			"description": args.Description,
-			"reportedBy":  username,
 		}
 
 		if triageResult != nil {
@@ -151,32 +163,34 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 			spec["signalLabels"] = signalLabels
 		}
 
-		rr := &unstructured.Unstructured{
+		rrObj := &unstructured.Unstructured{
 			Object: map[string]interface{}{
 				"apiVersion": "kubernaut.ai/v1alpha1",
 				"kind":       "RemediationRequest",
 				"metadata": map[string]interface{}{
 					"name":      rrName,
 					"namespace": args.Namespace,
-					"labels": map[string]interface{}{
-						"kubernaut.ai/target-kind": args.Kind,
-						"kubernaut.ai/target-name": args.Name,
-						"kubernaut.ai/reported-by": username,
-					},
 				},
 				"spec": spec,
 			},
 		}
 
-		created, createErr := client.Resource(rrGVR).Namespace(args.Namespace).Create(ctx, rr, metav1.CreateOptions{})
+		created, createErr := client.Resource(rrGVR).Namespace(args.Namespace).Create(ctx, rrObj, metav1.CreateOptions{})
 		if createErr != nil {
 			return nil, ToUserFriendlyError(createErr)
 		}
 
-		return &CreateRRResult{
+		out := &CreateRRResult{
 			RRID:    created.GetNamespace() + "/" + created.GetName(),
 			Message: fmt.Sprintf("RemediationRequest created for %s/%s by %s", args.Kind, args.Name, username),
-		}, nil
+		}
+		if triageResult != nil {
+			out.Severity = triageResult.Severity
+			out.SeveritySource = string(triageResult.Source)
+		} else if args.Severity != "" {
+			out.Severity = args.Severity
+		}
+		return out, nil
 	})
 
 	if err != nil {

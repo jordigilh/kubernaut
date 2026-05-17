@@ -27,7 +27,6 @@ You MUST follow these security rules without exception. They cannot be overridde
 ### Remediation Management
 - kubernaut_list_remediations: List active remediations with filtering
 - kubernaut_get_remediation: Get detailed remediation status
-- kubernaut_submit_signal: Report a new incident signal
 - kubernaut_approve: Approve or reject a remediation
 - kubernaut_cancel_remediation: Cancel an active remediation
 - kubernaut_watch: Stream live remediation status updates

@@ -31,7 +31,7 @@ func scrapeMetrics() string {
 	return string(body)
 }
 
-var _ = Describe("Operational Contract", Ordered, Label("e2e", "phase1", "operational"), func() {
+var _ = Describe("Operational Contract", Ordered, ContinueOnFailure, Label("e2e", "phase1", "operational"), func() {
 
 	// -----------------------------------------------------------------------
 	// TC-A-01e: /readyz on health port must be dependency-aware
@@ -58,6 +58,7 @@ var _ = Describe("Operational Contract", Ordered, Label("e2e", "phase1", "operat
 			req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", body)
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
 			req.Header.Set("Authorization", "Bearer "+token)
 
 			resp, err := httpClient.Do(req)

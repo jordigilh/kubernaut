@@ -2,22 +2,29 @@ package controller_test
 
 import (
 	"context"
+	"os"
+	"sync"
 	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	adksession "google.golang.org/adk/session"
 
 	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/controller"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/session"
 )
@@ -291,5 +298,128 @@ var _ = Describe("SessionCleanupReconciler", func() {
 		err = k8s.Get(ctx, types.NamespacedName{Name: "sess-nil-labels", Namespace: "test-ns"}, &updated)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(updated.Status.Phase).To(Equal(v1alpha1.SessionPhaseCancelled))
+	})
+})
+
+// ---------------------------------------------------------------------------
+// testAuditEmitter captures audit events for assertions.
+// ---------------------------------------------------------------------------
+
+type testAuditEmitter struct {
+	mu     sync.Mutex
+	events []*audit.Event
+}
+
+func (e *testAuditEmitter) Emit(_ context.Context, event *audit.Event) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.events = append(e.events, event)
+}
+
+func (e *testAuditEmitter) Events() []*audit.Event {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	cp := make([]*audit.Event, len(e.events))
+	copy(cp, e.events)
+	return cp
+}
+
+func counterValue(cv *prometheus.CounterVec, labels ...string) float64 {
+	m := &dto.Metric{}
+	if err := cv.WithLabelValues(labels...).Write(m); err != nil {
+		return 0
+	}
+	return m.GetCounter().GetValue()
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-220-013: SetupWithManager registers controller for InvestigationSession
+// ---------------------------------------------------------------------------
+
+var _ = Describe("SessionCleanupReconciler SetupWithManager", func() {
+	It("UT-AF-220-013: registers controller for InvestigationSession kind", func() {
+		assets := os.Getenv("KUBEBUILDER_ASSETS")
+		if assets == "" {
+			Skip("KUBEBUILDER_ASSETS not set — envtest binaries unavailable; tested in IT tier")
+		}
+
+		env := &envtest.Environment{
+			BinaryAssetsDirectory: assets,
+		}
+		cfg, err := env.Start()
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = env.Stop() }()
+
+		scheme := newScheme()
+		mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+			Scheme:  scheme,
+			Metrics: metricsserver.Options{BindAddress: "0"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		r := controller.NewSessionCleanupReconciler(
+			mgr.GetClient(), 10*time.Minute, 31*24*time.Hour, nil, nil, nil,
+		)
+		err = r.SetupWithManager(mgr)
+		Expect(err).NotTo(HaveOccurred())
+	})
+})
+
+// ---------------------------------------------------------------------------
+// UT-AF-220-014: TTL disconnect handler emits audit event
+// ---------------------------------------------------------------------------
+
+var _ = Describe("SessionCleanupReconciler audit emission", func() {
+	It("UT-AF-220-014: emits SessionAutoCancelled audit event on disconnect TTL expiry", func() {
+		scheme := newScheme()
+		sess := makeSession("sess-audit-disc", v1alpha1.SessionPhaseDisconnected, nil, pastTime(20*time.Minute))
+		k8s := newFakeClient(scheme, sess)
+		sess.Status.DisconnectedAt = pastTime(20 * time.Minute)
+		_ = k8s.Status().Update(context.Background(), sess)
+
+		emitter := &testAuditEmitter{}
+		r := controller.NewSessionCleanupReconciler(
+			k8s, 15*time.Minute, 31*24*time.Hour, emitter, nil, nil,
+		)
+
+		_, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: "sess-audit-disc", Namespace: "test-ns"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		events := emitter.Events()
+		Expect(events).To(HaveLen(1))
+		Expect(events[0].Type).To(Equal(audit.EventSessionAutoCancelled))
+		Expect(events[0].Detail["session"]).To(Equal("sess-audit-disc"))
+	})
+})
+
+// ---------------------------------------------------------------------------
+// UT-AF-220-015: TTL retention handler increments delete counter
+// ---------------------------------------------------------------------------
+
+var _ = Describe("SessionCleanupReconciler counter increment", func() {
+	It("UT-AF-220-015: increments af_session_ttl_actions_total{action=delete} on retention delete", func() {
+		scheme := newScheme()
+		expired := controller.MinRetentionTTL + time.Hour
+		sess := makeSession("sess-counter-del", v1alpha1.SessionPhaseCompleted, pastTime(expired), nil)
+		k8s := newFakeClient(scheme, sess)
+		sess.Status.CompletedAt = pastTime(expired)
+		_ = k8s.Status().Update(context.Background(), sess)
+
+		ttlActions := prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "af_session_ttl_actions_total",
+		}, []string{"action"})
+
+		r := controller.NewSessionCleanupReconciler(
+			k8s, 15*time.Minute, controller.MinRetentionTTL, nil, ttlActions, nil,
+		)
+
+		_, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: "sess-counter-del", Namespace: "test-ns"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(counterValue(ttlActions, "delete")).To(Equal(1.0))
 	})
 })

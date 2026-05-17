@@ -40,26 +40,26 @@ func HandleCheckExistingRR(ctx context.Context, client dynamic.Interface, args C
 	if args.Kind == "" {
 		return CheckExistingRRResult{}, fmt.Errorf("%w: kind must not be empty", ErrInvalidInput)
 	}
-	if err := validate.LabelValue(args.Kind); err != nil {
+	if err := validate.Kind(args.Kind); err != nil {
 		return CheckExistingRRResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 	if args.Name == "" {
 		return CheckExistingRRResult{}, fmt.Errorf("%w: name must not be empty", ErrInvalidInput)
 	}
-	if err := validate.LabelValue(args.Name); err != nil {
-		return CheckExistingRRResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-	}
 
-	labelSel := fmt.Sprintf("kubernaut.ai/target-kind=%s,kubernaut.ai/target-name=%s", args.Kind, args.Name)
-	list, err := client.Resource(rrGVR).Namespace(args.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: labelSel,
-	})
+	fingerprint := rrFingerprint(args.Namespace, args.Kind, args.Name)
+
+	list, err := client.Resource(rrGVR).Namespace(args.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return CheckExistingRRResult{}, ToUserFriendlyError(err)
 	}
 
 	for _, item := range list.Items {
-		phase, _, _ := unstructured.NestedString(item.Object, "status", "phase")
+		fp, _, _ := unstructured.NestedString(item.Object, "spec", "signalFingerprint")
+		if fp != fingerprint {
+			continue
+		}
+		phase, _, _ := unstructured.NestedString(item.Object, "status", "overallPhase")
 		if !IsTerminalPhase(phase) {
 			return CheckExistingRRResult{
 				Exists: true,

@@ -258,16 +258,12 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 				"metadata": map[string]any{
 					"name":      "test-rr",
 					"namespace": "default",
-					"labels": map[string]any{
-						"kubernaut.ai/target-kind": "Deployment",
-						"kubernaut.ai/target-name": "nginx",
-					},
 				},
 				"spec": map[string]any{
-					"targetRef": map[string]any{"kind": "Deployment", "name": "nginx"},
+					"targetResource": map[string]any{"kind": "Deployment", "name": "nginx"},
 				},
 				"status": map[string]any{
-					"phase": "Investigating",
+					"overallPhase": "Investigating",
 				},
 			},
 		}
@@ -281,7 +277,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 					"namespace": "default",
 				},
 				"status": map[string]any{
-					"phase": "Pending",
+					"overallPhase": "Pending",
 				},
 			},
 		}
@@ -295,8 +291,8 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 					"namespace": "default",
 				},
 				"status": map[string]any{
-					"phase":      "Running",
-					"conditions": []any{},
+					"overallPhase": "Running",
+					"conditions":   []any{},
 				},
 			},
 		}
@@ -349,7 +345,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 						"apiVersion": "kubernaut.ai/v1alpha1",
 						"kind":       "RemediationRequest",
 						"metadata":   map[string]any{"name": "test-rr", "namespace": "default"},
-						"status":     map[string]any{"phase": "Completed"},
+						"status":     map[string]any{"overallPhase": "Completed"},
 					},
 				})
 				w.Stop()
@@ -394,7 +390,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	})
 
 	Context("Tool registration", func() {
-		It("UT-AF-B-023: RegisterTools registers exactly 20 tools on the server", func() {
+		It("UT-AF-B-023: RegisterTools registers exactly 19 tools on the server", func() {
 			listReq := map[string]any{
 				"jsonrpc": "2.0",
 				"id":      3,
@@ -405,7 +401,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := rec.Body.String()
 			count := countToolsInResponse(body)
-			Expect(count).To(Equal(20))
+			Expect(count).To(Equal(19))
 		})
 	})
 
@@ -423,13 +419,6 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("test-rr"))
 			Expect(text).To(ContainSubstring("Investigating"))
-		})
-
-		It("UT-AF-B-003: kubernaut_submit_signal dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "kubernaut_submit_signal",
-				map[string]any{"namespace": "default", "kind": "Deployment", "name": "nginx", "description": "test signal"}, testUser)
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("signal_name"))
 		})
 
 		It("UT-AF-B-004: kubernaut_approve dispatches correctly", func() {
@@ -899,7 +888,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 	})
 
 	Context("tools/list shows all tools regardless of RBAC", func() {
-		It("UT-AF-B-040: viewer sees all 20 tools in tools/list", func() {
+		It("UT-AF-B-040: viewer sees all 19 tools in tools/list", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
@@ -928,7 +917,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			rec := mcpPost(h, sid, listReq, viewer)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			count := countToolsInResponse(rec.Body.String())
-			Expect(count).To(Equal(20))
+			Expect(count).To(Equal(19))
 		})
 	})
 })
@@ -1262,14 +1251,12 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			localMetrics := newBridgeMetrics()
 			localAuditor := &fakeAuditor{}
 
-			// Each handler call takes ~200ms; with MaxConcurrentTools=1 and
-			// ToolTimeout=200ms, concurrent callers waiting for the semaphore
-			// will exhaust their timeout budget and get throttled.
-			slowFactory := auth.DynamicClientFactory(func(ctx context.Context) (dynamic.Interface, error) {
-				select {
-				case <-ctx.Done():
-				case <-time.After(200 * time.Millisecond):
-				}
+			// slowFactory unconditionally holds the semaphore for 2s (ignoring
+			// ctx cancellation) while the tool timeout is only 500ms.  This
+			// guarantees the semaphore is still held when waiters' contexts
+			// expire, producing deterministic throttle responses.
+			slowFactory := auth.DynamicClientFactory(func(_ context.Context) (dynamic.Interface, error) {
+				time.Sleep(2 * time.Second)
 				return fakeK8s, nil
 			})
 
@@ -1283,7 +1270,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 					RBACRoles:          map[string][]string{"*": {"*"}},
 					Auditor:            localAuditor,
 					Metrics:            localMetrics,
-					ToolTimeout:        200 * time.Millisecond,
+					ToolTimeout:        500 * time.Millisecond,
 					MaxConcurrentTools: 1,
 				},
 			}
@@ -1295,18 +1282,28 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 			user := &auth.UserIdentity{Username: "sre", Groups: []string{"sre"}, Issuer: "test"}
 
-			results := make(chan string, 6)
+			const n = 6
+			// Pre-initialize sessions so all goroutines can fire tool calls
+			// simultaneously without variable init latency spreading them out.
+			sessions := make([]string, n)
+			for i := 0; i < n; i++ {
+				sessions[i] = mcpInitializeHTTP(ts.URL, user)
+			}
+
+			results := make(chan string, n)
+			barrier := make(chan struct{})
 			var wg sync.WaitGroup
-			for i := 0; i < 6; i++ {
+			for i := 0; i < n; i++ {
 				wg.Add(1)
-				go func() {
+				go func(idx int) {
 					defer GinkgoRecover()
 					defer wg.Done()
-					sid := mcpInitializeHTTP(ts.URL, user)
-					body := mcpCallToolHTTP(ts.URL, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+					<-barrier
+					body := mcpCallToolHTTP(ts.URL, sessions[idx], "af_list_events", map[string]any{"namespace": "default"}, user)
 					results <- body
-				}()
+				}(i)
 			}
+			close(barrier)
 			wg.Wait()
 			close(results)
 
@@ -1317,12 +1314,9 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				}
 			}
 
-			// With 6 concurrent calls, MaxConcurrentTools=1, and 200ms per
-			// call + 200ms timeout, several calls should be throttled.
 			Expect(throttled).To(BeNumerically(">=", 1),
 				"expected at least one throttled response out of 6 concurrent calls")
 
-			// Verify the throttle metric was incremented
 			metricVal := getCounterValue(localMetrics.ToolCallsTotal, prometheus.Labels{"tool": "af_list_events", "result": "throttled"})
 			Expect(metricVal).To(BeNumerically(">=", 1))
 		})
@@ -1545,12 +1539,6 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 			Expect(isErrorResult(body)).To(BeTrue())
 		})
 
-		It("UT-AF-B-072: kubernaut_submit_signal with empty kind returns error", func() {
-			_, body := mcpCallTool(h, sessionID, "kubernaut_submit_signal",
-				map[string]any{"namespace": "default", "kind": "", "name": "nginx", "description": "test"}, testUser)
-			Expect(isErrorResult(body)).To(BeTrue())
-		})
-
 		It("UT-AF-B-073: af_create_rr with empty description still succeeds (optional-ish)", func() {
 			_, body := mcpCallTool(h, sessionID, "af_create_rr",
 				map[string]any{"namespace": "default", "kind": "Deployment", "name": "test-empty-desc", "description": ""}, testUser)
@@ -1606,12 +1594,6 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 		It("UT-AF-B-080: af_list_events with unicode namespace is rejected", func() {
 			_, body := mcpCallTool(h, sessionID, "af_list_events",
 				map[string]any{"namespace": "default-日本語"}, testUser)
-			Expect(isErrorResult(body)).To(BeTrue())
-		})
-
-		It("UT-AF-B-081: kubernaut_submit_signal with emoji kind is rejected", func() {
-			_, body := mcpCallTool(h, sessionID, "kubernaut_submit_signal",
-				map[string]any{"namespace": "default", "kind": "Deploy🚀ment", "name": "test", "description": "test"}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 		})
 

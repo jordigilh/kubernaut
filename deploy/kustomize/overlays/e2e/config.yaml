@@ -1,5 +1,6 @@
 server:
   port: 8443
+  maxSSEConnections: 5
   tls:
     certDir: /etc/apifrontend/tls
     required: true
@@ -7,11 +8,19 @@ server:
 agent:
   gcpProject: ""
   gcpRegion: "us-central1"
-  kaBaseURL: "https://kubernaut-agent.kubernaut-system.svc:8443"
-  kaMCPEndpoint: "https://kubernaut-agent.kubernaut-system.svc:8443/api/v1/mcp/"
-  dsBaseURL: "https://data-storage.kubernaut-system.svc:8443"
-  kaTlsCaFile: /etc/apifrontend/tls-ca/ca.crt
-  dsTlsCaFile: /etc/apifrontend/tls-ca/ca.crt
+  kaBaseURL: "https://kubernaut-agent.kubernaut-system.svc:8080"
+  kaMCPEndpoint: "https://kubernaut-agent.kubernaut-system.svc:8080/api/v1/mcp/"
+  dsBaseURL: "https://data-storage-service.kubernaut-system.svc:8080"
+  dsBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+  kaTlsCaFile: /etc/apifrontend/inter-service-ca/ca.crt
+  dsTlsCaFile: /etc/apifrontend/inter-service-ca/ca.crt
+  llmEndpoint: "http://mock-llm.kubernaut-system.svc:8080"
+  llmModel: "mock-model"
+
+session:
+  namespace: kubernaut-system
+  disconnectTTL: 2m
+  retentionTTL: 720h
 
 mcp:
   enabled: true
@@ -26,14 +35,31 @@ auth:
   audience: "kubernaut-apifrontend"
   allowInsecureIssuers: true
 
+rbac:
+  groupMapping:
+    sre: sre
+    ai-orchestrator: ai-orchestrator
+    cicd: cicd
+    observability: observability
+    l3-audit: l3-audit
+    remediation-approver: remediation-approver
+
+severityTriage:
+  enabled: true
+  prometheusURL: "http://prometheus-svc.kubernaut-system.svc:9090"
+  maxQueriesPerCall: 10
+  maxRulesEvaluated: 100
+  cacheTTLSeconds: 30
+  llmConfidence: 0.7
+
 logging:
   level: debug
 
 rateLimit:
-  ipRequestsPerSec: 10
-  userRequestsPerSec: 5
-  maxConcurrentSessions: 10
-  toolCallsPerMinute: 30
+  ipRequestsPerSec: 10000
+  userRequestsPerSec: 100
+  maxConcurrentSessions: 50
+  toolCallsPerMinute: 600
 
 shutdown:
   drainSeconds: 3

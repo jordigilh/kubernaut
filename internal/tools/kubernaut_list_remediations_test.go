@@ -22,19 +22,15 @@ func newFakeRR(namespace, name, phase string) *unstructured.Unstructured {
 			"metadata": map[string]interface{}{
 				"name":      name,
 				"namespace": namespace,
-				"labels": map[string]interface{}{
-					"kubernaut.ai/target-kind": "Deployment",
-					"kubernaut.ai/target-name": "api-server",
-				},
 			},
 			"spec": map[string]interface{}{
-				"targetRef": map[string]interface{}{
+				"targetResource": map[string]interface{}{
 					"kind": "Deployment",
 					"name": "api-server",
 				},
 			},
 			"status": map[string]interface{}{
-				"phase": phase,
+				"overallPhase": phase,
 			},
 		},
 	}
@@ -121,23 +117,23 @@ var _ = Describe("kubernaut_list_remediations", func() {
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})
 
-	It("UT-AF-101-008: invalid kind label value returns ErrInvalidInput", func() {
-		client := newDynamicFakeClient()
-		_, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{
-			Namespace: "default",
-			Kind:      "has spaces and CAPITALS!!!",
+	It("UT-AF-101-008: kind filter excludes non-matching RRs", func() {
+		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
+		result, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{
+			Namespace: "payments",
+			Kind:      "StatefulSet",
 		})
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("invalid input"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Count).To(Equal(0))
 	})
 
-	It("UT-AF-101-009: invalid name label value returns ErrInvalidInput", func() {
-		client := newDynamicFakeClient()
-		_, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{
-			Namespace: "default",
-			Name:      "has spaces and CAPITALS!!!",
+	It("UT-AF-101-009: name filter excludes non-matching RRs", func() {
+		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
+		result, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{
+			Namespace: "payments",
+			Name:      "non-existent-target",
 		})
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("invalid input"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Count).To(Equal(0))
 	})
 })

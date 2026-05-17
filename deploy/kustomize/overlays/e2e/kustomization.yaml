@@ -4,11 +4,14 @@ kind: Kustomization
 metadata:
   name: apifrontend-e2e
   annotations:
-    description: "E2E overlay — realistic AF in Kind with TLS, DEX OIDC, and NetworkPolicy"
+    description: "E2E overlay — realistic AF in Kind with TLS and DEX OIDC"
 
 resources:
   - ../../base
   - dex.yaml
+  - e2e-user-rbac.yaml
+  - https://raw.githubusercontent.com/jordigilh/kubernaut/main/config/crd/bases/kubernaut.ai_remediationrequests.yaml
+  - https://raw.githubusercontent.com/jordigilh/kubernaut/main/config/crd/bases/kubernaut.ai_remediationapprovalrequests.yaml
 
 # Prometheus Operator CRDs are not available in bare Kind clusters
 patches:
@@ -30,6 +33,37 @@ patches:
       kind: ServiceMonitor
       metadata:
         name: apifrontend
+  # NetworkPolicy is for OCP / kubernaut-operator; not needed in Kind E2E
+  - target:
+      kind: NetworkPolicy
+      name: apifrontend
+    patch: |
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: apifrontend
+  - patch: |
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: apifrontend
+      spec:
+        type: NodePort
+        ports:
+        - name: https
+          port: 8443
+          targetPort: https
+          nodePort: 30443
+          protocol: TCP
+        - name: health
+          port: 8081
+          targetPort: health
+          nodePort: 30081
+          protocol: TCP
+    target:
+      kind: Service
+      name: apifrontend
   - path: patch-deployment.yaml
     target:
       kind: Deployment
@@ -37,20 +71,6 @@ patches:
   - path: patch-tls-optional.yaml
     target:
       kind: Deployment
-      name: apifrontend
-  - patch: |-
-      - op: add
-        path: /spec/egress/-
-        value:
-          to:
-            - podSelector:
-                matchLabels:
-                  app.kubernetes.io/name: dex
-          ports:
-            - port: 5556
-              protocol: TCP
-    target:
-      kind: NetworkPolicy
       name: apifrontend
 
 configMapGenerator:

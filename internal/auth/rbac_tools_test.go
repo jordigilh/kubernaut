@@ -20,24 +20,23 @@ var _ = Describe("FilterToolsByRole", func() {
 		}
 	})
 
-	It("UT-AF-130-001: SRE role gets all 20 tools", func() {
+	It("UT-AF-130-001: SRE role gets all 19 tools", func() {
 		cfg := agent.DefaultTestConfig()
 		_, tools, _ := agent.NewRootAgent(cfg)
 		filtered := agent.FilterToolsByRole("sre", tools)
-		Expect(filtered).To(HaveLen(20))
+		Expect(filtered).To(HaveLen(19))
 	})
 
-	It("UT-AF-130-002: CI/CD role gets submit_signal, list, watch, get only", func() {
+	It("UT-AF-130-002: CI/CD role gets list, watch, get only", func() {
 		cfg := agent.DefaultTestConfig()
 		_, tools, _ := agent.NewRootAgent(cfg)
 		filtered := agent.FilterToolsByRole("cicd", tools)
-		Expect(filtered).To(HaveLen(4))
+		Expect(filtered).To(HaveLen(3))
 		names := make([]string, 0, len(filtered))
 		for _, t := range filtered {
 			names = append(names, t.Name())
 		}
 		Expect(names).To(ContainElements(
-			"kubernaut_submit_signal",
 			"kubernaut_list_remediations",
 			"kubernaut_get_remediation",
 			"kubernaut_watch",
@@ -65,7 +64,7 @@ var _ = Describe("FilterToolsByRole", func() {
 		cfg := agent.DefaultTestConfig()
 		_, tools, _ := agent.NewRootAgent(cfg)
 		filtered := agent.FilterToolsByRole("ai-orchestrator", tools)
-		Expect(filtered).To(HaveLen(16))
+		Expect(filtered).To(HaveLen(15))
 	})
 
 	It("UT-AF-130-005: Observability Dashboard role gets list, get, watch, effectiveness, workflows + triage read tools", func() {

@@ -2,7 +2,9 @@
 package ka
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -50,10 +52,41 @@ type AnalyzeRequest struct {
 }
 
 // SessionStatus is the response from GET /api/v1/incident/session/{id}.
+// KA v1.5 may return status as either a string or a number; the custom
+// UnmarshalJSON handles both representations transparently.
 type SessionStatus struct {
 	SessionID string `json:"session_id"`
 	Status    string `json:"status"`
 	Error     string `json:"error,omitempty"`
+}
+
+// UnmarshalJSON accepts SessionStatus payloads where "status" is either a JSON string or number.
+func (s *SessionStatus) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		SessionID string          `json:"session_id"`
+		Status    json.RawMessage `json:"status"`
+		Error     string          `json:"error,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	s.SessionID = raw.SessionID
+	s.Error = raw.Error
+
+	if len(raw.Status) == 0 {
+		return nil
+	}
+	var str string
+	if err := json.Unmarshal(raw.Status, &str); err == nil {
+		s.Status = str
+		return nil
+	}
+	var num json.Number
+	if err := json.Unmarshal(raw.Status, &num); err == nil {
+		s.Status = num.String()
+		return nil
+	}
+	return fmt.Errorf("SessionStatus.status: expected string or number, got %s", string(raw.Status))
 }
 
 // IncidentResponse is the response from GET /api/v1/incident/session/{id}/result.

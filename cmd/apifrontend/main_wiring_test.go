@@ -2,21 +2,26 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/go-logr/logr"
+	"k8s.io/client-go/dynamic"
 
 	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/config"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/ds"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/handler"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/ka"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/metrics"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
 )
@@ -413,6 +418,220 @@ func TestBuildAuthMiddleware_NoAuth_ReadyAlwaysTrue(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// A2A wiring: buildA2AHandler
+// ---------------------------------------------------------------------------
+
+// testBackendDeps returns a minimal backendDeps for unit tests (no real K8s cluster).
+func testBackendDeps() *backendDeps {
+	return &backendDeps{}
+}
+
+func TestBuildA2AHandler_NoLLMEndpoint_Returns501Stub(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{}
+	reg := metrics.NewRegistry()
+	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, logr.Discard())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("handler must not be nil even without LLM endpoint")
+	}
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/a2a/invoke", http.NoBody))
+	if rec.Code != http.StatusNotImplemented {
+		t.Errorf("expected 501 when LLM endpoint not set, got %d", rec.Code)
+	}
+	body, _ := io.ReadAll(rec.Result().Body)
+	if !strings.Contains(string(body), "A2A not configured") {
+		t.Errorf("expected body to contain 'A2A not configured', got %q", string(body))
+	}
+}
+
+func TestBuildA2AHandler_WithLLMEndpoint_ReturnsHandler(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"role":"model","parts":[{"text":"hello"}]},"finishReason":"STOP"}]}`))
+	}))
+	t.Cleanup(mockLLM.Close)
+
+	cfg := &config.Config{}
+	cfg.Agent.LLMEndpoint = mockLLM.URL
+	cfg.Agent.LLMModel = "mock-model"
+	cfg.Agent.LLMAPIKey = "test-key"
+	reg := metrics.NewRegistry()
+
+	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, logr.Discard())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("handler must not be nil when LLM endpoint is configured")
+	}
+}
+
+func TestBuildA2AHandler_WithSessionInfra_UsesDecorator(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`))
+	}))
+	t.Cleanup(mockLLM.Close)
+
+	cfg := &config.Config{}
+	cfg.Agent.LLMEndpoint = mockLLM.URL
+	cfg.Agent.LLMModel = "mock-model"
+	cfg.Agent.LLMAPIKey = "test-key"
+	reg := metrics.NewRegistry()
+
+	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	defer infra.StopFunc()
+
+	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), infra, reg, nil, logr.Discard())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("handler must not be nil when session infra is provided")
+	}
+}
+
+// TC-WIRING-01: A2A handler threads K8sClient into AgentConfig
+func TestBuildA2AHandler_ThreadsK8sClient(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`))
+	}))
+	t.Cleanup(mockLLM.Close)
+
+	cfg := &config.Config{}
+	cfg.Agent.LLMEndpoint = mockLLM.URL
+	cfg.Agent.LLMModel = "mock-model"
+	cfg.Agent.LLMAPIKey = "test-key"
+	reg := metrics.NewRegistry()
+
+	deps := testBackendDeps()
+	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, logr.Discard())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("TC-WIRING-01: handler must not be nil — K8sClient threading must not break construction")
+	}
+}
+
+// TC-WIRING-02: A2A handler threads KAClient into AgentConfig
+func TestBuildA2AHandler_ThreadsKAClient(t *testing.T) {
+	t.Parallel()
+
+	kaBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(kaBackend.Close)
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`))
+	}))
+	t.Cleanup(mockLLM.Close)
+
+	cfg := &config.Config{}
+	cfg.Agent.LLMEndpoint = mockLLM.URL
+	cfg.Agent.LLMModel = "mock-model"
+	cfg.Agent.LLMAPIKey = "test-key"
+	reg := metrics.NewRegistry()
+
+	deps := testBackendDeps()
+	deps.KAClient = ka.NewClient(ka.Config{BaseURL: kaBackend.URL}, nil)
+
+	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, logr.Discard())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("TC-WIRING-02: handler must not be nil when KAClient is provided")
+	}
+}
+
+// TC-WIRING-03: A2A handler threads DSClient into AgentConfig
+func TestBuildA2AHandler_ThreadsDSClient(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`))
+	}))
+	t.Cleanup(mockLLM.Close)
+
+	dsBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(dsBackend.Close)
+
+	cfg := &config.Config{}
+	cfg.Agent.LLMEndpoint = mockLLM.URL
+	cfg.Agent.LLMModel = "mock-model"
+	cfg.Agent.LLMAPIKey = "test-key"
+	reg := metrics.NewRegistry()
+
+	dsClient, dsErr := ds.NewOgenClient(ds.OgenClientConfig{BaseURL: dsBackend.URL})
+	if dsErr != nil {
+		t.Fatalf("failed to create DS client: %v", dsErr)
+	}
+
+	deps := testBackendDeps()
+	deps.DSClient = dsClient
+
+	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, logr.Discard())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("TC-WIRING-03: handler must not be nil when DSClient is provided")
+	}
+}
+
+// TC-WIRING-04: A2A handler threads ImpersonatingClientFactory into AgentConfig
+func TestBuildA2AHandler_ThreadsImpersonatingFactory(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`))
+	}))
+	t.Cleanup(mockLLM.Close)
+
+	cfg := &config.Config{}
+	cfg.Agent.LLMEndpoint = mockLLM.URL
+	cfg.Agent.LLMModel = "mock-model"
+	cfg.Agent.LLMAPIKey = "test-key"
+	reg := metrics.NewRegistry()
+
+	factoryCalled := false
+	deps := testBackendDeps()
+	deps.DynFactory = func(_ context.Context) (dynamic.Interface, error) {
+		factoryCalled = true
+		return nil, fmt.Errorf("test factory called")
+	}
+
+	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, logr.Discard())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("TC-WIRING-04: handler must not be nil when DynFactory is provided")
+	}
+	_ = factoryCalled
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -427,6 +646,37 @@ func extractMetricLines(metricsText, prefix string) string {
 		return "(no lines with prefix " + prefix + ")"
 	}
 	return strings.Join(lines, "\n")
+}
+
+// TC-WIRING-08: K8sClient() is safe for concurrent access (sync.Once guards lazy init).
+func TestBackendDeps_K8sClient_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	deps := &backendDeps{}
+
+	const goroutines = 50
+	results := make([]dynamic.Interface, goroutines)
+	start := make(chan struct{})
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := range goroutines {
+		go func(idx int) {
+			defer wg.Done()
+			<-start
+			results[idx] = deps.K8sClient()
+		}(i)
+	}
+
+	close(start)
+	wg.Wait()
+
+	// All goroutines must observe the same value (nil when no kubeconfig is available in test)
+	for i := 1; i < goroutines; i++ {
+		if results[i] != results[0] {
+			t.Fatalf("goroutine %d got different K8sClient result than goroutine 0", i)
+		}
+	}
 }
 
 type noopAuditor struct{}

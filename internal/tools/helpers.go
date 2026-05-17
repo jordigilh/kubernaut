@@ -62,7 +62,7 @@ func ToUserFriendlyError(err error) error {
 		case http.StatusConflict:
 			return fmt.Errorf("operation conflict — the resource was modified concurrently, please retry")
 		default:
-			return fmt.Errorf("operation failed (code %d) — contact your cluster administrator", statusErr.ErrStatus.Code)
+			return fmt.Errorf("operation failed (code %d): %s", statusErr.ErrStatus.Code, statusErr.ErrStatus.Message)
 		}
 	}
 	return err

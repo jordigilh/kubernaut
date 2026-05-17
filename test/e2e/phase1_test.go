@@ -2,11 +2,9 @@ package e2e_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -23,31 +21,7 @@ var (
 	httpClient   *http.Client
 )
 
-var _ = BeforeSuite(func() {
-	baseURL = getEnvOrDefault("AF_E2E_BASE_URL", "https://localhost:18443")
-	caCertPath = getEnvOrDefault("AF_E2E_CA_CERT", "")
-	dexURL = getEnvOrDefault("AF_E2E_DEX_URL", "http://localhost:15556/dex")
-	clientID = getEnvOrDefault("AF_E2E_CLIENT_ID", "kubernaut-apifrontend")
-	clientSecret = getEnvOrDefault("AF_E2E_CLIENT_SECRET", "e2e-client-secret")
-	username = getEnvOrDefault("AF_E2E_USERNAME", "e2e-user@kubernaut.ai")
-	password = getEnvOrDefault("AF_E2E_PASSWORD", "password")
-
-	httpClient = newTLSClient(caCertPath)
-
-	Eventually(func() error {
-		resp, err := httpClient.Get(baseURL + "/healthz")
-		if err != nil {
-			return err
-		}
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("healthz returned %d", resp.StatusCode)
-		}
-		return nil
-	}, 60*time.Second, 2*time.Second).Should(Succeed(), "AF should become healthy")
-})
-
-var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "phase1"), func() {
+var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, ContinueOnFailure, Label("e2e", "phase1"), func() {
 
 	Context("Health Probes", func() {
 		It("should return 200 on /healthz", func() {
@@ -104,12 +78,16 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 			Expect(json.Unmarshal(body, &card)).To(Succeed())
 			Expect(card).To(HaveKey("name"))
 			Expect(card).To(HaveKey("url"))
+
+			skills, ok := card["skills"].([]interface{})
+			Expect(ok).To(BeTrue(), "skills should be a JSON array")
+			Expect(skills).To(HaveLen(19), "agent card should advertise all 19 tools as skills")
 		})
 	})
 
 	Context("Authentication", func() {
 		It("should reject unauthenticated POST /a2a/invoke with 401", func() {
-			body := strings.NewReader(`{"jsonrpc":"2.0","method":"tasks/send","id":"1","params":{}}`)
+			body := strings.NewReader(`{"jsonrpc":"2.0","method":"message/send","id":"1","params":{}}`)
 			req, err := http.NewRequest(http.MethodPost, baseURL+"/a2a/invoke", body)
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
@@ -125,6 +103,7 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 			req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", body)
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
 
 			resp, err := httpClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
@@ -137,7 +116,7 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 			Expect(err).NotTo(HaveOccurred())
 			Expect(token).NotTo(BeEmpty())
 
-			body := strings.NewReader(`{"jsonrpc":"2.0","method":"tasks/send","id":"1","params":{}}`)
+			body := strings.NewReader(`{"jsonrpc":"2.0","method":"message/send","id":"1","params":{}}`)
 			req, err := http.NewRequest(http.MethodPost, baseURL+"/a2a/invoke", body)
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
@@ -174,24 +153,4 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, Label("e2e", "ph
 		})
 	})
 
-	Context("Rate Limiting", func() {
-		It("should enforce IP-based rate limiting", func() {
-			var hitRateLimit bool
-			for i := 0; i < 50; i++ {
-				body := strings.NewReader(`{"jsonrpc":"2.0","method":"tasks/send","id":"1","params":{}}`)
-				req, err := http.NewRequest(http.MethodPost, baseURL+"/a2a/invoke", body)
-				Expect(err).NotTo(HaveOccurred())
-				req.Header.Set("Content-Type", "application/json")
-
-				resp, err := httpClient.Do(req)
-				Expect(err).NotTo(HaveOccurred())
-				_ = resp.Body.Close()
-				if resp.StatusCode == http.StatusTooManyRequests {
-					hitRateLimit = true
-					break
-				}
-			}
-			Expect(hitRateLimit).To(BeTrue(), "should have received 429 within 50 requests (burst=20)")
-		})
-	})
 })

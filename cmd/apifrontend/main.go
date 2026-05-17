@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -15,16 +16,22 @@ import (
 	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/adk/model/gemini"
 	adksession "google.golang.org/adk/session"
+	"google.golang.org/genai"
 	"gopkg.in/yaml.v3"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	k8sfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 
 	v1alpha1 "github.com/jordigilh/kubernaut-apifrontend/api/apifrontend/v1alpha1"
+	agentpkg "github.com/jordigilh/kubernaut-apifrontend/internal/agent"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/audit"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/auth"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/config"
@@ -32,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ds"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/handler"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ka"
+	"github.com/jordigilh/kubernaut-apifrontend/internal/launcher"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/metrics"
 	prom "github.com/jordigilh/kubernaut-apifrontend/internal/prometheus"
 	"github.com/jordigilh/kubernaut-apifrontend/internal/ratelimit"
@@ -96,10 +104,17 @@ func run() int {
 			}
 			defer auditDSWatcher.Stop()
 		}
+		auditDSAuthTransport := auditDSTransport
+		if cfg.Agent.DSBearerTokenFile != "" {
+			auditDSAuthTransport = &bearerTokenTransport{
+				base:      auditDSTransport,
+				tokenFile: cfg.Agent.DSBearerTokenFile,
+			}
+		}
 		dsCfg := ds.OgenClientConfig{
 			BaseURL:   cfg.Agent.DSBaseURL,
 			Timeout:   cfg.Resilience.DS.RequestTimeout,
-			Transport: auditDSTransport,
+			Transport: auditDSAuthTransport,
 		}
 		dsAuditClient, err := ds.NewOgenClient(dsCfg)
 		if err != nil {
@@ -137,16 +152,22 @@ func run() int {
 	sessInfra := buildSessionInfra(cfg, metricsReg, auditor, logger)
 	defer sessInfra.StopFunc()
 
-	mcpHandler, caWatchers, depsReady, err := buildMCPHandler(ctx, cfg, metricsReg, rbacRoles, auditor, logger, userLimiter)
+	deps, err := buildBackendDeps(ctx, cfg, metricsReg, logger)
+	if err != nil {
+		logger.Error(err, "failed to create backend dependencies")
+		return 1
+	}
+	defer func() {
+		for _, w := range deps.CAWatchers {
+			w.watcher.Stop()
+		}
+	}()
+
+	mcpHandler, depsReady, err := buildMCPHandler(cfg, deps, metricsReg, rbacRoles, auditor, logger, userLimiter)
 	if err != nil {
 		logger.Error(err, "failed to create MCP handler")
 		return 1
 	}
-	defer func() {
-		for _, w := range caWatchers {
-			w.watcher.Stop()
-		}
-	}()
 
 	// CM-02: Wire config file watcher for drift detection + audit trail.
 	cfgWatcher, err := config.NewFileWatcher(configPath, func(newContent []byte) error {
@@ -168,22 +189,22 @@ func run() int {
 	}
 
 	agentCardHandler, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
-		Name:         "kubernaut-apifrontend",
-		Description:  "Kubernaut AI-driven remediation API Frontend",
-		URL:          cfg.AgentCard.URL,
-		Version:      version(),
-		Skills:       handler.DefaultAgentSkills(),
-		RBACRoles:    handler.RBACRoles(rbacRoles),
-		GroupMapping: handler.GroupMapping(cfg.RBAC.GroupMapping),
+		Name:        "kubernaut-apifrontend",
+		Description: "Kubernaut AI-driven remediation API Frontend",
+		URL:         cfg.AgentCard.URL,
+		Version:     version(),
+		Skills:      handler.DefaultAgentSkills(),
 	})
 	if err != nil {
 		logger.Error(err, "failed to create agent card handler")
 		return 1
 	}
 
-	a2aHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "A2A not configured", http.StatusNotImplemented)
-	})
+	a2aHandler, err := buildA2AHandler(ctx, cfg, deps, sessInfra, metricsReg, auditor, logger)
+	if err != nil {
+		logger.Error(err, "failed to create A2A handler")
+		return 1
+	}
 
 	// F-001: Wire JWT auth middleware (fall back to noop only when auth is unconfigured).
 	authMiddleware, authReady := buildAuthMiddleware(cfg, metricsReg, auditor, logger)
@@ -209,7 +230,7 @@ func run() int {
 		PreAuthMiddleware:  preAuthMW,
 		PostAuthMiddleware: postAuthMW,
 		ReadyChecker:       handler.AllReady(func() bool { return !draining.Load() }, depsReady, authReady),
-		SSETracker:         streaming.NewConnectionTracker(metricsReg.SSEActiveConnections, 5*time.Second),
+		SSETracker:         buildSSETracker(cfg, metricsReg),
 		Draining:           draining,
 	}
 	router, err := handler.NewRouter(routerCfg)
@@ -396,67 +417,103 @@ type caWatcherEntry struct {
 	watcher *hotreload.FileWatcher
 }
 
-func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metrics.Registry, rbacRoles map[string][]string, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, []caWatcherEntry, func() bool, error) {
-	var caWatchers []caWatcherEntry
+// backendDeps holds shared backend clients used by both the MCP and A2A handlers.
+// Created once by buildBackendDeps and consumed by buildMCPHandler / buildA2AHandler.
+type backendDeps struct {
+	DSClient             ds.Client
+	KAClient             *ka.Client
+	MCPClient            ka.MCPClient
+	DynFactory           auth.DynamicClientFactory
+	Triager              *severity.Triager
+	DSResilientTransport *resilience.CircuitBreakerTransport
+	CAWatchers           []caWatcherEntry
+	k8sDynClient         dynamic.Interface
+	k8sOnce              sync.Once
+}
+
+// K8sClient returns the pod service-account scoped dynamic K8s client.
+// Created lazily on first call via the in-cluster config. Thread-safe via sync.Once.
+func (d *backendDeps) K8sClient() dynamic.Interface {
+	d.k8sOnce.Do(func() {
+		restCfg, err := ctrl.GetConfig()
+		if err != nil {
+			return
+		}
+		c, err := dynamic.NewForConfig(restCfg)
+		if err != nil {
+			return
+		}
+		d.k8sDynClient = c
+	})
+	return d.k8sDynClient
+}
+
+func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metrics.Registry, logger logr.Logger) (*backendDeps, error) {
+	deps := &backendDeps{}
 
 	dsTransport, dsWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.DSTLSCaFile, logger.WithName("ds-ca"))
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("DS TLS transport: %w", err)
+		return nil, fmt.Errorf("DS TLS transport: %w", err)
 	}
 	if dsWatcher != nil {
 		if err := dsWatcher.Start(ctx); err != nil {
-			return nil, nil, nil, fmt.Errorf("DS CA watcher start: %w", err)
+			return nil, fmt.Errorf("DS CA watcher start: %w", err)
 		}
-		caWatchers = append(caWatchers, caWatcherEntry{name: "ds-ca", watcher: dsWatcher})
+		deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "ds-ca", watcher: dsWatcher})
 	}
 
-	// F-014: Wrap DS transport with retry + circuit breaker for resilience.
-	dsResilientTransport := buildResilientTransport(dsTransport, &cfg.Resilience.DS, "ds", metricsReg)
+	deps.DSResilientTransport = buildResilientTransport(dsTransport, &cfg.Resilience.DS, "ds", metricsReg)
 
-	var dsClient ds.Client
+	var dsAuthTransport http.RoundTripper = deps.DSResilientTransport
+	if cfg.Agent.DSBearerTokenFile != "" {
+		dsAuthTransport = &bearerTokenTransport{
+			base:      deps.DSResilientTransport,
+			tokenFile: cfg.Agent.DSBearerTokenFile,
+		}
+	}
+
 	dsCfg := ds.OgenClientConfig{
 		BaseURL:   cfg.Agent.DSBaseURL,
 		Timeout:   cfg.Resilience.DS.RequestTimeout,
-		Transport: dsResilientTransport,
+		Transport: dsAuthTransport,
 	}
 	if c, err := ds.NewOgenClient(dsCfg); err == nil {
-		dsClient = c
+		deps.DSClient = c
 	} else {
 		logger.Info("DS client unavailable, DS tools will return errors", "error", err)
 	}
 
 	kaTransport, kaWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.KATLSCaFile, logger.WithName("ka-ca"))
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("KA TLS transport: %w", err)
+		return nil, fmt.Errorf("KA TLS transport: %w", err)
 	}
 	if kaWatcher != nil {
 		if err := kaWatcher.Start(ctx); err != nil {
-			return nil, nil, nil, fmt.Errorf("KA CA watcher start: %w", err)
+			return nil, fmt.Errorf("KA CA watcher start: %w", err)
 		}
-		caWatchers = append(caWatchers, caWatcherEntry{name: "ka-ca", watcher: kaWatcher})
+		deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "ka-ca", watcher: kaWatcher})
 	}
 
 	kaMCPHTTPClient := &http.Client{Transport: &auth.ContextJWTDelegationTransport{}}
 	if kaTransport != nil {
 		kaMCPHTTPClient.Transport = &auth.ContextJWTDelegationTransport{Base: kaTransport}
 	}
-	kaMCPClient := ka.NewSDKMCPClient(
+	deps.MCPClient = ka.NewSDKMCPClient(
 		cfg.Agent.KAMCPEndpoint,
 		kaMCPHTTPClient,
 		logger,
 	)
 
-	var triager *severity.Triager
 	if cfg.SeverityTriage.Enabled {
 		promTransport, promWatcher, promErr := tlswiring.CAReloadableTransport(cfg.SeverityTriage.PrometheusTLSCaFile, logger.WithName("prom-ca"))
 		if promErr != nil {
-			return nil, nil, nil, fmt.Errorf("prometheus TLS transport: %w", promErr)
+			return nil, fmt.Errorf("prometheus TLS transport: %w", promErr)
 		}
 		if promWatcher != nil {
 			if err := promWatcher.Start(ctx); err != nil {
-				return nil, nil, nil, fmt.Errorf("prometheus CA watcher start: %w", err)
+				return nil, fmt.Errorf("prometheus CA watcher start: %w", err)
 			}
-			caWatchers = append(caWatchers, caWatcherEntry{name: "prom-ca", watcher: promWatcher})
+			deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "prom-ca", watcher: promWatcher})
 		}
 
 		promHTTPClient := &http.Client{Transport: promTransport}
@@ -491,7 +548,7 @@ func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metric
 			severityCfg.LLMConfidence = 0.7
 		}
 
-		triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"), &severity.TriagerMetrics{
+		deps.Triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"), &severity.TriagerMetrics{
 			Total:    metricsReg.SeverityTriageTotal,
 			Duration: metricsReg.SeverityTriageDuration,
 			Errors:   metricsReg.SeverityTriageErrorsTotal,
@@ -499,7 +556,7 @@ func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metric
 		logger.Info("severity triage enabled", "prometheusURL", cfg.SeverityTriage.PrometheusURL)
 	}
 
-	kaClient := ka.NewClient(ka.Config{
+	deps.KAClient = ka.NewClient(ka.Config{
 		BaseURL:            cfg.Agent.KABaseURL,
 		BaseTransport:      kaTransport,
 		Timeout:            cfg.Resilience.KA.RequestTimeout,
@@ -517,12 +574,18 @@ func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metric
 		RetryCounter: metricsReg.DownstreamRetryTotal,
 	})
 
+	deps.DynFactory = buildDynFactory()
+
+	return deps, nil
+}
+
+func buildMCPHandler(cfg *config.Config, deps *backendDeps, metricsReg *metrics.Registry, rbacRoles map[string][]string, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, func() bool, error) {
 	bridgeCfg := &handler.MCPBridgeConfig{
-		DynFactory:         buildDynFactory(),
-		KAClient:           kaClient,
-		KAMCPClient:        kaMCPClient,
-		DSClient:           dsClient,
-		Triager:            triager,
+		DynFactory:         deps.DynFactory,
+		KAClient:           deps.KAClient,
+		KAMCPClient:        deps.MCPClient,
+		DSClient:           deps.DSClient,
+		Triager:            deps.Triager,
 		RBACRoles:          rbacRoles,
 		Auditor:            auditor,
 		Logger:             logger.WithName("bridge"),
@@ -545,15 +608,78 @@ func buildMCPHandler(ctx context.Context, cfg *config.Config, metricsReg *metric
 		SessionTimeout: mcpSessionTimeout,
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
-	// CM-04: Build composite readiness checker from dependency health.
 	depsReady := handler.AllReady(
-		kaClient.Healthy,
-		dsResilientTransport.Healthy,
+		deps.KAClient.Healthy,
+		deps.DSResilientTransport.Healthy,
 	)
-	return h, caWatchers, depsReady, nil
+	return h, depsReady, nil
+}
+
+// buildA2AHandler creates the A2A JSON-RPC handler when an LLM endpoint is
+// configured. Returns a 501 stub when LLMEndpoint is empty, preserving backward
+// compatibility for deployments that don't set it.
+func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (http.Handler, error) {
+	if cfg.Agent.LLMEndpoint == "" {
+		logger.Info("LLM endpoint not configured — A2A handler returns 501")
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "A2A not configured", http.StatusNotImplemented)
+		}), nil
+	}
+
+	llmModel, err := gemini.NewModel(ctx, cfg.Agent.LLMModel, &genai.ClientConfig{
+		APIKey:  cfg.Agent.LLMAPIKey,
+		Backend: genai.BackendGeminiAPI,
+		HTTPOptions: genai.HTTPOptions{
+			BaseURL: cfg.Agent.LLMEndpoint,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create LLM model: %w", err)
+	}
+
+	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
+		Instruction:                agentpkg.DefaultTestConfig().Instruction,
+		LLMModel:                   llmModel,
+		K8sClient:                  deps.K8sClient(),
+		KAClient:                   deps.KAClient,
+		DSClient:                   deps.DSClient,
+		MCPClient:                  deps.MCPClient,
+		ImpersonatingClientFactory: deps.DynFactory,
+		Auditor:                    auditor,
+		ToolCallsTotal:             metricsReg.ToolCallsTotal,
+		ToolCallDuration:           metricsReg.ToolCallDuration,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create root agent: %w", err)
+	}
+
+	var sessionSvc adksession.Service
+	if sessInfra != nil && sessInfra.SessionService != nil {
+		sessionSvc = session.NewServiceDecorator(sessInfra.SessionService)
+	} else {
+		sessionSvc = adksession.InMemoryService()
+	}
+
+	a2aCfg := launcher.A2AConfig{
+		Agent:          rootAgent,
+		SessionService: sessionSvc,
+		AppName:        "kubernaut-apifrontend",
+		Auditor:        auditor,
+	}
+
+	h, err := launcher.NewA2AHandler(a2aCfg)
+	if err != nil {
+		return nil, fmt.Errorf("create A2A handler: %w", err)
+	}
+
+	logger.Info("A2A handler wired with LLM backend",
+		"endpoint", cfg.Agent.LLMEndpoint,
+		"model", cfg.Agent.LLMModel,
+	)
+	return h, nil
 }
 
 // buildResilientTransport wraps a base transport with retry + circuit breaker.
@@ -738,7 +864,7 @@ type bearerTokenTransport struct {
 }
 
 func (t *bearerTokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	token, err := os.ReadFile(t.tokenFile) // #nosec G304 -- path from operator-controlled config
+	token, err := os.ReadFile(t.tokenFile) //nolint:gosec // G304/G703 -- path from operator-controlled config
 	if err != nil {
 		return nil, fmt.Errorf("reading bearer token: %w", err)
 	}
@@ -807,6 +933,14 @@ func shutdownTimeout(cfg *config.Config) time.Duration {
 	return 15 * time.Second
 }
 
+func buildSSETracker(cfg *config.Config, metricsReg *metrics.Registry) *streaming.ConnectionTracker {
+	tracker := streaming.NewConnectionTracker(metricsReg.SSEActiveConnections, 5*time.Second)
+	if cfg.Server.MaxSSEConnections > 0 {
+		tracker.MaxConnections = cfg.Server.MaxSSEConnections
+	}
+	return tracker
+}
+
 // sessionInfra bundles the session-management components that buildSessionInfra
 // produces. All fields are safe to use from multiple goroutines once built.
 type sessionInfra struct {
@@ -818,27 +952,98 @@ type sessionInfra struct {
 
 // buildSessionInfra creates the CRDSessionService, registers the
 // InvestigationSession scheme, and instantiates the TTL reconciler.
-// The caller is responsible for creating a ctrl.Manager with the returned Scheme
-// and starting the reconciler in a goroutine (see run()). StopFunc is a no-op
-// placeholder; the caller wires it to the manager's context cancellation.
+// When a kubeconfig is available (in-cluster or KUBECONFIG env), it creates a
+// real ctrl.Manager, registers the reconciler, and starts it in a goroutine.
+// When no kubeconfig is available (unit tests), it falls back to a fake client.
 func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) *sessionInfra {
 	scheme := k8sruntime.NewScheme()
 	if err := v1alpha1.AddToScheme(scheme); err != nil {
 		logger.Error(err, "failed to register InvestigationSession scheme — session features will be unavailable")
 	}
 
-	fakeClient := k8sfake.NewClientBuilder().
-		WithScheme(scheme).
-		WithStatusSubresource(&v1alpha1.InvestigationSession{}).
-		Build()
-
 	for _, phase := range []string{"Active", "Disconnected", "Completed", "Cancelled", "Failed"} {
 		reg.SessionsActive.WithLabelValues(phase)
+	}
+	for _, action := range []string{"cancel", "delete", "disconnect"} {
+		reg.SessionTTLActionsTotal.WithLabelValues(action)
+	}
+	reg.MCPRBACDeniedTotal.WithLabelValues("__prime__")
+
+	var k8sClient client.Client
+	var stopFunc func()
+
+	restCfg, err := ctrl.GetConfig()
+	if err == nil {
+		mgr, mgrErr := ctrl.NewManager(restCfg, ctrl.Options{
+			Scheme: scheme,
+			Cache: cache.Options{
+				DefaultNamespaces: map[string]cache.Config{
+					cfg.Session.Namespace: {},
+				},
+			},
+			Metrics:                metricsserver.Options{BindAddress: "0"},
+			HealthProbeBindAddress: "",
+			LeaderElection:         false,
+		})
+		if mgrErr != nil {
+			logger.Error(mgrErr, "failed to create session controller manager — falling back to in-memory")
+			k8sClient, stopFunc = buildFakeSessionClient(scheme)
+		} else {
+			k8sClient = mgr.GetClient()
+
+			svc := session.NewCRDSessionService(
+				adksession.InMemoryService(),
+				k8sClient,
+				scheme,
+				cfg.Session.Namespace,
+				session.WithAuditor(auditor),
+				session.WithSessionsActive(reg.SessionsActive),
+				session.WithAPIReader(mgr.GetAPIReader()),
+			)
+
+			reconciler := controller.NewSessionCleanupReconciler(
+				k8sClient,
+				cfg.Session.DisconnectTTL,
+				cfg.Session.RetentionTTL,
+				auditor,
+				reg.SessionTTLActionsTotal,
+				svc,
+			)
+
+			if setupErr := reconciler.SetupWithManager(mgr); setupErr != nil {
+				logger.Error(setupErr, "failed to register session reconciler with manager")
+				k8sClient, stopFunc = buildFakeSessionClient(scheme)
+			} else {
+				mgrCtx, mgrCancel := context.WithCancel(context.Background()) //nolint:gosec // G118 false positive: mgrCancel is assigned to stopFunc below
+				go func() {
+					if startErr := mgr.Start(mgrCtx); startErr != nil {
+						logger.Error(startErr, "session controller manager exited with error")
+					}
+				}()
+				stopFunc = mgrCancel
+				logger.Info("session controller manager started",
+					"namespace", cfg.Session.Namespace,
+					"disconnectTTL", cfg.Session.DisconnectTTL.String(),
+					"retentionTTL", cfg.Session.RetentionTTL.String(),
+				)
+
+				return &sessionInfra{
+					SessionService: svc,
+					Reconciler:     reconciler,
+					Scheme:         scheme,
+					StopFunc:       stopFunc,
+				}
+			}
+		}
+	} else {
+		logger.Info("no kubeconfig available — session CRDs will use in-memory client",
+			"reason", err.Error())
+		k8sClient, stopFunc = buildFakeSessionClient(scheme)
 	}
 
 	svc := session.NewCRDSessionService(
 		adksession.InMemoryService(),
-		fakeClient,
+		k8sClient,
 		scheme,
 		cfg.Session.Namespace,
 		session.WithAuditor(auditor),
@@ -846,7 +1051,7 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 	)
 
 	reconciler := controller.NewSessionCleanupReconciler(
-		fakeClient,
+		k8sClient,
 		cfg.Session.DisconnectTTL,
 		cfg.Session.RetentionTTL,
 		auditor,
@@ -858,6 +1063,15 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 		SessionService: svc,
 		Reconciler:     reconciler,
 		Scheme:         scheme,
-		StopFunc:       func() {},
+		StopFunc:       stopFunc,
 	}
+}
+
+func buildFakeSessionClient(scheme *k8sruntime.Scheme) (c client.Client, cleanup func()) {
+	c = k8sfake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&v1alpha1.InvestigationSession{}).
+		Build()
+	cleanup = func() {}
+	return c, cleanup
 }

@@ -16,6 +16,7 @@ data:
     oauth2:
       skipApprovalScreen: true
       passwordConnector: local
+      responseTypes: ["code", "token", "id_token"]
 
     staticClients:
       - id: kubernaut-apifrontend
@@ -30,6 +31,44 @@ data:
         hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
         username: "e2e-user"
         userID: "e2e-user-001"
+        groups:
+          - "sre"
+      - email: "sre@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "sre-user"
+        userID: "e2e-user-sre"
+        groups:
+          - "sre"
+      - email: "orchestrator@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "orchestrator-user"
+        userID: "e2e-user-orchestrator"
+        groups:
+          - "ai-orchestrator"
+      - email: "cicd@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "cicd-user"
+        userID: "e2e-user-cicd"
+        groups:
+          - "cicd"
+      - email: "observability@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "observability-user"
+        userID: "e2e-user-observability"
+        groups:
+          - "observability"
+      - email: "auditor@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "auditor-user"
+        userID: "e2e-user-auditor"
+        groups:
+          - "l3-audit"
+      - email: "approver@kubernaut.ai"
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: "approver-user"
+        userID: "e2e-user-approver"
+        groups:
+          - "remediation-approver"
 ---
 apiVersion: v1
 kind: Service
@@ -37,13 +76,14 @@ metadata:
   name: dex
   namespace: kubernaut-system
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app.kubernetes.io/name: dex
   ports:
     - name: http
       port: 5556
       targetPort: 5556
+      nodePort: 30556
       protocol: TCP
 ---
 apiVersion: apps/v1
@@ -69,11 +109,12 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1001
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: dex
-          image: ghcr.io/dexidp/dex:v2.41.1@sha256:bc7cfce7c17f52864e2bb2a4dc1d2f86a41e3019f6d42e81d92a301fad0c8a1d
+          image: ghcr.io/dexidp/dex:v2.45.1
           command: ["dex", "serve", "/etc/dex/config.yaml"]
           ports:
             - name: http

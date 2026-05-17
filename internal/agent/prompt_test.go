@@ -47,7 +47,6 @@ var _ = Describe("System Prompt", func() {
 	It("UT-AF-131-005: prompt includes tool inventory summary", func() {
 		Expect(instruction).To(ContainSubstring("kubernaut_list_remediations"))
 		Expect(instruction).To(ContainSubstring("kubernaut_get_remediation"))
-		Expect(instruction).To(ContainSubstring("kubernaut_submit_signal"))
 		Expect(instruction).To(ContainSubstring("kubernaut_approve"))
 		Expect(instruction).To(ContainSubstring("kubernaut_watch"))
 		Expect(instruction).To(ContainSubstring("kubernaut_start_investigation"))

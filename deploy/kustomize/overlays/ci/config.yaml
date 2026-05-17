@@ -9,8 +9,14 @@ agent:
   kaBaseURL: "https://kubernaut-agent.kubernaut-system.svc:8443"
   kaMCPEndpoint: "https://kubernaut-agent.kubernaut-system.svc:8443/api/v1/mcp/"
   dsBaseURL: "https://data-storage.kubernaut-system.svc:8443"
+  dsBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
   kaTlsCaFile: /etc/apifrontend/tls-ca/ca.crt
   dsTlsCaFile: /etc/apifrontend/tls-ca/ca.crt
+
+session:
+  namespace: kubernaut-system
+  disconnectTTL: 5m
+  retentionTTL: 720h
 
 mcp:
   enabled: true
