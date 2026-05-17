@@ -112,14 +112,14 @@ type ServerTLSConfig struct {
 
 // AgentConfig holds ADK agent and backend connectivity settings.
 type AgentConfig struct {
-	GCPProject    string `yaml:"gcpProject"`
-	GCPRegion     string `yaml:"gcpRegion"`
-	KABaseURL     string `yaml:"kaBaseURL"`
-	KAMCPEndpoint string `yaml:"kaMCPEndpoint"`
-	DSBaseURL          string `yaml:"dsBaseURL"`
-	DSBearerTokenFile  string `yaml:"dsBearerTokenFile,omitempty"`
-	KATLSCaFile        string `yaml:"kaTlsCaFile,omitempty"`
-	DSTLSCaFile        string `yaml:"dsTlsCaFile,omitempty"`
+	GCPProject        string `yaml:"gcpProject"`
+	GCPRegion         string `yaml:"gcpRegion"`
+	KABaseURL         string `yaml:"kaBaseURL"`
+	KAMCPEndpoint     string `yaml:"kaMCPEndpoint"`
+	DSBaseURL         string `yaml:"dsBaseURL"`
+	DSBearerTokenFile string `yaml:"dsBearerTokenFile,omitempty"`
+	KATLSCaFile       string `yaml:"kaTlsCaFile,omitempty"`
+	DSTLSCaFile       string `yaml:"dsTlsCaFile,omitempty"`
 	// LLMEndpoint is the base URL of a Gemini-compatible LLM endpoint.
 	// When set, AF wires the A2A handler with a real ADK agent backed by this
 	// endpoint. When empty, POST /a2a/invoke returns 501.

@@ -223,7 +223,6 @@ var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, L
 		Expect(parsed).NotTo(HaveKey("severity_source"))
 	})
 
-
 	It("TC-E2E-SEV-08: Triage metrics present on /metrics", func() {
 		body := scrapeMetrics()
 		Expect(sumSeverityTriageTotal(body)).To(BeNumerically(">", 0),
