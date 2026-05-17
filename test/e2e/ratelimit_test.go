@@ -44,6 +44,11 @@ func userRateLimitRejections(metricsBody string) float64 {
 }
 
 var _ = Describe("Rate Limiting (G14/G15/G16)", Ordered, ContinueOnFailure, Label("e2e", "phase5", "ratelimit"), func() {
+	// Rate limit tests use a raw client (no retry-on-429) so we can observe 429s directly.
+	var rawClient *http.Client
+	BeforeAll(func() {
+		rawClient = newRawTLSClient(caCertPath)
+	})
 
 	Context("TC-E2E-RATELIMIT-USER-01 (G14)", func() {
 		It("authenticated user exceeds request rate → HTTP 429 + user-tier rate limit metric", func() {
@@ -52,7 +57,7 @@ var _ = Describe("Rate Limiting (G14/G15/G16)", Ordered, ContinueOnFailure, Labe
 
 			var saw429 bool
 			for i := 0; i < 500; i++ {
-				resp, e := a2aInvoke(httpClient, baseURL, token, a2aTasksSend(fmt.Sprintf("rl-user-01-%d", i), "ping"))
+				resp, e := a2aInvoke(rawClient, baseURL, token, a2aTasksSend(fmt.Sprintf("rl-user-01-%d", i), "ping"))
 				Expect(e).NotTo(HaveOccurred())
 				body, _ := io.ReadAll(resp.Body)
 				_ = resp.Body.Close()
@@ -83,7 +88,7 @@ var _ = Describe("Rate Limiting (G14/G15/G16)", Ordered, ContinueOnFailure, Labe
 			// Exhaust SRE bucket.
 			var sreBlocked bool
 			for i := 0; i < 500; i++ {
-				resp, e := a2aInvoke(httpClient, baseURL, sreTok, a2aTasksSend(fmt.Sprintf("rl-alt-sre-%d", i), "ping"))
+				resp, e := a2aInvoke(rawClient, baseURL, sreTok, a2aTasksSend(fmt.Sprintf("rl-alt-sre-%d", i), "ping"))
 				Expect(e).NotTo(HaveOccurred())
 				_ = resp.Body.Close()
 				if resp.StatusCode == http.StatusTooManyRequests {
@@ -95,7 +100,7 @@ var _ = Describe("Rate Limiting (G14/G15/G16)", Ordered, ContinueOnFailure, Labe
 				Skip("SRE token did not hit per-user request limit — limits may be high for this environment")
 			}
 
-			resp, err := a2aInvoke(httpClient, baseURL, cicdTok, a2aTasksSend("rl-alt-cicd", "ping"))
+			resp, err := a2aInvoke(rawClient, baseURL, cicdTok, a2aTasksSend("rl-alt-cicd", "ping"))
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 			Expect(resp.StatusCode).NotTo(Equal(http.StatusTooManyRequests),

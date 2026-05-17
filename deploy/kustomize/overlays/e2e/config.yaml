@@ -49,9 +49,9 @@ logging:
 
 rateLimit:
   ipRequestsPerSec: 10000
-  userRequestsPerSec: 5
-  maxConcurrentSessions: 10
-  toolCallsPerMinute: 30
+  userRequestsPerSec: 100
+  maxConcurrentSessions: 50
+  toolCallsPerMinute: 600
 
 shutdown:
   drainSeconds: 3

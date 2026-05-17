@@ -148,7 +148,7 @@ jobs:
             kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} get events --sort-by='.lastTimestamp' 2>&1 | tee /tmp/e2e-must-gather/events.txt || true
             kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} get svc -o wide 2>&1 | tee /tmp/e2e-must-gather/services.txt || true
             kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} describe pods 2>&1 | tee /tmp/e2e-must-gather/pod-describe.txt || true
-            for deploy in apifrontend kubernaut-agent data-storage dex mock-llm prometheus; do
+            for deploy in apifrontend kubernaut-agent datastorage dex mock-llm prometheus; do
               kubectl --kubeconfig="$KUBECONFIG" -n ${{ env.NAMESPACE }} logs "deployment/$deploy" --all-containers --tail=500 2>&1 | tee "/tmp/e2e-must-gather/${deploy}.log" || true
             done
             kubectl --kubeconfig="$KUBECONFIG" get crds 2>&1 | tee /tmp/e2e-must-gather/crds.txt || true

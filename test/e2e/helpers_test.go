@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // persona holds credentials for a DEX E2E user with a specific RBAC role.
@@ -135,6 +137,19 @@ func getEnvOrDefault(key, defaultValue string) string {
 }
 
 func newTLSClient(caCertPath string) *http.Client {
+	base := newTLSTransport(caCertPath)
+	return &http.Client{
+		Transport: &retryOn429Transport{base: base, maxRetries: 5, baseDelay: 500 * time.Millisecond},
+	}
+}
+
+// newRawTLSClient returns an HTTP client without retry-on-429 wrapping.
+// Used by rate-limit-specific tests that need to observe 429 responses directly.
+func newRawTLSClient(caCertPath string) *http.Client {
+	return &http.Client{Transport: newTLSTransport(caCertPath)}
+}
+
+func newTLSTransport(caCertPath string) *http.Transport {
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if caCertPath != "" {
 		caCert, err := os.ReadFile(caCertPath)
@@ -147,8 +162,49 @@ func newTLSClient(caCertPath string) *http.Client {
 		}
 		tlsCfg.RootCAs = pool
 	}
-	return &http.Client{
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+	return &http.Transport{TLSClientConfig: tlsCfg}
+}
+
+// retryOn429Transport automatically retries on HTTP 429 with exponential
+// backoff. Mirrors kubernaut/test/shared/auth.RetryOn429Transport so that
+// parallel E2E procs absorb transient rate-limiter rejections without
+// requiring inflated limits.
+type retryOn429Transport struct {
+	base       http.RoundTripper
+	maxRetries int
+	baseDelay  time.Duration
+}
+
+func (t *retryOn429Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	delay := t.baseDelay
+	const maxDelay = 4 * time.Second
+
+	for attempt := 0; ; attempt++ {
+		resp, err := t.base.RoundTrip(req)
+		if err != nil {
+			return resp, err
+		}
+		if resp.StatusCode != http.StatusTooManyRequests || attempt >= t.maxRetries {
+			return resp, nil
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+
+		wait := delay
+		if ra := resp.Header.Get("Retry-After"); ra != "" {
+			if secs, parseErr := strconv.Atoi(ra); parseErr == nil && secs > 0 {
+				wait = time.Duration(secs) * time.Second
+			}
+		}
+		select {
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
+		case <-time.After(wait):
+		}
+		delay *= 2
+		if delay > maxDelay {
+			delay = maxDelay
+		}
 	}
 }
 

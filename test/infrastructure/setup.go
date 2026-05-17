@@ -172,11 +172,29 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 		return fmt.Errorf("redis deploy failed: %w", err)
 	}
 
-	// Apply database migrations before DS starts (DS requires audit_events table)
-	_, _ = fmt.Fprintln(writer, "  Applying database migrations...")
-	if err := applyDatabaseMigrations(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("database migrations failed: %w", err)
+	// Wait for PostgreSQL + Redis before DS starts (DS connects on boot)
+	_, _ = fmt.Fprintln(writer, "  Waiting for PostgreSQL readiness...")
+	waitPG := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"-n", namespace, "wait", "--for=condition=ready", "pod", "-l", "app=postgresql",
+		"--timeout=300s")
+	waitPG.Stdout = writer
+	waitPG.Stderr = writer
+	if err := waitPG.Run(); err != nil {
+		return fmt.Errorf("PostgreSQL not ready: %w", err)
 	}
+	_, _ = fmt.Fprintln(writer, "  Waiting for Redis readiness...")
+	waitRedis := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"-n", namespace, "wait", "--for=condition=ready", "pod", "-l", "app=redis",
+		"--timeout=120s")
+	waitRedis.Stdout = writer
+	waitRedis.Stderr = writer
+	if err := waitRedis.Run(); err != nil {
+		return fmt.Errorf("redis not ready: %w", err)
+	}
+
+	// DS handles its own schema via DS_AUTO_MIGRATE=true (goose-based).
+	// Manual psql migrations conflict with goose version tracking and cause
+	// CrashLoopBackOff ("relation already exists").
 
 	// Deploy DataStorage with RBAC (inline manifests)
 	_, _ = fmt.Fprintln(writer, "  Deploying DataStorage RBAC + service...")
@@ -230,9 +248,13 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\nPHASE 6: Waiting for deployments...")
 
-	for _, deploy := range []string{"dex", "apifrontend"} {
+	for _, deploy := range []string{"datastorage", "dex", "apifrontend"} {
 		_, _ = fmt.Fprintf(writer, "  Waiting for %s...\n", deploy)
-		if err := WaitForDeploymentRollout(ctx, kubeconfigPath, namespace, deploy, 120*time.Second, writer); err != nil {
+		timeout := 120 * time.Second
+		if deploy == "datastorage" {
+			timeout = 180 * time.Second
+		}
+		if err := WaitForDeploymentRollout(ctx, kubeconfigPath, namespace, deploy, timeout, writer); err != nil {
 			return fmt.Errorf("%s not ready: %w", deploy, err)
 		}
 	}
@@ -576,71 +598,16 @@ spec:
           sources:
           - secret:
               name: postgresql-secret
+              items:
+              - key: db-secrets.yaml
+                path: db-secrets.yaml
           - secret:
               name: redis-secret
+              items:
+              - key: redis-secrets.yaml
+                path: redis-secrets.yaml
 `, namespace, dsImage, pullPolicy)
 	return kubectlApplyStdin(ctx, kubeconfigPath, manifest, writer)
-}
-
-// applyDatabaseMigrations applies the kubernaut v1 schema to PostgreSQL.
-// DS requires audit_events (and other tables) before it can start.
-func applyDatabaseMigrations(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
-	// Wait for PostgreSQL pod to be ready (generous timeout for image pull)
-	waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"-n", namespace, "wait", "--for=condition=ready", "pod", "-l", "app=postgresql",
-		"--timeout=300s")
-	waitCmd.Stdout = writer
-	waitCmd.Stderr = writer
-	if err := waitCmd.Run(); err != nil {
-		return fmt.Errorf("waiting for PostgreSQL pod: %w", err)
-	}
-
-	// Find the migration SQL — try kubernaut repo first (local dev), then Go module cache
-	kubernautRoot := filepath.Join(filepath.Dir(getAFProjectRoot()), "kubernaut")
-	migrationFile := filepath.Join(kubernautRoot, "migrations", "001_v1_schema.sql")
-	if _, err := os.Stat(migrationFile); os.IsNotExist(err) {
-		_, _ = fmt.Fprintf(writer, "    ⚠️  Kubernaut migrations not found at %s, skipping\n", migrationFile)
-		return nil
-	}
-
-	sqlData, err := os.ReadFile(migrationFile) //nolint:gosec // G304: path from test constants
-	if err != nil {
-		return fmt.Errorf("read migration file: %w", err)
-	}
-
-	// Strip goose directives so raw psql can execute it
-	sql := string(sqlData)
-	for _, directive := range []string{"-- +goose Up", "-- +goose Down", "-- +goose StatementBegin", "-- +goose StatementEnd"} {
-		sql = strings.ReplaceAll(sql, directive, "")
-	}
-	// Only apply the Up migration (everything before -- +goose Down equivalent,
-	// but since we stripped directives, just take everything before DROP statements)
-	if idx := strings.Index(sql, "-- Drop in reverse dependency order"); idx > 0 {
-		sql = sql[:idx]
-	}
-
-	// Get the PostgreSQL pod name
-	getPodCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"-n", namespace, "get", "pod", "-l", "app=postgresql",
-		"-o", "jsonpath={.items[0].metadata.name}")
-	podNameBytes, err := getPodCmd.Output()
-	if err != nil {
-		return fmt.Errorf("get postgresql pod name: %w", err)
-	}
-	podName := strings.TrimSpace(string(podNameBytes))
-
-	// Execute the migration via kubectl exec + psql
-	execCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"-n", namespace, "exec", "-i", podName, "--",
-		"psql", "-U", "slm_user", "-d", "action_history", "-v", "ON_ERROR_STOP=1")
-	execCmd.Stdin = strings.NewReader(sql)
-	execCmd.Stdout = writer
-	execCmd.Stderr = writer
-	if err := execCmd.Run(); err != nil {
-		return fmt.Errorf("apply migration: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "    ✅ Database migrations applied")
-	return nil
 }
 
 // deployMockLLM deploys the mock-LLM service with the AF keyword scenarios ConfigMap.
