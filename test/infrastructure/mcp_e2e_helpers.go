@@ -115,9 +115,15 @@ func MCPEndpointForKAE2E() string {
 
 // CreateInteractiveE2ESA creates a ServiceAccount with full interactive RBAC
 // (impersonate, leases, pods access) and returns its token.
+// Self-contained: ensures the prerequisite kubernaut-agent-e2e-client-access
+// Role exists (idempotent) so this works in both KA E2E and FP E2E suites.
 func CreateInteractiveE2ESA(ctx context.Context, namespace, saName, kubeconfigPath string, writer io.Writer) (string, error) {
 	if err := CreateServiceAccount(ctx, namespace, kubeconfigPath, saName, writer); err != nil {
 		return "", fmt.Errorf("create SA %s: %w", saName, err)
+	}
+
+	if err := ensureKAClientAccessRole(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return "", fmt.Errorf("ensure KA client access Role: %w", err)
 	}
 
 	if err := CreateKAE2EClientRBACForSA(ctx, namespace, kubeconfigPath, saName, writer); err != nil {
@@ -129,6 +135,32 @@ func CreateInteractiveE2ESA(ctx context.Context, namespace, saName, kubeconfigPa
 		return "", fmt.Errorf("get token for %s: %w", saName, err)
 	}
 	return token, nil
+}
+
+// ensureKAClientAccessRole creates the kubernaut-agent-e2e-client-access Role
+// if it doesn't already exist. Idempotent via kubectl apply.
+func ensureKAClientAccessRole(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	roleYAML := fmt.Sprintf(`apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubernaut-agent-e2e-client-access
+  namespace: %s
+  labels:
+    app: kubernaut-agent
+    component: e2e-testing
+    authorization: dd-auth-014
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["kubernaut-agent"]
+    verbs: ["create", "get"]
+`, namespace)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
+	cmd.Stdin = strings.NewReader(roleYAML)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
 }
 
 // CreateLimitedRBACSA creates a ServiceAccount with restricted RBAC for security tests.
