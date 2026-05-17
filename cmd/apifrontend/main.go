@@ -456,10 +456,18 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 
 	deps.DSResilientTransport = buildResilientTransport(dsTransport, &cfg.Resilience.DS, "ds", metricsReg)
 
+	var dsAuthTransport http.RoundTripper = deps.DSResilientTransport
+	if cfg.Agent.DSBearerTokenFile != "" {
+		dsAuthTransport = &bearerTokenTransport{
+			base:      deps.DSResilientTransport,
+			tokenFile: cfg.Agent.DSBearerTokenFile,
+		}
+	}
+
 	dsCfg := ds.OgenClientConfig{
 		BaseURL:   cfg.Agent.DSBaseURL,
 		Timeout:   cfg.Resilience.DS.RequestTimeout,
-		Transport: deps.DSResilientTransport,
+		Transport: dsAuthTransport,
 	}
 	if c, err := ds.NewOgenClient(dsCfg); err == nil {
 		deps.DSClient = c

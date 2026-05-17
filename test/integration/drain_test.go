@@ -17,14 +17,14 @@ var _ = Describe("Graceful Drain — In-process (IT-DRAIN)", func() {
 		draining := &atomic.Bool{}
 		readyz := handler.ReadyzHandlerFunc(func() bool { return true }, draining)
 
-		req := httptest.NewRequest("GET", "/readyz", nil)
+		req := httptest.NewRequest("GET", "/readyz", http.NoBody)
 		rec := httptest.NewRecorder()
 		readyz.ServeHTTP(rec, req)
 		Expect(rec.Code).To(Equal(http.StatusOK))
 
 		draining.Store(true)
 
-		req = httptest.NewRequest("GET", "/readyz", nil)
+		req = httptest.NewRequest("GET", "/readyz", http.NoBody)
 		rec = httptest.NewRecorder()
 		readyz.ServeHTTP(rec, req)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable),
@@ -35,7 +35,7 @@ var _ = Describe("Graceful Drain — In-process (IT-DRAIN)", func() {
 		draining := &atomic.Bool{}
 		readyz := handler.ReadyzHandlerFunc(func() bool { return true }, draining)
 
-		req := httptest.NewRequest("GET", "/readyz", nil)
+		req := httptest.NewRequest("GET", "/readyz", http.NoBody)
 		rec := httptest.NewRecorder()
 		readyz.ServeHTTP(rec, req)
 		Expect(rec.Code).To(Equal(http.StatusOK))

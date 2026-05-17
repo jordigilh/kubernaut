@@ -38,7 +38,6 @@ func counterValue(metricsBody, metricName string) float64 {
 	return v
 }
 
-
 var _ = Describe("Resilience and Operational (G17/G20/G9/G10/G11)", Ordered, ContinueOnFailure, Label("e2e", "phase5-6"), func() {
 
 	Context("TC-E2E-PANIC-01 (G17)", func() {
@@ -70,6 +69,5 @@ var _ = Describe("Resilience and Operational (G17/G20/G9/G10/G11)", Ordered, Con
 				"af_http_panics_total should increase by at least 1 after handled panic")
 		})
 	})
-
 
 })

@@ -116,7 +116,6 @@ var _ = Describe("DS Audit Sink (G8)", Ordered, ContinueOnFailure, Label("e2e", 
 		}, 60*time.Second, 2*time.Second).Should(BeTrue(), "DS audit API should list an event referencing af_get_pods")
 	})
 
-
 	It("TC-E2E-AUDIT-04: Audit events contain redacted Detail (no raw secrets)", func() {
 		body, code, err := fetchAuditBody()
 		Expect(err).NotTo(HaveOccurred())

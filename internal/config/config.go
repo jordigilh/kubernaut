@@ -116,9 +116,10 @@ type AgentConfig struct {
 	GCPRegion     string `yaml:"gcpRegion"`
 	KABaseURL     string `yaml:"kaBaseURL"`
 	KAMCPEndpoint string `yaml:"kaMCPEndpoint"`
-	DSBaseURL     string `yaml:"dsBaseURL"`
-	KATLSCaFile   string `yaml:"kaTlsCaFile,omitempty"`
-	DSTLSCaFile   string `yaml:"dsTlsCaFile,omitempty"`
+	DSBaseURL          string `yaml:"dsBaseURL"`
+	DSBearerTokenFile  string `yaml:"dsBearerTokenFile,omitempty"`
+	KATLSCaFile        string `yaml:"kaTlsCaFile,omitempty"`
+	DSTLSCaFile        string `yaml:"dsTlsCaFile,omitempty"`
 	// LLMEndpoint is the base URL of a Gemini-compatible LLM endpoint.
 	// When set, AF wires the A2A handler with a real ADK agent backed by this
 	// endpoint. When empty, POST /a2a/invoke returns 501.
@@ -249,6 +250,11 @@ func (c *Config) Validate() error {
 	}
 	if err := validateURL("agent.dsBaseURL", c.Agent.DSBaseURL); err != nil {
 		return err
+	}
+	if c.Agent.DSBearerTokenFile != "" {
+		if _, err := os.Stat(c.Agent.DSBearerTokenFile); err != nil {
+			return fmt.Errorf("agent.dsBearerTokenFile %q is not accessible: %w", c.Agent.DSBearerTokenFile, err)
+		}
 	}
 	if err := c.validateAuth(); err != nil {
 		return err

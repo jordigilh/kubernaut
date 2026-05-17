@@ -279,8 +279,6 @@ spec:
 		Expect(names).To(HaveKey(n2))
 	})
 
-
-
 	It("TC-E2E-SESSION-JOIN-06: Lease-based takeover rejection", func() {
 		Skip("Lease-based takeover enforcement is not yet represented on InvestigationSession CRDs — defer to controller PR")
 	})
