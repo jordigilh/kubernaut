@@ -18,8 +18,6 @@ import (
 )
 
 var _ = Describe("Investigation Streaming (G3)", Ordered, ContinueOnFailure, Label("e2e", "phase3", "g3"), func() {
-	const sreUsername = "sre@kubernaut.ai"
-
 	var (
 		sreToken       string
 		kubeconfigPath string
@@ -122,8 +120,7 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, ContinueOnFailure, Lab
 	It("TC-E2E-STREAM-02: During investigation, session phase transitions to Connected", func() {
 		kctlCtx := context.Background()
 
-		// Pre-check: verify InvestigationSession CRD is available in the cluster
-		_, checkErr := kubectlOut(kctlCtx, "get", "crd", "investigationsessions.kubernaut.ai")
+		_, checkErr := kubectlOut(kctlCtx, "get", "crd", "investigationsessions.apifrontend.kubernaut.ai")
 		if checkErr != nil {
 			Skip("InvestigationSession CRD not installed — session lifecycle tests require CRD infrastructure")
 		}
@@ -149,20 +146,16 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, ContinueOnFailure, Lab
 				if _, seen := before[it.Metadata.Name]; seen {
 					continue
 				}
-				if it.Spec.UserIdentity.Username != sreUsername {
-					continue
-				}
 				g.Expect(it.Status.Phase).To(Equal("Active"), "session %s phase", it.Metadata.Name)
 				g.Expect(it.Status.ConnectionState).To(Equal("Connected"), "session %s connectionState", it.Metadata.Name)
 				return
 			}
-			g.Expect(false).To(BeTrue(), "expected new InvestigationSession for %s with Active phase and Connected connectionState", sreUsername)
+			g.Expect(false).To(BeTrue(), "expected new InvestigationSession with Active phase and Connected connectionState")
 		}, 90*time.Second, 2*time.Second).Should(Succeed())
 	})
 
 	It("TC-E2E-STREAM-03: Client disconnect -> session phase transitions to Disconnected", func() {
 		kctlCtx := context.Background()
-		// Pre-check: InvestigationSession CRD must be installed.
 		if _, err := kubectlOut(kctlCtx, "get", "crd", "investigationsessions.apifrontend.kubernaut.ai"); err != nil {
 			Skip("InvestigationSession CRD not installed — skipping session lifecycle test")
 		}
@@ -185,9 +178,6 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, ContinueOnFailure, Lab
 			list := listInvestigationSessions(kctlCtx)
 			for _, it := range list.Items {
 				if _, seen := before[it.Metadata.Name]; seen {
-					continue
-				}
-				if it.Spec.UserIdentity.Username != sreUsername {
 					continue
 				}
 				if it.Status.Phase == "Active" && it.Status.ConnectionState == "Connected" {

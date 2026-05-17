@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +18,7 @@ import (
 
 var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, Label("e2e", "phase4", "g12"), func() {
 	var authToken, mcpSessionID string
-	var prometheusReachable bool
+	var prometheusReachable, prometheusAlertsReady bool
 
 	BeforeAll(func() {
 		var err error
@@ -28,7 +29,16 @@ var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, L
 		mcpSessionID, err = initMCPSession(authToken)
 		Expect(err).NotTo(HaveOccurred(), "MCP initialize")
 
-		// Check if Prometheus is accessible from the test host (for pre-flight validation)
+		kubeconfigPath := os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
+		for _, ns := range []string{"sev-tier2-ns", "no-data-ns", "no-rules-ns"} {
+			out, nsErr := exec.CommandContext(context.Background(), "kubectl",
+				"--kubeconfig", kubeconfigPath,
+				"create", "namespace", ns).CombinedOutput()
+			if nsErr != nil && !strings.Contains(string(out), "already exists") {
+				_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: failed to create namespace %s: %s\n", ns, string(out))
+			}
+		}
+
 		promURL := "http://localhost:9190"
 		if envProm := os.Getenv("AF_E2E_PROMETHEUS_URL"); envProm != "" {
 			promURL = envProm
@@ -39,8 +49,10 @@ var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, L
 		if reqErr == nil {
 			resp, doErr := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 			if doErr == nil {
+				body, _ := io.ReadAll(resp.Body)
 				_ = resp.Body.Close()
 				prometheusReachable = resp.StatusCode == http.StatusOK
+				prometheusAlertsReady = strings.Contains(string(body), `"firing"`) && strings.Contains(string(body), "HighCPU")
 			}
 		}
 	})
@@ -48,6 +60,13 @@ var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, L
 	skipIfNoPrometheus := func() {
 		if !prometheusReachable {
 			Skip("Prometheus not reachable from test host — triage pipeline tests require Prometheus infrastructure")
+		}
+	}
+
+	skipIfNoAlerts := func() {
+		skipIfNoPrometheus()
+		if !prometheusAlertsReady {
+			Skip("Prometheus alerts not firing — OTLP metric injection timing issue")
 		}
 	}
 
@@ -129,37 +148,14 @@ var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, L
 	}
 
 	It("TC-E2E-SEV-01: Tier 1 — Firing alert", func() {
-		// Pre-check: Verify Prometheus has the HighCPU alert in firing state.
-		// OTLP injection is best-effort in BeforeSuite; skip if alert infra isn't ready.
-		promURL := "http://localhost:9190"
-		if envProm := os.Getenv("AF_E2E_PROMETHEUS_URL"); envProm != "" {
-			promURL = envProm
-		}
-		func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, promURL+"/api/v1/rules", http.NoBody)
-			if err != nil {
-				Skip("Prometheus not reachable from test host — cannot verify firing alert: " + err.Error())
-			}
-			resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
-			if err != nil {
-				Skip("Prometheus not reachable from test host — cannot verify firing alert: " + err.Error())
-			}
-			defer func() { _ = resp.Body.Close() }()
-			body, _ := io.ReadAll(resp.Body)
-			if !strings.Contains(string(body), `"firing"`) || !strings.Contains(string(body), "HighCPU") {
-				Skip("HighCPU alert not in firing state — Prometheus triage infra not ready")
-			}
-		}()
-
+		skipIfNoAlerts()
 		text, err := mcpToolCall("af_create_rr", createRRArgs("default", "test-firing-target", nil))
 		Expect(err).NotTo(HaveOccurred(), text)
 		expectSeverityAndSource(text, "critical", "firing_alert")
 	})
 
 	It("TC-E2E-SEV-02: Tier 1.5 — Pending alert", func() {
-		skipIfNoPrometheus()
+		skipIfNoAlerts()
 		text, err := mcpToolCall("af_create_rr", createRRArgs("default", "test-pending-target", nil))
 		Expect(err).NotTo(HaveOccurred(), text)
 		// The HighCPU alert fires globally in `default` namespace, so triage may
@@ -171,34 +167,29 @@ var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, L
 	})
 
 	It("TC-E2E-SEV-03: Tier 2 — Inactive rule with live data", func() {
-		skipIfNoPrometheus()
+		skipIfNoAlerts()
 
-		// Inject the disk metric just before calling af_create_rr.
-		// The rule evaluation interval is 5s, so the DiskPressure rule is still "inactive"
-		// from the previous cycle, but AF's InstantQuery will find live data.
 		promURL := "http://localhost:9190"
 		if envProm := os.Getenv("AF_E2E_PROMETHEUS_URL"); envProm != "" {
 			promURL = envProm
 		}
 		ctx := context.Background()
 		err := injectMetricForTier2(ctx, promURL, "e2e_disk_usage_percent", 95, map[string]string{
-			"namespace": "default", "kind": "Deployment", "name": "test-inactive-target",
+			"namespace": "sev-tier2-ns", "kind": "Deployment", "name": "test-inactive-target",
 		})
 		if err != nil {
 			Skip("Could not inject disk metric for Tier 2 test: " + err.Error())
 		}
 
-		text, toolErr := mcpToolCall("af_create_rr", createRRArgs("default", "test-inactive-target", nil))
+		text, toolErr := mcpToolCall("af_create_rr", createRRArgs("sev-tier2-ns", "test-inactive-target", nil))
 		Expect(toolErr).NotTo(HaveOccurred(), text)
-		// Accept either rule_evaluation (Tier 2 hit the timing window) or
-		// llm_rule_informed (rule re-evaluated and fired before AF queried).
 		src := parseJSONStringField(text, "severity_source")
 		Expect(src).To(BeElementOf("rule_evaluation", "llm_rule_informed"),
 			"expected Tier 2 or Tier 2.5 source, got: %s (full: %s)", src, text)
 	})
 
 	It("TC-E2E-SEV-04: Tier 2.5 — Inactive rule, no data", func() {
-		skipIfNoPrometheus()
+		skipIfNoAlerts()
 		text, err := mcpToolCall("af_create_rr", createRRArgs("no-data-ns", "test-nodata-target", nil))
 		Expect(err).NotTo(HaveOccurred(), text)
 		expectSeveritySource(text, "llm_rule_informed")

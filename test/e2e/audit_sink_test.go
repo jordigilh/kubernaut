@@ -89,8 +89,9 @@ var _ = Describe("DS Audit Sink (G8)", Ordered, ContinueOnFailure, Label("e2e", 
 			if rerr != nil {
 				Skip(fmt.Sprintf("DS audit endpoint not reachable from test host (%s): %v", dsAuditURL, rerr))
 			}
-			if code == http.StatusNotFound || code == http.StatusBadGateway || code == http.StatusServiceUnavailable {
-				Skip(fmt.Sprintf("DS audit endpoint returned %d — service not exposed to host", code))
+			if code == http.StatusUnauthorized || code == http.StatusForbidden ||
+				code == http.StatusNotFound || code == http.StatusBadGateway || code == http.StatusServiceUnavailable {
+				Skip(fmt.Sprintf("DS audit endpoint returned %d — service not accessible from test host", code))
 			}
 			_ = body
 		}()

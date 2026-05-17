@@ -34,7 +34,7 @@ groups:
         annotations:
           summary: "Memory usage is high"
       - alert: DiskPressure
-        expr: e2e_disk_usage_percent{namespace="default",kind="Deployment",name="test-inactive-target"} > 90
+        expr: e2e_disk_usage_percent{namespace="sev-tier2-ns",kind="Deployment",name="test-inactive-target"} > 90
         for: 0s
         labels:
           severity: medium

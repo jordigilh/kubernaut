@@ -1,5 +1,6 @@
 server:
   port: 8443
+  maxSSEConnections: 5
   tls:
     certDir: /etc/apifrontend/tls
     required: true

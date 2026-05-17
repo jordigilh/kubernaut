@@ -290,16 +290,16 @@ var _ = Describe("A2A Handler (E2E)", Ordered, ContinueOnFailure, Label("e2e", "
 				"RBAC denied counter should exist after denied tool calls")
 		})
 
-		It("TC-E2E-A2A-MET-05: af_tool_calls_total includes per-tool tool_name labels", func() {
+		It("TC-E2E-A2A-MET-05: af_tool_calls_total includes per-tool tool labels", func() {
 			metrics := scrapeMetrics()
-			Expect(metrics).To(MatchRegexp(`af_tool_calls_total\{[^}]*tool_name="`),
-				"tool calls counter should include tool_name label")
+			Expect(metrics).To(MatchRegexp(`af_tool_calls_total\{[^}]*tool="`),
+				"tool calls counter should include tool label")
 		})
 
 		It("TC-E2E-A2A-MET-06: af_tool_call_duration_seconds includes per-tool labels", func() {
 			metrics := scrapeMetrics()
-			Expect(metrics).To(MatchRegexp(`af_tool_call_duration_seconds_bucket\{[^}]*tool_name="`),
-				"tool call duration should include tool_name label")
+			Expect(metrics).To(MatchRegexp(`af_tool_call_duration_seconds_bucket\{[^}]*tool="`),
+				"tool call duration should include tool label")
 		})
 	})
 
