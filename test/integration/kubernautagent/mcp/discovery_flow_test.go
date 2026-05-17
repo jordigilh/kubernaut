@@ -29,35 +29,32 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/adapters"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
+	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// discoveryRunner provides canned RCA extraction and workflow discovery responses
-// for the discover_workflows flow, while still forwarding interactive turns
-// to the real Mock LLM for message handling.
-type discoveryRunner struct {
-	goldenPathRunner
-	rcaResult      *katypes.InvestigationResult
-	workflowResult *katypes.InvestigationResult
-}
-
-func (r *discoveryRunner) RunRCAExtraction(_ context.Context, _ []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
-	return r.rcaResult, nil
-}
-
-func (r *discoveryRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
-	return r.workflowResult, nil
-}
-
-// discoverySignalResolver provides canned signal context for tests.
+// discoverySignalResolver returns a signal context that triggers the oomkilled
+// scenario in the real Mock LLM container. The Phase 3 prompt template emits
+// "Signal Name: OOMKilled" which the Mock LLM's signalScenario matcher detects.
 type discoverySignalResolver struct{}
 
 func (d *discoverySignalResolver) ResolveSignalContext(_ context.Context, _ string) (*katypes.SignalContext, error) {
-	return &katypes.SignalContext{Severity: "critical"}, nil
+	return &katypes.SignalContext{
+		Name:         "OOMKilled",
+		Severity:     "critical",
+		ResourceKind: "Deployment",
+		Namespace:    "production",
+		ResourceName: "api-server",
+	}, nil
 }
 
 func (d *discoverySignalResolver) ResolveEnrichmentData(_ context.Context, _ string) (*prompt.EnrichmentData, error) {
@@ -97,15 +94,14 @@ func callTool(sess *mcpsdk.ClientSession, toolName string, args map[string]any) 
 
 var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integration", "discovery"), func() {
 
-	const (
-		discoveredWorkflowID = "restart-pod-v2"
-		alternativeWfID      = "rollback-deploy-v1"
+	var (
+		recommendedWfID = uuid.DeterministicUUID("oomkill-increase-memory-v1")
+		alternativeWfID = uuid.DeterministicUUID("generic-restart-v1")
 	)
 
 	var (
 		stack     *realMCPTestStack
 		nsName    string
-		runner    *discoveryRunner
 		completer *discoveryHTTPCompleter
 	)
 
@@ -113,38 +109,9 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 		nsName = uniqueNamespace("disc")
 		createNamespace(context.Background(), sharedK8sClient, nsName)
 
-		runner = &discoveryRunner{
-			goldenPathRunner: goldenPathRunner{
-				response: "I found OOM in deployment/web",
-				delay:    50 * time.Millisecond,
-			},
-			rcaResult: &katypes.InvestigationResult{
-				RCASummary: "Pod OOM due to memory leak in deployment/web",
-				Confidence: 0.92,
-				Severity:   "critical",
-			},
-			workflowResult: &katypes.InvestigationResult{
-				RCASummary: "Pod OOM due to memory leak in deployment/web",
-				WorkflowID: discoveredWorkflowID,
-				Confidence: 0.88,
-				Parameters: map[string]interface{}{"MEMORY_LIMIT_NEW": "512Mi"},
-				AlternativeWorkflows: []katypes.AlternativeWorkflow{
-					{
-						WorkflowID: alternativeWfID,
-						Confidence: 0.65,
-						Rationale:  "Rollback to previous deployment version",
-						Parameters: map[string]interface{}{"REPLICA_COUNT": "3"},
-					},
-				},
-			},
-		}
-
 		completer = &discoveryHTTPCompleter{}
 
-		opts := defaultRealStackOpts()
-		opts.customRunner = runner
-
-		stack = newRealMCPTestStackWithDiscovery(sharedK8sClient, nsName, opts, runner, completer)
+		stack = newRealMCPTestStackWithDiscovery(sharedK8sClient, nsName, defaultRealStackOpts(), completer)
 	})
 
 	AfterEach(func() {
@@ -188,7 +155,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output["status"]).To(Equal("workflows_discovered"))
 
-			By("verifying discovery response contains parameters (#1169)")
+			By("verifying discovery response contains parameters from real Mock LLM (#1169)")
 			responseStr, ok := output["response"].(string)
 			Expect(ok).To(BeTrue(), "response field must be a JSON string")
 			var discovery map[string]interface{}
@@ -211,7 +178,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			By("selecting the recommended workflow")
 			result, err = callTool(sess, "kubernaut_select_workflow", map[string]any{
 				"rr_id":       "rr-disc-001",
-				"workflow_id": discoveredWorkflowID,
+				"workflow_id": recommendedWfID,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
@@ -222,7 +189,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			By("verifying auto-complete wrote recommended parameters to HTTP session (#1169)")
 			Expect(completer.completedID).To(Equal("http-sess-discovery"))
 			Expect(completer.completedResult).NotTo(BeNil())
-			Expect(completer.completedResult.WorkflowID).To(Equal(discoveredWorkflowID))
+			Expect(completer.completedResult.WorkflowID).To(Equal(recommendedWfID))
 			Expect(completer.completedResult.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
 				"recommended parameters must flow through to the HTTP session completer (#1169)")
 			Expect(completer.completedResult.Parameters).NotTo(HaveKey("REPLICA_COUNT"),
@@ -303,7 +270,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			By("attempting select_workflow (should be rejected)")
 			result, err = callTool(sess, "kubernaut_select_workflow", map[string]any{
 				"rr_id":       "rr-disc-003",
-				"workflow_id": discoveredWorkflowID,
+				"workflow_id": recommendedWfID,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeTrue(), "select_workflow should fail after message invalidated discovery")
@@ -319,7 +286,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			By("selecting workflow after re-discovery (should succeed)")
 			result, err = callTool(sess, "kubernaut_select_workflow", map[string]any{
 				"rr_id":       "rr-disc-003",
-				"workflow_id": discoveredWorkflowID,
+				"workflow_id": recommendedWfID,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
@@ -520,15 +487,35 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 	})
 })
 
-// newRealMCPTestStackWithDiscovery builds a test stack with select_workflow and complete_no_action
-// tools wired up, using custom runner and HTTP completer for discovery testing.
-func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string, opts realStackOpts, runner *discoveryRunner, completer *discoveryHTTPCompleter) *realMCPTestStack {
+// newRealMCPTestStackWithDiscovery builds a test stack with select_workflow and
+// complete_no_action tools wired up, using the REAL investigator via langchaingo
+// against the shared Podman Mock LLM container. No stubbed runners.
+func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string, opts realStackOpts, completer *discoveryHTTPCompleter) *realMCPTestStack {
 	stack := &realMCPTestStack{
 		K8sClient: k8sClient,
 		Namespace: namespace,
 	}
 
 	logrLogger := logr.Discard()
+
+	// Real LLM client via langchaingo -> Podman Mock LLM
+	llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
+	Expect(err).ToNot(HaveOccurred(), "langchaingo adapter should build against Mock LLM at %s", sharedMockLLMEndpoint)
+	stack.LLMClient = llmAdapter
+
+	promptBuilder, buildErr := prompt.NewBuilder()
+	Expect(buildErr).ToNot(HaveOccurred(), "prompt builder should build")
+
+	inv := investigator.New(investigator.Config{
+		Client:       llmAdapter,
+		Builder:      promptBuilder,
+		ResultParser: parser.NewResultParser(),
+		AuditStore:   audit.NopAuditStore{},
+		Logger:       logrLogger,
+		MaxTurns:     15,
+		ModelName:    "test-model",
+	})
+	runner := adapters.NewInvestigatorRunnerAdapter(inv)
 
 	recon := mcpinternal.NewDSContextReconstructor(sharedDSClient, 5*time.Second, logrLogger)
 
@@ -562,21 +549,23 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 	}
 	investigateTool := mcptools.NewInvestigateTool(stack.SessionMgr, runner, recon, mcptools.NopAutonomousManager{}, investigateOpts...)
 
-	// Wire catalog that returns the discovered workflow
+	// Catalog uses the Mock LLM's oomkilled scenario workflow IDs
+	oomkillWfID := uuid.DeterministicUUID("oomkill-increase-memory-v1")
+	restartWfID := uuid.DeterministicUUID("generic-restart-v1")
 	catalog := &discoveryMockCatalog{
 		workflows: map[string]*mcptools.CatalogWorkflow{
-			"restart-pod-v2": {
-				WorkflowID:      "restart-pod-v2",
-				WorkflowName:    "Restart Pod",
-				ExecutionEngine: "argo",
-				ExecutionBundle: "oci://restart:v2",
-				Version:         "v2.0",
+			oomkillWfID: {
+				WorkflowID:      oomkillWfID,
+				WorkflowName:    "OOMKill Recovery - Increase Memory Limits",
+				ExecutionEngine: "job",
+				ExecutionBundle: "oci://oomkill-increase-memory:v1",
+				Version:         "v1.0",
 			},
-			"rollback-deploy-v1": {
-				WorkflowID:      "rollback-deploy-v1",
-				WorkflowName:    "Rollback Deploy",
-				ExecutionEngine: "argo",
-				ExecutionBundle: "oci://rollback:v1",
+			restartWfID: {
+				WorkflowID:      restartWfID,
+				WorkflowName:    "Generic Restart",
+				ExecutionEngine: "job",
+				ExecutionBundle: "oci://generic-restart:v1",
 				Version:         "v1.0",
 			},
 		},
