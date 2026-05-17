@@ -1374,6 +1374,7 @@ func buildMCPHandler(
 		mcptools.WithTimeoutTracker(timeoutMgr),
 		mcptools.WithNotifyFunc(sessionNotifier.Notify),
 		mcptools.WithRRExistenceChecker(rrChecker),
+		mcptools.WithHTTPCompleter(autoMgr),
 		mcptools.WithAuditStore(auditStore, logger.WithName("mcp-audit")),
 	}
 	investigateTool := mcptools.NewInvestigateTool(leaseMgr, investigatorRunner, recon, autoMgr, investigateOpts...)

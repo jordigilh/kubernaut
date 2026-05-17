@@ -131,6 +131,7 @@ type InvestigateTool struct {
 	runner          InvestigatorRunner
 	recon           mcpinternal.ContextReconstructor
 	autoMgr         AutonomousSessionManager
+	httpCompleter   HTTPSessionCompleter
 	signalResolver  SignalContextResolver
 	rrChecker       RRExistenceChecker
 	metrics         ToolMetrics
@@ -169,6 +170,17 @@ func WithTimeoutTracker(tt TimeoutTracker) InvestigateOption {
 	return func(t *InvestigateTool) {
 		if tt != nil {
 			t.timeoutTracker = tt
+		}
+	}
+}
+
+// WithHTTPCompleter sets the HTTP session completer for bridging MCP complete
+// to the HTTP session store. Without this, action:complete releases the MCP
+// lease but does not update the HTTP session that the AA controller polls.
+func WithHTTPCompleter(completer HTTPSessionCompleter) InvestigateOption {
+	return func(t *InvestigateTool) {
+		if completer != nil {
+			t.httpCompleter = completer
 		}
 	}
 }
@@ -523,6 +535,16 @@ func (t *InvestigateTool) handleComplete(input InvestigateInput, user mcpinterna
 	}
 
 	t.emitInteractiveCompleted(sess.SessionID, input.RRID, user.Username, "complete")
+
+	if t.httpCompleter != nil {
+		httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(input.RRID)
+		if found {
+			if completeErr := t.httpCompleter.CompleteUserDriving(httpSessionID, nil); completeErr != nil {
+				t.logger.Error(completeErr, "failed to complete HTTP session on action:complete",
+					"rr_id", input.RRID, "http_session_id", httpSessionID)
+			}
+		}
+	}
 
 	if t.metrics != nil {
 		t.metrics.RecordInteractiveSessionEnded()
