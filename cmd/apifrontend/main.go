@@ -103,10 +103,17 @@ func run() int {
 			}
 			defer auditDSWatcher.Stop()
 		}
+		var auditDSAuthTransport http.RoundTripper = auditDSTransport
+		if cfg.Agent.DSBearerTokenFile != "" {
+			auditDSAuthTransport = &bearerTokenTransport{
+				base:      auditDSTransport,
+				tokenFile: cfg.Agent.DSBearerTokenFile,
+			}
+		}
 		dsCfg := ds.OgenClientConfig{
 			BaseURL:   cfg.Agent.DSBaseURL,
 			Timeout:   cfg.Resilience.DS.RequestTimeout,
-			Transport: auditDSTransport,
+			Transport: auditDSAuthTransport,
 		}
 		dsAuditClient, err := ds.NewOgenClient(dsCfg)
 		if err != nil {

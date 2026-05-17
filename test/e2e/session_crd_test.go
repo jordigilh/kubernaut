@@ -37,7 +37,7 @@ var _ = Describe("InvestigationSession CRD (E2E)", Ordered, ContinueOnFailure, L
 	It("TC-E2E-SESS-001: AF logs confirm session controller manager started", func() {
 		out, err := kubectl("logs", "-n", namespace,
 			"-l", "app.kubernetes.io/name=kubernaut-apifrontend",
-			"--tail=200", "--all-containers")
+			"--tail=500", "--all-containers")
 		Expect(err).NotTo(HaveOccurred(), "kubectl logs failed: %s", out)
 		Expect(out).To(ContainSubstring("session controller manager started"),
 			"AF pod should log that the session controller manager started")
