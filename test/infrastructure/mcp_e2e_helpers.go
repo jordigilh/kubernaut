@@ -18,11 +18,19 @@ package infrastructure
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
 	"os/exec"
 	"strings"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -161,6 +169,101 @@ rules:
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
+}
+
+// CreateDirectRR creates a RemediationRequest CRD directly (bypassing the OOMKill
+// pipeline) for tests that don't need the full event->Gateway->SP->RO flow.
+// Returns the RR name. The RR targets a synthetic Deployment in the given namespace.
+func CreateDirectRR(ctx context.Context, namespace, testID string) (string, error) {
+	rrName := fmt.Sprintf("rr-%s-%d", testID, time.Now().UnixMilli())
+	fingerprint := fmt.Sprintf("%x", sha256.Sum256([]byte(testID+"-"+rrName)))
+	now := metav1.Now()
+
+	rr := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "kubernaut.ai/v1alpha1",
+			"kind":       "RemediationRequest",
+			"metadata": map[string]interface{}{
+				"name":      rrName,
+				"namespace": namespace,
+			},
+			"spec": map[string]interface{}{
+				"signalFingerprint": fingerprint,
+				"signalName":        fmt.Sprintf("e2e-%s-signal", testID),
+				"signalType":        "alert",
+				"severity":          "high",
+				"targetType":        "kubernetes",
+				"firingTime":        now.UTC().Format(time.RFC3339),
+				"receivedTime":      now.UTC().Format(time.RFC3339),
+				"targetResource": map[string]interface{}{
+					"kind":      "Deployment",
+					"name":      fmt.Sprintf("%s-target", testID),
+					"namespace": namespace,
+				},
+			},
+		},
+	}
+
+	cfg, err := config.GetConfig()
+	if err != nil {
+		return "", fmt.Errorf("get kubeconfig: %w", err)
+	}
+	dynClient, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		return "", fmt.Errorf("create dynamic client: %w", err)
+	}
+
+	rrGVR := schema.GroupVersionResource{
+		Group:    "kubernaut.ai",
+		Version:  "v1alpha1",
+		Resource: "remediationrequests",
+	}
+
+	createCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	_, err = dynClient.Resource(rrGVR).Namespace(namespace).Create(createCtx, rr, metav1.CreateOptions{})
+	if err != nil {
+		return "", fmt.Errorf("create RR CRD: %w", err)
+	}
+	return rrName, nil
+}
+
+// MCPSessionSetup holds the result of SetupMCPSession.
+type MCPSessionSetup struct {
+	Session  *mcpsdk.ClientSession
+	SAToken  string
+	Cleanup  func()
+}
+
+// SetupMCPSession creates a ServiceAccount with interactive RBAC, sets up TLS,
+// and connects an MCP client session. Returns the session and a cleanup function.
+func SetupMCPSession(ctx context.Context, namespace, saName, kubeconfigPath string, writer io.Writer) (*MCPSessionSetup, error) {
+	token, err := CreateInteractiveE2ESA(ctx, namespace, saName, kubeconfigPath, writer)
+	if err != nil {
+		return nil, fmt.Errorf("create interactive SA: %w", err)
+	}
+
+	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("TLS transport: %w", err)
+	}
+
+	connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	session, err := ConnectMCPClient(connectCtx, MCPClientConfig{
+		Endpoint:     MCPEndpointForKAE2E(),
+		SAToken:      token,
+		TLSTransport: tlsTransport,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("MCP connect: %w", err)
+	}
+
+	return &MCPSessionSetup{
+		Session: session,
+		SAToken: token,
+		Cleanup: func() { _ = session.Close() },
+	}, nil
 }
 
 // CreateLimitedRBACSA creates a ServiceAccount with restricted RBAC for security tests.
