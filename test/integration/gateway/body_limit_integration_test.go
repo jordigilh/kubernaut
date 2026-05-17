@@ -38,7 +38,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
-var _ = Describe("Issue #673: Request Body Size Limit (BR-GATEWAY-182)", Ordered, func() {
+var _ = Describe("Issue #673: Request Body Size Limit (BR-GATEWAY-182)", Ordered, ContinueOnFailure, func() {
 
 	var (
 		testServer *httptest.Server

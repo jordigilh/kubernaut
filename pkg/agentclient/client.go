@@ -184,6 +184,8 @@ func (c *KubernautAgentClient) awaitSession(ctx context.Context, sessionID strin
 // SessionStatusResult represents the status of an investigation session.
 // Returned by PollSession when querying session progress.
 type SessionStatusResult struct {
+	// SessionID is the KA-assigned session identifier
+	SessionID string `json:"session_id,omitempty"`
 	// Status of the session: "pending", "investigating", "completed", "failed"
 	Status string `json:"status"`
 	// Error message when status is "failed"
@@ -247,6 +249,7 @@ func (c *KubernautAgentClient) PollSession(ctx context.Context, sessionID string
 	switch v := res.(type) {
 	case *SessionStatus:
 		result := &SessionStatusResult{
+			SessionID:        v.SessionID,
 			Status:           v.Status,
 			Error:            v.Error.Value,
 			ActingUser:       v.ActingUser.Value,

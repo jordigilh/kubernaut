@@ -68,6 +68,22 @@ func HasSubmitWithWorkflowTool(tools []openai.Tool) bool {
 	return false
 }
 
+// HasSubmitResultOnly returns true when submit_result is the only tool in the
+// list (no workflow discovery or investigation tools). This indicates an RCA
+// extraction call from discover_workflows where the LLM should immediately
+// produce a structured RCA via the submit_result tool.
+func HasSubmitResultOnly(tools []openai.Tool) bool {
+	if len(tools) == 0 {
+		return false
+	}
+	for _, t := range tools {
+		if t.Function.Name != openai.ToolSubmitResult {
+			return false
+		}
+	}
+	return true
+}
+
 // AlwaysTrue is a fallback condition that always evaluates to true.
 type AlwaysTrue struct{}
 

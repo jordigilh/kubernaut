@@ -54,6 +54,7 @@ func (m *statusAutoMgr) FindByRemediationID(_ string) (string, bool) { return "a
 func (m *statusAutoMgr) CancelInvestigation(_ string) error                              { return nil }
 func (m *statusAutoMgr) SuspendInvestigation(_ string) error                             { return nil }
 func (m *statusAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string) error    { return nil }
+func (m *statusAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []string) error { return nil }
 
 var _ = Describe("action=status — PR4 PROD-01 BR-INTERACTIVE-002", func() {
 
@@ -61,7 +62,7 @@ var _ = Describe("action=status — PR4 PROD-01 BR-INTERACTIVE-002", func() {
 		It("should return autonomous mode with no driver info", func() {
 			sessMgr := &statusSessionMgr{driverSession: nil}
 			autoMgr := &statusAutoMgr{found: true}
-			tool := mcptools.NewInvestigateTool(sessMgr, nil, nil, mcptools.WithAutonomousManager(autoMgr))
+			tool := mcptools.NewInvestigateTool(sessMgr, nil, nil, autoMgr)
 
 			input := mcptools.InvestigateInput{
 				RRID:   "rr-status-001",
@@ -89,7 +90,7 @@ var _ = Describe("action=status — PR4 PROD-01 BR-INTERACTIVE-002", func() {
 				},
 			}
 			autoMgr := &statusAutoMgr{found: true}
-			tool := mcptools.NewInvestigateTool(sessMgr, nil, nil, mcptools.WithAutonomousManager(autoMgr))
+			tool := mcptools.NewInvestigateTool(sessMgr, nil, nil, autoMgr)
 
 			input := mcptools.InvestigateInput{
 				RRID:   "rr-status-002",
@@ -110,7 +111,7 @@ var _ = Describe("action=status — PR4 PROD-01 BR-INTERACTIVE-002", func() {
 		It("should return not_found mode when autonomous session doesn't exist and no driver", func() {
 			sessMgr := &statusSessionMgr{driverSession: nil}
 			autoMgr := &statusAutoMgr{found: false}
-			tool := mcptools.NewInvestigateTool(sessMgr, nil, nil, mcptools.WithAutonomousManager(autoMgr))
+			tool := mcptools.NewInvestigateTool(sessMgr, nil, nil, autoMgr)
 
 			input := mcptools.InvestigateInput{
 				RRID:   "rr-status-003",

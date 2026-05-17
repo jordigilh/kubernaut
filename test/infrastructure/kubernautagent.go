@@ -805,9 +805,10 @@ rules:
     resources: ["remediationrequests"]
     verbs: ["get", "list"]
   # Interactive mode: Lease-based session management (#703)
+  # list required by ReconcileOrphanedLeases startup loop
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
-    verbs: ["get", "create", "update", "delete"]
+    verbs: ["get", "list", "create", "update", "delete"]
   # Interactive mode: user impersonation (DD-AUTH-MCP-001)
   - apiGroups: [""]
     resources: ["users", "groups", "serviceaccounts"]

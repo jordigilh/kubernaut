@@ -51,7 +51,7 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 			runner := &delayedMockRunner{delay: 0, response: "response"}
 			recon := &mockReconIT{}
-			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon, mcptools.WithAutonomousManager(autoMgr))
+			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon, autoMgr)
 
 			user := mcpinternal.UserInfo{Username: "alice@example.com"}
 			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
@@ -67,7 +67,7 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 			runner := &delayedMockRunner{delay: 0, response: "response"}
 			recon := &mockReconIT{}
-			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon, mcptools.NopAutonomousManager{})
 
 			alice := mcpinternal.UserInfo{Username: "alice@example.com"}
 			bob := mcpinternal.UserInfo{Username: "bob@example.com"}
@@ -88,22 +88,6 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 		})
 	})
 
-	Describe("IT-KA-COV-003: takeover without autoMgr (nil autoMgr path)", func() {
-		It("should succeed when no autonomous session manager is configured", func() {
-			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
-			runner := &delayedMockRunner{delay: 0, response: "response"}
-			recon := &mockReconIT{}
-			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon)
-
-			user := mcpinternal.UserInfo{Username: "alice@example.com"}
-			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
-				RRID: "rr-cov-03", Action: mcptools.ActionTakeover,
-			}, user)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(out.Status).To(Equal("takeover_started"))
-		})
-	})
-
 	Describe("IT-KA-COV-004: message after TTL expiry returns session_expired", func() {
 		It("should return session_expired when the lease TTL has been exceeded", func() {
 			ttl := 1 * time.Second
@@ -111,7 +95,7 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 				mcpinternal.WithSessionTTL(ttl))
 			runner := &delayedMockRunner{delay: 0, response: "response"}
 			recon := &mockReconIT{}
-			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon, mcptools.NopAutonomousManager{})
 
 			user := mcpinternal.UserInfo{Username: "alice@example.com"}
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
@@ -168,6 +152,117 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 
 			Expect(stack.MCPServer.Implementation()).NotTo(BeNil())
 			Expect(stack.MCPServer.ToolCount()).To(BeNumerically(">=", 1))
+		})
+	})
+
+	Describe("IT-KA-COV-008: MCP cancel action wiring through real stack", func() {
+		It("should release session and delete Lease on cancel", func() {
+			nsLocal := uniqueNamespace("cov08")
+			createNamespace(context.Background(), sharedK8sClient, nsLocal)
+			stack := newRealMCPTestStack(sharedK8sClient, nsLocal, defaultRealStackOpts())
+			defer stack.Close()
+
+			sess, err := connectMCP(stack.Server, "alice@example.com")
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = sess.Close() }()
+
+			result, err := callInvestigate(sess, map[string]any{
+				"rr_id":  "rr-cov-08",
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("calling cancel")
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":  "rr-cov-08",
+				"action": "cancel",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			Expect(stack.SessionMgr.IsDriverActive("rr-cov-08")).To(BeFalse(),
+				"Lease should be released after cancel action")
+		})
+	})
+
+	Describe("IT-KA-COV-009: Rate limiter rejects oversized message with structured error", func() {
+		It("should return rate_limited error for oversized messages", func() {
+			nsLocal := uniqueNamespace("cov09")
+			createNamespace(context.Background(), sharedK8sClient, nsLocal)
+
+			opts := defaultRealStackOpts()
+			opts.maxMessageSize = 50
+			stack := newRealMCPTestStack(sharedK8sClient, nsLocal, opts)
+			defer stack.Close()
+
+			sess, err := connectMCP(stack.Server, "alice@example.com")
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = sess.Close() }()
+
+			result, err := callInvestigate(sess, map[string]any{
+				"rr_id":  "rr-cov-09",
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			longMessage := make([]byte, 100)
+			for i := range longMessage {
+				longMessage[i] = 'A'
+			}
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":   "rr-cov-09",
+				"action":  "message",
+				"message": string(longMessage),
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeTrue(),
+				"oversized message must be rejected with rate_limited error")
+		})
+	})
+
+	Describe("IT-KA-COV-010: Rate limiter rejects burst with structured error", func() {
+		It("should reject the 3rd message when maxPerMinute=2", func() {
+			nsLocal := uniqueNamespace("cov10")
+			createNamespace(context.Background(), sharedK8sClient, nsLocal)
+
+			opts := defaultRealStackOpts()
+			opts.maxPerMinute = 2
+			stack := newRealMCPTestStack(sharedK8sClient, nsLocal, opts)
+			defer stack.Close()
+
+			sess, err := connectMCP(stack.Server, "alice@example.com")
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = sess.Close() }()
+
+			result, err := callInvestigate(sess, map[string]any{
+				"rr_id":  "rr-cov-10",
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("sending 2 messages within the limit")
+			for i := 1; i <= 2; i++ {
+				result, err = callInvestigate(sess, map[string]any{
+					"rr_id":   "rr-cov-10",
+					"action":  "message",
+					"message": "msg",
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.IsError).To(BeFalse())
+			}
+
+			By("sending 3rd message — should be rate limited")
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":   "rr-cov-10",
+				"action":  "message",
+				"message": "burst",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeTrue(),
+				"3rd message should be rejected when maxPerMinute=2")
 		})
 	})
 })

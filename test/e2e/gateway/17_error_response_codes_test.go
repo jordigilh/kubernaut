@@ -31,7 +31,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
-var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)", Ordered, func() {
+var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)", Ordered, ContinueOnFailure, func() {
 	var (
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger

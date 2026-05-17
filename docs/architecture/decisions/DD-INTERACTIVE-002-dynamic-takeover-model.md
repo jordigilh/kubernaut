@@ -2,7 +2,7 @@
 
 **Status**: Proposed
 **Decision Date**: 2026-04-29
-**Version**: 1.0
+**Version**: 1.1
 **Confidence**: 95%
 **Deciders**: Architecture Team
 **Applies To**: kubernaut-agent, aianalysis-controller, remediation-orchestrator
@@ -26,6 +26,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-04-29 | AI-assisted | Initial design. Supersedes DD-INTERACTIVE-001. |
+| 1.1 | 2026-05-15 | AI-assisted | Clarified v1.5 takeover-abandon semantics: no autonomous resume on disconnect. Added SEC-TAKEOVER-001 security rationale. Updated connection flow diagram. |
 
 ---
 
@@ -144,16 +145,41 @@ Time →
                                       user sends action: takeover
                                            │
                                            ▼
-                            LLM completes current turn → autonomous cancelled
+                            LLM completes current turn → autonomous CANCELLED (one-way)
                                            │
                                            ▼
   User ────▶ [auto-inject context from DS] ──▶ [interactive turns (impersonated)]
                                            │
-                                      user disconnects
-                                           │
-                                           ▼
-  KA SA ──▶ [NEW autonomous, reconstructs from DS audit events]
+                                  ┌────────┴────────┐
+                                  │                  │
+                           user completes      user abandons / disconnects
+                                  │                  │
+                                  ▼                  ▼
+                         Lease released     Lease expires (inactivity timeout)
+                         RR progresses      AA phase times out → RO creates NEW RR
 ```
+
+> **v1.5 scope (SEC-TAKEOVER-001)**: Autonomous investigation is **not** resumed after
+> takeover. The user who takes over owns the investigation until completion. If the user
+> abandons it, the inactivity timeout releases the Lease, the AA phase times out on the
+> RO side, and the Gateway creates a fresh RemediationRequest.
+>
+> **Rationale**: A user who takes over can steer the LLM context in any direction —
+> including nudging it toward executing destructive workflows that the user would not
+> have RBAC access to trigger directly, but that KA's SA can execute. If autonomous
+> mode auto-resumed from poisoned context, it could execute attacker-influenced
+> workflows with KA SA privileges. This is "investigation hacking": the user manipulates
+> the conversation, walks away, and lets KA auto-execute the tainted result.
+>
+> By making takeover a **one-way door** (`TransitionToUserDriving` cancels the autonomous
+> goroutine permanently), there is no path for tainted context to flow back into
+> autonomous execution. The `aiagent.session.resumed` audit event type is pre-defined
+> for future use but is intentionally **not emitted** in v1.5.
+>
+> **Future (v1.6+)**: Autonomous resume-on-disconnect may be revisited once alignment
+> grounding review can verify the user's interactive turns did not introduce unsafe
+> directives. This requires the shadow agent to evaluate the full interactive
+> conversation before allowing autonomous continuation.
 
 #### Observer/Driver Model
 
@@ -269,6 +295,10 @@ No spec changes. No annotation changes. Every RR is takeover-capable by default.
 | DS unavailable during auto-inject | Low | Medium | Best-effort; session starts with empty prior context, warning logged |
 | Rapid connect/disconnect creates many reconstruct cycles | Low | Low | Each reconstruct is independent; Lease prevents concurrent drivers |
 | Global timeout too short for complex interactive investigations | Medium | Medium | Documented as hard cap; operator-tunable via config |
+| SEC-TAKEOVER-001: Investigation hacking via takeover-then-abandon | Medium | Critical | Takeover is a one-way door; autonomous goroutine cancelled permanently. No resume-on-disconnect in v1.5. User must complete or session times out; RO creates fresh RR. See Connection Flow diagram. |
+| Concurrent `action: start` requests for same RR (double-click) | Low | Low | K8s Lease `Create` is atomic — exactly one request wins. Losing request gets `ErrLeaseHeld`. Local `rrIndex` check may race with `rrIndex.Store`, but K8s is the source of truth and no data corruption results. User sees a clear "session active" error. No fix needed in v1.5. |
+| KA pod restart with orphaned K8s Lease | Medium | Medium | v1.5: Two-layer defence. (1) `ReconcileOrphanedLeases` runs once at startup, scans all `kubernaut-interactive-*` Leases in the namespace, and deletes any whose `AcquireTime + LeaseDurationSeconds` is in the past. (2) On-demand `tryReclaimExpiredLease` in `Takeover` handles Leases that expire between startup and the next `Takeover` call. Non-expired Leases from live pods are never reclaimed. |
+| User network disconnect during interactive session | High | Medium | v1.5: Explicit `action: reconnect` — the MCP client sends `{"action":"reconnect","rr_id":"..."}` to re-acquire an existing session held by the same user. Returns the existing session (status `reconnected`), resets the inactivity timer, and re-registers the MCP notification callback for the new transport. Fails with `not_driving` if no session exists, or `session_active` if a different user holds the session. `Takeover` also detects same-user reconnects implicitly as a fallback. |
 
 ---
 
@@ -313,5 +343,5 @@ No spec changes. No annotation changes. Every RR is takeover-capable by default.
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-04-29
+**Document Version**: 1.1
+**Last Updated**: 2026-05-15

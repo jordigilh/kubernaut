@@ -180,10 +180,23 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 		return nil, ErrMaxSessionsReached
 	}
 
-	// UX-03: Check local index first and provide holder context in error.
+	// UX-03: Check local index first. If the same user already holds the
+	// session, allow reconnect (e.g., after network loss) by returning the
+	// existing session with a refreshed activity timestamp. A different user
+	// gets ErrLeaseHeld with holder context.
 	if existingSessionID, ok := m.rrIndex.Load(rrID); ok {
 		if raw, found := m.sessions.Load(existingSessionID); found {
 			entry := raw.(*sessionEntry)
+			if entry.session.ActingUser.Username == user.Username {
+				entry.lastActivity.Store(time.Now())
+				entry.session.Reconnected = true
+				m.logger.Info("interactive session reconnected (same user)",
+					"session_id", entry.session.SessionID,
+					"rr_id", rrID,
+					"user", user.Username,
+				)
+				return entry.session, nil
+			}
 			return nil, fmt.Errorf("%w: held by %q since %s",
 				ErrLeaseHeld, entry.session.ActingUser.Username, entry.session.StartedAt.Format(time.RFC3339))
 		}
@@ -211,9 +224,16 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 
 	if err := m.client.Create(ctx, lease); err != nil {
 		if apierrors.IsAlreadyExists(err) {
-			return nil, ErrLeaseHeld
+			if reclaimed := m.tryReclaimExpiredLease(ctx, leaseName, rrID); reclaimed {
+				if retryErr := m.client.Create(ctx, lease); retryErr != nil {
+					return nil, fmt.Errorf("create lease after reclaim for rr %q: %w", rrID, retryErr)
+				}
+			} else {
+				return nil, ErrLeaseHeld
+			}
+		} else {
+			return nil, fmt.Errorf("create lease for rr %q: %w", rrID, err)
 		}
-		return nil, fmt.Errorf("create lease for rr %q: %w", rrID, err)
 	}
 
 	session := &InteractiveSession{
@@ -335,6 +355,107 @@ func (m *LeaseSessionManager) TouchActivity(rrID string) {
 func (m *LeaseSessionManager) IsDriverActive(rrID string) bool {
 	_, ok := m.rrIndex.Load(rrID)
 	return ok
+}
+
+// ActiveSessionIDs returns the session IDs of all active sessions.
+// Used by SessionDrainer during graceful shutdown (BR-OPS-013).
+func (m *LeaseSessionManager) ActiveSessionIDs() []string {
+	var ids []string
+	m.sessions.Range(func(key, _ any) bool {
+		ids = append(ids, key.(string))
+		return true
+	})
+	return ids
+}
+
+// tryReclaimExpiredLease checks if an existing K8s Lease is expired (e.g.,
+// orphaned after a pod restart where in-memory state was lost). If the Lease's
+// AcquireTime + LeaseDurationSeconds is in the past, it deletes the Lease so
+// the caller can create a fresh one. Returns true if the Lease was reclaimed.
+func (m *LeaseSessionManager) tryReclaimExpiredLease(ctx context.Context, name, rrID string) bool {
+	existing := &coordinationv1.Lease{}
+	key := client.ObjectKey{Namespace: m.namespace, Name: name}
+	if err := m.client.Get(ctx, key, existing); err != nil {
+		return false
+	}
+
+	if existing.Spec.AcquireTime == nil || existing.Spec.LeaseDurationSeconds == nil {
+		return false
+	}
+
+	expiry := existing.Spec.AcquireTime.Add(
+		time.Duration(*existing.Spec.LeaseDurationSeconds) * time.Second,
+	)
+	if time.Now().Before(expiry) {
+		return false
+	}
+
+	if err := m.client.Delete(ctx, existing); err != nil {
+		m.logger.Error(err, "failed to delete expired orphaned Lease",
+			"lease", name, "rr_id", rrID,
+			"expired_at", expiry.Format(time.RFC3339),
+		)
+		return false
+	}
+
+	m.logger.Info("reclaimed expired orphaned Lease (likely pod restart)",
+		"lease", name, "rr_id", rrID,
+		"expired_at", expiry.Format(time.RFC3339),
+	)
+	return true
+}
+
+// ReconcileOrphanedLeases scans for K8s Leases with the interactive prefix in
+// the namespace and deletes any that have expired. This handles the pod-restart
+// scenario where in-memory session state is lost but K8s Leases persist, blocking
+// new sessions until TTL expiry. Should be called once at startup.
+func (m *LeaseSessionManager) ReconcileOrphanedLeases(ctx context.Context) int {
+	leaseList := &coordinationv1.LeaseList{}
+	if err := m.client.List(ctx, leaseList, client.InNamespace(m.namespace)); err != nil {
+		m.logger.Error(err, "failed to list Leases for orphan reconciliation")
+		return 0
+	}
+
+	reclaimed := 0
+	now := time.Now()
+	for i := range leaseList.Items {
+		lease := &leaseList.Items[i]
+		if len(lease.Name) <= len(leasePrefix) || lease.Name[:len(leasePrefix)] != leasePrefix {
+			continue
+		}
+		if lease.Spec.AcquireTime == nil || lease.Spec.LeaseDurationSeconds == nil {
+			continue
+		}
+
+		expiry := lease.Spec.AcquireTime.Add(
+			time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second,
+		)
+		if now.Before(expiry) {
+			continue
+		}
+
+		rrID := lease.Name[len(leasePrefix):]
+		if err := m.client.Delete(ctx, lease); err != nil {
+			m.logger.Error(err, "failed to delete orphaned Lease during reconciliation",
+				"lease", lease.Name, "rr_id", rrID,
+			)
+			continue
+		}
+
+		reclaimed++
+		m.logger.Info("reconciled orphaned Lease at startup",
+			"lease", lease.Name, "rr_id", rrID,
+			"expired_at", expiry.Format(time.RFC3339),
+		)
+	}
+
+	if reclaimed > 0 {
+		m.logger.Info("orphaned Lease reconciliation complete",
+			"reclaimed", reclaimed,
+			"total_scanned", len(leaseList.Items),
+		)
+	}
+	return reclaimed
 }
 
 func leaseName(rrID string) string {

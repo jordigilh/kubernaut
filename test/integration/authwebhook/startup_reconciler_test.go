@@ -56,7 +56,7 @@ func (m *integrationMockDS) CreateWorkflowInline(_ context.Context, _, source, _
 	}, nil
 }
 
-var _ = Describe("StartupReconciler Integration (#548)", Ordered, func() {
+var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFailure, func() {
 
 	// ========================================
 	// IT-AW-548-001: StartupReconciler with envtest K8s + mock DS

@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -52,7 +53,7 @@ var _ = Describe("MCP Server — #703", func() {
 
 	Describe("UT-KA-703-F04: MCPSessionDrainer.DrainSessions returns within timeout", func() {
 		It("should complete draining within the specified timeout", func() {
-			drainer := mcpinternal.NewSessionDrainer()
+			drainer := mcpinternal.NewSessionDrainer(nil, nil, logr.Discard())
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 

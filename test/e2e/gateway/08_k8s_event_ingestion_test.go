@@ -39,7 +39,7 @@ import (
 // BEHAVIOR: Gateway accepts K8s Event payloads and creates RemediationRequest CRDs
 // CORRECTNESS: CRDs contain the correct resource information from K8s Events
 // Parallel-safe: Uses unique namespace per process
-var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered, func() {
+var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered, ContinueOnFailure, func() {
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc

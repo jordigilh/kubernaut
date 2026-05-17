@@ -34,7 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
-var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-GATEWAY-075)", Ordered, func() {
+var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-GATEWAY-075)", Ordered, ContinueOnFailure, func() {
 	var (
 		testLogger    logr.Logger
 		testNamespace string

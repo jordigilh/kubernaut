@@ -313,6 +313,40 @@ func (m *Manager) TransitionToUserDriving(id, username string, groups []string) 
 	return nil
 }
 
+// ForceTransitionToUserDriving locates any session matching the remediation ID
+// (regardless of status) and forces it to StatusUserDriving with identity
+// metadata. Unlike TransitionToUserDriving, this works even on terminal
+// sessions (e.g., completed investigations). Used when the autonomous
+// investigation finishes before the interactive user's takeover/start action.
+func (m *Manager) ForceTransitionToUserDriving(rrID, username string, groups []string) error {
+	groupsJSON, err := json.Marshal(groups)
+	if err != nil {
+		return fmt.Errorf("marshal groups: %w", err)
+	}
+
+	m.store.mu.Lock()
+	defer m.store.mu.Unlock()
+	for _, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] == rrID {
+			prevStatus := sess.Status
+			if sess.cancel != nil {
+				sess.cancel()
+			}
+			sess.Status = StatusUserDriving
+			if sess.Metadata == nil {
+				sess.Metadata = make(map[string]string)
+			}
+			sess.Metadata["acting_user"] = username
+			sess.Metadata["acting_user_groups"] = string(groupsJSON)
+			m.logger.Info("Force-transitioned session to user-driving",
+				"remediation_id", rrID, "previous_status", string(prevStatus),
+				"acting_user", username)
+			return nil
+		}
+	}
+	return ErrSessionNotFound
+}
+
 // FindByRemediationID scans running sessions for one whose metadata
 // "remediation_id" matches the given rrID. Returns the session ID and true
 // if found, or ("", false) otherwise. Uses RLock for safe concurrent access.
@@ -450,6 +484,72 @@ func (m *Manager) GetSignalForRemediation(rrID string) (*katypes.SignalContext, 
 	}
 	signal := sess.Context.Signal
 	return &signal, nil
+}
+
+// CompleteUserDriving transitions a user-driven session to completed with the
+// given result. This bridges the MCP tool completion path to the HTTP session
+// store so AA's poll mechanism picks up the result.
+func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationResult) error {
+	if err := m.store.CompleteUserDriving(id, result); err != nil {
+		return err
+	}
+	m.store.mu.RLock()
+	sess := m.store.sessions[id]
+	var correlationID string
+	if sess != nil && sess.Metadata != nil {
+		correlationID = sess.Metadata["remediation_id"]
+	}
+	m.store.mu.RUnlock()
+
+	m.emitSessionEvent(context.Background(),
+		audit.EventTypeSessionCompleted, audit.ActionSessionCompleted,
+		audit.OutcomeSuccess, id, correlationID, nil,
+		"completion_mode", "user_driving")
+	m.logger.Info("User-driven session completed",
+		"session_id", id, "has_workflow", result != nil && result.WorkflowID != "")
+	return nil
+}
+
+// FindUserDrivingByRemediationID scans user-driving sessions for one whose
+// metadata "remediation_id" matches the given rrID. Returns the session ID and
+// true if found. Used by select_workflow and complete_no_action to locate the
+// HTTP session for result propagation.
+func (m *Manager) FindUserDrivingByRemediationID(rrID string) (string, bool) {
+	m.store.mu.RLock()
+	defer m.store.mu.RUnlock()
+	for id, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] == rrID && sess.Status == StatusUserDriving {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+// ForceCompleteByRemediationID locates any session (Running, UserDriving, or
+// Completed) matching the given remediation ID and forces it to StatusCompleted
+// with the provided result. Cancels the investigation goroutine if still running.
+//
+// This is the fallback path for MCP tools (complete_no_action, action:complete,
+// select_workflow) when TransitionToUserDriving was not called or failed because
+// the autonomous investigation started after MCP session acquisition, or had
+// already completed before takeover.
+func (m *Manager) ForceCompleteByRemediationID(rrID string, result *katypes.InvestigationResult) error {
+	m.store.mu.Lock()
+	defer m.store.mu.Unlock()
+	for _, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] == rrID {
+			prevStatus := sess.Status
+			if sess.cancel != nil {
+				sess.cancel()
+			}
+			sess.Status = StatusCompleted
+			sess.Result = result
+			m.logger.Info("Force-completed session by remediation ID",
+				"remediation_id", rrID, "previous_status", string(prevStatus))
+			return nil
+		}
+	}
+	return ErrSessionNotFound
 }
 
 // storePartialResult attaches a result to a session that is already in a

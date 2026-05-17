@@ -17,6 +17,7 @@ limitations under the License.
 package auth
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -70,6 +71,17 @@ func (t *RetryOn429Transport) RoundTrip(req *http.Request) (*http.Response, erro
 		// Drain body so the connection can be reused.
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
+
+		// Reset request body for POST/PUT/PATCH retries. Without this,
+		// the second RoundTrip sends an empty body because the original
+		// reader was consumed. GetBody is set by http.NewRequest when the
+		// body is a *bytes.Reader, *bytes.Buffer, or *strings.Reader.
+		if req.GetBody != nil {
+			req.Body, err = req.GetBody()
+			if err != nil {
+				return nil, fmt.Errorf("retry429: reset request body: %w", err)
+			}
+		}
 
 		wait := delay
 		if ra := resp.Header.Get("Retry-After"); ra != "" {

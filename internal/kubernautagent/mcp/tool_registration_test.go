@@ -30,7 +30,7 @@ import (
 
 // stubInvestigate returns a minimal InvestigateTool for registration tests.
 func stubInvestigate() *mcptools.InvestigateTool {
-	return mcptools.NewInvestigateTool(nil, nil, nil)
+	return mcptools.NewInvestigateTool(nil, nil, nil, mcptools.NopAutonomousManager{})
 }
 
 // stubSelectWorkflow returns a minimal SelectWorkflowTool for registration tests.
@@ -38,21 +38,27 @@ func stubSelectWorkflow() *mcptools.SelectWorkflowTool {
 	return mcptools.NewSelectWorkflowTool(nil, nil)
 }
 
+// stubCompleteNoAction returns a minimal CompleteNoActionTool for registration tests.
+func stubCompleteNoAction() *mcptools.CompleteNoActionTool {
+	return mcptools.NewCompleteNoActionTool(nil)
+}
+
 var _ = Describe("MCP Tool Registration — PR6a", func() {
 
-	Describe("UT-KA-PR6A-001: BootstrapMCP registers all tools with the MCP SDK (#1012: 2-tool surface)", func() {
-		It("should expose 2 tools via the SDK tools/list protocol", func() {
+	Describe("UT-KA-PR6A-001: BootstrapMCP registers all tools with the MCP SDK (#1012: 3-tool surface)", func() {
+		It("should expose 3 tools via the SDK tools/list protocol", func() {
 			deps := mcpinternal.MCPDeps{
 				AuthMiddleware: func(next http.Handler) http.Handler { return next },
 				Tools: mcpinternal.ToolDeps{
-					Investigate:    mcptools.InvestigateRegistration(stubInvestigate(), nil, nil),
-					SelectWorkflow: mcptools.SelectWorkflowRegistration(stubSelectWorkflow()),
+					Investigate:      mcptools.InvestigateRegistration(stubInvestigate(), nil, nil),
+					SelectWorkflow:   mcptools.SelectWorkflowRegistration(stubSelectWorkflow()),
+					CompleteNoAction: mcptools.CompleteNoActionRegistration(stubCompleteNoAction()),
 				},
 			}
 
 			handler, srv := mcpinternal.BootstrapMCP(deps)
 			Expect(handler).NotTo(BeNil())
-			Expect(srv.ToolCount()).To(Equal(2))
+			Expect(srv.ToolCount()).To(Equal(3))
 
 			ts := httptest.NewServer(handler)
 			defer ts.Close()
@@ -77,6 +83,7 @@ var _ = Describe("MCP Tool Registration — PR6a", func() {
 			Expect(toolNames).To(ConsistOf(
 				"kubernaut_investigate",
 				"kubernaut_select_workflow",
+				"kubernaut_complete_no_action",
 			))
 		})
 	})

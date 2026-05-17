@@ -25,6 +25,8 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 type mockSessionManager struct {
@@ -67,6 +69,14 @@ func (m *mockInvestigatorRunner) RunInteractiveTurn(_ context.Context, _ []mcpto
 	return m.response, m.err
 }
 
+func (m *mockInvestigatorRunner) RunRCAExtraction(_ context.Context, _ []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA", Confidence: 0.9}, nil
+}
+
+func (m *mockInvestigatorRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA", WorkflowID: "mock-workflow", Confidence: 0.85}, nil
+}
+
 type mockContextReconstructor struct {
 	turns []mcpinternal.ConversationTurn
 	err   error
@@ -74,6 +84,12 @@ type mockContextReconstructor struct {
 
 func (m *mockContextReconstructor) Reconstruct(_ context.Context, _, _ string) ([]mcpinternal.ConversationTurn, error) {
 	return m.turns, m.err
+}
+
+type rejectingRateLimiter struct{}
+
+func (r *rejectingRateLimiter) Allow(_ string, _ int) error {
+	return mcpinternal.ErrRateLimited
 }
 
 var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func() {
@@ -111,7 +127,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-start",
 				Action: mcptools.ActionStart,
@@ -130,7 +146,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-held",
 				Action: mcptools.ActionStart,
@@ -155,7 +171,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{response: "The root cause is..."}
 			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:    "rr-msg",
 				Action:  mcptools.ActionMessage,
@@ -173,7 +189,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:    "rr-nosess",
 				Action:  mcptools.ActionMessage,
@@ -199,7 +215,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-complete",
 				Action: mcptools.ActionComplete,
@@ -224,7 +240,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-cancel",
 				Action: mcptools.ActionCancel,
@@ -248,7 +264,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			runner := &mockInvestigatorRunner{err: errors.New("LLM unavailable")}
 			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:    "rr-err",
 				Action:  mcptools.ActionMessage,
@@ -275,13 +291,399 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 				},
 			}
 
-			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon)
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
 			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-recon",
 				Action: mcptools.ActionStart,
 			}, mcpinternal.UserInfo{Username: "alice"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out.Status).To(Equal("started"))
+		})
+	})
+
+	Describe("UT-KA-703-K10: action=message returns session_expired when GetDriver returns ErrSessionExpired", func() {
+		It("should return MCPError with code session_expired (SEC-04)", func() {
+			sessionMgr := &mockSessionManager{
+				isActive:     true,
+				getDriverErr: mcpinternal.ErrSessionExpired,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:    "rr-expired",
+				Action:  mcptools.ActionMessage,
+				Message: "hello",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("session_expired"),
+				"expired session must return structured session_expired code for AF error handling")
+		})
+	})
+
+	Describe("UT-KA-703-K11: action=message returns rate_limited when rate limiter rejects", func() {
+		It("should return MCPError with code rate_limited (SEC-HIGH-01)", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-rl",
+					CorrelationID: "rr-rl",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+			rl := &rejectingRateLimiter{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{}, mcptools.WithRateLimiter(rl))
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:    "rr-rl",
+				Action:  mcptools.ActionMessage,
+				Message: "trigger rate limit",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("rate_limited"),
+				"rate-limited message must return structured rate_limited code for AF retry logic")
+		})
+	})
+
+	Describe("UT-KA-703-K12: action=cancel rejected when non-driver calls it", func() {
+		It("should return MCPError session_active with driver identity (SEC-CRIT-01)", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-cancel-authz",
+					CorrelationID: "rr-cancel-authz",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-cancel-authz",
+				Action: mcptools.ActionCancel,
+			}, mcpinternal.UserInfo{Username: "mallory"})
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("session_active"),
+				"non-driver cancel must be rejected with session_active")
+		})
+	})
+
+	Describe("UT-KA-703-K13: action=complete rejected when non-driver calls it", func() {
+		It("should return MCPError session_active with driver identity (SEC-CRIT-01)", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-complete-authz",
+					CorrelationID: "rr-complete-authz",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-complete-authz",
+				Action: mcptools.ActionComplete,
+			}, mcpinternal.UserInfo{Username: "mallory"})
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("session_active"),
+				"non-driver complete must be rejected with session_active")
+		})
+	})
+
+	Describe("UT-KA-RECONNECT-ACTION-001: action=reconnect returns existing session for same user", func() {
+		It("should return status=reconnected with the existing session ID", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-reconnect-existing",
+					CorrelationID: "rr-reconnect",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-reconnect",
+				Action: mcptools.ActionReconnect,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("reconnected"))
+			Expect(output.SessionID).To(Equal("sess-reconnect-existing"))
+		})
+	})
+
+	Describe("UT-KA-RECONNECT-ACTION-002: action=reconnect fails when no session exists", func() {
+		It("should return MCPError not_driving", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: false,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-no-session",
+				Action: mcptools.ActionReconnect,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("not_driving"))
+		})
+	})
+
+	Describe("UT-KA-RECONNECT-ACTION-003: action=reconnect rejected for different user", func() {
+		It("should return MCPError session_active with driver identity", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-reconnect-owned",
+					CorrelationID: "rr-reconnect-diff",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-reconnect-diff",
+				Action: mcptools.ActionReconnect,
+			}, mcpinternal.UserInfo{Username: "bob"})
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("session_active"))
+		})
+	})
+})
+
+// mockSignalResolver implements mcptools.SignalContextResolver for UTs.
+type mockSignalResolver struct {
+	signal  *katypes.SignalContext
+	enrich  *prompt.EnrichmentData
+	signalErr error
+	enrichErr error
+}
+
+func (m *mockSignalResolver) ResolveSignalContext(_ context.Context, _ string) (*katypes.SignalContext, error) {
+	if m.signal != nil {
+		return m.signal, m.signalErr
+	}
+	return &katypes.SignalContext{Severity: "critical"}, m.signalErr
+}
+
+func (m *mockSignalResolver) ResolveEnrichmentData(_ context.Context, _ string) (*prompt.EnrichmentData, error) {
+	if m.enrich != nil {
+		return m.enrich, m.enrichErr
+	}
+	return &prompt.EnrichmentData{}, m.enrichErr
+}
+
+var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
+
+	Describe("UT-KA-DW-001: discover_workflows stores RCA + DiscoveryResult", func() {
+		It("should return recommendations and store both results on session", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-001",
+				CorrelationID: "rr-dw-001",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{
+				{Role: "user", Content: "my pod is crashing"},
+				{Role: "assistant", Content: "I see OOM errors"},
+			}}
+			resolver := &mockSignalResolver{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver))
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-001",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"))
+
+			Expect(sess.RCAResult).NotTo(BeNil(), "RCA result should be stored on session")
+			Expect(sess.DiscoveryResult).NotTo(BeNil(), "Discovery result should be stored on session")
+		})
+	})
+
+	Describe("UT-KA-DW-002: discover_workflows rejects non-driver", func() {
+		It("should reject caller who is not the active driver", func() {
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-dw-002",
+					CorrelationID: "rr-dw-002",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-002",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "bob"})
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Describe("UT-KA-DW-003: discover_workflows rejects when no session", func() {
+		It("should reject when no active session exists", func() {
+			sessionMgr := &mockSessionManager{isActive: false}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-003",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+		})
+	})
+})
+
+var _ = Describe("kubernaut_investigate — discover_workflows additional scenarios", func() {
+
+	Describe("UT-KA-DW-004: discover_workflows called twice overwrites previous results", func() {
+		It("should succeed and overwrite RCA + DiscoveryResult on re-discovery", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-004",
+				CorrelationID: "rr-dw-004",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				RCAResult:     &katypes.InvestigationResult{RCASummary: "stale RCA"},
+				DiscoveryResult: &mcpinternal.WorkflowDiscoveryResult{
+					Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "stale-wf"},
+				},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{
+				{Role: "user", Content: "my pod is crashing"},
+			}}
+			resolver := &mockSignalResolver{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver))
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-004",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"))
+
+			Expect(sess.RCAResult).NotTo(BeNil())
+			Expect(sess.RCAResult.RCASummary).To(Equal("mock RCA"),
+				"RCA should be overwritten with fresh extraction result")
+			Expect(sess.DiscoveryResult).NotTo(BeNil())
+			Expect(sess.DiscoveryResult.Recommended).NotTo(BeNil())
+			Expect(sess.DiscoveryResult.Recommended.WorkflowID).To(Equal("mock-workflow"),
+				"DiscoveryResult should be overwritten with fresh discovery result")
+		})
+	})
+
+	Describe("UT-KA-RECONNECT-DW: reconnect after discover_workflows preserves session state", func() {
+		It("should allow select_workflow after reconnect without re-discovery", func() {
+			wfID := "wf-reconnect-test"
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-reconnect-dw",
+				CorrelationID: "rr-reconnect-dw",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				RCAResult:     &katypes.InvestigationResult{RCASummary: "OOM crash", Confidence: 0.9},
+				DiscoveryResult: &mcpinternal.WorkflowDiscoveryResult{
+					Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: wfID, Confidence: 0.85},
+				},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+
+			investigateTool := mcptools.NewInvestigateTool(sessionMgr, &mockInvestigatorRunner{}, &mockContextReconstructor{}, mcptools.NopAutonomousManager{})
+			reconnectOut, err := investigateTool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-reconnect-dw",
+				Action: mcptools.ActionReconnect,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(reconnectOut.Status).To(Equal("reconnected"))
+
+			Expect(sess.DiscoveryResult).NotTo(BeNil(),
+				"DiscoveryResult must survive reconnect")
+			Expect(sess.RCAResult).NotTo(BeNil(),
+				"RCAResult must survive reconnect")
+
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{WorkflowID: wfID, WorkflowName: "restart-pod"},
+			}
+			selectTool := mcptools.NewSelectWorkflowTool(catalog, sessionMgr)
+			selectOut, err := selectTool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-reconnect-dw",
+				WorkflowID: wfID,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(selectOut.Status).To(Equal("workflow_selected"))
+		})
+	})
+})
+
+var _ = Describe("kubernaut_investigate — DiscoveryResult invalidation on message", func() {
+
+	Describe("UT-KA-INVAL-001: message clears DiscoveryResult", func() {
+		It("should clear DiscoveryResult after a message is sent", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-inval-001",
+				CorrelationID: "rr-inval-001",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				DiscoveryResult: &mcpinternal.WorkflowDiscoveryResult{
+					Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "wf-stale"},
+				},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{response: "Updated analysis shows..."}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:    "rr-inval-001",
+				Action:  mcptools.ActionMessage,
+				Message: "actually it might be a network issue",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("message_received"))
+
+			Expect(sess.DiscoveryResult).To(BeNil(),
+				"DiscoveryResult must be cleared after a message to prevent stale recommendations")
 		})
 	})
 })

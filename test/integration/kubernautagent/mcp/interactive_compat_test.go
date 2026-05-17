@@ -70,7 +70,7 @@ var _ = Describe("Interactive Session Compatibility — COMPAT BR-INTERACTIVE-00
 
 			sessMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logrLogger)
 
-			investigateTool := tools.NewInvestigateTool(sessMgr, runner, recon)
+			investigateTool := tools.NewInvestigateTool(sessMgr, runner, recon, tools.NopAutonomousManager{})
 
 			toolDeps := mcpinternal.ToolDeps{
 				Investigate: tools.InvestigateRegistration(investigateTool, nil, nil),

@@ -62,7 +62,7 @@ import (
 // - BR-SOC2-004: Digital signatures for exports
 // - BR-SOC2-005: Certificate-based signing (production flow)
 
-var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
+var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, ContinueOnFailure, func() {
 	var (
 		testCtx    context.Context
 		testCancel context.CancelFunc

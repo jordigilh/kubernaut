@@ -18,6 +18,7 @@ package kubernautagent
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -126,6 +127,124 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 				"SSE stream must deliver at least one event")
 			Expect(hasComplete).To(BeTrue(),
 				"SSE stream must terminate with 'complete' event")
+		})
+
+		It("E2E-KA-SSE-003: SSE event data schema validation", func() {
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "test-sse-003",
+				RemediationID:     "test-rem-sse-003",
+				SignalName:        "CrashLoopBackOff",
+				Severity:          agentclient.SeverityHigh,
+				SignalSource:      "kubernetes",
+				ResourceNamespace: "default",
+				ResourceKind:      "Pod",
+				ResourceName:      "sse-pod-003",
+				ErrorMessage:      "Container restarting repeatedly",
+				Environment:       "production",
+				Priority:          "P1",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "e2e-test",
+			}
+
+			By("Submitting investigation")
+			sessionID, err := sessionClient.SubmitInvestigation(ctx, req)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Connecting to SSE stream immediately after submission")
+			streamReq, err := http.NewRequestWithContext(ctx, "GET",
+				fmt.Sprintf("%s/api/v1/incident/session/%s/stream", kaURL, sessionID), nil)
+			Expect(err).ToNot(HaveOccurred())
+			streamReq.Header.Set("Accept", "text/event-stream")
+
+			resp, err := authHTTPClient.Do(streamReq)
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
+
+			Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/event-stream"))
+
+			By("Reading SSE events and validating data: line schema")
+			scanner := bufio.NewScanner(resp.Body)
+			type sseFrame struct {
+				ID    string
+				Event string
+				Data  string
+			}
+			var frames []sseFrame
+			var current sseFrame
+			deadline := time.After(60 * time.Second)
+
+		readLoop:
+			for {
+				select {
+				case <-deadline:
+					break readLoop
+				default:
+					if !scanner.Scan() {
+						break readLoop
+					}
+					line := scanner.Text()
+					switch {
+					case strings.HasPrefix(line, "id: "):
+						current.ID = strings.TrimPrefix(line, "id: ")
+					case strings.HasPrefix(line, "event: "):
+						current.Event = strings.TrimPrefix(line, "event: ")
+					case strings.HasPrefix(line, "data: "):
+						current.Data = strings.TrimPrefix(line, "data: ")
+					case line == "":
+						if current.Event != "" {
+							frames = append(frames, current)
+							if current.Event == "complete" {
+								current = sseFrame{}
+								break readLoop
+							}
+						}
+						current = sseFrame{}
+					}
+				}
+			}
+
+			By("Asserting frames are present and well-formed")
+			Expect(frames).NotTo(BeEmpty(), "should have received at least one SSE frame")
+
+			var lastID int
+			for i, f := range frames {
+				GinkgoWriter.Printf("  frame[%d]: id=%s event=%s data=%s\n", i, f.ID, f.Event, truncate(f.Data, 120))
+
+				Expect(f.Event).NotTo(BeEmpty(),
+					"frame %d: event: line must be present", i)
+
+				if f.ID != "" {
+					var seqID int
+					_, parseErr := fmt.Sscanf(f.ID, "%d", &seqID)
+					if parseErr == nil && i > 0 {
+						Expect(seqID).To(BeNumerically(">", lastID),
+							"frame %d: id should be monotonically increasing", i)
+					}
+					lastID = seqID
+				}
+
+				if f.Data != "" {
+					var payload map[string]interface{}
+					Expect(json.Unmarshal([]byte(f.Data), &payload)).To(Succeed(),
+						"frame %d: data: line must be valid JSON", i)
+					Expect(payload).To(HaveKey("type"),
+						"frame %d: data JSON must contain 'type' field (InvestigationEvent schema)", i)
+					if turn, hasTurn := payload["turn"]; hasTurn {
+						Expect(turn).To(BeAssignableToTypeOf(float64(0)),
+							"frame %d: 'turn' must be a number", i)
+					}
+				}
+			}
+
+			hasComplete := false
+			for _, f := range frames {
+				if f.Event == "complete" {
+					hasComplete = true
+					break
+				}
+			}
+			Expect(hasComplete).To(BeTrue(), "SSE stream must terminate with 'complete' event")
 		})
 	})
 

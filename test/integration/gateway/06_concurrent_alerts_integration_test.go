@@ -55,7 +55,7 @@ import (
 //
 // Business Requirements:
 // - BR-GATEWAY-008: Gateway must handle concurrent requests without data loss
-var _ = Describe("Test 06: Concurrent Signal Handling (Integration)", Ordered, Label("concurrent", "integration"), func() {
+var _ = Describe("Test 06: Concurrent Signal Handling (Integration)", Ordered, ContinueOnFailure, Label("concurrent", "integration"), func() {
 	var (
 		testLogger    logr.Logger
 		testNamespace string

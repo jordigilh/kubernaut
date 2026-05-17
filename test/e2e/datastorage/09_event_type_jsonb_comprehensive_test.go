@@ -1310,7 +1310,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 // COMPREHENSIVE EVENT TYPE VALIDATION TESTS
 // ========================================
 
-var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("e2e", "gap-1.1", "p0"), Ordered, func() {
+var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("e2e", "gap-1.1", "p0"), Ordered, ContinueOnFailure, func() {
 	var (
 		db  *sql.DB
 		ctx context.Context

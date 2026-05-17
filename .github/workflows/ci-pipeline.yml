@@ -472,7 +472,7 @@ jobs:
             timeout: 15
           - service: kubernautagent
             service_name: "Kubernaut Agent"
-            timeout: 15
+            timeout: 20
     steps:
       - uses: actions/checkout@v6
         with:

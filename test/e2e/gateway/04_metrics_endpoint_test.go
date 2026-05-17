@@ -41,7 +41,7 @@ import (
 //
 // Business Requirements:
 // - BR-GATEWAY-017: Gateway must expose Prometheus metrics for observability
-var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
+var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, ContinueOnFailure, func() {
 	var (
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger

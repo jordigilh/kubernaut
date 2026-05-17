@@ -58,7 +58,7 @@ import (
 // - Complete infrastructure isolation
 // - No data pollution between tests
 
-var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audit Trail (DD-AUDIT-003)", Label("e2e", "happy-path", "p0"), Ordered, func() {
+var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audit Trail (DD-AUDIT-003)", Label("e2e", "happy-path", "p0"), Ordered, ContinueOnFailure, func() {
 	var (
 		testCancel context.CancelFunc
 		testLogger logr.Logger

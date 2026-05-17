@@ -41,7 +41,7 @@ import (
 // Note: Detailed audit event validation is covered in integration tests.
 // E2E tests focus on end-to-end flow execution and webhook attribution popul ation.
 
-var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, func() {
+var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, ContinueOnFailure, func() {
 	var (
 		testCtx       context.Context
 		testNamespace string

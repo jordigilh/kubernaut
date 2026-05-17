@@ -4,7 +4,7 @@
 **Priority**: P1 (HIGH) - Core v1.5 Feature
 **Target Version**: v1.5
 **Status**: Proposed
-**Date**: April 29, 2026
+**Date**: April 29, 2026 (Updated: May 15, 2026 — SEC-TAKEOVER-001 clarification on BR-INTERACTIVE-004 #5)
 **Related ADRs**: ADR-038 (Async Buffered Audit Ingestion)
 **Related DDs**: DD-AUTH-MCP-001 (MCP Endpoint Security), DD-INTERACTIVE-002 (Dynamic Takeover Model)
 **GitHub Issue**: [#703](https://github.com/jordigilh/kubernaut/issues/703)
@@ -87,8 +87,8 @@ SREs must be able to take over an ongoing autonomous investigation at any point 
 2. Takeover requires explicit `action: takeover` (not implicit on first message)
 3. Autonomous investigation completes current LLM turn before being cancelled (no lost work)
 4. User's LLM context is auto-injected with autonomous findings from DS audit events
-5. On disconnect, a NEW autonomous session reconstructs the full conversation from DS
-6. Autonomous resumes as KA SA (user identity not retained)
+5. **v1.5**: Takeover is a **one-way door** — autonomous investigation is cancelled permanently and does NOT resume on disconnect. If the user abandons the session, the inactivity timeout releases the Lease, the AA phase times out on the RO side, and the Gateway creates a fresh RemediationRequest. See SEC-TAKEOVER-001 in DD-INTERACTIVE-002 for security rationale.
+6. **v1.6+ (deferred)**: Resume-on-disconnect may be revisited once alignment grounding review can verify the user's interactive turns did not introduce unsafe directives
 7. Single-driver guarantee via K8s Lease (concurrent drivers rejected)
 
 ---

@@ -448,13 +448,7 @@ func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 			}, nil
 		}
 		if errors.Is(err, session.ErrSessionTerminal) {
-			return &agentclient.HTTPError{
-				Type:     "https://kubernaut.ai/problems/session-terminal",
-				Title:    "Session Terminal",
-				Detail:   fmt.Sprintf("session %s has already concluded; use the snapshot endpoint", params.SessionID),
-				Status:   404,
-				Instance: fmt.Sprintf("/api/v1/incident/session/%s/stream", params.SessionID),
-			}, nil
+			return h.terminalSessionSSE(params.SessionID)
 		}
 		h.logger.Error(err, "subscribe failed", "session_id", params.SessionID)
 		return nil, errors.New("internal server error")
@@ -493,6 +487,50 @@ func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 				seq++
 			}
 		}
+	}()
+
+	return &agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK{Data: pr}, nil
+}
+
+// terminalSessionSSE returns an SSE stream with a synthetic complete event
+// for sessions that have already concluded. This prevents a race condition
+// where clients connecting after investigation completion would receive a
+// JSON 404 instead of an SSE stream — breaking reconnection flows (e.g. AF
+// reconnecting after a dropped connection).
+func (h *Handler) terminalSessionSSE(sessionID string) (agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, error) {
+	sess, err := h.sessions.GetSession(sessionID)
+	if err != nil {
+		return &agentclient.HTTPError{
+			Type:     "https://kubernaut.ai/problems/not-found",
+			Title:    "Session Not Found",
+			Detail:   fmt.Sprintf("session %s not found", sessionID),
+			Status:   404,
+			Instance: fmt.Sprintf("/api/v1/incident/session/%s/stream", sessionID),
+		}, nil
+	}
+
+	completeEvent := session.InvestigationEvent{
+		Type:  session.EventTypeComplete,
+		Turn:  0,
+		Phase: "complete",
+	}
+	if sess.Result != nil {
+		if data, marshalErr := json.Marshal(sess.Result); marshalErr == nil {
+			completeEvent.Data = data
+		}
+	}
+
+	frame, err := json.Marshal(completeEvent)
+	if err != nil {
+		h.logger.Error(err, "terminal SSE marshal failed", "session_id", sessionID)
+		return nil, errors.New("internal server error")
+	}
+
+	pr, pw := io.Pipe()
+	go func() {
+		defer func() { _ = pw.CloseWithError(nil) }()
+		sseFrame := fmt.Sprintf("id: 1\nevent: %s\ndata: %s\n\n", session.EventTypeComplete, string(frame))
+		_, _ = pw.Write([]byte(sseFrame))
 	}()
 
 	return &agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK{Data: pr}, nil

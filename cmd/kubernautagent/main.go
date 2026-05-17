@@ -382,6 +382,8 @@ func main() {
 	}, agentMetrics.HTTPRateLimitedTotal)
 	defer apiRateLimiter.Stop()
 
+	var sessionDrainer *mcpkg.SessionDrainer
+
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -415,7 +417,8 @@ func main() {
 		}
 
 		if cfg.Interactive.Enabled && interactiveReadiness.StatusString() != "soft_disabled" {
-			mcpHandler := buildMCPHandler(cfg, k8sInfra, ds, inv, enricher, mgr, authMw, agentMetrics, instrumentedAudit, logger)
+			var mcpHandler http.Handler
+			mcpHandler, sessionDrainer = buildMCPHandler(cfg, k8sInfra, ds, inv, enricher, mgr, authMw, agentMetrics, instrumentedAudit, logger)
 			if mcpHandler != nil {
 				// SEC-02: Per-user rate limiting for MCP interactive endpoint.
 				userRL := kaserver.NewUserRateLimiter(
@@ -602,6 +605,11 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	if sessionDrainer != nil {
+		sessionDrainer.DrainSessions(shutdownCtx)
+	}
+
 	shutdownServer(shutdownCtx, httpServer, "API", logger)
 	shutdownServer(shutdownCtx, healthServer, "health", logger)
 	shutdownServer(shutdownCtx, metricsServer, "metrics", logger)
@@ -1193,19 +1201,19 @@ func buildMCPHandler(
 	agentMetrics *kametrics.Metrics,
 	auditStore audit.AuditStore,
 	logger logr.Logger,
-) http.Handler {
+) (http.Handler, *mcpkg.SessionDrainer) {
 	if infra == nil || infra.kubeConfig == nil {
 		logger.Error(nil, "MCP interactive mode: K8s infrastructure unavailable")
-		return nil
+		return nil, nil
 	}
 	if authMw == nil {
 		logger.Error(nil, "MCP interactive mode: auth middleware unavailable (DD-AUTH-MCP-001)")
-		return nil
+		return nil, nil
 	}
 	// SEC-05: Investigator is required for the core investigate tool.
 	if inv == nil {
 		logger.Error(nil, "MCP interactive mode: investigator unavailable")
-		return nil
+		return nil, nil
 	}
 
 	
@@ -1225,7 +1233,7 @@ func buildMCPHandler(
 	ctrlCli, err := ctrlclient.New(&mcpRestConfig, ctrlclient.Options{Scheme: mcpScheme})
 	if err != nil {
 		logger.Error(err, "MCP interactive mode: failed to create controller-runtime client")
-		return nil
+		return nil, nil
 	}
 
 	namespace := detectNamespace()
@@ -1253,6 +1261,10 @@ func buildMCPHandler(
 		}),
 	}
 	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(ctrlCli, namespace, logger, leaseOpts...)
+
+	if n := leaseMgr.ReconcileOrphanedLeases(context.Background()); n > 0 {
+		logger.Info("startup: reclaimed orphaned interactive Leases", "count", n)
+	}
 
 	// Context reconstruction from DS audit events (best-effort).
 	var recon mcpkg.ContextReconstructor
@@ -1362,12 +1374,10 @@ func buildMCPHandler(
 		mcptools.WithTimeoutTracker(timeoutMgr),
 		mcptools.WithNotifyFunc(sessionNotifier.Notify),
 		mcptools.WithRRExistenceChecker(rrChecker),
+		mcptools.WithHTTPCompleter(autoMgr),
 		mcptools.WithAuditStore(auditStore, logger.WithName("mcp-audit")),
 	}
-	if autoMgr != nil {
-		investigateOpts = append(investigateOpts, mcptools.WithAutonomousManager(autoMgr))
-	}
-	investigateTool := mcptools.NewInvestigateTool(leaseMgr, investigatorRunner, recon, investigateOpts...)
+	investigateTool := mcptools.NewInvestigateTool(leaseMgr, investigatorRunner, recon, autoMgr, investigateOpts...)
 
 	// Build the WorkflowCatalog adapter and SelectWorkflowTool.
 	// #1012: enrichment is now internalized into select_workflow via WithEnrichmentRunner.
@@ -1377,6 +1387,8 @@ func buildMCPHandler(
 		catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
 		swOpts := []mcptools.SelectWorkflowOption{
 			mcptools.WithLogger(logger.WithName("select-workflow")),
+			mcptools.WithHTTPSessionCompleter(autoMgr),
+			mcptools.WithMutexProvider(investigateTool),
 		}
 		if enricher != nil {
 			swOpts = append(swOpts, mcptools.WithEnrichmentRunner(enricher))
@@ -1384,12 +1396,20 @@ func buildMCPHandler(
 		selectWfTool = mcptools.NewSelectWorkflowTool(catalogAdapter, leaseMgr, swOpts...)
 	}
 
+	// Build the CompleteNoActionTool.
+	completeNoActionTool := mcptools.NewCompleteNoActionTool(leaseMgr,
+		mcptools.WithCompleteNoActionLogger(logger.WithName("complete-no-action")),
+		mcptools.WithCompleteNoActionHTTPCompleter(autoMgr),
+		mcptools.WithCompleteNoActionMutexProvider(investigateTool),
+	)
+
 	// Register tools with the MCP SDK server.
 	toolDeps := mcpkg.ToolDeps{}
 	toolDeps.Investigate = mcptools.InvestigateRegistration(investigateTool, eventStore, sessionNotifier)
 	if selectWfTool != nil {
 		toolDeps.SelectWorkflow = mcptools.SelectWorkflowRegistration(selectWfTool)
 	}
+	toolDeps.CompleteNoAction = mcptools.CompleteNoActionRegistration(completeNoActionTool)
 
 	mcpHandler, _ := mcpkg.BootstrapMCP(mcpkg.MCPDeps{
 		AuthMiddleware: authMw.Handler,
@@ -1397,18 +1417,22 @@ func buildMCPHandler(
 		EventStore:     eventStore,
 	})
 
+	drainer := mcpkg.NewSessionDrainer(leaseMgr, sessionNotifier, logger.WithName("session-drainer"))
+
 	logger.Info("MCP interactive mode fully wired",
 		"investigate", true,
 		"select_workflow", selectWfTool != nil,
+		"complete_no_action", true,
 		"enrichment_in_select_workflow", enricher != nil,
 		"event_store", true,
 		"timeout_manager", true,
 		"disconnect_handler", true,
 		"reconstruction_spawner", true,
 		"notification_bus", true,
+		"session_drainer", true,
 	)
 
-	return mcpHandler
+	return mcpHandler, drainer
 }
 
 // noopReconstructor is a no-op ContextReconstructor used when DS is unavailable.

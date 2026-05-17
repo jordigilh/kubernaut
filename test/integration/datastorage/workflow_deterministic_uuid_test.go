@@ -38,7 +38,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
-var _ = Describe("Deterministic UUID Integration (#548)", Ordered, func() {
+var _ = Describe("Deterministic UUID Integration (#548)", Ordered, ContinueOnFailure, func() {
 
 	var (
 		ts     *httptest.Server

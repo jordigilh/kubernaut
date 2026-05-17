@@ -18,11 +18,19 @@ package infrastructure
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
 	"os/exec"
 	"strings"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -68,18 +76,79 @@ func ConnectMCPClient(ctx context.Context, cfg MCPClientConfig) (*mcpsdk.ClientS
 	return client.Connect(ctx, transport, nil)
 }
 
+// ConnectMCPClientWithRetry wraps ConnectMCPClient with exponential backoff on
+// 429 (Too Many Requests). Matches KA's Retry-After: 1 header semantics.
+func ConnectMCPClientWithRetry(ctx context.Context, cfg MCPClientConfig, writer io.Writer) (*mcpsdk.ClientSession, error) {
+	backoff := 2 * time.Second
+	const maxRetries = 5
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		session, err := ConnectMCPClient(connectCtx, cfg)
+		cancel()
+		if err == nil {
+			return session, nil
+		}
+		if !strings.Contains(err.Error(), "Too Many Requests") || attempt == maxRetries {
+			return nil, err
+		}
+		if writer != nil {
+			_, _ = fmt.Fprintf(writer, "  ⏳ MCP connect got 429, retrying in %v (attempt %d/%d)\n", backoff, attempt+1, maxRetries)
+		}
+		select {
+		case <-time.After(backoff):
+			backoff *= 2
+		case <-ctx.Done():
+			return nil, fmt.Errorf("context cancelled during 429 backoff: %w", ctx.Err())
+		}
+	}
+	return nil, fmt.Errorf("unreachable")
+}
+
+// callToolWithRetry wraps a tool call with retry-on-429 backoff.
+func callToolWithRetry(ctx context.Context, session *mcpsdk.ClientSession, params *mcpsdk.CallToolParams) (*mcpsdk.CallToolResult, error) {
+	backoff := 2 * time.Second
+	const maxRetries = 5
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		result, err := session.CallTool(ctx, params)
+		if err == nil {
+			return result, nil
+		}
+		if !strings.Contains(err.Error(), "Too Many Requests") || attempt == maxRetries {
+			return nil, err
+		}
+		select {
+		case <-time.After(backoff):
+			backoff *= 2
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return nil, fmt.Errorf("unreachable")
+}
+
 // CallInvestigate calls the kubernaut_investigate MCP tool with the given arguments.
+// Retries on 429 (Too Many Requests) with exponential backoff.
 func CallInvestigate(ctx context.Context, session *mcpsdk.ClientSession, args map[string]any) (*mcpsdk.CallToolResult, error) {
-	return session.CallTool(ctx, &mcpsdk.CallToolParams{
+	return callToolWithRetry(ctx, session, &mcpsdk.CallToolParams{
 		Name:      "kubernaut_investigate",
 		Arguments: args,
 	})
 }
 
 // CallSelectWorkflow calls the kubernaut_select_workflow MCP tool with the given arguments.
+// Retries on 429 (Too Many Requests) with exponential backoff.
 func CallSelectWorkflow(ctx context.Context, session *mcpsdk.ClientSession, args map[string]any) (*mcpsdk.CallToolResult, error) {
-	return session.CallTool(ctx, &mcpsdk.CallToolParams{
+	return callToolWithRetry(ctx, session, &mcpsdk.CallToolParams{
 		Name:      "kubernaut_select_workflow",
+		Arguments: args,
+	})
+}
+
+// CallCompleteNoAction calls the kubernaut_complete_no_action MCP tool with the given arguments.
+// Retries on 429 (Too Many Requests) with exponential backoff.
+func CallCompleteNoAction(ctx context.Context, session *mcpsdk.ClientSession, args map[string]any) (*mcpsdk.CallToolResult, error) {
+	return callToolWithRetry(ctx, session, &mcpsdk.CallToolParams{
+		Name:      "kubernaut_complete_no_action",
 		Arguments: args,
 	})
 }
@@ -107,9 +176,15 @@ func MCPEndpointForKAE2E() string {
 
 // CreateInteractiveE2ESA creates a ServiceAccount with full interactive RBAC
 // (impersonate, leases, pods access) and returns its token.
+// Self-contained: ensures the prerequisite kubernaut-agent-e2e-client-access
+// Role exists (idempotent) so this works in both KA E2E and FP E2E suites.
 func CreateInteractiveE2ESA(ctx context.Context, namespace, saName, kubeconfigPath string, writer io.Writer) (string, error) {
 	if err := CreateServiceAccount(ctx, namespace, kubeconfigPath, saName, writer); err != nil {
 		return "", fmt.Errorf("create SA %s: %w", saName, err)
+	}
+
+	if err := ensureKAClientAccessRole(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return "", fmt.Errorf("ensure KA client access Role: %w", err)
 	}
 
 	if err := CreateKAE2EClientRBACForSA(ctx, namespace, kubeconfigPath, saName, writer); err != nil {
@@ -121,6 +196,167 @@ func CreateInteractiveE2ESA(ctx context.Context, namespace, saName, kubeconfigPa
 		return "", fmt.Errorf("get token for %s: %w", saName, err)
 	}
 	return token, nil
+}
+
+// ensureKAClientAccessRole creates the kubernaut-agent-e2e-client-access Role
+// if it doesn't already exist. Idempotent via kubectl apply.
+func ensureKAClientAccessRole(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	roleYAML := fmt.Sprintf(`apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubernaut-agent-e2e-client-access
+  namespace: %s
+  labels:
+    app: kubernaut-agent
+    component: e2e-testing
+    authorization: dd-auth-014
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["kubernaut-agent"]
+    verbs: ["create", "get"]
+`, namespace)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--server-side", "--force-conflicts", "--kubeconfig", kubeconfigPath, "-f", "-")
+	cmd.Stdin = strings.NewReader(roleYAML)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
+}
+
+// CreateDirectRR creates a RemediationRequest CRD directly (bypassing the OOMKill
+// pipeline) for tests that don't need the full event->Gateway->SP->RO flow.
+// Returns the RR name. A managed namespace is created for the target resource so
+// that the RO routing engine does not block the RR as UnmanagedResource.
+func CreateDirectRR(ctx context.Context, namespace, testID string) (string, error) {
+	rrName := fmt.Sprintf("rr-%s-%d", testID, time.Now().UnixMilli())
+	fingerprint := fmt.Sprintf("%x", sha256.Sum256([]byte(testID+"-"+rrName)))
+	now := metav1.Now()
+
+	cfg, err := config.GetConfig()
+	if err != nil {
+		return "", fmt.Errorf("get kubeconfig: %w", err)
+	}
+	dynClient, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		return "", fmt.Errorf("create dynamic client: %w", err)
+	}
+
+	targetNS := fmt.Sprintf("fp-%s-%d", testID, time.Now().UnixMilli())
+	nsGVR := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
+	nsObj := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "Namespace",
+			"metadata": map[string]interface{}{
+				"name": targetNS,
+				"labels": map[string]interface{}{
+					"kubernaut.ai/managed": "true",
+				},
+			},
+		},
+	}
+	nsCtx, nsCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer nsCancel()
+	if _, err := dynClient.Resource(nsGVR).Create(nsCtx, nsObj, metav1.CreateOptions{}); err != nil {
+		return "", fmt.Errorf("create managed namespace %s: %w", targetNS, err)
+	}
+
+	rr := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "kubernaut.ai/v1alpha1",
+			"kind":       "RemediationRequest",
+			"metadata": map[string]interface{}{
+				"name":      rrName,
+				"namespace": namespace,
+			},
+			"spec": map[string]interface{}{
+				"signalFingerprint": fingerprint,
+				"signalName":        fmt.Sprintf("e2e-%s-signal", testID),
+				"signalType":        "alert",
+				"severity":          "high",
+				"targetType":        "kubernetes",
+				"firingTime":        now.UTC().Format(time.RFC3339),
+				"receivedTime":      now.UTC().Format(time.RFC3339),
+				"targetResource": map[string]interface{}{
+					"kind":      "Deployment",
+					"name":      fmt.Sprintf("%s-target", testID),
+					"namespace": targetNS,
+				},
+			},
+		},
+	}
+
+	rrGVR := schema.GroupVersionResource{
+		Group:    "kubernaut.ai",
+		Version:  "v1alpha1",
+		Resource: "remediationrequests",
+	}
+
+	createCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	_, err = dynClient.Resource(rrGVR).Namespace(namespace).Create(createCtx, rr, metav1.CreateOptions{})
+	if err != nil {
+		return "", fmt.Errorf("create RR CRD: %w", err)
+	}
+	return rrName, nil
+}
+
+// MCPSessionSetup holds the result of SetupMCPSession.
+type MCPSessionSetup struct {
+	Session  *mcpsdk.ClientSession
+	SAToken  string
+	Cleanup  func()
+}
+
+// SetupMCPSession creates a ServiceAccount with interactive RBAC, sets up TLS,
+// and connects an MCP client session. Returns the session and a cleanup function.
+// Retries on 429 (Too Many Requests) with exponential backoff, matching KA's
+// per-IP (5 rps) and per-user (10 rps) rate limiters.
+func SetupMCPSession(ctx context.Context, namespace, saName, kubeconfigPath string, writer io.Writer) (*MCPSessionSetup, error) {
+	token, err := CreateInteractiveE2ESA(ctx, namespace, saName, kubeconfigPath, writer)
+	if err != nil {
+		return nil, fmt.Errorf("create interactive SA: %w", err)
+	}
+
+	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("TLS transport: %w", err)
+	}
+
+	cfg := MCPClientConfig{
+		Endpoint:     MCPEndpointForKAE2E(),
+		SAToken:      token,
+		TLSTransport: tlsTransport,
+	}
+
+	var session *mcpsdk.ClientSession
+	backoff := 2 * time.Second
+	const maxRetries = 5
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		session, err = ConnectMCPClient(connectCtx, cfg)
+		cancel()
+		if err == nil {
+			break
+		}
+		if !strings.Contains(err.Error(), "Too Many Requests") || attempt == maxRetries {
+			return nil, fmt.Errorf("MCP connect: %w", err)
+		}
+		_, _ = fmt.Fprintf(writer, "  ⏳ MCP connect got 429, retrying in %v (attempt %d/%d)\n", backoff, attempt+1, maxRetries)
+		select {
+		case <-time.After(backoff):
+			backoff *= 2
+		case <-ctx.Done():
+			return nil, fmt.Errorf("MCP connect: context cancelled during 429 backoff: %w", ctx.Err())
+		}
+	}
+
+	return &MCPSessionSetup{
+		Session: session,
+		SAToken: token,
+		Cleanup: func() { _ = session.Close() },
+	}, nil
 }
 
 // CreateLimitedRBACSA creates a ServiceAccount with restricted RBAC for security tests.

@@ -76,7 +76,13 @@ var _ = Describe("LeaseSessionManager deep IT — BR-INTERACTIVE-005", Label("in
 					}
 				}(i)
 			}
-			wg.Wait()
+			done := make(chan struct{})
+			go func() { wg.Wait(); close(done) }()
+			select {
+			case <-done:
+			case <-time.After(30 * time.Second):
+				Fail("wg.Wait() timed out — concurrent Takeover goroutines hung")
+			}
 
 			Expect(winners).To(HaveLen(1), "exactly one goroutine should win the lease")
 			Expect(losers).To(Equal(goroutines - 1))

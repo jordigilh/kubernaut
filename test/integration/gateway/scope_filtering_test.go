@@ -75,7 +75,7 @@ func getIntegrationMetricValue(counter *prometheus.CounterVec, labels ...string)
 	return 0
 }
 
-var _ = Describe("BR-SCOPE-002: Gateway Scope Filtering (Integration)", Ordered, Label("scope", "integration"), func() {
+var _ = Describe("BR-SCOPE-002: Gateway Scope Filtering (Integration)", Ordered, ContinueOnFailure, Label("scope", "integration"), func() {
 	var (
 		testLogger      logr.Logger
 		gwServer        *gateway.Server

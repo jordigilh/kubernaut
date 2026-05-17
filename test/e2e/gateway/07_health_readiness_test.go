@@ -39,7 +39,7 @@ import (
 //
 // Business Requirements:
 // - BR-GATEWAY-018: Gateway must expose health/readiness endpoints for K8s probes
-var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Ordered, func() {
+var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Ordered, ContinueOnFailure, func() {
 	var (
 		testCancel context.CancelFunc
 		testLogger logr.Logger

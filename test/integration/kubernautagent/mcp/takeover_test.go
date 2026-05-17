@@ -32,6 +32,7 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -48,6 +49,14 @@ func (m *delayedMockRunner) RunInteractiveTurn(_ context.Context, _ []tools.LLMM
 	m.calls.Add(1)
 	time.Sleep(m.delay)
 	return m.response, nil
+}
+
+func (m *delayedMockRunner) RunRCAExtraction(_ context.Context, _ []tools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
+}
+
+func (m *delayedMockRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA", WorkflowID: "mock-wf"}, nil
 }
 
 // mockReconIT mocks ContextReconstructor for integration tests.
@@ -76,6 +85,10 @@ func (m *mockAutoMgrIT) SuspendInvestigation(id string) error {
 
 func (m *mockAutoMgrIT) TransitionToUserDriving(id, username string, groups []string) error {
 	return m.mgr.TransitionToUserDriving(id, username, groups)
+}
+
+func (m *mockAutoMgrIT) ForceTransitionToUserDriving(rrID, username string, groups []string) error {
+	return m.mgr.ForceTransitionToUserDriving(rrID, username, groups)
 }
 
 var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", func() {
@@ -113,7 +126,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 			runner := &delayedMockRunner{delay: 10 * time.Millisecond, response: "interactive response"}
 			recon := &mockReconIT{}
-			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, tools.WithAutonomousManager(autoMgr))
+			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, autoMgr)
 
 			user := mcpinternal.UserInfo{Username: "sre-operator@example.com"}
 			input := tools.InvestigateInput{
@@ -157,7 +170,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			}, map[string]string{"remediation_id": "rr-concurrent-001"})
 			Expect(err).NotTo(HaveOccurred())
 
-			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, tools.WithAutonomousManager(autoMgr))
+			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, autoMgr)
 			user := mcpinternal.UserInfo{Username: "alice@example.com"}
 
 			takeoverInput := tools.InvestigateInput{
@@ -221,6 +234,118 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			totalDuration := latest.Sub(earliest)
 			Expect(totalDuration).To(BeNumerically(">=", 80*time.Millisecond),
 				"concurrent messages should be serialized (total time >= 80ms)")
+		})
+	})
+
+	// ---------------------------------------------------------------
+	// IT-KA-SEC-TAKEOVER-001: Takeover abandonment — autonomous does NOT resume
+	// BR: BR-INTERACTIVE-004 #5 (v1.5), SEC-TAKEOVER-001
+	//
+	// Security invariant: after takeover, the autonomous goroutine is
+	// cancelled permanently. If the user abandons the interactive session
+	// (inactivity timeout fires), the autonomous investigation must remain
+	// in StatusUserDriving — NOT transition back to StatusRunning.
+	// This prevents "investigation hacking" where a user poisons the LLM
+	// context and then walks away, letting KA auto-execute tainted results
+	// with KA SA privileges.
+	// ---------------------------------------------------------------
+	Describe("IT-KA-SEC-TAKEOVER-001: Takeover abandonment does not resume autonomous", func() {
+		It("should keep autonomous session in user_driving after interactive lease expires", func() {
+			nsName := uniqueNamespace("sec-take")
+			createNamespace(context.Background(), sharedK8sClient, nsName)
+
+			store := session.NewStore(30 * time.Minute)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
+			autoMgr := &mockAutoMgrIT{mgr: mgr}
+
+			By("Starting autonomous investigation that blocks until cancelled")
+			autoSessionID, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}, map[string]string{"remediation_id": "rr-sec-takeover-001"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() session.Status {
+				s, _ := mgr.GetSession(autoSessionID)
+				if s == nil {
+					return ""
+				}
+				return s.Status
+			}).Should(Equal(session.StatusRunning))
+
+			By("Setting up interactive tool with 1s inactivity timeout")
+			logger := logr.Discard()
+			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
+
+			var expiredSessions sync.Map
+			timeoutMgr := mcpinternal.NewTimeoutManager(
+				1*time.Second,
+				nil,
+				func(sessionID string) {
+					expiredSessions.Store(sessionID, true)
+					_ = leaseMgr.Release(sessionID, "inactivity_timeout")
+				},
+			)
+			defer timeoutMgr.StopAll()
+
+			runner := &delayedMockRunner{delay: 10 * time.Millisecond, response: "interactive response"}
+			recon := &mockReconIT{}
+			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, autoMgr,
+				tools.WithTimeoutTracker(timeoutMgr),
+			)
+
+			By("Taking over the autonomous investigation")
+			user := mcpinternal.UserInfo{Username: "attacker@example.com"}
+			out, err := tool.Handle(context.Background(), tools.InvestigateInput{
+				RRID:   "rr-sec-takeover-001",
+				Action: tools.ActionTakeover,
+			}, user)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("takeover_started"))
+			interactiveSessionID := out.SessionID
+
+			By("Verifying autonomous session transitioned to user_driving")
+			Eventually(func() session.Status {
+				s, _ := mgr.GetSession(autoSessionID)
+				if s == nil {
+					return ""
+				}
+				return s.Status
+			}).Should(Equal(session.StatusUserDriving))
+
+			By("Abandoning — NOT completing or cancelling the interactive session")
+			// Wait for inactivity timeout to fire (1s + buffer)
+			time.Sleep(2 * time.Second)
+
+			By("Verifying interactive Lease was released by timeout")
+			Eventually(func() bool {
+				_, found := expiredSessions.Load(interactiveSessionID)
+				return found
+			}, 3*time.Second, 100*time.Millisecond).Should(BeTrue(),
+				"inactivity timeout should have released the interactive session")
+
+			Expect(leaseMgr.IsDriverActive("rr-sec-takeover-001")).To(BeFalse(),
+				"Lease should be released after inactivity timeout")
+
+			By("CRITICAL: Verifying autonomous session is STILL in user_driving (NOT resumed)")
+			autoSess, getErr := mgr.GetSession(autoSessionID)
+			Expect(getErr).NotTo(HaveOccurred())
+			Expect(autoSess).NotTo(BeNil())
+			Expect(autoSess.Status).To(Equal(session.StatusUserDriving),
+				"SEC-TAKEOVER-001: autonomous session must remain in user_driving after "+
+					"interactive abandonment — autonomous must NOT resume to prevent "+
+					"investigation hacking via tainted LLM context")
+
+			By("Verifying autonomous session was NOT restarted (no new session for same RR)")
+			// FindByRemediationID only returns StatusRunning sessions by design;
+			// after TransitionToUserDriving the status is StatusUserDriving, so it
+			// correctly won't be found. The session itself is confirmed present via
+			// GetSession above. Verify no NEW running session was started.
+			_, found := mgr.FindByRemediationID("rr-sec-takeover-001")
+			Expect(found).To(BeFalse(),
+				"no StatusRunning session should exist — original is in user_driving, no new one was started")
+
+			GinkgoWriter.Println("SEC-TAKEOVER-001: Takeover abandonment validated — autonomous NOT resumed")
 		})
 	})
 })

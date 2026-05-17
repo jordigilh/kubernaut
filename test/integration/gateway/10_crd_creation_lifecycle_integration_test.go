@@ -76,7 +76,7 @@ import (
 // MIGRATION DATE: 2026-01-12
 //
 // Parallel-safe: Uses unique namespace per process
-var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-021)", Ordered, func() {
+var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-021)", Ordered, ContinueOnFailure, func() {
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc

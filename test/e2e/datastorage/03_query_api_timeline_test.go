@@ -59,7 +59,7 @@ import (
 // - Complete infrastructure isolation
 // - No query interference between tests
 
-var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s Response)", Label("e2e", "query-api", "p0"), Ordered, func() {
+var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s Response)", Label("e2e", "query-api", "p0"), Ordered, ContinueOnFailure, func() {
 	var (
 		testCancel context.CancelFunc
 		testLogger logr.Logger

@@ -19,6 +19,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -210,12 +211,37 @@ func (s *Store) Update(id string, status Status, result *katypes.InvestigationRe
 // SetResult attaches a result to an existing session without changing its
 // status. Used to persist partial investigation state on cancelled sessions
 // where Store.Update would reject the status transition (BR-SESSION-002).
+// Skips if the session already has a result set by CompleteUserDriving to
+// prevent a race where the cancelled investigation goroutine overwrites the
+// user-provided result with nil.
 func (s *Store) SetResult(id string, result *katypes.InvestigationResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if sess, ok := s.sessions[id]; ok {
+		if sess.Status == StatusCompleted && sess.Result != nil {
+			return
+		}
 		sess.Result = result
 	}
+}
+
+// CompleteUserDriving transitions a session from StatusUserDriving to
+// StatusCompleted with the given InvestigationResult. This is the only path
+// that allows a user-driven session to reach completion (Update blocks this
+// transition). Used by select_workflow and complete_no_action MCP tools.
+func (s *Store) CompleteUserDriving(id string, result *katypes.InvestigationResult) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[id]
+	if !ok {
+		return ErrSessionNotFound
+	}
+	if sess.Status != StatusUserDriving {
+		return fmt.Errorf("cannot complete: status is %s, expected %s", sess.Status, StatusUserDriving)
+	}
+	sess.Status = StatusCompleted
+	sess.Result = result
+	return nil
 }
 
 // StartCleanupLoop runs Cleanup periodically until the context is cancelled.

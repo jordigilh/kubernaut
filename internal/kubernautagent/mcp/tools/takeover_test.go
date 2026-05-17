@@ -30,7 +30,9 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // recordingAuditStore captures audit events for assertion in regression tests.
@@ -90,6 +92,10 @@ func (m *takeoverAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string
 	if m.transitionErr != nil {
 		return m.transitionErr
 	}
+	return nil
+}
+
+func (m *takeoverAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []string) error {
 	return nil
 }
 
@@ -178,6 +184,14 @@ func (m *takeoverRunner) RunInteractiveTurn(_ context.Context, _ []tools.LLMMess
 	return m.response, m.err
 }
 
+func (m *takeoverRunner) RunRCAExtraction(_ context.Context, _ []tools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
+}
+
+func (m *takeoverRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA", WorkflowID: "mock-wf"}, nil
+}
+
 // takeoverRecon mocks mcpinternal.ContextReconstructor for takeover tests.
 type takeoverRecon struct {
 	turns []mcpinternal.ConversationTurn
@@ -224,7 +238,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		}
 		runner = &takeoverRunner{response: "LLM response here"}
 		recon = &takeoverRecon{}
-		tool = tools.NewInvestigateTool(sessMgr, runner, recon, tools.WithAutonomousManager(autoMgr))
+		tool = tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr)
 		ctx = context.Background()
 	})
 
@@ -410,8 +424,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		It("should emit RecordInteractiveTakeover(start_failed) on ErrLeaseHeld", func() {
 			metrics := &recordingToolMetrics{}
 			sessMgr.takeoverErr = mcpinternal.ErrLeaseHeld
-			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithToolMetrics(metrics),
 			)
 
@@ -428,8 +441,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		It("should emit RecordInteractiveTakeover(start_failed) on generic session error", func() {
 			metrics := &recordingToolMetrics{}
 			sessMgr.takeoverErr = errors.New("k8s API unavailable")
-			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithToolMetrics(metrics),
 			)
 
@@ -445,8 +457,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		It("should emit RecordInteractiveTakeover(start_failed) on max sessions", func() {
 			metrics := &recordingToolMetrics{}
 			sessMgr.takeoverErr = mcpinternal.ErrMaxSessionsReached
-			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithToolMetrics(metrics),
 			)
 
@@ -465,8 +476,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		It("should emit RecordInteractiveTakeover(takeover_race_lost) on ErrLeaseHeld", func() {
 			metrics := &recordingToolMetrics{}
 			sessMgr.takeoverErr = mcpinternal.ErrLeaseHeld
-			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithToolMetrics(metrics),
 			)
 
@@ -483,8 +493,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		It("should emit RecordInteractiveTakeover(takeover_failed) on generic session error", func() {
 			metrics := &recordingToolMetrics{}
 			sessMgr.takeoverErr = errors.New("k8s API unavailable")
-			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithToolMetrics(metrics),
 			)
 
@@ -500,8 +509,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 		It("should emit RecordInteractiveTakeover(takeover_failed) when transition fails", func() {
 			metrics := &recordingToolMetrics{}
 			autoMgr.transitionErr = errors.New("context manager unavailable")
-			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithMetrics := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithToolMetrics(metrics),
 			)
 
@@ -521,8 +529,7 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 	Describe("UT-KA-TAKE-H3: Complete emits audit when Release returns ErrSessionNotFound (H3 regression)", func() {
 		It("should emit interactive.completed audit even when session was already released", func() {
 			auditRecorder := &recordingAuditStore{}
-			toolWithAudit := tools.NewInvestigateTool(sessMgr, runner, recon,
-				tools.WithAutonomousManager(autoMgr),
+			toolWithAudit := tools.NewInvestigateTool(sessMgr, runner, recon, autoMgr,
 				tools.WithAuditStore(auditRecorder, logr.Discard()),
 			)
 

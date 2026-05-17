@@ -29,6 +29,8 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 type goldenPathRunner struct {
@@ -41,6 +43,14 @@ func (r *goldenPathRunner) RunInteractiveTurn(_ context.Context, _ []mcptools.LL
 		time.Sleep(r.delay)
 	}
 	return r.response, nil
+}
+
+func (r *goldenPathRunner) RunRCAExtraction(_ context.Context, _ []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
+}
+
+func (r *goldenPathRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA", WorkflowID: "mock-wf"}, nil
 }
 
 type goldenPathRecon struct{}
@@ -70,6 +80,10 @@ func (m *goldenPathAutoMgr) TransitionToUserDriving(_ string, _ string, _ []stri
 	m.suspended = true
 	return nil
 }
+func (m *goldenPathAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []string) error {
+	m.suspended = true
+	return nil
+}
 
 var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001", func() {
 	var (
@@ -89,7 +103,7 @@ var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001"
 		autoMgr = &goldenPathAutoMgr{}
 
 		sessMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
-		tool = mcptools.NewInvestigateTool(sessMgr, runner, recon, mcptools.WithAutonomousManager(autoMgr))
+		tool = mcptools.NewInvestigateTool(sessMgr, runner, recon, autoMgr)
 	})
 
 	Describe("IT-KA-GOLDEN-001: Full lifecycle: status -> takeover -> message -> status -> complete", func() {

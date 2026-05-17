@@ -46,7 +46,7 @@ import (
 //
 // ========================================
 
-var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "actiontype"), func() {
+var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, ContinueOnFailure, Label("e2e", "actiontype"), func() {
 	var (
 		testCtx       context.Context
 		testNamespace string

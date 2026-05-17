@@ -25,7 +25,9 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 )
 
@@ -77,6 +79,20 @@ func ExtractContent(result investigator.LoopResult) (string, error) {
 	default:
 		return "", fmt.Errorf("unexpected loop result type: %T", result)
 	}
+}
+
+// RunRCAExtraction implements tools.InvestigatorRunner.
+func (a *InvestigatorRunnerAdapter) RunRCAExtraction(ctx context.Context, messages []tools.LLMMessage, correlationID string) (*katypes.InvestigationResult, error) {
+	llmMessages := make([]llm.Message, len(messages))
+	for i, m := range messages {
+		llmMessages[i] = llm.Message{Role: m.Role, Content: m.Content}
+	}
+	return a.inv.RunRCAExtractionFromConversation(ctx, llmMessages, correlationID)
+}
+
+// RunWorkflowDiscovery implements tools.InvestigatorRunner.
+func (a *InvestigatorRunnerAdapter) RunWorkflowDiscovery(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *prompt.EnrichmentData, correlationID string) (*katypes.InvestigationResult, error) {
+	return a.inv.RunWorkflowDiscoveryFromRCA(ctx, signal, rcaResult, enrichData, correlationID)
 }
 
 // Compile-time interface compliance check.

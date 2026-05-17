@@ -466,13 +466,19 @@ func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context,
 	now := metav1.Now()
 	session.LastPolled = &now
 
-	// #774: Propagate identity from KA poll response to CR status.
-	if status.ActingUser != "" || len(status.ActingUserGroups) > 0 {
+	// #774: Propagate identity and session ID from KA poll response to CR status.
+	if status.ActingUser != "" || len(status.ActingUserGroups) > 0 || status.SessionID != "" {
 		if analysis.Status.InteractiveSession == nil {
 			analysis.Status.InteractiveSession = &aianalysisv1.InteractiveSessionInfo{}
 		}
 		analysis.Status.InteractiveSession.ActingUser = status.ActingUser
 		analysis.Status.InteractiveSession.ActingUserGroups = status.ActingUserGroups
+		if status.SessionID != "" {
+			analysis.Status.InteractiveSession.SessionID = status.SessionID
+		}
+		if analysis.Status.InteractiveSession.StartedAt == nil {
+			analysis.Status.InteractiveSession.StartedAt = &now
+		}
 	}
 
 	h.log.Info("Session under user control, continuing to poll",
@@ -542,6 +548,14 @@ func (h *InvestigatingHandler) handleSessionPollCompleted(ctx context.Context, a
 	h.log.Info("KA session completed, fetching result",
 		"sessionID", session.ID,
 	)
+
+	// BR-INTERACTIVE-001: If a user was driving the session, record when the
+	// interactive phase ended. This lets the RO timeout logic distinguish
+	// "interactive session just completed" from "never had an interactive user".
+	if iss := analysis.Status.InteractiveSession; iss != nil && iss.StartedAt != nil && iss.CompletedAt == nil {
+		now := metav1.Now()
+		iss.CompletedAt = &now
+	}
 
 	// Calculate investigation time from session creation
 	var investigationTime int64

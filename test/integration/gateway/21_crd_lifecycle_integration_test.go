@@ -52,7 +52,7 @@ import (
 // - CRD spec fields are correctly populated from signal data
 //
 // NOTE: HTTP-specific tests (malformed JSON, Content-Type) remain in E2E tier
-var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Label("crd-lifecycle", "integration"), func() {
+var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, ContinueOnFailure, Label("crd-lifecycle", "integration"), func() {
 	var (
 		testNamespace string
 		gwServer      *gateway.Server

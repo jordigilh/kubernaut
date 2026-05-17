@@ -30,7 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
-var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-075)", Ordered, func() {
+var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-075)", Ordered, ContinueOnFailure, func() {
 	var (
 		testLogger    logr.Logger
 		testNamespace string

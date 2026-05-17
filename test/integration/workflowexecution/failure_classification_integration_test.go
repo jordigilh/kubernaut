@@ -54,7 +54,7 @@ import (
 // 4. Verify WFE.Status.FailureDetails.Reason is correctly mapped
 // 5. Verify WFE.Status.FailureDetails.WasExecutionFailure is correct
 
-var _ = Describe("BR-WE-004: Tekton Failure Reason Classification", Ordered, func() {
+var _ = Describe("BR-WE-004: Tekton Failure Reason Classification", Ordered, ContinueOnFailure, func() {
 	var (
 		testCtx   context.Context
 		namespace string
