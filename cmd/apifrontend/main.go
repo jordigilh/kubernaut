@@ -103,7 +103,7 @@ func run() int {
 			}
 			defer auditDSWatcher.Stop()
 		}
-		var auditDSAuthTransport http.RoundTripper = auditDSTransport
+		auditDSAuthTransport := auditDSTransport
 		if cfg.Agent.DSBearerTokenFile != "" {
 			auditDSAuthTransport = &bearerTokenTransport{
 				base:      auditDSTransport,

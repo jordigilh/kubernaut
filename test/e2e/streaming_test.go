@@ -159,6 +159,9 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, ContinueOnFailure, Lab
 	})
 
 	It("TC-E2E-STREAM-04 / TC-E2E-SSE-CAP-01: Connection cap enforcement", func() {
+		// Allow lingering connections from prior ordered tests to drain.
+		time.Sleep(5 * time.Second)
+
 		maxStr := getEnvOrDefault("AF_E2E_MAX_SSE", "5")
 		maxSSE := 5
 		var parsed int

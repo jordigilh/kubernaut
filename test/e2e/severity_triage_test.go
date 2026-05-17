@@ -174,7 +174,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, L
 			promURL = envProm
 		}
 		ctx := context.Background()
-		err := injectMetricForTier2(ctx, promURL, "e2e_disk_usage_percent", 95, map[string]string{
+		err := injectMetricForTier2(ctx, promURL, "e2e_disk_usage_percent", 80, map[string]string{
 			"namespace": "sev-tier2-ns", "kind": "Deployment", "name": "test-inactive-target",
 		})
 		if err != nil {
