@@ -556,6 +556,24 @@ var _ = Describe("FP-MCP-005c: complete_no_action through full pipeline", Label(
 		_, err := dynClient.Resource(rrGVR).Namespace(namespace).Create(createCtx, rr, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred(), "direct RR CRD creation for 005c")
 
+		By("Waiting for pipeline to create AIAnalysis (RR -> SP -> RO -> AA)")
+		var aaName string
+		Eventually(func() bool {
+			aaList := &aianalysisv1.AIAnalysisList{}
+			if err := apiReader.List(ctx, aaList, client.InNamespace(namespace)); err != nil {
+				return false
+			}
+			for _, aa := range aaList.Items {
+				if aa.Spec.RemediationRequestRef.Name == rrName {
+					aaName = aa.Name
+					GinkgoWriter.Printf("  AA created: %s phase=%s\n", aa.Name, aa.Status.Phase)
+					return true
+				}
+			}
+			return false
+		}, 5*time.Minute, 3*time.Second).Should(BeTrue(),
+			"pipeline should create AIAnalysis for direct RR (SP -> RO -> AA)")
+
 		By("Setting up MCP session — creating SA with interactive RBAC")
 		saToken, err := infrastructure.CreateInteractiveE2ESA(
 			ctx, namespace, "fp-mcp-005c-sa", kubeconfigPath, GinkgoWriter)
@@ -573,7 +591,7 @@ var _ = Describe("FP-MCP-005c: complete_no_action through full pipeline", Label(
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = mcpSess.Close() }()
 
-		By("Starting interactive session")
+		By("Starting interactive session (takes over from autonomous)")
 		startCtx, startCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer startCancel()
 		result, err := infrastructure.CallInvestigate(startCtx, mcpSess, map[string]any{
@@ -611,20 +629,16 @@ var _ = Describe("FP-MCP-005c: complete_no_action through full pipeline", Label(
 
 		By("Verifying AA routes to Completed/WorkflowNotNeeded (not Failed)")
 		Eventually(func(g Gomega) {
-			aaList := &aianalysisv1.AIAnalysisList{}
-			g.Expect(apiReader.List(ctx, aaList, client.InNamespace(namespace))).To(Succeed())
-			for _, aa := range aaList.Items {
-				if aa.Spec.RemediationRequestRef.Name == rrName {
-					GinkgoWriter.Printf("  AA %s phase=%s reason=%s\n", aa.Name, aa.Status.Phase, aa.Status.Reason)
-					g.Expect(aa.Status.Phase).To(Equal("Completed"),
-						"AA should complete (not fail) when user explicitly declines workflows")
-					g.Expect(aa.Status.Reason).To(Equal("WorkflowNotNeeded"),
-						"AA reason should be WorkflowNotNeeded for complete_no_action")
-					return
-				}
-			}
-			g.Expect(false).To(BeTrue(), "AIAnalysis for RR %s not found", rrName)
-		}, 2*time.Minute, 3*time.Second).Should(Succeed())
+			aa := &aianalysisv1.AIAnalysis{}
+			g.Expect(apiReader.Get(ctx, client.ObjectKey{
+				Namespace: namespace, Name: aaName,
+			}, aa)).To(Succeed())
+			GinkgoWriter.Printf("  AA %s phase=%s reason=%s\n", aaName, aa.Status.Phase, aa.Status.Reason)
+			g.Expect(aa.Status.Phase).To(Equal("Completed"),
+				"AA should complete (not fail) when user explicitly declines workflows")
+			g.Expect(aa.Status.Reason).To(Equal("WorkflowNotNeeded"),
+				"AA reason should be WorkflowNotNeeded for complete_no_action")
+		}, 5*time.Minute, 3*time.Second).Should(Succeed())
 
 		GinkgoWriter.Println("FP-MCP-005c: complete_no_action pipeline validated")
 	})
