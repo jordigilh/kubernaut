@@ -22,11 +22,16 @@ import (
 )
 
 // BuildFinalResult exposes buildFinalResult for external test packages.
-var BuildFinalResult = func(rca *katypes.InvestigationResult, workflow *CatalogWorkflow) *katypes.InvestigationResult {
-	return buildFinalResult(rca, workflow)
+var BuildFinalResult = func(rca *katypes.InvestigationResult, workflow *CatalogWorkflow, discovery *mcpinternal.WorkflowDiscoveryResult) *katypes.InvestigationResult {
+	return buildFinalResult(rca, workflow, discovery)
 }
 
 // IsWorkflowInDiscoveryResult exposes isWorkflowInDiscoveryResult for external test packages.
 var IsWorkflowInDiscoveryResult = func(workflowID string, dr *mcpinternal.WorkflowDiscoveryResult) bool {
 	return isWorkflowInDiscoveryResult(workflowID, dr)
+}
+
+// ExtractDiscoveryResult exposes extractDiscoveryResult for external test packages.
+var ExtractDiscoveryResult = func(result *katypes.InvestigationResult) *mcpinternal.WorkflowDiscoveryResult {
+	return extractDiscoveryResult(result)
 }

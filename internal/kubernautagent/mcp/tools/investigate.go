@@ -763,16 +763,21 @@ func extractDiscoveryResult(result *katypes.InvestigationResult) *mcpinternal.Wo
 			ExecutionBundle: result.ExecutionBundle,
 			Confidence:      result.Confidence,
 			Rationale:       result.WorkflowRationale,
+			Parameters:      result.Parameters,
 		}
 	}
 
-	for _, alt := range result.AlternativeWorkflows {
-		dr.Alternatives = append(dr.Alternatives, mcpinternal.DiscoveredWorkflow{
-			WorkflowID:      alt.WorkflowID,
-			ExecutionBundle: alt.ExecutionBundle,
-			Confidence:      alt.Confidence,
-			Rationale:       alt.Rationale,
-		})
+	if len(result.AlternativeWorkflows) > 0 {
+		dr.Alternatives = make([]mcpinternal.DiscoveredWorkflow, 0, len(result.AlternativeWorkflows))
+		for _, alt := range result.AlternativeWorkflows {
+			dr.Alternatives = append(dr.Alternatives, mcpinternal.DiscoveredWorkflow{
+				WorkflowID:      alt.WorkflowID,
+				ExecutionBundle: alt.ExecutionBundle,
+				Confidence:      alt.Confidence,
+				Rationale:       alt.Rationale,
+				Parameters:      alt.Parameters,
+			})
+		}
 	}
 
 	return dr

@@ -100,10 +100,11 @@ type WorkflowDiscoveryResult struct {
 
 // DiscoveredWorkflow represents a single workflow recommendation from Phase 3.
 type DiscoveredWorkflow struct {
-	WorkflowID      string  `json:"workflow_id"`
-	ExecutionBundle string  `json:"execution_bundle,omitempty"`
-	Confidence      float64 `json:"confidence"`
-	Rationale       string  `json:"rationale"`
+	WorkflowID      string                 `json:"workflow_id"`
+	ExecutionBundle string                 `json:"execution_bundle,omitempty"`
+	Confidence      float64                `json:"confidence"`
+	Rationale       string                 `json:"rationale"`
+	Parameters      map[string]interface{} `json:"parameters,omitempty"`
 }
 
 // SessionManager manages interactive session lifecycle: takeover, release, and
