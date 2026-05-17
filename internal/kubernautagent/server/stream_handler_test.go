@@ -109,8 +109,8 @@ var _ = Describe("SSE Stream Handler — #823 PR7", func() {
 		})
 	})
 
-	Describe("UT-KA-823-D02: Stream ends when investigation completes", func() {
-		It("returns 404 for a session that has already completed", func() {
+	Describe("UT-KA-823-D02: Stream for completed session returns SSE with complete event", func() {
+		It("returns SSE stream with synthetic complete event for already-completed session", func() {
 			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				return &katypes.InvestigationResult{RCASummary: "done"}, nil
 			}, map[string]string{"remediation_id": "rr-sse-eof"})
@@ -130,9 +130,12 @@ var _ = Describe("SSE Stream Handler — #823 PR7", func() {
 			)
 			Expect(handlerErr).NotTo(HaveOccurred())
 
-			httpErr, ok := resp.(*agentclient.HTTPError)
-			Expect(ok).To(BeTrue(), "already-completed session should return 404 (terminal)")
-			Expect(httpErr.Status).To(Equal(404))
+			okResp, ok := resp.(*agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK)
+			Expect(ok).To(BeTrue(), "terminal session should return SSE stream, not JSON error")
+			data, readErr := io.ReadAll(okResp.Data)
+			Expect(readErr).NotTo(HaveOccurred())
+			Expect(string(data)).To(ContainSubstring("event: complete"))
+			Expect(string(data)).To(ContainSubstring("done"))
 		})
 	})
 
@@ -151,10 +154,10 @@ var _ = Describe("SSE Stream Handler — #823 PR7", func() {
 		})
 	})
 
-	Describe("UT-KA-823-D04: Stream for terminal session returns 404", func() {
-		It("returns HTTPError for completed session with no active stream", func() {
+	Describe("UT-KA-823-D04: Stream for terminal session returns SSE complete", func() {
+		It("returns SSE stream with complete event including investigation result", func() {
 			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
-				return &katypes.InvestigationResult{RCASummary: "done"}, nil
+				return &katypes.InvestigationResult{RCASummary: "terminal result", Confidence: 0.95}, nil
 			}, map[string]string{"remediation_id": "rr-terminal"})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -172,9 +175,13 @@ var _ = Describe("SSE Stream Handler — #823 PR7", func() {
 			)
 			Expect(handlerErr).NotTo(HaveOccurred())
 
-			httpErr, ok := resp.(*agentclient.HTTPError)
-			Expect(ok).To(BeTrue(), "response should be HTTPError for terminal session")
-			Expect(httpErr.Status).To(Equal(404))
+			okResp, ok := resp.(*agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK)
+			Expect(ok).To(BeTrue(), "terminal session should return SSE stream with complete event")
+			data, readErr := io.ReadAll(okResp.Data)
+			Expect(readErr).NotTo(HaveOccurred())
+			sseData := string(data)
+			Expect(sseData).To(ContainSubstring("event: complete"))
+			Expect(sseData).To(ContainSubstring("terminal result"))
 		})
 	})
 })

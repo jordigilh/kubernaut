@@ -95,6 +95,10 @@ func (m *takeoverAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string
 	return nil
 }
 
+func (m *takeoverAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []string) error {
+	return nil
+}
+
 // takeoverSessMgr mocks mcpinternal.SessionManager for takeover tests.
 type takeoverSessMgr struct {
 	takeoverSession *mcpinternal.InteractiveSession

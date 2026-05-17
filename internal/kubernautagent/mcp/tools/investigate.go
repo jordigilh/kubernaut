@@ -65,9 +65,15 @@ type SignalContextResolver interface {
 // HTTPSessionCompleter bridges MCP tool completion to the HTTP session store.
 // select_workflow and complete_no_action use this to transition the session
 // from StatusUserDriving to StatusCompleted with the final InvestigationResult.
+//
+// ForceCompleteByRemediationID is a fallback for when FindUserDrivingByRemediationID
+// returns not-found: the autonomous session may still be running (submitted after
+// MCP start) or already completed (investigation finished before takeover). It
+// locates the session by remediation ID regardless of status and forces completion.
 type HTTPSessionCompleter interface {
 	FindUserDrivingByRemediationID(rrID string) (string, bool)
 	CompleteUserDriving(id string, result *katypes.InvestigationResult) error
+	ForceCompleteByRemediationID(rrID string, result *katypes.InvestigationResult) error
 }
 
 // SessionMutexProvider exposes per-rrID mutexes for concurrency control.
@@ -91,6 +97,7 @@ type AutonomousSessionManager interface {
 	CancelInvestigation(id string) error
 	SuspendInvestigation(id string) error
 	TransitionToUserDriving(id, username string, groups []string) error
+	ForceTransitionToUserDriving(rrID, username string, groups []string) error
 }
 
 // RRExistenceChecker validates that a RemediationRequest exists before
@@ -122,6 +129,7 @@ func (NopAutonomousManager) FindByRemediationID(string) (string, bool)          
 func (NopAutonomousManager) CancelInvestigation(string) error                             { return nil }
 func (NopAutonomousManager) SuspendInvestigation(string) error                            { return nil }
 func (NopAutonomousManager) TransitionToUserDriving(string, string, []string) error       { return nil }
+func (NopAutonomousManager) ForceTransitionToUserDriving(string, string, []string) error  { return nil }
 
 // InvestigateTool handles the kubernaut_investigate MCP tool actions:
 // start, message, complete, cancel, takeover, discover_workflows.
@@ -337,6 +345,24 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", user.Username)
 	}
 
+	// Transition any running autonomous session to user-driven mode so that
+	// complete_no_action / action:complete can find and close it via
+	// FindUserDrivingByRemediationID. Without this, the autonomous HTTP
+	// session keeps running after the MCP lease is released.
+	autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
+	if found {
+		if transErr := t.autoMgr.TransitionToUserDriving(autoSessionID, user.Username, user.Groups); transErr != nil {
+			if errors.Is(transErr, session.ErrSessionTerminal) {
+				_ = t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups)
+			} else {
+				t.logger.Error(transErr, "start: transition autonomous session to user-driving",
+					"rr_id", input.RRID, "auto_session_id", autoSessionID)
+			}
+		}
+	} else {
+		_ = t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups)
+	}
+
 	if t.metrics != nil {
 		t.metrics.RecordInteractiveSessionStarted()
 		t.metrics.RecordInteractiveTakeover("start_success")
@@ -398,13 +424,21 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 	autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
 	if found {
 		if err := t.autoMgr.TransitionToUserDriving(autoSessionID, user.Username, user.Groups); err != nil {
-			if !errors.Is(err, session.ErrSessionTerminal) {
+			if errors.Is(err, session.ErrSessionTerminal) {
+				// Investigation already completed; force-reopen as user-driving
+				// so the AA controller can observe the interactive session info.
+				_ = t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups)
+			} else {
 				if t.metrics != nil {
 					t.metrics.RecordInteractiveTakeover("takeover_failed")
 				}
 				return InvestigateOutput{}, fmt.Errorf("transition autonomous session to user-driving: %w", err)
 			}
 		}
+	} else {
+		// No running session found — investigation may have already completed
+		// or not yet started. Attempt force transition by rrID.
+		_ = t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups)
 	}
 
 	if t.metrics != nil {
@@ -543,6 +577,9 @@ func (t *InvestigateTool) handleComplete(input InvestigateInput, user mcpinterna
 				t.logger.Error(completeErr, "failed to complete HTTP session on action:complete",
 					"rr_id", input.RRID, "http_session_id", httpSessionID)
 			}
+		} else if completeErr := t.httpCompleter.ForceCompleteByRemediationID(input.RRID, nil); completeErr != nil {
+			t.logger.V(1).Info("no HTTP session found to force-complete on action:complete",
+				"rr_id", input.RRID, "error", completeErr)
 		}
 	}
 

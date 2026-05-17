@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -141,6 +142,17 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			}
 			return false
 		}, 2*time.Minute, 2*time.Second).Should(BeTrue(), "memory-eater should OOMKill")
+
+		// Scale deployment to 0 immediately after OOMKill detection to prevent
+		// subsequent restarts from generating additional RRs. Without this, the
+		// RO's IneffectiveChain detection can block WE creation if 3+ RRs
+		// accumulate for the same target before the test's specific RR is processed.
+		dep := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: "memory-eater", Namespace: testNamespace}, dep)).To(Succeed())
+		zero := int32(0)
+		dep.Spec.Replicas = &zero
+		Expect(k8sClient.Update(ctx, dep)).To(Succeed())
+		GinkgoWriter.Println("  ✅ Scaled memory-eater to 0 replicas (prevent RR storm)")
 
 		// ================================================================
 		// Step 3: Verify RemediationRequest created by Gateway

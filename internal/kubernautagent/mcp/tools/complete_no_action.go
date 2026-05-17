@@ -143,6 +143,9 @@ func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionI
 				t.logger.Error(completeErr, "failed to complete HTTP session",
 					"rr_id", input.RRID, "http_session_id", httpSessionID)
 			}
+		} else if completeErr := t.httpCompleter.ForceCompleteByRemediationID(input.RRID, finalResult); completeErr != nil {
+			t.logger.V(1).Info("no HTTP session found to force-complete (may already be terminal)",
+				"rr_id", input.RRID, "error", completeErr)
 		}
 	}
 

@@ -87,6 +87,10 @@ func (m *mockAutoMgrIT) TransitionToUserDriving(id, username string, groups []st
 	return m.mgr.TransitionToUserDriving(id, username, groups)
 }
 
+func (m *mockAutoMgrIT) ForceTransitionToUserDriving(rrID, username string, groups []string) error {
+	return m.mgr.ForceTransitionToUserDriving(rrID, username, groups)
+}
+
 var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", func() {
 
 	Describe("IT-KA-TAKE-001: Takeover mid-LLM-turn — autonomous transitions to user_driving", func() {

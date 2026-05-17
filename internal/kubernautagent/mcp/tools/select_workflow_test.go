@@ -49,6 +49,11 @@ func (m *mockHTTPCompleter) FindUserDrivingByRemediationID(_ string) (string, bo
 	return m.foundID, m.found
 }
 
+func (m *mockHTTPCompleter) ForceCompleteByRemediationID(_ string, result *katypes.InvestigationResult) error {
+	m.completedResult = result
+	return m.completeErr
+}
+
 // discoveryWithWorkflow creates a DiscoveryResult with a recommended workflow.
 func discoveryWithWorkflow(wfID string) *mcpinternal.WorkflowDiscoveryResult {
 	return &mcpinternal.WorkflowDiscoveryResult{

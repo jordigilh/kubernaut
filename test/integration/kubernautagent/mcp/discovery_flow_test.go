@@ -79,6 +79,11 @@ func (c *discoveryHTTPCompleter) FindUserDrivingByRemediationID(_ string) (strin
 	return "http-sess-discovery", true
 }
 
+func (c *discoveryHTTPCompleter) ForceCompleteByRemediationID(_ string, result *katypes.InvestigationResult) error {
+	c.completedResult = result
+	return nil
+}
+
 // callTool calls an arbitrary MCP tool by name with the given args.
 func callTool(sess *mcpsdk.ClientSession, toolName string, args map[string]any) (*mcpsdk.CallToolResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
