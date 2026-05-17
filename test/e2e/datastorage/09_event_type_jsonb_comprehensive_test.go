@@ -1379,7 +1379,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 		for _, tc := range eventTypeCatalog {
 			tc := tc // Capture range variable
 
-			Context(fmt.Sprintf("Event Type: %s", tc.EventType), Ordered, ContinueOnFailure, func() {
+			Context(fmt.Sprintf("Event Type: %s", tc.EventType), Ordered, func() {
 				It("should accept event type via OpenAPI client and persist to database", func() {
 					// ARRANGE: Create audit event using structured ogenclient types (DD-AUDIT-004 compliant)
 					auditEvent := tc.CreateEvent()

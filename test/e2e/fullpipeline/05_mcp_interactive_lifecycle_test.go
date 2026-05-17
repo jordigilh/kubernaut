@@ -234,10 +234,17 @@ var _ = Describe("CP-5 MCP Interactive Lifecycle — Full Pipeline", Label("e2e"
 		}
 		aa := &aianalysisv1.AIAnalysis{}
 		Eventually(func(g Gomega) {
+			keepAliveCtx, keepAliveCancel := context.WithTimeout(ctx, 5*time.Second)
+			defer keepAliveCancel()
+			_, _ = infrastructure.CallInvestigate(keepAliveCtx, mcpSession, map[string]any{
+				"rr_id":  remediationRequest.Name,
+				"action": "status",
+			})
+
 			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
 			g.Expect(aa.Status.InteractiveSession).NotTo(BeNil(),
 				"BR-007: InteractiveSession must be populated after takeover")
-		}, 90*time.Second, 2*time.Second).Should(Succeed())
+		}, 90*time.Second, 5*time.Second).Should(Succeed())
 
 		GinkgoWriter.Printf("  InteractiveSession: driver=%s, sessionID=%s\n",
 			aa.Status.InteractiveSession.ActingUser, aa.Status.InteractiveSession.SessionID)
