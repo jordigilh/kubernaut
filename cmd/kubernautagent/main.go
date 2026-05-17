@@ -1367,6 +1367,10 @@ func buildMCPHandler(
 	// HARM-004: Validate RR existence before creating interactive Leases.
 	rrChecker := mcptools.NewK8sRRExistenceChecker(ctrlCli, namespace)
 
+	// Signal context resolver: reads RR CR to provide signal name, severity,
+	// and resource targeting for Phase 3 workflow discovery prompts.
+	signalResolver := mcpadapters.NewK8sSignalContextResolver(ctrlCli, namespace)
+
 	// Build the InvestigateTool with optional dependencies.
 	investigateOpts := []mcptools.InvestigateOption{
 		mcptools.WithToolMetrics(agentMetrics),
@@ -1376,6 +1380,7 @@ func buildMCPHandler(
 		mcptools.WithRRExistenceChecker(rrChecker),
 		mcptools.WithHTTPCompleter(autoMgr),
 		mcptools.WithAuditStore(auditStore, logger.WithName("mcp-audit")),
+		mcptools.WithSignalContextResolver(signalResolver),
 	}
 	investigateTool := mcptools.NewInvestigateTool(leaseMgr, investigatorRunner, recon, autoMgr, investigateOpts...)
 
