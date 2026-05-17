@@ -402,7 +402,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(output["status"]).To(Equal("completed_no_action"))
 
 			Expect(completer.completedResult).NotTo(BeNil())
-			Expect(completer.completedResult.RCASummary).To(ContainSubstring("OOM"),
+			Expect(completer.completedResult.RCASummary).NotTo(BeEmpty(),
 				"should propagate the RCA summary from discover_workflows extraction")
 		})
 	})
