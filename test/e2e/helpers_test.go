@@ -143,12 +143,6 @@ func newTLSClient(caCertPath string) *http.Client {
 	}
 }
 
-// newRawTLSClient returns an HTTP client without retry-on-429 wrapping.
-// Used by rate-limit-specific tests that need to observe 429 responses directly.
-func newRawTLSClient(caCertPath string) *http.Client {
-	return &http.Client{Transport: newTLSTransport(caCertPath)}
-}
-
 func newTLSTransport(caCertPath string) *http.Transport {
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if caCertPath != "" {

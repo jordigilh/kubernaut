@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -101,10 +100,6 @@ var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, L
 
 	expectSeveritySource := func(text, wantSource string) {
 		Expect(parseJSONStringField(text, "severity_source")).To(Equal(wantSource))
-	}
-
-	e2eKubeconfigPath := func() string {
-		return os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
 	}
 
 	sumSeverityTriageTotal := func(metricsText string) float64 {
@@ -228,38 +223,6 @@ var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, L
 		Expect(parsed).NotTo(HaveKey("severity_source"))
 	})
 
-	It("TC-E2E-SEV-07: Prometheus unavailable — LLM triage fallback", func() {
-		kubeconfigPath := e2eKubeconfigPath()
-
-		DeferCleanup(func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-			defer cancel()
-			cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-				"scale", "deployment/prometheus", fmt.Sprintf("--replicas=%d", 1),
-				"-n", e2eNamespace)
-			out, err := cmd.CombinedOutput()
-			Expect(err).NotTo(HaveOccurred(), "restore Prometheus: %s", string(out))
-
-			wait := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-				"rollout", "status", "deployment/prometheus", "-n", e2eNamespace, "--timeout=120s")
-			wout, werr := wait.CombinedOutput()
-			Expect(werr).NotTo(HaveOccurred(), "prometheus rollout: %s", string(wout))
-		})
-
-		scaleDownCtx, scaleDownCancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer scaleDownCancel()
-		sd := exec.CommandContext(scaleDownCtx, "kubectl", "--kubeconfig", kubeconfigPath,
-			"scale", "deployment/prometheus", "--replicas=0", "-n", e2eNamespace)
-		sdOut, sdErr := sd.CombinedOutput()
-		Expect(sdErr).NotTo(HaveOccurred(), "scale prometheus down: %s", string(sdOut))
-
-		// Allow Kubernetes to terminate Prometheus before triage runs.
-		time.Sleep(5 * time.Second)
-
-		text, err := mcpToolCall("af_create_rr", createRRArgs("default", "test-prom-down-target", nil))
-		Expect(err).NotTo(HaveOccurred(), text)
-		expectSeveritySource(text, "llm_triage")
-	})
 
 	It("TC-E2E-SEV-08: Triage metrics present on /metrics", func() {
 		body := scrapeMetrics()

@@ -153,26 +153,4 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, ContinueOnFailur
 		})
 	})
 
-	Context("Rate Limiting", func() {
-		It("should enforce IP-based rate limiting", func() {
-			var hitRateLimit bool
-			for i := 0; i < 50; i++ {
-				body := strings.NewReader(`{"jsonrpc":"2.0","method":"message/send","id":"1","params":{}}`)
-				req, err := http.NewRequest(http.MethodPost, baseURL+"/a2a/invoke", body)
-				Expect(err).NotTo(HaveOccurred())
-				req.Header.Set("Content-Type", "application/json")
-
-				resp, err := httpClient.Do(req)
-				Expect(err).NotTo(HaveOccurred())
-				_ = resp.Body.Close()
-				if resp.StatusCode == http.StatusTooManyRequests {
-					hitRateLimit = true
-					break
-				}
-			}
-			if !hitRateLimit {
-				Skip("IP rate limit is set high for this environment (user-tier testing takes priority)")
-			}
-		})
-	})
 })

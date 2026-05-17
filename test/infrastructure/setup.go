@@ -507,6 +507,22 @@ rules:
   resourceNames: ["data-storage-service"]
   verbs: ["create", "get", "list", "update", "delete"]
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: apifrontend-ds-client
+  labels:
+    app: data-storage-service
+    authorization: dd-auth-014
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+- kind: ServiceAccount
+  name: apifrontend
+  namespace: %[1]s
+---
 apiVersion: v1
 kind: Service
 metadata:

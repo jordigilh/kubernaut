@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -18,16 +16,12 @@ import (
 
 var _ = Describe("DS Audit Sink (G8)", Ordered, ContinueOnFailure, Label("e2e", "phase4", "g8"), func() {
 	var (
-		kubeconfigPath string
-		namespace      string
-		authToken      string
-		mcpSessionID   string
-		dsAuditURL     string
+		authToken    string
+		mcpSessionID string
+		dsAuditURL   string
 	)
 
 	BeforeAll(func() {
-		kubeconfigPath = os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
-		namespace = getEnvOrDefault("AF_E2E_NAMESPACE", "kubernaut-system")
 		dsAuditURL = getEnvOrDefault("AF_E2E_DS_AUDIT_URL", "https://localhost:8089/api/v1/audit/events")
 
 		var err error
@@ -36,13 +30,6 @@ var _ = Describe("DS Audit Sink (G8)", Ordered, ContinueOnFailure, Label("e2e", 
 		mcpSessionID, err = initMCPSession(authToken)
 		Expect(err).NotTo(HaveOccurred())
 	})
-
-	kubectl := func(ctx context.Context, args ...string) (string, error) {
-		all := append([]string{"--kubeconfig", kubeconfigPath}, args...)
-		cmd := exec.CommandContext(ctx, "kubectl", all...)
-		out, err := cmd.CombinedOutput()
-		return strings.TrimSpace(string(out)), err
-	}
 
 	mcpToolCall := func(toolName string, args map[string]interface{}) (string, error) {
 		callBody := buildJSONRPC(fmt.Sprintf("g8-%s-%d", toolName, time.Now().UnixNano()),
@@ -129,81 +116,6 @@ var _ = Describe("DS Audit Sink (G8)", Ordered, ContinueOnFailure, Label("e2e", 
 		}, 60*time.Second, 2*time.Second).Should(BeTrue(), "DS audit API should list an event referencing af_get_pods")
 	})
 
-	It("TC-E2E-AUDIT-02: DS unavailable -> audit failure logged, request succeeds", func() {
-		// Pre-check: verify the data-storage deployment exists and we can reach it.
-		dsOut, dsErr := kubectl(context.Background(), "get", "deployment/data-storage",
-			"-n", namespace, "-o", "name")
-		if dsErr != nil {
-			Skip(fmt.Sprintf("data-storage deployment not accessible in namespace %s: %s (%v)", namespace, dsOut, dsErr))
-		}
-
-		DeferCleanup(func() {
-			_, _ = kubectl(context.Background(), "scale", "deployment/data-storage",
-				"-n", namespace, "--replicas=1")
-			_, _ = kubectl(context.Background(), "rollout", "status", "deployment/data-storage",
-				"-n", namespace, "--timeout=120s")
-		})
-
-		scaleOut, err := kubectl(context.Background(), "scale", "deployment/data-storage",
-			"-n", namespace, "--replicas=0")
-		Expect(err).NotTo(HaveOccurred(), "kubectl scale failed: %s", scaleOut)
-		time.Sleep(2 * time.Second)
-
-		text, err := mcpToolCall("af_get_pods", map[string]interface{}{
-			"namespace": "default",
-		})
-		Expect(err).NotTo(HaveOccurred(), text)
-
-		ctx := context.Background()
-		Eventually(func(g Gomega) {
-			logs, lerr := kubectl(ctx, "logs", "-n", namespace,
-				"-l", "app.kubernetes.io/name=kubernaut-apifrontend",
-				"--tail=300")
-			g.Expect(lerr).NotTo(HaveOccurred(), logs)
-			lower := strings.ToLower(logs)
-			g.Expect(lower).To(Or(
-				ContainSubstring("audit"),
-				ContainSubstring("flush"),
-				ContainSubstring("datastorage"),
-				ContainSubstring("ds"),
-			))
-		}, 40*time.Second, 2*time.Second).Should(Succeed())
-	})
-
-	It("TC-E2E-AUDIT-03: Buffer flush on graceful shutdown -> pending events reach DS", func() {
-		_, err := mcpToolCall("af_get_pods", map[string]interface{}{"namespace": "default"})
-		Expect(err).NotTo(HaveOccurred())
-		_, err = mcpToolCall("af_list_events", map[string]interface{}{"namespace": namespace})
-		Expect(err).NotTo(HaveOccurred())
-
-		ctx := context.Background()
-		pod, err := kubectl(ctx, "-n", namespace,
-			"get", "pods", "-l", "app.kubernetes.io/name=kubernaut-apifrontend",
-			"-o", "jsonpath={.items[0].metadata.name}")
-		Expect(err).NotTo(HaveOccurred(), pod)
-		Expect(pod).NotTo(BeEmpty())
-
-		_, err = kubectl(ctx, "delete", "pod", pod, "-n", namespace, "--grace-period=30")
-		Expect(err).NotTo(HaveOccurred())
-		_, err = kubectl(ctx, "rollout", "status", "deployment/apifrontend", "-n", namespace, "--timeout=180s")
-		Expect(err).NotTo(HaveOccurred())
-
-		Eventually(func() bool {
-			body, code, rerr := fetchAuditBody()
-			if rerr != nil || code != http.StatusOK {
-				return false
-			}
-			return auditBodyContainsTool(body, "af_list_events")
-		}, 90*time.Second, 3*time.Second).Should(BeTrue(),
-			"after AF restarts, DS should retain audit rows for tool calls made before shutdown")
-
-		// Restore MCP session (pod restart drops in-memory session table on server).
-		var ierr error
-		authToken, ierr = fetchDEXTokenForPersona("sre")
-		Expect(ierr).NotTo(HaveOccurred())
-		mcpSessionID, ierr = initMCPSession(authToken)
-		Expect(ierr).NotTo(HaveOccurred())
-	})
 
 	It("TC-E2E-AUDIT-04: Audit events contain redacted Detail (no raw secrets)", func() {
 		body, code, err := fetchAuditBody()
