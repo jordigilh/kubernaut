@@ -515,6 +515,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: LLM_API_KEY
+              value: "mock-key"
           volumeMounts:
             - name: config
               mountPath: /etc/apifrontend
