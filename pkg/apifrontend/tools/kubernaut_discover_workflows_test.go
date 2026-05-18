@@ -200,6 +200,34 @@ var _ = Describe("kubernaut_discover_workflows", func() {
 			Expect(tools.ValidateWorkflowParameters(schema, map[string]any{"dry_run": true})).To(Succeed())
 			Expect(tools.ValidateWorkflowParameters(schema, map[string]any{"dry_run": "yes"})).To(HaveOccurred())
 		})
+
+		It("validates json.Number as valid int", func() {
+			schema := []tools.WorkflowParameter{
+				{Name: "count", Type: "int", Required: true},
+			}
+			Expect(tools.ValidateWorkflowParameters(schema, map[string]any{"count": json.Number("42")})).To(Succeed())
+		})
+
+		It("rejects json.Number with decimal as int", func() {
+			schema := []tools.WorkflowParameter{
+				{Name: "count", Type: "int", Required: true},
+			}
+			Expect(tools.ValidateWorkflowParameters(schema, map[string]any{"count": json.Number("3.14")})).To(HaveOccurred())
+		})
+
+		It("accepts json.Number as float", func() {
+			schema := []tools.WorkflowParameter{
+				{Name: "ratio", Type: "float", Required: true},
+			}
+			Expect(tools.ValidateWorkflowParameters(schema, map[string]any{"ratio": json.Number("2.718")})).To(Succeed())
+		})
+
+		It("passes validation for unknown type (no type checking)", func() {
+			schema := []tools.WorkflowParameter{
+				{Name: "meta", Type: "object", Required: true},
+			}
+			Expect(tools.ValidateWorkflowParameters(schema, map[string]any{"meta": map[string]any{"key": "val"}})).To(Succeed())
+		})
 	})
 
 	Describe("NewDiscoverWorkflowsTool", func() {

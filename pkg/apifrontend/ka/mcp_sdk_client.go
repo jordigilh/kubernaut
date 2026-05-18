@@ -48,6 +48,18 @@ func (c *SDKMCPClient) SelectWorkflow(ctx context.Context, args SelectWorkflowAr
 		"rr_id":       args.RRID,
 		"workflow_id": args.WorkflowID,
 	}
+	if args.Kind != "" {
+		argsMap["kind"] = args.Kind
+	}
+	if args.Name != "" {
+		argsMap["name"] = args.Name
+	}
+	if args.Namespace != "" {
+		argsMap["namespace"] = args.Namespace
+	}
+	if args.Parameters != nil {
+		argsMap["parameters"] = args.Parameters
+	}
 
 	result, err := c.callTool(ctx, "kubernaut_select_workflow", argsMap)
 	if err != nil {

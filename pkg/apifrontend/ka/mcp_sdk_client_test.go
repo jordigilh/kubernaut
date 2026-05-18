@@ -163,6 +163,192 @@ var _ = Describe("SDKMCPClient", func() {
 			Expect(err).To(HaveOccurred())
 		})
 	})
+	Describe("DiscoverWorkflows", func() {
+		It("UT-AF-WP-019: calls correct MCP tool name", func() {
+			var calledTool string
+			ts = buildTestServer(toolDef{
+				name: "kubernaut_discover_workflows",
+				handler: func(_ context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+					calledTool = req.Params.Name
+					resp := `{"workflows":[]}`
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: resp}},
+					}, nil, nil
+				},
+			})
+
+			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "alice@example.com",
+				RawToken: "token-for-alice@example.com",
+			})
+
+			_, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(calledTool).To(Equal("kubernaut_discover_workflows"))
+		})
+
+		It("UT-AF-WP-020: passes workflow_id in args", func() {
+			var receivedArgs map[string]any
+			ts = buildTestServer(toolDef{
+				name: "kubernaut_discover_workflows",
+				handler: func(_ context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+					_ = json.Unmarshal(req.Params.Arguments, &receivedArgs)
+					resp := `{"workflows":[{"workflow_id":"wf-scale","name":"Scale"}]}`
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: resp}},
+					}, nil, nil
+				},
+			})
+
+			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "alice@example.com",
+				RawToken: "token-for-alice@example.com",
+			})
+
+			_, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{WorkflowID: "wf-scale"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedArgs).To(HaveKeyWithValue("workflow_id", "wf-scale"))
+		})
+
+		It("UT-AF-WP-021: unmarshals KA JSON response", func() {
+			ts = buildTestServer(toolDef{
+				name: "kubernaut_discover_workflows",
+				handler: func(_ context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+					resp := `{"workflows":[{"workflow_id":"wf-1","name":"Restart","description":"Restart pod","parameters":[{"name":"ns","type":"string","required":true}]}]}`
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: resp}},
+					}, nil, nil
+				},
+			})
+
+			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "alice@example.com",
+				RawToken: "token-for-alice@example.com",
+			})
+
+			result, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Workflows).To(HaveLen(1))
+			Expect(result.Workflows[0].Parameters).To(HaveLen(1))
+			Expect(result.Workflows[0].Parameters[0].Name).To(Equal("ns"))
+		})
+
+		It("UT-AF-WP-022: handles IsError response", func() {
+			ts = buildTestServer(toolDef{
+				name: "kubernaut_discover_workflows",
+				handler: func(_ context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+					return &mcp.CallToolResult{
+						IsError: true,
+						Content: []mcp.Content{&mcp.TextContent{Text: "internal server error: db connection lost"}},
+					}, nil, nil
+				},
+			})
+
+			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "alice@example.com",
+				RawToken: "token-for-alice@example.com",
+			})
+
+			_, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("kubernaut agent"))
+		})
+
+		It("UT-AF-WP-023: handles empty content", func() {
+			ts = buildTestServer(toolDef{
+				name: "kubernaut_discover_workflows",
+				handler: func(_ context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{},
+					}, nil, nil
+				},
+			})
+
+			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "alice@example.com",
+				RawToken: "token-for-alice@example.com",
+			})
+
+			result, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+		})
+
+		It("UT-AF-WP-024: SelectWorkflow includes parameters when non-nil", func() {
+			var receivedArgs map[string]any
+			ts = buildTestServer(toolDef{
+				name: "kubernaut_select_workflow",
+				handler: func(_ context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+					_ = json.Unmarshal(req.Params.Arguments, &receivedArgs)
+					resp := `{"status":"accepted","message":"ok"}`
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: resp}},
+					}, nil, nil
+				},
+			})
+
+			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "alice@example.com",
+				RawToken: "token-for-alice@example.com",
+			})
+
+			_, err := client.SelectWorkflow(ctx, ka.SelectWorkflowArgs{
+				RRID:       "rr-1",
+				WorkflowID: "wf-1",
+				Parameters: map[string]any{"namespace": "prod", "replicas": 3},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedArgs).To(HaveKey("parameters"))
+		})
+
+		It("UT-AF-WP-025: SelectWorkflow omits parameters when nil (backward compat)", func() {
+			var receivedArgs map[string]any
+			ts = buildTestServer(toolDef{
+				name: "kubernaut_select_workflow",
+				handler: func(_ context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+					_ = json.Unmarshal(req.Params.Arguments, &receivedArgs)
+					resp := `{"status":"accepted","message":"ok"}`
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: resp}},
+					}, nil, nil
+				},
+			})
+
+			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "alice@example.com",
+				RawToken: "token-for-alice@example.com",
+			})
+
+			_, err := client.SelectWorkflow(ctx, ka.SelectWorkflowArgs{
+				RRID:       "rr-1",
+				WorkflowID: "wf-1",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedArgs).NotTo(HaveKey("parameters"))
+		})
+	})
+
 	Describe("Investigate", func() {
 		It("returns investigation result on success (QE-11)", func() {
 			ts = buildTestServer(toolDef{
