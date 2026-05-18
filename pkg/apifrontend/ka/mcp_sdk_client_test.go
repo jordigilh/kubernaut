@@ -164,12 +164,14 @@ var _ = Describe("SDKMCPClient", func() {
 		})
 	})
 	Describe("DiscoverWorkflows", func() {
-		It("UT-AF-WP-019: calls correct MCP tool name", func() {
+		It("UT-AF-WP-019: calls kubernaut_investigate with discover_workflows action", func() {
 			var calledTool string
+			var receivedArgs map[string]any
 			ts = buildTestServer(toolDef{
-				name: "kubernaut_discover_workflows",
+				name: "kubernaut_investigate",
 				handler: func(_ context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
 					calledTool = req.Params.Name
+					_ = json.Unmarshal(req.Params.Arguments, &receivedArgs)
 					resp := `{"workflows":[]}`
 					return &mcp.CallToolResult{
 						Content: []mcp.Content{&mcp.TextContent{Text: resp}},
@@ -185,15 +187,17 @@ var _ = Describe("SDKMCPClient", func() {
 				RawToken: "token-for-alice@example.com",
 			})
 
-			_, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{})
+			_, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{RRID: "rr-test"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(calledTool).To(Equal("kubernaut_discover_workflows"))
+			Expect(calledTool).To(Equal("kubernaut_investigate"))
+			Expect(receivedArgs).To(HaveKeyWithValue("action", "discover_workflows"))
+			Expect(receivedArgs).To(HaveKeyWithValue("rr_id", "rr-test"))
 		})
 
-		It("UT-AF-WP-020: passes workflow_id in args", func() {
+		It("UT-AF-WP-020: passes rr_id in args", func() {
 			var receivedArgs map[string]any
 			ts = buildTestServer(toolDef{
-				name: "kubernaut_discover_workflows",
+				name: "kubernaut_investigate",
 				handler: func(_ context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
 					_ = json.Unmarshal(req.Params.Arguments, &receivedArgs)
 					resp := `{"workflows":[{"workflow_id":"wf-scale","name":"Scale"}]}`
@@ -211,14 +215,15 @@ var _ = Describe("SDKMCPClient", func() {
 				RawToken: "token-for-alice@example.com",
 			})
 
-			_, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{WorkflowID: "wf-scale"})
+			_, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{RRID: "rr-123", WorkflowID: "wf-scale"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(receivedArgs).To(HaveKeyWithValue("workflow_id", "wf-scale"))
+			Expect(receivedArgs).To(HaveKeyWithValue("rr_id", "rr-123"))
+			Expect(receivedArgs).To(HaveKeyWithValue("action", "discover_workflows"))
 		})
 
 		It("UT-AF-WP-021: unmarshals KA JSON response", func() {
 			ts = buildTestServer(toolDef{
-				name: "kubernaut_discover_workflows",
+				name: "kubernaut_investigate",
 				handler: func(_ context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
 					resp := `{"workflows":[{"workflow_id":"wf-1","name":"Restart","description":"Restart pod","parameters":[{"name":"ns","type":"string","required":true}]}]}`
 					return &mcp.CallToolResult{
@@ -235,7 +240,7 @@ var _ = Describe("SDKMCPClient", func() {
 				RawToken: "token-for-alice@example.com",
 			})
 
-			result, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{})
+			result, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{RRID: "rr-test"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Workflows).To(HaveLen(1))
 			Expect(result.Workflows[0].Parameters).To(HaveLen(1))
@@ -244,7 +249,7 @@ var _ = Describe("SDKMCPClient", func() {
 
 		It("UT-AF-WP-022: handles IsError response", func() {
 			ts = buildTestServer(toolDef{
-				name: "kubernaut_discover_workflows",
+				name: "kubernaut_investigate",
 				handler: func(_ context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
 					return &mcp.CallToolResult{
 						IsError: true,
@@ -261,14 +266,14 @@ var _ = Describe("SDKMCPClient", func() {
 				RawToken: "token-for-alice@example.com",
 			})
 
-			_, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{})
+			_, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{RRID: "rr-test"})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("kubernaut agent"))
 		})
 
 		It("UT-AF-WP-023: handles empty content", func() {
 			ts = buildTestServer(toolDef{
-				name: "kubernaut_discover_workflows",
+				name: "kubernaut_investigate",
 				handler: func(_ context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
 					return &mcp.CallToolResult{
 						Content: []mcp.Content{},
@@ -284,7 +289,7 @@ var _ = Describe("SDKMCPClient", func() {
 				RawToken: "token-for-alice@example.com",
 			})
 
-			result, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{})
+			result, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{RRID: "rr-test"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 		})

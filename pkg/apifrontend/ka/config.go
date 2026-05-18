@@ -97,6 +97,7 @@ type IncidentResponse struct {
 
 // DiscoverWorkflowsArgs is the input for the kubernaut_discover_workflows MCP tool call.
 type DiscoverWorkflowsArgs struct {
+	RRID       string `json:"rr_id"`
 	WorkflowID string `json:"workflow_id,omitempty"`
 	Kind       string `json:"kind,omitempty"`
 }
@@ -111,7 +112,7 @@ type WorkflowParameterSchema struct {
 	Enum        []string `json:"enum,omitempty"`
 }
 
-// DiscoveredWorkflow represents a workflow returned by KA discover_workflows.
+// DiscoveredWorkflow represents a workflow returned by KA's discover_workflows.
 type DiscoveredWorkflow struct {
 	WorkflowID  string                    `json:"workflow_id"`
 	Name        string                    `json:"name"`

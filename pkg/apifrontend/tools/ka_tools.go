@@ -141,6 +141,7 @@ type WorkflowParameter struct {
 
 // DiscoverWorkflowsArgs defines the input for kubernaut_discover_workflows.
 type DiscoverWorkflowsArgs struct {
+	RRID       string `json:"rr_id"`
 	WorkflowID string `json:"workflow_id,omitempty"`
 	Kind       string `json:"kind,omitempty"`
 }
@@ -169,6 +170,7 @@ func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args D
 	}
 
 	kaResult, err := mcpClient.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{
+		RRID:       args.RRID,
 		WorkflowID: args.WorkflowID,
 		Kind:       args.Kind,
 	})

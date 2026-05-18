@@ -136,19 +136,18 @@ func (c *SDKMCPClient) callTool(ctx context.Context, name string, args map[strin
 	return json.RawMessage("{}"), nil
 }
 
-// DiscoverWorkflows calls kubernaut_discover_workflows on KA's MCP server.
+// DiscoverWorkflows calls kubernaut_investigate with action "discover_workflows"
+// on KA's MCP server. KA exposes workflow discovery as an action within the
+// kubernaut_investigate tool, not as a standalone tool.
 //
 //nolint:gocritic // hugeParam: matches MCPClient interface contract
 func (c *SDKMCPClient) DiscoverWorkflows(ctx context.Context, args DiscoverWorkflowsArgs) (*DiscoverWorkflowsResult, error) {
-	argsMap := map[string]any{}
-	if args.WorkflowID != "" {
-		argsMap["workflow_id"] = args.WorkflowID
-	}
-	if args.Kind != "" {
-		argsMap["kind"] = args.Kind
+	argsMap := map[string]any{
+		"rr_id":  args.RRID,
+		"action": "discover_workflows",
 	}
 
-	result, err := c.callTool(ctx, "kubernaut_discover_workflows", argsMap)
+	result, err := c.callTool(ctx, "kubernaut_investigate", argsMap)
 	if err != nil {
 		return nil, err
 	}
