@@ -519,6 +519,9 @@ spec:
             - name: tls-certs
               mountPath: /etc/apifrontend/tls
               readOnly: true
+            - name: inter-service-ca
+              mountPath: /etc/apifrontend/inter-service-ca
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /readyz
@@ -556,6 +559,9 @@ spec:
           secret:
             secretName: apifrontend-tls
             optional: false
+        - name: inter-service-ca
+          configMap:
+            name: inter-service-ca
 ---
 apiVersion: v1
 kind: Service

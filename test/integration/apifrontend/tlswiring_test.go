@@ -140,50 +140,38 @@ var _ = Describe("Integration: TLS wiring", func() {
 	})
 })
 
-func generateCerts(t GinkgoTInterface) string {
+func generateCerts(_ GinkgoTInterface) string {
 	dir := GinkgoT().TempDir()
 
-	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	Expect(err).NotTo(HaveOccurred())
 
-	caTemplate := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "test-ca"},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(24 * time.Hour),
-		IsCA:                  true,
-		BasicConstraintsValid: true,
-		KeyUsage:              x509.KeyUsageCertSign,
-	}
-	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
-	Expect(err).NotTo(HaveOccurred())
-
-	serverKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	Expect(err).NotTo(HaveOccurred())
-
-	serverTemplate := &x509.Certificate{
-		SerialNumber: big.NewInt(2),
-		Subject:      pkix.Name{CommonName: "localhost"},
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test"},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(24 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1)},
+		DNSNames:     []string{"localhost"},
 	}
-	serverDER, err := x509.CreateCertificate(rand.Reader, serverTemplate, caTemplate, &serverKey.PublicKey, caKey)
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	Expect(err).NotTo(HaveOccurred())
 
-	writePEM(filepath.Join(dir, "tls.crt"), "CERTIFICATE", caDER)
-	appendPEM(filepath.Join(dir, "tls.crt"), "CERTIFICATE", serverDER)
-
-	keyBytes, err := x509.MarshalECPrivateKey(serverKey)
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyDER, err := x509.MarshalECPrivateKey(key)
 	Expect(err).NotTo(HaveOccurred())
-	writePEM(filepath.Join(dir, "tls.key"), "EC PRIVATE KEY", keyBytes)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	Expect(os.WriteFile(filepath.Join(dir, "tls.crt"), certPEM, 0o600)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(dir, "tls.key"), keyPEM, 0o600)).To(Succeed())
 
 	return dir
 }
 
-func generateCA(t GinkgoTInterface) string {
+func generateCA(_ GinkgoTInterface) string {
 	dir := GinkgoT().TempDir()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -202,20 +190,6 @@ func generateCA(t GinkgoTInterface) string {
 	Expect(err).NotTo(HaveOccurred())
 
 	caFile := filepath.Join(dir, "ca.crt")
-	writePEM(caFile, "CERTIFICATE", der)
+	Expect(os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600)).To(Succeed())
 	return caFile
-}
-
-func writePEM(path, blockType string, data []byte) {
-	f, err := os.Create(path) //nolint:gosec
-	Expect(err).NotTo(HaveOccurred())
-	defer func() { _ = f.Close() }()
-	Expect(pem.Encode(f, &pem.Block{Type: blockType, Bytes: data})).To(Succeed())
-}
-
-func appendPEM(path, blockType string, data []byte) {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644) //nolint:gosec
-	Expect(err).NotTo(HaveOccurred())
-	defer func() { _ = f.Close() }()
-	Expect(pem.Encode(f, &pem.Block{Type: blockType, Bytes: data})).To(Succeed())
 }

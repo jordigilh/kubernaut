@@ -443,10 +443,10 @@ run_pre_001() {
   if kubectl apply --server-side --force-conflicts -f "${CHART_PATH}/crds/" >/dev/null 2>&1; then
     local count
     count=$(kubectl get crds 2>/dev/null | grep -c "kubernaut.ai" || true)
-    if [[ "$count" -eq 9 ]]; then
-      tap_ok "$desc (9 CRDs created)"
+    if [[ "$count" -eq 10 ]]; then
+      tap_ok "$desc (10 CRDs created)"
     else
-      tap_not_ok "$desc" "Expected 9 CRDs, found ${count}"
+      tap_not_ok "$desc" "Expected 10 CRDs, found ${count}"
     fi
   else
     tap_not_ok "$desc" "kubectl apply failed"
@@ -575,7 +575,7 @@ run_inst_003() {
 }
 
 run_verify_001() {
-  assert_pods_ready 12
+  assert_pods_ready 13
 }
 
 run_verify_002() {
@@ -827,7 +827,7 @@ run_upg_001() {
     tap_not_ok "ST-CHART-UPG-001c: Revision incremented" "Revision is ${revision}, expected >= 2"
   fi
 
-  assert_pods_ready 12 "ST-CHART-UPG-001d: 12 pods healthy after upgrade"
+  assert_pods_ready 13 "ST-CHART-UPG-001d: 13 pods healthy after upgrade"
 }
 
 run_uninst_001() {
@@ -870,10 +870,10 @@ run_uninst_001() {
 
   local crd_count
   crd_count=$(kubectl get crds 2>/dev/null | grep -c "kubernaut.ai" || true)
-  if [[ "$crd_count" -eq 9 ]]; then
-    tap_ok "ST-CHART-UNINST-001d: 9 CRDs retained"
+  if [[ "$crd_count" -eq 10 ]]; then
+    tap_ok "ST-CHART-UNINST-001d: 10 CRDs retained"
   else
-    tap_not_ok "ST-CHART-UNINST-001d: 9 CRDs retained" "Found ${crd_count} CRDs"
+    tap_not_ok "ST-CHART-UNINST-001d: 10 CRDs retained" "Found ${crd_count} CRDs"
   fi
 }
 
