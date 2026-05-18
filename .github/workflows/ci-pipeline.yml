@@ -214,6 +214,7 @@ jobs:
           - remediationorchestrator
           - signalprocessing
           - workflowexecution
+          - apifrontend
           - shared-packages  # pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared
     steps:
       - name: Checkout code
@@ -447,7 +448,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -479,6 +480,9 @@ jobs:
           - service: kubernautagent
             service_name: "Kubernaut Agent"
             timeout: 20
+          - service: apifrontend
+            service_name: "API Frontend"
+            timeout: 15
     steps:
       - uses: actions/checkout@v6
         with:

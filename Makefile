@@ -329,6 +329,7 @@ test-integration-%: generate ginkgo setup-envtest ensure-coverage-dirs ## Run in
 		go tool cover -func=coverage_integration_$*.out | grep total || echo "No coverage data"; \
 	fi
 
+
 # Kubernaut Agent integration tests: internal code lives at internal/kubernautagent/ (not internal/controller/)
 .PHONY: test-integration-kubernautagent
 test-integration-kubernautagent: generate ginkgo setup-envtest ensure-coverage-dirs ## Run kubernaut agent integration tests (coverpkg: pkg + internal/kubernautagent)

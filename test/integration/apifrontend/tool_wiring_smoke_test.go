@@ -1,6 +1,4 @@
-//go:build integration
-
-package tools_test
+package apifrontend_test
 
 import (
 	"context"
@@ -17,12 +15,12 @@ import (
 
 var _ = Describe("Integration: tool wiring smoke", func() {
 	It("list_remediations round-trip with fake client", func() {
-		scheme := runtime.NewScheme()
+		s := runtime.NewScheme()
 		rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
-		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+		dynClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(s,
 			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
 
-		result, err := tools.HandleListRemediations(context.Background(), client, tools.ListRemediationsArgs{
+		result, err := tools.HandleListRemediations(context.Background(), dynClient, tools.ListRemediationsArgs{
 			Namespace: "default",
 		})
 		Expect(err).NotTo(HaveOccurred())
