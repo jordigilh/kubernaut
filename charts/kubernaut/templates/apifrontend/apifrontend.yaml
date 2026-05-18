@@ -169,8 +169,8 @@ spec:
       automountServiceAccountToken: true
       containers:
         - name: apifrontend
-          image: "{{ .Values.apifrontend.image.repository }}:{{ .Values.apifrontend.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.apifrontend.image.pullPolicy | default "IfNotPresent" }}
+          image: {{ include "kubernaut.image" (dict "service" "apifrontend" "global" .Values.global "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy | default "IfNotPresent" }}
           ports:
             - name: https
               containerPort: {{ .Values.apifrontend.config.server.httpPort | default 8443 }}

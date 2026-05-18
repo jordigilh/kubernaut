@@ -171,6 +171,7 @@ jobs:
           go-licenses check ./... \
             --ignore=github.com/jordigilh/kubernaut \
             --ignore=github.com/segmentio/asm \
+            --ignore=github.com/Alcova-AI/adk-anthropic-go \
             --logtostderr=false
           echo "All dependency licenses are compliant."
 
@@ -180,6 +181,7 @@ jobs:
           go-licenses report ./... \
             --ignore=github.com/jordigilh/kubernaut \
             --ignore=github.com/segmentio/asm \
+            --ignore=github.com/Alcova-AI/adk-anthropic-go \
             --logtostderr=false \
             --format csv > licenses.csv 2>/dev/null || true
           echo "License report generated ($(wc -l < licenses.csv) dependencies)"
@@ -329,6 +331,10 @@ jobs:
           - service: kubernautagent
             dockerfile: docker/kubernautagent.Dockerfile
             image_name: kubernautagent
+          # Frontend (1)
+          - service: apifrontend
+            dockerfile: docker/apifrontend.Dockerfile
+            image_name: apifrontend
           # Infrastructure (1)
           - service: db-migrate
             dockerfile: docker/db-migrate.Dockerfile
@@ -441,7 +447,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -473,6 +479,9 @@ jobs:
           - service: kubernautagent
             service_name: "Kubernaut Agent"
             timeout: 20
+          - service: apifrontend
+            service_name: "API Frontend"
+            timeout: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -606,7 +615,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, fullpipeline]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fullpipeline]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -638,6 +647,9 @@ jobs:
           - service: kubernautagent
             service_name: "Kubernaut Agent"
             timeout: 35
+          - service: apifrontend
+            service_name: "API Frontend"
+            timeout: 30
           - service: fullpipeline
             service_name: "Full Pipeline"
             timeout: 50
@@ -931,7 +943,7 @@ jobs:
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [detect-changes, lint-go, integration-tests, e2e-tests, helm-smoke-test]
+    needs: [detect-changes, lint-go, unit-tests, build-and-push-images, integration-tests, e2e-tests, helm-smoke-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
