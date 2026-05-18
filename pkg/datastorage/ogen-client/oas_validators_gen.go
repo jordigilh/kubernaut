@@ -3427,6 +3427,38 @@ func (s *CreateActionTypeOK) Validate() error {
 	return nil
 }
 
+func (s *CreateAuditEventBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *CreateAuditEventForbidden) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *CreateAuditEventInternalServerError) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *CreateAuditEventUnauthorized) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *CreateNotificationAuditAccepted) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -3459,6 +3491,46 @@ func (s CreateNotificationAuditAcceptedStatus) Validate() error {
 	}
 }
 
+func (s *CreateNotificationAuditBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *CreateNotificationAuditConflict) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *CreateNotificationAuditInternalServerError) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *CreateWorkflowBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *CreateWorkflowConflict) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *CreateWorkflowCreated) Validate() error {
 	alias := (*RemediationWorkflow)(s)
 	if err := alias.Validate(); err != nil {
@@ -3467,8 +3539,32 @@ func (s *CreateWorkflowCreated) Validate() error {
 	return nil
 }
 
+func (s *CreateWorkflowForbidden) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *CreateWorkflowInternalServerError) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *CreateWorkflowOK) Validate() error {
 	alias := (*RemediationWorkflow)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *CreateWorkflowUnauthorized) Validate() error {
+	alias := (*RFC7807Problem)(s)
 	if err := alias.Validate(); err != nil {
 		return err
 	}
@@ -3493,6 +3589,22 @@ func (s CustomLabels) Validate() error {
 
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *DeprecateWorkflowBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *DeprecateWorkflowNotFound) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -3619,6 +3731,46 @@ func (s DetectedLabelsServiceMesh) Validate() error {
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
+}
+
+func (s *DisableActionTypeBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *DisableActionTypeInternalServerError) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *DisableActionTypeNotFound) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *DisableWorkflowBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *DisableWorkflowNotFound) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *EffectivenessAssessmentAuditPayload) Validate() error {
@@ -4134,6 +4286,22 @@ func (s EffectivenessScoreResponseAssessmentStatus) Validate() error {
 	}
 }
 
+func (s *EnableWorkflowBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *EnableWorkflowNotFound) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *ErrorDetails) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -4176,6 +4344,14 @@ func (s ErrorDetailsComponent) Validate() error {
 	}
 }
 
+func (s *ExportAuditEventsBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s ExportAuditEventsFormat) Validate() error {
 	switch s {
 	case "json":
@@ -4183,6 +4359,22 @@ func (s ExportAuditEventsFormat) Validate() error {
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
+}
+
+func (s *ExportAuditEventsRequestEntityTooLarge) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ExportAuditEventsUnauthorized) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *GatewayAuditPayload) Validate() error {
@@ -4288,6 +4480,54 @@ func (s GatewayAuditPayloadSignalType) Validate() error {
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
+}
+
+func (s *GetEffectivenessScoreInternalServerError) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *GetEffectivenessScoreNotFound) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *GetRemediationHistoryContextBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *GetRemediationHistoryContextInternalServerError) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *GetWorkflowByIDInternalServerError) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *GetWorkflowByIDNotFound) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s GetWorkflowByIDPriority) Validate() error {
@@ -4824,6 +5064,22 @@ func (s LLMToolCallPayloadEventType) Validate() error {
 	}
 }
 
+func (s *ListAvailableActionsBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ListAvailableActionsInternalServerError) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s ListAvailableActionsPriority) Validate() error {
 	switch s {
 	case "P0":
@@ -4852,6 +5108,22 @@ func (s ListAvailableActionsSeverity) Validate() error {
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
+}
+
+func (s *ListWorkflowsByActionTypeBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ListWorkflowsByActionTypeInternalServerError) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s ListWorkflowsByActionTypePriority) Validate() error {
@@ -5832,6 +6104,30 @@ func (s *PaginationMetadata) Validate() error {
 	return nil
 }
 
+func (s *PlaceLegalHoldBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *PlaceLegalHoldNotFound) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *PlaceLegalHoldUnauthorized) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s QueryAuditEventsEventOutcome) Validate() error {
 	switch s {
 	case "success":
@@ -5893,6 +6189,96 @@ func (s *QueryMetadata) Validate() error {
 	return nil
 }
 
+func (s *RFC7807Problem) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := (validate.String{
+			MinLength:     0,
+			MinLengthSet:  false,
+			MaxLength:     0,
+			MaxLengthSet:  false,
+			Email:         false,
+			Hostname:      false,
+			Regex:         regexMap["^https://kubernaut\\.ai/problems/.+"],
+			MinNumeric:    0,
+			MinNumericSet: false,
+			MaxNumeric:    0,
+			MaxNumericSet: false,
+		}).Validate(string(s.Type)); err != nil {
+			return errors.Wrap(err, "string")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *RFC7807ProblemStatusCode) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Response.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "Response",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *ReconstructRemediationRequestBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ReconstructRemediationRequestInternalServerError) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ReconstructRemediationRequestNotFound) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ReconstructRemediationRequestUnprocessableEntity) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *ReconstructionResponse) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -5912,6 +6298,30 @@ func (s *ReconstructionResponse) Validate() error {
 	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *ReleaseLegalHoldBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ReleaseLegalHoldNotFound) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ReleaseLegalHoldUnauthorized) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -8128,6 +8538,22 @@ func (s SignalProcessingAuditPayloadSignalMode) Validate() error {
 	}
 }
 
+func (s *UpdateWorkflowBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *UpdateWorkflowNotFound) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *ValidationResult) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -8179,6 +8605,22 @@ func (s *ValidationResult) Validate() error {
 	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *VerifyAuditChainBadRequest) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *VerifyAuditChainInternalServerError) Validate() error {
+	alias := (*RFC7807Problem)(s)
+	if err := alias.Validate(); err != nil {
+		return err
 	}
 	return nil
 }

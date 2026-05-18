@@ -209,10 +209,16 @@ func tryPullFromRegistry(ctx context.Context, serviceName, localImageName string
 		return "", false, nil // Verification failed, caller should build locally
 	}
 
-	_, _ = fmt.Fprintf(writer, "   ✅ Image ready from registry (skipping local build)\n")
-	_, _ = fmt.Fprintf(writer, "   💡 No pre-pull needed - Kubernetes will fetch during pod deployment\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Image verified in registry, pulling...\n")
+	pullCmd := exec.CommandContext(ctx, "podman", "pull", registryImage)
+	pullCmd.Stdout = writer
+	pullCmd.Stderr = writer
+	if pullErr := pullCmd.Run(); pullErr != nil {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Pull failed: %v, falling back to local build...\n", pullErr)
+		return "", false, nil
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Image pulled from registry (skipping local build)\n")
 
-	// Return registry image path - Kubernetes will pull it automatically
 	return registryImage, true, nil
 }
 
