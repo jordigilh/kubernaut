@@ -885,6 +885,9 @@ data:
       server:
         tls:
           certDir: /etc/tls
+        rateLimit:
+          requestsPerSecond: 50
+          burst: 100
       audit:
         flushIntervalSeconds: 0.1
         bufferSize: 10000
@@ -908,7 +911,7 @@ data:
       enabled: true
       sessionTTL: "5m"
       inactivityTimeout: "2m"
-      maxConcurrentSessions: 3
+      maxConcurrentSessions: 10
       rateLimitPerUser: 20
 %s
 ---

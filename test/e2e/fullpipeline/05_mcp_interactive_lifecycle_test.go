@@ -325,9 +325,6 @@ var _ = Describe("FP-MCP-008: re-takeover after proxy disconnect", Label("e2e", 
 		proxy.DisconnectAll()
 		_ = proxiedSession.Close()
 
-		By("Waiting for disconnect handler to release session")
-		time.Sleep(1 * time.Second) // ✅ APPROVED EXCEPTION: wait for KA disconnect handler to process
-
 		By("Creating new direct MCP session")
 		directSession, err := infrastructure.ConnectMCPClientWithRetry(ctx, infrastructure.MCPClientConfig{
 			Endpoint:     infrastructure.MCPEndpointForKAE2E(),
@@ -337,22 +334,23 @@ var _ = Describe("FP-MCP-008: re-takeover after proxy disconnect", Label("e2e", 
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = directSession.Close() }()
 
-		By("Re-acquiring session via fresh takeover")
-		retakeoverCtx, retakeoverCancel := context.WithTimeout(ctx, 30*time.Second)
-		defer retakeoverCancel()
-		result, err = infrastructure.CallInvestigate(retakeoverCtx, directSession, map[string]any{
-			"rr_id":  rrName,
-			"action": "takeover",
-		})
-		Expect(err).NotTo(HaveOccurred())
-
-		text := infrastructure.ExtractToolResultText(result)
-		GinkgoWriter.Printf("  Re-takeover response (isError=%v): %s\n", result.IsError, text)
-		Expect(result.IsError).To(BeFalse(), "re-takeover after partition should succeed; got: %s", text)
-		Expect(text).To(SatisfyAny(
-			ContainSubstring("takeover_started"),
-			ContainSubstring("reconnected"),
-		))
+		By("Re-acquiring session via fresh takeover (with retry for disconnect handler)")
+		Eventually(func(g Gomega) {
+			retakeoverCtx, retakeoverCancel := context.WithTimeout(ctx, 10*time.Second)
+			defer retakeoverCancel()
+			result, err = infrastructure.CallInvestigate(retakeoverCtx, directSession, map[string]any{
+				"rr_id":  rrName,
+				"action": "takeover",
+			})
+			g.Expect(err).NotTo(HaveOccurred())
+			text := infrastructure.ExtractToolResultText(result)
+			GinkgoWriter.Printf("  Re-takeover response (isError=%v): %s\n", result.IsError, text)
+			g.Expect(result.IsError).To(BeFalse(), "re-takeover after partition should succeed; got: %s", text)
+			g.Expect(text).To(SatisfyAny(
+				ContainSubstring("takeover_started"),
+				ContainSubstring("reconnected"),
+			))
+		}, 15*time.Second, 2*time.Second).Should(Succeed())
 	})
 })
 

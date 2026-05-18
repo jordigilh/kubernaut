@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -331,8 +332,8 @@ func SetupMCPSession(ctx context.Context, namespace, saName, kubeconfigPath stri
 	}
 
 	var session *mcpsdk.ClientSession
-	backoff := 2 * time.Second
-	const maxRetries = 5
+	backoff := 1 * time.Second
+	const maxRetries = 8
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		session, err = ConnectMCPClient(connectCtx, cfg)
@@ -343,10 +344,15 @@ func SetupMCPSession(ctx context.Context, namespace, saName, kubeconfigPath stri
 		if !strings.Contains(err.Error(), "Too Many Requests") || attempt == maxRetries {
 			return nil, fmt.Errorf("MCP connect: %w", err)
 		}
-		_, _ = fmt.Fprintf(writer, "  ⏳ MCP connect got 429, retrying in %v (attempt %d/%d)\n", backoff, attempt+1, maxRetries)
+		jitter := time.Duration(rand.Int63n(int64(backoff / 2)))
+		wait := backoff + jitter
+		_, _ = fmt.Fprintf(writer, "  ⏳ MCP connect got 429, retrying in %v (attempt %d/%d)\n", wait, attempt+1, maxRetries)
 		select {
-		case <-time.After(backoff):
+		case <-time.After(wait):
 			backoff *= 2
+			if backoff > 16*time.Second {
+				backoff = 16 * time.Second
+			}
 		case <-ctx.Done():
 			return nil, fmt.Errorf("MCP connect: context cancelled during 429 backoff: %w", ctx.Err())
 		}
