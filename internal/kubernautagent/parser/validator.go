@@ -46,6 +46,7 @@ type WorkflowMeta struct {
 	Version               string
 	Component             []string // MandatoryLabels.Component: GVK scope (apiVersion/Kind, e.g. apps/v1/Deployment), plain Kind legacy, or ["*"]
 	Parameters            []models.WorkflowParameter
+	CompiledPatterns      map[string]*regexp.Regexp
 }
 
 // kaManagedParams are parameters injected by KA (not provided by the LLM).
@@ -127,8 +128,31 @@ func NewValidator(allowedWorkflows []string) *Validator {
 }
 
 // SetWorkflowMeta stores catalog metadata for a workflow ID (UUID).
+// Pre-compiles regex patterns from parameter schema to avoid per-call compilation.
 func (v *Validator) SetWorkflowMeta(workflowID string, meta WorkflowMeta) {
+	if len(meta.Parameters) > 0 && meta.CompiledPatterns == nil {
+		meta.CompiledPatterns = compileParameterPatterns(meta.Parameters)
+	}
 	v.catalogMeta[workflowID] = meta
+}
+
+// compileParameterPatterns pre-compiles regex patterns from workflow parameter
+// definitions. Invalid patterns are silently skipped — they'll produce a warning
+// at validation time via the fallback path.
+func compileParameterPatterns(params []models.WorkflowParameter) map[string]*regexp.Regexp {
+	compiled := make(map[string]*regexp.Regexp)
+	for _, p := range params {
+		if p.Pattern == "" {
+			continue
+		}
+		if re, err := regexp.Compile(p.Pattern); err == nil {
+			compiled[p.Name] = re
+		}
+	}
+	if len(compiled) == 0 {
+		return nil
+	}
+	return compiled
 }
 
 // GetWorkflowMeta returns catalog metadata for a workflow ID, if available.
@@ -164,7 +188,7 @@ func (v *Validator) Validate(result *katypes.InvestigationResult) error {
 
 	if result.WorkflowID != "" && result.Parameters != nil {
 		if meta, ok := v.catalogMeta[result.WorkflowID]; ok {
-			pvr := v.ValidateParameters(result.Parameters, meta.Parameters)
+			pvr := v.validateParameters(result.Parameters, meta.Parameters, meta.CompiledPatterns)
 			if !pvr.IsValid {
 				return &ParameterValidationError{Result: pvr}
 			}
@@ -178,6 +202,10 @@ func (v *Validator) Validate(result *katypes.InvestigationResult) error {
 // Mutates params in-place: strips undeclared parameters (except KA-managed).
 // BR-HAPI-191: 8 constraint checks + undeclared stripping.
 func (v *Validator) ValidateParameters(params map[string]interface{}, schema []models.WorkflowParameter) *ParameterValidationResult {
+	return v.validateParameters(params, schema, nil)
+}
+
+func (v *Validator) validateParameters(params map[string]interface{}, schema []models.WorkflowParameter, compiledPatterns map[string]*regexp.Regexp) *ParameterValidationResult {
 	result := &ParameterValidationResult{IsValid: true}
 
 	declared := make(map[string]bool, len(schema))
@@ -256,11 +284,17 @@ func (v *Validator) ValidateParameters(params map[string]interface{}, schema []m
 		// 6. Pattern check (string type)
 		if p.Pattern != "" {
 			if strVal, ok := val.(string); ok {
-				re, err := regexp.Compile(p.Pattern)
-				if err != nil {
-					result.Warnings = append(result.Warnings,
-						fmt.Sprintf("%s: invalid regex pattern %q, skipping pattern validation", p.Name, p.Pattern))
-				} else if !re.MatchString(strVal) {
+				re := compiledPatterns[p.Name]
+				if re == nil {
+					var err error
+					re, err = regexp.Compile(p.Pattern)
+					if err != nil {
+						result.Warnings = append(result.Warnings,
+							fmt.Sprintf("%s: invalid regex pattern %q, skipping pattern validation", p.Name, p.Pattern))
+						re = nil
+					}
+				}
+				if re != nil && !re.MatchString(strVal) {
 					result.Errors = append(result.Errors,
 						fmt.Sprintf("%s: value %q does not match pattern %q", p.Name, strVal, p.Pattern))
 				}
