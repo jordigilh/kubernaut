@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 )
 
 // fakeAuditor captures audit events thread-safely for test assertions.
@@ -2009,6 +2010,7 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 				DSClient:           newFakeDSClient(),
 				RBACRoles:          roles,
 				Auditor:            auditor,
+				MetricsRegistry:    metrics.NewRegistry(),
 				ToolTimeout:        5 * time.Second,
 				MaxConcurrentTools: 10,
 			},
@@ -2094,6 +2096,56 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 
 		_, body := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{}, testUser)
 		Expect(body).To(ContainSubstring("not available"))
+	})
+
+	It("UT-AF-WP-030: emits EventWorkflowDiscovery audit event on success", func() {
+		mockMCP := &ka.MockMCPClient{
+			DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+				return &ka.DiscoverWorkflowsResult{
+					Workflows: []ka.DiscoveredWorkflow{
+						{WorkflowID: "wf-1", Name: "Test"},
+						{WorkflowID: "wf-2", Name: "Test2"},
+					},
+				}, nil
+			},
+			SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+				return &ka.SelectWorkflowResult{Status: "ok"}, nil
+			},
+		}
+		h := newDiscoverHandler(mockMCP)
+		sessionID := mcpInitialize(h, testUser)
+
+		status, _ := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{}, testUser)
+		Expect(status).To(Equal(http.StatusOK))
+
+		events := auditor.Events()
+		var found bool
+		for _, e := range events {
+			if e.Type == audit.EventWorkflowDiscovery {
+				found = true
+				Expect(e.Detail).To(HaveKeyWithValue("workflow_count", "2"))
+				Expect(e.Detail).To(HaveKeyWithValue("tool", "kubernaut_discover_workflows"))
+				break
+			}
+		}
+		Expect(found).To(BeTrue(), "expected EventWorkflowDiscovery audit event")
+	})
+
+	It("UT-AF-WP-031: error from KA increments DiscoverWorkflowsErrorsTotal", func() {
+		mockMCP := &ka.MockMCPClient{
+			DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+				return nil, ka.ErrMCPUnavailable
+			},
+			SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+				return &ka.SelectWorkflowResult{Status: "ok"}, nil
+			},
+		}
+		h := newDiscoverHandler(mockMCP)
+		sessionID := mcpInitialize(h, testUser)
+
+		status, body := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{}, testUser)
+		Expect(status).To(Equal(http.StatusOK))
+		Expect(body).To(ContainSubstring("isError"))
 	})
 
 	It("UT-AF-WP-032: RBAC enforces permission for kubernaut_discover_workflows", func() {

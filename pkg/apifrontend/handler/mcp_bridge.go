@@ -3,7 +3,9 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -15,6 +17,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
@@ -37,6 +40,7 @@ type MCPBridgeConfig struct {
 	Auditor            audit.Emitter
 	Logger             logr.Logger
 	Metrics            *MCPBridgeMetrics
+	MetricsRegistry    *metrics.Registry
 	ToolTimeout        time.Duration
 	MaxConcurrentTools int64
 	UserLimiter        *ratelimit.UserLimiter
@@ -144,7 +148,32 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 
 	registerTool(srv, cfg, sem, "kubernaut_discover_workflows", "Discover available workflows with parameter schemas",
 		func(ctx context.Context, args tools.DiscoverWorkflowsArgs) (any, error) {
-			return tools.HandleDiscoverWorkflows(ctx, cfg.KAMCPClient, args)
+			start := time.Now()
+			result, err := tools.HandleDiscoverWorkflows(ctx, cfg.KAMCPClient, args)
+			reg := cfg.MetricsRegistry
+			if err != nil {
+				if reg != nil && reg.DiscoverWorkflowsErrorsTotal != nil {
+					errType := "unknown"
+					if ctx.Err() != nil {
+						errType = "timeout"
+					} else if errors.Is(err, ka.ErrMCPUnavailable) {
+						errType = "mcp_unavailable"
+					}
+					reg.DiscoverWorkflowsErrorsTotal.WithLabelValues(errType).Inc()
+				}
+				return result, err
+			}
+			if reg != nil {
+				if reg.DiscoverWorkflowsTotal != nil {
+					reg.DiscoverWorkflowsTotal.WithLabelValues("success").Inc()
+				}
+				if reg.DiscoverWorkflowsDuration != nil {
+					reg.DiscoverWorkflowsDuration.WithLabelValues().Observe(time.Since(start).Seconds())
+				}
+			}
+			emitAudit(ctx, cfg, "kubernaut_discover_workflows", audit.EventWorkflowDiscovery,
+				map[string]string{"workflow_count": strconv.Itoa(result.Count)})
+			return result, nil
 		})
 
 	// Presentation tool (no backend dependency)

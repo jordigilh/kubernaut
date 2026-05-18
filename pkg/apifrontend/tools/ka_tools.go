@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"google.golang.org/adk/tool"
@@ -222,10 +223,10 @@ func ValidateWorkflowParameters(schema []WorkflowParameter, params map[string]an
 
 	for _, p := range schema {
 		val, provided := params[p.Name]
+		if !provided && p.Required {
+			return fmt.Errorf("required parameter %q missing", p.Name)
+		}
 		if !provided {
-			if p.Required {
-				return fmt.Errorf("required parameter %q missing", p.Name)
-			}
 			continue
 		}
 		if err := validateParamType(p, val); err != nil {
@@ -233,14 +234,7 @@ func ValidateWorkflowParameters(schema []WorkflowParameter, params map[string]an
 		}
 		if len(p.Enum) > 0 {
 			strVal := fmt.Sprintf("%v", val)
-			found := false
-			for _, allowed := range p.Enum {
-				if strVal == allowed {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !slices.Contains(p.Enum, strVal) {
 				return fmt.Errorf("parameter %q value %q not in enum %v", p.Name, strVal, p.Enum)
 			}
 		}
