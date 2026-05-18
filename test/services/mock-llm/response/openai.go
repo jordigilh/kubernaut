@@ -236,11 +236,15 @@ func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 	if len(cfg.Alternatives) > 0 {
 		alts := make([]map[string]interface{}, 0, len(cfg.Alternatives))
 		for _, a := range cfg.Alternatives {
-			alts = append(alts, map[string]interface{}{
+			alt := map[string]interface{}{
 				"workflow_id": a.WorkflowID,
 				"confidence":  a.Confidence,
 				"rationale":   a.Rationale,
-			})
+			}
+			if len(a.Parameters) > 0 {
+				alt["parameters"] = a.Parameters
+			}
+			alts = append(alts, alt)
 		}
 		obj["alternative_workflows"] = alts
 	}

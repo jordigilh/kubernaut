@@ -157,6 +157,24 @@ kubernautAgent:
 | `rateLimitPerUser` | `10` | MCP requests per second per authenticated user (max: 100) |
 | `maxAnalyzingTimeout` | `45m` | Extended analyzing timeout in Remediation Orchestrator while an interactive session is active, preventing RO from timing out the RR during operator investigation |
 
+## Workflow Discovery and Selection
+
+Interactive mode supports a structured workflow discovery and selection flow:
+
+1. **Discover Workflows**: Call `kubernaut_investigate` with `action: "discover_workflows"` to trigger KA's Phase 3 LLM analysis. The response includes a recommended workflow and zero or more alternatives, each with:
+   - `workflow_id` — unique identifier for catalog lookup
+   - `confidence` — LLM confidence score (0-1)
+   - `rationale` — why this workflow was recommended
+   - `parameters` — LLM-populated execution parameters (e.g., `{"MEMORY_LIMIT_NEW": "512Mi"}`)
+
+2. **Select Workflow**: Call `kubernaut_select_workflow` with the chosen `workflow_id`. The selected workflow's parameters are merged into the final investigation result and forwarded to the workflow execution engine.
+
+3. **Complete Without Action**: Call `kubernaut_complete_no_action` if no workflow is appropriate.
+
+Selecting a workflow auto-completes the interactive session: the final result is written to the HTTP session store, the MCP lease is released, and the AA controller transitions to completion.
+
+For the detailed MCP tool contract including JSON schemas, parameter semantics, and gating rules, see [docs/mcp/discover-workflows-contract.md](../mcp/discover-workflows-contract.md).
+
 ## Disconnect Behavior
 
 If your MCP connection drops (network issue, client crash):

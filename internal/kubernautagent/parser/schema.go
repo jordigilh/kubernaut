@@ -178,7 +178,8 @@ const investigationResultSchemaJSON = `{
         "properties": {
           "workflow_id": { "type": "string" },
           "confidence": { "type": "number" },
-          "rationale": { "type": "string" }
+          "rationale": { "type": "string" },
+          "parameters": { "type": "object", "additionalProperties": { "type": "string" } }
         },
         "required": ["workflow_id", "confidence"]
       }

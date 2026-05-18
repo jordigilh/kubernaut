@@ -27,7 +27,6 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
 )
 
 var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
@@ -334,11 +333,17 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 
 			By("Verifying AlternativeWorkflows populated (mock low_confidence scenario returns exactly 2 alternatives)")
 			Expect(analysis.Status.AlternativeWorkflows).To(HaveLen(2))
-			Expect(analysis.Status.AlternativeWorkflows[0].WorkflowID).To(Equal(uuid.DeterministicUUID("oomkill-increase-memory-v1")))
-			Expect(analysis.Status.AlternativeWorkflows[0].Rationale).To(Equal("Alternative approach for ambiguous root cause"))
-			Expect(analysis.Status.AlternativeWorkflows[1].WorkflowID).To(Equal(uuid.DeterministicUUID("node-drain-reboot-v1")))
-			Expect(analysis.Status.AlternativeWorkflows[1].Rationale).To(Equal("Requires human expertise to determine correct remediation"))
-			Expect(analysis.Status.AlternativeWorkflows[0].Confidence).To(BeNumerically(">", analysis.Status.AlternativeWorkflows[1].Confidence))
+			alt0 := analysis.Status.AlternativeWorkflows[0]
+			alt1 := analysis.Status.AlternativeWorkflows[1]
+			Expect(alt0.WorkflowID).NotTo(BeEmpty(),
+				"alternative[0] must have a workflow ID (may be DS-overridden or deterministic)")
+			Expect(alt0.Rationale).To(Equal("Alternative approach for ambiguous root cause"))
+			Expect(alt1.WorkflowID).NotTo(BeEmpty(),
+				"alternative[1] must have a workflow ID (may be DS-overridden or deterministic)")
+			Expect(alt1.Rationale).To(Equal("Requires human expertise to determine correct remediation"))
+			Expect(alt0.WorkflowID).NotTo(Equal(alt1.WorkflowID),
+				"alternatives must reference distinct workflows")
+			Expect(alt0.Confidence).To(BeNumerically(">", alt1.Confidence))
 		})
 	})
 

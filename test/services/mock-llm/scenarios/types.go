@@ -25,6 +25,7 @@ type MockAlternativeWorkflow struct {
 	WorkflowID   string
 	Confidence   float64
 	Rationale    string
+	Parameters   map[string]string
 }
 
 // MultiToolCallEntry describes a single tool call within a multi-tool-call batch.

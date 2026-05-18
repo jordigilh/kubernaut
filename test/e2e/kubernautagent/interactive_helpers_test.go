@@ -33,10 +33,20 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
+// rrOption configures optional overrides for createTestRemediationRequest.
+type rrOption func(*remediationv1.RemediationRequestSpec)
+
+// withSignalName overrides the default "E2ETestSignal" signal name on the RR.
+func withSignalName(name string) rrOption {
+	return func(spec *remediationv1.RemediationRequestSpec) {
+		spec.SignalName = name
+	}
+}
+
 // createTestRemediationRequest provisions a minimal RemediationRequest CRD in the
 // Kind cluster so that the RRExistenceChecker (HARM-004) allows the session to start.
 // The RR is created with the bare minimum fields required by the CRD validation schema.
-func createTestRemediationRequest(testCtx context.Context, rrID string) {
+func createTestRemediationRequest(testCtx context.Context, rrID string, opts ...rrOption) {
 	GinkgoHelper()
 
 	scheme := k8sruntime.NewScheme()
@@ -73,7 +83,11 @@ func createTestRemediationRequest(testCtx context.Context, rrID string) {
 		},
 	}
 
+	for _, o := range opts {
+		o(&rr.Spec)
+	}
+
 	Expect(cli.Create(testCtx, rr)).To(Succeed(),
 		"should create RemediationRequest %s for E2E test", rrID)
-	GinkgoWriter.Printf("  📋 Created RR fixture: %s/%s\n", sharedNamespace, rrID)
+	GinkgoWriter.Printf("  📋 Created RR fixture: %s/%s (signal=%s)\n", sharedNamespace, rrID, rr.Spec.SignalName)
 }

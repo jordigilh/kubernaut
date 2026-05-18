@@ -182,6 +182,150 @@ End of analysis.`
 		})
 	})
 
+	Describe("UT-KA-433-PRS-010: alternative_workflows parameters extraction (BR-LLM-024, #1169)", func() {
+		It("should preserve primary workflow parameters and map per-alternative parameters by workflow id for stable discovery", func() {
+			input := `{
+				"root_cause_analysis": {"summary": "Memory pressure on workload"},
+				"selected_workflow": {
+					"workflow_id": "oomkill-increase-memory-v1",
+					"confidence": 0.92,
+					"parameters": {
+						"MEMORY_LIMIT_NEW": "512Mi"
+					}
+				},
+				"alternative_workflows": [
+					{
+						"workflow_id": "horizontal-scale-alt",
+						"confidence": 0.65,
+						"rationale": "Scale replicas to spread memory pressure",
+						"parameters": {
+							"REPLICA_COUNT": "5",
+							"MAX_SURGE": "2"
+						}
+					},
+					{
+						"workflow_id": "defer-investigation-alt",
+						"confidence": 0.4,
+						"rationale": "Defer until on-call confirms blast radius"
+					}
+				]
+			}`
+
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred(),
+				"parser must accept structured LLM alternatives with parameters for BR-LLM-024 / #1169")
+			Expect(result.Parameters).To(HaveKey("MEMORY_LIMIT_NEW"),
+				"primary selected_workflow parameters must populate result.Parameters (#1169, BR-LLM-024)")
+			altsByID := make(map[string]map[string]interface{})
+			for _, alt := range result.AlternativeWorkflows {
+				altsByID[alt.WorkflowID] = alt.Parameters
+			}
+			Expect(altsByID).To(HaveKey("horizontal-scale-alt"),
+				"expected parameterized alternative to be indexed by workflow_id (#1169, BR-LLM-024)")
+			Expect(altsByID).To(HaveKey("defer-investigation-alt"),
+				"expected alternative without parameters to still be present by workflow_id (#1169, BR-LLM-024)")
+			Expect(altsByID["horizontal-scale-alt"]).To(HaveKey("REPLICA_COUNT"),
+				"alternative_workflows must surface REPLICA_COUNT when LLM provides it (#1169, BR-LLM-024)")
+			Expect(altsByID["horizontal-scale-alt"]).To(HaveKey("MAX_SURGE"),
+				"alternative_workflows must surface MAX_SURGE when LLM provides it (#1169, BR-LLM-024)")
+			Expect(altsByID["defer-investigation-alt"]).To(BeNil(),
+				"alternatives omitting parameters must leave Parameters nil (#1169, BR-LLM-024)")
+		})
+	})
+
+	Describe("UT-KA-433-PRS-010b: empty parameters object on alternative (BR-LLM-024, #1169)", func() {
+		It("should materialize an empty JSON object as a non-nil empty parameter map on the alternative", func() {
+			input := `{
+				"root_cause_analysis": {"summary": "RCA with empty alt parameters"},
+				"selected_workflow": {"workflow_id": "primary-wf", "confidence": 0.9},
+				"alternative_workflows": [
+					{
+						"workflow_id": "empty-object-alt",
+						"confidence": 0.55,
+						"rationale": "explicit empty parameters",
+						"parameters": {}
+					}
+				]
+			}`
+
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred(),
+				"empty parameters object must parse for BR-LLM-024 / #1169")
+			Expect(result.AlternativeWorkflows).To(HaveLen(1),
+				"single alternative must round-trip (#1169, BR-LLM-024)")
+			Expect(result.AlternativeWorkflows[0].Parameters).NotTo(BeNil(),
+				"{} must decode to non-nil map on AlternativeWorkflow.Parameters (#1169, BR-LLM-024)")
+			Expect(result.AlternativeWorkflows[0].Parameters).To(BeEmpty(),
+				"explicit empty parameters must not invent keys (#1169, BR-LLM-024)")
+		})
+	})
+
+	Describe("UT-KA-433-PRS-010c: explicit null parameters on alternative (BR-LLM-024, #1169)", func() {
+		It("should record null parameters on an alternative as absent", func() {
+			input := `{
+				"root_cause_analysis": {"summary": "RCA with null alt parameters"},
+				"selected_workflow": {"workflow_id": "primary-wf", "confidence": 0.9},
+				"alternative_workflows": [
+					{
+						"workflow_id": "null-params-alt",
+						"confidence": 0.55,
+						"rationale": "null parameters",
+						"parameters": null
+					}
+				]
+			}`
+
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred(),
+				"null parameters must parse for BR-LLM-024 / #1169")
+			Expect(result.AlternativeWorkflows).To(HaveLen(1),
+				"single alternative must round-trip (#1169, BR-LLM-024)")
+			Expect(result.AlternativeWorkflows[0].Parameters).To(BeNil(),
+				"JSON null parameters must leave AlternativeWorkflow.Parameters nil (#1169, BR-LLM-024)")
+		})
+	})
+
+	Describe("UT-KA-433-PRS-010d: malformed parameters type on alternative (BR-LLM-024, #1169)", func() {
+		It("should fail parsing when alternative parameters are not a JSON object", func() {
+			input := `{
+				"root_cause_analysis": {"summary": "RCA with invalid alt parameters type"},
+				"selected_workflow": {"workflow_id": "primary-wf", "confidence": 0.9},
+				"alternative_workflows": [
+					{
+						"workflow_id": "bad-params-alt",
+						"confidence": 0.5,
+						"rationale": "parameters scalar",
+						"parameters": "not-an-object"
+					}
+				]
+			}`
+
+			result, err := p.Parse(input)
+			Expect(err).To(HaveOccurred(),
+				"non-object parameters on alternative_workflows must surface a parse error (#1169, BR-LLM-024)")
+			Expect(result).To(BeNil(),
+				"malformed alternative parameters must not produce a partial InvestigationResult (#1169, BR-LLM-024)")
+		})
+	})
+
+	Describe("UT-KA-433-PRS-010e: omitted alternative_workflows key (BR-LLM-024, #1169)", func() {
+		It("should leave alternatives empty when the LLM response has no alternative_workflows field", func() {
+			input := `{
+				"root_cause_analysis": {"summary": "Standard RCA without alternatives"},
+				"selected_workflow": {
+					"workflow_id": "oom-recovery",
+					"confidence": 0.88
+				}
+			}`
+
+			result, err := p.Parse(input)
+			Expect(err).NotTo(HaveOccurred(),
+				"standard RCA JSON without alternative_workflows must still parse (#1169, BR-LLM-024)")
+			Expect(result.AlternativeWorkflows).To(BeEmpty(),
+				"omitted alternative_workflows must yield nil or empty slice (#1169, BR-LLM-024)")
+		})
+	})
+
 	Describe("UT-KA-433-PRS-009: Parser ignores LLM needs_human_review (BR-HAPI-200)", func() {
 		It("should clear LLM-set HR fields and re-derive from outcome routing", func() {
 			input := `{

@@ -487,7 +487,7 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 				Version:            "v1.2.0",
 			}
 
-			result := mcptools.BuildFinalResult(rca, workflow)
+			result := mcptools.BuildFinalResult(rca, workflow, nil)
 			Expect(result.RCASummary).To(Equal("Pod OOM due to memory leak"))
 			Expect(result.Confidence).To(Equal(0.92))
 			Expect(result.Severity).To(Equal("critical"))
@@ -507,7 +507,7 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 				Confidence: 0.5,
 			}
 
-			result := mcptools.BuildFinalResult(rca, nil)
+			result := mcptools.BuildFinalResult(rca, nil, nil)
 			Expect(result.RCASummary).To(Equal("test rca"))
 			Expect(result.WorkflowID).To(BeEmpty())
 		})
@@ -516,9 +516,184 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 			rca := &katypes.InvestigationResult{RCASummary: "original"}
 			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-001"}
 
-			result := mcptools.BuildFinalResult(rca, workflow)
+			result := mcptools.BuildFinalResult(rca, workflow, nil)
 			Expect(result.WorkflowID).To(Equal("wf-001"))
 			Expect(rca.WorkflowID).To(BeEmpty(), "original RCA must not be mutated")
+		})
+	})
+
+	Describe("UT-KA-SW-BUILDFINAL-002: buildFinalResult merges per-workflow parameters (BR-INTERACTIVE, #1169)", func() {
+		It("should use discovery recommended parameters instead of stale RCA params", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "OOM",
+				Parameters: map[string]interface{}{
+					"STALE_KEY": "stale_val",
+				},
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-rec"}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: "wf-rec",
+					Parameters: map[string]interface{}{"MEMORY_LIMIT_NEW": "512Mi"},
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+			Expect(result.Parameters).To(HaveKey("MEMORY_LIMIT_NEW"),
+				"interactive workflow selection must expose parameters from the discovery recommendation")
+			Expect(result.Parameters["MEMORY_LIMIT_NEW"]).To(Equal("512Mi"),
+				"downstream automation needs the discovery memory limit, not an arbitrary placeholder")
+			Expect(result.Parameters).NotTo(HaveKey("STALE_KEY"),
+				"stale RCA parameters must not leak after a fresh discovery recommendation")
+		})
+
+		It("should replace parameters when selecting an alternative workflow", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "rollout stuck",
+				Parameters: map[string]interface{}{
+					"RECOMMENDED_ONLY": "should-not-appear",
+				},
+			}
+			altID := "wf-alt-params"
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: altID}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: "wf-recommended",
+					Parameters: map[string]interface{}{"RECOMMENDED_ONLY": "rec-val"},
+				},
+				Alternatives: []mcpinternal.DiscoveredWorkflow{
+					{
+						WorkflowID: altID,
+						Parameters: map[string]interface{}{
+							"REPLICA_COUNT": "5",
+							"MAX_SURGE":     "2",
+						},
+					},
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+			Expect(result.Parameters).To(HaveKey("REPLICA_COUNT"),
+				"the chosen alternative workflow must drive rollout parameters for AA")
+			Expect(result.Parameters).To(HaveKey("MAX_SURGE"),
+				"surge settings must come from the alternative workflow the user picked")
+			Expect(result.Parameters).NotTo(HaveKey("RECOMMENDED_ONLY"),
+				"recommended-workflow parameters must not remain when an alternative is selected")
+		})
+
+		It("should pass through RCA params when discovery is nil", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "no discovery snapshot",
+				Parameters: map[string]interface{}{
+					"PRESERVE_ME": "yes",
+				},
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-001"}
+
+			result := mcptools.BuildFinalResult(rca, workflow, nil)
+			Expect(result.Parameters).To(HaveKey("PRESERVE_ME"),
+				"without discovery context, hand-off must keep the RCA-supplied parameters")
+			Expect(result.Parameters["PRESERVE_ME"]).To(Equal("yes"),
+				"legacy completion paths must not drop parameters when discovery is unavailable")
+		})
+
+		It("should clear params when selected alternative has nil parameters", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "alt without params",
+				Parameters: map[string]interface{}{
+					"OLD": "old",
+				},
+			}
+			altID := "wf-alt-empty-params"
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: altID}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: "wf-rec",
+					Parameters: map[string]interface{}{"OLD": "rec"},
+				},
+				Alternatives: []mcpinternal.DiscoveredWorkflow{
+					{WorkflowID: altID, Parameters: nil},
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+			Expect(result.Parameters).To(BeEmpty(),
+				"an alternative that defines no parameters must yield an empty parameter map for execution")
+		})
+
+		It("should keep RCA params when workflow not found in discovery", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "fallback path",
+				Parameters: map[string]interface{}{
+					"FROM_RCA": "keep",
+				},
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-not-in-discovery"}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: "wf-rec",
+					Parameters: map[string]interface{}{"DISC_ONLY": "x"},
+				},
+				Alternatives: []mcpinternal.DiscoveredWorkflow{
+					{WorkflowID: "wf-alt", Parameters: map[string]interface{}{"ALT_ONLY": "y"}},
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+			Expect(result.Parameters).To(HaveKey("FROM_RCA"),
+				"graceful fallback must retain RCA parameters when discovery cannot map the catalog workflow")
+			Expect(result.Parameters["FROM_RCA"]).To(Equal("keep"),
+				"operators rely on RCA parameters when discovery IDs and catalog IDs diverge")
+		})
+
+		It("should clear recommended params when recommended has nil parameters", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "rec nil params",
+				Parameters: map[string]interface{}{
+					"RCA_PARAM": "v",
+				},
+			}
+			recID := "wf-rec-nil-params"
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: recID}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: recID,
+					Parameters: nil,
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+			Expect(result.Parameters).To(BeEmpty(),
+				"explicit nil parameters on the recommended workflow must override stale RCA parameter maps")
+		})
+
+		It("should not mutate original RCA or discovery parameter maps", func() {
+			rcaParams := map[string]interface{}{"RCA_K": "rca_v"}
+			recParams := map[string]interface{}{"DISC_K": "disc_v"}
+			rca := &katypes.InvestigationResult{
+				RCASummary: "immutability",
+				Parameters: rcaParams,
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-immut"}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: "wf-immut",
+					Parameters: recParams,
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+			Expect(result.Parameters).NotTo(BeNil(),
+				"buildFinalResult should produce a distinct parameters map for safe mutation downstream")
+			result.Parameters["MUTATED"] = "after"
+			Expect(rcaParams).NotTo(HaveKey("MUTATED"),
+				"session RCA storage must remain untouched when the completer mutates the merged result")
+			Expect(recParams).NotTo(HaveKey("MUTATED"),
+				"stored discovery recommendations must stay immutable for audit and replay")
+			Expect(rcaParams).To(HaveKey("RCA_K"),
+				"original RCA parameter keys must be preserved in the source map")
+			Expect(recParams).To(HaveKey("DISC_K"),
+				"original discovery parameter keys must be preserved in the source map")
 		})
 	})
 
@@ -564,6 +739,161 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 		It("should handle empty discovery result", func() {
 			dr := &mcpinternal.WorkflowDiscoveryResult{}
 			Expect(mcptools.IsWorkflowInDiscoveryResult("wf-any", dr)).To(BeFalse())
+		})
+	})
+})
+
+var _ = Describe("extractDiscoveryResult — parameter propagation (BR-LLM-026, #1169)", func() {
+
+	Describe("UT-KA-EDR-001: recommended parameters (BR-LLM-026, #1169)", func() {
+		It("should copy recommended workflow parameters from InvestigationResult", func() {
+			inv := &katypes.InvestigationResult{
+				WorkflowID: "wf-rec",
+				Parameters: map[string]interface{}{"KEY": "val"},
+			}
+
+			dr := mcptools.ExtractDiscoveryResult(inv)
+			Expect(dr).NotTo(BeNil(), "operators need a discovery envelope even when only parameters change")
+			Expect(dr.Recommended).NotTo(BeNil(), "a primary workflow must be advertised when WorkflowID is present")
+			Expect(dr.Recommended.Parameters).To(HaveKeyWithValue("KEY", "val"),
+				"discovered recommended workflow must surface LLM parameter bindings for execution")
+		})
+	})
+
+	Describe("UT-KA-EDR-002: alternative parameters (BR-LLM-026, #1169)", func() {
+		It("should copy alternative workflow parameters", func() {
+			inv := &katypes.InvestigationResult{
+				AlternativeWorkflows: []katypes.AlternativeWorkflow{
+					{
+						WorkflowID: "wf-alt",
+						Parameters: map[string]interface{}{"ALT_KEY": "alt_val"},
+					},
+				},
+			}
+
+			dr := mcptools.ExtractDiscoveryResult(inv)
+			Expect(dr).NotTo(BeNil(), "discovery extraction must return a non-nil result for downstream MCP serialization")
+			Expect(dr.Alternatives).NotTo(BeEmpty(), "alternatives from LLM output must appear in discovery")
+			Expect(dr.Alternatives[0].Parameters).To(HaveKeyWithValue("ALT_KEY", "alt_val"),
+				"each alternative must retain its own parameter map for fair operator comparison")
+		})
+	})
+
+	Describe("UT-KA-EDR-003: nil alternative parameters (BR-LLM-026, #1169)", func() {
+		It("should propagate nil parameters on alternatives without parameters", func() {
+			inv := &katypes.InvestigationResult{
+				AlternativeWorkflows: []katypes.AlternativeWorkflow{
+					{WorkflowID: "wf-alt-no-params"},
+				},
+			}
+
+			dr := mcptools.ExtractDiscoveryResult(inv)
+			Expect(dr.Alternatives).To(HaveLen(1), "single alternative must be preserved without inventing fields")
+			Expect(dr.Alternatives[0].Parameters).To(BeNil(),
+				"absent alternative parameters must stay nil so callers can distinguish missing from empty maps")
+		})
+	})
+
+	Describe("UT-KA-EDR-004: nil investigation input (BR-LLM-026, #1169)", func() {
+		It("should return empty result for nil input", func() {
+			dr := mcptools.ExtractDiscoveryResult(nil)
+			Expect(dr).NotTo(BeNil(), "nil-safe extraction avoids panics in interactive session handlers")
+			Expect(dr.Recommended).To(BeNil(), "without an investigation there must be no recommended workflow")
+			Expect(dr.Alternatives).To(BeEmpty(), "without an investigation there must be no alternative list")
+		})
+	})
+
+	Describe("UT-KA-EDR-005: alternatives only (BR-LLM-026, #1169)", func() {
+		It("should populate alternatives without recommended when WorkflowID is empty", func() {
+			inv := &katypes.InvestigationResult{
+				WorkflowID: "",
+				AlternativeWorkflows: []katypes.AlternativeWorkflow{
+					{
+						WorkflowID: "wf-alt-only",
+						Parameters: map[string]interface{}{"ONLY": "one"},
+					},
+				},
+			}
+
+			dr := mcptools.ExtractDiscoveryResult(inv)
+			Expect(dr.Recommended).To(BeNil(), "no primary workflow must be fabricated when WorkflowID is absent")
+			Expect(dr.Alternatives).To(HaveLen(1), "alternatives-only Phase 3 output must still populate discovery")
+			Expect(dr.Alternatives[0].Parameters).To(HaveKeyWithValue("ONLY", "one"),
+				"parameters on alternatives must propagate even when no recommended row exists")
+		})
+	})
+
+	Describe("UT-KA-EDR-006: empty recommended parameter map (BR-LLM-026, #1169)", func() {
+		It("should propagate empty parameter map on recommended", func() {
+			inv := &katypes.InvestigationResult{
+				WorkflowID: "wf-rec",
+				Parameters: map[string]interface{}{},
+			}
+
+			dr := mcptools.ExtractDiscoveryResult(inv)
+			Expect(dr.Recommended).NotTo(BeNil(), "recommended workflow must exist when WorkflowID is set")
+			Expect(dr.Recommended.Parameters).NotTo(BeNil(),
+				"explicit empty maps from the LLM must not collapse to nil and hide the parameter layer")
+			Expect(dr.Recommended.Parameters).To(BeEmpty(),
+				"non-nil parameter map with zero entries must round-trip for schema-stable clients")
+		})
+	})
+})
+
+var _ = Describe("kubernaut_select_workflow — per-workflow parameter hand-off (BR-INTERACTIVE, #1169)", func() {
+	Describe("UT-KA-SW-AC-002: select_workflow propagates per-workflow parameters to completer (BR-INTERACTIVE, #1169)", func() {
+		It("should deliver alternative workflow parameters to the interactive session completer", func() {
+			altID := "wf-alt-params"
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{
+					WorkflowID:      altID,
+					WorkflowName:    "alt-with-params",
+					ExecutionEngine: "argo",
+					ExecutionBundle: "oci://alt:v1",
+					Version:         "v1.0",
+				},
+			}
+			completer := &mockHTTPCompleter{foundID: "http-ac-002", found: true}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-ac-002",
+					CorrelationID: "rr-ac-002",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:     &katypes.InvestigationResult{RCASummary: "needs rollout tuning"},
+					DiscoveryResult: &mcpinternal.WorkflowDiscoveryResult{
+						Recommended: &mcpinternal.DiscoveredWorkflow{
+							WorkflowID: "wf-recommended",
+							Parameters: map[string]interface{}{"REC_KEY": "rec_val"},
+						},
+						Alternatives: []mcpinternal.DiscoveredWorkflow{
+							{
+								WorkflowID: altID,
+								Parameters: map[string]interface{}{"ALT_KEY": "alt_val"},
+							},
+						},
+					},
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(catalog, sessions,
+				mcptools.WithHTTPSessionCompleter(completer),
+			)
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-ac-002",
+				WorkflowID: altID,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred(),
+				"select_workflow must succeed when the user picks a discovery-listed alternative")
+
+			Expect(completer.completedResult).NotTo(BeNil(),
+				"the HTTP completer must receive the merged investigation result for session completion")
+			Expect(completer.completedResult.Parameters).To(HaveKey("ALT_KEY"),
+				"the completer must forward parameters for the workflow the user actually selected")
+			Expect(completer.completedResult.Parameters["ALT_KEY"]).To(Equal("alt_val"),
+				"downstream automation must see concrete values from the alternative workflow")
+			Expect(completer.completedResult.Parameters).NotTo(HaveKey("REC_KEY"),
+				"recommended-workflow parameters must not leak after an explicit alternative choice")
 		})
 	})
 })

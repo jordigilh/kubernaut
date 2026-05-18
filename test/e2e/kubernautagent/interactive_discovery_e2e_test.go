@@ -60,7 +60,7 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 	Describe("E2E-KA-DISC-001: Full discovery lifecycle", func() {
 		It("should execute start -> message -> discover_workflows -> select_workflow", func() {
 			rrID := fmt.Sprintf("rr-disc001-%d", time.Now().Unix())
-			createTestRemediationRequest(ctx, rrID)
+			createTestRemediationRequest(ctx, rrID, withSignalName("OOMKilled"))
 
 			By("Connecting MCP client")
 			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
@@ -124,6 +124,24 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 			recommendedID, ok := recommended["workflow_id"].(string)
 			Expect(ok).To(BeTrue(), "recommended workflow should have a workflow_id")
 			GinkgoWriter.Printf("Using recommended workflow_id: %s\n", recommendedID)
+
+			By("Verifying recommended workflow has oomkilled scenario parameters (#1169)")
+			recParams, _ := recommended["parameters"].(map[string]any)
+			Expect(recParams).To(HaveKey("MEMORY_LIMIT_NEW"),
+				"recommended workflow must include MEMORY_LIMIT_NEW from oomkilled scenario (#1169)")
+			GinkgoWriter.Printf("Recommended parameters: %v\n", recParams)
+
+			By("Verifying alternatives exist with parameters (#1169)")
+			alts, _ := innerData["alternatives"].([]any)
+			Expect(alts).NotTo(BeEmpty(),
+				"oomkilled scenario must return at least one alternative (#1169)")
+			alt0, _ := alts[0].(map[string]any)
+			Expect(alt0).NotTo(BeNil())
+			alt0Params, _ := alt0["parameters"].(map[string]any)
+			Expect(alt0Params).To(HaveKey("REPLICA_COUNT"),
+				"first alternative must include REPLICA_COUNT from oomkilled scenario (#1169)")
+			GinkgoWriter.Printf("Alternative[0] (%s) parameters: %v\n",
+				alt0["workflow_id"], alt0Params)
 
 			By("Selecting the recommended workflow from discovery results")
 			result, err = infrastructure.CallSelectWorkflow(ctx, session, map[string]any{
@@ -241,6 +259,94 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 			})
 
 			GinkgoWriter.Println("E2E-KA-DISC-003: select_workflow gating validated")
+		})
+	})
+
+	Describe("E2E-KA-DISC-004: select alternative workflow propagates parameters through real KA (#1169)", func() {
+		It("should discover alternatives with parameters and successfully select one", func() {
+			rrID := fmt.Sprintf("rr-disc004-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, rrID, withSignalName("OOMKilled"))
+
+			By("Connecting MCP client")
+			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
+				Endpoint:     mcpEndpoint,
+				SAToken:      saToken,
+				TLSTransport: tlsTransport,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			defer session.Close()
+
+			By("Starting interactive session")
+			result, err := infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("Sending OOMKill-themed message to steer to oomkilled scenario")
+			result, err = infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":   rrID,
+				"action":  "message",
+				"message": "What is the root cause of this OOMKill event?",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("Discovering workflows")
+			result, err = infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"action": "discover_workflows",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("Extracting alternative workflow_id from discovery results")
+			discoverText := infrastructure.ExtractToolResultText(result)
+			var outerData map[string]any
+			Expect(json.Unmarshal([]byte(discoverText), &outerData)).To(Succeed())
+			responseStr, ok := outerData["response"].(string)
+			Expect(ok).To(BeTrue())
+			var innerData map[string]any
+			Expect(json.Unmarshal([]byte(responseStr), &innerData)).To(Succeed())
+
+			alts, _ := innerData["alternatives"].([]any)
+			Expect(alts).NotTo(BeEmpty(),
+				"discovery must return at least one alternative for the oomkilled scenario (#1169)")
+
+			alt0, _ := alts[0].(map[string]any)
+			altID, ok := alt0["workflow_id"].(string)
+			Expect(ok).To(BeTrue(), "alternative must have a workflow_id")
+			GinkgoWriter.Printf("Selecting alternative workflow_id: %s\n", altID)
+
+			altParams, _ := alt0["parameters"].(map[string]any)
+			Expect(altParams).NotTo(BeEmpty(),
+				"alternative workflow must include LLM-provided parameters (#1169)")
+			GinkgoWriter.Printf("Alternative parameters: %v\n", altParams)
+
+			By("Selecting the alternative workflow")
+			result, err = infrastructure.CallSelectWorkflow(ctx, session, map[string]any{
+				"rr_id":       rrID,
+				"workflow_id": altID,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			selectText := infrastructure.ExtractToolResultText(result)
+			GinkgoWriter.Printf("select_workflow result: %s\n", selectText)
+			Expect(result.IsError).To(BeFalse(),
+				"select_workflow must succeed for a discovery-listed alternative (#1169)")
+
+			By("Verifying Lease released after auto-complete")
+			clientset, err := getKubernetesClientset()
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func() bool {
+				_, err := clientset.CoordinationV1().Leases(sharedNamespace).Get(
+					ctx, leaseNameForRR(rrID), metav1.GetOptions{})
+				return err != nil
+			}, 15*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Lease should be deleted after selecting alternative workflow")
+
+			GinkgoWriter.Println("E2E-KA-DISC-004: Alternative workflow selection completed")
 		})
 	})
 })

@@ -514,10 +514,29 @@ ProblemDetails:
 
 ---
 
+## Addendum: MCP `DiscoveredWorkflow` Parameters (#1169)
+
+The MCP `DiscoveredWorkflow` struct (used in `discover_workflows` responses) diverges from
+the REST `AlternativeWorkflow` struct by including a `parameters` field (`map[string]interface{}`).
+This enables the MCP client (AF) to display per-workflow parameter previews before selection.
+
+The REST `AlternativeWorkflow` (used in the KA→AA HTTP API) was designed for audit/context only
+(v1.2) and intentionally excluded `parameters`. The MCP DTO adds them because:
+
+1. AF needs to display parameter previews for operator decision-making
+2. `select_workflow` needs to merge the selected workflow's parameters into the final result
+3. Parameter values come from the LLM's Phase 3 structured output, not from the catalog
+
+See [docs/mcp/discover-workflows-contract.md](../../mcp/discover-workflows-contract.md) for the
+authoritative MCP tool contract.
+
+---
+
 ## Version History
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.3 | 2026-05-17 | KA Team | Addendum: MCP `DiscoveredWorkflow` includes `parameters` (#1169) |
 | 1.2 | 2025-12-05 | HAPI Team | Implemented `alternativeWorkflows[]` for audit/context (NOT for execution) |
 | 1.1 | 2025-12-02 | HAPI Team | Added `targetInOwnerChain` and `warnings[]` fields per AIAnalysis request |
 | 1.0 | 2025-12-02 | HAPI Team | Initial creation (converted from DD-HAPI-004) |

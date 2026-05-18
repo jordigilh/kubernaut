@@ -57,6 +57,20 @@ func applyOverride(cs *configScenario, ov config.ScenarioOverride) {
 	}
 }
 
+// applyAlternativeOverrides replaces deterministic UUIDs in a scenario's
+// Alternatives with the real DataStorage UUIDs from the overrides map.
+func applyAlternativeOverrides(cs *configScenario, overrides map[string]config.ScenarioOverride) {
+	for i := range cs.config.Alternatives {
+		alt := &cs.config.Alternatives[i]
+		if alt.WorkflowName == "" {
+			continue
+		}
+		if ov, found := findOverrideByWorkflowName(overrides, alt.WorkflowName); found && ov.WorkflowID != "" {
+			alt.WorkflowID = ov.WorkflowID
+		}
+	}
+}
+
 // findOverrideByWorkflowName searches override keys for entries matching the
 // given workflow name. Keys have format "workflow_name:environment". When
 // multiple environments match, ":production" is preferred since the E2E
@@ -92,13 +106,13 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 			}
 			if ov, found := overrides.Scenarios[cs.config.ScenarioName]; found {
 				applyOverride(cs, ov)
-				continue
+			} else if cs.config.WorkflowName != "" {
+				if ov, found := findOverrideByWorkflowName(overrides.Scenarios, cs.config.WorkflowName); found {
+					applyOverride(cs, ov)
+				}
 			}
-			if cs.config.WorkflowName == "" {
-				continue
-			}
-			if ov, found := findOverrideByWorkflowName(overrides.Scenarios, cs.config.WorkflowName); found {
-				applyOverride(cs, ov)
+			if len(cs.config.Alternatives) > 0 {
+				applyAlternativeOverrides(cs, overrides.Scenarios)
 			}
 		}
 

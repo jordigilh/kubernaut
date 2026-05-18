@@ -244,7 +244,11 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 	// Auto-complete: build final InvestigationResult from RCA + selected workflow,
 	// write to HTTP session store, and release the MCP lease.
 	if t.httpCompleter != nil && driver.RCAResult != nil {
-		finalResult := buildFinalResult(driver.RCAResult, workflow)
+		finalResult := buildFinalResult(driver.RCAResult, workflow, driver.DiscoveryResult)
+		if finalResult.Parameters == nil && driver.DiscoveryResult != nil {
+			t.logger.V(1).Info("no discovered parameters resolved for selected workflow",
+				"rr_id", input.RRID, "workflow_id", input.WorkflowID)
+		}
 		httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(input.RRID)
 		if found {
 			if completeErr := t.httpCompleter.CompleteUserDriving(httpSessionID, finalResult); completeErr != nil {
@@ -287,8 +291,9 @@ func isWorkflowInDiscoveryResult(workflowID string, dr *mcpinternal.WorkflowDisc
 }
 
 // buildFinalResult constructs the final InvestigationResult by merging the RCA
-// with the selected workflow details from the catalog.
-func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflow) *katypes.InvestigationResult {
+// with the selected workflow details from the catalog and per-workflow parameters
+// from the discovery result (#1169).
+func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflow, discovery *mcpinternal.WorkflowDiscoveryResult) *katypes.InvestigationResult {
 	result := *rca
 	if workflow != nil {
 		result.WorkflowID = workflow.WorkflowID
@@ -298,7 +303,41 @@ func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflo
 		result.WorkflowVersion = workflow.Version
 		result.WorkflowRationale = "User-selected via interactive mode"
 	}
+
+	if discovery != nil && workflow != nil {
+		if params, found := lookupDiscoveredParameters(workflow.WorkflowID, discovery); found {
+			result.Parameters = cloneParameterMap(params)
+		}
+	}
+
 	return &result
+}
+
+// lookupDiscoveredParameters finds the parameter map for a given workflow_id
+// in the discovery result (recommended or alternatives).
+func lookupDiscoveredParameters(workflowID string, dr *mcpinternal.WorkflowDiscoveryResult) (map[string]interface{}, bool) {
+	if dr.Recommended != nil && dr.Recommended.WorkflowID == workflowID {
+		return dr.Recommended.Parameters, true
+	}
+	for _, alt := range dr.Alternatives {
+		if alt.WorkflowID == workflowID {
+			return alt.Parameters, true
+		}
+	}
+	return nil, false
+}
+
+// cloneParameterMap creates a shallow clone of a parameter map to prevent
+// aliasing between the result and the stored discovery/RCA maps (Go mistake #78).
+func cloneParameterMap(src map[string]interface{}) map[string]interface{} {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]interface{}, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 func validateSelectWorkflowInput(input SelectWorkflowInput) error {

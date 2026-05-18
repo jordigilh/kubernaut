@@ -175,6 +175,31 @@ Interactive mode must be additive. Failures in interactive infrastructure must n
 
 ---
 
+## BR-INTERACTIVE-009: Workflow Discovery with Per-Workflow Parameters
+
+**Business Requirement ID**: BR-INTERACTIVE-009
+**Priority**: P1
+**Status**: Implemented
+**GitHub Issue**: [#1169](https://github.com/jordigilh/kubernaut/issues/1169)
+
+### Business Need
+
+When the LLM discovers workflows during interactive investigation, each workflow (recommended and alternatives) may have specific parameters (e.g., `MEMORY_LIMIT_NEW`, `REPLICA_COUNT`). These parameters must be surfaced to the MCP client so the AF UI can display them, and they must flow through to the workflow execution engine when a workflow is selected.
+
+### Success Criteria
+
+1. `discover_workflows` action returns `parameters` on both recommended and alternative workflows in the MCP JSON response
+2. `select_workflow` merges the selected workflow's parameters into the final `InvestigationResult`
+3. Selecting an alternative workflow uses that alternative's parameters, not the recommended workflow's
+4. Parameter maps are cloned to prevent aliasing between session state and the completed result
+5. Workflows without parameters omit the `parameters` key from JSON (backward compatible)
+
+### Contract Reference
+
+See [docs/mcp/discover-workflows-contract.md](../mcp/discover-workflows-contract.md) for the authoritative MCP tool contract.
+
+---
+
 ## Traceability Matrix
 
 | BR ID | PR | Checkpoint | Test Tier |
@@ -187,3 +212,4 @@ Interactive mode must be additive. Failures in interactive infrastructure must n
 | BR-INTERACTIVE-006 | PR2 + PR3 | CP-3 | Unit + Integration |
 | BR-INTERACTIVE-007 | PR1 | CP-1 | Unit |
 | BR-INTERACTIVE-008 | PR2 + PR6 | CP-2 + CP-5 | Unit + E2E |
+| BR-INTERACTIVE-009 | #1169 | — | Unit + IT + E2E |
