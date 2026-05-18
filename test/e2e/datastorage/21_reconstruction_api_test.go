@@ -327,19 +327,19 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 			switch resp := response.(type) {
 			case *ogenclient.ReconstructRemediationRequestBadRequest:
 				GinkgoWriter.Printf("❌ Got 400 Bad Request:\n")
-				GinkgoWriter.Printf("   Type: %s\n", resp.Type.String())
+				GinkgoWriter.Printf("   Type: %s\n", resp.Type)
 				GinkgoWriter.Printf("   Title: %s\n", resp.Title)
 				GinkgoWriter.Printf("   Detail: %s\n", resp.Detail.Value)
 				Fail("Reconstruction returned 400 Bad Request - check server logs")
 			case *ogenclient.ReconstructRemediationRequestNotFound:
 				GinkgoWriter.Printf("❌ Got 404 Not Found:\n")
-				GinkgoWriter.Printf("   Type: %s\n", resp.Type.String())
+				GinkgoWriter.Printf("   Type: %s\n", resp.Type)
 				GinkgoWriter.Printf("   Title: %s\n", resp.Title)
 				GinkgoWriter.Printf("   Detail: %s\n", resp.Detail.Value)
 				Fail("Reconstruction returned 404 Not Found - events not found in database")
 			case *ogenclient.ReconstructRemediationRequestInternalServerError:
 				GinkgoWriter.Printf("❌ Got 500 Internal Server Error:\n")
-				GinkgoWriter.Printf("   Type: %s\n", resp.Type.String())
+				GinkgoWriter.Printf("   Type: %s\n", resp.Type)
 				GinkgoWriter.Printf("   Title: %s\n", resp.Title)
 				GinkgoWriter.Printf("   Detail: %s\n", resp.Detail.Value)
 				Fail("Reconstruction returned 500 Internal Server Error - check server logs")
