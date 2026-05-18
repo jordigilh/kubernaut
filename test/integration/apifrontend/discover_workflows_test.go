@@ -151,6 +151,42 @@ var _ = Describe("Integration: discover_workflows (#1176)", Label("integration",
 		}
 	})
 
+	It("IT-AF-WP-007: numeric parameters (float64 from JSON) survive validate and select round-trip", func() {
+		discoverResult, err := tools.HandleDiscoverWorkflows(ctx, mockMCP, tools.DiscoverWorkflowsArgs{WorkflowID: "wf-scale"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(discoverResult.Count).To(Equal(1))
+
+		wf := discoverResult.Workflows[0]
+
+		// Real JSON decode produces float64 for numeric values, not int
+		params := map[string]any{
+			"namespace":  "production",
+			"deployment": "api-server",
+			"replicas":   float64(5),
+		}
+
+		err = tools.ValidateWorkflowParameters(wf.Parameters, params)
+		Expect(err).NotTo(HaveOccurred(), "float64 should satisfy int schema via type switch")
+
+		var receivedParams map[string]any
+		paramCaptureMCP := &ka.MockMCPClient{
+			SelectWorkflowFn: func(_ context.Context, args ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+				receivedParams = args.Parameters
+				return &ka.SelectWorkflowResult{Status: "accepted", Message: "ok"}, nil
+			},
+		}
+
+		selectResult, err := tools.HandleSelectWorkflow(ctx, paramCaptureMCP, tools.SelectWorkflowArgs{
+			RRID:       "it/rr-numeric-test",
+			WorkflowID: wf.WorkflowID,
+			Parameters: params,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(selectResult.Status).To(Equal("accepted"))
+		Expect(receivedParams).To(HaveKeyWithValue("replicas", float64(5)))
+		Expect(receivedParams).To(HaveKeyWithValue("namespace", "production"))
+	})
+
 	Context("HTTP MCP bridge integration", func() {
 		var ts *httptest.Server
 

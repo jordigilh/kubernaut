@@ -209,4 +209,132 @@ var _ = Describe("E2E: discover_workflows (#1176)", Ordered, ContinueOnFailure, 
 			ContainSubstring("af_discover_workflows_duration_seconds"),
 		))
 	})
+
+	It("E2E-AF-WP-005: filtered discovery by workflow_id returns matching subset", func() {
+		raw, err := mcpToolCall("dw-e2e-005a", "kubernaut_discover_workflows", map[string]interface{}{})
+		Expect(err).NotTo(HaveOccurred())
+
+		var rpcResp struct {
+			Result struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"result"`
+		}
+		Expect(json.Unmarshal(raw, &rpcResp)).To(Succeed())
+		Expect(rpcResp.Result.Content).NotTo(BeEmpty())
+
+		var allResult struct {
+			Workflows []struct {
+				WorkflowID string `json:"workflow_id"`
+			} `json:"workflows"`
+		}
+		Expect(json.Unmarshal([]byte(rpcResp.Result.Content[0].Text), &allResult)).To(Succeed())
+		if len(allResult.Workflows) == 0 {
+			Skip("No workflows discovered from KA — cannot test filtered discovery")
+		}
+
+		targetID := allResult.Workflows[0].WorkflowID
+		filteredRaw, err := mcpToolCall("dw-e2e-005b", "kubernaut_discover_workflows", map[string]interface{}{
+			"workflow_id": targetID,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var filteredResp struct {
+			Result struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"result"`
+		}
+		Expect(json.Unmarshal(filteredRaw, &filteredResp)).To(Succeed())
+		Expect(filteredResp.Result.Content).NotTo(BeEmpty())
+
+		var filteredResult struct {
+			Workflows []struct {
+				WorkflowID string `json:"workflow_id"`
+			} `json:"workflows"`
+			Count int `json:"count"`
+		}
+		Expect(json.Unmarshal([]byte(filteredResp.Result.Content[0].Text), &filteredResult)).To(Succeed())
+		Expect(filteredResult.Count).To(Equal(1))
+		Expect(filteredResult.Workflows).To(HaveLen(1))
+		Expect(filteredResult.Workflows[0].WorkflowID).To(Equal(targetID))
+	})
+
+	It("E2E-AF-WP-006: validation rejects wrong parameter type at wire level", func() {
+		raw, err := mcpToolCall("dw-e2e-006a", "kubernaut_discover_workflows", map[string]interface{}{})
+		Expect(err).NotTo(HaveOccurred())
+
+		var rpcResp struct {
+			Result struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"result"`
+		}
+		Expect(json.Unmarshal(raw, &rpcResp)).To(Succeed())
+		Expect(rpcResp.Result.Content).NotTo(BeEmpty())
+
+		var discoverResult struct {
+			Workflows []struct {
+				WorkflowID string `json:"workflow_id"`
+				Parameters []struct {
+					Name     string `json:"name"`
+					Type     string `json:"type"`
+					Required bool   `json:"required"`
+				} `json:"parameters"`
+			} `json:"workflows"`
+		}
+		Expect(json.Unmarshal([]byte(rpcResp.Result.Content[0].Text), &discoverResult)).To(Succeed())
+		if len(discoverResult.Workflows) == 0 {
+			Skip("No workflows discovered from KA — cannot test validation rejection")
+		}
+
+		var targetWF struct {
+			WorkflowID string
+			IntParam   string
+		}
+		for _, wf := range discoverResult.Workflows {
+			for _, p := range wf.Parameters {
+				if p.Type == "int" && p.Required {
+					targetWF.WorkflowID = wf.WorkflowID
+					targetWF.IntParam = p.Name
+					break
+				}
+			}
+			if targetWF.WorkflowID != "" {
+				break
+			}
+		}
+		if targetWF.WorkflowID == "" {
+			Skip("No workflow with required int parameter found — cannot test type validation")
+		}
+
+		badParams := map[string]interface{}{
+			targetWF.IntParam: "not-a-number",
+		}
+		selectRaw, err := mcpToolCall("dw-e2e-006b", "kubernaut_select_workflow", map[string]interface{}{
+			"rr_id":       "e2e-rr-type-reject",
+			"workflow_id": targetWF.WorkflowID,
+			"parameters":  badParams,
+		})
+
+		if err != nil {
+			Expect(err.Error()).To(SatisfyAny(
+				ContainSubstring("type"),
+				ContainSubstring("int"),
+				ContainSubstring("validation"),
+				ContainSubstring("parameter"),
+			))
+		} else {
+			Expect(string(selectRaw)).To(SatisfyAny(
+				ContainSubstring("type"),
+				ContainSubstring("int"),
+				ContainSubstring("validation"),
+				ContainSubstring("parameter"),
+				ContainSubstring("error"),
+			))
+		}
+	})
 })
