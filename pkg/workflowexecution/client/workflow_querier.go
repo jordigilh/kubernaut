@@ -335,11 +335,9 @@ func (q *OgenWorkflowQuerier) GetWorkflowSchemaMetadata(ctx context.Context, wor
 		meta.EngineConfig = *rawEC
 	}
 
-	if len(parsed.Parameters) > 0 {
-		meta.DeclaredParameterNames = make(map[string]bool, len(parsed.Parameters))
-		for _, p := range parsed.Parameters {
-			meta.DeclaredParameterNames[p.Name] = true
-		}
+	meta.DeclaredParameterNames = make(map[string]bool, len(parsed.Parameters))
+	for _, p := range parsed.Parameters {
+		meta.DeclaredParameterNames[p.Name] = true
 	}
 
 	return meta, nil

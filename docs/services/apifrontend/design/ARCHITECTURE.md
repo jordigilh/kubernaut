@@ -1,0 +1,962 @@
+# kubernaut-apifrontend Architecture Design Document
+
+**Version:** 1.1
+**Status:** Accepted
+**Last Updated:** 2026-05-10
+
+---
+
+## Table of Contents
+
+1. [System Context](#1-system-context)
+2. [Component Architecture](#2-component-architecture)
+3. [Data Flow](#3-data-flow)
+4. [CRD Design](#4-crd-design)
+5. [API Surface](#5-api-surface)
+6. [Security Model](#6-security-model)
+7. [Observability](#7-observability)
+8. [Deployment Model](#8-deployment-model)
+9. [Dependency Map](#9-dependency-map)
+10. [Cross-Repo Contracts](#10-cross-repo-contracts)
+
+---
+
+## 1. System Context
+
+The API Frontend (AF) is the external-facing gateway for kubernaut's agentic investigation capabilities. It enables natural language (NL) driven investigation and RemediationRequest (RR) creation through the A2A and MCP protocols.
+
+```mermaid
+graph TB
+    subgraph external [External Clients]
+        RHDH[Red Hat Developer Hub]
+        Kagenti[kagenti]
+        ThirdParty[Third-Party A2A/MCP Clients]
+    end
+
+    subgraph af [kubernaut-apifrontend]
+        A2A[A2A Handler]
+        MCP[MCP Handler]
+        LLM[LLM Orchestrator]
+        Tools[AF Tools]
+        SessionMgr[Session Manager]
+    end
+
+    subgraph kubernaut [kubernaut ecosystem]
+        KA[Kubernaut Agent - REST API]
+        SP[SignalProcessing Controller]
+        AA[AIAnalysis Controller]
+        RO[Remediation Orchestrator]
+        DS[DataStorage]
+    end
+
+    subgraph infra [Infrastructure]
+        K8sAPI[Kubernetes API]
+        Keycloak[Keycloak / RHBK]
+        LLMProvider[Claude Sonnet 4.6 - Vertex AI]
+    end
+
+    RHDH -->|A2A JSON-RPC| A2A
+    Kagenti -->|MCP Streamable HTTP| MCP
+    ThirdParty -->|A2A / MCP| A2A
+
+    A2A --> LLM
+    MCP --> LLM
+    LLM --> Tools
+    Tools -->|Impersonated queries| K8sAPI
+    Tools -->|REST API| KA
+    SessionMgr -->|CRD CRUD| K8sAPI
+
+    KA --> K8sAPI
+    SP --> K8sAPI
+    AA --> KA
+    DS --> K8sAPI
+
+    af -->|JWT validation| Keycloak
+    af -->|Triage / orchestration| LLMProvider
+    af -->|Audit events| DS
+```
+
+### Positioning
+
+| Concern | Owned by |
+|---------|----------|
+| External authentication (OIDC/JWT) | AF |
+| Natural language interpretation and triage | AF (own LLM) |
+| RR creation from NL queries | AF |
+| Autonomous investigation (RCA, tool calls) | KA |
+| Workflow selection and execution | KA + RO |
+| Session persistence (A2A tasks) | AF (InvestigationSession CRD) |
+| Pipeline orchestration (SP → AA → RO) | kubernaut controllers |
+
+### Key Principles
+
+- **AF is stateless between requests** — the InvestigationSession CRD is the only persistent state
+- **AF never escalates privileges** — all K8s API calls use user impersonation
+- **AF owns triage, KA owns investigation** — separation of concerns at service boundary
+- **Defense-in-depth** — JWT validation at AF + JWT validation at KA (double verification)
+
+---
+
+## 2. Component Architecture
+
+### Package Layout
+
+```
+kubernaut-apifrontend/
+├── api/
+│   └── apifrontend/
+│       └── v1alpha1/              # InvestigationSession CRD types
+├── cmd/
+│   └── apifrontend/
+│       └── main.go                # Entry point, wires all components
+├── internal/
+│   ├── agent/
+│   │   ├── root.go                # ADK agent config, tool registration, callbacks
+│   │   ├── config.go              # Agent creation config
+│   │   ├── deps.go                # Dependency injection container
+│   │   └── prompt.go              # System prompt construction
+│   ├── audit/
+│   │   ├── audit.go               # Audit event types and Emitter interface
+│   │   └── buffered.go            # BufferedEmitter with overflow protection
+│   ├── auth/
+│   │   ├── jwt.go                 # Multi-issuer JWT validation (KEP-3331)
+│   │   ├── middleware.go          # Auth middleware chain
+│   │   ├── impersonation.go       # K8s impersonation header injection
+│   │   ├── dynamic_impersonation.go # Per-request DynamicClientFactory
+│   │   ├── tokenreview.go         # K8s TokenReview validation
+│   │   ├── jwks_cache.go          # JWKS response caching
+│   │   ├── jwt_delegation.go      # JWT forwarding to downstream services
+│   │   ├── config.go              # Auth configuration
+│   │   ├── context.go             # UserIdentity context helpers
+│   │   └── types.go               # Auth type definitions
+│   ├── config/
+│   │   ├── config.go              # YAML config parsing and validation
+│   │   └── hotreload.go           # Configuration hot-reload
+│   ├── controller/
+│   │   └── ttl.go                 # InvestigationSession TTL controller
+│   ├── ds/
+│   │   ├── client.go              # DataStorage REST client
+│   │   └── ogen_client.go         # Generated ogen client wrapper
+│   ├── handler/
+│   │   ├── router.go              # HTTP route registration
+│   │   ├── mcp.go                 # MCP Streamable HTTP handler
+│   │   ├── mcp_bridge.go          # MCP tool bridge (RBAC, dispatch, metrics)
+│   │   ├── mcptools.go            # MCP tool registry (20 tools)
+│   │   ├── agentcard.go           # /.well-known/agent-card.json
+│   │   ├── health.go              # /healthz, /readyz
+│   │   └── middleware.go          # HTTP middleware chain
+│   ├── httputil/
+│   │   ├── clientip.go            # Client IP extraction
+│   │   ├── errormapper.go         # K8s error to HTTP status mapping
+│   │   └── problem.go             # RFC 7807 Problem Details
+│   ├── ka/
+│   │   ├── rest_client.go         # KA REST API client (autonomous flow)
+│   │   ├── mcp_client.go          # KA MCP client (interactive flow)
+│   │   ├── mcp_sdk_client.go      # KA MCP SDK client wrapper
+│   │   └── config.go              # KA client configuration
+│   ├── launcher/
+│   │   ├── launcher.go            # A2A task launcher (BeforeExecute/AfterExecute)
+│   │   └── model.go               # Launcher types
+│   ├── logging/
+│   │   └── logging.go             # logr/zap logger setup
+│   ├── metrics/
+│   │   └── metrics.go             # Prometheus metric registration (af_* prefix)
+│   ├── prometheus/
+│   │   ├── client.go              # HTTP client for /api/v1/{alerts,rules,query}
+│   │   ├── types.go               # Alert, RuleGroup, Rule, QueryResult types
+│   │   └── rules.go               # PromQL AST label extraction, resource matching
+│   ├── ratelimit/
+│   │   ├── ratelimit.go           # Per-user rate limiting (token bucket)
+│   │   └── config.go              # Rate limit configuration
+│   ├── requestid/
+│   │   ├── requestid.go           # Request ID generation
+│   │   └── transport.go           # Request ID HTTP transport
+│   ├── resilience/
+│   │   ├── circuitbreaker.go      # Generic circuit breaker
+│   │   ├── k8s_cb.go              # K8s-specific circuit breaker
+│   │   ├── k8s_dynamic.go         # Resilient dynamic client wrapper
+│   │   └── retry.go               # Retry with backoff
+│   ├── security/
+│   │   ├── redact.go              # Error/URL/path redaction
+│   │   └── sanitize.go            # Input sanitization
+│   ├── session/
+│   │   ├── service.go             # Session CRD CRUD operations
+│   │   ├── decorator.go           # SessionServiceDecorator (user context)
+│   │   ├── reinvoke.go            # Session reinvocation (LLM re-entry)
+│   │   ├── statemachine.go        # Session phase state machine
+│   │   └── trimming.go            # Tool result size trimming
+│   ├── severity/
+│   │   ├── triage.go              # Multi-tier severity triage orchestrator
+│   │   ├── types.go               # TriageInput, TriageResult, Source, severity utils
+│   │   ├── cache.go               # TTL-based rules cache (sync.RWMutex)
+│   │   └── llm.go                 # LLMTriager interface implementation
+│   ├── streaming/
+│   │   ├── sse.go                 # SSE event construction and delivery
+│   │   └── tracker.go             # SSE connection tracking
+│   ├── tools/
+│   │   ├── helpers.go             # Shared tool helpers (TrimSliceToFit, errors)
+│   │   ├── af_list_events.go      # K8s Events query
+│   │   ├── af_get_pods.go         # Pod status query
+│   │   ├── af_get_workloads.go    # Workload health query
+│   │   ├── af_resolve_owner.go    # Owner chain resolution
+│   │   ├── af_check_existing_rr.go # RR existence check (dedup)
+│   │   ├── af_create_rr.go        # RemediationRequest creation
+│   │   ├── crd_tools.go           # CRD-based kubernaut tools
+│   │   ├── ka_tools.go            # KA proxy tools
+│   │   └── ds_tools.go            # DataStorage proxy tools
+│   └── validate/
+│       └── k8s.go                 # K8s name/namespace/label validation
+├── config/
+│   ├── crd/bases/                 # Generated CRD YAML
+│   ├── rbac/                      # ClusterRole, ClusterRoleBinding
+│   └── local.yaml                 # Local development config
+├── charts/
+│   └── kubernaut-apifrontend/     # Helm chart (dev/test only)
+└── docs/
+    ├── design/                    # Architecture, data flow, triage design docs
+    ├── adr/                       # Architecture Decision Records (ADR-001..021)
+    ├── security/                  # Audit catalog, RBAC, service boundary
+    ├── slo/                       # SLO definitions
+    ├── operations/                # Deployment guide, runbooks
+    ├── tests/                     # Per-issue test plans
+    └── development/               # Developer guide, TDD prompts
+```
+
+### Component Responsibilities
+
+```mermaid
+graph LR
+    subgraph handlers [Protocol Handlers]
+        A2AHandler[A2A Handler]
+        MCPHandler[MCP Handler]
+    end
+
+    subgraph core [Core Logic]
+        Orchestrator[LLM Orchestrator]
+        ToolRegistry[Tool Registry]
+        SessionManager[Session Manager]
+        SevTriager[Severity Triager]
+    end
+
+    subgraph infra_pkg [Infrastructure]
+        Auth[Auth Middleware]
+        RateLimit[Rate Limiter]
+        Security[Security Layers]
+        Audit[Audit Emitter]
+        Metrics[Metrics]
+    end
+
+    A2AHandler --> Auth
+    MCPHandler --> Auth
+    Auth --> RateLimit
+    RateLimit --> Orchestrator
+    Orchestrator --> ToolRegistry
+    Orchestrator --> Security
+    ToolRegistry --> SessionManager
+    ToolRegistry --> SevTriager
+    SevTriager -->|/api/v1/*| Prom[Prometheus]
+    SevTriager -->|Tier 2.5/3| LLMProv[LLM Provider]
+    SessionManager -->|CRD| K8s[K8s API]
+    Orchestrator --> Audit
+```
+
+### Key Interfaces
+
+```go
+// Tool defines the contract for AF-internal tools
+type Tool interface {
+    Name() string
+    Description() string
+    InputSchema() json.RawMessage
+    Execute(ctx context.Context, params json.RawMessage, user UserInfo) (ToolResult, error)
+}
+
+// LLMClient abstracts the LLM provider
+type LLMClient interface {
+    Chat(ctx context.Context, messages []Message, tools []Tool, opts ChatOptions) (*Response, error)
+}
+
+// SessionStore manages InvestigationSession CRDs
+type SessionStore interface {
+    Create(ctx context.Context, spec SessionSpec) (*Session, error)
+    Get(ctx context.Context, taskID string) (*Session, error)
+    UpdatePhase(ctx context.Context, name string, phase SessionPhase, msg string) error
+    FindActiveByUser(ctx context.Context, username string) ([]Session, error)
+    FindActiveByRR(ctx context.Context, rrName string) ([]Session, error)
+}
+```
+
+---
+
+## 3. Data Flow
+
+### Flow 1: NL Query → Triage → RR Creation → Investigation → User Decision
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant AF as API Frontend
+    participant LLM as Claude Sonnet 4.6
+    participant K8s as K8s API
+    participant KA as Kubernaut Agent
+
+    User->>AF: tasks/send "investigate namespace payments"
+    AF->>AF: Validate JWT, extract UserInfo
+    AF->>AF: Rate limit check (3 tiers)
+
+    Note over AF,LLM: Phase 1: Triage (AF LLM-driven)
+    AF->>LLM: System prompt + user query + tool definitions
+    LLM->>AF: tool_call: af_list_events(namespace: payments)
+    AF->>K8s: List Events (impersonated as user)
+    K8s->>AF: Events with warnings
+    AF->>LLM: Tool result (events data)
+    LLM->>AF: tool_call: af_get_pods(namespace: payments)
+    AF->>K8s: List Pods (impersonated as user)
+    K8s->>AF: Pods with CrashLoopBackOff
+    AF->>LLM: Tool result (pod status)
+    LLM->>AF: tool_call: af_resolve_owner(pod: payment-api-xyz)
+    AF->>K8s: Get owner chain (impersonated as user)
+    K8s->>AF: Deployment/payment-api
+    AF->>LLM: Tool result (owner: Deployment/payment-api)
+    LLM->>AF: tool_call: af_create_rr(namespace, kind, name, severity, description)
+    AF->>K8s: Acquire distributed lock (Lease by fingerprint)
+    AF->>K8s: Create RemediationRequest
+    AF->>K8s: Create InvestigationSession CRD (phase: Active)
+    AF->>User: SSE: task status "working" + artifact (RR created)
+
+    Note over AF,KA: Phase 2: Autonomous investigation (KA-driven)
+    Note over K8s,KA: SP classifies signal, RO creates AA, AA controller calls KA
+    AF->>K8s: Watch RR/AA phase transitions (CRD watcher)
+    AF->>User: SSE: progress updates (SP complete, AA investigating...)
+    AF->>KA: GET /api/v1/incident/session/{id}/stream (SSE subscribe)
+    KA-->>AF: SSE: tool calls, reasoning, partial findings
+    AF->>User: SSE: progress updates (relayed from KA stream)
+    KA-->>AF: SSE: investigation complete
+    AF->>KA: GET /api/v1/incident/session/{id}/result
+    KA->>AF: RCA payload (root cause, affected resource, recommendation)
+
+    Note over AF,User: Phase 3: Present RCA (yield to user)
+    AF->>User: SSE: task status "input-required" (RCA summary + options)
+
+    alt User accepts and selects workflow
+        User->>AF: tasks/send "yes, apply the fix"
+        AF->>KA: MCP kubernaut_select_workflow(rr_id, workflow_id, ...)
+        KA-->>AF: MCP notification: workflow selected, execution started
+        AF->>User: SSE: progress updates (workflow executing)
+        AF->>AF: Update session phase → Completed
+        AF->>User: SSE: task status "completed"
+    else User says not an issue
+        User->>AF: tasks/send "not an issue, close it"
+        AF->>KA: MCP kubernaut_investigate(rr_id, action: cancel)
+        KA->>AF: status: cancelled
+        AF->>AF: Update session phase → Completed
+        AF->>User: SSE: task status "completed" (investigation closed)
+    else User asks for more investigation
+        User->>AF: tasks/send "check the PVC mounts too"
+        AF->>KA: MCP kubernaut_investigate(rr_id, action: message, message: "...")
+        KA-->>AF: MCP notifications: tool calls, reasoning, findings
+        AF->>User: SSE: task status "working" (relayed from MCP stream)
+    end
+```
+
+### Flow 2: User Reconnection (Disconnect → Reconnect)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant AF as API Frontend
+    participant K8s as K8s API
+
+    Note over User,AF: SSE connection drops (network issue)
+    AF->>AF: Detect disconnect, set session.disconnectedAt
+    AF->>AF: Update session phase → Disconnected
+    Note over AF: TTL timer starts (default 60s)
+
+    User->>AF: tasks/get (with task ID)
+    AF->>K8s: Query InvestigationSession by taskID
+    K8s->>AF: Session found (phase: Disconnected)
+    AF->>AF: Transition phase → Active, set reconnectedAt
+    AF->>AF: Read current RR/AA state
+    AF->>User: SSE: full state reconstruction + resume streaming
+```
+
+### Flow 3: Remediation Approver Takeover
+
+```mermaid
+sequenceDiagram
+    participant Approver
+    participant AF as API Frontend
+    participant K8s as K8s API
+
+    Note over K8s: RR reaches phase: AwaitingApproval
+    Approver->>AF: tasks/send "show me the investigation for payment-api"
+    AF->>AF: Validate JWT (approver identity)
+    AF->>AF: Create InvestigationSession (joinMode: takeover)
+    AF->>K8s: Get RR, AA status (impersonated as approver)
+    AF->>AF: Synthesize investigation summary from AA.status
+    AF->>Approver: SSE: investigation summary + approval prompt
+    Approver->>AF: "what was the root cause?"
+    AF->>AF: LLM reads AA.status.postRCAContext, synthesizes answer
+    AF->>Approver: SSE: RCA explanation in natural language
+    Approver->>AF: "approve the remediation"
+    AF->>K8s: Create RemediationApprovalRequest (impersonated)
+    AF->>Approver: SSE: task completed
+```
+
+---
+
+## 4. CRD Design
+
+### InvestigationSession (`apifrontend.kubernaut.ai/v1alpha1`)
+
+**Purpose:** Links A2A tasks to kubernaut pipeline CRDs; enables session persistence across AF restarts and user reconnections.
+
+#### Spec (immutable after creation)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `remediationRequestRef` | ObjectRef | Reference to the RR this session investigates |
+| `a2aTaskID` | string | A2A task ID for client reconnection |
+| `userIdentity` | UserIdentity | Username + groups from JWT |
+| `joinMode` | enum | `start` (user-initiated) or `takeover` (joined running investigation) |
+
+#### Status (mutable, AF-only)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `phase` | enum | Active, Disconnected, Completed, Cancelled, Failed |
+| `aiAnalysisRef` | string | Reference to AA CRD (when discovered) |
+| `kaCorrelationID` | string | KA correlation ID from `/analyze` response |
+| `connectionState` | enum | Connected, Disconnected |
+| `startedAt` | Time | Session creation timestamp |
+| `completedAt` | Time | Terminal state timestamp |
+| `disconnectedAt` | Time | Last disconnect timestamp |
+| `reconnectedAt` | Time | Last reconnect timestamp |
+| `message` | string | Human-readable state description |
+| `conditions` | []Condition | Standard K8s conditions |
+
+#### State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Active: Session created
+    Active --> Disconnected: SSE connection drops
+    Active --> Completed: User accepts workflow / says "not an issue"
+    Active --> Cancelled: User explicitly cancels
+    Active --> Failed: Unrecoverable error
+    Disconnected --> Active: User reconnects within TTL
+    Disconnected --> Cancelled: TTL expires
+    Completed --> [*]
+    Cancelled --> [*]
+    Failed --> [*]
+```
+
+#### Labels and Indexes
+
+| Label | Value | Purpose |
+|-------|-------|---------|
+| `apifrontend.kubernaut.ai/user` | username | Reconnection lookups |
+| `apifrontend.kubernaut.ai/rr-name` | RR name | Dedup / status lookups |
+| `apifrontend.kubernaut.ai/phase` | phase value | Phase-based filtering |
+| `app.kubernetes.io/managed-by` | kubernaut-apifrontend | Standard ownership |
+
+#### TTL Cleanup Controller
+
+| Phase | Retention | Action |
+|-------|-----------|--------|
+| Disconnected | 60s (configurable) | Transition → Cancelled |
+| Completed | 24h | Delete CRD |
+| Cancelled | 1h | Delete CRD |
+| Failed | 24h | Delete CRD |
+
+---
+
+## 5. API Surface
+
+### MCP Streamable HTTP (spec 2025-03-26)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/mcp` | POST | JSON-RPC method dispatch (tools/list, tools/call) |
+| `/mcp` | POST + `Accept: text/event-stream` | Streaming tool execution |
+
+**Registered tools (20 total: 6 AF-native + 14 kubernaut proxy):**
+
+AF-native tools (execute against K8s API directly):
+
+| Tool | Purpose | Data source |
+|------|---------|-------------|
+| `af_list_events` | Query K8s Events in namespace | K8s API (impersonated) |
+| `af_get_pods` | Get pod status and health | K8s API (impersonated) |
+| `af_get_workloads` | Get Deployment/StatefulSet health | K8s API (impersonated) |
+| `af_resolve_owner` | Resolve owner chain to root | K8s API (impersonated) |
+| `af_check_existing_rr` | Check if RR already exists for resource (dedup) | K8s API (AF SA) |
+| `af_create_rr` | Create RemediationRequest (with severity triage) | K8s API (AF SA) |
+
+kubernaut proxy tools (forwarded to KA REST/MCP or DataStorage):
+
+| Tool | Purpose | Backend |
+|------|---------|---------|
+| `kubernaut_list_remediations` | List active and recent remediations | KA REST |
+| `kubernaut_get_remediation` | Get remediation details | KA REST |
+| `kubernaut_submit_signal` | Submit signal to active remediation | KA REST |
+| `kubernaut_approve` | Approve a remediation action | KA REST |
+| `kubernaut_cancel_remediation` | Cancel active remediation | KA REST |
+| `kubernaut_watch` | Watch remediation state changes | KA REST |
+| `kubernaut_start_investigation` | Start investigation session | KA MCP |
+| `kubernaut_poll_investigation` | Poll investigation for updates | KA REST |
+| `kubernaut_select_workflow` | Select workflow for investigation | KA MCP |
+| `kubernaut_present_decision` | Present decision point to user | KA MCP |
+| `kubernaut_list_workflows` | List available workflows | KA REST |
+| `kubernaut_get_remediation_history` | Get remediation execution history | DS REST |
+| `kubernaut_get_effectiveness` | Get effectiveness metrics | DS REST |
+| `kubernaut_get_audit_trail` | Get audit trail for remediations | DS REST |
+
+### A2A Protocol (v0.3.0, JSON-RPC 2.0)
+
+| Method | Purpose |
+|--------|---------|
+| `tasks/send` | Create task (NL query) or respond to input-required |
+| `tasks/get` | Get task status |
+| `tasks/cancel` | Cancel active task |
+| `tasks/sendSubscribe` | Create task with SSE streaming |
+
+### Agent Card
+
+`GET /.well-known/agent-card.json` — Returns A2A AgentCard with capabilities, skills, and authentication requirements.
+
+### Health and Metrics
+
+| Endpoint | Port | Purpose |
+|----------|------|---------|
+| `/healthz` | 8443 | Liveness probe (process alive) |
+| `/readyz` | 8443 | Readiness probe (dependencies reachable) |
+| `/metrics` | 8443 | Prometheus metrics scrape (unauthenticated, same port) |
+
+---
+
+## 6. Security Model
+
+### 7-Layer Defense-in-Depth
+
+```mermaid
+graph TB
+    subgraph layers [Defense Layers]
+        L1[L1: Input Sanitization]
+        L2[L2: System Prompt Boundaries]
+        L3[L3: Structured Output Validation]
+        L4[L4: Tool Call Authorization]
+        L5[L5: Context Isolation]
+        L6[L6: Output Filtering]
+        L7[L7: Anomaly Detection]
+    end
+
+    Input[User NL Query] --> L1
+    L1 --> L2
+    L2 --> LLM[LLM Processing]
+    LLM --> L3
+    L3 --> L4
+    L4 --> ToolExec[Tool Execution]
+    ToolExec --> L5
+    L5 --> L6
+    L6 --> L7
+    L7 --> Output[Response to User]
+```
+
+| Layer | What it does | What it prevents |
+|-------|-------------|-----------------|
+| L1: Input Sanitization | Strip control chars, normalize Unicode, length limits | Payload smuggling, buffer overflow |
+| L2: System Prompt Boundaries | XML-tagged regions, role separation | Prompt injection, role confusion |
+| L3: Structured Output Validation | JSON Schema validation of LLM tool calls | Hallucinated tools, malformed params |
+| L4: Tool Call Authorization | RBAC check per tool, namespace enforcement | Privilege escalation, cross-namespace access |
+| L5: Context Isolation | Per-session LLM context, no cross-session state | Data leakage between users |
+| L6: Output Filtering | Hybrid: structural allowlist (tools return typed fields, never raw YAML) + regex scan (JWT prefixes, cert blocks, high-entropy strings) + LLM instruction | Information disclosure |
+| L7: Anomaly Detection | Track tool call patterns, abort on anomaly | Automated exploitation, runaway loops |
+
+### Identity Chain
+
+```
+User (Keycloak JWT) → AF validates JWT → AF impersonates user for K8s API calls
+                                       → AF forwards JWT to KA for investigation
+```
+
+- AF validates JWT against Keycloak JWKS (multi-issuer, KEP-3331)
+- AF uses its own SA + `Impersonate-User`/`Impersonate-Group` for K8s API queries
+- AF forwards original JWT to KA (`Authorization: Bearer <jwt>`) per kubernaut#1009
+- KA validates same JWT via JWKS and extracts identity
+
+### Rate Limiting (3-tier)
+
+| Tier | Scope | Mechanism | Default |
+|------|-------|-----------|---------|
+| 1 | Per-user request rate | Token bucket | 30 req/min |
+| 2 | Global LLM concurrency | Semaphore | 10 concurrent |
+| 3 | Per-user token budget | Counter (when available) | Configurable |
+
+HTTP 429 returned when any tier is exceeded. Tier 3 disabled when LLM provider does not report token usage.
+
+### Circuit Breakers
+
+| Target | Failure threshold | Half-open timeout | Success to close | Degraded behavior |
+|--------|-------------------|-------------------|------------------|-------------------|
+| KA REST API | 5 consecutive 5xx/timeout | 30s | 1 success | Return "investigation service unavailable" to user |
+| LLM provider | 3 consecutive failures | 60s | 1 success | Return 503 with RFC 7807 detail; no queuing |
+| Keycloak JWKS | 3 consecutive failures | 30s | 1 success | Use cached JWKS (cache TTL: 5min); fail-open for existing sessions, fail-closed for new |
+
+### RBAC (ClusterRole)
+
+AF ServiceAccount permissions:
+
+| Resource | Verbs | Purpose |
+|----------|-------|---------|
+| `remediationrequests` (kubernaut.ai) | create, get, list, watch | RR lifecycle |
+| `aianalyses` (kubernaut.ai) | get, list, watch | Investigation status |
+| `signalprocessings` (kubernaut.ai) | get, list, watch | Signal context |
+| `investigationsessions` (apifrontend.kubernaut.ai) | create, get, list, watch, update, delete | Session management |
+| `leases` (coordination.k8s.io) | create, get, update, delete | Distributed locking |
+| `users`, `groups` (core) | impersonate | User-scoped K8s queries |
+
+---
+
+## 7. Observability
+
+### Metrics Catalog (`af_*` prefix)
+
+**Histograms:**
+
+| Metric | Labels | SLO | Status |
+|--------|--------|-----|--------|
+| `af_http_request_duration_seconds` | method, path, status | — | Implemented |
+| `af_tool_call_duration_seconds` | tool, type | P99 < 500ms (internal), < 2s (proxy) | Implemented |
+| `af_auth_duration_seconds` | result | P99 < 200ms | Implemented |
+| `af_severity_triage_duration_seconds` | tier | P95 < 5s (Tier 1-2), P95 < 15s (Tier 3) | Implemented (#92) |
+| `af_sse_connect_duration_seconds` | — | P99 < 1s | Planned (PR6) |
+| `af_ka_poll_duration_seconds` | endpoint | — | Planned (PR5) |
+
+**Counters:**
+
+| Metric | Labels | Status |
+|--------|--------|--------|
+| `af_http_requests_total` | method, path, status | Implemented |
+| `af_tool_calls_total` | tool, result | Implemented |
+| `af_mcp_rbac_denied_total` | tool | Implemented |
+| `af_llm_tokens_total` | direction, model | Implemented |
+| `af_rate_limit_rejections_total` | tier, reason | Implemented |
+| `af_audit_events_total` | type | Implemented |
+| `af_severity_triage_total` | tier, severity | Implemented (#92) |
+| `af_severity_triage_errors_total` | tier, error_type | Implemented (#92) |
+
+**Gauges:**
+
+| Metric | Labels | Status |
+|--------|--------|--------|
+| `af_sessions_active` | phase | Implemented |
+| `af_circuit_breaker_state` | dependency | Implemented |
+| `af_sse_connections_active` | — | Planned (PR6) |
+
+### Structured Logging
+
+- Library: `go.uber.org/zap` (via `logr` interface for controller-runtime compatibility)
+- Format: JSON in production, console in development
+- Standard fields: `requestID`, `userID`, `taskID`, `sessionName`, `tool`, `latencyMs`
+
+### Audit Trail
+
+8-link forensic chain emitted to DataStorage:
+1. A2A request received (who, what, when)
+2. Triage started (session created)
+3. Tool call executed (which tool, params, result summary)
+4. Severity triage completed/failed (tier, source, severity, duration) — see `SEVERITY_TRIAGE.md`
+5. RR created (fingerprint, severity, target, signalLabels)
+6. Investigation delegated (KA session ID)
+7. User decision (accept/reject/cancel)
+8. Session completed (outcome, duration)
+
+---
+
+## 8. Deployment Model
+
+### Production (OCP via kubernaut-operator)
+
+| Resource | Managed by |
+|----------|-----------|
+| Deployment (2 replicas) | Operator |
+| Service (8443 app + metrics) | Operator |
+| Route (edge TLS termination) | Operator |
+| NetworkPolicy (OPS-3 full spec) | Operator |
+| PodDisruptionBudget (minAvailable: 1) | Operator |
+| ClusterRole + ClusterRoleBinding | Operator |
+| ServiceAccount | Operator |
+| ConfigMap (`af-config`) | Operator |
+| Secret (`af-llm-credentials`) | Operator |
+| ServiceMonitor | Operator |
+| PrometheusRule | Operator |
+| InvestigationSession CRD | Operator |
+| ValidatingAdmissionPolicy | Operator |
+| SCC binding (restricted-v2) | Operator (default on OCP) |
+
+### Development (Helm chart)
+
+```bash
+helm install af charts/kubernaut-apifrontend \
+  --set llm.provider=vertexanthropic \
+  --set llm.model=claude-sonnet-4-6-20250514 \
+  --set auth.issuerURL=http://keycloak:8080/realms/kubernaut \
+  --set kubernautAgent.pollInterval=5s \
+  --set kubernautAgent.circuitBreaker.failureThreshold=5 \
+  --set kubernautAgent.circuitBreaker.halfOpenTimeout=30s
+```
+
+### Local Development (no cluster)
+
+```bash
+make run-mocks    # Start mock KA + mock JWKS + mock LLM
+make run-local    # AF binary with config/local.yaml
+```
+
+---
+
+## 9. Dependency Map
+
+### Go Module Dependencies
+
+AF imports from the kubernaut monorepo (`github.com/jordigilh/kubernaut`):
+
+| Package | Purpose |
+|---------|---------|
+| `api/remediation/v1alpha1` | RR CRD types |
+| `api/aianalysis/v1alpha1` | AA CRD types |
+| `api/signalprocessing/v1alpha1` | SP CRD types |
+| `pkg/shared/types` | EnrichmentResults, DetectedLabels |
+| `pkg/gateway/types` | SHA256 fingerprinting (`ResolveFingerprint`), owner resolution |
+| `pkg/gateway/processing` | Signal processing types |
+
+**Version pinning:**
+- Dev: `go.mod` points to kubernaut `development/v1.5` branch
+- CI: pinned to latest tagged commit on `development/v1.5`
+- Release: pinned to kubernaut release tag (e.g., `v1.5.0`)
+
+### External Dependencies
+
+| Dependency | Purpose | Version |
+|-----------|---------|---------|
+| controller-runtime | CRD management, reconcilers, leader election | v0.19+ |
+| LangChainGo (or direct Anthropic SDK) | LLM provider abstraction | Latest |
+| mcp-go | MCP client for KA interactive sessions (ADR-014) | Latest |
+| go-jose/v4 | JWT validation, JWKS fetching | v4.x |
+| prometheus/client_golang | Metrics registration | v1.20+ |
+| zap | Structured logging | v1.27+ |
+
+### KA Communication (ADR-014: Hybrid REST + MCP)
+
+#### Autonomous flow — REST API
+
+All endpoints verified on `development/v1.5`:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/incident/analyze` | POST | Start investigation session (returns session_id) |
+| `/api/v1/incident/session/{id}` | GET | Poll session status |
+| `/api/v1/incident/session/{id}/result` | GET | Get completed investigation result (RCA payload) |
+| `/api/v1/incident/session/{id}/cancel` | POST | Cancel active investigation (returns 409 if terminal) |
+| `/api/v1/incident/session/{id}/snapshot` | GET | Session snapshot for reconnection (returns 409 if in-progress) |
+| `/api/v1/incident/session/{id}/stream` | GET | SSE event stream of investigation progress (tool calls, reasoning) |
+
+#### Interactive flow — MCP client
+
+AF connects to KA's MCP endpoint (`/api/v1/mcp/`) with the user's JWT. Two tools available:
+
+**`kubernaut_investigate` (6 actions):**
+
+| Action | Purpose | Output status |
+|--------|---------|---------------|
+| `start` | Begin new interactive investigation | `session_started` |
+| `takeover` | Take over running autonomous investigation | `takeover_started` |
+| `message` | Send user follow-up to LLM | `message_sent` |
+| `complete` | End session, trigger workflow execution | `completed` |
+| `cancel` | Abort without remediation | `cancelled` |
+| `status` | Query session state | current status |
+
+**`kubernaut_select_workflow`:**
+- Input: `{rr_id, workflow_id, kind, name, namespace}`
+- Enrichment runs internally before workflow selection
+
+Streaming during interactive sessions flows via MCP `ServerSession.Log` notifications on the same connection — no separate SSE subscription needed.
+
+#### CRD watches
+
+AF watches RR/AA/SP CRDs for pipeline state transitions (SP complete, AA created, RR phase changes). These provide context outside KA's visibility.
+
+#### Streaming strategy (tri-source)
+
+| Source | What it provides | When used |
+|--------|-----------------|-----------|
+| KA REST `/stream` | Investigation tool calls, reasoning, findings | Autonomous observation |
+| KA MCP notifications | Interactive LLM responses, tool calls | Interactive session (takeover/message) |
+| CRD watches | Pipeline state (SP→AA→RR phases) | Always (pipeline context) |
+| KA `/snapshot` + status poll | Reconnection state reconstruction | After connection drop |
+
+AF authenticates to KA by forwarding the user's original Keycloak JWT in the `Authorization` header.
+
+**Poll configuration:**
+- Default interval: 5s (configurable via `kubernautAgent.pollInterval` in Helm values)
+- Circuit breaker: 5 consecutive failures → open (30s half-open timeout, 1 success to close)
+- Timeout per poll: 10s
+- Backoff on error: exponential (1s, 2s, 4s, 8s, capped at 30s)
+
+**Throughput ceiling:** With Tier 2 global concurrency = 10 and average triage duration = 15s, the system supports ~40 triages/minute at steady state. Exceeding this queues requests behind the semaphore (HTTP 429 after configurable wait timeout).
+
+---
+
+## 10. Cross-Repo Contracts
+
+### kubernaut (core) — Required for AF
+
+| Issue | What AF needs | Status | Blocker? |
+|-------|--------------|--------|----------|
+| #1014 | `signal_mode=manual` in SP/AA enums | Open | Yes (E2E) |
+| #1015 | `severity=unknown` in DataStorage enum | Open | Yes (E2E) |
+| #1009 | Pattern B JWT trust-boundary (AF→KA identity delegation) | Open | Yes (E2E) |
+| #874 | KA interactive session (resolved via MCP endpoint per ADR-014; no new REST endpoints needed) | Open | No (MCP surface exists) |
+| #1017 | LLM-derived severity as distinct field | Open | No (enhancement) |
+| #893 | KA NetworkPolicy allows AF ingress | Closed | N/A |
+
+### kubernaut-operator — Required for Production
+
+| Issue | What operator deploys | Status |
+|-------|----------------------|--------|
+| #30 | AF Deployment (umbrella) | Open |
+| #42 | InvestigationSession CRD + ValidatingAdmissionPolicy | Open |
+| #43 | ServiceMonitor + PrometheusRule | Open |
+| #44 | Full AF NetworkPolicy (OPS-3) | Open |
+| #45 | PDB + SCC + resource limits + probes | Open |
+
+### Contract Stability
+
+AF uses kubernaut's Go types directly. Contract tests (QE-4) run in CI to detect breaking changes:
+- CRD field existence (compile-time via Go types)
+- Enum value completeness (runtime reflection)
+- KA REST API response schema (JSON Schema validation)
+
+Nightly job runs against kubernaut `main` for early break detection.
+
+---
+
+## Configuration
+
+The API Frontend is configured exclusively via a YAML file mounted from a Kubernetes ConfigMap.
+**No environment variables are used** — this is an architectural constraint shared with the
+kubernaut project (DD-INFRA-001).
+
+### CLI Flag
+
+```
+--config <path>    Path to YAML configuration file (default: /etc/apifrontend/config.yaml)
+```
+
+### YAML Structure
+
+```yaml
+server:
+  port: 8443                          # HTTP listen port (1-65535)
+
+agent:
+  gcpProject: "my-gcp-project"        # Vertex AI project (required in prod)
+  gcpRegion: "us-central1"            # Vertex AI region
+  kaBaseURL: "http://ka:8080"         # Kubernaut Agent REST API base URL
+  kaMCPEndpoint: "http://ka:8080/api/v1/mcp/"  # KA MCP endpoint
+  dsBaseURL: "http://ds:9090"         # Data Store API base URL
+
+mcp:
+  enabled: false                      # Enable MCP tool stubs (false = 501 on /mcp)
+
+agentCard:
+  url: "https://af.example.com"       # External URL for agent card (derived from port if empty)
+```
+
+### Configuration Fields
+
+| Field | Default | Required | Purpose |
+|-------|---------|----------|---------|
+| `server.port` | `8443` | No | HTTP listen port. TLS termination is handled by ingress/service mesh. |
+| `agent.gcpProject` | (empty) | Yes (prod) | GCP project for Vertex AI LLM calls. |
+| `agent.gcpRegion` | `us-central1` | No | GCP region for Vertex AI endpoints. |
+| `agent.kaBaseURL` | `http://localhost:8080` | Yes (prod) | Base URL of the Kubernaut Agent backend. |
+| `agent.kaMCPEndpoint` | `http://localhost:8080/api/v1/mcp/` | Yes (prod) | MCP endpoint for the Kubernaut Agent. |
+| `agent.dsBaseURL` | `http://localhost:9090` | Yes (prod) | Base URL of the audit/data store service. |
+| `mcp.enabled` | `false` | No | Set to `true` to enable MCP tool stubs. When `false`, `/mcp` returns 501. |
+| `agentCard.url` | `https://localhost:{port}` | No | External-facing URL published in the agent card. Derived from `server.port` if left empty. |
+
+### Kubernetes ConfigMap Mount
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apifrontend-config
+data:
+  config.yaml: |
+    server:
+      port: 8443
+    agent:
+      gcpProject: "prod-project"
+      kaBaseURL: "http://kubernaut-agent:8080"
+      kaMCPEndpoint: "http://kubernaut-agent:8080/api/v1/mcp/"
+      dsBaseURL: "http://data-storage:9090"
+    mcp:
+      enabled: true
+    agentCard:
+      url: "https://apifrontend.example.com"
+```
+
+The ConfigMap is mounted into the pod at `/etc/apifrontend/`:
+
+```yaml
+volumes:
+  - name: config
+    configMap:
+      name: apifrontend-config
+containers:
+  - volumeMounts:
+      - name: config
+        mountPath: /etc/apifrontend
+        readOnly: true
+```
+
+### Startup Behavior
+
+- **Invalid config at startup** → structured error log + exit(1) (fail-fast)
+- **Missing config file** → error includes path and `--config` flag hint
+- **Validation** checks port range (1-65535), required URLs, and URL syntax (scheme required)
+
+---
+
+## East-West Encryption Boundaries
+
+All inter-service communication within the cluster uses mutual TLS (mTLS) via
+the service mesh (Istio sidecar). The API Frontend does **not** terminate TLS
+itself; the envoy sidecar provides transparent mTLS for all east-west traffic:
+
+| Source | Destination | Protocol | Encryption |
+|--------|------------|----------|------------|
+| Ingress Gateway | API Frontend | HTTP (localhost) | mTLS via sidecar |
+| API Frontend | Kubernaut Agent (REST) | HTTP | mTLS via sidecar |
+| API Frontend | Kubernaut Agent (MCP) | HTTP | mTLS via sidecar |
+| API Frontend | Data Storage | HTTP | mTLS via sidecar |
+| API Frontend | Kubernetes API | HTTPS | In-cluster TLS (ServiceAccount token) |
+
+**FedRAMP Boundary Note**: The API Frontend operates within the FedRAMP
+authorization boundary. External traffic enters via the ingress gateway which
+terminates north-south TLS (minimum TLS 1.2, FIPS 140-2 compliant ciphers).
+East-west encryption satisfies SC-8 (Transmission Confidentiality and Integrity).
+
+---
+
+## References
+
+- GitHub Issues: #41-#56, #57-#71 (design comments), #92 (severity triage)
+- ADRs: `docs/adr/ADR-001` through `ADR-021`
+- Design Documents: `SEVERITY_TRIAGE.md`, `DATA_FLOW.md`, `TOOL_EXECUTION_MODEL.md`, `CONTAINER_IMAGE.md`
+- kubernaut PROPOSAL-EXT-003 Appendix B (delegated authorization model)
+- MCP Spec: https://spec.modelcontextprotocol.io/specification/2025-03-26/
+- A2A Spec: https://google.github.io/A2A/specification/

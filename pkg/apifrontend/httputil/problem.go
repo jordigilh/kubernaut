@@ -1,0 +1,54 @@
+package httputil
+
+import (
+	"encoding/json"
+	"net/http"
+)
+
+// ProblemDetail represents an RFC 7807 Problem Details response.
+// The request_id field is a custom extension (RFC 7807 §3.2 allows extension
+// members). Clients can use it for correlation with server-side logs.
+type ProblemDetail struct {
+	Type      string `json:"type"`
+	Title     string `json:"title"`
+	Status    int    `json:"status"`
+	Detail    string `json:"detail,omitempty"`
+	Instance  string `json:"instance,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
+}
+
+// WriteProblem writes an RFC 7807 application/problem+json response.
+func WriteProblem(w http.ResponseWriter, status int, title, detail string) {
+	problem := ProblemDetail{
+		Type:   "about:blank",
+		Title:  title,
+		Status: status,
+		Detail: detail,
+	}
+
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(problem)
+}
+
+// WriteProblemWithType writes an RFC 7807 response with a custom type URI.
+func WriteProblemWithType(w http.ResponseWriter, status int, typeURI, title, detail, instance string) {
+	problem := ProblemDetail{
+		Type:     typeURI,
+		Title:    title,
+		Status:   status,
+		Detail:   detail,
+		Instance: instance,
+	}
+
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(problem)
+}
+
+// WriteProblemFull writes a fully constructed ProblemDetail as a response.
+func WriteProblemFull(w http.ResponseWriter, p *ProblemDetail) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(p.Status)
+	_ = json.NewEncoder(w).Encode(p)
+}

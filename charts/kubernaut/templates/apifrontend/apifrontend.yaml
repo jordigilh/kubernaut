@@ -1,0 +1,255 @@
+{{- if .Values.apifrontend.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: apifrontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: apifrontend
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: apifrontend
+  labels:
+    app: apifrontend
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apifrontend.kubernaut.ai"]
+    resources: ["investigationsessions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apifrontend.kubernaut.ai"]
+    resources: ["investigationsessions/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: [""]
+    resources: ["users", "groups", "serviceaccounts"]
+    verbs: ["impersonate"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: apifrontend
+  labels:
+    app: apifrontend
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: apifrontend
+subjects:
+  - kind: ServiceAccount
+    name: apifrontend
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apifrontend-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: apifrontend
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    server:
+      port: {{ .Values.apifrontend.config.server.httpPort | default 8443 }}
+      metricsPort: {{ .Values.apifrontend.config.server.metricsPort | default 9090 }}
+      healthPort: {{ .Values.apifrontend.config.server.healthPort | default 8081 }}
+    agent:
+      kaBaseURL: "http://kubernaut-agent.{{ .Release.Namespace }}.svc:8080"
+      dsBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    session:
+      namespace: {{ .Release.Namespace }}
+      disconnectTTL: {{ .Values.apifrontend.config.session.disconnectTTL | default "10m" }}
+      retentionTTL: {{ .Values.apifrontend.config.session.retentionTTL | default "720h" }}
+    severityTriage:
+      cacheTTLSeconds: {{ .Values.apifrontend.config.severityTriage.cacheTTLSeconds | default 30 }}
+      llmConfidence: {{ .Values.apifrontend.config.severityTriage.llmConfidence | default 0.7 }}
+    logging:
+      level: {{ .Values.apifrontend.logging.level | default "INFO" }}
+      format: json
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apifrontend-rbac-roles
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: apifrontend
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  rbac_roles.yaml: |
+    roles:
+      sre:
+        - kubernaut_list_remediations
+        - kubernaut_get_remediation
+        - kubernaut_approve
+        - kubernaut_cancel_remediation
+        - kubernaut_watch
+        - kubernaut_start_investigation
+        - kubernaut_poll_investigation
+        - kubernaut_select_workflow
+        - kubernaut_present_decision
+        - kubernaut_list_workflows
+        - kubernaut_get_remediation_history
+        - kubernaut_get_effectiveness
+        - kubernaut_get_audit_trail
+        - af_list_events
+        - af_get_pods
+        - af_get_workloads
+        - af_resolve_owner
+        - af_check_existing_rr
+        - af_create_rr
+      ai-orchestrator:
+        - kubernaut_list_remediations
+        - kubernaut_get_remediation
+        - kubernaut_approve
+        - kubernaut_cancel_remediation
+        - kubernaut_watch
+        - kubernaut_start_investigation
+        - kubernaut_poll_investigation
+        - kubernaut_select_workflow
+        - kubernaut_present_decision
+        - af_list_events
+        - af_get_pods
+        - af_get_workloads
+        - af_resolve_owner
+        - af_check_existing_rr
+        - af_create_rr
+      cicd:
+        - kubernaut_list_remediations
+        - kubernaut_get_remediation
+        - kubernaut_watch
+      observability:
+        - kubernaut_list_remediations
+        - kubernaut_get_remediation
+        - kubernaut_watch
+        - kubernaut_get_effectiveness
+        - kubernaut_list_workflows
+        - af_list_events
+        - af_get_pods
+        - af_get_workloads
+      l3-audit:
+        - kubernaut_list_remediations
+        - kubernaut_get_remediation
+        - kubernaut_list_workflows
+        - kubernaut_get_remediation_history
+        - kubernaut_get_effectiveness
+        - kubernaut_get_audit_trail
+      remediation-approver:
+        - kubernaut_approve
+        - kubernaut_list_remediations
+        - kubernaut_get_remediation
+        - kubernaut_watch
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apifrontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: apifrontend
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.apifrontend.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: apifrontend
+  template:
+    metadata:
+      labels:
+        app: apifrontend
+    spec:
+      serviceAccountName: apifrontend
+      automountServiceAccountToken: true
+      containers:
+        - name: apifrontend
+          image: {{ include "kubernaut.image" (dict "service" "apifrontend" "global" .Values.global "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: https
+              containerPort: {{ .Values.apifrontend.config.server.httpPort | default 8443 }}
+            - name: metrics
+              containerPort: {{ .Values.apifrontend.config.server.metricsPort | default 9090 }}
+            - name: health
+              containerPort: {{ .Values.apifrontend.config.server.healthPort | default 8081 }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - name: config
+              mountPath: /etc/apifrontend
+              readOnly: true
+            - name: tls-certs
+              mountPath: /etc/apifrontend/tls
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.apifrontend.resources | nindent 12 }}
+      volumes:
+        - name: config
+          projected:
+            sources:
+              - configMap:
+                  name: apifrontend-config
+                  items:
+                    - key: config.yaml
+                      path: config.yaml
+              - configMap:
+                  name: apifrontend-rbac-roles
+                  items:
+                    - key: rbac_roles.yaml
+                      path: rbac_roles.yaml
+        - name: tls-certs
+          secret:
+            secretName: apifrontend-tls
+            optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apifrontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: apifrontend
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+spec:
+  type: ClusterIP
+  ports:
+    - name: https
+      port: {{ .Values.apifrontend.config.server.httpPort | default 8443 }}
+      targetPort: https
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+    - name: health
+      port: 8081
+      targetPort: health
+  selector:
+    app: apifrontend
+{{- end }}

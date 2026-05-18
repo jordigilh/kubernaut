@@ -947,6 +947,59 @@
         "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
+    "apifrontend": {
+      "type": "object",
+      "description": "API Frontend (MCP bridge between users and Kubernaut Agent)",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "replicas": { "type": "integer", "default": 1 },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": { "type": "string", "default": "ghcr.io/jordigilh/kubernaut/apifrontend" },
+            "pullPolicy": { "type": "string", "default": "IfNotPresent" },
+            "tag": { "type": "string", "default": "" }
+          }
+        },
+        "logging": { "$ref": "#/definitions/serviceLogging" },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "server": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "httpPort": { "type": "integer", "default": 8443 },
+                "metricsPort": { "type": "integer", "default": 9090 },
+                "healthPort": { "type": "integer", "default": 8081 }
+              }
+            },
+            "session": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "disconnectTTL": { "type": "string", "default": "10m" },
+                "retentionTTL": { "type": "string", "default": "720h" }
+              }
+            },
+            "severityTriage": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cacheTTLSeconds": { "type": "integer", "default": 30 },
+                "llmConfidence": { "type": "number", "default": 0.7 }
+              }
+            }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
+      }
+    },
     "hooks": {
       "type": "object",
       "description": "Post-install Jobs",

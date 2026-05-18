@@ -1,0 +1,244 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: apifrontend-rules
+  namespace: kubernaut-system
+spec:
+  groups:
+    # NOTE: All rules filter on job="apifrontend". The Prometheus scrape config
+    # (ServiceMonitor/PodMonitor) MUST set this job label, or these alerts will
+    # be silently inactive. Ratio-based alerts return NaN (no alert) when traffic
+    # is zero — this is intentional to avoid false positives during idle periods.
+    - name: apifrontend.availability
+      rules:
+        - alert: ApifrontendDown
+          expr: up{job="apifrontend"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API Frontend is down"
+            description: "The API Frontend service has been unreachable for more than 5 minutes."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-001.md"
+
+    - name: apifrontend.latency
+      rules:
+        - alert: ApifrontendHighLatencyP95
+          expr: histogram_quantile(0.95, sum(rate(af_http_request_duration_seconds_bucket{job="apifrontend"}[5m])) by (le)) > 0.5
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend P95 latency > 500ms"
+            description: "95th percentile HTTP request latency is above 500ms for more than 2 minutes."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-002.md"
+
+        - alert: ApifrontendHighLatencyP99
+          expr: histogram_quantile(0.99, sum(rate(af_http_request_duration_seconds_bucket{job="apifrontend"}[5m])) by (le)) > 1.0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API Frontend P99 latency > 1s"
+            description: "99th percentile HTTP request latency is above 1 second for more than 2 minutes."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-002.md"
+
+    - name: apifrontend.errors
+      rules:
+        - alert: ApifrontendHighErrorRateWarning
+          expr: |
+            sum(rate(af_http_requests_total{job="apifrontend",status=~"5.."}[5m]))
+            /
+            sum(rate(af_http_requests_total{job="apifrontend"}[5m]))
+            > 0.005
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend error rate > 0.5%"
+            description: "More than 0.5% of HTTP requests are returning 5xx status codes."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-003.md"
+
+        - alert: ApifrontendHighErrorRate
+          expr: |
+            sum(rate(af_http_requests_total{job="apifrontend",status=~"5.."}[5m]))
+            /
+            sum(rate(af_http_requests_total{job="apifrontend"}[5m]))
+            > 0.01
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API Frontend error rate > 1%"
+            description: "More than 1% of HTTP requests are returning 5xx status codes. SLO-6 budget is breached."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-003.md"
+
+    - name: apifrontend.auth
+      rules:
+        - alert: ApifrontendAuthFailureSpike
+          expr: |
+            sum(rate(af_http_requests_total{job="apifrontend",status="401"}[5m]))
+            /
+            sum(rate(af_http_requests_total{job="apifrontend"}[5m]))
+            > 0.1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API Frontend auth failure rate > 10%"
+            description: "More than 10% of requests are failing authentication."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-004.md"
+
+    - name: apifrontend.circuitbreaker
+      rules:
+        - alert: ApifrontendCircuitBreakerOpenKA
+          expr: af_circuit_breaker_state{job="apifrontend",dependency="ka"} == 2
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "KA circuit breaker is open"
+            description: "Circuit breaker for Kubernaut Agent (KA) has been open for more than 2 minutes — all KA-proxied tools are unavailable."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-005.md"
+
+        - alert: ApifrontendCircuitBreakerOpenDS
+          expr: af_circuit_breaker_state{job="apifrontend",dependency="ds"} == 2
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "DS circuit breaker is open"
+            description: "Circuit breaker for Data Store (DS) has been open for more than 2 minutes — audit and data tools are degraded."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-005.md"
+
+        - alert: ApifrontendCircuitBreakerOpenOther
+          expr: af_circuit_breaker_state{job="apifrontend",dependency!="ka",dependency!="ds"} == 2
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Circuit breaker open for {{ $labels.dependency }}"
+            description: "Circuit breaker for {{ $labels.dependency }} has been open for more than 2 minutes."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-005.md"
+
+    - name: apifrontend.audit
+      rules:
+        - alert: ApifrontendAuditBufferOverflow
+          expr: rate(af_audit_buffer_overflow_total{job="apifrontend"}[5m]) > 0.1
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Audit events being dropped due to buffer overflow"
+            description: "The audit buffer is overflowing — events may be lost."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-006.md"
+
+    - name: apifrontend.tools
+      rules:
+        - alert: ApifrontendToolLatencyHigh
+          expr: histogram_quantile(0.99, sum(rate(af_tool_call_duration_seconds_bucket{job="apifrontend"}[5m])) by (le)) > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend tool call P99 latency > 5s"
+            description: "99th percentile tool call duration exceeds 5 seconds."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-009.md"
+
+        - alert: ApifrontendMCPRBACDenialSpike
+          expr: sum(rate(af_mcp_rbac_denied_total{job="apifrontend"}[5m])) > 1
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "MCP RBAC denials elevated (>1/s for 3m)"
+            description: "Sustained RBAC denials may indicate misconfigured roles or unauthorized access attempts."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-009.md"
+
+        - alert: ApifrontendToolErrorRate
+          expr: sum(rate(af_tool_calls_total{job="apifrontend",result=~"error|timeout|panic"}[5m])) / sum(rate(af_tool_calls_total{job="apifrontend"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "MCP tool error rate > 5%"
+            description: "More than 5% of MCP tool calls are failing."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-009.md"
+
+    - name: apifrontend.dependencies
+      rules:
+        - alert: ApifrontendDependencyLatencyHigh
+          expr: histogram_quantile(0.95, sum(rate(af_downstream_request_duration_seconds_bucket{job="apifrontend"}[5m])) by (le, dependency)) > 2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend downstream dependency P95 latency > 2s"
+            description: "95th percentile downstream request duration for {{ $labels.dependency }} exceeds 2 seconds."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-007.md"
+
+    - name: apifrontend.sse
+      rules:
+        - alert: ApifrontendSSEConnectionsHigh
+          expr: af_sse_active_connections{job="apifrontend"} > 100
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend SSE connections > 100"
+            description: "Active SSE connections are above threshold."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-008.md"
+
+    - name: apifrontend.severity-triage
+      rules:
+        - alert: ApifrontendSeverityTriageErrorRate
+          expr: rate(af_severity_triage_errors_total{job="apifrontend"}[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Severity triage pipeline error rate elevated"
+            description: "More than 0.1 errors/sec in severity triage pipeline over the last 5 minutes."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-010.md"
+        - alert: ApifrontendSeverityTriageLatencyHigh
+          expr: histogram_quantile(0.95, sum(rate(af_severity_triage_duration_seconds_bucket{job="apifrontend"}[5m])) by (le, tier)) > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Severity triage P95 latency > 5s"
+            description: "95th percentile triage duration for tier {{ $labels.tier }} exceeds 5 seconds."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-010.md"
+        # CM-05: Rate limit storm detection
+        - alert: ApifrontendRateLimitStorm
+          expr: sum(rate(af_rate_limit_rejections_total{job="apifrontend"}[5m])) > 10
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Sustained rate limit rejections (>10/s)"
+            description: "Rate limit denials exceeded 10/s for 3 minutes. Potential DoS or misconfigured client."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-008.md"
+        # CM-05: Auth latency SLO breach
+        - alert: ApifrontendAuthLatencyHigh
+          expr: histogram_quantile(0.99, sum(rate(af_auth_duration_seconds_bucket{job="apifrontend"}[5m])) by (le)) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Auth middleware P99 latency > 1s"
+            description: "JWT validation P99 exceeds 1 second — possible JWKS fetch issues or network degradation."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-011.md"
+        # IR-03: Composite attack pattern detection
+        - alert: ApifrontendSustainedAttackPattern
+          expr: |
+            (sum(rate(af_rate_limit_rejections_total{job="apifrontend"}[5m])) > 5)
+            and
+            (sum(rate(af_http_requests_total{job="apifrontend",status="401"}[5m])) > 5)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Sustained attack pattern: rate limits + auth failures"
+            description: "Concurrent elevated rate-limit denials and 401 responses for 5+ minutes. Investigate for credential stuffing or brute force."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-012.md"

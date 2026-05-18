@@ -138,6 +138,25 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 			Expect(err.Error()).To(ContainSubstring("invalid workflow ID"))
 		})
 
+		It("UT-WE-243-035: should return non-nil empty DeclaredParameterNames when schema declares zero parameters", func() {
+			content := buildTestSchemaWithParams(nil, []models.WorkflowParameter{})
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{
+					Content:         content,
+					ExecutionEngine: "job",
+					WorkflowName:    "zero-params-wf",
+				},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			meta, err := querier.GetWorkflowSchemaMetadata(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(meta.DeclaredParameterNames).ToNot(BeNil(),
+				"schema with zero parameters must produce non-nil map (strip-all per #243)")
+			Expect(meta.DeclaredParameterNames).To(BeEmpty(),
+				"zero declared parameters means empty map, not nil")
+		})
+
 		It("UT-F6-001: should extract engineConfig as JSON from schema with ansible engine", func() {
 			content := buildTestSchemaWithEngineConfig("ansible",
 				map[string]interface{}{
