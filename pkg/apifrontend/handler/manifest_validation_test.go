@@ -14,7 +14,7 @@ import (
 // repoRoot returns the project root by walking up from the test file location.
 func repoRoot() string {
 	_, f, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(f), "..", "..")
+	return filepath.Join(filepath.Dir(f), "..", "..", "..")
 }
 
 // ---------------------------------------------------------------------------
@@ -25,7 +25,7 @@ var _ = Describe("ServiceMonitor manifest", func() {
 	var smData map[string]interface{}
 
 	BeforeEach(func() {
-		path := filepath.Join(repoRoot(), "deploy", "kustomize", "base", "08-servicemonitor.yaml")
+		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "08-servicemonitor.yaml")
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred(), "failed to read ServiceMonitor YAML")
 		Expect(yaml.Unmarshal(raw, &smData)).To(Succeed())
@@ -99,7 +99,7 @@ var _ = Describe("PrometheusRule manifest", func() {
 	var pr prometheusRule
 
 	BeforeEach(func() {
-		path := filepath.Join(repoRoot(), "deploy", "kustomize", "base", "05-prometheusrule.yaml")
+		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "05-prometheusrule.yaml")
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(yaml.Unmarshal(raw, &pr)).To(Succeed())
@@ -172,7 +172,7 @@ var _ = Describe("RBAC tool name alignment", func() {
 	}
 
 	It("TC-A-RBAC-01a: every tool in deploy rbac_roles.yaml must exist in bridge registration", func() {
-		path := filepath.Join(repoRoot(), "deploy", "kustomize", "base", "rbac_roles.yaml")
+		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "rbac_roles.yaml")
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -190,7 +190,7 @@ var _ = Describe("RBAC tool name alignment", func() {
 	})
 
 	It("TC-A-RBAC-01b: every registered MCP tool must appear in at least one RBAC role", func() {
-		path := filepath.Join(repoRoot(), "deploy", "kustomize", "base", "rbac_roles.yaml")
+		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "rbac_roles.yaml")
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -213,7 +213,7 @@ var _ = Describe("RBAC tool name alignment", func() {
 	})
 
 	It("TC-A-RBAC-01c: deploy rbac_roles.yaml must use kubernaut_present_decision (MCP bridge name)", func() {
-		path := filepath.Join(repoRoot(), "deploy", "kustomize", "base", "rbac_roles.yaml")
+		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "rbac_roles.yaml")
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -245,7 +245,7 @@ var _ = Describe("NetworkPolicy manifest", func() {
 	var np networkPolicy
 
 	BeforeEach(func() {
-		path := filepath.Join(repoRoot(), "deploy", "kustomize", "base", "06-networkpolicy.yaml")
+		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "06-networkpolicy.yaml")
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(yaml.Unmarshal(raw, &np)).To(Succeed())
@@ -275,7 +275,7 @@ var _ = Describe("NetworkPolicy manifest", func() {
 	})
 
 	It("TC-P1-09b: Prometheus namespace matches config reference", func() {
-		configPath := filepath.Join(repoRoot(), "deploy", "kustomize", "base", "config.yaml")
+		configPath := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "config.yaml")
 		configRaw, err := os.ReadFile(configPath)
 		Expect(err).NotTo(HaveOccurred())
 		configText := string(configRaw)
@@ -306,7 +306,7 @@ var _ = Describe("NetworkPolicy manifest", func() {
 
 var _ = Describe("Dockerfile FIPS Compliance", func() {
 	It("TC-P3-07a: Dockerfile sets GOEXPERIMENT=boringcrypto", func() {
-		dockerfilePath := filepath.Join(repoRoot(), "Dockerfile")
+		dockerfilePath := filepath.Join(repoRoot(), "docker", "apifrontend.Dockerfile")
 		content, err := os.ReadFile(dockerfilePath)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(content)).To(ContainSubstring("GOEXPERIMENT=boringcrypto"),

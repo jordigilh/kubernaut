@@ -13,7 +13,7 @@ import (
 // gap at FedRAMP High, replace with a distributed cache (Redis SETEX with jti as
 // key and TTL matching token expiry). The interface is designed to be swap-compatible:
 // implement MissingJTI(string) bool and Seen(string) bool against Redis.
-// See: https://github.com/jordigilh/kubernaut-apifrontend/issues/TBD
+// See: https://github.com/jordigilh/kubernaut/issues (origin:apifrontend)
 type ReplayCache struct {
 	mu       sync.RWMutex
 	entries  map[string]time.Time
