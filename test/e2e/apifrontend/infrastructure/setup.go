@@ -586,6 +586,7 @@ spec:
     - name: health
       port: 8081
       targetPort: health
+      nodePort: 30081
   selector:
     app: apifrontend
 `, namespace, indentYAML(string(configData), 4),

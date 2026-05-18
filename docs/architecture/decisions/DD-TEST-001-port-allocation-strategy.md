@@ -2,8 +2,8 @@
 
 **Status**: ✅ Approved
 **Date**: 2025-11-26
-**Last Updated**: 2026-03-19
-**Version**: 3.1
+**Last Updated**: 2026-05-18
+**Version**: 3.3
 **Author**: AI Assistant
 **Reviewers**: TBD
 **Related**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
@@ -73,6 +73,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Toolset** | 8087 | 30087 | 9187 | 30187 | — | — | `test/infrastructure/kind-toolset-config.yaml` |
 | **Kubernaut Agent** | 8088 | 30088 | 9188 | 30188 | — | — | `test/infrastructure/kind-kubernautagent-config.yaml` |
 | **Effectiveness Monitor** | 8089 | 30089 | 9189 | 30189 | — | — | `test/infrastructure/kind-effectivenessmonitor-config.yaml` |
+| **API Frontend** | 18443 | 30443 | — | — | 18081 | 30081 | `test/infrastructure/kind-kubernautagent-config.yaml` (shared with KA) |
 | **Full Pipeline E2E** | — | — | — | — | — | — | `test/infrastructure/kind-fullpipeline-config.yaml` |
 | &nbsp;&nbsp;→ Gateway | 30080 | 30080 | — | — | — | — | (Gateway ingress for event-exporter webhook) |
 | &nbsp;&nbsp;→ Data Storage | 30081 | 30081 | — | — | — | — | (DataStorage for workflow catalog seeding) |
@@ -139,6 +140,66 @@ Data Storage (Dependency):
   NodePort: 30089
   Connection: http://127.0.0.1:8089
 ```
+
+---
+
+### **API Frontend (AF) - MCP/A2A Service**
+
+#### **Integration Tests** (`test/integration/apifrontend/`)
+
+**Created**: 2026-05-18 (Monorepo merge - Issue #1184)
+
+```yaml
+API Frontend:
+  Port: In-process (envtest)
+  Purpose: Unit/integration tests use envtest with in-process handlers
+  Note: No podman containers needed — AF integration uses envtest CRDs only
+```
+
+**Infrastructure**: envtest (K8s API) with CRDs applied
+**Pattern**: Ginkgo `BeforeSuite` with envtest environment
+
+#### **E2E Tests** (`test/e2e/apifrontend/`)
+
+**Status**: Active (Kind cluster shared with KA/DS stack)
+
+```yaml
+API Frontend HTTPS (in Kind):
+  Host Port: 18443
+  NodePort: 30443
+  Container Port: 8443
+  Connection: https://127.0.0.1:18443
+  Purpose: MCP Streamable HTTP + A2A endpoint (TLS)
+
+API Frontend Health (in Kind):
+  Host Port: 18081
+  NodePort: 30081
+  Container Port: 8081
+  Connection: http://127.0.0.1:18081/healthz
+  Purpose: Health/readiness probe endpoint
+
+Prometheus (Severity Triage, in Kind):
+  Host Port: 9190
+  NodePort: 30190
+  Container Port: 9090
+  Connection: http://127.0.0.1:9190
+  Purpose: Alerting rules for severity triage E2E tests
+
+Dependencies (shared Kind cluster):
+  Kubernaut Agent: NodePort 30088 (host 8088)
+  Data Storage: NodePort 30089 (host 8089)
+  DEX OIDC: NodePort 30556 (host 5556)
+  Mock LLM: ClusterIP (internal only)
+```
+
+**Kind Config**: `test/infrastructure/kind-kubernautagent-config.yaml` (shared with KA E2E)
+**Infrastructure**: Kind cluster with full kubernaut stack (KA+DS+Dex+mock-LLM+Prometheus) + AF overlay
+**Pattern**: Ginkgo `SynchronizedBeforeSuite` with programmatic manifests
+
+**Port Allocation Rationale**:
+- **30443 (HTTPS)**: Standard HTTPS-like port (mirrors 443); outside 30080-30099 API range since AF uses TLS natively
+- **30081 (Health)**: Available in KA Kind cluster; no conflict with DS 30081 which only exists in other clusters (gateway, RO, WE, fullpipeline)
+- **30190 (Prometheus)**: Shared with Full Pipeline E2E allocation; AF E2E and Full Pipeline never run in same cluster
 
 ---
 
@@ -680,6 +741,7 @@ extraPortMappings:
 | **Toolset** | 8087 | 30087 | 9187 | 30187 |
 | **Kubernaut Agent** | 8088 | 30088 | 9188 | 30188 |
 | **Effectiveness Monitor** | 8089 | 30089 | 9189 | 30189 |
+| **API Frontend** | 18443 | 30443 | — | — |
 
 **Pattern**:
 - Service NodePort: `3008X` where X = service index
@@ -905,6 +967,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 3.3 | 2026-05-18 | AI Assistant | **API Frontend E2E (Issue #1184)**: Added AF port allocations for monorepo E2E; HTTPS NodePort 30443 (host 18443), Health NodePort 30081 (host 18081), Prometheus NodePort 30190 (host 9190); AF shares Kind cluster with KA (`kind-kubernautagent-config.yaml`); No conflicts within cluster — 30081 only used by DS in separate clusters (gateway, RO, WE, fullpipeline); Added AF to NodePort Summary and authoritative table |
 | 3.2 | 2026-05-01 | AI Assistant | **KA MCP IT (Issue #703, CP-5)**: Allocated freed Immudb range 13330-13333 for KA MCP integration tests DataStorage stack (PostgreSQL: 13330, Redis: 13331, DataStorage: 13332, Metrics: 13333); KA Custom Tools already uses 13322-13325, KA Enrichment uses 13326-13329; MCP IT also uses Mock LLM on existing KA port 18140 (mode=interactive); No port conflicts — verified against Port Collision Matrix |
 | 3.1 | 2026-03-19 | AI Assistant | **DATA STORAGE METRICS (Issue #283)**: Added dedicated metrics NodePort 30181 (host port 28091) for DataStorage E2E tests; Issue #283 moved `/metrics` from the API server (port 8080) to a dedicated Prometheus metrics server (port 9090); E2E test `17_metrics_api_test.go` updated to use `metricsURL` instead of `dataStorageURL + "/metrics"`; Kind config updated with new `extraPortMapping`; Service definition updated with `nodePort: 30181`; Corrected Data Storage host ports in NodePort Allocation Summary (28090/28091); Updated Port Collision Matrix |
 | 3.0 | 2026-03-02 | AI Assistant | **AWX (BR-WE-015)**: Added AWX NodePort 30095 for ansible engine E2E tests; AWX deployed in WE Kind cluster sharing existing PostgreSQL and Redis; Added AWX to WE dependencies, NodePort Summary, and Port Collision Matrix; AWX API accessed from host via `localhost:30095` for post-deployment configuration; OCI schema images `ansible-success` and `ansible-failure` added to `test/fixtures/workflows/`; FP E2E excluded (WE E2E covers ansible regression) |
