@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -154,11 +155,66 @@ var _ = Describe("BR-HAPI-191: SelfCorrect with Parameter Validation (#1170)", f
 			})
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(receivedErr).NotTo(BeNil())
 			paramErr, ok := receivedErr.(*parser.ParameterValidationError)
 			Expect(ok).To(BeTrue(), "correctionFn should receive *ParameterValidationError")
-			Expect(paramErr.Result).NotTo(BeNil())
-			Expect(paramErr.Result.SchemaHint).NotTo(BeEmpty())
+			Expect(paramErr.Result.Errors).To(ContainElement(ContainSubstring("REPLICA_COUNT")),
+				"Validation error should identify the failing parameter")
+			Expect(paramErr.Result.SchemaHint).To(ContainSubstring("REPLICA_COUNT"),
+				"Schema hint should include the parameter for LLM self-correction")
+		})
+	})
+
+	Context("UT-KA-1170-055: Template renders errors + schema hint correctly", func() {
+		It("should render parameter errors and schema hint via validation_error.tmpl", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			data := prompt.ValidationErrorData{
+				IsFormatFailure: false,
+				AttemptDisplay:  1,
+				MaxAttempts:     3,
+				Errors: []string{
+					"REPLICA_COUNT: expected type integer, got string",
+					"STRATEGY: value 'canary' not in allowed values [rolling, recreate]",
+				},
+				SchemaHint: "REPLICA_COUNT (integer, required): Number of replicas [min=1, max=10]\nSTRATEGY (string, required): Strategy [enum: rolling, recreate]",
+			}
+
+			rendered, err := builder.RenderValidationError(data)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("VALIDATION ERROR"),
+				"Template should render as a validation error, not format failure")
+			Expect(rendered).To(ContainSubstring("Attempt 1/3"),
+				"Template should show attempt counter")
+			Expect(rendered).To(ContainSubstring("REPLICA_COUNT: expected type integer"),
+				"Template should list each error")
+			Expect(rendered).To(ContainSubstring("STRATEGY: value 'canary'"),
+				"Template should list each error")
+			Expect(rendered).To(ContainSubstring("Expected Parameter Schema"),
+				"Template should include schema hint section")
+			Expect(rendered).To(ContainSubstring("REPLICA_COUNT (integer, required)"),
+				"Schema hint should be rendered verbatim for LLM consumption")
+		})
+
+		It("should render format failure variant when IsFormatFailure is true", func() {
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			data := prompt.ValidationErrorData{
+				IsFormatFailure: true,
+				AttemptDisplay:  2,
+				MaxAttempts:     3,
+				Errors:          []string{"No JSON block found in response"},
+				SchemaHint:      "",
+			}
+
+			rendered, err := builder.RenderValidationError(data)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("OUTPUT FORMAT ERROR"),
+				"Format failure should use the format error heading")
+			Expect(rendered).To(ContainSubstring("Attempt 2/3"))
+			Expect(rendered).NotTo(ContainSubstring("Expected Parameter Schema"),
+				"Format failures should not include schema hint section")
 		})
 	})
 

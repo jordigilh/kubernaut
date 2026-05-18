@@ -287,6 +287,33 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Constraints (#1170)", func()
 		})
 	})
 
+	Context("UT-KA-1170-019b: Pattern — pre-compiled via SetWorkflowMeta", func() {
+		It("should use pre-compiled patterns when Validate is called through the full path", func() {
+			schema := []models.WorkflowParameter{
+				{Name: "POD_NAME", Type: "string", Required: true, Description: "Pod name", Pattern: `^[a-z][a-z0-9-]*$`},
+			}
+			meta := parser.WorkflowMeta{Parameters: schema}
+			v.SetWorkflowMeta("wf-precompile-test", meta)
+
+			stored, ok := v.GetWorkflowMeta("wf-precompile-test")
+			Expect(ok).To(BeTrue())
+			Expect(stored.CompiledPatterns).To(HaveKey("POD_NAME"),
+				"SetWorkflowMeta should pre-compile pattern for POD_NAME")
+		})
+
+		It("should skip pre-compilation for invalid patterns (validated at runtime)", func() {
+			schema := []models.WorkflowParameter{
+				{Name: "BAD_PARAM", Type: "string", Required: true, Description: "Bad", Pattern: `[invalid`},
+			}
+			meta := parser.WorkflowMeta{Parameters: schema}
+			v.SetWorkflowMeta("wf-badpattern-test", meta)
+
+			stored, _ := v.GetWorkflowMeta("wf-badpattern-test")
+			Expect(stored.CompiledPatterns).NotTo(HaveKey("BAD_PARAM"),
+				"Invalid patterns should not be pre-compiled")
+		})
+	})
+
 	Context("UT-KA-1170-020: DependsOn — param present when dependency is present is valid", func() {
 		It("should accept when both the param and its dependency are present", func() {
 			schema := []models.WorkflowParameter{
@@ -442,6 +469,20 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Constraints (#1170)", func()
 	// GROUP D: Multi-Error ValidationResult
 	// ========================================
 
+	Context("UT-KA-1170-010b: Type/integer — fractional float64 rejected for integer type", func() {
+		It("should reject float64 with fractional part for integer type", func() {
+			schema := []models.WorkflowParameter{
+				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas"},
+			}
+			params := map[string]interface{}{"REPLICA_COUNT": float64(3.5)}
+
+			result := v.ValidateParameters(params, schema)
+			Expect(result.IsValid).To(BeFalse())
+			Expect(result.Errors).To(ContainElement(ContainSubstring("REPLICA_COUNT")))
+			Expect(result.Errors).To(ContainElement(ContainSubstring("integer")))
+		})
+	})
+
 	Context("UT-KA-1170-050: Multiple constraint violations produce multiple errors", func() {
 		It("should collect all validation errors, not stop at first", func() {
 			min := float64(1)
@@ -457,6 +498,10 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Constraints (#1170)", func()
 			result := v.ValidateParameters(params, schema)
 			Expect(result.IsValid).To(BeFalse())
 			Expect(len(result.Errors)).To(BeNumerically(">=", 2))
+			Expect(result.Errors).To(ContainElement(ContainSubstring("REPLICA_COUNT")),
+				"Should report REPLICA_COUNT type error")
+			Expect(result.Errors).To(ContainElement(ContainSubstring("STRATEGY")),
+				"Should report STRATEGY enum error")
 		})
 	})
 

@@ -20,6 +20,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"strings"
+
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
@@ -88,8 +90,17 @@ var _ = Describe("E2E-KA Parameter Validation Self-Correction (#1170)", Label("e
 				"First attempt number should be 1")
 			Expect(firstAttempt.IsValid).To(BeFalse(),
 				"First attempt should fail due to type mismatch")
-			Expect(firstAttempt.Errors).ToNot(BeEmpty(),
+			Expect(len(firstAttempt.Errors)).To(BeNumerically(">=", 1),
 				"First attempt must record parameter-level validation errors")
+			hasParamError := false
+			for _, e := range firstAttempt.Errors {
+				if strings.Contains(e, "REPLICA_COUNT") || strings.Contains(e, "type") || strings.Contains(e, "required") {
+					hasParamError = true
+					break
+				}
+			}
+			Expect(hasParamError).To(BeTrue(),
+				"First attempt errors should identify specific parameter constraint failures")
 
 			// Second attempt: corrected params pass validation
 			secondAttempt := incidentResp.ValidationAttemptsHistory[1]
@@ -97,6 +108,18 @@ var _ = Describe("E2E-KA Parameter Validation Self-Correction (#1170)", Label("e
 				"Second attempt number should be 2")
 			Expect(secondAttempt.IsValid).To(BeTrue(),
 				"Second attempt should pass with corrected parameters")
+
+			// E2E-KA-1170-002 (consolidated): Final response has valid params, undeclared stripped
+			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
+				"E2E-KA-1170-002: selected_workflow must be present with valid parameters")
+
+			// E2E-KA-1170-003 (consolidated): validation_attempts_history shape
+			for i, attempt := range incidentResp.ValidationAttemptsHistory {
+				Expect(attempt.Attempt).To(Equal(i+1),
+					"E2E-KA-1170-003: attempt numbers must be sequential")
+				Expect(attempt.Timestamp).ToNot(BeEmpty(),
+					"E2E-KA-1170-003: each attempt must have a timestamp for audit trail")
+			}
 
 			// BUSINESS IMPACT: Operator sees successful self-correction in audit trail,
 			// confirming the LLM can learn from structured schema feedback.
