@@ -224,12 +224,15 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 6: Wait for rollouts + enable JWT on KA
+	// KA must be ready before AF because AF's readiness probe checks
+	// KAClient.Healthy() via circuit breaker. If KA isn't up, AF's CB opens
+	// and the readiness probe never passes (Issue #1184 fix).
 	// DEX must be up before KA can validate JWT config, so we enable JWT
-	// after PHASE 5 deploys DEX and wait for everything together.
+	// after the initial rollout wait.
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\nPHASE 6: Waiting for deployments...")
 
-	for _, deploy := range []string{"datastorage", "dex", "apifrontend"} {
+	for _, deploy := range []string{"datastorage", "kubernaut-agent", "dex", "apifrontend"} {
 		_, _ = fmt.Fprintf(writer, "  Waiting for %s...\n", deploy)
 		timeout := 120 * time.Second
 		if deploy == "datastorage" {
