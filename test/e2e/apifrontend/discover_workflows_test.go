@@ -57,7 +57,8 @@ var _ = Describe("E2E: discover_workflows (#1176)", Ordered, ContinueOnFailure, 
 		if code >= http.StatusBadRequest {
 			return nil, fmt.Errorf("MCP returned HTTP %d: %s", code, raw)
 		}
-		return raw, nil
+		payload := unwrapSSEDataLine(raw)
+		return []byte(payload), nil
 	}
 
 	It("E2E-AF-WP-001: kubernaut_discover_workflows returns parameter schemas from KA", func() {
@@ -177,6 +178,7 @@ var _ = Describe("E2E: discover_workflows (#1176)", Ordered, ContinueOnFailure, 
 		callReq, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(callBody))
 		Expect(err).NotTo(HaveOccurred())
 		callReq.Header.Set("Content-Type", "application/json")
+		callReq.Header.Set("Accept", "application/json, text/event-stream")
 		callReq.Header.Set("Authorization", "Bearer "+cicdToken)
 		if deniedSessionID != "" {
 			callReq.Header.Set("Mcp-Session-Id", deniedSessionID)
@@ -194,7 +196,7 @@ var _ = Describe("E2E: discover_workflows (#1176)", Ordered, ContinueOnFailure, 
 		))
 	})
 
-	It("E2E-AF-WP-004: af_discover_workflows_total metric is exposed", func() {
+	It("E2E-AF-WP-004: af_discover_workflows metrics are exposed", func() {
 		resp, err := httpClient.Get(baseURL + "/metrics")
 		if err != nil {
 			resp, err = http.Get("http://localhost:18081/metrics")
@@ -207,6 +209,7 @@ var _ = Describe("E2E: discover_workflows (#1176)", Ordered, ContinueOnFailure, 
 		Expect(string(body)).To(SatisfyAny(
 			ContainSubstring("af_discover_workflows_total"),
 			ContainSubstring("af_discover_workflows_duration_seconds"),
+			ContainSubstring("af_discover_workflows_errors_total"),
 		))
 	})
 
