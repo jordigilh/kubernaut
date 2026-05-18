@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -193,6 +194,10 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Mock LLM image should build")
 		mockLLMCfg.ImageTag = builtImageTag
 		mockLLMCfg.ConfigFilePath = overrideFile.Name()
+		// DD-AUTH-014: Platform-specific network (matches AIAnalysis IT pattern)
+		if runtime.GOOS == "linux" {
+			mockLLMCfg.Network = "host"
+		}
 
 		By("Starting Mock LLM container (mode=interactive, with DS UUID overrides)")
 		_, err = infrastructure.StartMockLLMContainer(ctx, mockLLMCfg, GinkgoWriter)
