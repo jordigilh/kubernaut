@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -195,7 +195,7 @@ var _ = SynchronizedBeforeSuite(
 		mockLLMCfg.ImageTag = builtImageTag
 		mockLLMCfg.ConfigFilePath = overrideFile.Name()
 		// DD-AUTH-014: Platform-specific network (matches AIAnalysis IT pattern)
-		if runtime.GOOS == "linux" {
+		if goruntime.GOOS == "linux" {
 			mockLLMCfg.Network = "host"
 		}
 
