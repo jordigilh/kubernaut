@@ -77,8 +77,8 @@ func paramValidationSelfCorrectConfigs() (bad, corrected MockScenarioConfig) {
 		ResourceNS:   "production",
 		ResourceName: "api-server-xyz",
 		APIVersion:   "v1",
-		Parameters: map[string]string{
-			"REPLICA_COUNT": "5",
+		RawParameters: map[string]interface{}{
+			"REPLICA_COUNT": float64(5),
 			"NAMESPACE":     "production",
 		},
 		InvestigationOutcome: "actionable",
