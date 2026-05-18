@@ -155,8 +155,8 @@ func getAFProjectRoot() string {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if ok {
 		// This file lives at test/e2e/apifrontend/infrastructure/kind.go
-		// Project root is 4 directories up.
-		return filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(currentFile))))
+		// Monorepo root is 5 directories up (infrastructure → apifrontend → e2e → test → root).
+		return filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(currentFile)))))
 	}
 	candidates := []string{".", "..", "../..", "../../..", "../../../.."}
 	for _, dir := range candidates {

@@ -447,7 +447,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -479,9 +479,6 @@ jobs:
           - service: kubernautagent
             service_name: "Kubernaut Agent"
             timeout: 20
-          - service: apifrontend
-            service_name: "API Frontend"
-            timeout: 15
     steps:
       - uses: actions/checkout@v6
         with:
