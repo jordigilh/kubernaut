@@ -121,6 +121,15 @@ func (s *paramValidationSelfCorrectScenario) Metadata() ScenarioMetadata {
 
 func (s *paramValidationSelfCorrectScenario) DAG() *conversation.DAG { return nil }
 
+// OverrideWorkflowID replaces the deterministic workflow UUID in both configs
+// with the real DataStorage UUID assigned at E2E seed time.
+func (s *paramValidationSelfCorrectScenario) OverrideWorkflowID(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.badConfig.WorkflowID = id
+	s.correctedConfig.WorkflowID = id
+}
+
 // Config returns the corrected config if KA already sent validation feedback
 // (detected by "expected parameters" in the conversation text from
 // FormatSchemaHint), otherwise returns the bad config.
