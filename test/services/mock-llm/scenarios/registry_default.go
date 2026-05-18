@@ -164,6 +164,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(mockKeywordScenario("not_actionable", "mock_not_actionable", notActionableConfig()))
 	r.Register(mockKeywordScenario("parallel_tools", "mock_parallel_tools", parallelToolsConfig()))
 	r.Register(mockKeywordScenario("ambiguous_kind", "mock_ambiguous_kind", ambiguousKindConfig()))
+	r.Register(newParamValidationSelfCorrectScenario())
 
 	// Test signal scenario
 	r.Register(testSignalScenario())

@@ -1,0 +1,47 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: param-validation-test-v1
+spec:
+  version: "1.0.0"
+  description:
+    what: "Test workflow for parameter validation self-correction (#1170)"
+    whenToUse: "E2E test: validates KA parameter type/constraint checking and LLM self-correction"
+    whenNotToUse: "Not for production use"
+    preconditions: "None"
+  
+  actionType: ScaleReplicas
+  
+  labels:
+    severity: [high]
+    environment: [production, staging]
+    component: ["apps/v1/Deployment"]
+    priority: "P1"
+  
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0@sha256:c4fc636f28d46f94c3f4a211f4dc07f60545891818ee45262e860b0825296ba0
+  
+  parameters:
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the deployment (KA-injected from root_owner)"
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      description: "Kind of the root managing resource (KA-injected from root_owner)"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the root managing resource (KA-injected from root_owner)"
+    - name: REPLICA_COUNT
+      type: integer
+      required: true
+      description: "Number of replicas to scale to"
+      minimum: 1
+      maximum: 20
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace for the scaling operation"
