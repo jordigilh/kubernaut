@@ -232,7 +232,7 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 		_, _ = fmt.Fprintf(writer, "   🌐 Host network mode: Mock LLM will bind to port %d directly\n", internalPort)
 	}
 
-	args := []string{"run", "-d", "--rm",
+	args := []string{"run", "-d",
 		"--name", config.ContainerName,
 		"-p", fmt.Sprintf("%d:%d", config.Port, internalPort), // Port mapping (ignored on host network)
 		"-e", "MOCK_LLM_HOST=0.0.0.0",

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	goruntime "runtime"
 	"strings"
 	"testing"
@@ -179,12 +180,10 @@ var _ = SynchronizedBeforeSuite(
 		}{Scenarios: scenarios})
 		Expect(yamlErr).ToNot(HaveOccurred(), "scenario override YAML must serialize")
 
-		overrideFile, writeErr := os.CreateTemp("", "kamcp-scenarios-*.yaml")
-		Expect(writeErr).ToNot(HaveOccurred())
-		_, writeErr = overrideFile.Write(overrideYAML)
-		Expect(writeErr).ToNot(HaveOccurred())
-		Expect(overrideFile.Close()).To(Succeed())
-		sharedOverrideFilePath = overrideFile.Name()
+		overridePath, absErr := filepath.Abs("kamcp-scenarios-override.yaml")
+		Expect(absErr).ToNot(HaveOccurred())
+		Expect(os.WriteFile(overridePath, overrideYAML, 0644)).To(Succeed())
+		sharedOverrideFilePath = overridePath
 		GinkgoWriter.Printf("Mock LLM override file: %s\n", sharedOverrideFilePath)
 
 		// ── Step 4: Mock LLM (Podman, mode=interactive) ──
@@ -193,7 +192,7 @@ var _ = SynchronizedBeforeSuite(
 		builtImageTag, err := infrastructure.BuildMockLLMImage(ctx, mockLLMCfg.ServiceName, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Mock LLM image should build")
 		mockLLMCfg.ImageTag = builtImageTag
-		mockLLMCfg.ConfigFilePath = overrideFile.Name()
+		mockLLMCfg.ConfigFilePath = overridePath
 		// DD-AUTH-014: Platform-specific network (matches AIAnalysis IT pattern)
 		if goruntime.GOOS == "linux" {
 			mockLLMCfg.Network = "host"
