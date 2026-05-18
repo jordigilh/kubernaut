@@ -197,6 +197,10 @@ var _ = Describe("E2E: discover_workflows (#1176)", Ordered, ContinueOnFailure, 
 	})
 
 	It("E2E-AF-WP-004: af_discover_workflows metrics are exposed", func() {
+		// Trigger a discover_workflows call to ensure metrics are observed at
+		// least once (CounterVec only appears after first Inc).
+		_, _ = mcpToolCall("dw-e2e-004-prime", "kubernaut_discover_workflows", map[string]interface{}{})
+
 		resp, err := httpClient.Get(baseURL + "/metrics")
 		if err != nil {
 			resp, err = http.Get("http://localhost:18081/metrics")
