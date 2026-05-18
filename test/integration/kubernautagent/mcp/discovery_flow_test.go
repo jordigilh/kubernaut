@@ -19,7 +19,6 @@ package mcp_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http/httptest"
 	"time"
 
@@ -32,13 +31,14 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/adapters"
+	mcpadapters "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/adapters"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
-	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
+	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
+
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -61,7 +61,11 @@ func (d *discoverySignalResolver) ResolveEnrichmentData(_ context.Context, _ str
 	return &prompt.EnrichmentData{}, nil
 }
 
-// discoveryHTTPCompleter captures CompleteUserDriving calls.
+// discoveryHTTPCompleter captures CompleteUserDriving calls in-memory.
+// Retained as a stub (#1174): the production HTTPSessionCompleter is
+// session.Manager, which requires the full gateway HTTP long-poll bridge.
+// Wiring that in IT is disproportionate; the stub validates method calls
+// and result payloads, which is sufficient for behavioral assurance.
 type discoveryHTTPCompleter struct {
 	completedID     string
 	completedResult *katypes.InvestigationResult
@@ -95,15 +99,14 @@ func callTool(sess *mcpsdk.ClientSession, toolName string, args map[string]any) 
 var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integration", "discovery"), func() {
 
 	var (
-		recommendedWfID = uuid.DeterministicUUID("oomkill-increase-memory-v1")
-		alternativeWfID = uuid.DeterministicUUID("generic-restart-v1")
-	)
-
-	var (
 		stack     *realMCPTestStack
 		nsName    string
 		completer *discoveryHTTPCompleter
 	)
+
+	// DS-assigned UUIDs resolved from sharedWorkflowUUIDs (#1174).
+	recommendedWfID := func() string { return sharedWorkflowUUIDs["oomkill-increase-memory-v1:production"] }
+	alternativeWfID := func() string { return sharedWorkflowUUIDs["generic-restart-v1:production"] }
 
 	BeforeEach(func() {
 		nsName = uniqueNamespace("disc")
@@ -178,7 +181,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			By("selecting the recommended workflow")
 			result, err = callTool(sess, "kubernaut_select_workflow", map[string]any{
 				"rr_id":       "rr-disc-001",
-				"workflow_id": recommendedWfID,
+				"workflow_id": recommendedWfID(),
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
@@ -189,7 +192,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			By("verifying auto-complete wrote recommended parameters to HTTP session (#1169)")
 			Expect(completer.completedID).To(Equal("http-sess-discovery"))
 			Expect(completer.completedResult).NotTo(BeNil())
-			Expect(completer.completedResult.WorkflowID).To(Equal(recommendedWfID))
+			Expect(completer.completedResult.WorkflowID).To(Equal(recommendedWfID()))
 			Expect(completer.completedResult.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
 				"recommended parameters must flow through to the HTTP session completer (#1169)")
 			Expect(completer.completedResult.Parameters).NotTo(HaveKey("REPLICA_COUNT"),
@@ -270,7 +273,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			By("attempting select_workflow (should be rejected)")
 			result, err = callTool(sess, "kubernaut_select_workflow", map[string]any{
 				"rr_id":       "rr-disc-003",
-				"workflow_id": recommendedWfID,
+				"workflow_id": recommendedWfID(),
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeTrue(), "select_workflow should fail after message invalidated discovery")
@@ -286,7 +289,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			By("selecting workflow after re-discovery (should succeed)")
 			result, err = callTool(sess, "kubernaut_select_workflow", map[string]any{
 				"rr_id":       "rr-disc-003",
-				"workflow_id": recommendedWfID,
+				"workflow_id": recommendedWfID(),
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
@@ -470,7 +473,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			completer.completedResult = nil
 			result, err = callTool(sess, "kubernaut_select_workflow", map[string]any{
 				"rr_id":       "rr-disc-008",
-				"workflow_id": alternativeWfID,
+				"workflow_id": alternativeWfID(),
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
@@ -481,7 +484,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			By("verifying completer received alternative parameters (#1169)")
 			Expect(completer.completedResult).NotTo(BeNil(),
 				"HTTP session completion must occur for alternative workflow selection")
-			Expect(completer.completedResult.WorkflowID).To(Equal(alternativeWfID),
+			Expect(completer.completedResult.WorkflowID).To(Equal(alternativeWfID()),
 				"the selected alternative workflow ID must be on the completed result")
 			Expect(completer.completedResult.Parameters).To(HaveKeyWithValue("REPLICA_COUNT", "3"),
 				"alternative workflow parameters must flow through to the completer (#1169)")
@@ -519,7 +522,7 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 		MaxTurns:     15,
 		ModelName:    "test-model",
 	})
-	runner := adapters.NewInvestigatorRunnerAdapter(inv)
+	runner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
 
 	recon := mcpinternal.NewDSContextReconstructor(sharedDSClient, 5*time.Second, logrLogger)
 
@@ -553,27 +556,10 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 	}
 	investigateTool := mcptools.NewInvestigateTool(stack.SessionMgr, runner, recon, mcptools.NopAutonomousManager{}, investigateOpts...)
 
-	// Catalog uses the Mock LLM's oomkilled scenario workflow IDs
-	oomkillWfID := uuid.DeterministicUUID("oomkill-increase-memory-v1")
-	restartWfID := uuid.DeterministicUUID("generic-restart-v1")
-	catalog := &discoveryMockCatalog{
-		workflows: map[string]*mcptools.CatalogWorkflow{
-			oomkillWfID: {
-				WorkflowID:      oomkillWfID,
-				WorkflowName:    "OOMKill Recovery - Increase Memory Limits",
-				ExecutionEngine: "job",
-				ExecutionBundle: "oci://oomkill-increase-memory:v1",
-				Version:         "v1.0",
-			},
-			restartWfID: {
-				WorkflowID:      restartWfID,
-				WorkflowName:    "Generic Restart",
-				ExecutionEngine: "job",
-				ExecutionBundle: "oci://generic-restart:v1",
-				Version:         "v1.0",
-			},
-		},
-	}
+	// Real catalog backed by DataStorage (#1174). Workflow UUIDs are resolved
+	// via the override file mounted into the Mock LLM container.
+	wfQuerier := wfclient.NewOgenWorkflowQuerier(sharedDSClient)
+	catalog := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
 
 	selectTool := mcptools.NewSelectWorkflowTool(catalog, stack.SessionMgr,
 		mcptools.WithHTTPSessionCompleter(completer),
@@ -607,15 +593,3 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 	return stack
 }
 
-// discoveryMockCatalog returns workflows by ID.
-type discoveryMockCatalog struct {
-	workflows map[string]*mcptools.CatalogWorkflow
-}
-
-func (c *discoveryMockCatalog) GetWorkflowByID(_ context.Context, wfID string) (*mcptools.CatalogWorkflow, error) {
-	wf, ok := c.workflows[wfID]
-	if !ok {
-		return nil, fmt.Errorf("workflow %q not found", wfID)
-	}
-	return wf, nil
-}
