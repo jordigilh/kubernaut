@@ -263,7 +263,7 @@ var _ = Describe("UT-AT-300-012: DSClientAdapter ActionType operations", Label("
 				w.Header().Set("Content-Type", "application/problem+json")
 				w.WriteHeader(http.StatusNotFound)
 				resp := map[string]interface{}{
-					"type":   "https://kubernaut.ai/errors/not-found",
+					"type":   "https://kubernaut.ai/problems/not-found",
 					"title":  "Action type not found",
 					"status": 404,
 					"detail": "The action type 'RestartPod' does not exist in the catalog",
@@ -293,7 +293,7 @@ var _ = Describe("UT-AT-300-012: DSClientAdapter ActionType operations", Label("
 				w.Header().Set("Content-Type", "application/problem+json")
 				w.WriteHeader(http.StatusInternalServerError)
 				resp := map[string]interface{}{
-					"type":   "https://kubernaut.ai/errors/internal",
+					"type":   "https://kubernaut.ai/problems/internal",
 					"title":  "Internal server error",
 					"status": 500,
 					"detail": "Database connection pool exhausted",

@@ -18,8 +18,7 @@ import (
 )
 
 var regexMap = map[string]ogenregex.Regexp{
-	"^[a-f0-9]{64}$":                      ogenregex.MustCompile("^[a-f0-9]{64}$"),
-	"^https://kubernaut\\.ai/problems/.+": ogenregex.MustCompile("^https://kubernaut\\.ai/problems/.+"),
+	"^[a-f0-9]{64}$": ogenregex.MustCompile("^[a-f0-9]{64}$"),
 }
 var (
 	// Allocate option closure once.

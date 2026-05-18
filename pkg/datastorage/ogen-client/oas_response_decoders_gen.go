@@ -134,15 +134,6 @@ func decodeCreateActionTypeResponse(resp *http.Response) (res CreateActionTypeRe
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -178,15 +169,6 @@ func decodeCreateActionTypeResponse(resp *http.Response) (res CreateActionTypeRe
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -305,15 +287,6 @@ func decodeCreateAuditEventResponse(resp *http.Response) (res CreateAuditEventRe
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -348,15 +321,6 @@ func decodeCreateAuditEventResponse(resp *http.Response) (res CreateAuditEventRe
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -393,15 +357,6 @@ func decodeCreateAuditEventResponse(resp *http.Response) (res CreateAuditEventRe
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -436,15 +391,6 @@ func decodeCreateAuditEventResponse(resp *http.Response) (res CreateAuditEventRe
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -481,15 +427,6 @@ func decodeCreateAuditEventResponse(resp *http.Response) (res CreateAuditEventRe
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -573,15 +510,6 @@ func decodeCreateAuditEventsBatchResponse(resp *http.Response) (res *BatchAuditE
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -718,15 +646,6 @@ func decodeCreateNotificationAuditResponse(resp *http.Response) (res CreateNotif
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -761,15 +680,6 @@ func decodeCreateNotificationAuditResponse(resp *http.Response) (res CreateNotif
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -806,15 +716,6 @@ func decodeCreateNotificationAuditResponse(resp *http.Response) (res CreateNotif
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -850,15 +751,6 @@ func decodeCreateNotificationAuditResponse(resp *http.Response) (res CreateNotif
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -995,15 +887,6 @@ func decodeCreateWorkflowResponse(resp *http.Response) (res CreateWorkflowRes, _
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -1038,15 +921,6 @@ func decodeCreateWorkflowResponse(resp *http.Response) (res CreateWorkflowRes, _
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -1083,15 +957,6 @@ func decodeCreateWorkflowResponse(resp *http.Response) (res CreateWorkflowRes, _
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -1126,15 +991,6 @@ func decodeCreateWorkflowResponse(resp *http.Response) (res CreateWorkflowRes, _
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -1171,15 +1027,6 @@ func decodeCreateWorkflowResponse(resp *http.Response) (res CreateWorkflowRes, _
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -1215,15 +1062,6 @@ func decodeCreateWorkflowResponse(resp *http.Response) (res CreateWorkflowRes, _
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -1316,15 +1154,6 @@ func decodeDeprecateWorkflowResponse(resp *http.Response) (res DeprecateWorkflow
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -1359,15 +1188,6 @@ func decodeDeprecateWorkflowResponse(resp *http.Response) (res DeprecateWorkflow
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -1404,15 +1224,6 @@ func decodeDeprecateWorkflowResponse(resp *http.Response) (res DeprecateWorkflow
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -1505,15 +1316,6 @@ func decodeDisableActionTypeResponse(resp *http.Response) (res DisableActionType
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -1548,15 +1350,6 @@ func decodeDisableActionTypeResponse(resp *http.Response) (res DisableActionType
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -1637,15 +1430,6 @@ func decodeDisableActionTypeResponse(resp *http.Response) (res DisableActionType
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -1681,15 +1465,6 @@ func decodeDisableActionTypeResponse(resp *http.Response) (res DisableActionType
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -1782,15 +1557,6 @@ func decodeDisableWorkflowResponse(resp *http.Response) (res DisableWorkflowRes,
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -1825,15 +1591,6 @@ func decodeDisableWorkflowResponse(resp *http.Response) (res DisableWorkflowRes,
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -1870,15 +1627,6 @@ func decodeDisableWorkflowResponse(resp *http.Response) (res DisableWorkflowRes,
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -1971,15 +1719,6 @@ func decodeEnableWorkflowResponse(resp *http.Response) (res EnableWorkflowRes, _
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -2014,15 +1753,6 @@ func decodeEnableWorkflowResponse(resp *http.Response) (res EnableWorkflowRes, _
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -2059,15 +1789,6 @@ func decodeEnableWorkflowResponse(resp *http.Response) (res EnableWorkflowRes, _
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -2160,15 +1881,6 @@ func decodeExportAuditEventsResponse(resp *http.Response) (res ExportAuditEvents
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -2203,15 +1915,6 @@ func decodeExportAuditEventsResponse(resp *http.Response) (res ExportAuditEvents
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -2248,15 +1951,6 @@ func decodeExportAuditEventsResponse(resp *http.Response) (res ExportAuditEvents
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -2292,15 +1986,6 @@ func decodeExportAuditEventsResponse(resp *http.Response) (res ExportAuditEvents
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -2384,15 +2069,6 @@ func decodeGetActionTypeWorkflowCountResponse(resp *http.Response) (res *ActionT
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -2485,15 +2161,6 @@ func decodeGetEffectivenessScoreResponse(resp *http.Response) (res GetEffectiven
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -2528,15 +2195,6 @@ func decodeGetEffectivenessScoreResponse(resp *http.Response) (res GetEffectiven
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -2573,15 +2231,6 @@ func decodeGetEffectivenessScoreResponse(resp *http.Response) (res GetEffectiven
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -2674,15 +2323,6 @@ func decodeGetRemediationHistoryContextResponse(resp *http.Response) (res GetRem
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -2717,15 +2357,6 @@ func decodeGetRemediationHistoryContextResponse(resp *http.Response) (res GetRem
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -2762,15 +2393,6 @@ func decodeGetRemediationHistoryContextResponse(resp *http.Response) (res GetRem
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -2863,15 +2485,6 @@ func decodeGetWorkflowByIDResponse(resp *http.Response) (res GetWorkflowByIDRes,
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -2906,15 +2519,6 @@ func decodeGetWorkflowByIDResponse(resp *http.Response) (res GetWorkflowByIDRes,
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -2951,15 +2555,6 @@ func decodeGetWorkflowByIDResponse(resp *http.Response) (res GetWorkflowByIDRes,
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -3052,15 +2647,6 @@ func decodeListAvailableActionsResponse(resp *http.Response) (res ListAvailableA
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -3095,15 +2681,6 @@ func decodeListAvailableActionsResponse(resp *http.Response) (res ListAvailableA
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -3140,15 +2717,6 @@ func decodeListAvailableActionsResponse(resp *http.Response) (res ListAvailableA
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -3232,15 +2800,6 @@ func decodeListLegalHoldsResponse(resp *http.Response) (res *ListLegalHoldsOK, _
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -3333,15 +2892,6 @@ func decodeListWorkflowsResponse(resp *http.Response) (res ListWorkflowsRes, _ e
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -3377,15 +2927,6 @@ func decodeListWorkflowsResponse(resp *http.Response) (res ListWorkflowsRes, _ e
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -3478,15 +3019,6 @@ func decodeListWorkflowsByActionTypeResponse(resp *http.Response) (res ListWorkf
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -3521,15 +3053,6 @@ func decodeListWorkflowsByActionTypeResponse(resp *http.Response) (res ListWorkf
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -3566,15 +3089,6 @@ func decodeListWorkflowsByActionTypeResponse(resp *http.Response) (res ListWorkf
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -3658,15 +3172,6 @@ func decodePlaceLegalHoldResponse(resp *http.Response) (res PlaceLegalHoldRes, _
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -3701,15 +3206,6 @@ func decodePlaceLegalHoldResponse(resp *http.Response) (res PlaceLegalHoldRes, _
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -3746,15 +3242,6 @@ func decodePlaceLegalHoldResponse(resp *http.Response) (res PlaceLegalHoldRes, _
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -3790,15 +3277,6 @@ func decodePlaceLegalHoldResponse(resp *http.Response) (res PlaceLegalHoldRes, _
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -3892,15 +3370,6 @@ func decodeQueryAuditEventsResponse(resp *http.Response) (res *AuditEventsQueryR
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
 				Response:   response,
@@ -3992,15 +3461,6 @@ func decodeReconstructRemediationRequestResponse(resp *http.Response) (res Recon
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -4035,15 +3495,6 @@ func decodeReconstructRemediationRequestResponse(resp *http.Response) (res Recon
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -4080,15 +3531,6 @@ func decodeReconstructRemediationRequestResponse(resp *http.Response) (res Recon
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -4123,15 +3565,6 @@ func decodeReconstructRemediationRequestResponse(resp *http.Response) (res Recon
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -4168,15 +3601,6 @@ func decodeReconstructRemediationRequestResponse(resp *http.Response) (res Recon
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -4260,15 +3684,6 @@ func decodeReleaseLegalHoldResponse(resp *http.Response) (res ReleaseLegalHoldRe
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -4303,15 +3718,6 @@ func decodeReleaseLegalHoldResponse(resp *http.Response) (res ReleaseLegalHoldRe
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -4348,15 +3754,6 @@ func decodeReleaseLegalHoldResponse(resp *http.Response) (res ReleaseLegalHoldRe
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -4392,15 +3789,6 @@ func decodeReleaseLegalHoldResponse(resp *http.Response) (res ReleaseLegalHoldRe
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -4493,15 +3881,6 @@ func decodeUpdateActionTypeResponse(resp *http.Response) (res UpdateActionTypeRe
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -4537,15 +3916,6 @@ func decodeUpdateActionTypeResponse(resp *http.Response) (res UpdateActionTypeRe
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -4638,15 +4008,6 @@ func decodeUpdateWorkflowResponse(resp *http.Response) (res UpdateWorkflowRes, _
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -4681,15 +4042,6 @@ func decodeUpdateWorkflowResponse(resp *http.Response) (res UpdateWorkflowRes, _
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -4726,15 +4078,6 @@ func decodeUpdateWorkflowResponse(resp *http.Response) (res UpdateWorkflowRes, _
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,
@@ -4818,15 +4161,6 @@ func decodeVerifyAuditChainResponse(resp *http.Response) (res VerifyAuditChainRe
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
@@ -4861,15 +4195,6 @@ func decodeVerifyAuditChainResponse(resp *http.Response) (res VerifyAuditChainRe
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &response, nil
 		default:
@@ -4906,15 +4231,6 @@ func decodeVerifyAuditChainResponse(resp *http.Response) (res VerifyAuditChainRe
 					Err:         err,
 				}
 				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
 			}
 			return &RFC7807ProblemStatusCode{
 				StatusCode: resp.StatusCode,

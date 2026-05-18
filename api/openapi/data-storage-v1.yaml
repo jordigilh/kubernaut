@@ -2509,7 +2509,6 @@ components:
             service-unavailable, conflict, database-error, bad-request.
             Domain-specific types use path prefixes: reconstruction/*,
             effectiveness/*, audit/*, remediation-history/*.
-          pattern: "^https://kubernaut\\.ai/problems/.+"
           example: "https://kubernaut.ai/problems/validation-error"
         title:
           type: string
