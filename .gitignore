@@ -296,3 +296,4 @@ must-gather-*.tar.gz
 .cursor-swarm-dev/
 *.vsix
 *.venv*
+/apifrontend

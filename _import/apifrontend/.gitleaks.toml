@@ -1,9 +1,0 @@
-[extend]
-useDefault = true
-
-[allowlist]
-description = "Test fixtures — fake JWTs, bcrypt hashes, and base64 strings in test/E2E files"
-paths = [
-  '''_test\.go$''',
-  '''deploy/kustomize/overlays/e2e/''',
-]
