@@ -139,6 +139,7 @@ func CreateTLSSecrets(ctx context.Context, kubeconfigPath, namespace, certDir st
 }
 
 // WaitForDeploymentRollout waits for a deployment to become ready.
+// On failure, it collects pod-level diagnostics (describe, logs, events) for triage.
 func WaitForDeploymentRollout(ctx context.Context, kubeconfigPath, namespace, name string, timeout time.Duration, writer io.Writer) error {
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infra
 		"rollout", "status", "deployment/"+name, "-n", namespace,
@@ -146,9 +147,36 @@ func WaitForDeploymentRollout(ctx context.Context, kubeconfigPath, namespace, na
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
+		collectDeploymentDiagnostics(ctx, kubeconfigPath, namespace, name, writer)
 		return fmt.Errorf("deployment/%s not ready: %w", name, err)
 	}
 	return nil
+}
+
+func collectDeploymentDiagnostics(ctx context.Context, kubeconfigPath, namespace, name string, writer io.Writer) {
+	_, _ = fmt.Fprintf(writer, "\n╔══ DIAGNOSTICS for deployment/%s ══╗\n", name)
+
+	// Pod status
+	run := func(args ...string) {
+		c := exec.CommandContext(ctx, "kubectl", append([]string{"--kubeconfig", kubeconfigPath, "-n", namespace}, args...)...) //nolint:gosec
+		c.Stdout = writer
+		c.Stderr = writer
+		_ = c.Run()
+	}
+
+	_, _ = fmt.Fprintln(writer, "── kubectl get pods ──")
+	run("get", "pods", "-l", "app="+name, "-o", "wide")
+
+	_, _ = fmt.Fprintln(writer, "── kubectl describe pod ──")
+	run("describe", "pods", "-l", "app="+name)
+
+	_, _ = fmt.Fprintln(writer, "── kubectl logs (last 50 lines) ──")
+	run("logs", "-l", "app="+name, "--tail=50", "--all-containers=true")
+
+	_, _ = fmt.Fprintln(writer, "── kubectl get events ──")
+	run("get", "events", "--sort-by=.lastTimestamp", "--field-selector", "involvedObject.kind=Pod")
+
+	_, _ = fmt.Fprintf(writer, "╚══ END DIAGNOSTICS for deployment/%s ══╝\n\n", name)
 }
 
 func getAFProjectRoot() string {
