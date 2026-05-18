@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/test/e2e/apifrontend/infrastructure"
+	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 func TestE2E(t *testing.T) {
@@ -25,14 +26,28 @@ const (
 	e2eNamespace   = "kubernaut-system"
 )
 
+var (
+	setupSucceeded bool
+	anyTestFailed  bool
+	kubeconfigPath string
+)
+
+var _ = ReportAfterEach(func(report SpecReport) {
+	if report.Failed() {
+		anyTestFailed = true
+		kinfra.MarkTestFailure(e2eClusterName)
+	}
+})
+
 var _ = SynchronizedBeforeSuite(
 	func() []byte {
 		homeDir, err := os.UserHomeDir()
 		Expect(err).NotTo(HaveOccurred())
-		kubeconfigPath := fmt.Sprintf("%s/.kube/apifrontend-e2e-config", homeDir)
+		kubeconfigPath = fmt.Sprintf("%s/.kube/apifrontend-e2e-config", homeDir)
 
 		if os.Getenv("AF_E2E_SKIP_INFRA") == "true" {
 			_, _ = fmt.Fprintln(GinkgoWriter, "Skipping infra deployment (AF_E2E_SKIP_INFRA=true)")
+			setupSucceeded = true
 			return []byte(kubeconfigPath)
 		}
 
@@ -72,6 +87,7 @@ var _ = SynchronizedBeforeSuite(
 		_, _ = fmt.Fprintln(GinkgoWriter, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		_, _ = fmt.Fprintln(GinkgoWriter, "E2E Infrastructure Ready")
 		_, _ = fmt.Fprintln(GinkgoWriter, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		setupSucceeded = true
 		return []byte(kubeconfigPath)
 	},
 	func(_ []byte) {
@@ -114,6 +130,20 @@ var _ = SynchronizedBeforeSuite(
 var _ = SynchronizedAfterSuite(
 	func() {},
 	func() {
+		_, _ = fmt.Fprintln(GinkgoWriter, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		_, _ = fmt.Fprintln(GinkgoWriter, "AF E2E Test Suite - Teardown")
+		_, _ = fmt.Fprintln(GinkgoWriter, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+		setupFailed := !setupSucceeded
+		anyFailure := setupFailed || anyTestFailed || kinfra.CheckTestFailure(e2eClusterName)
+		defer kinfra.CleanupFailureMarker(e2eClusterName)
+
+		if anyFailure {
+			_, _ = fmt.Fprintln(GinkgoWriter, "⚠️  Failure detected — collecting must-gather logs BEFORE teardown")
+			kinfra.MustGatherPodLogs(e2eClusterName, kubeconfigPath,
+				e2eNamespace, "apifrontend", GinkgoWriter)
+		}
+
 		if os.Getenv("E2E_COVERAGE") == "true" {
 			_, _ = fmt.Fprintln(GinkgoWriter, "\nCollecting E2E binary coverage data (DD-TEST-007)...")
 			profilePath, err := infrastructure.CollectE2EBinaryCoverage(e2eClusterName, GinkgoWriter)
@@ -131,6 +161,9 @@ var _ = SynchronizedAfterSuite(
 		if os.Getenv("AF_E2E_SKIP_INFRA") == "true" {
 			return
 		}
-		_ = infrastructure.TeardownE2EInfrastructure(GinkgoWriter)
+
+		if err := kinfra.DeleteCluster(e2eClusterName, "apifrontend", anyFailure, GinkgoWriter); err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Cluster deletion failed: %v\n", err)
+		}
 	},
 )
