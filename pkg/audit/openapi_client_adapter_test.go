@@ -224,9 +224,9 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 		Context("Error Cases - HTTP 4xx (NOT Retryable)", func() {
 			It("should return HTTPError for 400 Bad Request", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", "application/json") // Required for ogen client
+					w.Header().Set("Content-Type", "application/problem+json")
 					w.WriteHeader(http.StatusBadRequest)
-					_, _ = w.Write([]byte(`{"message": "Invalid event data"}`))
+					_, _ = w.Write([]byte(`{"type":"https://kubernaut.ai/problems/bad-request","title":"Bad Request","status":400,"detail":"Invalid event data"}`))
 				}))
 
 				var err error
@@ -263,9 +263,9 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 
 			It("should return HTTPError for 422 Unprocessable Entity", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", "application/json") // Required for ogen client
+					w.Header().Set("Content-Type", "application/problem+json")
 					w.WriteHeader(http.StatusUnprocessableEntity)
-					_, _ = w.Write([]byte(`{"message": "Validation failed"}`))
+					_, _ = w.Write([]byte(`{"type":"https://kubernaut.ai/problems/unprocessable","title":"Unprocessable Entity","status":422,"detail":"Validation failed"}`))
 				}))
 
 				var err error
@@ -304,9 +304,9 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 		Context("Error Cases - HTTP 5xx (Retryable)", func() {
 			It("should return HTTPError for 500 Internal Server Error", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", "application/json") // Required for ogen client
+					w.Header().Set("Content-Type", "application/problem+json")
 					w.WriteHeader(http.StatusInternalServerError)
-					_, _ = w.Write([]byte(`{"message": "Database connection failed"}`))
+					_, _ = w.Write([]byte(`{"type":"https://kubernaut.ai/problems/internal","title":"Internal Server Error","status":500,"detail":"Database connection failed"}`))
 				}))
 
 				var err error
@@ -343,13 +343,15 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 
 			It("should return HTTPError for 503 Service Unavailable", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", "application/json") // Required for ogen client
+					w.Header().Set("Content-Type", "application/problem+json")
 					w.WriteHeader(http.StatusServiceUnavailable)
-					_, _ = w.Write([]byte(`{"message": "Service temporarily unavailable"}`))
+					_, _ = w.Write([]byte(`{"type":"https://kubernaut.ai/problems/service-unavailable","title":"Service Unavailable","status":503,"detail":"Service temporarily unavailable"}`))
 				}))
 
 				var err error
-				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
+				// Use plain transport (no retry) so the 503 body is available for ogen decoding.
+				// RetryTransport drains the body on retryable status codes (502/503/504).
+				client, err = audit.NewOpenAPIClientAdapterWithTransport(server.URL, 5*time.Second, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create test event using ogen union constructor (ogen migration)

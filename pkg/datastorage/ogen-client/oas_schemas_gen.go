@@ -12,6 +12,10 @@ import (
 	"github.com/google/uuid"
 )
 
+func (s *RFC7807ProblemStatusCode) Error() string {
+	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
+}
+
 // Alignment step event payload (aiagent.alignment.step) - Emitted per suspicious observation from
 // the shadow agent alignment check (SOC2 CC7.2, BR-AUDIT-070).
 // Ref: #/components/schemas/AIAgentAlignmentStepPayload
@@ -22165,7 +22169,7 @@ type RFC7807Problem struct {
 	// service-unavailable, conflict, database-error, bad-request.
 	// Domain-specific types use path prefixes: reconstruction/*,
 	// effectiveness/*, audit/*, remediation-history/*.
-	Type url.URL `json:"type"`
+	Type string `json:"type"`
 	// Short, human-readable summary of the problem type.
 	// Should not change from occurrence to occurrence.
 	Title string `json:"title"`
@@ -22181,7 +22185,7 @@ type RFC7807Problem struct {
 }
 
 // GetType returns the value of Type.
-func (s *RFC7807Problem) GetType() url.URL {
+func (s *RFC7807Problem) GetType() string {
 	return s.Type
 }
 
@@ -22211,7 +22215,7 @@ func (s *RFC7807Problem) GetFieldErrors() OptRFC7807ProblemFieldErrors {
 }
 
 // SetType sets the value of Type.
-func (s *RFC7807Problem) SetType(val url.URL) {
+func (s *RFC7807Problem) SetType(val string) {
 	s.Type = val
 }
 
@@ -22255,6 +22259,32 @@ func (s *RFC7807ProblemFieldErrors) init() RFC7807ProblemFieldErrors {
 		*s = m
 	}
 	return m
+}
+
+// RFC7807ProblemStatusCode wraps RFC7807Problem with StatusCode.
+type RFC7807ProblemStatusCode struct {
+	StatusCode int
+	Response   RFC7807Problem
+}
+
+// GetStatusCode returns the value of StatusCode.
+func (s *RFC7807ProblemStatusCode) GetStatusCode() int {
+	return s.StatusCode
+}
+
+// GetResponse returns the value of Response.
+func (s *RFC7807ProblemStatusCode) GetResponse() RFC7807Problem {
+	return s.Response
+}
+
+// SetStatusCode sets the value of StatusCode.
+func (s *RFC7807ProblemStatusCode) SetStatusCode(val int) {
+	s.StatusCode = val
+}
+
+// SetResponse sets the value of Response.
+func (s *RFC7807ProblemStatusCode) SetResponse(val RFC7807Problem) {
+	s.Response = val
 }
 
 type ReconstructRemediationRequestBadRequest RFC7807Problem

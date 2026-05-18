@@ -34731,7 +34731,7 @@ func (s *RFC7807Problem) Encode(e *jx.Encoder) {
 func (s *RFC7807Problem) encodeFields(e *jx.Encoder) {
 	{
 		e.FieldStart("type")
-		json.EncodeURI(e, s.Type)
+		e.Str(s.Type)
 	}
 	{
 		e.FieldStart("title")
@@ -34782,8 +34782,8 @@ func (s *RFC7807Problem) Decode(d *jx.Decoder) error {
 		case "type":
 			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
-				v, err := json.DecodeURI(d)
-				s.Type = v
+				v, err := d.Str()
+				s.Type = string(v)
 				if err != nil {
 					return err
 				}

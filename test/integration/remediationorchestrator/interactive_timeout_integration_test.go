@@ -42,6 +42,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -91,19 +92,35 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration
 			}
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
-			By("Creating a RemediationRequest in Analyzing phase with start time > 10m ago")
+			By("Creating a RemediationRequest and letting the controller initialize it")
 			rr := helpers.NewRemediationRequest(rrName, ns)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-			// Set RR status to Analyzing with start time 12 minutes ago
+			// DD-TEST-PARALLELISM-003: Work WITH the controller, not against it.
+			// Wait for the RO controller to finish initialization (empty → Pending/Blocked)
+			// before overriding status, so we never race on resourceVersion.
+			Eventually(func() bool {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+					return false
+				}
+				return rr.Status.OverallPhase != ""
+			}, timeout, interval).Should(BeTrue(),
+				"Controller should initialize the RR before test overrides status")
+
+			By("Overriding RR status to Analyzing with start time > 10m ago")
 			analyzingStart := metav1.NewTime(time.Now().Add(-12 * time.Minute))
-			rr.Status.OverallPhase = remediationv1.PhaseAnalyzing
-			rr.Status.AnalyzingStartTime = &analyzingStart
-			rr.Status.AIAnalysisRef = &corev1.ObjectReference{
-				Name:      ai.Name,
-				Namespace: ai.Namespace,
-			}
-			Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+			Eventually(func() error {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+					return err
+				}
+				rr.Status.OverallPhase = remediationv1.PhaseAnalyzing
+				rr.Status.AnalyzingStartTime = &analyzingStart
+				rr.Status.AIAnalysisRef = &corev1.ObjectReference{
+					Name:      ai.Name,
+					Namespace: ai.Namespace,
+				}
+				return k8sClient.Status().Update(ctx, rr)
+			}, timeout, interval).Should(Succeed())
 
 			By("Waiting for controller to reconcile and verifying NO timeout")
 			Eventually(func() remediationv1.RemediationPhase {
@@ -159,18 +176,32 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration
 			}
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
-			By("Creating RR in Analyzing with start time > 10m ago")
+			By("Creating RR and letting the controller initialize it")
 			rr := helpers.NewRemediationRequest(rrName, ns)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
+			Eventually(func() bool {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+					return false
+				}
+				return rr.Status.OverallPhase != ""
+			}, timeout, interval).Should(BeTrue(),
+				"Controller should initialize the RR before test overrides status")
+
+			By("Overriding RR status to Analyzing with start time > 10m ago")
 			analyzingStart := metav1.NewTime(time.Now().Add(-12 * time.Minute))
-			rr.Status.OverallPhase = remediationv1.PhaseAnalyzing
-			rr.Status.AnalyzingStartTime = &analyzingStart
-			rr.Status.AIAnalysisRef = &corev1.ObjectReference{
-				Name:      ai.Name,
-				Namespace: ai.Namespace,
-			}
-			Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+			Eventually(func() error {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+					return err
+				}
+				rr.Status.OverallPhase = remediationv1.PhaseAnalyzing
+				rr.Status.AnalyzingStartTime = &analyzingStart
+				rr.Status.AIAnalysisRef = &corev1.ObjectReference{
+					Name:      ai.Name,
+					Namespace: ai.Namespace,
+				}
+				return k8sClient.Status().Update(ctx, rr)
+			}, timeout, interval).Should(Succeed())
 
 			By("Waiting for controller to reconcile and timeout the RR")
 			Eventually(func() remediationv1.RemediationPhase {
@@ -192,18 +223,32 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration
 			ns := ROControllerNamespace
 			rrName := "it-703-003-rr"
 
-			By("Creating RR with AIAnalysisRef pointing to non-existent AA")
+			By("Creating RR and letting the controller initialize it")
 			rr := helpers.NewRemediationRequest(rrName, ns)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
+			Eventually(func() bool {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+					return false
+				}
+				return rr.Status.OverallPhase != ""
+			}, timeout, interval).Should(BeTrue(),
+				"Controller should initialize the RR before test overrides status")
+
+			By("Overriding RR status to Analyzing with AIAnalysisRef pointing to non-existent AA")
 			analyzingStart := metav1.NewTime(time.Now().Add(-12 * time.Minute))
-			rr.Status.OverallPhase = remediationv1.PhaseAnalyzing
-			rr.Status.AnalyzingStartTime = &analyzingStart
-			rr.Status.AIAnalysisRef = &corev1.ObjectReference{
-				Name:      "ai-deleted-703",
-				Namespace: ns,
-			}
-			Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+			Eventually(func() error {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+					return err
+				}
+				rr.Status.OverallPhase = remediationv1.PhaseAnalyzing
+				rr.Status.AnalyzingStartTime = &analyzingStart
+				rr.Status.AIAnalysisRef = &corev1.ObjectReference{
+					Name:      "ai-deleted-703",
+					Namespace: ns,
+				}
+				return k8sClient.Status().Update(ctx, rr)
+			}, timeout, interval).Should(Succeed())
 
 			By("Waiting for controller to reconcile and timeout normally")
 			Eventually(func() remediationv1.RemediationPhase {

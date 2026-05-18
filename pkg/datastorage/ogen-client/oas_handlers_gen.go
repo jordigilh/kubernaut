@@ -165,8 +165,19 @@ func (s *Server) handleCreateActionTypeRequest(args [0]string, argsEscaped bool,
 		response, err = s.h.CreateActionType(ctx, request)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -313,8 +324,19 @@ func (s *Server) handleCreateAuditEventRequest(args [0]string, argsEscaped bool,
 		response, err = s.h.CreateAuditEvent(ctx, request)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -456,8 +478,19 @@ func (s *Server) handleCreateAuditEventsBatchRequest(args [0]string, argsEscaped
 		response, err = s.h.CreateAuditEventsBatch(ctx, request)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -610,8 +643,19 @@ func (s *Server) handleCreateNotificationAuditRequest(args [0]string, argsEscape
 		response, err = s.h.CreateNotificationAudit(ctx, request)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -759,8 +803,19 @@ func (s *Server) handleCreateWorkflowRequest(args [0]string, argsEscaped bool, w
 		response, err = s.h.CreateWorkflow(ctx, request)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -919,8 +974,19 @@ func (s *Server) handleDeprecateWorkflowRequest(args [1]string, argsEscaped bool
 		response, err = s.h.DeprecateWorkflow(ctx, request, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -1079,8 +1145,19 @@ func (s *Server) handleDisableActionTypeRequest(args [1]string, argsEscaped bool
 		response, err = s.h.DisableActionType(ctx, request, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -1239,8 +1316,19 @@ func (s *Server) handleDisableWorkflowRequest(args [1]string, argsEscaped bool, 
 		response, err = s.h.DisableWorkflow(ctx, request, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -1399,8 +1487,19 @@ func (s *Server) handleEnableWorkflowRequest(args [1]string, argsEscaped bool, w
 		response, err = s.h.EnableWorkflow(ctx, request, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -1600,8 +1699,19 @@ func (s *Server) handleExportAuditEventsRequest(args [0]string, argsEscaped bool
 		response, err = s.h.ExportAuditEvents(ctx, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -1746,8 +1856,19 @@ func (s *Server) handleGetActionTypeWorkflowCountRequest(args [1]string, argsEsc
 		response, err = s.h.GetActionTypeWorkflowCount(ctx, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -1901,8 +2022,19 @@ func (s *Server) handleGetEffectivenessScoreRequest(args [1]string, argsEscaped 
 		response, err = s.h.GetEffectivenessScore(ctx, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -2081,8 +2213,19 @@ func (s *Server) handleGetRemediationHistoryContextRequest(args [0]string, argsE
 		response, err = s.h.GetRemediationHistoryContext(ctx, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -2260,8 +2403,19 @@ func (s *Server) handleGetWorkflowByIDRequest(args [1]string, argsEscaped bool, 
 		response, err = s.h.GetWorkflowByID(ctx, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -2445,8 +2599,19 @@ func (s *Server) handleListAvailableActionsRequest(args [0]string, argsEscaped b
 		response, err = s.h.ListAvailableActions(ctx, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -2577,8 +2742,19 @@ func (s *Server) handleListLegalHoldsRequest(args [0]string, argsEscaped bool, w
 		response, err = s.h.ListLegalHolds(ctx)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -2745,8 +2921,19 @@ func (s *Server) handleListWorkflowsRequest(args [0]string, argsEscaped bool, w 
 		response, err = s.h.ListWorkflows(ctx, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -2936,8 +3123,19 @@ func (s *Server) handleListWorkflowsByActionTypeRequest(args [1]string, argsEsca
 		response, err = s.h.ListWorkflowsByActionType(ctx, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -3091,8 +3289,19 @@ func (s *Server) handlePlaceLegalHoldRequest(args [0]string, argsEscaped bool, w
 		response, err = s.h.PlaceLegalHold(ctx, request)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -3266,8 +3475,19 @@ func (s *Server) handleQueryAuditEventsRequest(args [0]string, argsEscaped bool,
 		response, err = s.h.QueryAuditEvents(ctx, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -3425,8 +3645,19 @@ func (s *Server) handleReconstructRemediationRequestRequest(args [1]string, args
 		response, err = s.h.ReconstructRemediationRequest(ctx, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -3595,8 +3826,19 @@ func (s *Server) handleReleaseLegalHoldRequest(args [1]string, argsEscaped bool,
 		response, err = s.h.ReleaseLegalHold(ctx, request, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -3755,8 +3997,19 @@ func (s *Server) handleUpdateActionTypeRequest(args [1]string, argsEscaped bool,
 		response, err = s.h.UpdateActionType(ctx, request, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -3915,8 +4168,19 @@ func (s *Server) handleUpdateWorkflowRequest(args [1]string, argsEscaped bool, w
 		response, err = s.h.UpdateWorkflow(ctx, request, params)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 
@@ -4065,8 +4329,19 @@ func (s *Server) handleVerifyAuditChainRequest(args [0]string, argsEscaped bool,
 		response, err = s.h.VerifyAuditChain(ctx, request)
 	}
 	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
+		if errRes, ok := errors.Into[*RFC7807ProblemStatusCode](err); ok {
+			if err := encodeErrorResponse(errRes, w, span); err != nil {
+				defer recordError("Internal", err)
+			}
+			return
+		}
+		if errors.Is(err, ht.ErrNotImplemented) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+			return
+		}
+		if err := encodeErrorResponse(s.h.NewError(ctx, err), w, span); err != nil {
+			defer recordError("Internal", err)
+		}
 		return
 	}
 

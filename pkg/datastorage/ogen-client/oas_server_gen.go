@@ -339,6 +339,10 @@ type Handler interface {
 	//
 	// POST /api/v1/audit/verify-chain
 	VerifyAuditChain(ctx context.Context, req *VerifyChainRequest) (VerifyAuditChainRes, error)
+	// NewError creates *RFC7807ProblemStatusCode from error returned by handler.
+	//
+	// Used for common default response.
+	NewError(ctx context.Context, err error) *RFC7807ProblemStatusCode
 }
 
 // Server implements http server based on OpenAPI v3 specification and
