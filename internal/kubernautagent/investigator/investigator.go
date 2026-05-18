@@ -912,7 +912,11 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			}
 			inv.emitValidationEvent(ctx, attempt, maxSelfCorrectionAttempts, false, errStrs, r.WorkflowID, correlationID)
 
-			correctionMsg := fmt.Sprintf("Validation failed: %s. Please select a valid workflow.", validationErr)
+			correctionMsg, renderErr := inv.renderCorrectionMessage(validationErr, attempt, maxSelfCorrectionAttempts)
+			if renderErr != nil {
+				inv.logger.Error(renderErr, "failed to render validation error template, using fallback")
+				correctionMsg = fmt.Sprintf("Validation failed: %s. Please select a valid workflow.", validationErr)
+			}
 			messages = append(messages, llm.Message{Role: "assistant", Content: content})
 			messages = append(messages, llm.Message{Role: "user", Content: correctionMsg})
 

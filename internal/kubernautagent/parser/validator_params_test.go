@@ -431,13 +431,10 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Constraints (#1170)", func()
 
 			result := v.ValidateParameters(params, schema)
 			Expect(result.IsValid).To(BeTrue())
-			hasTargetError := false
 			for _, e := range result.Errors {
-				if ContainSubstring("TARGET_RESOURCE").Match(e) == nil {
-					hasTargetError = true
-				}
+				Expect(e).NotTo(ContainSubstring("TARGET_RESOURCE"),
+					"Should not produce errors for KA-managed params")
 			}
-			Expect(hasTargetError).To(BeFalse(), "Should not produce errors for KA-managed params")
 		})
 	})
 

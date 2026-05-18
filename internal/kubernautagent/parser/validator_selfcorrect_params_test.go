@@ -25,6 +25,57 @@ import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
+var _ = Describe("BR-HAPI-191: WorkflowMeta.Parameters population (#1170)", func() {
+
+	Context("UT-KA-1170-060: WorkflowMeta.Parameters populated from schema", func() {
+		It("should store parameters in WorkflowMeta when set", func() {
+			v := parser.NewValidator([]string{"test-workflow"})
+			schema := []models.WorkflowParameter{
+				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Replicas"},
+				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Namespace"},
+			}
+			v.SetWorkflowMeta("test-workflow", parser.WorkflowMeta{
+				ExecutionEngine: "tekton",
+				Parameters:      schema,
+			})
+
+			meta, ok := v.GetWorkflowMeta("test-workflow")
+			Expect(ok).To(BeTrue())
+			Expect(meta.Parameters).To(HaveLen(2))
+			Expect(meta.Parameters[0].Name).To(Equal("REPLICA_COUNT"))
+			Expect(meta.Parameters[1].Name).To(Equal("NAMESPACE"))
+		})
+	})
+
+	Context("UT-KA-1170-061: Missing Content leaves Parameters nil (fail-closed)", func() {
+		It("should leave Parameters nil when no schema is set", func() {
+			v := parser.NewValidator([]string{"test-workflow"})
+			v.SetWorkflowMeta("test-workflow", parser.WorkflowMeta{
+				ExecutionEngine: "tekton",
+			})
+
+			meta, ok := v.GetWorkflowMeta("test-workflow")
+			Expect(ok).To(BeTrue())
+			Expect(meta.Parameters).To(BeNil())
+		})
+	})
+
+	Context("UT-KA-1170-062: Empty schema leaves Parameters as empty slice", func() {
+		It("should store empty Parameters when schema has no params", func() {
+			v := parser.NewValidator([]string{"test-workflow"})
+			v.SetWorkflowMeta("test-workflow", parser.WorkflowMeta{
+				ExecutionEngine: "tekton",
+				Parameters:      []models.WorkflowParameter{},
+			})
+
+			meta, ok := v.GetWorkflowMeta("test-workflow")
+			Expect(ok).To(BeTrue())
+			Expect(meta.Parameters).NotTo(BeNil())
+			Expect(meta.Parameters).To(BeEmpty())
+		})
+	})
+})
+
 var _ = Describe("BR-HAPI-191: SelfCorrect with Parameter Validation (#1170)", func() {
 
 	var (

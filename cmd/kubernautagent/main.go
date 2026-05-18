@@ -69,6 +69,7 @@ import (
 	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	dsschema "github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
@@ -1100,6 +1101,7 @@ func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validato
 	}
 
 	validator := parser.NewValidator(ids)
+	schemaParser := dsschema.NewParser()
 	for _, w := range wlr.Workflows {
 		if !w.WorkflowId.Set {
 			continue
@@ -1118,6 +1120,15 @@ func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validato
 		}
 		if w.ServiceAccountName.Set {
 			meta.ServiceAccountName = w.ServiceAccountName.Value
+		}
+		if w.Content != "" {
+			parsed, err := schemaParser.Parse(w.Content)
+			if err != nil {
+				f.logger.Error(err, "failed to parse workflow schema Content, parameter validation will strip all LLM params (fail-closed)",
+					"workflow_id", wfID)
+			} else {
+				meta.Parameters = parsed.Parameters
+			}
 		}
 		validator.SetWorkflowMeta(wfID, meta)
 	}
