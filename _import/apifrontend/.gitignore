@@ -1,0 +1,37 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test coverage
+cover.out
+cover-integration.out
+cover-bridge.out
+*.coverprofile
+coverage.html
+
+# Test binaries
+*.test
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+/apifrontend
+*.out
+sbom.cdx.json
+
+# Local environment / secrets
+*.env.local
+test-llm-*.env
+scripts/coverage/__pycache__/

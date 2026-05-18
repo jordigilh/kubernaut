@@ -1,0 +1,37 @@
+# F-011: Least-privilege RBAC aligned with actual resource access patterns.
+# The apifrontend ServiceAccount itself only needs RBAC for its controller
+# (InvestigationSession). User-scoped operations go through impersonation —
+# the impersonated user's Kubernetes RBAC governs access to kubernaut.ai CRDs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: apifrontend
+rules:
+  # InvestigationSession controller (owned CRD)
+  - apiGroups: ["apifrontend.kubernaut.ai"]
+    resources: ["investigationsessions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apifrontend.kubernaut.ai"]
+    resources: ["investigationsessions/status"]
+    verbs: ["get", "update", "patch"]
+  # Events for controller status reporting
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  # Impersonation: apifrontend impersonates authenticated users for K8s API calls
+  - apiGroups: [""]
+    resources: ["users", "groups", "serviceaccounts"]
+    verbs: ["impersonate"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: apifrontend
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: apifrontend
+subjects:
+  - kind: ServiceAccount
+    name: apifrontend
+    namespace: kubernaut-system

@@ -1,0 +1,58 @@
+---
+description: Multi-persona PR review audit -- activate when reviewing a pull request
+alwaysApply: false
+---
+
+# PR Review Audit (8 Personas)
+
+When reviewing a PR, audit every changed file from all 8 personas. Assign P1/P2/P3 severity to each finding. Conclude with a verdict: approve, approve-with-nits, or request-changes.
+
+## 1. QE -- "Can we ship this with confidence?"
+- Every public symbol has a test traceable to a requirement
+- Error paths and boundary cases tested (not just happy paths)
+- No test anti-patterns (fixed sleeps, tautologies, shared mutable state)
+- Every fix has a regression test; every race fix has a `-race` stress test
+
+## 2. Prod Security -- "Can an attacker exploit this?"
+- External inputs validated before use as K8s names, log fields, paths
+- Secrets excluded from logs, metrics labels, error responses, truncated outputs
+- RBAC least-privilege; impersonation justified in ADR with compensating controls
+- CI actions and deps pinned to immutable refs; `govulncheck` clean
+
+## 3. Product -- "Does this deliver what was promised?"
+- Every acceptance criterion has a corresponding test or code path
+- No silent breaking changes; migration path documented if breaking
+- No zombie code; deprecations announced before removal
+- User-facing errors are actionable, no internal IDs or stack traces
+
+## 4. UX -- "Is this intuitive to consume?"
+- Endpoints, events, schemas documented and consistent with conventions
+- Naming follows project conventions (snake_case JSON, camelCase Go, kebab-case K8s)
+- Error responses include machine-readable code, human message, and retry context
+- SSE streams have coherent lifecycle (start, progress, done, heartbeat, retry)
+
+## 5. Architecture -- "Does this fit the system?"
+- No circular deps; `internal/` never imports from `cmd/`
+- Interfaces at package boundaries, not concrete types
+- CRD fields additive-only with defaults; ADR compliance verified
+- No test helpers or debug symbols exported from production packages
+
+## 6. SRE/Ops -- "Can we run this in production?"
+- Every defined metric is incremented from production code paths
+- Error logs include structured context (resource, namespace, phase)
+- Maps/caches have bounded lifecycle (eviction, pruning, max size)
+- External calls have timeouts, circuit breakers, fallbacks
+- Readiness checks reflect real component health
+
+## 7. Release / Change Mgmt -- "Can we roll this out and back safely?"
+- No irreversible migrations; CRD changes are additive-only
+- High-risk behavior gated behind feature flags where appropriate
+- User-visible changes documented in changelog
+- Deployment ordering constraints documented
+
+## 8. FedRAMP -- "Does this satisfy NIST 800-53?"
+- AU-2/AU-12: security events emit structured audit trail
+- AC-3/AC-6: RBAC least-privilege, impersonation documented
+- IA-5: JWKS rotation, token validation, fail-open justified in ADR
+- SC-4/SC-28: PII classified per ADR-017, excluded from logs/metrics
+- SI-10: all external inputs sanitized per spec (RFC 1123, JWT, SSE)

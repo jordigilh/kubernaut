@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apifrontend
+  namespace: kubernaut-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernaut-apifrontend
+      app.kubernetes.io/component: apifrontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubernaut-apifrontend
+        app.kubernetes.io/component: apifrontend
+        app.kubernetes.io/part-of: kubernaut
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: apifrontend
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: apifrontend
+          # F-013: Use digest-pinned images in production overlays.
+          # Base uses :latest for dev; kustomize overlays pin SHA256 digests.
+          image: quay.io/jordigilh/kubernaut-apifrontend:latest
+          imagePullPolicy: Always
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: TLS_CA_FILE
+              value: /etc/apifrontend/tls-ca/ca.crt
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: config
+              mountPath: /etc/apifrontend
+              readOnly: true
+            - name: tls-server
+              mountPath: /etc/apifrontend/tls
+              readOnly: true
+            - name: tls-ca
+              mountPath: /etc/apifrontend/tls-ca
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: config
+          projected:
+            sources:
+              - configMap:
+                  name: apifrontend-config
+                  items:
+                    - key: config.yaml
+                      path: config.yaml
+              - configMap:
+                  name: apifrontend-rbac-roles
+                  items:
+                    - key: rbac_roles.yaml
+                      path: rbac_roles.yaml
+        - name: tls-server
+          secret:
+            secretName: apifrontend-tls
+        - name: tls-ca
+          secret:
+            secretName: apifrontend-ca
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/component
+                      operator: In
+                      values:
+                        - apifrontend
+                topologyKey: kubernetes.io/hostname

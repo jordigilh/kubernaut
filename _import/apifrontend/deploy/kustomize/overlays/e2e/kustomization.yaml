@@ -1,0 +1,85 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: apifrontend-e2e
+  annotations:
+    description: "E2E overlay — realistic AF in Kind with TLS and DEX OIDC"
+
+resources:
+  - ../../base
+  - dex.yaml
+  - e2e-user-rbac.yaml
+  - https://raw.githubusercontent.com/jordigilh/kubernaut/main/config/crd/bases/kubernaut.ai_remediationrequests.yaml
+  - https://raw.githubusercontent.com/jordigilh/kubernaut/main/config/crd/bases/kubernaut.ai_remediationapprovalrequests.yaml
+
+# Prometheus Operator CRDs are not available in bare Kind clusters
+patches:
+  - target:
+      kind: PrometheusRule
+      name: apifrontend-rules
+    patch: |
+      $patch: delete
+      apiVersion: monitoring.coreos.com/v1
+      kind: PrometheusRule
+      metadata:
+        name: apifrontend-rules
+  - target:
+      kind: ServiceMonitor
+      name: apifrontend
+    patch: |
+      $patch: delete
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: apifrontend
+  # NetworkPolicy is for OCP / kubernaut-operator; not needed in Kind E2E
+  - target:
+      kind: NetworkPolicy
+      name: apifrontend
+    patch: |
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: apifrontend
+  - patch: |
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: apifrontend
+      spec:
+        type: NodePort
+        ports:
+        - name: https
+          port: 8443
+          targetPort: https
+          nodePort: 30443
+          protocol: TCP
+        - name: health
+          port: 8081
+          targetPort: health
+          nodePort: 30081
+          protocol: TCP
+    target:
+      kind: Service
+      name: apifrontend
+  - path: patch-deployment.yaml
+    target:
+      kind: Deployment
+      name: apifrontend
+  - path: patch-tls-optional.yaml
+    target:
+      kind: Deployment
+      name: apifrontend
+
+configMapGenerator:
+  - name: apifrontend-config
+    behavior: replace
+    files:
+      - config.yaml
+
+images:
+  - name: quay.io/jordigilh/kubernaut-apifrontend
+    newName: localhost/kubernaut-apifrontend
+    newTag: e2e
