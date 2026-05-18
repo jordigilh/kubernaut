@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -127,13 +128,187 @@ func NewPollInvestigationTool(kaClient *ka.Client) (tool.Tool, error) {
 	})
 }
 
+// WorkflowParameter describes a single input parameter for a workflow.
+type WorkflowParameter struct {
+	Name        string   `json:"name"`
+	Type        string   `json:"type"`
+	Description string   `json:"description"`
+	Required    bool     `json:"required"`
+	Default     any      `json:"default,omitempty"`
+	Enum        []string `json:"enum,omitempty"`
+}
+
+// DiscoverWorkflowsArgs defines the input for kubernaut_discover_workflows.
+type DiscoverWorkflowsArgs struct {
+	WorkflowID string `json:"workflow_id,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+}
+
+// WorkflowDetail holds a workflow definition with its parameter schemas.
+type WorkflowDetail struct {
+	WorkflowID  string              `json:"workflow_id"`
+	Name        string              `json:"name"`
+	Description string              `json:"description"`
+	Kind        string              `json:"kind,omitempty"`
+	Parameters  []WorkflowParameter `json:"parameters"`
+}
+
+// DiscoverWorkflowsResult is the output of kubernaut_discover_workflows.
+type DiscoverWorkflowsResult struct {
+	Workflows []WorkflowDetail `json:"workflows"`
+	Count     int              `json:"count"`
+}
+
+// HandleDiscoverWorkflows implements kubernaut_discover_workflows via KA MCP.
+//
+//nolint:gocritic // hugeParam: args passed by value for simplicity
+func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args DiscoverWorkflowsArgs) (DiscoverWorkflowsResult, error) {
+	if mcpClient == nil {
+		return DiscoverWorkflowsResult{}, fmt.Errorf("workflow discovery is not available: MCP client not configured")
+	}
+
+	kaResult, err := mcpClient.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{
+		WorkflowID: args.WorkflowID,
+		Kind:       args.Kind,
+	})
+	if err != nil {
+		return DiscoverWorkflowsResult{}, fmt.Errorf("discover workflows: %w", err)
+	}
+
+	workflows := make([]WorkflowDetail, 0, len(kaResult.Workflows))
+	for _, w := range kaResult.Workflows {
+		params := make([]WorkflowParameter, 0, len(w.Parameters))
+		for _, p := range w.Parameters {
+			params = append(params, WorkflowParameter{
+				Name:        p.Name,
+				Type:        p.Type,
+				Description: p.Description,
+				Required:    p.Required,
+				Default:     p.Default,
+				Enum:        p.Enum,
+			})
+		}
+		workflows = append(workflows, WorkflowDetail{
+			WorkflowID:  w.WorkflowID,
+			Name:        w.Name,
+			Description: w.Description,
+			Kind:        w.Kind,
+			Parameters:  params,
+		})
+	}
+
+	return DiscoverWorkflowsResult{
+		Workflows: workflows,
+		Count:     len(workflows),
+	}, nil
+}
+
+// ValidateWorkflowParameters validates supplied parameters against a discovered schema.
+func ValidateWorkflowParameters(schema []WorkflowParameter, params map[string]any) error {
+	if err := validateDefaults(schema); err != nil {
+		return err
+	}
+
+	knownParams := make(map[string]WorkflowParameter, len(schema))
+	for _, p := range schema {
+		knownParams[p.Name] = p
+	}
+
+	for key := range params {
+		if _, ok := knownParams[key]; !ok {
+			return fmt.Errorf("unknown parameter %q", key)
+		}
+	}
+
+	for _, p := range schema {
+		val, provided := params[p.Name]
+		if !provided {
+			if p.Required {
+				return fmt.Errorf("required parameter %q missing", p.Name)
+			}
+			continue
+		}
+		if err := validateParamType(p, val); err != nil {
+			return err
+		}
+		if len(p.Enum) > 0 {
+			strVal := fmt.Sprintf("%v", val)
+			found := false
+			for _, allowed := range p.Enum {
+				if strVal == allowed {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("parameter %q value %q not in enum %v", p.Name, strVal, p.Enum)
+			}
+		}
+	}
+	return nil
+}
+
+func validateDefaults(schema []WorkflowParameter) error {
+	for _, p := range schema {
+		if p.Default == nil || p.Required {
+			continue
+		}
+		if err := validateParamType(p, p.Default); err != nil {
+			return fmt.Errorf("default value for parameter %q: %w", p.Name, err)
+		}
+	}
+	return nil
+}
+
+func validateParamType(p WorkflowParameter, val any) error {
+	switch p.Type {
+	case "string":
+		if _, ok := val.(string); !ok {
+			return fmt.Errorf("parameter %q: expected type string, got %T", p.Name, val)
+		}
+	case "int":
+		switch v := val.(type) {
+		case int, int32, int64, float64:
+			_ = v
+		case json.Number:
+			if _, err := v.Int64(); err != nil {
+				return fmt.Errorf("parameter %q: expected type int, got non-integer number", p.Name)
+			}
+		default:
+			return fmt.Errorf("parameter %q: expected type int, got %T", p.Name, val)
+		}
+	case "float":
+		switch val.(type) {
+		case float32, float64, int, int32, int64, json.Number:
+		default:
+			return fmt.Errorf("parameter %q: expected type float, got %T", p.Name, val)
+		}
+	case "bool":
+		if _, ok := val.(bool); !ok {
+			return fmt.Errorf("parameter %q: expected type bool, got %T", p.Name, val)
+		}
+	}
+	return nil
+}
+
+// NewDiscoverWorkflowsTool creates the kubernaut_discover_workflows tool.
+func NewDiscoverWorkflowsTool(mcpClient ka.MCPClient) (tool.Tool, error) {
+	return functiontool.New(functiontool.Config{
+		Name:        "kubernaut_discover_workflows",
+		Description: "Discover available workflows with their parameter schemas for LLM-populated execution",
+	}, func(ctx tool.Context, args DiscoverWorkflowsArgs) (DiscoverWorkflowsResult, error) {
+		return HandleDiscoverWorkflows(ctx, mcpClient, args)
+	})
+}
+
 // SelectWorkflowArgs defines the input for kubernaut_select_workflow.
 type SelectWorkflowArgs struct {
-	RRID       string `json:"rr_id"`
-	WorkflowID string `json:"workflow_id"`
-	Kind       string `json:"kind,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Namespace  string `json:"namespace,omitempty"`
+	RRID       string         `json:"rr_id"`
+	WorkflowID string         `json:"workflow_id"`
+	Kind       string         `json:"kind,omitempty"`
+	Name       string         `json:"name,omitempty"`
+	Namespace  string         `json:"namespace,omitempty"`
+	Parameters map[string]any `json:"parameters,omitempty"`
 }
 
 // SelectWorkflowResult is the output of kubernaut_select_workflow.
@@ -155,6 +330,7 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 		Kind:       args.Kind,
 		Name:       args.Name,
 		Namespace:  args.Namespace,
+		Parameters: args.Parameters,
 	})
 	if err != nil {
 		return SelectWorkflowResult{}, fmt.Errorf("selecting workflow: %w", err)

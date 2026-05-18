@@ -53,7 +53,10 @@ type Registry struct {
 	AuditBufferOverflow       prometheus.Counter
 	SeverityTriageTotal       *prometheus.CounterVec
 	SeverityTriageDuration    *prometheus.HistogramVec
-	SeverityTriageErrorsTotal *prometheus.CounterVec
+	SeverityTriageErrorsTotal    *prometheus.CounterVec
+	DiscoverWorkflowsTotal       *prometheus.CounterVec
+	DiscoverWorkflowsDuration    *prometheus.HistogramVec
+	DiscoverWorkflowsErrorsTotal *prometheus.CounterVec
 }
 
 // NewRegistry creates and registers all AF Prometheus metrics.
@@ -191,6 +194,26 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.SeverityTriageTotal)
 	reg.MustRegister(r.SeverityTriageDuration)
 	reg.MustRegister(r.SeverityTriageErrorsTotal)
+
+	r.DiscoverWorkflowsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "af",
+		Name:      "discover_workflows_total",
+		Help:      "Total discover_workflows calls by status.",
+	}, []string{"status"})
+	r.DiscoverWorkflowsDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "af",
+		Name:      "discover_workflows_duration_seconds",
+		Help:      "Discover workflows call latency distribution.",
+		Buckets:   prometheus.DefBuckets,
+	}, []string{})
+	r.DiscoverWorkflowsErrorsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "af",
+		Name:      "discover_workflows_errors_total",
+		Help:      "Total discover_workflows errors by error type.",
+	}, []string{"error_type"})
+	reg.MustRegister(r.DiscoverWorkflowsTotal)
+	reg.MustRegister(r.DiscoverWorkflowsDuration)
+	reg.MustRegister(r.DiscoverWorkflowsErrorsTotal)
 
 	return r
 }

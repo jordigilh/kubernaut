@@ -196,7 +196,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Ordered, ContinueOnFailure, La
 
 		toolsRaw, ok := res["tools"].([]interface{})
 		Expect(ok).To(BeTrue(), "result.tools should be an array: %#v", res)
-		Expect(len(toolsRaw)).To(Equal(19))
+		Expect(len(toolsRaw)).To(Equal(20))
 
 		for _, t := range toolsRaw {
 			tm, ok := t.(map[string]interface{})

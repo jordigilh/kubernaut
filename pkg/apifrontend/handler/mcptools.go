@@ -11,6 +11,7 @@ var mcpToolRegistry = []MCPToolDef{
 	{Name: "kubernaut_start_investigation", Description: "Start a new investigation session"},
 	{Name: "kubernaut_poll_investigation", Description: "Poll an investigation session for updates"},
 	{Name: "kubernaut_select_workflow", Description: "Select a workflow for an investigation"},
+	{Name: "kubernaut_discover_workflows", Description: "Discover available workflows with parameter schemas"},
 	{Name: "kubernaut_present_decision", Description: "Present a decision point requiring user input"},
 	{Name: "kubernaut_list_workflows", Description: "List available workflows"},
 	{Name: "kubernaut_get_remediation_history", Description: "Get remediation execution history"},

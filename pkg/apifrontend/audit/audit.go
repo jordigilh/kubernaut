@@ -47,6 +47,8 @@ const (
 	EventSeverityTriageCompleted EventType = "severity_triage.completed"
 	EventSeverityTriageFailed    EventType = "severity_triage.failed"
 
+	EventWorkflowDiscovery EventType = "workflow.discovery"
+
 	EventConfigReloaded EventType = "config.reloaded"
 	EventConfigRejected EventType = "config.rejected"
 

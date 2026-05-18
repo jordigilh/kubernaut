@@ -124,5 +124,29 @@ func (c *SDKMCPClient) callTool(ctx context.Context, name string, args map[strin
 	return json.RawMessage("{}"), nil
 }
 
+// DiscoverWorkflows calls kubernaut_discover_workflows on KA's MCP server.
+//
+//nolint:gocritic // hugeParam: matches MCPClient interface contract
+func (c *SDKMCPClient) DiscoverWorkflows(ctx context.Context, args DiscoverWorkflowsArgs) (*DiscoverWorkflowsResult, error) {
+	argsMap := map[string]any{}
+	if args.WorkflowID != "" {
+		argsMap["workflow_id"] = args.WorkflowID
+	}
+	if args.Kind != "" {
+		argsMap["kind"] = args.Kind
+	}
+
+	result, err := c.callTool(ctx, "kubernaut_discover_workflows", argsMap)
+	if err != nil {
+		return nil, err
+	}
+
+	var dwResult DiscoverWorkflowsResult
+	if err := json.Unmarshal(result, &dwResult); err != nil {
+		return nil, fmt.Errorf("parse discover_workflows response: %w", err)
+	}
+	return &dwResult, nil
+}
+
 // Compile-time interface check.
 var _ MCPClient = (*SDKMCPClient)(nil)

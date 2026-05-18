@@ -136,10 +136,15 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandlePollInvestigation(ctx, cfg.KAClient, args, 5, 3*time.Second)
 		})
 
-	// KA MCP tool
+	// KA MCP tools
 	registerTool(srv, cfg, sem, "kubernaut_select_workflow", "Select a workflow for an investigation",
 		func(ctx context.Context, args tools.SelectWorkflowArgs) (any, error) {
 			return tools.HandleSelectWorkflow(ctx, cfg.KAMCPClient, args)
+		})
+
+	registerTool(srv, cfg, sem, "kubernaut_discover_workflows", "Discover available workflows with parameter schemas",
+		func(ctx context.Context, args tools.DiscoverWorkflowsArgs) (any, error) {
+			return tools.HandleDiscoverWorkflows(ctx, cfg.KAMCPClient, args)
 		})
 
 	// Presentation tool (no backend dependency)

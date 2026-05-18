@@ -95,13 +95,44 @@ type IncidentResponse struct {
 	Summary   string `json:"summary"`
 }
 
+// DiscoverWorkflowsArgs is the input for the kubernaut_discover_workflows MCP tool call.
+type DiscoverWorkflowsArgs struct {
+	WorkflowID string `json:"workflow_id,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+}
+
+// WorkflowParameterSchema describes a single parameter from a KA discovery response.
+type WorkflowParameterSchema struct {
+	Name        string   `json:"name"`
+	Type        string   `json:"type"`
+	Description string   `json:"description"`
+	Required    bool     `json:"required"`
+	Default     any      `json:"default,omitempty"`
+	Enum        []string `json:"enum,omitempty"`
+}
+
+// DiscoveredWorkflow represents a workflow returned by KA discover_workflows.
+type DiscoveredWorkflow struct {
+	WorkflowID  string                    `json:"workflow_id"`
+	Name        string                    `json:"name"`
+	Description string                    `json:"description"`
+	Kind        string                    `json:"kind,omitempty"`
+	Parameters  []WorkflowParameterSchema `json:"parameters"`
+}
+
+// DiscoverWorkflowsResult is the response from kubernaut_discover_workflows MCP call.
+type DiscoverWorkflowsResult struct {
+	Workflows []DiscoveredWorkflow `json:"workflows"`
+}
+
 // SelectWorkflowArgs is the input for the kubernaut_select_workflow MCP tool call.
 type SelectWorkflowArgs struct {
-	RRID       string `json:"rr_id"`
-	WorkflowID string `json:"workflow_id"`
-	Kind       string `json:"kind,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Namespace  string `json:"namespace,omitempty"`
+	RRID       string         `json:"rr_id"`
+	WorkflowID string         `json:"workflow_id"`
+	Kind       string         `json:"kind,omitempty"`
+	Name       string         `json:"name,omitempty"`
+	Namespace  string         `json:"namespace,omitempty"`
+	Parameters map[string]any `json:"parameters,omitempty"`
 }
 
 // SelectWorkflowResult is the response from kubernaut_select_workflow MCP call.

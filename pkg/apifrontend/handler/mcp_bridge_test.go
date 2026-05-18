@@ -390,7 +390,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	})
 
 	Context("Tool registration", func() {
-		It("UT-AF-B-023: RegisterTools registers exactly 19 tools on the server", func() {
+		It("UT-AF-B-023: RegisterTools registers exactly 20 tools on the server", func() {
 			listReq := map[string]any{
 				"jsonrpc": "2.0",
 				"id":      3,
@@ -401,7 +401,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := rec.Body.String()
 			count := countToolsInResponse(body)
-			Expect(count).To(Equal(19))
+			Expect(count).To(Equal(20))
 		})
 	})
 
@@ -917,7 +917,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			rec := mcpPost(h, sid, listReq, viewer)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			count := countToolsInResponse(rec.Body.String())
-			Expect(count).To(Equal(19))
+			Expect(count).To(Equal(20))
 		})
 	})
 })
@@ -1978,3 +1978,146 @@ func newFakeDSClient() *ds.MockClient {
 		},
 	}
 }
+
+var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "discover-workflows"), func() {
+	var (
+		auditor  *fakeAuditor
+		testUser *auth.UserIdentity
+	)
+
+	newDiscoverHandler := func(mockMCP ka.MCPClient) http.Handler {
+		kaServer := newKATestServer()
+		DeferCleanup(kaServer.Close)
+
+		fakeK8s := newFakeDynamicClient()
+		kaClient := ka.NewClient(ka.Config{BaseURL: kaServer.URL})
+
+		roles := map[string][]string{
+			"sre":             {"*"},
+			"ai-orchestrator": {"*"},
+			"cicd":            {"kubernaut_list_remediations", "kubernaut_get_remediation"},
+		}
+
+		cfg := handler.MCPConfig{
+			ServerName:    "kubernaut-apifrontend",
+			ServerVersion: "v0.1.0-test",
+			Enabled:       true,
+			Bridge: &handler.MCPBridgeConfig{
+				DynFactory:         auth.StaticDynamicFactory(fakeK8s),
+				KAClient:           kaClient,
+				KAMCPClient:        mockMCP,
+				DSClient:           newFakeDSClient(),
+				RBACRoles:          roles,
+				Auditor:            auditor,
+				ToolTimeout:        5 * time.Second,
+				MaxConcurrentTools: 10,
+			},
+		}
+		h, err := handler.NewMCPHandler(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		return h
+	}
+
+	BeforeEach(func() {
+		auditor = &fakeAuditor{}
+		testUser = &auth.UserIdentity{
+			Username: "sre-engineer",
+			Groups:   []string{"sre"},
+			Issuer:   "test",
+		}
+	})
+
+	It("UT-AF-WP-026: registers kubernaut_discover_workflows tool", func() {
+		h := newDiscoverHandler(nil)
+		sessionID := mcpInitialize(h, testUser)
+
+		listReq := map[string]any{
+			"jsonrpc": "2.0",
+			"id":      3,
+			"method":  "tools/list",
+			"params":  map[string]any{},
+		}
+		rec := mcpPost(h, sessionID, listReq, testUser)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec.Body.String()).To(ContainSubstring("kubernaut_discover_workflows"))
+	})
+
+	It("UT-AF-WP-027: kubernaut_discover_workflows invokes handler correctly", func() {
+		var called bool
+		mockMCP := &ka.MockMCPClient{
+			DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+				called = true
+				return &ka.DiscoverWorkflowsResult{
+					Workflows: []ka.DiscoveredWorkflow{
+						{WorkflowID: "wf-1", Name: "Test"},
+					},
+				}, nil
+			},
+			SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+				return &ka.SelectWorkflowResult{Status: "ok"}, nil
+			},
+		}
+		h := newDiscoverHandler(mockMCP)
+		sessionID := mcpInitialize(h, testUser)
+
+		status, _ := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{}, testUser)
+		Expect(status).To(Equal(http.StatusOK))
+		Expect(called).To(BeTrue())
+	})
+
+	It("UT-AF-WP-028: kubernaut_select_workflow passes parameters from args", func() {
+		var receivedParams map[string]any
+		mockMCP := &ka.MockMCPClient{
+			SelectWorkflowFn: func(_ context.Context, args ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+				receivedParams = args.Parameters
+				return &ka.SelectWorkflowResult{Status: "accepted", Message: "ok"}, nil
+			},
+			DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+				return &ka.DiscoverWorkflowsResult{}, nil
+			},
+		}
+		h := newDiscoverHandler(mockMCP)
+		sessionID := mcpInitialize(h, testUser)
+
+		status, _ := mcpCallTool(h, sessionID, "kubernaut_select_workflow", map[string]any{
+			"rr_id":       "rr-1",
+			"workflow_id": "wf-1",
+			"parameters":  map[string]any{"ns": "prod"},
+		}, testUser)
+		Expect(status).To(Equal(http.StatusOK))
+		Expect(receivedParams).To(HaveKeyWithValue("ns", "prod"))
+	})
+
+	It("UT-AF-WP-029: returns error when KAMCPClient nil for discover", func() {
+		h := newDiscoverHandler(nil)
+		sessionID := mcpInitialize(h, testUser)
+
+		_, body := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{}, testUser)
+		Expect(body).To(ContainSubstring("not available"))
+	})
+
+	It("UT-AF-WP-032: RBAC enforces permission for kubernaut_discover_workflows", func() {
+		mockMCP := &ka.MockMCPClient{
+			DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+				return &ka.DiscoverWorkflowsResult{}, nil
+			},
+			SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+				return &ka.SelectWorkflowResult{Status: "ok"}, nil
+			},
+		}
+		h := newDiscoverHandler(mockMCP)
+
+		cicdUser := &auth.UserIdentity{
+			Username: "cicd-bot",
+			Groups:   []string{"cicd"},
+			Issuer:   "test",
+		}
+		sessionID := mcpInitialize(h, cicdUser)
+		_, body := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{}, cicdUser)
+		Expect(body).To(SatisfyAny(
+			ContainSubstring("denied"),
+			ContainSubstring("not permitted"),
+			ContainSubstring("forbidden"),
+		))
+	})
+})
