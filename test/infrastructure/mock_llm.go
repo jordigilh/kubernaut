@@ -232,7 +232,7 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 		_, _ = fmt.Fprintf(writer, "   🌐 Host network mode: Mock LLM will bind to port %d directly\n", internalPort)
 	}
 
-	args := []string{"run", "-d", "--rm",
+	args := []string{"run", "-d",
 		"--name", config.ContainerName,
 		"-p", fmt.Sprintf("%d:%d", config.Port, internalPort), // Port mapping (ignored on host network)
 		"-e", "MOCK_LLM_HOST=0.0.0.0",
@@ -280,6 +280,11 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 	// Wait for Mock LLM to be healthy
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for Mock LLM to be healthy...\n")
 	if err := WaitForMockLLMHealthy(ctx, config.Port, writer); err != nil {
+		// Capture container logs before cleanup for diagnostics
+		logsCmd := exec.CommandContext(ctx, "podman", "logs", "--tail=50", config.ContainerName)
+		if logOutput, logErr := logsCmd.CombinedOutput(); logErr == nil {
+			_, _ = fmt.Fprintf(writer, "📋 Mock LLM container logs (last 50 lines):\n%s\n", string(logOutput))
+		}
 		// Cleanup on failure
 		rmCmd := exec.CommandContext(ctx, "podman", "rm", "-f", config.ContainerName)
 		_ = rmCmd.Run() // Ignore cleanup errors
@@ -297,12 +302,12 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 //
 // Pattern: DD-TEST-002 Health Check Pattern
 // - HTTP GET to /health endpoint
-// - 30-second timeout with 1-second retry interval
+// - 60-second timeout with 1-second retry interval
 // - Returns error if service doesn't become healthy
 // - Uses 127.0.0.1 (not localhost) to avoid IPv6 mapping issues in CI/CD
 func WaitForMockLLMHealthy(ctx context.Context, port int, writer io.Writer) error {
 	healthURL := fmt.Sprintf("http://127.0.0.1:%d/health", port)
-	maxRetries := 30
+	maxRetries := 60
 	retryInterval := 1 * time.Second
 
 	for i := 0; i < maxRetries; i++ {
@@ -329,7 +334,7 @@ func WaitForMockLLMHealthy(ctx context.Context, port int, writer io.Writer) erro
 		}
 	}
 
-	return fmt.Errorf("mock LLM did not become healthy after %d seconds", maxRetries)
+	return fmt.Errorf("mock LLM did not become healthy after %d attempts", maxRetries)
 }
 
 // StopMockLLMContainer stops and removes the Mock LLM container

@@ -112,7 +112,7 @@ func (s *Server) handleReconstructRemediationRequestWrapper(w http.ResponseWrite
 	case *ogenclient.ReconstructRemediationRequestBadRequest:
 		// 400 error
 		response.WriteRFC7807Error(w, int(resp.Status),
-			resp.Type.String(),
+			resp.Type,
 			resp.Title,
 			resp.Detail.Value,
 			s.logger,
@@ -121,7 +121,7 @@ func (s *Server) handleReconstructRemediationRequestWrapper(w http.ResponseWrite
 	case *ogenclient.ReconstructRemediationRequestNotFound:
 		// 404 error
 		response.WriteRFC7807Error(w, int(resp.Status),
-			resp.Type.String(),
+			resp.Type,
 			resp.Title,
 			resp.Detail.Value,
 			s.logger,
@@ -130,7 +130,7 @@ func (s *Server) handleReconstructRemediationRequestWrapper(w http.ResponseWrite
 	case *ogenclient.ReconstructRemediationRequestInternalServerError:
 		// Uses Status from handler (typically 500; build/validation paths use 422)
 		response.WriteRFC7807Error(w, int(resp.Status),
-			resp.Type.String(),
+			resp.Type,
 			resp.Title,
 			resp.Detail.Value,
 			s.logger,

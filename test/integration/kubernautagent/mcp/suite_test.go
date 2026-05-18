@@ -18,9 +18,12 @@ package mcp_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -36,10 +39,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
+	"gopkg.in/yaml.v3"
+
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
+
+// phase1Payload is the JSON struct passed between Ginkgo processes via
+// SynchronizedBeforeSuite. Uses the same pattern as the AIAnalysis IT suite.
+type phase1Payload struct {
+	Token            string            `json:"token"`
+	KubeconfigPath   string            `json:"kubeconfig_path"`
+	MockLLMEndpoint  string            `json:"mock_llm_endpoint"`
+	WorkflowUUIDs    map[string]string `json:"workflow_uuids"`
+}
 
 // Port allocation per DD-TEST-001 v2.5 — MCP IT (Phase 7A)
 const (
@@ -62,6 +76,13 @@ var (
 	sharedDSInfra    *infrastructure.DSBootstrapInfra
 	sharedDSEndpoint string
 	sharedDSClient   *ogenclient.Client
+
+	// Workflow UUIDs assigned by DataStorage during seeding (#1174).
+	// Key format: "workflowID:environment" (e.g., "oomkill-increase-memory-v1:production").
+	sharedWorkflowUUIDs map[string]string
+
+	// Temp file for Mock LLM scenario overrides; cleaned up in AfterSuite.
+	sharedOverrideFilePath string
 )
 
 func TestMCPIntegration(t *testing.T) {
@@ -126,14 +147,58 @@ var _ = SynchronizedBeforeSuite(
 		sharedDSEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mcpDataStoragePort)
 		GinkgoWriter.Printf("DataStorage endpoint: %s\n", sharedDSEndpoint)
 
+		// Build the DS client for seeding (primary process).
+		dsClients := integration.NewAuthenticatedDataStorageClients(
+			sharedDSEndpoint, authConfig.Token, 10*time.Second,
+		)
+		sharedDSClient = dsClients.OpenAPIClient
+
+		// ── Step 3b: Seed workflows into DataStorage (#1174) ──
+		By("Seeding discovery workflows into DataStorage")
+		discoveryWorkflows := []infrastructure.TestWorkflow{
+			{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery", ActionType: "IncreaseMemoryLimits", Environment: "production"},
+			{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", ActionType: "RestartPod", Environment: "production"},
+		}
+		workflowUUIDs, seedErr := infrastructure.SeedWorkflowsInDataStorage(
+			sharedDSClient, discoveryWorkflows, "KA MCP IT", GinkgoWriter,
+		)
+		Expect(seedErr).ToNot(HaveOccurred(), "discovery workflows must seed in DataStorage")
+		sharedWorkflowUUIDs = workflowUUIDs
+		GinkgoWriter.Printf("Seeded %d workflows: %v\n", len(workflowUUIDs), workflowUUIDs)
+
+		// ── Step 3c: Write scenarios override YAML for Mock LLM (#1174) ──
+		By("Writing Mock LLM scenario overrides with DS-assigned UUIDs")
+		type scenarioEntry struct {
+			WorkflowID string `yaml:"workflow_id"`
+		}
+		scenarios := make(map[string]scenarioEntry, len(workflowUUIDs))
+		for key, id := range workflowUUIDs {
+			scenarios[key] = scenarioEntry{WorkflowID: id}
+		}
+		overrideYAML, yamlErr := yaml.Marshal(struct {
+			Scenarios map[string]scenarioEntry `yaml:"scenarios"`
+		}{Scenarios: scenarios})
+		Expect(yamlErr).ToNot(HaveOccurred(), "scenario override YAML must serialize")
+
+		overridePath, absErr := filepath.Abs("kamcp-scenarios-override.yaml")
+		Expect(absErr).ToNot(HaveOccurred())
+		Expect(os.WriteFile(overridePath, overrideYAML, 0644)).To(Succeed())
+		sharedOverrideFilePath = overridePath
+		GinkgoWriter.Printf("Mock LLM override file: %s\n", sharedOverrideFilePath)
+
 		// ── Step 4: Mock LLM (Podman, mode=interactive) ──
 		By("Building Mock LLM image")
 		mockLLMCfg := infrastructure.GetMockLLMConfigForKA()
 		builtImageTag, err := infrastructure.BuildMockLLMImage(ctx, mockLLMCfg.ServiceName, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Mock LLM image should build")
 		mockLLMCfg.ImageTag = builtImageTag
+		mockLLMCfg.ConfigFilePath = overridePath
+		// DD-AUTH-014: Platform-specific network (matches AIAnalysis IT pattern)
+		if goruntime.GOOS == "linux" {
+			mockLLMCfg.Network = "host"
+		}
 
-		By("Starting Mock LLM container (mode=interactive)")
+		By("Starting Mock LLM container (mode=interactive, with DS UUID overrides)")
 		_, err = infrastructure.StartMockLLMContainer(ctx, mockLLMCfg, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Mock LLM container should start")
 		sharedMockLLMConfig = mockLLMCfg
@@ -142,19 +207,22 @@ var _ = SynchronizedBeforeSuite(
 
 		GinkgoWriter.Println("Phase 0 complete — envtest + DataStorage + Mock LLM ready")
 
-		// Pass token + kubeconfig + mockLLMEndpoint to all processes
-		payload := authConfig.Token + "\n" + kubeconfigPath + "\n" + sharedMockLLMEndpoint
-		return []byte(payload)
+		// JSON payload for all Ginkgo processes (pattern: AIAnalysis IT suite).
+		payload, marshalErr := json.Marshal(phase1Payload{
+			Token:           authConfig.Token,
+			KubeconfigPath:  kubeconfigPath,
+			MockLLMEndpoint: sharedMockLLMEndpoint,
+			WorkflowUUIDs:   workflowUUIDs,
+		})
+		Expect(marshalErr).ToNot(HaveOccurred())
+		return payload
 	},
 	func(data []byte) {
-		lines := strings.SplitN(string(data), "\n", 3)
+		var p phase1Payload
+		Expect(json.Unmarshal(data, &p)).To(Succeed(), "phase 1 JSON payload must deserialize")
 
-		// Reconstruct rest.Config from the kubeconfig file written by process 1.
-		// In parallel Ginkgo execution, sharedK8sConfig is only set in the primary
-		// process; secondary processes must load it from the persisted kubeconfig.
-		if sharedK8sConfig == nil && len(lines) >= 2 {
-			kubeconfigPath := lines[1]
-			cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		if sharedK8sConfig == nil {
+			cfg, err := clientcmd.BuildConfigFromFlags("", p.KubeconfigPath)
 			Expect(err).ToNot(HaveOccurred(), "secondary process should load rest.Config from kubeconfig")
 			sharedK8sConfig = cfg
 		}
@@ -169,16 +237,15 @@ var _ = SynchronizedBeforeSuite(
 			Expect(err).ToNot(HaveOccurred())
 		}
 
-		// Reconstruct Mock LLM endpoint and DS client for this Ginkgo process
-		if len(lines) >= 3 {
-			if sharedMockLLMEndpoint == "" {
-				sharedMockLLMEndpoint = lines[2]
-			}
-			dsToken := lines[0]
-			dsURL := fmt.Sprintf("http://127.0.0.1:%d", mcpDataStoragePort)
-			dsClients := integration.NewAuthenticatedDataStorageClients(dsURL, dsToken, 10*time.Second)
-			sharedDSClient = dsClients.OpenAPIClient
+		if sharedMockLLMEndpoint == "" {
+			sharedMockLLMEndpoint = p.MockLLMEndpoint
 		}
+
+		dsURL := fmt.Sprintf("http://127.0.0.1:%d", mcpDataStoragePort)
+		dsClients := integration.NewAuthenticatedDataStorageClients(dsURL, p.Token, 10*time.Second)
+		sharedDSClient = dsClients.OpenAPIClient
+
+		sharedWorkflowUUIDs = p.WorkflowUUIDs
 	},
 )
 
@@ -192,6 +259,9 @@ var _ = SynchronizedAfterSuite(
 
 		if sharedMockLLMConfig.ContainerName != "" {
 			_ = infrastructure.StopMockLLMContainer(ctx, sharedMockLLMConfig, GinkgoWriter)
+		}
+		if sharedOverrideFilePath != "" {
+			_ = os.Remove(sharedOverrideFilePath)
 		}
 		if sharedDSInfra != nil {
 			infrastructure.MustGatherContainerLogs("kamcp", []string{

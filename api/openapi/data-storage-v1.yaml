@@ -209,6 +209,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/workflows/actions/{action_type}:
     get:
       tags:
@@ -318,6 +324,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/workflows:
     post:
       tags:
@@ -397,6 +409,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
     get:
       tags:
         - Workflow Catalog API
@@ -458,6 +476,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/workflows/{workflow_id}:
     get:
       tags:
@@ -551,6 +575,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
     patch:
       tags:
         - Workflow Catalog API
@@ -594,6 +624,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/workflows/{workflow_id}/disable:
     patch:
       tags:
@@ -638,6 +674,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/workflows/{workflow_id}/enable:
     patch:
       tags:
@@ -682,6 +724,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/workflows/{workflow_id}/deprecate:
     patch:
       tags:
@@ -726,6 +774,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/action-types:
     post:
       tags:
@@ -759,6 +813,12 @@ paths:
                 $ref: '#/components/schemas/ActionTypeCreateResponse'
         '400':
           description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        default:
+          description: Unexpected error
           content:
             application/problem+json:
               schema:
@@ -797,6 +857,12 @@ paths:
                 $ref: '#/components/schemas/ActionTypeUpdateResponse'
         '404':
           description: Action type not found or disabled
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        default:
+          description: Unexpected error
           content:
             application/problem+json:
               schema:
@@ -857,6 +923,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
 
   /api/v1/action-types/{name}/workflow-count:
     get:
@@ -884,6 +956,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ActionTypeWorkflowCountResponse'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
 
   /api/v1/audit/events:
     post:
@@ -965,6 +1043,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
     get:
       tags:
         - Audit Write API
@@ -1037,6 +1121,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuditEventsQueryResponse'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
 
   /api/v1/audit/events/batch:
     post:
@@ -1060,6 +1150,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BatchAuditEventResponse'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
 
   /api/v1/audit/notifications:
     post:
@@ -1206,6 +1302,12 @@ paths:
                 detail: "database and DLQ both unavailable - please retry"
                 instance: "/api/v1/audit/notifications"
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/audit/legal-hold:
     post:
       tags:
@@ -1285,6 +1387,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
     get:
       tags:
         - Audit Write API
@@ -1331,6 +1439,12 @@ paths:
                   total:
                     type: integer
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/audit/export:
     get:
       tags:
@@ -1490,6 +1604,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/audit/legal-hold/{correlation_id}:
     delete:
       tags:
@@ -1570,6 +1690,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/audit/remediation-requests/{correlation_id}/reconstruct:
     post:
       tags:
@@ -1690,6 +1816,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/audit/verify-chain:
     post:
       tags:
@@ -1749,6 +1881,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/effectiveness/{correlation_id}:
     get:
       tags:
@@ -1815,6 +1953,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/remediation-history/context:
     get:
       tags:
@@ -1926,6 +2070,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
   # NOTE: /health, /health/ready, /health/live, and /metrics are served on a
   # dedicated health server (port 8081) and are NOT part of the API server.
   # See pkg/datastorage/health/ and DD-007 for details.
@@ -2352,7 +2502,6 @@ components:
       properties:
         type:
           type: string
-          format: uri
           description: |
             URI reference identifying the problem type.
             All types follow the pattern https://kubernaut.ai/problems/{error-type}.
@@ -2360,7 +2509,6 @@ components:
             service-unavailable, conflict, database-error, bad-request.
             Domain-specific types use path prefixes: reconstruction/*,
             effectiveness/*, audit/*, remediation-history/*.
-          pattern: "^https://kubernaut\\.ai/problems/.+"
           example: "https://kubernaut.ai/problems/validation-error"
         title:
           type: string

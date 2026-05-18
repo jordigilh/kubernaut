@@ -57,14 +57,45 @@ import (
 //
 // Authority: SME-validated pattern from OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026.md
 func ToError(resp any, err error) error {
-	// Case 1: err is already set (network error or undefined status code)
-	// Try to extract HTTP status from ogen error string
 	if err != nil {
+		// Case 1a: ogen "convenient error" wraps a typed error response via errors.Wrap.
+		// Unwrap to find a type that exposes GetStatusCode()/GetResponse().
+		if httpErr := extractConvenientError(err); httpErr != nil {
+			return httpErr
+		}
+		// Case 1b: ogen "unexpected status code" string for undefined status codes.
 		return parseStatusFromErrorString(err)
 	}
 
 	// Case 2: Check if typed response indicates an error (status >= 400)
 	return checkResponseStatus(resp)
+}
+
+// statusCodeError matches ogen's convenient error wrapper (*RFC7807ProblemStatusCode).
+type statusCodeError interface {
+	error
+	GetStatusCode() int
+}
+
+// extractConvenientError walks the error chain looking for ogen's convenient
+// error type (*RFC7807ProblemStatusCode) which wraps a default RFC 7807 response.
+func extractConvenientError(err error) *HTTPError {
+	var sce statusCodeError
+	if !errors.As(err, &sce) {
+		return nil
+	}
+	code := sce.GetStatusCode()
+	if code < 400 {
+		return nil
+	}
+	detail := extractErrorDetail(sce)
+	title := extractErrorTitle(sce)
+	return &HTTPError{
+		StatusCode: code,
+		Title:      title,
+		Detail:     detail,
+		Response:   sce,
+	}
 }
 
 // parseStatusFromErrorString extracts HTTP status codes from ogen error strings.

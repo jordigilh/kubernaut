@@ -418,3 +418,11 @@ func (UnimplementedHandler) UpdateWorkflow(ctx context.Context, req *WorkflowUpd
 func (UnimplementedHandler) VerifyAuditChain(ctx context.Context, req *VerifyChainRequest) (r VerifyAuditChainRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
+
+// NewError creates *RFC7807ProblemStatusCode from error returned by handler.
+//
+// Used for common default response.
+func (UnimplementedHandler) NewError(ctx context.Context, err error) (r *RFC7807ProblemStatusCode) {
+	r = new(RFC7807ProblemStatusCode)
+	return r
+}
