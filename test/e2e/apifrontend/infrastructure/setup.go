@@ -82,16 +82,12 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 		}(svc.name, svc.image, svc.dockerfile, svc.buildCtx)
 	}
 
-	// AF: IMAGE_REGISTRY + IMAGE_TAG => registry image; else local BuildAFImage
+	// DD-TEST-007: AF is always built locally with GOFLAGS=-cover so the
+	// binary writes coverage counters to GOCOVERDIR at runtime. The overhead
+	// is negligible for E2E and coverage data is always useful.
 	go func() {
-		if imageRegistry != "" && imageTag != "" {
-			img := strings.TrimRight(imageRegistry, "/") + "/apifrontend:" + imageTag
-			_, _ = fmt.Fprintf(writer, "  apifrontend: using registry image %s\n", img)
-			results <- buildResult{"apifrontend", img, nil}
-		} else {
-			img, err := BuildAFImage(writer)
-			results <- buildResult{"apifrontend", img, err}
-		}
+		img, err := BuildAFImage(writer)
+		results <- buildResult{"apifrontend", img, err}
 	}()
 
 	images := make(map[string]string, 4)
@@ -129,8 +125,14 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 	// from the registry inside the Kind node (same as KA/fullpipeline E2E).
 	// In local mode: load locally-built images via kind load.
 	// ═══════════════════════════════════════════════════════════════════════
+	// AF is always built locally (coverage-instrumented), so it must always
+	// be loaded into Kind. Other images use the registry in CI mode.
 	if imageRegistry != "" {
-		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Skipping image loading (CI/CD: IMAGE_REGISTRY set, Kind pulls from public GHCR)")
+		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Loading AF image into Kind (coverage build); others pull from GHCR...")
+		if err := kinfra.LoadImageToKind(images["apifrontend"], "apifrontend", clusterName, writer); err != nil {
+			return fmt.Errorf("failed to load apifrontend image: %w", err)
+		}
+		_, _ = fmt.Fprintln(writer, "  apifrontend loaded")
 	} else {
 		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Loading images into Kind...")
 
@@ -445,7 +447,9 @@ subjects:
 	return nil
 }
 
-// deployAPIFrontendService deploys the AF ConfigMaps, Deployment, and NodePort Service (programmatic E2E manifest).
+// deployAPIFrontendService deploys the AF ConfigMaps, Deployment, and NodePort Service.
+// The pod is always configured with GOCOVERDIR=/coverdata and a hostPath volume
+// mount so the coverage-instrumented binary writes runtime counters (DD-TEST-007).
 func deployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, afImage string, writer io.Writer) error {
 	projectRoot := getAFProjectRoot()
 	configData, err := os.ReadFile(filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "config.yaml")) //nolint:gosec // G304
@@ -456,10 +460,7 @@ func deployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, af
 	if err != nil {
 		return fmt.Errorf("failed to read rbac_roles.yaml: %w", err)
 	}
-	pullPolicy := "IfNotPresent"
-	if os.Getenv("IMAGE_REGISTRY") != "" {
-		pullPolicy = "Always"
-	}
+
 	manifest := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -495,10 +496,13 @@ spec:
     spec:
       serviceAccountName: apifrontend
       automountServiceAccountToken: true
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
       containers:
         - name: apifrontend
           image: %s
-          imagePullPolicy: %s
+          imagePullPolicy: IfNotPresent
           ports:
             - name: https
               containerPort: 8443
@@ -517,6 +521,8 @@ spec:
                   fieldPath: metadata.namespace
             - name: LLM_API_KEY
               value: "mock-key"
+            - name: GOCOVERDIR
+              value: /coverdata
           volumeMounts:
             - name: config
               mountPath: /etc/apifrontend
@@ -527,6 +533,8 @@ spec:
             - name: inter-service-ca
               mountPath: /etc/apifrontend/inter-service-ca
               readOnly: true
+            - name: coverdata
+              mountPath: /coverdata
           readinessProbe:
             httpGet:
               path: /readyz
@@ -567,6 +575,10 @@ spec:
         - name: inter-service-ca
           configMap:
             name: inter-service-ca
+        - name: coverdata
+          hostPath:
+            path: /coverdata
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
@@ -591,7 +603,7 @@ spec:
     app: apifrontend
 `, namespace, indentYAML(string(configData), 4),
 		namespace, indentYAML(string(rbacRolesData), 4),
-		namespace, afImage, pullPolicy, namespace)
+		namespace, afImage, namespace)
 	return kubectlApplyStdin(ctx, kubeconfigPath, manifest, writer)
 }
 
