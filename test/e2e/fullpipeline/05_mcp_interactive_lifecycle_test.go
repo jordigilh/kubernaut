@@ -325,9 +325,6 @@ var _ = Describe("FP-MCP-008: re-takeover after proxy disconnect", Label("e2e", 
 		proxy.DisconnectAll()
 		_ = proxiedSession.Close()
 
-		By("Waiting for disconnect handler to release session")
-		time.Sleep(1 * time.Second) // ✅ APPROVED EXCEPTION: wait for KA disconnect handler to process
-
 		By("Creating new direct MCP session")
 		directSession, err := infrastructure.ConnectMCPClientWithRetry(ctx, infrastructure.MCPClientConfig{
 			Endpoint:     infrastructure.MCPEndpointForKAE2E(),
@@ -337,22 +334,23 @@ var _ = Describe("FP-MCP-008: re-takeover after proxy disconnect", Label("e2e", 
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = directSession.Close() }()
 
-		By("Re-acquiring session via fresh takeover")
-		retakeoverCtx, retakeoverCancel := context.WithTimeout(ctx, 30*time.Second)
-		defer retakeoverCancel()
-		result, err = infrastructure.CallInvestigate(retakeoverCtx, directSession, map[string]any{
-			"rr_id":  rrName,
-			"action": "takeover",
-		})
-		Expect(err).NotTo(HaveOccurred())
-
-		text := infrastructure.ExtractToolResultText(result)
-		GinkgoWriter.Printf("  Re-takeover response (isError=%v): %s\n", result.IsError, text)
-		Expect(result.IsError).To(BeFalse(), "re-takeover after partition should succeed; got: %s", text)
-		Expect(text).To(SatisfyAny(
-			ContainSubstring("takeover_started"),
-			ContainSubstring("reconnected"),
-		))
+		By("Re-acquiring session via fresh takeover (with retry for disconnect handler)")
+		Eventually(func(g Gomega) {
+			retakeoverCtx, retakeoverCancel := context.WithTimeout(ctx, 10*time.Second)
+			defer retakeoverCancel()
+			result, err = infrastructure.CallInvestigate(retakeoverCtx, directSession, map[string]any{
+				"rr_id":  rrName,
+				"action": "takeover",
+			})
+			g.Expect(err).NotTo(HaveOccurred())
+			text := infrastructure.ExtractToolResultText(result)
+			GinkgoWriter.Printf("  Re-takeover response (isError=%v): %s\n", result.IsError, text)
+			g.Expect(result.IsError).To(BeFalse(), "re-takeover after partition should succeed; got: %s", text)
+			g.Expect(text).To(SatisfyAny(
+				ContainSubstring("takeover_started"),
+				ContainSubstring("reconnected"),
+			))
+		}, 15*time.Second, 2*time.Second).Should(Succeed())
 	})
 })
 
@@ -396,7 +394,10 @@ var _ = Describe("FP-MCP-009: concurrent takeover contention", Label("e2e", "ful
 
 		text := infrastructure.ExtractToolResultText(result)
 		GinkgoWriter.Printf("  Contention response: %s\n", text)
-		Expect(text).To(ContainSubstring("session_active"))
+		Expect(text).To(SatisfyAny(
+			ContainSubstring("session_active"),
+			ContainSubstring("max_sessions"),
+		), "takeover must be rejected with session_active (lease held) or max_sessions (pool exhausted)")
 	})
 })
 
@@ -568,23 +569,25 @@ var _ = Describe("FP-MCP-005c: complete_no_action through full pipeline", Label(
 		Expect(infrastructure.ExtractToolResultText(result)).To(ContainSubstring("completed_no_action"))
 
 		By("Verifying session released (status returns not_found)")
-		statusCtx, statusCancel := context.WithTimeout(ctx, 30*time.Second)
-		defer statusCancel()
-		result, err = infrastructure.CallInvestigate(statusCtx, setup.Session, map[string]any{
-			"rr_id":  rrName,
-			"action": "status",
-		})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result.IsError).To(BeFalse())
+		Eventually(func(g Gomega) {
+			pollCtx, pollCancel := context.WithTimeout(ctx, 10*time.Second)
+			defer pollCancel()
+			statusResult, statusErr := infrastructure.CallInvestigate(pollCtx, setup.Session, map[string]any{
+				"rr_id":  rrName,
+				"action": "status",
+			})
+			g.Expect(statusErr).NotTo(HaveOccurred())
+			g.Expect(statusResult.IsError).To(BeFalse())
 
-		statusText := infrastructure.ExtractToolResultText(result)
-		var outer map[string]interface{}
-		Expect(json.Unmarshal([]byte(statusText), &outer)).To(Succeed())
-		responseStr, ok := outer["response"].(string)
-		Expect(ok).To(BeTrue(), "status result should have a response field")
-		var inner map[string]interface{}
-		Expect(json.Unmarshal([]byte(responseStr), &inner)).To(Succeed())
-		Expect(inner["mode"]).To(Equal("not_found"),
-			"session should be released after complete_no_action")
+			statusText := infrastructure.ExtractToolResultText(statusResult)
+			var outer map[string]interface{}
+			g.Expect(json.Unmarshal([]byte(statusText), &outer)).To(Succeed())
+			responseStr, ok := outer["response"].(string)
+			g.Expect(ok).To(BeTrue(), "status result should have a response field")
+			var inner map[string]interface{}
+			g.Expect(json.Unmarshal([]byte(responseStr), &inner)).To(Succeed())
+			g.Expect(inner["mode"]).To(Equal("not_found"),
+				"session should be released after complete_no_action")
+		}, 15*time.Second, 1*time.Second).Should(Succeed())
 	})
 })

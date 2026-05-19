@@ -157,6 +157,15 @@ func GetKAE2ETestWorkflows() []TestWorkflow {
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to restart"},
 			}},
+		// Issue #1170: Workflow for parameter validation self-correction E2E tests.
+		{WorkflowID: "param-validation-test-v1", Name: "Param Validation Test", Description: "Test workflow for parameter validation self-correction", ActionType: "ScaleReplicas", Severity: "high", Component: []string{"apps/v1/Deployment"}, Priority: "P1", SchemaImage: kaWorkflowRegistry + "/param-validation-test:v1.0.0",
+			SchemaParameters: []models.WorkflowParameter{
+				{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the deployment (KA-injected)"},
+				{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kind of resource (KA-injected)"},
+				{Name: "TARGET_RESOURCE_NAMESPACE", Type: "string", Required: true, Description: "Namespace (KA-injected)"},
+				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas to scale to"},
+				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace for the scaling operation"},
+			}},
 		// Issue #1044: Workflow for ambiguous-kind apiVersion gate E2E tests.
 		// Uses "job" execution engine and targets TestWidget (ambiguous across
 		// alpha.kubernaut-test.ai and beta.kubernaut-test.ai API groups).

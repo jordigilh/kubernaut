@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
@@ -164,6 +166,24 @@ func (inv *Investigator) emitValidationEvent(ctx context.Context, attempt, maxAt
 	valEvent.Data["workflow_id"] = workflowID
 	valEvent.Data["is_final_attempt"] = attempt == maxAttempts
 	audit.StoreBestEffort(ctx, inv.auditStore, valEvent, inv.auditLog())
+}
+
+// renderCorrectionMessage builds a structured correction message for LLM self-correction.
+// BR-HAPI-191: Uses validation_error.tmpl with schema hints for parameter errors,
+// falls back to format error template for other validation failures.
+func (inv *Investigator) renderCorrectionMessage(validationErr error, attempt, maxAttempts int) (string, error) {
+	data := prompt.ValidationErrorData{
+		AttemptDisplay: attempt,
+		MaxAttempts:    maxAttempts,
+		Errors:         []string{validationErr.Error()},
+	}
+
+	if paramErr, ok := validationErr.(*parser.ParameterValidationError); ok {
+		data.Errors = paramErr.Result.Errors
+		data.SchemaHint = paramErr.Result.SchemaHint
+	}
+
+	return inv.builder.RenderValidationError(data)
 }
 
 func toolErrorJSON(msg string) string {

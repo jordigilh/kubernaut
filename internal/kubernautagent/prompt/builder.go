@@ -136,10 +136,21 @@ type Phase1Data struct {
 	DueDiligence          *katypes.DueDiligenceReview
 }
 
+// ValidationErrorData maps to fields expected by validation_error.tmpl.
+// BR-HAPI-191: Structured feedback for LLM self-correction.
+type ValidationErrorData struct {
+	IsFormatFailure bool
+	AttemptDisplay  int
+	MaxAttempts     int
+	Errors          []string
+	SchemaHint      string
+}
+
 // Builder renders prompt templates with signal and enrichment data.
 type Builder struct {
-	investigationTmpl *template.Template
-	workflowTmpl      *template.Template
+	investigationTmpl  *template.Template
+	workflowTmpl       *template.Template
+	validationErrorTmpl *template.Template
 }
 
 // NewBuilder creates a prompt builder with embedded templates.
@@ -152,10 +163,25 @@ func NewBuilder() (*Builder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing workflow selection template: %w", err)
 	}
+	valErrTmpl, err := template.ParseFS(templateFS, "templates/validation_error.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("parsing validation error template: %w", err)
+	}
 	return &Builder{
-		investigationTmpl: invTmpl,
-		workflowTmpl:      wfTmpl,
+		investigationTmpl:   invTmpl,
+		workflowTmpl:        wfTmpl,
+		validationErrorTmpl: valErrTmpl,
 	}, nil
+}
+
+// RenderValidationError renders the self-correction feedback message.
+// BR-HAPI-191: Structured error feedback with schema hints for LLM.
+func (b *Builder) RenderValidationError(data ValidationErrorData) (string, error) {
+	var buf strings.Builder
+	if err := b.validationErrorTmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("rendering validation error template: %w", err)
+	}
+	return buf.String(), nil
 }
 
 // RenderInvestigation renders the Phase 1 investigation prompt.

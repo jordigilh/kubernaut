@@ -18,9 +18,12 @@ package parser
 
 import (
 	"fmt"
+	"math"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -42,6 +45,36 @@ type WorkflowMeta struct {
 	ServiceAccountName    string
 	Version               string
 	Component             []string // MandatoryLabels.Component: GVK scope (apiVersion/Kind, e.g. apps/v1/Deployment), plain Kind legacy, or ["*"]
+	Parameters            []models.WorkflowParameter
+	CompiledPatterns      map[string]*regexp.Regexp
+}
+
+// kaManagedParams are parameters injected by KA (not provided by the LLM).
+// These are excluded from schema validation and never stripped.
+var kaManagedParams = map[string]bool{
+	"TARGET_RESOURCE_NAME":        true,
+	"TARGET_RESOURCE_KIND":        true,
+	"TARGET_RESOURCE_NAMESPACE":   true,
+	"TARGET_RESOURCE_API_VERSION": true,
+}
+
+// ParameterValidationResult captures the outcome of parameter schema validation.
+type ParameterValidationResult struct {
+	IsValid       bool
+	Errors        []string
+	Warnings      []string
+	StrippedParams []string
+	SchemaHint    string
+}
+
+// ParameterValidationError wraps a ParameterValidationResult as an error,
+// allowing correctionFn to access the structured result for template rendering.
+type ParameterValidationError struct {
+	Result *ParameterValidationResult
+}
+
+func (e *ParameterValidationError) Error() string {
+	return fmt.Sprintf("parameter validation failed: %s", strings.Join(e.Result.Errors, "; "))
 }
 
 // MatchesTargetKind reports whether the workflow's component scope includes
@@ -95,8 +128,36 @@ func NewValidator(allowedWorkflows []string) *Validator {
 }
 
 // SetWorkflowMeta stores catalog metadata for a workflow ID (UUID).
+// Pre-compiles regex patterns from parameter schema to avoid per-call compilation.
 func (v *Validator) SetWorkflowMeta(workflowID string, meta WorkflowMeta) {
+	if len(meta.Parameters) > 0 && meta.CompiledPatterns == nil {
+		meta.CompiledPatterns = compileParameterPatterns(meta.Parameters)
+	}
 	v.catalogMeta[workflowID] = meta
+}
+
+// maxPatternLength caps regex pattern length to prevent ReDoS from excessively
+// long patterns in workflow schemas. Patterns exceeding this are treated as
+// invalid and skipped (warning emitted at validation time).
+const maxPatternLength = 1024
+
+// compileParameterPatterns pre-compiles regex patterns from workflow parameter
+// definitions. Invalid or oversized patterns are silently skipped — they'll
+// produce a warning at validation time via the fallback path.
+func compileParameterPatterns(params []models.WorkflowParameter) map[string]*regexp.Regexp {
+	compiled := make(map[string]*regexp.Regexp)
+	for _, p := range params {
+		if p.Pattern == "" || len(p.Pattern) > maxPatternLength {
+			continue
+		}
+		if re, err := regexp.Compile(p.Pattern); err == nil {
+			compiled[p.Name] = re
+		}
+	}
+	if len(compiled) == 0 {
+		return nil
+	}
+	return compiled
 }
 
 // GetWorkflowMeta returns catalog metadata for a workflow ID, if available.
@@ -105,7 +166,10 @@ func (v *Validator) GetWorkflowMeta(workflowID string) (WorkflowMeta, bool) {
 	return m, ok
 }
 
-// Validate checks the result against the allowlist and parameter bounds.
+// Validate checks the result against the allowlist, confidence bounds, and
+// parameter schema constraints. Returns a ParameterValidationError when
+// parameter validation fails (so correctionFn can access the structured result),
+// or a ValidationError for allowlist/confidence failures.
 func (v *Validator) Validate(result *katypes.InvestigationResult) error {
 	if result.HumanReviewNeeded {
 		return nil
@@ -127,7 +191,218 @@ func (v *Validator) Validate(result *katypes.InvestigationResult) error {
 		}
 	}
 
+	if result.WorkflowID != "" && result.Parameters != nil {
+		if meta, ok := v.catalogMeta[result.WorkflowID]; ok {
+			pvr := v.validateParameters(result.Parameters, meta.Parameters, meta.CompiledPatterns)
+			if !pvr.IsValid {
+				return &ParameterValidationError{Result: pvr}
+			}
+		}
+	}
+
 	return nil
+}
+
+// ValidateParameters checks parameters against the workflow schema.
+// Mutates params in-place: strips undeclared parameters (except KA-managed).
+// BR-HAPI-191: 8 constraint checks + undeclared stripping.
+func (v *Validator) ValidateParameters(params map[string]interface{}, schema []models.WorkflowParameter) *ParameterValidationResult {
+	return v.validateParameters(params, schema, nil)
+}
+
+func (v *Validator) validateParameters(params map[string]interface{}, schema []models.WorkflowParameter, compiledPatterns map[string]*regexp.Regexp) *ParameterValidationResult {
+	result := &ParameterValidationResult{IsValid: true}
+
+	declared := make(map[string]bool, len(schema))
+	for _, p := range schema {
+		declared[p.Name] = true
+	}
+
+	// Strip undeclared parameters (KA-managed are always preserved)
+	var toDelete []string
+	for k := range params {
+		if kaManagedParams[k] {
+			continue
+		}
+		if !declared[k] {
+			toDelete = append(toDelete, k)
+		}
+	}
+	for _, k := range toDelete {
+		delete(params, k)
+		result.StrippedParams = append(result.StrippedParams, k)
+	}
+
+	// Validate each declared parameter
+	for _, p := range schema {
+		if kaManagedParams[p.Name] {
+			continue
+		}
+
+		val, exists := params[p.Name]
+
+		// 1. Required check
+		if !exists {
+			if p.Required {
+				result.Errors = append(result.Errors,
+					fmt.Sprintf("%s: required parameter is missing", p.Name))
+			}
+			continue
+		}
+
+		// 2. Type check
+		if !validateType(val, p.Type) {
+			result.Errors = append(result.Errors,
+				fmt.Sprintf("%s: expected type %s, got %T", p.Name, p.Type, val))
+			continue // skip further checks if type is wrong
+		}
+
+		// 3-4. Minimum / Maximum (numeric types only)
+		if numVal, ok := toFloat64(val); ok {
+			if p.Minimum != nil && numVal < *p.Minimum {
+				result.Errors = append(result.Errors,
+					fmt.Sprintf("%s: value %v is below minimum %v", p.Name, numVal, *p.Minimum))
+			}
+			if p.Maximum != nil && numVal > *p.Maximum {
+				result.Errors = append(result.Errors,
+					fmt.Sprintf("%s: value %v exceeds maximum %v", p.Name, numVal, *p.Maximum))
+			}
+		}
+
+		// 5. Enum check (string type)
+		if len(p.Enum) > 0 {
+			if strVal, ok := val.(string); ok {
+				found := false
+				for _, allowed := range p.Enum {
+					if strVal == allowed {
+						found = true
+						break
+					}
+				}
+				if !found {
+					result.Errors = append(result.Errors,
+						fmt.Sprintf("%s: value %q not in enum [%s]", p.Name, strVal, strings.Join(p.Enum, ", ")))
+				}
+			}
+		}
+
+		// 6. Pattern check (string type)
+		if p.Pattern != "" {
+			if strVal, ok := val.(string); ok {
+				if len(p.Pattern) > maxPatternLength {
+					result.Warnings = append(result.Warnings,
+						fmt.Sprintf("%s: pattern exceeds %d chars, skipping pattern validation", p.Name, maxPatternLength))
+				} else {
+					re := compiledPatterns[p.Name]
+					if re == nil {
+						var err error
+						re, err = regexp.Compile(p.Pattern)
+						if err != nil {
+							result.Warnings = append(result.Warnings,
+								fmt.Sprintf("%s: invalid regex pattern %q, skipping pattern validation", p.Name, p.Pattern))
+							re = nil
+						}
+					}
+					if re != nil && !re.MatchString(strVal) {
+						result.Errors = append(result.Errors,
+							fmt.Sprintf("%s: value %q does not match pattern %q", p.Name, strVal, p.Pattern))
+					}
+				}
+			}
+		}
+
+		// 7. DependsOn check
+		if len(p.DependsOn) > 0 {
+			for _, dep := range p.DependsOn {
+				if _, depExists := params[dep]; !depExists {
+					result.Errors = append(result.Errors,
+						fmt.Sprintf("%s: depends on %q which is not present", p.Name, dep))
+				}
+			}
+		}
+	}
+
+	if len(result.Errors) > 0 {
+		result.IsValid = false
+		result.SchemaHint = FormatSchemaHint(schema)
+	}
+
+	return result
+}
+
+// FormatSchemaHint produces a human-readable schema description for LLM feedback.
+// KA-managed parameters are excluded from the hint.
+func FormatSchemaHint(schema []models.WorkflowParameter) string {
+	if len(schema) == 0 {
+		return "No parameter schema available."
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Expected parameters:\n")
+	count := 0
+	for _, p := range schema {
+		if kaManagedParams[p.Name] {
+			continue
+		}
+		count++
+		sb.WriteString(fmt.Sprintf("  - %s (%s", p.Name, p.Type))
+		if p.Required {
+			sb.WriteString(", required")
+		}
+		if p.Minimum != nil {
+			sb.WriteString(fmt.Sprintf(", min=%v", *p.Minimum))
+		}
+		if p.Maximum != nil {
+			sb.WriteString(fmt.Sprintf(", max=%v", *p.Maximum))
+		}
+		if len(p.Enum) > 0 {
+			sb.WriteString(fmt.Sprintf(", enum=[%s]", strings.Join(p.Enum, ", ")))
+		}
+		if p.Pattern != "" {
+			sb.WriteString(fmt.Sprintf(", pattern=%q", p.Pattern))
+		}
+		sb.WriteString(")\n")
+	}
+	if count == 0 {
+		return "No parameter schema available."
+	}
+	return sb.String()
+}
+
+func validateType(val interface{}, expectedType string) bool {
+	switch expectedType {
+	case "string":
+		_, ok := val.(string)
+		return ok
+	case "integer":
+		f, ok := val.(float64)
+		if !ok {
+			return false
+		}
+		return f == math.Trunc(f)
+	case "float":
+		_, ok := val.(float64)
+		return ok
+	case "boolean":
+		_, ok := val.(bool)
+		return ok
+	case "array":
+		_, ok := val.([]interface{})
+		return ok
+	default:
+		return true
+	}
+}
+
+func toFloat64(val interface{}) (float64, bool) {
+	switch v := val.(type) {
+	case float64:
+		return v, true
+	case int:
+		return float64(v), true
+	default:
+		return 0, false
+	}
 }
 
 // SelfCorrect runs a validation-correction loop up to maxAttempts times.
@@ -159,11 +434,19 @@ func (v *Validator) SelfCorrect(result *katypes.InvestigationResult, maxAttempts
 		}
 
 		lastErr = validationErr
+
+		var errStrings []string
+		if paramErr, ok := validationErr.(*ParameterValidationError); ok {
+			errStrings = paramErr.Result.Errors
+		} else {
+			errStrings = []string{validationErr.Error()}
+		}
+
 		history = append(history, katypes.ValidationAttemptRecord{
 			Attempt:    attempt + 1,
 			WorkflowID: current.WorkflowID,
 			IsValid:    false,
-			Errors:     []string{validationErr.Error()},
+			Errors:     errStrings,
 			Timestamp:  time.Now().UTC().Format(time.RFC3339),
 		})
 

@@ -227,7 +227,9 @@ func analysisJSON(cfg scenarios.MockScenarioConfig) map[string]interface{} {
 			"rationale":        workflowRationale(cfg),
 			"execution_engine": executionEngine(cfg),
 		}
-		if len(cfg.Parameters) > 0 {
+		if len(cfg.RawParameters) > 0 {
+			sw["parameters"] = cfg.RawParameters
+		} else if len(cfg.Parameters) > 0 {
 			sw["parameters"] = cfg.Parameters
 		}
 		obj["selected_workflow"] = sw

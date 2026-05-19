@@ -102,6 +102,12 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 		for _, s := range r.scenarios {
 			cs, ok := s.(*configScenario)
 			if !ok {
+				// Custom scenario types that support workflow_id overrides.
+				if pvs, isPV := s.(*paramValidationSelfCorrectScenario); isPV {
+					if ov, found := findOverrideByWorkflowName(overrides.Scenarios, pvs.badConfig.WorkflowName); found && ov.WorkflowID != "" {
+						pvs.OverrideWorkflowID(ov.WorkflowID)
+					}
+				}
 				continue
 			}
 			if ov, found := overrides.Scenarios[cs.config.ScenarioName]; found {
@@ -164,6 +170,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(mockKeywordScenario("not_actionable", "mock_not_actionable", notActionableConfig()))
 	r.Register(mockKeywordScenario("parallel_tools", "mock_parallel_tools", parallelToolsConfig()))
 	r.Register(mockKeywordScenario("ambiguous_kind", "mock_ambiguous_kind", ambiguousKindConfig()))
+	r.Register(newParamValidationSelfCorrectScenario())
 
 	// Test signal scenario
 	r.Register(testSignalScenario())

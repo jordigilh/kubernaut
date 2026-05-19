@@ -17,6 +17,7 @@ limitations under the License.
 package auth
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,7 +42,7 @@ type RetryOn429Transport struct {
 }
 
 // NewRetryOn429Transport wraps base with retry-on-429 behaviour.
-// Defaults: up to 5 retries, starting with a 500ms delay (doubling each
+// Defaults: up to 8 retries, starting with a 250ms delay (doubling each
 // attempt, capped at 4s). Respects Retry-After header when present.
 func NewRetryOn429Transport(base http.RoundTripper) *RetryOn429Transport {
 	if base == nil {
@@ -49,8 +50,8 @@ func NewRetryOn429Transport(base http.RoundTripper) *RetryOn429Transport {
 	}
 	return &RetryOn429Transport{
 		base:       base,
-		maxRetries: 5,
-		baseDelay:  500 * time.Millisecond,
+		maxRetries: 8,
+		baseDelay:  250 * time.Millisecond,
 	}
 }
 
@@ -58,6 +59,22 @@ func NewRetryOn429Transport(base http.RoundTripper) *RetryOn429Transport {
 func (t *RetryOn429Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	delay := t.baseDelay
 	const maxDelay = 4 * time.Second
+
+	// Snapshot the request body so POST/PUT/PATCH retries can replay it.
+	// Ogen-generated clients don't set GetBody, so the standard
+	// GetBody-based reset doesn't work. We eagerly buffer the body
+	// (test payloads are small) and install a synthetic GetBody.
+	if req.Body != nil && req.GetBody == nil {
+		bodyBytes, err := io.ReadAll(req.Body)
+		_ = req.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("retry429: buffer request body: %w", err)
+		}
+		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		req.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+		}
+	}
 
 	for attempt := 0; ; attempt++ {
 		resp, err := t.base.RoundTrip(req)
@@ -72,10 +89,6 @@ func (t *RetryOn429Transport) RoundTrip(req *http.Request) (*http.Response, erro
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 
-		// Reset request body for POST/PUT/PATCH retries. Without this,
-		// the second RoundTrip sends an empty body because the original
-		// reader was consumed. GetBody is set by http.NewRequest when the
-		// body is a *bytes.Reader, *bytes.Buffer, or *strings.Reader.
 		if req.GetBody != nil {
 			req.Body, err = req.GetBody()
 			if err != nil {

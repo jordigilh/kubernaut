@@ -52,6 +52,7 @@ type MockScenarioConfig struct {
 	IncludeAffected  bool
 	OverrideResource bool
 	Parameters       map[string]string
+	RawParameters    map[string]interface{}
 	ExecutionEngine  string
 	Contributing     []string
 	NeedsHumanReview *bool

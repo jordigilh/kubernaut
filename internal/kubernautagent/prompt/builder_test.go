@@ -510,6 +510,72 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 		})
 	})
 
+	Describe("RenderValidationError — #1170", func() {
+
+		Describe("UT-KA-1170-PROMPT-001: Parameter validation error renders with schema hint", func() {
+			It("should render error list and schema hint for parameter validation failures", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				rendered, err := builder.RenderValidationError(prompt.ValidationErrorData{
+					AttemptDisplay: 1,
+					MaxAttempts:    3,
+					Errors: []string{
+						"REPLICA_COUNT: required parameter is missing",
+						"STRATEGY: value \"invalid\" not in enum [RollingUpdate, Recreate]",
+					},
+					SchemaHint: "Expected parameters:\n  - REPLICA_COUNT (integer, required, min=1, max=10)\n  - STRATEGY (string, enum=[RollingUpdate, Recreate])\n",
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(rendered).To(ContainSubstring("VALIDATION ERROR"))
+				Expect(rendered).To(ContainSubstring("Attempt 1/3"))
+				Expect(rendered).To(ContainSubstring("REPLICA_COUNT: required parameter is missing"))
+				Expect(rendered).To(ContainSubstring("STRATEGY"))
+				Expect(rendered).To(ContainSubstring("Expected Parameter Schema"))
+				Expect(rendered).To(ContainSubstring("min=1, max=10"))
+			})
+		})
+
+		Describe("UT-KA-1170-PROMPT-002: Format failure renders JSON structure hint", func() {
+			It("should render format failure template with JSON example", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				rendered, err := builder.RenderValidationError(prompt.ValidationErrorData{
+					IsFormatFailure: true,
+					AttemptDisplay:  2,
+					MaxAttempts:     3,
+					Errors:          []string{"no JSON block found in response"},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(rendered).To(ContainSubstring("OUTPUT FORMAT ERROR"))
+				Expect(rendered).To(ContainSubstring("Attempt 2/3"))
+				Expect(rendered).To(ContainSubstring("no JSON block found"))
+				Expect(rendered).To(ContainSubstring("root_cause_analysis"))
+			})
+		})
+
+		Describe("UT-KA-1170-PROMPT-003: Validation error without schema hint omits schema section", func() {
+			It("should not render schema section when SchemaHint is empty", func() {
+				builder, err := prompt.NewBuilder()
+				Expect(err).NotTo(HaveOccurred())
+
+				rendered, err := builder.RenderValidationError(prompt.ValidationErrorData{
+					AttemptDisplay: 1,
+					MaxAttempts:    3,
+					Errors:         []string{"workflow \"nonexistent\" not in session allowlist"},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(rendered).To(ContainSubstring("VALIDATION ERROR"))
+				Expect(rendered).To(ContainSubstring("nonexistent"))
+				Expect(rendered).NotTo(ContainSubstring("Expected Parameter Schema"))
+			})
+		})
+	})
+
 	Describe("#462: Signal annotations rendered in investigation prompt", func() {
 		It("UT-KA-462-002: should render Alert Annotations section when annotations present", func() {
 			builder, err := prompt.NewBuilder()

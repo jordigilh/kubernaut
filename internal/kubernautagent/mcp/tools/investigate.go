@@ -406,6 +406,12 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 			}
 			return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", driverName)
 		}
+		if errors.Is(err, mcpinternal.ErrMaxSessionsReached) {
+			if t.metrics != nil {
+				t.metrics.RecordInteractiveTakeover("takeover_failed")
+			}
+			return InvestigateOutput{}, &MCPError{Code: "max_sessions", Message: "Maximum concurrent sessions reached"}
+		}
 		if t.metrics != nil {
 			t.metrics.RecordInteractiveTakeover("takeover_failed")
 		}
