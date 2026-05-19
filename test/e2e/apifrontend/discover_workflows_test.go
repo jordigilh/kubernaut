@@ -153,10 +153,13 @@ var _ = Describe("E2E: discover_workflows (#1176)", Ordered, ContinueOnFailure, 
 		))
 	})
 
-	It("E2E-AF-WP-004: metrics endpoint is reachable and exposes af_ prefixed metrics", func() {
-		// Verify the metrics endpoint works and exposes AF metrics.
-		// Specific discover_workflows counters require a full investigation session
-		// to trigger the handler (covered by unit tests WP-030/031 and fullpipeline).
+	It("E2E-AF-WP-004: af_discover_workflows metrics are exposed after tool call", func() {
+		// Trigger a discover_workflows call to ensure metrics are observed at
+		// least once (CounterVec only appears after first Inc).
+		_, _ = mcpToolCall("dw-e2e-004-prime", "kubernaut_discover_workflows", map[string]interface{}{
+			"rr_id": "e2e-metrics-prime",
+		})
+
 		resp, err := httpClient.Get(baseURL + "/metrics")
 		if err != nil {
 			resp, err = http.Get("http://localhost:18081/metrics")
@@ -166,9 +169,11 @@ var _ = Describe("E2E: discover_workflows (#1176)", Ordered, ContinueOnFailure, 
 
 		body, err := io.ReadAll(resp.Body)
 		Expect(err).NotTo(HaveOccurred())
-		metricsBody := string(body)
-		Expect(metricsBody).To(ContainSubstring("af_"))
-		Expect(metricsBody).To(ContainSubstring("af_http_requests_total"))
+		Expect(string(body)).To(SatisfyAny(
+			ContainSubstring("af_discover_workflows_total"),
+			ContainSubstring("af_discover_workflows_duration_seconds"),
+			ContainSubstring("af_discover_workflows_errors_total"),
+		))
 	})
 
 	It("E2E-AF-WP-005: discover_workflows with workflow_id filter passes argument", func() {
