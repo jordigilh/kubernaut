@@ -182,7 +182,7 @@ func newRBACGuard(auditor audit.Emitter) llmagent.BeforeToolCallback {
 
 		if auditor != nil {
 			auditor.Emit(ctx, &audit.Event{
-				Type:   audit.EventRBACDenied,
+				Type:   audit.EventAuthAccessDenied,
 				UserID: identity.Username,
 				Detail: map[string]string{
 					"tool":   toolName,
@@ -325,7 +325,7 @@ func newAuditToolCallback(auditor audit.Emitter) llmagent.AfterToolCallback {
 		}
 
 		auditor.Emit(ctx, &audit.Event{
-			Type:   audit.EventToolInvoked,
+			Type:   audit.EventToolExecuted,
 			UserID: userID,
 			Detail: detail,
 		})

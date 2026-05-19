@@ -234,7 +234,7 @@ func TestEventOutcome(t *testing.T) {
 		{audit.EventCircuitBreakerTrip, "failure"},
 		{audit.EventConfigRejected, "failure"},
 		{audit.EventSessionAutoCancelled, "failure"},
-		{audit.EventRBACDenied, "failure"},
+		{audit.EventAuthAccessDenied, "failure"},
 		{audit.EventAuthSuccess, "success"},
 		{audit.EventA2ATaskStarted, "success"},
 		{audit.EventA2ATaskCompleted, "success"},

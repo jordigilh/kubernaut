@@ -769,7 +769,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
-		It("UT-AF-B-031: RBAC denial emits EventMCPToolDenied audit event", func() {
+		It("UT-AF-B-031: RBAC denial emits EventAuthAccessDenied audit event", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
@@ -795,7 +795,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 
 			events := auditor.Events()
 			Expect(events).NotTo(BeEmpty())
-			Expect(events[0].Type).To(Equal(audit.EventMCPToolDenied))
+			Expect(events[0].Type).To(Equal(audit.EventAuthAccessDenied))
 			Expect(events[0].Detail["tool"]).To(Equal("af_list_events"))
 		})
 
@@ -1062,7 +1062,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 	})
 
 	Context("Audit events", func() {
-		It("UT-AF-B-050: successful tool call emits EventMCPToolInvoked", func() {
+		It("UT-AF-B-050: successful tool call emits EventToolExecuted", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
@@ -1090,7 +1090,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			Expect(events).NotTo(BeEmpty())
 			found := false
 			for _, e := range events {
-				if e.Type == audit.EventMCPToolInvoked && e.Detail["tool"] == "af_list_events" {
+				if e.Type == audit.EventToolExecuted && e.Detail["tool"] == "af_list_events" {
 					found = true
 					Expect(e.UserID).To(Equal("sre-user"))
 					break

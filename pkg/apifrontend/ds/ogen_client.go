@@ -218,7 +218,7 @@ func eventOutcome(t audit.EventType) ogenclient.AuditEventRequestEventOutcome {
 		audit.EventCircuitBreakerTrip,
 		audit.EventConfigRejected,
 		audit.EventSessionAutoCancelled,
-		audit.EventRBACDenied:
+		audit.EventAuthAccessDenied:
 		return ogenclient.AuditEventRequestEventOutcomeFailure
 	default:
 		return ogenclient.AuditEventRequestEventOutcomeSuccess
