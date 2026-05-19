@@ -17,6 +17,8 @@ limitations under the License.
 package parser_test
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -311,6 +313,39 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Constraints (#1170)", func()
 			stored, _ := v.GetWorkflowMeta("wf-badpattern-test")
 			Expect(stored.CompiledPatterns).NotTo(HaveKey("BAD_PARAM"),
 				"Invalid patterns should not be pre-compiled")
+		})
+	})
+
+	Context("UT-KA-1170-019c: Pattern — oversized patterns are rejected", func() {
+		It("should skip pre-compilation for patterns exceeding maxPatternLength", func() {
+			longPattern := "^" + strings.Repeat("a", 1025) + "$"
+			schema := []models.WorkflowParameter{
+				{Name: "OVERSIZED", Type: "string", Required: true, Description: "Oversized pattern", Pattern: longPattern},
+				{Name: "NORMAL", Type: "string", Required: true, Description: "Normal pattern", Pattern: `^[a-z]+$`},
+			}
+			meta := parser.WorkflowMeta{Parameters: schema}
+			v.SetWorkflowMeta("wf-oversized-test", meta)
+
+			stored, ok := v.GetWorkflowMeta("wf-oversized-test")
+			Expect(ok).To(BeTrue())
+			Expect(stored.CompiledPatterns).NotTo(HaveKey("OVERSIZED"),
+				"Oversized patterns must not be pre-compiled")
+			Expect(stored.CompiledPatterns).To(HaveKey("NORMAL"),
+				"Normal-length patterns should still be pre-compiled")
+		})
+
+		It("should emit a warning when validating against an oversized pattern", func() {
+			longPattern := "^" + strings.Repeat("a", 1025) + "$"
+			schema := []models.WorkflowParameter{
+				{Name: "OVERSIZED", Type: "string", Required: true, Description: "Oversized", Pattern: longPattern},
+			}
+			params := map[string]interface{}{
+				"OVERSIZED": "test-value",
+			}
+			result := v.ValidateParameters(params, schema)
+			Expect(result.IsValid).To(BeTrue(), "oversized pattern should not cause an error, only a warning")
+			Expect(result.Warnings).To(ContainElement(ContainSubstring("exceeds")))
+			Expect(result.Warnings).To(ContainElement(ContainSubstring("OVERSIZED")))
 		})
 	})
 

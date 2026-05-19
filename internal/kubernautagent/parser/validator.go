@@ -136,13 +136,18 @@ func (v *Validator) SetWorkflowMeta(workflowID string, meta WorkflowMeta) {
 	v.catalogMeta[workflowID] = meta
 }
 
+// maxPatternLength caps regex pattern length to prevent ReDoS from excessively
+// long patterns in workflow schemas. Patterns exceeding this are treated as
+// invalid and skipped (warning emitted at validation time).
+const maxPatternLength = 1024
+
 // compileParameterPatterns pre-compiles regex patterns from workflow parameter
-// definitions. Invalid patterns are silently skipped — they'll produce a warning
-// at validation time via the fallback path.
+// definitions. Invalid or oversized patterns are silently skipped — they'll
+// produce a warning at validation time via the fallback path.
 func compileParameterPatterns(params []models.WorkflowParameter) map[string]*regexp.Regexp {
 	compiled := make(map[string]*regexp.Regexp)
 	for _, p := range params {
-		if p.Pattern == "" {
+		if p.Pattern == "" || len(p.Pattern) > maxPatternLength {
 			continue
 		}
 		if re, err := regexp.Compile(p.Pattern); err == nil {
@@ -284,19 +289,24 @@ func (v *Validator) validateParameters(params map[string]interface{}, schema []m
 		// 6. Pattern check (string type)
 		if p.Pattern != "" {
 			if strVal, ok := val.(string); ok {
-				re := compiledPatterns[p.Name]
-				if re == nil {
-					var err error
-					re, err = regexp.Compile(p.Pattern)
-					if err != nil {
-						result.Warnings = append(result.Warnings,
-							fmt.Sprintf("%s: invalid regex pattern %q, skipping pattern validation", p.Name, p.Pattern))
-						re = nil
+				if len(p.Pattern) > maxPatternLength {
+					result.Warnings = append(result.Warnings,
+						fmt.Sprintf("%s: pattern exceeds %d chars, skipping pattern validation", p.Name, maxPatternLength))
+				} else {
+					re := compiledPatterns[p.Name]
+					if re == nil {
+						var err error
+						re, err = regexp.Compile(p.Pattern)
+						if err != nil {
+							result.Warnings = append(result.Warnings,
+								fmt.Sprintf("%s: invalid regex pattern %q, skipping pattern validation", p.Name, p.Pattern))
+							re = nil
+						}
 					}
-				}
-				if re != nil && !re.MatchString(strVal) {
-					result.Errors = append(result.Errors,
-						fmt.Sprintf("%s: value %q does not match pattern %q", p.Name, strVal, p.Pattern))
+					if re != nil && !re.MatchString(strVal) {
+						result.Errors = append(result.Errors,
+							fmt.Sprintf("%s: value %q does not match pattern %q", p.Name, strVal, p.Pattern))
+					}
 				}
 			}
 		}
