@@ -26,6 +26,8 @@ import (
 // parseSSEStream reads a text/event-stream body and emits InvestigationEvents
 // on the provided channel. It returns when the stream ends, ctx is cancelled,
 // or a terminal event (complete/cancelled/error) is encountered.
+// If the underlying reader returns an error, an EventTypeError event is emitted
+// so callers can distinguish clean completion from I/O failure.
 func parseSSEStream(ctx context.Context, body io.Reader, ch chan<- InvestigationEvent) {
 	scanner := bufio.NewScanner(body)
 	var eventType string
@@ -76,6 +78,14 @@ func parseSSEStream(ctx context.Context, body io.Reader, ch chan<- Investigation
 				dataBuf.WriteString("\n")
 			}
 			dataBuf.WriteString(strings.TrimPrefix(line, "data: "))
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		errMsg, _ := json.Marshal(map[string]string{"error": err.Error()})
+		select {
+		case ch <- InvestigationEvent{Type: EventTypeError, Data: json.RawMessage(errMsg)}:
+		case <-ctx.Done():
 		}
 	}
 }

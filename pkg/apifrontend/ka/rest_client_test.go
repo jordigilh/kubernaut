@@ -176,6 +176,30 @@ var _ = Describe("KA REST Client", func() {
 		Expect(capturedAuth).To(Equal("Bearer jwt-carol-789"))
 	})
 
+	It("UT-AF-1189-050: StreamEvents rejects non-SSE Content-Type", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{"error":"wrong content type"}`)
+		}))
+		client := ka.NewClient(ka.Config{BaseURL: server.URL})
+		_, err := client.StreamEvents(ctx, "sess-ct")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("Content-Type"))
+	})
+
+	It("UT-AF-1189-051: StreamEvents accepts text/event-stream with charset", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+			_, _ = fmt.Fprint(w, "event: complete\ndata: {}\n\n")
+		}))
+		client := ka.NewClient(ka.Config{BaseURL: server.URL})
+		ch, err := client.StreamEvents(ctx, "sess-ct2")
+		Expect(err).NotTo(HaveOccurred())
+		for range ch {
+		}
+	})
+
 	It("UT-AF-110-006: returns circuit-open error when KA unreachable", func() {
 		client := ka.NewClient(ka.Config{BaseURL: "http://127.0.0.1:1", CBMaxRequests: 1, CBFailureThreshold: 1})
 		_, err := client.Analyze(ctx, ka.AnalyzeRequest{})

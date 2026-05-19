@@ -240,6 +240,12 @@ func (c *Client) StreamEvents(ctx context.Context, sessionID string) (<-chan Inv
 		return nil, kaToUserFriendlyError(fmt.Errorf("KA stream returned %d", resp.StatusCode))
 	}
 
+	ct := resp.Header.Get("Content-Type")
+	if ct != "" && !strings.HasPrefix(ct, "text/event-stream") {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("unexpected Content-Type %q from KA stream (expected text/event-stream)", ct)
+	}
+
 	ch := make(chan InvestigationEvent, 32)
 	go func() {
 		defer close(ch)
