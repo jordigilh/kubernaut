@@ -370,7 +370,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).To(Equal(reasoning))
 		})
 
-		It("UT-AF-1189-131: Text part with Thought=true -> passed through with metadata", func() {
+		It("UT-AF-1189-131: Text part with Thought=true -> activity indicator, not raw thought", func() {
 			part := &genai.Part{
 				Text:    "I should check the node resource utilization next.",
 				Thought: true,
@@ -379,7 +379,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("I should check the node resource utilization next."))
+			Expect(tp.Text).To(Equal("Analyzing..."))
 		})
 
 		It("UT-AF-1189-132: empty text part -> passed through (not dropped)", func() {
@@ -448,6 +448,269 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
 			Expect(tp.Text).To(ContainSubstring("Processing"))
+		})
+	})
+
+	Describe("Nil and edge-case inputs", func() {
+		It("UT-AF-1189-153: nil part -> nil result, no error", func() {
+			result, err := convert(context.Background(), nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil())
+		})
+
+		It("UT-AF-1189-154: kubernaut_start_investigation response without session_id -> generic fallback", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "kubernaut_start_investigation",
+					Response: map[string]any{"status": "pending"},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal("Investigation started."))
+		})
+
+		It("UT-AF-1189-155: kubernaut_select_workflow response with message only -> message text", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "kubernaut_select_workflow",
+					Response: map[string]any{"message": "Workflow selected for execution"},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal("Workflow selected for execution"))
+		})
+
+		It("UT-AF-1189-156: kubernaut_select_workflow response with status only -> formatted status", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "kubernaut_select_workflow",
+					Response: map[string]any{"status": "queued"},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal("Workflow queued."))
+		})
+
+		It("UT-AF-1189-157: kubernaut_select_workflow response with empty fields -> generic fallback", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "kubernaut_select_workflow",
+					Response: map[string]any{"other": "data"},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal("Workflow selection completed."))
+		})
+
+		It("UT-AF-1189-158: kubernaut_watch response with phase only -> phase text", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "kubernaut_watch",
+					Response: map[string]any{"phase": "Executing"},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal("Phase: Executing"))
+		})
+
+		It("UT-AF-1189-159: kubernaut_watch response with status only -> status text", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "kubernaut_watch",
+					Response: map[string]any{"status": "WorkflowRunning"},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal("WorkflowRunning"))
+		})
+
+		It("UT-AF-1189-160: kubernaut_watch response with empty fields -> generic fallback", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "kubernaut_watch",
+					Response: map[string]any{"other": "data"},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal("Watching remediation..."))
+		})
+
+		It("UT-AF-1189-161: af_create_rr response without rr_id -> generic fallback", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "af_create_rr",
+					Response: map[string]any{"status": "created"},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal("Remediation request created."))
+		})
+	})
+
+	Describe("Truncation edge cases", func() {
+		It("UT-AF-1189-162: multi-byte string over byte limit but within rune limit -> not truncated", func() {
+			// 400 CJK runes * 3 bytes each = 1200 bytes > maxSummaryLen(1024), but 400 runes < 1024
+			multiByteStr := strings.Repeat("\u4e16", 400)
+			Expect(len(multiByteStr)).To(BeNumerically(">", 1024), "precondition: byte length exceeds maxSummaryLen")
+			Expect(len([]rune(multiByteStr))).To(BeNumerically("<=", 1024), "precondition: rune count within limit")
+
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "kubernaut_stream_investigation",
+					Response: map[string]any{"summary": multiByteStr},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal(multiByteStr), "rune-safe truncation should preserve string when rune count is within limit")
+		})
+
+		It("UT-AF-1189-163: multi-byte string over both byte and rune limits -> rune-safe truncation", func() {
+			multiByteStr := strings.Repeat("\u4e16", 1100)
+			Expect(len([]rune(multiByteStr))).To(BeNumerically(">", 1024), "precondition: rune count exceeds limit")
+
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "kubernaut_stream_investigation",
+					Response: map[string]any{"summary": multiByteStr},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(HaveSuffix("..."))
+			Expect(len([]rune(tp.Text))).To(BeNumerically("<=", 1024))
+		})
+	})
+
+	Describe("Discover workflows edge cases", func() {
+		It("UT-AF-1189-164: non-map entry in workflows array -> skipped gracefully", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_discover_workflows",
+					Response: map[string]any{
+						"workflows": []any{
+							"not-a-map",
+							42,
+							map[string]any{"name": "valid-workflow", "confidence": 0.85},
+						},
+					},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("valid-workflow"))
+			Expect(tp.Text).NotTo(ContainSubstring("not-a-map"))
+		})
+
+		It("UT-AF-1189-165: workflow entry with empty name -> skipped", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_discover_workflows",
+					Response: map[string]any{
+						"workflows": []any{
+							map[string]any{"name": "", "confidence": 0.5},
+							map[string]any{"name": "restart-pod", "confidence": 0.9},
+						},
+					},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("restart-pod"))
+		})
+
+		It("UT-AF-1189-169: workflows key is not an array -> no workflows discovered", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_discover_workflows",
+					Response: map[string]any{
+						"workflows": "not-an-array",
+					},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal("No workflows discovered."))
+		})
+
+		It("UT-AF-1189-166: workflow entry with zero confidence -> name without percentage", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_discover_workflows",
+					Response: map[string]any{
+						"workflows": []any{
+							map[string]any{"name": "scale-up"},
+						},
+					},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("- scale-up"))
+			Expect(tp.Text).NotTo(ContainSubstring("confidence"))
+		})
+	})
+
+	Describe("Thought-to-activity indicator (AC 10)", func() {
+		It("UT-AF-1189-167: Thought=true with long reasoning -> activity indicator, not raw thought", func() {
+			part := &genai.Part{
+				Text:    "Let me analyze the disk pressure situation. The node shows high emptyDir usage which is likely caused by the PostgreSQL StatefulSet writing temporary data.",
+				Thought: true,
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal("Analyzing..."))
+		})
+
+		It("UT-AF-1189-168: Thought=false with text -> text passes through unchanged", func() {
+			text := "Based on the analysis, the root cause is disk pressure from emptyDir."
+			part := &genai.Part{
+				Text:    text,
+				Thought: false,
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal(text))
 		})
 	})
 })

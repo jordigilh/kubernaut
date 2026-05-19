@@ -68,6 +68,9 @@ func buildPartConverter() adka2a.GenAIPartConverter {
 		if part.FunctionResponse != nil {
 			return convertFunctionResponse(part.FunctionResponse), nil
 		}
+		if part.Thought {
+			return &a2a.TextPart{Text: "Analyzing..."}, nil
+		}
 		return &a2a.TextPart{Text: part.Text}, nil
 	}
 }
