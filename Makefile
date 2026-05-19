@@ -27,7 +27,7 @@ SHELL = /usr/bin/env bash -o pipefail
 
 # Service auto-discovery from cmd/ directory
 SERVICES := $(filter-out README.md must-gather, $(notdir $(wildcard cmd/*)))
-# Result: aianalysis authwebhook datastorage gateway notification remediationorchestrator signalprocessing workflowexecution
+# Result: aianalysis apifrontend authwebhook datastorage effectivenessmonitor gateway kubernautagent notification remediationorchestrator signalprocessing workflowexecution
 # Note: must-gather is a bash tool, built separately via cmd/must-gather/Makefile
 
 # Test configuration

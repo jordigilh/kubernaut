@@ -102,6 +102,20 @@ GO_SERVICE_CONFIG = {
         "unit_exclude": r"/(client|status|reconciler)/",
         "int_include": r"/(client|status|reconciler)/",
     },
+    "apifrontend": {
+        "pkg_pattern": "/pkg/apifrontend/",
+        "controller_pattern": "/internal/controller/apifrontend/",
+        # Unit-testable: audit, config, httputil, logging, metrics, ratelimit,
+        # requestid, security, severity, streaming, validate, agent config,
+        # auth/{config,context,jwt,replay_cache,sanitize,types}.go,
+        # session/statemachine.go
+        # Unit-excluded (I/O-dependent): handler/, ds/, ka/, resilience/,
+        # tools/, launcher/, tlswiring/, prometheus/, session/service.go,
+        # auth/{middleware,tokenreview,jwt_delegation,dynamic_impersonation,
+        # impersonation,jwks_cache}.go
+        "unit_exclude": r"/(handler/|ds/|ka/|resilience/|tools/|launcher/|tlswiring/|prometheus/|session/service\.go:|auth/(middleware|tokenreview|jwt_delegation|dynamic_impersonation|impersonation|jwks_cache)\.go:)",
+        "int_include": r"/(handler/|ds/|ka/|resilience/|tools/|launcher/|tlswiring/|prometheus/|session/service\.go:|auth/(middleware|tokenreview|jwt_delegation|dynamic_impersonation|impersonation|jwks_cache)\.go:)",
+    },
     "shared-packages": {
         "pkg_pattern": "/pkg/shared/|/pkg/audit/|/pkg/cache/|/pkg/k8sutil/",
         # Unit-excluded: middleware that requires K8s TokenReview/SAR, k8sutil client, SA transport
