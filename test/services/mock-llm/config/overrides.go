@@ -42,10 +42,15 @@ type ScenarioOverride struct {
 // KeywordScenarioOverride defines a keyword-matched scenario injected via YAML.
 // Consumers (e.g., AF E2E tests) use this to map prompt keywords to specific
 // tool call responses without modifying mock-LLM code.
+//
+// When MatchLastOnly is true, keyword matching uses only the last user message
+// instead of the full conversation history. This prevents prior-turn keywords
+// from shadowing later-turn keywords in multi-turn ADK agent conversations.
 type KeywordScenarioOverride struct {
-	Name     string           `yaml:"name"`
-	Keywords []string         `yaml:"keywords"`
-	ToolCall ToolCallOverride `yaml:"tool_call"`
+	Name          string           `yaml:"name"`
+	Keywords      []string         `yaml:"keywords"`
+	ToolCall      ToolCallOverride `yaml:"tool_call"`
+	MatchLastOnly bool             `yaml:"match_last_only,omitempty"`
 }
 
 // Overrides holds the parsed YAML override configuration.

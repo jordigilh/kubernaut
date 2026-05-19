@@ -42,6 +42,29 @@ func mockKeywordScenarioMulti(name string, keywords []string, cfg MockScenarioCo
 	}
 }
 
+func lastUserKeywordScenario(name, keyword string, cfg MockScenarioConfig) *configScenario {
+	return lastUserKeywordScenarioMulti(name, []string{keyword, strings.ReplaceAll(keyword, "_", " ")}, cfg)
+}
+
+func lastUserKeywordScenarioMulti(name string, keywords []string, cfg MockScenarioConfig) *configScenario {
+	cfg.ScenarioName = name
+	return &configScenario{
+		config: cfg,
+		matchFunc: func(ctx *DetectionContext) (bool, float64) {
+			if ctx.LastUserContent == "" {
+				return false, 0
+			}
+			target := strings.ToLower(ctx.LastUserContent)
+			for _, kw := range keywords {
+				if strings.Contains(target, kw) {
+					return true, 1.0
+				}
+			}
+			return false, 0
+		},
+	}
+}
+
 func signalScenario(name string, patterns []string, cfg MockScenarioConfig) *configScenario {
 	cfg.ScenarioName = name
 	return &configScenario{
