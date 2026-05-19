@@ -590,6 +590,7 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, metricsReg *metrics.
 		Auditor:            auditor,
 		Logger:             logger.WithName("bridge"),
 		Metrics:            bridgeMetricsFrom(metricsReg),
+		MetricsRegistry:    metricsReg,
 		ToolTimeout:        30 * time.Second,
 		MaxConcurrentTools: 10,
 		UserLimiter:        userLimiter,
