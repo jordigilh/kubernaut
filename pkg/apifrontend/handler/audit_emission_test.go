@@ -71,4 +71,47 @@ var _ = Describe("Audit event emission – MCP handler (PR2 wiring)", func() {
 		Expect(events).To(HaveLen(1), "expected exactly one mcp.session_init event")
 		Expect(events[0].Detail).To(HaveKeyWithValue("protocol_version", "2025-03-26"))
 	})
+
+	It("UT-AF-1156-065: does NOT emit duplicate mcp.session_init for same session", func() {
+		spy := &handlerAuditSpy{}
+		h, err := handler.NewMCPHandler(handler.MCPConfig{
+			ServerName:    "kubernaut-apifrontend",
+			ServerVersion: "v0.1.0",
+			Enabled:       true,
+			Auditor:       spy,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		initReq := map[string]any{
+			"jsonrpc": "2.0",
+			"id":      1,
+			"method":  "initialize",
+			"params": map[string]any{
+				"protocolVersion": "2025-03-26",
+				"capabilities":    map[string]any{},
+				"clientInfo":      map[string]any{"name": "test-client", "version": "1.0"},
+			},
+		}
+		body, _ := json.Marshal(initReq)
+
+		req1 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(string(body)))
+		req1.Header.Set("Content-Type", "application/json")
+		req1.Header.Set("Accept", "application/json, text/event-stream")
+		rec1 := httptest.NewRecorder()
+		h.ServeHTTP(rec1, req1)
+
+		sessionID := rec1.Header().Get("Mcp-Session-Id")
+
+		req2 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(string(body)))
+		req2.Header.Set("Content-Type", "application/json")
+		req2.Header.Set("Accept", "application/json, text/event-stream")
+		if sessionID != "" {
+			req2.Header.Set("Mcp-Session-Id", sessionID)
+		}
+		rec2 := httptest.NewRecorder()
+		h.ServeHTTP(rec2, req2)
+
+		events := spy.eventsByType(audit.EventMCPSessionInit)
+		Expect(events).To(HaveLen(1), "second request with same session should NOT emit another mcp.session_init")
+	})
 })
