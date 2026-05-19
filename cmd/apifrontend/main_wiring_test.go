@@ -108,7 +108,7 @@ func TestBuildResilientTransport_DependencyNameInMetrics(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	cbt := buildResilientTransport(http.DefaultTransport, depCfg, "ds", reg)
+	cbt := buildResilientTransport(http.DefaultTransport, depCfg, "ds", reg, nil)
 	client := &http.Client{Transport: cbt}
 
 	for i := 0; i < 5; i++ {

@@ -146,7 +146,7 @@ func run() int {
 	sessInfra := buildSessionInfra(cfg, metricsReg, auditor, logger)
 	defer sessInfra.StopFunc()
 
-	deps, err := buildBackendDeps(ctx, cfg, metricsReg, logger)
+	deps, err := buildBackendDeps(ctx, cfg, metricsReg, auditor, logger)
 	if err != nil {
 		logger.Error(err, "failed to create backend dependencies")
 		return 1
@@ -442,7 +442,7 @@ func (d *backendDeps) K8sClient() dynamic.Interface {
 	return d.k8sDynClient
 }
 
-func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metrics.Registry, logger logr.Logger) (*backendDeps, error) {
+func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (*backendDeps, error) {
 	deps := &backendDeps{}
 
 	dsTransport, dsWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.DSTLSCaFile, logger.WithName("ds-ca"))
@@ -456,7 +456,7 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "ds-ca", watcher: dsWatcher})
 	}
 
-	deps.DSResilientTransport = buildResilientTransport(dsTransport, &cfg.Resilience.DS, "ds", metricsReg)
+	deps.DSResilientTransport = buildResilientTransport(dsTransport, &cfg.Resilience.DS, "ds", metricsReg, auditor)
 
 	var dsAuthTransport http.RoundTripper = deps.DSResilientTransport
 	if cfg.Agent.DSBearerTokenFile != "" {
@@ -488,10 +488,12 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "ka-ca", watcher: kaWatcher})
 	}
 
-	kaMCPHTTPClient := &http.Client{Transport: &auth.ContextJWTDelegationTransport{}}
+	var jwtDelegation http.RoundTripper = &auth.ContextJWTDelegationTransport{}
 	if kaTransport != nil {
-		kaMCPHTTPClient.Transport = &auth.ContextJWTDelegationTransport{Base: kaTransport}
+		jwtDelegation = &auth.ContextJWTDelegationTransport{Base: kaTransport}
 	}
+	jwtDelegation = &auth.AuditingJWTDelegationTransport{Base: jwtDelegation, Auditor: auditor}
+	kaMCPHTTPClient := &http.Client{Transport: jwtDelegation}
 	deps.MCPClient = ka.NewSDKMCPClient(
 		cfg.Agent.KAMCPEndpoint,
 		kaMCPHTTPClient,
@@ -558,12 +560,13 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		RetryInitBackoff:   cfg.Resilience.KA.RetryInitBackoff,
 		RetryMaxBackoff:    cfg.Resilience.KA.RetryMaxBackoff,
 		RetryableStatuses:  cfg.Resilience.KA.RetryableStatuses,
+		CBAuditFunc:        resilience.CircuitBreakerAuditFunc(auditor),
 	}, &ka.ClientMetrics{
 		StateGauge:   metricsReg.CircuitBreakerState,
 		DurationHist: metricsReg.DownstreamDuration,
 	})
 
-	deps.DynFactory = buildDynFactory()
+	deps.DynFactory = auth.AuditingDynamicFactory(buildDynFactory(), auditor)
 
 	return deps, nil
 }
@@ -673,7 +676,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 
 // buildResilientTransport wraps a base transport with retry + circuit breaker.
 // Returns the CB transport for health checking.
-func buildResilientTransport(base http.RoundTripper, depCfg *config.DependencyConfig, name string, reg *metrics.Registry) *resilience.CircuitBreakerTransport {
+func buildResilientTransport(base http.RoundTripper, depCfg *config.DependencyConfig, name string, reg *metrics.Registry, auditor audit.Emitter) *resilience.CircuitBreakerTransport {
 	if base == nil {
 		base = http.DefaultTransport
 	}
@@ -709,6 +712,7 @@ func buildResilientTransport(base http.RoundTripper, depCfg *config.DependencyCo
 		FailureThreshold: cbFailureThreshold,
 		StateGauge:       reg.CircuitBreakerState,
 		DurationHist:     reg.DownstreamDuration,
+		AuditFunc:        resilience.CircuitBreakerAuditFunc(auditor),
 	})
 	return cbt
 }
