@@ -28,7 +28,7 @@ var _ = Describe("kubernaut_select_workflow", func() {
 		}
 		result, err := tools.HandleSelectWorkflow(ctx, mockMCP, tools.SelectWorkflowArgs{
 			RRID: "pay/rr-1", WorkflowID: "wf-restart",
-		})
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("accepted"))
 	})
@@ -41,7 +41,7 @@ var _ = Describe("kubernaut_select_workflow", func() {
 		}
 		result, err := tools.HandleSelectWorkflow(ctx, mockMCP, tools.SelectWorkflowArgs{
 			RRID: "pay/rr-1", WorkflowID: "wf-restart",
-		})
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Message).To(ContainSubstring("started"))
 	})
@@ -54,7 +54,7 @@ var _ = Describe("kubernaut_select_workflow", func() {
 		}
 		_, err := tools.HandleSelectWorkflow(ctx, mockMCP, tools.SelectWorkflowArgs{
 			RRID: "pay/rr-1", WorkflowID: "nonexistent",
-		})
+		}, nil)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("not found"))
 	})

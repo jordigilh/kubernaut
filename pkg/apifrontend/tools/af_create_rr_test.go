@@ -30,7 +30,7 @@ var _ = Describe("af_create_rr", func() {
 			Name:        "web",
 			Severity:    "high",
 			Description: "Pod CrashLoopBackOff detected",
-		}, "sre-user", nil)
+		}, "sre-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
 		Expect(result.AlreadyExists).To(BeFalse())
@@ -50,7 +50,7 @@ var _ = Describe("af_create_rr", func() {
 			Kind:        "Deployment",
 			Name:        "web",
 			Description: "duplicate",
-		}, "sre-user", nil)
+		}, "sre-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.AlreadyExists).To(BeTrue())
 		Expect(result.RRID).To(Equal("prod/rr-deploy-web-existing"))
@@ -63,7 +63,7 @@ var _ = Describe("af_create_rr", func() {
 
 		_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace: "", Kind: "Deployment", Name: "web", Description: "x",
-		}, "user", nil)
+		}, "user", nil, nil)
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
 
@@ -74,7 +74,7 @@ var _ = Describe("af_create_rr", func() {
 
 		_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "", Name: "web", Description: "x",
-		}, "user", nil)
+		}, "user", nil, nil)
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
 
@@ -85,14 +85,14 @@ var _ = Describe("af_create_rr", func() {
 
 		_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "", Description: "x",
-		}, "user", nil)
+		}, "user", nil, nil)
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
 
 	It("UT-AF-052-055: nil client returns ErrK8sUnavailable", func() {
 		_, err := tools.HandleCreateRR(context.Background(), nil, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "web", Description: "x",
-		}, "user", nil)
+		}, "user", nil, nil)
 		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
 	})
 
@@ -111,7 +111,7 @@ var _ = Describe("af_create_rr", func() {
 			Kind:        "Deployment",
 			Name:        "web",
 			Description: string(longDesc),
-		}, "user", nil)
+		}, "user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
 	})
@@ -134,7 +134,7 @@ var _ = Describe("af_create_rr", func() {
 					Kind:        "Deployment",
 					Name:        "dedup-target",
 					Description: "concurrent test",
-				}, "user", nil)
+				}, "user", nil, nil)
 			}(i)
 		}
 		wg.Wait()
@@ -156,7 +156,7 @@ var _ = Describe("af_create_rr", func() {
 
 		_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
 			Namespace: "../../etc", Kind: "Deployment", Name: "web", Description: "x",
-		}, "user", nil)
+		}, "user", nil, nil)
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
 
@@ -171,7 +171,7 @@ var _ = Describe("af_create_rr", func() {
 			Name:        "web",
 			Severity:    "CATASTROPHIC",
 			Description: "bad sev",
-		}, "user", nil)
+		}, "user", nil, nil)
 		Expect(err).To(MatchError(ContainSubstring("severity must be one of")))
 	})
 
@@ -186,7 +186,7 @@ var _ = Describe("af_create_rr", func() {
 			Name:        "web",
 			Severity:    "critical",
 			Description: "oom kill",
-		}, "alice", nil)
+		}, "alice", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
 	})
@@ -202,7 +202,7 @@ var _ = Describe("af_create_rr", func() {
 			Name:        "web",
 			Severity:    "",
 			Description: "no sev",
-		}, "alice", nil)
+		}, "alice", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
 	})
@@ -228,7 +228,7 @@ var _ = Describe("af_create_rr", func() {
 			Name:        "web",
 			Severity:    "high",
 			Description: "user-supplied severity",
-		}, "alice", triager)
+		}, "alice", triager, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
 	})

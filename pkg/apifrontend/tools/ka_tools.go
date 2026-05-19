@@ -10,6 +10,7 @@ import (
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 )
 
@@ -28,7 +29,7 @@ type StartInvestigationResult struct {
 }
 
 // HandleStartInvestigation implements the kubernaut_start_investigation logic.
-func HandleStartInvestigation(ctx context.Context, kaClient *ka.Client, args StartInvestigationArgs) (StartInvestigationResult, error) {
+func HandleStartInvestigation(ctx context.Context, kaClient *ka.Client, args StartInvestigationArgs, auditor audit.Emitter) (StartInvestigationResult, error) {
 	sessionID, err := kaClient.Analyze(ctx, ka.AnalyzeRequest{
 		Namespace: args.Namespace,
 		Kind:      args.Kind,
@@ -36,6 +37,17 @@ func HandleStartInvestigation(ctx context.Context, kaClient *ka.Client, args Sta
 	})
 	if err != nil {
 		return StartInvestigationResult{}, fmt.Errorf("starting investigation: %w", err)
+	}
+
+	if auditor != nil {
+		auditor.Emit(ctx, &audit.Event{
+			Type: audit.EventKADelegated,
+			Detail: map[string]string{
+				"namespace":  args.Namespace,
+				"rr_name":    args.Name,
+				"session_id": sessionID,
+			},
+		})
 	}
 
 	return StartInvestigationResult{
@@ -46,12 +58,12 @@ func HandleStartInvestigation(ctx context.Context, kaClient *ka.Client, args Sta
 }
 
 // NewStartInvestigationTool creates the kubernaut_start_investigation tool.
-func NewStartInvestigationTool(kaClient *ka.Client) (tool.Tool, error) {
+func NewStartInvestigationTool(kaClient *ka.Client, auditor audit.Emitter) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_start_investigation",
 		Description: "Start an AI-powered investigation for an incident, returning a session ID for tracking",
 	}, func(ctx tool.Context, args StartInvestigationArgs) (StartInvestigationResult, error) {
-		return HandleStartInvestigation(ctx, kaClient, args)
+		return HandleStartInvestigation(ctx, kaClient, args, auditor)
 	})
 }
 
@@ -70,7 +82,7 @@ type PollInvestigationResult struct {
 
 // HandlePollInvestigation implements kubernaut_poll_investigation with blocking poll.
 // maxPolls controls how many times to poll; pollInterval is the wait between polls.
-func HandlePollInvestigation(ctx context.Context, kaClient *ka.Client, args PollInvestigationArgs, maxPolls int, pollInterval time.Duration) (PollInvestigationResult, error) {
+func HandlePollInvestigation(ctx context.Context, kaClient *ka.Client, args PollInvestigationArgs, maxPolls int, pollInterval time.Duration, auditor audit.Emitter) (PollInvestigationResult, error) {
 	for i := 1; i <= maxPolls; i++ {
 		status, err := kaClient.Status(ctx, args.SessionID)
 		if err != nil {
@@ -83,6 +95,15 @@ func HandlePollInvestigation(ctx context.Context, kaClient *ka.Client, args Poll
 			if err != nil {
 				return PollInvestigationResult{}, fmt.Errorf("fetching investigation result: %w", err)
 			}
+			if auditor != nil {
+				auditor.Emit(ctx, &audit.Event{
+					Type: audit.EventKAResultReceived,
+					Detail: map[string]string{
+						"session_id": args.SessionID,
+						"status":     "completed",
+					},
+				})
+			}
 			return PollInvestigationResult{
 				Status:    "completed",
 				Summary:   result.Summary,
@@ -90,6 +111,15 @@ func HandlePollInvestigation(ctx context.Context, kaClient *ka.Client, args Poll
 			}, nil
 
 		case "failed":
+			if auditor != nil {
+				auditor.Emit(ctx, &audit.Event{
+					Type: audit.EventKAResultReceived,
+					Detail: map[string]string{
+						"session_id": args.SessionID,
+						"status":     "failed",
+					},
+				})
+			}
 			return PollInvestigationResult{
 				Status:    "failed",
 				Progress:  "Investigation failed. Please try again or contact support.",
@@ -120,12 +150,12 @@ func HandlePollInvestigation(ctx context.Context, kaClient *ka.Client, args Poll
 }
 
 // NewPollInvestigationTool creates the kubernaut_poll_investigation tool.
-func NewPollInvestigationTool(kaClient *ka.Client) (tool.Tool, error) {
+func NewPollInvestigationTool(kaClient *ka.Client, auditor audit.Emitter) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_poll_investigation",
 		Description: "Check investigation progress. Blocks for up to 15 seconds polling every 3 seconds. Re-call if status is in_progress.",
 	}, func(ctx tool.Context, args PollInvestigationArgs) (PollInvestigationResult, error) {
-		return HandlePollInvestigation(ctx, kaClient, args, 5, 3*time.Second)
+		return HandlePollInvestigation(ctx, kaClient, args, 5, 3*time.Second, auditor)
 	})
 }
 
@@ -316,7 +346,7 @@ type SelectWorkflowResult struct {
 // HandleSelectWorkflow implements kubernaut_select_workflow via KA MCP.
 //
 //nolint:gocritic // hugeParam: args passed by value for simplicity; not performance-critical
-func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args SelectWorkflowArgs) (SelectWorkflowResult, error) {
+func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args SelectWorkflowArgs, auditor audit.Emitter) (SelectWorkflowResult, error) {
 	if mcpClient == nil {
 		return SelectWorkflowResult{}, fmt.Errorf("workflow selection is not available: MCP client not configured")
 	}
@@ -332,6 +362,17 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 		return SelectWorkflowResult{}, fmt.Errorf("selecting workflow: %w", err)
 	}
 
+	if auditor != nil {
+		auditor.Emit(ctx, &audit.Event{
+			Type: audit.EventUserDecision,
+			Detail: map[string]string{
+				"rr_id":       args.RRID,
+				"workflow_id": args.WorkflowID,
+				"status":      result.Status,
+			},
+		})
+	}
+
 	return SelectWorkflowResult{
 		Status:  result.Status,
 		Message: result.Message,
@@ -339,12 +380,12 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 }
 
 // NewSelectWorkflowTool creates the kubernaut_select_workflow tool.
-func NewSelectWorkflowTool(mcpClient ka.MCPClient) (tool.Tool, error) {
+func NewSelectWorkflowTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_select_workflow",
 		Description: "Select a remediation workflow for execution. Triggers enrichment and workflow selection in the backend.",
 	}, func(ctx tool.Context, args SelectWorkflowArgs) (SelectWorkflowResult, error) {
-		return HandleSelectWorkflow(ctx, mcpClient, args)
+		return HandleSelectWorkflow(ctx, mcpClient, args, auditor)
 	})
 }
 

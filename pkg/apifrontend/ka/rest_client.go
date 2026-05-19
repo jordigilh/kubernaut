@@ -46,12 +46,8 @@ func NewClient(cfg Config, metrics ...*ClientMetrics) *Client {
 	if underlying == nil {
 		underlying = http.DefaultTransport
 	}
-	var baseTransport http.RoundTripper = &requestid.Transport{Base: underlying}
-	if cfg.Token != "" {
-		baseTransport = &auth.JWTDelegationTransport{
-			Base:  baseTransport,
-			Token: cfg.Token,
-		}
+	var baseTransport http.RoundTripper = &auth.ContextJWTDelegationTransport{
+		Base: &requestid.Transport{Base: underlying},
 	}
 
 	// Build the resilience transport chain: CB -> Retry -> Auth/Base
@@ -100,6 +96,7 @@ func NewClient(cfg Config, metrics ...*ClientMetrics) *Client {
 		StateGauge:       stateGauge,
 		DurationHist:     durationHist,
 		DependencyName:   "ka",
+		AuditFunc:        cfg.CBAuditFunc,
 	})
 
 	return &Client{
@@ -213,6 +210,44 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body interface
 	}
 
 	return c.httpClient.Do(req)
+}
+
+// StreamEvents opens an SSE connection to KA's session stream endpoint and
+// yields InvestigationEvents on the returned channel. The channel is closed
+// when the stream ends (complete/cancelled event), the context is cancelled,
+// or a non-recoverable error occurs. Errors are delivered as EventTypeError
+// events on the channel rather than returned directly, allowing callers to
+// process partial streams.
+func (c *Client) StreamEvents(ctx context.Context, sessionID string) (<-chan InvestigationEvent, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.baseURL+fmt.Sprintf("/api/v1/incident/session/%s/stream", sessionID), http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("creating SSE request: %w", err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Cache-Control", "no-cache")
+
+	// Use a separate client without the default timeout — SSE connections
+	// are long-lived and bounded by ctx cancellation instead.
+	sseClient := &http.Client{Transport: c.httpClient.Transport}
+	resp, err := sseClient.Do(req)
+	if err != nil {
+		return nil, kaToUserFriendlyError(err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		return nil, kaToUserFriendlyError(fmt.Errorf("KA stream returned %d", resp.StatusCode))
+	}
+
+	ch := make(chan InvestigationEvent, 32)
+	go func() {
+		defer close(ch)
+		defer func() { _ = resp.Body.Close() }()
+		parseSSEStream(ctx, resp.Body, ch)
+	}()
+
+	return ch, nil
 }
 
 func (c *Client) doGet(ctx context.Context, path string) (*http.Response, error) {

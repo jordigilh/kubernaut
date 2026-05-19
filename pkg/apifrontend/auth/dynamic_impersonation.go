@@ -6,6 +6,8 @@ import (
 
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
+
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 )
 
 // DynamicClientFactory creates a dynamic.Interface appropriate for the calling
@@ -45,6 +47,26 @@ func NewImpersonatingDynamicFactory(baseCfg *rest.Config, wrappers ...ClientWrap
 			wrapped = w(wrapped)
 		}
 		return wrapped, nil
+	}
+}
+
+// AuditingDynamicFactory wraps a DynamicClientFactory to emit an
+// impersonation.created audit event each time a client is created.
+func AuditingDynamicFactory(base DynamicClientFactory, auditor audit.Emitter) DynamicClientFactory {
+	return func(ctx context.Context) (dynamic.Interface, error) {
+		client, err := base(ctx)
+		if err == nil && auditor != nil {
+			username := ""
+			if identity := UserIdentityFromContext(ctx); identity != nil {
+				username = identity.Username
+			}
+			auditor.Emit(ctx, &audit.Event{
+				Type:   audit.EventImpersonation,
+				UserID: username,
+				Detail: map[string]string{},
+			})
+		}
+		return client, err
 	}
 }
 

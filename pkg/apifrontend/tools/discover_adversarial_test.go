@@ -131,7 +131,7 @@ var _ = Describe("kubernaut_discover_workflows adversarial", func() {
 		}
 		result, err := tools.HandleSelectWorkflow(ctx, mockMCP, tools.SelectWorkflowArgs{
 			RRID: "rr-1", WorkflowID: "wf-1",
-		})
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("accepted"))
 	})

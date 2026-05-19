@@ -24,11 +24,11 @@ var _ = Describe("Root Agent", func() {
 			Expect(tools).NotTo(BeEmpty())
 		})
 
-		It("UT-AF-100-002: registers all 20 tools", func() {
+		It("UT-AF-100-002: registers all 21 tools", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(19))
+			Expect(tools).To(HaveLen(21))
 		})
 
 		It("UT-AF-100-003: with nil model config returns error", func() {
@@ -78,7 +78,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(19))
+			Expect(tools).To(HaveLen(21))
 		})
 
 		It("UT-AF-100-008: present_decision is marked IsLongRunning", func() {
@@ -121,7 +121,7 @@ var _ = Describe("Root Agent", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			filtered := agentpkg.FilterToolsByRole("sre", tools)
-			Expect(filtered).To(HaveLen(19))
+			Expect(filtered).To(HaveLen(21))
 
 			filtered = agentpkg.FilterToolsByRole("unknown-role", tools)
 			Expect(filtered).To(BeEmpty())

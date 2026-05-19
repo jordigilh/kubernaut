@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 )
 
@@ -42,24 +43,37 @@ type Triager struct {
 	config     Config
 	logger     logr.Logger
 	cache      *RulesCache
+	auditor    audit.Emitter
+}
+
+// TriagerOption configures optional dependencies on Triager.
+type TriagerOption func(*Triager)
+
+// WithAuditor injects an audit.Emitter for SOC2 AU-2 compliance.
+func WithAuditor(e audit.Emitter) TriagerOption {
+	return func(t *Triager) { t.auditor = e }
 }
 
 // NewTriager creates a new Triager instance.
 // Panics if llm is nil — the pipeline requires an LLM fallback to guarantee a result.
-func NewTriager(promClient prom.Client, llm LLMTriager, cfg Config, logger logr.Logger) *Triager {
+func NewTriager(promClient prom.Client, llm LLMTriager, cfg Config, logger logr.Logger, opts ...TriagerOption) *Triager {
 	if llm == nil {
 		panic("NewTriager: LLMTriager must not be nil — the triage pipeline requires an LLM fallback")
 	}
 	if logger.GetSink() == nil {
 		logger = logr.Discard()
 	}
-	return &Triager{
+	t := &Triager{
 		promClient: promClient,
 		llm:        llm,
 		config:     cfg,
 		logger:     logger,
 		cache:      NewRulesCache(cfg.CacheTTLSeconds),
 	}
+	for _, o := range opts {
+		o(t)
+	}
+	return t
 }
 
 // Triage runs the severity triage pipeline: Tier 1 -> 1.5 -> 2 -> 2.5/3.
@@ -69,7 +83,34 @@ func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, 
 		return TriageResult{}, nil
 	}
 
-	return t.triagePipeline(ctx, input)
+	result, err := t.triagePipeline(ctx, input)
+	if err != nil {
+		if t.auditor != nil {
+			t.auditor.Emit(ctx, &audit.Event{
+				Type: audit.EventSeverityTriageFailed,
+				Detail: map[string]string{
+					"namespace": input.Namespace,
+					"kind":      input.Kind,
+					"name":      input.Name,
+					"error":     err.Error(),
+				},
+			})
+		}
+		return result, err
+	}
+	if result.Severity != "" && t.auditor != nil {
+		t.auditor.Emit(ctx, &audit.Event{
+			Type: audit.EventSeverityTriageCompleted,
+			Detail: map[string]string{
+				"namespace": input.Namespace,
+				"kind":      input.Kind,
+				"name":      input.Name,
+				"severity":  result.Severity,
+				"source":    string(result.Source),
+			},
+		})
+	}
+	return result, nil
 }
 
 func (t *Triager) triagePipeline(ctx context.Context, input TriageInput) (TriageResult, error) {

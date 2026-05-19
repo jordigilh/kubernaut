@@ -37,7 +37,7 @@ var _ = Describe("kubernaut_start_investigation", func() {
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
 		result, err := tools.HandleStartInvestigation(ctx, kaClient, tools.StartInvestigationArgs{
 			Namespace: "payments", Name: "rr-1",
-		})
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.SessionID).To(Equal("sess-abc"))
 	})
@@ -50,7 +50,7 @@ var _ = Describe("kubernaut_start_investigation", func() {
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
 		result, err := tools.HandleStartInvestigation(ctx, kaClient, tools.StartInvestigationArgs{
 			Namespace: "payments", Name: "rr-1",
-		})
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Message).NotTo(BeEmpty())
 		Expect(result.Status).To(Equal("started"))
@@ -63,7 +63,7 @@ var _ = Describe("kubernaut_start_investigation", func() {
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
 		_, err := tools.HandleStartInvestigation(ctx, kaClient, tools.StartInvestigationArgs{
 			Namespace: "forbidden", Name: "rr-1",
-		})
+		}, nil)
 		Expect(err).To(HaveOccurred())
 	})
 
@@ -71,7 +71,7 @@ var _ = Describe("kubernaut_start_investigation", func() {
 		kaClient := ka.NewClient(ka.Config{BaseURL: "http://127.0.0.1:1"})
 		_, err := tools.HandleStartInvestigation(ctx, kaClient, tools.StartInvestigationArgs{
 			Namespace: "payments", Name: "rr-1",
-		})
+		}, nil)
 		Expect(err).To(HaveOccurred())
 	})
 })

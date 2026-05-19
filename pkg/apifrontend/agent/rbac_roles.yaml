@@ -7,6 +7,7 @@ roles:
     - kubernaut_watch
     - kubernaut_start_investigation
     - kubernaut_poll_investigation
+    - kubernaut_stream_investigation
     - kubernaut_discover_workflows
     - kubernaut_select_workflow
     - present_decision
@@ -29,6 +30,7 @@ roles:
     - kubernaut_watch
     - kubernaut_start_investigation
     - kubernaut_poll_investigation
+    - kubernaut_stream_investigation
     - kubernaut_discover_workflows
     - kubernaut_select_workflow
     - present_decision
