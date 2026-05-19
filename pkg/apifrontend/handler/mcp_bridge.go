@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -46,7 +47,6 @@ type MCPBridgeConfig struct {
 type MCPBridgeMetrics struct {
 	ToolCallsTotal   *prometheus.CounterVec
 	ToolCallDuration *prometheus.HistogramVec
-	RBACDeniedTotal  *prometheus.CounterVec
 }
 
 // GetToolTimeout returns the configured tool timeout or the default.
@@ -136,10 +136,21 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandlePollInvestigation(ctx, cfg.KAClient, args, 5, 3*time.Second)
 		})
 
-	// KA MCP tool
+	// KA MCP tools
 	registerTool(srv, cfg, sem, "kubernaut_select_workflow", "Select a workflow for an investigation",
 		func(ctx context.Context, args tools.SelectWorkflowArgs) (any, error) {
 			return tools.HandleSelectWorkflow(ctx, cfg.KAMCPClient, args)
+		})
+
+	registerTool(srv, cfg, sem, "kubernaut_discover_workflows", "Discover available workflows with parameter schemas",
+		func(ctx context.Context, args tools.DiscoverWorkflowsArgs) (any, error) {
+			result, err := tools.HandleDiscoverWorkflows(ctx, cfg.KAMCPClient, args)
+			if err != nil {
+				return result, err
+			}
+			emitAudit(ctx, cfg, "kubernaut_discover_workflows", audit.EventWorkflowDiscovery,
+				map[string]string{"workflow_count": strconv.Itoa(result.Count)})
+			return result, nil
 		})
 
 	// Presentation tool (no backend dependency)
@@ -279,9 +290,6 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 		if err := checkRBAC(ctx, cfg, toolName); err != nil {
 			resultLabel = "denied"
 			recordMetrics(cfg, toolName, resultLabel, start)
-			if cfg.Metrics != nil && cfg.Metrics.RBACDeniedTotal != nil {
-				cfg.Metrics.RBACDeniedTotal.With(prometheus.Labels{"tool": toolName}).Inc()
-			}
 			emitAudit(ctx, cfg, toolName, audit.EventMCPToolDenied, nil)
 			cfg.Logger.Info("tool call denied by RBAC",
 				"tool", toolName, "user", usernameFromCtx(ctx))

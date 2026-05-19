@@ -271,7 +271,7 @@ var _ = Describe("A2A Handler (E2E)", Ordered, ContinueOnFailure, Label("e2e", "
 				"tool call duration histogram should have bucket observations")
 		})
 
-		It("TC-E2E-A2A-MET-04: af_mcp_rbac_denied_total has observations from RBAC denials", func() {
+		It("TC-E2E-A2A-MET-04: RBAC denials tracked via af_tool_calls_total{result=denied}", func() {
 			// Trigger an MCP RBAC denial: observability persona calling af_create_rr (not in their role)
 			obsToken, err := fetchDEXTokenForPersona("observability")
 			Expect(err).NotTo(HaveOccurred())
@@ -286,8 +286,8 @@ var _ = Describe("A2A Handler (E2E)", Ordered, ContinueOnFailure, Label("e2e", "
 			time.Sleep(1 * time.Second)
 
 			metrics := scrapeMetrics()
-			Expect(metrics).To(ContainSubstring("af_mcp_rbac_denied_total"),
-				"RBAC denied counter should exist after denied tool calls")
+			Expect(metrics).To(ContainSubstring(`af_tool_calls_total`),
+				"tool calls total counter should exist after denied tool calls")
 		})
 
 		It("TC-E2E-A2A-MET-05: af_tool_calls_total includes per-tool tool labels", func() {

@@ -48,6 +48,18 @@ func (c *SDKMCPClient) SelectWorkflow(ctx context.Context, args SelectWorkflowAr
 		"rr_id":       args.RRID,
 		"workflow_id": args.WorkflowID,
 	}
+	if args.Kind != "" {
+		argsMap["kind"] = args.Kind
+	}
+	if args.Name != "" {
+		argsMap["name"] = args.Name
+	}
+	if args.Namespace != "" {
+		argsMap["namespace"] = args.Namespace
+	}
+	if args.Parameters != nil {
+		argsMap["parameters"] = args.Parameters
+	}
 
 	result, err := c.callTool(ctx, "kubernaut_select_workflow", argsMap)
 	if err != nil {
@@ -122,6 +134,29 @@ func (c *SDKMCPClient) callTool(ctx context.Context, name string, args map[strin
 	}
 
 	return json.RawMessage("{}"), nil
+}
+
+// DiscoverWorkflows calls kubernaut_investigate with action "discover_workflows"
+// on KA's MCP server. KA exposes workflow discovery as an action within the
+// kubernaut_investigate tool, not as a standalone tool.
+//
+//nolint:gocritic // hugeParam: matches MCPClient interface contract
+func (c *SDKMCPClient) DiscoverWorkflows(ctx context.Context, args DiscoverWorkflowsArgs) (*DiscoverWorkflowsResult, error) {
+	argsMap := map[string]any{
+		"rr_id":  args.RRID,
+		"action": "discover_workflows",
+	}
+
+	result, err := c.callTool(ctx, "kubernaut_investigate", argsMap)
+	if err != nil {
+		return nil, err
+	}
+
+	var dwResult DiscoverWorkflowsResult
+	if err := json.Unmarshal(result, &dwResult); err != nil {
+		return nil, fmt.Errorf("parse discover_workflows response: %w", err)
+	}
+	return &dwResult, nil
 }
 
 // Compile-time interface check.

@@ -81,7 +81,7 @@ var _ = Describe("Phase 1: AF Standalone (Realistic)", Ordered, ContinueOnFailur
 
 			skills, ok := card["skills"].([]interface{})
 			Expect(ok).To(BeTrue(), "skills should be a JSON array")
-			Expect(skills).To(HaveLen(19), "agent card should advertise all 19 tools as skills")
+			Expect(skills).To(HaveLen(20), "agent card should advertise all 20 tools as skills")
 		})
 	})
 

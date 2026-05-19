@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 )
 
 // fakeAuditor captures audit events thread-safely for test assertions.
@@ -215,9 +216,6 @@ func newBridgeMetrics() *handler.MCPBridgeMetrics {
 			Name:    "test_tool_call_duration_seconds",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"tool", "type"}),
-		RBACDeniedTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "test_rbac_denied_total",
-		}, []string{"tool"}),
 	}
 }
 
@@ -390,7 +388,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	})
 
 	Context("Tool registration", func() {
-		It("UT-AF-B-023: RegisterTools registers exactly 19 tools on the server", func() {
+		It("UT-AF-B-023: RegisterTools registers exactly 20 tools on the server", func() {
 			listReq := map[string]any{
 				"jsonrpc": "2.0",
 				"id":      3,
@@ -401,7 +399,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := rec.Body.String()
 			count := countToolsInResponse(body)
-			Expect(count).To(Equal(19))
+			Expect(count).To(Equal(20))
 		})
 	})
 
@@ -801,7 +799,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			Expect(events[0].Detail["tool"]).To(Equal("af_list_events"))
 		})
 
-		It("UT-AF-B-032: RBAC denial increments af_mcp_rbac_denied_total metric", func() {
+		It("UT-AF-B-032: RBAC denial increments af_tool_calls_total{result=denied}", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
@@ -824,7 +822,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 
 			mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
 
-			val := getCounterValue(metrics.RBACDeniedTotal, prometheus.Labels{"tool": "af_list_events"})
+			val := getCounterValue(metrics.ToolCallsTotal, prometheus.Labels{"tool": "af_list_events", "result": "denied"})
 			Expect(val).To(BeNumerically(">=", 1))
 		})
 	})
@@ -917,7 +915,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			rec := mcpPost(h, sid, listReq, viewer)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			count := countToolsInResponse(rec.Body.String())
-			Expect(count).To(Equal(19))
+			Expect(count).To(Equal(20))
 		})
 	})
 })
@@ -1978,3 +1976,313 @@ func newFakeDSClient() *ds.MockClient {
 		},
 	}
 }
+
+var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "discover-workflows"), func() {
+	var (
+		auditor  *fakeAuditor
+		testUser *auth.UserIdentity
+	)
+
+	newDiscoverHandler := func(mockMCP ka.MCPClient) http.Handler {
+		kaServer := newKATestServer()
+		DeferCleanup(kaServer.Close)
+
+		fakeK8s := newFakeDynamicClient()
+		kaClient := ka.NewClient(ka.Config{BaseURL: kaServer.URL})
+
+		roles := map[string][]string{
+			"sre":             {"*"},
+			"ai-orchestrator": {"*"},
+			"cicd":            {"kubernaut_list_remediations", "kubernaut_get_remediation"},
+		}
+
+		cfg := handler.MCPConfig{
+			ServerName:    "kubernaut-apifrontend",
+			ServerVersion: "v0.1.0-test",
+			Enabled:       true,
+			Bridge: &handler.MCPBridgeConfig{
+				DynFactory:         auth.StaticDynamicFactory(fakeK8s),
+				KAClient:           kaClient,
+				KAMCPClient:        mockMCP,
+				DSClient:           newFakeDSClient(),
+				RBACRoles:          roles,
+				Auditor:            auditor,
+				ToolTimeout:        5 * time.Second,
+				MaxConcurrentTools: 10,
+			},
+		}
+		h, err := handler.NewMCPHandler(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		return h
+	}
+
+	BeforeEach(func() {
+		auditor = &fakeAuditor{}
+		testUser = &auth.UserIdentity{
+			Username: "sre-engineer",
+			Groups:   []string{"sre"},
+			Issuer:   "test",
+		}
+	})
+
+	It("UT-AF-WP-026: registers kubernaut_discover_workflows tool", func() {
+		h := newDiscoverHandler(nil)
+		sessionID := mcpInitialize(h, testUser)
+
+		listReq := map[string]any{
+			"jsonrpc": "2.0",
+			"id":      3,
+			"method":  "tools/list",
+			"params":  map[string]any{},
+		}
+		rec := mcpPost(h, sessionID, listReq, testUser)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec.Body.String()).To(ContainSubstring("kubernaut_discover_workflows"))
+	})
+
+	It("UT-AF-WP-027: kubernaut_discover_workflows invokes handler correctly", func() {
+		var called bool
+		mockMCP := &ka.MockMCPClient{
+			DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+				called = true
+				return &ka.DiscoverWorkflowsResult{
+					Workflows: []ka.DiscoveredWorkflow{
+						{WorkflowID: "wf-1", Name: "Test"},
+					},
+				}, nil
+			},
+			SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+				return &ka.SelectWorkflowResult{Status: "ok"}, nil
+			},
+		}
+		h := newDiscoverHandler(mockMCP)
+		sessionID := mcpInitialize(h, testUser)
+
+		status, _ := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-test"}, testUser)
+		Expect(status).To(Equal(http.StatusOK))
+		Expect(called).To(BeTrue())
+	})
+
+	It("UT-AF-WP-028: kubernaut_select_workflow passes parameters from args", func() {
+		var receivedParams map[string]any
+		mockMCP := &ka.MockMCPClient{
+			SelectWorkflowFn: func(_ context.Context, args ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+				receivedParams = args.Parameters
+				return &ka.SelectWorkflowResult{Status: "accepted", Message: "ok"}, nil
+			},
+			DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+				return &ka.DiscoverWorkflowsResult{}, nil
+			},
+		}
+		h := newDiscoverHandler(mockMCP)
+		sessionID := mcpInitialize(h, testUser)
+
+		status, _ := mcpCallTool(h, sessionID, "kubernaut_select_workflow", map[string]any{
+			"rr_id":       "rr-1",
+			"workflow_id": "wf-1",
+			"parameters":  map[string]any{"ns": "prod"},
+		}, testUser)
+		Expect(status).To(Equal(http.StatusOK))
+		Expect(receivedParams).To(HaveKeyWithValue("ns", "prod"))
+	})
+
+	It("UT-AF-WP-029: returns error when KAMCPClient nil for discover", func() {
+		h := newDiscoverHandler(nil)
+		sessionID := mcpInitialize(h, testUser)
+
+		_, body := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-test"}, testUser)
+		Expect(body).To(ContainSubstring("not available"))
+	})
+
+	It("UT-AF-WP-030: emits EventWorkflowDiscovery audit event on success", func() {
+		mockMCP := &ka.MockMCPClient{
+			DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+				return &ka.DiscoverWorkflowsResult{
+					Workflows: []ka.DiscoveredWorkflow{
+						{WorkflowID: "wf-1", Name: "Test"},
+						{WorkflowID: "wf-2", Name: "Test2"},
+					},
+				}, nil
+			},
+			SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+				return &ka.SelectWorkflowResult{Status: "ok"}, nil
+			},
+		}
+		h := newDiscoverHandler(mockMCP)
+		sessionID := mcpInitialize(h, testUser)
+
+		status, _ := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-test"}, testUser)
+		Expect(status).To(Equal(http.StatusOK))
+
+		events := auditor.Events()
+		var found bool
+		for _, e := range events {
+			if e.Type == audit.EventWorkflowDiscovery {
+				found = true
+				Expect(e.Detail).To(HaveKeyWithValue("workflow_count", "2"))
+				Expect(e.Detail).To(HaveKeyWithValue("tool", "kubernaut_discover_workflows"))
+				break
+			}
+		}
+		Expect(found).To(BeTrue(), "expected EventWorkflowDiscovery audit event")
+	})
+
+	It("UT-AF-WP-031: error from KA returns isError in tool response", func() {
+		mockMCP := &ka.MockMCPClient{
+			DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+				return nil, ka.ErrMCPUnavailable
+			},
+			SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+				return &ka.SelectWorkflowResult{Status: "ok"}, nil
+			},
+		}
+		h := newDiscoverHandler(mockMCP)
+		sessionID := mcpInitialize(h, testUser)
+
+		status, body := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-test"}, testUser)
+		Expect(status).To(Equal(http.StatusOK))
+		Expect(body).To(ContainSubstring("isError"))
+	})
+
+	It("UT-AF-WP-032: RBAC enforces permission for kubernaut_discover_workflows", func() {
+		mockMCP := &ka.MockMCPClient{
+			DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+				return &ka.DiscoverWorkflowsResult{}, nil
+			},
+			SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+				return &ka.SelectWorkflowResult{Status: "ok"}, nil
+			},
+		}
+		h := newDiscoverHandler(mockMCP)
+
+		cicdUser := &auth.UserIdentity{
+			Username: "cicd-bot",
+			Groups:   []string{"cicd"},
+			Issuer:   "test",
+		}
+		sessionID := mcpInitialize(h, cicdUser)
+		_, body := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-test"}, cicdUser)
+		Expect(body).To(SatisfyAny(
+			ContainSubstring("denied"),
+			ContainSubstring("not permitted"),
+			ContainSubstring("forbidden"),
+		))
+	})
+})
+
+// ========================================================================
+// Metrics Wiring Integration Tests
+// Verifies that tool calls through the real bridge code path actually
+// increment the Prometheus metrics (catches nil-guard / unwired bugs).
+// Pattern: DD-TEST-005 — dto value verification after real business logic.
+// ========================================================================
+
+var _ = Describe("MCP Bridge - Metrics Wiring", Label("metrics", "wiring"), func() {
+	var (
+		h           http.Handler
+		sessionID   string
+		testUser    *auth.UserIdentity
+		metricsReg  *metrics.Registry
+	)
+
+	BeforeEach(func() {
+		metricsReg = metrics.NewRegistry()
+		kaServer := newKATestServer()
+		DeferCleanup(kaServer.Close)
+
+		fakeK8s := newFakeDynamicClient()
+		kaClient := ka.NewClient(ka.Config{BaseURL: kaServer.URL})
+
+		mockMCP := &ka.MockMCPClient{
+			DiscoverWorkflowsFn: func(_ context.Context, args ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+				return &ka.DiscoverWorkflowsResult{
+					Workflows: []ka.DiscoveredWorkflow{{WorkflowID: "wf-1", Name: "test-wf"}},
+				}, nil
+			},
+			SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+				return &ka.SelectWorkflowResult{Status: "selected"}, nil
+			},
+		}
+
+		bridgeMetrics := &handler.MCPBridgeMetrics{
+			ToolCallsTotal:   metricsReg.ToolCallsTotal,
+			ToolCallDuration: metricsReg.ToolCallDuration,
+		}
+
+		cfg := handler.MCPConfig{
+			ServerName:    "kubernaut-apifrontend",
+			ServerVersion: "v0.1.0-test",
+			Enabled:       true,
+			Bridge: &handler.MCPBridgeConfig{
+				DynFactory:         auth.StaticDynamicFactory(fakeK8s),
+				KAClient:           kaClient,
+				KAMCPClient:        mockMCP,
+				DSClient:           newFakeDSClient(),
+				RBACRoles:          map[string][]string{"sre": {"*"}, "cicd": {"kubernaut_list_remediations"}},
+				Auditor:            &fakeAuditor{},
+				Metrics:            bridgeMetrics,
+				ToolTimeout:        5 * time.Second,
+				MaxConcurrentTools: 10,
+			},
+		}
+		var err error
+		h, err = handler.NewMCPHandler(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		testUser = &auth.UserIdentity{
+			Username: "sre-engineer",
+			Groups:   []string{"sre"},
+			Issuer:   "test",
+		}
+		sessionID = mcpInitialize(h, testUser)
+	})
+
+	It("UT-AF-MET-W01: successful tool call increments af_tool_calls_total{result=success}", func() {
+		before := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_discover_workflows", "result": "success"})
+
+		mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-1"}, testUser)
+
+		after := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_discover_workflows", "result": "success"})
+		Expect(after - before).To(Equal(float64(1)))
+	})
+
+	It("UT-AF-MET-W02: tool call records af_tool_call_duration_seconds observation", func() {
+		obs := metricsReg.ToolCallDuration.WithLabelValues("kubernaut_discover_workflows", "mcp")
+		var beforeMetric dto.Metric
+		obs.(prometheus.Metric).Write(&beforeMetric) //nolint:errcheck
+		beforeCount := beforeMetric.GetHistogram().GetSampleCount()
+
+		mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-1"}, testUser)
+
+		var afterMetric dto.Metric
+		obs.(prometheus.Metric).Write(&afterMetric) //nolint:errcheck
+		afterCount := afterMetric.GetHistogram().GetSampleCount()
+		Expect(afterCount - beforeCount).To(Equal(uint64(1)))
+		Expect(afterMetric.GetHistogram().GetSampleSum()).To(BeNumerically(">", 0))
+	})
+
+	It("UT-AF-MET-W03: RBAC denied tool call increments af_tool_calls_total{result=denied}", func() {
+		cicdUser := &auth.UserIdentity{
+			Username: "cicd-bot",
+			Groups:   []string{"cicd"},
+			Issuer:   "test",
+		}
+		cicdSession := mcpInitialize(h, cicdUser)
+
+		before := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_discover_workflows", "result": "denied"})
+
+		mcpCallTool(h, cicdSession, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-1"}, cicdUser)
+
+		after := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_discover_workflows", "result": "denied"})
+		Expect(after - before).To(Equal(float64(1)))
+	})
+
+	It("UT-AF-MET-W04: error tool call increments af_tool_calls_total{result=error}", func() {
+		before := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "af_get_pods", "result": "error"})
+
+		mcpCallTool(h, sessionID, "af_get_pods", map[string]any{"namespace": ""}, testUser)
+
+		after := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "af_get_pods", "result": "error"})
+		Expect(after - before).To(BeNumerically(">=", float64(1)))
+	})
+})

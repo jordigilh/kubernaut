@@ -20,7 +20,6 @@ type BufferConfig struct {
 	FlushInterval   time.Duration
 	BatchSize       int
 	OverflowCounter prometheus.Counter
-	EventsCounter   *prometheus.CounterVec
 }
 
 // BufferedEmitter buffers audit events and flushes them asynchronously
@@ -32,7 +31,6 @@ type BufferedEmitter struct {
 	flushInterval   time.Duration
 	batchSize       int
 	overflowCounter prometheus.Counter
-	eventsCounter   *prometheus.CounterVec
 	done            chan struct{}
 	wg              sync.WaitGroup
 }
@@ -61,7 +59,6 @@ func NewBufferedEmitter(cfg BufferConfig) *BufferedEmitter { //nolint:gocritic /
 		flushInterval:   flushInterval,
 		batchSize:       batchSize,
 		overflowCounter: cfg.OverflowCounter,
-		eventsCounter:   cfg.EventsCounter,
 		done:            make(chan struct{}),
 	}
 }
@@ -85,9 +82,6 @@ func (e *BufferedEmitter) Emit(ctx context.Context, event *Event) {
 
 	select {
 	case e.buffer <- &ev:
-		if e.eventsCounter != nil {
-			e.eventsCounter.WithLabelValues(string(ev.Type)).Inc()
-		}
 	default:
 		if e.overflowCounter != nil {
 			e.overflowCounter.Inc()
@@ -113,9 +107,6 @@ func (e *BufferedEmitter) EmitBlocking(ctx context.Context, event *Event) {
 
 	select {
 	case e.buffer <- &ev:
-		if e.eventsCounter != nil {
-			e.eventsCounter.WithLabelValues(string(ev.Type)).Inc()
-		}
 	case <-ctx.Done():
 		if e.overflowCounter != nil {
 			e.overflowCounter.Inc()

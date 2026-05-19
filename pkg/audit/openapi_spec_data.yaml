@@ -2734,6 +2734,25 @@ components:
             - $ref: '#/components/schemas/ApifrontendUserDecisionPayload'
             - $ref: '#/components/schemas/ApifrontendAuthAccessDeniedPayload'
             - $ref: '#/components/schemas/ApifrontendToolExecutedPayload'
+            - $ref: '#/components/schemas/ApifrontendAuthSuccessPayload'
+            - $ref: '#/components/schemas/ApifrontendAuthFailurePayload'
+            - $ref: '#/components/schemas/ApifrontendRatelimitDeniedPayload'
+            - $ref: '#/components/schemas/ApifrontendCircuitbreakerTripPayload'
+            - $ref: '#/components/schemas/ApifrontendImpersonationCreatedPayload'
+            - $ref: '#/components/schemas/ApifrontendJWTDelegationPayload'
+            - $ref: '#/components/schemas/ApifrontendSessionPhaseChangedPayload'
+            - $ref: '#/components/schemas/ApifrontendSessionDeletedPayload'
+            - $ref: '#/components/schemas/ApifrontendSessionAutoCancelledPayload'
+            - $ref: '#/components/schemas/ApifrontendSessionRetentionDeletedPayload'
+            - $ref: '#/components/schemas/ApifrontendA2ATaskStartedPayload'
+            - $ref: '#/components/schemas/ApifrontendA2ATaskCompletedPayload'
+            - $ref: '#/components/schemas/ApifrontendA2ATaskFailedPayload'
+            - $ref: '#/components/schemas/ApifrontendMCPToolFailedPayload'
+            - $ref: '#/components/schemas/ApifrontendMCPSessionInitPayload'
+            - $ref: '#/components/schemas/ApifrontendSeverityTriageCompletedPayload'
+            - $ref: '#/components/schemas/ApifrontendSeverityTriageFailedPayload'
+            - $ref: '#/components/schemas/ApifrontendConfigReloadedPayload'
+            - $ref: '#/components/schemas/ApifrontendConfigRejectedPayload'
           discriminator:
             propertyName: event_type
             mapping:
@@ -2850,6 +2869,25 @@ components:
               'apifrontend.user.decision': '#/components/schemas/ApifrontendUserDecisionPayload'
               'apifrontend.auth.access_denied': '#/components/schemas/ApifrontendAuthAccessDeniedPayload'
               'apifrontend.tool.executed': '#/components/schemas/ApifrontendToolExecutedPayload'
+              'apifrontend.auth.success': '#/components/schemas/ApifrontendAuthSuccessPayload'
+              'apifrontend.auth.failure': '#/components/schemas/ApifrontendAuthFailurePayload'
+              'apifrontend.ratelimit.denied': '#/components/schemas/ApifrontendRatelimitDeniedPayload'
+              'apifrontend.circuitbreaker.trip': '#/components/schemas/ApifrontendCircuitbreakerTripPayload'
+              'apifrontend.impersonation.created': '#/components/schemas/ApifrontendImpersonationCreatedPayload'
+              'apifrontend.jwt.delegation': '#/components/schemas/ApifrontendJWTDelegationPayload'
+              'apifrontend.session.phase_changed': '#/components/schemas/ApifrontendSessionPhaseChangedPayload'
+              'apifrontend.session.deleted': '#/components/schemas/ApifrontendSessionDeletedPayload'
+              'apifrontend.session.auto_cancelled': '#/components/schemas/ApifrontendSessionAutoCancelledPayload'
+              'apifrontend.session.retention_deleted': '#/components/schemas/ApifrontendSessionRetentionDeletedPayload'
+              'apifrontend.a2a.task_started': '#/components/schemas/ApifrontendA2ATaskStartedPayload'
+              'apifrontend.a2a.task_completed': '#/components/schemas/ApifrontendA2ATaskCompletedPayload'
+              'apifrontend.a2a.task_failed': '#/components/schemas/ApifrontendA2ATaskFailedPayload'
+              'apifrontend.mcp.tool_failed': '#/components/schemas/ApifrontendMCPToolFailedPayload'
+              'apifrontend.mcp.session_init': '#/components/schemas/ApifrontendMCPSessionInitPayload'
+              'apifrontend.severity_triage.completed': '#/components/schemas/ApifrontendSeverityTriageCompletedPayload'
+              'apifrontend.severity_triage.failed': '#/components/schemas/ApifrontendSeverityTriageFailedPayload'
+              'apifrontend.config.reloaded': '#/components/schemas/ApifrontendConfigReloadedPayload'
+              'apifrontend.config.rejected': '#/components/schemas/ApifrontendConfigRejectedPayload'
           # Removed x-go-type override to use proper oneOf discriminator
           # Let oapi-codegen generate appropriate union type from oneOf schemas
 
@@ -7303,4 +7341,334 @@ components:
         target_resource:
           type: string
           description: Resource the tool operated on (if applicable)
+
+    ApifrontendAuthSuccessPayload:
+      type: object
+      required: [event_type, auth_method]
+      description: Authentication success event payload (apifrontend.auth.success) — JWT validated or TokenReview accepted (SOC2 CC6.1, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.auth.success']
+          description: Event type for discriminator (matches parent event_type)
+        auth_method:
+          type: string
+          enum: [jwt, token_review]
+          description: Authentication method used
+        issuer:
+          type: string
+          description: JWT issuer (iss claim)
+        groups:
+          type: array
+          items:
+            type: string
+          description: User group memberships from JWT
+
+    ApifrontendAuthFailurePayload:
+      type: object
+      required: [event_type, auth_method, failure_reason]
+      description: Authentication failure event payload (apifrontend.auth.failure) — JWT rejected or TokenReview denied (SOC2 CC6.1, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.auth.failure']
+          description: Event type for discriminator (matches parent event_type)
+        auth_method:
+          type: string
+          enum: [jwt, token_review]
+          description: Authentication method attempted
+        failure_reason:
+          type: string
+          description: Reason for authentication failure
+
+    ApifrontendRatelimitDeniedPayload:
+      type: object
+      required: [event_type, limit_type]
+      description: Rate limit denied event payload (apifrontend.ratelimit.denied) — request rejected by rate limiter (SOC2 A1.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.ratelimit.denied']
+          description: Event type for discriminator (matches parent event_type)
+        limit_type:
+          type: string
+          description: Type of rate limit exceeded (per-user, global)
+        limit_value:
+          type: string
+          description: Configured limit value
+
+    ApifrontendCircuitbreakerTripPayload:
+      type: object
+      required: [event_type, circuit_name, failure_count]
+      description: Circuit breaker trip event payload (apifrontend.circuitbreaker.trip) — circuit breaker opened (SOC2 A1.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.circuitbreaker.trip']
+          description: Event type for discriminator (matches parent event_type)
+        circuit_name:
+          type: string
+          description: Name of the circuit that tripped
+        failure_count:
+          type: integer
+          description: Number of consecutive failures that triggered the trip
+        threshold:
+          type: integer
+          description: Configured failure threshold
+
+    ApifrontendImpersonationCreatedPayload:
+      type: object
+      required: [event_type, target_user]
+      description: K8s impersonation created event payload (apifrontend.impersonation.created) — impersonated client created for user (SOC2 CC6.1, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.impersonation.created']
+          description: Event type for discriminator (matches parent event_type)
+        target_user:
+          type: string
+          description: Username being impersonated
+        groups:
+          type: array
+          items:
+            type: string
+          description: Groups assigned to impersonated identity
+
+    ApifrontendJWTDelegationPayload:
+      type: object
+      required: [event_type, target_service]
+      description: JWT delegation event payload (apifrontend.jwt.delegation) — original JWT forwarded to downstream service (SOC2 CC6.1, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.jwt.delegation']
+          description: Event type for discriminator (matches parent event_type)
+        target_service:
+          type: string
+          description: Downstream service receiving the delegated JWT
+
+    ApifrontendSessionPhaseChangedPayload:
+      type: object
+      required: [event_type, session_id, from_phase, to_phase]
+      description: Session phase changed event payload (apifrontend.session.phase_changed) — InvestigationSession phase transition (SOC2 CC7.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.session.phase_changed']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        from_phase:
+          type: string
+          description: Previous phase
+        to_phase:
+          type: string
+          description: New phase
+
+    ApifrontendSessionDeletedPayload:
+      type: object
+      required: [event_type, session_id]
+      description: Session deleted event payload (apifrontend.session.deleted) — InvestigationSession CRD deleted (SOC2 CC7.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.session.deleted']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        reason:
+          type: string
+          description: Reason for deletion (user-initiated, cleanup)
+
+    ApifrontendSessionAutoCancelledPayload:
+      type: object
+      required: [event_type, session_id]
+      description: Session auto-cancelled event payload (apifrontend.session.auto_cancelled) — TTL controller cancelled idle session (SOC2 CC7.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.session.auto_cancelled']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        ttl_seconds:
+          type: integer
+          description: TTL value that triggered cancellation
+
+    ApifrontendSessionRetentionDeletedPayload:
+      type: object
+      required: [event_type, session_id]
+      description: Session retention deleted event payload (apifrontend.session.retention_deleted) — TTL controller deleted completed session (SOC2 CC7.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.session.retention_deleted']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        retention_seconds:
+          type: integer
+          description: Retention period that triggered deletion
+
+    ApifrontendA2ATaskStartedPayload:
+      type: object
+      required: [event_type, session_id, task_id]
+      description: A2A task started event payload (apifrontend.a2a.task_started) — A2A task execution began (SOC2 CC7.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.a2a.task_started']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        task_id:
+          type: string
+          description: A2A task identifier
+
+    ApifrontendA2ATaskCompletedPayload:
+      type: object
+      required: [event_type, session_id, task_id]
+      description: A2A task completed event payload (apifrontend.a2a.task_completed) — A2A task execution succeeded (SOC2 CC7.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.a2a.task_completed']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        task_id:
+          type: string
+          description: A2A task identifier
+        duration_ms:
+          type: integer
+          description: Task execution duration in milliseconds
+
+    ApifrontendA2ATaskFailedPayload:
+      type: object
+      required: [event_type, session_id, task_id, error]
+      description: A2A task failed event payload (apifrontend.a2a.task_failed) — A2A task execution failed (SOC2 CC7.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.a2a.task_failed']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: InvestigationSession CRD name
+        task_id:
+          type: string
+          description: A2A task identifier
+        error:
+          type: string
+          description: Error message or classification
+
+    ApifrontendMCPToolFailedPayload:
+      type: object
+      required: [event_type, tool_name, error]
+      description: MCP tool failed event payload (apifrontend.mcp.tool_failed) — MCP tool execution failed (SOC2 CC7.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.mcp.tool_failed']
+          description: Event type for discriminator (matches parent event_type)
+        session_id:
+          type: string
+          description: MCP session ID (if available)
+        tool_name:
+          type: string
+          description: Name of the MCP tool that failed
+        error:
+          type: string
+          description: Error message
+
+    ApifrontendMCPSessionInitPayload:
+      type: object
+      required: [event_type, mcp_session_id]
+      description: MCP session init event payload (apifrontend.mcp.session_init) — new MCP session initialized (SOC2 CC7.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.mcp.session_init']
+          description: Event type for discriminator (matches parent event_type)
+        mcp_session_id:
+          type: string
+          description: MCP session identifier
+        protocol_version:
+          type: string
+          description: MCP protocol version negotiated
+
+    ApifrontendSeverityTriageCompletedPayload:
+      type: object
+      required: [event_type, severity, source_tier]
+      description: Severity triage completed event payload (apifrontend.severity_triage.completed) — multi-tier severity triage succeeded (SOC2 CC7.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.severity_triage.completed']
+          description: Event type for discriminator (matches parent event_type)
+        severity:
+          type: string
+          description: Determined severity level
+        source_tier:
+          type: string
+          description: Tier that produced the final severity (prometheus_rules, llm, default)
+        duration_ms:
+          type: integer
+          description: Triage pipeline execution time
+
+    ApifrontendSeverityTriageFailedPayload:
+      type: object
+      required: [event_type, error]
+      description: Severity triage failed event payload (apifrontend.severity_triage.failed) — multi-tier severity triage failed (SOC2 CC7.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.severity_triage.failed']
+          description: Event type for discriminator (matches parent event_type)
+        error:
+          type: string
+          description: Error that caused triage failure
+        failed_tier:
+          type: string
+          description: Tier where failure occurred
+
+    ApifrontendConfigReloadedPayload:
+      type: object
+      required: [event_type, config_version]
+      description: Config reloaded event payload (apifrontend.config.reloaded) — hot-reload configuration accepted (SOC2 CC7.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.config.reloaded']
+          description: Event type for discriminator (matches parent event_type)
+        config_version:
+          type: string
+          description: New configuration version or hash
+        changed_keys:
+          type: array
+          items:
+            type: string
+          description: Configuration keys that changed
+
+    ApifrontendConfigRejectedPayload:
+      type: object
+      required: [event_type, rejection_reason]
+      description: Config rejected event payload (apifrontend.config.rejected) — hot-reload configuration rejected (SOC2 CC7.2, Issue #1156)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.config.rejected']
+          description: Event type for discriminator (matches parent event_type)
+        rejection_reason:
+          type: string
+          description: Reason configuration was rejected
+        config_version:
+          type: string
+          description: Rejected configuration version or hash
 

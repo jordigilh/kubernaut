@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 
@@ -121,32 +120,6 @@ var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, L
 		Expect(parseJSONStringField(text, "severity_source")).To(Equal(wantSource))
 	}
 
-	sumSeverityTriageTotal := func(metricsText string) float64 {
-		var sum float64
-		for _, line := range strings.Split(metricsText, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			if !strings.HasPrefix(line, "af_severity_triage_total") {
-				continue
-			}
-			if strings.HasPrefix(line, "af_severity_triage_total_created") {
-				continue
-			}
-			fields := strings.Fields(line)
-			if len(fields) < 2 {
-				continue
-			}
-			v, err := strconv.ParseFloat(fields[len(fields)-1], 64)
-			if err != nil {
-				continue
-			}
-			sum += v
-		}
-		return sum
-	}
-
 	It("TC-E2E-SEV-01: Tier 1 — Firing alert", func() {
 		skipIfNoAlerts()
 		text, err := mcpToolCall("af_create_rr", createRRArgs("default", "test-firing-target", nil))
@@ -219,11 +192,6 @@ var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, L
 		Expect(parsed).NotTo(HaveKey("severity_source"))
 	})
 
-	It("TC-E2E-SEV-08: Triage metrics present on /metrics", func() {
-		body := scrapeMetrics()
-		Expect(sumSeverityTriageTotal(body)).To(BeNumerically(">", 0),
-			"af_severity_triage_total should be incremented after triage calls")
-	})
 })
 
 // injectMetricForTier2 injects a metric into Prometheus via OTLP for Tier 2 testing.

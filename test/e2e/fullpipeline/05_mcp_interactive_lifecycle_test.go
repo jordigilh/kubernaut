@@ -449,11 +449,23 @@ var _ = Describe("FP-MCP-005: discover_workflows and select_workflow", Label("e2
 			return
 		}
 
-		By("Calling select_workflow with discovered workflow")
-		Expect(workflowUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"),
-			"workflow catalog must be seeded")
-		workflowID := workflowUUIDs["oomkill-increase-memory-v1:production"]
+		By("Extracting workflow_id from discovery results")
+		var discovery struct {
+			Recommended  *struct{ WorkflowID string `json:"workflow_id"` } `json:"recommended"`
+			Alternatives []struct{ WorkflowID string `json:"workflow_id"` } `json:"alternatives"`
+		}
+		Expect(json.Unmarshal([]byte(resp), &discovery)).To(Succeed(), "parse discovery JSON")
 
+		var workflowID string
+		if discovery.Recommended != nil && discovery.Recommended.WorkflowID != "" {
+			workflowID = discovery.Recommended.WorkflowID
+		} else if len(discovery.Alternatives) > 0 {
+			workflowID = discovery.Alternatives[0].WorkflowID
+		}
+		Expect(workflowID).NotTo(BeEmpty(), "discovery must return at least one workflow")
+		GinkgoWriter.Printf("  Using discovered workflow_id: %s\n", workflowID)
+
+		By("Calling select_workflow with discovered workflow")
 		selectCtx, selectCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer selectCancel()
 		result, err = infrastructure.CallSelectWorkflow(selectCtx, setup.Session, map[string]any{

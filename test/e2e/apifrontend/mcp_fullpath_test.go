@@ -186,7 +186,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Ordered, ContinueOnFailure, La
 		))
 	})
 
-	It("TC-E2E-MCP-FULL-05: MCP tools/list returns exactly 19 tools", func() {
+	It("TC-E2E-MCP-FULL-05: MCP tools/list returns exactly 20 tools", func() {
 		root, err := mcpToolsList("mcp-full-05")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(root).NotTo(HaveKey("error"))
@@ -196,7 +196,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Ordered, ContinueOnFailure, La
 
 		toolsRaw, ok := res["tools"].([]interface{})
 		Expect(ok).To(BeTrue(), "result.tools should be an array: %#v", res)
-		Expect(len(toolsRaw)).To(Equal(19))
+		Expect(len(toolsRaw)).To(Equal(20))
 
 		for _, t := range toolsRaw {
 			tm, ok := t.(map[string]interface{})

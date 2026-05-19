@@ -99,12 +99,13 @@ var _ = Describe("SLO Conformance — Prometheus Rules", func() {
 	})
 
 	It("UT-AF-SLO-004: metric names in rules match registered AF metrics", func() {
-		// SYNC: update this map when adding/removing metrics in internal/metrics/metrics.go.
+		// SYNC: update this map when adding/removing metrics in metrics.go.
 		// Include _bucket suffixes for histograms referenced by prometheus-rules.yaml.
 		knownMetrics := map[string]bool{
 			"af_http_request_duration_seconds":              true,
 			"af_http_request_duration_seconds_bucket":       true,
 			"af_http_requests_total":                        true,
+			"af_http_panics_total":                          true,
 			"af_tool_call_duration_seconds":                 true,
 			"af_tool_call_duration_seconds_bucket":          true,
 			"af_tool_calls_total":                           true,
@@ -114,13 +115,8 @@ var _ = Describe("SLO Conformance — Prometheus Rules", func() {
 			"af_rate_limit_rejections_total":                true,
 			"af_auth_duration_seconds":                      true,
 			"af_auth_duration_seconds_bucket":               true,
-			"af_mcp_rbac_denied_total":                      true,
 			"af_sse_active_connections":                     true,
 			"af_audit_buffer_overflow_total":                true,
-			"af_severity_triage_total":                      true,
-			"af_severity_triage_duration_seconds":           true,
-			"af_severity_triage_duration_seconds_bucket":    true,
-			"af_severity_triage_errors_total":               true,
 			"up":                                            true,
 		}
 

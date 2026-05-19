@@ -129,7 +129,6 @@ func run() int {
 		Writer:          auditWriter,
 		Logger:          logger,
 		OverflowCounter: metricsReg.AuditBufferOverflow,
-		EventsCounter:   metricsReg.AuditEventsTotal,
 	})
 	auditor.Start()
 
@@ -548,11 +547,7 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 			severityCfg.LLMConfidence = 0.7
 		}
 
-		deps.Triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"), &severity.TriagerMetrics{
-			Total:    metricsReg.SeverityTriageTotal,
-			Duration: metricsReg.SeverityTriageDuration,
-			Errors:   metricsReg.SeverityTriageErrorsTotal,
-		})
+		deps.Triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"))
 		logger.Info("severity triage enabled", "prometheusURL", cfg.SeverityTriage.PrometheusURL)
 	}
 
@@ -571,7 +566,6 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 	}, &ka.ClientMetrics{
 		StateGauge:   metricsReg.CircuitBreakerState,
 		DurationHist: metricsReg.DownstreamDuration,
-		RetryCounter: metricsReg.DownstreamRetryTotal,
 	})
 
 	deps.DynFactory = buildDynFactory()
@@ -693,7 +687,6 @@ func buildResilientTransport(base http.RoundTripper, depCfg *config.DependencyCo
 		InitialBackoff:    depCfg.RetryInitBackoff,
 		MaxBackoff:        depCfg.RetryMaxBackoff,
 		RetryableStatuses: depCfg.RetryableStatuses,
-		RetryCounter:      reg.DownstreamRetryTotal,
 		DependencyName:    name,
 	})
 	cbMaxReqs := depCfg.CBMaxRequests
@@ -731,7 +724,6 @@ func bridgeMetricsFrom(reg *metrics.Registry) *handler.MCPBridgeMetrics {
 	return &handler.MCPBridgeMetrics{
 		ToolCallsTotal:   reg.ToolCallsTotal,
 		ToolCallDuration: reg.ToolCallDuration,
-		RBACDeniedTotal:  reg.MCPRBACDeniedTotal,
 	}
 }
 
@@ -964,10 +956,6 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 	for _, phase := range []string{"Active", "Disconnected", "Completed", "Cancelled", "Failed"} {
 		reg.SessionsActive.WithLabelValues(phase)
 	}
-	for _, action := range []string{"cancel", "delete", "disconnect"} {
-		reg.SessionTTLActionsTotal.WithLabelValues(action)
-	}
-	reg.MCPRBACDeniedTotal.WithLabelValues("__prime__")
 
 	var k8sClient client.Client
 	var stopFunc func()
@@ -1006,7 +994,7 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 				cfg.Session.DisconnectTTL,
 				cfg.Session.RetentionTTL,
 				auditor,
-				reg.SessionTTLActionsTotal,
+				nil,
 				svc,
 			)
 
@@ -1055,7 +1043,7 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 		cfg.Session.DisconnectTTL,
 		cfg.Session.RetentionTTL,
 		auditor,
-		reg.SessionTTLActionsTotal,
+		nil,
 		svc,
 	)
 

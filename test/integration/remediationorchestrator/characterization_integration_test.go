@@ -172,10 +172,14 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 
 		By("Verifying ProcessingStartTime is set")
 		fetched := &remediationv1.RemediationRequest{}
-		Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
-			Name: rrName, Namespace: ROControllerNamespace,
-		}, fetched)).To(Succeed())
-		Expect(fetched.Status.ProcessingStartTime).ToNot(BeNil(),
+		Eventually(func() *metav1.Time {
+			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+				Name: rrName, Namespace: ROControllerNamespace,
+			}, fetched); err != nil {
+				return nil
+			}
+			return fetched.Status.ProcessingStartTime
+		}, timeout, interval).ShouldNot(BeNil(),
 			"ProcessingStartTime should be set after Pending → Processing transition")
 
 		By("Completing SP to drive to Analyzing")
