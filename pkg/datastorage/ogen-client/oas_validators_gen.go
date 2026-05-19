@@ -1635,6 +1635,102 @@ func (s ActionTypeWebhookAuditPayloadEventType) Validate() error {
 	}
 }
 
+func (s *ApifrontendA2ATaskCompletedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendA2ATaskCompletedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.a2a.task_completed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendA2ATaskFailedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendA2ATaskFailedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.a2a.task_failed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendA2ATaskStartedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendA2ATaskStartedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.a2a.task_started":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ApifrontendAuthAccessDeniedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -1694,6 +1790,274 @@ func (s ApifrontendAuthAccessDeniedPayloadEndpoint) Validate() error {
 func (s ApifrontendAuthAccessDeniedPayloadEventType) Validate() error {
 	switch s {
 	case "apifrontend.auth.access_denied":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendAuthFailurePayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.AuthMethod.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "auth_method",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendAuthFailurePayloadAuthMethod) Validate() error {
+	switch s {
+	case "jwt":
+		return nil
+	case "token_review":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s ApifrontendAuthFailurePayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.auth.failure":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendAuthSuccessPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.AuthMethod.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "auth_method",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendAuthSuccessPayloadAuthMethod) Validate() error {
+	switch s {
+	case "jwt":
+		return nil
+	case "token_review":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s ApifrontendAuthSuccessPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.auth.success":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendCircuitbreakerTripPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendCircuitbreakerTripPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.circuitbreaker.trip":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendConfigRejectedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendConfigRejectedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.config.rejected":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendConfigReloadedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendConfigReloadedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.config.reloaded":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendImpersonationCreatedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendImpersonationCreatedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.impersonation.created":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendJWTDelegationPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendJWTDelegationPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.jwt.delegation":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -1830,6 +2194,70 @@ func (s ApifrontendKAResultReceivedPayloadResultType) Validate() error {
 	}
 }
 
+func (s *ApifrontendMCPSessionInitPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendMCPSessionInitPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.mcp.session_init":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendMCPToolFailedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendMCPToolFailedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.mcp.tool_failed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ApifrontendRRCreatedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -1888,6 +2316,70 @@ func (s *ApifrontendRRDeduplicatedPayload) Validate() error {
 func (s ApifrontendRRDeduplicatedPayloadEventType) Validate() error {
 	switch s {
 	case "apifrontend.rr.deduplicated":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendRatelimitDeniedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendRatelimitDeniedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.ratelimit.denied":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendSessionAutoCancelledPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendSessionAutoCancelledPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.session.auto_cancelled":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -2033,6 +2525,166 @@ func (s ApifrontendSessionCreatedPayloadJoinMode) Validate() error {
 	case "start":
 		return nil
 	case "takeover":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendSessionDeletedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendSessionDeletedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.session.deleted":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendSessionPhaseChangedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendSessionPhaseChangedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.session.phase_changed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendSessionRetentionDeletedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendSessionRetentionDeletedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.session.retention_deleted":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendSeverityTriageCompletedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendSeverityTriageCompletedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.severity_triage.completed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ApifrontendSeverityTriageFailedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendSeverityTriageFailedPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.severity_triage.failed":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -2748,6 +3400,101 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case ApifrontendAuthSuccessPayloadAuditEventEventData:
+		if err := s.ApifrontendAuthSuccessPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendAuthFailurePayloadAuditEventEventData:
+		if err := s.ApifrontendAuthFailurePayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendRatelimitDeniedPayloadAuditEventEventData:
+		if err := s.ApifrontendRatelimitDeniedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendCircuitbreakerTripPayloadAuditEventEventData:
+		if err := s.ApifrontendCircuitbreakerTripPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendImpersonationCreatedPayloadAuditEventEventData:
+		if err := s.ApifrontendImpersonationCreatedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendJWTDelegationPayloadAuditEventEventData:
+		if err := s.ApifrontendJWTDelegationPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendSessionPhaseChangedPayloadAuditEventEventData:
+		if err := s.ApifrontendSessionPhaseChangedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendSessionDeletedPayloadAuditEventEventData:
+		if err := s.ApifrontendSessionDeletedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendSessionAutoCancelledPayloadAuditEventEventData:
+		if err := s.ApifrontendSessionAutoCancelledPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendSessionRetentionDeletedPayloadAuditEventEventData:
+		if err := s.ApifrontendSessionRetentionDeletedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendA2ATaskStartedPayloadAuditEventEventData:
+		if err := s.ApifrontendA2ATaskStartedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendA2ATaskCompletedPayloadAuditEventEventData:
+		if err := s.ApifrontendA2ATaskCompletedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendA2ATaskFailedPayloadAuditEventEventData:
+		if err := s.ApifrontendA2ATaskFailedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendMCPToolFailedPayloadAuditEventEventData:
+		if err := s.ApifrontendMCPToolFailedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendMCPSessionInitPayloadAuditEventEventData:
+		if err := s.ApifrontendMCPSessionInitPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendSeverityTriageCompletedPayloadAuditEventEventData:
+		if err := s.ApifrontendSeverityTriageCompletedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendSeverityTriageFailedPayloadAuditEventEventData:
+		if err := s.ApifrontendSeverityTriageFailedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendConfigReloadedPayloadAuditEventEventData:
+		if err := s.ApifrontendConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendConfigRejectedPayloadAuditEventEventData:
+		if err := s.ApifrontendConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	default:
 		return errors.Errorf("invalid type %q", s.Type)
 	}
@@ -3236,6 +3983,101 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case ApifrontendToolExecutedPayloadAuditEventRequestEventData:
 		if err := s.ApifrontendToolExecutedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendAuthSuccessPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendAuthSuccessPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendAuthFailurePayloadAuditEventRequestEventData:
+		if err := s.ApifrontendAuthFailurePayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendRatelimitDeniedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendRatelimitDeniedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendCircuitbreakerTripPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendCircuitbreakerTripPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendImpersonationCreatedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendImpersonationCreatedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendJWTDelegationPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendJWTDelegationPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendSessionPhaseChangedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendSessionPhaseChangedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendSessionDeletedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendSessionDeletedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendSessionAutoCancelledPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendSessionAutoCancelledPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendSessionRetentionDeletedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendSessionRetentionDeletedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendA2ATaskStartedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendA2ATaskStartedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendA2ATaskCompletedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendA2ATaskCompletedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendA2ATaskFailedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendA2ATaskFailedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendMCPToolFailedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendMCPToolFailedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendMCPSessionInitPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendMCPSessionInitPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendSeverityTriageCompletedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendSeverityTriageCompletedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendSeverityTriageFailedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendConfigRejectedPayload.Validate(); err != nil {
 			return err
 		}
 		return nil

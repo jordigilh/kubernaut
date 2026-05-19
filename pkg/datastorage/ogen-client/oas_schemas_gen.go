@@ -3949,6 +3949,261 @@ func (s *ActionTypeWorkflowCountResponse) SetCount(val int) {
 	s.Count = val
 }
 
+// A2A task completed event payload (apifrontend.a2a.task_completed) — A2A task execution succeeded
+// (SOC2 CC7.2, Issue.
+// Ref: #/components/schemas/ApifrontendA2ATaskCompletedPayload
+type ApifrontendA2ATaskCompletedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendA2ATaskCompletedPayloadEventType `json:"event_type"`
+	// InvestigationSession CRD name.
+	SessionID string `json:"session_id"`
+	// A2A task identifier.
+	TaskID string `json:"task_id"`
+	// Task execution duration in milliseconds.
+	DurationMs OptInt `json:"duration_ms"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendA2ATaskCompletedPayload) GetEventType() ApifrontendA2ATaskCompletedPayloadEventType {
+	return s.EventType
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *ApifrontendA2ATaskCompletedPayload) GetSessionID() string {
+	return s.SessionID
+}
+
+// GetTaskID returns the value of TaskID.
+func (s *ApifrontendA2ATaskCompletedPayload) GetTaskID() string {
+	return s.TaskID
+}
+
+// GetDurationMs returns the value of DurationMs.
+func (s *ApifrontendA2ATaskCompletedPayload) GetDurationMs() OptInt {
+	return s.DurationMs
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendA2ATaskCompletedPayload) SetEventType(val ApifrontendA2ATaskCompletedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *ApifrontendA2ATaskCompletedPayload) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// SetTaskID sets the value of TaskID.
+func (s *ApifrontendA2ATaskCompletedPayload) SetTaskID(val string) {
+	s.TaskID = val
+}
+
+// SetDurationMs sets the value of DurationMs.
+func (s *ApifrontendA2ATaskCompletedPayload) SetDurationMs(val OptInt) {
+	s.DurationMs = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendA2ATaskCompletedPayloadEventType string
+
+const (
+	ApifrontendA2ATaskCompletedPayloadEventTypeApifrontendA2aTaskCompleted ApifrontendA2ATaskCompletedPayloadEventType = "apifrontend.a2a.task_completed"
+)
+
+// AllValues returns all ApifrontendA2ATaskCompletedPayloadEventType values.
+func (ApifrontendA2ATaskCompletedPayloadEventType) AllValues() []ApifrontendA2ATaskCompletedPayloadEventType {
+	return []ApifrontendA2ATaskCompletedPayloadEventType{
+		ApifrontendA2ATaskCompletedPayloadEventTypeApifrontendA2aTaskCompleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendA2ATaskCompletedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendA2ATaskCompletedPayloadEventTypeApifrontendA2aTaskCompleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendA2ATaskCompletedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendA2ATaskCompletedPayloadEventType(data) {
+	case ApifrontendA2ATaskCompletedPayloadEventTypeApifrontendA2aTaskCompleted:
+		*s = ApifrontendA2ATaskCompletedPayloadEventTypeApifrontendA2aTaskCompleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// A2A task failed event payload (apifrontend.a2a.task_failed) — A2A task execution failed (SOC2
+// CC7.2, Issue.
+// Ref: #/components/schemas/ApifrontendA2ATaskFailedPayload
+type ApifrontendA2ATaskFailedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendA2ATaskFailedPayloadEventType `json:"event_type"`
+	// InvestigationSession CRD name.
+	SessionID string `json:"session_id"`
+	// A2A task identifier.
+	TaskID string `json:"task_id"`
+	// Error message or classification.
+	Error string `json:"error"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendA2ATaskFailedPayload) GetEventType() ApifrontendA2ATaskFailedPayloadEventType {
+	return s.EventType
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *ApifrontendA2ATaskFailedPayload) GetSessionID() string {
+	return s.SessionID
+}
+
+// GetTaskID returns the value of TaskID.
+func (s *ApifrontendA2ATaskFailedPayload) GetTaskID() string {
+	return s.TaskID
+}
+
+// GetError returns the value of Error.
+func (s *ApifrontendA2ATaskFailedPayload) GetError() string {
+	return s.Error
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendA2ATaskFailedPayload) SetEventType(val ApifrontendA2ATaskFailedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *ApifrontendA2ATaskFailedPayload) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// SetTaskID sets the value of TaskID.
+func (s *ApifrontendA2ATaskFailedPayload) SetTaskID(val string) {
+	s.TaskID = val
+}
+
+// SetError sets the value of Error.
+func (s *ApifrontendA2ATaskFailedPayload) SetError(val string) {
+	s.Error = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendA2ATaskFailedPayloadEventType string
+
+const (
+	ApifrontendA2ATaskFailedPayloadEventTypeApifrontendA2aTaskFailed ApifrontendA2ATaskFailedPayloadEventType = "apifrontend.a2a.task_failed"
+)
+
+// AllValues returns all ApifrontendA2ATaskFailedPayloadEventType values.
+func (ApifrontendA2ATaskFailedPayloadEventType) AllValues() []ApifrontendA2ATaskFailedPayloadEventType {
+	return []ApifrontendA2ATaskFailedPayloadEventType{
+		ApifrontendA2ATaskFailedPayloadEventTypeApifrontendA2aTaskFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendA2ATaskFailedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendA2ATaskFailedPayloadEventTypeApifrontendA2aTaskFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendA2ATaskFailedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendA2ATaskFailedPayloadEventType(data) {
+	case ApifrontendA2ATaskFailedPayloadEventTypeApifrontendA2aTaskFailed:
+		*s = ApifrontendA2ATaskFailedPayloadEventTypeApifrontendA2aTaskFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// A2A task started event payload (apifrontend.a2a.task_started) — A2A task execution began (SOC2
+// CC7.2, Issue.
+// Ref: #/components/schemas/ApifrontendA2ATaskStartedPayload
+type ApifrontendA2ATaskStartedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendA2ATaskStartedPayloadEventType `json:"event_type"`
+	// InvestigationSession CRD name.
+	SessionID string `json:"session_id"`
+	// A2A task identifier.
+	TaskID string `json:"task_id"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendA2ATaskStartedPayload) GetEventType() ApifrontendA2ATaskStartedPayloadEventType {
+	return s.EventType
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *ApifrontendA2ATaskStartedPayload) GetSessionID() string {
+	return s.SessionID
+}
+
+// GetTaskID returns the value of TaskID.
+func (s *ApifrontendA2ATaskStartedPayload) GetTaskID() string {
+	return s.TaskID
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendA2ATaskStartedPayload) SetEventType(val ApifrontendA2ATaskStartedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *ApifrontendA2ATaskStartedPayload) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// SetTaskID sets the value of TaskID.
+func (s *ApifrontendA2ATaskStartedPayload) SetTaskID(val string) {
+	s.TaskID = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendA2ATaskStartedPayloadEventType string
+
+const (
+	ApifrontendA2ATaskStartedPayloadEventTypeApifrontendA2aTaskStarted ApifrontendA2ATaskStartedPayloadEventType = "apifrontend.a2a.task_started"
+)
+
+// AllValues returns all ApifrontendA2ATaskStartedPayloadEventType values.
+func (ApifrontendA2ATaskStartedPayloadEventType) AllValues() []ApifrontendA2ATaskStartedPayloadEventType {
+	return []ApifrontendA2ATaskStartedPayloadEventType{
+		ApifrontendA2ATaskStartedPayloadEventTypeApifrontendA2aTaskStarted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendA2ATaskStartedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendA2ATaskStartedPayloadEventTypeApifrontendA2aTaskStarted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendA2ATaskStartedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendA2ATaskStartedPayloadEventType(data) {
+	case ApifrontendA2ATaskStartedPayloadEventTypeApifrontendA2aTaskStarted:
+		*s = ApifrontendA2ATaskStartedPayloadEventTypeApifrontendA2aTaskStarted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Auth access denied event payload (apifrontend.auth.access_denied) — tool invocation denied by
 // RBAC (SOC2 CC6.1, Issue.
 // Ref: #/components/schemas/ApifrontendAuthAccessDeniedPayload
@@ -4110,6 +4365,641 @@ func (s *ApifrontendAuthAccessDeniedPayloadEventType) UnmarshalText(data []byte)
 	switch ApifrontendAuthAccessDeniedPayloadEventType(data) {
 	case ApifrontendAuthAccessDeniedPayloadEventTypeApifrontendAuthAccessDenied:
 		*s = ApifrontendAuthAccessDeniedPayloadEventTypeApifrontendAuthAccessDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Authentication failure event payload (apifrontend.auth.failure) — JWT rejected or TokenReview
+// denied (SOC2 CC6.1, Issue.
+// Ref: #/components/schemas/ApifrontendAuthFailurePayload
+type ApifrontendAuthFailurePayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendAuthFailurePayloadEventType `json:"event_type"`
+	// Authentication method attempted.
+	AuthMethod ApifrontendAuthFailurePayloadAuthMethod `json:"auth_method"`
+	// Reason for authentication failure.
+	FailureReason string `json:"failure_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendAuthFailurePayload) GetEventType() ApifrontendAuthFailurePayloadEventType {
+	return s.EventType
+}
+
+// GetAuthMethod returns the value of AuthMethod.
+func (s *ApifrontendAuthFailurePayload) GetAuthMethod() ApifrontendAuthFailurePayloadAuthMethod {
+	return s.AuthMethod
+}
+
+// GetFailureReason returns the value of FailureReason.
+func (s *ApifrontendAuthFailurePayload) GetFailureReason() string {
+	return s.FailureReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendAuthFailurePayload) SetEventType(val ApifrontendAuthFailurePayloadEventType) {
+	s.EventType = val
+}
+
+// SetAuthMethod sets the value of AuthMethod.
+func (s *ApifrontendAuthFailurePayload) SetAuthMethod(val ApifrontendAuthFailurePayloadAuthMethod) {
+	s.AuthMethod = val
+}
+
+// SetFailureReason sets the value of FailureReason.
+func (s *ApifrontendAuthFailurePayload) SetFailureReason(val string) {
+	s.FailureReason = val
+}
+
+// Authentication method attempted.
+type ApifrontendAuthFailurePayloadAuthMethod string
+
+const (
+	ApifrontendAuthFailurePayloadAuthMethodJwt         ApifrontendAuthFailurePayloadAuthMethod = "jwt"
+	ApifrontendAuthFailurePayloadAuthMethodTokenReview ApifrontendAuthFailurePayloadAuthMethod = "token_review"
+)
+
+// AllValues returns all ApifrontendAuthFailurePayloadAuthMethod values.
+func (ApifrontendAuthFailurePayloadAuthMethod) AllValues() []ApifrontendAuthFailurePayloadAuthMethod {
+	return []ApifrontendAuthFailurePayloadAuthMethod{
+		ApifrontendAuthFailurePayloadAuthMethodJwt,
+		ApifrontendAuthFailurePayloadAuthMethodTokenReview,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendAuthFailurePayloadAuthMethod) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendAuthFailurePayloadAuthMethodJwt:
+		return []byte(s), nil
+	case ApifrontendAuthFailurePayloadAuthMethodTokenReview:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendAuthFailurePayloadAuthMethod) UnmarshalText(data []byte) error {
+	switch ApifrontendAuthFailurePayloadAuthMethod(data) {
+	case ApifrontendAuthFailurePayloadAuthMethodJwt:
+		*s = ApifrontendAuthFailurePayloadAuthMethodJwt
+		return nil
+	case ApifrontendAuthFailurePayloadAuthMethodTokenReview:
+		*s = ApifrontendAuthFailurePayloadAuthMethodTokenReview
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendAuthFailurePayloadEventType string
+
+const (
+	ApifrontendAuthFailurePayloadEventTypeApifrontendAuthFailure ApifrontendAuthFailurePayloadEventType = "apifrontend.auth.failure"
+)
+
+// AllValues returns all ApifrontendAuthFailurePayloadEventType values.
+func (ApifrontendAuthFailurePayloadEventType) AllValues() []ApifrontendAuthFailurePayloadEventType {
+	return []ApifrontendAuthFailurePayloadEventType{
+		ApifrontendAuthFailurePayloadEventTypeApifrontendAuthFailure,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendAuthFailurePayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendAuthFailurePayloadEventTypeApifrontendAuthFailure:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendAuthFailurePayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendAuthFailurePayloadEventType(data) {
+	case ApifrontendAuthFailurePayloadEventTypeApifrontendAuthFailure:
+		*s = ApifrontendAuthFailurePayloadEventTypeApifrontendAuthFailure
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Authentication success event payload (apifrontend.auth.success) — JWT validated or TokenReview
+// accepted (SOC2 CC6.1, Issue.
+// Ref: #/components/schemas/ApifrontendAuthSuccessPayload
+type ApifrontendAuthSuccessPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendAuthSuccessPayloadEventType `json:"event_type"`
+	// Authentication method used.
+	AuthMethod ApifrontendAuthSuccessPayloadAuthMethod `json:"auth_method"`
+	// JWT issuer (iss claim).
+	Issuer OptString `json:"issuer"`
+	// User group memberships from JWT.
+	Groups []string `json:"groups"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendAuthSuccessPayload) GetEventType() ApifrontendAuthSuccessPayloadEventType {
+	return s.EventType
+}
+
+// GetAuthMethod returns the value of AuthMethod.
+func (s *ApifrontendAuthSuccessPayload) GetAuthMethod() ApifrontendAuthSuccessPayloadAuthMethod {
+	return s.AuthMethod
+}
+
+// GetIssuer returns the value of Issuer.
+func (s *ApifrontendAuthSuccessPayload) GetIssuer() OptString {
+	return s.Issuer
+}
+
+// GetGroups returns the value of Groups.
+func (s *ApifrontendAuthSuccessPayload) GetGroups() []string {
+	return s.Groups
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendAuthSuccessPayload) SetEventType(val ApifrontendAuthSuccessPayloadEventType) {
+	s.EventType = val
+}
+
+// SetAuthMethod sets the value of AuthMethod.
+func (s *ApifrontendAuthSuccessPayload) SetAuthMethod(val ApifrontendAuthSuccessPayloadAuthMethod) {
+	s.AuthMethod = val
+}
+
+// SetIssuer sets the value of Issuer.
+func (s *ApifrontendAuthSuccessPayload) SetIssuer(val OptString) {
+	s.Issuer = val
+}
+
+// SetGroups sets the value of Groups.
+func (s *ApifrontendAuthSuccessPayload) SetGroups(val []string) {
+	s.Groups = val
+}
+
+// Authentication method used.
+type ApifrontendAuthSuccessPayloadAuthMethod string
+
+const (
+	ApifrontendAuthSuccessPayloadAuthMethodJwt         ApifrontendAuthSuccessPayloadAuthMethod = "jwt"
+	ApifrontendAuthSuccessPayloadAuthMethodTokenReview ApifrontendAuthSuccessPayloadAuthMethod = "token_review"
+)
+
+// AllValues returns all ApifrontendAuthSuccessPayloadAuthMethod values.
+func (ApifrontendAuthSuccessPayloadAuthMethod) AllValues() []ApifrontendAuthSuccessPayloadAuthMethod {
+	return []ApifrontendAuthSuccessPayloadAuthMethod{
+		ApifrontendAuthSuccessPayloadAuthMethodJwt,
+		ApifrontendAuthSuccessPayloadAuthMethodTokenReview,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendAuthSuccessPayloadAuthMethod) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendAuthSuccessPayloadAuthMethodJwt:
+		return []byte(s), nil
+	case ApifrontendAuthSuccessPayloadAuthMethodTokenReview:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendAuthSuccessPayloadAuthMethod) UnmarshalText(data []byte) error {
+	switch ApifrontendAuthSuccessPayloadAuthMethod(data) {
+	case ApifrontendAuthSuccessPayloadAuthMethodJwt:
+		*s = ApifrontendAuthSuccessPayloadAuthMethodJwt
+		return nil
+	case ApifrontendAuthSuccessPayloadAuthMethodTokenReview:
+		*s = ApifrontendAuthSuccessPayloadAuthMethodTokenReview
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendAuthSuccessPayloadEventType string
+
+const (
+	ApifrontendAuthSuccessPayloadEventTypeApifrontendAuthSuccess ApifrontendAuthSuccessPayloadEventType = "apifrontend.auth.success"
+)
+
+// AllValues returns all ApifrontendAuthSuccessPayloadEventType values.
+func (ApifrontendAuthSuccessPayloadEventType) AllValues() []ApifrontendAuthSuccessPayloadEventType {
+	return []ApifrontendAuthSuccessPayloadEventType{
+		ApifrontendAuthSuccessPayloadEventTypeApifrontendAuthSuccess,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendAuthSuccessPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendAuthSuccessPayloadEventTypeApifrontendAuthSuccess:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendAuthSuccessPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendAuthSuccessPayloadEventType(data) {
+	case ApifrontendAuthSuccessPayloadEventTypeApifrontendAuthSuccess:
+		*s = ApifrontendAuthSuccessPayloadEventTypeApifrontendAuthSuccess
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Circuit breaker trip event payload (apifrontend.circuitbreaker.trip) — circuit breaker opened
+// (SOC2 A1.2, Issue.
+// Ref: #/components/schemas/ApifrontendCircuitbreakerTripPayload
+type ApifrontendCircuitbreakerTripPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendCircuitbreakerTripPayloadEventType `json:"event_type"`
+	// Name of the circuit that tripped.
+	CircuitName string `json:"circuit_name"`
+	// Number of consecutive failures that triggered the trip.
+	FailureCount int `json:"failure_count"`
+	// Configured failure threshold.
+	Threshold OptInt `json:"threshold"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendCircuitbreakerTripPayload) GetEventType() ApifrontendCircuitbreakerTripPayloadEventType {
+	return s.EventType
+}
+
+// GetCircuitName returns the value of CircuitName.
+func (s *ApifrontendCircuitbreakerTripPayload) GetCircuitName() string {
+	return s.CircuitName
+}
+
+// GetFailureCount returns the value of FailureCount.
+func (s *ApifrontendCircuitbreakerTripPayload) GetFailureCount() int {
+	return s.FailureCount
+}
+
+// GetThreshold returns the value of Threshold.
+func (s *ApifrontendCircuitbreakerTripPayload) GetThreshold() OptInt {
+	return s.Threshold
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendCircuitbreakerTripPayload) SetEventType(val ApifrontendCircuitbreakerTripPayloadEventType) {
+	s.EventType = val
+}
+
+// SetCircuitName sets the value of CircuitName.
+func (s *ApifrontendCircuitbreakerTripPayload) SetCircuitName(val string) {
+	s.CircuitName = val
+}
+
+// SetFailureCount sets the value of FailureCount.
+func (s *ApifrontendCircuitbreakerTripPayload) SetFailureCount(val int) {
+	s.FailureCount = val
+}
+
+// SetThreshold sets the value of Threshold.
+func (s *ApifrontendCircuitbreakerTripPayload) SetThreshold(val OptInt) {
+	s.Threshold = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendCircuitbreakerTripPayloadEventType string
+
+const (
+	ApifrontendCircuitbreakerTripPayloadEventTypeApifrontendCircuitbreakerTrip ApifrontendCircuitbreakerTripPayloadEventType = "apifrontend.circuitbreaker.trip"
+)
+
+// AllValues returns all ApifrontendCircuitbreakerTripPayloadEventType values.
+func (ApifrontendCircuitbreakerTripPayloadEventType) AllValues() []ApifrontendCircuitbreakerTripPayloadEventType {
+	return []ApifrontendCircuitbreakerTripPayloadEventType{
+		ApifrontendCircuitbreakerTripPayloadEventTypeApifrontendCircuitbreakerTrip,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendCircuitbreakerTripPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendCircuitbreakerTripPayloadEventTypeApifrontendCircuitbreakerTrip:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendCircuitbreakerTripPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendCircuitbreakerTripPayloadEventType(data) {
+	case ApifrontendCircuitbreakerTripPayloadEventTypeApifrontendCircuitbreakerTrip:
+		*s = ApifrontendCircuitbreakerTripPayloadEventTypeApifrontendCircuitbreakerTrip
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Config rejected event payload (apifrontend.config.rejected) — hot-reload configuration rejected
+// (SOC2 CC7.2, Issue.
+// Ref: #/components/schemas/ApifrontendConfigRejectedPayload
+type ApifrontendConfigRejectedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendConfigRejectedPayloadEventType `json:"event_type"`
+	// Reason configuration was rejected.
+	RejectionReason string `json:"rejection_reason"`
+	// Rejected configuration version or hash.
+	ConfigVersion OptString `json:"config_version"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendConfigRejectedPayload) GetEventType() ApifrontendConfigRejectedPayloadEventType {
+	return s.EventType
+}
+
+// GetRejectionReason returns the value of RejectionReason.
+func (s *ApifrontendConfigRejectedPayload) GetRejectionReason() string {
+	return s.RejectionReason
+}
+
+// GetConfigVersion returns the value of ConfigVersion.
+func (s *ApifrontendConfigRejectedPayload) GetConfigVersion() OptString {
+	return s.ConfigVersion
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendConfigRejectedPayload) SetEventType(val ApifrontendConfigRejectedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetRejectionReason sets the value of RejectionReason.
+func (s *ApifrontendConfigRejectedPayload) SetRejectionReason(val string) {
+	s.RejectionReason = val
+}
+
+// SetConfigVersion sets the value of ConfigVersion.
+func (s *ApifrontendConfigRejectedPayload) SetConfigVersion(val OptString) {
+	s.ConfigVersion = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendConfigRejectedPayloadEventType string
+
+const (
+	ApifrontendConfigRejectedPayloadEventTypeApifrontendConfigRejected ApifrontendConfigRejectedPayloadEventType = "apifrontend.config.rejected"
+)
+
+// AllValues returns all ApifrontendConfigRejectedPayloadEventType values.
+func (ApifrontendConfigRejectedPayloadEventType) AllValues() []ApifrontendConfigRejectedPayloadEventType {
+	return []ApifrontendConfigRejectedPayloadEventType{
+		ApifrontendConfigRejectedPayloadEventTypeApifrontendConfigRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendConfigRejectedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendConfigRejectedPayloadEventTypeApifrontendConfigRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendConfigRejectedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendConfigRejectedPayloadEventType(data) {
+	case ApifrontendConfigRejectedPayloadEventTypeApifrontendConfigRejected:
+		*s = ApifrontendConfigRejectedPayloadEventTypeApifrontendConfigRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Config reloaded event payload (apifrontend.config.reloaded) — hot-reload configuration accepted
+// (SOC2 CC7.2, Issue.
+// Ref: #/components/schemas/ApifrontendConfigReloadedPayload
+type ApifrontendConfigReloadedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendConfigReloadedPayloadEventType `json:"event_type"`
+	// New configuration version or hash.
+	ConfigVersion string `json:"config_version"`
+	// Configuration keys that changed.
+	ChangedKeys []string `json:"changed_keys"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendConfigReloadedPayload) GetEventType() ApifrontendConfigReloadedPayloadEventType {
+	return s.EventType
+}
+
+// GetConfigVersion returns the value of ConfigVersion.
+func (s *ApifrontendConfigReloadedPayload) GetConfigVersion() string {
+	return s.ConfigVersion
+}
+
+// GetChangedKeys returns the value of ChangedKeys.
+func (s *ApifrontendConfigReloadedPayload) GetChangedKeys() []string {
+	return s.ChangedKeys
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendConfigReloadedPayload) SetEventType(val ApifrontendConfigReloadedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetConfigVersion sets the value of ConfigVersion.
+func (s *ApifrontendConfigReloadedPayload) SetConfigVersion(val string) {
+	s.ConfigVersion = val
+}
+
+// SetChangedKeys sets the value of ChangedKeys.
+func (s *ApifrontendConfigReloadedPayload) SetChangedKeys(val []string) {
+	s.ChangedKeys = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendConfigReloadedPayloadEventType string
+
+const (
+	ApifrontendConfigReloadedPayloadEventTypeApifrontendConfigReloaded ApifrontendConfigReloadedPayloadEventType = "apifrontend.config.reloaded"
+)
+
+// AllValues returns all ApifrontendConfigReloadedPayloadEventType values.
+func (ApifrontendConfigReloadedPayloadEventType) AllValues() []ApifrontendConfigReloadedPayloadEventType {
+	return []ApifrontendConfigReloadedPayloadEventType{
+		ApifrontendConfigReloadedPayloadEventTypeApifrontendConfigReloaded,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendConfigReloadedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendConfigReloadedPayloadEventTypeApifrontendConfigReloaded:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendConfigReloadedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendConfigReloadedPayloadEventType(data) {
+	case ApifrontendConfigReloadedPayloadEventTypeApifrontendConfigReloaded:
+		*s = ApifrontendConfigReloadedPayloadEventTypeApifrontendConfigReloaded
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// K8s impersonation created event payload (apifrontend.impersonation.created) — impersonated
+// client created for user (SOC2 CC6.1, Issue.
+// Ref: #/components/schemas/ApifrontendImpersonationCreatedPayload
+type ApifrontendImpersonationCreatedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendImpersonationCreatedPayloadEventType `json:"event_type"`
+	// Username being impersonated.
+	TargetUser string `json:"target_user"`
+	// Groups assigned to impersonated identity.
+	Groups []string `json:"groups"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendImpersonationCreatedPayload) GetEventType() ApifrontendImpersonationCreatedPayloadEventType {
+	return s.EventType
+}
+
+// GetTargetUser returns the value of TargetUser.
+func (s *ApifrontendImpersonationCreatedPayload) GetTargetUser() string {
+	return s.TargetUser
+}
+
+// GetGroups returns the value of Groups.
+func (s *ApifrontendImpersonationCreatedPayload) GetGroups() []string {
+	return s.Groups
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendImpersonationCreatedPayload) SetEventType(val ApifrontendImpersonationCreatedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetTargetUser sets the value of TargetUser.
+func (s *ApifrontendImpersonationCreatedPayload) SetTargetUser(val string) {
+	s.TargetUser = val
+}
+
+// SetGroups sets the value of Groups.
+func (s *ApifrontendImpersonationCreatedPayload) SetGroups(val []string) {
+	s.Groups = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendImpersonationCreatedPayloadEventType string
+
+const (
+	ApifrontendImpersonationCreatedPayloadEventTypeApifrontendImpersonationCreated ApifrontendImpersonationCreatedPayloadEventType = "apifrontend.impersonation.created"
+)
+
+// AllValues returns all ApifrontendImpersonationCreatedPayloadEventType values.
+func (ApifrontendImpersonationCreatedPayloadEventType) AllValues() []ApifrontendImpersonationCreatedPayloadEventType {
+	return []ApifrontendImpersonationCreatedPayloadEventType{
+		ApifrontendImpersonationCreatedPayloadEventTypeApifrontendImpersonationCreated,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendImpersonationCreatedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendImpersonationCreatedPayloadEventTypeApifrontendImpersonationCreated:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendImpersonationCreatedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendImpersonationCreatedPayloadEventType(data) {
+	case ApifrontendImpersonationCreatedPayloadEventTypeApifrontendImpersonationCreated:
+		*s = ApifrontendImpersonationCreatedPayloadEventTypeApifrontendImpersonationCreated
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// JWT delegation event payload (apifrontend.jwt.delegation) — original JWT forwarded to downstream
+// service (SOC2 CC6.1, Issue.
+// Ref: #/components/schemas/ApifrontendJWTDelegationPayload
+type ApifrontendJWTDelegationPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendJWTDelegationPayloadEventType `json:"event_type"`
+	// Downstream service receiving the delegated JWT.
+	TargetService string `json:"target_service"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendJWTDelegationPayload) GetEventType() ApifrontendJWTDelegationPayloadEventType {
+	return s.EventType
+}
+
+// GetTargetService returns the value of TargetService.
+func (s *ApifrontendJWTDelegationPayload) GetTargetService() string {
+	return s.TargetService
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendJWTDelegationPayload) SetEventType(val ApifrontendJWTDelegationPayloadEventType) {
+	s.EventType = val
+}
+
+// SetTargetService sets the value of TargetService.
+func (s *ApifrontendJWTDelegationPayload) SetTargetService(val string) {
+	s.TargetService = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendJWTDelegationPayloadEventType string
+
+const (
+	ApifrontendJWTDelegationPayloadEventTypeApifrontendJwtDelegation ApifrontendJWTDelegationPayloadEventType = "apifrontend.jwt.delegation"
+)
+
+// AllValues returns all ApifrontendJWTDelegationPayloadEventType values.
+func (ApifrontendJWTDelegationPayloadEventType) AllValues() []ApifrontendJWTDelegationPayloadEventType {
+	return []ApifrontendJWTDelegationPayloadEventType{
+		ApifrontendJWTDelegationPayloadEventTypeApifrontendJwtDelegation,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendJWTDelegationPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendJWTDelegationPayloadEventTypeApifrontendJwtDelegation:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendJWTDelegationPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendJWTDelegationPayloadEventType(data) {
+	case ApifrontendJWTDelegationPayloadEventTypeApifrontendJwtDelegation:
+		*s = ApifrontendJWTDelegationPayloadEventTypeApifrontendJwtDelegation
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -4452,6 +5342,172 @@ func (s *ApifrontendKAResultReceivedPayloadResultType) UnmarshalText(data []byte
 	}
 }
 
+// MCP session init event payload (apifrontend.mcp.session_init) — new MCP session initialized
+// (SOC2 CC7.2, Issue.
+// Ref: #/components/schemas/ApifrontendMCPSessionInitPayload
+type ApifrontendMCPSessionInitPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendMCPSessionInitPayloadEventType `json:"event_type"`
+	// MCP session identifier.
+	McpSessionID string `json:"mcp_session_id"`
+	// MCP protocol version negotiated.
+	ProtocolVersion OptString `json:"protocol_version"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendMCPSessionInitPayload) GetEventType() ApifrontendMCPSessionInitPayloadEventType {
+	return s.EventType
+}
+
+// GetMcpSessionID returns the value of McpSessionID.
+func (s *ApifrontendMCPSessionInitPayload) GetMcpSessionID() string {
+	return s.McpSessionID
+}
+
+// GetProtocolVersion returns the value of ProtocolVersion.
+func (s *ApifrontendMCPSessionInitPayload) GetProtocolVersion() OptString {
+	return s.ProtocolVersion
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendMCPSessionInitPayload) SetEventType(val ApifrontendMCPSessionInitPayloadEventType) {
+	s.EventType = val
+}
+
+// SetMcpSessionID sets the value of McpSessionID.
+func (s *ApifrontendMCPSessionInitPayload) SetMcpSessionID(val string) {
+	s.McpSessionID = val
+}
+
+// SetProtocolVersion sets the value of ProtocolVersion.
+func (s *ApifrontendMCPSessionInitPayload) SetProtocolVersion(val OptString) {
+	s.ProtocolVersion = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendMCPSessionInitPayloadEventType string
+
+const (
+	ApifrontendMCPSessionInitPayloadEventTypeApifrontendMcpSessionInit ApifrontendMCPSessionInitPayloadEventType = "apifrontend.mcp.session_init"
+)
+
+// AllValues returns all ApifrontendMCPSessionInitPayloadEventType values.
+func (ApifrontendMCPSessionInitPayloadEventType) AllValues() []ApifrontendMCPSessionInitPayloadEventType {
+	return []ApifrontendMCPSessionInitPayloadEventType{
+		ApifrontendMCPSessionInitPayloadEventTypeApifrontendMcpSessionInit,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendMCPSessionInitPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendMCPSessionInitPayloadEventTypeApifrontendMcpSessionInit:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendMCPSessionInitPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendMCPSessionInitPayloadEventType(data) {
+	case ApifrontendMCPSessionInitPayloadEventTypeApifrontendMcpSessionInit:
+		*s = ApifrontendMCPSessionInitPayloadEventTypeApifrontendMcpSessionInit
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// MCP tool failed event payload (apifrontend.mcp.tool_failed) — MCP tool execution failed (SOC2
+// CC7.2, Issue.
+// Ref: #/components/schemas/ApifrontendMCPToolFailedPayload
+type ApifrontendMCPToolFailedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendMCPToolFailedPayloadEventType `json:"event_type"`
+	// MCP session ID (if available).
+	SessionID OptString `json:"session_id"`
+	// Name of the MCP tool that failed.
+	ToolName string `json:"tool_name"`
+	// Error message.
+	Error string `json:"error"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendMCPToolFailedPayload) GetEventType() ApifrontendMCPToolFailedPayloadEventType {
+	return s.EventType
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *ApifrontendMCPToolFailedPayload) GetSessionID() OptString {
+	return s.SessionID
+}
+
+// GetToolName returns the value of ToolName.
+func (s *ApifrontendMCPToolFailedPayload) GetToolName() string {
+	return s.ToolName
+}
+
+// GetError returns the value of Error.
+func (s *ApifrontendMCPToolFailedPayload) GetError() string {
+	return s.Error
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendMCPToolFailedPayload) SetEventType(val ApifrontendMCPToolFailedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *ApifrontendMCPToolFailedPayload) SetSessionID(val OptString) {
+	s.SessionID = val
+}
+
+// SetToolName sets the value of ToolName.
+func (s *ApifrontendMCPToolFailedPayload) SetToolName(val string) {
+	s.ToolName = val
+}
+
+// SetError sets the value of Error.
+func (s *ApifrontendMCPToolFailedPayload) SetError(val string) {
+	s.Error = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendMCPToolFailedPayloadEventType string
+
+const (
+	ApifrontendMCPToolFailedPayloadEventTypeApifrontendMcpToolFailed ApifrontendMCPToolFailedPayloadEventType = "apifrontend.mcp.tool_failed"
+)
+
+// AllValues returns all ApifrontendMCPToolFailedPayloadEventType values.
+func (ApifrontendMCPToolFailedPayloadEventType) AllValues() []ApifrontendMCPToolFailedPayloadEventType {
+	return []ApifrontendMCPToolFailedPayloadEventType{
+		ApifrontendMCPToolFailedPayloadEventTypeApifrontendMcpToolFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendMCPToolFailedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendMCPToolFailedPayloadEventTypeApifrontendMcpToolFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendMCPToolFailedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendMCPToolFailedPayloadEventType(data) {
+	case ApifrontendMCPToolFailedPayloadEventTypeApifrontendMcpToolFailed:
+		*s = ApifrontendMCPToolFailedPayloadEventTypeApifrontendMcpToolFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // RemediationRequest created event payload (apifrontend.rr.created) — AF created an RR (SOC2 CC7.2,
 //
 //	Issue.
@@ -4698,6 +5754,160 @@ func (s *ApifrontendRRDeduplicatedPayloadEventType) UnmarshalText(data []byte) e
 	switch ApifrontendRRDeduplicatedPayloadEventType(data) {
 	case ApifrontendRRDeduplicatedPayloadEventTypeApifrontendRrDeduplicated:
 		*s = ApifrontendRRDeduplicatedPayloadEventTypeApifrontendRrDeduplicated
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Rate limit denied event payload (apifrontend.ratelimit.denied) — request rejected by rate
+// limiter (SOC2 A1.2, Issue.
+// Ref: #/components/schemas/ApifrontendRatelimitDeniedPayload
+type ApifrontendRatelimitDeniedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendRatelimitDeniedPayloadEventType `json:"event_type"`
+	// Type of rate limit exceeded (per-user, global).
+	LimitType string `json:"limit_type"`
+	// Configured limit value.
+	LimitValue OptString `json:"limit_value"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendRatelimitDeniedPayload) GetEventType() ApifrontendRatelimitDeniedPayloadEventType {
+	return s.EventType
+}
+
+// GetLimitType returns the value of LimitType.
+func (s *ApifrontendRatelimitDeniedPayload) GetLimitType() string {
+	return s.LimitType
+}
+
+// GetLimitValue returns the value of LimitValue.
+func (s *ApifrontendRatelimitDeniedPayload) GetLimitValue() OptString {
+	return s.LimitValue
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendRatelimitDeniedPayload) SetEventType(val ApifrontendRatelimitDeniedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetLimitType sets the value of LimitType.
+func (s *ApifrontendRatelimitDeniedPayload) SetLimitType(val string) {
+	s.LimitType = val
+}
+
+// SetLimitValue sets the value of LimitValue.
+func (s *ApifrontendRatelimitDeniedPayload) SetLimitValue(val OptString) {
+	s.LimitValue = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendRatelimitDeniedPayloadEventType string
+
+const (
+	ApifrontendRatelimitDeniedPayloadEventTypeApifrontendRatelimitDenied ApifrontendRatelimitDeniedPayloadEventType = "apifrontend.ratelimit.denied"
+)
+
+// AllValues returns all ApifrontendRatelimitDeniedPayloadEventType values.
+func (ApifrontendRatelimitDeniedPayloadEventType) AllValues() []ApifrontendRatelimitDeniedPayloadEventType {
+	return []ApifrontendRatelimitDeniedPayloadEventType{
+		ApifrontendRatelimitDeniedPayloadEventTypeApifrontendRatelimitDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendRatelimitDeniedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendRatelimitDeniedPayloadEventTypeApifrontendRatelimitDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendRatelimitDeniedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendRatelimitDeniedPayloadEventType(data) {
+	case ApifrontendRatelimitDeniedPayloadEventTypeApifrontendRatelimitDenied:
+		*s = ApifrontendRatelimitDeniedPayloadEventTypeApifrontendRatelimitDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Session auto-cancelled event payload (apifrontend.session.auto_cancelled) — TTL controller
+// cancelled idle session (SOC2 CC7.2, Issue.
+// Ref: #/components/schemas/ApifrontendSessionAutoCancelledPayload
+type ApifrontendSessionAutoCancelledPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendSessionAutoCancelledPayloadEventType `json:"event_type"`
+	// InvestigationSession CRD name.
+	SessionID string `json:"session_id"`
+	// TTL value that triggered cancellation.
+	TTLSeconds OptInt `json:"ttl_seconds"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendSessionAutoCancelledPayload) GetEventType() ApifrontendSessionAutoCancelledPayloadEventType {
+	return s.EventType
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *ApifrontendSessionAutoCancelledPayload) GetSessionID() string {
+	return s.SessionID
+}
+
+// GetTTLSeconds returns the value of TTLSeconds.
+func (s *ApifrontendSessionAutoCancelledPayload) GetTTLSeconds() OptInt {
+	return s.TTLSeconds
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendSessionAutoCancelledPayload) SetEventType(val ApifrontendSessionAutoCancelledPayloadEventType) {
+	s.EventType = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *ApifrontendSessionAutoCancelledPayload) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// SetTTLSeconds sets the value of TTLSeconds.
+func (s *ApifrontendSessionAutoCancelledPayload) SetTTLSeconds(val OptInt) {
+	s.TTLSeconds = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendSessionAutoCancelledPayloadEventType string
+
+const (
+	ApifrontendSessionAutoCancelledPayloadEventTypeApifrontendSessionAutoCancelled ApifrontendSessionAutoCancelledPayloadEventType = "apifrontend.session.auto_cancelled"
+)
+
+// AllValues returns all ApifrontendSessionAutoCancelledPayloadEventType values.
+func (ApifrontendSessionAutoCancelledPayloadEventType) AllValues() []ApifrontendSessionAutoCancelledPayloadEventType {
+	return []ApifrontendSessionAutoCancelledPayloadEventType{
+		ApifrontendSessionAutoCancelledPayloadEventTypeApifrontendSessionAutoCancelled,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendSessionAutoCancelledPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendSessionAutoCancelledPayloadEventTypeApifrontendSessionAutoCancelled:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendSessionAutoCancelledPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendSessionAutoCancelledPayloadEventType(data) {
+	case ApifrontendSessionAutoCancelledPayloadEventTypeApifrontendSessionAutoCancelled:
+		*s = ApifrontendSessionAutoCancelledPayloadEventTypeApifrontendSessionAutoCancelled
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -5126,6 +6336,415 @@ func (s *ApifrontendSessionCreatedPayloadJoinMode) UnmarshalText(data []byte) er
 		return nil
 	case ApifrontendSessionCreatedPayloadJoinModeTakeover:
 		*s = ApifrontendSessionCreatedPayloadJoinModeTakeover
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Session deleted event payload (apifrontend.session.deleted) — InvestigationSession CRD deleted
+// (SOC2 CC7.2, Issue.
+// Ref: #/components/schemas/ApifrontendSessionDeletedPayload
+type ApifrontendSessionDeletedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendSessionDeletedPayloadEventType `json:"event_type"`
+	// InvestigationSession CRD name.
+	SessionID string `json:"session_id"`
+	// Reason for deletion (user-initiated, cleanup).
+	Reason OptString `json:"reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendSessionDeletedPayload) GetEventType() ApifrontendSessionDeletedPayloadEventType {
+	return s.EventType
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *ApifrontendSessionDeletedPayload) GetSessionID() string {
+	return s.SessionID
+}
+
+// GetReason returns the value of Reason.
+func (s *ApifrontendSessionDeletedPayload) GetReason() OptString {
+	return s.Reason
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendSessionDeletedPayload) SetEventType(val ApifrontendSessionDeletedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *ApifrontendSessionDeletedPayload) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// SetReason sets the value of Reason.
+func (s *ApifrontendSessionDeletedPayload) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendSessionDeletedPayloadEventType string
+
+const (
+	ApifrontendSessionDeletedPayloadEventTypeApifrontendSessionDeleted ApifrontendSessionDeletedPayloadEventType = "apifrontend.session.deleted"
+)
+
+// AllValues returns all ApifrontendSessionDeletedPayloadEventType values.
+func (ApifrontendSessionDeletedPayloadEventType) AllValues() []ApifrontendSessionDeletedPayloadEventType {
+	return []ApifrontendSessionDeletedPayloadEventType{
+		ApifrontendSessionDeletedPayloadEventTypeApifrontendSessionDeleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendSessionDeletedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendSessionDeletedPayloadEventTypeApifrontendSessionDeleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendSessionDeletedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendSessionDeletedPayloadEventType(data) {
+	case ApifrontendSessionDeletedPayloadEventTypeApifrontendSessionDeleted:
+		*s = ApifrontendSessionDeletedPayloadEventTypeApifrontendSessionDeleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Session phase changed event payload (apifrontend.session.phase_changed) — InvestigationSession
+// phase transition (SOC2 CC7.2, Issue.
+// Ref: #/components/schemas/ApifrontendSessionPhaseChangedPayload
+type ApifrontendSessionPhaseChangedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendSessionPhaseChangedPayloadEventType `json:"event_type"`
+	// InvestigationSession CRD name.
+	SessionID string `json:"session_id"`
+	// Previous phase.
+	FromPhase string `json:"from_phase"`
+	// New phase.
+	ToPhase string `json:"to_phase"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendSessionPhaseChangedPayload) GetEventType() ApifrontendSessionPhaseChangedPayloadEventType {
+	return s.EventType
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *ApifrontendSessionPhaseChangedPayload) GetSessionID() string {
+	return s.SessionID
+}
+
+// GetFromPhase returns the value of FromPhase.
+func (s *ApifrontendSessionPhaseChangedPayload) GetFromPhase() string {
+	return s.FromPhase
+}
+
+// GetToPhase returns the value of ToPhase.
+func (s *ApifrontendSessionPhaseChangedPayload) GetToPhase() string {
+	return s.ToPhase
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendSessionPhaseChangedPayload) SetEventType(val ApifrontendSessionPhaseChangedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *ApifrontendSessionPhaseChangedPayload) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// SetFromPhase sets the value of FromPhase.
+func (s *ApifrontendSessionPhaseChangedPayload) SetFromPhase(val string) {
+	s.FromPhase = val
+}
+
+// SetToPhase sets the value of ToPhase.
+func (s *ApifrontendSessionPhaseChangedPayload) SetToPhase(val string) {
+	s.ToPhase = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendSessionPhaseChangedPayloadEventType string
+
+const (
+	ApifrontendSessionPhaseChangedPayloadEventTypeApifrontendSessionPhaseChanged ApifrontendSessionPhaseChangedPayloadEventType = "apifrontend.session.phase_changed"
+)
+
+// AllValues returns all ApifrontendSessionPhaseChangedPayloadEventType values.
+func (ApifrontendSessionPhaseChangedPayloadEventType) AllValues() []ApifrontendSessionPhaseChangedPayloadEventType {
+	return []ApifrontendSessionPhaseChangedPayloadEventType{
+		ApifrontendSessionPhaseChangedPayloadEventTypeApifrontendSessionPhaseChanged,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendSessionPhaseChangedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendSessionPhaseChangedPayloadEventTypeApifrontendSessionPhaseChanged:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendSessionPhaseChangedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendSessionPhaseChangedPayloadEventType(data) {
+	case ApifrontendSessionPhaseChangedPayloadEventTypeApifrontendSessionPhaseChanged:
+		*s = ApifrontendSessionPhaseChangedPayloadEventTypeApifrontendSessionPhaseChanged
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Session retention deleted event payload (apifrontend.session.retention_deleted) — TTL controller
+// deleted completed session (SOC2 CC7.2, Issue.
+// Ref: #/components/schemas/ApifrontendSessionRetentionDeletedPayload
+type ApifrontendSessionRetentionDeletedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendSessionRetentionDeletedPayloadEventType `json:"event_type"`
+	// InvestigationSession CRD name.
+	SessionID string `json:"session_id"`
+	// Retention period that triggered deletion.
+	RetentionSeconds OptInt `json:"retention_seconds"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendSessionRetentionDeletedPayload) GetEventType() ApifrontendSessionRetentionDeletedPayloadEventType {
+	return s.EventType
+}
+
+// GetSessionID returns the value of SessionID.
+func (s *ApifrontendSessionRetentionDeletedPayload) GetSessionID() string {
+	return s.SessionID
+}
+
+// GetRetentionSeconds returns the value of RetentionSeconds.
+func (s *ApifrontendSessionRetentionDeletedPayload) GetRetentionSeconds() OptInt {
+	return s.RetentionSeconds
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendSessionRetentionDeletedPayload) SetEventType(val ApifrontendSessionRetentionDeletedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetSessionID sets the value of SessionID.
+func (s *ApifrontendSessionRetentionDeletedPayload) SetSessionID(val string) {
+	s.SessionID = val
+}
+
+// SetRetentionSeconds sets the value of RetentionSeconds.
+func (s *ApifrontendSessionRetentionDeletedPayload) SetRetentionSeconds(val OptInt) {
+	s.RetentionSeconds = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendSessionRetentionDeletedPayloadEventType string
+
+const (
+	ApifrontendSessionRetentionDeletedPayloadEventTypeApifrontendSessionRetentionDeleted ApifrontendSessionRetentionDeletedPayloadEventType = "apifrontend.session.retention_deleted"
+)
+
+// AllValues returns all ApifrontendSessionRetentionDeletedPayloadEventType values.
+func (ApifrontendSessionRetentionDeletedPayloadEventType) AllValues() []ApifrontendSessionRetentionDeletedPayloadEventType {
+	return []ApifrontendSessionRetentionDeletedPayloadEventType{
+		ApifrontendSessionRetentionDeletedPayloadEventTypeApifrontendSessionRetentionDeleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendSessionRetentionDeletedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendSessionRetentionDeletedPayloadEventTypeApifrontendSessionRetentionDeleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendSessionRetentionDeletedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendSessionRetentionDeletedPayloadEventType(data) {
+	case ApifrontendSessionRetentionDeletedPayloadEventTypeApifrontendSessionRetentionDeleted:
+		*s = ApifrontendSessionRetentionDeletedPayloadEventTypeApifrontendSessionRetentionDeleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Severity triage completed event payload (apifrontend.severity_triage.completed) — multi-tier
+// severity triage succeeded (SOC2 CC7.2, Issue.
+// Ref: #/components/schemas/ApifrontendSeverityTriageCompletedPayload
+type ApifrontendSeverityTriageCompletedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendSeverityTriageCompletedPayloadEventType `json:"event_type"`
+	// Determined severity level.
+	Severity string `json:"severity"`
+	// Tier that produced the final severity (prometheus_rules, llm, default).
+	SourceTier string `json:"source_tier"`
+	// Triage pipeline execution time.
+	DurationMs OptInt `json:"duration_ms"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendSeverityTriageCompletedPayload) GetEventType() ApifrontendSeverityTriageCompletedPayloadEventType {
+	return s.EventType
+}
+
+// GetSeverity returns the value of Severity.
+func (s *ApifrontendSeverityTriageCompletedPayload) GetSeverity() string {
+	return s.Severity
+}
+
+// GetSourceTier returns the value of SourceTier.
+func (s *ApifrontendSeverityTriageCompletedPayload) GetSourceTier() string {
+	return s.SourceTier
+}
+
+// GetDurationMs returns the value of DurationMs.
+func (s *ApifrontendSeverityTriageCompletedPayload) GetDurationMs() OptInt {
+	return s.DurationMs
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendSeverityTriageCompletedPayload) SetEventType(val ApifrontendSeverityTriageCompletedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetSeverity sets the value of Severity.
+func (s *ApifrontendSeverityTriageCompletedPayload) SetSeverity(val string) {
+	s.Severity = val
+}
+
+// SetSourceTier sets the value of SourceTier.
+func (s *ApifrontendSeverityTriageCompletedPayload) SetSourceTier(val string) {
+	s.SourceTier = val
+}
+
+// SetDurationMs sets the value of DurationMs.
+func (s *ApifrontendSeverityTriageCompletedPayload) SetDurationMs(val OptInt) {
+	s.DurationMs = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendSeverityTriageCompletedPayloadEventType string
+
+const (
+	ApifrontendSeverityTriageCompletedPayloadEventTypeApifrontendSeverityTriageCompleted ApifrontendSeverityTriageCompletedPayloadEventType = "apifrontend.severity_triage.completed"
+)
+
+// AllValues returns all ApifrontendSeverityTriageCompletedPayloadEventType values.
+func (ApifrontendSeverityTriageCompletedPayloadEventType) AllValues() []ApifrontendSeverityTriageCompletedPayloadEventType {
+	return []ApifrontendSeverityTriageCompletedPayloadEventType{
+		ApifrontendSeverityTriageCompletedPayloadEventTypeApifrontendSeverityTriageCompleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendSeverityTriageCompletedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendSeverityTriageCompletedPayloadEventTypeApifrontendSeverityTriageCompleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendSeverityTriageCompletedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendSeverityTriageCompletedPayloadEventType(data) {
+	case ApifrontendSeverityTriageCompletedPayloadEventTypeApifrontendSeverityTriageCompleted:
+		*s = ApifrontendSeverityTriageCompletedPayloadEventTypeApifrontendSeverityTriageCompleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Severity triage failed event payload (apifrontend.severity_triage.failed) — multi-tier severity
+// triage failed (SOC2 CC7.2, Issue.
+// Ref: #/components/schemas/ApifrontendSeverityTriageFailedPayload
+type ApifrontendSeverityTriageFailedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendSeverityTriageFailedPayloadEventType `json:"event_type"`
+	// Error that caused triage failure.
+	Error string `json:"error"`
+	// Tier where failure occurred.
+	FailedTier OptString `json:"failed_tier"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendSeverityTriageFailedPayload) GetEventType() ApifrontendSeverityTriageFailedPayloadEventType {
+	return s.EventType
+}
+
+// GetError returns the value of Error.
+func (s *ApifrontendSeverityTriageFailedPayload) GetError() string {
+	return s.Error
+}
+
+// GetFailedTier returns the value of FailedTier.
+func (s *ApifrontendSeverityTriageFailedPayload) GetFailedTier() OptString {
+	return s.FailedTier
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendSeverityTriageFailedPayload) SetEventType(val ApifrontendSeverityTriageFailedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetError sets the value of Error.
+func (s *ApifrontendSeverityTriageFailedPayload) SetError(val string) {
+	s.Error = val
+}
+
+// SetFailedTier sets the value of FailedTier.
+func (s *ApifrontendSeverityTriageFailedPayload) SetFailedTier(val OptString) {
+	s.FailedTier = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendSeverityTriageFailedPayloadEventType string
+
+const (
+	ApifrontendSeverityTriageFailedPayloadEventTypeApifrontendSeverityTriageFailed ApifrontendSeverityTriageFailedPayloadEventType = "apifrontend.severity_triage.failed"
+)
+
+// AllValues returns all ApifrontendSeverityTriageFailedPayloadEventType values.
+func (ApifrontendSeverityTriageFailedPayloadEventType) AllValues() []ApifrontendSeverityTriageFailedPayloadEventType {
+	return []ApifrontendSeverityTriageFailedPayloadEventType{
+		ApifrontendSeverityTriageFailedPayloadEventTypeApifrontendSeverityTriageFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendSeverityTriageFailedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendSeverityTriageFailedPayloadEventTypeApifrontendSeverityTriageFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendSeverityTriageFailedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendSeverityTriageFailedPayloadEventType(data) {
+	case ApifrontendSeverityTriageFailedPayloadEventTypeApifrontendSeverityTriageFailed:
+		*s = ApifrontendSeverityTriageFailedPayloadEventTypeApifrontendSeverityTriageFailed
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -6378,73 +7997,92 @@ func (s *AuditEventEventCategory) UnmarshalText(data []byte) error {
 // See DD-AUDIT-004 for structured type requirements.
 // AuditEventEventData represents sum type.
 type AuditEventEventData struct {
-	Type                                   AuditEventEventDataType // switch on this field
-	GatewayAuditPayload                    GatewayAuditPayload
-	RemediationOrchestratorAuditPayload    RemediationOrchestratorAuditPayload
-	SignalProcessingAuditPayload           SignalProcessingAuditPayload
-	AIAnalysisAuditPayload                 AIAnalysisAuditPayload
-	WorkflowExecutionAuditPayload          WorkflowExecutionAuditPayload
-	NotificationAuditPayload               NotificationAuditPayload
-	WorkflowExecutionWebhookAuditPayload   WorkflowExecutionWebhookAuditPayload
-	RemediationApprovalAuditPayload        RemediationApprovalAuditPayload
-	RemediationApprovalDecisionPayload     RemediationApprovalDecisionPayload
-	WorkflowDiscoveryAuditPayload          WorkflowDiscoveryAuditPayload
-	WorkflowCatalogCreatedPayload          WorkflowCatalogCreatedPayload
-	WorkflowCatalogUpdatedPayload          WorkflowCatalogUpdatedPayload
-	AIAnalysisPhaseTransitionPayload       AIAnalysisPhaseTransitionPayload
-	AIAnalysisAIAgentCallPayload           AIAnalysisAIAgentCallPayload
-	AIAnalysisApprovalDecisionPayload      AIAnalysisApprovalDecisionPayload
-	AIAnalysisRegoEvaluationPayload        AIAnalysisRegoEvaluationPayload
-	AIAnalysisErrorPayload                 AIAnalysisErrorPayload
-	NotificationMessageSentPayload         NotificationMessageSentPayload
-	NotificationMessageFailedPayload       NotificationMessageFailedPayload
-	NotificationMessageAcknowledgedPayload NotificationMessageAcknowledgedPayload
-	NotificationMessageEscalatedPayload    NotificationMessageEscalatedPayload
-	AIAgentResponsePayload                 AIAgentResponsePayload
-	AIAgentRCACompletePayload              AIAgentRCACompletePayload
-	AIAgentResponseFailedPayload           AIAgentResponseFailedPayload
-	AIAgentEnrichmentCompletedPayload      AIAgentEnrichmentCompletedPayload
-	AIAgentEnrichmentFailedPayload         AIAgentEnrichmentFailedPayload
-	LLMRequestPayload                      LLMRequestPayload
-	LLMResponsePayload                     LLMResponsePayload
-	LLMToolCallPayload                     LLMToolCallPayload
-	WorkflowValidationPayload              WorkflowValidationPayload
-	AIAgentSessionStartedPayload           AIAgentSessionStartedPayload
-	AIAgentSessionCompletedPayload         AIAgentSessionCompletedPayload
-	AIAgentSessionFailedPayload            AIAgentSessionFailedPayload
-	AIAgentSessionCancelledPayload         AIAgentSessionCancelledPayload
-	AIAgentSessionSuspendedPayload         AIAgentSessionSuspendedPayload
-	AIAgentSessionResumedPayload           AIAgentSessionResumedPayload
-	AIAgentInteractiveStartedPayload       AIAgentInteractiveStartedPayload
-	AIAgentInteractiveCompletedPayload     AIAgentInteractiveCompletedPayload
-	AIAgentInteractiveK8sCallPayload       AIAgentInteractiveK8sCallPayload
-	AIAgentSessionObservedPayload          AIAgentSessionObservedPayload
-	AIAgentSessionAccessDeniedPayload      AIAgentSessionAccessDeniedPayload
-	AIAgentInvestigationCancelledPayload   AIAgentInvestigationCancelledPayload
-	AIAgentAlignmentStepPayload            AIAgentAlignmentStepPayload
-	AIAgentAlignmentVerdictPayload         AIAgentAlignmentVerdictPayload
-	ShadowLLMRequestPayload                ShadowLLMRequestPayload
-	ShadowLLMResponsePayload               ShadowLLMResponsePayload
-	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
-	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
-	EffectivenessAssessmentAuditPayload    EffectivenessAssessmentAuditPayload
-	ActionTypeCatalogCreatedPayload        ActionTypeCatalogCreatedPayload
-	ActionTypeCatalogUpdatedPayload        ActionTypeCatalogUpdatedPayload
-	ActionTypeCatalogDisabledPayload       ActionTypeCatalogDisabledPayload
-	ActionTypeCatalogReenabledPayload      ActionTypeCatalogReenabledPayload
-	ActionTypeCatalogDisableDeniedPayload  ActionTypeCatalogDisableDeniedPayload
-	ActionTypeWebhookAuditPayload          ActionTypeWebhookAuditPayload
-	ApifrontendTriageStartedPayload        ApifrontendTriageStartedPayload
-	ApifrontendTriageCompletedPayload      ApifrontendTriageCompletedPayload
-	ApifrontendRRCreatedPayload            ApifrontendRRCreatedPayload
-	ApifrontendRRDeduplicatedPayload       ApifrontendRRDeduplicatedPayload
-	ApifrontendSessionCreatedPayload       ApifrontendSessionCreatedPayload
-	ApifrontendSessionCompletedPayload     ApifrontendSessionCompletedPayload
-	ApifrontendKADelegatedPayload          ApifrontendKADelegatedPayload
-	ApifrontendKAResultReceivedPayload     ApifrontendKAResultReceivedPayload
-	ApifrontendUserDecisionPayload         ApifrontendUserDecisionPayload
-	ApifrontendAuthAccessDeniedPayload     ApifrontendAuthAccessDeniedPayload
-	ApifrontendToolExecutedPayload         ApifrontendToolExecutedPayload
+	Type                                      AuditEventEventDataType // switch on this field
+	GatewayAuditPayload                       GatewayAuditPayload
+	RemediationOrchestratorAuditPayload       RemediationOrchestratorAuditPayload
+	SignalProcessingAuditPayload              SignalProcessingAuditPayload
+	AIAnalysisAuditPayload                    AIAnalysisAuditPayload
+	WorkflowExecutionAuditPayload             WorkflowExecutionAuditPayload
+	NotificationAuditPayload                  NotificationAuditPayload
+	WorkflowExecutionWebhookAuditPayload      WorkflowExecutionWebhookAuditPayload
+	RemediationApprovalAuditPayload           RemediationApprovalAuditPayload
+	RemediationApprovalDecisionPayload        RemediationApprovalDecisionPayload
+	WorkflowDiscoveryAuditPayload             WorkflowDiscoveryAuditPayload
+	WorkflowCatalogCreatedPayload             WorkflowCatalogCreatedPayload
+	WorkflowCatalogUpdatedPayload             WorkflowCatalogUpdatedPayload
+	AIAnalysisPhaseTransitionPayload          AIAnalysisPhaseTransitionPayload
+	AIAnalysisAIAgentCallPayload              AIAnalysisAIAgentCallPayload
+	AIAnalysisApprovalDecisionPayload         AIAnalysisApprovalDecisionPayload
+	AIAnalysisRegoEvaluationPayload           AIAnalysisRegoEvaluationPayload
+	AIAnalysisErrorPayload                    AIAnalysisErrorPayload
+	NotificationMessageSentPayload            NotificationMessageSentPayload
+	NotificationMessageFailedPayload          NotificationMessageFailedPayload
+	NotificationMessageAcknowledgedPayload    NotificationMessageAcknowledgedPayload
+	NotificationMessageEscalatedPayload       NotificationMessageEscalatedPayload
+	AIAgentResponsePayload                    AIAgentResponsePayload
+	AIAgentRCACompletePayload                 AIAgentRCACompletePayload
+	AIAgentResponseFailedPayload              AIAgentResponseFailedPayload
+	AIAgentEnrichmentCompletedPayload         AIAgentEnrichmentCompletedPayload
+	AIAgentEnrichmentFailedPayload            AIAgentEnrichmentFailedPayload
+	LLMRequestPayload                         LLMRequestPayload
+	LLMResponsePayload                        LLMResponsePayload
+	LLMToolCallPayload                        LLMToolCallPayload
+	WorkflowValidationPayload                 WorkflowValidationPayload
+	AIAgentSessionStartedPayload              AIAgentSessionStartedPayload
+	AIAgentSessionCompletedPayload            AIAgentSessionCompletedPayload
+	AIAgentSessionFailedPayload               AIAgentSessionFailedPayload
+	AIAgentSessionCancelledPayload            AIAgentSessionCancelledPayload
+	AIAgentSessionSuspendedPayload            AIAgentSessionSuspendedPayload
+	AIAgentSessionResumedPayload              AIAgentSessionResumedPayload
+	AIAgentInteractiveStartedPayload          AIAgentInteractiveStartedPayload
+	AIAgentInteractiveCompletedPayload        AIAgentInteractiveCompletedPayload
+	AIAgentInteractiveK8sCallPayload          AIAgentInteractiveK8sCallPayload
+	AIAgentSessionObservedPayload             AIAgentSessionObservedPayload
+	AIAgentSessionAccessDeniedPayload         AIAgentSessionAccessDeniedPayload
+	AIAgentInvestigationCancelledPayload      AIAgentInvestigationCancelledPayload
+	AIAgentAlignmentStepPayload               AIAgentAlignmentStepPayload
+	AIAgentAlignmentVerdictPayload            AIAgentAlignmentVerdictPayload
+	ShadowLLMRequestPayload                   ShadowLLMRequestPayload
+	ShadowLLMResponsePayload                  ShadowLLMResponsePayload
+	RemediationRequestWebhookAuditPayload     RemediationRequestWebhookAuditPayload
+	RemediationWorkflowWebhookAuditPayload    RemediationWorkflowWebhookAuditPayload
+	EffectivenessAssessmentAuditPayload       EffectivenessAssessmentAuditPayload
+	ActionTypeCatalogCreatedPayload           ActionTypeCatalogCreatedPayload
+	ActionTypeCatalogUpdatedPayload           ActionTypeCatalogUpdatedPayload
+	ActionTypeCatalogDisabledPayload          ActionTypeCatalogDisabledPayload
+	ActionTypeCatalogReenabledPayload         ActionTypeCatalogReenabledPayload
+	ActionTypeCatalogDisableDeniedPayload     ActionTypeCatalogDisableDeniedPayload
+	ActionTypeWebhookAuditPayload             ActionTypeWebhookAuditPayload
+	ApifrontendTriageStartedPayload           ApifrontendTriageStartedPayload
+	ApifrontendTriageCompletedPayload         ApifrontendTriageCompletedPayload
+	ApifrontendRRCreatedPayload               ApifrontendRRCreatedPayload
+	ApifrontendRRDeduplicatedPayload          ApifrontendRRDeduplicatedPayload
+	ApifrontendSessionCreatedPayload          ApifrontendSessionCreatedPayload
+	ApifrontendSessionCompletedPayload        ApifrontendSessionCompletedPayload
+	ApifrontendKADelegatedPayload             ApifrontendKADelegatedPayload
+	ApifrontendKAResultReceivedPayload        ApifrontendKAResultReceivedPayload
+	ApifrontendUserDecisionPayload            ApifrontendUserDecisionPayload
+	ApifrontendAuthAccessDeniedPayload        ApifrontendAuthAccessDeniedPayload
+	ApifrontendToolExecutedPayload            ApifrontendToolExecutedPayload
+	ApifrontendAuthSuccessPayload             ApifrontendAuthSuccessPayload
+	ApifrontendAuthFailurePayload             ApifrontendAuthFailurePayload
+	ApifrontendRatelimitDeniedPayload         ApifrontendRatelimitDeniedPayload
+	ApifrontendCircuitbreakerTripPayload      ApifrontendCircuitbreakerTripPayload
+	ApifrontendImpersonationCreatedPayload    ApifrontendImpersonationCreatedPayload
+	ApifrontendJWTDelegationPayload           ApifrontendJWTDelegationPayload
+	ApifrontendSessionPhaseChangedPayload     ApifrontendSessionPhaseChangedPayload
+	ApifrontendSessionDeletedPayload          ApifrontendSessionDeletedPayload
+	ApifrontendSessionAutoCancelledPayload    ApifrontendSessionAutoCancelledPayload
+	ApifrontendSessionRetentionDeletedPayload ApifrontendSessionRetentionDeletedPayload
+	ApifrontendA2ATaskStartedPayload          ApifrontendA2ATaskStartedPayload
+	ApifrontendA2ATaskCompletedPayload        ApifrontendA2ATaskCompletedPayload
+	ApifrontendA2ATaskFailedPayload           ApifrontendA2ATaskFailedPayload
+	ApifrontendMCPToolFailedPayload           ApifrontendMCPToolFailedPayload
+	ApifrontendMCPSessionInitPayload          ApifrontendMCPSessionInitPayload
+	ApifrontendSeverityTriageCompletedPayload ApifrontendSeverityTriageCompletedPayload
+	ApifrontendSeverityTriageFailedPayload    ApifrontendSeverityTriageFailedPayload
+	ApifrontendConfigReloadedPayload          ApifrontendConfigReloadedPayload
+	ApifrontendConfigRejectedPayload          ApifrontendConfigRejectedPayload
 }
 
 // AuditEventEventDataType is oneOf type of AuditEventEventData.
@@ -6566,6 +8204,25 @@ const (
 	ApifrontendUserDecisionPayloadAuditEventEventData                                AuditEventEventDataType = "apifrontend.user.decision"
 	ApifrontendAuthAccessDeniedPayloadAuditEventEventData                            AuditEventEventDataType = "apifrontend.auth.access_denied"
 	ApifrontendToolExecutedPayloadAuditEventEventData                                AuditEventEventDataType = "apifrontend.tool.executed"
+	ApifrontendAuthSuccessPayloadAuditEventEventData                                 AuditEventEventDataType = "apifrontend.auth.success"
+	ApifrontendAuthFailurePayloadAuditEventEventData                                 AuditEventEventDataType = "apifrontend.auth.failure"
+	ApifrontendRatelimitDeniedPayloadAuditEventEventData                             AuditEventEventDataType = "apifrontend.ratelimit.denied"
+	ApifrontendCircuitbreakerTripPayloadAuditEventEventData                          AuditEventEventDataType = "apifrontend.circuitbreaker.trip"
+	ApifrontendImpersonationCreatedPayloadAuditEventEventData                        AuditEventEventDataType = "apifrontend.impersonation.created"
+	ApifrontendJWTDelegationPayloadAuditEventEventData                               AuditEventEventDataType = "apifrontend.jwt.delegation"
+	ApifrontendSessionPhaseChangedPayloadAuditEventEventData                         AuditEventEventDataType = "apifrontend.session.phase_changed"
+	ApifrontendSessionDeletedPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.session.deleted"
+	ApifrontendSessionAutoCancelledPayloadAuditEventEventData                        AuditEventEventDataType = "apifrontend.session.auto_cancelled"
+	ApifrontendSessionRetentionDeletedPayloadAuditEventEventData                     AuditEventEventDataType = "apifrontend.session.retention_deleted"
+	ApifrontendA2ATaskStartedPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.a2a.task_started"
+	ApifrontendA2ATaskCompletedPayloadAuditEventEventData                            AuditEventEventDataType = "apifrontend.a2a.task_completed"
+	ApifrontendA2ATaskFailedPayloadAuditEventEventData                               AuditEventEventDataType = "apifrontend.a2a.task_failed"
+	ApifrontendMCPToolFailedPayloadAuditEventEventData                               AuditEventEventDataType = "apifrontend.mcp.tool_failed"
+	ApifrontendMCPSessionInitPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.mcp.session_init"
+	ApifrontendSeverityTriageCompletedPayloadAuditEventEventData                     AuditEventEventDataType = "apifrontend.severity_triage.completed"
+	ApifrontendSeverityTriageFailedPayloadAuditEventEventData                        AuditEventEventDataType = "apifrontend.severity_triage.failed"
+	ApifrontendConfigReloadedPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.config.reloaded"
+	ApifrontendConfigRejectedPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.config.rejected"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventEventData is GatewayAuditPayload.
@@ -6951,6 +8608,101 @@ func (s AuditEventEventData) IsApifrontendAuthAccessDeniedPayload() bool {
 // IsApifrontendToolExecutedPayload reports whether AuditEventEventData is ApifrontendToolExecutedPayload.
 func (s AuditEventEventData) IsApifrontendToolExecutedPayload() bool {
 	return s.Type == ApifrontendToolExecutedPayloadAuditEventEventData
+}
+
+// IsApifrontendAuthSuccessPayload reports whether AuditEventEventData is ApifrontendAuthSuccessPayload.
+func (s AuditEventEventData) IsApifrontendAuthSuccessPayload() bool {
+	return s.Type == ApifrontendAuthSuccessPayloadAuditEventEventData
+}
+
+// IsApifrontendAuthFailurePayload reports whether AuditEventEventData is ApifrontendAuthFailurePayload.
+func (s AuditEventEventData) IsApifrontendAuthFailurePayload() bool {
+	return s.Type == ApifrontendAuthFailurePayloadAuditEventEventData
+}
+
+// IsApifrontendRatelimitDeniedPayload reports whether AuditEventEventData is ApifrontendRatelimitDeniedPayload.
+func (s AuditEventEventData) IsApifrontendRatelimitDeniedPayload() bool {
+	return s.Type == ApifrontendRatelimitDeniedPayloadAuditEventEventData
+}
+
+// IsApifrontendCircuitbreakerTripPayload reports whether AuditEventEventData is ApifrontendCircuitbreakerTripPayload.
+func (s AuditEventEventData) IsApifrontendCircuitbreakerTripPayload() bool {
+	return s.Type == ApifrontendCircuitbreakerTripPayloadAuditEventEventData
+}
+
+// IsApifrontendImpersonationCreatedPayload reports whether AuditEventEventData is ApifrontendImpersonationCreatedPayload.
+func (s AuditEventEventData) IsApifrontendImpersonationCreatedPayload() bool {
+	return s.Type == ApifrontendImpersonationCreatedPayloadAuditEventEventData
+}
+
+// IsApifrontendJWTDelegationPayload reports whether AuditEventEventData is ApifrontendJWTDelegationPayload.
+func (s AuditEventEventData) IsApifrontendJWTDelegationPayload() bool {
+	return s.Type == ApifrontendJWTDelegationPayloadAuditEventEventData
+}
+
+// IsApifrontendSessionPhaseChangedPayload reports whether AuditEventEventData is ApifrontendSessionPhaseChangedPayload.
+func (s AuditEventEventData) IsApifrontendSessionPhaseChangedPayload() bool {
+	return s.Type == ApifrontendSessionPhaseChangedPayloadAuditEventEventData
+}
+
+// IsApifrontendSessionDeletedPayload reports whether AuditEventEventData is ApifrontendSessionDeletedPayload.
+func (s AuditEventEventData) IsApifrontendSessionDeletedPayload() bool {
+	return s.Type == ApifrontendSessionDeletedPayloadAuditEventEventData
+}
+
+// IsApifrontendSessionAutoCancelledPayload reports whether AuditEventEventData is ApifrontendSessionAutoCancelledPayload.
+func (s AuditEventEventData) IsApifrontendSessionAutoCancelledPayload() bool {
+	return s.Type == ApifrontendSessionAutoCancelledPayloadAuditEventEventData
+}
+
+// IsApifrontendSessionRetentionDeletedPayload reports whether AuditEventEventData is ApifrontendSessionRetentionDeletedPayload.
+func (s AuditEventEventData) IsApifrontendSessionRetentionDeletedPayload() bool {
+	return s.Type == ApifrontendSessionRetentionDeletedPayloadAuditEventEventData
+}
+
+// IsApifrontendA2ATaskStartedPayload reports whether AuditEventEventData is ApifrontendA2ATaskStartedPayload.
+func (s AuditEventEventData) IsApifrontendA2ATaskStartedPayload() bool {
+	return s.Type == ApifrontendA2ATaskStartedPayloadAuditEventEventData
+}
+
+// IsApifrontendA2ATaskCompletedPayload reports whether AuditEventEventData is ApifrontendA2ATaskCompletedPayload.
+func (s AuditEventEventData) IsApifrontendA2ATaskCompletedPayload() bool {
+	return s.Type == ApifrontendA2ATaskCompletedPayloadAuditEventEventData
+}
+
+// IsApifrontendA2ATaskFailedPayload reports whether AuditEventEventData is ApifrontendA2ATaskFailedPayload.
+func (s AuditEventEventData) IsApifrontendA2ATaskFailedPayload() bool {
+	return s.Type == ApifrontendA2ATaskFailedPayloadAuditEventEventData
+}
+
+// IsApifrontendMCPToolFailedPayload reports whether AuditEventEventData is ApifrontendMCPToolFailedPayload.
+func (s AuditEventEventData) IsApifrontendMCPToolFailedPayload() bool {
+	return s.Type == ApifrontendMCPToolFailedPayloadAuditEventEventData
+}
+
+// IsApifrontendMCPSessionInitPayload reports whether AuditEventEventData is ApifrontendMCPSessionInitPayload.
+func (s AuditEventEventData) IsApifrontendMCPSessionInitPayload() bool {
+	return s.Type == ApifrontendMCPSessionInitPayloadAuditEventEventData
+}
+
+// IsApifrontendSeverityTriageCompletedPayload reports whether AuditEventEventData is ApifrontendSeverityTriageCompletedPayload.
+func (s AuditEventEventData) IsApifrontendSeverityTriageCompletedPayload() bool {
+	return s.Type == ApifrontendSeverityTriageCompletedPayloadAuditEventEventData
+}
+
+// IsApifrontendSeverityTriageFailedPayload reports whether AuditEventEventData is ApifrontendSeverityTriageFailedPayload.
+func (s AuditEventEventData) IsApifrontendSeverityTriageFailedPayload() bool {
+	return s.Type == ApifrontendSeverityTriageFailedPayloadAuditEventEventData
+}
+
+// IsApifrontendConfigReloadedPayload reports whether AuditEventEventData is ApifrontendConfigReloadedPayload.
+func (s AuditEventEventData) IsApifrontendConfigReloadedPayload() bool {
+	return s.Type == ApifrontendConfigReloadedPayloadAuditEventEventData
+}
+
+// IsApifrontendConfigRejectedPayload reports whether AuditEventEventData is ApifrontendConfigRejectedPayload.
+func (s AuditEventEventData) IsApifrontendConfigRejectedPayload() bool {
+	return s.Type == ApifrontendConfigRejectedPayloadAuditEventEventData
 }
 
 // SetGatewayAuditPayload sets AuditEventEventData to GatewayAuditPayload.
@@ -8719,6 +10471,405 @@ func NewApifrontendToolExecutedPayloadAuditEventEventData(v ApifrontendToolExecu
 	return s
 }
 
+// SetApifrontendAuthSuccessPayload sets AuditEventEventData to ApifrontendAuthSuccessPayload.
+func (s *AuditEventEventData) SetApifrontendAuthSuccessPayload(v ApifrontendAuthSuccessPayload) {
+	s.Type = ApifrontendAuthSuccessPayloadAuditEventEventData
+	s.ApifrontendAuthSuccessPayload = v
+}
+
+// GetApifrontendAuthSuccessPayload returns ApifrontendAuthSuccessPayload and true boolean if AuditEventEventData is ApifrontendAuthSuccessPayload.
+func (s AuditEventEventData) GetApifrontendAuthSuccessPayload() (v ApifrontendAuthSuccessPayload, ok bool) {
+	if !s.IsApifrontendAuthSuccessPayload() {
+		return v, false
+	}
+	return s.ApifrontendAuthSuccessPayload, true
+}
+
+// NewApifrontendAuthSuccessPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendAuthSuccessPayload.
+func NewApifrontendAuthSuccessPayloadAuditEventEventData(v ApifrontendAuthSuccessPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendAuthSuccessPayload(v)
+	return s
+}
+
+// SetApifrontendAuthFailurePayload sets AuditEventEventData to ApifrontendAuthFailurePayload.
+func (s *AuditEventEventData) SetApifrontendAuthFailurePayload(v ApifrontendAuthFailurePayload) {
+	s.Type = ApifrontendAuthFailurePayloadAuditEventEventData
+	s.ApifrontendAuthFailurePayload = v
+}
+
+// GetApifrontendAuthFailurePayload returns ApifrontendAuthFailurePayload and true boolean if AuditEventEventData is ApifrontendAuthFailurePayload.
+func (s AuditEventEventData) GetApifrontendAuthFailurePayload() (v ApifrontendAuthFailurePayload, ok bool) {
+	if !s.IsApifrontendAuthFailurePayload() {
+		return v, false
+	}
+	return s.ApifrontendAuthFailurePayload, true
+}
+
+// NewApifrontendAuthFailurePayloadAuditEventEventData returns new AuditEventEventData from ApifrontendAuthFailurePayload.
+func NewApifrontendAuthFailurePayloadAuditEventEventData(v ApifrontendAuthFailurePayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendAuthFailurePayload(v)
+	return s
+}
+
+// SetApifrontendRatelimitDeniedPayload sets AuditEventEventData to ApifrontendRatelimitDeniedPayload.
+func (s *AuditEventEventData) SetApifrontendRatelimitDeniedPayload(v ApifrontendRatelimitDeniedPayload) {
+	s.Type = ApifrontendRatelimitDeniedPayloadAuditEventEventData
+	s.ApifrontendRatelimitDeniedPayload = v
+}
+
+// GetApifrontendRatelimitDeniedPayload returns ApifrontendRatelimitDeniedPayload and true boolean if AuditEventEventData is ApifrontendRatelimitDeniedPayload.
+func (s AuditEventEventData) GetApifrontendRatelimitDeniedPayload() (v ApifrontendRatelimitDeniedPayload, ok bool) {
+	if !s.IsApifrontendRatelimitDeniedPayload() {
+		return v, false
+	}
+	return s.ApifrontendRatelimitDeniedPayload, true
+}
+
+// NewApifrontendRatelimitDeniedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendRatelimitDeniedPayload.
+func NewApifrontendRatelimitDeniedPayloadAuditEventEventData(v ApifrontendRatelimitDeniedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendRatelimitDeniedPayload(v)
+	return s
+}
+
+// SetApifrontendCircuitbreakerTripPayload sets AuditEventEventData to ApifrontendCircuitbreakerTripPayload.
+func (s *AuditEventEventData) SetApifrontendCircuitbreakerTripPayload(v ApifrontendCircuitbreakerTripPayload) {
+	s.Type = ApifrontendCircuitbreakerTripPayloadAuditEventEventData
+	s.ApifrontendCircuitbreakerTripPayload = v
+}
+
+// GetApifrontendCircuitbreakerTripPayload returns ApifrontendCircuitbreakerTripPayload and true boolean if AuditEventEventData is ApifrontendCircuitbreakerTripPayload.
+func (s AuditEventEventData) GetApifrontendCircuitbreakerTripPayload() (v ApifrontendCircuitbreakerTripPayload, ok bool) {
+	if !s.IsApifrontendCircuitbreakerTripPayload() {
+		return v, false
+	}
+	return s.ApifrontendCircuitbreakerTripPayload, true
+}
+
+// NewApifrontendCircuitbreakerTripPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendCircuitbreakerTripPayload.
+func NewApifrontendCircuitbreakerTripPayloadAuditEventEventData(v ApifrontendCircuitbreakerTripPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendCircuitbreakerTripPayload(v)
+	return s
+}
+
+// SetApifrontendImpersonationCreatedPayload sets AuditEventEventData to ApifrontendImpersonationCreatedPayload.
+func (s *AuditEventEventData) SetApifrontendImpersonationCreatedPayload(v ApifrontendImpersonationCreatedPayload) {
+	s.Type = ApifrontendImpersonationCreatedPayloadAuditEventEventData
+	s.ApifrontendImpersonationCreatedPayload = v
+}
+
+// GetApifrontendImpersonationCreatedPayload returns ApifrontendImpersonationCreatedPayload and true boolean if AuditEventEventData is ApifrontendImpersonationCreatedPayload.
+func (s AuditEventEventData) GetApifrontendImpersonationCreatedPayload() (v ApifrontendImpersonationCreatedPayload, ok bool) {
+	if !s.IsApifrontendImpersonationCreatedPayload() {
+		return v, false
+	}
+	return s.ApifrontendImpersonationCreatedPayload, true
+}
+
+// NewApifrontendImpersonationCreatedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendImpersonationCreatedPayload.
+func NewApifrontendImpersonationCreatedPayloadAuditEventEventData(v ApifrontendImpersonationCreatedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendImpersonationCreatedPayload(v)
+	return s
+}
+
+// SetApifrontendJWTDelegationPayload sets AuditEventEventData to ApifrontendJWTDelegationPayload.
+func (s *AuditEventEventData) SetApifrontendJWTDelegationPayload(v ApifrontendJWTDelegationPayload) {
+	s.Type = ApifrontendJWTDelegationPayloadAuditEventEventData
+	s.ApifrontendJWTDelegationPayload = v
+}
+
+// GetApifrontendJWTDelegationPayload returns ApifrontendJWTDelegationPayload and true boolean if AuditEventEventData is ApifrontendJWTDelegationPayload.
+func (s AuditEventEventData) GetApifrontendJWTDelegationPayload() (v ApifrontendJWTDelegationPayload, ok bool) {
+	if !s.IsApifrontendJWTDelegationPayload() {
+		return v, false
+	}
+	return s.ApifrontendJWTDelegationPayload, true
+}
+
+// NewApifrontendJWTDelegationPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendJWTDelegationPayload.
+func NewApifrontendJWTDelegationPayloadAuditEventEventData(v ApifrontendJWTDelegationPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendJWTDelegationPayload(v)
+	return s
+}
+
+// SetApifrontendSessionPhaseChangedPayload sets AuditEventEventData to ApifrontendSessionPhaseChangedPayload.
+func (s *AuditEventEventData) SetApifrontendSessionPhaseChangedPayload(v ApifrontendSessionPhaseChangedPayload) {
+	s.Type = ApifrontendSessionPhaseChangedPayloadAuditEventEventData
+	s.ApifrontendSessionPhaseChangedPayload = v
+}
+
+// GetApifrontendSessionPhaseChangedPayload returns ApifrontendSessionPhaseChangedPayload and true boolean if AuditEventEventData is ApifrontendSessionPhaseChangedPayload.
+func (s AuditEventEventData) GetApifrontendSessionPhaseChangedPayload() (v ApifrontendSessionPhaseChangedPayload, ok bool) {
+	if !s.IsApifrontendSessionPhaseChangedPayload() {
+		return v, false
+	}
+	return s.ApifrontendSessionPhaseChangedPayload, true
+}
+
+// NewApifrontendSessionPhaseChangedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendSessionPhaseChangedPayload.
+func NewApifrontendSessionPhaseChangedPayloadAuditEventEventData(v ApifrontendSessionPhaseChangedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendSessionPhaseChangedPayload(v)
+	return s
+}
+
+// SetApifrontendSessionDeletedPayload sets AuditEventEventData to ApifrontendSessionDeletedPayload.
+func (s *AuditEventEventData) SetApifrontendSessionDeletedPayload(v ApifrontendSessionDeletedPayload) {
+	s.Type = ApifrontendSessionDeletedPayloadAuditEventEventData
+	s.ApifrontendSessionDeletedPayload = v
+}
+
+// GetApifrontendSessionDeletedPayload returns ApifrontendSessionDeletedPayload and true boolean if AuditEventEventData is ApifrontendSessionDeletedPayload.
+func (s AuditEventEventData) GetApifrontendSessionDeletedPayload() (v ApifrontendSessionDeletedPayload, ok bool) {
+	if !s.IsApifrontendSessionDeletedPayload() {
+		return v, false
+	}
+	return s.ApifrontendSessionDeletedPayload, true
+}
+
+// NewApifrontendSessionDeletedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendSessionDeletedPayload.
+func NewApifrontendSessionDeletedPayloadAuditEventEventData(v ApifrontendSessionDeletedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendSessionDeletedPayload(v)
+	return s
+}
+
+// SetApifrontendSessionAutoCancelledPayload sets AuditEventEventData to ApifrontendSessionAutoCancelledPayload.
+func (s *AuditEventEventData) SetApifrontendSessionAutoCancelledPayload(v ApifrontendSessionAutoCancelledPayload) {
+	s.Type = ApifrontendSessionAutoCancelledPayloadAuditEventEventData
+	s.ApifrontendSessionAutoCancelledPayload = v
+}
+
+// GetApifrontendSessionAutoCancelledPayload returns ApifrontendSessionAutoCancelledPayload and true boolean if AuditEventEventData is ApifrontendSessionAutoCancelledPayload.
+func (s AuditEventEventData) GetApifrontendSessionAutoCancelledPayload() (v ApifrontendSessionAutoCancelledPayload, ok bool) {
+	if !s.IsApifrontendSessionAutoCancelledPayload() {
+		return v, false
+	}
+	return s.ApifrontendSessionAutoCancelledPayload, true
+}
+
+// NewApifrontendSessionAutoCancelledPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendSessionAutoCancelledPayload.
+func NewApifrontendSessionAutoCancelledPayloadAuditEventEventData(v ApifrontendSessionAutoCancelledPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendSessionAutoCancelledPayload(v)
+	return s
+}
+
+// SetApifrontendSessionRetentionDeletedPayload sets AuditEventEventData to ApifrontendSessionRetentionDeletedPayload.
+func (s *AuditEventEventData) SetApifrontendSessionRetentionDeletedPayload(v ApifrontendSessionRetentionDeletedPayload) {
+	s.Type = ApifrontendSessionRetentionDeletedPayloadAuditEventEventData
+	s.ApifrontendSessionRetentionDeletedPayload = v
+}
+
+// GetApifrontendSessionRetentionDeletedPayload returns ApifrontendSessionRetentionDeletedPayload and true boolean if AuditEventEventData is ApifrontendSessionRetentionDeletedPayload.
+func (s AuditEventEventData) GetApifrontendSessionRetentionDeletedPayload() (v ApifrontendSessionRetentionDeletedPayload, ok bool) {
+	if !s.IsApifrontendSessionRetentionDeletedPayload() {
+		return v, false
+	}
+	return s.ApifrontendSessionRetentionDeletedPayload, true
+}
+
+// NewApifrontendSessionRetentionDeletedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendSessionRetentionDeletedPayload.
+func NewApifrontendSessionRetentionDeletedPayloadAuditEventEventData(v ApifrontendSessionRetentionDeletedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendSessionRetentionDeletedPayload(v)
+	return s
+}
+
+// SetApifrontendA2ATaskStartedPayload sets AuditEventEventData to ApifrontendA2ATaskStartedPayload.
+func (s *AuditEventEventData) SetApifrontendA2ATaskStartedPayload(v ApifrontendA2ATaskStartedPayload) {
+	s.Type = ApifrontendA2ATaskStartedPayloadAuditEventEventData
+	s.ApifrontendA2ATaskStartedPayload = v
+}
+
+// GetApifrontendA2ATaskStartedPayload returns ApifrontendA2ATaskStartedPayload and true boolean if AuditEventEventData is ApifrontendA2ATaskStartedPayload.
+func (s AuditEventEventData) GetApifrontendA2ATaskStartedPayload() (v ApifrontendA2ATaskStartedPayload, ok bool) {
+	if !s.IsApifrontendA2ATaskStartedPayload() {
+		return v, false
+	}
+	return s.ApifrontendA2ATaskStartedPayload, true
+}
+
+// NewApifrontendA2ATaskStartedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendA2ATaskStartedPayload.
+func NewApifrontendA2ATaskStartedPayloadAuditEventEventData(v ApifrontendA2ATaskStartedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendA2ATaskStartedPayload(v)
+	return s
+}
+
+// SetApifrontendA2ATaskCompletedPayload sets AuditEventEventData to ApifrontendA2ATaskCompletedPayload.
+func (s *AuditEventEventData) SetApifrontendA2ATaskCompletedPayload(v ApifrontendA2ATaskCompletedPayload) {
+	s.Type = ApifrontendA2ATaskCompletedPayloadAuditEventEventData
+	s.ApifrontendA2ATaskCompletedPayload = v
+}
+
+// GetApifrontendA2ATaskCompletedPayload returns ApifrontendA2ATaskCompletedPayload and true boolean if AuditEventEventData is ApifrontendA2ATaskCompletedPayload.
+func (s AuditEventEventData) GetApifrontendA2ATaskCompletedPayload() (v ApifrontendA2ATaskCompletedPayload, ok bool) {
+	if !s.IsApifrontendA2ATaskCompletedPayload() {
+		return v, false
+	}
+	return s.ApifrontendA2ATaskCompletedPayload, true
+}
+
+// NewApifrontendA2ATaskCompletedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendA2ATaskCompletedPayload.
+func NewApifrontendA2ATaskCompletedPayloadAuditEventEventData(v ApifrontendA2ATaskCompletedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendA2ATaskCompletedPayload(v)
+	return s
+}
+
+// SetApifrontendA2ATaskFailedPayload sets AuditEventEventData to ApifrontendA2ATaskFailedPayload.
+func (s *AuditEventEventData) SetApifrontendA2ATaskFailedPayload(v ApifrontendA2ATaskFailedPayload) {
+	s.Type = ApifrontendA2ATaskFailedPayloadAuditEventEventData
+	s.ApifrontendA2ATaskFailedPayload = v
+}
+
+// GetApifrontendA2ATaskFailedPayload returns ApifrontendA2ATaskFailedPayload and true boolean if AuditEventEventData is ApifrontendA2ATaskFailedPayload.
+func (s AuditEventEventData) GetApifrontendA2ATaskFailedPayload() (v ApifrontendA2ATaskFailedPayload, ok bool) {
+	if !s.IsApifrontendA2ATaskFailedPayload() {
+		return v, false
+	}
+	return s.ApifrontendA2ATaskFailedPayload, true
+}
+
+// NewApifrontendA2ATaskFailedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendA2ATaskFailedPayload.
+func NewApifrontendA2ATaskFailedPayloadAuditEventEventData(v ApifrontendA2ATaskFailedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendA2ATaskFailedPayload(v)
+	return s
+}
+
+// SetApifrontendMCPToolFailedPayload sets AuditEventEventData to ApifrontendMCPToolFailedPayload.
+func (s *AuditEventEventData) SetApifrontendMCPToolFailedPayload(v ApifrontendMCPToolFailedPayload) {
+	s.Type = ApifrontendMCPToolFailedPayloadAuditEventEventData
+	s.ApifrontendMCPToolFailedPayload = v
+}
+
+// GetApifrontendMCPToolFailedPayload returns ApifrontendMCPToolFailedPayload and true boolean if AuditEventEventData is ApifrontendMCPToolFailedPayload.
+func (s AuditEventEventData) GetApifrontendMCPToolFailedPayload() (v ApifrontendMCPToolFailedPayload, ok bool) {
+	if !s.IsApifrontendMCPToolFailedPayload() {
+		return v, false
+	}
+	return s.ApifrontendMCPToolFailedPayload, true
+}
+
+// NewApifrontendMCPToolFailedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendMCPToolFailedPayload.
+func NewApifrontendMCPToolFailedPayloadAuditEventEventData(v ApifrontendMCPToolFailedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendMCPToolFailedPayload(v)
+	return s
+}
+
+// SetApifrontendMCPSessionInitPayload sets AuditEventEventData to ApifrontendMCPSessionInitPayload.
+func (s *AuditEventEventData) SetApifrontendMCPSessionInitPayload(v ApifrontendMCPSessionInitPayload) {
+	s.Type = ApifrontendMCPSessionInitPayloadAuditEventEventData
+	s.ApifrontendMCPSessionInitPayload = v
+}
+
+// GetApifrontendMCPSessionInitPayload returns ApifrontendMCPSessionInitPayload and true boolean if AuditEventEventData is ApifrontendMCPSessionInitPayload.
+func (s AuditEventEventData) GetApifrontendMCPSessionInitPayload() (v ApifrontendMCPSessionInitPayload, ok bool) {
+	if !s.IsApifrontendMCPSessionInitPayload() {
+		return v, false
+	}
+	return s.ApifrontendMCPSessionInitPayload, true
+}
+
+// NewApifrontendMCPSessionInitPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendMCPSessionInitPayload.
+func NewApifrontendMCPSessionInitPayloadAuditEventEventData(v ApifrontendMCPSessionInitPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendMCPSessionInitPayload(v)
+	return s
+}
+
+// SetApifrontendSeverityTriageCompletedPayload sets AuditEventEventData to ApifrontendSeverityTriageCompletedPayload.
+func (s *AuditEventEventData) SetApifrontendSeverityTriageCompletedPayload(v ApifrontendSeverityTriageCompletedPayload) {
+	s.Type = ApifrontendSeverityTriageCompletedPayloadAuditEventEventData
+	s.ApifrontendSeverityTriageCompletedPayload = v
+}
+
+// GetApifrontendSeverityTriageCompletedPayload returns ApifrontendSeverityTriageCompletedPayload and true boolean if AuditEventEventData is ApifrontendSeverityTriageCompletedPayload.
+func (s AuditEventEventData) GetApifrontendSeverityTriageCompletedPayload() (v ApifrontendSeverityTriageCompletedPayload, ok bool) {
+	if !s.IsApifrontendSeverityTriageCompletedPayload() {
+		return v, false
+	}
+	return s.ApifrontendSeverityTriageCompletedPayload, true
+}
+
+// NewApifrontendSeverityTriageCompletedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendSeverityTriageCompletedPayload.
+func NewApifrontendSeverityTriageCompletedPayloadAuditEventEventData(v ApifrontendSeverityTriageCompletedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendSeverityTriageCompletedPayload(v)
+	return s
+}
+
+// SetApifrontendSeverityTriageFailedPayload sets AuditEventEventData to ApifrontendSeverityTriageFailedPayload.
+func (s *AuditEventEventData) SetApifrontendSeverityTriageFailedPayload(v ApifrontendSeverityTriageFailedPayload) {
+	s.Type = ApifrontendSeverityTriageFailedPayloadAuditEventEventData
+	s.ApifrontendSeverityTriageFailedPayload = v
+}
+
+// GetApifrontendSeverityTriageFailedPayload returns ApifrontendSeverityTriageFailedPayload and true boolean if AuditEventEventData is ApifrontendSeverityTriageFailedPayload.
+func (s AuditEventEventData) GetApifrontendSeverityTriageFailedPayload() (v ApifrontendSeverityTriageFailedPayload, ok bool) {
+	if !s.IsApifrontendSeverityTriageFailedPayload() {
+		return v, false
+	}
+	return s.ApifrontendSeverityTriageFailedPayload, true
+}
+
+// NewApifrontendSeverityTriageFailedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendSeverityTriageFailedPayload.
+func NewApifrontendSeverityTriageFailedPayloadAuditEventEventData(v ApifrontendSeverityTriageFailedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendSeverityTriageFailedPayload(v)
+	return s
+}
+
+// SetApifrontendConfigReloadedPayload sets AuditEventEventData to ApifrontendConfigReloadedPayload.
+func (s *AuditEventEventData) SetApifrontendConfigReloadedPayload(v ApifrontendConfigReloadedPayload) {
+	s.Type = ApifrontendConfigReloadedPayloadAuditEventEventData
+	s.ApifrontendConfigReloadedPayload = v
+}
+
+// GetApifrontendConfigReloadedPayload returns ApifrontendConfigReloadedPayload and true boolean if AuditEventEventData is ApifrontendConfigReloadedPayload.
+func (s AuditEventEventData) GetApifrontendConfigReloadedPayload() (v ApifrontendConfigReloadedPayload, ok bool) {
+	if !s.IsApifrontendConfigReloadedPayload() {
+		return v, false
+	}
+	return s.ApifrontendConfigReloadedPayload, true
+}
+
+// NewApifrontendConfigReloadedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendConfigReloadedPayload.
+func NewApifrontendConfigReloadedPayloadAuditEventEventData(v ApifrontendConfigReloadedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendConfigReloadedPayload(v)
+	return s
+}
+
+// SetApifrontendConfigRejectedPayload sets AuditEventEventData to ApifrontendConfigRejectedPayload.
+func (s *AuditEventEventData) SetApifrontendConfigRejectedPayload(v ApifrontendConfigRejectedPayload) {
+	s.Type = ApifrontendConfigRejectedPayloadAuditEventEventData
+	s.ApifrontendConfigRejectedPayload = v
+}
+
+// GetApifrontendConfigRejectedPayload returns ApifrontendConfigRejectedPayload and true boolean if AuditEventEventData is ApifrontendConfigRejectedPayload.
+func (s AuditEventEventData) GetApifrontendConfigRejectedPayload() (v ApifrontendConfigRejectedPayload, ok bool) {
+	if !s.IsApifrontendConfigRejectedPayload() {
+		return v, false
+	}
+	return s.ApifrontendConfigRejectedPayload, true
+}
+
+// NewApifrontendConfigRejectedPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendConfigRejectedPayload.
+func NewApifrontendConfigRejectedPayloadAuditEventEventData(v ApifrontendConfigRejectedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendConfigRejectedPayload(v)
+	return s
+}
+
 // Result of the event.
 type AuditEventEventOutcome string
 
@@ -9178,73 +11329,92 @@ func (s *AuditEventRequestEventCategory) UnmarshalText(data []byte) error {
 // See DD-AUDIT-004 for structured type requirements.
 // AuditEventRequestEventData represents sum type.
 type AuditEventRequestEventData struct {
-	Type                                   AuditEventRequestEventDataType // switch on this field
-	GatewayAuditPayload                    GatewayAuditPayload
-	RemediationOrchestratorAuditPayload    RemediationOrchestratorAuditPayload
-	SignalProcessingAuditPayload           SignalProcessingAuditPayload
-	AIAnalysisAuditPayload                 AIAnalysisAuditPayload
-	WorkflowExecutionAuditPayload          WorkflowExecutionAuditPayload
-	NotificationAuditPayload               NotificationAuditPayload
-	WorkflowExecutionWebhookAuditPayload   WorkflowExecutionWebhookAuditPayload
-	RemediationApprovalAuditPayload        RemediationApprovalAuditPayload
-	RemediationApprovalDecisionPayload     RemediationApprovalDecisionPayload
-	WorkflowDiscoveryAuditPayload          WorkflowDiscoveryAuditPayload
-	WorkflowCatalogCreatedPayload          WorkflowCatalogCreatedPayload
-	WorkflowCatalogUpdatedPayload          WorkflowCatalogUpdatedPayload
-	AIAnalysisPhaseTransitionPayload       AIAnalysisPhaseTransitionPayload
-	AIAnalysisAIAgentCallPayload           AIAnalysisAIAgentCallPayload
-	AIAnalysisApprovalDecisionPayload      AIAnalysisApprovalDecisionPayload
-	AIAnalysisRegoEvaluationPayload        AIAnalysisRegoEvaluationPayload
-	AIAnalysisErrorPayload                 AIAnalysisErrorPayload
-	NotificationMessageSentPayload         NotificationMessageSentPayload
-	NotificationMessageFailedPayload       NotificationMessageFailedPayload
-	NotificationMessageAcknowledgedPayload NotificationMessageAcknowledgedPayload
-	NotificationMessageEscalatedPayload    NotificationMessageEscalatedPayload
-	AIAgentResponsePayload                 AIAgentResponsePayload
-	AIAgentRCACompletePayload              AIAgentRCACompletePayload
-	AIAgentResponseFailedPayload           AIAgentResponseFailedPayload
-	AIAgentEnrichmentCompletedPayload      AIAgentEnrichmentCompletedPayload
-	AIAgentEnrichmentFailedPayload         AIAgentEnrichmentFailedPayload
-	LLMRequestPayload                      LLMRequestPayload
-	LLMResponsePayload                     LLMResponsePayload
-	LLMToolCallPayload                     LLMToolCallPayload
-	WorkflowValidationPayload              WorkflowValidationPayload
-	AIAgentSessionStartedPayload           AIAgentSessionStartedPayload
-	AIAgentSessionCompletedPayload         AIAgentSessionCompletedPayload
-	AIAgentSessionFailedPayload            AIAgentSessionFailedPayload
-	AIAgentSessionCancelledPayload         AIAgentSessionCancelledPayload
-	AIAgentSessionSuspendedPayload         AIAgentSessionSuspendedPayload
-	AIAgentSessionResumedPayload           AIAgentSessionResumedPayload
-	AIAgentInteractiveStartedPayload       AIAgentInteractiveStartedPayload
-	AIAgentInteractiveCompletedPayload     AIAgentInteractiveCompletedPayload
-	AIAgentInteractiveK8sCallPayload       AIAgentInteractiveK8sCallPayload
-	AIAgentSessionObservedPayload          AIAgentSessionObservedPayload
-	AIAgentSessionAccessDeniedPayload      AIAgentSessionAccessDeniedPayload
-	AIAgentInvestigationCancelledPayload   AIAgentInvestigationCancelledPayload
-	AIAgentAlignmentStepPayload            AIAgentAlignmentStepPayload
-	AIAgentAlignmentVerdictPayload         AIAgentAlignmentVerdictPayload
-	ShadowLLMRequestPayload                ShadowLLMRequestPayload
-	ShadowLLMResponsePayload               ShadowLLMResponsePayload
-	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
-	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
-	EffectivenessAssessmentAuditPayload    EffectivenessAssessmentAuditPayload
-	ActionTypeCatalogCreatedPayload        ActionTypeCatalogCreatedPayload
-	ActionTypeCatalogUpdatedPayload        ActionTypeCatalogUpdatedPayload
-	ActionTypeCatalogDisabledPayload       ActionTypeCatalogDisabledPayload
-	ActionTypeCatalogReenabledPayload      ActionTypeCatalogReenabledPayload
-	ActionTypeCatalogDisableDeniedPayload  ActionTypeCatalogDisableDeniedPayload
-	ActionTypeWebhookAuditPayload          ActionTypeWebhookAuditPayload
-	ApifrontendTriageStartedPayload        ApifrontendTriageStartedPayload
-	ApifrontendTriageCompletedPayload      ApifrontendTriageCompletedPayload
-	ApifrontendRRCreatedPayload            ApifrontendRRCreatedPayload
-	ApifrontendRRDeduplicatedPayload       ApifrontendRRDeduplicatedPayload
-	ApifrontendSessionCreatedPayload       ApifrontendSessionCreatedPayload
-	ApifrontendSessionCompletedPayload     ApifrontendSessionCompletedPayload
-	ApifrontendKADelegatedPayload          ApifrontendKADelegatedPayload
-	ApifrontendKAResultReceivedPayload     ApifrontendKAResultReceivedPayload
-	ApifrontendUserDecisionPayload         ApifrontendUserDecisionPayload
-	ApifrontendAuthAccessDeniedPayload     ApifrontendAuthAccessDeniedPayload
-	ApifrontendToolExecutedPayload         ApifrontendToolExecutedPayload
+	Type                                      AuditEventRequestEventDataType // switch on this field
+	GatewayAuditPayload                       GatewayAuditPayload
+	RemediationOrchestratorAuditPayload       RemediationOrchestratorAuditPayload
+	SignalProcessingAuditPayload              SignalProcessingAuditPayload
+	AIAnalysisAuditPayload                    AIAnalysisAuditPayload
+	WorkflowExecutionAuditPayload             WorkflowExecutionAuditPayload
+	NotificationAuditPayload                  NotificationAuditPayload
+	WorkflowExecutionWebhookAuditPayload      WorkflowExecutionWebhookAuditPayload
+	RemediationApprovalAuditPayload           RemediationApprovalAuditPayload
+	RemediationApprovalDecisionPayload        RemediationApprovalDecisionPayload
+	WorkflowDiscoveryAuditPayload             WorkflowDiscoveryAuditPayload
+	WorkflowCatalogCreatedPayload             WorkflowCatalogCreatedPayload
+	WorkflowCatalogUpdatedPayload             WorkflowCatalogUpdatedPayload
+	AIAnalysisPhaseTransitionPayload          AIAnalysisPhaseTransitionPayload
+	AIAnalysisAIAgentCallPayload              AIAnalysisAIAgentCallPayload
+	AIAnalysisApprovalDecisionPayload         AIAnalysisApprovalDecisionPayload
+	AIAnalysisRegoEvaluationPayload           AIAnalysisRegoEvaluationPayload
+	AIAnalysisErrorPayload                    AIAnalysisErrorPayload
+	NotificationMessageSentPayload            NotificationMessageSentPayload
+	NotificationMessageFailedPayload          NotificationMessageFailedPayload
+	NotificationMessageAcknowledgedPayload    NotificationMessageAcknowledgedPayload
+	NotificationMessageEscalatedPayload       NotificationMessageEscalatedPayload
+	AIAgentResponsePayload                    AIAgentResponsePayload
+	AIAgentRCACompletePayload                 AIAgentRCACompletePayload
+	AIAgentResponseFailedPayload              AIAgentResponseFailedPayload
+	AIAgentEnrichmentCompletedPayload         AIAgentEnrichmentCompletedPayload
+	AIAgentEnrichmentFailedPayload            AIAgentEnrichmentFailedPayload
+	LLMRequestPayload                         LLMRequestPayload
+	LLMResponsePayload                        LLMResponsePayload
+	LLMToolCallPayload                        LLMToolCallPayload
+	WorkflowValidationPayload                 WorkflowValidationPayload
+	AIAgentSessionStartedPayload              AIAgentSessionStartedPayload
+	AIAgentSessionCompletedPayload            AIAgentSessionCompletedPayload
+	AIAgentSessionFailedPayload               AIAgentSessionFailedPayload
+	AIAgentSessionCancelledPayload            AIAgentSessionCancelledPayload
+	AIAgentSessionSuspendedPayload            AIAgentSessionSuspendedPayload
+	AIAgentSessionResumedPayload              AIAgentSessionResumedPayload
+	AIAgentInteractiveStartedPayload          AIAgentInteractiveStartedPayload
+	AIAgentInteractiveCompletedPayload        AIAgentInteractiveCompletedPayload
+	AIAgentInteractiveK8sCallPayload          AIAgentInteractiveK8sCallPayload
+	AIAgentSessionObservedPayload             AIAgentSessionObservedPayload
+	AIAgentSessionAccessDeniedPayload         AIAgentSessionAccessDeniedPayload
+	AIAgentInvestigationCancelledPayload      AIAgentInvestigationCancelledPayload
+	AIAgentAlignmentStepPayload               AIAgentAlignmentStepPayload
+	AIAgentAlignmentVerdictPayload            AIAgentAlignmentVerdictPayload
+	ShadowLLMRequestPayload                   ShadowLLMRequestPayload
+	ShadowLLMResponsePayload                  ShadowLLMResponsePayload
+	RemediationRequestWebhookAuditPayload     RemediationRequestWebhookAuditPayload
+	RemediationWorkflowWebhookAuditPayload    RemediationWorkflowWebhookAuditPayload
+	EffectivenessAssessmentAuditPayload       EffectivenessAssessmentAuditPayload
+	ActionTypeCatalogCreatedPayload           ActionTypeCatalogCreatedPayload
+	ActionTypeCatalogUpdatedPayload           ActionTypeCatalogUpdatedPayload
+	ActionTypeCatalogDisabledPayload          ActionTypeCatalogDisabledPayload
+	ActionTypeCatalogReenabledPayload         ActionTypeCatalogReenabledPayload
+	ActionTypeCatalogDisableDeniedPayload     ActionTypeCatalogDisableDeniedPayload
+	ActionTypeWebhookAuditPayload             ActionTypeWebhookAuditPayload
+	ApifrontendTriageStartedPayload           ApifrontendTriageStartedPayload
+	ApifrontendTriageCompletedPayload         ApifrontendTriageCompletedPayload
+	ApifrontendRRCreatedPayload               ApifrontendRRCreatedPayload
+	ApifrontendRRDeduplicatedPayload          ApifrontendRRDeduplicatedPayload
+	ApifrontendSessionCreatedPayload          ApifrontendSessionCreatedPayload
+	ApifrontendSessionCompletedPayload        ApifrontendSessionCompletedPayload
+	ApifrontendKADelegatedPayload             ApifrontendKADelegatedPayload
+	ApifrontendKAResultReceivedPayload        ApifrontendKAResultReceivedPayload
+	ApifrontendUserDecisionPayload            ApifrontendUserDecisionPayload
+	ApifrontendAuthAccessDeniedPayload        ApifrontendAuthAccessDeniedPayload
+	ApifrontendToolExecutedPayload            ApifrontendToolExecutedPayload
+	ApifrontendAuthSuccessPayload             ApifrontendAuthSuccessPayload
+	ApifrontendAuthFailurePayload             ApifrontendAuthFailurePayload
+	ApifrontendRatelimitDeniedPayload         ApifrontendRatelimitDeniedPayload
+	ApifrontendCircuitbreakerTripPayload      ApifrontendCircuitbreakerTripPayload
+	ApifrontendImpersonationCreatedPayload    ApifrontendImpersonationCreatedPayload
+	ApifrontendJWTDelegationPayload           ApifrontendJWTDelegationPayload
+	ApifrontendSessionPhaseChangedPayload     ApifrontendSessionPhaseChangedPayload
+	ApifrontendSessionDeletedPayload          ApifrontendSessionDeletedPayload
+	ApifrontendSessionAutoCancelledPayload    ApifrontendSessionAutoCancelledPayload
+	ApifrontendSessionRetentionDeletedPayload ApifrontendSessionRetentionDeletedPayload
+	ApifrontendA2ATaskStartedPayload          ApifrontendA2ATaskStartedPayload
+	ApifrontendA2ATaskCompletedPayload        ApifrontendA2ATaskCompletedPayload
+	ApifrontendA2ATaskFailedPayload           ApifrontendA2ATaskFailedPayload
+	ApifrontendMCPToolFailedPayload           ApifrontendMCPToolFailedPayload
+	ApifrontendMCPSessionInitPayload          ApifrontendMCPSessionInitPayload
+	ApifrontendSeverityTriageCompletedPayload ApifrontendSeverityTriageCompletedPayload
+	ApifrontendSeverityTriageFailedPayload    ApifrontendSeverityTriageFailedPayload
+	ApifrontendConfigReloadedPayload          ApifrontendConfigReloadedPayload
+	ApifrontendConfigRejectedPayload          ApifrontendConfigRejectedPayload
 }
 
 // AuditEventRequestEventDataType is oneOf type of AuditEventRequestEventData.
@@ -9366,6 +11536,25 @@ const (
 	ApifrontendUserDecisionPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "apifrontend.user.decision"
 	ApifrontendAuthAccessDeniedPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "apifrontend.auth.access_denied"
 	ApifrontendToolExecutedPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "apifrontend.tool.executed"
+	ApifrontendAuthSuccessPayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "apifrontend.auth.success"
+	ApifrontendAuthFailurePayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "apifrontend.auth.failure"
+	ApifrontendRatelimitDeniedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "apifrontend.ratelimit.denied"
+	ApifrontendCircuitbreakerTripPayloadAuditEventRequestEventData                                 AuditEventRequestEventDataType = "apifrontend.circuitbreaker.trip"
+	ApifrontendImpersonationCreatedPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "apifrontend.impersonation.created"
+	ApifrontendJWTDelegationPayloadAuditEventRequestEventData                                      AuditEventRequestEventDataType = "apifrontend.jwt.delegation"
+	ApifrontendSessionPhaseChangedPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "apifrontend.session.phase_changed"
+	ApifrontendSessionDeletedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.session.deleted"
+	ApifrontendSessionAutoCancelledPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "apifrontend.session.auto_cancelled"
+	ApifrontendSessionRetentionDeletedPayloadAuditEventRequestEventData                            AuditEventRequestEventDataType = "apifrontend.session.retention_deleted"
+	ApifrontendA2ATaskStartedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.a2a.task_started"
+	ApifrontendA2ATaskCompletedPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "apifrontend.a2a.task_completed"
+	ApifrontendA2ATaskFailedPayloadAuditEventRequestEventData                                      AuditEventRequestEventDataType = "apifrontend.a2a.task_failed"
+	ApifrontendMCPToolFailedPayloadAuditEventRequestEventData                                      AuditEventRequestEventDataType = "apifrontend.mcp.tool_failed"
+	ApifrontendMCPSessionInitPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.mcp.session_init"
+	ApifrontendSeverityTriageCompletedPayloadAuditEventRequestEventData                            AuditEventRequestEventDataType = "apifrontend.severity_triage.completed"
+	ApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "apifrontend.severity_triage.failed"
+	ApifrontendConfigReloadedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.config.reloaded"
+	ApifrontendConfigRejectedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.config.rejected"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventRequestEventData is GatewayAuditPayload.
@@ -9751,6 +11940,101 @@ func (s AuditEventRequestEventData) IsApifrontendAuthAccessDeniedPayload() bool 
 // IsApifrontendToolExecutedPayload reports whether AuditEventRequestEventData is ApifrontendToolExecutedPayload.
 func (s AuditEventRequestEventData) IsApifrontendToolExecutedPayload() bool {
 	return s.Type == ApifrontendToolExecutedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendAuthSuccessPayload reports whether AuditEventRequestEventData is ApifrontendAuthSuccessPayload.
+func (s AuditEventRequestEventData) IsApifrontendAuthSuccessPayload() bool {
+	return s.Type == ApifrontendAuthSuccessPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendAuthFailurePayload reports whether AuditEventRequestEventData is ApifrontendAuthFailurePayload.
+func (s AuditEventRequestEventData) IsApifrontendAuthFailurePayload() bool {
+	return s.Type == ApifrontendAuthFailurePayloadAuditEventRequestEventData
+}
+
+// IsApifrontendRatelimitDeniedPayload reports whether AuditEventRequestEventData is ApifrontendRatelimitDeniedPayload.
+func (s AuditEventRequestEventData) IsApifrontendRatelimitDeniedPayload() bool {
+	return s.Type == ApifrontendRatelimitDeniedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendCircuitbreakerTripPayload reports whether AuditEventRequestEventData is ApifrontendCircuitbreakerTripPayload.
+func (s AuditEventRequestEventData) IsApifrontendCircuitbreakerTripPayload() bool {
+	return s.Type == ApifrontendCircuitbreakerTripPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendImpersonationCreatedPayload reports whether AuditEventRequestEventData is ApifrontendImpersonationCreatedPayload.
+func (s AuditEventRequestEventData) IsApifrontendImpersonationCreatedPayload() bool {
+	return s.Type == ApifrontendImpersonationCreatedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendJWTDelegationPayload reports whether AuditEventRequestEventData is ApifrontendJWTDelegationPayload.
+func (s AuditEventRequestEventData) IsApifrontendJWTDelegationPayload() bool {
+	return s.Type == ApifrontendJWTDelegationPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendSessionPhaseChangedPayload reports whether AuditEventRequestEventData is ApifrontendSessionPhaseChangedPayload.
+func (s AuditEventRequestEventData) IsApifrontendSessionPhaseChangedPayload() bool {
+	return s.Type == ApifrontendSessionPhaseChangedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendSessionDeletedPayload reports whether AuditEventRequestEventData is ApifrontendSessionDeletedPayload.
+func (s AuditEventRequestEventData) IsApifrontendSessionDeletedPayload() bool {
+	return s.Type == ApifrontendSessionDeletedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendSessionAutoCancelledPayload reports whether AuditEventRequestEventData is ApifrontendSessionAutoCancelledPayload.
+func (s AuditEventRequestEventData) IsApifrontendSessionAutoCancelledPayload() bool {
+	return s.Type == ApifrontendSessionAutoCancelledPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendSessionRetentionDeletedPayload reports whether AuditEventRequestEventData is ApifrontendSessionRetentionDeletedPayload.
+func (s AuditEventRequestEventData) IsApifrontendSessionRetentionDeletedPayload() bool {
+	return s.Type == ApifrontendSessionRetentionDeletedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendA2ATaskStartedPayload reports whether AuditEventRequestEventData is ApifrontendA2ATaskStartedPayload.
+func (s AuditEventRequestEventData) IsApifrontendA2ATaskStartedPayload() bool {
+	return s.Type == ApifrontendA2ATaskStartedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendA2ATaskCompletedPayload reports whether AuditEventRequestEventData is ApifrontendA2ATaskCompletedPayload.
+func (s AuditEventRequestEventData) IsApifrontendA2ATaskCompletedPayload() bool {
+	return s.Type == ApifrontendA2ATaskCompletedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendA2ATaskFailedPayload reports whether AuditEventRequestEventData is ApifrontendA2ATaskFailedPayload.
+func (s AuditEventRequestEventData) IsApifrontendA2ATaskFailedPayload() bool {
+	return s.Type == ApifrontendA2ATaskFailedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendMCPToolFailedPayload reports whether AuditEventRequestEventData is ApifrontendMCPToolFailedPayload.
+func (s AuditEventRequestEventData) IsApifrontendMCPToolFailedPayload() bool {
+	return s.Type == ApifrontendMCPToolFailedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendMCPSessionInitPayload reports whether AuditEventRequestEventData is ApifrontendMCPSessionInitPayload.
+func (s AuditEventRequestEventData) IsApifrontendMCPSessionInitPayload() bool {
+	return s.Type == ApifrontendMCPSessionInitPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendSeverityTriageCompletedPayload reports whether AuditEventRequestEventData is ApifrontendSeverityTriageCompletedPayload.
+func (s AuditEventRequestEventData) IsApifrontendSeverityTriageCompletedPayload() bool {
+	return s.Type == ApifrontendSeverityTriageCompletedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendSeverityTriageFailedPayload reports whether AuditEventRequestEventData is ApifrontendSeverityTriageFailedPayload.
+func (s AuditEventRequestEventData) IsApifrontendSeverityTriageFailedPayload() bool {
+	return s.Type == ApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendConfigReloadedPayload reports whether AuditEventRequestEventData is ApifrontendConfigReloadedPayload.
+func (s AuditEventRequestEventData) IsApifrontendConfigReloadedPayload() bool {
+	return s.Type == ApifrontendConfigReloadedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendConfigRejectedPayload reports whether AuditEventRequestEventData is ApifrontendConfigRejectedPayload.
+func (s AuditEventRequestEventData) IsApifrontendConfigRejectedPayload() bool {
+	return s.Type == ApifrontendConfigRejectedPayloadAuditEventRequestEventData
 }
 
 // SetGatewayAuditPayload sets AuditEventRequestEventData to GatewayAuditPayload.
@@ -11516,6 +13800,405 @@ func (s AuditEventRequestEventData) GetApifrontendToolExecutedPayload() (v Apifr
 func NewApifrontendToolExecutedPayloadAuditEventRequestEventData(v ApifrontendToolExecutedPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetApifrontendToolExecutedPayload(v)
+	return s
+}
+
+// SetApifrontendAuthSuccessPayload sets AuditEventRequestEventData to ApifrontendAuthSuccessPayload.
+func (s *AuditEventRequestEventData) SetApifrontendAuthSuccessPayload(v ApifrontendAuthSuccessPayload) {
+	s.Type = ApifrontendAuthSuccessPayloadAuditEventRequestEventData
+	s.ApifrontendAuthSuccessPayload = v
+}
+
+// GetApifrontendAuthSuccessPayload returns ApifrontendAuthSuccessPayload and true boolean if AuditEventRequestEventData is ApifrontendAuthSuccessPayload.
+func (s AuditEventRequestEventData) GetApifrontendAuthSuccessPayload() (v ApifrontendAuthSuccessPayload, ok bool) {
+	if !s.IsApifrontendAuthSuccessPayload() {
+		return v, false
+	}
+	return s.ApifrontendAuthSuccessPayload, true
+}
+
+// NewApifrontendAuthSuccessPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendAuthSuccessPayload.
+func NewApifrontendAuthSuccessPayloadAuditEventRequestEventData(v ApifrontendAuthSuccessPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendAuthSuccessPayload(v)
+	return s
+}
+
+// SetApifrontendAuthFailurePayload sets AuditEventRequestEventData to ApifrontendAuthFailurePayload.
+func (s *AuditEventRequestEventData) SetApifrontendAuthFailurePayload(v ApifrontendAuthFailurePayload) {
+	s.Type = ApifrontendAuthFailurePayloadAuditEventRequestEventData
+	s.ApifrontendAuthFailurePayload = v
+}
+
+// GetApifrontendAuthFailurePayload returns ApifrontendAuthFailurePayload and true boolean if AuditEventRequestEventData is ApifrontendAuthFailurePayload.
+func (s AuditEventRequestEventData) GetApifrontendAuthFailurePayload() (v ApifrontendAuthFailurePayload, ok bool) {
+	if !s.IsApifrontendAuthFailurePayload() {
+		return v, false
+	}
+	return s.ApifrontendAuthFailurePayload, true
+}
+
+// NewApifrontendAuthFailurePayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendAuthFailurePayload.
+func NewApifrontendAuthFailurePayloadAuditEventRequestEventData(v ApifrontendAuthFailurePayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendAuthFailurePayload(v)
+	return s
+}
+
+// SetApifrontendRatelimitDeniedPayload sets AuditEventRequestEventData to ApifrontendRatelimitDeniedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendRatelimitDeniedPayload(v ApifrontendRatelimitDeniedPayload) {
+	s.Type = ApifrontendRatelimitDeniedPayloadAuditEventRequestEventData
+	s.ApifrontendRatelimitDeniedPayload = v
+}
+
+// GetApifrontendRatelimitDeniedPayload returns ApifrontendRatelimitDeniedPayload and true boolean if AuditEventRequestEventData is ApifrontendRatelimitDeniedPayload.
+func (s AuditEventRequestEventData) GetApifrontendRatelimitDeniedPayload() (v ApifrontendRatelimitDeniedPayload, ok bool) {
+	if !s.IsApifrontendRatelimitDeniedPayload() {
+		return v, false
+	}
+	return s.ApifrontendRatelimitDeniedPayload, true
+}
+
+// NewApifrontendRatelimitDeniedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendRatelimitDeniedPayload.
+func NewApifrontendRatelimitDeniedPayloadAuditEventRequestEventData(v ApifrontendRatelimitDeniedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendRatelimitDeniedPayload(v)
+	return s
+}
+
+// SetApifrontendCircuitbreakerTripPayload sets AuditEventRequestEventData to ApifrontendCircuitbreakerTripPayload.
+func (s *AuditEventRequestEventData) SetApifrontendCircuitbreakerTripPayload(v ApifrontendCircuitbreakerTripPayload) {
+	s.Type = ApifrontendCircuitbreakerTripPayloadAuditEventRequestEventData
+	s.ApifrontendCircuitbreakerTripPayload = v
+}
+
+// GetApifrontendCircuitbreakerTripPayload returns ApifrontendCircuitbreakerTripPayload and true boolean if AuditEventRequestEventData is ApifrontendCircuitbreakerTripPayload.
+func (s AuditEventRequestEventData) GetApifrontendCircuitbreakerTripPayload() (v ApifrontendCircuitbreakerTripPayload, ok bool) {
+	if !s.IsApifrontendCircuitbreakerTripPayload() {
+		return v, false
+	}
+	return s.ApifrontendCircuitbreakerTripPayload, true
+}
+
+// NewApifrontendCircuitbreakerTripPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendCircuitbreakerTripPayload.
+func NewApifrontendCircuitbreakerTripPayloadAuditEventRequestEventData(v ApifrontendCircuitbreakerTripPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendCircuitbreakerTripPayload(v)
+	return s
+}
+
+// SetApifrontendImpersonationCreatedPayload sets AuditEventRequestEventData to ApifrontendImpersonationCreatedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendImpersonationCreatedPayload(v ApifrontendImpersonationCreatedPayload) {
+	s.Type = ApifrontendImpersonationCreatedPayloadAuditEventRequestEventData
+	s.ApifrontendImpersonationCreatedPayload = v
+}
+
+// GetApifrontendImpersonationCreatedPayload returns ApifrontendImpersonationCreatedPayload and true boolean if AuditEventRequestEventData is ApifrontendImpersonationCreatedPayload.
+func (s AuditEventRequestEventData) GetApifrontendImpersonationCreatedPayload() (v ApifrontendImpersonationCreatedPayload, ok bool) {
+	if !s.IsApifrontendImpersonationCreatedPayload() {
+		return v, false
+	}
+	return s.ApifrontendImpersonationCreatedPayload, true
+}
+
+// NewApifrontendImpersonationCreatedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendImpersonationCreatedPayload.
+func NewApifrontendImpersonationCreatedPayloadAuditEventRequestEventData(v ApifrontendImpersonationCreatedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendImpersonationCreatedPayload(v)
+	return s
+}
+
+// SetApifrontendJWTDelegationPayload sets AuditEventRequestEventData to ApifrontendJWTDelegationPayload.
+func (s *AuditEventRequestEventData) SetApifrontendJWTDelegationPayload(v ApifrontendJWTDelegationPayload) {
+	s.Type = ApifrontendJWTDelegationPayloadAuditEventRequestEventData
+	s.ApifrontendJWTDelegationPayload = v
+}
+
+// GetApifrontendJWTDelegationPayload returns ApifrontendJWTDelegationPayload and true boolean if AuditEventRequestEventData is ApifrontendJWTDelegationPayload.
+func (s AuditEventRequestEventData) GetApifrontendJWTDelegationPayload() (v ApifrontendJWTDelegationPayload, ok bool) {
+	if !s.IsApifrontendJWTDelegationPayload() {
+		return v, false
+	}
+	return s.ApifrontendJWTDelegationPayload, true
+}
+
+// NewApifrontendJWTDelegationPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendJWTDelegationPayload.
+func NewApifrontendJWTDelegationPayloadAuditEventRequestEventData(v ApifrontendJWTDelegationPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendJWTDelegationPayload(v)
+	return s
+}
+
+// SetApifrontendSessionPhaseChangedPayload sets AuditEventRequestEventData to ApifrontendSessionPhaseChangedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendSessionPhaseChangedPayload(v ApifrontendSessionPhaseChangedPayload) {
+	s.Type = ApifrontendSessionPhaseChangedPayloadAuditEventRequestEventData
+	s.ApifrontendSessionPhaseChangedPayload = v
+}
+
+// GetApifrontendSessionPhaseChangedPayload returns ApifrontendSessionPhaseChangedPayload and true boolean if AuditEventRequestEventData is ApifrontendSessionPhaseChangedPayload.
+func (s AuditEventRequestEventData) GetApifrontendSessionPhaseChangedPayload() (v ApifrontendSessionPhaseChangedPayload, ok bool) {
+	if !s.IsApifrontendSessionPhaseChangedPayload() {
+		return v, false
+	}
+	return s.ApifrontendSessionPhaseChangedPayload, true
+}
+
+// NewApifrontendSessionPhaseChangedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendSessionPhaseChangedPayload.
+func NewApifrontendSessionPhaseChangedPayloadAuditEventRequestEventData(v ApifrontendSessionPhaseChangedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendSessionPhaseChangedPayload(v)
+	return s
+}
+
+// SetApifrontendSessionDeletedPayload sets AuditEventRequestEventData to ApifrontendSessionDeletedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendSessionDeletedPayload(v ApifrontendSessionDeletedPayload) {
+	s.Type = ApifrontendSessionDeletedPayloadAuditEventRequestEventData
+	s.ApifrontendSessionDeletedPayload = v
+}
+
+// GetApifrontendSessionDeletedPayload returns ApifrontendSessionDeletedPayload and true boolean if AuditEventRequestEventData is ApifrontendSessionDeletedPayload.
+func (s AuditEventRequestEventData) GetApifrontendSessionDeletedPayload() (v ApifrontendSessionDeletedPayload, ok bool) {
+	if !s.IsApifrontendSessionDeletedPayload() {
+		return v, false
+	}
+	return s.ApifrontendSessionDeletedPayload, true
+}
+
+// NewApifrontendSessionDeletedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendSessionDeletedPayload.
+func NewApifrontendSessionDeletedPayloadAuditEventRequestEventData(v ApifrontendSessionDeletedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendSessionDeletedPayload(v)
+	return s
+}
+
+// SetApifrontendSessionAutoCancelledPayload sets AuditEventRequestEventData to ApifrontendSessionAutoCancelledPayload.
+func (s *AuditEventRequestEventData) SetApifrontendSessionAutoCancelledPayload(v ApifrontendSessionAutoCancelledPayload) {
+	s.Type = ApifrontendSessionAutoCancelledPayloadAuditEventRequestEventData
+	s.ApifrontendSessionAutoCancelledPayload = v
+}
+
+// GetApifrontendSessionAutoCancelledPayload returns ApifrontendSessionAutoCancelledPayload and true boolean if AuditEventRequestEventData is ApifrontendSessionAutoCancelledPayload.
+func (s AuditEventRequestEventData) GetApifrontendSessionAutoCancelledPayload() (v ApifrontendSessionAutoCancelledPayload, ok bool) {
+	if !s.IsApifrontendSessionAutoCancelledPayload() {
+		return v, false
+	}
+	return s.ApifrontendSessionAutoCancelledPayload, true
+}
+
+// NewApifrontendSessionAutoCancelledPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendSessionAutoCancelledPayload.
+func NewApifrontendSessionAutoCancelledPayloadAuditEventRequestEventData(v ApifrontendSessionAutoCancelledPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendSessionAutoCancelledPayload(v)
+	return s
+}
+
+// SetApifrontendSessionRetentionDeletedPayload sets AuditEventRequestEventData to ApifrontendSessionRetentionDeletedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendSessionRetentionDeletedPayload(v ApifrontendSessionRetentionDeletedPayload) {
+	s.Type = ApifrontendSessionRetentionDeletedPayloadAuditEventRequestEventData
+	s.ApifrontendSessionRetentionDeletedPayload = v
+}
+
+// GetApifrontendSessionRetentionDeletedPayload returns ApifrontendSessionRetentionDeletedPayload and true boolean if AuditEventRequestEventData is ApifrontendSessionRetentionDeletedPayload.
+func (s AuditEventRequestEventData) GetApifrontendSessionRetentionDeletedPayload() (v ApifrontendSessionRetentionDeletedPayload, ok bool) {
+	if !s.IsApifrontendSessionRetentionDeletedPayload() {
+		return v, false
+	}
+	return s.ApifrontendSessionRetentionDeletedPayload, true
+}
+
+// NewApifrontendSessionRetentionDeletedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendSessionRetentionDeletedPayload.
+func NewApifrontendSessionRetentionDeletedPayloadAuditEventRequestEventData(v ApifrontendSessionRetentionDeletedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendSessionRetentionDeletedPayload(v)
+	return s
+}
+
+// SetApifrontendA2ATaskStartedPayload sets AuditEventRequestEventData to ApifrontendA2ATaskStartedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendA2ATaskStartedPayload(v ApifrontendA2ATaskStartedPayload) {
+	s.Type = ApifrontendA2ATaskStartedPayloadAuditEventRequestEventData
+	s.ApifrontendA2ATaskStartedPayload = v
+}
+
+// GetApifrontendA2ATaskStartedPayload returns ApifrontendA2ATaskStartedPayload and true boolean if AuditEventRequestEventData is ApifrontendA2ATaskStartedPayload.
+func (s AuditEventRequestEventData) GetApifrontendA2ATaskStartedPayload() (v ApifrontendA2ATaskStartedPayload, ok bool) {
+	if !s.IsApifrontendA2ATaskStartedPayload() {
+		return v, false
+	}
+	return s.ApifrontendA2ATaskStartedPayload, true
+}
+
+// NewApifrontendA2ATaskStartedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendA2ATaskStartedPayload.
+func NewApifrontendA2ATaskStartedPayloadAuditEventRequestEventData(v ApifrontendA2ATaskStartedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendA2ATaskStartedPayload(v)
+	return s
+}
+
+// SetApifrontendA2ATaskCompletedPayload sets AuditEventRequestEventData to ApifrontendA2ATaskCompletedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendA2ATaskCompletedPayload(v ApifrontendA2ATaskCompletedPayload) {
+	s.Type = ApifrontendA2ATaskCompletedPayloadAuditEventRequestEventData
+	s.ApifrontendA2ATaskCompletedPayload = v
+}
+
+// GetApifrontendA2ATaskCompletedPayload returns ApifrontendA2ATaskCompletedPayload and true boolean if AuditEventRequestEventData is ApifrontendA2ATaskCompletedPayload.
+func (s AuditEventRequestEventData) GetApifrontendA2ATaskCompletedPayload() (v ApifrontendA2ATaskCompletedPayload, ok bool) {
+	if !s.IsApifrontendA2ATaskCompletedPayload() {
+		return v, false
+	}
+	return s.ApifrontendA2ATaskCompletedPayload, true
+}
+
+// NewApifrontendA2ATaskCompletedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendA2ATaskCompletedPayload.
+func NewApifrontendA2ATaskCompletedPayloadAuditEventRequestEventData(v ApifrontendA2ATaskCompletedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendA2ATaskCompletedPayload(v)
+	return s
+}
+
+// SetApifrontendA2ATaskFailedPayload sets AuditEventRequestEventData to ApifrontendA2ATaskFailedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendA2ATaskFailedPayload(v ApifrontendA2ATaskFailedPayload) {
+	s.Type = ApifrontendA2ATaskFailedPayloadAuditEventRequestEventData
+	s.ApifrontendA2ATaskFailedPayload = v
+}
+
+// GetApifrontendA2ATaskFailedPayload returns ApifrontendA2ATaskFailedPayload and true boolean if AuditEventRequestEventData is ApifrontendA2ATaskFailedPayload.
+func (s AuditEventRequestEventData) GetApifrontendA2ATaskFailedPayload() (v ApifrontendA2ATaskFailedPayload, ok bool) {
+	if !s.IsApifrontendA2ATaskFailedPayload() {
+		return v, false
+	}
+	return s.ApifrontendA2ATaskFailedPayload, true
+}
+
+// NewApifrontendA2ATaskFailedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendA2ATaskFailedPayload.
+func NewApifrontendA2ATaskFailedPayloadAuditEventRequestEventData(v ApifrontendA2ATaskFailedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendA2ATaskFailedPayload(v)
+	return s
+}
+
+// SetApifrontendMCPToolFailedPayload sets AuditEventRequestEventData to ApifrontendMCPToolFailedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendMCPToolFailedPayload(v ApifrontendMCPToolFailedPayload) {
+	s.Type = ApifrontendMCPToolFailedPayloadAuditEventRequestEventData
+	s.ApifrontendMCPToolFailedPayload = v
+}
+
+// GetApifrontendMCPToolFailedPayload returns ApifrontendMCPToolFailedPayload and true boolean if AuditEventRequestEventData is ApifrontendMCPToolFailedPayload.
+func (s AuditEventRequestEventData) GetApifrontendMCPToolFailedPayload() (v ApifrontendMCPToolFailedPayload, ok bool) {
+	if !s.IsApifrontendMCPToolFailedPayload() {
+		return v, false
+	}
+	return s.ApifrontendMCPToolFailedPayload, true
+}
+
+// NewApifrontendMCPToolFailedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendMCPToolFailedPayload.
+func NewApifrontendMCPToolFailedPayloadAuditEventRequestEventData(v ApifrontendMCPToolFailedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendMCPToolFailedPayload(v)
+	return s
+}
+
+// SetApifrontendMCPSessionInitPayload sets AuditEventRequestEventData to ApifrontendMCPSessionInitPayload.
+func (s *AuditEventRequestEventData) SetApifrontendMCPSessionInitPayload(v ApifrontendMCPSessionInitPayload) {
+	s.Type = ApifrontendMCPSessionInitPayloadAuditEventRequestEventData
+	s.ApifrontendMCPSessionInitPayload = v
+}
+
+// GetApifrontendMCPSessionInitPayload returns ApifrontendMCPSessionInitPayload and true boolean if AuditEventRequestEventData is ApifrontendMCPSessionInitPayload.
+func (s AuditEventRequestEventData) GetApifrontendMCPSessionInitPayload() (v ApifrontendMCPSessionInitPayload, ok bool) {
+	if !s.IsApifrontendMCPSessionInitPayload() {
+		return v, false
+	}
+	return s.ApifrontendMCPSessionInitPayload, true
+}
+
+// NewApifrontendMCPSessionInitPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendMCPSessionInitPayload.
+func NewApifrontendMCPSessionInitPayloadAuditEventRequestEventData(v ApifrontendMCPSessionInitPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendMCPSessionInitPayload(v)
+	return s
+}
+
+// SetApifrontendSeverityTriageCompletedPayload sets AuditEventRequestEventData to ApifrontendSeverityTriageCompletedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendSeverityTriageCompletedPayload(v ApifrontendSeverityTriageCompletedPayload) {
+	s.Type = ApifrontendSeverityTriageCompletedPayloadAuditEventRequestEventData
+	s.ApifrontendSeverityTriageCompletedPayload = v
+}
+
+// GetApifrontendSeverityTriageCompletedPayload returns ApifrontendSeverityTriageCompletedPayload and true boolean if AuditEventRequestEventData is ApifrontendSeverityTriageCompletedPayload.
+func (s AuditEventRequestEventData) GetApifrontendSeverityTriageCompletedPayload() (v ApifrontendSeverityTriageCompletedPayload, ok bool) {
+	if !s.IsApifrontendSeverityTriageCompletedPayload() {
+		return v, false
+	}
+	return s.ApifrontendSeverityTriageCompletedPayload, true
+}
+
+// NewApifrontendSeverityTriageCompletedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendSeverityTriageCompletedPayload.
+func NewApifrontendSeverityTriageCompletedPayloadAuditEventRequestEventData(v ApifrontendSeverityTriageCompletedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendSeverityTriageCompletedPayload(v)
+	return s
+}
+
+// SetApifrontendSeverityTriageFailedPayload sets AuditEventRequestEventData to ApifrontendSeverityTriageFailedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendSeverityTriageFailedPayload(v ApifrontendSeverityTriageFailedPayload) {
+	s.Type = ApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData
+	s.ApifrontendSeverityTriageFailedPayload = v
+}
+
+// GetApifrontendSeverityTriageFailedPayload returns ApifrontendSeverityTriageFailedPayload and true boolean if AuditEventRequestEventData is ApifrontendSeverityTriageFailedPayload.
+func (s AuditEventRequestEventData) GetApifrontendSeverityTriageFailedPayload() (v ApifrontendSeverityTriageFailedPayload, ok bool) {
+	if !s.IsApifrontendSeverityTriageFailedPayload() {
+		return v, false
+	}
+	return s.ApifrontendSeverityTriageFailedPayload, true
+}
+
+// NewApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendSeverityTriageFailedPayload.
+func NewApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData(v ApifrontendSeverityTriageFailedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendSeverityTriageFailedPayload(v)
+	return s
+}
+
+// SetApifrontendConfigReloadedPayload sets AuditEventRequestEventData to ApifrontendConfigReloadedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendConfigReloadedPayload(v ApifrontendConfigReloadedPayload) {
+	s.Type = ApifrontendConfigReloadedPayloadAuditEventRequestEventData
+	s.ApifrontendConfigReloadedPayload = v
+}
+
+// GetApifrontendConfigReloadedPayload returns ApifrontendConfigReloadedPayload and true boolean if AuditEventRequestEventData is ApifrontendConfigReloadedPayload.
+func (s AuditEventRequestEventData) GetApifrontendConfigReloadedPayload() (v ApifrontendConfigReloadedPayload, ok bool) {
+	if !s.IsApifrontendConfigReloadedPayload() {
+		return v, false
+	}
+	return s.ApifrontendConfigReloadedPayload, true
+}
+
+// NewApifrontendConfigReloadedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendConfigReloadedPayload.
+func NewApifrontendConfigReloadedPayloadAuditEventRequestEventData(v ApifrontendConfigReloadedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendConfigReloadedPayload(v)
+	return s
+}
+
+// SetApifrontendConfigRejectedPayload sets AuditEventRequestEventData to ApifrontendConfigRejectedPayload.
+func (s *AuditEventRequestEventData) SetApifrontendConfigRejectedPayload(v ApifrontendConfigRejectedPayload) {
+	s.Type = ApifrontendConfigRejectedPayloadAuditEventRequestEventData
+	s.ApifrontendConfigRejectedPayload = v
+}
+
+// GetApifrontendConfigRejectedPayload returns ApifrontendConfigRejectedPayload and true boolean if AuditEventRequestEventData is ApifrontendConfigRejectedPayload.
+func (s AuditEventRequestEventData) GetApifrontendConfigRejectedPayload() (v ApifrontendConfigRejectedPayload, ok bool) {
+	if !s.IsApifrontendConfigRejectedPayload() {
+		return v, false
+	}
+	return s.ApifrontendConfigRejectedPayload, true
+}
+
+// NewApifrontendConfigRejectedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendConfigRejectedPayload.
+func NewApifrontendConfigRejectedPayloadAuditEventRequestEventData(v ApifrontendConfigRejectedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendConfigRejectedPayload(v)
 	return s
 }
 
