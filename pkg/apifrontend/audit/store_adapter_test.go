@@ -270,4 +270,55 @@ var _ = Describe("StoreAdapter", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(store.closed).To(BeTrue())
 	})
+
+	It("UT-AF-1189-001: EventRRCreated with CorrelationID set to RR name", func() {
+		adapter.Emit(context.Background(), &audit.Event{
+			Type:          audit.EventRRCreated,
+			CorrelationID: "kubernaut-system/rr-deployment-web-1234",
+			UserID:        "sre-user",
+			Detail: map[string]string{
+				"rr_id": "kubernaut-system/rr-deployment-web-1234",
+				"tool":  "af_create_rr",
+			},
+		})
+		evt := store.lastEvent()
+		Expect(evt).NotTo(BeNil())
+		Expect(evt.CorrelationID).To(Equal("kubernaut-system/rr-deployment-web-1234"))
+		Expect(evt.EventType).To(Equal("apifrontend.rr.created"))
+	})
+
+	It("UT-AF-1189-002: EventRRDeduplicated with CorrelationID set to existing RR name", func() {
+		adapter.Emit(context.Background(), &audit.Event{
+			Type:          audit.EventRRDeduplicated,
+			CorrelationID: "kubernaut-system/rr-deployment-web-existing",
+			UserID:        "sre-user",
+			Detail: map[string]string{
+				"rr_id": "kubernaut-system/rr-deployment-web-existing",
+				"tool":  "af_create_rr",
+			},
+		})
+		evt := store.lastEvent()
+		Expect(evt).NotTo(BeNil())
+		Expect(evt.CorrelationID).To(Equal("kubernaut-system/rr-deployment-web-existing"))
+		Expect(evt.EventType).To(Equal("apifrontend.rr.deduplicated"))
+	})
+
+	It("UT-AF-1189-003: StoreAdapter maps CorrelationID to DS AuditEventRequest field", func() {
+		rrID := "prod/rr-deploy-nginx-9999"
+		adapter.Emit(context.Background(), &audit.Event{
+			Type:          audit.EventRRCreated,
+			CorrelationID: rrID,
+			UserID:        "test-user",
+			Detail: map[string]string{
+				"rr_id": rrID,
+				"tool":  "af_create_rr",
+			},
+		})
+		evt := store.lastEvent()
+		Expect(evt).NotTo(BeNil())
+		Expect(evt.CorrelationID).To(Equal(rrID),
+			"StoreAdapter must propagate Event.CorrelationID to AuditEventRequest.CorrelationID without modification")
+		Expect(evt.CorrelationID).NotTo(HaveLen(36),
+			"CorrelationID should be the RR name, not a synthetic UUID")
+	})
 })
