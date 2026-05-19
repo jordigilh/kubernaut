@@ -20,11 +20,11 @@ var _ = Describe("FilterToolsByRole", func() {
 		}
 	})
 
-	It("UT-AF-130-001: SRE role gets all 19 tools", func() {
+	It("UT-AF-130-001: SRE role gets all 21 tools", func() {
 		cfg := agent.DefaultTestConfig()
 		_, tools, _ := agent.NewRootAgent(cfg)
 		filtered := agent.FilterToolsByRole("sre", tools)
-		Expect(filtered).To(HaveLen(19))
+		Expect(filtered).To(HaveLen(21))
 	})
 
 	It("UT-AF-130-002: CI/CD role gets list, watch, get only", func() {
@@ -64,7 +64,7 @@ var _ = Describe("FilterToolsByRole", func() {
 		cfg := agent.DefaultTestConfig()
 		_, tools, _ := agent.NewRootAgent(cfg)
 		filtered := agent.FilterToolsByRole("ai-orchestrator", tools)
-		Expect(filtered).To(HaveLen(15))
+		Expect(filtered).To(HaveLen(17))
 	})
 
 	It("UT-AF-130-005: Observability Dashboard role gets list, get, watch, effectiveness, workflows + triage read tools", func() {
