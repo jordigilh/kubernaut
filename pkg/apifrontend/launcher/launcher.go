@@ -71,6 +71,8 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 		},
 		BeforeExecuteCallback: buildBeforeExecuteCallback(cfg.BeforeExecute, cfg.Auditor),
 		AfterExecuteCallback:  buildAfterExecuteCallback(log, cfg.Auditor),
+		GenAIPartConverter:    buildPartConverter(),
+		OutputMode:            adka2a.OutputArtifactPerEvent,
 	}
 
 	executor := adka2a.NewExecutor(execCfg)

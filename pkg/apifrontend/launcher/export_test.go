@@ -2,9 +2,35 @@ package launcher
 
 import (
 	"context"
+
+	"github.com/a2aproject/a2a-go/a2a"
+	"google.golang.org/adk/server/adka2a"
+	"google.golang.org/adk/session"
+	"google.golang.org/genai"
 )
 
 // EnrichRRDetailForTest exports enrichRRDetail for unit testing.
 func EnrichRRDetailForTest(ctx context.Context, detail map[string]string) {
 	enrichRRDetail(ctx, detail)
+}
+
+// PartConverterFunc is the exported signature for testing the part converter.
+type PartConverterFunc func(ctx context.Context, adkEvent *session.Event, part *genai.Part) (a2a.Part, error)
+
+// BuildPartConverterForTest exports buildPartConverter for unit testing.
+func BuildPartConverterForTest() PartConverterFunc {
+	fn := buildPartConverter()
+	return func(ctx context.Context, adkEvent *session.Event, part *genai.Part) (a2a.Part, error) {
+		return fn(ctx, adkEvent, part)
+	}
+}
+
+// BuiltConverterIsNonNil verifies buildPartConverter returns a non-nil function.
+func BuiltConverterIsNonNil() bool {
+	return buildPartConverter() != nil
+}
+
+// ExpectedOutputMode returns the OutputMode constant wired in the ExecutorConfig.
+func ExpectedOutputMode() adka2a.OutputMode {
+	return adka2a.OutputArtifactPerEvent
 }
