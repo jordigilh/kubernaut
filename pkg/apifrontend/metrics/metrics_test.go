@@ -101,4 +101,119 @@ var _ = Describe("Metrics Registry", func() {
 			reg.RateLimitDenied.WithLabelValues("user", "request_rate").Inc()
 		}).NotTo(Panic())
 	})
+
+	It("UT-AF-WP-039: af_discover_workflows_total incremented on successful discovery", func() {
+		Expect(reg.DiscoverWorkflowsTotal).NotTo(BeNil())
+		Expect(func() {
+			reg.DiscoverWorkflowsTotal.WithLabelValues("success").Inc()
+		}).NotTo(Panic())
+	})
+
+	It("UT-AF-WP-040: af_discover_workflows_duration_seconds observed on each call", func() {
+		Expect(reg.DiscoverWorkflowsDuration).NotTo(BeNil())
+		Expect(func() {
+			reg.DiscoverWorkflowsDuration.WithLabelValues().Observe(0.05)
+		}).NotTo(Panic())
+	})
+
+	It("UT-AF-WP-041: af_discover_workflows_errors_total incremented on KA error", func() {
+		Expect(reg.DiscoverWorkflowsErrorsTotal).NotTo(BeNil())
+		Expect(func() {
+			reg.DiscoverWorkflowsErrorsTotal.WithLabelValues("mcp_unavailable").Inc()
+		}).NotTo(Panic())
+	})
+
+	It("UT-AF-MET-007: all registered metrics appear in scrape after observation", func() {
+		// Exercise every metric to ensure it's registered and observable.
+		// This catches "registered but never wired" bugs where a metric is
+		// created in NewRegistry but silently nil-guarded at the call site.
+		reg.HTTPRequestsTotal.WithLabelValues("GET", "/healthz", "200").Inc()
+		reg.HTTPRequestDuration.WithLabelValues("GET", "/healthz", "200").Observe(0.001)
+		reg.ToolCallsTotal.WithLabelValues("af_get_pods", "success").Inc()
+		reg.ToolCallDuration.WithLabelValues("af_get_pods", "mcp").Observe(0.05)
+		reg.SessionsActive.WithLabelValues("active").Set(1)
+		reg.LLMTokensTotal.WithLabelValues("input", "test-model").Add(100)
+		reg.RateLimitDenied.WithLabelValues("user", "burst").Inc()
+		reg.CircuitBreakerState.WithLabelValues("ka").Set(0)
+		reg.DownstreamDuration.WithLabelValues("ka", "2xx").Observe(0.1)
+		reg.DownstreamRetryTotal.WithLabelValues("ka", "1").Inc()
+		reg.AuthDuration.WithLabelValues("success").Observe(0.01)
+		reg.AuditEventsTotal.WithLabelValues("mcp.tool_call").Inc()
+		reg.SessionTTLActionsTotal.WithLabelValues("evicted").Inc()
+		reg.MCPRBACDeniedTotal.WithLabelValues("af_get_pods").Inc()
+		reg.HTTPPanicsTotal.Inc()
+		reg.SSEActiveConnections.Set(2)
+		reg.AuditBufferOverflow.Inc()
+		reg.SeverityTriageTotal.WithLabelValues("rule", "high").Inc()
+		reg.SeverityTriageDuration.WithLabelValues("rule").Observe(0.02)
+		reg.SeverityTriageErrorsTotal.WithLabelValues("rule", "timeout").Inc()
+		reg.DiscoverWorkflowsTotal.WithLabelValues("success").Inc()
+		reg.DiscoverWorkflowsDuration.WithLabelValues().Observe(0.03)
+		reg.DiscoverWorkflowsErrorsTotal.WithLabelValues("mcp_unavailable").Inc()
+
+		rec := httptest.NewRecorder()
+		reg.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", http.NoBody))
+		Expect(rec.Code).To(Equal(200))
+
+		body, err := io.ReadAll(rec.Body)
+		Expect(err).NotTo(HaveOccurred())
+		output := string(body)
+
+		expected := []string{
+			"af_http_requests_total",
+			"af_http_request_duration_seconds",
+			"af_tool_calls_total",
+			"af_tool_call_duration_seconds",
+			"af_sessions_active",
+			"af_llm_tokens_total",
+			"af_rate_limit_rejections_total",
+			"af_circuit_breaker_state",
+			"af_downstream_request_duration_seconds",
+			"af_downstream_retry_total",
+			"af_auth_duration_seconds",
+			"af_audit_events_total",
+			"af_session_ttl_actions_total",
+			"af_mcp_rbac_denied_total",
+			"af_http_panics_total",
+			"af_sse_active_connections",
+			"af_audit_buffer_overflow_total",
+			"af_severity_triage_total",
+			"af_severity_triage_duration_seconds",
+			"af_severity_triage_errors_total",
+			"af_discover_workflows_total",
+			"af_discover_workflows_duration_seconds",
+			"af_discover_workflows_errors_total",
+		}
+
+		for _, name := range expected {
+			Expect(output).To(ContainSubstring(name),
+				"metric %q must appear in /metrics scrape after observation", name)
+		}
+	})
+
+	It("UT-AF-MET-008: all registry fields are non-nil after construction", func() {
+		Expect(reg.HTTPRequestsTotal).NotTo(BeNil(), "HTTPRequestsTotal")
+		Expect(reg.HTTPRequestDuration).NotTo(BeNil(), "HTTPRequestDuration")
+		Expect(reg.ToolCallsTotal).NotTo(BeNil(), "ToolCallsTotal")
+		Expect(reg.ToolCallDuration).NotTo(BeNil(), "ToolCallDuration")
+		Expect(reg.SessionsActive).NotTo(BeNil(), "SessionsActive")
+		Expect(reg.LLMTokensTotal).NotTo(BeNil(), "LLMTokensTotal")
+		Expect(reg.RateLimitDenied).NotTo(BeNil(), "RateLimitDenied")
+		Expect(reg.CircuitBreakerState).NotTo(BeNil(), "CircuitBreakerState")
+		Expect(reg.DownstreamDuration).NotTo(BeNil(), "DownstreamDuration")
+		Expect(reg.DownstreamRetryTotal).NotTo(BeNil(), "DownstreamRetryTotal")
+		Expect(reg.AuthDuration).NotTo(BeNil(), "AuthDuration")
+		Expect(reg.AuditEventsTotal).NotTo(BeNil(), "AuditEventsTotal")
+		Expect(reg.SessionTTLActionsTotal).NotTo(BeNil(), "SessionTTLActionsTotal")
+		Expect(reg.MCPRBACDeniedTotal).NotTo(BeNil(), "MCPRBACDeniedTotal")
+		Expect(reg.HTTPPanicsTotal).NotTo(BeNil(), "HTTPPanicsTotal")
+		Expect(reg.SSEActiveConnections).NotTo(BeNil(), "SSEActiveConnections")
+		Expect(reg.AuditBufferOverflow).NotTo(BeNil(), "AuditBufferOverflow")
+		Expect(reg.SeverityTriageTotal).NotTo(BeNil(), "SeverityTriageTotal")
+		Expect(reg.SeverityTriageDuration).NotTo(BeNil(), "SeverityTriageDuration")
+		Expect(reg.SeverityTriageErrorsTotal).NotTo(BeNil(), "SeverityTriageErrorsTotal")
+		Expect(reg.DiscoverWorkflowsTotal).NotTo(BeNil(), "DiscoverWorkflowsTotal")
+		Expect(reg.DiscoverWorkflowsDuration).NotTo(BeNil(), "DiscoverWorkflowsDuration")
+		Expect(reg.DiscoverWorkflowsErrorsTotal).NotTo(BeNil(), "DiscoverWorkflowsErrorsTotal")
+	})
 })
