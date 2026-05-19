@@ -164,6 +164,18 @@ data:
 			},
 			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
 		},
+		{
+			name:       "apifrontend",
+			secretName: "apifrontend-tls",
+			dnsNames: []string{
+				"localhost",
+				"apifrontend",
+				fmt.Sprintf("apifrontend.%s", namespace),
+				fmt.Sprintf("apifrontend.%s.svc", namespace),
+				fmt.Sprintf("apifrontend.%s.svc.cluster.local", namespace),
+			},
+			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
+		},
 	}
 
 	for _, svc := range services {

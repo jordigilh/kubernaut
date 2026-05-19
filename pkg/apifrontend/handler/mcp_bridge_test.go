@@ -886,7 +886,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 	})
 
 	Context("tools/list shows all tools regardless of RBAC", func() {
-		It("UT-AF-B-040: viewer sees all 19 tools in tools/list", func() {
+		It("UT-AF-B-040: viewer sees all 20 tools in tools/list", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",

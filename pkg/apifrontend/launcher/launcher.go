@@ -126,6 +126,8 @@ func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Contex
 
 // buildAfterExecuteCallback logs task completion with structured context for
 // SRE observability and emits audit events (AU-2 compliance).
+// Issue #1189 AC 12: enriches EventA2ATaskCompleted/Failed with rr_name and
+// rr_namespace if af_create_rr populated the shared CreateContext during the task.
 func buildAfterExecuteCallback(log *slog.Logger, auditor audit.Emitter) adka2a.AfterExecuteCallback {
 	return func(ctx adka2a.ExecutorContext, finalEvent *a2a.TaskStatusUpdateEvent, err error) error {
 		user := auth.UserIdentityFromContext(ctx)
@@ -146,13 +148,15 @@ func buildAfterExecuteCallback(log *slog.Logger, auditor audit.Emitter) adka2a.A
 				"task_id", taskID,
 			)
 			if auditor != nil {
+				detail := map[string]string{
+					"task_id": taskID,
+					"error":   security.RedactError(err),
+				}
+				enrichRRDetail(ctx, detail)
 				auditor.Emit(ctx, &audit.Event{
 					Type:   audit.EventA2ATaskFailed,
 					UserID: username,
-					Detail: map[string]string{
-						"task_id": taskID,
-						"error":   security.RedactError(err),
-					},
+					Detail: detail,
 				})
 			}
 			// Return nil — the framework has already produced the TaskStateFailed
@@ -160,10 +164,12 @@ func buildAfterExecuteCallback(log *slog.Logger, auditor audit.Emitter) adka2a.A
 			// written to the client queue (ARCH-3 verification).
 			return nil
 		} else if auditor != nil {
+			detail := map[string]string{"task_id": taskID}
+			enrichRRDetail(ctx, detail)
 			auditor.Emit(ctx, &audit.Event{
 				Type:   audit.EventA2ATaskCompleted,
 				UserID: username,
-				Detail: map[string]string{"task_id": taskID},
+				Detail: detail,
 			})
 			auditor.Emit(ctx, &audit.Event{
 				Type:   audit.EventTriageCompleted,
@@ -172,5 +178,15 @@ func buildAfterExecuteCallback(log *slog.Logger, auditor audit.Emitter) adka2a.A
 			})
 		}
 		return nil
+	}
+}
+
+// enrichRRDetail adds rr_name and rr_namespace to the detail map if the
+// shared CreateContext was populated by the AfterToolCallback during the task.
+func enrichRRDetail(ctx context.Context, detail map[string]string) {
+	sc := session.CreateContextFromContext(ctx)
+	if sc != nil && sc.RRName != "" {
+		detail["rr_name"] = sc.RRName
+		detail["rr_namespace"] = sc.RRNamespace
 	}
 }

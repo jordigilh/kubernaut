@@ -1,3 +1,18 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 package ka
 
 import (
@@ -8,23 +23,15 @@ import (
 	"strings"
 )
 
-// parseSSEStream reads an SSE-formatted stream from r and sends parsed
-// InvestigationEvents to ch. The function returns when:
-//   - the stream is exhausted (io.EOF)
-//   - ctx is cancelled
-//   - a terminal event (complete, cancelled) is received
-//
-// KA's SSE wire format:
-//
-//	id: <seq>
-//	event: <type>
-//	data: <json>
-//	<blank line>
-func parseSSEStream(ctx context.Context, r io.Reader, ch chan<- InvestigationEvent) {
-	scanner := bufio.NewScanner(r)
-
+// parseSSEStream reads a text/event-stream body and emits InvestigationEvents
+// on the provided channel. It returns when the stream ends, ctx is cancelled,
+// or a terminal event (complete/cancelled/error) is encountered.
+// If the underlying reader returns an error, an EventTypeError event is emitted
+// so callers can distinguish clean completion from I/O failure.
+func parseSSEStream(ctx context.Context, body io.Reader, ch chan<- InvestigationEvent) {
+	scanner := bufio.NewScanner(body)
 	var eventType string
-	var dataLine string
+	var dataBuf strings.Builder
 
 	for scanner.Scan() {
 		select {
@@ -36,38 +43,49 @@ func parseSSEStream(ctx context.Context, r io.Reader, ch chan<- InvestigationEve
 		line := scanner.Text()
 
 		if line == "" {
-			if eventType != "" && dataLine != "" {
-				var event InvestigationEvent
-				if err := json.Unmarshal([]byte(dataLine), &event); err != nil {
-					event = InvestigationEvent{
-						Type: eventType,
-						Data: json.RawMessage(dataLine),
-					}
+			if dataBuf.Len() > 0 {
+				evt := InvestigationEvent{Type: eventType}
+				raw := dataBuf.String()
+				evt.Data = json.RawMessage(raw)
+
+				var parsed struct {
+					Turn  int    `json:"turn"`
+					Phase string `json:"phase"`
 				}
-				if event.Type == "" {
-					event.Type = eventType
-				}
+				_ = json.Unmarshal([]byte(raw), &parsed)
+				evt.Turn = parsed.Turn
+				evt.Phase = parsed.Phase
 
 				select {
-				case ch <- event:
+				case ch <- evt:
 				case <-ctx.Done():
 					return
 				}
 
-				if event.Type == EventTypeComplete || event.Type == EventTypeCancelled {
+				if eventType == EventTypeComplete || eventType == EventTypeCancelled || eventType == EventTypeError {
 					return
 				}
 			}
 			eventType = ""
-			dataLine = ""
+			dataBuf.Reset()
 			continue
 		}
 
 		if strings.HasPrefix(line, "event: ") {
 			eventType = strings.TrimPrefix(line, "event: ")
 		} else if strings.HasPrefix(line, "data: ") {
-			dataLine = strings.TrimPrefix(line, "data: ")
+			if dataBuf.Len() > 0 {
+				dataBuf.WriteString("\n")
+			}
+			dataBuf.WriteString(strings.TrimPrefix(line, "data: "))
 		}
-		// "id: " lines are ignored — sequence numbers are not needed by AF.
+	}
+
+	if err := scanner.Err(); err != nil {
+		errMsg, _ := json.Marshal(map[string]string{"error": err.Error()})
+		select {
+		case ch <- InvestigationEvent{Type: EventTypeError, Data: json.RawMessage(errMsg)}:
+		case <-ctx.Done():
+		}
 	}
 }

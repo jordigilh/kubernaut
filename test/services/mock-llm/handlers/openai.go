@@ -246,9 +246,13 @@ func hasToolResults(messages []openai.Message) bool {
 
 func buildDetectionContext(ctx *conversation.Context) *scenarios.DetectionContext {
 	var contentParts, allParts []string
+	var lastUserContent string
 	for _, m := range ctx.Messages {
 		if m.Content != nil {
 			contentParts = append(contentParts, *m.Content)
+			if m.Role == "user" {
+				lastUserContent = *m.Content
+			}
 		}
 		allParts = append(allParts, msgString(m))
 	}
@@ -260,9 +264,10 @@ func buildDetectionContext(ctx *conversation.Context) *scenarios.DetectionContex
 		(strings.Contains(content, "predicted") && strings.Contains(content, "not yet occurred"))
 
 	return &scenarios.DetectionContext{
-		Content:     content,
-		AllText:     allText,
-		IsProactive: isProactive,
+		Content:         content,
+		AllText:         allText,
+		IsProactive:     isProactive,
+		LastUserContent: lastUserContent,
 	}
 }
 

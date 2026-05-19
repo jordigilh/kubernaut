@@ -327,12 +327,22 @@ func newAuditToolCallback(auditor audit.Emitter) llmagent.AfterToolCallback {
 		// Issue #1189: A2A task-to-RR correlation. When af_create_rr succeeds
 		// within an A2A task, include both a2a_task_id and rr_id in the audit
 		// event so the Data Store can correlate them bidirectionally.
-		if sc := session.CreateContextFromContext(ctx); sc != nil && sc.TaskID != "" {
+		sc := session.CreateContextFromContext(ctx)
+		if sc != nil && sc.TaskID != "" {
 			detail["a2a_task_id"] = sc.TaskID
 		}
 		if t.Name() == "af_create_rr" && toolErr == nil && output != nil {
 			if rrID, ok := output["rr_id"].(string); ok && rrID != "" {
 				detail["rr_id"] = rrID
+				// AC 12: Store RR reference on the shared CreateContext pointer
+				// so AfterExecuteCallback can enrich EventA2ATaskCompleted.
+				if sc != nil {
+					parts := strings.SplitN(rrID, "/", 2)
+					if len(parts) == 2 {
+						sc.RRNamespace = parts[0]
+						sc.RRName = parts[1]
+					}
+				}
 			}
 		}
 

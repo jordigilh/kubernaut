@@ -39,9 +39,11 @@ package fullpipeline
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -96,6 +98,11 @@ var (
 	// Used by tests that make direct HTTP requests to signal endpoints (e.g., future tests).
 	// Infrastructure components (event-exporter, AlertManager) get their token at deploy time.
 	fpAuthToken string
+
+	// API Frontend (AF): HTTPS client and DEX OIDC token for AF E2E tests in the FP cluster.
+	afBaseURL    string
+	afHTTPClient *http.Client
+	afAuthToken  string
 
 	// Workflow UUIDs seeded once in SynchronizedBeforeSuite, shared by all tests.
 	// Map of "workflowID:environment" → UUID. Tests must NOT modify this or the Mock LLM ConfigMap.
@@ -223,9 +230,42 @@ var _ = SynchronizedBeforeSuite(
 		dataStorageClient, err = ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
 		Expect(err).ToNot(HaveOccurred())
 
+		By("Setting up API Frontend HTTP client (NodePort 30443, self-signed TLS)")
+		afBaseURL = "https://localhost:30443"
+		afHTTPClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // E2E self-signed cert
+			},
+			Timeout: 30 * time.Second,
+		}
+
 		GinkgoWriter.Printf("✅ Setup Complete - Process %d ready\n", GinkgoParallelProcess())
 	},
 )
+
+// getAFToken obtains an OIDC token from DEX for API Frontend authentication (password grant).
+func getAFToken() string {
+	if afAuthToken != "" {
+		return afAuthToken
+	}
+	resp, err := http.PostForm("http://localhost:30556/dex/token", url.Values{
+		"grant_type":    {"password"},
+		"client_id":     {"af-e2e-client"},
+		"client_secret": {"af-e2e-secret"},
+		"username":      {"admin@example.com"},
+		"password":      {"password"},
+		"scope":         {"openid email profile"},
+	})
+	Expect(err).NotTo(HaveOccurred())
+	defer resp.Body.Close()
+
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+	}
+	Expect(json.NewDecoder(resp.Body).Decode(&tokenResp)).To(Succeed())
+	afAuthToken = tokenResp.AccessToken
+	return afAuthToken
+}
 
 var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {

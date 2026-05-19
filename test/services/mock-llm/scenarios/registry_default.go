@@ -102,12 +102,6 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 		for _, s := range r.scenarios {
 			cs, ok := s.(*configScenario)
 			if !ok {
-				// Custom scenario types that support workflow_id overrides.
-				if pvs, isPV := s.(*paramValidationSelfCorrectScenario); isPV {
-					if ov, found := findOverrideByWorkflowName(overrides.Scenarios, pvs.badConfig.WorkflowName); found && ov.WorkflowID != "" {
-						pvs.OverrideWorkflowID(ov.WorkflowID)
-					}
-				}
 				continue
 			}
 			if ov, found := overrides.Scenarios[cs.config.ScenarioName]; found {
@@ -125,6 +119,9 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 		// Register consumer-defined keyword scenarios from YAML (issue #1160).
 		// These use the same priority (1.0) as built-in keyword scenarios and
 		// override the default fallback (0.01).
+		// When MatchLastOnly is true (issue #1189), matching uses only the last
+		// user message to prevent prior-turn keyword shadowing in multi-turn
+		// ADK agent conversations.
 		for _, ks := range overrides.KeywordScenarios {
 			cfg := MockScenarioConfig{
 				ScenarioName: ks.Name,
@@ -132,7 +129,11 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 				ToolCallArgs: ks.ToolCall.Arguments,
 				ForceText:    BoolPtr(false),
 			}
-			r.Register(mockKeywordScenarioMulti(ks.Name, ks.Keywords, cfg))
+			if ks.MatchLastOnly {
+				r.Register(lastUserKeywordScenarioMulti(ks.Name, ks.Keywords, cfg))
+			} else {
+				r.Register(mockKeywordScenarioMulti(ks.Name, ks.Keywords, cfg))
+			}
 		}
 	}
 	return r
@@ -170,7 +171,6 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(mockKeywordScenario("not_actionable", "mock_not_actionable", notActionableConfig()))
 	r.Register(mockKeywordScenario("parallel_tools", "mock_parallel_tools", parallelToolsConfig()))
 	r.Register(mockKeywordScenario("ambiguous_kind", "mock_ambiguous_kind", ambiguousKindConfig()))
-	r.Register(newParamValidationSelfCorrectScenario())
 
 	// Test signal scenario
 	r.Register(testSignalScenario())
@@ -185,6 +185,10 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(signalScenario("oomkilled", []string{"memoryexceedslimit", "memoryexceeds", "oomkilled", "oomkill"}, oomkilledConfig()))
 	r.Register(signalScenario("crashloop", []string{"crashloop", "backoff"}, crashloopConfig()))
 	r.Register(signalScenario("injection_configmap_read", []string{"injection_configmap_read"}, injectionConfigmapReadConfig()))
+
+	// Issue #1189: AF-created RRs use "af-manual-<Kind>-<Name>" as signal name.
+	// Map to oomkill workflow so the KA pipeline can process them end-to-end.
+	r.Register(signalScenario("af_manual", []string{"af-manual"}, oomkilledConfig()))
 
 	// Default fallback (lowest priority = 0.01)
 	r.Register(defaultFallbackScenario())

@@ -55,4 +55,37 @@ var _ = Describe("System Prompt", func() {
 		Expect(instruction).To(ContainSubstring("kubernaut_list_workflows"))
 		Expect(instruction).To(ContainSubstring("kubernaut_get_audit_trail"))
 	})
+
+	It("UT-AF-1189-030: prompt includes kubernaut_stream_investigation tool", func() {
+		Expect(instruction).To(ContainSubstring("kubernaut_stream_investigation"))
+		Expect(instruction).To(ContainSubstring("Stream live investigation events"))
+	})
+
+	It("UT-AF-1189-031: prompt includes kubernaut_discover_workflows tool", func() {
+		Expect(instruction).To(ContainSubstring("kubernaut_discover_workflows"))
+		Expect(instruction).To(ContainSubstring("Discover available workflows"))
+	})
+
+	It("UT-AF-1189-032: prompt includes 4-phase interactive remediation journey", func() {
+		Expect(instruction).To(ContainSubstring("4-Phase Interactive Remediation Journey"))
+		Expect(instruction).To(ContainSubstring("Phase 1: Investigate"))
+		Expect(instruction).To(ContainSubstring("Phase 2: Discover"))
+		Expect(instruction).To(ContainSubstring("Phase 3: User selects"))
+		Expect(instruction).To(ContainSubstring("Phase 4: Watch"))
+	})
+
+	It("UT-AF-1189-033: prompt includes autonomous mode rules for A2A delegation", func() {
+		Expect(instruction).To(ContainSubstring("Autonomous mode"))
+		Expect(instruction).To(ContainSubstring("fix"))
+		Expect(instruction).To(ContainSubstring("remediate"))
+		Expect(instruction).To(ContainSubstring("highest-confidence workflow"))
+	})
+
+	It("UT-AF-1189-034: prompt enforces kubernaut_watch after workflow selection", func() {
+		Expect(instruction).To(ContainSubstring("MUST call kubernaut_watch"))
+	})
+
+	It("UT-AF-1189-035: prompt requires session_id/rr_id preservation across phases", func() {
+		Expect(instruction).To(ContainSubstring("Preserve session_id and rr_id across all phases"))
+	})
 })
