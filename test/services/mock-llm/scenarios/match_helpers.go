@@ -42,10 +42,6 @@ func mockKeywordScenarioMulti(name string, keywords []string, cfg MockScenarioCo
 	}
 }
 
-func lastUserKeywordScenario(name, keyword string, cfg MockScenarioConfig) *configScenario {
-	return lastUserKeywordScenarioMulti(name, []string{keyword, strings.ReplaceAll(keyword, "_", " ")}, cfg)
-}
-
 func lastUserKeywordScenarioMulti(name string, keywords []string, cfg MockScenarioConfig) *configScenario {
 	cfg.ScenarioName = name
 	return &configScenario{
