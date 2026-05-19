@@ -143,6 +143,15 @@ func newTLSClient(caCertPath string) *http.Client {
 	}
 }
 
+// newA2AClientNoRetry returns an HTTP client without retry-on-429 so rate-limit
+// responses can be observed directly (E2E-AF-1189-005/006).
+func newA2AClientNoRetry(caCertPath string) *http.Client {
+	return &http.Client{
+		Transport: newTLSTransport(caCertPath),
+		Timeout:   30 * time.Second,
+	}
+}
+
 func newTLSTransport(caCertPath string) *http.Transport {
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if caCertPath != "" {
