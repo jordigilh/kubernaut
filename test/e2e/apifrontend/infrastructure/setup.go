@@ -231,7 +231,7 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 	}
 
 	afImage := images["apifrontend"]
-	if err := deployAPIFrontendService(ctx, kubeconfigPath, namespace, afImage, writer); err != nil {
+	if err := deployAPIFrontendService(ctx, kubeconfigPath, namespace, afImage, enableCoverage, writer); err != nil {
 		return fmt.Errorf("failed to deploy AF service: %w", err)
 	}
 
@@ -459,7 +459,10 @@ subjects:
 }
 
 // deployAPIFrontendService deploys the AF ConfigMaps, Deployment, and NodePort Service (programmatic E2E manifest).
-func deployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, afImage string, writer io.Writer) error {
+// When enableCoverage is true (E2E_COVERAGE=true), the pod is configured with
+// GOCOVERDIR=/coverdata and a hostPath volume mount so the coverage-instrumented
+// binary writes runtime counters that CollectE2EBinaryCoverage can harvest.
+func deployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, afImage string, enableCoverage bool, writer io.Writer) error {
 	projectRoot := getAFProjectRoot()
 	configData, err := os.ReadFile(filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "config.yaml")) //nolint:gosec // G304
 	if err != nil {
@@ -470,9 +473,33 @@ func deployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, af
 		return fmt.Errorf("failed to read rbac_roles.yaml: %w", err)
 	}
 	pullPolicy := "IfNotPresent"
-	if os.Getenv("IMAGE_REGISTRY") != "" {
+	if os.Getenv("IMAGE_REGISTRY") != "" && !enableCoverage {
 		pullPolicy = "Always"
 	}
+
+	// DD-TEST-007: Coverage instrumentation YAML fragments
+	coverageEnvYAML := ""
+	coverageVolumeMountYAML := ""
+	coverageVolumeYAML := ""
+	coverageSecurityContextYAML := ""
+	if enableCoverage {
+		coverageEnvYAML = `
+            - name: GOCOVERDIR
+              value: /coverdata`
+		coverageVolumeMountYAML = `
+            - name: coverdata
+              mountPath: /coverdata`
+		coverageVolumeYAML = `
+        - name: coverdata
+          hostPath:
+            path: /coverdata
+            type: DirectoryOrCreate`
+		coverageSecurityContextYAML = `
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0`
+	}
+
 	manifest := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -507,7 +534,7 @@ spec:
         app: apifrontend
     spec:
       serviceAccountName: apifrontend
-      automountServiceAccountToken: true
+      automountServiceAccountToken: true%s
       containers:
         - name: apifrontend
           image: %s
@@ -529,7 +556,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: LLM_API_KEY
-              value: "mock-key"
+              value: "mock-key"%s
           volumeMounts:
             - name: config
               mountPath: /etc/apifrontend
@@ -539,7 +566,7 @@ spec:
               readOnly: true
             - name: inter-service-ca
               mountPath: /etc/apifrontend/inter-service-ca
-              readOnly: true
+              readOnly: true%s
           readinessProbe:
             httpGet:
               path: /readyz
@@ -579,7 +606,7 @@ spec:
             optional: false
         - name: inter-service-ca
           configMap:
-            name: inter-service-ca
+            name: inter-service-ca%s
 ---
 apiVersion: v1
 kind: Service
@@ -604,7 +631,8 @@ spec:
     app: apifrontend
 `, namespace, indentYAML(string(configData), 4),
 		namespace, indentYAML(string(rbacRolesData), 4),
-		namespace, afImage, pullPolicy, namespace)
+		namespace, coverageSecurityContextYAML, afImage, pullPolicy,
+		coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML, namespace)
 	return kubectlApplyStdin(ctx, kubeconfigPath, manifest, writer)
 }
 
