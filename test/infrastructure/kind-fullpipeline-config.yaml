@@ -70,6 +70,14 @@ nodes:
   - containerPort: 30193  # AlertManager NodePort
     hostPort: 9193        # DD-TEST-001 v2.8: AlertManager
     protocol: TCP
+  # API Frontend HTTPS (Issue #1189: AF as FP signal source)
+  - containerPort: 30443  # AF NodePort
+    hostPort: 30443       # DD-TEST-001: AF HTTPS
+    protocol: TCP
+  # DEX OIDC for AF authentication (Issue #1189)
+  - containerPort: 30556  # DEX NodePort
+    hostPort: 30556       # DD-TEST-001: DEX for AF
+    protocol: TCP
   # Extra mounts for coverage data collection (DD-TEST-007) and notification output
   # Note: ALL extraMounts are added programmatically in SetupFullPipelineInfrastructure
   # based on OS (macOS vs Linux) to handle path differences between environments
