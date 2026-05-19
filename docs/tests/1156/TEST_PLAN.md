@@ -7,7 +7,6 @@
 | Test Plan ID | TP-AF-1156-001 |
 | Issue | [#1156](https://github.com/jordigilh/kubernaut/issues/1156) |
 | Service | ApiFrontend (AF) |
-| Service Abbreviation | AF |
 | Date | 2026-05-19 |
 | Status | Draft |
 | Author | AI Agent |
@@ -84,14 +83,12 @@ This test plan defines the testing strategy for normalizing the AF audit system 
 
 ### 3.1 Adapter Event Mapping (PR1)
 
-All 30 AF event types must be correctly mapped from internal `Event` to `AuditEventRequest`:
-
 | Feature | Acceptance Criteria |
 |---|---|
 | F-01: Event type prefix | `AuditEventRequest.EventType` = `"apifrontend." + Event.Type` |
 | F-02: Event category | `AuditEventRequest.EventCategory` = `"apifrontend"` (always) |
 | F-03: Event action mapping | Each EventType maps to correct `event_action` string |
-| F-04: Event outcome derivation | Success-path events = `success`; failure-path = `failure`; override from `Detail["outcome"]` |
+| F-04: Event outcome derivation | Success-path events = `success`; failure-path = `failure` |
 | F-05: Actor attribution | `UserID` present -> `actor_type: "user"`, `actor_id: UserID`; absent -> `actor_type: "service"`, `actor_id: "apifrontend"` |
 | F-06: CorrelationID cascade | Priority: `CorrelationID` > `RequestID` > synthetic UUID |
 | F-07: Typed payload construction | Each EventType constructs the correct ogen payload struct |
@@ -109,13 +106,13 @@ All 30 AF event types must be correctly mapped from internal `Event` to `AuditEv
 | F-14: severity_triage.failed | Emitted after triage pipeline fails, payload has `error`, `failed_tier` |
 | F-15: mcp.session_init | Emitted when MCP session initialized, payload has `session_id`, `protocol_version` |
 | F-16: session.completed | Emitted at terminal phase, payload has `session_id`, `total_duration_ms` |
-| F-17: triage.started | Emitted at agent entry, payload has `session_id`, `persona`, `nl_query` |
+| F-17: triage.started | Emitted at agent entry, payload has `session_id`, `persona` |
 | F-18: triage.completed | Emitted at agent completion, payload has `session_id`, `outcome`, `duration_ms` |
-| F-19: rr.created | Emitted after RR creation, payload has `rr_name`, `namespace`, `alert_name` |
-| F-20: rr.deduplicated | Emitted at dedup detection, payload has `rr_name`, `fingerprint` |
-| F-21: ka.delegated | Emitted after KA Analyze call, payload has `session_id`, `namespace` |
-| F-22: ka.result_received | Emitted on KA result, payload has `session_id`, `status`, `duration_ms` |
-| F-23: user.decision | Emitted after workflow selection, payload has `session_id`, `workflow_name` |
+| F-19: rr.created | Emitted after RR creation, payload has `rr_name`, `namespace` |
+| F-20: rr.deduplicated | Emitted at dedup detection, payload has `fingerprint` |
+| F-21: ka.delegated | Emitted after KA Analyze call, payload has `session_id` |
+| F-22: ka.result_received | Emitted on KA result, payload has `session_id`, `result_type` |
+| F-23: user.decision | Emitted after workflow selection, payload has `session_id`, `decision` |
 
 ### 3.3 Enrichment (PR2)
 
@@ -232,24 +229,22 @@ Table-driven test: for each of the 30 event types, verify:
 
 #### 6.2.1 New Event Emission (UT-AF-1156-050..063)
 
-Each test uses a capturing mock `Emitter` injected into the component under test.
-
 | Test ID | Event | Component | Trigger | Verified Fields |
 |---|---|---|---|---|
-| UT-AF-1156-050 | `circuitbreaker.trip` | `resilience/circuitbreaker.go` | AuditFunc callback invoked | `circuit_name`, `failure_count` |
-| UT-AF-1156-051 | `impersonation.created` | `auth/dynamic_impersonation.go` | Client created for user | `target_user`, `groups` |
-| UT-AF-1156-052 | `jwt.delegation` | `auth/jwt_delegation.go` | JWT forwarded | `target_service` |
+| UT-AF-1156-050 | `circuitbreaker.trip` | circuit breaker setup | AuditFunc callback | `circuit_name`, `failure_count` |
+| UT-AF-1156-051 | `impersonation.created` | `DynamicClientFactory` | Client created for user | `target_user`, `groups` |
+| UT-AF-1156-052 | `jwt.delegation` | `JWTDelegationTransport` | JWT forwarded | `target_service` |
 | UT-AF-1156-053 | `severity_triage.completed` | `severity/triage.go` | Triage succeeds | `severity`, `source_tier` |
 | UT-AF-1156-054 | `severity_triage.failed` | `severity/triage.go` | Triage fails | `error`, `failed_tier` |
-| UT-AF-1156-055 | `mcp.session_init` | `handler/mcp.go` | New MCP session | `session_id`, `protocol_version` |
+| UT-AF-1156-055 | `mcp.session_init` | `handler/mcp.go` | New MCP session | `mcp_session_id`, `protocol_version` |
 | UT-AF-1156-056 | `session.completed` | `session/statemachine.go` | `IsTerminal(to)` | `session_id`, `total_duration_ms` |
 | UT-AF-1156-057 | `triage.started` | `session/service.go` | Session created | `session_id`, `persona` |
-| UT-AF-1156-058 | `triage.completed` | `launcher/launcher.go` | AfterExecuteCallback | `session_id`, `outcome`, `duration_ms` |
-| UT-AF-1156-059 | `rr.created` | `tools/af_create_rr.go` | RR created | `rr_name`, `namespace` |
-| UT-AF-1156-060 | `rr.deduplicated` | `tools/af_create_rr.go` | Dedup detected | `rr_name`, `fingerprint` |
-| UT-AF-1156-061 | `ka.delegated` | `tools/ka_tools.go` | KA Analyze called | `session_id`, `namespace` |
-| UT-AF-1156-062 | `ka.result_received` | `tools/ka_tools.go` | KA result received | `session_id`, `status` |
-| UT-AF-1156-063 | `user.decision` | `tools/ka_tools.go` | Workflow selected | `session_id`, `workflow_name` |
+| UT-AF-1156-058 | `triage.completed` | `launcher/launcher.go` | AfterExecuteCallback | `session_id`, `triage_outcome`, `triage_duration_ms` |
+| UT-AF-1156-059 | `rr.created` | `tools/af_create_rr.go` | RR created | `rr_name`, `rr_namespace` |
+| UT-AF-1156-060 | `rr.deduplicated` | `tools/af_create_rr.go` | Dedup detected | `fingerprint`, `existing_rr_name` |
+| UT-AF-1156-061 | `ka.delegated` | `tools/ka_tools.go` | KA Analyze called | `session_id`, `ka_correlation_id` |
+| UT-AF-1156-062 | `ka.result_received` | `tools/ka_tools.go` | KA result received | `session_id`, `result_type` |
+| UT-AF-1156-063 | `user.decision` | `tools/ka_tools.go` | Workflow selected | `session_id`, `decision` |
 
 #### 6.2.2 Enrichment Tests (UT-AF-1156-070..075)
 
@@ -278,7 +273,7 @@ Each test uses a capturing mock `Emitter` injected into the component under test
 |---|---|---|---|
 | IT-AF-1156-010 | F-16 | Session lifecycle: create -> phase_changed -> completed -> 3 events in DS | Real DS + K8s fake |
 | IT-AF-1156-011 | F-26 | Tool execution -> `tool.executed` in DS with `session_id`, `execution_duration_ms` | Real DS |
-| IT-AF-1156-012 | F-19 | HandleCreateRR -> `rr.created` in DS with `rr_name`, `namespace` | Real DS + K8s fake |
+| IT-AF-1156-012 | F-19 | HandleCreateRR -> `rr.created` in DS with `rr_name`, `rr_namespace` | Real DS + K8s fake |
 
 ### 6.4 E2E Tests (E2E-AF-1156-001)
 
@@ -346,7 +341,6 @@ Each test uses a capturing mock `Emitter` injected into the component under test
 | `time.Sleep()` in tests (#86) | Use `Eventually()` with timeout/polling |
 | Missing race detection (#83) | `-race` flag in CI |
 | No table-driven tests (#85) | 30-entry table for adapter event mapping |
-| Sleeping in unit tests (#86) | Synchronous adapter; async only in IT/E2E with `Eventually()` |
 | Not using httptest (#88) | Used for HTTP-level integration |
 | Pending/skipped tests | No `XIt`, `Skip()`, or `Pending()` |
 | Assertion-free tests | Every `It` block has at least one `Expect()` |
