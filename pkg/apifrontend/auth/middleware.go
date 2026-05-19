@@ -115,6 +115,13 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 	}
 }
 
+func authMethodFromIdentity(identity *UserIdentity) string {
+	if identity.Issuer != "" {
+		return "jwt"
+	}
+	return "token_review"
+}
+
 func emitAuthSuccess(ctx context.Context, emitter audit.Emitter, identity *UserIdentity, sourceIP string) {
 	if emitter == nil {
 		return
@@ -124,7 +131,8 @@ func emitAuthSuccess(ctx context.Context, emitter audit.Emitter, identity *UserI
 		UserID:   identity.Username,
 		SourceIP: sourceIP,
 		Detail: map[string]string{
-			"issuer": identity.Issuer,
+			"auth_method": authMethodFromIdentity(identity),
+			"issuer":      identity.Issuer,
 		},
 	})
 }
@@ -138,7 +146,8 @@ func emitAuthFailure(ctx context.Context, emitter audit.Emitter, userID, sourceI
 		UserID:   userID,
 		SourceIP: sourceIP,
 		Detail: map[string]string{
-			"reason": reason,
+			"auth_method":    "jwt",
+			"failure_reason": reason,
 		},
 	})
 }

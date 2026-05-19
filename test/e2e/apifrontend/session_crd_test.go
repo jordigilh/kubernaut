@@ -35,9 +35,18 @@ var _ = Describe("InvestigationSession CRD (E2E)", Ordered, ContinueOnFailure, L
 	// TC-E2E-SESS-001: AF pod starts ctrl.Manager successfully
 	// -------------------------------------------------------------------
 	It("TC-E2E-SESS-001: AF logs confirm session controller manager started", func() {
-		out, err := kubectl("logs", "-n", namespace,
+		// Label-selector mode (`-l`) applies implicit per-pod truncation that
+		// drops early startup lines when debug-level timer ticks accumulate.
+		// Resolve the pod name first, then fetch its full log stream.
+		podName, err := kubectl("get", "pods", "-n", namespace,
 			"-l", "app=apifrontend",
-			"--tail=500", "--all-containers")
+			"-o", "jsonpath={.items[0].metadata.name}")
+		Expect(err).NotTo(HaveOccurred(), "failed to resolve AF pod name: %s", podName)
+		Expect(podName).NotTo(BeEmpty(), "no AF pod found with label app=apifrontend")
+
+		out, err := kubectl("logs", "-n", namespace, podName,
+			"--all-containers",
+			"--since=10m")
 		Expect(err).NotTo(HaveOccurred(), "kubectl logs failed: %s", out)
 		Expect(out).To(ContainSubstring("session controller manager started"),
 			"AF pod should log that the session controller manager started")

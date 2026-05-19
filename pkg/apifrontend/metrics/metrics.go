@@ -45,7 +45,6 @@ type Registry struct {
 	CircuitBreakerState  *prometheus.GaugeVec
 	DownstreamDuration   *prometheus.HistogramVec
 	AuthDuration         *prometheus.HistogramVec
-	AuditBufferOverflow  prometheus.Counter
 	RateLimitDenied      *prometheus.CounterVec
 	SSEActiveConnections prometheus.Gauge
 	LLMTokensTotal       *prometheus.CounterVec
@@ -100,11 +99,6 @@ func NewRegistry() *Registry {
 			Help:      "Authentication latency distribution by result.",
 			Buckets:   prometheus.DefBuckets,
 		}, []string{"result"}),
-		AuditBufferOverflow: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "af",
-			Name:      "audit_buffer_overflow_total",
-			Help:      "Total audit events dropped due to buffer overflow.",
-		}),
 		RateLimitDenied: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "af",
 			Name:      "rate_limit_rejections_total",
@@ -135,7 +129,6 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.CircuitBreakerState)
 	reg.MustRegister(r.DownstreamDuration)
 	reg.MustRegister(r.AuthDuration)
-	reg.MustRegister(r.AuditBufferOverflow)
 	reg.MustRegister(r.RateLimitDenied)
 	reg.MustRegister(r.SSEActiveConnections)
 	reg.MustRegister(r.LLMTokensTotal)

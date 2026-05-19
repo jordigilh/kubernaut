@@ -34,6 +34,7 @@ import (
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/internal/controller/apifrontend"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
@@ -89,10 +90,10 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// F-004 + DP-01: Wire audit emitter to DS-backed writer with CA-pinned transport.
-	var auditWriter audit.Writer = &logAuditWriter{logger: logger.WithName("audit-writer")}
+	// Issue #1156: Wire audit to shared pkg/audit.BufferedAuditStore + StoreAdapter.
+	var auditDSTransport http.RoundTripper
 	if cfg.Agent.DSBaseURL != "" {
-		auditDSTransport, auditDSWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.DSTLSCaFile, logger.WithName("ds-audit-ca"))
+		transport, auditDSWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.DSTLSCaFile, logger.WithName("ds-audit-ca"))
 		if err != nil {
 			logger.Error(err, "DS audit CA transport failed — refusing to start with broken TLS")
 			return 1
@@ -104,33 +105,27 @@ func run() int {
 			}
 			defer auditDSWatcher.Stop()
 		}
-		auditDSAuthTransport := auditDSTransport
+		auditDSTransport = transport
 		if cfg.Agent.DSBearerTokenFile != "" {
-			auditDSAuthTransport = &bearerTokenTransport{
-				base:      auditDSTransport,
+			auditDSTransport = &bearerTokenTransport{
+				base:      transport,
 				tokenFile: cfg.Agent.DSBearerTokenFile,
 			}
 		}
-		dsCfg := ds.OgenClientConfig{
-			BaseURL:   cfg.Agent.DSBaseURL,
-			Timeout:   cfg.Resilience.DS.RequestTimeout,
-			Transport: auditDSAuthTransport,
-		}
-		dsAuditClient, err := ds.NewOgenClient(dsCfg)
-		if err != nil {
-			logger.Error(err, "DS audit client creation failed — refusing to start")
-			return 1
-		}
-		auditWriter = &dsAuditWriterAdapter{client: dsAuditClient, logger: logger.WithName("ds-audit")}
-		logger.Info("audit trail wired to Data Store backend", "dsURL", cfg.Agent.DSBaseURL)
 	}
-
-	auditor := audit.NewBufferedEmitter(audit.BufferConfig{
-		Writer:          auditWriter,
-		Logger:          logger,
-		OverflowCounter: metricsReg.AuditBufferOverflow,
-	})
-	auditor.Start()
+	dsAuditClient, err := sharedaudit.NewOpenAPIClientAdapterWithTransport(
+		cfg.Agent.DSBaseURL, cfg.Resilience.DS.RequestTimeout, auditDSTransport)
+	if err != nil {
+		logger.Error(err, "DS audit client creation failed — refusing to start")
+		return 1
+	}
+	auditStore, err := sharedaudit.NewBufferedStore(dsAuditClient, sharedaudit.DefaultConfig(), "apifrontend", logger)
+	if err != nil {
+		logger.Error(err, "failed to create buffered audit store")
+		return 1
+	}
+	auditor := audit.NewStoreAdapter(auditStore, logger)
+	logger.Info("audit trail wired to shared BufferedAuditStore", "dsURL", cfg.Agent.DSBaseURL)
 
 	// F-005 + SM-01/SM-02/CFG-01: Wire all rate limit config fields.
 	rlCfg := ratelimit.DefaultConfig()
@@ -323,9 +318,9 @@ func run() int {
 	shutdownServer(shutCtx, healthServer, "health", logger)
 	shutdownServer(shutCtx, metricsServer, "metrics", logger)
 
-	// F-008: Drain audit buffer before exit to prevent event loss.
+	// Issue #1156: Drain shared audit store before exit to prevent event loss.
 	if err := auditor.Close(shutCtx); err != nil {
-		logger.Error(err, "failed to flush audit buffer on shutdown")
+		logger.Error(err, "failed to flush audit store on shutdown")
 	}
 
 	// WIRE-16: Stop background goroutines in limiters to prevent leaks.
@@ -869,36 +864,6 @@ func (t *bearerTokenTransport) RoundTrip(req *http.Request) (*http.Response, err
 	return base.RoundTrip(r)
 }
 
-// logAuditWriter implements audit.Writer by logging events via logr.
-// Used as fallback when DS is unavailable.
-type logAuditWriter struct {
-	logger logr.Logger
-}
-
-func (w *logAuditWriter) WriteAuditEvents(_ context.Context, events []*audit.Event) error {
-	for _, ev := range events {
-		w.logger.Info("audit event", "type", ev.Type, "user", ev.UserID, "detail", ev.Detail)
-	}
-	return nil
-}
-
-// dsAuditWriterAdapter wraps a DS client to satisfy audit.Writer for FedRAMP-compliant
-// durable, centralized audit storage.
-type dsAuditWriterAdapter struct {
-	client *ds.OgenClient
-	logger logr.Logger
-}
-
-func (w *dsAuditWriterAdapter) WriteAuditEvents(ctx context.Context, events []*audit.Event) error {
-	if err := w.client.WriteAuditEvents(ctx, events); err != nil {
-		w.logger.Error(err, "DS audit write failed, events logged as fallback", "count", len(events))
-		for _, ev := range events {
-			w.logger.Info("audit event (DS fallback)", "type", ev.Type, "user", ev.UserID, "detail", ev.Detail)
-		}
-		return err
-	}
-	return nil
-}
 
 // buildHealthMux constructs the health server mux with dependency-aware readyz.
 // WIRE-01: /readyz must check depsReady, not just draining.

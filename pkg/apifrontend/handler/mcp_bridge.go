@@ -290,7 +290,7 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 		if err := checkRBAC(ctx, cfg, toolName); err != nil {
 			resultLabel = "denied"
 			recordMetrics(cfg, toolName, resultLabel, start)
-			emitAudit(ctx, cfg, toolName, audit.EventMCPToolDenied, nil)
+			emitAudit(ctx, cfg, toolName, audit.EventAuthAccessDenied, nil)
 			cfg.Logger.Info("tool call denied by RBAC",
 				"tool", toolName, "user", usernameFromCtx(ctx))
 			return &mcp.CallToolResult{
@@ -367,7 +367,7 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 		}
 
 		recordMetrics(cfg, toolName, resultLabel, start)
-		emitAudit(ctx, cfg, toolName, audit.EventMCPToolInvoked, nil)
+		emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, nil)
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: string(resultJSON)}},

@@ -121,18 +121,6 @@ spec:
             description: "Circuit breaker for {{ $labels.dependency }} has been open for more than 2 minutes."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-005.md"
 
-    - name: apifrontend.audit
-      rules:
-        - alert: ApifrontendAuditBufferOverflow
-          expr: rate(af_audit_buffer_overflow_total{job="apifrontend"}[5m]) > 0.1
-          for: 1m
-          labels:
-            severity: critical
-          annotations:
-            summary: "Audit events being dropped due to buffer overflow"
-            description: "The audit buffer is overflowing — events may be lost."
-            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-006.md"
-
     - name: apifrontend.tools
       rules:
         - alert: ApifrontendToolLatencyHigh
