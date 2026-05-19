@@ -2,9 +2,9 @@
 
 **Status**: 📋 **DRAFT** (Awaiting Team Review)
 **Date**: December 16, 2025
-**Last Reviewed**: December 16, 2025
-**Confidence**: 90%
-**Based On**: Gateway/DataStorage Reference Implementations
+**Last Reviewed**: May 19, 2026
+**Confidence**: 95%
+**Based On**: Gateway/DataStorage Reference Implementations + AF Wiring Gap RCA (Issue #1176)
 
 ---
 
@@ -103,6 +103,76 @@ Cross-team triage revealed inconsistent metrics unit testing across services:
 2. **NULL-TESTING** provides zero actual coverage
 3. **DD-005 Compliance** requires unit-level validation
 4. **Production Reliability** depends on correct metrics
+
+---
+
+## ⚠️ **Unit Test Limitation: Wiring Gaps**
+
+### **Problem Statement**
+
+Unit tests that exercise metrics in isolation (even with `dto` value verification) **cannot guarantee that production code actually wires and increments those metrics**. A metric can pass all UT assertions while remaining dead code in production because:
+
+1. The registry field is nil-guarded at the call site (`if reg != nil { ... }`) and the registry is never injected
+2. The metric is registered in `NewRegistry()` but the struct field is never referenced in the handler
+3. The production wiring (`main.go` or config struct) omits the field entirely
+
+**Real-world example (Issue #1176)**: `af_discover_workflows_*` metrics passed all unit tests but were never emitted in production because `MetricsRegistry` was not assigned in `MCPBridgeConfig` — the nil check silently skipped instrumentation.
+
+### **Required: Integration-Tier Wiring Tests**
+
+To guarantee metrics are wired end-to-end, services MUST include **integration-tier wiring tests** that:
+
+1. Instantiate the real handler/bridge with a real `metrics.Registry`
+2. Execute actual business logic through the production code path (e.g., make a tool call via the MCP bridge)
+3. Inspect the registry using `dto` to verify the counter/histogram actually changed
+
+This is the **only** way to catch "registered but never wired" bugs.
+
+### **Wiring Test Pattern (Authoritative Reference: `pkg/apifrontend/handler/mcp_bridge_test.go`)**
+
+```go
+var _ = Describe("Metrics Wiring", Label("metrics", "wiring"), func() {
+    var (
+        h          http.Handler
+        sessionID  string
+        metricsReg *metrics.Registry
+    )
+
+    BeforeEach(func() {
+        // Use real registry — same struct production code uses
+        metricsReg = metrics.NewRegistry()
+
+        cfg := handler.BridgeConfig{
+            Metrics:         bridgeMetricsFrom(metricsReg),
+            MetricsRegistry: metricsReg, // <-- the field that was missing
+            // ... other real deps
+        }
+        h = handler.NewHandler(cfg)
+        sessionID = initSession(h)
+    })
+
+    It("successful tool call increments tool_calls_total{result=success}", func() {
+        before := getCounterValue(metricsReg.ToolCallsTotal,
+            prometheus.Labels{"tool": "my_tool", "result": "success"})
+
+        callTool(h, sessionID, "my_tool", validArgs)
+
+        after := getCounterValue(metricsReg.ToolCallsTotal,
+            prometheus.Labels{"tool": "my_tool", "result": "success"})
+        Expect(after - before).To(Equal(float64(1)))
+    })
+})
+```
+
+### **Testing Tiers Summary**
+
+| Tier | What It Validates | Catches |
+|------|------------------|---------|
+| **Unit (dto)** | Registry construction, label schemas, increment math | Wrong label cardinality, registration panics |
+| **Integration (wiring)** | Production code path actually emits metrics | Nil-guarded fields, missing config wiring, dead code |
+| **E2E (scrape)** | `/metrics` endpoint exposes expected families in a running cluster | Deployment misconfig, runtime env issues |
+
+All three tiers are required for GA-ready metrics coverage.
 
 ---
 

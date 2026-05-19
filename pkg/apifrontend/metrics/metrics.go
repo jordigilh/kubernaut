@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	dto "github.com/prometheus/client_model/go"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 )
@@ -51,8 +52,8 @@ type Registry struct {
 	HTTPPanicsTotal           prometheus.Counter
 	SSEActiveConnections      prometheus.Gauge
 	AuditBufferOverflow       prometheus.Counter
-	SeverityTriageTotal       *prometheus.CounterVec
-	SeverityTriageDuration    *prometheus.HistogramVec
+	SeverityTriageTotal          *prometheus.CounterVec
+	SeverityTriageDuration       *prometheus.HistogramVec
 	SeverityTriageErrorsTotal    *prometheus.CounterVec
 	DiscoverWorkflowsTotal       *prometheus.CounterVec
 	DiscoverWorkflowsDuration    *prometheus.HistogramVec
@@ -191,10 +192,6 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.HTTPPanicsTotal)
 	reg.MustRegister(r.SSEActiveConnections)
 	reg.MustRegister(r.AuditBufferOverflow)
-	reg.MustRegister(r.SeverityTriageTotal)
-	reg.MustRegister(r.SeverityTriageDuration)
-	reg.MustRegister(r.SeverityTriageErrorsTotal)
-
 	r.DiscoverWorkflowsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "af",
 		Name:      "discover_workflows_total",
@@ -211,6 +208,10 @@ func NewRegistry() *Registry {
 		Name:      "discover_workflows_errors_total",
 		Help:      "Total discover_workflows errors by error type.",
 	}, []string{"error_type"})
+
+	reg.MustRegister(r.SeverityTriageTotal)
+	reg.MustRegister(r.SeverityTriageDuration)
+	reg.MustRegister(r.SeverityTriageErrorsTotal)
 	reg.MustRegister(r.DiscoverWorkflowsTotal)
 	reg.MustRegister(r.DiscoverWorkflowsDuration)
 	reg.MustRegister(r.DiscoverWorkflowsErrorsTotal)
@@ -223,4 +224,9 @@ func (r *Registry) Handler() http.Handler {
 	return promhttp.HandlerFor(r.registry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	})
+}
+
+// Gather collects all metric families from the underlying Prometheus registry.
+func (r *Registry) Gather() ([]*dto.MetricFamily, error) {
+	return r.registry.Gather()
 }
