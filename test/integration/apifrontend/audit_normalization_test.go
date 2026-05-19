@@ -2,14 +2,20 @@ package apifrontend_test
 
 import (
 	"context"
+	"strconv"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	adksession "google.golang.org/adk/session"
 
+	v1alpha1 "github.com/jordigilh/kubernaut/api/apifrontend/apifrontend/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
@@ -115,6 +121,132 @@ var _ = Describe("IT-AF-1156: Audit Normalization Integration", func() {
 		Expect(evt.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeSuccess))
 	})
 
+	It("IT-AF-1156-010: session.completed emits duration_ms with real K8s CreationTimestamp", func() {
+		adkSvc := adksession.InMemoryService()
+		recorder := &itRecordingEmitter{}
+		svc := session.NewCRDSessionService(
+			adkSvc, k8sClient, scheme, "default",
+			session.WithAuditor(recorder),
+		)
+		ctx := context.Background()
+
+		req := adksession.CreateRequest{
+			AppName:   "kubernaut-apifrontend",
+			UserID:    "it-user",
+			SessionID: "sess-duration-it",
+			State: map[string]any{
+				session.StateKeyCreateConfig: &session.CreateConfig{
+					OwnerRef: metav1.OwnerReference{
+						APIVersion: "kubernaut.ai/v1",
+						Kind:       "RemediationRequest",
+						Name:       "owner-rr-duration-it",
+						UID:        "00000000-0000-0000-0000-000000000001",
+					},
+					A2ATaskID:    "task-it-duration",
+					UserIdentity: v1alpha1.SessionUser{Username: "it-user"},
+					JoinMode:     v1alpha1.SessionJoinModeStart,
+				},
+			},
+		}
+		_, err := svc.Create(ctx, &req)
+		Expect(err).NotTo(HaveOccurred())
+
+		time.Sleep(100 * time.Millisecond)
+
+		err = svc.UpdatePhase(ctx, "sess-duration-it", v1alpha1.SessionPhaseCompleted, "done", "it-user")
+		Expect(err).NotTo(HaveOccurred())
+
+		var completedEvents []*audit.Event
+		for _, e := range recorder.events() {
+			if e.Type == audit.EventSessionCompleted {
+				completedEvents = append(completedEvents, e)
+			}
+		}
+		Expect(completedEvents).To(HaveLen(1))
+		Expect(completedEvents[0].Detail).To(HaveKey("duration_ms"),
+			"with a real K8s API server, CreationTimestamp is set and duration_ms must be present")
+
+		durationStr := completedEvents[0].Detail["duration_ms"]
+		durationVal, parseErr := strconv.ParseInt(durationStr, 10, 64)
+		Expect(parseErr).NotTo(HaveOccurred())
+		Expect(durationVal).To(BeNumerically(">=", 100),
+			"duration_ms should reflect at least the 100ms sleep between creation and completion")
+	})
+
+	It("IT-AF-1156-011: multi-event pipeline round-trips all event categories through BufferedAuditStore", func() {
+		events := []audit.Event{
+			{Type: audit.EventSessionCreated, CorrelationID: "rr-multi-001", UserID: "alice", Detail: map[string]string{
+				"session_id": "sess-multi-001", "a2a_task_id": "task-001", "join_mode": "start", "user_identity": "alice",
+			}},
+			{Type: audit.EventToolExecuted, CorrelationID: "rr-multi-001", UserID: "alice", Detail: map[string]string{
+				"session_id": "sess-multi-001", "tool_name": "kubernaut_investigate", "tool_outcome": "success", "execution_duration_ms": "150",
+			}},
+			{Type: audit.EventRRCreated, CorrelationID: "rr-multi-001", UserID: "alice", Detail: map[string]string{
+				"rr_name": "rr-test-001", "rr_namespace": "default",
+			}},
+			{Type: audit.EventSeverityTriageCompleted, CorrelationID: "rr-multi-001", UserID: "system", Detail: map[string]string{
+				"severity": "critical", "source_tier": "prometheus_rules",
+			}},
+			{Type: audit.EventCircuitBreakerTrip, Detail: map[string]string{
+				"circuit_name": "ds", "failure_count": "5",
+			}},
+		}
+		for i := range events {
+			adapter.Emit(context.Background(), &events[i])
+		}
+
+		Expect(auditStore.Flush(context.Background())).To(Succeed())
+
+		Eventually(func() int { return len(dsClient.allEvents()) }).
+			WithTimeout(5 * time.Second).
+			WithPolling(100 * time.Millisecond).
+			Should(BeNumerically(">=", 4))
+
+		all := dsClient.allEvents()
+
+		typeSet := make(map[string]bool, len(all))
+		for _, evt := range all {
+			typeSet[evt.EventType] = true
+			Expect(evt.EventCategory).To(Equal(ogenclient.AuditEventRequestEventCategoryApifrontend))
+		}
+
+		expected := []string{
+			"apifrontend.session.created",
+			"apifrontend.tool.executed",
+			"apifrontend.rr.created",
+			"apifrontend.severity_triage.completed",
+			"apifrontend.circuitbreaker.trip",
+		}
+		for _, e := range expected {
+			Expect(typeSet).To(HaveKey(e), "missing event type: "+e)
+		}
+	})
+
+	It("IT-AF-1156-012: circuitbreaker.trip event includes state transition and dependency details", func() {
+		adapter.Emit(context.Background(), &audit.Event{
+			Type: audit.EventCircuitBreakerTrip,
+			Detail: map[string]string{
+				"dependency": "ka",
+				"from_state": "closed",
+				"to_state":   "open",
+			},
+		})
+
+		Expect(auditStore.Flush(context.Background())).To(Succeed())
+
+		Eventually(func() int { return len(dsClient.allEvents()) }).
+			WithTimeout(2 * time.Second).
+			WithPolling(50 * time.Millisecond).
+			Should(BeNumerically(">=", 1))
+
+		events := dsClient.allEvents()
+		Expect(events).To(HaveLen(1))
+		evt := events[0]
+		Expect(evt.EventType).To(Equal("apifrontend.circuitbreaker.trip"))
+		Expect(evt.EventAction).To(Equal("tripped"))
+		Expect(evt.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcomeFailure))
+	})
+
 	It("IT-AF-1156-003: Close flushes all buffered events", func() {
 		for i := 0; i < 5; i++ {
 			adapter.Emit(context.Background(), &audit.Event{
@@ -134,3 +266,22 @@ var _ = Describe("IT-AF-1156: Audit Normalization Integration", func() {
 		adapter = nil
 	})
 })
+
+type itRecordingEmitter struct {
+	mu   sync.Mutex
+	evts []*audit.Event
+}
+
+func (r *itRecordingEmitter) Emit(_ context.Context, event *audit.Event) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.evts = append(r.evts, event)
+}
+
+func (r *itRecordingEmitter) events() []*audit.Event {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cp := make([]*audit.Event, len(r.evts))
+	copy(cp, r.evts)
+	return cp
+}

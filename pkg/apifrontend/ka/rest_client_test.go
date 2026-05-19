@@ -3,12 +3,15 @@ package ka_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 )
 
@@ -86,17 +89,91 @@ var _ = Describe("KA REST Client", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	It("UT-AF-110-005: forwards JWT via Authorization header", func() {
+	It("UT-AF-110-005: forwards context JWT via Authorization header (ADR-013)", func() {
 		var capturedAuth string
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			capturedAuth = r.Header.Get("Authorization")
 			w.WriteHeader(http.StatusAccepted)
 			_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "sess-123"})
 		}))
-		client := ka.NewClient(ka.Config{BaseURL: server.URL, Token: "my-jwt-token"})
+		client := ka.NewClient(ka.Config{BaseURL: server.URL})
+		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{
+			Username:  "alice@example.com",
+			RawToken:  "jwt-alice-123",
+			ExpiresAt: time.Now().Add(10 * time.Minute),
+		})
 		_, err := client.Analyze(ctx, ka.AnalyzeRequest{})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(capturedAuth).To(Equal("Bearer my-jwt-token"))
+		Expect(capturedAuth).To(Equal("Bearer jwt-alice-123"))
+	})
+
+	It("UT-AF-110-005b: no Authorization header when no identity in context", func() {
+		var capturedAuth string
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			capturedAuth = r.Header.Get("Authorization")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "sess-123"})
+		}))
+		client := ka.NewClient(ka.Config{BaseURL: server.URL})
+		_, err := client.Analyze(ctx, ka.AnalyzeRequest{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(capturedAuth).To(BeEmpty())
+	})
+
+	It("UT-AF-110-005c: rejects expired JWT (fail-closed per ADR-013)", func() {
+		var requestReachedKA bool
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			requestReachedKA = true
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "should-not-reach"})
+		}))
+		client := ka.NewClient(ka.Config{BaseURL: server.URL})
+		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{
+			Username:  "alice@example.com",
+			RawToken:  "expired-token",
+			ExpiresAt: time.Now().Add(-1 * time.Minute),
+		})
+		_, err := client.Analyze(ctx, ka.AnalyzeRequest{})
+		Expect(err).To(HaveOccurred(), "expired JWT must be rejected")
+		Expect(requestReachedKA).To(BeFalse(), "request must NOT reach KA with expired token")
+	})
+
+	It("UT-AF-110-005d: Status forwards context JWT", func() {
+		var capturedAuth string
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			capturedAuth = r.Header.Get("Authorization")
+			_ = json.NewEncoder(w).Encode(ka.SessionStatus{SessionID: "sess-1", Status: "investigating"})
+		}))
+		client := ka.NewClient(ka.Config{BaseURL: server.URL})
+		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{
+			Username:  "bob@example.com",
+			RawToken:  "jwt-bob-456",
+			ExpiresAt: time.Now().Add(10 * time.Minute),
+		})
+		_, err := client.Status(ctx, "sess-1")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(capturedAuth).To(Equal("Bearer jwt-bob-456"))
+	})
+
+	It("UT-AF-110-005e: StreamEvents forwards context JWT", func() {
+		var capturedAuth string
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			capturedAuth = r.Header.Get("Authorization")
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprint(w, "event: complete\ndata: {\"type\":\"complete\"}\n\n")
+		}))
+		client := ka.NewClient(ka.Config{BaseURL: server.URL})
+		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{
+			Username:  "carol@example.com",
+			RawToken:  "jwt-carol-789",
+			ExpiresAt: time.Now().Add(10 * time.Minute),
+		})
+		ch, err := client.StreamEvents(ctx, "sess-1")
+		Expect(err).NotTo(HaveOccurred())
+		// Drain channel to let the goroutine complete
+		for range ch {
+		}
+		Expect(capturedAuth).To(Equal("Bearer jwt-carol-789"))
 	})
 
 	It("UT-AF-110-006: returns circuit-open error when KA unreachable", func() {

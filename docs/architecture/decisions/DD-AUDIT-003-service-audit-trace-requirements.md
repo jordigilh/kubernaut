@@ -2,10 +2,19 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: November 8, 2025
-**Last Reviewed**: April 24, 2026
-**Version**: 1.9
+**Last Reviewed**: May 19, 2026
+**Version**: 2.0
 **Confidence**: 95%
-**Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 12 services
+**Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 13 services
+
+**Recent Changes** (v2.0 - May 19, 2026):
+- **API Frontend (AF)**: Added as P0 MUST service (8th P0, 13th overall) per Issue #1156 (SOC2 AU-2)
+  - 30 `apifrontend.*` event types covering: auth (success/failure/denied), sessions (created/phase_changed/completed/auto_cancelled/retention_deleted), tools (executed), MCP (session_init/tool_failed), A2A (task_failed), triage (started/completed), severity (completed/failed), resilience (circuitbreaker.trip), config (reloaded/rejected), auth decorators (impersonation.created/jwt.delegation), remediation (rr.created/rr.deduplicated), user (decision), KA delegation (ka.delegated/ka.result_received), rate limiting (ratelimit.denied)
+  - Uses shared `pkg/audit.BufferedAuditStore` with OpenAPI-typed `event_data` payloads (DD-AUDIT-004)
+  - MCP session dedup guard: `mcp.session_init` fires once per new MCP session (Mcp-Session-Id header tracking)
+  - Decorators wired in `cmd/apifrontend/main.go`: `AuditingDynamicFactory`, `AuditingJWTDelegationTransport`, `CircuitBreakerAuditFunc`
+  - **Expected Volume**: +500 events/day (session lifecycle + tool execution + auth)
+  - **Authority**: BR-AUDIT-005 v2.0 (SOC2 CC8.1, AU-2), Issue #1156
 
 **Recent Changes** (v1.9 - April 24, 2026):
 - **Kubernaut Agent (KA)**: Added 4 session lifecycle audit events per Issue #823 (PR 1.5):
@@ -722,19 +731,20 @@ context_api:
 | **Data Storage Service** | ✅ **MUST** | P0 | Workflow + ActionType catalog audit |
 | **Auth Webhook Service** | ✅ **MUST** | P0 | ActionType CRD admission decisions (SOC2) |
 | **Effectiveness Monitor Service** | ✅ **MUST** | P0 | Business-critical learning loop |
+| **API Frontend Service** | ✅ **MUST** | P0 | User-facing MCP/A2A sessions, auth, tool execution (SOC2 AU-2, Issue #1156). Emits 30 `apifrontend.*` events covering auth, sessions, tools, triage, resilience, and config. |
 | **Signal Processing Controller** | ✅ **SHOULD** | P1 | Operational visibility (enrichment) |
 | **Remediation Orchestrator Controller** | ✅ **SHOULD** | P1 | Operational visibility (coordination) |
 | **Context API Service** | ❌ **NO** | N/A | Read-only, no state changes |
 | **HolmesGPT API Service** | ✅ **MUST** | P0 | LLM interactions and investigation outcomes (DD-AUDIT-005, BR-AUDIT-005). Emits `aiagent.*` events: `aiagent.llm.request`, `aiagent.llm.response`, `aiagent.llm.tool_call`, `aiagent.workflow.validation_attempt`, `aiagent.response.complete`, `aiagent.response.failed`, `aiagent.enrichment.completed`, `aiagent.enrichment.failed` |
 | **Dynamic Toolset Service** | ❌ **NO** | N/A | Configuration, read-only |
 
-**Total**: **10 out of 12 services** generate audit traces (83%)
+**Total**: **11 out of 13 services** generate audit traces (85%)
 
 ---
 
 ## 🎯 **Implementation Priority**
 
-### Phase 1: P0 Services (MUST) - 7 Services
+### Phase 1: P0 Services (MUST) - 8 Services
 
 **Timeline**: Sprint 1-2 (2 weeks)
 
@@ -746,6 +756,7 @@ context_api:
 5. Remediation Execution Controller (Week 2)
 6. Notification Service (Week 2)
 7. Effectiveness Monitor Service (Week 2)
+8. API Frontend Service — 30 SOC2 AU-2 audit events (Issue #1156)
 
 **Effort**: 7 hours (1 hour per service)
 

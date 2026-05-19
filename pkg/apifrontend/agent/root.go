@@ -18,6 +18,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
@@ -121,9 +122,11 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"approve", func() (tool.Tool, error) { return tools.NewApproveTool(k8s) }},
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},
-		{"start_investigation", func() (tool.Tool, error) { return tools.NewStartInvestigationTool(kaC) }},
-		{"poll_investigation", func() (tool.Tool, error) { return tools.NewPollInvestigationTool(kaC) }},
-		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC) }},
+		{"start_investigation", func() (tool.Tool, error) { return tools.NewStartInvestigationTool(kaC, cfg.Auditor) }},
+		{"poll_investigation", func() (tool.Tool, error) { return tools.NewPollInvestigationTool(kaC, cfg.Auditor) }},
+		{"stream_investigation", func() (tool.Tool, error) { return tools.NewStreamInvestigationTool(kaC) }},
+		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
+		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC, cfg.Auditor) }},
 		{"present_decision", func() (tool.Tool, error) { return tools.NewPresentDecisionTool() }},
 		{"list_workflows", func() (tool.Tool, error) { return tools.NewListWorkflowsTool(dsC) }},
 		{"get_remediation_history", func() (tool.Tool, error) { return tools.NewGetRemediationHistoryTool(dsC) }},
@@ -136,7 +139,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"resolve_owner", func() (tool.Tool, error) { return tools.NewResolveOwnerTool(triageFactory) }},
 		// RR tools use AF ServiceAccount (write AF-owned CRDs)
 		{"check_existing_rr", func() (tool.Tool, error) { return tools.NewCheckExistingRRTool(k8s) }},
-		{"create_rr", func() (tool.Tool, error) { return tools.NewCreateRRTool(k8s, nil) }},
+		{"create_rr", func() (tool.Tool, error) { return tools.NewCreateRRTool(k8s, nil, cfg.Auditor) }},
 	}
 
 	result := make([]tool.Tool, 0, len(constructors))
@@ -297,8 +300,10 @@ func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *pro
 // newAuditToolCallback returns an AfterToolCallback that emits a structured
 // audit event for every tool invocation (FedRAMP AU-12 compliance).
 // The event includes tool name, result status, and user identity.
+// Issue #1189: when af_create_rr is called within an A2A task context, the
+// audit event includes a2a_task_id for bidirectional task-to-RR correlation.
 func newAuditToolCallback(auditor audit.Emitter) llmagent.AfterToolCallback {
-	return func(ctx tool.Context, t tool.Tool, input, _ map[string]any, toolErr error) (map[string]any, error) {
+	return func(ctx tool.Context, t tool.Tool, input, output map[string]any, toolErr error) (map[string]any, error) {
 		if auditor == nil {
 			return nil, nil
 		}
@@ -317,6 +322,18 @@ func newAuditToolCallback(auditor audit.Emitter) llmagent.AfterToolCallback {
 		}
 		if ns, ok := input["namespace"].(string); ok && ns != "" {
 			detail["namespace"] = ns
+		}
+
+		// Issue #1189: A2A task-to-RR correlation. When af_create_rr succeeds
+		// within an A2A task, include both a2a_task_id and rr_id in the audit
+		// event so the Data Store can correlate them bidirectionally.
+		if sc := session.CreateContextFromContext(ctx); sc != nil && sc.TaskID != "" {
+			detail["a2a_task_id"] = sc.TaskID
+		}
+		if t.Name() == "af_create_rr" && toolErr == nil && output != nil {
+			if rrID, ok := output["rr_id"].(string); ok && rrID != "" {
+				detail["rr_id"] = rrID
+			}
 		}
 
 		userID := ""

@@ -128,18 +128,18 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	// KA REST tools
 	registerTool(srv, cfg, sem, "kubernaut_start_investigation", "Start a new investigation session",
 		func(ctx context.Context, args tools.StartInvestigationArgs) (any, error) {
-			return tools.HandleStartInvestigation(ctx, cfg.KAClient, args)
+			return tools.HandleStartInvestigation(ctx, cfg.KAClient, args, cfg.Auditor)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_poll_investigation", "Poll an investigation session for updates",
 		func(ctx context.Context, args tools.PollInvestigationArgs) (any, error) {
-			return tools.HandlePollInvestigation(ctx, cfg.KAClient, args, 5, 3*time.Second)
+			return tools.HandlePollInvestigation(ctx, cfg.KAClient, args, 5, 3*time.Second, cfg.Auditor)
 		})
 
 	// KA MCP tools
 	registerTool(srv, cfg, sem, "kubernaut_select_workflow", "Select a workflow for an investigation",
 		func(ctx context.Context, args tools.SelectWorkflowArgs) (any, error) {
-			return tools.HandleSelectWorkflow(ctx, cfg.KAMCPClient, args)
+			return tools.HandleSelectWorkflow(ctx, cfg.KAMCPClient, args, cfg.Auditor)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_discover_workflows", "Discover available workflows with parameter schemas",
@@ -245,7 +245,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 				return nil, err
 			}
 			username := usernameFromCtx(ctx)
-			return tools.HandleCreateRR(ctx, client, &args, username, cfg.Triager)
+			return tools.HandleCreateRR(ctx, client, &args, username, cfg.Triager, cfg.Auditor)
 		})
 }
 

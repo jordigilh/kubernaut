@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -77,8 +78,31 @@ func NewMCPHandler(cfg MCPConfig) (http.Handler, error) { //nolint:gocritic // h
 		opts.SessionTimeout = cfg.SessionTimeout
 	}
 
+	auditor := cfg.Auditor
+	var seenSessions sync.Map
 	h := mcp.NewStreamableHTTPHandler(
-		func(_ *http.Request) *mcp.Server { return srv },
+		func(r *http.Request) *mcp.Server {
+			if auditor != nil {
+				sid := r.Header.Get("Mcp-Session-Id")
+				if sid == "" {
+					sid = "__no_session__"
+				}
+				if _, loaded := seenSessions.LoadOrStore(sid, struct{}{}); !loaded {
+					username := ""
+					if user := auth.UserIdentityFromContext(r.Context()); user != nil {
+						username = user.Username
+					}
+					auditor.Emit(r.Context(), &audit.Event{
+						Type:   audit.EventMCPSessionInit,
+						UserID: username,
+						Detail: map[string]string{
+							"protocol_version": "2025-03-26",
+						},
+					})
+				}
+			}
+			return srv
+		},
 		opts,
 	)
 

@@ -15,6 +15,7 @@ import (
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
@@ -65,7 +66,7 @@ func rrFingerprint(namespace, kind, name string) string {
 // HandleCreateRR creates a RemediationRequest CRD with singleflight deduplication.
 // Concurrent calls with the same fingerprint are deduplicated — only one creation executes.
 // If severity is empty and a triager is available, severity is determined via triage pipeline.
-func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateRRArgs, username string, triager *severity.Triager) (CreateRRResult, error) {
+func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateRRArgs, username string, triager *severity.Triager, auditor audit.Emitter) (CreateRRResult, error) {
 	if client == nil {
 		return CreateRRResult{}, ErrK8sUnavailable
 	}
@@ -200,15 +201,43 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 	if !ok {
 		return CreateRRResult{}, fmt.Errorf("unexpected singleflight result type")
 	}
+
+	if auditor != nil {
+		if res.AlreadyExists {
+			auditor.Emit(ctx, &audit.Event{
+				Type:   audit.EventRRDeduplicated,
+				UserID: username,
+				Detail: map[string]string{
+					"namespace":   args.Namespace,
+					"kind":        args.Kind,
+					"name":        args.Name,
+					"existing_rr": res.RRID,
+				},
+			})
+		} else {
+			auditor.Emit(ctx, &audit.Event{
+				Type:   audit.EventRRCreated,
+				UserID: username,
+				Detail: map[string]string{
+					"namespace": args.Namespace,
+					"kind":      args.Kind,
+					"name":      args.Name,
+					"rr_id":     res.RRID,
+					"severity":  args.Severity,
+				},
+			})
+		}
+	}
+
 	return *res, nil
 }
 
 // NewCreateRRTool creates the af_create_rr tool.
-func NewCreateRRTool(client dynamic.Interface, triager *severity.Triager) (tool.Tool, error) {
+func NewCreateRRTool(client dynamic.Interface, triager *severity.Triager, auditor audit.Emitter) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "af_create_rr",
 		Description: "Create a RemediationRequest for a target resource with deduplication. Checks for existing non-terminal RRs before creating.",
 	}, func(ctx tool.Context, args CreateRRArgs) (CreateRRResult, error) {
-		return HandleCreateRR(ctx, client, &args, usernameFromContext(ctx), triager)
+		return HandleCreateRR(ctx, client, &args, usernameFromContext(ctx), triager, auditor)
 	})
 }

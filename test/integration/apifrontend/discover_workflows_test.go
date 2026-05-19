@@ -100,7 +100,7 @@ var _ = Describe("Integration: discover_workflows (#1176)", Label("integration",
 			RRID:       "pay/rr-1",
 			WorkflowID: wf.WorkflowID,
 			Parameters: params,
-		})
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(selectResult.Status).To(Equal("accepted"))
 	})
@@ -180,7 +180,7 @@ var _ = Describe("Integration: discover_workflows (#1176)", Label("integration",
 			RRID:       "it/rr-numeric-test",
 			WorkflowID: wf.WorkflowID,
 			Parameters: params,
-		})
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(selectResult.Status).To(Equal("accepted"))
 		Expect(receivedParams).To(HaveKeyWithValue("replicas", float64(5)))

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	gobreaker "github.com/sony/gobreaker/v2"
 )
 
 // ErrMCPUnavailable indicates the KA MCP endpoint is unreachable.
@@ -18,8 +20,6 @@ type Config struct {
 	BaseURL string
 	// MCPEndpoint is the KA MCP endpoint URL.
 	MCPEndpoint string
-	// Token is the JWT for authentication (forwarded as Bearer).
-	Token string
 	// Timeout for HTTP requests to KA.
 	Timeout time.Duration
 	// BaseTransport is the underlying transport used for outbound requests.
@@ -42,6 +42,8 @@ type Config struct {
 	RetryMaxBackoff time.Duration
 	// RetryableStatuses are HTTP status codes that trigger a retry.
 	RetryableStatuses []int
+	// CBAuditFunc is called on circuit breaker state transitions for SOC2 AU-2 compliance.
+	CBAuditFunc func(dependency string, from, to gobreaker.State)
 }
 
 // AnalyzeRequest is the request body for POST /api/v1/incident/analyze.
@@ -155,3 +157,24 @@ type InvestigateResult struct {
 	Status    string `json:"status"`
 	Summary   string `json:"summary,omitempty"`
 }
+
+// InvestigationEvent represents a discrete event from KA's SSE stream.
+// Wire-format compatible with internal/kubernautagent/session.InvestigationEvent.
+type InvestigationEvent struct {
+	Type  string          `json:"type"`
+	Turn  int             `json:"turn"`
+	Phase string          `json:"phase,omitempty"`
+	Data  json.RawMessage `json:"data,omitempty"`
+}
+
+// SSE event type constants matching KA's wire format.
+const (
+	EventTypeReasoningDelta = "reasoning_delta"
+	EventTypeTokenDelta     = "token_delta"
+	EventTypeToolCallStart  = "tool_call_start"
+	EventTypeToolCall       = "tool_call"
+	EventTypeToolResult     = "tool_result"
+	EventTypeError          = "error"
+	EventTypeComplete       = "complete"
+	EventTypeCancelled      = "cancelled"
+)

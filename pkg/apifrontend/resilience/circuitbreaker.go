@@ -1,12 +1,32 @@
 package resilience
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	gobreaker "github.com/sony/gobreaker/v2"
+
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 )
+
+// CircuitBreakerAuditFunc returns an AuditFunc that emits circuitbreaker.trip
+// audit events via the given Emitter (SOC2 AU-2 compliance).
+func CircuitBreakerAuditFunc(auditor audit.Emitter) func(string, gobreaker.State, gobreaker.State) {
+	return func(dep string, from, to gobreaker.State) {
+		if auditor != nil {
+			auditor.Emit(context.Background(), &audit.Event{
+				Type: audit.EventCircuitBreakerTrip,
+				Detail: map[string]string{
+					"dependency": dep,
+					"from_state": from.String(),
+					"to_state":   to.String(),
+				},
+			})
+		}
+	}
+}
 
 // CircuitBreakerConfig controls the circuit breaker behavior.
 type CircuitBreakerConfig struct {
