@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"fmt"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -137,6 +138,22 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 		"from":       string(from),
 		"to":         string(to),
 	})
+
+	if IsTerminal(to) {
+		detail := map[string]string{
+			"session_id":     sessionID,
+			"terminal_phase": string(to),
+		}
+		nn := types.NamespacedName{Name: crdName, Namespace: s.namespace}
+		var crdForDuration v1alpha1.InvestigationSession
+		if err := s.getReader().Get(ctx, nn, &crdForDuration); err == nil {
+			created := crdForDuration.CreationTimestamp.Time
+			if !created.IsZero() {
+				detail["duration_ms"] = fmt.Sprintf("%d", time.Since(created).Milliseconds())
+			}
+		}
+		s.emitAudit(ctx, audit.EventSessionCompleted, userID, detail)
+	}
 
 	s.decSessionGauge(string(from))
 	s.incSessionGauge(string(to))

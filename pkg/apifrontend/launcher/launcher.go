@@ -101,6 +101,11 @@ func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Contex
 				UserID: username,
 				Detail: detail,
 			})
+			auditor.Emit(ctx, &audit.Event{
+				Type:   audit.EventTriageStarted,
+				UserID: username,
+				Detail: detail,
+			})
 		}
 
 		// Inject session creation context for the ServiceDecorator.
@@ -157,6 +162,11 @@ func buildAfterExecuteCallback(log *slog.Logger, auditor audit.Emitter) adka2a.A
 		} else if auditor != nil {
 			auditor.Emit(ctx, &audit.Event{
 				Type:   audit.EventA2ATaskCompleted,
+				UserID: username,
+				Detail: map[string]string{"task_id": taskID},
+			})
+			auditor.Emit(ctx, &audit.Event{
+				Type:   audit.EventTriageCompleted,
 				UserID: username,
 				Detail: map[string]string{"task_id": taskID},
 			})
