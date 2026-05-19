@@ -82,13 +82,19 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 		}(svc.name, svc.image, svc.dockerfile, svc.buildCtx)
 	}
 
-	// AF: IMAGE_REGISTRY + IMAGE_TAG => registry image; else local BuildAFImage
+	// AF: IMAGE_REGISTRY + IMAGE_TAG => registry image; else local BuildAFImage.
+	// DD-TEST-007: When E2E_COVERAGE=true, always build locally with GOFLAGS=-cover
+	// so the binary writes coverage counters to GOCOVERDIR at runtime.
+	enableCoverage := os.Getenv("E2E_COVERAGE") == "true"
 	go func() {
-		if imageRegistry != "" && imageTag != "" {
+		if imageRegistry != "" && imageTag != "" && !enableCoverage {
 			img := strings.TrimRight(imageRegistry, "/") + "/apifrontend:" + imageTag
 			_, _ = fmt.Fprintf(writer, "  apifrontend: using registry image %s\n", img)
 			results <- buildResult{"apifrontend", img, nil}
 		} else {
+			if enableCoverage {
+				_, _ = fmt.Fprintln(writer, "  apifrontend: building locally with coverage instrumentation (E2E_COVERAGE=true)")
+			}
 			img, err := BuildAFImage(writer)
 			results <- buildResult{"apifrontend", img, err}
 		}
@@ -129,8 +135,15 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 	// from the registry inside the Kind node (same as KA/fullpipeline E2E).
 	// In local mode: load locally-built images via kind load.
 	// ═══════════════════════════════════════════════════════════════════════
-	if imageRegistry != "" {
+	if imageRegistry != "" && !enableCoverage {
 		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Skipping image loading (CI/CD: IMAGE_REGISTRY set, Kind pulls from public GHCR)")
+	} else if imageRegistry != "" && enableCoverage {
+		// Coverage mode in CI: only AF was built locally; load AF, let others pull from registry.
+		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Loading coverage-instrumented AF image into Kind...")
+		if err := kinfra.LoadImageToKind(images["apifrontend"], "apifrontend", clusterName, writer); err != nil {
+			return fmt.Errorf("failed to load apifrontend image: %w", err)
+		}
+		_, _ = fmt.Fprintln(writer, "  apifrontend loaded (coverage build)")
 	} else {
 		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Loading images into Kind...")
 
