@@ -144,11 +144,9 @@ var _ = SynchronizedAfterSuite(
 				e2eNamespace, "apifrontend", GinkgoWriter)
 		}
 
-		if os.Getenv("E2E_COVERAGE") == "true" {
-			_, _ = fmt.Fprintln(GinkgoWriter, "\nCollecting E2E binary coverage data (DD-TEST-007)...")
-			if err := infrastructure.CollectE2EBinaryCoverage(e2eClusterName, GinkgoWriter); err != nil {
-				_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Coverage collection failed (non-fatal): %v\n", err)
-			}
+		_, _ = fmt.Fprintln(GinkgoWriter, "\nCollecting E2E binary coverage data (DD-TEST-007)...")
+		if err := infrastructure.CollectE2EBinaryCoverage(e2eClusterName, GinkgoWriter); err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Coverage collection failed (non-fatal): %v\n", err)
 		}
 
 		if os.Getenv("AF_E2E_SKIP_TEARDOWN") == "true" {

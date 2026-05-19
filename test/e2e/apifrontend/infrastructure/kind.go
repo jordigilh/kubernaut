@@ -43,13 +43,15 @@ func CreateAFKindCluster(kubeconfigPath string, writer io.Writer) error {
 	return kinfra.CreateKindClusterWithConfig(opts, writer)
 }
 
-// BuildAFImage builds the apifrontend container image locally for development.
-// In CI, SetupE2EInfrastructure uses the pre-built GHCR image instead.
+// BuildAFImage builds the apifrontend container image locally with coverage
+// instrumentation (GOFLAGS=-cover). Coverage is always enabled because the
+// overhead is negligible for E2E and the data is always useful.
 func BuildAFImage(writer io.Writer) (string, error) {
 	cfg := kinfra.E2EImageConfig{
 		ServiceName:    "apifrontend",
 		ImageName:      "apifrontend",
 		DockerfilePath: "docker/apifrontend.Dockerfile",
+		EnableCoverage: true,
 	}
 	return kinfra.BuildImageForKind(cfg, writer)
 }
