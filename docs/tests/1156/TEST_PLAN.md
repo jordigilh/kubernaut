@@ -271,15 +271,17 @@ Table-driven test: for each of the 30 event types, verify:
 
 | Test ID | Feature | Description | Infrastructure |
 |---|---|---|---|
-| IT-AF-1156-010 | F-16 | Session lifecycle: create -> phase_changed -> completed -> 3 events in DS | Real DS + K8s fake |
-| IT-AF-1156-011 | F-26 | Tool execution -> `tool.executed` in DS with `session_id`, `execution_duration_ms` | Real DS |
-| IT-AF-1156-012 | F-19 | HandleCreateRR -> `rr.created` in DS with `rr_name`, `rr_namespace` | Real DS + K8s fake |
+| IT-AF-1156-010 | F-16 | session.completed emits `duration_ms` with real K8s CreationTimestamp (envtest) | envtest + real K8s API |
+| IT-AF-1156-011 | F-* | Multi-event pipeline: 5 different event types round-trip through BufferedAuditStore | Capturing DS client |
+| IT-AF-1156-012 | F-19 | circuitbreaker.trip event includes state transition and dependency details | Capturing DS client |
 
 ### 6.4 E2E Tests (E2E-AF-1156-001)
 
 | Test ID | Feature | Description | Infrastructure |
 |---|---|---|---|
 | E2E-AF-1156-001 | Full SOC2 trace | Full A2A flow -> query DS -> >= 5 distinct `apifrontend.*` event types | Kind cluster + real DS |
+
+**Note**: E2E-FP-AF-001 requires AF+DEX deployed in the FP cluster (Issue #1189). The test gracefully skips if AF is not available. Once #1189 deploys AF as the 14th FP service, this test validates the full-stack audit trace.
 
 ---
 
