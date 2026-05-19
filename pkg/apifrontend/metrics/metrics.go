@@ -31,33 +31,25 @@ import (
 // All collectors are created here and injected into components that need them,
 // avoiding package-level Prometheus vars that silently use the default registry.
 //
-// Metric names follow the catalog in ARCHITECTURE.md §7 (af_* prefix).
+// GA metric set (13 metrics): only things that require real-time aggregation
+// or threshold-based alerting. Everything extractable from logs or audit trail
+// is deliberately excluded.
 type Registry struct {
 	registry *prometheus.Registry
 
-	HTTPRequestsTotal         *prometheus.CounterVec
-	HTTPRequestDuration       *prometheus.HistogramVec
-	ToolCallsTotal            *prometheus.CounterVec
-	ToolCallDuration          *prometheus.HistogramVec
-	SessionsActive            *prometheus.GaugeVec
-	LLMTokensTotal            *prometheus.CounterVec
-	RateLimitDenied           *prometheus.CounterVec
-	CircuitBreakerState       *prometheus.GaugeVec
-	DownstreamDuration        *prometheus.HistogramVec
-	DownstreamRetryTotal      *prometheus.CounterVec
-	AuthDuration              *prometheus.HistogramVec
-	AuditEventsTotal          *prometheus.CounterVec
-	SessionTTLActionsTotal    *prometheus.CounterVec
-	MCPRBACDeniedTotal        *prometheus.CounterVec
-	HTTPPanicsTotal           prometheus.Counter
-	SSEActiveConnections      prometheus.Gauge
-	AuditBufferOverflow       prometheus.Counter
-	SeverityTriageTotal          *prometheus.CounterVec
-	SeverityTriageDuration       *prometheus.HistogramVec
-	SeverityTriageErrorsTotal    *prometheus.CounterVec
-	DiscoverWorkflowsTotal       *prometheus.CounterVec
-	DiscoverWorkflowsDuration    *prometheus.HistogramVec
-	DiscoverWorkflowsErrorsTotal *prometheus.CounterVec
+	HTTPRequestsTotal    *prometheus.CounterVec
+	HTTPRequestDuration  *prometheus.HistogramVec
+	HTTPPanicsTotal      prometheus.Counter
+	ToolCallsTotal       *prometheus.CounterVec
+	ToolCallDuration     *prometheus.HistogramVec
+	CircuitBreakerState  *prometheus.GaugeVec
+	DownstreamDuration   *prometheus.HistogramVec
+	AuthDuration         *prometheus.HistogramVec
+	AuditBufferOverflow  prometheus.Counter
+	RateLimitDenied      *prometheus.CounterVec
+	SSEActiveConnections prometheus.Gauge
+	LLMTokensTotal       *prometheus.CounterVec
+	SessionsActive       *prometheus.GaugeVec
 }
 
 // NewRegistry creates and registers all AF Prometheus metrics.
@@ -79,6 +71,11 @@ func NewRegistry() *Registry {
 			Help:      "HTTP request latency distribution by method, path, and status.",
 			Buckets:   prometheus.DefBuckets,
 		}, []string{"method", "path", "status"}),
+		HTTPPanicsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "af",
+			Name:      "http_panics_total",
+			Help:      "Total HTTP handler panics recovered.",
+		}),
 		ToolCallsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "af",
 			Name:      "tool_calls_total",
@@ -90,21 +87,6 @@ func NewRegistry() *Registry {
 			Help:      "Tool execution latency distribution by tool name and type.",
 			Buckets:   prometheus.DefBuckets,
 		}, []string{"tool", "type"}),
-		SessionsActive: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "af",
-			Name:      "sessions_active",
-			Help:      "Number of currently active InvestigationSessions by phase.",
-		}, []string{"phase"}),
-		LLMTokensTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "af",
-			Name:      "llm_tokens_total",
-			Help:      "Total LLM tokens consumed by direction (input/output).",
-		}, []string{"direction", "model"}),
-		RateLimitDenied: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "af",
-			Name:      "rate_limit_rejections_total",
-			Help:      "Total rate limit rejections by tier and reason.",
-		}, []string{"tier", "reason"}),
 		CircuitBreakerState: auth.NewCircuitBreakerStateGauge(),
 		DownstreamDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "af",
@@ -112,109 +94,52 @@ func NewRegistry() *Registry {
 			Help:      "Downstream HTTP request duration by dependency and status class.",
 			Buckets:   prometheus.DefBuckets,
 		}, []string{"dependency", "status"}),
-		DownstreamRetryTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "af",
-			Name:      "downstream_retry_total",
-			Help:      "Total downstream retry attempts by dependency and attempt number.",
-		}, []string{"dependency", "attempt"}),
 		AuthDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "af",
 			Name:      "auth_duration_seconds",
 			Help:      "Authentication latency distribution by result.",
 			Buckets:   prometheus.DefBuckets,
 		}, []string{"result"}),
-		AuditEventsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+		AuditBufferOverflow: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "af",
-			Name:      "audit_events_total",
-			Help:      "Total audit trail events by type.",
-		}, []string{"type"}),
-		SessionTTLActionsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name:      "audit_buffer_overflow_total",
+			Help:      "Total audit events dropped due to buffer overflow.",
+		}),
+		RateLimitDenied: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "af",
-			Name:      "session_ttl_actions_total",
-			Help:      "Total TTL-triggered session lifecycle actions by action type.",
-		}, []string{"action"}),
+			Name:      "rate_limit_rejections_total",
+			Help:      "Total rate limit rejections by tier and reason.",
+		}, []string{"tier", "reason"}),
+		SSEActiveConnections: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "af",
+			Name:      "sse_active_connections",
+			Help:      "Number of currently active SSE connections.",
+		}),
+		LLMTokensTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "af",
+			Name:      "llm_tokens_total",
+			Help:      "Total LLM tokens consumed by direction (input/output).",
+		}, []string{"direction", "model"}),
+		SessionsActive: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: "af",
+			Name:      "sessions_active",
+			Help:      "Number of currently active InvestigationSessions by phase.",
+		}, []string{"phase"}),
 	}
-
-	r.MCPRBACDeniedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "af",
-		Name:      "mcp_rbac_denied_total",
-		Help:      "Total MCP tool calls denied by RBAC policy.",
-	}, []string{"tool"})
-
-	r.HTTPPanicsTotal = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "af",
-		Name:      "http_panics_total",
-		Help:      "Total HTTP handler panics recovered.",
-	})
-
-	r.SSEActiveConnections = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "af",
-		Name:      "sse_active_connections",
-		Help:      "Number of currently active SSE connections.",
-	})
-	r.AuditBufferOverflow = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "af",
-		Name:      "audit_buffer_overflow_total",
-		Help:      "Total audit events dropped due to buffer overflow.",
-	})
-
-	r.SeverityTriageTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "af",
-		Name:      "severity_triage_total",
-		Help:      "Total severity triage completions by tier and resulting severity.",
-	}, []string{"tier", "severity"})
-	r.SeverityTriageDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "af",
-		Name:      "severity_triage_duration_seconds",
-		Help:      "Severity triage latency distribution by tier.",
-		Buckets:   prometheus.DefBuckets,
-	}, []string{"tier"})
-	r.SeverityTriageErrorsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "af",
-		Name:      "severity_triage_errors_total",
-		Help:      "Total severity triage errors by tier and error type.",
-	}, []string{"tier", "error_type"})
 
 	reg.MustRegister(r.HTTPRequestsTotal)
 	reg.MustRegister(r.HTTPRequestDuration)
+	reg.MustRegister(r.HTTPPanicsTotal)
 	reg.MustRegister(r.ToolCallsTotal)
 	reg.MustRegister(r.ToolCallDuration)
-	reg.MustRegister(r.SessionsActive)
-	reg.MustRegister(r.LLMTokensTotal)
-	reg.MustRegister(r.RateLimitDenied)
 	reg.MustRegister(r.CircuitBreakerState)
 	reg.MustRegister(r.DownstreamDuration)
-	reg.MustRegister(r.DownstreamRetryTotal)
 	reg.MustRegister(r.AuthDuration)
-	reg.MustRegister(r.AuditEventsTotal)
-	reg.MustRegister(r.SessionTTLActionsTotal)
-	reg.MustRegister(r.MCPRBACDeniedTotal)
-	reg.MustRegister(r.HTTPPanicsTotal)
-	reg.MustRegister(r.SSEActiveConnections)
 	reg.MustRegister(r.AuditBufferOverflow)
-	r.DiscoverWorkflowsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "af",
-		Name:      "discover_workflows_total",
-		Help:      "Total discover_workflows calls by status.",
-	}, []string{"status"})
-	r.DiscoverWorkflowsDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "af",
-		Name:      "discover_workflows_duration_seconds",
-		Help:      "Discover workflows call latency distribution.",
-		Buckets:   prometheus.DefBuckets,
-	}, []string{})
-	r.DiscoverWorkflowsErrorsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "af",
-		Name:      "discover_workflows_errors_total",
-		Help:      "Total discover_workflows errors by error type.",
-	}, []string{"error_type"})
-
-	reg.MustRegister(r.SeverityTriageTotal)
-	reg.MustRegister(r.SeverityTriageDuration)
-	reg.MustRegister(r.SeverityTriageErrorsTotal)
-	reg.MustRegister(r.DiscoverWorkflowsTotal)
-	reg.MustRegister(r.DiscoverWorkflowsDuration)
-	reg.MustRegister(r.DiscoverWorkflowsErrorsTotal)
+	reg.MustRegister(r.RateLimitDenied)
+	reg.MustRegister(r.SSEActiveConnections)
+	reg.MustRegister(r.LLMTokensTotal)
+	reg.MustRegister(r.SessionsActive)
 
 	return r
 }

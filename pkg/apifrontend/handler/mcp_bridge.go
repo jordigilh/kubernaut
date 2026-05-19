@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -17,7 +16,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
@@ -40,7 +38,6 @@ type MCPBridgeConfig struct {
 	Auditor            audit.Emitter
 	Logger             logr.Logger
 	Metrics            *MCPBridgeMetrics
-	MetricsRegistry    *metrics.Registry
 	ToolTimeout        time.Duration
 	MaxConcurrentTools int64
 	UserLimiter        *ratelimit.UserLimiter
@@ -50,7 +47,6 @@ type MCPBridgeConfig struct {
 type MCPBridgeMetrics struct {
 	ToolCallsTotal   *prometheus.CounterVec
 	ToolCallDuration *prometheus.HistogramVec
-	RBACDeniedTotal  *prometheus.CounterVec
 }
 
 // GetToolTimeout returns the configured tool timeout or the default.
@@ -148,28 +144,9 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 
 	registerTool(srv, cfg, sem, "kubernaut_discover_workflows", "Discover available workflows with parameter schemas",
 		func(ctx context.Context, args tools.DiscoverWorkflowsArgs) (any, error) {
-			start := time.Now()
 			result, err := tools.HandleDiscoverWorkflows(ctx, cfg.KAMCPClient, args)
-			reg := cfg.MetricsRegistry
 			if err != nil {
-				if reg != nil && reg.DiscoverWorkflowsErrorsTotal != nil {
-					errType := "unknown"
-					if ctx.Err() != nil {
-						errType = "timeout"
-					} else if errors.Is(err, ka.ErrMCPUnavailable) {
-						errType = "mcp_unavailable"
-					}
-					reg.DiscoverWorkflowsErrorsTotal.WithLabelValues(errType).Inc()
-				}
 				return result, err
-			}
-			if reg != nil {
-				if reg.DiscoverWorkflowsTotal != nil {
-					reg.DiscoverWorkflowsTotal.WithLabelValues("success").Inc()
-				}
-				if reg.DiscoverWorkflowsDuration != nil {
-					reg.DiscoverWorkflowsDuration.WithLabelValues().Observe(time.Since(start).Seconds())
-				}
 			}
 			emitAudit(ctx, cfg, "kubernaut_discover_workflows", audit.EventWorkflowDiscovery,
 				map[string]string{"workflow_count": strconv.Itoa(result.Count)})
@@ -313,9 +290,6 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 		if err := checkRBAC(ctx, cfg, toolName); err != nil {
 			resultLabel = "denied"
 			recordMetrics(cfg, toolName, resultLabel, start)
-			if cfg.Metrics != nil && cfg.Metrics.RBACDeniedTotal != nil {
-				cfg.Metrics.RBACDeniedTotal.With(prometheus.Labels{"tool": toolName}).Inc()
-			}
 			emitAudit(ctx, cfg, toolName, audit.EventMCPToolDenied, nil)
 			cfg.Logger.Info("tool call denied by RBAC",
 				"tool", toolName, "user", usernameFromCtx(ctx))

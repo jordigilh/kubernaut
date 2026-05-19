@@ -145,16 +145,6 @@ spec:
             description: "99th percentile tool call duration exceeds 5 seconds."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-009.md"
 
-        - alert: ApifrontendMCPRBACDenialSpike
-          expr: sum(rate(af_mcp_rbac_denied_total{job="apifrontend"}[5m])) > 1
-          for: 3m
-          labels:
-            severity: warning
-          annotations:
-            summary: "MCP RBAC denials elevated (>1/s for 3m)"
-            description: "Sustained RBAC denials may indicate misconfigured roles or unauthorized access attempts."
-            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-009.md"
-
         - alert: ApifrontendToolErrorRate
           expr: sum(rate(af_tool_calls_total{job="apifrontend",result=~"error|timeout|panic"}[5m])) / sum(rate(af_tool_calls_total{job="apifrontend"}[5m])) > 0.05
           for: 5m
@@ -189,26 +179,20 @@ spec:
             description: "Active SSE connections are above threshold."
             runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-008.md"
 
-    - name: apifrontend.severity-triage
+    - name: apifrontend.panics
       rules:
-        - alert: ApifrontendSeverityTriageErrorRate
-          expr: rate(af_severity_triage_errors_total{job="apifrontend"}[5m]) > 0.1
-          for: 5m
+        - alert: ApifrontendPanicDetected
+          expr: increase(af_http_panics_total{job="apifrontend"}[5m]) > 0
+          for: 0m
           labels:
-            severity: warning
+            severity: critical
           annotations:
-            summary: "Severity triage pipeline error rate elevated"
-            description: "More than 0.1 errors/sec in severity triage pipeline over the last 5 minutes."
-            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-010.md"
-        - alert: ApifrontendSeverityTriageLatencyHigh
-          expr: histogram_quantile(0.95, sum(rate(af_severity_triage_duration_seconds_bucket{job="apifrontend"}[5m])) by (le, tier)) > 5
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: "Severity triage P95 latency > 5s"
-            description: "95th percentile triage duration for tier {{ $labels.tier }} exceeds 5 seconds."
-            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-010.md"
+            summary: "API Frontend HTTP handler panic detected"
+            description: "At least one HTTP handler panic was recovered in the last 5 minutes. This indicates a programming error that must be investigated immediately."
+            runbook_url: "https://github.com/jordigilh/kubernaut-apifrontend/blob/main/docs/operations/runbooks/RB-AF-013.md"
+
+    - name: apifrontend.ratelimit
+      rules:
         # CM-05: Rate limit storm detection
         - alert: ApifrontendRateLimitStorm
           expr: sum(rate(af_rate_limit_rejections_total{job="apifrontend"}[5m])) > 10
