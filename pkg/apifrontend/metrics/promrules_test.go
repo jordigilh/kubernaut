@@ -116,7 +116,6 @@ var _ = Describe("SLO Conformance — Prometheus Rules", func() {
 			"af_auth_duration_seconds":                      true,
 			"af_auth_duration_seconds_bucket":               true,
 			"af_sse_active_connections":                     true,
-			"af_audit_buffer_overflow_total":                true,
 			"up":                                            true,
 		}
 

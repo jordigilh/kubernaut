@@ -91,12 +91,6 @@ var _ = Describe("AF Metrics Registry (DD-TEST-005 Compliant — GA Set)", func(
 			Expect(after - before).To(Equal(float64(1)))
 		})
 
-		It("UT-AF-MET-006: af_audit_buffer_overflow_total increments by 1", func() {
-			before := getCounterValue(reg.AuditBufferOverflow)
-			reg.AuditBufferOverflow.Inc()
-			after := getCounterValue(reg.AuditBufferOverflow)
-			Expect(after - before).To(Equal(float64(1)))
-		})
 	})
 
 	Context("Histogram Metrics — observation verification", func() {
@@ -180,7 +174,6 @@ var _ = Describe("AF Metrics Registry (DD-TEST-005 Compliant — GA Set)", func(
 			reg.CircuitBreakerState.WithLabelValues("ka").Set(0)
 			reg.DownstreamDuration.WithLabelValues("ka", "2xx").Observe(0.01)
 			reg.AuthDuration.WithLabelValues("s").Observe(0.01)
-			reg.AuditBufferOverflow.Inc()
 			reg.RateLimitDenied.WithLabelValues("u", "r").Inc()
 			reg.SSEActiveConnections.Set(1)
 			reg.LLMTokensTotal.WithLabelValues("i", "m").Inc()
@@ -206,7 +199,6 @@ var _ = Describe("AF Metrics Registry (DD-TEST-005 Compliant — GA Set)", func(
 				"af_circuit_breaker_state",
 				"af_downstream_request_duration_seconds",
 				"af_auth_duration_seconds",
-				"af_audit_buffer_overflow_total",
 				"af_rate_limit_rejections_total",
 				"af_sse_active_connections",
 				"af_llm_tokens_total",

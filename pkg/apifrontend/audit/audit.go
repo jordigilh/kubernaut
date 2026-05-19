@@ -73,7 +73,7 @@ type Emitter interface {
 }
 
 // ClosableEmitter extends Emitter with lifecycle management for implementations
-// that buffer events (e.g. BufferedEmitter). Callers that only need fire-and-forget
+// that buffer events (e.g. StoreAdapter). Callers that only need fire-and-forget
 // should depend on Emitter; shutdown orchestration depends on ClosableEmitter.
 type ClosableEmitter interface {
 	Emitter

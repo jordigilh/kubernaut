@@ -116,12 +116,4 @@ var _ = Describe("Unwired Code Gaps (E2E)", Ordered, ContinueOnFailure, Label("e
 		}
 	})
 
-	// -------------------------------------------------------------------
-	// TC-E2E-UNWIRED-004: af_audit_buffer_overflow_total counter is registered
-	// -------------------------------------------------------------------
-	It("TC-E2E-UNWIRED-004: af_audit_buffer_overflow_total counter is present in /metrics", func() {
-		metrics := scrapeMetrics()
-		Expect(metrics).To(ContainSubstring("af_audit_buffer_overflow_total"),
-			"BufferedEmitter should register the audit buffer overflow counter")
-	})
 })
