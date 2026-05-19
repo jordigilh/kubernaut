@@ -290,9 +290,6 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 		if err := checkRBAC(ctx, cfg, toolName); err != nil {
 			resultLabel = "denied"
 			recordMetrics(cfg, toolName, resultLabel, start)
-			if cfg.Metrics != nil && cfg.Metrics.RBACDeniedTotal != nil {
-				cfg.Metrics.RBACDeniedTotal.With(prometheus.Labels{"tool": toolName}).Inc()
-			}
 			emitAudit(ctx, cfg, toolName, audit.EventAuthAccessDenied, nil)
 			cfg.Logger.Info("tool call denied by RBAC",
 				"tool", toolName, "user", usernameFromCtx(ctx))
