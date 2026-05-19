@@ -17,8 +17,9 @@ package scenarios
 
 // DetectionContext holds the input data used for scenario detection.
 type DetectionContext struct {
-	Content    string
-	AllText    string
-	SignalName string
-	IsProactive bool
+	Content         string
+	AllText         string
+	SignalName      string
+	IsProactive     bool
+	LastUserContent string
 }
