@@ -2062,7 +2062,7 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 		h := newDiscoverHandler(mockMCP)
 		sessionID := mcpInitialize(h, testUser)
 
-		status, _ := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{}, testUser)
+		status, _ := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-test"}, testUser)
 		Expect(status).To(Equal(http.StatusOK))
 		Expect(called).To(BeTrue())
 	})
@@ -2094,7 +2094,7 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 		h := newDiscoverHandler(nil)
 		sessionID := mcpInitialize(h, testUser)
 
-		_, body := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{}, testUser)
+		_, body := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-test"}, testUser)
 		Expect(body).To(ContainSubstring("not available"))
 	})
 
@@ -2115,7 +2115,7 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 		h := newDiscoverHandler(mockMCP)
 		sessionID := mcpInitialize(h, testUser)
 
-		status, _ := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{}, testUser)
+		status, _ := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-test"}, testUser)
 		Expect(status).To(Equal(http.StatusOK))
 
 		events := auditor.Events()
@@ -2143,7 +2143,7 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 		h := newDiscoverHandler(mockMCP)
 		sessionID := mcpInitialize(h, testUser)
 
-		status, body := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{}, testUser)
+		status, body := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-test"}, testUser)
 		Expect(status).To(Equal(http.StatusOK))
 		Expect(body).To(ContainSubstring("isError"))
 	})
@@ -2165,7 +2165,7 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 			Issuer:   "test",
 		}
 		sessionID := mcpInitialize(h, cicdUser)
-		_, body := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{}, cicdUser)
+		_, body := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-test"}, cicdUser)
 		Expect(body).To(SatisfyAny(
 			ContainSubstring("denied"),
 			ContainSubstring("not permitted"),
