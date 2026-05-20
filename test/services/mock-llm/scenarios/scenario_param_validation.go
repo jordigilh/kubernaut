@@ -31,8 +31,14 @@ import (
 //
 // Turn 2: After KA sends validation error feedback, returns the same workflow
 // with corrected params (REPLICA_COUNT="3", no undeclared params).
+//
+// State tracking: Instead of a simple call counter, we detect whether a
+// previous submit_result_with_workflow tool call exists in the conversation
+// history (via AllText in DetectionContext). This avoids the counter being
+// consumed by early non-submit calls (DAG exploration, RCA extraction) that
+// occur before KA registers the split tool.
 type paramValidationSelfcorrectScenario struct {
-	callCount       atomic.Int64
+	seenPriorSubmit atomic.Bool
 	overrideWfID    string // set by registry when YAML overrides provide the DS-generated UUID
 }
 
@@ -42,14 +48,18 @@ func (s *paramValidationSelfcorrectScenario) Name() string { return paramValScen
 
 func (s *paramValidationSelfcorrectScenario) Match(ctx *DetectionContext) (bool, float64) {
 	signal := extractSignal(ctx)
-	if strings.Contains(signal, "mock_param_validation_selfcorrect") {
-		return true, 0.95
+	matched := strings.Contains(signal, "mock_param_validation_selfcorrect")
+	if !matched {
+		combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
+		matched = strings.Contains(combined, "mock_param_validation_selfcorrect")
 	}
-	combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
-	if strings.Contains(combined, "mock_param_validation_selfcorrect") {
-		return true, 0.95
+	if !matched {
+		return false, 0
 	}
-	return false, 0
+	if strings.Contains(ctx.AllText, "submit_result_with_workflow") {
+		s.seenPriorSubmit.Store(true)
+	}
+	return true, 0.95
 }
 
 func (s *paramValidationSelfcorrectScenario) Metadata() ScenarioMetadata {
@@ -62,11 +72,10 @@ func (s *paramValidationSelfcorrectScenario) Metadata() ScenarioMetadata {
 func (s *paramValidationSelfcorrectScenario) DAG() *conversation.DAG { return nil }
 
 func (s *paramValidationSelfcorrectScenario) Config() MockScenarioConfig {
-	n := s.callCount.Add(1)
-	if n <= 1 {
-		return s.badParamsConfig()
+	if s.seenPriorSubmit.Load() {
+		return s.correctedParamsConfig()
 	}
-	return s.correctedParamsConfig()
+	return s.badParamsConfig()
 }
 
 func (s *paramValidationSelfcorrectScenario) effectiveWorkflowID() string {

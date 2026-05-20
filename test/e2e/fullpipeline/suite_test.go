@@ -254,7 +254,7 @@ func getAFToken() string {
 		"client_secret": {"e2e-client-secret"},
 		"username":      {"sre@kubernaut.ai"},
 		"password":      {"password"},
-		"scope":         {"openid email profile"},
+		"scope":         {"openid email profile groups"},
 	})
 	Expect(err).NotTo(HaveOccurred())
 	defer resp.Body.Close()
