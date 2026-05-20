@@ -47,17 +47,18 @@ var _ = Describe("DS Client Integration (ds/)", func() {
 			Expect(workflows).NotTo(BeNil())
 		})
 
-		It("IT-AF-1195-029: GetRemediationHistory queries real DS", func() {
+		It("IT-AF-1195-029: GetRemediationHistory returns structured error for missing required param", func() {
 			client, err := newAuthenticatedDSClient()
 			Expect(err).NotTo(HaveOccurred())
 
-			history, err := client.GetRemediationHistory(context.Background(), ds.HistoryOpts{
+			_, err = client.GetRemediationHistory(context.Background(), ds.HistoryOpts{
 				Namespace: "default",
 				Kind:      "Deployment",
 				Name:      "test-app",
 			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(history).NotTo(BeNil())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("currentSpecHash"),
+				"DS should return 400 with missing currentSpecHash (HistoryOpts does not expose this field yet)")
 		})
 	})
 

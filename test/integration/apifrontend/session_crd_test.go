@@ -16,6 +16,8 @@ import (
 
 func sessionCreateRequest(suffix, user string) *adksession.CreateRequest {
 	return &adksession.CreateRequest{
+		AppName: "kubernaut-apifrontend",
+		UserID:  user,
 		State: map[string]any{
 			session.StateKeyCreateConfig: &session.CreateConfig{
 				OwnerRef: metav1.OwnerReference{

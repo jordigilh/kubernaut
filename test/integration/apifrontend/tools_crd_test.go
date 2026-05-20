@@ -38,7 +38,7 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 						"severity":          "warning",
 						"firingTime":        "2025-01-01T00:00:00Z",
 						"receivedTime":      "2025-01-01T00:00:01Z",
-						"targetType":        "Deployment",
+						"targetType":        "kubernetes",
 						"targetResource": map[string]any{
 							"kind": "Deployment",
 							"name": "test-app",
