@@ -100,19 +100,22 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 	r := defaultRegistryWithGoldenDir(goldenDir)
 	if overrides != nil {
 		for _, s := range r.scenarios {
-			cs, ok := s.(*configScenario)
-			if !ok {
-				continue
-			}
-			if ov, found := overrides.Scenarios[cs.config.ScenarioName]; found {
-				applyOverride(cs, ov)
-			} else if cs.config.WorkflowName != "" {
-				if ov, found := findOverrideByWorkflowName(overrides.Scenarios, cs.config.WorkflowName); found {
-					applyOverride(cs, ov)
+			switch ts := s.(type) {
+			case *configScenario:
+				if ov, found := overrides.Scenarios[ts.config.ScenarioName]; found {
+					applyOverride(ts, ov)
+				} else if ts.config.WorkflowName != "" {
+					if ov, found := findOverrideByWorkflowName(overrides.Scenarios, ts.config.WorkflowName); found {
+						applyOverride(ts, ov)
+					}
 				}
-			}
-			if len(cs.config.Alternatives) > 0 {
-				applyAlternativeOverrides(cs, overrides.Scenarios)
+				if len(ts.config.Alternatives) > 0 {
+					applyAlternativeOverrides(ts, overrides.Scenarios)
+				}
+			case *paramValidationSelfcorrectScenario:
+				if ov, found := findOverrideByWorkflowName(overrides.Scenarios, "param-validation-test-v1"); found && ov.WorkflowID != "" {
+					ts.overrideWfID = ov.WorkflowID
+				}
 			}
 		}
 

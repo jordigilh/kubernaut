@@ -32,7 +32,8 @@ import (
 // Turn 2: After KA sends validation error feedback, returns the same workflow
 // with corrected params (REPLICA_COUNT="3", no undeclared params).
 type paramValidationSelfcorrectScenario struct {
-	callCount atomic.Int64
+	callCount       atomic.Int64
+	overrideWfID    string // set by registry when YAML overrides provide the DS-generated UUID
 }
 
 const paramValScenarioName = "param_validation_selfcorrect"
@@ -68,24 +69,31 @@ func (s *paramValidationSelfcorrectScenario) Config() MockScenarioConfig {
 	return s.correctedParamsConfig()
 }
 
+func (s *paramValidationSelfcorrectScenario) effectiveWorkflowID() string {
+	if s.overrideWfID != "" {
+		return s.overrideWfID
+	}
+	return uuid.DeterministicUUID("param-validation-test-v1")
+}
+
 func (s *paramValidationSelfcorrectScenario) badParamsConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName:    paramValScenarioName,
 		SignalName:      "MOCK_PARAM_VALIDATION_SELFCORRECT",
 		Severity:        "high",
-		WorkflowName:    "oomkill-increase-memory-v1",
-		WorkflowID:      uuid.DeterministicUUID("oomkill-increase-memory-v1"),
-		WorkflowTitle:   "OOMKill Recovery - Increase Memory Limits",
+		WorkflowName:    "param-validation-test-v1",
+		WorkflowID:      s.effectiveWorkflowID(),
+		WorkflowTitle:   "Param Validation Test",
 		Confidence:      0.85,
-		RootCause:       "Pod api-server-xyz is experiencing high memory pressure. Increase memory limits to prevent OOMKill.",
-		ResourceKind:    "Pod",
+		RootCause:       "Pod api-server-xyz is experiencing high memory pressure. Scale replicas to handle load.",
+		ResourceKind:    "Deployment",
 		ResourceNS:      "production",
 		ResourceName:    "api-server-xyz",
-		APIVersion:      "v1",
+		APIVersion:      "apps/v1",
 		ExecutionEngine: "job",
 		Parameters: map[string]string{
 			"REPLICA_COUNT":    "three",
-			"MEMORY_LIMIT_NEW": "512Mi",
+			"NAMESPACE":        "production",
 			"UNDECLARED_PARAM": "should_be_stripped",
 		},
 		InvestigationOutcome: "actionable",
@@ -98,19 +106,19 @@ func (s *paramValidationSelfcorrectScenario) correctedParamsConfig() MockScenari
 		ScenarioName:    paramValScenarioName,
 		SignalName:      "MOCK_PARAM_VALIDATION_SELFCORRECT",
 		Severity:        "high",
-		WorkflowName:    "oomkill-increase-memory-v1",
-		WorkflowID:      uuid.DeterministicUUID("oomkill-increase-memory-v1"),
-		WorkflowTitle:   "OOMKill Recovery - Increase Memory Limits",
+		WorkflowName:    "param-validation-test-v1",
+		WorkflowID:      s.effectiveWorkflowID(),
+		WorkflowTitle:   "Param Validation Test",
 		Confidence:      0.90,
-		RootCause:       "Pod api-server-xyz is experiencing high memory pressure. Increase memory limits to prevent OOMKill.",
-		ResourceKind:    "Pod",
+		RootCause:       "Pod api-server-xyz is experiencing high memory pressure. Scale replicas to handle load.",
+		ResourceKind:    "Deployment",
 		ResourceNS:      "production",
 		ResourceName:    "api-server-xyz",
-		APIVersion:      "v1",
+		APIVersion:      "apps/v1",
 		ExecutionEngine: "job",
-		Parameters: map[string]string{
-			"REPLICA_COUNT":    "3",
-			"MEMORY_LIMIT_NEW": "512Mi",
+		RawParameters: map[string]interface{}{
+			"REPLICA_COUNT": float64(3),
+			"NAMESPACE":     "production",
 		},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
