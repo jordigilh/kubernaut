@@ -183,6 +183,8 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 			"root_cause_analysis": rca,
 			"reasoning":           "No matching workflow found for this scenario",
 		}
+	case "kubernaut_list_remediations":
+		return map[string]interface{}{"namespace": cfg.ResourceNS}
 	default:
 		return map[string]interface{}{}
 	}
