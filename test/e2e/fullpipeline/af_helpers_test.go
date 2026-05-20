@@ -215,7 +215,7 @@ func fpWaitForRR(nameSubstring string, timeout time.Duration) string {
 func fpWaitForWEComplete(rrName string, timeout time.Duration) {
 	Eventually(func() bool {
 		weList := &workflowexecutionv1.WorkflowExecutionList{}
-		if err := apiReader.List(ctx, weList, client.InNamespace("kubernaut-workflows")); err != nil {
+		if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
 			return false
 		}
 		for _, we := range weList.Items {

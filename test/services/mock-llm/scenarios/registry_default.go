@@ -197,6 +197,10 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// Returns bad params on first call, corrected params after validation feedback.
 	r.Register(paramValidationSelfcorrectScenarioNew())
 
+	// Issue #1189: AF A2A tests need the mock LLM to call af_create_rr when
+	// the user message contains "create a remediation request" (priority 0.9).
+	r.Register(afCreateRRScenario())
+
 	// Default fallback (lowest priority = 0.01)
 	r.Register(defaultFallbackScenario())
 
