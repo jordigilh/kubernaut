@@ -86,7 +86,23 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 			toolTest("a2a-t03", "Select the restart workflow for remediation rr-001", "kubernaut_select_workflow")
 		})
 		It("TC-E2E-A2A-T04: kubernaut_present_decision", func() {
-			toolTest("a2a-t04", "Present remediation options to the user for session sess-002", "kubernaut_present_decision")
+			// present_decision is IsLongRunning=true, so the ADK A2A executor
+			// correctly returns "input-required" instead of "completed".
+			resp, err := a2aInvoke(httpClient, baseURL, sreToken, a2aTasksSend("a2a-t04", "Present remediation options to the user for session sess-002"))
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "A2A should return 200 for a2a-t04")
+
+			rpc, err := parseRPCResponse(resp)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rpc.Error).To(BeNil(), "a2a-t04: unexpected JSON-RPC error: %+v", rpc.Error)
+			Expect(rpc.Result).NotTo(BeNil())
+
+			task, err := extractTaskFromResult(rpc.Result)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(task.ID).NotTo(BeEmpty(), "a2a-t04: task ID must not be empty")
+			Expect(task.Status.State).To(Equal("input-required"),
+				"a2a-t04: present_decision (IsLongRunning) should produce input-required")
 		})
 		It("TC-E2E-A2A-T05: kubernaut_list_remediations", func() {
 			toolTest("a2a-t05", "List all remediations in the default namespace", "kubernaut_list_remediations")
