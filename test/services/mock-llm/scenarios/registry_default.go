@@ -190,6 +190,10 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// Map to oomkill workflow so the KA pipeline can process them end-to-end.
 	r.Register(signalScenario("af_manual", []string{"af-manual"}, oomkilledConfig()))
 
+	// Issue #1170: Multi-turn param validation self-correction (BR-HAPI-191).
+	// Returns bad params on first call, corrected params after validation feedback.
+	r.Register(paramValidationSelfcorrectScenarioNew())
+
 	// Default fallback (lowest priority = 0.01)
 	r.Register(defaultFallbackScenario())
 
