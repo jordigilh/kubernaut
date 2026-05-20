@@ -77,9 +77,10 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 		(strings.Contains(content, "predicted") && strings.Contains(content, "not yet occurred"))
 
 	detCtx := &scenarios.DetectionContext{
-		Content:     content,
-		AllText:     allTextLower,
-		IsProactive: isProactive,
+		Content:         content,
+		AllText:         allTextLower,
+		IsProactive:     isProactive,
+		LastUserContent: content,
 	}
 
 	if isPermanentError(detCtx) {
