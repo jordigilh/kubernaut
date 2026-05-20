@@ -383,8 +383,15 @@ func (s *Server) parseQueryFilters(r *http.Request) (*queryFilters, error) {
 		service:       query.Get("event_category"), // ADR-034: Use event_category parameter
 		outcome:       query.Get("event_outcome"),  // ADR-034: Use event_outcome parameter
 		severity:      query.Get("severity"),
-		limit:         100, // Default limit
-		offset:        0,   // Default offset
+		detailKey:     query.Get("detail_key"),   // Issue #1199
+		detailValue:   query.Get("detail_value"), // Issue #1199
+		limit:         100,                       // Default limit
+		offset:        0,                         // Default offset
+	}
+
+	// Issue #1199: detail_key and detail_value must be paired
+	if (filters.detailKey != "" && filters.detailValue == "") || (filters.detailKey == "" && filters.detailValue != "") {
+		return nil, fmt.Errorf("detail_key and detail_value must both be provided or both omitted")
 	}
 
 	// Parse time parameters
@@ -457,6 +464,10 @@ func (s *Server) buildQueryFromFilters(filters *queryFilters) *query.AuditEvents
 		builder = builder.WithUntil(*filters.until)
 	}
 
+	if filters.detailKey != "" && filters.detailValue != "" {
+		builder = builder.WithEventDataFilter(filters.detailKey, filters.detailValue)
+	}
+
 	builder = builder.WithLimit(filters.limit).WithOffset(filters.offset)
 
 	return builder
@@ -471,6 +482,8 @@ type queryFilters struct {
 	service       string // Maps to event_category (ADR-034)
 	outcome       string // Maps to event_outcome (ADR-034)
 	severity      string
+	detailKey     string // Issue #1199: JSONB field key for event_data filter
+	detailValue   string // Issue #1199: JSONB field value for event_data filter
 	since         *time.Time
 	until         *time.Time
 	limit         int
