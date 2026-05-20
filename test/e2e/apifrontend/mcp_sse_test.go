@@ -13,7 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("MCP SSE Responses (G2)", ContinueOnFailure, Label("e2e", "phase4", "g2"), func() {
+var _ = Describe("MCP SSE Responses (G2)", Label("e2e", "phase4", "g2"), func() {
 	var authToken, mcpSessionID string
 
 	BeforeEach(func() {

@@ -59,7 +59,7 @@ import (
 //  5. EA reaches terminal phase after propagation + stabilization window
 //
 // Self-contained: cert-manager is installed in BeforeEach and only affects this test.
-var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010, #253]", Serial, ContinueOnFailure, func() {
+var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010, #253]", Serial, func() {
 
 	var (
 		testNamespace string

@@ -17,7 +17,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Investigation Streaming (G3)", ContinueOnFailure, Label("e2e", "phase3", "g3"), func() {
+var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), func() {
 	var (
 		sreToken       string
 		kubeconfigPath string

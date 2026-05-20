@@ -31,7 +31,7 @@ func scrapeMetrics() string {
 	return string(body)
 }
 
-var _ = Describe("Operational Contract", ContinueOnFailure, Label("e2e", "phase1", "operational"), func() {
+var _ = Describe("Operational Contract", Label("e2e", "phase1", "operational"), func() {
 
 	// -----------------------------------------------------------------------
 	// TC-A-01e: /readyz on health port must be dependency-aware

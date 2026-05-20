@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", ContinueOnFailure, Label("e2e", "phase1", "ka-integration"), func() {
+var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "phase1", "ka-integration"), func() {
 
 	var authToken string
 

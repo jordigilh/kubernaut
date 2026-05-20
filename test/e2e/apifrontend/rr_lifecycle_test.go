@@ -56,7 +56,7 @@ spec:
 `, rarName, namespace, rrName, namespace, rarName, rrName, now)
 }
 
-var _ = Describe("RR CRD Lifecycle (G4)", ContinueOnFailure, Label("e2e", "phase2", "g4"), func() {
+var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 
 	// mcpToolCallWith creates a short-lived MCP session and invokes a tool.
 	// Each test gets its own session for parallel safety.
@@ -276,7 +276,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", ContinueOnFailure, Label("e2e", "phase
 	})
 })
 
-var _ = Describe("RAR Flow (G5)", ContinueOnFailure, Label("e2e", "phase2", "g5"), func() {
+var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 
 	const rrNamespace = "default"
 

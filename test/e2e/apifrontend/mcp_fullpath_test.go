@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("MCP Full-Path Validation (G1)", ContinueOnFailure, Label("e2e", "phase2", "g1"), func() {
+var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), func() {
 	const g1RRDeployName = "e2e-mcp-test-deploy"
 
 	var authToken string

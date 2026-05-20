@@ -15,7 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Session Join/Takeover/Reconnect (G19)", ContinueOnFailure, Label("e2e", "phase4", "g19"), func() {
+var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4", "g19"), func() {
 	var (
 		kubeconfigPath string
 		namespace      string
