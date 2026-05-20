@@ -3449,6 +3449,14 @@ func (s *Server) handleQueryAuditEventsRequest(args [0]string, argsEscaped bool,
 					Name: "offset",
 					In:   "query",
 				}: params.Offset,
+				{
+					Name: "detail_key",
+					In:   "query",
+				}: params.DetailKey,
+				{
+					Name: "detail_value",
+					In:   "query",
+				}: params.DetailValue,
 			},
 			Raw: r,
 		}
