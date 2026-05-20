@@ -14,11 +14,11 @@ import (
 // accidental wiring changes are caught. When a gap is closed, the test
 // should be updated to assert the new behavior.
 
-var _ = Describe("Unwired Code Gaps (E2E)", Ordered, ContinueOnFailure, Label("e2e", "phase1", "unwired-gaps"), func() {
+var _ = Describe("Unwired Code Gaps (E2E)", ContinueOnFailure, Label("e2e", "phase1", "unwired-gaps"), func() {
 
 	var authToken string
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		var err error
 		authToken, err = fetchDEXToken(dexURL, clientID, clientSecret, username, password)
 		Expect(err).NotTo(HaveOccurred(), "Failed to obtain DEX token")

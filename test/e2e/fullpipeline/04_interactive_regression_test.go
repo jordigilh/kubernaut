@@ -42,15 +42,15 @@ import (
 // BR: BR-INTERACTIVE-001 (Do No Harm)
 // Validates: Standard autonomous flow produces NO InteractiveSession, NO K8s Lease.
 // Context: Full pipeline E2E with all services deployed.
-var _ = Describe("CP-5 HARM-001: Autonomous regression — no interactive artifacts", Label("e2e", "fullpipeline", "interactive", "harm"), Ordered, ContinueOnFailure, func() {
+var _ = Describe("CP-5 HARM-001: Autonomous regression — no interactive artifacts", Label("e2e", "fullpipeline", "interactive", "harm"), ContinueOnFailure, func() {
 
 	var testNamespace string
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		Expect(ctx).NotTo(BeNil(), "suite ctx must be initialized before tests run")
 	})
 
-	AfterAll(func() {
+	AfterEach(func() {
 		if testNamespace != "" {
 			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
 			_ = k8sClient.Delete(ctx, ns)

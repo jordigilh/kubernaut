@@ -56,30 +56,17 @@ spec:
 `, rarName, namespace, rrName, namespace, rarName, rrName, now)
 }
 
-var _ = Describe("RR CRD Lifecycle (G4)", Ordered, ContinueOnFailure, Label("e2e", "phase2", "g4"), func() {
-	var authToken string
-	var mcpSessionID string
+var _ = Describe("RR CRD Lifecycle (G4)", ContinueOnFailure, Label("e2e", "phase2", "g4"), func() {
 
-	var rr01RRID string
-	var rr06RRID string
-
-	BeforeAll(func() {
-		var err error
-		authToken, err = fetchDEXTokenForPersona("sre")
-		Expect(err).NotTo(HaveOccurred(), "SRE DEX token")
-		Expect(authToken).NotTo(BeEmpty())
-
-		mcpSessionID, err = initMCPSession(authToken)
-		Expect(err).NotTo(HaveOccurred(), "MCP initialize")
-	})
-
-	mcpToolCall := func(toolName string, args map[string]interface{}) (string, error) {
+	// mcpToolCallWith creates a short-lived MCP session and invokes a tool.
+	// Each test gets its own session for parallel safety.
+	mcpToolCallWith := func(token, sessionID, toolName string, args map[string]interface{}) (string, error) {
 		callBody := buildJSONRPC(fmt.Sprintf("g4-%s-%d", toolName, time.Now().UnixNano()),
 			"tools/call", map[string]interface{}{
 				"name":      toolName,
 				"arguments": args,
 			})
-		raw, code, err := mcpPOST(authToken, mcpSessionID, callBody)
+		raw, code, err := mcpPOST(token, sessionID, callBody)
 		if err != nil {
 			return "", err
 		}
@@ -97,9 +84,15 @@ var _ = Describe("RR CRD Lifecycle (G4)", Ordered, ContinueOnFailure, Label("e2e
 		return text, nil
 	}
 
-	It("TC-E2E-RR-01: af_create_rr via MCP creates RR with expected target", func() {
-		// CreateRRArgs use namespace, name, kind, description (target identity for the RR).
-		text, err := mcpToolCall("af_create_rr", map[string]interface{}{
+	// TC-E2E-RR-01..05 collapsed: create → check existing → cancel → list → get detail
+	It("TC-E2E-RR-01..05: RR create → check → cancel → list → get lifecycle", func() {
+		authToken, err := fetchDEXTokenForPersona("sre")
+		Expect(err).NotTo(HaveOccurred())
+		mcpSessionID, err := initMCPSession(authToken)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("TC-E2E-RR-01: af_create_rr creates RR")
+		text, err := mcpToolCallWith(authToken, mcpSessionID, "af_create_rr", map[string]interface{}{
 			"namespace":   "default",
 			"name":        "test-deploy-rr01",
 			"kind":        "Deployment",
@@ -111,8 +104,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Ordered, ContinueOnFailure, Label("e2e
 			ContainSubstring("remediationrequest"),
 		))
 		Expect(text).To(ContainSubstring("rr_id"))
-
-		rr01RRID = parseJSONStringField(text, "rr_id")
+		rr01RRID := parseJSONStringField(text, "rr_id")
 		Expect(rr01RRID).NotTo(BeEmpty())
 
 		var parsed map[string]interface{}
@@ -122,34 +114,25 @@ var _ = Describe("RR CRD Lifecycle (G4)", Ordered, ContinueOnFailure, Label("e2e
 			Expect(tr["name"]).To(Equal("test-deploy-rr01"))
 			Expect(tr["kind"]).To(Equal("Deployment"))
 		} else {
-			// Some responses only surface rr_id + message; RR name encodes target.
 			Expect(text).To(ContainSubstring("test-deploy-rr01"))
 		}
-	})
 
-	It("TC-E2E-RR-02: af_check_existing_rr finds RR for same fingerprint", func() {
-		Expect(rr01RRID).NotTo(BeEmpty(), "run TC-E2E-RR-01 first")
-
-		text, err := mcpToolCall("af_check_existing_rr", map[string]interface{}{
+		By("TC-E2E-RR-02: af_check_existing_rr finds RR for same fingerprint")
+		text, err = mcpToolCallWith(authToken, mcpSessionID, "af_check_existing_rr", map[string]interface{}{
 			"namespace": "default",
 			"kind":      "Deployment",
 			"name":      "test-deploy-rr01",
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
-
 		var out map[string]interface{}
 		Expect(json.Unmarshal([]byte(text), &out)).To(Succeed())
 		Expect(out["exists"]).To(BeTrue(), "non-terminal RR should exist for fingerprint")
 		Expect(out["rr_id"]).To(Equal(rr01RRID))
-	})
 
-	It("TC-E2E-RR-03: kubernaut_cancel_remediation sets RR to Cancelled", func() {
-		Expect(rr01RRID).NotTo(BeEmpty())
-
+		By("TC-E2E-RR-03: kubernaut_cancel_remediation sets RR to Cancelled")
 		rrName := rrNameFromRRID(rr01RRID)
 		Expect(rrName).NotTo(BeEmpty())
-
-		text, err := mcpToolCall("kubernaut_cancel_remediation", map[string]interface{}{
+		text, err = mcpToolCallWith(authToken, mcpSessionID, "kubernaut_cancel_remediation", map[string]interface{}{
 			"namespace": "default",
 			"name":      rrName,
 		})
@@ -158,35 +141,23 @@ var _ = Describe("RR CRD Lifecycle (G4)", Ordered, ContinueOnFailure, Label("e2e
 			ContainSubstring("cancel"),
 			ContainSubstring("cancelled"),
 		))
-	})
 
-	It("TC-E2E-RR-04: kubernaut_list_remediations returns the RR", func() {
-		Expect(rr01RRID).NotTo(BeEmpty())
-
-		text, err := mcpToolCall("kubernaut_list_remediations", map[string]interface{}{
+		By("TC-E2E-RR-04: kubernaut_list_remediations returns the RR")
+		text, err = mcpToolCallWith(authToken, mcpSessionID, "kubernaut_list_remediations", map[string]interface{}{
 			"namespace": "default",
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
-
-		var out map[string]interface{}
 		Expect(json.Unmarshal([]byte(text), &out)).To(Succeed())
 		rem, ok := out["remediations"].([]interface{})
 		Expect(ok).To(BeTrue(), "list result should include remediations array")
 		Expect(len(rem)).To(BeNumerically(">=", 1))
+		Expect(strings.ToLower(text)).To(ContainSubstring(strings.ToLower(rrNameFromRRID(rr01RRID))))
 
-		joined := strings.ToLower(text)
-		Expect(joined).To(ContainSubstring(strings.ToLower(rrNameFromRRID(rr01RRID))))
-	})
-
-	It("TC-E2E-RR-05: kubernaut_get_remediation returns detail for RR", func() {
-		Expect(rr01RRID).NotTo(BeEmpty())
-
-		text, err := mcpToolCall("kubernaut_get_remediation", map[string]interface{}{
+		By("TC-E2E-RR-05: kubernaut_get_remediation returns detail for RR")
+		text, err = mcpToolCallWith(authToken, mcpSessionID, "kubernaut_get_remediation", map[string]interface{}{
 			"rr_id": rr01RRID,
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
-
-		var out map[string]interface{}
 		Expect(json.Unmarshal([]byte(text), &out)).To(Succeed())
 		Expect(out).To(HaveKey("namespace"))
 		Expect(out).To(HaveKey("name"))
@@ -198,44 +169,42 @@ var _ = Describe("RR CRD Lifecycle (G4)", Ordered, ContinueOnFailure, Label("e2e
 		Expect(target).NotTo(BeEmpty())
 	})
 
-	It("TC-E2E-RR-06: af_create_rr twice is idempotent (dedup / already_exists)", func() {
+	// TC-E2E-RR-06..07 collapsed: create twice (idempotent) → watch
+	It("TC-E2E-RR-06..07: idempotent create → watch", func() {
+		authToken, err := fetchDEXTokenForPersona("sre")
+		Expect(err).NotTo(HaveOccurred())
+		mcpSessionID, err := initMCPSession(authToken)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("TC-E2E-RR-06: af_create_rr twice is idempotent")
 		args := map[string]interface{}{
 			"namespace":   "default",
 			"name":        "test-deploy-rr06",
 			"kind":        "Deployment",
 			"description": "E2E idempotent RR",
 		}
-		first, err := mcpToolCall("af_create_rr", args)
+		first, err := mcpToolCallWith(authToken, mcpSessionID, "af_create_rr", args)
 		Expect(err).NotTo(HaveOccurred(), first)
-
-		second, err := mcpToolCall("af_create_rr", args)
+		second, err := mcpToolCallWith(authToken, mcpSessionID, "af_create_rr", args)
 		Expect(err).NotTo(HaveOccurred(), second)
-
 		id1 := parseJSONStringField(first, "rr_id")
 		id2 := parseJSONStringField(second, "rr_id")
 		Expect(id1).NotTo(BeEmpty())
 		Expect(id2).NotTo(BeEmpty())
 		Expect(id1).To(Equal(id2), "second create should return the same rr_id")
-
 		var s2 map[string]interface{}
 		_ = json.Unmarshal([]byte(second), &s2)
 		if already, ok := s2["already_exists"].(bool); ok {
 			Expect(already).To(BeTrue())
 		}
-		// Track RR name for watch
-		rr06RRID = id1
-	})
 
-	It("TC-E2E-RR-07: kubernaut_watch returns structured watch result", func() {
-		Expect(rr06RRID).NotTo(BeEmpty(), "run TC-E2E-RR-06 first")
-
-		name := rrNameFromRRID(rr06RRID)
-		text, err := mcpToolCall("kubernaut_watch", map[string]interface{}{
+		By("TC-E2E-RR-07: kubernaut_watch returns structured watch result")
+		name := rrNameFromRRID(id1)
+		text, err := mcpToolCallWith(authToken, mcpSessionID, "kubernaut_watch", map[string]interface{}{
 			"namespace": "default",
 			"name":      name,
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
-
 		var out map[string]interface{}
 		Expect(json.Unmarshal([]byte(text), &out)).To(Succeed())
 		Expect(out).To(HaveKey("events"))
@@ -243,6 +212,11 @@ var _ = Describe("RR CRD Lifecycle (G4)", Ordered, ContinueOnFailure, Label("e2e
 	})
 
 	It("TC-E2E-RR-08: af_create_rr with empty name returns validation error", func() {
+		authToken, err := fetchDEXTokenForPersona("sre")
+		Expect(err).NotTo(HaveOccurred())
+		mcpSessionID, err := initMCPSession(authToken)
+		Expect(err).NotTo(HaveOccurred())
+
 		raw, code, err := mcpPOST(authToken, mcpSessionID,
 			buildJSONRPC(fmt.Sprintf("g4-invalid-%d", time.Now().UnixNano()), "tools/call",
 				map[string]interface{}{
@@ -302,7 +276,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Ordered, ContinueOnFailure, Label("e2e
 	})
 })
 
-var _ = Describe("RAR Flow (G5)", Ordered, ContinueOnFailure, Label("e2e", "phase2", "g5"), func() {
+var _ = Describe("RAR Flow (G5)", ContinueOnFailure, Label("e2e", "phase2", "g5"), func() {
 
 	const rrNamespace = "default"
 

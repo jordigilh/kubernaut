@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,41 +14,20 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("MCP Full-Path Validation (G1)", Ordered, ContinueOnFailure, Label("e2e", "phase2", "g1"), func() {
+var _ = Describe("MCP Full-Path Validation (G1)", ContinueOnFailure, Label("e2e", "phase2", "g1"), func() {
 	const g1RRDeployName = "e2e-mcp-test-deploy"
 
 	var authToken string
 	var mcpSessionID string
-	var g1RRID string
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		var err error
 		authToken, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred(), "SRE DEX token")
 		Expect(authToken).NotTo(BeEmpty())
 
-		initBody := buildJSONRPC("mcp-init", "initialize", map[string]interface{}{
-			"protocolVersion": "2024-11-05",
-			"capabilities":    map[string]interface{}{},
-			"clientInfo": map[string]interface{}{
-				"name":    "e2e-mcp-full",
-				"version": "1.0",
-			},
-		})
-		req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(initBody))
-		Expect(err).NotTo(HaveOccurred())
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json, text/event-stream")
-		req.Header.Set("Authorization", "Bearer "+authToken)
-
-		resp, err := httpClient.Do(req)
-		Expect(err).NotTo(HaveOccurred())
-		defer func() { _ = resp.Body.Close() }()
-		_, _ = io.Copy(io.Discard, resp.Body)
-		Expect(resp.StatusCode).To(BeNumerically("<", http.StatusBadRequest), "MCP initialize")
-
-		mcpSessionID = resp.Header.Get("Mcp-Session-Id")
-		Expect(mcpSessionID).NotTo(BeEmpty())
+		mcpSessionID, err = initMCPSession(authToken)
+		Expect(err).NotTo(HaveOccurred(), "MCP initialize")
 	})
 
 	mcpToolCall := func(rpcID, toolName string, args map[string]interface{}) (string, error) {
@@ -114,7 +92,9 @@ var _ = Describe("MCP Full-Path Validation (G1)", Ordered, ContinueOnFailure, La
 		), "expected AF stack pod data in result: %s", text)
 	})
 
-	It("TC-E2E-MCP-FULL-02: MCP tools/call -> af_create_rr succeeds for test deployment", func() {
+	// TC-E2E-MCP-FULL-02 + 04 collapsed: create RR → approve it
+	It("TC-E2E-MCP-FULL-02+04: af_create_rr then kubernaut_approve lifecycle", func() {
+		By("TC-E2E-MCP-FULL-02: af_create_rr succeeds")
 		text, err := mcpToolCall("mcp-full-02", "af_create_rr", map[string]interface{}{
 			"namespace":   "default",
 			"name":        g1RRDeployName,
@@ -127,31 +107,13 @@ var _ = Describe("MCP Full-Path Validation (G1)", Ordered, ContinueOnFailure, La
 			ContainSubstring("remediationrequest"),
 			ContainSubstring("exists"),
 		))
-
-		g1RRID = parseJSONStringField(text, "rr_id")
+		g1RRID := parseJSONStringField(text, "rr_id")
 		Expect(g1RRID).NotTo(BeEmpty())
-	})
 
-	It("TC-E2E-MCP-FULL-03: MCP tools/call -> kubernaut_list_workflows returns workflows from DS", func() {
-		text, err := mcpToolCall("mcp-full-03", "kubernaut_list_workflows", map[string]interface{}{})
-		Expect(err).NotTo(HaveOccurred(), "kubernaut_list_workflows: %s", text)
-
-		var parsed map[string]interface{}
-		Expect(json.Unmarshal([]byte(text), &parsed)).To(Succeed())
-		Expect(parsed).To(HaveKey("workflows"))
-		wf, ok := parsed["workflows"].([]interface{})
-		Expect(ok).To(BeTrue(), "workflows should be an array: %s", text)
-		if len(wf) == 0 {
-			Skip("DS has no seeded workflow entries — workflow catalog empty in this E2E environment")
-		}
-	})
-
-	It("TC-E2E-MCP-FULL-04: MCP tools/call -> kubernaut_approve after RR exists creates successful approval", func() {
-		Expect(g1RRID).NotTo(BeEmpty(), "RR from TC-E2E-MCP-FULL-02 must exist")
+		By("TC-E2E-MCP-FULL-04: kubernaut_approve after RR exists")
 		rrNamespace := "default"
 		rrName := rrNameFromRRID(g1RRID)
 		Expect(rrName).NotTo(BeEmpty())
-
 		rarName := fmt.Sprintf("e2e-rar-g1-%d", time.Now().UnixNano())
 		Expect(kubectlApplyYAML(remediationApprovalManifest(rrNamespace, rarName, rrName))).To(Succeed())
 		DeferCleanup(func() {
@@ -159,12 +121,10 @@ var _ = Describe("MCP Full-Path Validation (G1)", Ordered, ContinueOnFailure, La
 			_, _ = exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 				"delete", "remediationapprovalrequest", rarName, "-n", rrNamespace, "--ignore-not-found").CombinedOutput()
 		})
-
 		approverTok, err := fetchDEXTokenForPersona("remediation-approver")
 		Expect(err).NotTo(HaveOccurred())
 		approverSession, err := initMCPSession(approverTok)
 		Expect(err).NotTo(HaveOccurred())
-
 		apBody := buildJSONRPC("mcp-full-04-approve", "tools/call", map[string]interface{}{
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
@@ -184,6 +144,20 @@ var _ = Describe("MCP Full-Path Validation (G1)", Ordered, ContinueOnFailure, La
 			ContainSubstring("approved"),
 			ContainSubstring("approval"),
 		))
+	})
+
+	It("TC-E2E-MCP-FULL-03: MCP tools/call -> kubernaut_list_workflows returns workflows from DS", func() {
+		text, err := mcpToolCall("mcp-full-03", "kubernaut_list_workflows", map[string]interface{}{})
+		Expect(err).NotTo(HaveOccurred(), "kubernaut_list_workflows: %s", text)
+
+		var parsed map[string]interface{}
+		Expect(json.Unmarshal([]byte(text), &parsed)).To(Succeed())
+		Expect(parsed).To(HaveKey("workflows"))
+		wf, ok := parsed["workflows"].([]interface{})
+		Expect(ok).To(BeTrue(), "workflows should be an array: %s", text)
+		if len(wf) == 0 {
+			Skip("DS has no seeded workflow entries — workflow catalog empty in this E2E environment")
+		}
 	})
 
 	It("TC-E2E-MCP-FULL-05: MCP tools/list returns exactly 20 tools", func() {

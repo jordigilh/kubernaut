@@ -30,7 +30,7 @@ import (
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
-var _ = Describe("CP-5 COMPAT: Backward Compatibility Tests", Label("e2e", "ka", "interactive", "compat"), Ordered, ContinueOnFailure, func() {
+var _ = Describe("CP-5 COMPAT: Backward Compatibility Tests", Label("e2e", "ka", "interactive", "compat"), ContinueOnFailure, func() {
 
 	var (
 		mcpEndpoint  string
@@ -38,7 +38,7 @@ var _ = Describe("CP-5 COMPAT: Backward Compatibility Tests", Label("e2e", "ka",
 		saToken      string
 	)
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		mcpEndpoint = infrastructure.MCPEndpointForKAE2E()
 		tlsTransport = testauth.NewRetryOn429Transport(http.DefaultTransport)
 
