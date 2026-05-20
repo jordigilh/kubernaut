@@ -1,0 +1,129 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: OASSpec
+metadata:
+  name: kubernaut-workflow-selection
+  description: >
+    Select the appropriate remediation workflow from the Kubernaut catalog
+    based on the RCA findings, remediation target, and any constraints
+    from pre-workflow-selection hook phases.
+
+input_schema:
+  type: object
+  required: [signal, remediation_target, rca_summary, catalog]
+  properties:
+    signal:
+      type: object
+      required: [name, namespace, severity]
+      properties:
+        name: { type: string }
+        namespace: { type: string }
+        severity: { type: string, enum: [critical, high, medium, low] }
+        resource_kind: { type: string }
+        resource_name: { type: string }
+    remediation_target:
+      type: object
+      required: [kind, name, namespace]
+      properties:
+        kind: { type: string }
+        name: { type: string }
+        namespace: { type: string }
+    rca_summary:
+      type: string
+      description: One-sentence summary of the root cause
+    rca_narrative:
+      type: string
+      description: Full RCA narrative for context
+    detected_labels:
+      type: object
+      additionalProperties: { type: string }
+    catalog:
+      type: array
+      description: Available remediation workflows from the catalog
+      items:
+        type: object
+        required: [name, description, target_kinds]
+        properties:
+          name:
+            type: string
+            description: Workflow name (must match catalog entry exactly)
+          description: { type: string }
+          target_kinds:
+            type: array
+            items: { type: string }
+            description: Kubernetes resource kinds this workflow can remediate
+          prerequisites:
+            type: array
+            items: { type: string }
+          risk_level:
+            type: string
+            enum: [low, medium, high]
+    pre_workflow_constraints:
+      type: array
+      description: Constraints from pre-workflow-selection hook phases
+      items:
+        type: object
+        properties:
+          source: { type: string }
+          constraint: { type: string }
+          policy: { type: string, enum: [enforce, advise] }
+    suggested_actions:
+      type: array
+      description: Suggested actions from the RCA resolution phase
+      items:
+        type: object
+        properties:
+          action: { type: string }
+          rationale: { type: string }
+  additionalProperties: false
+
+output_schema:
+  type: object
+  required: [selected_workflow, rationale, confidence]
+  properties:
+    selected_workflow:
+      type: string
+      description: >
+        Name of the selected workflow from the catalog. Must exactly match
+        a catalog entry name.
+    rationale:
+      type: string
+      description: >
+        Explanation of why this workflow was selected, referencing the RCA
+        findings and any constraints that were considered.
+    confidence:
+      type: number
+      minimum: 0
+      maximum: 1
+      description: Confidence score for the selection (0.0 to 1.0)
+    alternatives_considered:
+      type: array
+      items:
+        type: object
+        required: [workflow, reason_rejected]
+        properties:
+          workflow: { type: string }
+          reason_rejected: { type: string }
+    constraint_violations:
+      type: array
+      description: Constraints that could not be satisfied
+      items:
+        type: object
+        properties:
+          source: { type: string }
+          constraint: { type: string }
+          impact: { type: string }
+  additionalProperties: false
+
+tools:
+  - name: kubernaut-domain-mcp
+    type: streamable_http
+    uri: "http://kubernaut-domain.kubernaut-system.svc:8080/mcp"
+    timeout: 15
+
+behavioral_contracts:
+  max_tool_calls: 15
+  structured_output: required
+  catalog_validation: >
+    KA validates that selected_workflow matches a catalog entry.
+    If validation fails, KA resumes the run with correction context
+    via ACP POST /runs/{id} (self-correction loop, max 3 retries).

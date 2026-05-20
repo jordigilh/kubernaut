@@ -1,11 +1,15 @@
-# PROPOSAL-EXT-003: Goose Runtime Adoption
+# PROPOSAL-EXT-003: Agent Runtime Evaluation
 
-**Status**: ACCEPTED
-**Date**: April 15, 2026 (original); May 3, 2026 (decision accepted)
+**Status**: SUPERSEDED (see [Addendum: OAS Runtime + ACP + OpenShell](#addendum-oas-runtime--acp--openshell-architecture))
+**Date**: April 15, 2026 (original); May 3, 2026 (Goose decision accepted); May 20, 2026 (Goose superseded by OAS Runtime + ACP)
 **Author**: Kubernaut Architecture Team
-**Confidence**: 78% (v1.6 end-to-end design assessment, May 13 2026). The Kubernaut-side architecture is ahead of upstream: KA as pure orchestrator, AgenticWorkflow CRD, ephemeral sidecar deployment, GooseClient abstraction, and the security model (AuthBridge + OpenShell) are all designed and documented. The most mature upstream dependency is Goose recipes — `goose-server` HTTP supports recipe-based session creation today, and our structured parameter PR ([goose#8934](https://github.com/aaif-goose/goose/pull/8934)) with the proposed `schema`/`schema_file` follow-up would close the input validation gap. Key risks lowering confidence: `goose-server` deprecation timeline vs stale ACP recipe support ([goose#7596](https://github.com/block/goose/issues/7596), open 2.5 months with no activity), open design gates (DG-9 credentials, DG-11 MCP auth model, DG-14 OpenShell spike), and #8934 maintainer reception. Confidence rises to 85%+ when goose#7596 gets traction and DG-11 gets an implementation spike.
-**Related**: [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [#601](https://github.com/jordigilh/kubernaut/issues/601) (Shadow Agent), [#648](https://github.com/jordigilh/kubernaut/issues/648) (Multi-Agent Consensus / Dual Investigation), [#708](https://github.com/jordigilh/kubernaut/issues/708) (API Frontend Service), [#883](https://github.com/jordigilh/kubernaut/issues/883) (Goose Recipe Format Convergence), [PROPOSAL-EXT-001](PROPOSAL-EXT-001-external-integration-strategy.md) (External Integration Strategy), [PROPOSAL-EXT-002](PROPOSAL-EXT-002-investigation-prompt-bundles.md) (Investigation Prompt Bundles)
-**Upstream Goose dependencies**: [goose#7596](https://github.com/block/goose/issues/7596) (ACP recipe/session parity — blocks ACP migration), [goose#8934](https://github.com/aaif-goose/goose/pull/8934) (Structured parameter types — pending review), + proposed follow-up: JSON Schema input validation (`schema`/`schema_file` fields — proposed in [#8934 review thread](https://github.com/aaif-goose/goose/pull/8934), not yet implemented)
+**Confidence**: 82% (OAS Runtime spike validated, May 20 2026). The OAS Runtime spike (`spikes/oas-runtime/`) validates the complete architecture: `open-agent-sdk-go` v0.5.0 provides streaming agentic loop, MCP client, hook system, and multi-provider support in a 10MB Go binary. ACP server (6 endpoints, REST + SSE) is implemented and compiles. No upstream dependencies -- all components are under Kubernaut's control. Key risks: OAS Go SDK maturity (v0.5.0, 7 weeks old), provider matrix validation pending, OpenShell alpha status. Confidence rises to 90%+ when provider validation spike completes and first end-to-end investigation runs.
+**Related**: [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [#601](https://github.com/jordigilh/kubernaut/issues/601) (Shadow Agent), [#648](https://github.com/jordigilh/kubernaut/issues/648) (Multi-Agent Consensus / Dual Investigation), [#708](https://github.com/jordigilh/kubernaut/issues/708) (API Frontend Service), [#883](https://github.com/jordigilh/kubernaut/issues/883) (Goose Recipe Format Convergence -- to be updated), [PROPOSAL-EXT-001](PROPOSAL-EXT-001-external-integration-strategy.md) (External Integration Strategy), [PROPOSAL-EXT-002](PROPOSAL-EXT-002-investigation-prompt-bundles.md) (Investigation Prompt Bundles)
+**Upstream dependencies**: None. All components are Kubernaut-owned or use stable open-source Go libraries (open-agent-sdk-go v0.5.0 MIT, ACP spec v0.2.0 Apache 2.0).
+**Spike**: [SPIKE-OAS-RUNTIME](../spikes/SPIKE-OAS-RUNTIME.md) -- validates `open-agent-sdk-go` + ACP server in a 10MB Go binary
+**Gap Analysis**: [OAS Runtime Gap Analysis](../../../.cursor/plans/oas_runtime_gap_analysis_dd1a8953.plan.md)
+
+> **IMPORTANT**: The Goose runtime adoption documented in the body of this proposal (Sections 1-16, Appendices A-E) is **superseded** as of May 20, 2026. Goose maintainers closed PR [#8934](https://github.com/aaif-goose/goose/pull/8934) citing a strategic shift toward ACP, and the structured parameter/JSON Schema validation work that Kubernaut depended on will not be implemented upstream. The body is preserved as historical record. See the [Addendum](#addendum-oas-runtime--acp--openshell-architecture) for the current architecture.
 
 ---
 
@@ -2305,3 +2309,142 @@ The CLI subprocess alternative was evaluated and rejected: intra-container calls
 | `goose-server` topology | Ephemeral sidecar pod with emptyDir; `GooseClient` protocol abstraction | DG-13 | Resolved |
 
 **No blocking gaps remain for the v1.6 vertical stack.** All critical decisions are recorded.
+
+---
+
+## Addendum: OAS Runtime + ACP + OpenShell Architecture
+
+**Date**: May 20, 2026
+**Status**: ACTIVE -- supersedes the Goose runtime adoption documented above
+**Trigger**: Goose maintainers closed PR [#8934](https://github.com/aaif-goose/goose/pull/8934) (structured parameters) citing a strategic shift to ACP. The structured parameter types and JSON Schema validation that Kubernaut depended on will not be implemented in Goose. Separately, `goose-server` is being deprecated upstream in favor of ACP, and the ACP session-configuration gap ([goose#7596](https://github.com/block/goose/issues/7596)) has been stale for 2.5+ months.
+
+### Decision
+
+Replace `goose-server` (Rust) with a **Kubernaut-owned Go binary** ("OAS Runtime") that:
+
+1. Embeds [`open-agent-sdk-go`](https://github.com/codeany-ai/open-agent-sdk-go) (v0.5.0, MIT) as the agentic execution engine
+2. Exposes the [Agent Communication Protocol](https://agentcommunicationprotocol.dev/) (ACP v0.2.0) REST + SSE API
+3. Runs inside an [OpenShell](https://github.com/NVIDIA/OpenShell) sandbox pod (separate process from KA)
+
+KA remains a pure orchestrator with zero LLM dependencies. The OAS Runtime handles all LLM execution, MCP tool calls, and streaming. Communication between KA and the OAS Runtime uses ACP over HTTP/SSE.
+
+### Why Not Goose
+
+| Factor | Goose | OAS Runtime |
+|---|---|---|
+| Structured input validation | Not available. PR #8934 rejected. No JSON Schema support. | Native via OAS `input_schema` (JSON Schema). No upstream dependency. |
+| Template rendering | MiniJinja (Rust). Required upstream coordination for Kubernaut's template needs. | KA pre-renders prompts using Go `text/template` (already implemented). Runtime receives fully-rendered prompts. |
+| Protocol | `goose-server` HTTP (being deprecated) + future ACP (stale upstream gap). Two protocols, migration risk. | ACP from day 1. One protocol, one client. |
+| SDK language | Rust. KA team has zero Rust expertise. Contributing upstream required learning Rust. | Go. Same language as all Kubernaut services. Full control. |
+| Binary size | ~50-100 MB (Rust binary + deps) | ~10 MB (Go binary, 1 external dependency) |
+| Upstream risk | Block/AAIF governance. Strategic direction changes (ACP pivot) broke our plans. | Zero upstream risk. SDK is MIT, we can fork if needed. |
+
+### Architecture
+
+```
+KA (Orchestrator)                    OpenShell Sandbox Pod
+┌──────────────────────┐             ┌──────────────────────────────┐
+│ Pipeline Orchestrator │             │ OpenShell Supervisor          │
+│ OAS Contract Layer    │             │ OPA egress policy             │
+│ ACP Client            │─── ACP ───▶│ inference.local routing       │
+│ Signal Enrichment     │◀── SSE ────│                               │
+│ CRD Lifecycle         │             │ ┌──────────────────────────┐ │
+│ Audit Assembly        │             │ │ OAS Runtime (Go binary)  │ │
+└──────────────────────┘             │ │ ACP Server (HTTP/SSE)    │ │
+                                     │ │ open-agent-sdk-go         │ │
+                                     │ │ MCP Client → AuthBridge   │ │
+                                     │ └──────────────────────────┘ │
+                                     │ ┌──────────────────────────┐ │
+                                     │ │ AuthBridge Sidecar        │ │
+                                     │ │ SPIRE SVID → OAuth        │ │
+                                     │ └──────────────────────────┘ │
+                                     └──────────────────────────────┘
+```
+
+**Layer responsibilities (unchanged from Sections 5/6 above):**
+
+| Layer | Component | Responsibility |
+|---|---|---|
+| **Orchestrator** | KA | Pipeline sequencing, OAS spec compilation, context injection, ACP client, CRD lifecycle, enrichment, audit, budget enforcement, shadow agent coordination |
+| **Execution** | OAS Runtime | Agentic loop (LLM + tools), ACP server, MCP client, hook system, streaming |
+| **Security** | OpenShell + AuthBridge | OPA egress policy, `inference.local`, OCSF audit, SPIRE SVID → scoped OAuth for MCP/A2A |
+| **Protocol** | ACP v0.2.0 | REST + SSE between KA and OAS Runtime: `POST /runs`, `GET /runs/{id}`, `POST /runs/{id}` (resume), `DELETE /runs/{id}` (cancel) |
+
+### What Changes from the Goose Body
+
+| Aspect | Goose (Body) | OAS Runtime (Addendum) |
+|---|---|---|
+| Execution runtime | `goose-server` (Rust binary) | OAS Runtime (`open-agent-sdk-go` in Go binary) |
+| Spec format | Goose recipe YAML | OAS spec YAML (JSON Schema input/output, instructions, tools) |
+| Protocol | `goose-server` HTTP (v1.6) → ACP (future) | ACP from day 1 |
+| Client interface | `GooseClient` | `ACPClient` (same shape: CreateRun, StreamRun, ResumeRun, CancelRun) |
+| Template rendering | MiniJinja in Goose (target); Go pre-render (interim) | Go `text/template` in KA (permanent -- simpler, no upstream dependency) |
+| Structured input validation | Upstream PR needed (rejected) | OAS `input_schema` native JSON Schema |
+| Shadow agent | Two Goose sessions (primary + shadow) | Two ACP runs (primary + shadow) -- same orchestration pattern |
+| Self-correction | `Prompt()` on same Goose session | ACP `POST /runs/{id}` resume on same run |
+| Dual investigation | Two Goose sessions with different `settings` | Two ACP runs with different model configs |
+| HITL/permission gating | Goose ACP `request_permission` (planned, not available) | SDK `PermissionRequest` hook → ACP `awaiting` state → KA resumes |
+| Event streaming | `SessionUpdate` SSE from goose-server | ACP SSE events (`message.part`, `run.in-progress`, `run.completed`) with `TrajectoryMetadata` |
+| Error taxonomy | Goose `stop_reason` + HTTP status | ACP `Error.code` (server_error, invalid_input, not_found) + run status |
+
+### What Does Not Change
+
+All KA-side architecture from the body of this proposal remains valid:
+
+- **5-phase pipeline model** (Section 3)
+- **AgenticWorkflow CRD** (Section 4) -- `recipe.ref` becomes `spec.ref`
+- **What KA keeps** (Section 5) -- pipeline orchestration, enrichment, audit, etc.
+- **What KA drops** (Section 6) -- `runLLMLoop`, `llm.Client`, LangChainGo
+- **Shadow agent pattern** (Section 8.1) -- two parallel runs with event forwarding
+- **Dual investigation** (Section 8.2) -- two parallel runs with different models
+- **Defense-in-depth security model** (Section 16.7) -- all 5 layers preserved
+- **OpenShell integration** (Appendix D) -- BYOC model, OPA policy, `inference.local`, AuthBridge
+- **Delegated authorization** (Appendix B) -- SPIRE + RFC 8693/9396
+
+### Spike Results
+
+The [OAS Runtime Spike](../spikes/SPIKE-OAS-RUNTIME.md) (`spikes/oas-runtime/`) validates:
+
+- `open-agent-sdk-go` v0.5.0 compiles and provides the full API surface needed
+- ACP server (7 endpoints) is ~250 lines of Go code
+- Binary size: 10 MB (vs ~50-100 MB for goose-server)
+- Single external dependency (google/uuid)
+- Streaming via `agent.Query()` → `SDKMessage` channel maps cleanly to ACP SSE events
+- Hook system (`PermissionRequest`, `PreToolUse`) works for permission gating and audit
+- MCP client supports HTTP, SSE, and stdio transports
+- Multi-provider support (Anthropic + OpenAI-compatible APIs)
+
+### Updated Design Gates
+
+| Gate | Goose Status | OAS Runtime Status |
+|---|---|---|
+| DG-7: Runtime selection | Resolved (Goose) | **Updated**: OAS Runtime for core phases, A2A for hooks |
+| DG-8: ACP stability | Deferred | **Resolved**: ACP is the only protocol from day 1 |
+| DG-9: Credential management | Deferred | Unchanged -- `inference.local` + AuthBridge |
+| DG-13: Deployment topology | Resolved (Goose sidecar) | **Updated**: OAS Runtime in OpenShell sandbox pod (same emptyDir model) |
+| DG-14: OpenShell spike | Open | **Partially resolved**: BYOC Dockerfile validated in spike. End-to-end OpenShell test pending. |
+| DG-15: Spec lifecycle | Resolved (Goose recipes) | **Updated**: OAS spec YAML via OCI. `oas-runtime validate` replaces `goose recipe validate`. |
+| DG-20: Shadow agent | Resolved (Goose sessions) | **Updated**: Two ACP runs. Same pattern, different protocol. |
+| DG-21: Agent Sandbox CRD | Open | Unchanged |
+| **NEW DG-23** | -- | **Provider validation spike**: Validate OAS Go SDK against Vertex AI, Azure OpenAI, Bedrock, Anthropic |
+| **NEW DG-24** | -- | **HITL hook-to-ACP bridge**: Wire SDK `PermissionRequest` hook to ACP `awaiting` state with channel synchronization |
+
+### Updated Adoption Roadmap
+
+| Version | Runtime | KA Role |
+|---|---|---|
+| v1.5 | None (current inline execution) | Orchestrator + inline LLM executor. AgenticWorkflow CRD design only. |
+| v1.6 | **OAS Runtime** (Go binary with `open-agent-sdk-go` + ACP server) in OpenShell sandbox pod | Pure orchestrator. ACP client. Zero LLM dependencies. |
+
+**v1.6 estimated effort**: ~8-9 weeks (1 developer). Comparable to original Goose estimate (10-12 weeks) but with zero upstream dependencies.
+
+### References
+
+| Reference | Description |
+|---|---|
+| [open-agent-sdk-go](https://github.com/codeany-ai/open-agent-sdk-go) | Go SDK for building AI agents (v0.5.0, MIT, single dependency) |
+| [ACP Specification](https://agentcommunicationprotocol.dev/) | Agent Communication Protocol v0.2.0 -- REST + SSE API for agent interop |
+| [SPIKE-OAS-RUNTIME](../spikes/SPIKE-OAS-RUNTIME.md) | Spike validating the OAS Runtime + ACP server architecture |
+| [OAS Runtime Gap Analysis](../../../.cursor/plans/oas_runtime_gap_analysis_dd1a8953.plan.md) | Feature-by-feature gap analysis vs Goose |
+| [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) | Sandbox runtime for AI agents |
+| [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) | Kubernetes Sandbox CRD for agent workloads |
