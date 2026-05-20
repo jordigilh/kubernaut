@@ -1,0 +1,46 @@
+version: 1
+
+filesystem_policy:
+  read_only: [/usr, /lib, /etc]
+  read_write: [/sandbox, /tmp]
+
+landlock:
+  compatibility: best_effort
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+network_policies:
+  kubernaut_agent:
+    name: kubernaut-agent-callback
+    endpoints:
+      - host: kubernaut-agent.kubernaut.svc.cluster.local
+        port: 8443
+        protocol: rest
+        enforcement: enforce
+        access: full
+    binaries:
+      - path: /usr/local/bin/oas-runtime
+
+  mcp_kubernetes:
+    name: mcp-kubernetes
+    endpoints:
+      - host: mcp-k8s.kubernaut.svc.cluster.local
+        port: 8080
+        protocol: rest
+        enforcement: enforce
+        access: full
+    binaries:
+      - path: /usr/local/bin/oas-runtime
+
+  mcp_datastorage:
+    name: mcp-datastorage
+    endpoints:
+      - host: datastorage.kubernaut.svc.cluster.local
+        port: 8080
+        protocol: rest
+        enforcement: enforce
+        access: full
+    binaries:
+      - path: /usr/local/bin/oas-runtime
