@@ -94,21 +94,40 @@ data:
     keyword_scenarios:
       - name: "af_start_investigation"
         keywords: ["start investigation"]
+        match_last_only: true
         tool_call:
           name: "kubernaut_start_investigation"
           arguments:
             namespace: "default"
             pod_name: "nginx"
 
+      - name: "af_stream_investigation"
+        keywords: ["stream investigation", "stream the investigation"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_stream_investigation"
+          arguments:
+            session_id: "sess-001"
+
       - name: "af_poll_investigation"
         keywords: ["investigation status", "check investigation", "poll investigation"]
+        match_last_only: true
         tool_call:
           name: "kubernaut_poll_investigation"
           arguments:
             session_id: "sess-001"
 
+      - name: "af_discover_workflows"
+        keywords: ["discover available workflows", "discover workflows"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_discover_workflows"
+          arguments:
+            rr_id: "kubernaut-system/rr-test"
+
       - name: "af_select_workflow"
         keywords: ["select workflow", "select the restart workflow"]
+        match_last_only: true
         tool_call:
           name: "kubernaut_select_workflow"
           arguments:
@@ -117,6 +136,7 @@ data:
 
       - name: "af_present_decision"
         keywords: ["present decision", "present remediation options", "remediation options"]
+        match_last_only: true
         tool_call:
           name: "present_decision"
           arguments:
@@ -125,6 +145,7 @@ data:
 
       - name: "af_list_remediations"
         keywords: ["list remediations", "list all remediations"]
+        match_last_only: true
         tool_call:
           name: "kubernaut_list_remediations"
           arguments:
@@ -132,6 +153,7 @@ data:
 
       - name: "af_get_remediation"
         keywords: ["get details for remediation", "get remediation"]
+        match_last_only: true
         tool_call:
           name: "kubernaut_get_remediation"
           arguments:
@@ -140,6 +162,7 @@ data:
 
       - name: "af_approve"
         keywords: ["approve the remediation", "approve remediation"]
+        match_last_only: true
         tool_call:
           name: "kubernaut_approve"
           arguments:
@@ -148,6 +171,7 @@ data:
 
       - name: "af_cancel_remediation"
         keywords: ["cancel the remediation", "cancel remediation"]
+        match_last_only: true
         tool_call:
           name: "kubernaut_cancel_remediation"
           arguments:
@@ -156,6 +180,7 @@ data:
 
       - name: "af_watch"
         keywords: ["watch the progress", "watch remediation"]
+        match_last_only: true
         tool_call:
           name: "kubernaut_watch"
           arguments:
@@ -164,6 +189,7 @@ data:
 
       - name: "af_list_workflows"
         keywords: ["list workflows", "available remediation workflows", "list all available"]
+        match_last_only: true
         tool_call:
           name: "kubernaut_list_workflows"
           arguments:
@@ -171,6 +197,7 @@ data:
 
       - name: "af_get_remediation_history"
         keywords: ["remediation history", "get remediation history"]
+        match_last_only: true
         tool_call:
           name: "kubernaut_get_remediation_history"
           arguments:
@@ -178,12 +205,14 @@ data:
 
       - name: "af_get_effectiveness"
         keywords: ["effectiveness", "remediation effectiveness"]
+        match_last_only: true
         tool_call:
           name: "kubernaut_get_effectiveness"
           arguments: {}
 
       - name: "af_get_audit_trail"
         keywords: ["audit trail", "get the audit trail"]
+        match_last_only: true
         tool_call:
           name: "kubernaut_get_audit_trail"
           arguments:
@@ -191,6 +220,7 @@ data:
 
       - name: "af_list_events"
         keywords: ["list events", "list kubernetes events"]
+        match_last_only: true
         tool_call:
           name: "af_list_events"
           arguments:
@@ -198,6 +228,7 @@ data:
 
       - name: "af_get_pods"
         keywords: ["get pods", "get all pods"]
+        match_last_only: true
         tool_call:
           name: "af_get_pods"
           arguments:
@@ -205,6 +236,7 @@ data:
 
       - name: "af_get_workloads"
         keywords: ["get workloads"]
+        match_last_only: true
         tool_call:
           name: "af_get_workloads"
           arguments:
@@ -212,6 +244,7 @@ data:
 
       - name: "af_resolve_owner"
         keywords: ["resolve owner", "resolve the owner"]
+        match_last_only: true
         tool_call:
           name: "af_resolve_owner"
           arguments:
@@ -221,6 +254,7 @@ data:
 
       - name: "af_check_existing_rr"
         keywords: ["check existing", "remediation already exists", "check if a remediation"]
+        match_last_only: true
         tool_call:
           name: "af_check_existing_rr"
           arguments:
@@ -230,12 +264,13 @@ data:
 
       - name: "af_create_rr"
         keywords: ["create a remediation request", "create remediation"]
+        match_last_only: true
         tool_call:
           name: "af_create_rr"
           arguments:
-            namespace: "prod"
+            namespace: "kubernaut-system"
             kind: "Deployment"
-            name: "web"
+            name: "memory-eater"
             description: "E2E test remediation request"
 ---
 apiVersion: v1

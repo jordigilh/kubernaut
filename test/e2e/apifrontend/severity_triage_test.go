@@ -15,11 +15,11 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Severity Triage Pipeline (G12)", Ordered, ContinueOnFailure, Label("e2e", "phase4", "g12"), func() {
+var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12"), func() {
 	var authToken, mcpSessionID string
 	var prometheusReachable, prometheusAlertsReady bool
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		var err error
 		authToken, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred(), "SRE DEX token")

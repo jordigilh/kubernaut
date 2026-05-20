@@ -11,11 +11,11 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("E2E: discover_workflows (#1176)", Ordered, ContinueOnFailure, Label("e2e", "discover-workflows"), func() {
+var _ = Describe("E2E: discover_workflows (#1176)", Label("e2e", "discover-workflows"), func() {
 	var authToken string
 	var mcpSessionID string
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		var err error
 		authToken, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred(), "SRE DEX token")

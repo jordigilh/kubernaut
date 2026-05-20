@@ -11,13 +11,13 @@ import (
 )
 
 // Comprehensive E2E test suite for the A2A handler.
-// Exercises all 19 tools, 6 RBAC personas, metrics/audit callbacks, multi-tool
+// Exercises all 21 tools, 6 RBAC personas, metrics/audit callbacks, multi-tool
 // workflows, protocol errors, and session lifecycle.
 //
 // Gated on mock-LLM Gemini endpoint (kubernaut#1157): if /a2a/invoke returns 501
 // the entire suite is skipped with a clear message.
 
-var _ = Describe("A2A Handler (E2E)", Ordered, ContinueOnFailure, Label("e2e", "a2a"), func() {
+var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 
 	var (
 		sreToken           string
@@ -28,7 +28,7 @@ var _ = Describe("A2A Handler (E2E)", Ordered, ContinueOnFailure, Label("e2e", "
 		approverToken      string
 	)
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		var err error
 		sreToken, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred(), "Failed to obtain SRE token")
@@ -54,7 +54,7 @@ var _ = Describe("A2A Handler (E2E)", Ordered, ContinueOnFailure, Label("e2e", "
 	})
 
 	// ===================================================================
-	// Category 1: Per-Tool Happy Path via SRE persona (19 tests)
+	// Category 1: Per-Tool Happy Path via SRE persona (21 tests)
 	// ===================================================================
 	Context("Category 1: Per-Tool Happy Path (SRE)", func() {
 
@@ -132,6 +132,12 @@ var _ = Describe("A2A Handler (E2E)", Ordered, ContinueOnFailure, Label("e2e", "
 		})
 		It("TC-E2E-A2A-T19: af_create_rr", func() {
 			toolTest("a2a-t19", "Create a remediation request for deployment web in prod namespace", "af_create_rr")
+		})
+		It("E2E-AF-1189-001: kubernaut_stream_investigation", func() {
+			toolTest("a2a-1189-001", "Stream the investigation for session sess-001", "kubernaut_stream_investigation")
+		})
+		It("E2E-AF-1189-002: kubernaut_discover_workflows", func() {
+			toolTest("a2a-1189-002", "Discover available workflows for remediation kubernaut-system/rr-test", "kubernaut_discover_workflows")
 		})
 	})
 
@@ -260,9 +266,9 @@ var _ = Describe("A2A Handler (E2E)", Ordered, ContinueOnFailure, Label("e2e", "
 		})
 
 		It("TC-E2E-A2A-MET-02: af_tool_calls_total includes result=success label", func() {
-			metrics := scrapeMetrics()
-			Expect(metrics).To(MatchRegexp(`af_tool_calls_total\{[^}]*result="success"`),
-				"should have successful tool call observations")
+			Eventually(func() string { return scrapeMetrics() }, 60*time.Second, 3*time.Second).
+				Should(MatchRegexp(`af_tool_calls_total\{[^}]*result="success"`),
+					"should have successful tool call observations (contributed by parallel tests)")
 		})
 
 		It("TC-E2E-A2A-MET-03: af_tool_call_duration_seconds histogram has buckets", func() {
@@ -561,4 +567,89 @@ var _ = Describe("A2A Handler (E2E)", Ordered, ContinueOnFailure, Label("e2e", "
 				"af_sessions_active gauge should be present after A2A requests")
 		})
 	})
+
+	// ===================================================================
+	// Category 7: Issue #1189 — stream_investigation / discover_workflows
+	// non-happy paths (E2E-AF-1189-003..008)
+	// ===================================================================
+	Context("Category 7: Issue #1189 Non-Happy Paths", Label("issue-1189"), func() {
+
+		// expectA2ARBACEnforced validates that the RBAC guard fires for the
+		// low-privilege persona. The ADK BeforeToolCallback returns the denial
+		// as tool output (nil Go error), so the LLM may self-correct by
+		// pivoting to an allowed tool. Both outcomes are acceptable:
+		//   (a) The response text explicitly mentions denial/rbac/forbidden, OR
+		//   (b) The task completes without the denied tool's output (LLM adapted).
+		// What we must NOT see is a successful execution of the denied tool.
+		expectA2ARBACEnforced := func(rpc rpcResponse, deniedTool string) {
+			if rpc.Error != nil {
+				errBody, _ := json.Marshal(rpc.Error)
+				lower := strings.ToLower(string(errBody))
+				Expect(lower).To(SatisfyAny(
+					ContainSubstring("unauthorized"),
+					ContainSubstring("forbidden"),
+					ContainSubstring("denied"),
+					ContainSubstring("not allowed"),
+					ContainSubstring("error"),
+				), "JSON-RPC error should indicate auth failure")
+				return
+			}
+			Expect(rpc.Result).NotTo(BeNil(), "task result must not be nil")
+			bodyBytes, _ := json.Marshal(rpc.Result)
+			bodyStr := strings.ToLower(string(bodyBytes))
+
+			task, taskErr := extractTaskFromResult(rpc.Result)
+			Expect(taskErr).NotTo(HaveOccurred(), "should parse task from result")
+			Expect(task.Status.State).To(BeElementOf("completed", "failed"),
+				"task should reach a terminal state")
+
+			hasDenialKeyword := strings.Contains(bodyStr, "denied") ||
+				strings.Contains(bodyStr, "not allowed") ||
+				strings.Contains(bodyStr, "rbac") ||
+				strings.Contains(bodyStr, "unauthorized") ||
+				strings.Contains(bodyStr, "forbidden") ||
+				strings.Contains(bodyStr, "access denied")
+
+			hasToolSuccess := strings.Contains(bodyStr, deniedTool)
+
+			Expect(hasDenialKeyword || !hasToolSuccess).To(BeTrue(),
+				"RBAC should either surface denial or prevent tool execution; got: %s", bodyStr)
+		}
+
+		Context("RBAC denial (low-privilege cicd persona)", func() {
+
+			It("E2E-AF-1189-003: RBAC denial for kubernaut_stream_investigation", func() {
+				resp, err := a2aInvoke(httpClient, baseURL, cicdToken,
+					a2aTasksSend("1189-003", "stream the investigation events"))
+				Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = resp.Body.Close() }()
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				rpc, err := parseRPCResponse(resp)
+				Expect(err).NotTo(HaveOccurred())
+				expectA2ARBACEnforced(rpc, "kubernaut_stream_investigation")
+			})
+
+			It("E2E-AF-1189-004: RBAC denial for kubernaut_discover_workflows", func() {
+				resp, err := a2aInvoke(httpClient, baseURL, cicdToken,
+					a2aTasksSend("1189-004", "discover available workflows"))
+				Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = resp.Body.Close() }()
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				rpc, err := parseRPCResponse(resp)
+				Expect(err).NotTo(HaveOccurred())
+				expectA2ARBACEnforced(rpc, "kubernaut_discover_workflows")
+			})
+		})
+
+		// Rate limiting (E2E-AF-1189-005/006) and circuit breaker (E2E-AF-1189-007/008)
+		// tests removed: they require destructive cluster mutations (ConfigMap patch +
+		// rollout restart, KA scale-to-zero) that break parallel test execution and
+		// invalidate MCP sessions in other suites. Both behaviors are comprehensively
+		// covered at the unit level:
+		//   - Rate limiting: UT-AF-009-001..016 (ratelimit/ratelimit_test.go)
+		//   - Circuit breaker: UT-AF-038-016..024 (resilience/transport_test.go)
+	})
 })
+

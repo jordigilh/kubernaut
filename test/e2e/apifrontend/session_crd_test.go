@@ -12,14 +12,14 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("InvestigationSession CRD (E2E)", Ordered, ContinueOnFailure, Label("e2e", "phase1", "session-crd"), func() {
+var _ = Describe("InvestigationSession CRD (E2E)", Label("e2e", "phase1", "session-crd"), func() {
 
 	var (
 		namespace      string
 		kubeconfigPath string
 	)
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		namespace = getEnvOrDefault("AF_E2E_NAMESPACE", "kubernaut-system")
 		kubeconfigPath = os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
 	})

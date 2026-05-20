@@ -100,31 +100,31 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 	r := defaultRegistryWithGoldenDir(goldenDir)
 	if overrides != nil {
 		for _, s := range r.scenarios {
-			cs, ok := s.(*configScenario)
-			if !ok {
-				// Custom scenario types that support workflow_id overrides.
-				if pvs, isPV := s.(*paramValidationSelfCorrectScenario); isPV {
-					if ov, found := findOverrideByWorkflowName(overrides.Scenarios, pvs.badConfig.WorkflowName); found && ov.WorkflowID != "" {
-						pvs.OverrideWorkflowID(ov.WorkflowID)
+			switch ts := s.(type) {
+			case *configScenario:
+				if ov, found := overrides.Scenarios[ts.config.ScenarioName]; found {
+					applyOverride(ts, ov)
+				} else if ts.config.WorkflowName != "" {
+					if ov, found := findOverrideByWorkflowName(overrides.Scenarios, ts.config.WorkflowName); found {
+						applyOverride(ts, ov)
 					}
 				}
-				continue
-			}
-			if ov, found := overrides.Scenarios[cs.config.ScenarioName]; found {
-				applyOverride(cs, ov)
-			} else if cs.config.WorkflowName != "" {
-				if ov, found := findOverrideByWorkflowName(overrides.Scenarios, cs.config.WorkflowName); found {
-					applyOverride(cs, ov)
+				if len(ts.config.Alternatives) > 0 {
+					applyAlternativeOverrides(ts, overrides.Scenarios)
 				}
-			}
-			if len(cs.config.Alternatives) > 0 {
-				applyAlternativeOverrides(cs, overrides.Scenarios)
+			case *paramValidationSelfcorrectScenario:
+				if ov, found := findOverrideByWorkflowName(overrides.Scenarios, "param-validation-test-v1"); found && ov.WorkflowID != "" {
+					ts.overrideWfID = ov.WorkflowID
+				}
 			}
 		}
 
 		// Register consumer-defined keyword scenarios from YAML (issue #1160).
 		// These use the same priority (1.0) as built-in keyword scenarios and
 		// override the default fallback (0.01).
+		// When MatchLastOnly is true (issue #1189), matching uses only the last
+		// user message to prevent prior-turn keyword shadowing in multi-turn
+		// ADK agent conversations.
 		for _, ks := range overrides.KeywordScenarios {
 			cfg := MockScenarioConfig{
 				ScenarioName: ks.Name,
@@ -132,7 +132,11 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 				ToolCallArgs: ks.ToolCall.Arguments,
 				ForceText:    BoolPtr(false),
 			}
-			r.Register(mockKeywordScenarioMulti(ks.Name, ks.Keywords, cfg))
+			if ks.MatchLastOnly {
+				r.Register(lastUserKeywordScenarioMulti(ks.Name, ks.Keywords, cfg))
+			} else {
+				r.Register(mockKeywordScenarioMulti(ks.Name, ks.Keywords, cfg))
+			}
 		}
 	}
 	return r
@@ -170,7 +174,6 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(mockKeywordScenario("not_actionable", "mock_not_actionable", notActionableConfig()))
 	r.Register(mockKeywordScenario("parallel_tools", "mock_parallel_tools", parallelToolsConfig()))
 	r.Register(mockKeywordScenario("ambiguous_kind", "mock_ambiguous_kind", ambiguousKindConfig()))
-	r.Register(newParamValidationSelfCorrectScenario())
 
 	// Test signal scenario
 	r.Register(testSignalScenario())
@@ -185,6 +188,18 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(signalScenario("oomkilled", []string{"memoryexceedslimit", "memoryexceeds", "oomkilled", "oomkill"}, oomkilledConfig()))
 	r.Register(signalScenario("crashloop", []string{"crashloop", "backoff"}, crashloopConfig()))
 	r.Register(signalScenario("injection_configmap_read", []string{"injection_configmap_read"}, injectionConfigmapReadConfig()))
+
+	// Issue #1189: AF-created RRs use "af-manual-<Kind>-<Name>" as signal name.
+	// Map to oomkill workflow so the KA pipeline can process them end-to-end.
+	r.Register(signalScenario("af_manual", []string{"af-manual"}, oomkilledConfig()))
+
+	// Issue #1170: Multi-turn param validation self-correction (BR-HAPI-191).
+	// Returns bad params on first call, corrected params after validation feedback.
+	r.Register(paramValidationSelfcorrectScenarioNew())
+
+	// Issue #1189: AF A2A tests need the mock LLM to call af_create_rr when
+	// the user message contains "create a remediation request" (priority 0.9).
+	r.Register(afCreateRRScenario())
 
 	// Default fallback (lowest priority = 0.01)
 	r.Register(defaultFallbackScenario())

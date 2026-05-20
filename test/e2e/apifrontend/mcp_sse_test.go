@@ -13,10 +13,10 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("MCP SSE Responses (G2)", Ordered, ContinueOnFailure, Label("e2e", "phase4", "g2"), func() {
+var _ = Describe("MCP SSE Responses (G2)", Label("e2e", "phase4", "g2"), func() {
 	var authToken, mcpSessionID string
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		var err error
 		authToken, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred())

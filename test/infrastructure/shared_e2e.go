@@ -199,6 +199,51 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		"              name: api-server-abc\n" +
 		"              namespace: production\n"
 
+	// Issue #1189: Append AF keyword_scenarios with match_last_only so the FP
+	// mock-LLM can handle both KA signal scenarios AND AF multi-turn ADK conversations.
+	afKeywordYAML := `keyword_scenarios:
+      - name: "af_start_investigation"
+        keywords: ["start investigation"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_start_investigation"
+          arguments:
+            namespace: "kubernaut-system"
+            pod_name: "memory-eater"
+      - name: "af_stream_investigation"
+        keywords: ["stream investigation", "stream the investigation"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_stream_investigation"
+          arguments:
+            session_id: "sess-001"
+      - name: "af_discover_workflows"
+        keywords: ["discover available workflows", "discover workflows"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_discover_workflows"
+          arguments:
+            rr_id: "kubernaut-system/rr-test"
+      - name: "af_select_workflow"
+        keywords: ["select workflow"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_select_workflow"
+          arguments:
+            workflow_id: "oomkill-increase-memory-v1"
+            remediation_id: "rr-001"
+      - name: "af_create_rr"
+        keywords: ["create a remediation request", "create remediation"]
+        match_last_only: true
+        tool_call:
+          name: "af_create_rr"
+          arguments:
+            namespace: "kubernaut-system"
+            kind: "Deployment"
+            name: "memory-eater"
+            description: "FP E2E test remediation request"
+`
+
 	configMap := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -210,7 +255,8 @@ metadata:
 data:
   scenarios.yaml: |
     %s
----`, namespace, scenariosYAML)
+    %s
+---`, namespace, scenariosYAML, afKeywordYAML)
 
 	_, _ = fmt.Fprintf(writer, "   📦 Creating Mock LLM ConfigMap...\n")
 	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)

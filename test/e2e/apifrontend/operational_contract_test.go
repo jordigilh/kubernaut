@@ -31,7 +31,7 @@ func scrapeMetrics() string {
 	return string(body)
 }
 
-var _ = Describe("Operational Contract", Ordered, ContinueOnFailure, Label("e2e", "phase1", "operational"), func() {
+var _ = Describe("Operational Contract", Label("e2e", "phase1", "operational"), func() {
 
 	// -----------------------------------------------------------------------
 	// TC-A-01e: /readyz on health port must be dependency-aware
@@ -48,7 +48,7 @@ var _ = Describe("Operational Contract", Ordered, ContinueOnFailure, Label("e2e"
 	Context("Metrics Emission (WIRE-05/06/08)", func() {
 		var token string
 
-		BeforeAll(func() {
+		BeforeEach(func() {
 			var err error
 			token, err = fetchDEXToken(dexURL, clientID, clientSecret, username, password)
 			Expect(err).NotTo(HaveOccurred())

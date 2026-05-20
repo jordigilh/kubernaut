@@ -93,7 +93,7 @@ var _ = Describe("E2E-FP-AF-001: AF audit trace coverage in happy-path MCP lifec
 			Expect(token).NotTo(BeEmpty())
 
 			By("Initializing MCP session through AF")
-			sessionID, err := fpInitMCPSession(afHTTPClient, afBaseURL, token)
+			sessionID, err := fpInitMCPSessionExplicit(afHTTPClient, afBaseURL, token)
 			Expect(err).NotTo(HaveOccurred())
 			GinkgoWriter.Printf("  MCP Session ID: %s\n", sessionID)
 
@@ -223,7 +223,7 @@ func fpFetchDEXToken(dexURL, clientID, clientSecret, username, password string) 
 	return tokenResp.IDToken, nil
 }
 
-func fpInitMCPSession(client *http.Client, baseURL, token string) (string, error) {
+func fpInitMCPSessionExplicit(client *http.Client, baseURL, token string) (string, error) {
 	body := fpBuildJSONRPC("fp-init-1", "initialize", map[string]interface{}{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]interface{}{},
@@ -259,13 +259,3 @@ func fpMCPPOST(client *http.Client, baseURL, token, sessionID, jsonBody string) 
 	return body, resp.StatusCode, err
 }
 
-func fpBuildJSONRPC(id, method string, params map[string]interface{}) string {
-	payload := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  method,
-		"id":      id,
-		"params":  params,
-	}
-	b, _ := json.Marshal(payload)
-	return string(b)
-}

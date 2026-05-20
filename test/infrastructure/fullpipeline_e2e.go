@@ -97,6 +97,7 @@ var fullPipelineImageConfigs = []E2EImageConfig{
 	{ServiceName: "kubernautagent", ImageName: "kubernaut/kubernautagent", DockerfilePath: "docker/kubernautagent.Dockerfile"},
 	{ServiceName: "mock-llm", ImageName: "kubernaut/mock-llm", DockerfilePath: "test/services/mock-llm/go.Dockerfile", BuildContextPath: ""},
 	{ServiceName: "effectivenessmonitor", ImageName: "kubernaut/effectivenessmonitor", DockerfilePath: "docker/effectivenessmonitor-controller.Dockerfile"},
+	{ServiceName: "apifrontend", ImageName: "kubernaut/apifrontend", DockerfilePath: "docker/apifrontend.Dockerfile"},
 }
 
 // SetupFullPipelineInfrastructure deploys the complete Kubernaut service pipeline
@@ -494,6 +495,13 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		allResults <- waveResult{"KubernautAgent", err}
 	}()
 
+	// B1b: API Frontend — wait for Mock LLM (Issue #1189: AF as FP signal source)
+	go func() {
+		<-mockLLMReady
+		err := deployAPIFrontendInFP(ctx, namespace, kubeconfigPath, builtImages["apifrontend"], writer)
+		allResults <- waveResult{"APIFrontend", err}
+	}()
+
 	// B2: EM controller — wait for Prometheus + AlertManager
 	go func() {
 		<-promAMReady
@@ -510,8 +518,8 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 
 	// ── Collect all results ──
 	// Wave A: KA-RBAC + MockLLM + MockLLMShadow + Prom+AM(1) + 5 controllers + Gateway = 10
-	// Wave B: KubernautAgent + EM + event-exporter = 3
-	expectedResults := 13
+	// Wave B: KubernautAgent + APIFrontend + EM + event-exporter = 4
+	expectedResults := 14
 	var deployErrors []error
 	for i := 0; i < expectedResults; i++ {
 		r := <-allResults
@@ -1070,6 +1078,288 @@ spec:
 }
 
 // ============================================================================
+// Issue #1189: API Frontend Deployment for FP Cluster
+// ============================================================================
+
+// deployAPIFrontendInFP deploys the API Frontend into the FP Kind cluster.
+// Reuses patterns from AF E2E infrastructure (test/e2e/apifrontend/infrastructure/setup.go)
+// but adapts for the FP cluster which already has KA, DataStorage, and mock-LLM deployed.
+//
+// Deploys: DEX OIDC → AF CRDs → RBAC → ConfigMap (config + rbac_roles) → Deployment + Service.
+// TLS cert (apifrontend-tls) is already created by GenerateInterServiceTLS in Phase 5.
+func deployAPIFrontendInFP(ctx context.Context, namespace, kubeconfigPath, afImageName string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "  🌐 Deploying API Frontend (Issue #1189)...")
+	projectRoot := getProjectRoot()
+
+	// 1. Deploy DEX OIDC provider (reads from deploy/apifrontend/overlays/e2e/dex.yaml)
+	_, _ = fmt.Fprintln(writer, "    ├── DEX OIDC provider...")
+	dexPath := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "dex.yaml")
+	dexData, err := os.ReadFile(dexPath) //nolint:gosec // G304: test infrastructure path
+	if err != nil {
+		return fmt.Errorf("failed to read dex.yaml: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(string(dexData))
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy DEX: %w", err)
+	}
+
+	// 2. Apply AF CRD
+	_, _ = fmt.Fprintln(writer, "    ├── AF CRDs...")
+	crdPath := filepath.Join(projectRoot, "config", "crd", "bases", "apifrontend.kubernaut.ai_investigationsessions.yaml")
+	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply AF CRD: %w", err)
+	}
+
+	// 3. RBAC (ServiceAccount, ClusterRole, ClusterRoleBinding, E2E user RBAC)
+	_, _ = fmt.Fprintln(writer, "    ├── RBAC...")
+	afRBAC := fmt.Sprintf(`apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: apifrontend
+  namespace: %s
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: apifrontend
+rules:
+  - apiGroups: ["apifrontend.kubernaut.ai"]
+    resources: ["investigationsessions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apifrontend.kubernaut.ai"]
+    resources: ["investigationsessions/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: [""]
+    resources: ["users", "groups", "serviceaccounts"]
+    verbs: ["impersonate"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: apifrontend
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: apifrontend
+subjects:
+  - kind: ServiceAccount
+    name: apifrontend
+    namespace: %s
+`, namespace, namespace)
+	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(afRBAC)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy AF RBAC: %w", err)
+	}
+	// E2E user RBAC for multi-role testing
+	userRBACPath := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "e2e-user-rbac.yaml")
+	userRBACData, err := os.ReadFile(userRBACPath) //nolint:gosec // G304
+	if err != nil {
+		return fmt.Errorf("failed to read e2e-user-rbac.yaml: %w", err)
+	}
+	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(string(userRBACData))
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy E2E user RBAC: %w", err)
+	}
+
+	// DataStorage client RoleBinding for AF audit trail writes
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "apifrontend", writer); err != nil {
+		return fmt.Errorf("failed to create AF DataStorage RoleBinding: %w", err)
+	}
+
+	// 4. ConfigMap (AF config + rbac_roles)
+	_, _ = fmt.Fprintln(writer, "    ├── ConfigMaps...")
+	configData, err := os.ReadFile(filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "config.yaml")) //nolint:gosec // G304
+	if err != nil {
+		return fmt.Errorf("failed to read config.yaml: %w", err)
+	}
+	rbacRolesData, err := os.ReadFile(filepath.Join(projectRoot, "deploy", "apifrontend", "base", "rbac_roles.yaml")) //nolint:gosec // G304
+	if err != nil {
+		return fmt.Errorf("failed to read rbac_roles.yaml: %w", err)
+	}
+	configManifest := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apifrontend-config
+  namespace: %s
+data:
+  config.yaml: |
+%s
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apifrontend-rbac-roles
+  namespace: %s
+data:
+  rbac_roles.yaml: |
+%s
+`, namespace, indentYAMLLines(string(configData), 4),
+		namespace, indentYAMLLines(string(rbacRolesData), 4))
+	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(configManifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create AF ConfigMaps: %w", err)
+	}
+
+	// 5. Deployment + Service (NodePort 30443)
+	_, _ = fmt.Fprintln(writer, "    ├── Deployment + Service...")
+	pullPolicy := "IfNotPresent"
+	if os.Getenv("IMAGE_REGISTRY") != "" {
+		pullPolicy = "Always"
+	}
+	deployManifest := fmt.Sprintf(`apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apifrontend
+  namespace: %[1]s
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: apifrontend
+  template:
+    metadata:
+      labels:
+        app: apifrontend
+    spec:
+      serviceAccountName: apifrontend
+      automountServiceAccountToken: true
+      containers:
+        - name: apifrontend
+          image: %[2]s
+          imagePullPolicy: %[3]s
+          ports:
+            - name: https
+              containerPort: 8443
+            - name: metrics
+              containerPort: 9090
+            - name: health
+              containerPort: 8081
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: LLM_API_KEY
+              value: "mock-key"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/apifrontend
+              readOnly: true
+            - name: tls-certs
+              mountPath: /etc/apifrontend/tls
+              readOnly: true
+            - name: inter-service-ca
+              mountPath: /etc/apifrontend/inter-service-ca
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 50m
+            limits:
+              memory: 256Mi
+              cpu: 500m
+      volumes:
+        - name: config
+          projected:
+            sources:
+              - configMap:
+                  name: apifrontend-config
+                  items:
+                    - key: config.yaml
+                      path: config.yaml
+              - configMap:
+                  name: apifrontend-rbac-roles
+                  items:
+                    - key: rbac_roles.yaml
+                      path: rbac_roles.yaml
+        - name: tls-certs
+          secret:
+            secretName: apifrontend-tls
+            optional: false
+        - name: inter-service-ca
+          configMap:
+            name: inter-service-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apifrontend
+  namespace: %[1]s
+spec:
+  type: NodePort
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+      nodePort: 30443
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+    - name: health
+      port: 8081
+      targetPort: health
+  selector:
+    app: apifrontend
+`, namespace, afImageName, pullPolicy)
+	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(deployManifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy AF: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    └── ✅ API Frontend deployed")
+	return nil
+}
+
+// indentYAMLLines indents each non-empty line of s by the given number of spaces.
+func indentYAMLLines(s string, spaces int) string {
+	prefix := strings.Repeat(" ", spaces)
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = prefix + line
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// ============================================================================
 // PHASE 11: Service Readiness Checks
 // ============================================================================
 
@@ -1091,9 +1381,11 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 		"kubernaut-agent",
 		"gateway",
 		"event-exporter",
-		"mock-slack",   // Accepts Slack webhook POSTs so notifications reach terminal phase
-		"prometheus",   // ADR-EM-001: Prometheus for EM metric comparison
-		"alertmanager", // ADR-EM-001: AlertManager for EM alert resolution
+		"mock-slack",    // Accepts Slack webhook POSTs so notifications reach terminal phase
+		"prometheus",    // ADR-EM-001: Prometheus for EM metric comparison
+		"alertmanager",  // ADR-EM-001: AlertManager for EM alert resolution
+		"apifrontend",   // Issue #1189: AF as FP signal source
+		"dex",           // Issue #1189: OIDC provider for AF authentication
 	}
 	if !skipMockLLM() {
 		deployments = append(deployments, "mock-llm")

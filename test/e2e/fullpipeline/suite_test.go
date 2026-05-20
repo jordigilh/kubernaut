@@ -39,9 +39,11 @@ package fullpipeline
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -97,6 +99,11 @@ var (
 	// Infrastructure components (event-exporter, AlertManager) get their token at deploy time.
 	fpAuthToken string
 
+	// API Frontend (AF): HTTPS client and DEX OIDC token for AF E2E tests in the FP cluster.
+	afBaseURL    string
+	afHTTPClient *http.Client
+	afAuthToken  string
+
 	// Workflow UUIDs seeded once in SynchronizedBeforeSuite, shared by all tests.
 	// Map of "workflowID:environment" → UUID. Tests must NOT modify this or the Mock LLM ConfigMap.
 	workflowUUIDs map[string]string
@@ -151,6 +158,16 @@ var _ = SynchronizedBeforeSuite(
 		gatewaySAName := "fullpipeline-gateway-sa"
 		gatewayToken, gtwErr := infrastructure.GetServiceAccountToken(ctx, namespace, gatewaySAName, tempKubeconfigPath)
 		Expect(gtwErr).ToNot(HaveOccurred(), "Failed to get Gateway SA token (SA created in SetupFullPipelineInfrastructure)")
+
+		By("Labeling kubernaut-system namespace as managed (for AF E2E tests)")
+		labelCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
+			"label", "namespace", namespace, "kubernaut.ai/managed=true", "--overwrite")
+		labelOut, labelErr := labelCmd.CombinedOutput()
+		Expect(labelErr).ToNot(HaveOccurred(), "Failed to label namespace: %s", string(labelOut))
+
+		By("Deploying memory-eater in kubernaut-system for AF E2E tests")
+		err = infrastructure.DeployMemoryEater(ctx, namespace, tempKubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Failed to deploy memory-eater for AF tests")
 
 		By("Setting KUBECONFIG for all processes")
 		err = os.Setenv("KUBECONFIG", tempKubeconfigPath)
@@ -223,9 +240,42 @@ var _ = SynchronizedBeforeSuite(
 		dataStorageClient, err = ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
 		Expect(err).ToNot(HaveOccurred())
 
+		By("Setting up API Frontend HTTP client (NodePort 30443, self-signed TLS)")
+		afBaseURL = "https://localhost:30443"
+		afHTTPClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // E2E self-signed cert
+			},
+			Timeout: 30 * time.Second,
+		}
+
 		GinkgoWriter.Printf("✅ Setup Complete - Process %d ready\n", GinkgoParallelProcess())
 	},
 )
+
+// getAFToken obtains an OIDC token from DEX for API Frontend authentication (password grant).
+func getAFToken() string {
+	if afAuthToken != "" {
+		return afAuthToken
+	}
+	resp, err := http.PostForm("http://localhost:30556/dex/token", url.Values{
+		"grant_type":    {"password"},
+		"client_id":     {"kubernaut-apifrontend"},
+		"client_secret": {"e2e-client-secret"},
+		"username":      {"sre@kubernaut.ai"},
+		"password":      {"password"},
+		"scope":         {"openid email profile groups"},
+	})
+	Expect(err).NotTo(HaveOccurred())
+	defer resp.Body.Close()
+
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+	}
+	Expect(json.NewDecoder(resp.Body).Decode(&tokenResp)).To(Succeed())
+	afAuthToken = tokenResp.AccessToken
+	return afAuthToken
+}
 
 var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {

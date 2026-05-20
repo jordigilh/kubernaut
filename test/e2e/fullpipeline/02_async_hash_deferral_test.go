@@ -58,8 +58,8 @@ import (
 //  4. Audit trail contains hash_compute_after in assessment.scheduled event
 //  5. EA reaches terminal phase after propagation + stabilization window
 //
-// Self-contained: cert-manager is installed in BeforeAll and only affects this test.
-var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010, #253]", Serial, Ordered, ContinueOnFailure, func() {
+// Self-contained: cert-manager is installed in BeforeEach and only affects this test.
+var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010, #253]", Serial, func() {
 
 	var (
 		testNamespace string
@@ -67,7 +67,7 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		testCancel    context.CancelFunc
 	)
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		By("Installing cert-manager for real Certificate CRD registration")
 		err := infrastructure.InstallCertManager(kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Failed to install cert-manager")
@@ -79,7 +79,7 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		GinkgoWriter.Println("  ✅ cert-manager installed — Certificate CRD registered in REST mapper")
 	})
 
-	AfterAll(func() {
+	AfterEach(func() {
 		By("Uninstalling cert-manager to prevent cluster resource contamination")
 		_ = infrastructure.UninstallCertManager(kubeconfigPath, GinkgoWriter)
 	})

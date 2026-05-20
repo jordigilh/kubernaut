@@ -115,3 +115,11 @@ type ScenarioWithConfig interface {
 	Scenario
 	Config() MockScenarioConfig
 }
+
+// ScenarioWithSubmitNotify is implemented by stateful scenarios that need to
+// know when the handler actually responded with submit_result_with_workflow.
+// The handler calls MarkSubmitSent() after writing the response so the scenario
+// can advance its state machine for multi-turn self-correction flows.
+type ScenarioWithSubmitNotify interface {
+	MarkSubmitSent()
+}

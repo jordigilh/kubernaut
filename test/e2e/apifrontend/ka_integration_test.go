@@ -11,11 +11,11 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Ordered, ContinueOnFailure, Label("e2e", "phase1", "ka-integration"), func() {
+var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "phase1", "ka-integration"), func() {
 
 	var authToken string
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		var err error
 		authToken, err = fetchDEXToken(dexURL, clientID, clientSecret, username, password)
 		Expect(err).NotTo(HaveOccurred(), "Failed to obtain DEX token for KA integration tests")

@@ -183,6 +183,15 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 			"root_cause_analysis": rca,
 			"reasoning":           "No matching workflow found for this scenario",
 		}
+	case "kubernaut_list_remediations":
+		return map[string]interface{}{"namespace": cfg.ResourceNS}
+	case "af_create_rr":
+		return map[string]interface{}{
+			"namespace":   cfg.ResourceNS,
+			"kind":        cfg.ResourceKind,
+			"name":        cfg.ResourceName,
+			"description": "Auto-remediation triggered by AI analysis",
+		}
 	default:
 		return map[string]interface{}{}
 	}

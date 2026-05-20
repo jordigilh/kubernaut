@@ -18,14 +18,14 @@ import (
 // Signature is intentionally invalid — exercising rejection after (or instead of) expiry checks.
 const expiredCallerJWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjEwMDAwMDAwMDAsInN1YiI6ImUyZS1leHBpcmVkIiwiaWF0IjoxMDAwMDAwMDAwfQ.invalidsignature"
 
-var _ = Describe("JWT Delegation to KA (G7)", Ordered, ContinueOnFailure, Label("e2e", "phase4", "g7"), func() {
+var _ = Describe("JWT Delegation to KA (G7)", Label("e2e", "phase4", "g7"), func() {
 	var (
 		kubeconfigPath string
 		namespace      string
 		sreEmail       string
 	)
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		kubeconfigPath = os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
 		namespace = getEnvOrDefault("AF_E2E_NAMESPACE", "kubernaut-system")
 		sreEmail = e2ePersonas["sre"].Email

@@ -14,14 +14,14 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("DS Audit Sink (G8)", Ordered, ContinueOnFailure, Label("e2e", "phase4", "g8"), func() {
+var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
 	var (
 		authToken    string
 		mcpSessionID string
 		dsAuditURL   string
 	)
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		dsAuditURL = getEnvOrDefault("AF_E2E_DS_AUDIT_URL", "https://localhost:8089/api/v1/audit/events")
 
 		var err error

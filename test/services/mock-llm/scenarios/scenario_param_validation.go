@@ -17,134 +17,126 @@ package scenarios
 
 import (
 	"strings"
-	"sync"
+	"sync/atomic"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
 )
 
-// paramValidationSelfCorrectScenario is a stateful scenario that returns
-// invalid parameters on the first tool-call request and corrected parameters
-// when KA sends validation error feedback. This supports testing the full
-// parameter validation self-correction loop (#1170).
+// paramValidationSelfcorrectScenario is a stateful scenario that simulates
+// LLM self-correction for parameter validation (BR-HAPI-191, #1170).
 //
-// Detection: matches keyword "mock_param_validation_selfcorrect" in message text.
-// State transition: presence of "expected parameters" (from FormatSchemaHint) in
-// the conversation indicates KA already sent validation feedback, so we return
-// the corrected config.
-type paramValidationSelfCorrectScenario struct {
-	mu            sync.Mutex
-	lastCtx       *DetectionContext
-	badConfig     MockScenarioConfig
-	correctedConfig MockScenarioConfig
+// Turn 1: Returns submit_result_with_workflow with invalid params (type
+// mismatch: REPLICA_COUNT="three" instead of "3", plus undeclared param).
+//
+// Turn 2: After KA sends validation error feedback, returns the same workflow
+// with corrected params (REPLICA_COUNT="3", no undeclared params).
+//
+// State tracking: The handler calls MarkSubmitSent() after it actually writes
+// a submit_result_with_workflow response. Config() checks this counter to
+// decide whether to return bad or corrected params. This avoids the counter
+// being consumed by non-submit calls (DAG exploration, RCA extraction) and
+// avoids false positives from tool names appearing in the system prompt.
+type paramValidationSelfcorrectScenario struct {
+	submitsSent  atomic.Int64
+	overrideWfID string // set by registry when YAML overrides provide the DS-generated UUID
 }
 
-func paramValidationSelfCorrectConfigs() (bad, corrected MockScenarioConfig) {
-	bad = MockScenarioConfig{
-		ScenarioName: "param_validation_selfcorrect",
-		SignalName:   "MOCK_PARAM_VALIDATION_SELFCORRECT",
-		Severity:     "high",
-		WorkflowName: "param-validation-test-v1",
-		WorkflowID:   uuid.DeterministicUUID("param-validation-test-v1"),
-		WorkflowTitle: "Param Validation Test",
-		Confidence:   0.85,
-		Rationale:    "Scaling deployment to handle increased load",
-		RootCause:    "Deployment under-scaled for current traffic",
-		ResourceKind: "Pod",
-		ResourceNS:   "production",
-		ResourceName: "api-server-xyz",
-		APIVersion:   "v1",
+const paramValScenarioName = "param_validation_selfcorrect"
+
+func (s *paramValidationSelfcorrectScenario) Name() string { return paramValScenarioName }
+
+func (s *paramValidationSelfcorrectScenario) Match(ctx *DetectionContext) (bool, float64) {
+	signal := extractSignal(ctx)
+	matched := strings.Contains(signal, "mock_param_validation_selfcorrect")
+	if !matched {
+		combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
+		matched = strings.Contains(combined, "mock_param_validation_selfcorrect")
+	}
+	if !matched {
+		return false, 0
+	}
+	return true, 0.95
+}
+
+// MarkSubmitSent is called by the handler after it writes a
+// submit_result_with_workflow response for this scenario.
+func (s *paramValidationSelfcorrectScenario) MarkSubmitSent() {
+	s.submitsSent.Add(1)
+}
+
+func (s *paramValidationSelfcorrectScenario) Metadata() ScenarioMetadata {
+	return ScenarioMetadata{
+		Name:        paramValScenarioName,
+		Description: "Multi-turn param validation self-correction (BR-HAPI-191)",
+	}
+}
+
+func (s *paramValidationSelfcorrectScenario) DAG() *conversation.DAG { return nil }
+
+func (s *paramValidationSelfcorrectScenario) Config() MockScenarioConfig {
+	if s.submitsSent.Load() > 0 {
+		return s.correctedParamsConfig()
+	}
+	return s.badParamsConfig()
+}
+
+func (s *paramValidationSelfcorrectScenario) effectiveWorkflowID() string {
+	if s.overrideWfID != "" {
+		return s.overrideWfID
+	}
+	return uuid.DeterministicUUID("param-validation-test-v1")
+}
+
+func (s *paramValidationSelfcorrectScenario) badParamsConfig() MockScenarioConfig {
+	return MockScenarioConfig{
+		ScenarioName:    paramValScenarioName,
+		SignalName:      "MOCK_PARAM_VALIDATION_SELFCORRECT",
+		Severity:        "high",
+		WorkflowName:    "param-validation-test-v1",
+		WorkflowID:      s.effectiveWorkflowID(),
+		WorkflowTitle:   "Param Validation Test",
+		Confidence:      0.85,
+		RootCause:       "Pod api-server-xyz is experiencing high memory pressure. Scale replicas to handle load.",
+		ResourceKind:    "Deployment",
+		ResourceNS:      "production",
+		ResourceName:    "api-server-xyz",
+		APIVersion:      "apps/v1",
+		ExecutionEngine: "job",
 		Parameters: map[string]string{
-			"REPLICA_COUNT": "not-a-number",
-			"EXTRA_HALLUCINATED": "should-be-stripped",
+			"REPLICA_COUNT":    "three",
+			"NAMESPACE":        "production",
+			"UNDECLARED_PARAM": "should_be_stripped",
 		},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
-		ForceText:            BoolPtr(false),
 	}
+}
 
-	corrected = MockScenarioConfig{
-		ScenarioName: "param_validation_selfcorrect",
-		SignalName:   "MOCK_PARAM_VALIDATION_SELFCORRECT",
-		Severity:     "high",
-		WorkflowName: "param-validation-test-v1",
-		WorkflowID:   uuid.DeterministicUUID("param-validation-test-v1"),
-		WorkflowTitle: "Param Validation Test",
-		Confidence:   0.85,
-		Rationale:    "Scaling deployment to handle increased load",
-		RootCause:    "Deployment under-scaled for current traffic",
-		ResourceKind: "Pod",
-		ResourceNS:   "production",
-		ResourceName: "api-server-xyz",
-		APIVersion:   "v1",
+func (s *paramValidationSelfcorrectScenario) correctedParamsConfig() MockScenarioConfig {
+	return MockScenarioConfig{
+		ScenarioName:    paramValScenarioName,
+		SignalName:      "MOCK_PARAM_VALIDATION_SELFCORRECT",
+		Severity:        "high",
+		WorkflowName:    "param-validation-test-v1",
+		WorkflowID:      s.effectiveWorkflowID(),
+		WorkflowTitle:   "Param Validation Test",
+		Confidence:      0.90,
+		RootCause:       "Pod api-server-xyz is experiencing high memory pressure. Scale replicas to handle load.",
+		ResourceKind:    "Deployment",
+		ResourceNS:      "production",
+		ResourceName:    "api-server-xyz",
+		APIVersion:      "apps/v1",
+		ExecutionEngine: "job",
 		RawParameters: map[string]interface{}{
-			"REPLICA_COUNT": float64(5),
+			"REPLICA_COUNT": float64(3),
 			"NAMESPACE":     "production",
 		},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
-		ForceText:            BoolPtr(false),
-	}
-	return
-}
-
-func newParamValidationSelfCorrectScenario() *paramValidationSelfCorrectScenario {
-	bad, corrected := paramValidationSelfCorrectConfigs()
-	return &paramValidationSelfCorrectScenario{
-		badConfig:       bad,
-		correctedConfig: corrected,
 	}
 }
 
-func (s *paramValidationSelfCorrectScenario) Name() string {
-	return "param_validation_selfcorrect"
-}
-
-func (s *paramValidationSelfCorrectScenario) Match(ctx *DetectionContext) (bool, float64) {
-	combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
-	if strings.Contains(combined, "mock_param_validation_selfcorrect") ||
-		strings.Contains(combined, "mock param validation selfcorrect") {
-		s.mu.Lock()
-		s.lastCtx = ctx
-		s.mu.Unlock()
-		return true, 1.0
-	}
-	return false, 0
-}
-
-func (s *paramValidationSelfCorrectScenario) Metadata() ScenarioMetadata {
-	return ScenarioMetadata{
-		Name:        "param_validation_selfcorrect",
-		Description: "Returns invalid params first, then corrected params after KA sends validation feedback (#1170)",
-	}
-}
-
-func (s *paramValidationSelfCorrectScenario) DAG() *conversation.DAG { return nil }
-
-// OverrideWorkflowID replaces the deterministic workflow UUID in both configs
-// with the real DataStorage UUID assigned at E2E seed time.
-func (s *paramValidationSelfCorrectScenario) OverrideWorkflowID(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.badConfig.WorkflowID = id
-	s.correctedConfig.WorkflowID = id
-}
-
-// Config returns the corrected config if KA already sent validation feedback
-// (detected by "expected parameters" in the conversation text from
-// FormatSchemaHint), otherwise returns the bad config.
-func (s *paramValidationSelfCorrectScenario) Config() MockScenarioConfig {
-	s.mu.Lock()
-	ctx := s.lastCtx
-	s.mu.Unlock()
-
-	if ctx != nil {
-		combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
-		if strings.Contains(combined, "expected parameters") ||
-			strings.Contains(combined, "type mismatch") ||
-			strings.Contains(combined, "parameter validation") {
-			return s.correctedConfig
-		}
-	}
-	return s.badConfig
+func paramValidationSelfcorrectScenarioNew() *paramValidationSelfcorrectScenario {
+	return &paramValidationSelfcorrectScenario{}
 }

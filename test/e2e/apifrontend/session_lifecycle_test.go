@@ -15,7 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Session Join/Takeover/Reconnect (G19)", Ordered, ContinueOnFailure, Label("e2e", "phase4", "g19"), func() {
+var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4", "g19"), func() {
 	var (
 		kubeconfigPath string
 		namespace      string
@@ -25,7 +25,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Ordered, ContinueOnFai
 		sharedRRName   string
 	)
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		kubeconfigPath = os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
 		namespace = getEnvOrDefault("AF_E2E_NAMESPACE", "kubernaut-system")
 		rrNamespace = "default"
