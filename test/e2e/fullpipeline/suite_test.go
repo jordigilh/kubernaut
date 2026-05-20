@@ -159,6 +159,16 @@ var _ = SynchronizedBeforeSuite(
 		gatewayToken, gtwErr := infrastructure.GetServiceAccountToken(ctx, namespace, gatewaySAName, tempKubeconfigPath)
 		Expect(gtwErr).ToNot(HaveOccurred(), "Failed to get Gateway SA token (SA created in SetupFullPipelineInfrastructure)")
 
+		By("Labeling kubernaut-system namespace as managed (for AF E2E tests)")
+		labelCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
+			"label", "namespace", namespace, "kubernaut.ai/managed=true", "--overwrite")
+		labelOut, labelErr := labelCmd.CombinedOutput()
+		Expect(labelErr).ToNot(HaveOccurred(), "Failed to label namespace: %s", string(labelOut))
+
+		By("Deploying memory-eater in kubernaut-system for AF E2E tests")
+		err = infrastructure.DeployMemoryEater(ctx, namespace, tempKubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Failed to deploy memory-eater for AF tests")
+
 		By("Setting KUBECONFIG for all processes")
 		err = os.Setenv("KUBECONFIG", tempKubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
