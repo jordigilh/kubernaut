@@ -266,9 +266,13 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		})
 
 		It("TC-E2E-A2A-MET-02: af_tool_calls_total includes result=success label", func() {
-			metrics := scrapeMetrics()
-			Expect(metrics).To(MatchRegexp(`af_tool_calls_total\{[^}]*result="success"`),
-				"should have successful tool call observations")
+			resp, err := a2aInvoke(httpClient, baseURL, sreToken, a2aTasksSend("met02-tool", "list pods in default namespace"))
+			Expect(err).NotTo(HaveOccurred())
+			_ = resp.Body.Close()
+
+			Eventually(func() string { return scrapeMetrics() }, 30*time.Second, 2*time.Second).
+				Should(MatchRegexp(`af_tool_calls_total\{[^}]*result="success"`),
+					"should have successful tool call observations")
 		})
 
 		It("TC-E2E-A2A-MET-03: af_tool_call_duration_seconds histogram has buckets", func() {

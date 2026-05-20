@@ -162,7 +162,29 @@ func fpMCPCall(sessionID, toolName string, args map[string]interface{}) ([]byte,
 	}
 	defer func() { _ = resp.Body.Close() }()
 	respBody, err := io.ReadAll(resp.Body)
-	return respBody, resp.StatusCode, err
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	return []byte(fpUnwrapSSE(respBody)), resp.StatusCode, nil
+}
+
+// fpUnwrapSSE extracts the JSON payload from an SSE response body.
+// If the body is already plain JSON it is returned as-is.
+func fpUnwrapSSE(raw []byte) string {
+	s := string(raw)
+	if !strings.Contains(s, "data:") {
+		return strings.TrimSpace(s)
+	}
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if strings.HasPrefix(line, "data:") {
+			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if strings.HasPrefix(payload, "{") {
+				return payload
+			}
+		}
+	}
+	return strings.TrimSpace(s)
 }
 
 // ────────────────────────────────────────────────────────────────────────────
