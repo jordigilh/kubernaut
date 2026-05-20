@@ -32,14 +32,14 @@ import (
 // Turn 2: After KA sends validation error feedback, returns the same workflow
 // with corrected params (REPLICA_COUNT="3", no undeclared params).
 //
-// State tracking: Instead of a simple call counter, we detect whether a
-// previous submit_result_with_workflow tool call exists in the conversation
-// history (via AllText in DetectionContext). This avoids the counter being
-// consumed by early non-submit calls (DAG exploration, RCA extraction) that
-// occur before KA registers the split tool.
+// State tracking: The handler calls MarkSubmitSent() after it actually writes
+// a submit_result_with_workflow response. Config() checks this counter to
+// decide whether to return bad or corrected params. This avoids the counter
+// being consumed by non-submit calls (DAG exploration, RCA extraction) and
+// avoids false positives from tool names appearing in the system prompt.
 type paramValidationSelfcorrectScenario struct {
-	seenPriorSubmit atomic.Bool
-	overrideWfID    string // set by registry when YAML overrides provide the DS-generated UUID
+	submitsSent  atomic.Int64
+	overrideWfID string // set by registry when YAML overrides provide the DS-generated UUID
 }
 
 const paramValScenarioName = "param_validation_selfcorrect"
@@ -56,10 +56,13 @@ func (s *paramValidationSelfcorrectScenario) Match(ctx *DetectionContext) (bool,
 	if !matched {
 		return false, 0
 	}
-	if strings.Contains(ctx.AllText, "submit_result_with_workflow") {
-		s.seenPriorSubmit.Store(true)
-	}
 	return true, 0.95
+}
+
+// MarkSubmitSent is called by the handler after it writes a
+// submit_result_with_workflow response for this scenario.
+func (s *paramValidationSelfcorrectScenario) MarkSubmitSent() {
+	s.submitsSent.Add(1)
 }
 
 func (s *paramValidationSelfcorrectScenario) Metadata() ScenarioMetadata {
@@ -72,7 +75,7 @@ func (s *paramValidationSelfcorrectScenario) Metadata() ScenarioMetadata {
 func (s *paramValidationSelfcorrectScenario) DAG() *conversation.DAG { return nil }
 
 func (s *paramValidationSelfcorrectScenario) Config() MockScenarioConfig {
-	if s.seenPriorSubmit.Load() {
+	if s.submitsSent.Load() > 0 {
 		return s.correctedParamsConfig()
 	}
 	return s.badParamsConfig()

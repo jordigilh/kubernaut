@@ -111,6 +111,12 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[mock-llm] scenario=%s mode=%s outcome=%s workflowID=%q tools=%d hasSplitTool=%v hasSubmitOnly=%v isResolved=%v",
 		scenarioName, h.mode, cfg.InvestigationOutcome, cfg.WorkflowID, len(req.Tools), hasSplit, hasSubmitOnly, resolved)
 
+	notifySubmit := func() {
+		if notifier, ok := result.Scenario.(scenarios.ScenarioWithSubmitNotify); ok {
+			notifier.MarkSubmitSent()
+		}
+	}
+
 	// RCA extraction mode: when the only tool is submit_result, the caller
 	// wants a structured RCA (e.g. discover_workflows). Respond immediately
 	// with a submit_result tool call regardless of mode or forceText.
@@ -132,11 +138,12 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		if effectiveForceText || len(req.Tools) == 0 {
 			if hasSplit && !resolved {
 				h.respondWithSubmitToolCall(w, model, cfg)
+				notifySubmit()
 			} else {
 				h.respondWithText(w, model, cfg)
 			}
 		} else {
-			h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved)
+			h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved, notifySubmit)
 		}
 
 	default: // config.ModeFull
@@ -147,11 +154,12 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		if effectiveForceText || len(req.Tools) == 0 {
 			if hasSplit && !resolved {
 				h.respondWithSubmitToolCall(w, model, cfg)
+				notifySubmit()
 			} else {
 				h.respondWithText(w, model, cfg)
 			}
 		} else {
-			h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved)
+			h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved, notifySubmit)
 		}
 	}
 
@@ -187,6 +195,7 @@ func (h *handler) handleFullDAG(
 	req openai.ChatCompletionRequest,
 	ctx *conversation.Context,
 	hasSplit, resolved bool,
+	notifySubmit func(),
 ) {
 	if len(cfg.MultiToolCalls) > 0 && !hasToolResults(req.Messages) {
 		for _, tc := range cfg.MultiToolCalls {
@@ -223,6 +232,7 @@ func (h *handler) handleFullDAG(
 	default:
 		if hasSplit && !resolved {
 			h.respondWithSubmitToolCall(w, model, cfg)
+			notifySubmit()
 		} else {
 			writeJSON(w, http.StatusOK, response.BuildTextResponse(model, cfg))
 		}
