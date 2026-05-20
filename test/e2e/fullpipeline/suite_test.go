@@ -250,9 +250,9 @@ func getAFToken() string {
 	}
 	resp, err := http.PostForm("http://localhost:30556/dex/token", url.Values{
 		"grant_type":    {"password"},
-		"client_id":     {"af-e2e-client"},
-		"client_secret": {"af-e2e-secret"},
-		"username":      {"admin@example.com"},
+		"client_id":     {"kubernaut-apifrontend"},
+		"client_secret": {"e2e-client-secret"},
+		"username":      {"sre@kubernaut.ai"},
 		"password":      {"password"},
 		"scope":         {"openid email profile"},
 	})
