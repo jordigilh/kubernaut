@@ -192,61 +192,9 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandleGetAuditTrail(ctx, cfg.DSClient, args)
 		})
 
-	// AF triage tools (use DynFactory)
-	registerTool(srv, cfg, sem, "af_list_events", "List Kubernetes events filtered by namespace with optional reason/object filters",
-		func(ctx context.Context, args tools.ListEventsArgs) (any, error) {
-			client, err := cfg.DynFactory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return tools.HandleListEvents(ctx, client, args)
-		})
-
-	registerTool(srv, cfg, sem, "af_get_pods", "Get pod status summaries including container states and conditions",
-		func(ctx context.Context, args tools.GetPodsArgs) (any, error) {
-			client, err := cfg.DynFactory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return tools.HandleGetPods(ctx, client, args)
-		})
-
-	registerTool(srv, cfg, sem, "af_get_workloads", "List Deployment and StatefulSet health with replica counts",
-		func(ctx context.Context, args tools.GetWorkloadsArgs) (any, error) {
-			client, err := cfg.DynFactory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return tools.HandleGetWorkloads(ctx, client, args)
-		})
-
-	registerTool(srv, cfg, sem, "af_resolve_owner", "Trace owner references from a resource to its root workload",
-		func(ctx context.Context, args tools.ResolveOwnerArgs) (any, error) {
-			client, err := cfg.DynFactory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return tools.HandleResolveOwner(ctx, client, args)
-		})
-
-	registerTool(srv, cfg, sem, "af_check_existing_rr", "Check for existing non-terminal RemediationRequest by fingerprint",
-		func(ctx context.Context, args tools.CheckExistingRRArgs) (any, error) {
-			client, err := cfg.DynFactory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return tools.HandleCheckExistingRR(ctx, client, args)
-		})
-
-	registerTool(srv, cfg, sem, "af_create_rr", "Create a RemediationRequest with singleflight deduplication",
-		func(ctx context.Context, args tools.CreateRRArgs) (any, error) {
-			client, err := cfg.DynFactory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			username := usernameFromCtx(ctx)
-			return tools.HandleCreateRR(ctx, client, &args, username, cfg.Triager, cfg.Auditor)
-		})
+	// Internal triage tools (kubectl_get, kubectl_list, kubectl_list_events,
+	// af_check_existing_rr, af_create_rr) are available only to AF's LLM
+	// agent (ADK path) and are not exposed via MCP.
 }
 
 // registerTool is a generic helper that registers a single tool with all cross-cutting concerns:

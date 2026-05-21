@@ -116,6 +116,9 @@ func newFakeDynamicClient(objects ...runtime.Object) *dynamicfake.FakeDynamicCli
 	return dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
 		{Group: "", Version: "v1", Resource: "events"}:                                        "EventList",
 		{Group: "", Version: "v1", Resource: "pods"}:                                          "PodList",
+		{Group: "", Version: "v1", Resource: "services"}:                                      "ServiceList",
+		{Group: "", Version: "v1", Resource: "secrets"}:                                       "SecretList",
+		{Group: "", Version: "v1", Resource: "endpoints"}:                                     "EndpointsList",
 		{Group: "apps", Version: "v1", Resource: "deployments"}:                               "DeploymentList",
 		{Group: "apps", Version: "v1", Resource: "statefulsets"}:                              "StatefulSetList",
 		{Group: "apps", Version: "v1", Resource: "replicasets"}:                               "ReplicaSetList",
@@ -561,50 +564,9 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 		})
 	})
 
-	Context("AF triage tools dispatch", func() {
-		It("UT-AF-B-015: af_list_events dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "af_list_events",
-				map[string]any{"namespace": "default"}, testUser)
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("events"))
-		})
-
-		It("UT-AF-B-016: af_get_pods dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "af_get_pods",
-				map[string]any{"namespace": "default"}, testUser)
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("pods"))
-		})
-
-		It("UT-AF-B-017: af_get_workloads dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "af_get_workloads",
-				map[string]any{"namespace": "default"}, testUser)
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("workloads"))
-		})
-
-		It("UT-AF-B-018: af_resolve_owner dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "af_resolve_owner",
-				map[string]any{"namespace": "default", "kind": "Pod", "name": "nginx-pod-1"}, testUser)
-			text := extractTextContent(body)
-			// Pod has no ownerReferences, so chain is just the pod itself
-			Expect(text).To(ContainSubstring("chain"))
-		})
-
-		It("UT-AF-B-019: af_check_existing_rr dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "af_check_existing_rr",
-				map[string]any{"namespace": "default", "kind": "Deployment", "name": "nginx"}, testUser)
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("exists"))
-		})
-
-		It("UT-AF-B-020: af_create_rr dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "af_create_rr",
-				map[string]any{"namespace": "default", "kind": "StatefulSet", "name": "redis", "description": "test rr"}, testUser)
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("rr_id"))
-		})
-	})
+	// AF triage tools (kubectl_get, kubectl_list, kubectl_list_events,
+	// af_check_existing_rr, af_create_rr) are internal to AF's LLM agent
+	// (ADK path only) and not exposed via MCP — no bridge dispatch tests needed.
 
 	Context("Error paths", func() {
 		It("UT-AF-B-021: tool call with nil DynFactory returns error", func() {
