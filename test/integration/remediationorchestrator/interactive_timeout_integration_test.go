@@ -23,114 +23,133 @@ package remediationorchestrator
 // real AIAnalysis CRD objects in envtest to determine timeout behavior
 // during interactive sessions.
 //
-// Pattern: Create RR + AA CRDs, let the real controller reconcile,
-// assert RR does NOT transition to TimedOut when interactive session is active.
-//
-// NOTE: These tests do NOT wait for real timeouts to expire.
-// They validate the controller's decision logic by setting AnalyzingStartTime
-// in the past and checking the resulting phase after reconciliation.
-// Time manipulation is limited to initial fixture setup (CreationTimestamp
-// is immutable in envtest, but AnalyzingStartTime is a status field we control).
+// Pattern: Let the controller flow naturally through Pending → Processing →
+// Analyzing (using createRemediationRequest + updateSPStatus), then set up
+// the AIAnalysis InteractiveSession and override AnalyzingStartTime to
+// simulate elapsed time. This avoids fighting the controller's phase
+// transitions.
 // ========================================
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/test/shared/helpers"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
 var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration)", func() {
+
+	var (
+		namespace string
+	)
+
+	BeforeEach(func() {
+		namespace = createTestNamespace("ro-interactive")
+	})
+
+	AfterEach(func() {
+		deleteTestNamespace(namespace)
+	})
+
+	// advanceToAnalyzing creates an RR, completes the SP, waits for the controller
+	// to create the AI and transition to Analyzing, then returns the RR and AI names.
+	advanceToAnalyzing := func(rrName string) (aiName, spName string) {
+		By("Creating a RemediationRequest via the established helper")
+		_ = createRemediationRequest(namespace, rrName)
+
+		By("Waiting for SignalProcessing to be created")
+		spName = fmt.Sprintf("sp-%s", rrName)
+		Eventually(func() error {
+			sp := &signalprocessingv1.SignalProcessing{}
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+				Name: spName, Namespace: ROControllerNamespace,
+			}, sp)
+		}, timeout, interval).Should(Succeed())
+
+		By("Completing SignalProcessing to advance RR to Processing")
+		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+
+		By("Waiting for AIAnalysis to be created by the controller")
+		aiName = fmt.Sprintf("ai-%s", rrName)
+		Eventually(func() error {
+			ai := &aianalysisv1.AIAnalysis{}
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+				Name: aiName, Namespace: ROControllerNamespace,
+			}, ai)
+		}, timeout, interval).Should(Succeed())
+
+		By("Waiting for RR to reach Analyzing phase naturally")
+		Eventually(func() string {
+			rr := &remediationv1.RemediationRequest{}
+			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+				Name: rrName, Namespace: ROControllerNamespace,
+			}, rr); err != nil {
+				return ""
+			}
+			return string(rr.Status.OverallPhase)
+		}, timeout, interval).Should(Equal("Analyzing"))
+
+		return aiName, spName
+	}
 
 	// IT-RO-703-001: RO does NOT timeout Analyzing phase when AA has active InteractiveSession
 	// BR: DD-INTERACTIVE-002 (dynamic timeout extension)
 	Context("IT-RO-703-001: Active InteractiveSession prevents Analyzing timeout", func() {
 		It("should keep RR in Analyzing when AA has an active interactive session", func() {
-			ns := ROControllerNamespace
-			rrName := "it-703-001-rr"
-			aiName := "it-703-001-ai"
+			rrName := fmt.Sprintf("it-703-001-%s", uuid.New().String()[:8])
+			aiName, _ := advanceToAnalyzing(rrName)
 
-			By("Creating an AIAnalysis with active InteractiveSession")
-			startedAt := metav1.NewTime(time.Now().Add(-2 * time.Minute))
-			ai := &aianalysisv1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{Name: aiName, Namespace: ns},
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: rrName, Namespace: ns},
-					RemediationID:         "it-703-001",
-					AnalysisRequest: aianalysisv1.AnalysisRequest{
-						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      "a1b2c3d4e5f6",
-							Severity:         "medium",
-							SignalName:       "TestSignal",
-							Environment:      "test",
-							BusinessPriority: "P2",
-							TargetResource:   aianalysisv1.TargetResource{Kind: "Pod", Name: "test-pod", Namespace: ns},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
-						},
-						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, ai)).To(Succeed())
-
-			// Set status with interactive session (status subresource)
-			ai.Status.Phase = "Investigating"
-			ai.Status.InteractiveSession = &aianalysisv1.InteractiveSessionInfo{
-				SessionID:  "sess-integration-001",
-				ActingUser: "test-user@corp",
-				StartedAt:  &startedAt,
-			}
-			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
-
-			By("Creating a RemediationRequest and letting the controller initialize it")
-			rr := helpers.NewRemediationRequest(rrName, ns)
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-
-			// DD-TEST-PARALLELISM-003: Work WITH the controller, not against it.
-			// Wait for the RO controller to finish initialization (empty → Pending/Blocked)
-			// before overriding status, so we never race on resourceVersion.
-			Eventually(func() bool {
-				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
-					return false
-				}
-				return rr.Status.OverallPhase != ""
-			}, timeout, interval).Should(BeTrue(),
-				"Controller should initialize the RR before test overrides status")
-
-			By("Overriding RR status to Analyzing with start time > 10m ago")
-			analyzingStart := metav1.NewTime(time.Now().Add(-12 * time.Minute))
+			By("Setting AIAnalysis to Investigating with an active InteractiveSession")
+			ai := &aianalysisv1.AIAnalysis{}
 			Eventually(func() error {
-				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+					Name: aiName, Namespace: ROControllerNamespace,
+				}, ai); err != nil {
 					return err
 				}
-				rr.Status.OverallPhase = remediationv1.PhaseAnalyzing
-				rr.Status.AnalyzingStartTime = &analyzingStart
-				rr.Status.AIAnalysisRef = &corev1.ObjectReference{
-					Name:      ai.Name,
-					Namespace: ai.Namespace,
+				startedAt := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+				ai.Status.Phase = "Investigating"
+				ai.Status.InteractiveSession = &aianalysisv1.InteractiveSessionInfo{
+					SessionID:  "sess-integration-001",
+					ActingUser: "test-user@corp",
+					StartedAt:  &startedAt,
 				}
+				return k8sClient.Status().Update(ctx, ai)
+			}, timeout, interval).Should(Succeed())
+
+			By("Backdating AnalyzingStartTime to > 10m ago (past default timeout)")
+			rr := &remediationv1.RemediationRequest{}
+			analyzingStart := metav1.NewTime(time.Now().Add(-12 * time.Minute))
+			Eventually(func() error {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+					Name: rrName, Namespace: ROControllerNamespace,
+				}, rr); err != nil {
+					return err
+				}
+				rr.Status.AnalyzingStartTime = &analyzingStart
 				return k8sClient.Status().Update(ctx, rr)
 			}, timeout, interval).Should(Succeed())
 
-			By("Waiting for controller to reconcile and verifying NO timeout")
-			Eventually(func() remediationv1.RemediationPhase {
+			By("Verifying controller does NOT timeout the RR (active session extends timeout)")
+			Consistently(func() remediationv1.RemediationPhase {
 				updated := &remediationv1.RemediationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: ns}, updated)
-				if err != nil {
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name: rrName, Namespace: ROControllerNamespace,
+				}, updated); err != nil {
 					return ""
 				}
 				return updated.Status.OverallPhase
-			}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing),
+			}, 10*time.Second, interval).Should(Equal(remediationv1.PhaseAnalyzing),
 				"RR should remain in Analyzing (not TimedOut) when interactive session is active")
 		})
 	})
@@ -139,75 +158,48 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration
 	// BR: DD-INTERACTIVE-002 (timeout returns to default after disconnect)
 	Context("IT-RO-703-002: Completed InteractiveSession allows normal timeout", func() {
 		It("should timeout RR when interactive session is completed and time exceeded", func() {
-			ns := ROControllerNamespace
-			rrName := "it-703-002-rr"
-			aiName := "it-703-002-ai"
+			rrName := fmt.Sprintf("it-703-002-%s", uuid.New().String()[:8])
+			aiName, _ := advanceToAnalyzing(rrName)
 
-			By("Creating an AIAnalysis with completed InteractiveSession")
-			startedAt := metav1.NewTime(time.Now().Add(-20 * time.Minute))
-			completedAt := metav1.NewTime(time.Now().Add(-15 * time.Minute))
-			ai := &aianalysisv1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{Name: aiName, Namespace: ns},
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: rrName, Namespace: ns},
-					RemediationID:         "it-703-002",
-					AnalysisRequest: aianalysisv1.AnalysisRequest{
-						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      "a1b2c3d4e5f6",
-							Severity:         "medium",
-							SignalName:       "TestSignal",
-							Environment:      "test",
-							BusinessPriority: "P2",
-							TargetResource:   aianalysisv1.TargetResource{Kind: "Pod", Name: "test-pod", Namespace: ns},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
-						},
-						AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, ai)).To(Succeed())
-
-			ai.Status.Phase = "Investigating"
-			ai.Status.InteractiveSession = &aianalysisv1.InteractiveSessionInfo{
-				SessionID:   "sess-integration-002",
-				ActingUser:  "test-user@corp",
-				StartedAt:   &startedAt,
-				CompletedAt: &completedAt,
-			}
-			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
-
-			By("Creating RR and letting the controller initialize it")
-			rr := helpers.NewRemediationRequest(rrName, ns)
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-
-			Eventually(func() bool {
-				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
-					return false
-				}
-				return rr.Status.OverallPhase != ""
-			}, timeout, interval).Should(BeTrue(),
-				"Controller should initialize the RR before test overrides status")
-
-			By("Overriding RR status to Analyzing with start time > 10m ago")
-			analyzingStart := metav1.NewTime(time.Now().Add(-12 * time.Minute))
+			By("Setting AIAnalysis to Investigating with a completed InteractiveSession")
+			ai := &aianalysisv1.AIAnalysis{}
 			Eventually(func() error {
-				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+					Name: aiName, Namespace: ROControllerNamespace,
+				}, ai); err != nil {
 					return err
 				}
-				rr.Status.OverallPhase = remediationv1.PhaseAnalyzing
-				rr.Status.AnalyzingStartTime = &analyzingStart
-				rr.Status.AIAnalysisRef = &corev1.ObjectReference{
-					Name:      ai.Name,
-					Namespace: ai.Namespace,
+				startedAt := metav1.NewTime(time.Now().Add(-20 * time.Minute))
+				completedAt := metav1.NewTime(time.Now().Add(-15 * time.Minute))
+				ai.Status.Phase = "Investigating"
+				ai.Status.InteractiveSession = &aianalysisv1.InteractiveSessionInfo{
+					SessionID:   "sess-integration-002",
+					ActingUser:  "test-user@corp",
+					StartedAt:   &startedAt,
+					CompletedAt: &completedAt,
 				}
+				return k8sClient.Status().Update(ctx, ai)
+			}, timeout, interval).Should(Succeed())
+
+			By("Backdating AnalyzingStartTime to > 10m ago (past default timeout)")
+			rr := &remediationv1.RemediationRequest{}
+			analyzingStart := metav1.NewTime(time.Now().Add(-12 * time.Minute))
+			Eventually(func() error {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+					Name: rrName, Namespace: ROControllerNamespace,
+				}, rr); err != nil {
+					return err
+				}
+				rr.Status.AnalyzingStartTime = &analyzingStart
 				return k8sClient.Status().Update(ctx, rr)
 			}, timeout, interval).Should(Succeed())
 
 			By("Waiting for controller to reconcile and timeout the RR")
 			Eventually(func() remediationv1.RemediationPhase {
 				updated := &remediationv1.RemediationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: ns}, updated)
-				if err != nil {
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name: rrName, Namespace: ROControllerNamespace,
+				}, updated); err != nil {
 					return ""
 				}
 				return updated.Status.OverallPhase
@@ -220,32 +212,29 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration
 	// BR: BR-ORCH-028 (graceful degradation)
 	Context("IT-RO-703-003: Missing AA -- graceful fallback to default timeout", func() {
 		It("should timeout at default when AIAnalysisRef points to non-existent AA", func() {
-			ns := ROControllerNamespace
-			rrName := "it-703-003-rr"
+			rrName := fmt.Sprintf("it-703-003-%s", uuid.New().String()[:8])
+			aiName, _ := advanceToAnalyzing(rrName)
 
-			By("Creating RR and letting the controller initialize it")
-			rr := helpers.NewRemediationRequest(rrName, ns)
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			By("Deleting the AIAnalysis to simulate a missing AA")
+			ai := &aianalysisv1.AIAnalysis{}
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+				Name: aiName, Namespace: ROControllerNamespace,
+			}, ai)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, ai)).To(Succeed())
 
-			Eventually(func() bool {
-				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
-					return false
-				}
-				return rr.Status.OverallPhase != ""
-			}, timeout, interval).Should(BeTrue(),
-				"Controller should initialize the RR before test overrides status")
-
-			By("Overriding RR status to Analyzing with AIAnalysisRef pointing to non-existent AA")
+			By("Backdating AnalyzingStartTime to > 10m ago (past default timeout)")
+			rr := &remediationv1.RemediationRequest{}
 			analyzingStart := metav1.NewTime(time.Now().Add(-12 * time.Minute))
 			Eventually(func() error {
-				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
+					Name: rrName, Namespace: ROControllerNamespace,
+				}, rr); err != nil {
 					return err
 				}
-				rr.Status.OverallPhase = remediationv1.PhaseAnalyzing
 				rr.Status.AnalyzingStartTime = &analyzingStart
 				rr.Status.AIAnalysisRef = &corev1.ObjectReference{
-					Name:      "ai-deleted-703",
-					Namespace: ns,
+					Name:      "ai-deleted-nonexistent",
+					Namespace: ROControllerNamespace,
 				}
 				return k8sClient.Status().Update(ctx, rr)
 			}, timeout, interval).Should(Succeed())
@@ -253,8 +242,9 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration
 			By("Waiting for controller to reconcile and timeout normally")
 			Eventually(func() remediationv1.RemediationPhase {
 				updated := &remediationv1.RemediationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: ns}, updated)
-				if err != nil {
+				if err := k8sClient.Get(ctx, types.NamespacedName{
+					Name: rrName, Namespace: ROControllerNamespace,
+				}, updated); err != nil {
 					return ""
 				}
 				return updated.Status.OverallPhase
