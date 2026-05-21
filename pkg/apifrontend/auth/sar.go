@@ -29,6 +29,10 @@ type cacheEntry struct {
 
 // SARChecker implements ToolAuthorizer using Kubernetes SubjectAccessReview.
 // Results are cached with a configurable TTL to reduce API server load.
+//
+// Cache eviction: a background goroutine sweeps expired entries every 2*cacheTTL
+// (minimum 60s) to prevent unbounded growth from departed users. Each entry is
+// ~100 bytes, so even at 1000 users x 21 tools the peak between sweeps is ~2MB.
 type SARChecker struct {
 	client   kubernetes.Interface
 	cacheTTL time.Duration
@@ -39,12 +43,37 @@ type SARChecker struct {
 
 // NewSARChecker creates a SARChecker that performs SubjectAccessReview calls
 // against the Kubernetes API server with results cached for the given TTL.
+// A background sweep goroutine evicts expired entries periodically.
 func NewSARChecker(client kubernetes.Interface, cacheTTL time.Duration, logger logr.Logger) *SARChecker {
-	return &SARChecker{
+	s := &SARChecker{
 		client:   client,
 		cacheTTL: cacheTTL,
 		logger:   logger,
 		cache:    make(map[string]cacheEntry, 64),
+	}
+
+	sweepInterval := 2 * cacheTTL
+	if sweepInterval < 60*time.Second {
+		sweepInterval = 60 * time.Second
+	}
+	go s.evictExpired(sweepInterval)
+
+	return s
+}
+
+// evictExpired periodically removes cache entries whose TTL has expired.
+func (s *SARChecker) evictExpired(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for range ticker.C {
+		now := time.Now()
+		s.mu.Lock()
+		for k, v := range s.cache {
+			if now.After(v.expiresAt) {
+				delete(s.cache, k)
+			}
+		}
+		s.mu.Unlock()
 	}
 }
 
