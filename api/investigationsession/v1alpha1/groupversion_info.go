@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1alpha1 contains API Schema definitions for the apifrontend v1alpha1 API group.
+// Package v1alpha1 contains API Schema definitions for the InvestigationSession v1alpha1 API group.
 // +kubebuilder:object:generate=true
-// +groupName=apifrontend.kubernaut.ai
+// +groupName=kubernaut.ai
 package v1alpha1
 
 import (
@@ -27,7 +27,7 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects.
-	GroupVersion = schema.GroupVersion{Group: "apifrontend.kubernaut.ai", Version: "v1alpha1"}
+	GroupVersion = schema.GroupVersion{Group: "kubernaut.ai", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionResource scheme.
 	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
