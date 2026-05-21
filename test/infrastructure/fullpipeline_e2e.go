@@ -354,6 +354,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		{FixtureDir: "crashloop-config-fix-job", Environment: "production"},
 		{FixtureDir: "oomkill-increase-memory-job", Environment: "production"},
 		{FixtureDir: "fix-certificate", Environment: "production"},
+		{FixtureDir: "generic-restart", Environment: "production"},
 	}
 	seededUUIDs, seedErr := SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace, fpWorkflows, writer)
 	if seedErr != nil {
