@@ -138,6 +138,9 @@ jobs:
           fi
           echo "✅ Generated files are up-to-date"
 
+      - name: Validate embedded assets (CRDs, migrations)
+        run: make validate-embed
+
       - name: Lint Go code
         uses: golangci/golangci-lint-action@v9
         with:

@@ -112,7 +112,7 @@ sync-embed: ## Sync migration SQL and CRD YAMLs into pkg/shared/assets/ for Go e
 	@echo "📋 Syncing embedded assets for kubernaut-operator..."
 	@mkdir -p pkg/shared/assets/migrations pkg/shared/assets/crds
 	@cp -f migrations/*.sql pkg/shared/assets/migrations/
-	@cp -f config/crd/bases/kubernaut.ai_*.yaml pkg/shared/assets/crds/
+	@cp -f config/crd/bases/*.yaml pkg/shared/assets/crds/
 	@echo "✅ pkg/shared/assets/ updated (migrations + CRDs)"
 
 .PHONY: validate-embed
