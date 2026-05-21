@@ -111,6 +111,7 @@ manifests: controller-gen sync-version ## Generate WebhookConfiguration, Cluster
 sync-embed: ## Sync migration SQL and CRD YAMLs into pkg/shared/assets/ for Go embed (DD-4, Issue #578)
 	@echo "📋 Syncing embedded assets for kubernaut-operator..."
 	@mkdir -p pkg/shared/assets/migrations pkg/shared/assets/crds
+	@rm -f pkg/shared/assets/migrations/*.sql pkg/shared/assets/crds/*.yaml
 	@cp -f migrations/*.sql pkg/shared/assets/migrations/
 	@cp -f config/crd/bases/*.yaml pkg/shared/assets/crds/
 	@echo "✅ pkg/shared/assets/ updated (migrations + CRDs)"
@@ -129,6 +130,19 @@ validate-embed: sync-embed ## Validate embedded assets are in sync with source f
 		exit 1; \
 	fi
 	@echo "✅ Embedded assets are in sync"
+	@echo "🔍 Checking for duplicate migration versions..."
+	@dupes=$$(ls migrations/*.sql 2>/dev/null | xargs -n1 basename | cut -d_ -f1 | sort | uniq -d); \
+	if [ -n "$$dupes" ]; then \
+		echo ""; \
+		echo "❌ Duplicate migration version(s) detected: $$dupes"; \
+		echo ""; \
+		echo "📋 Conflicting files:"; \
+		for v in $$dupes; do ls migrations/$${v}_*.sql; done; \
+		echo ""; \
+		echo "🔧 To fix: renumber one of the conflicting migrations"; \
+		exit 1; \
+	fi
+	@echo "✅ No duplicate migration versions"
 
 .PHONY: sync-version
 sync-version: ## Propagate VERSION and CHART_VERSION files to Chart.yaml, values, Dockerfiles, and docs
