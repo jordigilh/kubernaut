@@ -127,6 +127,12 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 	return result, nil
 }
 
+// NewRBACGuardForTest is an exported alias of newRBACGuard for integration
+// testing via runner.Run. Production code should use the unexported constructor.
+func NewRBACGuardForTest(authorizer auth.ToolAuthorizer, auditor audit.Emitter) llmagent.BeforeToolCallback {
+	return newRBACGuard(authorizer, auditor)
+}
+
 // newRBACGuard returns a BeforeToolCallback that enforces RBAC via SAR.
 // Fail-closed: if no identity, authorizer error, or denial, the tool call is rejected.
 // Denied attempts are emitted as audit events for FedRAMP SI-4 compliance.

@@ -1,13 +1,49 @@
 package agent_test
 
 import (
+	"context"
+	"fmt"
+	"iter"
 	"strings"
+	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"google.golang.org/adk/agent"
+	"google.golang.org/adk/agent/llmagent"
+	"google.golang.org/adk/model"
+	"google.golang.org/adk/runner"
+	"google.golang.org/adk/session"
+	"google.golang.org/adk/tool"
+	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/genai"
+
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 )
+
+// llmAdapter wraps mockToolCallLLM to satisfy model.LLM interface at the
+// package level (struct methods can't be declared inside Describe blocks).
+type llmAdapter struct {
+	m    any
+	genFn func(context.Context, *model.LLMRequest, bool) iter.Seq2[*model.LLMResponse, error]
+}
+
+func (a *llmAdapter) Name() string { return "mock-tool-call-llm" }
+func (a *llmAdapter) GenerateContent(ctx context.Context, req *model.LLMRequest, streaming bool) iter.Seq2[*model.LLMResponse, error] {
+	return a.genFn(ctx, req, streaming)
+}
+
+// mockAuthorizerImpl implements auth.ToolAuthorizer for test control.
+type mockAuthorizerImpl struct {
+	allow bool
+	err   error
+}
+
+func (m *mockAuthorizerImpl) Check(_ context.Context, _ string, _ []string, _ string) (bool, error) {
+	return m.allow, m.err
+}
 
 var _ = Describe("Root Agent", func() {
 	Describe("NewRootAgent", func() {
@@ -132,6 +168,153 @@ var _ = Describe("Root Agent", func() {
 			_, _, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("tool"))
+		})
+	})
+
+	Describe("newRBACGuard via runner.Run", func() {
+		type noopArgs struct {
+			Input string `json:"input"`
+		}
+		type noopResult struct {
+			Output string `json:"output"`
+		}
+
+		// mockToolCallLLM implements model.LLM. First GenerateContent returns a
+		// FunctionCall for targetTool; subsequent calls return text to terminate.
+		type mockToolCallLLM struct {
+			targetTool string
+			callCount  atomic.Int32
+		}
+
+		newMockToolCallLLM := func(targetTool string) *mockToolCallLLM {
+			return &mockToolCallLLM{targetTool: targetTool}
+		}
+
+		buildToolCallLLMName := func(_ *mockToolCallLLM) string { return "mock-tool-call-llm" }
+		_ = buildToolCallLLMName
+
+		generateContent := func(m *mockToolCallLLM) func(context.Context, *model.LLMRequest, bool) iter.Seq2[*model.LLMResponse, error] {
+			return func(_ context.Context, _ *model.LLMRequest, _ bool) iter.Seq2[*model.LLMResponse, error] {
+				return func(yield func(*model.LLMResponse, error) bool) {
+					n := m.callCount.Add(1)
+					if n == 1 {
+						yield(&model.LLMResponse{
+							Content: &genai.Content{
+								Role: "model",
+								Parts: []*genai.Part{{FunctionCall: &genai.FunctionCall{
+									ID:   "call-1",
+									Name: m.targetTool,
+									Args: map[string]any{"input": "test"},
+								}}},
+							},
+						}, nil)
+					} else {
+						yield(&model.LLMResponse{
+							Content: &genai.Content{
+								Role:  "model",
+								Parts: []*genai.Part{{Text: "Done."}},
+							},
+						}, nil)
+					}
+				}
+			}
+		}
+
+		buildRunner := func(mockLLM *mockToolCallLLM, authorizer auth.ToolAuthorizer) (*runner.Runner, tool.Tool) {
+			noopTool, err := functiontool.New(functiontool.Config{
+				Name:        "af_test_tool",
+				Description: "No-op tool for RBAC guard integration tests",
+			}, func(_ tool.Context, args noopArgs) (noopResult, error) {
+				return noopResult{Output: "executed"}, nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Wire mockLLM as a model.LLM-compatible type via adapter
+			adapter := &llmAdapter{m: mockLLM, genFn: generateContent(mockLLM)}
+
+			a, err := llmagent.New(llmagent.Config{
+				Name:        "rbac-guard-test-agent",
+				Description: "Integration test agent for RBAC guard",
+				Model:       adapter,
+				Tools:       []tool.Tool{noopTool},
+				Instruction: "You are a test agent. Call af_test_tool when asked.",
+				BeforeToolCallbacks: []llmagent.BeforeToolCallback{
+					agentpkg.NewRBACGuardForTest(authorizer, nil),
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			r, err := runner.New(runner.Config{
+				AppName:           "rbac-guard-it",
+				Agent:             a,
+				SessionService:    session.InMemoryService(),
+				AutoCreateSession: true,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			return r, noopTool
+		}
+
+		runAgent := func(r *runner.Runner, ctx context.Context) string {
+			msg := &genai.Content{
+				Role:  "user",
+				Parts: []*genai.Part{{Text: "call af_test_tool"}},
+			}
+			var allText strings.Builder
+			for event, err := range r.Run(ctx, "test-user", "sess-1", msg, agent.RunConfig{}) {
+				Expect(err).NotTo(HaveOccurred())
+				if event.Content != nil {
+					for _, p := range event.Content.Parts {
+						if p.Text != "" {
+							allText.WriteString(p.Text)
+						}
+						if p.FunctionResponse != nil && p.FunctionResponse.Response != nil {
+							if errMsg, ok := p.FunctionResponse.Response["error"].(string); ok {
+								allText.WriteString(fmt.Sprintf(" [fn_error:%s]", errMsg))
+							}
+						}
+					}
+				}
+			}
+			return allText.String()
+		}
+
+		It("IT-AF-1221-020: allowed identity -> tool executes via runner.Run", func() {
+			mockLLM := newMockToolCallLLM("af_test_tool")
+			r, _ := buildRunner(mockLLM, &mockAuthorizerImpl{allow: true})
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre-user@example.com",
+				Groups:   []string{"sre"},
+			})
+
+			result := runAgent(r, ctx)
+			// Agent completed without RBAC errors; the mock LLM produced "Done."
+			Expect(result).To(ContainSubstring("Done."))
+			// The LLM was called at least twice (tool call + final text)
+			Expect(mockLLM.callCount.Load()).To(BeNumerically(">=", 2))
+		})
+
+		It("IT-AF-1221-021: denied identity -> tool blocked with forbidden", func() {
+			mockLLM := newMockToolCallLLM("af_test_tool")
+			r, _ := buildRunner(mockLLM, &mockAuthorizerImpl{allow: false})
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "cicd-user@example.com",
+				Groups:   []string{"cicd"},
+			})
+
+			result := runAgent(r, ctx)
+			Expect(result).To(ContainSubstring("forbidden"))
+		})
+
+		It("IT-AF-1221-022: no identity in context -> denied with unauthorized", func() {
+			mockLLM := newMockToolCallLLM("af_test_tool")
+			r, _ := buildRunner(mockLLM, &mockAuthorizerImpl{allow: true})
+
+			// No identity injected — context.Background() without WithUserIdentity
+			result := runAgent(r, context.Background())
+			Expect(result).To(ContainSubstring("unauthorized"))
 		})
 	})
 
