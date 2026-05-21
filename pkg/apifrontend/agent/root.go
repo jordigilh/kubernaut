@@ -312,7 +312,8 @@ func newAuditToolCallback(auditor audit.Emitter) llmagent.AfterToolCallback {
 
 		result := "success"
 		if toolErr != nil {
-			result = "error"
+			result = "failure"
+			log.Printf("[audit-tool-callback] tool=%q outcome=failure error=%v", t.Name(), toolErr)
 		}
 
 		detail := map[string]string{

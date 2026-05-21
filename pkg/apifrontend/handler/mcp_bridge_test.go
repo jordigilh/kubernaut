@@ -796,7 +796,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			events := auditor.Events()
 			Expect(events).NotTo(BeEmpty())
 			Expect(events[0].Type).To(Equal(audit.EventAuthAccessDenied))
-			Expect(events[0].Detail["tool"]).To(Equal("af_list_events"))
+			Expect(events[0].Detail["tool_name"]).To(Equal("af_list_events"))
 		})
 
 		It("UT-AF-B-032: RBAC denial increments af_tool_calls_total{result=denied}", func() {
@@ -1090,7 +1090,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			Expect(events).NotTo(BeEmpty())
 			found := false
 			for _, e := range events {
-				if e.Type == audit.EventToolExecuted && e.Detail["tool"] == "af_list_events" {
+				if e.Type == audit.EventToolExecuted && e.Detail["tool_name"] == "af_list_events" {
 					found = true
 					Expect(e.UserID).To(Equal("sre-user"))
 					break
@@ -1235,7 +1235,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			events := localAuditor.Events()
 			var foundFailed bool
 			for _, ev := range events {
-				if ev.Type == audit.EventMCPToolFailed && ev.Detail["tool"] == "af_list_events" {
+				if ev.Type == audit.EventMCPToolFailed && ev.Detail["tool_name"] == "af_list_events" {
 					foundFailed = true
 					break
 				}
@@ -1453,7 +1453,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			events := localAuditor.Events()
 			var foundPanicAudit bool
 			for _, ev := range events {
-				if ev.Type == audit.EventMCPToolFailed && ev.Detail["tool"] == "af_list_events" && ev.Detail["error"] == "internal error" {
+				if ev.Type == audit.EventMCPToolFailed && ev.Detail["tool_name"] == "af_list_events" && ev.Detail["error"] == "internal error" {
 					foundPanicAudit = true
 					break
 				}
@@ -2120,7 +2120,7 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 			if e.Type == audit.EventWorkflowDiscovery {
 				found = true
 				Expect(e.Detail).To(HaveKeyWithValue("workflow_count", "2"))
-				Expect(e.Detail).To(HaveKeyWithValue("tool", "kubernaut_discover_workflows"))
+				Expect(e.Detail).To(HaveKeyWithValue("tool_name", "kubernaut_discover_workflows"))
 				break
 			}
 		}
