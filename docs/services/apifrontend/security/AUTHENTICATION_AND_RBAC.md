@@ -187,6 +187,69 @@ sequenceDiagram
 
 ---
 
+## 3.1 OIDC-Direct Mode (Opt-in, v1.5+)
+
+As an alternative to impersonation, the AF supports **OIDC-direct mode**
+(`rbac.useOIDCDirect: true`). In this mode, triage tool K8s API calls use the
+user's raw OIDC JWT as a bearer token directly, rather than impersonation headers.
+
+### Benefits
+
+- Eliminates the need for ServiceAccount impersonation privileges
+- Simpler ClusterRole (no `impersonate` verb needed)
+- Token authenticity verified by the K8s API server's OIDC provider configuration
+
+### Configuration
+
+```yaml
+rbac:
+  useOIDCDirect: true
+```
+
+The K8s API server must be configured to trust the same OIDC provider that issues
+tokens to AF users (via `--oidc-issuer-url`, `--oidc-client-id`, etc.).
+
+### OIDC-Direct Flow
+
+```mermaid
+sequenceDiagram
+    participant Tool as af_list_events
+    participant Factory as DynamicClientFactory
+    participant CTX as Context
+    participant K8s as K8s API Server
+
+    Tool->>Factory: factory(ctx)
+    Factory->>CTX: UserIdentityFromContext(ctx)
+    CTX-->>Factory: {username, groups, rawToken, expiresAt}
+    Factory->>Factory: Validate: identity present, token non-empty, not expired
+    Factory->>Factory: rest.CopyConfig(baseCfg)
+    Factory->>Factory: cfg.BearerToken = rawToken
+    Factory->>Factory: Clear BearerTokenFile and Impersonate
+    Factory->>Factory: dynamic.NewForConfig(cfg)
+    Factory-->>Tool: OIDC-direct dynamic.Interface
+    Tool->>K8s: List events (Authorization: Bearer <user-jwt>)
+    K8s->>K8s: Validate JWT via OIDC provider, evaluate user's RBAC
+    K8s-->>Tool: Events (or 401/403)
+```
+
+### Fail-Closed Behavior
+
+The factory rejects requests when:
+- No `UserIdentity` in context (missing authentication)
+- `Username` is empty
+- `RawToken` is empty (no JWT available)
+- Token `ExpiresAt` is in the past
+
+### Source Files
+
+| File | Purpose |
+|------|---------|
+| `pkg/apifrontend/auth/dynamic_impersonation.go` | `NewOIDCDirectDynamicFactory` implementation |
+| `pkg/apifrontend/config/config.go` | `RBACConfig.UseOIDCDirect` flag |
+| `cmd/apifrontend/main.go` | `buildDynFactory(cfg)` routing |
+
+---
+
 ## 4. Kubernetes RBAC (ClusterRole)
 
 The Kustomize-managed ClusterRole (`deploy/kustomize/base/02-rbac.yaml`) grants the AF ServiceAccount:

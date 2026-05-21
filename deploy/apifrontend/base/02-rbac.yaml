@@ -24,7 +24,7 @@ rules:
     verbs: ["create", "patch"]
   # Impersonation: apifrontend impersonates authenticated users for K8s API calls
   - apiGroups: [""]
-    resources: ["users", "groups", "serviceaccounts"]
+    resources: ["users", "groups"]
     verbs: ["impersonate"]
   # SubjectAccessReview: SAR-based tool authorization (replaces rbac_roles.yaml)
   - apiGroups: ["authorization.k8s.io"]

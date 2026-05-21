@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -40,6 +41,42 @@ func NewImpersonatingDynamicFactory(baseCfg *rest.Config, wrappers ...ClientWrap
 		client, err := dynamic.NewForConfig(impCfg)
 		if err != nil {
 			return nil, fmt.Errorf("creating impersonated dynamic client: %w", err)
+		}
+
+		var wrapped dynamic.Interface = client
+		for _, w := range wrappers {
+			wrapped = w(wrapped)
+		}
+		return wrapped, nil
+	}
+}
+
+// NewOIDCDirectDynamicFactory returns a DynamicClientFactory that creates a
+// dynamic.Interface using the user's raw OIDC JWT as a bearer token.
+// The K8s API server must trust the same OIDC provider.
+// baseCfg is the AF ServiceAccount's rest.Config (never mutated).
+// wrappers are applied in order to the raw client (typically circuit breaker).
+func NewOIDCDirectDynamicFactory(baseCfg *rest.Config, wrappers ...ClientWrapper) DynamicClientFactory {
+	return func(ctx context.Context) (dynamic.Interface, error) {
+		identity := UserIdentityFromContext(ctx)
+		if identity == nil || identity.Username == "" {
+			return nil, fmt.Errorf("OIDC-direct requires authenticated user identity in context")
+		}
+		if identity.RawToken == "" {
+			return nil, fmt.Errorf("OIDC-direct requires a raw JWT in UserIdentity")
+		}
+		if !identity.ExpiresAt.IsZero() && identity.ExpiresAt.Before(time.Now()) {
+			return nil, fmt.Errorf("OIDC-direct token expired at %s", identity.ExpiresAt)
+		}
+
+		cfg := rest.CopyConfig(baseCfg)
+		cfg.BearerToken = identity.RawToken
+		cfg.BearerTokenFile = ""
+		cfg.Impersonate = rest.ImpersonationConfig{}
+
+		client, err := dynamic.NewForConfig(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("creating OIDC-direct dynamic client: %w", err)
 		}
 
 		var wrapped dynamic.Interface = client
