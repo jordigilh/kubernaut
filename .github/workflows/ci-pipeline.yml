@@ -73,6 +73,9 @@ jobs:
       - uses: dorny/paths-filter@v4
         id: filter
         with:
+          # Note: dorny/paths-filter uses picomatch globs. Negation patterns
+          # must appear AFTER the positive patterns they override. Files under
+          # spikes/ and docs/ are non-production and should not trigger CI.
           filters: |
             code:
               - '**.go'
@@ -90,6 +93,8 @@ jobs:
               - 'charts/**'
               - 'scripts/helm-smoke-test.sh'
               - 'config/**'
+              - '!spikes/**'
+              - '!docs/**'
 
   # ========================================
   # STAGE 1: LINT, LICENSE SCAN & UNIT TESTS (ALL PARALLEL)
