@@ -1,0 +1,70 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: OASSpec
+metadata:
+  name: kubernaut-alignment-shadow
+  description: >
+    Per-step security evaluation for investigation alignment.
+    Receives forwarded events from the primary investigation and evaluates
+    each for prompt injection, unauthorized tool usage, output manipulation,
+    and data exfiltration. Also performs grounding review of the full RCA
+    transcript when prefixed with [GROUNDING_REVIEW].
+
+input_schema:
+  type: object
+  required: [event_content]
+  properties:
+    event_content:
+      type: string
+      description: >
+        Forwarded event from the primary investigation. Prefixed with
+        event type tags: [TOOL_RESULT], [LLM_COMPLETION], [TOOL_CALL],
+        or [GROUNDING_REVIEW] for RCA transcript evaluation.
+  additionalProperties: false
+
+output_schema:
+  type: object
+  required: [suspicious, explanation]
+  properties:
+    suspicious:
+      type: boolean
+      description: >
+        Whether the event contains security concerns (prompt injection,
+        unauthorized tool usage, output manipulation, data exfiltration).
+    grounded:
+      type: boolean
+      description: >
+        For [GROUNDING_REVIEW] events only: whether the RCA conversation
+        is factually grounded in the evidence provided by tool results.
+    explanation:
+      type: string
+      description: >
+        Human-readable explanation of the verdict. For suspicious=true,
+        describes the specific concern. For grounded=false, describes
+        what is ungrounded and why.
+    threat_category:
+      type: string
+      enum:
+        - prompt_injection
+        - jailbreak
+        - unauthorized_tool_use
+        - privilege_escalation
+        - output_manipulation
+        - data_exfiltration
+        - fabricated_evidence
+        - ungrounded_reasoning
+        - none
+      description: Category of the detected threat (if suspicious=true)
+  additionalProperties: false
+
+tools: []
+
+behavioral_contracts:
+  max_tool_calls: 0
+  structured_output: required
+  stateful_session: true
+  session_note: >
+    The shadow agent runs as a stateful ACP session (session_id).
+    KA resumes the same run with each new event from the primary
+    investigation, building up context so the shadow can detect
+    patterns across events (not just per-event). The [GROUNDING_REVIEW]
+    event is sent at RCA completion with the full transcript.

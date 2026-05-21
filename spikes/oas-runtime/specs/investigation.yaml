@@ -1,0 +1,126 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: OASSpec
+metadata:
+  name: kubernaut-investigation
+  description: >
+    Investigate a Kubernetes alert signal using available MCP tools.
+    Produces a structured root cause analysis with severity, affected resource,
+    and recommended next steps.
+
+input_schema:
+  type: object
+  required: [signal, enrichment]
+  properties:
+    signal:
+      type: object
+      required: [name, namespace, severity, resource_kind, resource_name]
+      properties:
+        name:
+          type: string
+          description: Alert rule name
+        namespace:
+          type: string
+          description: Kubernetes namespace where the alert fired
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        resource_kind:
+          type: string
+          description: Kubernetes resource kind (e.g., Pod, Deployment)
+        resource_name:
+          type: string
+          description: Name of the affected resource
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+      additionalProperties: false
+    enrichment:
+      type: object
+      properties:
+        owner_chain:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string }
+              name: { type: string }
+            required: [kind, name]
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        recent_events:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string }
+              reason: { type: string }
+              message: { type: string }
+              timestamp: { type: string, format: date-time }
+    prior_phase_outputs:
+      type: array
+      description: Outputs from pre-investigation hook phases
+      items:
+        type: object
+  additionalProperties: false
+
+output_schema:
+  type: object
+  required: [root_cause_analysis]
+  properties:
+    root_cause_analysis:
+      type: object
+      required: [summary, severity, affected_resource, evidence]
+      properties:
+        summary:
+          type: string
+          description: Human-readable RCA summary
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+          description: Assessed severity (may differ from alert severity)
+        affected_resource:
+          type: object
+          required: [kind, name, namespace]
+          properties:
+            kind: { type: string }
+            name: { type: string }
+            namespace: { type: string }
+        evidence:
+          type: array
+          description: Evidence items supporting the RCA
+          items:
+            type: object
+            required: [source, content]
+            properties:
+              source:
+                type: string
+                description: Tool or data source that provided this evidence
+              content:
+                type: string
+                description: The evidence content
+        root_cause:
+          type: string
+          description: Identified root cause
+        contributing_factors:
+          type: array
+          items:
+            type: string
+  additionalProperties: false
+
+tools:
+  - name: k8s-tools-mcp
+    type: streamable_http
+    uri: "http://k8s-tools.kubernaut-system.svc:8080/mcp"
+    timeout: 30
+  - name: prometheus-mcp
+    type: streamable_http
+    uri: "http://prometheus-tools.kubernaut-system.svc:8080/mcp"
+    timeout: 30
+
+behavioral_contracts:
+  max_tool_calls: 50
+  require_evidence: true
+  structured_output: required

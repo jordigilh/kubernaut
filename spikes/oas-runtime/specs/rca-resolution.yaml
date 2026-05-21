@@ -1,0 +1,117 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: OASSpec
+metadata:
+  name: kubernaut-rca-resolution
+  description: >
+    Resolve the root cause analysis into actionable remediation targets.
+    Takes the investigation RCA output and produces a remediation target
+    with specific resource references and suggested actions.
+
+input_schema:
+  type: object
+  required: [signal, root_cause_analysis]
+  properties:
+    signal:
+      type: object
+      required: [name, namespace, severity]
+      properties:
+        name: { type: string }
+        namespace: { type: string }
+        severity: { type: string, enum: [critical, high, medium, low] }
+        resource_kind: { type: string }
+        resource_name: { type: string }
+    root_cause_analysis:
+      type: object
+      required: [summary, severity, affected_resource]
+      properties:
+        summary: { type: string }
+        severity: { type: string }
+        affected_resource:
+          type: object
+          properties:
+            kind: { type: string }
+            name: { type: string }
+            namespace: { type: string }
+        root_cause: { type: string }
+        evidence:
+          type: array
+          items:
+            type: object
+            properties:
+              source: { type: string }
+              content: { type: string }
+        contributing_factors:
+          type: array
+          items: { type: string }
+    enrichment:
+      type: object
+      properties:
+        owner_chain:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string }
+              name: { type: string }
+        labels:
+          type: object
+          additionalProperties: { type: string }
+  additionalProperties: false
+
+output_schema:
+  type: object
+  required: [remediation_target, rca_narrative]
+  properties:
+    remediation_target:
+      type: object
+      required: [kind, name, namespace]
+      properties:
+        kind:
+          type: string
+          description: >
+            Kubernetes resource kind to remediate. May differ from the
+            alert resource if the root cause is in a parent/related resource.
+        name: { type: string }
+        namespace: { type: string }
+    rca_narrative:
+      type: string
+      description: >
+        Full-text narrative of the root cause analysis, suitable for
+        human review and audit records.
+    rca_summary:
+      type: string
+      description: One-sentence summary of the root cause
+    suggested_actions:
+      type: array
+      items:
+        type: object
+        required: [action, rationale]
+        properties:
+          action:
+            type: string
+            description: Suggested remediation action
+          rationale:
+            type: string
+            description: Why this action addresses the root cause
+          risk:
+            type: string
+            enum: [low, medium, high]
+    detected_labels:
+      type: object
+      additionalProperties: { type: string }
+      description: Labels detected during investigation that inform workflow selection
+  additionalProperties: false
+
+tools:
+  - name: k8s-tools-mcp
+    type: streamable_http
+    uri: "http://k8s-tools.kubernaut-system.svc:8080/mcp"
+    timeout: 30
+  - name: kubernaut-domain-mcp
+    type: streamable_http
+    uri: "http://kubernaut-domain.kubernaut-system.svc:8080/mcp"
+    timeout: 15
+
+behavioral_contracts:
+  max_tool_calls: 30
+  structured_output: required
