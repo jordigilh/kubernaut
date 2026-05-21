@@ -29,7 +29,7 @@ type WorkloadReplicaStatus struct {
 	Available int64 `json:"available"`
 }
 
-// WorkloadSummary is a compact view of a Deployment or StatefulSet.
+// WorkloadSummary is a compact view of a workload (Deployment, StatefulSet, DaemonSet, Job, or CronJob).
 type WorkloadSummary struct {
 	Name       string                `json:"name"`
 	Kind       string                `json:"kind"`
@@ -48,7 +48,15 @@ type GetWorkloadsResult struct {
 var (
 	deploymentGVR  = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
 	statefulSetGVR = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}
+	daemonSetGVR   = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "daemonsets"}
+	jobGVR         = schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}
+	cronJobGVR     = schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"}
 )
+
+type workloadQuery struct {
+	gvr  schema.GroupVersionResource
+	kind string
+}
 
 // HandleGetWorkloads implements the af_get_workloads logic.
 func HandleGetWorkloads(ctx context.Context, client dynamic.Interface, args GetWorkloadsArgs) (GetWorkloadsResult, error) {
@@ -64,29 +72,27 @@ func HandleGetWorkloads(ctx context.Context, client dynamic.Interface, args GetW
 		}
 	}
 
-	deployList, err := client.Resource(deploymentGVR).Namespace(args.Namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return GetWorkloadsResult{}, ToUserFriendlyError(err)
-	}
-	ssList, err := client.Resource(statefulSetGVR).Namespace(args.Namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return GetWorkloadsResult{}, ToUserFriendlyError(err)
+	queries := []workloadQuery{
+		{gvr: deploymentGVR, kind: "Deployment"},
+		{gvr: statefulSetGVR, kind: "StatefulSet"},
+		{gvr: daemonSetGVR, kind: "DaemonSet"},
+		{gvr: jobGVR, kind: "Job"},
+		{gvr: cronJobGVR, kind: "CronJob"},
 	}
 
-	result := make([]WorkloadSummary, 0, len(deployList.Items)+len(ssList.Items))
-	for i := range deployList.Items {
-		item := &deployList.Items[i]
-		if args.Name != "" && item.GetName() != args.Name {
-			continue
+	var result []WorkloadSummary
+	for _, q := range queries {
+		list, err := client.Resource(q.gvr).Namespace(args.Namespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return GetWorkloadsResult{}, ToUserFriendlyError(err)
 		}
-		result = append(result, workloadSummaryFromUnstructured(item, "Deployment", args.Namespace))
-	}
-	for i := range ssList.Items {
-		item := &ssList.Items[i]
-		if args.Name != "" && item.GetName() != args.Name {
-			continue
+		for i := range list.Items {
+			item := &list.Items[i]
+			if args.Name != "" && item.GetName() != args.Name {
+				continue
+			}
+			result = append(result, workloadSummaryFromUnstructured(item, q.kind, args.Namespace))
 		}
-		result = append(result, workloadSummaryFromUnstructured(item, "StatefulSet", args.Namespace))
 	}
 
 	result, truncated := TrimSliceToFit(result)
@@ -99,19 +105,29 @@ func HandleGetWorkloads(ctx context.Context, client dynamic.Interface, args GetW
 }
 
 func workloadSummaryFromUnstructured(item *unstructured.Unstructured, kind, namespace string) WorkloadSummary {
-	desired, _, _ := unstructured.NestedInt64(item.Object, "spec", "replicas")
-	ready, _, _ := unstructured.NestedInt64(item.Object, "status", "readyReplicas")
-	available, _, _ := unstructured.NestedInt64(item.Object, "status", "availableReplicas")
+	var replicas WorkloadReplicaStatus
+
+	switch kind {
+	case "DaemonSet":
+		replicas.Desired, _, _ = unstructured.NestedInt64(item.Object, "status", "desiredNumberScheduled")
+		replicas.Ready, _, _ = unstructured.NestedInt64(item.Object, "status", "numberReady")
+		replicas.Available, _, _ = unstructured.NestedInt64(item.Object, "status", "numberAvailable")
+	case "Job":
+		replicas.Desired, _, _ = unstructured.NestedInt64(item.Object, "spec", "completions")
+		replicas.Ready, _, _ = unstructured.NestedInt64(item.Object, "status", "succeeded")
+	case "CronJob":
+		// CronJobs have no replica semantics; fields remain zero.
+	default:
+		replicas.Desired, _, _ = unstructured.NestedInt64(item.Object, "spec", "replicas")
+		replicas.Ready, _, _ = unstructured.NestedInt64(item.Object, "status", "readyReplicas")
+		replicas.Available, _, _ = unstructured.NestedInt64(item.Object, "status", "availableReplicas")
+	}
 
 	return WorkloadSummary{
-		Name:      item.GetName(),
-		Kind:      kind,
-		Namespace: namespace,
-		Replicas: WorkloadReplicaStatus{
-			Desired:   desired,
-			Ready:     ready,
-			Available: available,
-		},
+		Name:       item.GetName(),
+		Kind:       kind,
+		Namespace:  namespace,
+		Replicas:   replicas,
 		Conditions: extractWorkloadConditions(item.Object),
 	}
 }
@@ -144,7 +160,7 @@ func extractWorkloadConditions(obj map[string]interface{}) []string {
 func NewGetWorkloadsTool(factory auth.DynamicClientFactory) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "af_get_workloads",
-		Description: "List Deployment and StatefulSet workloads in a namespace with replica status and conditions, optionally filtered by resource name",
+		Description: "List Deployment, StatefulSet, DaemonSet, Job, and CronJob workloads in a namespace with replica status and conditions, optionally filtered by resource name",
 	}, func(ctx tool.Context, args GetWorkloadsArgs) (GetWorkloadsResult, error) {
 		client, err := factory(ctx)
 		if err != nil {
