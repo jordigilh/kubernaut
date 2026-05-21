@@ -30,6 +30,9 @@ auth:
   issuerURL: "https://login.kubernaut.ai/realms/kubernaut"
   audience: "kubernaut-apifrontend"
 
+rbac:
+  sarCacheTTL: 30s
+
 logging:
   level: info
 
