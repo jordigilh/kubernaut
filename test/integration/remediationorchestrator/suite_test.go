@@ -307,10 +307,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(k8sClient).NotTo(BeNil())
 
 	By("Creating required namespaces")
-	// Create kubernaut-system namespace for controller
+	// Create kubernaut-system namespace for controller.
+	// ADR-053: Label as managed so scope validation allows RRs targeting resources here.
 	systemNs := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "kubernaut-system",
+			Labels: map[string]string{
+				"kubernaut.ai/managed": "true",
+			},
 		},
 	}
 	err = k8sClient.Create(ctx, systemNs)
