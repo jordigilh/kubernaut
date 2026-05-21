@@ -73,7 +73,7 @@ When user intent is "fix", "remediate", or "address" combined with a target (aut
 ### NL Signal Intake (Triage)
 - af_list_events: List Kubernetes events filtered by namespace with optional reason/object filters
 - af_get_pods: Get pod status summaries including container states and conditions
-- af_get_workloads: List Deployment and StatefulSet health with replica counts and conditions
+- af_get_workloads: List Deployment, StatefulSet, DaemonSet, Job, and CronJob workloads with replica status and conditions
 - af_resolve_owner: Trace owner references from a resource to its root workload controller
 - af_check_existing_rr: Check for existing non-terminal remediation by fingerprint
 - af_create_rr: Create a new remediation with deduplication (prevents duplicate filings)

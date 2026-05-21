@@ -211,7 +211,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandleGetPods(ctx, client, args)
 		})
 
-	registerTool(srv, cfg, sem, "af_get_workloads", "List Deployment and StatefulSet health with replica counts",
+	registerTool(srv, cfg, sem, "af_get_workloads", "List Deployment, StatefulSet, DaemonSet, Job, and CronJob workloads with replica status",
 		func(ctx context.Context, args tools.GetWorkloadsArgs) (any, error) {
 			client, err := cfg.DynFactory(ctx)
 			if err != nil {
