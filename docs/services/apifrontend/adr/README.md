@@ -16,7 +16,7 @@ Each ADR follows the standard structure:
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
-| [ADR-001](ADR-001-crd-api-group.md) | CRD API group: `apifrontend.kubernaut.ai/v1alpha1` | Accepted | 2026-05-01 |
+| [ADR-001](ADR-001-crd-api-group.md) | CRD API group: `apifrontend.kubernaut.ai/v1alpha1` | Superseded (#1219) | 2026-05-01 |
 | [ADR-002](ADR-002-llm-provider.md) | LLM provider: Claude Sonnet 4.6 via Vertex AI | Accepted | 2026-04-30 |
 | [ADR-003](ADR-003-metric-prefix.md) | Prometheus metric prefix: `af_` | Accepted | 2026-05-03 |
 | [ADR-004](ADR-004-test-framework.md) | Test framework: Go stdlib + httptest (no Ginkgo for unit/integration) | Superseded by ADR-015 | 2026-05-03 |

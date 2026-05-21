@@ -73,7 +73,7 @@ This test plan validates the controller-runtime wiring for `CRDSessionService` a
 | Phase label sync | `internal/session` | `statemachine.go` | BR-SESS-003 |
 | `af_sessions_active` gauge | `internal/session` | `service.go` | BR-SESS-006 |
 | Audit event emission | `internal/controller`, `internal/session` | `ttl.go`, `service.go` | BR-SESS-008 |
-| InvestigationSession CRD YAML | `config/crd/bases` | `apifrontend.kubernaut.ai_investigationsessions.yaml` | BR-SESS-010 |
+| InvestigationSession CRD YAML | `config/crd/bases` | `kubernaut.ai_investigationsessions.yaml` | BR-SESS-010 |
 
 ---
 
@@ -83,7 +83,7 @@ This test plan validates the controller-runtime wiring for `CRDSessionService` a
 |----|-----------|--------|----------|
 | BAC-02B-01 | When an MCP session is created, an InvestigationSession CRD exists in the K8s API server with `status.phase=Active` | BR-SESS-001, BR-SESS-003 | P0 |
 | BAC-02B-02 | The CRD spec fields match the CreateConfig: `remediationRequestRef`, `a2aTaskID`, `userIdentity.username`, `userIdentity.groups`, `joinMode` | BR-SESS-002 | P0 |
-| BAC-02B-03 | The CRD label `apifrontend.kubernaut.ai/phase` matches `status.phase` for queryability | BR-SESS-003 | P0 |
+| BAC-02B-03 | The CRD label `kubernaut.ai/phase` matches `status.phase` for queryability | BR-SESS-003 | P0 |
 | BAC-02B-04 | When a session is deleted, the CRD is removed from the API server; subsequent Get returns NotFound | BR-SESS-007 | P0 |
 | BAC-02B-05 | A Disconnected session is automatically transitioned to Cancelled after the configured `disconnectTTL` | BR-SESS-004 | P0 |
 | BAC-02B-06 | A terminal session CRD is deleted after the configured `retentionTTL` (clamped to >= 30 days per AU-11) | BR-SESS-005 | P0 |
@@ -154,7 +154,7 @@ RED -> GREEN -> REFACTOR for each test category. Tests are written first to defi
 | UT-AF-220-016 | BAC-02B-15 | buildSessionInfra returns non-nil SessionService when no kubeconfig | Config with valid session params, no KUBECONFIG | `sessInfra.SessionService` is non-nil; warning logged | UT |
 | UT-AF-220-017 | BAC-02B-15 | buildSessionInfra returns non-nil Reconciler | Config with valid session params | `sessInfra.Reconciler` is non-nil | UT |
 | UT-AF-220-018 | BAC-02B-15 | StopFunc is callable and does not panic | Call StopFunc after build | No panic; function returns | UT |
-| UT-AF-220-019 | BAC-02B-15 | Scheme recognizes InvestigationSession GVK | Inspect returned scheme | `scheme.Recognizes(apifrontend.kubernaut.ai/v1alpha1 InvestigationSession)` is true | UT |
+| UT-AF-220-019 | BAC-02B-15 | Scheme recognizes InvestigationSession GVK | Inspect returned scheme | `scheme.Recognizes(kubernaut.ai/v1alpha1 InvestigationSession)` is true | UT |
 
 ---
 
@@ -168,7 +168,7 @@ RED -> GREEN -> REFACTOR for each test category. Tests are written first to defi
 |-------|-----|-------------|-------|-----------------|------|
 | IT-SESS-001 | BAC-02B-01 | Session create persists CRD to API server | `CRDSessionService.Create` with valid CreateConfig | `client.Get` for InvestigationSession returns the resource; `status.phase == Active` | IT |
 | IT-SESS-002 | BAC-02B-02 | CRD spec fields match CreateConfig input | CreateConfig with specific userIdentity, a2aTaskID, remediationRef, joinMode | Retrieved CRD `spec.userIdentity.username`, `spec.a2aTaskID`, `spec.remediationRequestRef.name`, `spec.joinMode` all match input | IT |
-| IT-SESS-003 | BAC-02B-03 | Phase label matches status.phase on creation | Freshly created session | CRD label `apifrontend.kubernaut.ai/phase` == `"Active"` | IT |
+| IT-SESS-003 | BAC-02B-03 | Phase label matches status.phase on creation | Freshly created session | CRD label `kubernaut.ai/phase` == `"Active"` | IT |
 | IT-SESS-004 | BAC-02B-04 | Session delete removes CRD from API server | Create then Delete session | `client.Get` returns `IsNotFound` error | IT |
 
 ### 5.4 IT: TTL Reconciler Behavioral Contracts (envtest)
