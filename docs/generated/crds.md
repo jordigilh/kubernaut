@@ -103,7 +103,7 @@ _Appears in:_
 | `degradedMode`| _boolean_| DegradedMode indicates if the analysis ran with degraded capabilities<br />(e.g., Rego policy evaluation failed, using safe defaults)|
 | `totalAnalysisTime`| _integer_| TotalAnalysisTime is the total duration of the analysis in seconds|
 | `consecutiveFailures`| _integer_| ConsecutiveFailures tracks retry attempts for exponential backoff<br /> Reset to 0 on success, increment on transient failure<br />Used with for retry logic with jitter|
-| `investigationSession`| _[InvestigationSession](#investigationsession)_| Tracks the async submit/poll session with Kubernaut Agent<br />InvestigationSession tracks the async KA session for submit/poll pattern|
+| `investigationSession`| _[KASession](#kasession)_| Tracks the async submit/poll session with Kubernaut Agent<br />KASession tracks the async KA session for submit/poll pattern|
 | `interactiveSession`| _[InteractiveSessionInfo](#interactivesessioninfo)_| Tracks the dynamic takeover session for MCP interactive mode <br />InteractiveSession tracks who is currently driving the investigation.<br />Populated when a user takes over via MCP; nil during autonomous mode.<br /> Every RR is takeover-capable; this is observability-only.|
 | `postRCAContext`| _[PostRCAContext](#postrcacontext)_| Runtime-computed cluster characteristics from Kubernaut Agent<br />PostRCAContext holds data computed by Kubernaut Agent after RCA (e.g., DetectedLabels).<br />Immutable once set — use CEL validation on the PostRCAContext type.|
 | `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions|
@@ -462,6 +462,22 @@ _Validation:_
 | `IneffectiveChain`| BlockReasonIneffectiveChain indicates consecutive remediations for the same target<br />have been ineffective (resource keeps reverting or health doesn't improve).<br />Escalates to human review via NotificationRequest.|
 
 
+### ConnectionState
+
+_Underlying type:_ _string_
+
+ConnectionState represents the SSE connection state.
+
+_Appears in:_
+- [InvestigationSessionStatus](#investigationsessionstatus)
+
+
+| Value| Description|
+| ---| ---|
+| `Connected`||
+| `Disconnected`||
+
+
 ### DedupContext
 
 
@@ -818,12 +834,69 @@ _Appears in:_
 | `completedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| CompletedAt is when the user disconnected (KA resumed autonomous)|
 
 
-### InvestigationSession
+## InvestigationSession
 
 
-InvestigationSession tracks the async Kubernaut Agent session lifecycle.
+InvestigationSession links an A2A task to kubernaut pipeline CRDs.
+It enables session persistence across AF restarts and user reconnections.
+OwnerReference to the associated RemediationRequest ensures automatic
+garbage collection when the RR's retention TTL expires.
+
+
+| Field| Type| Description|
+| ---| ---| ---|
+| `apiVersion`| _string_| `kubernaut.ai/v1alpha1`|
+| `kind`| _string_| `InvestigationSession`|
+| `metadata`| _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta)_| Refer to the Kubernetes API documentation for fields of `metadata`.|
+| `spec`| _[InvestigationSessionSpec](#investigationsessionspec)_||
+| `status`| _[InvestigationSessionStatus](#investigationsessionstatus)_||
+
+
+### InvestigationSessionSpec
+
+
+InvestigationSessionSpec defines the desired state (immutable after creation).
+
+_Appears in:_
+- [InvestigationSession](#investigationsession)
+
+| Field| Type| Description|
+| ---| ---| ---|
+| `remediationRequestRef`| _[ObjectRef](#objectref)_| RemediationRequestRef references the RR this session investigates.<br />The InvestigationSession MUST be created in the same namespace as the RR.<br />OwnerReference is set to this RR for cascade deletion.|
+| `a2aTaskID`| _string_| A2ATaskID is the A2A task identifier for client reconnection.|
+| `userIdentity`| _[SessionUser](#sessionuser)_| UserIdentity captures the authenticated user from the originating JWT.|
+| `joinMode`| _[SessionJoinMode](#sessionjoinmode)_| JoinMode indicates whether the user started or joined the investigation.|
+
+
+### InvestigationSessionStatus
+
+
+InvestigationSessionStatus defines the observed state (mutable, AF-only).
+
+_Appears in:_
+- [InvestigationSession](#investigationsession)
+
+| Field| Type| Description|
+| ---| ---| ---|
+| `phase`| _[SessionPhase](#sessionphase)_| Phase is the current lifecycle state.|
+| `aiAnalysisRef`| _string_| AIAnalysisRef is the name of the discovered AIAnalysis CRD.|
+| `kaCorrelationID`| _string_| KACorrelationID is the correlation ID from KA's /analyze response.|
+| `connectionState`| _[ConnectionState](#connectionstate)_| ConnectionState tracks the SSE connection state.|
+| `startedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| StartedAt is the session creation timestamp.|
+| `completedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| CompletedAt is the timestamp when the session reached a terminal state.|
+| `disconnectedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| DisconnectedAt is the last disconnect timestamp.|
+| `reconnectedAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| ReconnectedAt is the last reconnect timestamp.|
+| `message`| _string_| Message is a human-readable description of the current state.|
+| `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions provide detailed status information.|
+
+
+### KASession
+
+
+KASession tracks the async Kubernaut Agent session lifecycle.
  AA controller session tracking
  Session regeneration on 404 (KA restart)
+the root InvestigationSession type in api/investigationsession/v1alpha1/.
 
 _Appears in:_
 - [AIAnalysisStatus](#aianalysisstatus)
@@ -1701,6 +1774,56 @@ _Appears in:_
 | `executionEngine`| _string_| ExecutionEngine specifies the backend engine for workflow execution.<br />Populated from KA workflow recommendation.<br />When empty, defaults to "tekton" for backwards compatibility.|
 | `engineConfig`| _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_| EngineConfig holds engine-specific configuration .<br />For ansible: \{"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."\}.|
 | `serviceAccountName`| _string_| ServiceAccountName is the pre-existing ServiceAccount resolved from the<br />DS workflow catalog . Propagated to the WFE for pod execution.|
+
+
+### SessionJoinMode
+
+_Underlying type:_ _string_
+
+SessionJoinMode indicates how the session was initiated.
+
+_Appears in:_
+- [InvestigationSessionSpec](#investigationsessionspec)
+
+
+| Value| Description|
+| ---| ---|
+| `start`||
+| `takeover`||
+
+
+### SessionPhase
+
+_Underlying type:_ _string_
+
+SessionPhase represents the lifecycle state of an InvestigationSession.
+
+_Appears in:_
+- [InvestigationSessionStatus](#investigationsessionstatus)
+
+
+| Value| Description|
+| ---| ---|
+| `Active`||
+| `Disconnected`||
+| `Completed`||
+| `Cancelled`||
+| `Failed`||
+
+
+### SessionUser
+
+
+SessionUser captures the authenticated user's identity from JWT.
+Named SessionUser (not UserIdentity) to avoid collision with internal/auth.UserIdentity.
+
+_Appears in:_
+- [InvestigationSessionSpec](#investigationsessionspec)
+
+| Field| Type| Description|
+| ---| ---| ---|
+| `username`| _string_| Username from JWT sub claim.|
+| `groups`| _string array_| Groups from JWT groups claim (RBAC-relevant only).|
 
 
 ### SignalContextInput

@@ -74,7 +74,7 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
 				Phase: aianalysis.PhaseInvestigating,
-				InvestigationSession: &aianalysisv1.InvestigationSession{
+				KASession: &aianalysisv1.KASession{
 					ID:        "session-timeout-001",
 					CreatedAt: &cat,
 					PollCount: 5,

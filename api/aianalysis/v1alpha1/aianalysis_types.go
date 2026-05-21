@@ -450,9 +450,9 @@ type AIAnalysisStatus struct {
 	// INVESTIGATION SESSION (BR-AA-HAPI-064)
 	// Tracks the async submit/poll session with Kubernaut Agent
 	// ========================================
-	// InvestigationSession tracks the async KA session for submit/poll pattern
+	// KASession tracks the async KA session for submit/poll pattern
 	// +optional
-	InvestigationSession *InvestigationSession `json:"investigationSession,omitempty"`
+	KASession *KASession `json:"investigationSession,omitempty"`
 
 	// ========================================
 	// INTERACTIVE SESSION (DD-INTERACTIVE-002)
@@ -496,10 +496,12 @@ type PostRCAContext struct {
 	SetAt *metav1.Time `json:"setAt,omitempty"`
 }
 
-// InvestigationSession tracks the async Kubernaut Agent session lifecycle.
+// KASession tracks the async Kubernaut Agent session lifecycle.
 // BR-AA-HAPI-064.4: AA controller session tracking
 // BR-AA-HAPI-064.5: Session regeneration on 404 (KA restart)
-type InvestigationSession struct {
+// Renamed from InvestigationSession to avoid CRD name collision with
+// the root InvestigationSession type in api/investigationsession/v1alpha1/.
+type KASession struct {
 	// Session ID returned by Kubernaut Agent on submit (cleared on session loss)
 	ID string `json:"id,omitempty"`
 	// Generation counter tracking session regenerations (0 = first session, incremented on 404)

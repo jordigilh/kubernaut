@@ -75,7 +75,7 @@ var _ = Describe("InvestigatingHandler Identity Propagation — #774, BR-INTERAC
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
 				Phase: aianalysis.PhaseInvestigating,
-				InvestigationSession: &aianalysisv1.InvestigationSession{
+				KASession: &aianalysisv1.KASession{
 					ID:        "session-774-001",
 					PollCount: 3,
 				},

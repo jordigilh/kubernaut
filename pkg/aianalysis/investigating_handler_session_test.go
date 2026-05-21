@@ -169,7 +169,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 			It("should create a KA session and record it in CRD status", func() {
 				analysis := createSessionTestAnalysis()
 				// InvestigationSession is nil (first time)
-				Expect(analysis.Status.InvestigationSession).To(BeNil())
+				Expect(analysis.Status.KASession).To(BeNil())
 
 				mockClient.WithSessionSubmitResponse("session-uuid-001")
 
@@ -178,10 +178,10 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(err).NotTo(HaveOccurred())
 
 				// CRD status: InvestigationSession populated
-				Expect(analysis.Status.InvestigationSession).NotTo(BeNil(), "InvestigationSession should be populated after submit")
-				Expect(analysis.Status.InvestigationSession.ID).To(Equal("session-uuid-001"), "Session ID should match KA response")
-				Expect(analysis.Status.InvestigationSession.Generation).To(Equal(int32(0)), "Generation should be 0 for first session")
-				Expect(analysis.Status.InvestigationSession.CreatedAt).NotTo(BeNil(), "CreatedAt should be set")
+				Expect(analysis.Status.KASession).NotTo(BeNil(), "InvestigationSession should be populated after submit")
+				Expect(analysis.Status.KASession.ID).To(Equal("session-uuid-001"), "Session ID should match KA response")
+				Expect(analysis.Status.KASession.Generation).To(Equal(int32(0)), "Generation should be 0 for first session")
+				Expect(analysis.Status.KASession.CreatedAt).NotTo(BeNil(), "CreatedAt should be set")
 
 				// Condition: InvestigationSessionReady=True, Reason=SessionCreated
 				cond := getCondition(analysis, "InvestigationSessionReady")
@@ -210,7 +210,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 			It("should resubmit while preserving the regeneration count", func() {
 				analysis := createSessionTestAnalysis()
 				// Session was lost: ID cleared but Generation preserved
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "", // Cleared after session loss
 					Generation: 2,
 				}
@@ -222,9 +222,9 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(err).NotTo(HaveOccurred())
 
 				// CRD status: ID populated with new UUID, Generation preserved at 2
-				Expect(analysis.Status.InvestigationSession.ID).To(Equal("session-uuid-regen-001"))
-				Expect(analysis.Status.InvestigationSession.Generation).To(Equal(int32(2)), "Generation should be preserved")
-				Expect(analysis.Status.InvestigationSession.CreatedAt).NotTo(BeNil(), "CreatedAt should be updated")
+				Expect(analysis.Status.KASession.ID).To(Equal("session-uuid-regen-001"))
+				Expect(analysis.Status.KASession.Generation).To(Equal(int32(2)), "Generation should be preserved")
+				Expect(analysis.Status.KASession.CreatedAt).NotTo(BeNil(), "CreatedAt should be updated")
 
 				// Condition: InvestigationSessionReady=True, Reason=SessionRegenerated
 				cond := getCondition(analysis, "InvestigationSessionReady")
@@ -248,7 +248,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		Context("UT-AA-064-003: Poll session -- status pending, controller requeues", func() {
 			It("should update LastPolled and PollCount, requeue at constant interval", func() {
 				analysis := createSessionTestAnalysis()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-poll-001",
 					Generation: 0,
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-30 * time.Second)},
@@ -259,8 +259,8 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				result, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.InvestigationSession.LastPolled).NotTo(BeNil(), "LastPolled should be updated")
-				Expect(analysis.Status.InvestigationSession.PollCount).To(Equal(int32(1)), "PollCount should be incremented to 1")
+				Expect(analysis.Status.KASession.LastPolled).NotTo(BeNil(), "LastPolled should be updated")
+				Expect(analysis.Status.KASession.PollCount).To(Equal(int32(1)), "PollCount should be incremented to 1")
 				// BR-AA-HAPI-064.8: Constant interval, default 15s
 				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "First poll should requeue at constant interval (15s)")
 			})
@@ -272,7 +272,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 			It("should use same constant interval for second consecutive poll", func() {
 				analysis := createSessionTestAnalysis()
 				lastPoll := metav1.Now()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-poll-002",
 					Generation: 0,
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-60 * time.Second)},
@@ -294,7 +294,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		Context("UT-AA-064-005: Poll completed, result fetched and processed", func() {
 			It("should retrieve result and advance to Analyzing phase", func() {
 				analysis := createSessionTestAnalysis()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-completed-001",
 					Generation: 0,
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-120 * time.Second)},
@@ -332,7 +332,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		Context("UT-AA-064-006: Poll session -- failed, investigation terminates", func() {
 			It("should surface KA-side failure to operators via CRD status", func() {
 				analysis := createSessionTestAnalysis()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-failed-001",
 					Generation: 0,
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-120 * time.Second)},
@@ -359,7 +359,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		Context("UT-AA-064-007: Polling interval is constant across all polls", func() {
 			It("should use the same constant interval for every poll", func() {
 				analysis := createSessionTestAnalysis()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-constant-001",
 					Generation: 0,
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
@@ -394,7 +394,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 			It("should increment Generation, clear ID, and requeue immediately", func() {
 				analysis := createSessionTestAnalysis()
 				createdAt := metav1.Now()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-lost-001",
 					Generation: 0,
 					CreatedAt:  &createdAt,
@@ -408,8 +408,8 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(err).NotTo(HaveOccurred())
 
 				// CRD status: Generation=1, ID cleared, CreatedAt preserved
-				Expect(analysis.Status.InvestigationSession.Generation).To(Equal(int32(1)), "Generation should increment to 1")
-				Expect(analysis.Status.InvestigationSession.ID).To(BeEmpty(), "Session ID should be cleared")
+				Expect(analysis.Status.KASession.Generation).To(Equal(int32(1)), "Generation should increment to 1")
+				Expect(analysis.Status.KASession.ID).To(BeEmpty(), "Session ID should be cleared")
 
 				// Condition: InvestigationSessionReady=False, Reason=SessionLost
 				cond := getCondition(analysis, "InvestigationSessionReady")
@@ -437,7 +437,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		Context("UT-AA-064-009: Multiple regenerations under cap", func() {
 			It("should continue self-healing up to the regeneration limit", func() {
 				analysis := createSessionTestAnalysis()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-regen-multi",
 					Generation: 3,
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-2 * time.Minute)},
@@ -448,8 +448,8 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				result, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.InvestigationSession.Generation).To(Equal(int32(4)), "Generation should increment to 4")
-				Expect(analysis.Status.InvestigationSession.ID).To(BeEmpty(), "ID should be cleared")
+				Expect(analysis.Status.KASession.Generation).To(Equal(int32(4)), "Generation should increment to 4")
+				Expect(analysis.Status.KASession.ID).To(BeEmpty(), "ID should be cleared")
 				Expect(result.RequeueAfter).To(Equal(time.Duration(0)), "Should requeue immediately for resubmit")
 				// Phase should NOT be Failed (still under cap)
 				Expect(analysis.Status.Phase).NotTo(Equal(aianalysis.PhaseFailed), "Should NOT fail while under regeneration cap")
@@ -460,7 +460,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		Context("UT-AA-064-010: Regeneration cap exceeded", func() {
 			It("should fail with SessionRegenerationExceeded and emit K8s Warning Event", func() {
 				analysis := createSessionTestAnalysis()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-cap-exceeded",
 					Generation: 4, // One more 404 will make it 5 = cap
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
@@ -538,7 +538,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		Context("UT-AA-064-013: GetSessionResult returns 409 Conflict", func() {
 			It("should re-poll at standard session poll interval (treat as transient)", func() {
 				analysis := createSessionTestAnalysis()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-409",
 					Generation: 0,
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-60 * time.Second)},
@@ -556,7 +556,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				// Phase should NOT be Failed
 				Expect(analysis.Status.Phase).NotTo(Equal(aianalysis.PhaseFailed), "Should NOT fail on 409 (transient)")
 				// PollCount should be incremented for observability
-				Expect(analysis.Status.InvestigationSession.PollCount).To(Equal(int32(1)), "PollCount should be incremented after 409 re-poll")
+				Expect(analysis.Status.KASession.PollCount).To(Equal(int32(1)), "PollCount should be incremented after 409 re-poll")
 			})
 		})
 	})
@@ -570,7 +570,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		Context("UT-AA-703-001: Poll returns user_driving status", func() {
 			It("should requeue at the configured session poll interval", func() {
 				analysis := createSessionTestAnalysis()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-interactive-001",
 					Generation: 0,
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-60 * time.Second)},
@@ -591,7 +591,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		Context("UT-AA-703-002: user_driving increments poll tracking", func() {
 			It("should increment PollCount and set LastPolled", func() {
 				analysis := createSessionTestAnalysis()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-interactive-002",
 					Generation: 0,
 					PollCount:  3,
@@ -603,9 +603,9 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.InvestigationSession.PollCount).To(Equal(int32(4)),
+				Expect(analysis.Status.KASession.PollCount).To(Equal(int32(4)),
 					"PollCount should be incremented from 3 to 4")
-				Expect(analysis.Status.InvestigationSession.LastPolled).NotTo(BeNil(),
+				Expect(analysis.Status.KASession.LastPolled).NotTo(BeNil(),
 					"LastPolled should be set")
 			})
 		})
@@ -615,7 +615,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		Context("UT-AA-703-003: user_driving emits K8s event", func() {
 			It("should emit a Normal event with reason UserDriving", func() {
 				analysis := createSessionTestAnalysis()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-interactive-003",
 					Generation: 0,
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-30 * time.Second)},
@@ -648,7 +648,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		Context("UT-AA-703-004: user_driving followed by completed", func() {
 			It("should transition to completed on second poll", func() {
 				analysis := createSessionTestAnalysis()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-interactive-004",
 					Generation: 0,
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-180 * time.Second)},
@@ -693,7 +693,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		Context("UT-AA-703-005: user_driving uses constant poll interval", func() {
 			It("should return the same RequeueAfter duration across multiple user_driving polls", func() {
 				analysis := createSessionTestAnalysis()
-				analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+				analysis.Status.KASession = &aianalysisv1.KASession{
 					ID:         "session-interactive-005",
 					Generation: 0,
 					CreatedAt:  &metav1.Time{Time: time.Now().Add(-300 * time.Second)},

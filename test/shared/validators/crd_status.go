@@ -201,10 +201,10 @@ func ValidateAAStatus(aa *aianalysisv1.AIAnalysis, opts ...ValidationOption) []s
 	}
 
 	// InvestigationSession
-	if s.InvestigationSession == nil {
+	if s.KASession == nil {
 		f = append(f, "AA: InvestigationSession not populated -- investigation tracking unavailable")
 	} else {
-		f = appendIfNonEmpty(f, checkNonEmpty("AA: InvestigationSession.ID", "session tracking broken, cannot resume investigation", s.InvestigationSession.ID))
+		f = appendIfNonEmpty(f, checkNonEmpty("AA: InvestigationSession.ID", "session tracking broken, cannot resume investigation", s.KASession.ID))
 	}
 
 	// PostRCAContext

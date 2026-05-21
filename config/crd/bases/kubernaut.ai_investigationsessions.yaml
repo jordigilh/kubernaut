@@ -33,46 +33,6 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          InvestigationSession tracks the async Kubernaut Agent session lifecycle.
-          BR-AA-HAPI-064.4: AA controller session tracking
-          BR-AA-HAPI-064.5: Session regeneration on 404 (KA restart)
-        properties:
-          createdAt:
-            description: CreatedAt timestamp when the current session was created
-            format: date-time
-            type: string
-          generation:
-            description: Generation counter tracking session regenerations (0 = first
-              session, incremented on 404)
-            format: int32
-            minimum: 0
-            type: integer
-          id:
-            description: Session ID returned by Kubernaut Agent on submit (cleared
-              on session loss)
-            type: string
-          lastPolled:
-            description: LastPolled timestamp of the last poll attempt
-            format: date-time
-            type: string
-          pollCount:
-            description: |-
-              PollCount tracks the number of poll attempts for observability
-              BR-AA-HAPI-064.8: Constant 15s poll interval (configurable 1s–5m)
-            format: int32
-            minimum: 0
-            type: integer
-        required:
-        - generation
-        type: object
-    served: true
-    storage: true
-    subresources:
-      status: {}
-  - name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: |-
           InvestigationSession links an A2A task to kubernaut pipeline CRDs.
           It enables session persistence across AF restarts and user reconnections.
           OwnerReference to the associated RemediationRequest ensures automatic
@@ -259,4 +219,6 @@ spec:
             type: object
         type: object
     served: true
-    storage: false
+    storage: true
+    subresources:
+      status: {}
