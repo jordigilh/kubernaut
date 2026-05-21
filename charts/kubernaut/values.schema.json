@@ -276,11 +276,29 @@
             "cors": {
               "type": "object",
               "additionalProperties": false,
+              "description": "Issue #1215: CORS configuration (moved from env vars to config YAML)",
               "properties": {
                 "allowedOrigins": {
-                  "type": "string",
-                  "default": "https://no-browser-clients.invalid",
-                  "description": "Issue #673 H-2: CORS allowed origins (M2M API, deny by default)"
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "default": ["https://no-browser-clients.invalid"],
+                  "description": "Allowed CORS origins. M2M API — deny by default."
+                },
+                "allowedMethods": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "default": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+                  "description": "HTTP methods allowed for cross-origin requests."
+                },
+                "allowCredentials": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Whether cross-origin requests may include credentials."
+                },
+                "maxAge": {
+                  "type": "integer",
+                  "default": 300,
+                  "description": "Preflight cache duration in seconds."
                 }
               }
             },

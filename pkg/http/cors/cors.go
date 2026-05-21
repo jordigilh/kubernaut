@@ -245,6 +245,59 @@ func FromEnvironment() *Options {
 	return opts
 }
 
+// FromConfig merges CORS options from a config YAML struct with env-var
+// fallbacks. For every field that is zero/empty in cfg, the corresponding
+// CORS_* environment variable is checked, then the built-in default is used.
+//
+// Issue #1215: Provides backward compatibility during migration from
+// env-var-only CORS to config-YAML-first.
+//
+// Precedence per field: cfg value → CORS_* env var → DefaultOptions().
+func FromConfig(cfg *Options) *Options {
+	opts := DefaultOptions()
+
+	if len(cfg.AllowedOrigins) > 0 {
+		opts.AllowedOrigins = cfg.AllowedOrigins
+	} else if origins := os.Getenv("CORS_ALLOWED_ORIGINS"); origins != "" {
+		opts.AllowedOrigins = splitAndTrim(origins)
+	}
+
+	if len(cfg.AllowedMethods) > 0 {
+		opts.AllowedMethods = cfg.AllowedMethods
+	} else if methods := os.Getenv("CORS_ALLOWED_METHODS"); methods != "" {
+		opts.AllowedMethods = splitAndTrim(methods)
+	}
+
+	if len(cfg.AllowedHeaders) > 0 {
+		opts.AllowedHeaders = cfg.AllowedHeaders
+	} else if headers := os.Getenv("CORS_ALLOWED_HEADERS"); headers != "" {
+		opts.AllowedHeaders = splitAndTrim(headers)
+	}
+
+	if len(cfg.ExposedHeaders) > 0 {
+		opts.ExposedHeaders = cfg.ExposedHeaders
+	} else if exposed := os.Getenv("CORS_EXPOSED_HEADERS"); exposed != "" {
+		opts.ExposedHeaders = splitAndTrim(exposed)
+	}
+
+	if cfg.AllowCredentials {
+		opts.AllowCredentials = true
+	} else if creds := os.Getenv("CORS_ALLOW_CREDENTIALS"); creds == "true" {
+		opts.AllowCredentials = true
+	}
+
+	if cfg.MaxAge > 0 {
+		opts.MaxAge = cfg.MaxAge
+	} else if maxAgeStr := os.Getenv("CORS_MAX_AGE"); maxAgeStr != "" {
+		var age int
+		if _, err := parseMaxAge(maxAgeStr, &age); err == nil {
+			opts.MaxAge = age
+		}
+	}
+
+	return opts
+}
+
 // Handler returns a chi-compatible CORS middleware handler.
 //
 // This function converts our Options to go-chi/cors.Options and returns

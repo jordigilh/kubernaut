@@ -59,11 +59,22 @@ gateway:
       # Example: ["10.0.0.0/8", "172.16.0.0/12"] for internal load balancers.
       trustedProxyCIDRs: []
     cors:
-      # Issue #673 H-2: CORS allowed origins. Gateway is an M2M webhook API
-      # and does not serve browser clients, so CORS is irrelevant.
-      # This non-matching origin ensures no browser can pass CORS preflight.
+      # Issue #1215: CORS configuration moved from env vars to config YAML.
+      # Gateway is an M2M webhook API and does not serve browser clients,
+      # so CORS is irrelevant. This non-matching origin ensures no browser
+      # can pass CORS preflight.
       # Override only if you have a browser-based client accessing the Gateway directly.
-      allowedOrigins: "https://no-browser-clients.invalid"
+      allowedOrigins:
+        - "https://no-browser-clients.invalid"
+      allowedMethods:
+        - "GET"
+        - "POST"
+        - "PUT"
+        - "PATCH"
+        - "DELETE"
+        - "OPTIONS"
+      allowCredentials: false
+      maxAge: 300
     deduplication:
       cooldownPeriod: "5m"
   resources:

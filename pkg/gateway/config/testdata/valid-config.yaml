@@ -7,6 +7,18 @@ server:
   writeTimeout: "30s"
   idleTimeout: "120s"
 
+cors:
+  allowedOrigins:
+    - "https://no-browser-clients.invalid"
+  allowedMethods:
+    - "GET"
+    - "POST"
+    - "PUT"
+    - "DELETE"
+    - "OPTIONS"
+  allowCredentials: false
+  maxAge: 300
+
 middleware:
   # Concurrency limiting via chi Throttle in server.maxConcurrentRequests (ADR-048-ADDENDUM-001)
 

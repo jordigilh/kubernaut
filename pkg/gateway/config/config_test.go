@@ -53,6 +53,16 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 			Expect(cfg.DataStorage.URL).ToNot(BeEmpty(), "Data Storage URL required for audit persistence")
 		})
 
+	It("should load CORS configuration from YAML (Issue #1215)", func() {
+		cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(cfg.CORS.AllowedOrigins).To(Equal([]string{"https://no-browser-clients.invalid"}))
+		Expect(cfg.CORS.AllowedMethods).To(ContainElements("GET", "POST", "PUT", "DELETE", "OPTIONS"))
+		Expect(cfg.CORS.AllowCredentials).To(BeFalse())
+		Expect(cfg.CORS.MaxAge).To(Equal(300))
+	})
+
 	It("should support LoadFromEnv (no-op after GATEWAY_DEDUP_TTL removal)", func() {
 		// BUSINESS OUTCOME: LoadFromEnv exists for future env overrides; currently a no-op.
 		// DD-GATEWAY-011: GATEWAY_DEDUP_TTL removed; deduplication window = CRD lifecycle.
