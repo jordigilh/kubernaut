@@ -32,6 +32,58 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 )
 
+// allowAllAuthorizer is a ToolAuthorizer mock that always allows access.
+type allowAllAuthorizer struct{}
+
+func (a *allowAllAuthorizer) Check(_ context.Context, _ string, _ []string, _ string) (bool, error) {
+	return true, nil
+}
+
+// mapAuthorizer is a ToolAuthorizer mock that uses a role-to-tools map for decisions.
+type mapAuthorizer struct {
+	roles map[string][]string
+}
+
+func (m *mapAuthorizer) Check(_ context.Context, _ string, groups []string, toolName string) (bool, error) {
+	for _, g := range groups {
+		if tools, ok := m.roles[g]; ok {
+			for _, t := range tools {
+				if t == "*" || t == toolName {
+					return true, nil
+				}
+			}
+		}
+	}
+	if tools, ok := m.roles["*"]; ok {
+		for _, t := range tools {
+			if t == "*" || t == toolName {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// testIdentityFromHeaderMiddleware injects UserIdentity from the custom
+// X-Test-User / X-Test-Groups headers. This allows per-request identity
+// variation in tests that use httptest.NewServer with real HTTP transport.
+func testIdentityFromHeaderMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username := r.Header.Get("X-Test-User")
+		if username != "" {
+			groups := strings.Split(r.Header.Get("X-Test-Groups"), ",")
+			user := &auth.UserIdentity{
+				Username: username,
+				Groups:   groups,
+				Issuer:   r.Header.Get("X-Test-Issuer"),
+			}
+			ctx := auth.WithUserIdentity(r.Context(), user)
+			r = r.WithContext(ctx)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // fakeAuditor captures audit events thread-safely for test assertions.
 type fakeAuditor struct {
 	mu     sync.Mutex
@@ -370,7 +422,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 					return &ka.SelectWorkflowResult{Status: "selected", Message: "workflow selected"}, nil
 				}},
 				DSClient:           newFakeDSClient(),
-				RBACRoles:          map[string][]string{"sre": {"*"}},
+				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 				Auditor:            auditor,
 				ToolTimeout:        5 * time.Second,
 				MaxConcurrentTools: 10,
@@ -563,7 +615,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(nil),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: "http://localhost:9999"}),
-					RBACRoles:          map[string][]string{"sre": {"*"}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 5,
@@ -625,7 +677,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"sre": {"*"}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        2 * time.Second,
@@ -651,7 +703,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"sre": {"*"}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        2 * time.Second,
@@ -678,7 +730,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"sre": {"af_list_events", "af_get_pods"}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"af_list_events", "af_get_pods"}}},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 5,
@@ -702,7 +754,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"sre": {"af_list_events"}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"af_list_events"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        2 * time.Second,
@@ -729,7 +781,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"admin": {"*"}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"admin": {"*"}}},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 5,
@@ -745,7 +797,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
-		It("UT-AF-B-030: nil RBACRoles allows all users (open access)", func() {
+		It("UT-AF-B-030: allowAll authorizer allows all users (open access)", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
@@ -753,7 +805,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 5,
@@ -777,7 +829,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"sre": {"af_list_events"}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"af_list_events"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        2 * time.Second,
@@ -807,7 +859,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"sre": {"af_list_events"}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"af_list_events"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        2 * time.Second,
@@ -839,7 +891,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         jwtFactory,
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 5,
@@ -867,7 +919,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         pathFactory,
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 5,
@@ -894,7 +946,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"sre": {"*"}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 5,
@@ -952,7 +1004,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        5 * time.Second,
@@ -979,7 +1031,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"admin": {"*"}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"admin": {"*"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        5 * time.Second,
@@ -1009,7 +1061,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         errFactory,
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        5 * time.Second,
@@ -1036,7 +1088,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        5 * time.Second,
@@ -1070,7 +1122,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        5 * time.Second,
@@ -1110,7 +1162,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         errFactory,
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        5 * time.Second,
@@ -1147,7 +1199,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            nil,
 					ToolTimeout:        5 * time.Second,
 					MaxConcurrentTools: 5,
@@ -1182,7 +1234,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         slowFactory,
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        50 * time.Millisecond,
@@ -1215,7 +1267,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         slowFactory,
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            localAuditor,
 					Metrics:            localMetrics,
 					ToolTimeout:        50 * time.Millisecond,
@@ -1249,12 +1301,14 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			localMetrics := newBridgeMetrics()
 			localAuditor := &fakeAuditor{}
 
-			// slowFactory unconditionally holds the semaphore for 2s (ignoring
-			// ctx cancellation) while the tool timeout is only 500ms.  This
-			// guarantees the semaphore is still held when waiters' contexts
-			// expire, producing deterministic throttle responses.
-			slowFactory := auth.DynamicClientFactory(func(_ context.Context) (dynamic.Interface, error) {
-				time.Sleep(2 * time.Second)
+			// gate blocks the factory until explicitly closed. With
+			// MaxConcurrentTools=1 the first call holds the semaphore
+			// indefinitely, so all other callers' contexts expire and
+			// receive a "busy" throttle response -- fully deterministic,
+			// no time.Sleep.
+			gate := make(chan struct{})
+			blockingFactory := auth.DynamicClientFactory(func(_ context.Context) (dynamic.Interface, error) {
+				<-gate
 				return fakeK8s, nil
 			})
 
@@ -1263,9 +1317,9 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					DynFactory:         slowFactory,
+					DynFactory:         blockingFactory,
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            localAuditor,
 					Metrics:            localMetrics,
 					ToolTimeout:        500 * time.Millisecond,
@@ -1275,14 +1329,11 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			h, err := handler.NewMCPHandler(cfg)
 			Expect(err).NotTo(HaveOccurred())
 
-			ts := httptest.NewServer(h)
+			user := &auth.UserIdentity{Username: "sre", Groups: []string{"sre"}, Issuer: "test"}
+			ts := httptest.NewServer(testIdentityFromHeaderMiddleware(h))
 			defer ts.Close()
 
-			user := &auth.UserIdentity{Username: "sre", Groups: []string{"sre"}, Issuer: "test"}
-
 			const n = 6
-			// Pre-initialize sessions so all goroutines can fire tool calls
-			// simultaneously without variable init latency spreading them out.
 			sessions := make([]string, n)
 			for i := 0; i < n; i++ {
 				sessions[i] = mcpInitializeHTTP(ts.URL, user)
@@ -1302,11 +1353,21 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				}(i)
 			}
 			close(barrier)
+
+			// Collect n responses. The 5 throttled calls complete
+			// quickly (ToolTimeout=500ms). The gate-blocked call
+			// remains outstanding until we close gate below.
+			collected := make([]string, 0, n)
+			for i := 0; i < n-1; i++ {
+				collected = append(collected, <-results)
+			}
+			// Release the factory so the remaining goroutine can finish.
+			close(gate)
+			collected = append(collected, <-results)
 			wg.Wait()
-			close(results)
 
 			var throttled int
-			for body := range results {
+			for _, body := range collected {
 				if strings.Contains(body, "busy") {
 					throttled++
 				}
@@ -1322,11 +1383,16 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 	Context("Concurrency limiting", func() {
 		It("UT-AF-B-064: semaphore limits concurrent tool calls across sessions", func() {
-			var concurrency int64
 			var mu sync.Mutex
 			var maxConcurrency int64
+			var concurrency int64
 
-			slowFactory := auth.DynamicClientFactory(func(ctx context.Context) (dynamic.Interface, error) {
+			// Each factory invocation signals entered, then blocks on
+			// release. The test driver reads entered to observe the
+			// concurrency high-water mark before unblocking workers.
+			entered := make(chan struct{}, 6)
+			release := make(chan struct{})
+			gatedFactory := auth.DynamicClientFactory(func(ctx context.Context) (dynamic.Interface, error) {
 				mu.Lock()
 				concurrency++
 				if concurrency > maxConcurrency {
@@ -1334,9 +1400,10 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				}
 				mu.Unlock()
 
+				entered <- struct{}{}
 				select {
 				case <-ctx.Done():
-				case <-time.After(50 * time.Millisecond):
+				case <-release:
 				}
 
 				mu.Lock()
@@ -1350,9 +1417,9 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					DynFactory:         slowFactory,
+					DynFactory:         gatedFactory,
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        2 * time.Second,
@@ -1362,11 +1429,9 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			h, err := handler.NewMCPHandler(cfg)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Use httptest.Server so each goroutine gets its own MCP session
-			ts := httptest.NewServer(h)
-			defer ts.Close()
-
 			user := &auth.UserIdentity{Username: "user", Groups: []string{"sre"}, Issuer: "test"}
+			ts := httptest.NewServer(testIdentityFromHeaderMiddleware(h))
+			defer ts.Close()
 
 			var wg sync.WaitGroup
 			for i := 0; i < 6; i++ {
@@ -1378,6 +1443,13 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 					mcpCallToolHTTP(ts.URL, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
 				}()
 			}
+
+			// Wait for at least 3 workers to enter the factory
+			// (the semaphore cap) before releasing them all.
+			for i := 0; i < 3; i++ {
+				<-entered
+			}
+			close(release)
 			wg.Wait()
 
 			mu.Lock()
@@ -1401,7 +1473,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 					DynFactory:         panicFactory,
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
 					DSClient:           newFakeDSClient(),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        2 * time.Second,
@@ -1433,7 +1505,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 					DynFactory:         panicFactory,
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
 					DSClient:           newFakeDSClient(),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            localAuditor,
 					Metrics:            localMetrics,
 					ToolTimeout:        2 * time.Second,
@@ -1504,7 +1576,7 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 					return &ka.SelectWorkflowResult{Status: "selected", Message: "ok"}, nil
 				}},
 				DSClient:           newFakeDSClient(),
-				RBACRoles:          map[string][]string{"*": {"*"}},
+				Authorizer:         &allowAllAuthorizer{},
 				Auditor:            auditor,
 				ToolTimeout:        5 * time.Second,
 				MaxConcurrentTools: 10,
@@ -1659,7 +1731,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
 					DSClient:           newFakeDSClient(),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 10,
@@ -1686,7 +1758,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
 					DSClient:           newFakeDSClient(),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 10,
@@ -1717,9 +1789,9 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 					DynFactory: auth.StaticDynamicFactory(fakeK8s),
 					KAClient:   ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
 					DSClient:   newFakeDSClient(),
-					RBACRoles: map[string][]string{
+					Authorizer: &mapAuthorizer{roles: map[string][]string{
 						"sre": {"af_list_events", "af_get_pods"},
-					},
+					}},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        2 * time.Second,
@@ -1729,7 +1801,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 			h, err := handler.NewMCPHandler(cfg)
 			Expect(err).NotTo(HaveOccurred())
 
-			ts := httptest.NewServer(h)
+			ts := httptest.NewServer(testIdentityFromHeaderMiddleware(h))
 			defer ts.Close()
 
 			var wg sync.WaitGroup
@@ -1766,7 +1838,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           nil,
 					DSClient:           newFakeDSClient(),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 10,
@@ -1793,7 +1865,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
 					DSClient:           nil,
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 10,
@@ -1819,7 +1891,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
 					DSClient:           newFakeDSClient(),
-					RBACRoles:          map[string][]string{"*": {"*"}},
+					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            nil,
 					ToolTimeout:        2 * time.Second,
@@ -1854,6 +1926,19 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 // ========================================================================
 
 // mcpInitializeHTTP initializes an MCP session via a real HTTP server.
+// setTestIdentityHeaders propagates user identity as custom HTTP headers so
+// that testIdentityFromHeaderMiddleware on the server side can reconstruct it.
+func setTestIdentityHeaders(req *http.Request, user *auth.UserIdentity) {
+	if user == nil {
+		return
+	}
+	req.Header.Set("X-Test-User", user.Username)
+	req.Header.Set("X-Test-Groups", strings.Join(user.Groups, ","))
+	if user.Issuer != "" {
+		req.Header.Set("X-Test-Issuer", user.Issuer)
+	}
+}
+
 func mcpInitializeHTTP(baseURL string, user *auth.UserIdentity) string {
 	initReq := map[string]any{
 		"jsonrpc": "2.0",
@@ -1869,17 +1954,13 @@ func mcpInitializeHTTP(baseURL string, user *auth.UserIdentity) string {
 	req, _ := http.NewRequest("POST", baseURL, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	if user != nil {
-		ctx := auth.WithUserIdentity(req.Context(), user)
-		req = req.WithContext(ctx)
-	}
+	setTestIdentityHeaders(req, user)
 	resp, err := http.DefaultClient.Do(req)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	defer func() { _ = resp.Body.Close() }()
 	sessionID := resp.Header.Get("Mcp-Session-Id")
 	ExpectWithOffset(1, sessionID).NotTo(BeEmpty())
 
-	// Send initialized notification
 	notif, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
 		"method":  "notifications/initialized",
@@ -1888,10 +1969,7 @@ func mcpInitializeHTTP(baseURL string, user *auth.UserIdentity) string {
 	nReq.Header.Set("Content-Type", "application/json")
 	nReq.Header.Set("Accept", "application/json, text/event-stream")
 	nReq.Header.Set("Mcp-Session-Id", sessionID)
-	if user != nil {
-		ctx := auth.WithUserIdentity(nReq.Context(), user)
-		nReq = nReq.WithContext(ctx)
-	}
+	setTestIdentityHeaders(nReq, user)
 	nResp, _ := http.DefaultClient.Do(nReq)
 	if nResp != nil {
 		_ = nResp.Body.Close()
@@ -1920,10 +1998,7 @@ func mcpCallToolHTTPClient(client *http.Client, baseURL, sessionID, toolName str
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Mcp-Session-Id", sessionID)
-	if user != nil {
-		ctx := auth.WithUserIdentity(req.Context(), user)
-		req = req.WithContext(ctx)
-	}
+	setTestIdentityHeaders(req, user)
 	resp, err := client.Do(req)
 	if err != nil {
 		return ""
@@ -2005,7 +2080,7 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 				KAClient:           kaClient,
 				KAMCPClient:        mockMCP,
 				DSClient:           newFakeDSClient(),
-				RBACRoles:          roles,
+				Authorizer:         &mapAuthorizer{roles: roles},
 				Auditor:            auditor,
 				ToolTimeout:        5 * time.Second,
 				MaxConcurrentTools: 10,
@@ -2218,7 +2293,7 @@ var _ = Describe("MCP Bridge - Metrics Wiring", Label("metrics", "wiring"), func
 				KAClient:           kaClient,
 				KAMCPClient:        mockMCP,
 				DSClient:           newFakeDSClient(),
-				RBACRoles:          map[string][]string{"sre": {"*"}, "cicd": {"kubernaut_list_remediations"}},
+				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}, "cicd": {"kubernaut_list_remediations"}}},
 				Auditor:            &fakeAuditor{},
 				Metrics:            bridgeMetrics,
 				ToolTimeout:        5 * time.Second,

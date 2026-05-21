@@ -431,7 +431,7 @@ func TestBuildA2AHandler_NoLLMEndpoint_Returns501Stub(t *testing.T) {
 
 	cfg := &config.Config{}
 	reg := metrics.NewRegistry()
-	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, logr.Discard())
+	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, nil, logr.Discard())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -465,7 +465,7 @@ func TestBuildA2AHandler_WithLLMEndpoint_ReturnsHandler(t *testing.T) {
 	cfg.Agent.LLMAPIKey = "test-key"
 	reg := metrics.NewRegistry()
 
-	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, logr.Discard())
+	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, nil, logr.Discard())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -492,7 +492,7 @@ func TestBuildA2AHandler_WithSessionInfra_UsesDecorator(t *testing.T) {
 	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
 	defer infra.StopFunc()
 
-	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), infra, reg, nil, logr.Discard())
+	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), infra, reg, nil, nil, logr.Discard())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -518,7 +518,7 @@ func TestBuildA2AHandler_ThreadsK8sClient(t *testing.T) {
 	reg := metrics.NewRegistry()
 
 	deps := testBackendDeps()
-	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, logr.Discard())
+	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -551,7 +551,7 @@ func TestBuildA2AHandler_ThreadsKAClient(t *testing.T) {
 	deps := testBackendDeps()
 	deps.KAClient = ka.NewClient(ka.Config{BaseURL: kaBackend.URL}, nil)
 
-	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, logr.Discard())
+	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -589,7 +589,7 @@ func TestBuildA2AHandler_ThreadsDSClient(t *testing.T) {
 	deps := testBackendDeps()
 	deps.DSClient = dsClient
 
-	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, logr.Discard())
+	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -621,7 +621,7 @@ func TestBuildA2AHandler_ThreadsImpersonatingFactory(t *testing.T) {
 		return nil, fmt.Errorf("test factory called")
 	}
 
-	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, logr.Discard())
+	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

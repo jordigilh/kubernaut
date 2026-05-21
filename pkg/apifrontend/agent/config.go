@@ -40,6 +40,8 @@ type AgentConfig struct {
 	KAClient *ka.Client
 	// MCPClient is the KA MCP client for workflow selection.
 	MCPClient ka.MCPClient
+	// Authorizer checks tool-level authorization via SAR.
+	Authorizer auth.ToolAuthorizer
 	// Auditor emits audit events for RBAC denials (FedRAMP SI-4).
 	Auditor audit.Emitter
 	// ToolCallsTotal is the af_tool_calls_total counter for observability wiring.

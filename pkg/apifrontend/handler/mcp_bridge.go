@@ -34,7 +34,7 @@ type MCPBridgeConfig struct {
 	KAMCPClient        ka.MCPClient
 	DSClient           ds.Client
 	Triager            *severity.Triager
-	RBACRoles          map[string][]string
+	Authorizer         auth.ToolAuthorizer
 	Auditor            audit.Emitter
 	Logger             logr.Logger
 	Metrics            *MCPBridgeMetrics
@@ -70,8 +70,8 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	if cfg == nil {
 		panic("RegisterTools: cfg must not be nil")
 	}
-	if cfg.RBACRoles == nil {
-		panic("RegisterTools: RBACRoles must not be nil — use map[string][]string{\"*\": {\"*\"}} to explicitly allow all")
+	if cfg.Authorizer == nil {
+		panic("RegisterTools: Authorizer must not be nil")
 	}
 	if cfg.Logger.GetSink() == nil {
 		cfg.Logger = logr.Discard()
@@ -375,32 +375,26 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 	}
 }
 
-// checkRBAC verifies the user has permission to invoke the named tool.
+// checkRBAC verifies the user has permission to invoke the named tool via SAR.
 // Returns nil if allowed, or an error describing the denial.
 func checkRBAC(ctx context.Context, cfg *MCPBridgeConfig, toolName string) error {
-	// Check wildcard group first (matches any authenticated user)
-	if allowedTools, ok := cfg.RBACRoles["*"]; ok {
-		for _, t := range allowedTools {
-			if t == toolName || t == "*" {
-				return nil
-			}
-		}
-	}
-
 	user := auth.UserIdentityFromContext(ctx)
 	if user == nil {
 		return fmt.Errorf("permission denied: authentication required to invoke %s", toolName)
 	}
-	for _, group := range user.Groups {
-		if allowedTools, ok := cfg.RBACRoles[group]; ok {
-			for _, t := range allowedTools {
-				if t == toolName || t == "*" {
-					return nil
-				}
-			}
-		}
+
+	if cfg.Authorizer == nil {
+		return fmt.Errorf("permission denied: no authorizer configured")
 	}
-	return fmt.Errorf("permission denied: role lacks access to %s", toolName)
+
+	allowed, err := cfg.Authorizer.Check(ctx, user.Username, user.Groups, toolName)
+	if err != nil {
+		return fmt.Errorf("permission denied: authorization check failed for %s: %w", toolName, err)
+	}
+	if !allowed {
+		return fmt.Errorf("permission denied: role lacks access to %s", toolName)
+	}
+	return nil
 }
 
 func recordMetrics(cfg *MCPBridgeConfig, toolName, result string, start time.Time) {

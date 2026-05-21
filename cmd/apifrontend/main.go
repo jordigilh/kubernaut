@@ -22,6 +22,7 @@ import (
 	"gopkg.in/yaml.v3"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -53,7 +54,6 @@ import (
 
 const (
 	configPath     = "/etc/apifrontend/config.yaml"
-	rbacRolesPath  = "/etc/apifrontend/rbac_roles.yaml"
 	defaultHealthz = ":8081"
 	defaultMetrics = ":9090"
 )
@@ -79,11 +79,17 @@ func run() int {
 		return 1
 	}
 
-	rbacRoles, err := loadRBACRoles()
+	restCfg, err := ctrl.GetConfig()
 	if err != nil {
-		logger.Error(err, "failed to load RBAC roles", "path", rbacRolesPath)
+		logger.Error(err, "failed to get in-cluster config for SAR client")
 		return 1
 	}
+	k8sClient, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		logger.Error(err, "failed to create kubernetes client for SAR")
+		return 1
+	}
+	sarChecker := auth.NewSARChecker(k8sClient, cfg.RBAC.SARCacheTTL, logger.WithName("sar"))
 
 	metricsReg := metrics.NewRegistry()
 
@@ -157,7 +163,7 @@ func run() int {
 		}
 	}()
 
-	mcpHandler, depsReady, err := buildMCPHandler(cfg, deps, metricsReg, rbacRoles, auditor, logger, userLimiter)
+	mcpHandler, depsReady, err := buildMCPHandler(cfg, deps, metricsReg, sarChecker, auditor, logger, userLimiter)
 	if err != nil {
 		logger.Error(err, "failed to create MCP handler")
 		return 1
@@ -194,7 +200,7 @@ func run() int {
 		return 1
 	}
 
-	a2aHandler, err := buildA2AHandler(ctx, cfg, deps, sessInfra, metricsReg, auditor, logger)
+	a2aHandler, err := buildA2AHandler(ctx, cfg, deps, sessInfra, metricsReg, sarChecker, auditor, logger)
 	if err != nil {
 		logger.Error(err, "failed to create A2A handler")
 		return 1
@@ -382,29 +388,6 @@ func loadConfig() (*config.Config, error) {
 	return config.Load(data)
 }
 
-type rbacFile struct {
-	Roles map[string][]string `yaml:"roles"`
-}
-
-func loadRBACRoles() (map[string][]string, error) {
-	data, err := os.ReadFile(rbacRolesPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// F-002: Fail startup when rbac_roles.yaml is missing.
-			// Wildcard defaults are unsafe for production.
-			return nil, fmt.Errorf("rbac_roles.yaml not found at %s — RBAC policy is required", rbacRolesPath)
-		}
-		return nil, err
-	}
-	var rf rbacFile
-	if err := yaml.Unmarshal(data, &rf); err != nil {
-		return nil, fmt.Errorf("parsing rbac_roles.yaml: %w", err)
-	}
-	if len(rf.Roles) == 0 {
-		return nil, fmt.Errorf("rbac_roles.yaml must define at least one role")
-	}
-	return rf.Roles, nil
-}
 
 type caWatcherEntry struct {
 	name    string
@@ -571,14 +554,14 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 	return deps, nil
 }
 
-func buildMCPHandler(cfg *config.Config, deps *backendDeps, metricsReg *metrics.Registry, rbacRoles map[string][]string, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, func() bool, error) {
+func buildMCPHandler(cfg *config.Config, deps *backendDeps, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, func() bool, error) {
 	bridgeCfg := &handler.MCPBridgeConfig{
 		DynFactory:         deps.DynFactory,
 		KAClient:           deps.KAClient,
 		KAMCPClient:        deps.MCPClient,
 		DSClient:           deps.DSClient,
 		Triager:            deps.Triager,
-		RBACRoles:          rbacRoles,
+		Authorizer:         authorizer,
 		Auditor:            auditor,
 		Logger:             logger.WithName("bridge"),
 		Metrics:            bridgeMetricsFrom(metricsReg),
@@ -613,7 +596,7 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, metricsReg *metrics.
 // buildA2AHandler creates the A2A JSON-RPC handler when an LLM endpoint is
 // configured. Returns a 501 stub when LLMEndpoint is empty, preserving backward
 // compatibility for deployments that don't set it.
-func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (http.Handler, error) {
+func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger) (http.Handler, error) {
 	if cfg.Agent.LLMEndpoint == "" {
 		logger.Info("LLM endpoint not configured — A2A handler returns 501")
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -639,6 +622,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		KAClient:                   deps.KAClient,
 		DSClient:                   deps.DSClient,
 		MCPClient:                  deps.MCPClient,
+		Authorizer:                 authorizer,
 		ImpersonatingClientFactory: deps.DynFactory,
 		Auditor:                    auditor,
 		ToolCallsTotal:             metricsReg.ToolCallsTotal,

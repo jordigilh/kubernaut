@@ -143,11 +143,11 @@ type AgentCardConfig struct {
 	URL string `yaml:"url"`
 }
 
-// RBACConfig holds RBAC-related configuration for the Agent Card.
+// RBACConfig holds SAR-based RBAC authorization configuration.
 type RBACConfig struct {
-	// GroupMapping maps OIDC group names to AF role keys (defined in rbac_roles.yaml).
-	// When configured, the Agent Card handler uses this to filter skills per caller.
-	GroupMapping map[string]string `yaml:"groupMapping"`
+	// SARCacheTTL controls how long SubjectAccessReview results are cached.
+	// Zero disables caching (every call hits the API server).
+	SARCacheTTL time.Duration `yaml:"sarCacheTTL"`
 }
 
 // DefaultConfig returns a Config populated with production defaults.
@@ -210,6 +210,9 @@ func DefaultConfig() *Config {
 				RetryMax:           0,
 				RetryableStatuses:  []int{},
 			},
+		},
+		RBAC: RBACConfig{
+			SARCacheTTL: 30 * time.Second,
 		},
 	}
 }
