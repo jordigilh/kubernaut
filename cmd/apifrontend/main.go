@@ -549,7 +549,7 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		DurationHist: metricsReg.DownstreamDuration,
 	})
 
-	deps.DynFactory = auth.AuditingDynamicFactory(buildDynFactory(), auditor)
+	deps.DynFactory = auth.AuditingDynamicFactory(buildDynFactory(cfg), auditor)
 
 	return deps, nil
 }
@@ -710,16 +710,19 @@ func bridgeMetricsFrom(reg *metrics.Registry) *handler.MCPBridgeMetrics {
 	}
 }
 
-func buildDynFactory() auth.DynamicClientFactory {
+func buildDynFactory(cfg *config.Config) auth.DynamicClientFactory {
 	return func(ctx context.Context) (dynamic.Interface, error) {
 		restCfg, err := ctrl.GetConfig()
 		if err != nil {
 			return nil, fmt.Errorf("kubernetes config unavailable: %w", err)
 		}
+
+		if cfg.RBAC.UseOIDCDirect {
+			return auth.NewOIDCDirectDynamicFactory(restCfg)(ctx)
+		}
+
 		identity := auth.UserIdentityFromContext(ctx)
 		if identity == nil {
-			// F-003: Reject requests without validated identity.
-			// Using the pod ServiceAccount for user-scoped operations violates least privilege.
 			return nil, fmt.Errorf("authenticated user identity required for kubernetes operations")
 		}
 		return auth.NewImpersonatingDynamicFactory(restCfg)(ctx)
