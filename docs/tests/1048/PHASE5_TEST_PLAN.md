@@ -168,7 +168,7 @@ retention:
 ### 4.3 Item 3: Retention DEFAULT Alignment (AU-11)
 
 **Business Requirement**: BR-AUDIT-009, ADR-034
-**Files Under Test**: `migrations/009_retention_default_alignment.sql` (new), `pkg/datastorage/config/config.go`
+**Files Under Test**: `migrations/010_retention_default_alignment.sql` (new), `pkg/datastorage/config/config.go`
 
 | ID | Tier | TDD Phase | Description | Expected Result |
 |----|------|-----------|-------------|-----------------|

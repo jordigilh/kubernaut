@@ -15,17 +15,17 @@ Historical note: archived migration `v0-archived/023_add_event_hashing.sql` expl
 
 ---
 
-## Timestamp types (audit of `001`–`009`)
+## Timestamp types (audit of `001`–`010`)
 
-Across numbered migrations **`001_v1_schema.sql`** through **`009_retention_default_alignment.sql`**:
+Across numbered migrations **`001_v1_schema.sql`** through **`010_retention_default_alignment.sql`**:
 
 | Location | Columns / literals | Finding |
 |---------|---------------------|--------|
 | `001_v1_schema.sql` | Most timestamps | **`TIMESTAMP WITH TIME ZONE`** (consistent for instants-in-UTC semantics). |
-| `001_v1_schema.sql` | `audit_events.legal_hold_placed_at` | **`TIMESTAMP`** without TZ — migrated to **`TIMESTAMP WITH TIME ZONE`** via **`010_timestamp_timezone_alignment.sql`**. |
+| `001_v1_schema.sql` | `audit_events.legal_hold_placed_at` | **`TIMESTAMP`** without TZ — migrated to **`TIMESTAMP WITH TIME ZONE`** via **`011_timestamp_timezone_alignment.sql`**. |
 | `001_v1_schema.sql` | `action_type_taxonomy.created_at`, `updated_at` | **`TIMESTAMP NOT NULL`** (no TZ); consider a future alignment migration if audit/compliance requires zone-aware semantics. |
 | `001_v1_schema.sql` | `audit_retention_policies.created_at`, `updated_at` | **`TIMESTAMP NOT NULL`** (no TZ); optional future alignment as above. |
-| `002`–`009` | — | No new plain-`TIMESTAMP` column definitions observed; **`009`** only adjusts **`audit_events.retention_days`** default. |
+| `002`–`010` | — | No new plain-`TIMESTAMP` column definitions observed; **`010`** only adjusts **`audit_events.retention_days`** default. |
 
 ---
 
@@ -39,7 +39,7 @@ When changing a column type (e.g. `TIMESTAMP` → `TIMESTAMP WITH TIME ZONE`):
 4. **Sync embedded copy**: Update `pkg/shared/assets/migrations/` to mirror the new migration.
 5. **Validate**: Run `go build ./...` and the full unit test suite to catch any column-count or type-assertion mismatches in mock rows.
 
-Reference: migration `010_timestamp_timezone_alignment.sql` follows this pattern for `legal_hold_placed_at`.
+Reference: migration `011_timestamp_timezone_alignment.sql` follows this pattern for `legal_hold_placed_at`.
 
 ---
 
