@@ -23,12 +23,18 @@ rules:
   - apiGroups: ["apifrontend.kubernaut.ai"]
     resources: ["investigationsessions/status"]
     verbs: ["get", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["get", "list", "create"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
   - apiGroups: [""]
     resources: ["users", "groups", "serviceaccounts"]
     verbs: ["impersonate"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -70,82 +76,35 @@ data:
     severityTriage:
       cacheTTLSeconds: {{ .Values.apifrontend.config.severityTriage.cacheTTLSeconds | default 30 }}
       llmConfidence: {{ .Values.apifrontend.config.severityTriage.llmConfidence | default 0.7 }}
+    rbac:
+      sarCacheTTL: {{ .Values.apifrontend.config.rbac.sarCacheTTL | default "30s" }}
     logging:
       level: {{ .Values.apifrontend.logging.level | default "INFO" }}
       format: json
 ---
-apiVersion: v1
-kind: ConfigMap
+# Per-persona ClusterRoles for SAR-based tool authorization.
+# The AF performs SubjectAccessReview checks against verb=use, group=kubernaut.ai,
+# resource=tools, name=<toolName>. Bind these ClusterRoles to OIDC groups via
+# ClusterRoleBindings to grant tool access per persona.
+{{- range $persona, $tools := .Values.apifrontend.config.rbac.personas }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
 metadata:
-  name: apifrontend-rbac-roles
-  namespace: {{ .Release.Namespace }}
+  name: kubernaut-tool-{{ $persona }}
   labels:
-    app: apifrontend
-    {{- include "kubernaut.labels" . | nindent 4 }}
-data:
-  rbac_roles.yaml: |
-    roles:
-      sre:
-        - kubernaut_list_remediations
-        - kubernaut_get_remediation
-        - kubernaut_approve
-        - kubernaut_cancel_remediation
-        - kubernaut_watch
-        - kubernaut_start_investigation
-        - kubernaut_poll_investigation
-        - kubernaut_select_workflow
-        - kubernaut_present_decision
-        - kubernaut_list_workflows
-        - kubernaut_get_remediation_history
-        - kubernaut_get_effectiveness
-        - kubernaut_get_audit_trail
-        - af_list_events
-        - af_get_pods
-        - af_get_workloads
-        - af_resolve_owner
-        - af_check_existing_rr
-        - af_create_rr
-      ai-orchestrator:
-        - kubernaut_list_remediations
-        - kubernaut_get_remediation
-        - kubernaut_approve
-        - kubernaut_cancel_remediation
-        - kubernaut_watch
-        - kubernaut_start_investigation
-        - kubernaut_poll_investigation
-        - kubernaut_select_workflow
-        - kubernaut_present_decision
-        - af_list_events
-        - af_get_pods
-        - af_get_workloads
-        - af_resolve_owner
-        - af_check_existing_rr
-        - af_create_rr
-      cicd:
-        - kubernaut_list_remediations
-        - kubernaut_get_remediation
-        - kubernaut_watch
-      observability:
-        - kubernaut_list_remediations
-        - kubernaut_get_remediation
-        - kubernaut_watch
-        - kubernaut_get_effectiveness
-        - kubernaut_list_workflows
-        - af_list_events
-        - af_get_pods
-        - af_get_workloads
-      l3-audit:
-        - kubernaut_list_remediations
-        - kubernaut_get_remediation
-        - kubernaut_list_workflows
-        - kubernaut_get_remediation_history
-        - kubernaut_get_effectiveness
-        - kubernaut_get_audit_trail
-      remediation-approver:
-        - kubernaut_approve
-        - kubernaut_list_remediations
-        - kubernaut_get_remediation
-        - kubernaut_watch
+    app.kubernetes.io/part-of: kubernaut
+    kubernaut.ai/component: tool-authorization
+    {{- include "kubernaut.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["tools"]
+    verbs: ["use"]
+    resourceNames:
+      {{- range $tools }}
+      - {{ . }}
+      {{- end }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -210,18 +169,11 @@ spec:
             {{- toYaml .Values.apifrontend.resources | nindent 12 }}
       volumes:
         - name: config
-          projected:
-            sources:
-              - configMap:
-                  name: apifrontend-config
-                  items:
-                    - key: config.yaml
-                      path: config.yaml
-              - configMap:
-                  name: apifrontend-rbac-roles
-                  items:
-                    - key: rbac_roles.yaml
-                      path: rbac_roles.yaml
+          configMap:
+            name: apifrontend-config
+            items:
+              - key: config.yaml
+                path: config.yaml
         - name: tls-certs
           secret:
             secretName: apifrontend-tls

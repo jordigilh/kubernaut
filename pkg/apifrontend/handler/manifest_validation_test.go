@@ -144,11 +144,10 @@ var _ = Describe("PrometheusRule manifest", func() {
 })
 
 // ---------------------------------------------------------------------------
-// TC-A-RBAC-01: Tool names in rbac_roles.yaml must match bridge registration
+// TC-A-RBAC-01: Tool names in Helm values.yaml personas must match bridge registration
 // ---------------------------------------------------------------------------
 
 var _ = Describe("RBAC tool name alignment", func() {
-	// Registered MCP tool names from mcp_bridge.go (canonical list)
 	registeredTools := map[string]bool{
 		"kubernaut_list_remediations":       true,
 		"kubernaut_get_remediation":         true,
@@ -171,54 +170,55 @@ var _ = Describe("RBAC tool name alignment", func() {
 		"af_create_rr":                      true,
 	}
 
-	It("TC-A-RBAC-01a: every tool in deploy rbac_roles.yaml must exist in bridge registration", func() {
-		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "rbac_roles.yaml")
+	type helmValues struct {
+		Apifrontend struct {
+			Config struct {
+				RBAC struct {
+					Personas map[string][]string `yaml:"personas"`
+				} `yaml:"rbac"`
+			} `yaml:"config"`
+		} `yaml:"apifrontend"`
+	}
+
+	loadPersonas := func() map[string][]string {
+		path := filepath.Join(repoRoot(), "charts", "kubernaut", "values.yaml")
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
+		var v helmValues
+		Expect(yaml.Unmarshal(raw, &v)).To(Succeed())
+		return v.Apifrontend.Config.RBAC.Personas
+	}
 
-		var rbac struct {
-			Roles map[string][]string `yaml:"roles"`
-		}
-		Expect(yaml.Unmarshal(raw, &rbac)).To(Succeed())
-
-		for role, tools := range rbac.Roles {
+	It("TC-A-RBAC-01a: every tool in Helm persona definitions must exist in bridge registration", func() {
+		personas := loadPersonas()
+		for persona, tools := range personas {
 			for _, tool := range tools {
 				Expect(registeredTools).To(HaveKey(tool),
-					"role %q references tool %q which is not registered in mcp_bridge.go", role, tool)
+					"persona %q references tool %q which is not registered in mcp_bridge.go", persona, tool)
 			}
 		}
 	})
 
-	It("TC-A-RBAC-01b: every registered MCP tool must appear in at least one RBAC role", func() {
-		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "rbac_roles.yaml")
-		raw, err := os.ReadFile(path)
-		Expect(err).NotTo(HaveOccurred())
-
-		var rbac struct {
-			Roles map[string][]string `yaml:"roles"`
-		}
-		Expect(yaml.Unmarshal(raw, &rbac)).To(Succeed())
-
-		allRBACTools := map[string]bool{}
-		for _, tools := range rbac.Roles {
+	It("TC-A-RBAC-01b: every registered MCP tool must appear in at least one persona", func() {
+		personas := loadPersonas()
+		allPersonaTools := map[string]bool{}
+		for _, tools := range personas {
 			for _, t := range tools {
-				allRBACTools[t] = true
+				allPersonaTools[t] = true
 			}
 		}
-
 		for tool := range registeredTools {
-			Expect(allRBACTools).To(HaveKey(tool),
-				"registered tool %q has no RBAC role assignment", tool)
+			Expect(allPersonaTools).To(HaveKey(tool),
+				"registered tool %q has no persona assignment in Helm values", tool)
 		}
 	})
 
-	It("TC-A-RBAC-01c: deploy rbac_roles.yaml must use kubernaut_present_decision (MCP bridge name)", func() {
-		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "rbac_roles.yaml")
+	It("TC-A-RBAC-01c: Helm personas must use kubernaut_present_decision (MCP bridge name)", func() {
+		path := filepath.Join(repoRoot(), "charts", "kubernaut", "values.yaml")
 		raw, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
-
 		Expect(string(raw)).NotTo(MatchRegexp(`(?m)^\s*-\s+present_decision\s*$`),
-			"deploy rbac_roles.yaml should use 'kubernaut_present_decision' (MCP bridge registration name), not bare 'present_decision'")
+			"Helm values should use 'kubernaut_present_decision' (MCP bridge registration name), not bare 'present_decision'")
 	})
 })
 

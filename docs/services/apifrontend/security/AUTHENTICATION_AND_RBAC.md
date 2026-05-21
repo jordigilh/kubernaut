@@ -2,8 +2,8 @@
 
 **Service:** kubernaut-apifrontend
 **NIST Controls:** AC-2, AC-3, AC-6, IA-2, IA-5, IA-8
-**Source of truth:** `internal/auth/`, `internal/agent/rbac_roles.yaml`
-**Last updated:** 2026-05-08
+**Source of truth:** `pkg/apifrontend/auth/sar.go`, `charts/kubernaut/values.yaml` (persona ClusterRoles)
+**Last updated:** 2026-05-21
 
 ---
 
@@ -63,60 +63,89 @@ The `JWKSCache` fetches provider signing keys with:
 
 ---
 
-## 2. RBAC Model
+## 2. RBAC Model (SAR-based, v1.5+)
 
-After authentication, tool-level access control is enforced by a `BeforeToolCallback` registered in the ADK agent. The model is **fail-closed**: if no role match is found, the tool call is rejected and an `rbac.denied` audit event is emitted.
+> **ADR**: [ADR-021](../adr/ADR-021-sar-based-tool-authorization.md)
+> **Breaking change from v1.4**: The file-based `rbac_roles.yaml` has been removed.
+> Authorization is now enforced via Kubernetes SubjectAccessReview (SAR).
 
-### Role Assignment
+After authentication, tool-level access control is enforced via Kubernetes
+SubjectAccessReview (SAR) calls. The model is **fail-closed**: SAR errors or
+denials result in tool rejection and an audit event.
 
-Roles are derived from the `groups` claim in the JWT token. The group-to-role mapping is defined externally (OIDC provider configuration). The AF maps roles to tool permissions.
+### How It Works
 
-### Role Definitions
+1. The AF extracts `username` and `groups` from the authenticated JWT token.
+2. On every `tools/call`, the AF performs a SAR check:
+   ```yaml
+   verb:     use
+   group:    kubernaut.ai
+   resource: tools
+   name:     <toolName>
+   ```
+3. The Kubernetes RBAC engine evaluates the request against ClusterRoles and
+   ClusterRoleBindings.
+4. Results are cached for `sarCacheTTL` (default 30s) to reduce API server load.
 
-| Role | Purpose | Tool Count |
-|------|---------|-----------|
-| `sre` | Full operational access — all tools | 20 |
-| `ai-orchestrator` | Automated agent — remediation + triage | 16 |
-| `observability` | Dashboard / monitoring integration — read + triage | 8 |
-| `l3-audit` | Forensic analysis — history, audit trail, effectiveness | 6 |
-| `cicd` | CI/CD pipeline integration — signal submission + status | 4 |
-| `remediation-approver` | Human approval gate — approve/reject only | 4 |
+### `tools/list` Is Unfiltered
 
-### Tool Permission Matrix
+Per [ADR-020](../adr/ADR-020-mcp-bridge-rbac-runtime.md), `tools/list` always
+returns all registered tools regardless of caller identity. Authorization is
+enforced only at `tools/call` execution time to eliminate TOCTOU races.
 
-| Tool | sre | ai-orch | observ | l3-audit | cicd | approver |
-|------|-----|---------|--------|----------|------|----------|
-| kubernaut_list_remediations | Y | Y | Y | Y | Y | Y |
-| kubernaut_get_remediation | Y | Y | Y | Y | Y | Y |
-| kubernaut_submit_signal | Y | Y | | | Y | |
-| kubernaut_approve | Y | Y | | | | Y |
-| kubernaut_cancel_remediation | Y | Y | | | | |
-| kubernaut_watch | Y | Y | Y | | Y | Y |
-| kubernaut_start_investigation | Y | Y | | | | |
-| kubernaut_poll_investigation | Y | Y | | | | |
-| kubernaut_select_workflow | Y | Y | | | | |
-| present_decision | Y | Y | | | | |
-| kubernaut_list_workflows | Y | | Y | Y | | |
-| kubernaut_get_remediation_history | Y | | | Y | | |
-| kubernaut_get_effectiveness | Y | | Y | Y | | |
-| kubernaut_get_audit_trail | Y | | | Y | | |
-| af_list_events | Y | Y | Y | | | |
-| af_get_pods | Y | Y | Y | | | |
-| af_get_workloads | Y | Y | Y | | | |
-| af_resolve_owner | Y | Y | | | | |
-| af_check_existing_rr | Y | Y | | | | |
-| af_create_rr | Y | Y | | | | |
+### Persona ClusterRoles
 
-### Enforcement Mechanism
+The Helm chart ships pre-built ClusterRoles for each persona. Bind them to
+OIDC groups via ClusterRoleBindings.
 
+| Persona | ClusterRole | Tool Count |
+|---------|-------------|-----------|
+| `sre` | `kubernaut-tool-sre` | 19 |
+| `ai-orchestrator` | `kubernaut-tool-ai-orchestrator` | 15 |
+| `observability` | `kubernaut-tool-observability` | 8 |
+| `l3-audit` | `kubernaut-tool-l3-audit` | 6 |
+| `cicd` | `kubernaut-tool-cicd` | 3 |
+| `remediation-approver` | `kubernaut-tool-remediation-approver` | 4 |
+
+### Enforcement Code Paths
+
+| Path | Code | Description |
+|------|------|-------------|
+| MCP Bridge | `handler/mcp_bridge.go:checkRBAC()` | Calls `ToolAuthorizer.Check()` |
+| A2A Agent | `agent/root.go:newRBACGuard()` | BeforeToolCallback delegates to `ToolAuthorizer` |
+
+### Fail-Closed Guarantees
+
+| Condition | Result |
+|-----------|--------|
+| No UserIdentity in context | DENY |
+| No Authorizer configured | DENY (panic at startup) |
+| SAR API call fails | DENY + log error |
+| SAR returns `allowed: false` | DENY + audit event |
+| Empty user or tool name | DENY + error |
+
+### Configuration
+
+```yaml
+rbac:
+  sarCacheTTL: 30s   # TTL for SAR result cache (0 = no cache)
 ```
-BeforeToolCallback (RBAC Guard)
-  1. Extract UserIdentity from context
-  2. If nil → REJECT (fail-closed)
-  3. Map user groups to roles via GroupMapping
-  4. Check if any role grants the requested tool
-  5. If no match → REJECT + emit rbac.denied audit event
-  6. If match → ALLOW (proceed to tool execution)
+
+### Example ClusterRoleBinding
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-tool-sre-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-tool-sre
+subjects:
+  - kind: Group
+    name: platform-sre        # OIDC group from JWT
+    apiGroup: rbac.authorization.k8s.io
 ```
 
 ---

@@ -43,9 +43,10 @@ sum(rate(af_tool_calls_total{result="throttled"}[5m]))
 ### 1. RBAC Denials
 
 1. Check `af_mcp_rbac_denied_total` by tool — which tool is being denied?
-2. Verify `rbac_roles.yaml` maps the user's OIDC groups correctly
-3. Check audit trail (DataStorage) for `EventMCPToolDenied` events with user/tool
-4. If `RBACRoles` is nil, all calls are allowed at app layer; check K8s RBAC for CRD ops
+2. Verify the user's OIDC groups are bound to the correct `kubernaut-tool-<persona>` ClusterRole via ClusterRoleBindings
+3. Test SAR manually: `kubectl auth can-i use tools.kubernaut.ai/<toolName> --as=<user> --as-group=<group>`
+4. Check audit trail (DataStorage) for `EventMCPToolDenied` events with user/tool
+5. Check SAR cache TTL (`rbac.sarCacheTTL`) — permission changes take up to this duration to propagate
 
 ### 2. Tool Timeouts
 

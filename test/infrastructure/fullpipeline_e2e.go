@@ -1086,7 +1086,7 @@ spec:
 // Reuses patterns from AF E2E infrastructure (test/e2e/apifrontend/infrastructure/setup.go)
 // but adapts for the FP cluster which already has KA, DataStorage, and mock-LLM deployed.
 //
-// Deploys: DEX OIDC → AF CRDs → RBAC → ConfigMap (config + rbac_roles) → Deployment + Service.
+// Deploys: DEX OIDC → AF CRDs → RBAC → ConfigMap (config) → Deployment + Service.
 // TLS cert (apifrontend-tls) is already created by GenerateInterServiceTLS in Phase 5.
 func deployAPIFrontendInFP(ctx context.Context, namespace, kubeconfigPath, afImageName string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🌐 Deploying API Frontend (Issue #1189)...")
@@ -1145,6 +1145,9 @@ rules:
   - apiGroups: [""]
     resources: ["users", "groups", "serviceaccounts"]
     verbs: ["impersonate"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -1166,6 +1169,16 @@ subjects:
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to deploy AF RBAC: %w", err)
 	}
+	// Per-persona tool ClusterRoles + ClusterRoleBindings for SAR-based RBAC (ADR-021).
+	personaToolRBAC := fpPersonaToolClusterRolesYAML()
+	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(personaToolRBAC)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy persona tool ClusterRoles: %w", err)
+	}
+
 	// E2E user RBAC for multi-role testing
 	userRBACPath := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "e2e-user-rbac.yaml")
 	userRBACData, err := os.ReadFile(userRBACPath) //nolint:gosec // G304
@@ -1185,15 +1198,11 @@ subjects:
 		return fmt.Errorf("failed to create AF DataStorage RoleBinding: %w", err)
 	}
 
-	// 4. ConfigMap (AF config + rbac_roles)
+	// 4. ConfigMap (AF config)
 	_, _ = fmt.Fprintln(writer, "    ├── ConfigMaps...")
 	configData, err := os.ReadFile(filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "config.yaml")) //nolint:gosec // G304
 	if err != nil {
 		return fmt.Errorf("failed to read config.yaml: %w", err)
-	}
-	rbacRolesData, err := os.ReadFile(filepath.Join(projectRoot, "deploy", "apifrontend", "base", "rbac_roles.yaml")) //nolint:gosec // G304
-	if err != nil {
-		return fmt.Errorf("failed to read rbac_roles.yaml: %w", err)
 	}
 	configManifest := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap
@@ -1203,17 +1212,7 @@ metadata:
 data:
   config.yaml: |
 %s
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: apifrontend-rbac-roles
-  namespace: %s
-data:
-  rbac_roles.yaml: |
-%s
-`, namespace, indentYAMLLines(string(configData), 4),
-		namespace, indentYAMLLines(string(rbacRolesData), 4))
+`, namespace, indentYAMLLines(string(configData), 4))
 	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(configManifest)
 	cmd.Stdout = writer
@@ -1298,18 +1297,11 @@ spec:
               cpu: 500m
       volumes:
         - name: config
-          projected:
-            sources:
-              - configMap:
-                  name: apifrontend-config
-                  items:
-                    - key: config.yaml
-                      path: config.yaml
-              - configMap:
-                  name: apifrontend-rbac-roles
-                  items:
-                    - key: rbac_roles.yaml
-                      path: rbac_roles.yaml
+          configMap:
+            name: apifrontend-config
+            items:
+              - key: config.yaml
+                path: config.yaml
         - name: tls-certs
           secret:
             secretName: apifrontend-tls
@@ -1349,6 +1341,82 @@ spec:
 
 	_, _ = fmt.Fprintln(writer, "    └── ✅ API Frontend deployed")
 	return nil
+}
+
+// fpPersonaToolClusterRolesYAML generates the 6 per-persona ClusterRoles (with
+// kubernaut.ai/tools verb=use resourceNames) and 6 ClusterRoleBindings (mapping
+// DEX OIDC groups to the ClusterRoles). Mirrors the Helm chart template that
+// generates kubernaut-tool-{persona} ClusterRoles from values.yaml personas.
+func fpPersonaToolClusterRolesYAML() string {
+	type persona struct {
+		name  string
+		tools []string
+	}
+	personas := []persona{
+		{"sre", []string{
+			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_approve",
+			"kubernaut_cancel_remediation", "kubernaut_watch", "kubernaut_start_investigation",
+			"kubernaut_poll_investigation", "kubernaut_select_workflow", "kubernaut_present_decision",
+			"kubernaut_list_workflows", "kubernaut_get_remediation_history", "kubernaut_get_effectiveness",
+			"kubernaut_get_audit_trail", "af_list_events", "af_get_pods", "af_get_workloads",
+			"af_resolve_owner", "af_check_existing_rr", "af_create_rr",
+		}},
+		{"ai-orchestrator", []string{
+			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_approve",
+			"kubernaut_cancel_remediation", "kubernaut_watch", "kubernaut_start_investigation",
+			"kubernaut_poll_investigation", "kubernaut_select_workflow", "kubernaut_present_decision",
+			"af_list_events", "af_get_pods", "af_get_workloads", "af_resolve_owner",
+			"af_check_existing_rr", "af_create_rr",
+		}},
+		{"cicd", []string{
+			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch",
+		}},
+		{"observability", []string{
+			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch",
+			"kubernaut_get_effectiveness", "kubernaut_list_workflows",
+			"af_list_events", "af_get_pods", "af_get_workloads",
+		}},
+		{"l3-audit", []string{
+			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_list_workflows",
+			"kubernaut_get_remediation_history", "kubernaut_get_effectiveness", "kubernaut_get_audit_trail",
+		}},
+		{"remediation-approver", []string{
+			"kubernaut_approve", "kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch",
+		}},
+	}
+
+	var b strings.Builder
+	for _, p := range personas {
+		fmt.Fprintf(&b, `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-tool-%s
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["tools"]
+    verbs: ["use"]
+    resourceNames:
+`, p.name)
+		for _, t := range p.tools {
+			fmt.Fprintf(&b, "      - %q\n", t)
+		}
+		fmt.Fprintf(&b, `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-tool-%s-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-tool-%s
+subjects:
+  - kind: Group
+    name: %s
+    apiGroup: rbac.authorization.k8s.io
+`, p.name, p.name, p.name)
+	}
+	return b.String()
 }
 
 // indentYAMLLines indents each non-empty line of s by the given number of spaces.

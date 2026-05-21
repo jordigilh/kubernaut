@@ -90,7 +90,8 @@ tests/performance/        — k6 performance test scripts
    tools = append(tools, toolspkg.NewMyTool(deps))
    ```
 
-3. Add RBAC authorization in `internal/agent/rbac_roles.yaml`:
+3. Add RBAC authorization by adding the tool name to the appropriate persona in
+   `charts/kubernaut/values.yaml` under `apifrontend.config.rbac.personas`:
    ```yaml
    sre:
      - af_my_tool

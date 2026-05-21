@@ -1,14 +1,11 @@
 package agent
 
 import (
-	_ "embed"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
 	"time"
-
-	"gopkg.in/yaml.v3"
 
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
@@ -22,37 +19,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
-
-//go:embed rbac_roles.yaml
-var embeddedRBACConfig []byte
-
-// rbacConfig holds the parsed RBAC role-to-tools mapping.
-type rbacConfig struct {
-	Roles map[string][]string `yaml:"roles"`
-}
-
-var (
-	defaultRBAC     rbacConfig
-	defaultRBACOnce sync.Once
-	defaultRBACErr  error
-)
-
-func loadDefaultRBAC() (rbacConfig, error) {
-	defaultRBACOnce.Do(func() {
-		defaultRBACErr = yaml.Unmarshal(embeddedRBACConfig, &defaultRBAC)
-	})
-	return defaultRBAC, defaultRBACErr
-}
-
-// LoadRBACRoles returns the embedded RBAC role-to-tools mapping for use by
-// components that need to filter capabilities per persona (e.g., Agent Card).
-func LoadRBACRoles() (map[string][]string, error) {
-	cfg, err := loadDefaultRBAC()
-	if err != nil {
-		return nil, fmt.Errorf("load rbac_roles.yaml: %w", err)
-	}
-	return cfg.Roles, nil
-}
 
 // NewRootAgent creates the ADK root agent with all registered tools.
 // Returns the agent, the full tool list (for RBAC filtering), and any error.
@@ -78,13 +44,19 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 	beforeMetrics, afterMetrics := newMetricsToolCallbacks(cfg.ToolCallsTotal, cfg.ToolCallDuration)
 	afterAudit := newAuditToolCallback(cfg.Auditor)
 
+	var beforeCallbacks []llmagent.BeforeToolCallback
+	if cfg.Authorizer != nil {
+		beforeCallbacks = append(beforeCallbacks, newRBACGuard(cfg.Authorizer, cfg.Auditor))
+	}
+	beforeCallbacks = append(beforeCallbacks, beforeMetrics)
+
 	a, err := llmagent.New(llmagent.Config{
 		Name:                "kubernaut-apifrontend",
 		Description:         "Kubernaut API Frontend agent for incident triage and remediation",
 		Model:               cfg.LLMModel,
 		Tools:               allTools,
 		Instruction:         cfg.Instruction,
-		BeforeToolCallbacks: []llmagent.BeforeToolCallback{newRBACGuard(cfg.Auditor), beforeMetrics},
+		BeforeToolCallbacks: beforeCallbacks,
 		AfterToolCallbacks:  []llmagent.AfterToolCallback{afterMetrics, afterAudit},
 	})
 	if err != nil {
@@ -155,11 +127,16 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 	return result, nil
 }
 
-// newRBACGuard returns a BeforeToolCallback that enforces RBAC by checking
-// whether the authenticated user's groups grant access to the requested tool.
-// Fail-closed: if no identity or no matching role, the tool call is rejected.
+// NewRBACGuardForTest is an exported alias of newRBACGuard for integration
+// testing via runner.Run. Production code should use the unexported constructor.
+func NewRBACGuardForTest(authorizer auth.ToolAuthorizer, auditor audit.Emitter) llmagent.BeforeToolCallback {
+	return newRBACGuard(authorizer, auditor)
+}
+
+// newRBACGuard returns a BeforeToolCallback that enforces RBAC via SAR.
+// Fail-closed: if no identity, authorizer error, or denial, the tool call is rejected.
 // Denied attempts are emitted as audit events for FedRAMP SI-4 compliance.
-func newRBACGuard(auditor audit.Emitter) llmagent.BeforeToolCallback {
+func newRBACGuard(authorizer auth.ToolAuthorizer, auditor audit.Emitter) llmagent.BeforeToolCallback {
 	return func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
 		identity := auth.UserIdentityFromContext(ctx)
 		if identity == nil {
@@ -167,22 +144,14 @@ func newRBACGuard(auditor audit.Emitter) llmagent.BeforeToolCallback {
 			return map[string]any{"error": "unauthorized: no identity in context"}, nil
 		}
 
-		rbac, err := loadDefaultRBAC()
-		if err != nil {
-			return map[string]any{"error": "rbac configuration error"}, nil
-		}
-
 		toolName := t.Name()
-		for _, group := range identity.Groups {
-			allowed, ok := rbac.Roles[group]
-			if !ok {
-				continue
-			}
-			for _, name := range allowed {
-				if name == toolName {
-					return nil, nil
-				}
-			}
+		allowed, err := authorizer.Check(ctx, identity.Username, identity.Groups, toolName)
+		if err != nil {
+			log.Printf("[rbac-guard] DENIED tool=%q user=%q reason=authorizer_error err=%v", toolName, identity.Username, err)
+			return map[string]any{"error": "authorization check failed"}, nil
+		}
+		if allowed {
+			return nil, nil
 		}
 
 		if auditor != nil {
@@ -198,48 +167,6 @@ func newRBACGuard(auditor audit.Emitter) llmagent.BeforeToolCallback {
 
 		return map[string]any{"error": fmt.Sprintf("forbidden: role does not grant access to tool %q", toolName)}, nil
 	}
-}
-
-// FilterToolsByRole returns only the tools accessible to the given role.
-// Unknown roles get an empty list (fail-closed).
-// The returned slice is a new allocation; the original is not mutated.
-// Role mappings are loaded from the embedded rbac_roles.yaml; override at
-// runtime via operator ConfigMap injection (PR7).
-func FilterToolsByRole(role string, allTools []tool.Tool) []tool.Tool {
-	return FilterToolsByRoles([]string{role}, allTools)
-}
-
-// FilterToolsByRoles returns the union of tools accessible to any of the given
-// roles. This models multi-group membership where a user in [cicd, l3-audit]
-// gets the combined tool set from both roles.
-func FilterToolsByRoles(roles []string, allTools []tool.Tool) []tool.Tool {
-	rbac, err := loadDefaultRBAC()
-	if err != nil {
-		return nil
-	}
-
-	allowSet := make(map[string]bool)
-	for _, role := range roles {
-		allowed, ok := rbac.Roles[role]
-		if !ok {
-			continue
-		}
-		for _, name := range allowed {
-			allowSet[name] = true
-		}
-	}
-
-	if len(allowSet) == 0 {
-		return nil
-	}
-
-	result := make([]tool.Tool, 0, len(allowSet))
-	for _, t := range allTools {
-		if allowSet[t.Name()] {
-			result = append(result, t)
-		}
-	}
-	return result
 }
 
 // newMetricsToolCallbacks returns Before/After callbacks that track tool call

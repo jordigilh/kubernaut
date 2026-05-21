@@ -1010,6 +1010,21 @@
                 "cacheTTLSeconds": { "type": "integer", "default": 30 },
                 "llmConfidence": { "type": "number", "default": 0.7 }
               }
+            },
+            "rbac": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "sarCacheTTL": { "type": "string", "default": "30s", "description": "TTL for SubjectAccessReview cache entries" },
+                "personas": {
+                  "type": "object",
+                  "description": "Map of persona name to list of allowed tool names for SAR-based authorization",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                }
+              }
             }
           }
         },
