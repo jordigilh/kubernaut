@@ -568,7 +568,7 @@ graph TB
 | L1: Input Sanitization | Strip control chars, normalize Unicode, length limits | Payload smuggling, buffer overflow |
 | L2: System Prompt Boundaries | XML-tagged regions, role separation | Prompt injection, role confusion |
 | L3: Structured Output Validation | JSON Schema validation of LLM tool calls | Hallucinated tools, malformed params |
-| L4: Tool Call Authorization | RBAC check per tool, namespace enforcement | Privilege escalation, cross-namespace access |
+| L4: Tool Call Authorization | SAR-based RBAC check per tool ([ADR-021](../adr/ADR-021-sar-based-tool-authorization.md)), namespace enforcement | Privilege escalation, cross-namespace access |
 | L5: Context Isolation | Per-session LLM context, no cross-session state | Data leakage between users |
 | L6: Output Filtering | Hybrid: structural allowlist (tools return typed fields, never raw YAML) + regex scan (JWT prefixes, cert blocks, high-entropy strings) + LLM instruction | Information disclosure |
 | L7: Anomaly Detection | Track tool call patterns, abort on anomaly | Automated exploitation, runaway loops |

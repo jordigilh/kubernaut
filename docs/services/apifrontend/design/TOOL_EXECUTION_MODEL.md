@@ -51,7 +51,7 @@ The ADK agent is configured with explicit callback ordering that provides a secu
 
 | Position | Callback | Purpose | Failure Behavior |
 |----------|----------|---------|-----------------|
-| 1 | **RBAC Guard** | Checks `UserIdentity.Groups` against `rbac_roles.yaml` | Returns `{"error": "forbidden: ..."}` + emits `rbac.denied` audit event |
+| 1 | **RBAC Guard** | Performs Kubernetes SAR check via `ToolAuthorizer.Check()` (see [ADR-021](../adr/ADR-021-sar-based-tool-authorization.md)) | Returns `{"error": "forbidden: ..."}` + emits `rbac.denied` audit event |
 | 2 | **Metrics Start** | Records `time.Now()` in `sync.Map` keyed by `FunctionCallID` | No-op on nil metrics (graceful degradation) |
 
 ### After Tool Callbacks (ordered)
