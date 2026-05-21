@@ -761,14 +761,15 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 func (s *Server) setupRoutes() chi.Router {
 	r := chi.NewRouter()
 
-	// BR-HTTP-015: CORS configuration using shared library
-	// Configuration is read from environment variables:
-	// - CORS_ALLOWED_ORIGINS: Comma-separated list of allowed origins (default: "*" for dev)
-	// - CORS_ALLOWED_METHODS: Comma-separated list of allowed methods
-	// - CORS_ALLOWED_HEADERS: Comma-separated list of allowed headers
-	// - CORS_ALLOW_CREDENTIALS: "true" or "false"
-	// - CORS_MAX_AGE: Preflight cache duration in seconds
-	corsOpts := kubecors.FromEnvironment()
+	// BR-HTTP-015 + Issue #1215: CORS from config YAML with env-var fallback.
+	corsOpts := kubecors.FromConfig(&kubecors.Options{
+		AllowedOrigins:   s.config.CORS.AllowedOrigins,
+		AllowedMethods:   s.config.CORS.AllowedMethods,
+		AllowedHeaders:   s.config.CORS.AllowedHeaders,
+		ExposedHeaders:   s.config.CORS.ExposedHeaders,
+		AllowCredentials: s.config.CORS.AllowCredentials,
+		MaxAge:           s.config.CORS.MaxAge,
+	})
 	if !corsOpts.IsProduction() {
 		s.logger.Info("CORS configuration allows all origins - not recommended for production",
 			"allowed_origins", corsOpts.AllowedOrigins)

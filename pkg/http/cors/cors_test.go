@@ -330,4 +330,99 @@ var _ = Describe("BR-HTTP-015: CORS Security Policy Enforcement", func() {
 				"Credentials should NOT be allowed by default for security")
 		})
 	})
+
+	// ==============================================
+	// CATEGORY 7: Config-based CORS with env-var fallback (Issue #1215)
+	// ==============================================
+
+	Context("FromConfig — config YAML with env-var fallback", func() {
+
+		It("should use config values when provided", func() {
+			cfg := &kubecors.Options{
+				AllowedOrigins: []string{"https://from-config.example.com"},
+				AllowedMethods: []string{"GET", "POST"},
+				MaxAge:         600,
+			}
+			opts := kubecors.FromConfig(cfg)
+
+			Expect(opts.AllowedOrigins).To(Equal([]string{"https://from-config.example.com"}))
+			Expect(opts.AllowedMethods).To(Equal([]string{"GET", "POST"}))
+			Expect(opts.MaxAge).To(Equal(600))
+		})
+
+		It("should fall back to env vars when config fields are empty", func() {
+			_ = os.Setenv("CORS_ALLOWED_ORIGINS", "https://from-env.example.com")
+			_ = os.Setenv("CORS_ALLOWED_METHODS", "DELETE,PATCH")
+			_ = os.Setenv("CORS_MAX_AGE", "120")
+
+			cfg := &kubecors.Options{} // all zero/empty
+			opts := kubecors.FromConfig(cfg)
+
+			Expect(opts.AllowedOrigins).To(Equal([]string{"https://from-env.example.com"}))
+			Expect(opts.AllowedMethods).To(Equal([]string{"DELETE", "PATCH"}))
+			Expect(opts.MaxAge).To(Equal(120))
+		})
+
+		It("should fall back to defaults when both config and env are empty", func() {
+			cfg := &kubecors.Options{}
+			opts := kubecors.FromConfig(cfg)
+
+			defaults := kubecors.DefaultOptions()
+			Expect(opts.AllowedOrigins).To(Equal(defaults.AllowedOrigins))
+			Expect(opts.AllowedMethods).To(Equal(defaults.AllowedMethods))
+			Expect(opts.AllowedHeaders).To(Equal(defaults.AllowedHeaders))
+			Expect(opts.MaxAge).To(Equal(defaults.MaxAge))
+		})
+
+		It("should prefer config over env vars", func() {
+			_ = os.Setenv("CORS_ALLOWED_ORIGINS", "https://from-env.example.com")
+
+			cfg := &kubecors.Options{
+				AllowedOrigins: []string{"https://from-config.example.com"},
+			}
+			opts := kubecors.FromConfig(cfg)
+
+			Expect(opts.AllowedOrigins).To(Equal([]string{"https://from-config.example.com"}),
+				"Config YAML should take precedence over CORS_ALLOWED_ORIGINS env var")
+		})
+
+		It("should handle allowCredentials from config", func() {
+			cfg := &kubecors.Options{
+				AllowedOrigins:   []string{"https://app.example.com"},
+				AllowCredentials: true,
+			}
+			opts := kubecors.FromConfig(cfg)
+
+			Expect(opts.AllowCredentials).To(BeTrue())
+		})
+
+		It("should fall back allowCredentials to env var", func() {
+			_ = os.Setenv("CORS_ALLOW_CREDENTIALS", "true")
+
+			cfg := &kubecors.Options{}
+			opts := kubecors.FromConfig(cfg)
+
+			Expect(opts.AllowCredentials).To(BeTrue())
+		})
+
+		It("should produce correct CORS headers when wired as middleware", func() {
+			cfg := &kubecors.Options{
+				AllowedOrigins: []string{"https://dashboard.kubernaut.io"},
+				AllowedMethods: []string{"GET", "POST"},
+				MaxAge:         600,
+			}
+			opts := kubecors.FromConfig(cfg)
+			handler := kubecors.Handler(opts)(testHandler)
+
+			req := httptest.NewRequest("OPTIONS", "/api/v1/data", nil)
+			req.Header.Set("Origin", "https://dashboard.kubernaut.io")
+			req.Header.Set("Access-Control-Request-Method", "POST")
+			rec := httptest.NewRecorder()
+
+			handler.ServeHTTP(rec, req)
+
+			Expect(rec.Header().Get("Access-Control-Allow-Origin")).To(Equal("https://dashboard.kubernaut.io"))
+			Expect(rec.Header().Get("Access-Control-Allow-Methods")).To(ContainSubstring("POST"))
+		})
+	})
 })

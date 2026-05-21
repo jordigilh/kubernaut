@@ -20,6 +20,17 @@ data:
       writeTimeout: {{ .Values.gateway.config.server.writeTimeout | default "30s" }}
       idleTimeout: 120s
       k8sRequestTimeout: {{ .Values.gateway.config.server.k8sRequestTimeout | default "15s" }}
+    cors:
+      allowedOrigins:
+      {{- range .Values.gateway.config.cors.allowedOrigins }}
+        - {{ . | quote }}
+      {{- end }}
+      allowedMethods:
+      {{- range .Values.gateway.config.cors.allowedMethods }}
+        - {{ . | quote }}
+      {{- end }}
+      allowCredentials: {{ .Values.gateway.config.cors.allowCredentials | default false }}
+      maxAge: {{ .Values.gateway.config.cors.maxAge | default 300 }}
     middleware:
       trustedProxyCIDRs:
       {{- range .Values.gateway.config.middleware.trustedProxyCIDRs }}
@@ -160,11 +171,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            # Issue #673 H-2: Restrictive CORS default for M2M webhook API.
-            # Gateway is not accessed by browsers; CORS is irrelevant but must not default to "*".
-            # Set to "none" to trigger FromEnvironment() to use an explicit deny-all value.
-            - name: CORS_ALLOWED_ORIGINS
-              value: {{ .Values.gateway.config.cors.allowedOrigins | default "https://no-browser-clients.invalid" | quote }}
             - name: TLS_CA_FILE
               value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
           volumeMounts:

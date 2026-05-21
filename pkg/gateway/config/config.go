@@ -41,6 +41,9 @@ type ServerConfig struct {
 	// Middleware configuration
 	Middleware MiddlewareSettings `yaml:"middleware"`
 
+	// CORS configuration (Issue #1215: moved from env vars to config YAML)
+	CORS CORSConfig `yaml:"cors"`
+
 	// DataStorage connectivity (ADR-030: audit trail + workflow catalog)
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 
@@ -53,6 +56,18 @@ type ServerConfig struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+}
+
+// CORSConfig contains CORS settings for the Gateway HTTP API.
+// Issue #1215: Moved from CORS_* env vars to config YAML for consistency
+// with all other Gateway configuration. Env vars are still read as fallback.
+type CORSConfig struct {
+	AllowedOrigins   []string `yaml:"allowedOrigins"`
+	AllowedMethods   []string `yaml:"allowedMethods"`
+	AllowedHeaders   []string `yaml:"allowedHeaders"`
+	ExposedHeaders   []string `yaml:"exposedHeaders"`
+	AllowCredentials bool     `yaml:"allowCredentials"`
+	MaxAge           int      `yaml:"maxAge"`
 }
 
 // ServerSettings contains HTTP server configuration.
