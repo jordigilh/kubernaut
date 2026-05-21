@@ -136,7 +136,7 @@ func registerStubTools(srv *mcp.Server, cfg MCPConfig) { //nolint:gocritic // hu
 				auditor.Emit(ctx, &audit.Event{
 					Type:   audit.EventToolExecuted,
 					UserID: username,
-					Detail: map[string]string{"tool": toolName},
+					Detail: map[string]string{"tool_name": toolName, "tool_outcome": "failure"},
 				})
 			}
 			return &mcp.CallToolResult{

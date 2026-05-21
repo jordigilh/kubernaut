@@ -3961,6 +3961,10 @@ type ApifrontendA2ATaskCompletedPayload struct {
 	TaskID string `json:"task_id"`
 	// Task execution duration in milliseconds.
 	DurationMs OptInt `json:"duration_ms"`
+	// Associated RemediationRequest CRD name (Issue.
+	RrName OptString `json:"rr_name"`
+	// Associated RemediationRequest K8s namespace (Issue.
+	RrNamespace OptString `json:"rr_namespace"`
 }
 
 // GetEventType returns the value of EventType.
@@ -3983,6 +3987,16 @@ func (s *ApifrontendA2ATaskCompletedPayload) GetDurationMs() OptInt {
 	return s.DurationMs
 }
 
+// GetRrName returns the value of RrName.
+func (s *ApifrontendA2ATaskCompletedPayload) GetRrName() OptString {
+	return s.RrName
+}
+
+// GetRrNamespace returns the value of RrNamespace.
+func (s *ApifrontendA2ATaskCompletedPayload) GetRrNamespace() OptString {
+	return s.RrNamespace
+}
+
 // SetEventType sets the value of EventType.
 func (s *ApifrontendA2ATaskCompletedPayload) SetEventType(val ApifrontendA2ATaskCompletedPayloadEventType) {
 	s.EventType = val
@@ -4001,6 +4015,16 @@ func (s *ApifrontendA2ATaskCompletedPayload) SetTaskID(val string) {
 // SetDurationMs sets the value of DurationMs.
 func (s *ApifrontendA2ATaskCompletedPayload) SetDurationMs(val OptInt) {
 	s.DurationMs = val
+}
+
+// SetRrName sets the value of RrName.
+func (s *ApifrontendA2ATaskCompletedPayload) SetRrName(val OptString) {
+	s.RrName = val
+}
+
+// SetRrNamespace sets the value of RrNamespace.
+func (s *ApifrontendA2ATaskCompletedPayload) SetRrNamespace(val OptString) {
+	s.RrNamespace = val
 }
 
 // Event type for discriminator (matches parent event_type).
@@ -4050,6 +4074,10 @@ type ApifrontendA2ATaskFailedPayload struct {
 	TaskID string `json:"task_id"`
 	// Error message or classification.
 	Error string `json:"error"`
+	// Associated RemediationRequest CRD name (Issue.
+	RrName OptString `json:"rr_name"`
+	// Associated RemediationRequest K8s namespace (Issue.
+	RrNamespace OptString `json:"rr_namespace"`
 }
 
 // GetEventType returns the value of EventType.
@@ -4072,6 +4100,16 @@ func (s *ApifrontendA2ATaskFailedPayload) GetError() string {
 	return s.Error
 }
 
+// GetRrName returns the value of RrName.
+func (s *ApifrontendA2ATaskFailedPayload) GetRrName() OptString {
+	return s.RrName
+}
+
+// GetRrNamespace returns the value of RrNamespace.
+func (s *ApifrontendA2ATaskFailedPayload) GetRrNamespace() OptString {
+	return s.RrNamespace
+}
+
 // SetEventType sets the value of EventType.
 func (s *ApifrontendA2ATaskFailedPayload) SetEventType(val ApifrontendA2ATaskFailedPayloadEventType) {
 	s.EventType = val
@@ -4090,6 +4128,16 @@ func (s *ApifrontendA2ATaskFailedPayload) SetTaskID(val string) {
 // SetError sets the value of Error.
 func (s *ApifrontendA2ATaskFailedPayload) SetError(val string) {
 	s.Error = val
+}
+
+// SetRrName sets the value of RrName.
+func (s *ApifrontendA2ATaskFailedPayload) SetRrName(val OptString) {
+	s.RrName = val
+}
+
+// SetRrNamespace sets the value of RrNamespace.
+func (s *ApifrontendA2ATaskFailedPayload) SetRrNamespace(val OptString) {
+	s.RrNamespace = val
 }
 
 // Event type for discriminator (matches parent event_type).

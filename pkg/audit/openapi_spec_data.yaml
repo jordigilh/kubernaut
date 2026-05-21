@@ -1114,6 +1114,19 @@ paths:
             type: integer
             default: 0
             minimum: 0
+        - name: detail_key
+          in: query
+          description: Filter by event_data JSONB field name (alphanumeric + underscore only). Must be paired with detail_value. (Issue #1199)
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9_]+$'
+          example: "task_id"
+        - name: detail_value
+          in: query
+          description: Filter by event_data JSONB field value. Must be paired with detail_key. (Issue #1199)
+          schema:
+            type: string
+          example: "task-abc-123"
       responses:
         '200':
           description: Query results
@@ -7548,6 +7561,12 @@ components:
         duration_ms:
           type: integer
           description: Task execution duration in milliseconds
+        rr_name:
+          type: string
+          description: Associated RemediationRequest CRD name (Issue #1199)
+        rr_namespace:
+          type: string
+          description: Associated RemediationRequest K8s namespace (Issue #1199)
 
     ApifrontendA2ATaskFailedPayload:
       type: object
@@ -7567,6 +7586,12 @@ components:
         error:
           type: string
           description: Error message or classification
+        rr_name:
+          type: string
+          description: Associated RemediationRequest CRD name (Issue #1199)
+        rr_namespace:
+          type: string
+          description: Associated RemediationRequest K8s namespace (Issue #1199)
 
     ApifrontendMCPToolFailedPayload:
       type: object

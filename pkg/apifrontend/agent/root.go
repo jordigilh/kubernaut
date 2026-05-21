@@ -3,6 +3,7 @@ package agent
 import (
 	_ "embed"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -162,6 +163,7 @@ func newRBACGuard(auditor audit.Emitter) llmagent.BeforeToolCallback {
 	return func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
 		identity := auth.UserIdentityFromContext(ctx)
 		if identity == nil {
+			log.Printf("[rbac-guard] DENIED tool=%q reason=no_identity_in_context", t.Name())
 			return map[string]any{"error": "unauthorized: no identity in context"}, nil
 		}
 
@@ -310,12 +312,13 @@ func newAuditToolCallback(auditor audit.Emitter) llmagent.AfterToolCallback {
 
 		result := "success"
 		if toolErr != nil {
-			result = "error"
+			result = "failure"
+			log.Printf("[audit-tool-callback] tool=%q outcome=failure error=%v", t.Name(), toolErr)
 		}
 
 		detail := map[string]string{
-			"tool":   t.Name(),
-			"result": result,
+			"tool_name":    t.Name(),
+			"tool_outcome": result,
 		}
 		if toolErr != nil {
 			detail["error"] = security.RedactError(toolErr)

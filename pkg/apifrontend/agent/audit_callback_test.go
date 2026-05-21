@@ -129,7 +129,7 @@ var _ = Describe("newAuditToolCallback (#1189)", func() {
 		Expect(auditor.events).To(HaveLen(1))
 		_, hasRRID := auditor.events[0].Detail["rr_id"]
 		Expect(hasRRID).To(BeFalse())
-		Expect(auditor.events[0].Detail["result"]).To(Equal("error"))
+		Expect(auditor.events[0].Detail["tool_outcome"]).To(Equal("failure"))
 	})
 
 	It("UT-AF-1189-005: omits rr_id for non-af_create_rr tools", func() {

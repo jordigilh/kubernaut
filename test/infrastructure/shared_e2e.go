@@ -209,7 +209,8 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           name: "kubernaut_start_investigation"
           arguments:
             namespace: "kubernaut-system"
-            pod_name: "memory-eater"
+            name: "memory-eater"
+            kind: "Deployment"
       - name: "af_stream_investigation"
         keywords: ["stream investigation", "stream the investigation"]
         match_last_only: true

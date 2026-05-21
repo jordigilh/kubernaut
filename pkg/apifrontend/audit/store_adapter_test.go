@@ -321,4 +321,86 @@ var _ = Describe("StoreAdapter", func() {
 		Expect(evt.CorrelationID).NotTo(HaveLen(36),
 			"CorrelationID should be the RR name, not a synthetic UUID")
 	})
+
+	Describe("Issue #1199: rr_name/rr_namespace wiring in A2A task payloads", func() {
+		It("UT-AF-1199-001: EventA2ATaskCompleted with rr_name/rr_namespace populates OptString fields", func() {
+			adapter.Emit(context.Background(), &audit.Event{
+				Type: audit.EventA2ATaskCompleted,
+				Detail: map[string]string{
+					"session_id":   "sess-corr-1",
+					"task_id":      "task-abc",
+					"rr_name":      "rr-oom-web",
+					"rr_namespace": "production",
+				},
+			})
+			evt := store.lastEvent()
+			Expect(evt).NotTo(BeNil())
+
+			payload, ok := evt.EventData.GetApifrontendA2ATaskCompletedPayload()
+			Expect(ok).To(BeTrue(), "event_data should be ApifrontendA2ATaskCompletedPayload")
+			Expect(payload.TaskID).To(Equal("task-abc"))
+			Expect(payload.RrName.IsSet()).To(BeTrue(), "RrName should be set")
+			Expect(payload.RrName.Value).To(Equal("rr-oom-web"))
+			Expect(payload.RrNamespace.IsSet()).To(BeTrue(), "RrNamespace should be set")
+			Expect(payload.RrNamespace.Value).To(Equal("production"))
+		})
+
+		It("UT-AF-1199-002: EventA2ATaskFailed with rr_name/rr_namespace populates OptString fields", func() {
+			adapter.Emit(context.Background(), &audit.Event{
+				Type: audit.EventA2ATaskFailed,
+				Detail: map[string]string{
+					"session_id":   "sess-corr-2",
+					"task_id":      "task-def",
+					"error":        "timeout",
+					"rr_name":      "rr-crash-api",
+					"rr_namespace": "staging",
+				},
+			})
+			evt := store.lastEvent()
+			Expect(evt).NotTo(BeNil())
+
+			payload, ok := evt.EventData.GetApifrontendA2ATaskFailedPayload()
+			Expect(ok).To(BeTrue(), "event_data should be ApifrontendA2ATaskFailedPayload")
+			Expect(payload.TaskID).To(Equal("task-def"))
+			Expect(payload.RrName.IsSet()).To(BeTrue(), "RrName should be set")
+			Expect(payload.RrName.Value).To(Equal("rr-crash-api"))
+			Expect(payload.RrNamespace.IsSet()).To(BeTrue(), "RrNamespace should be set")
+			Expect(payload.RrNamespace.Value).To(Equal("staging"))
+		})
+
+		It("UT-AF-1199-003: EventA2ATaskCompleted without rr_name leaves OptString unset", func() {
+			adapter.Emit(context.Background(), &audit.Event{
+				Type: audit.EventA2ATaskCompleted,
+				Detail: map[string]string{
+					"session_id": "sess-no-rr",
+					"task_id":    "task-no-rr",
+				},
+			})
+			evt := store.lastEvent()
+			Expect(evt).NotTo(BeNil())
+
+			payload, ok := evt.EventData.GetApifrontendA2ATaskCompletedPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.RrName.IsSet()).To(BeFalse(), "RrName should not be set when detail map has no rr_name")
+			Expect(payload.RrNamespace.IsSet()).To(BeFalse(), "RrNamespace should not be set when detail map has no rr_namespace")
+		})
+
+		It("UT-AF-1199-004: EventA2ATaskFailed without rr_name leaves OptString unset", func() {
+			adapter.Emit(context.Background(), &audit.Event{
+				Type: audit.EventA2ATaskFailed,
+				Detail: map[string]string{
+					"session_id": "sess-no-rr",
+					"task_id":    "task-no-rr",
+					"error":      "crash",
+				},
+			})
+			evt := store.lastEvent()
+			Expect(evt).NotTo(BeNil())
+
+			payload, ok := evt.EventData.GetApifrontendA2ATaskFailedPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.RrName.IsSet()).To(BeFalse(), "RrName should not be set when detail map has no rr_name")
+			Expect(payload.RrNamespace.IsSet()).To(BeFalse(), "RrNamespace should not be set when detail map has no rr_namespace")
+		})
+	})
 })

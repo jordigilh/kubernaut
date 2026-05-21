@@ -258,19 +258,33 @@ func buildEventData(e *Event) ogenclient.AuditEventRequestEventData {
 		})
 
 	case EventA2ATaskCompleted:
-		return ogenclient.NewApifrontendA2ATaskCompletedPayloadAuditEventRequestEventData(ogenclient.ApifrontendA2ATaskCompletedPayload{
+		payload := ogenclient.ApifrontendA2ATaskCompletedPayload{
 			EventType: ogenclient.ApifrontendA2ATaskCompletedPayloadEventTypeApifrontendA2aTaskCompleted,
 			SessionID: detailStr(d, "session_id"),
 			TaskID:    detailStr(d, "task_id"),
-		})
+		}
+		if v := detailStr(d, "rr_name"); v != "" {
+			payload.RrName = ogenclient.NewOptString(v)
+		}
+		if v := detailStr(d, "rr_namespace"); v != "" {
+			payload.RrNamespace = ogenclient.NewOptString(v)
+		}
+		return ogenclient.NewApifrontendA2ATaskCompletedPayloadAuditEventRequestEventData(payload)
 
 	case EventA2ATaskFailed:
-		return ogenclient.NewApifrontendA2ATaskFailedPayloadAuditEventRequestEventData(ogenclient.ApifrontendA2ATaskFailedPayload{
+		payload := ogenclient.ApifrontendA2ATaskFailedPayload{
 			EventType: ogenclient.ApifrontendA2ATaskFailedPayloadEventTypeApifrontendA2aTaskFailed,
 			SessionID: detailStr(d, "session_id"),
 			TaskID:    detailStr(d, "task_id"),
 			Error:     detailStr(d, "error"),
-		})
+		}
+		if v := detailStr(d, "rr_name"); v != "" {
+			payload.RrName = ogenclient.NewOptString(v)
+		}
+		if v := detailStr(d, "rr_namespace"); v != "" {
+			payload.RrNamespace = ogenclient.NewOptString(v)
+		}
+		return ogenclient.NewApifrontendA2ATaskFailedPayloadAuditEventRequestEventData(payload)
 
 	case EventMCPToolFailed:
 		return ogenclient.NewApifrontendMCPToolFailedPayloadAuditEventRequestEventData(ogenclient.ApifrontendMCPToolFailedPayload{

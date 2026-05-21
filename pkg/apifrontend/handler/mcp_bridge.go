@@ -367,7 +367,7 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 		}
 
 		recordMetrics(cfg, toolName, resultLabel, start)
-		emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, nil)
+		emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, map[string]string{"tool_outcome": "success"})
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: string(resultJSON)}},
@@ -424,7 +424,7 @@ func emitAudit(ctx context.Context, cfg *MCPBridgeConfig, toolName string, event
 	if user := auth.UserIdentityFromContext(ctx); user != nil {
 		username = user.Username
 	}
-	detail := map[string]string{"tool": toolName}
+	detail := map[string]string{"tool_name": toolName}
 	for k, v := range extra {
 		detail[k] = v
 	}

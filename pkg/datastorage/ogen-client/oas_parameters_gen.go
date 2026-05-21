@@ -3273,6 +3273,11 @@ type QueryAuditEventsParams struct {
 	Limit OptInt `json:",omitempty,omitzero"`
 	// Page offset (default 0).
 	Offset OptInt `json:",omitempty,omitzero"`
+	// Filter by event_data JSONB field name (alphanumeric + underscore only). Must be paired with
+	// detail_value. (Issue.
+	DetailKey OptString `json:",omitempty,omitzero"`
+	// Filter by event_data JSONB field value. Must be paired with detail_key. (Issue.
+	DetailValue OptString `json:",omitempty,omitzero"`
 }
 
 func unpackQueryAuditEventsParams(packed middleware.Parameters) (params QueryAuditEventsParams) {
@@ -3355,6 +3360,24 @@ func unpackQueryAuditEventsParams(packed middleware.Parameters) (params QueryAud
 		}
 		if v, ok := packed[key]; ok {
 			params.Offset = v.(OptInt)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "detail_key",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.DetailKey = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "detail_value",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.DetailValue = v.(OptString)
 		}
 	}
 	return params
@@ -3802,6 +3825,115 @@ func decodeQueryAuditEventsParams(args [0]string, argsEscaped bool, r *http.Requ
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "offset",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: detail_key.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "detail_key",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotDetailKeyVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotDetailKeyVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.DetailKey.SetTo(paramsDotDetailKeyVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.DetailKey.Get(); ok {
+					if err := func() error {
+						if err := (validate.String{
+							MinLength:     0,
+							MinLengthSet:  false,
+							MaxLength:     0,
+							MaxLengthSet:  false,
+							Email:         false,
+							Hostname:      false,
+							Regex:         regexMap["^[a-zA-Z0-9_]+$"],
+							MinNumeric:    0,
+							MinNumericSet: false,
+							MaxNumeric:    0,
+							MaxNumericSet: false,
+						}).Validate(string(value)); err != nil {
+							return errors.Wrap(err, "string")
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "detail_key",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: detail_value.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "detail_value",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotDetailValueVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotDetailValueVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.DetailValue.SetTo(paramsDotDetailValueVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "detail_value",
 			In:   "query",
 			Err:  err,
 		}

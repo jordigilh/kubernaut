@@ -8291,13 +8291,27 @@ func (s *ApifrontendA2ATaskCompletedPayload) encodeFields(e *jx.Encoder) {
 			s.DurationMs.Encode(e)
 		}
 	}
+	{
+		if s.RrName.Set {
+			e.FieldStart("rr_name")
+			s.RrName.Encode(e)
+		}
+	}
+	{
+		if s.RrNamespace.Set {
+			e.FieldStart("rr_namespace")
+			s.RrNamespace.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfApifrontendA2ATaskCompletedPayload = [4]string{
+var jsonFieldsNameOfApifrontendA2ATaskCompletedPayload = [6]string{
 	0: "event_type",
 	1: "session_id",
 	2: "task_id",
 	3: "duration_ms",
+	4: "rr_name",
+	5: "rr_namespace",
 }
 
 // Decode decodes ApifrontendA2ATaskCompletedPayload from json.
@@ -8352,6 +8366,26 @@ func (s *ApifrontendA2ATaskCompletedPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"duration_ms\"")
+			}
+		case "rr_name":
+			if err := func() error {
+				s.RrName.Reset()
+				if err := s.RrName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rr_name\"")
+			}
+		case "rr_namespace":
+			if err := func() error {
+				s.RrNamespace.Reset()
+				if err := s.RrNamespace.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rr_namespace\"")
 			}
 		default:
 			return d.Skip()
@@ -8472,13 +8506,27 @@ func (s *ApifrontendA2ATaskFailedPayload) encodeFields(e *jx.Encoder) {
 		e.FieldStart("error")
 		e.Str(s.Error)
 	}
+	{
+		if s.RrName.Set {
+			e.FieldStart("rr_name")
+			s.RrName.Encode(e)
+		}
+	}
+	{
+		if s.RrNamespace.Set {
+			e.FieldStart("rr_namespace")
+			s.RrNamespace.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfApifrontendA2ATaskFailedPayload = [4]string{
+var jsonFieldsNameOfApifrontendA2ATaskFailedPayload = [6]string{
 	0: "event_type",
 	1: "session_id",
 	2: "task_id",
 	3: "error",
+	4: "rr_name",
+	5: "rr_namespace",
 }
 
 // Decode decodes ApifrontendA2ATaskFailedPayload from json.
@@ -8535,6 +8583,26 @@ func (s *ApifrontendA2ATaskFailedPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"error\"")
+			}
+		case "rr_name":
+			if err := func() error {
+				s.RrName.Reset()
+				if err := s.RrName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rr_name\"")
+			}
+		case "rr_namespace":
+			if err := func() error {
+				s.RrNamespace.Reset()
+				if err := s.RrNamespace.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rr_namespace\"")
 			}
 		default:
 			return d.Skip()
@@ -18591,6 +18659,18 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 					s.DurationMs.Encode(e)
 				}
 			}
+			{
+				if s.RrName.Set {
+					e.FieldStart("rr_name")
+					s.RrName.Encode(e)
+				}
+			}
+			{
+				if s.RrNamespace.Set {
+					e.FieldStart("rr_namespace")
+					s.RrNamespace.Encode(e)
+				}
+			}
 		}
 	case ApifrontendA2ATaskFailedPayloadAuditEventEventData:
 		e.FieldStart("event_type")
@@ -18608,6 +18688,18 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("error")
 				e.Str(s.Error)
+			}
+			{
+				if s.RrName.Set {
+					e.FieldStart("rr_name")
+					s.RrName.Encode(e)
+				}
+			}
+			{
+				if s.RrNamespace.Set {
+					e.FieldStart("rr_namespace")
+					s.RrNamespace.Encode(e)
+				}
 			}
 		}
 	case ApifrontendMCPToolFailedPayloadAuditEventEventData:
@@ -23254,6 +23346,18 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 					s.DurationMs.Encode(e)
 				}
 			}
+			{
+				if s.RrName.Set {
+					e.FieldStart("rr_name")
+					s.RrName.Encode(e)
+				}
+			}
+			{
+				if s.RrNamespace.Set {
+					e.FieldStart("rr_namespace")
+					s.RrNamespace.Encode(e)
+				}
+			}
 		}
 	case ApifrontendA2ATaskFailedPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
@@ -23271,6 +23375,18 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("error")
 				e.Str(s.Error)
+			}
+			{
+				if s.RrName.Set {
+					e.FieldStart("rr_name")
+					s.RrName.Encode(e)
+				}
+			}
+			{
+				if s.RrNamespace.Set {
+					e.FieldStart("rr_namespace")
+					s.RrNamespace.Encode(e)
+				}
 			}
 		}
 	case ApifrontendMCPToolFailedPayloadAuditEventRequestEventData:
