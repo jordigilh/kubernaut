@@ -105,11 +105,10 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"get_remediation_history", func() (tool.Tool, error) { return tools.NewGetRemediationHistoryTool(dsC) }},
 		{"get_effectiveness", func() (tool.Tool, error) { return tools.NewGetEffectivenessTool(dsC) }},
 		{"get_audit_trail", func() (tool.Tool, error) { return tools.NewGetAuditTrailTool(dsC) }},
-		// NL Signal Intake tools (#52) — read-only tools use impersonation (SEC-05)
-		{"list_events", func() (tool.Tool, error) { return tools.NewListEventsTool(triageFactory) }},
-		{"get_pods", func() (tool.Tool, error) { return tools.NewGetPodsTool(triageFactory) }},
-		{"get_workloads", func() (tool.Tool, error) { return tools.NewGetWorkloadsTool(triageFactory) }},
-		{"resolve_owner", func() (tool.Tool, error) { return tools.NewResolveOwnerTool(triageFactory) }},
+		// Generic K8s triage tools (#1230) — read-only tools use impersonation (SEC-05)
+		{"kubectl_get", func() (tool.Tool, error) { return tools.NewKubectlGetTool(triageFactory, cfg.RESTMapper) }},
+		{"kubectl_list", func() (tool.Tool, error) { return tools.NewKubectlListTool(triageFactory, cfg.RESTMapper) }},
+		{"kubectl_list_events", func() (tool.Tool, error) { return tools.NewKubectlListEventsTool(triageFactory) }},
 		// RR tools use AF ServiceAccount (write AF-owned CRDs)
 		{"check_existing_rr", func() (tool.Tool, error) { return tools.NewCheckExistingRRTool(k8s) }},
 		{"create_rr", func() (tool.Tool, error) { return tools.NewCreateRRTool(k8s, nil, cfg.Auditor) }},

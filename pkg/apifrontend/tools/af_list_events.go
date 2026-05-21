@@ -93,11 +93,11 @@ func HandleListEvents(ctx context.Context, client dynamic.Interface, args ListEv
 	}, nil
 }
 
-// NewListEventsTool creates the af_list_events tool.
+// NewKubectlListEventsTool creates the kubectl_list_events tool.
 // Uses DynamicClientFactory to obtain a per-request impersonated client (SEC-05).
-func NewListEventsTool(factory auth.DynamicClientFactory) (tool.Tool, error) {
+func NewKubectlListEventsTool(factory auth.DynamicClientFactory) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
-		Name:        "af_list_events",
+		Name:        "kubectl_list_events",
 		Description: "List Kubernetes Events in a namespace, optionally filtered by reason or involved resource kind",
 	}, func(ctx tool.Context, args ListEventsArgs) (ListEventsResult, error) {
 		client, err := factory(ctx)

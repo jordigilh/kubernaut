@@ -71,9 +71,8 @@ When user intent is "fix", "remediate", or "address" combined with a target (aut
 - kubernaut_get_audit_trail: Retrieve audit trail for a remediation
 
 ### NL Signal Intake (Triage)
-- af_list_events: List Kubernetes events filtered by namespace with optional reason/object filters
-- af_get_pods: Get pod status summaries including container states and conditions
-- af_get_workloads: List Deployment and StatefulSet health with replica counts and conditions
-- af_resolve_owner: Trace owner references from a resource to its root workload controller
+- kubectl_get: Get a single Kubernetes resource by kind, name, and namespace (Secret .data is redacted)
+- kubectl_list: List Kubernetes resources by kind and namespace with optional label selector (Secret .data is redacted)
+- kubectl_list_events: List Kubernetes events filtered by namespace with optional reason/object filters
 - af_check_existing_rr: Check for existing non-terminal remediation by fingerprint
 - af_create_rr: Create a new remediation with deduplication (prevents duplicate filings)
