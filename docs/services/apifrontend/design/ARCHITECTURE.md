@@ -195,10 +195,9 @@ kubernaut-apifrontend/
 │   │   └── tracker.go             # SSE connection tracking
 │   ├── tools/
 │   │   ├── helpers.go             # Shared tool helpers (TrimSliceToFit, errors)
-│   │   ├── af_list_events.go      # K8s Events query
-│   │   ├── af_get_pods.go         # Pod status query
-│   │   ├── af_get_workloads.go    # Workload health query
-│   │   ├── af_resolve_owner.go    # Owner chain resolution
+│   │   ├── kubectl_get.go          # Generic K8s resource get (Secret .data redacted)
+│   │   ├── kubectl_list.go         # Generic K8s resource list (Secret .data redacted)
+│   │   ├── af_list_events.go       # K8s Events query (exposed as kubectl_list_events)
 │   │   ├── af_check_existing_rr.go # RR existence check (dedup)
 │   │   ├── af_create_rr.go        # RemediationRequest creation
 │   │   ├── crd_tools.go           # CRD-based kubernaut tools
@@ -306,16 +305,16 @@ sequenceDiagram
 
     Note over AF,LLM: Phase 1: Triage (AF LLM-driven)
     AF->>LLM: System prompt + user query + tool definitions
-    LLM->>AF: tool_call: af_list_events(namespace: payments)
+    LLM->>AF: tool_call: kubectl_list_events(namespace: payments)
     AF->>K8s: List Events (impersonated as user)
     K8s->>AF: Events with warnings
     AF->>LLM: Tool result (events data)
-    LLM->>AF: tool_call: af_get_pods(namespace: payments)
+    LLM->>AF: tool_call: kubectl_list(kind: Pod, namespace: payments)
     AF->>K8s: List Pods (impersonated as user)
     K8s->>AF: Pods with CrashLoopBackOff
-    AF->>LLM: Tool result (pod status)
-    LLM->>AF: tool_call: af_resolve_owner(pod: payment-api-xyz)
-    AF->>K8s: Get owner chain (impersonated as user)
+    AF->>LLM: Tool result (pod list)
+    LLM->>AF: tool_call: kubectl_get(kind: Deployment, name: payment-api, namespace: payments)
+    AF->>K8s: Get Deployment (impersonated as user)
     K8s->>AF: Deployment/payment-api
     AF->>LLM: Tool result (owner: Deployment/payment-api)
     LLM->>AF: tool_call: af_create_rr(namespace, kind, name, severity, description)
@@ -486,10 +485,9 @@ AF-native tools (execute against K8s API directly):
 
 | Tool | Purpose | Data source |
 |------|---------|-------------|
-| `af_list_events` | Query K8s Events in namespace | K8s API (impersonated) |
-| `af_get_pods` | Get pod status and health | K8s API (impersonated) |
-| `af_get_workloads` | Get Deployment/StatefulSet health | K8s API (impersonated) |
-| `af_resolve_owner` | Resolve owner chain to root | K8s API (impersonated) |
+| `kubectl_get` | Get any K8s resource by kind/name/namespace (Secret .data redacted) | K8s API (impersonated) |
+| `kubectl_list` | List K8s resources by kind/namespace with label selector (Secret .data redacted) | K8s API (impersonated) |
+| `kubectl_list_events` | Query K8s Events in namespace with filters | K8s API (impersonated) |
 | `af_check_existing_rr` | Check if RR already exists for resource (dedup) | K8s API (AF SA) |
 | `af_create_rr` | Create RemediationRequest (with severity triage) | K8s API (AF SA) |
 

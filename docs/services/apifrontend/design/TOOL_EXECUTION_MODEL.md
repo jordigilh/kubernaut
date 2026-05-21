@@ -81,10 +81,9 @@ Tools access the Kubernetes API through two distinct client scopes, determined a
 │                                                     │
 │  ┌───────────────────────┐  ┌─────────────────────┐│
 │  │ Triage Tools (read)   │  │ CRD Tools (write)   ││
-│  │ af_list_events        │  │ kubernaut_*          ││
-│  │ af_get_pods           │  │ af_check_existing_rr ││
-│  │ af_get_workloads      │  │ af_create_rr         ││
-│  │ af_resolve_owner      │  │                      ││
+│  │ kubectl_get           │  │ kubernaut_*          ││
+│  │ kubectl_list          │  │ af_check_existing_rr ││
+│  │ kubectl_list_events   │  │ af_create_rr         ││
 │  └──────────┬────────────┘  └──────────┬───────────┘│
 │             │                           │            │
 │             ▼                           ▼            │
@@ -135,10 +134,9 @@ Every tool validates inputs before making K8s API calls. Validation is centraliz
 
 | Tool | Validated Fields | Additional Checks |
 |------|-----------------|-------------------|
-| af_list_events | namespace | — |
-| af_get_pods | namespace | label_selector format |
-| af_get_workloads | namespace | — |
-| af_resolve_owner | namespace, pod_name | — |
+| kubectl_get | kind, name, namespace | Kind validation (PascalCase) |
+| kubectl_list | kind, namespace | label_selector format |
+| kubectl_list_events | namespace | — |
 | af_check_existing_rr | namespace, kind, name | — |
 | af_create_rr | namespace, kind, name | Description truncated at 2048 chars |
 | kubernaut_submit_signal | namespace/name via ParseRRID | — |
@@ -175,9 +173,9 @@ func TrimSliceToFit[T any](items []T) ([]T, bool)
 
 | Tool | Output Type | Truncation Signal |
 |------|------------|-------------------|
-| af_list_events | `[]EventSummary` | `"truncated": true` in result |
-| af_get_pods | `[]PodSummary` | `"truncated": true` in result |
-| af_get_workloads | `[]WorkloadSummary` | `"truncated": true` in result |
+| kubectl_get | `KubectlGetResult` (single object) | N/A (single resource) |
+| kubectl_list | `[]map[string]interface{}` | `"truncated": true` in result |
+| kubectl_list_events | `[]EventSummary` | `"truncated": true` in result |
 
 ### Error Translation
 
