@@ -295,11 +295,11 @@ func aiAnalysisUpdatePredicate() predicate.Predicate {
 			// Reconcile when session ID changes (new session created)
 			oldSessionID := ""
 			newSessionID := ""
-			if oldAIA.Status.InvestigationSession != nil {
-				oldSessionID = oldAIA.Status.InvestigationSession.ID
+			if oldAIA.Status.KASession != nil {
+				oldSessionID = oldAIA.Status.KASession.ID
 			}
-			if newAIA.Status.InvestigationSession != nil {
-				newSessionID = newAIA.Status.InvestigationSession.ID
+			if newAIA.Status.KASession != nil {
+				newSessionID = newAIA.Status.KASession.ID
 			}
 			if oldSessionID != newSessionID {
 				return true

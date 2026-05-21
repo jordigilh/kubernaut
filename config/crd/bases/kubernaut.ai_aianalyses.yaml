@@ -757,7 +757,7 @@ spec:
                   INVESTIGATION SESSION (BR-AA-HAPI-064)
                   Tracks the async submit/poll session with Kubernaut Agent
                   ========================================
-                  InvestigationSession tracks the async KA session for submit/poll pattern
+                  KASession tracks the async KA session for submit/poll pattern
                 properties:
                   createdAt:
                     description: CreatedAt timestamp when the current session was

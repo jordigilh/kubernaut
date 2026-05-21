@@ -407,7 +407,7 @@ sequenceDiagram
 
 ## 4. CRD Design
 
-### InvestigationSession (`apifrontend.kubernaut.ai/v1alpha1`)
+### InvestigationSession (`kubernaut.ai/v1alpha1`)
 
 **Purpose:** Links A2A tasks to kubernaut pipeline CRDs; enables session persistence across AF restarts and user reconnections.
 
@@ -455,9 +455,9 @@ stateDiagram-v2
 
 | Label | Value | Purpose |
 |-------|-------|---------|
-| `apifrontend.kubernaut.ai/user` | username | Reconnection lookups |
-| `apifrontend.kubernaut.ai/rr-name` | RR name | Dedup / status lookups |
-| `apifrontend.kubernaut.ai/phase` | phase value | Phase-based filtering |
+| `kubernaut.ai/user` | username | Reconnection lookups |
+| `kubernaut.ai/rr-name` | RR name | Dedup / status lookups |
+| `kubernaut.ai/phase` | phase value | Phase-based filtering |
 | `app.kubernetes.io/managed-by` | kubernaut-apifrontend | Standard ownership |
 
 #### TTL Cleanup Controller
@@ -612,7 +612,7 @@ AF ServiceAccount permissions:
 | `remediationrequests` (kubernaut.ai) | create, get, list, watch | RR lifecycle |
 | `aianalyses` (kubernaut.ai) | get, list, watch | Investigation status |
 | `signalprocessings` (kubernaut.ai) | get, list, watch | Signal context |
-| `investigationsessions` (apifrontend.kubernaut.ai) | create, get, list, watch, update, delete | Session management |
+| `investigationsessions` (kubernaut.ai) | create, get, list, watch, update, delete | Session management |
 | `leases` (coordination.k8s.io) | create, get, update, delete | Distributed locking |
 | `users`, `groups` (core) | impersonate | User-scoped K8s queries |
 

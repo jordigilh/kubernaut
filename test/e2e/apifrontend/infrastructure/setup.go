@@ -359,7 +359,7 @@ func patchKAJWTAudience(ctx context.Context, kubeconfigPath, namespace string, w
 func installAFCRDs(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	projectRoot := getAFProjectRoot()
 	crds := []string{
-		"config/crd/bases/apifrontend.kubernaut.ai_investigationsessions.yaml",
+		"config/crd/bases/kubernaut.ai_investigationsessions.yaml",
 		"config/crd/bases/kubernaut.ai_remediationrequests.yaml",
 		"config/crd/bases/kubernaut.ai_remediationapprovalrequests.yaml",
 	}
@@ -407,10 +407,10 @@ kind: ClusterRole
 metadata:
   name: apifrontend
 rules:
-  - apiGroups: ["apifrontend.kubernaut.ai"]
+  - apiGroups: ["kubernaut.ai"]
     resources: ["investigationsessions"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["apifrontend.kubernaut.ai"]
+  - apiGroups: ["kubernaut.ai"]
     resources: ["investigationsessions/status"]
     verbs: ["get", "update", "patch"]
   - apiGroups: ["kubernaut.ai"]

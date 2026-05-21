@@ -102,7 +102,7 @@ var _ = Describe("E2E-AA-064: Session-Based Async Flow", Label("e2e", "session",
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 
 			// BR-AA-HAPI-064.4: InvestigationSession tracking
-			session := analysis.Status.InvestigationSession
+			session := analysis.Status.KASession
 			Expect(session).NotTo(BeNil(), "InvestigationSession must be populated in CRD status")
 			// Session ID should be set (from KA's 202 response)
 			// Note: After result retrieval, the session may be cleared or retained depending on implementation.

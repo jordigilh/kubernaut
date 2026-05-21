@@ -17,10 +17,10 @@ metadata:
     app: apifrontend
     {{- include "kubernaut.labels" . | nindent 4 }}
 rules:
-  - apiGroups: ["apifrontend.kubernaut.ai"]
+  - apiGroups: ["kubernaut.ai"]
     resources: ["investigationsessions"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["apifrontend.kubernaut.ai"]
+  - apiGroups: ["kubernaut.ai"]
     resources: ["investigationsessions/status"]
     verbs: ["get", "update", "patch"]
   - apiGroups: ["kubernaut.ai"]

@@ -9,7 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	k8sretry "k8s.io/client-go/util/retry"
 
-	v1alpha1 "github.com/jordigilh/kubernaut/api/apifrontend/apifrontend/v1alpha1"
+	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 )
 

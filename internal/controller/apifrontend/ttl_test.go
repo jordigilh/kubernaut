@@ -23,7 +23,7 @@ import (
 
 	adksession "google.golang.org/adk/session"
 
-	v1alpha1 "github.com/jordigilh/kubernaut/api/apifrontend/apifrontend/v1alpha1"
+	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/internal/controller/apifrontend"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
@@ -59,7 +59,7 @@ func makeSession(name string, phase v1alpha1.SessionPhase, completedAt, disconne
 			Name:      name,
 			Namespace: "test-ns",
 			Labels: map[string]string{
-				"apifrontend.kubernaut.ai/phase": string(phase),
+				"kubernaut.ai/phase": string(phase),
 			},
 		},
 		Spec: v1alpha1.InvestigationSessionSpec{

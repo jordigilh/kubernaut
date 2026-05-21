@@ -345,7 +345,7 @@ func mapErrorTypeToSubReason(errorType ErrorType) string {
 // handleSessionBased routes the session-based flow based on InvestigationSession state.
 // BR-AA-HAPI-064: Non-blocking communication with KA via submit/poll/result
 func (h *InvestigatingHandler) handleSessionBased(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	session := analysis.Status.InvestigationSession
+	session := analysis.Status.KASession
 
 	// SUBMIT: No session yet, or session ID cleared after loss (needs new submit)
 	if session == nil || session.ID == "" {
@@ -361,9 +361,9 @@ func (h *InvestigatingHandler) handleSessionBased(ctx context.Context, analysis 
 // BR-AA-HAPI-064.9: Submit incident investigation to KA
 func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	// Detect if this is a regeneration (session exists but ID was cleared after 404)
-	isRegeneration := analysis.Status.InvestigationSession != nil &&
-		analysis.Status.InvestigationSession.ID == "" &&
-		analysis.Status.InvestigationSession.Generation > 0
+	isRegeneration := analysis.Status.KASession != nil &&
+		analysis.Status.KASession.ID == "" &&
+		analysis.Status.KASession.Generation > 0
 
 	h.log.Info("Submitting incident investigation to KA (session mode)",
 		"isRegeneration", isRegeneration,
@@ -377,18 +377,18 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 
 	// Initialize or update InvestigationSession in CRD status
 	now := metav1.Now()
-	if analysis.Status.InvestigationSession == nil {
-		analysis.Status.InvestigationSession = &aianalysisv1.InvestigationSession{
+	if analysis.Status.KASession == nil {
+		analysis.Status.KASession = &aianalysisv1.KASession{
 			ID:         sessionID,
 			Generation: 0,
 			CreatedAt:  &now,
 			PollCount:  0,
 		}
 	} else {
-		analysis.Status.InvestigationSession.ID = sessionID
-		analysis.Status.InvestigationSession.CreatedAt = &now
-		analysis.Status.InvestigationSession.PollCount = 0
-		analysis.Status.InvestigationSession.LastPolled = nil
+		analysis.Status.KASession.ID = sessionID
+		analysis.Status.KASession.CreatedAt = &now
+		analysis.Status.KASession.PollCount = 0
+		analysis.Status.KASession.LastPolled = nil
 	}
 
 	// Set condition: SessionCreated (first time) or SessionRegenerated (after loss)
@@ -396,7 +396,7 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 	condMsg := fmt.Sprintf("Session %s created", sessionID)
 	if isRegeneration {
 		condReason = aianalysis.ReasonSessionRegenerated
-		condMsg = fmt.Sprintf("Session %s regenerated (generation %d)", sessionID, analysis.Status.InvestigationSession.Generation)
+		condMsg = fmt.Sprintf("Session %s regenerated (generation %d)", sessionID, analysis.Status.KASession.Generation)
 	}
 	aianalysis.SetInvestigationSessionReady(analysis, true, condReason, condMsg)
 
@@ -406,12 +406,12 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 	// DD-EVENT-001: Emit SessionCreated K8s event for observability
 	if h.recorder != nil {
 		h.recorder.Event(analysis, corev1.EventTypeNormal, events.EventReasonSessionCreated,
-			fmt.Sprintf("KA investigation session created (ID: %s, generation: %d)", sessionID, analysis.Status.InvestigationSession.Generation))
+			fmt.Sprintf("KA investigation session created (ID: %s, generation: %d)", sessionID, analysis.Status.KASession.Generation))
 	}
 
 	h.log.Info("KA session created",
 		"sessionID", sessionID,
-		"generation", analysis.Status.InvestigationSession.Generation,
+		"generation", analysis.Status.KASession.Generation,
 		"isRegeneration", isRegeneration,
 	)
 
@@ -426,7 +426,7 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 // informer predicate (aiAnalysisUpdatePredicate) so they don't trigger
 // re-reconciles. Only RequeueAfter controls the next poll timing.
 func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	session := analysis.Status.InvestigationSession
+	session := analysis.Status.KASession
 
 	h.log.V(1).Info("Polling KA session",
 		"sessionID", session.ID,
@@ -460,7 +460,7 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 // user-driven session completes or fails.
 // BR-INTERACTIVE-001: User takeover observability via CRD status.
 func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
-	session := analysis.Status.InvestigationSession
+	session := analysis.Status.KASession
 
 	session.PollCount++
 	now := metav1.Now()
@@ -502,7 +502,7 @@ func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context,
 // The aiAnalysisUpdatePredicate filters PollCount/LastPolled-only status writes
 // so they don't trigger re-reconciles. Only RequeueAfter controls the next poll.
 func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
-	session := analysis.Status.InvestigationSession
+	session := analysis.Status.KASession
 
 	if session.CreatedAt != nil {
 		elapsed := time.Since(session.CreatedAt.Time)
@@ -543,7 +543,7 @@ func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, ana
 // handleSessionPollCompleted handles poll results where investigation has completed.
 // BR-AA-HAPI-064.3: Fetch result and process through ResponseProcessor
 func (h *InvestigatingHandler) handleSessionPollCompleted(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	session := analysis.Status.InvestigationSession
+	session := analysis.Status.KASession
 
 	h.log.Info("KA session completed, fetching result",
 		"sessionID", session.ID,
@@ -568,7 +568,7 @@ func (h *InvestigatingHandler) handleSessionPollCompleted(ctx context.Context, a
 
 // handleSessionIncidentResult fetches and processes the incident investigation result.
 func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTime int64) (ctrl.Result, error) {
-	session := analysis.Status.InvestigationSession
+	session := analysis.Status.KASession
 
 	resp, err := h.kaClient.GetSessionResult(ctx, session.ID)
 	if err != nil {
@@ -598,7 +598,7 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 // BR-AA-HAPI-064: Surface KA-side failure to operators via CRD status
 func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
 	h.log.Info("KA session failed",
-		"sessionID", analysis.Status.InvestigationSession.ID,
+		"sessionID", analysis.Status.KASession.ID,
 		"error", status.Error,
 	)
 
@@ -642,7 +642,7 @@ func (h *InvestigatingHandler) handleSessionPollError(ctx context.Context, analy
 // BR-AA-HAPI-064.5: Increment generation, clear ID, requeue for re-submit
 // BR-AA-HAPI-064.6: Fail with SessionRegenerationExceeded if cap reached
 func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	session := analysis.Status.InvestigationSession
+	session := analysis.Status.KASession
 	session.Generation++
 	session.ID = ""
 	session.PollCount = 0
@@ -710,9 +710,9 @@ func (h *InvestigatingHandler) handleSessionGetResultError(ctx context.Context, 
 	var apiErr *agentclient.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode == 409 {
 		h.log.Info("GetSessionResult returned 409 Conflict, treating as transient",
-			"sessionID", analysis.Status.InvestigationSession.ID,
+			"sessionID", analysis.Status.KASession.ID,
 		)
-		session := analysis.Status.InvestigationSession
+		session := analysis.Status.KASession
 		now := metav1.Now()
 		session.LastPolled = &now
 		session.PollCount++

@@ -107,7 +107,7 @@ func completeAA() *aianalysisv1.AIAnalysis {
 			},
 			InvestigationID:   "inv-abc-123",
 			TotalAnalysisTime: 5000,
-			InvestigationSession: &aianalysisv1.InvestigationSession{
+			KASession: &aianalysisv1.KASession{
 				ID:        "sess-123",
 				Generation: 0,
 				LastPolled: &now,
