@@ -1143,7 +1143,7 @@ rules:
     resources: ["events"]
     verbs: ["create", "patch"]
   - apiGroups: [""]
-    resources: ["users", "groups", "serviceaccounts"]
+    resources: ["users", "groups"]
     verbs: ["impersonate"]
   - apiGroups: ["authorization.k8s.io"]
     resources: ["subjectaccessreviews"]

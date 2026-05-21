@@ -301,6 +301,73 @@ var _ = Describe("NetworkPolicy manifest", func() {
 })
 
 // ---------------------------------------------------------------------------
+// UT-AF-1226-030/031: Impersonation ClusterRole must not include serviceaccounts
+// ---------------------------------------------------------------------------
+
+var _ = Describe("Impersonation ClusterRole manifests", func() {
+	readYAMLRules := func(path string) []map[string]interface{} {
+		raw, err := os.ReadFile(path)
+		Expect(err).NotTo(HaveOccurred(), "failed to read %s", path)
+		var doc map[string]interface{}
+		Expect(yaml.Unmarshal(raw, &doc)).To(Succeed())
+		rulesRaw, ok := doc["rules"].([]interface{})
+		Expect(ok).To(BeTrue(), "rules missing from %s", path)
+		var rules []map[string]interface{}
+		for _, r := range rulesRaw {
+			rm, ok := r.(map[string]interface{})
+			Expect(ok).To(BeTrue())
+			rules = append(rules, rm)
+		}
+		return rules
+	}
+
+	hasServiceAccounts := func(rules []map[string]interface{}) bool {
+		for _, rule := range rules {
+			verbs, ok := rule["verbs"].([]interface{})
+			if !ok {
+				continue
+			}
+			isImpersonate := false
+			for _, v := range verbs {
+				if v == "impersonate" {
+					isImpersonate = true
+					break
+				}
+			}
+			if !isImpersonate {
+				continue
+			}
+			resources, ok := rule["resources"].([]interface{})
+			if !ok {
+				continue
+			}
+			for _, r := range resources {
+				if r == "serviceaccounts" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	It("UT-AF-1226-030: Helm ClusterRole must not include serviceaccounts in impersonation", func() {
+		path := filepath.Join(repoRoot(), "charts", "kubernaut", "templates", "apifrontend", "apifrontend.yaml")
+		raw, err := os.ReadFile(path)
+		Expect(err).NotTo(HaveOccurred())
+		content := string(raw)
+		Expect(content).NotTo(ContainSubstring("serviceaccounts"),
+			"Helm ClusterRole template must not reference serviceaccounts in impersonation rules")
+	})
+
+	It("UT-AF-1226-031: Deploy base ClusterRole must not include serviceaccounts in impersonation", func() {
+		path := filepath.Join(repoRoot(), "deploy", "apifrontend", "base", "02-rbac.yaml")
+		rules := readYAMLRules(path)
+		Expect(hasServiceAccounts(rules)).To(BeFalse(),
+			"deploy/apifrontend/base/02-rbac.yaml must not include serviceaccounts in impersonation rules")
+	})
+})
+
+// ---------------------------------------------------------------------------
 // TC-P3-07: Dockerfile FIPS boringcrypto (MED-10, BAC-14)
 // ---------------------------------------------------------------------------
 
