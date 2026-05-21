@@ -59,13 +59,14 @@ jobs:
 
   # ========================================
   # STAGE 1a: BUILD & PUSH amd64 IMAGES
-  # 12 parallel jobs: one per service, amd64 only.
+  # 14 parallel jobs: one per service, amd64 only.
   # Helm smoke tests depend on this stage completing (Issue #569).
   #
-  # Services (12):
-  #   Go (11): gateway, signalprocessing, aianalysis, authwebhook,
+  # Services (14):
+  #   Go (12): gateway, signalprocessing, aianalysis, authwebhook,
   #            remediationorchestrator, workflowexecution, notification,
-  #            datastorage, effectivenessmonitor, db-migrate, kubernautagent
+  #            datastorage, effectivenessmonitor, db-migrate, kubernautagent,
+  #            apifrontend
   #   Bash (1): must-gather
   #
   # Strategy:
@@ -92,6 +93,7 @@ jobs:
           - datastorage
           - effectivenessmonitor
           - kubernautagent
+          - apifrontend
           - must-gather
           - db-migrate
     steps:
@@ -140,7 +142,7 @@ jobs:
 
   # ========================================
   # STAGE 1b: BUILD & PUSH arm64 IMAGES (Go services)
-  # 10 parallel jobs: one per Go service, arm64 via host-native cross-compile.
+  # 11 parallel jobs: one per Go service, arm64 via host-native cross-compile.
   # No QEMU needed — CGO_ENABLED=0 GOARCH=arm64 runs natively on amd64.
   # Runtime images use FROM scratch with pre-built binary.
   #
@@ -168,6 +170,7 @@ jobs:
           - datastorage
           - effectivenessmonitor
           - kubernautagent
+          - apifrontend
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -386,7 +389,7 @@ jobs:
           for svc in gateway signalprocessing aianalysis authwebhook \
                      remediationorchestrator workflowexecution notification \
                      datastorage effectivenessmonitor kubernautagent \
-                     must-gather db-migrate; do
+                     apifrontend must-gather db-migrate; do
             IMAGE="${IMAGE_REGISTRY}/${svc}:${IMAGE_TAG}-amd64"
             echo "Pulling ${IMAGE}..."
             podman pull "${IMAGE}"
@@ -472,7 +475,8 @@ jobs:
         run: |
           for svc in datastorage gateway aianalysis authwebhook notification \
                      remediationorchestrator signalprocessing workflowexecution \
-                     effectivenessmonitor kubernautagent must-gather db-migrate; do
+                     effectivenessmonitor kubernautagent apifrontend \
+                     must-gather db-migrate; do
             echo "  Tagging $svc:latest..."
             podman manifest rm ${IMAGE_REGISTRY}/$svc:latest 2>/dev/null || true
             podman manifest create ${IMAGE_REGISTRY}/$svc:latest \
