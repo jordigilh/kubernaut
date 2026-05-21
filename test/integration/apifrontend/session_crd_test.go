@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	adksession "google.golang.org/adk/session"
 
-	v1alpha1 "github.com/jordigilh/kubernaut/api/apifrontend/apifrontend/v1alpha1"
+	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 

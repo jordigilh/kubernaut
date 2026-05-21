@@ -17,7 +17,7 @@ import (
 
 	adksession "google.golang.org/adk/session"
 
-	v1alpha1 "github.com/jordigilh/kubernaut/api/apifrontend/apifrontend/v1alpha1"
+	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 )
@@ -29,9 +29,9 @@ var validCRDName = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]{0,251}[a-z0-9])?$`)
 
 // Label keys used on InvestigationSession CRDs.
 const (
-	LabelUser      = "apifrontend.kubernaut.ai/user"
-	LabelRRName    = "apifrontend.kubernaut.ai/rr-name"
-	LabelPhase     = "apifrontend.kubernaut.ai/phase"
+	LabelUser      = "kubernaut.ai/user"
+	LabelRRName    = "kubernaut.ai/rr-name"
+	LabelPhase     = "kubernaut.ai/phase"
 	LabelManagedBy = "app.kubernetes.io/managed-by"
 )
 

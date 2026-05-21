@@ -120,7 +120,7 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 	It("TC-E2E-STREAM-02: During investigation, session phase transitions to Connected", func() {
 		kctlCtx := context.Background()
 
-		_, checkErr := kubectlOut(kctlCtx, "get", "crd", "investigationsessions.apifrontend.kubernaut.ai")
+		_, checkErr := kubectlOut(kctlCtx, "get", "crd", "investigationsessions.kubernaut.ai")
 		if checkErr != nil {
 			Skip("InvestigationSession CRD not installed — session lifecycle tests require CRD infrastructure")
 		}

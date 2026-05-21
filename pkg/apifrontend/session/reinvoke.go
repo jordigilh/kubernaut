@@ -4,7 +4,7 @@ import (
 	adksession "google.golang.org/adk/session"
 	"google.golang.org/genai"
 
-	v1alpha1 "github.com/jordigilh/kubernaut/api/apifrontend/apifrontend/v1alpha1"
+	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 )
 
 const (

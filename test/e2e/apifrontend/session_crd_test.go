@@ -56,24 +56,24 @@ var _ = Describe("InvestigationSession CRD (E2E)", Label("e2e", "phase1", "sessi
 	// TC-E2E-SESS-002: InvestigationSession CRD registered in cluster
 	// -------------------------------------------------------------------
 	It("TC-E2E-SESS-002: InvestigationSession CRD is registered in the cluster", func() {
-		out, err := kubectl("get", "crd", "investigationsessions.apifrontend.kubernaut.ai",
+		out, err := kubectl("get", "crd", "investigationsessions.kubernaut.ai",
 			"-o", "jsonpath={.metadata.name}")
 		Expect(err).NotTo(HaveOccurred(), "CRD not found: %s", out)
-		Expect(out).To(Equal("investigationsessions.apifrontend.kubernaut.ai"))
+		Expect(out).To(Equal("investigationsessions.kubernaut.ai"))
 	})
 
 	// -------------------------------------------------------------------
 	// TC-E2E-SESS-003: CRD create + status update works in-cluster
 	// -------------------------------------------------------------------
 	It("TC-E2E-SESS-003: InvestigationSession can be created and status updated", func() {
-		manifest := fmt.Sprintf(`apiVersion: apifrontend.kubernaut.ai/v1alpha1
+		manifest := fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
 kind: InvestigationSession
 metadata:
   name: e2e-sess-003
   namespace: %s
   labels:
     app.kubernetes.io/managed-by: kubernaut-apifrontend
-    apifrontend.kubernaut.ai/phase: Active
+    kubernaut.ai/phase: Active
 spec:
   a2aTaskID: task-e2e-003
   joinMode: start
@@ -108,14 +108,14 @@ spec:
 	// -------------------------------------------------------------------
 	It("TC-E2E-SESS-004: TTL reconciler transitions Disconnected session to Cancelled", func() {
 		// Step 1: Create the CRD (status is a subresource, so kubectl apply won't set it)
-		manifest := fmt.Sprintf(`apiVersion: apifrontend.kubernaut.ai/v1alpha1
+		manifest := fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
 kind: InvestigationSession
 metadata:
   name: e2e-sess-004
   namespace: %s
   labels:
     app.kubernetes.io/managed-by: kubernaut-apifrontend
-    apifrontend.kubernaut.ai/phase: Disconnected
+    kubernaut.ai/phase: Disconnected
 spec:
   a2aTaskID: task-e2e-004
   joinMode: start

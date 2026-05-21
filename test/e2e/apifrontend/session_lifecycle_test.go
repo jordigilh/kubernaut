@@ -66,7 +66,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 	}
 
 	applyInvestigationSession := func(name, userEmail, joinMode, a2aTaskID string) error {
-		manifest := fmt.Sprintf(`apiVersion: apifrontend.kubernaut.ai/v1alpha1
+		manifest := fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
 kind: InvestigationSession
 metadata:
   name: %s

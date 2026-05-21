@@ -6,7 +6,7 @@ import (
 
 	adksession "google.golang.org/adk/session"
 
-	"github.com/jordigilh/kubernaut/api/apifrontend/apifrontend/v1alpha1"
+	"github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 )
 

@@ -1109,7 +1109,7 @@ func deployAPIFrontendInFP(ctx context.Context, namespace, kubeconfigPath, afIma
 
 	// 2. Apply AF CRD
 	_, _ = fmt.Fprintln(writer, "    ├── AF CRDs...")
-	crdPath := filepath.Join(projectRoot, "config", "crd", "bases", "apifrontend.kubernaut.ai_investigationsessions.yaml")
+	crdPath := filepath.Join(projectRoot, "config", "crd", "bases", "kubernaut.ai_investigationsessions.yaml")
 	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -1130,10 +1130,10 @@ kind: ClusterRole
 metadata:
   name: apifrontend
 rules:
-  - apiGroups: ["apifrontend.kubernaut.ai"]
+  - apiGroups: ["kubernaut.ai"]
     resources: ["investigationsessions"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["apifrontend.kubernaut.ai"]
+  - apiGroups: ["kubernaut.ai"]
     resources: ["investigationsessions/status"]
     verbs: ["get", "update", "patch"]
   - apiGroups: ["kubernaut.ai"]
