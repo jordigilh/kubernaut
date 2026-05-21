@@ -14,6 +14,10 @@ rules:
   - apiGroups: ["apifrontend.kubernaut.ai"]
     resources: ["investigationsessions/status"]
     verbs: ["get", "update", "patch"]
+  # RemediationRequest management (ADK A2A path — AF creates/lists on behalf of users)
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["get", "list", "create"]
   # Events for controller status reporting
   - apiGroups: [""]
     resources: ["events"]
