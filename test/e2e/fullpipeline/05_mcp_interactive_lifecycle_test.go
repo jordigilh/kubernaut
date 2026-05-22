@@ -190,7 +190,10 @@ var _ = Describe("FP-MCP-001: full interactive lifecycle", Label("e2e", "fullpip
 		Expect(ok).To(BeTrue())
 		var inner map[string]interface{}
 		Expect(json.Unmarshal([]byte(responseStr), &inner)).To(Succeed())
-		Expect(inner["mode"]).To(Equal("not_found"))
+		Expect(inner["mode"]).To(SatisfyAny(
+			Equal("not_found"),
+			Equal("autonomous"),
+		), "after complete the session is released; AA controller may re-enter autonomously before the status check")
 	})
 })
 
