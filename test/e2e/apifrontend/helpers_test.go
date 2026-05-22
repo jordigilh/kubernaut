@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -364,4 +366,37 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 		return "", fmt.Errorf("id_token not found in response: %s", body)
 	}
 	return tokenResp.IDToken, nil
+}
+
+func rrManifest(namespace, rrName, targetKind, targetName, description string) string {
+	fp := fmt.Sprintf("e2e-%s-%s-%s", namespace, targetKind, targetName)
+	return fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationRequest
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  signalName: "E2ETestAlert"
+  signalFingerprint: "%s"
+  signalType: "prometheus"
+  severity: "warning"
+  firingTime: "2026-01-01T00:00:00Z"
+  receivedTime: "2026-01-01T00:00:01Z"
+  targetType: "kubernetes"
+  targetResource:
+    kind: %s
+    name: %s
+  description: "%s"
+`, rrName, namespace, fp, targetKind, targetName, description)
+}
+
+func kubectlCreateRR(namespace, rrName, targetKind, targetName, description string) error {
+	return kubectlApplyYAML(rrManifest(namespace, rrName, targetKind, targetName, description))
+}
+
+func kubectlDeleteRR(namespace, rrName string) {
+	kubeconfigPath := os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
+	_, _ = exec.CommandContext(context.Background(), "kubectl",
+		"--kubeconfig", kubeconfigPath,
+		"delete", "remediationrequest", rrName, "-n", namespace, "--ignore-not-found").CombinedOutput()
 }

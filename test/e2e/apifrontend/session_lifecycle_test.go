@@ -21,7 +21,6 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		namespace      string
 		rrNamespace    string
 		authTokenA     string
-		mcpSessionA    string
 		sharedRRName   string
 	)
 
@@ -34,28 +33,9 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		authTokenA, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred())
 
-		mcpSessionA, err = initMCPSession(authTokenA)
-		Expect(err).NotTo(HaveOccurred())
-
-		callBody := buildJSONRPC("g19-setup-rr", "tools/call", map[string]interface{}{
-			"name": "af_create_rr",
-			"arguments": map[string]interface{}{
-				"namespace":   rrNamespace,
-				"name":        "test-deploy-g19-shared",
-				"kind":        "Deployment",
-				"description": "E2E G19 shared RR",
-			},
-		})
-		raw, code, err := mcpPOST(authTokenA, mcpSessionA, callBody)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(code).To(BeNumerically("<", 400))
-
-		text, _, perr := parseMCPToolPayload(unwrapSSEDataLine(raw))
-		Expect(perr).NotTo(HaveOccurred())
-		rrID := parseJSONStringField(text, "rr_id")
-		Expect(rrID).NotTo(BeEmpty())
-		sharedRRName = rrNameFromRRID(rrID)
-		Expect(sharedRRName).NotTo(BeEmpty())
+		sharedRRName = "e2e-rr-g19-shared"
+		Expect(kubectlCreateRR(rrNamespace, sharedRRName, "Deployment", "test-deploy-g19-shared", "E2E G19 shared RR")).To(Succeed())
+		DeferCleanup(func() { kubectlDeleteRR(rrNamespace, sharedRRName) })
 	})
 
 	kubectl := func(ctx context.Context, args ...string) (string, error) {

@@ -59,25 +59,26 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 			Expect(result.Count).To(BeNumerically(">=", 1))
 		})
 
-		It("IT-AF-1195-036: get_pods returns pod list from envtest", func() {
+		It("IT-AF-1195-036: kubectl_list returns pod list from envtest", func() {
 			ctx := context.Background()
 
-			result, err := tools.HandleGetPods(ctx, dynamicClient, tools.GetPodsArgs{
+			result, err := tools.HandleKubectlList(ctx, dynamicClient, nil, tools.KubectlListArgs{
+				Kind:      "Pod",
 				Namespace: "default",
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// envtest may or may not have pods; the key is no error and valid result
-			Expect(result.Pods).NotTo(BeNil())
+			Expect(result.Items).NotTo(BeNil())
 		})
 
-		It("IT-AF-1195-037: get_workloads returns workload list from envtest", func() {
+		It("IT-AF-1195-037: kubectl_list returns workload list from envtest", func() {
 			ctx := context.Background()
 
-			result, err := tools.HandleGetWorkloads(ctx, dynamicClient, tools.GetWorkloadsArgs{
+			result, err := tools.HandleKubectlList(ctx, dynamicClient, nil, tools.KubectlListArgs{
+				Kind:      "Deployment",
 				Namespace: "default",
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Workloads).NotTo(BeNil())
+			Expect(result.Items).NotTo(BeNil())
 		})
 	})
 

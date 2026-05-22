@@ -97,9 +97,9 @@ var _ = Describe("E2E-FP-AF-001: AF audit trace coverage in happy-path MCP lifec
 			Expect(err).NotTo(HaveOccurred())
 			GinkgoWriter.Printf("  MCP Session ID: %s\n", sessionID)
 
-			By("Calling af_get_pods tool through AF MCP (generates tool.executed, jwt.delegation, impersonation.created)")
+			By("Calling kubernaut_list_remediations tool through AF MCP (generates tool.executed audit event)")
 			toolBody := fpBuildJSONRPC("fp-af-audit-1", "tools/call", map[string]interface{}{
-				"name":      "af_get_pods",
+				"name":      "kubernaut_list_remediations",
 				"arguments": map[string]interface{}{"namespace": "default"},
 			})
 			_, code, err := fpMCPPOST(afHTTPClient, afBaseURL, token, sessionID, toolBody)

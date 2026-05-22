@@ -131,18 +131,16 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		It("TC-E2E-A2A-T13: kubernaut_get_audit_trail", func() {
 			toolTest("a2a-t13", "Get the audit trail for remediation rr-audit", "kubernaut_get_audit_trail")
 		})
-		It("TC-E2E-A2A-T14: af_list_events", func() {
-			toolTest("a2a-t14", "List Kubernetes events in the kubernaut-system namespace", "af_list_events")
+		It("TC-E2E-A2A-T14: kubectl_list_events", func() {
+			toolTest("a2a-t14", "List Kubernetes events in the kubernaut-system namespace", "kubectl_list_events")
 		})
-		It("TC-E2E-A2A-T15: af_get_pods", func() {
-			toolTest("a2a-t15", "Get all pods in the default namespace", "af_get_pods")
+		It("TC-E2E-A2A-T15: kubectl_list (Pod)", func() {
+			toolTest("a2a-t15", "Get all pods in the default namespace", "kubectl_list")
 		})
-		It("TC-E2E-A2A-T16: af_get_workloads", func() {
-			toolTest("a2a-t16", "Get workloads in the default namespace", "af_get_workloads")
+		It("TC-E2E-A2A-T16: kubectl_list (Deployment)", func() {
+			toolTest("a2a-t16", "Get workloads in the default namespace", "kubectl_list")
 		})
-		It("TC-E2E-A2A-T17: af_resolve_owner", func() {
-			toolTest("a2a-t17", "Resolve the owner of pod nginx-abc123 in default namespace", "af_resolve_owner")
-		})
+		// TC-E2E-A2A-T17 deleted: af_resolve_owner removed. Owner chain is internal LLM reasoning.
 		It("TC-E2E-A2A-T18: af_check_existing_rr", func() {
 			toolTest("a2a-t18", "Check if a remediation request already exists for deployment web in prod", "af_check_existing_rr")
 		})
@@ -197,8 +195,8 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		It("TC-E2E-A2A-RBAC-01: cicd denied kubernaut_approve", func() {
 			rbacDenialTest("rbac-01", cicdToken, "Approve the remediation rr-test in payments namespace", "kubernaut_approve")
 		})
-		It("TC-E2E-A2A-RBAC-02: cicd denied af_get_pods", func() {
-			rbacDenialTest("rbac-02", cicdToken, "Get all pods in the default namespace", "af_get_pods")
+		It("TC-E2E-A2A-RBAC-02: cicd denied kubectl_list", func() {
+			rbacDenialTest("rbac-02", cicdToken, "Get all pods in the default namespace", "kubectl_list")
 		})
 		It("TC-E2E-A2A-RBAC-03: cicd denied kubernaut_start_investigation", func() {
 			rbacDenialTest("rbac-03", cicdToken, "Start investigation on pod nginx in default namespace", "kubernaut_start_investigation")
@@ -219,8 +217,8 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		It("TC-E2E-A2A-RBAC-07: l3-audit denied kubernaut_approve", func() {
 			rbacDenialTest("rbac-07", auditorToken, "Approve the remediation rr-test in payments namespace", "kubernaut_approve")
 		})
-		It("TC-E2E-A2A-RBAC-08: l3-audit denied af_get_pods", func() {
-			rbacDenialTest("rbac-08", auditorToken, "Get all pods in the default namespace", "af_get_pods")
+		It("TC-E2E-A2A-RBAC-08: l3-audit denied kubectl_list", func() {
+			rbacDenialTest("rbac-08", auditorToken, "Get all pods in the default namespace", "kubectl_list")
 		})
 		It("TC-E2E-A2A-RBAC-09: l3-audit denied kubernaut_start_investigation", func() {
 			rbacDenialTest("rbac-09", auditorToken, "Start investigation on pod nginx in default namespace", "kubernaut_start_investigation")
@@ -230,8 +228,8 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		It("TC-E2E-A2A-RBAC-10: approver denied kubernaut_start_investigation", func() {
 			rbacDenialTest("rbac-10", approverToken, "Start investigation on pod nginx in default namespace", "kubernaut_start_investigation")
 		})
-		It("TC-E2E-A2A-RBAC-11: approver denied af_get_pods", func() {
-			rbacDenialTest("rbac-11", approverToken, "Get all pods in the default namespace", "af_get_pods")
+		It("TC-E2E-A2A-RBAC-11: approver denied kubectl_list", func() {
+			rbacDenialTest("rbac-11", approverToken, "Get all pods in the default namespace", "kubectl_list")
 		})
 		It("TC-E2E-A2A-RBAC-12: approver denied kubernaut_list_workflows", func() {
 			rbacDenialTest("rbac-12", approverToken, "List all available remediation workflows", "kubernaut_list_workflows")
@@ -294,14 +292,13 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		})
 
 		It("TC-E2E-A2A-MET-04: RBAC denials tracked via af_tool_calls_total{result=denied}", func() {
-			// Trigger an MCP RBAC denial: observability persona calling af_create_rr (not in their role)
 			obsToken, err := fetchDEXTokenForPersona("observability")
 			Expect(err).NotTo(HaveOccurred())
 			obsSID, err := initMCPSession(obsToken)
 			if err == nil && obsSID != "" {
 				body := buildJSONRPC("met04-rbac-deny", "tools/call", map[string]interface{}{
-					"name":      "af_create_rr",
-					"arguments": map[string]interface{}{"namespace": "default", "name": "x", "kind": "Deployment", "description": "denied"},
+					"name":      "kubernaut_approve",
+					"arguments": map[string]interface{}{"namespace": "default", "rar_name": "x", "decision": "approved"},
 				})
 				_, _, _ = mcpPOST(obsToken, obsSID, body)
 			}
