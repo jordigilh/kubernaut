@@ -34,7 +34,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		Expect(err).NotTo(HaveOccurred())
 
 		sharedRRName = "e2e-rr-g19-shared"
-		Expect(kubectlCreateRR(rrNamespace, sharedRRName, "Deployment", "test-deploy-g19-shared", "E2E G19 shared RR")).To(Succeed())
+		Expect(kubectlCreateRR(rrNamespace, sharedRRName, "Deployment", "test-deploy-g19-shared")).To(Succeed())
 		DeferCleanup(func() { kubectlDeleteRR(rrNamespace, sharedRRName) })
 	})
 

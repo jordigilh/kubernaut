@@ -96,7 +96,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		rrID := rrNamespace + "/" + rrName
 
 		By("TC-E2E-RR-01: Create RR via kubectl CRD fixture")
-		Expect(kubectlCreateRR(rrNamespace, rrName, "Deployment", "test-deploy-rr01", "E2E test RR")).To(Succeed())
+		Expect(kubectlCreateRR(rrNamespace, rrName, "Deployment", "test-deploy-rr01")).To(Succeed())
 		DeferCleanup(func() { kubectlDeleteRR(rrNamespace, rrName) })
 
 		By("TC-E2E-RR-03: kubernaut_cancel_remediation sets RR to Cancelled")
@@ -147,7 +147,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		const rrName = "e2e-rr-watch-07"
-		Expect(kubectlCreateRR("default", rrName, "Deployment", "test-deploy-rr07", "E2E watch RR")).To(Succeed())
+		Expect(kubectlCreateRR("default", rrName, "Deployment", "test-deploy-rr07")).To(Succeed())
 		DeferCleanup(func() { kubectlDeleteRR("default", rrName) })
 
 		text, err := mcpToolCallWith(authToken, mcpSessionID, "kubernaut_watch", map[string]interface{}{
@@ -171,7 +171,7 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 
 	It("TC-E2E-RAR-01: kubernaut_approve succeeds for RAR referencing existing RR", func() {
 		const rrName = "e2e-rr-rar01"
-		Expect(kubectlCreateRR(rrNamespace, rrName, "Deployment", "test-deploy-rar01", "E2E RAR flow — RR")).To(Succeed())
+		Expect(kubectlCreateRR(rrNamespace, rrName, "Deployment", "test-deploy-rar01")).To(Succeed())
 		DeferCleanup(func() { kubectlDeleteRR(rrNamespace, rrName) })
 
 		rarName := "e2e-rar-g5-01"
@@ -238,7 +238,7 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 
 	It("TC-E2E-RAR-03: sre persona may kubernaut_approve (RBAC includes tool)", func() {
 		const rrName = "e2e-rr-rar03"
-		Expect(kubectlCreateRR(rrNamespace, rrName, "Deployment", "test-deploy-rar03", "E2E SRE approve path")).To(Succeed())
+		Expect(kubectlCreateRR(rrNamespace, rrName, "Deployment", "test-deploy-rar03")).To(Succeed())
 		DeferCleanup(func() { kubectlDeleteRR(rrNamespace, rrName) })
 
 		sreTok, err := fetchDEXTokenForPersona("sre")

@@ -368,7 +368,7 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 	return tokenResp.IDToken, nil
 }
 
-func rrManifest(namespace, rrName, targetKind, targetName, description string) string {
+func rrManifest(namespace, rrName, targetKind, targetName string) string {
 	fp := fmt.Sprintf("e2e-%s-%s-%s", namespace, targetKind, targetName)
 	return fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
 kind: RemediationRequest
@@ -386,12 +386,11 @@ spec:
   targetResource:
     kind: %s
     name: %s
-  description: "%s"
-`, rrName, namespace, fp, targetKind, targetName, description)
+`, rrName, namespace, fp, targetKind, targetName)
 }
 
-func kubectlCreateRR(namespace, rrName, targetKind, targetName, description string) error {
-	return kubectlApplyYAML(rrManifest(namespace, rrName, targetKind, targetName, description))
+func kubectlCreateRR(namespace, rrName, targetKind, targetName string) error {
+	return kubectlApplyYAML(rrManifest(namespace, rrName, targetKind, targetName))
 }
 
 func kubectlDeleteRR(namespace, rrName string) {

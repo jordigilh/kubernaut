@@ -86,7 +86,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		const rrName = "e2e-rr-mcp-full-02"
 
 		By("TC-E2E-MCP-FULL-02: Create RR via kubectl CRD fixture")
-		Expect(kubectlCreateRR(rrNamespace, rrName, "Deployment", g1RRDeployName, "MCP E2E test")).To(Succeed())
+		Expect(kubectlCreateRR(rrNamespace, rrName, "Deployment", g1RRDeployName)).To(Succeed())
 		DeferCleanup(func() { kubectlDeleteRR(rrNamespace, rrName) })
 
 		By("TC-E2E-MCP-FULL-04: kubernaut_approve after RR exists")

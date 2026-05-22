@@ -42,7 +42,6 @@ spec:
   targetResource:
     kind: Deployment
     name: memory-eater
-  description: "E2E-FP-1189-001: MCP path full pipeline"
 `, rrName, namespace, namespace)
 		cmd := exec.CommandContext(context.Background(), "kubectl",
 			"--kubeconfig", kubeconfigPath, "apply", "-f", "-")
