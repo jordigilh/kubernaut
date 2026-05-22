@@ -11,8 +11,11 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -41,6 +44,37 @@ var _ = Describe("AF MCP Path Full Pipeline [E2E-FP-1189-001]", Label("fp", "af"
 			_ = k8sClient.Delete(context.Background(), ns, &client.DeleteOptions{})
 		})
 
+		By("Deploying target Deployment for the remediation workflow")
+		dep := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "memory-eater",
+				Namespace: testNS,
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: ptr.To[int32](0),
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "memory-eater"},
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{"app": "memory-eater"},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "app",
+							Image: "busybox:1.36",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("64Mi"),
+								},
+							},
+						}},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+
 		rrName := "e2e-fp-mcp-rr-001"
 		By("Creating RemediationRequest via kubectl CRD fixture")
 		fp := fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("e2e-%s-Deployment-memory-eater", testNS))))
@@ -53,7 +87,7 @@ spec:
   signalName: "KubernetesPodOOMKilled"
   signalFingerprint: "%s"
   signalType: "prometheus"
-  severity: "warning"
+  severity: "critical"
   firingTime: "2026-01-01T00:00:00Z"
   receivedTime: "2026-01-01T00:00:01Z"
   targetType: "kubernetes"
