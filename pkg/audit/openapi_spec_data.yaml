@@ -2626,6 +2626,10 @@ components:
         actor_id:
           type: string
           example: gateway-service
+        actor_ip:
+          type: string
+          maxLength: 45
+          description: Client source IP address (SOC2 CC7.2 / AU-3)
         resource_type:
           type: string
           example: Signal
@@ -7354,6 +7358,12 @@ components:
         target_resource:
           type: string
           description: Resource the tool operated on (if applicable)
+        target_namespace:
+          type: string
+          description: Kubernetes namespace the tool operated in (if applicable)
+        target_kind:
+          type: string
+          description: Kubernetes resource kind (e.g., Pod, Deployment) the tool operated on
 
     ApifrontendAuthSuccessPayload:
       type: object
