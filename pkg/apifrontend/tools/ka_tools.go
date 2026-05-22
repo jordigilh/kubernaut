@@ -428,7 +428,7 @@ func HandlePresentDecision(args PresentDecisionArgs) PresentDecisionResult {
 // NewPresentDecisionTool creates the present_decision tool (IsLongRunning).
 func NewPresentDecisionTool() (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
-		Name:          "present_decision",
+		Name:          "kubernaut_present_decision",
 		Description:   "Present investigation results and remediation options to the user for a decision",
 		IsLongRunning: true,
 	}, func(ctx tool.Context, args PresentDecisionArgs) (PresentDecisionResult, error) {

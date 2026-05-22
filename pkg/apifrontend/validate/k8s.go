@@ -49,6 +49,60 @@ func Kind(k string) error {
 	return nil
 }
 
+// ParseRRID validates and splits an rr_id in the form "namespace/name" into
+// its components. Returns an error for empty, malformed, or path-traversal values.
+func ParseRRID(rrid string) (namespace, name string, err error) {
+	if rrid == "" {
+		return "", "", fmt.Errorf("rr_id must not be empty")
+	}
+	if strings.Contains(rrid, "..") {
+		return "", "", fmt.Errorf("rr_id %q contains path traversal", rrid)
+	}
+	parts := strings.SplitN(rrid, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("rr_id %q must be in the form namespace/name", rrid)
+	}
+	if err := Namespace(parts[0]); err != nil {
+		return "", "", fmt.Errorf("rr_id namespace: %w", err)
+	}
+	if err := ResourceName(parts[1]); err != nil {
+		return "", "", fmt.Errorf("rr_id name: %w", err)
+	}
+	return parts[0], parts[1], nil
+}
+
+// ValidActions is the set of valid interactive action strings.
+var ValidActions = map[string]bool{
+	"investigate":  true,
+	"discover":     true,
+	"select":       true,
+	"takeover":     true,
+	"message":      true,
+	"complete":     true,
+	"cancel":       true,
+	"status":       true,
+	"reconnect":    true,
+}
+
+// Action validates that the action string is in the valid set.
+func Action(action string) error {
+	if !ValidActions[action] {
+		return fmt.Errorf("invalid action %q: must be one of investigate, discover, select, takeover, message, complete, cancel, status, reconnect", action)
+	}
+	return nil
+}
+
+// MaxMessageLen is the maximum allowed length for interactive message content.
+const MaxMessageLen = 10240
+
+// MessageLength validates that msg is within the allowed length.
+func MessageLength(msg string) error {
+	if len(msg) > MaxMessageLen {
+		return fmt.Errorf("message length %d exceeds maximum %d", len(msg), MaxMessageLen)
+	}
+	return nil
+}
+
 // LabelValue validates that v is a valid Kubernetes label value.
 func LabelValue(v string) error {
 	if errs := validation.IsValidLabelValue(v); len(errs) > 0 {

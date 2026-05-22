@@ -65,8 +65,11 @@ type CRDSessionService struct {
 	auditor        audit.Emitter
 	sessionsActive *prometheus.GaugeVec
 
-	mu       sync.RWMutex
-	crdIndex map[string]string // sessionID -> CRD name
+	deferCRD bool
+
+	mu             sync.RWMutex
+	crdIndex       map[string]string        // sessionID -> CRD name
+	pendingConfigs map[string]*CreateConfig  // sessionID -> deferred CreateConfig (not yet materialized)
 }
 
 // NewCRDSessionService creates a new CRDSessionService. The delegate should
@@ -74,12 +77,13 @@ type CRDSessionService struct {
 // audit emission (e.g. in tests).
 func NewCRDSessionService(delegate adksession.Service, c client.Client, scheme *runtime.Scheme, ns string, opts ...Option) *CRDSessionService {
 	svc := &CRDSessionService{
-		delegate:  delegate,
-		client:    c,
-		scheme:    scheme,
-		namespace: ns,
-		logger:    slog.Default().With("component", "session-service"),
-		crdIndex:  make(map[string]string),
+		delegate:       delegate,
+		client:         c,
+		scheme:         scheme,
+		namespace:      ns,
+		logger:         slog.Default().With("component", "session-service"),
+		crdIndex:       make(map[string]string),
+		pendingConfigs: make(map[string]*CreateConfig),
 	}
 	for _, o := range opts {
 		o(svc)
@@ -98,6 +102,13 @@ func WithAuditor(e audit.Emitter) Option {
 // WithSessionsActive injects the af_sessions_active gauge for observability.
 func WithSessionsActive(g *prometheus.GaugeVec) Option {
 	return func(s *CRDSessionService) { s.sessionsActive = g }
+}
+
+// WithDeferredCRD enables deferred CRD creation (G6). When set, Create()
+// stores the CreateConfig but skips K8s CRD creation. The CRD is materialized
+// later via MaterializeCRD when af_create_rr produces a real RR reference.
+func WithDeferredCRD() Option {
+	return func(s *CRDSessionService) { s.deferCRD = true }
 }
 
 // WithAPIReader injects a cache-bypassing reader (DD-STATUS-001 pattern from
@@ -120,6 +131,10 @@ func (s *CRDSessionService) getReader() client.Reader {
 // Create creates an InvestigationSession CRD and delegates session creation
 // to the in-memory service. The CRD creation config is read from
 // req.State[StateKeyCreateConfig].
+//
+// When deferCRD is true, the K8s CRD creation is skipped and the CreateConfig
+// is stored in pendingConfigs. The CRD will be materialized later via
+// MaterializeCRD when af_create_rr produces a real RR reference.
 func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRequest) (*adksession.CreateResponse, error) {
 	var cfg *CreateConfig
 	if req.State != nil {
@@ -139,6 +154,41 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 		return nil, fmt.Errorf("invalid session ID %q: must be a valid RFC 1123 subdomain", crdName)
 	}
 
+	if s.deferCRD {
+		return s.createDeferred(ctx, req, cfg, crdName)
+	}
+	return s.createImmediate(ctx, req, cfg, crdName)
+}
+
+func (s *CRDSessionService) createDeferred(ctx context.Context, req *adksession.CreateRequest, cfg *CreateConfig, crdName string) (*adksession.CreateResponse, error) {
+	resp, err := s.delegate.Create(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("delegate create: %w", err)
+	}
+
+	s.mu.Lock()
+	s.crdIndex[resp.Session.ID()] = crdName
+	if cfg != nil {
+		s.pendingConfigs[resp.Session.ID()] = cfg
+	}
+	s.mu.Unlock()
+
+	s.logger.InfoContext(ctx, "session created (deferred CRD)",
+		"session_id", resp.Session.ID(),
+		"crd_name", crdName,
+		"user", req.UserID,
+	)
+	s.emitAudit(ctx, audit.EventSessionCreated, req.UserID, map[string]string{
+		"session_id": resp.Session.ID(),
+		"crd_name":   crdName,
+		"phase":      string(v1alpha1.SessionPhaseActive),
+		"deferred":   "true",
+	})
+	s.incSessionGauge(string(v1alpha1.SessionPhaseActive))
+	return resp, nil
+}
+
+func (s *CRDSessionService) createImmediate(ctx context.Context, req *adksession.CreateRequest, cfg *CreateConfig, crdName string) (*adksession.CreateResponse, error) {
 	now := metav1.Now()
 	crd := &v1alpha1.InvestigationSession{
 		ObjectMeta: metav1.ObjectMeta{
@@ -264,6 +314,7 @@ func (s *CRDSessionService) Delete(ctx context.Context, req *adksession.DeleteRe
 
 	s.mu.Lock()
 	delete(s.crdIndex, req.SessionID)
+	delete(s.pendingConfigs, req.SessionID)
 	s.mu.Unlock()
 
 	s.emitAudit(ctx, audit.EventSessionDeleted, req.UserID, map[string]string{
@@ -370,6 +421,89 @@ func (s *CRDSessionService) PruneTerminalEntries(ctx context.Context) int {
 		s.logger.InfoContext(ctx, "pruned terminal crdIndex entries", "count", pruned)
 	}
 	return pruned
+}
+
+// MaterializeCRD creates the K8s InvestigationSession CRD for a previously
+// deferred session. It is called by the af_create_rr after-callback once a
+// real RemediationRequest reference is available. Idempotent: returns nil
+// if the CRD was already materialized.
+func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string, rrRef v1alpha1.ObjectRef) error {
+	s.mu.Lock()
+	cfg, isPending := s.pendingConfigs[sessionID]
+	crdName, hasCRD := s.crdIndex[sessionID]
+	if !isPending {
+		s.mu.Unlock()
+		if hasCRD {
+			return nil // already materialized (idempotent)
+		}
+		return fmt.Errorf("session %q not found in pending configs", sessionID)
+	}
+	delete(s.pendingConfigs, sessionID)
+	s.mu.Unlock()
+
+	now := metav1.Now()
+	crd := &v1alpha1.InvestigationSession{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      crdName,
+			Namespace: s.namespace,
+			Labels: map[string]string{
+				LabelPhase:     string(v1alpha1.SessionPhaseActive),
+				LabelManagedBy: "kubernaut-apifrontend",
+			},
+		},
+		Status: v1alpha1.InvestigationSessionStatus{
+			Phase:           v1alpha1.SessionPhaseActive,
+			ConnectionState: v1alpha1.ConnectionStateConnected,
+			StartedAt:       &now,
+		},
+	}
+
+	if cfg != nil {
+		if cfg.OwnerRef.Name != "" {
+			crd.OwnerReferences = []metav1.OwnerReference{cfg.OwnerRef}
+		}
+		crd.Labels[LabelUser] = sanitizeLabelValue(cfg.UserIdentity.Username)
+		cfg.RemediationRef = rrRef
+		crd.Labels[LabelRRName] = sanitizeLabelValue(rrRef.Name)
+		crd.Spec = v1alpha1.InvestigationSessionSpec{
+			RemediationRequestRef: rrRef,
+			A2ATaskID:             cfg.A2ATaskID,
+			UserIdentity:          cfg.UserIdentity,
+			JoinMode:              cfg.JoinMode,
+		}
+	}
+
+	desiredStatus := crd.Status
+	if err := s.client.Create(ctx, crd); err != nil {
+		s.mu.Lock()
+		s.pendingConfigs[sessionID] = cfg
+		s.mu.Unlock()
+		return fmt.Errorf("create InvestigationSession CRD: %w", err)
+	}
+
+	crd.Status = desiredStatus
+	if err := s.client.Status().Update(ctx, crd); err != nil {
+		s.logger.WarnContext(ctx, "CRD status update failed after materialize",
+			"session_id", sessionID,
+			"error", security.RedactError(err),
+		)
+	}
+
+	s.logger.InfoContext(ctx, "CRD materialized",
+		"session_id", sessionID,
+		"crd_name", crdName,
+		"rr_ref", rrRef.Name,
+	)
+	return nil
+}
+
+// IsMaterialized returns true if the session's CRD has been created in K8s.
+func (s *CRDSessionService) IsMaterialized(sessionID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, hasCRD := s.crdIndex[sessionID]
+	_, isPending := s.pendingConfigs[sessionID]
+	return hasCRD && !isPending
 }
 
 var invalidLabelChars = regexp.MustCompile(`[^a-zA-Z0-9._-]`)

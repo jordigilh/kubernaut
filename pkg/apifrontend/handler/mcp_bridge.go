@@ -295,8 +295,17 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 			}, nil, nil
 		}
 
+		durationMs := fmt.Sprintf("%d", time.Since(start).Milliseconds())
 		recordMetrics(cfg, toolName, resultLabel, start)
-		emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, map[string]string{"tool_outcome": "success"})
+		emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, map[string]string{
+			"tool_outcome":        "success",
+			"execution_duration_ms": durationMs,
+		})
+		cfg.Logger.Info("tool call succeeded",
+			"tool", toolName,
+			"user", usernameFromCtx(ctx),
+			"duration_ms", durationMs,
+		)
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: string(resultJSON)}},

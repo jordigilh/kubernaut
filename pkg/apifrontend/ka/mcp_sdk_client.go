@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 )
 
@@ -18,14 +21,22 @@ import (
 //
 // Session-per-call overhead is acceptable for v1.5 volume (P2 Architect finding).
 type SDKMCPClient struct {
-	endpoint   string
-	client     *mcp.Client
-	httpClient *http.Client
-	logger     logr.Logger
+	endpoint           string
+	client             *mcp.Client
+	httpClient         *http.Client
+	logger             logr.Logger
+	downstreamDuration *prometheus.HistogramVec
 }
 
 // NewSDKMCPClient creates a new MCP client for KA communication.
 // The httpClient should include auth transport (e.g., ContextJWTDelegationTransport).
+// WithDownstreamDuration injects the af_downstream_request_duration_seconds
+// histogram for MCP call latency instrumentation (G18).
+func (c *SDKMCPClient) WithDownstreamDuration(h *prometheus.HistogramVec) *SDKMCPClient {
+	c.downstreamDuration = h
+	return c
+}
+
 func NewSDKMCPClient(endpoint string, httpClient *http.Client, logger logr.Logger) *SDKMCPClient {
 	mcpClient := mcp.NewClient(&mcp.Implementation{
 		Name:    "kubernaut-apifrontend",
@@ -96,6 +107,15 @@ func (c *SDKMCPClient) Investigate(ctx context.Context, args InvestigateArgs) (*
 }
 
 func (c *SDKMCPClient) callTool(ctx context.Context, name string, args map[string]any) (json.RawMessage, error) {
+	start := time.Now()
+	statusLabel := "2xx"
+
+	defer func() {
+		if c.downstreamDuration != nil {
+			c.downstreamDuration.WithLabelValues("ka-mcp", statusLabel).Observe(time.Since(start).Seconds())
+		}
+	}()
+
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   c.endpoint,
 		HTTPClient: c.httpClient,
@@ -103,6 +123,7 @@ func (c *SDKMCPClient) callTool(ctx context.Context, name string, args map[strin
 
 	session, err := c.client.Connect(ctx, transport, nil)
 	if err != nil {
+		statusLabel = "5xx"
 		return nil, kaToUserFriendlyError(fmt.Errorf("MCP connect: %w", err))
 	}
 	defer func() { _ = session.Close() }()
@@ -112,10 +133,12 @@ func (c *SDKMCPClient) callTool(ctx context.Context, name string, args map[strin
 		Arguments: args,
 	})
 	if err != nil {
+		statusLabel = "5xx"
 		return nil, kaToUserFriendlyError(fmt.Errorf("MCP call %s: %w", name, err))
 	}
 
 	if result.IsError {
+		statusLabel = "4xx"
 		msg := "tool call returned error"
 		if len(result.Content) > 0 {
 			if textContent, ok := result.Content[0].(*mcp.TextContent); ok {
@@ -157,6 +180,37 @@ func (c *SDKMCPClient) DiscoverWorkflows(ctx context.Context, args DiscoverWorkf
 		return nil, fmt.Errorf("parse discover_workflows response: %w", err)
 	}
 	return &dwResult, nil
+}
+
+// InvokeAction calls kubernaut_investigate with a specific action on KA's MCP server.
+// The acting_user and acting_user_groups are extracted from ctx via
+// auth.UserIdentityFromContext and injected into the MCP args map (ADR-022).
+func (c *SDKMCPClient) InvokeAction(ctx context.Context, args InvokeActionArgs) (*InvokeActionResult, error) {
+	identity := auth.UserIdentityFromContext(ctx)
+	if identity == nil {
+		return nil, fmt.Errorf("user identity required: no identity in context")
+	}
+
+	argsMap := map[string]any{
+		"rr_id":              args.RRID,
+		"action":             args.Action,
+		"acting_user":        identity.Username,
+		"acting_user_groups": identity.Groups,
+	}
+	if args.Message != "" {
+		argsMap["message"] = args.Message
+	}
+
+	result, err := c.callTool(ctx, "kubernaut_investigate", argsMap)
+	if err != nil {
+		return nil, err
+	}
+
+	var invResult InvokeActionResult
+	if err := json.Unmarshal(result, &invResult); err != nil {
+		return nil, fmt.Errorf("parse invoke_action response: %w", err)
+	}
+	return &invResult, nil
 }
 
 // Compile-time interface check.
