@@ -61,7 +61,7 @@ var _ = Describe("AF Metrics Registry (DD-TEST-005 Compliant — GA Set)", func(
 		})
 
 		It("UT-AF-MET-002: af_tool_calls_total increments by 1", func() {
-			c := reg.ToolCallsTotal.WithLabelValues("af_get_pods", "success")
+			c := reg.ToolCallsTotal.WithLabelValues("kubectl_list", "success")
 			before := getCounterValue(c)
 			c.Inc()
 			after := getCounterValue(c)
@@ -108,7 +108,7 @@ var _ = Describe("AF Metrics Registry (DD-TEST-005 Compliant — GA Set)", func(
 		})
 
 		It("UT-AF-MET-008: af_tool_call_duration_seconds records observation", func() {
-			obs := reg.ToolCallDuration.WithLabelValues("af_get_pods", "mcp")
+			obs := reg.ToolCallDuration.WithLabelValues("kubectl_list", "mcp")
 			beforeCount := getHistogramSampleCount(obs)
 
 			obs.Observe(0.075)

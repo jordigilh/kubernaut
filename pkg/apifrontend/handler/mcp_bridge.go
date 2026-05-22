@@ -65,7 +65,7 @@ func (c *MCPBridgeConfig) GetMaxConcurrentTools() int64 {
 	return defaultMaxConcurrentTool
 }
 
-// RegisterTools registers all 20 MCP tools on the server with the real dispatch handlers.
+// RegisterTools registers all 14 MCP domain tools on the server with the real dispatch handlers.
 func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	if cfg == nil {
 		panic("RegisterTools: cfg must not be nil")

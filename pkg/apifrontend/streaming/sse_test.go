@@ -35,7 +35,7 @@ var _ = Describe("SSE Event Formatting", func() {
 			Parts: []*genai.Part{
 				{
 					FunctionCall: &genai.FunctionCall{
-						Name: "af_get_pods",
+						Name: "kubectl_list",
 						Args: map[string]any{"namespace": "default"},
 					},
 				},
