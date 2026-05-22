@@ -361,6 +361,8 @@ func extractA2AToolJSON(raw json.RawMessage, markerKey string) string {
 	}
 	return string(raw)
 }
+
+func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (string, error) {
 	tokenURL := dexURL + "/token"
 	data := url.Values{
 		"grant_type":    {"password"},
