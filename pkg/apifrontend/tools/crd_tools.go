@@ -356,6 +356,13 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 	if err := validate.ResourceName(args.Name); err != nil {
 		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
+
+	// Verify the RR exists before blocking on a watch — a watch on a
+	// non-existent resource would silently block until the 10-minute timeout.
+	if _, err := client.Resource(rrGVR).Namespace(args.Namespace).Get(ctx, args.Name, metav1.GetOptions{}); err != nil {
+		return WatchResult{}, ToUserFriendlyError(err)
+	}
+
 	watchCtx, cancel := context.WithTimeout(ctx, maxWatchDuration)
 	defer cancel()
 

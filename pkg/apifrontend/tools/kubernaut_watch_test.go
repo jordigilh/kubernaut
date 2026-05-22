@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	k8stesting "k8s.io/client-go/testing"
@@ -140,14 +141,21 @@ var _ = Describe("kubernaut_watch", func() {
 		}))
 	})
 
-	It("UT-AF-106-008: returns 403 when user cannot watch namespace", func() {
+	It("UT-AF-106-008: returns 403 when user cannot access namespace", func() {
 		client := newDynamicFakeClient()
-		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
+		client.PrependReactor("get", "remediationrequests", func(action k8stesting.Action) (bool, runtime.Object, error) {
 			return true, nil, newForbiddenError("remediationrequests")
 		})
 		_, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "forbidden", Name: "rr-1"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("access denied"))
+	})
+
+	It("UT-AF-106-012: returns not-found when RR does not exist", func() {
+		client := newDynamicFakeClient()
+		_, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "default", Name: "nonexistent"})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("not found"))
 	})
 
 	It("UT-AF-106-009: nil client returns ErrK8sUnavailable", func() {
