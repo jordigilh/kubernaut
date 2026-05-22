@@ -174,6 +174,54 @@ var _ = Describe("kubectl_get", func() {
 		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
 	})
 
+	It("UT-AF-1230-008a: redacts Secret .stringData field", func() {
+		secret := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Secret",
+				"metadata": map[string]interface{}{
+					"name":      "inline-creds",
+					"namespace": "prod",
+				},
+				"type": "Opaque",
+				"stringData": map[string]interface{}{
+					"username": "admin",
+					"password": "hunter2",
+				},
+			},
+		}
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs, secret)
+
+		result, err := tools.HandleKubectlGet(context.Background(), client, nil, tools.KubectlGetArgs{
+			Kind:      "Secret",
+			Name:      "inline-creds",
+			Namespace: "prod",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		sd, exists := result.Object["stringData"]
+		if exists {
+			sdMap, ok := sd.(map[string]interface{})
+			Expect(ok).To(BeTrue())
+			for _, v := range sdMap {
+				Expect(v).To(Equal("REDACTED"))
+			}
+		}
+	})
+
+	It("UT-AF-1230-009: unknown Kind with nil mapper returns error", func() {
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs)
+
+		_, err := tools.HandleKubectlGet(context.Background(), client, nil, tools.KubectlGetArgs{
+			Kind:      "FooBarBaz",
+			Name:      "test",
+			Namespace: "prod",
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(err).To(MatchError(ContainSubstring("invalid input")))
+	})
+
 	It("UT-AF-1230-008: returns Endpoints resource", func() {
 		scheme := runtime.NewScheme()
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs,

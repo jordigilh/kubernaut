@@ -79,25 +79,30 @@ func resolveGVR(mapper meta.RESTMapper, kind string) (schema.GroupVersionResourc
 }
 
 // sanitizeObject removes sensitive fields from resource objects.
-// For Secrets, .data values are replaced with "REDACTED".
+// For Secrets, .data and .stringData values are replaced with "REDACTED".
 func sanitizeObject(obj map[string]interface{}, kind string) map[string]interface{} {
 	if kind != "Secret" {
 		return obj
 	}
-	data, ok := obj["data"]
+	redactMapField(obj, "data")
+	redactMapField(obj, "stringData")
+	return obj
+}
+
+func redactMapField(obj map[string]interface{}, field string) {
+	raw, ok := obj[field]
 	if !ok {
-		return obj
+		return
 	}
-	dataMap, ok := data.(map[string]interface{})
+	dataMap, ok := raw.(map[string]interface{})
 	if !ok {
-		return obj
+		return
 	}
 	redacted := make(map[string]interface{}, len(dataMap))
 	for k := range dataMap {
 		redacted[k] = "REDACTED"
 	}
-	obj["data"] = redacted
-	return obj
+	obj[field] = redacted
 }
 
 // NewKubectlGetTool creates the kubectl_get ADK tool.

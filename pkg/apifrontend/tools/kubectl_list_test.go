@@ -2,6 +2,7 @@ package tools_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -116,6 +117,23 @@ var _ = Describe("kubectl_list", func() {
 			Namespace: "prod",
 		})
 		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
+	})
+
+	It("UT-AF-1230-018: large list triggers truncation", func() {
+		scheme := runtime.NewScheme()
+		objects := make([]runtime.Object, 0, 200)
+		for i := 0; i < 200; i++ {
+			objects = append(objects, newUnstructuredService("prod", fmt.Sprintf("svc-%03d", i), "10.0.0.1"))
+		}
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs, objects...)
+
+		result, err := tools.HandleKubectlList(context.Background(), client, nil, tools.KubectlListArgs{
+			Kind:      "Service",
+			Namespace: "prod",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Truncated).To(BeTrue())
+		Expect(result.Count).To(BeNumerically("<", 200))
 	})
 
 	It("UT-AF-1230-017: concurrent calls are safe", func() {
