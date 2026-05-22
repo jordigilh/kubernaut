@@ -1,7 +1,7 @@
 # Kubernetes RBAC for E2E users.
-# AF's internal triage tools (kubectl_get, kubectl_list, kubectl_list_events)
-# use AF's ServiceAccount, not user impersonation. This ClusterRole grants
-# permissions for CRD operations exposed via the MCP bridge (kubernaut_* tools).
+# ADR-022: All AF K8s operations (MCP bridge and A2A) use AF's ServiceAccount.
+# E2E users do not need CRD permissions for kubernaut_* tools at runtime.
+# These grants remain for E2E test fixture setup (admin kubectl).
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

@@ -1,7 +1,7 @@
-# F-011: Least-privilege RBAC aligned with actual resource access patterns.
-# The apifrontend ServiceAccount itself only needs RBAC for its controller
-# (InvestigationSession). User-scoped operations go through impersonation —
-# the impersonated user's Kubernetes RBAC governs access to kubernaut.ai CRDs.
+# F-011 / ADR-022: AF SA unified security model.
+# All K8s operations (MCP bridge and A2A agent) use AF's ServiceAccount.
+# MCP RBAC (SubjectAccessReview) is the application-level access gate;
+# users do not need direct K8s RBAC for kubernaut CRDs.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -14,19 +14,32 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["investigationsessions/status"]
     verbs: ["get", "update", "patch"]
-  # RemediationRequest management (ADK A2A path — AF creates/lists on behalf of users)
+  # RemediationRequest management (MCP bridge + A2A agent)
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
-    verbs: ["get", "list", "create"]
-  # Events for controller status reporting
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  # RemediationApprovalRequest management (MCP kubernaut_approve)
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationapprovalrequests"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationapprovalrequests/status"]
+    verbs: ["get", "update", "patch"]
+  # Events for controller status reporting + kubectl_list_events
   - apiGroups: [""]
     resources: ["events"]
-    verbs: ["create", "patch"]
-  # Impersonation: apifrontend impersonates authenticated users for K8s API calls
+    verbs: ["get", "list", "create", "patch"]
+  # Internal triage tools (kubectl_get, kubectl_list)
   - apiGroups: [""]
-    resources: ["users", "groups"]
-    verbs: ["impersonate"]
-  # SubjectAccessReview: SAR-based tool authorization (replaces rbac_roles.yaml)
+    resources: ["pods", "replicationcontrollers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get"]
+  # SubjectAccessReview: SAR-based tool authorization (ADR-021)
   - apiGroups: ["authorization.k8s.io"]
     resources: ["subjectaccessreviews"]
     verbs: ["create"]
