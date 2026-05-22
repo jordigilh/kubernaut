@@ -117,16 +117,7 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 		Expect(foundData).To(BeTrue(), "expected at least one SSE data: line")
 	})
 
-	It("TC-E2E-STREAM-02: During investigation, session phase transitions to Connected", func() {
-		kctlCtx := context.Background()
-
-		_, checkErr := kubectlOut(kctlCtx, "get", "crd", "investigationsessions.kubernaut.ai")
-		if checkErr != nil {
-			Skip("InvestigationSession CRD not installed — session lifecycle tests require CRD infrastructure")
-		}
-
-		before := sessionNameSnapshot(kctlCtx)
-
+	It("TC-E2E-STREAM-02: SSE stream starts successfully for non-remediating prompt", func() {
 		streamCtx, streamCancel := context.WithCancel(context.Background())
 		defer streamCancel()
 
@@ -140,18 +131,22 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 			_, _ = io.Copy(io.Discard, resp.Body)
 		}()
 
-		Eventually(func(g Gomega) {
+		// CRD is not created because deferred CRD creation requires af_create_rr
+		// which a non-remediating prompt ("list pods") never triggers.
+		// The session exists in-memory only; CRD materialization occurs when
+		// the agent produces a real RemediationRequest via af_create_rr.
+		kctlCtx := context.Background()
+		before := sessionNameSnapshot(kctlCtx)
+		Consistently(func() bool {
 			list := listInvestigationSessions(kctlCtx)
 			for _, it := range list.Items {
-				if _, seen := before[it.Metadata.Name]; seen {
-					continue
+				if _, seen := before[it.Metadata.Name]; !seen {
+					return false
 				}
-				g.Expect(it.Status.Phase).To(Equal("Active"), "session %s phase", it.Metadata.Name)
-				g.Expect(it.Status.ConnectionState).To(Equal("Connected"), "session %s connectionState", it.Metadata.Name)
-				return
 			}
-			g.Expect(false).To(BeTrue(), "expected new InvestigationSession with Active phase and Connected connectionState")
-		}, 90*time.Second, 2*time.Second).Should(Succeed())
+			return true
+		}, 10*time.Second, 2*time.Second).Should(BeTrue(),
+			"non-remediating prompt should not create InvestigationSession CRD")
 	})
 
 	It("TC-E2E-STREAM-03: Client disconnect -> session phase transitions to Disconnected", func() {

@@ -138,7 +138,7 @@ data:
         keywords: ["present decision", "present remediation options", "remediation options"]
         match_last_only: true
         tool_call:
-          name: "present_decision"
+          name: "kubernaut_present_decision"
           arguments:
             session_id: "sess-002"
             options: "restart,scale-up,rollback"
