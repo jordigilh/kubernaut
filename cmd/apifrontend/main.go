@@ -200,7 +200,7 @@ func run() int {
 		return 1
 	}
 
-	a2aHandler, err := buildA2AHandler(ctx, cfg, deps, sessInfra, metricsReg, sarChecker, auditor, logger)
+	a2aHandler, err := buildA2AHandler(ctx, cfg, deps, sessInfra, metricsReg, sarChecker, auditor, logger, userLimiter)
 	if err != nil {
 		logger.Error(err, "failed to create A2A handler")
 		return 1
@@ -593,7 +593,7 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, metricsReg *metrics.
 // buildA2AHandler creates the A2A JSON-RPC handler when an LLM endpoint is
 // configured. Returns a 501 stub when LLMEndpoint is empty, preserving backward
 // compatibility for deployments that don't set it.
-func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger) (http.Handler, error) {
+func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, error) {
 	if cfg.Agent.LLMEndpoint == "" {
 		logger.Info("LLM endpoint not configured — A2A handler returns 501")
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -624,6 +624,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		Triager:          deps.Triager,
 		ToolCallsTotal:   metricsReg.ToolCallsTotal,
 		ToolCallDuration: metricsReg.ToolCallDuration,
+		UserLimiter:      userLimiter,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create root agent: %w", err)

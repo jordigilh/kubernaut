@@ -93,8 +93,16 @@ func ConvertFromAuditEvent(event *audit.AuditEvent) (*AuditEvent, error) {
 		ErrorMessage:      errorMessage,
 		ActorID:           event.ActorID,
 		ActorType:         event.ActorType,
+		ActorIP:           ptrStringOrEmpty(event.ActorIP),
 		EventData:         eventDataMap,
 		RetentionDays:     retentionDays,
 		IsSensitive:       event.IsSensitive,
 	}, nil
+}
+
+func ptrStringOrEmpty(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }

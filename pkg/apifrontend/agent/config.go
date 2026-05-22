@@ -13,6 +13,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 )
 
@@ -50,6 +51,8 @@ type AgentConfig struct {
 	ToolCallsTotal *prometheus.CounterVec
 	// ToolCallDuration is the af_tool_call_duration_seconds histogram.
 	ToolCallDuration *prometheus.HistogramVec
+	// UserLimiter enforces per-user tool call rate limits in the A2A path (SEC-05).
+	UserLimiter *ratelimit.UserLimiter
 	// RESTMapper resolves Kind strings to GVR for generic kubectl tools.
 	// If nil, only statically-known kinds are supported.
 	RESTMapper meta.RESTMapper

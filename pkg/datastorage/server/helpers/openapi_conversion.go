@@ -162,6 +162,9 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest, authenticatedAct
 	if req.IsSensitive.IsSet() && !req.IsSensitive.Null {
 		event.IsSensitive = req.IsSensitive.Value
 	}
+	if req.ActorIP.IsSet() {
+		event.ActorIP = &req.ActorIP.Value
+	}
 
 	return event, nil
 }

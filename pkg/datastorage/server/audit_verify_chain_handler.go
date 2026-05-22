@@ -153,7 +153,7 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 			event_category, event_action, event_outcome,
 			correlation_id, parent_event_id, parent_event_date,
 			resource_type, resource_id, namespace, cluster_name,
-			actor_id, actor_type,
+			actor_id, actor_type, actor_ip,
 			severity, duration_ms, error_code, error_message,
 			retention_days, is_sensitive, event_data,
 			event_hash, previous_event_hash,
@@ -186,6 +186,7 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 		var (
 			namespace    sql.NullString
 			clusterName  sql.NullString
+			actorIP      sql.NullString
 			severity     sql.NullString
 			durationMs   sql.NullInt32
 			errorCode    sql.NullString
@@ -208,6 +209,7 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 			&clusterName,
 			&event.ActorID,
 			&event.ActorType,
+			&actorIP,
 			&severity,
 			&durationMs,
 			&errorCode,
@@ -225,6 +227,7 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 
 		event.ResourceNamespace = namespace.String
 		event.ClusterID = clusterName.String
+		event.ActorIP = actorIP.String
 		event.Severity = severity.String
 		event.DurationMs = int(durationMs.Int32)
 		event.ErrorCode = errorCode.String

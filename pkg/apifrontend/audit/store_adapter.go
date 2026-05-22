@@ -54,6 +54,10 @@ func (a *StoreAdapter) Emit(ctx context.Context, e *Event) {
 		req.ActorID.SetTo("apifrontend")
 	}
 
+	if e.SourceIP != "" {
+		req.ActorIP.SetTo(e.SourceIP)
+	}
+
 	req.EventData = buildEventData(e)
 
 	if err := a.store.StoreAudit(ctx, req); err != nil {
@@ -138,7 +142,7 @@ var actionMap = map[EventType]string{
 	EventConfigReloaded:          "reloaded",
 	EventConfigRejected:          "rejected",
 	EventCircuitBreakerTrip:      "tripped",
-	EventImpersonation:           "created",
+	// EventImpersonation removed (ADR-022: impersonation deprecated)
 	EventJWTDelegation:           "delegated",
 	EventSeverityTriageCompleted: "completed",
 	EventSeverityTriageFailed:    "failed",
@@ -190,13 +194,6 @@ func buildEventData(e *Event) ogenclient.AuditEventRequestEventData {
 			EventType:    ogenclient.ApifrontendCircuitbreakerTripPayloadEventTypeApifrontendCircuitbreakerTrip,
 			CircuitName:  detailStr(d, "circuit_name"),
 			FailureCount: detailInt(d, "failure_count"),
-		})
-
-	case EventImpersonation:
-		return ogenclient.NewApifrontendImpersonationCreatedPayloadAuditEventRequestEventData(ogenclient.ApifrontendImpersonationCreatedPayload{
-			EventType:  ogenclient.ApifrontendImpersonationCreatedPayloadEventTypeApifrontendImpersonationCreated,
-			TargetUser: detailStr(d, "target_user"),
-			Groups:     detailStrSlice(d, "groups"),
 		})
 
 	case EventJWTDelegation:
@@ -392,13 +389,26 @@ func buildEventData(e *Event) ogenclient.AuditEventRequestEventData {
 		})
 
 	case EventToolExecuted:
-		return ogenclient.NewApifrontendToolExecutedPayloadAuditEventRequestEventData(ogenclient.ApifrontendToolExecutedPayload{
+		payload := ogenclient.ApifrontendToolExecutedPayload{
 			EventType:           ogenclient.ApifrontendToolExecutedPayloadEventTypeApifrontendToolExecuted,
 			SessionID:           detailStr(d, "session_id"),
 			ToolName:            detailStr(d, "tool_name"),
 			ExecutionDurationMs: detailInt(d, "execution_duration_ms"),
 			ToolOutcome:         ogenclient.ApifrontendToolExecutedPayloadToolOutcome(detailStr(d, "tool_outcome")),
-		})
+		}
+		if v := detailStr(d, "target_resource"); v != "" {
+			payload.TargetResource = ogenclient.NewOptString(v)
+		}
+		if v := detailStr(d, "target_namespace"); v != "" {
+			payload.TargetNamespace = ogenclient.NewOptString(v)
+		}
+		if v := detailStr(d, "target_kind"); v != "" {
+			payload.TargetKind = ogenclient.NewOptString(v)
+		}
+		if v := detailStr(d, "error_code"); v != "" {
+			payload.ErrorCode = ogenclient.NewOptString(v)
+		}
+		return ogenclient.NewApifrontendToolExecutedPayloadAuditEventRequestEventData(payload)
 
 	default:
 		return ogenclient.AuditEventRequestEventData{}

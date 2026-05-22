@@ -6817,6 +6817,10 @@ type ApifrontendToolExecutedPayload struct {
 	ErrorCode OptString `json:"error_code"`
 	// Resource the tool operated on (if applicable).
 	TargetResource OptString `json:"target_resource"`
+	// Kubernetes namespace the tool operated in (if applicable).
+	TargetNamespace OptString `json:"target_namespace"`
+	// Kubernetes resource kind (e.g., Pod, Deployment) the tool operated on.
+	TargetKind OptString `json:"target_kind"`
 }
 
 // GetEventType returns the value of EventType.
@@ -6854,6 +6858,16 @@ func (s *ApifrontendToolExecutedPayload) GetTargetResource() OptString {
 	return s.TargetResource
 }
 
+// GetTargetNamespace returns the value of TargetNamespace.
+func (s *ApifrontendToolExecutedPayload) GetTargetNamespace() OptString {
+	return s.TargetNamespace
+}
+
+// GetTargetKind returns the value of TargetKind.
+func (s *ApifrontendToolExecutedPayload) GetTargetKind() OptString {
+	return s.TargetKind
+}
+
 // SetEventType sets the value of EventType.
 func (s *ApifrontendToolExecutedPayload) SetEventType(val ApifrontendToolExecutedPayloadEventType) {
 	s.EventType = val
@@ -6887,6 +6901,16 @@ func (s *ApifrontendToolExecutedPayload) SetErrorCode(val OptString) {
 // SetTargetResource sets the value of TargetResource.
 func (s *ApifrontendToolExecutedPayload) SetTargetResource(val OptString) {
 	s.TargetResource = val
+}
+
+// SetTargetNamespace sets the value of TargetNamespace.
+func (s *ApifrontendToolExecutedPayload) SetTargetNamespace(val OptString) {
+	s.TargetNamespace = val
+}
+
+// SetTargetKind sets the value of TargetKind.
+func (s *ApifrontendToolExecutedPayload) SetTargetKind(val OptString) {
+	s.TargetKind = val
 }
 
 // Event type for discriminator (matches parent event_type).
@@ -7577,8 +7601,10 @@ type AuditEvent struct {
 	EventOutcome AuditEventEventOutcome `json:"event_outcome"`
 	ActorType    OptString              `json:"actor_type"`
 	ActorID      OptString              `json:"actor_id"`
-	ResourceType OptString              `json:"resource_type"`
-	ResourceID   OptString              `json:"resource_id"`
+	// Client source IP address (SOC2 CC7.2 / AU-3).
+	ActorIP      OptString `json:"actor_ip"`
+	ResourceType OptString `json:"resource_type"`
+	ResourceID   OptString `json:"resource_id"`
 	// Unique identifier for request correlation.
 	CorrelationID string       `json:"correlation_id"`
 	ParentEventID OptNilUUID   `json:"parent_event_id"`
@@ -7649,6 +7675,11 @@ func (s *AuditEvent) GetActorType() OptString {
 // GetActorID returns the value of ActorID.
 func (s *AuditEvent) GetActorID() OptString {
 	return s.ActorID
+}
+
+// GetActorIP returns the value of ActorIP.
+func (s *AuditEvent) GetActorIP() OptString {
+	return s.ActorIP
 }
 
 // GetResourceType returns the value of ResourceType.
@@ -7799,6 +7830,11 @@ func (s *AuditEvent) SetActorType(val OptString) {
 // SetActorID sets the value of ActorID.
 func (s *AuditEvent) SetActorID(val OptString) {
 	s.ActorID = val
+}
+
+// SetActorIP sets the value of ActorIP.
+func (s *AuditEvent) SetActorIP(val OptString) {
+	s.ActorIP = val
 }
 
 // SetResourceType sets the value of ResourceType.
@@ -10999,8 +11035,10 @@ type AuditEventRequest struct {
 	EventOutcome AuditEventRequestEventOutcome `json:"event_outcome"`
 	ActorType    OptString                     `json:"actor_type"`
 	ActorID      OptString                     `json:"actor_id"`
-	ResourceType OptString                     `json:"resource_type"`
-	ResourceID   OptString                     `json:"resource_id"`
+	// Client source IP address (SOC2 CC7.2 / AU-3).
+	ActorIP      OptString `json:"actor_ip"`
+	ResourceType OptString `json:"resource_type"`
+	ResourceID   OptString `json:"resource_id"`
 	// Unique identifier for request correlation.
 	CorrelationID string       `json:"correlation_id"`
 	ParentEventID OptNilUUID   `json:"parent_event_id"`
@@ -11061,6 +11099,11 @@ func (s *AuditEventRequest) GetActorType() OptString {
 // GetActorID returns the value of ActorID.
 func (s *AuditEventRequest) GetActorID() OptString {
 	return s.ActorID
+}
+
+// GetActorIP returns the value of ActorIP.
+func (s *AuditEventRequest) GetActorIP() OptString {
+	return s.ActorIP
 }
 
 // GetResourceType returns the value of ResourceType.
@@ -11171,6 +11214,11 @@ func (s *AuditEventRequest) SetActorType(val OptString) {
 // SetActorID sets the value of ActorID.
 func (s *AuditEventRequest) SetActorID(val OptString) {
 	s.ActorID = val
+}
+
+// SetActorIP sets the value of ActorIP.
+func (s *AuditEventRequest) SetActorIP(val OptString) {
+	s.ActorIP = val
 }
 
 // SetResourceType sets the value of ResourceType.

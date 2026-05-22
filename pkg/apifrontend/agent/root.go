@@ -15,6 +15,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
@@ -47,6 +48,9 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 	var beforeCallbacks []llmagent.BeforeToolCallback
 	if cfg.Authorizer != nil {
 		beforeCallbacks = append(beforeCallbacks, newRBACGuard(cfg.Authorizer, cfg.Auditor))
+	}
+	if cfg.UserLimiter != nil {
+		beforeCallbacks = append(beforeCallbacks, newRateLimitGuard(cfg.UserLimiter, cfg.Auditor))
 	}
 	beforeCallbacks = append(beforeCallbacks, beforeMetrics)
 
@@ -140,6 +144,16 @@ func newRBACGuard(authorizer auth.ToolAuthorizer, auditor audit.Emitter) llmagen
 		identity := auth.UserIdentityFromContext(ctx)
 		if identity == nil {
 			log.Printf("[rbac-guard] DENIED tool=%q reason=no_identity_in_context", t.Name())
+			if auditor != nil {
+				auditor.Emit(ctx, &audit.Event{
+					Type: audit.EventAuthAccessDenied,
+					Detail: map[string]string{
+						"tool_name": t.Name(),
+						"endpoint":  "a2a",
+						"reason":    "no_identity_in_context",
+					},
+				})
+			}
 			return map[string]any{"error": "unauthorized: no identity in context"}, nil
 		}
 
@@ -147,6 +161,18 @@ func newRBACGuard(authorizer auth.ToolAuthorizer, auditor audit.Emitter) llmagen
 		allowed, err := authorizer.Check(ctx, identity.Username, identity.Groups, toolName)
 		if err != nil {
 			log.Printf("[rbac-guard] DENIED tool=%q user=%q reason=authorizer_error err=%v", toolName, identity.Username, err)
+			if auditor != nil {
+				auditor.Emit(ctx, &audit.Event{
+					Type:   audit.EventAuthAccessDenied,
+					UserID: identity.Username,
+					Detail: map[string]string{
+						"tool_name": toolName,
+						"endpoint":  "a2a",
+						"reason":    "authorizer_error",
+						"groups":    strings.Join(identity.Groups, ","),
+					},
+				})
+			}
 			return map[string]any{"error": "authorization check failed"}, nil
 		}
 		if allowed {
@@ -158,13 +184,42 @@ func newRBACGuard(authorizer auth.ToolAuthorizer, auditor audit.Emitter) llmagen
 				Type:   audit.EventAuthAccessDenied,
 				UserID: identity.Username,
 				Detail: map[string]string{
-					"tool":   toolName,
-					"groups": strings.Join(identity.Groups, ","),
+					"tool_name": toolName,
+					"endpoint":  "a2a",
+					"groups":    strings.Join(identity.Groups, ","),
 				},
 			})
 		}
 
 		return map[string]any{"error": fmt.Sprintf("forbidden: role does not grant access to tool %q", toolName)}, nil
+	}
+}
+
+// newRateLimitGuard returns a BeforeToolCallback that enforces per-user
+// tool-call rate limits in the A2A path (SEC-05). MCP bridge has its own
+// rate limiter in wrapTool; this mirrors it for the A2A entry point.
+func newRateLimitGuard(limiter *ratelimit.UserLimiter, auditor audit.Emitter) llmagent.BeforeToolCallback {
+	return func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
+		identity := auth.UserIdentityFromContext(ctx)
+		if identity == nil {
+			return nil, nil
+		}
+		if limiter.AllowToolCall(identity.Username) {
+			return nil, nil
+		}
+		log.Printf("[rate-limit-guard] DENIED tool=%q user=%q reason=rate_limited", t.Name(), identity.Username)
+		if auditor != nil {
+			auditor.Emit(ctx, &audit.Event{
+				Type:   audit.EventRateLimitDenied,
+				UserID: identity.Username,
+				Detail: map[string]string{
+					"tool_name": t.Name(),
+					"endpoint":  "a2a",
+					"tier":      "a2a_tool",
+				},
+			})
+		}
+		return map[string]any{"error": "rate limit exceeded — too many tool calls per minute, please retry later"}, nil
 	}
 }
 
