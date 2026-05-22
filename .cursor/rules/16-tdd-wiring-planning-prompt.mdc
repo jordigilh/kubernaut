@@ -1,0 +1,38 @@
+---
+description: "Prompt template: always plan TDD feature work with wiring verification, IT/E2E coverage, and CHECKPOINT W"
+alwaysApply: true
+---
+
+# TDD Feature Planning with Wiring Verification
+
+When implementing features using TDD, always follow this planning sequence:
+
+## 1. Plan Phase
+
+Include a **Wiring Manifest** table for every new component:
+
+```markdown
+| Component | Production Entry Point | Wiring Code Location | IT Test ID |
+|-----------|----------------------|---------------------|------------|
+```
+
+Each row answers: "Where is this constructed/called in production, and which IT test proves it?"
+
+## 2. TDD Cycle (per component)
+
+- **RED**: Write IT test (wiring) + UT test (logic) -- both fail
+- **GREEN**: Wire into production code, implement logic -- both pass
+- **CHECKPOINT W**: Verify every Wiring Manifest row has a production caller + passing IT
+- **REFACTOR**: Clean up
+
+## 3. The Pyramid Invariant
+
+> UT proves logic. IT proves wiring. E2E proves the journey.
+
+A component with only UT is prototyped, not implemented. GREEN is not complete until the IT for every wiring point passes.
+
+## 4. E2E Coverage
+
+Include E2E tests for critical user journeys that span multiple wired components.
+
+**See**: [10-wiring-verification.mdc](mdc:.cursor/rules/10-wiring-verification.mdc) for the full rule.
