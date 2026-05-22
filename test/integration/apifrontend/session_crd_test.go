@@ -73,6 +73,9 @@ var _ = Describe("Session CRD Integration (session/)", func() {
 			Expect(resp).NotTo(BeNil())
 
 			sessionID := resp.Session.ID()
+			err = svc.MaterializeCRD(context.Background(), sessionID, v1alpha1.ObjectRef{Name: "test-rr-043", Namespace: "default"})
+			Expect(err).NotTo(HaveOccurred())
+
 			err = svc.UpdatePhase(context.Background(), sessionID, v1alpha1.SessionPhaseCompleted, "investigation completed", "test-user-043")
 			Expect(err).NotTo(HaveOccurred())
 		})

@@ -151,6 +151,9 @@ var _ = Describe("IT-AF-1156: Audit Normalization Integration", func() {
 		_, err := svc.Create(ctx, &req)
 		Expect(err).NotTo(HaveOccurred())
 
+		err = svc.MaterializeCRD(ctx, "sess-duration-it", v1alpha1.ObjectRef{Name: "rr-duration-it", Namespace: "default"})
+		Expect(err).NotTo(HaveOccurred())
+
 		Eventually(func(g Gomega) {
 			err = svc.UpdatePhase(ctx, "sess-duration-it", v1alpha1.SessionPhaseCompleted, "done", "it-user")
 			g.Expect(err).NotTo(HaveOccurred())

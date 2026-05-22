@@ -177,6 +177,9 @@ var _ = Describe("SessionCleanupReconciler", func() {
 		_, err := svc.Create(ctx, &createReq)
 		Expect(err).NotTo(HaveOccurred())
 
+		err = svc.MaterializeCRD(ctx, "sess-prune-target", v1alpha1.ObjectRef{Name: "rr-1", Namespace: "test-ns"})
+		Expect(err).NotTo(HaveOccurred())
+
 		Expect(svc.UpdatePhase(ctx, "sess-prune-target", v1alpha1.SessionPhaseCompleted, "done", "test-user")).To(Succeed())
 
 		expired := controller.MinRetentionTTL + time.Hour
