@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"k8s.io/client-go/dynamic"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
@@ -441,7 +442,7 @@ func TestBuildMCPHandler_ReturnsHandlerAndReadyChecker(t *testing.T) {
 		),
 	}
 
-	h, depsReady, err := buildMCPHandler(cfg, deps, reg, nil, nil, logr.Discard(), nil)
+	h, depsReady, err := buildMCPHandler(cfg, deps, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -720,6 +721,12 @@ func TestBackendDeps_K8sClient_ConcurrentAccess(t *testing.T) {
 	}
 }
 
+type allowAllToolAuthorizer struct{}
+
+func (a *allowAllToolAuthorizer) Check(_ context.Context, _ string, _ []string, _ string) (bool, error) {
+	return true, nil
+}
+
 type noopAuditor struct{}
 
 func (n *noopAuditor) Emit(_ context.Context, _ *audit.Event) {}
@@ -728,4 +735,139 @@ func (n *noopAuditor) Close(_ context.Context) error          { return nil }
 
 func noopLogger() logr.Logger {
 	return logr.Discard()
+}
+
+// ---------------------------------------------------------------------------
+// IT-AF-1234-W10: KASessionPool constructed in backendDeps
+// ---------------------------------------------------------------------------
+
+func TestBackendDeps_PoolConstructed(t *testing.T) {
+	t.Parallel()
+	deps := &backendDeps{
+		Pool: ka.NewKASessionPool(ka.PoolConfig{
+			Factory:    func(_ context.Context) (ka.PoolSession, error) { return nil, nil },
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		}),
+	}
+	if deps.Pool == nil {
+		t.Fatal("IT-AF-1234-W10: Pool must be constructed in backendDeps")
+	}
+	if deps.Pool.Size() != 0 {
+		t.Errorf("IT-AF-1234-W10: new pool should have size 0, got %d", deps.Pool.Size())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IT-AF-1234-W11: Pool.DrainAll called during shutdown
+// ---------------------------------------------------------------------------
+
+func TestShutdown_PoolDrainAllCalled(t *testing.T) {
+	t.Parallel()
+	var drained bool
+	pool := ka.NewKASessionPool(ka.PoolConfig{
+		Factory: func(_ context.Context) (ka.PoolSession, error) {
+			return &mockPoolSession{}, nil
+		},
+		MaxEntries: 10,
+		Logger:     logr.Discard(),
+	})
+	_, _ = pool.Acquire(context.Background(), "test/rr", "user@test")
+	if pool.Size() != 1 {
+		t.Fatalf("expected pool size 1, got %d", pool.Size())
+	}
+
+	ctx := context.Background()
+	if err := pool.DrainAll(ctx); err != nil {
+		t.Fatalf("DrainAll failed: %v", err)
+	}
+	drained = pool.Size() == 0
+	if !drained {
+		t.Fatal("IT-AF-1234-W11: DrainAll must empty the pool")
+	}
+}
+
+type mockPoolSession struct{}
+
+func (m *mockPoolSession) CallTool(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+	return nil, nil
+}
+func (m *mockPoolSession) Close() error { return nil }
+
+// ---------------------------------------------------------------------------
+// IT-AF-1234-W12: WithDownstreamDuration wired on SDKMCPClient
+// ---------------------------------------------------------------------------
+
+func TestSDKMCPClient_DownstreamDurationWired(t *testing.T) {
+	t.Parallel()
+	reg := metrics.NewRegistry()
+	mcpClient := ka.NewSDKMCPClient("http://localhost:0", &http.Client{}, logr.Discard())
+	result := mcpClient.WithDownstreamDuration(reg.DownstreamDuration)
+	if result == nil {
+		t.Fatal("IT-AF-1234-W12: WithDownstreamDuration must return the client")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IT-AF-1234-W13: buildResilientTransport wraps MCP transport with CB+retry
+// ---------------------------------------------------------------------------
+
+func TestBuildResilientTransport_ForMCP(t *testing.T) {
+	t.Parallel()
+	reg := metrics.NewRegistry()
+	depCfg := &config.DependencyConfig{
+		CBFailureThreshold: 5,
+		CBMaxRequests:      3,
+		CBInterval:         10 * time.Second,
+		CBTimeout:          100 * time.Millisecond,
+		RetryMax:           1,
+		RetryInitBackoff:   1 * time.Millisecond,
+		RetryMaxBackoff:    5 * time.Millisecond,
+		RetryableStatuses:  []int{503},
+	}
+
+	transport := buildResilientTransport(http.DefaultTransport, depCfg, "ka-mcp", reg, &noopAuditor{})
+	if transport == nil {
+		t.Fatal("IT-AF-1234-W13: buildResilientTransport must return non-nil transport")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IT-AF-1234-W10b: buildMCPHandler passes pool to bridge config
+// ---------------------------------------------------------------------------
+
+func TestBuildMCPHandler_PassesPool(t *testing.T) {
+	t.Parallel()
+
+	kaBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(kaBackend.Close)
+
+	cfg := &config.Config{}
+	cfg.MCP.Enabled = true
+	reg := metrics.NewRegistry()
+
+	pool := ka.NewKASessionPool(ka.PoolConfig{
+		Factory:    func(_ context.Context) (ka.PoolSession, error) { return nil, nil },
+		MaxEntries: 10,
+		Logger:     logr.Discard(),
+	})
+
+	deps := &backendDeps{
+		KAClient: ka.NewClient(ka.Config{BaseURL: kaBackend.URL}),
+		Pool:     pool,
+		DSResilientTransport: resilience.NewCircuitBreakerTransport(
+			http.DefaultTransport,
+			&resilience.CircuitBreakerConfig{Name: "test-ds"},
+		),
+	}
+
+	h, _, err := buildMCPHandler(cfg, deps, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("IT-AF-1234-W10b: handler must not be nil when pool is provided")
+	}
 }

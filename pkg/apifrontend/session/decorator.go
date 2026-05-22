@@ -18,6 +18,10 @@ type sessionCreateContextKey struct{}
 // by tool callbacks are visible to the AfterExecuteCallback.
 type CreateContext struct {
 	TaskID string
+	// SessionID is the ADK session ID assigned after session creation.
+	// Set by the launcher after Create, consumed by the af_create_rr
+	// after-callback to drive deferred CRD materialization (G6).
+	SessionID string
 	// TODO(v1.6): RemediationRef is a forward-compatibility placeholder.
 	// It will be populated when the A2A protocol carries remediation context
 	// in the task params (tracked in issue #54). Currently only TaskID is set
