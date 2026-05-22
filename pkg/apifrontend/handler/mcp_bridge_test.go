@@ -1315,14 +1315,18 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			localMetrics := newBridgeMetrics()
 			localAuditor := &fakeAuditor{}
 
-			// gate blocks the K8s client until explicitly closed (or ToolTimeout
-			// expires). With MaxConcurrentTools=1 the first call holds the
-			// semaphore for up to ToolTimeout, so all other callers' contexts
-			// expire and receive a "busy" throttle response.
+			// entered signals when the first goroutine has acquired the
+			// semaphore and is blocking inside the hook. gate releases
+			// the hook so the holder can return normally.
+			entered := make(chan struct{}, 1)
 			gate := make(chan struct{})
 			blockingClient := &hookDynamicClient{
 				Interface: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()),
 				hook: func(ctx context.Context) error {
+					select {
+					case entered <- struct{}{}:
+					default:
+					}
 					select {
 					case <-gate:
 						return nil
@@ -1342,7 +1346,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            localAuditor,
 					Metrics:            localMetrics,
-					ToolTimeout:        500 * time.Millisecond,
+					ToolTimeout:        3 * time.Second,
 					MaxConcurrentTools: 1,
 				},
 			}
@@ -1360,28 +1364,40 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			}
 
 			results := make(chan string, n)
-			barrier := make(chan struct{})
 			var wg sync.WaitGroup
-			for i := 0; i < n; i++ {
+
+			// Fire one goroutine first to acquire the semaphore.
+			wg.Add(1)
+			go func() {
+				defer GinkgoRecover()
+				defer wg.Done()
+				results <- mcpCallToolHTTP(ts.URL, sessions[0],
+					"kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			}()
+
+			// Wait for the holder to enter the hook (semaphore acquired).
+			Eventually(entered, 5*time.Second).Should(Receive())
+
+			// Fire remaining goroutines — they will all block on
+			// sem.Acquire until their ToolTimeout (3s) expires,
+			// producing "busy" throttle responses.
+			for i := 1; i < n; i++ {
 				wg.Add(1)
 				go func(idx int) {
 					defer GinkgoRecover()
 					defer wg.Done()
-					<-barrier
-					body := mcpCallToolHTTP(ts.URL, sessions[idx], "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
-					results <- body
+					results <- mcpCallToolHTTP(ts.URL, sessions[idx],
+						"kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 				}(i)
 			}
-			close(barrier)
 
-			// Collect n responses. The 5 throttled calls complete
-			// quickly (ToolTimeout=500ms). The gate-blocked call
-			// remains outstanding until we close gate below.
+			// Collect n-1 results (the throttled ones arrive when their
+			// ToolTimeout contexts expire).
 			collected := make([]string, 0, n)
 			for i := 0; i < n-1; i++ {
 				collected = append(collected, <-results)
 			}
-			// Release the K8s client hook so the remaining goroutine can finish.
+			// Release the hook so the holding goroutine can finish.
 			close(gate)
 			collected = append(collected, <-results)
 			wg.Wait()
