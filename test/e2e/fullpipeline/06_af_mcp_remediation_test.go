@@ -2,6 +2,7 @@ package fullpipeline
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -26,6 +27,7 @@ var _ = Describe("AF MCP Path Full Pipeline [E2E-FP-1189-001]", Label("fp", "af"
 
 		rrName := "e2e-fp-mcp-rr-001"
 		By("Creating RemediationRequest via kubectl CRD fixture")
+		fp := fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("e2e-%s-Deployment-memory-eater", namespace))))
 		manifest := fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
 kind: RemediationRequest
 metadata:
@@ -33,7 +35,7 @@ metadata:
   namespace: %s
 spec:
   signalName: "E2ETestAlert"
-  signalFingerprint: "e2e-%s-Deployment-memory-eater"
+  signalFingerprint: "%s"
   signalType: "prometheus"
   severity: "warning"
   firingTime: "2026-01-01T00:00:00Z"
@@ -42,7 +44,7 @@ spec:
   targetResource:
     kind: Deployment
     name: memory-eater
-`, rrName, namespace, namespace)
+`, rrName, namespace, fp)
 		cmd := exec.CommandContext(context.Background(), "kubectl",
 			"--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 		cmd.Stdin = strings.NewReader(manifest)

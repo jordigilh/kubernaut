@@ -2,8 +2,10 @@ package e2e_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -329,9 +331,36 @@ func parseJSONStringField(jsonStr, field string) string {
 	return v
 }
 
-// fetchDEXToken performs an OAuth2 Resource Owner Password Credentials grant
-// against DEX to obtain a valid ID token for E2E testing.
-func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (string, error) {
+// extractA2AToolJSON scans A2A task result artifacts for the first text part
+// that is valid JSON containing the given marker key. This allows tests to
+// extract structured tool output (e.g. af_create_rr result with severity_source)
+// from the A2A task envelope.
+func extractA2AToolJSON(raw json.RawMessage, markerKey string) string {
+	var task struct {
+		Artifacts []struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"artifacts"`
+	}
+	if err := json.Unmarshal(raw, &task); err != nil {
+		return string(raw)
+	}
+	for _, a := range task.Artifacts {
+		for _, p := range a.Parts {
+			if p.Text == "" {
+				continue
+			}
+			var obj map[string]interface{}
+			if json.Unmarshal([]byte(p.Text), &obj) == nil {
+				if _, ok := obj[markerKey]; ok {
+					return p.Text
+				}
+			}
+		}
+	}
+	return string(raw)
+}
 	tokenURL := dexURL + "/token"
 	data := url.Values{
 		"grant_type":    {"password"},
@@ -369,7 +398,8 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 }
 
 func rrManifest(namespace, rrName, targetKind, targetName string) string {
-	fp := fmt.Sprintf("e2e-%s-%s-%s", namespace, targetKind, targetName)
+	h := sha256.Sum256([]byte(fmt.Sprintf("e2e-%s-%s-%s", namespace, targetKind, targetName)))
+	fp := hex.EncodeToString(h[:])
 	return fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
 kind: RemediationRequest
 metadata:

@@ -274,7 +274,6 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Remediation request created"))
 			Expect(tp.Text).To(ContainSubstring("rr-disk-pressure-abc123"))
 		})
 
@@ -556,7 +555,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).To(Equal("Watching remediation..."))
 		})
 
-		It("UT-AF-1189-161: af_create_rr response without rr_id -> generic fallback", func() {
+		It("UT-AF-1189-161: af_create_rr response without rr_id -> JSON output", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
 					Name:     "af_create_rr",
@@ -567,7 +566,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Remediation request created."))
+			Expect(tp.Text).To(ContainSubstring("created"))
 		})
 	})
 

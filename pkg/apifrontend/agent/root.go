@@ -111,7 +111,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"kubectl_list_events", func() (tool.Tool, error) { return tools.NewKubectlListEventsTool(saFactory) }},
 		// RR tools — AF SA writes AF-owned CRDs
 		{"check_existing_rr", func() (tool.Tool, error) { return tools.NewCheckExistingRRTool(k8s) }},
-		{"create_rr", func() (tool.Tool, error) { return tools.NewCreateRRTool(k8s, nil, cfg.Auditor) }},
+		{"create_rr", func() (tool.Tool, error) { return tools.NewCreateRRTool(k8s, cfg.Triager, cfg.Auditor) }},
 	}
 
 	result := make([]tool.Tool, 0, len(constructors))

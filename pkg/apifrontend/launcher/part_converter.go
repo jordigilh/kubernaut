@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -194,11 +195,11 @@ func summarizeWatch(resp map[string]any) string {
 }
 
 func summarizeCreateRR(resp map[string]any) string {
-	rrID, _ := resp["rr_id"].(string)
-	if rrID != "" {
-		return fmt.Sprintf("Remediation request created: %s", rrID)
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return "Remediation request created."
 	}
-	return "Remediation request created."
+	return string(data)
 }
 
 func stringArg(args map[string]any, key string) string {

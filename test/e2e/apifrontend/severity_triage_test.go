@@ -89,8 +89,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		if rpc.Error != nil {
 			return "", fmt.Errorf("A2A error %d: %s", rpc.Error.Code, rpc.Error.Message)
 		}
-		bodyBytes, _ := json.Marshal(rpc.Result)
-		return string(bodyBytes), nil
+		return extractA2AToolJSON(rpc.Result, "rr_id"), nil
 	}
 
 	expectSeverityAndSource := func(text, wantSeverity, wantSource string) {

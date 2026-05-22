@@ -625,6 +625,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		Authorizer:                 authorizer,
 		ImpersonatingClientFactory: deps.DynFactory,
 		Auditor:                    auditor,
+		Triager:                    deps.Triager,
 		ToolCallsTotal:             metricsReg.ToolCallsTotal,
 		ToolCallDuration:           metricsReg.ToolCallDuration,
 	})

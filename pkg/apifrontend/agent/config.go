@@ -13,6 +13,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 )
 
 // AgentConfig holds the configuration for creating the ADK root agent.
@@ -55,6 +56,9 @@ type AgentConfig struct {
 	// RESTMapper resolves Kind strings to GVR for generic kubectl tools.
 	// If nil, only statically-known kinds are supported.
 	RESTMapper meta.RESTMapper
+	// Triager performs severity triage for af_create_rr. If nil, severity
+	// defaults to "medium" without source attribution.
+	Triager *severity.Triager
 	// LLMModel is the model backend for the ADK agent. When non-nil, the agent
 	// uses this model for generateContent calls. When nil, the agent is created
 	// without a model (tools-only mode for MCP bridge).
