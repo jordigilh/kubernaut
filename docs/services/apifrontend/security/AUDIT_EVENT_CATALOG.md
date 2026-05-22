@@ -25,7 +25,7 @@ type Event struct {
 | `auth.success` | `EventAuthSuccess` | AU-2, AC-7 | JWT validated or TokenReview accepted | `issuer`, `groups` |
 | `auth.failure` | `EventAuthFailure` | AU-2, AC-7 | JWT rejected or TokenReview denied | `reason` |
 | `rbac.denied` | `EventRBACDenied` | AC-3, AC-6 | Tool call blocked by RBAC guard | `tool`, `role`, `reason` |
-| `impersonation.created` | `EventImpersonation` | AC-3, AU-12 | K8s impersonated client created for user | `target_user`, `groups` |
+| ~~`impersonation.created`~~ | ~~`EventImpersonation`~~ | — | **Removed** (ADR-022: impersonation deprecated; user attribution via `tool.executed` events) | — |
 | `jwt.delegation` | `EventJWTDelegation` | AC-3, AU-12 | Original JWT forwarded to downstream service (KA) | `target_service` |
 
 **Emitted from:** `internal/auth/middleware.go`, `internal/agent/root.go` (RBAC guard)

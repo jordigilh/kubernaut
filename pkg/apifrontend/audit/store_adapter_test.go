@@ -80,7 +80,7 @@ var _ = Describe("StoreAdapter", func() {
 		{"UT-AF-1156-015", audit.EventConfigReloaded, map[string]string{"config_version": "v2"}, "apifrontend.config.reloaded"},
 		{"UT-AF-1156-016", audit.EventConfigRejected, map[string]string{"rejection_reason": "invalid yaml"}, "apifrontend.config.rejected"},
 		{"UT-AF-1156-017", audit.EventCircuitBreakerTrip, map[string]string{"circuit_name": "ds", "failure_count": "5"}, "apifrontend.circuitbreaker.trip"},
-		{"UT-AF-1156-018", audit.EventImpersonation, map[string]string{"target_user": "bob"}, "apifrontend.impersonation.created"},
+		// EventImpersonation removed (ADR-022: impersonation deprecated)
 		{"UT-AF-1156-019", audit.EventJWTDelegation, map[string]string{"target_service": "kubernaut-agent"}, "apifrontend.jwt.delegation"},
 		{"UT-AF-1156-020", audit.EventSeverityTriageCompleted, map[string]string{"severity": "critical", "source_tier": "prometheus_rules"}, "apifrontend.severity_triage.completed"},
 		{"UT-AF-1156-021", audit.EventSeverityTriageFailed, map[string]string{"error": "llm timeout"}, "apifrontend.severity_triage.failed"},
@@ -137,10 +137,11 @@ var _ = Describe("StoreAdapter", func() {
 			{audit.EventConfigReloaded, "reloaded"},
 			{audit.EventConfigRejected, "rejected"},
 			{audit.EventCircuitBreakerTrip, "tripped"},
-			{audit.EventImpersonation, "created"},
+			// EventImpersonation removed (ADR-022: impersonation deprecated)
 			{audit.EventJWTDelegation, "delegated"},
 			{audit.EventSeverityTriageCompleted, "completed"},
 			{audit.EventSeverityTriageFailed, "failed"},
+			{audit.EventWorkflowDiscovery, "discovered"},
 			{audit.EventTriageStarted, "started"},
 			{audit.EventTriageCompleted, "completed"},
 			{audit.EventRRCreated, "created"},
@@ -167,7 +168,7 @@ var _ = Describe("StoreAdapter", func() {
 		successEvents := []audit.EventType{
 			audit.EventAuthSuccess, audit.EventSessionCreated, audit.EventSessionCompleted,
 			audit.EventA2ATaskStarted, audit.EventA2ATaskCompleted, audit.EventToolExecuted,
-			audit.EventConfigReloaded, audit.EventImpersonation, audit.EventJWTDelegation,
+			audit.EventConfigReloaded, audit.EventJWTDelegation, audit.EventWorkflowDiscovery,
 		}
 		for _, et := range successEvents {
 			et := et

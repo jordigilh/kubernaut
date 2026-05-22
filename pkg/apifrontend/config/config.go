@@ -148,11 +148,6 @@ type RBACConfig struct {
 	// SARCacheTTL controls how long SubjectAccessReview results are cached.
 	// Zero disables caching (every call hits the API server).
 	SARCacheTTL time.Duration `yaml:"sarCacheTTL"`
-
-	// UseOIDCDirect enables OIDC-direct mode: triage tool K8s API calls use
-	// the user's raw JWT as a bearer token instead of ServiceAccount impersonation.
-	// Requires the K8s API server to trust the same OIDC provider.
-	UseOIDCDirect bool `yaml:"useOIDCDirect"`
 }
 
 // DefaultConfig returns a Config populated with production defaults.

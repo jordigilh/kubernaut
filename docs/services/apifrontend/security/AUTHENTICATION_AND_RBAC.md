@@ -150,115 +150,56 @@ subjects:
 
 ---
 
-## 3. Kubernetes Impersonation Model
+## 3. K8s Client Model: Unified AF ServiceAccount (ADR-022)
 
-The AF uses two distinct client scopes when making K8s API calls:
+> **ADR**: [ADR-022](../adr/ADR-022-af-sa-unified-security-model.md)
+> **Supersedes**: ADR-018 (impersonation risk acceptance), OIDC-direct mode (#1226)
 
-| Scope | Client Type | Tools | Rationale |
-|-------|------------|-------|-----------|
-| Service Account | Static AF SA `dynamic.Interface` | kubectl_get, kubectl_list, kubectl_list_events, af_check_existing_rr, af_create_rr | Internal triage tools; access gated by MCP RBAC at the tool level — users do not need direct K8s permissions |
-| User Impersonation | Per-request `dynamic.Interface` via DynFactory | All kubernaut_* domain tools (MCP bridge) | MCP clients operate with their own K8s identity for CRD operations |
+All K8s API calls made by AF use the **AF pod ServiceAccount** regardless of
+entry point (MCP or A2A). User identity is preserved in the application audit
+trail via tool callbacks, not via K8s impersonation headers.
 
-### Impersonation Flow
+### K8s Client Flow
 
 ```mermaid
 sequenceDiagram
-    participant Tool as kubectl_list_events
-    participant Factory as StaticDynamicFactory
-    participant CTX as Context
+    participant Tool as CRD/Triage Tool
+    participant Bridge as MCP Bridge / A2A Agent
     participant K8s as K8s API Server
+    participant Audit as Audit Trail
 
-    Tool->>Factory: factory(ctx)
-    Factory->>CTX: UserIdentityFromContext(ctx)
-    CTX-->>Factory: {username, groups}
-    Factory->>Factory: NewImpersonatedConfig(baseCfg, username, groups)
-    Factory->>Factory: dynamic.NewForConfig(impCfg)
-    Factory-->>Tool: impersonated dynamic.Interface
-    Tool->>K8s: List events (Impersonate-User: <username>)
-    K8s->>K8s: Evaluate user's RBAC (not AF SA's)
-    K8s-->>Tool: Events (or 403 Forbidden)
+    Bridge->>Bridge: checkRBAC(user, toolName) via SAR
+    Bridge->>Tool: handler(ctx, K8sClient, args)
+    Tool->>K8s: List/Get/Create (AF SA identity)
+    K8s->>K8s: Evaluate AF SA ClusterRole
+    K8s-->>Tool: Result (or 403 if SA missing perms)
+    Tool-->>Bridge: result
+    Bridge->>Audit: Emit tool.executed {userId, toolName, params}
 ```
 
 ### Security Properties
 
-- The AF ServiceAccount requires the `impersonate` verb on `users` and `groups` resources (granted by ClusterRole)
-- A user cannot escalate beyond their own K8s RBAC, even if their AF role grants the tool
-- The impersonated config is created per-request and never cached (prevents identity leakage)
-
----
-
-## 3.1 OIDC-Direct Mode (Opt-in, v1.5+)
-
-As an alternative to impersonation, the AF supports **OIDC-direct mode**
-(`rbac.useOIDCDirect: true`). In this mode, triage tool K8s API calls use the
-user's raw OIDC JWT as a bearer token directly, rather than impersonation headers.
-
-### Benefits
-
-- Eliminates the need for ServiceAccount impersonation privileges
-- Simpler ClusterRole (no `impersonate` verb needed)
-- Token authenticity verified by the K8s API server's OIDC provider configuration
-
-### Configuration
-
-```yaml
-rbac:
-  useOIDCDirect: true
-```
-
-The K8s API server must be configured to trust the same OIDC provider that issues
-tokens to AF users (via `--oidc-issuer-url`, `--oidc-client-id`, etc.).
-
-### OIDC-Direct Flow
-
-```mermaid
-sequenceDiagram
-    participant Tool as kubectl_list_events
-    participant Factory as StaticDynamicFactory
-    participant CTX as Context
-    participant K8s as K8s API Server
-
-    Tool->>Factory: factory(ctx)
-    Factory->>CTX: UserIdentityFromContext(ctx)
-    CTX-->>Factory: {username, groups, rawToken, expiresAt}
-    Factory->>Factory: Validate: identity present, token non-empty, not expired
-    Factory->>Factory: rest.CopyConfig(baseCfg)
-    Factory->>Factory: cfg.BearerToken = rawToken
-    Factory->>Factory: Clear BearerTokenFile and Impersonate
-    Factory->>Factory: dynamic.NewForConfig(cfg)
-    Factory-->>Tool: OIDC-direct dynamic.Interface
-    Tool->>K8s: List events (Authorization: Bearer <user-jwt>)
-    K8s->>K8s: Validate JWT via OIDC provider, evaluate user's RBAC
-    K8s-->>Tool: Events (or 401/403)
-```
-
-### Fail-Closed Behavior
-
-The factory rejects requests when:
-- No `UserIdentity` in context (missing authentication)
-- `Username` is empty
-- `RawToken` is empty (no JWT available)
-- Token `ExpiresAt` is in the past
-
-### Source Files
-
-| File | Purpose |
-|------|---------|
-| `pkg/apifrontend/auth/dynamic_impersonation.go` | `NewOIDCDirectDynamicFactory` implementation |
-| `pkg/apifrontend/config/config.go` | `RBACConfig.UseOIDCDirect` flag |
-| `cmd/apifrontend/main.go` | `buildDynFactory(cfg)` routing |
+- MCP RBAC (SAR-based) is the application-level access control gate
+- Users never need K8s RBAC for kubernaut CRDs
+- AF SA is the sole K8s identity for all tool operations
+- User attribution is maintained via audit events (`tool.executed` with `UserID`)
+- Impersonation headers are explicitly stripped by auth middleware (SEC-12)
 
 ---
 
 ## 4. Kubernetes RBAC (ClusterRole)
 
-The Kustomize-managed ClusterRole (`deploy/kustomize/base/02-rbac.yaml`) grants the AF ServiceAccount:
+The Kustomize-managed ClusterRole (`deploy/apifrontend/base/02-rbac.yaml`) grants the AF ServiceAccount:
 
 | API Group | Resources | Verbs | Purpose |
 |-----------|-----------|-------|---------|
-| `kubernaut.ai` | remediationrequests, remediationapprovalrequests, signalprocessings, investigationsessions | get, list, watch, create, update, patch, delete | CRD lifecycle management |
+| `kubernaut.ai` | remediationrequests | get, list, watch, create, update, patch | CRD lifecycle (cancel, watch) |
+| `kubernaut.ai` | remediationapprovalrequests | get, list, create, update, patch | Approval workflow |
+| `kubernaut.ai` | remediationapprovalrequests/status | get, update, patch | Approval status updates |
+| `kubernaut.ai` | signalprocessings, investigationsessions | get, list, watch, create, update, patch, delete | Session lifecycle |
 | `kubernaut.ai` | */status | get, update, patch | Status subresource updates |
-| (core) | events, pods, replicationcontrollers | get, list | Triage tool reads (via impersonation) |
+| (core) | events | get, list, create, patch | Triage reads + event creation |
+| (core) | pods, replicationcontrollers | get, list | Triage tool reads |
 | `apps` | deployments, statefulsets, replicasets, daemonsets | get, list | Workload triage |
 | `batch` | jobs, cronjobs | get, list | Job triage |
 | `authentication.k8s.io` | tokenreviews | create | JWT fallback validation |
@@ -298,8 +239,9 @@ This is distinct from the internal triage tools (`kubectl_get`, `kubectl_list`, 
 |-----|-------|-----------|
 | ADR-013 | JWT Forwarding to KA | Original JWT forwarded byte-identical to downstream services |
 | ADR-016 | JWKS Fail-Open Rationale | When circuit breaker opens, cached keys allow validation to continue |
-| ADR-018 | Impersonation Risk Acceptance | Documents accepted risk of impersonation model |
+| ADR-018 | Impersonation Risk Acceptance | **Superseded by ADR-022** |
+| ADR-022 | AF SA Unified Security Model | All K8s operations use AF SA; MCP RBAC is the application-level gate |
 
 ---
 
-*Source files: `internal/auth/middleware.go`, `internal/auth/jwt.go`, `internal/auth/tokenreview.go`, `internal/auth/impersonation.go`, `internal/auth/dynamic_impersonation.go`, `internal/agent/rbac_roles.yaml`, `deploy/kustomize/base/02-rbac.yaml`*
+*Source files: `pkg/apifrontend/auth/middleware.go`, `pkg/apifrontend/auth/jwt.go`, `pkg/apifrontend/auth/tokenreview.go`, `pkg/apifrontend/auth/dynamic_impersonation.go`, `deploy/apifrontend/base/02-rbac.yaml`*

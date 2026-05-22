@@ -165,6 +165,26 @@ var _ = Describe("RBAC tool name alignment", func() {
 		"kubernaut_get_audit_trail":          true,
 	}
 
+	// A2A-only internal tools registered in pkg/apifrontend/agent/root.go.
+	// These are exposed via A2A (ADK) and authorized through the same persona
+	// definitions but are NOT registered in the MCP bridge.
+	a2aInternalTools := map[string]bool{
+		"kubectl_get":                       true,
+		"kubectl_list":                      true,
+		"kubectl_list_events":               true,
+		"check_existing_rr":                 true,
+		"create_rr":                         true,
+		"kubernaut_stream_investigation":    true,
+	}
+
+	allKnownTools := map[string]bool{}
+	for k, v := range registeredTools {
+		allKnownTools[k] = v
+	}
+	for k, v := range a2aInternalTools {
+		allKnownTools[k] = v
+	}
+
 	type helmValues struct {
 		Apifrontend struct {
 			Config struct {
@@ -184,12 +204,12 @@ var _ = Describe("RBAC tool name alignment", func() {
 		return v.Apifrontend.Config.RBAC.Personas
 	}
 
-	It("TC-A-RBAC-01a: every tool in Helm persona definitions must exist in bridge registration", func() {
+	It("TC-A-RBAC-01a: every tool in Helm persona definitions must exist in bridge or A2A registration", func() {
 		personas := loadPersonas()
 		for persona, tools := range personas {
 			for _, tool := range tools {
-				Expect(registeredTools).To(HaveKey(tool),
-					"persona %q references tool %q which is not registered in mcp_bridge.go", persona, tool)
+				Expect(allKnownTools).To(HaveKey(tool),
+					"persona %q references tool %q which is not registered in mcp_bridge.go or agent/root.go", persona, tool)
 			}
 		}
 	})

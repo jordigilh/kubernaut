@@ -13667,9 +13667,21 @@ func (s *ApifrontendToolExecutedPayload) encodeFields(e *jx.Encoder) {
 			s.TargetResource.Encode(e)
 		}
 	}
+	{
+		if s.TargetNamespace.Set {
+			e.FieldStart("target_namespace")
+			s.TargetNamespace.Encode(e)
+		}
+	}
+	{
+		if s.TargetKind.Set {
+			e.FieldStart("target_kind")
+			s.TargetKind.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfApifrontendToolExecutedPayload = [7]string{
+var jsonFieldsNameOfApifrontendToolExecutedPayload = [9]string{
 	0: "event_type",
 	1: "session_id",
 	2: "tool_name",
@@ -13677,6 +13689,8 @@ var jsonFieldsNameOfApifrontendToolExecutedPayload = [7]string{
 	4: "tool_outcome",
 	5: "error_code",
 	6: "target_resource",
+	7: "target_namespace",
+	8: "target_kind",
 }
 
 // Decode decodes ApifrontendToolExecutedPayload from json.
@@ -13684,7 +13698,7 @@ func (s *ApifrontendToolExecutedPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode ApifrontendToolExecutedPayload to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -13764,6 +13778,26 @@ func (s *ApifrontendToolExecutedPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"target_resource\"")
 			}
+		case "target_namespace":
+			if err := func() error {
+				s.TargetNamespace.Reset()
+				if err := s.TargetNamespace.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"target_namespace\"")
+			}
+		case "target_kind":
+			if err := func() error {
+				s.TargetKind.Reset()
+				if err := s.TargetKind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"target_kind\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -13773,8 +13807,9 @@ func (s *ApifrontendToolExecutedPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
+	for i, mask := range [2]uint8{
 		0b00011111,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -14872,6 +14907,12 @@ func (s *AuditEvent) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ActorIP.Set {
+			e.FieldStart("actor_ip")
+			s.ActorIP.Encode(e)
+		}
+	}
+	{
 		if s.ResourceType.Set {
 			e.FieldStart("resource_type")
 			s.ResourceType.Encode(e)
@@ -15001,7 +15042,7 @@ func (s *AuditEvent) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfAuditEvent = [30]string{
+var jsonFieldsNameOfAuditEvent = [31]string{
 	0:  "version",
 	1:  "event_type",
 	2:  "event_timestamp",
@@ -15010,28 +15051,29 @@ var jsonFieldsNameOfAuditEvent = [30]string{
 	5:  "event_outcome",
 	6:  "actor_type",
 	7:  "actor_id",
-	8:  "resource_type",
-	9:  "resource_id",
-	10: "correlation_id",
-	11: "parent_event_id",
-	12: "namespace",
-	13: "cluster_name",
-	14: "severity",
-	15: "duration_ms",
-	16: "parent_event_date",
-	17: "error_code",
-	18: "error_message",
-	19: "retention_days",
-	20: "is_sensitive",
-	21: "event_data",
-	22: "event_id",
-	23: "event_date",
-	24: "event_hash",
-	25: "previous_event_hash",
-	26: "legal_hold",
-	27: "legal_hold_reason",
-	28: "legal_hold_placed_by",
-	29: "legal_hold_placed_at",
+	8:  "actor_ip",
+	9:  "resource_type",
+	10: "resource_id",
+	11: "correlation_id",
+	12: "parent_event_id",
+	13: "namespace",
+	14: "cluster_name",
+	15: "severity",
+	16: "duration_ms",
+	17: "parent_event_date",
+	18: "error_code",
+	19: "error_message",
+	20: "retention_days",
+	21: "is_sensitive",
+	22: "event_data",
+	23: "event_id",
+	24: "event_date",
+	25: "event_hash",
+	26: "previous_event_hash",
+	27: "legal_hold",
+	28: "legal_hold_reason",
+	29: "legal_hold_placed_by",
+	30: "legal_hold_placed_at",
 }
 
 // Decode decodes AuditEvent from json.
@@ -15131,6 +15173,16 @@ func (s *AuditEvent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"actor_id\"")
 			}
+		case "actor_ip":
+			if err := func() error {
+				s.ActorIP.Reset()
+				if err := s.ActorIP.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"actor_ip\"")
+			}
 		case "resource_type":
 			if err := func() error {
 				s.ResourceType.Reset()
@@ -15152,7 +15204,7 @@ func (s *AuditEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resource_id\"")
 			}
 		case "correlation_id":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.CorrelationID = string(v)
@@ -15264,7 +15316,7 @@ func (s *AuditEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"is_sensitive\"")
 			}
 		case "event_data":
-			requiredBitSet[2] |= 1 << 5
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				if err := s.EventData.Decode(d); err != nil {
 					return err
@@ -15364,8 +15416,8 @@ func (s *AuditEvent) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [4]uint8{
 		0b00111111,
-		0b00000100,
-		0b00100000,
+		0b00001000,
+		0b01000000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
@@ -18453,6 +18505,18 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 					s.TargetResource.Encode(e)
 				}
 			}
+			{
+				if s.TargetNamespace.Set {
+					e.FieldStart("target_namespace")
+					s.TargetNamespace.Encode(e)
+				}
+			}
+			{
+				if s.TargetKind.Set {
+					e.FieldStart("target_kind")
+					s.TargetKind.Encode(e)
+				}
+			}
 		}
 	case ApifrontendAuthSuccessPayloadAuditEventEventData:
 		e.FieldStart("event_type")
@@ -19696,6 +19760,12 @@ func (s *AuditEventRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ActorIP.Set {
+			e.FieldStart("actor_ip")
+			s.ActorIP.Encode(e)
+		}
+	}
+	{
 		if s.ResourceType.Set {
 			e.FieldStart("resource_type")
 			s.ResourceType.Encode(e)
@@ -19777,7 +19847,7 @@ func (s *AuditEventRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfAuditEventRequest = [22]string{
+var jsonFieldsNameOfAuditEventRequest = [23]string{
 	0:  "version",
 	1:  "event_type",
 	2:  "event_timestamp",
@@ -19786,20 +19856,21 @@ var jsonFieldsNameOfAuditEventRequest = [22]string{
 	5:  "event_outcome",
 	6:  "actor_type",
 	7:  "actor_id",
-	8:  "resource_type",
-	9:  "resource_id",
-	10: "correlation_id",
-	11: "parent_event_id",
-	12: "namespace",
-	13: "cluster_name",
-	14: "severity",
-	15: "duration_ms",
-	16: "parent_event_date",
-	17: "error_code",
-	18: "error_message",
-	19: "retention_days",
-	20: "is_sensitive",
-	21: "event_data",
+	8:  "actor_ip",
+	9:  "resource_type",
+	10: "resource_id",
+	11: "correlation_id",
+	12: "parent_event_id",
+	13: "namespace",
+	14: "cluster_name",
+	15: "severity",
+	16: "duration_ms",
+	17: "parent_event_date",
+	18: "error_code",
+	19: "error_message",
+	20: "retention_days",
+	21: "is_sensitive",
+	22: "event_data",
 }
 
 // Decode decodes AuditEventRequest from json.
@@ -19899,6 +19970,16 @@ func (s *AuditEventRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"actor_id\"")
 			}
+		case "actor_ip":
+			if err := func() error {
+				s.ActorIP.Reset()
+				if err := s.ActorIP.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"actor_ip\"")
+			}
 		case "resource_type":
 			if err := func() error {
 				s.ResourceType.Reset()
@@ -19920,7 +20001,7 @@ func (s *AuditEventRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resource_id\"")
 			}
 		case "correlation_id":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.CorrelationID = string(v)
@@ -20032,7 +20113,7 @@ func (s *AuditEventRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"is_sensitive\"")
 			}
 		case "event_data":
-			requiredBitSet[2] |= 1 << 5
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				if err := s.EventData.Decode(d); err != nil {
 					return err
@@ -20052,8 +20133,8 @@ func (s *AuditEventRequest) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b00111111,
-		0b00000100,
-		0b00100000,
+		0b00001000,
+		0b01000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -23138,6 +23219,18 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.TargetResource.Set {
 					e.FieldStart("target_resource")
 					s.TargetResource.Encode(e)
+				}
+			}
+			{
+				if s.TargetNamespace.Set {
+					e.FieldStart("target_namespace")
+					s.TargetNamespace.Encode(e)
+				}
+			}
+			{
+				if s.TargetKind.Set {
+					e.FieldStart("target_kind")
+					s.TargetKind.Encode(e)
 				}
 			}
 		}

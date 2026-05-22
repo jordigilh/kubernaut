@@ -15,7 +15,6 @@ const (
 	EventRateLimitDenied    EventType = "ratelimit.denied"
 	EventCircuitBreakerTrip EventType = "circuitbreaker.trip"
 
-	EventImpersonation EventType = "impersonation.created"
 	EventJWTDelegation EventType = "jwt.delegation"
 
 	EventSessionCreated          EventType = "session.created"

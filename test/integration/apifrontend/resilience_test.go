@@ -13,6 +13,9 @@ import (
 
 	gobreaker "github.com/sony/gobreaker/v2"
 
+	"k8s.io/apimachinery/pkg/runtime"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/resilience"
 )
@@ -134,20 +137,30 @@ var _ = Describe("Resilience Integration (resilience/)", func() {
 		})
 	})
 
-	Describe("AC-23: K8s dynamic client factory with impersonation", func() {
-		It("IT-AF-1195-034: creates impersonated dynamic client from UserIdentity", func() {
+	Describe("AC-23: K8s dynamic client uses AF ServiceAccount (ADR-022)", func() {
+		It("IT-AF-1195-034: StaticDynamicFactory returns the same client for any context", func() {
+			scheme := runtime.NewScheme()
+			fakeClient := dynamicfake.NewSimpleDynamicClient(scheme)
+
 			identity := &auth.UserIdentity{
-				Username: "impersonation-user",
+				Username: "test-user",
 				Groups:   []string{"sre-team"},
 			}
 			ctx := auth.WithUserIdentity(context.Background(), identity)
 
-			factory := auth.NewImpersonatingDynamicFactory(restCfg)
+			factory := auth.StaticDynamicFactory(fakeClient)
 			Expect(factory).NotTo(BeNil())
 
 			dynClient, err := factory(ctx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(dynClient).NotTo(BeNil())
+			Expect(dynClient).To(Equal(fakeClient), "StaticDynamicFactory always returns the same client regardless of context identity")
+		})
+
+		It("IT-AF-1195-034b: StaticDynamicFactory(nil) returns descriptive error", func() {
+			factory := auth.StaticDynamicFactory(nil)
+			_, err := factory(context.Background())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("kubernetes cluster is not available"))
 		})
 	})
 })

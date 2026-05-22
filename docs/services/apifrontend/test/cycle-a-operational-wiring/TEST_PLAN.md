@@ -88,8 +88,10 @@ return HTTP 503 with structured response.
 
 ### 5.2 WIRE-03 — K8s Dynamic Client Resilience Wrapping
 
-**Current behavior:** `buildDynFactory` returns raw `dynamic.Interface` from
-`auth.NewImpersonatingDynamicFactory`. No circuit breaker protection.
+> **Note:** `buildDynFactory` and `NewImpersonatingDynamicFactory` have been
+> superseded by the unified AF SA model (ADR-022). All K8s API calls now use
+> `backendDeps.K8sClient()` which returns a lazily-initialized `dynamic.Interface`
+> using the in-cluster ServiceAccount config.
 
 **Required behavior:** Dynamic client wrapped with `resilience.NewResilientDynamicClient`
 using `cfg.Resilience.K8s` circuit breaker settings.

@@ -175,6 +175,7 @@ type AuditEvent struct {
 	// ========================================
 	ActorID   string `json:"actor_id,omitempty"`   // User, service account, or system
 	ActorType string `json:"actor_type,omitempty"` // e.g., user, service_account, system
+	ActorIP   string `json:"actor_ip,omitempty"`   // Source IP (SOC2 CC7.2 / AU-3)
 
 	// ========================================
 	// COMPLIANCE (ADR-034)
@@ -428,7 +429,7 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 				event_category, event_action, event_outcome,
 				correlation_id, parent_event_id, parent_event_date,
 				resource_type, resource_id, namespace, cluster_name,
-				actor_id, actor_type,
+				actor_id, actor_type, actor_ip,
 				severity, duration_ms, error_code, error_message,
 				retention_days, is_sensitive, event_data,
 				event_hash, previous_event_hash,
@@ -438,11 +439,11 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 				$6, $7, $8,
 				$9, $10, $11,
 				$12, $13, $14, $15,
-				$16, $17,
-				$18, $19, $20, $21,
-				$22, $23, $24,
-				$25, $26,
-				$27, $28, $29, $30
+				$16, $17, $18,
+				$19, $20, $21, $22,
+				$23, $24, $25,
+				$26, $27,
+				$28, $29, $30, $31
 			)
 			RETURNING event_timestamp
 		`
@@ -454,6 +455,7 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		errorCode := sqlutil.ToNullStringValue(event.ErrorCode)
 		errorMessage := sqlutil.ToNullStringValue(event.ErrorMessage)
 		severity := sqlutil.ToNullStringValue(event.Severity)
+		actorIP := sqlutil.ToNullStringValue(event.ActorIP)
 
 		var durationMs sql.NullInt32
 		if event.DurationMs != 0 {
@@ -480,6 +482,7 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 			clusterName,
 			event.ActorID,
 			event.ActorType,
+			actorIP,
 			severity,
 			durationMs,
 			errorCode,
@@ -617,7 +620,7 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 				event_category, event_action, event_outcome,
 				correlation_id, parent_event_id, parent_event_date,
 				resource_type, resource_id, namespace, cluster_name,
-				actor_id, actor_type,
+				actor_id, actor_type, actor_ip,
 				severity, duration_ms, error_code, error_message,
 				retention_days, is_sensitive, event_data,
 				event_hash, previous_event_hash,
@@ -627,11 +630,11 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 				$6, $7, $8,
 				$9, $10, $11,
 				$12, $13, $14, $15,
-				$16, $17,
-				$18, $19, $20, $21,
-				$22, $23, $24,
-				$25, $26,
-				$27, $28, $29, $30
+				$16, $17, $18,
+				$19, $20, $21, $22,
+				$23, $24, $25,
+				$26, $27,
+				$28, $29, $30, $31
 			)
 			RETURNING event_timestamp
 		`
@@ -679,6 +682,7 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 				errorCode := sqlutil.ToNullStringValue(event.ErrorCode)
 				errorMessage := sqlutil.ToNullStringValue(event.ErrorMessage)
 				severity := sqlutil.ToNullStringValue(event.Severity)
+				actorIP := sqlutil.ToNullStringValue(event.ActorIP)
 
 				var durationMs sql.NullInt32
 				if event.DurationMs != 0 {
@@ -704,6 +708,7 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 					clusterName,
 					event.ActorID,
 					event.ActorType,
+					actorIP,
 					severity,
 					durationMs,
 					errorCode,
@@ -787,7 +792,7 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 		event := &AuditEvent{}
 		var eventDataJSON []byte
 		var parentEventID sql.NullString
-		var actorID, actorType, resourceType, resourceID sql.NullString
+		var actorID, actorType, actorIP, resourceType, resourceID sql.NullString
 		var severity, namespace, clusterName sql.NullString
 		var errorCode, errorMessage sql.NullString // DD-TESTING-001: Error fields
 		var durationMs sql.NullInt64               // DD-TESTING-001: Performance tracking (BR-SP-090)
@@ -813,6 +818,7 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 			&resourceID,
 			&actorType,
 			&actorID,
+			&actorIP,
 			&parentEventID,
 			&eventDataJSON,
 			&event.EventDate,
@@ -850,6 +856,9 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 		}
 		if actorID.Valid {
 			event.ActorID = actorID.String
+		}
+		if actorIP.Valid {
+			event.ActorIP = actorIP.String
 		}
 		if parentEventID.Valid {
 			parentUUID, err := uuid.Parse(parentEventID.String)

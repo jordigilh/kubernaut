@@ -83,7 +83,7 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 			event_id, event_version, event_type, event_timestamp,
 			event_category, event_action, event_outcome, correlation_id,
 			parent_event_id, parent_event_date, resource_type, resource_id,
-			namespace, cluster_name, actor_id, actor_type,
+			namespace, cluster_name, actor_id, actor_type, actor_ip,
 			severity, duration_ms, error_code, error_message,
 			retention_days, is_sensitive, event_data,
 			event_hash, previous_event_hash, legal_hold
@@ -151,7 +151,7 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 		// Use sql.NullString for nullable string columns and sql.NullInt64 for nullable int columns
 		// to handle NULL values from database
 		var resourceType, resourceID, resourceNamespace, clusterID sql.NullString
-		var actorID, actorType, severity, errorCode, errorMessage sql.NullString
+		var actorID, actorType, actorIP, severity, errorCode, errorMessage sql.NullString
 		var durationMs sql.NullInt64
 
 		err := rows.Scan(
@@ -171,6 +171,7 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 			&clusterID,
 			&actorID,
 			&actorType,
+			&actorIP,
 			&severity,
 			&durationMs,
 			&errorCode,
@@ -203,6 +204,7 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 	event.ClusterID = clusterID.String
 	event.ActorID = actorID.String
 	event.ActorType = actorType.String
+	event.ActorIP = actorIP.String
 	event.Severity = severity.String
 	event.ErrorCode = errorCode.String
 	event.ErrorMessage = errorMessage.String

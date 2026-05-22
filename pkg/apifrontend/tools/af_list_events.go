@@ -94,7 +94,7 @@ func HandleListEvents(ctx context.Context, client dynamic.Interface, args ListEv
 }
 
 // NewKubectlListEventsTool creates the kubectl_list_events tool.
-// Uses DynamicClientFactory to obtain a per-request impersonated client (SEC-05).
+// Uses DynamicClientFactory backed by AF's ServiceAccount (ADR-022).
 func NewKubectlListEventsTool(factory auth.DynamicClientFactory) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubectl_list_events",

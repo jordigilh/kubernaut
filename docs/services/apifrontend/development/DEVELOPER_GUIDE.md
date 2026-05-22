@@ -199,28 +199,13 @@ The service watches its ConfigMap file for changes. When changes are detected:
 - Context: Always propagate `context.Context` for cancellation
 - Testing: Ginkgo/Gomega with `UT-AF-XXX-NNN` test IDs
 
-## Configuring OIDC-Direct Mode
+## K8s Client Model (ADR-022)
 
-The AF supports an opt-in OIDC-direct authentication mode (v1.5+) as an
-alternative to Kubernetes impersonation. In this mode, triage tool K8s API calls
-use the user's raw OIDC JWT as a bearer token directly.
+All K8s API calls made by AF use the AF pod ServiceAccount. OIDC-direct mode
+and impersonation have been removed. User access control is managed exclusively
+at the MCP RBAC level (SAR-based tool authorization).
 
-### Enable in Config
-
-```yaml
-rbac:
-  useOIDCDirect: true
-  sarCacheTTL: 30s
-```
-
-### Requirements
-
-1. The K8s API server must trust the AF's OIDC provider (`--oidc-issuer-url`,
-   `--oidc-client-id`, `--oidc-username-claim`, `--oidc-groups-claim`)
-2. Users must have K8s RBAC bindings for their OIDC identity (not the AF SA)
-3. The AF JWT middleware must preserve `RawToken` in `UserIdentity`
-
-See [AUTHENTICATION_AND_RBAC.md](../security/AUTHENTICATION_AND_RBAC.md#31-oidc-direct-mode-opt-in-v15)
+See [AUTHENTICATION_AND_RBAC.md](../security/AUTHENTICATION_AND_RBAC.md#3-k8s-client-model-unified-af-serviceaccount-adr-022)
 for the full security design.
 
 ## Known Tech Debt (v1.5)

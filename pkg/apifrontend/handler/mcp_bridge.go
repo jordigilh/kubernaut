@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/semaphore"
+	"k8s.io/client-go/dynamic"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -29,7 +30,7 @@ const (
 
 // MCPBridgeConfig holds the configuration for the real MCP tool bridge.
 type MCPBridgeConfig struct {
-	DynFactory         auth.DynamicClientFactory
+	K8sClient          dynamic.Interface
 	KAClient           *ka.Client
 	KAMCPClient        ka.MCPClient
 	DSClient           ds.Client
@@ -78,51 +79,31 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	}
 	sem := semaphore.NewWeighted(cfg.GetMaxConcurrentTools())
 
-	// K8s CRD tools (use DynFactory for impersonated clients)
+	// K8s CRD tools (ADR-022: all use AF's ServiceAccount)
 	registerTool(srv, cfg, sem, "kubernaut_list_remediations", "List active and recent remediations",
 		func(ctx context.Context, args tools.ListRemediationsArgs) (any, error) {
-			client, err := cfg.DynFactory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return tools.HandleListRemediations(ctx, client, args)
+			return tools.HandleListRemediations(ctx, cfg.K8sClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_get_remediation", "Get details of a specific remediation",
 		func(ctx context.Context, args tools.GetRemediationArgs) (any, error) {
-			client, err := cfg.DynFactory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return tools.HandleGetRemediation(ctx, client, args)
+			return tools.HandleGetRemediation(ctx, cfg.K8sClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_approve", "Approve a remediation action",
 		func(ctx context.Context, args tools.ApproveArgs) (any, error) {
-			client, err := cfg.DynFactory(ctx)
-			if err != nil {
-				return nil, err
-			}
 			username := usernameFromCtx(ctx)
-			return tools.HandleApprove(ctx, client, args, username)
+			return tools.HandleApprove(ctx, cfg.K8sClient, args, username)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_cancel_remediation", "Cancel an active remediation",
 		func(ctx context.Context, args tools.CancelRemediationArgs) (any, error) {
-			client, err := cfg.DynFactory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return tools.HandleCancelRemediation(ctx, client, args)
+			return tools.HandleCancelRemediation(ctx, cfg.K8sClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_watch", "Watch for remediation state changes",
 		func(ctx context.Context, args tools.WatchArgs) (any, error) {
-			client, err := cfg.DynFactory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return tools.HandleWatch(ctx, client, args)
+			return tools.HandleWatch(ctx, cfg.K8sClient, args)
 		})
 
 	// KA REST tools

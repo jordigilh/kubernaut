@@ -43,6 +43,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			stripImpersonationHeaders(r)
 			start := time.Now()
 			r.Body = http.MaxBytesReader(w, r.Body, MaxBodySize)
 
@@ -190,4 +191,18 @@ func cryptoRandIntn(n int) int {
 		return 0
 	}
 	return int(v.Int64())
+}
+
+// stripImpersonationHeaders removes K8s impersonation headers from inbound
+// requests (SEC-12 / ADR-022). AF no longer performs impersonation; stale
+// headers from a proxy or malicious client must be dropped before processing.
+func stripImpersonationHeaders(r *http.Request) {
+	r.Header.Del("Impersonate-User")
+	r.Header.Del("Impersonate-Group")
+	r.Header.Del("Impersonate-Uid")
+	for key := range r.Header {
+		if strings.HasPrefix(strings.ToLower(key), "impersonate-extra-") {
+			r.Header.Del(key)
+		}
+	}
 }
