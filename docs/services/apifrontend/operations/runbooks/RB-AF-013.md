@@ -39,7 +39,7 @@ kubectl get clusterrolebinding -l kubernaut.ai/component=tool-authorization
 
 ```bash
 # Test if a specific user/group can use a tool
-kubectl auth can-i use tools.kubernaut.ai/af_list_events \
+kubectl auth can-i use tools.kubernaut.ai/kubernaut_list_remediations \
   --as=alice@example.com \
   --as-group=platform-sre
 ```

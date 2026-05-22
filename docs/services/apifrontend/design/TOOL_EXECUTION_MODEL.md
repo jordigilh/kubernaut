@@ -79,18 +79,23 @@ Tools access the Kubernetes API through two distinct client scopes, determined a
 │                 Tool Registration                     │
 ├─────────────────────────────────────────────────────┤
 │                                                     │
-│  ┌───────────────────────┐  ┌─────────────────────┐│
-│  │ Triage Tools (read)   │  │ CRD Tools (write)   ││
-│  │ kubectl_get           │  │ kubernaut_*          ││
-│  │ kubectl_list          │  │ af_check_existing_rr ││
-│  │ kubectl_list_events   │  │ af_create_rr         ││
-│  └──────────┬────────────┘  └──────────┬───────────┘│
-│             │                           │            │
-│             ▼                           ▼            │
-│  DynamicClientFactory         Static dynamic.Interface│
-│  (per-request impersonation)  (AF ServiceAccount)    │
+│  ┌─────────────────────────────────────────────────┐│
+│  │ Internal Tools (AF SA)                          ││
+│  │ kubectl_get, kubectl_list, kubectl_list_events  ││
+│  │ af_check_existing_rr, af_create_rr              ││
+│  └──────────────────────┬──────────────────────────┘│
+│                         │                            │
+│                         ▼                            │
+│           Static dynamic.Interface                   │
+│           (AF ServiceAccount)                        │
+│                                                     │
+│  Access gated by MCP RBAC: if a user has permission │
+│  to invoke kubernaut_start_investigation, AF         │
+│  investigates on their behalf using its own SA.      │
 └─────────────────────────────────────────────────────┘
 ```
+
+MCP bridge domain tools (`kubernaut_*`) use `DynamicClientFactory` with per-request impersonation so external MCP clients operate with their own K8s identity.
 
 ### DynamicClientFactory (Impersonated)
 

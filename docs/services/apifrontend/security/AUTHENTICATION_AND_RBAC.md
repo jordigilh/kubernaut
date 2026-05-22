@@ -156,15 +156,15 @@ The AF uses two distinct client scopes when making K8s API calls:
 
 | Scope | Client Type | Tools | Rationale |
 |-------|------------|-------|-----------|
-| User Impersonation | Per-request `dynamic.Interface` with impersonation headers | af_list_events, af_get_pods, af_get_workloads, af_resolve_owner | User only sees what their K8s RBAC permits (AC-6) |
-| Service Account | Static AF SA `dynamic.Interface` | All kubernaut_* tools, af_check_existing_rr, af_create_rr | AF manages its own CRDs; user does not need direct CRD access |
+| Service Account | Static AF SA `dynamic.Interface` | kubectl_get, kubectl_list, kubectl_list_events, af_check_existing_rr, af_create_rr | Internal triage tools; access gated by MCP RBAC at the tool level — users do not need direct K8s permissions |
+| User Impersonation | Per-request `dynamic.Interface` via DynFactory | All kubernaut_* domain tools (MCP bridge) | MCP clients operate with their own K8s identity for CRD operations |
 
 ### Impersonation Flow
 
 ```mermaid
 sequenceDiagram
-    participant Tool as af_list_events
-    participant Factory as DynamicClientFactory
+    participant Tool as kubectl_list_events
+    participant Factory as StaticDynamicFactory
     participant CTX as Context
     participant K8s as K8s API Server
 
@@ -213,8 +213,8 @@ tokens to AF users (via `--oidc-issuer-url`, `--oidc-client-id`, etc.).
 
 ```mermaid
 sequenceDiagram
-    participant Tool as af_list_events
-    participant Factory as DynamicClientFactory
+    participant Tool as kubectl_list_events
+    participant Factory as StaticDynamicFactory
     participant CTX as Context
     participant K8s as K8s API Server
 
@@ -278,7 +278,7 @@ The severity triage pipeline (`internal/severity/triage.go`) queries Prometheus 
 | Rationale | Prometheus metrics/rules are cluster-wide data; user-scoped access is not applicable |
 | NIST | AC-6 (least privilege): AF only needs read access to `/api/v1/{alerts,rules,query}` |
 
-This is distinct from the K8s impersonation model used by triage tools (`af_list_events`, etc.) which operate on behalf of the calling user.
+This is distinct from the internal triage tools (`kubectl_get`, `kubectl_list`, `kubectl_list_events`) which use AF's ServiceAccount. Access to these tools is gated by MCP RBAC at the tool level — if a user has permission to invoke `kubernaut_start_investigation`, AF investigates on their behalf using its own SA.
 
 ---
 

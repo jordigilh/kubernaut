@@ -39,11 +39,12 @@ keyword_scenarios:
       arguments:
         namespace: "default"
         pod_name: "nginx"
-  - name: "af_get_pods"
+  - name: "kubectl_list_pods"
     keywords: ["get pods"]
     tool_call:
-      name: "af_get_pods"
+      name: "kubectl_list"
       arguments:
+        kind: "Pod"
         namespace: "default"
 `
 			tmpFile := filepath.Join(GinkgoT().TempDir(), "overrides.yaml")
@@ -65,10 +66,10 @@ scenarios:
   oomkilled:
     workflow_id: "custom-uuid"
 keyword_scenarios:
-  - name: "af_get_pods"
+  - name: "kubectl_list_pods"
     keywords: ["get pods"]
     tool_call:
-      name: "af_get_pods"
+      name: "kubectl_list"
 `
 			tmpFile := filepath.Join(GinkgoT().TempDir(), "overrides.yaml")
 			Expect(os.WriteFile(tmpFile, []byte(yaml), 0644)).To(Succeed())
@@ -78,7 +79,7 @@ keyword_scenarios:
 			Expect(overrides.Scenarios).To(HaveKey("oomkilled"))
 			Expect(overrides.Scenarios["oomkilled"].WorkflowID).To(Equal("custom-uuid"))
 			Expect(overrides.KeywordScenarios).To(HaveLen(1))
-			Expect(overrides.KeywordScenarios[0].Name).To(Equal("af_get_pods"))
+			Expect(overrides.KeywordScenarios[0].Name).To(Equal("kubectl_list_pods"))
 		})
 
 		It("UT-MOCK-KW-001-003: should handle missing keyword_scenarios gracefully", func() {
@@ -155,9 +156,9 @@ scenarios:
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:     "af_get_pods",
+						Name:     "kubectl_list_pods",
 						Keywords: []string{"get pods", "list pods", "show pods"},
-						ToolCall: config.ToolCallOverride{Name: "af_get_pods"},
+						ToolCall: config.ToolCallOverride{Name: "kubectl_list"},
 					},
 				},
 			}
@@ -169,8 +170,8 @@ scenarios:
 					AllText: "I need to " + keyword + " in namespace default",
 				}
 				result := registry.Detect(detCtx)
-				Expect(result.Scenario.Name()).To(Equal("af_get_pods"),
-					"expected af_get_pods for keyword %q", keyword)
+				Expect(result.Scenario.Name()).To(Equal("kubectl_list_pods"),
+					"expected kubectl_list_pods for keyword %q", keyword)
 			}
 		})
 

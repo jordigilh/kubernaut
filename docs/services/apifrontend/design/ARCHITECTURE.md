@@ -91,7 +91,7 @@ graph TB
 ### Key Principles
 
 - **AF is stateless between requests** — the InvestigationSession CRD is the only persistent state
-- **AF never escalates privileges** — all K8s API calls use user impersonation
+- **AF never escalates privileges** — internal triage tools use AF SA (access gated by MCP RBAC); MCP bridge domain tools use user impersonation
 - **AF owns triage, KA owns investigation** — separation of concerns at service boundary
 - **Defense-in-depth** — JWT validation at AF + JWT validation at KA (double verification)
 
@@ -306,15 +306,15 @@ sequenceDiagram
     Note over AF,LLM: Phase 1: Triage (AF LLM-driven)
     AF->>LLM: System prompt + user query + tool definitions
     LLM->>AF: tool_call: kubectl_list_events(namespace: payments)
-    AF->>K8s: List Events (impersonated as user)
+    AF->>K8s: List Events (AF SA)
     K8s->>AF: Events with warnings
     AF->>LLM: Tool result (events data)
     LLM->>AF: tool_call: kubectl_list(kind: Pod, namespace: payments)
-    AF->>K8s: List Pods (impersonated as user)
+    AF->>K8s: List Pods (AF SA)
     K8s->>AF: Pods with CrashLoopBackOff
     AF->>LLM: Tool result (pod list)
     LLM->>AF: tool_call: kubectl_get(kind: Deployment, name: payment-api, namespace: payments)
-    AF->>K8s: Get Deployment (impersonated as user)
+    AF->>K8s: Get Deployment (AF SA)
     K8s->>AF: Deployment/payment-api
     AF->>LLM: Tool result (owner: Deployment/payment-api)
     LLM->>AF: tool_call: af_create_rr(namespace, kind, name, severity, description)
@@ -391,14 +391,14 @@ sequenceDiagram
     Approver->>AF: tasks/send "show me the investigation for payment-api"
     AF->>AF: Validate JWT (approver identity)
     AF->>AF: Create InvestigationSession (joinMode: takeover)
-    AF->>K8s: Get RR, AA status (impersonated as approver)
+    AF->>K8s: Get RR, AA status (AF SA)
     AF->>AF: Synthesize investigation summary from AA.status
     AF->>Approver: SSE: investigation summary + approval prompt
     Approver->>AF: "what was the root cause?"
     AF->>AF: LLM reads AA.status.postRCAContext, synthesizes answer
     AF->>Approver: SSE: RCA explanation in natural language
     Approver->>AF: "approve the remediation"
-    AF->>K8s: Create RemediationApprovalRequest (impersonated)
+    AF->>K8s: Create RemediationApprovalRequest (AF SA)
     AF->>Approver: SSE: task completed
 ```
 
@@ -485,9 +485,9 @@ AF-native tools (execute against K8s API directly):
 
 | Tool | Purpose | Data source |
 |------|---------|-------------|
-| `kubectl_get` | Get any K8s resource by kind/name/namespace (Secret .data redacted) | K8s API (impersonated) |
-| `kubectl_list` | List K8s resources by kind/namespace with label selector (Secret .data redacted) | K8s API (impersonated) |
-| `kubectl_list_events` | Query K8s Events in namespace with filters | K8s API (impersonated) |
+| `kubectl_get` | Get any K8s resource by kind/name/namespace (Secret .data/.stringData redacted) | K8s API (AF SA) |
+| `kubectl_list` | List K8s resources by kind/namespace with label selector (Secret .data/.stringData redacted) | K8s API (AF SA) |
+| `kubectl_list_events` | Query K8s Events in namespace with filters | K8s API (AF SA) |
 | `af_check_existing_rr` | Check if RR already exists for resource (dedup) | K8s API (AF SA) |
 | `af_create_rr` | Create RemediationRequest (with severity triage) | K8s API (AF SA) |
 
@@ -574,7 +574,8 @@ graph TB
 ### Identity Chain
 
 ```
-User (Keycloak JWT) → AF validates JWT → AF impersonates user for K8s API calls
+User (Keycloak JWT) → AF validates JWT → Internal triage tools use AF SA (gated by MCP RBAC)
+                                       → MCP bridge tools use user identity (K8s impersonation)
                                        → AF forwards JWT to KA for investigation
 ```
 
