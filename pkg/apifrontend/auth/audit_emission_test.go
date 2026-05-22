@@ -8,7 +8,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/client-go/dynamic"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -38,26 +37,6 @@ func (s *auditSpy) eventsByType(t audit.EventType) []*audit.Event {
 }
 
 var _ = Describe("Audit event emission – auth decorators (PR2 wiring)", func() {
-	Describe("AuditingDynamicFactory", func() {
-		It("UT-AF-1156-059: emits impersonation.created on successful client creation", func() {
-			spy := &auditSpy{}
-			noopFactory := func(_ context.Context) (dynamic.Interface, error) {
-				return nil, nil
-			}
-			auditingFactory := auth.AuditingDynamicFactory(noopFactory, spy)
-
-			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
-				Username: "sre-alice",
-				Groups:   []string{"sre-team"},
-			})
-			_, _ = auditingFactory(ctx)
-
-			events := spy.eventsByType(audit.EventImpersonation)
-			Expect(events).To(HaveLen(1), "expected exactly one impersonation.created event")
-			Expect(events[0].UserID).To(Equal("sre-alice"))
-		})
-	})
-
 	Describe("AuditingJWTDelegationTransport", func() {
 		It("UT-AF-1156-060: emits jwt.delegation on outbound delegated request", func() {
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

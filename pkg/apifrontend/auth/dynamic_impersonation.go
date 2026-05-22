@@ -3,109 +3,14 @@ package auth
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/rest"
-
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 )
 
 // DynamicClientFactory creates a dynamic.Interface appropriate for the calling
-// user's identity. Read-only triage tools use this to enforce least-privilege:
-// the user only sees what their RBAC permits, not the AF ServiceAccount's broader view.
+// context. ADR-022: all factories now return AF's ServiceAccount-scoped client;
+// the type is retained for interface compatibility with internal tools.
 type DynamicClientFactory func(ctx context.Context) (dynamic.Interface, error)
-
-// ClientWrapper optionally wraps a dynamic.Interface with additional behavior
-// (e.g., circuit breaker). Used by NewImpersonatingDynamicFactory to protect
-// impersonated clients with the shared K8s circuit breaker.
-type ClientWrapper func(dynamic.Interface) dynamic.Interface
-
-// NewImpersonatingDynamicFactory returns a DynamicClientFactory that creates an
-// impersonated dynamic.Interface based on the UserIdentity in the context.
-// If no identity is present, it returns an error (fail-closed).
-// baseCfg is the AF ServiceAccount's rest.Config (never mutated).
-// wrappers are applied in order to the raw client (typically circuit breaker).
-func NewImpersonatingDynamicFactory(baseCfg *rest.Config, wrappers ...ClientWrapper) DynamicClientFactory {
-	return func(ctx context.Context) (dynamic.Interface, error) {
-		identity := UserIdentityFromContext(ctx)
-		if identity == nil || identity.Username == "" {
-			return nil, fmt.Errorf("impersonation requires authenticated user identity in context")
-		}
-
-		impCfg, err := NewImpersonatedConfig(baseCfg, identity.Username, identity.Groups)
-		if err != nil {
-			return nil, fmt.Errorf("creating impersonated config: %w", err)
-		}
-
-		client, err := dynamic.NewForConfig(impCfg)
-		if err != nil {
-			return nil, fmt.Errorf("creating impersonated dynamic client: %w", err)
-		}
-
-		var wrapped dynamic.Interface = client
-		for _, w := range wrappers {
-			wrapped = w(wrapped)
-		}
-		return wrapped, nil
-	}
-}
-
-// NewOIDCDirectDynamicFactory returns a DynamicClientFactory that creates a
-// dynamic.Interface using the user's raw OIDC JWT as a bearer token.
-// The K8s API server must trust the same OIDC provider.
-// baseCfg is the AF ServiceAccount's rest.Config (never mutated).
-// wrappers are applied in order to the raw client (typically circuit breaker).
-func NewOIDCDirectDynamicFactory(baseCfg *rest.Config, wrappers ...ClientWrapper) DynamicClientFactory {
-	return func(ctx context.Context) (dynamic.Interface, error) {
-		identity := UserIdentityFromContext(ctx)
-		if identity == nil || identity.Username == "" {
-			return nil, fmt.Errorf("OIDC-direct requires authenticated user identity in context")
-		}
-		if identity.RawToken == "" {
-			return nil, fmt.Errorf("OIDC-direct requires a raw JWT in UserIdentity")
-		}
-		if !identity.ExpiresAt.IsZero() && identity.ExpiresAt.Before(time.Now()) {
-			return nil, fmt.Errorf("OIDC-direct token expired at %s", identity.ExpiresAt)
-		}
-
-		cfg := rest.CopyConfig(baseCfg)
-		cfg.BearerToken = identity.RawToken
-		cfg.BearerTokenFile = ""
-		cfg.Impersonate = rest.ImpersonationConfig{}
-
-		client, err := dynamic.NewForConfig(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("creating OIDC-direct dynamic client: %w", err)
-		}
-
-		var wrapped dynamic.Interface = client
-		for _, w := range wrappers {
-			wrapped = w(wrapped)
-		}
-		return wrapped, nil
-	}
-}
-
-// AuditingDynamicFactory wraps a DynamicClientFactory to emit an
-// impersonation.created audit event each time a client is created.
-func AuditingDynamicFactory(base DynamicClientFactory, auditor audit.Emitter) DynamicClientFactory {
-	return func(ctx context.Context) (dynamic.Interface, error) {
-		client, err := base(ctx)
-		if err == nil && auditor != nil {
-			username := ""
-			if identity := UserIdentityFromContext(ctx); identity != nil {
-				username = identity.Username
-			}
-			auditor.Emit(ctx, &audit.Event{
-				Type:   audit.EventImpersonation,
-				UserID: username,
-				Detail: map[string]string{},
-			})
-		}
-		return client, err
-	}
-}
 
 // StaticDynamicFactory returns a DynamicClientFactory that always returns the
 // same client. Used for AF ServiceAccount-scoped tools and testing.
