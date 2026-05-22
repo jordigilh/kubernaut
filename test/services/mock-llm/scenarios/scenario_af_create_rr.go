@@ -80,6 +80,7 @@ func (s *afCreateRRDynScenario) Config() MockScenarioConfig {
 	text := s.lastCtx.Content
 	if m := deployNSRe.FindStringSubmatch(text); len(m) == 3 {
 		cfg.ResourceName = m[1]
+		cfg.ResourceNS = m[2]
 	}
 	if m := severityRe.FindStringSubmatch(text); len(m) == 2 {
 		cfg.Severity = m[1]
