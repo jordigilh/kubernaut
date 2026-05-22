@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -33,7 +34,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		authTokenA, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred())
 
-		sharedRRName = "e2e-rr-g19-shared"
+		sharedRRName = fmt.Sprintf("e2e-rr-g19-%s", uuid.New().String()[:8])
 		Expect(kubectlCreateRR(rrNamespace, sharedRRName, "Deployment", "test-deploy-g19-shared")).To(Succeed())
 		DeferCleanup(func() { kubectlDeleteRR(rrNamespace, sharedRRName) })
 	})
