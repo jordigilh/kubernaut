@@ -134,8 +134,10 @@ type AgentConfig struct {
 
 // MCPConfig holds Model Context Protocol feature flags.
 type MCPConfig struct {
-	Enabled            bool          `yaml:"enabled"`
-	SessionIdleTimeout time.Duration `yaml:"sessionIdleTimeout,omitempty"`
+	Enabled            bool                       `yaml:"enabled"`
+	SessionIdleTimeout time.Duration              `yaml:"sessionIdleTimeout,omitempty"`
+	ToolTimeout        time.Duration              `yaml:"toolTimeout,omitempty"`
+	ToolTimeouts       map[string]time.Duration   `yaml:"toolTimeouts,omitempty"`
 }
 
 // AgentCardConfig holds the agent card endpoint configuration.
@@ -163,7 +165,11 @@ func DefaultConfig() *Config {
 			DSBaseURL:     "http://localhost:9090",
 		},
 		MCP: MCPConfig{
-			Enabled: false,
+			Enabled:     false,
+			ToolTimeout: 30 * time.Second,
+			ToolTimeouts: map[string]time.Duration{
+				"kubernaut_stream_investigation": 15 * time.Minute,
+			},
 		},
 		Logging: LoggingConfig{
 			Level: "INFO",

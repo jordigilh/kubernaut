@@ -584,7 +584,8 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, metricsReg *metrics.
 		Auditor:            auditor,
 		Logger:             logger.WithName("bridge"),
 		Metrics:            bridgeMetricsFrom(metricsReg),
-		ToolTimeout:        30 * time.Second,
+		ToolTimeout:        cfg.MCP.ToolTimeout,
+		ToolTimeouts:       cfg.MCP.ToolTimeouts,
 		MaxConcurrentTools: 10,
 		UserLimiter:        userLimiter,
 	}
