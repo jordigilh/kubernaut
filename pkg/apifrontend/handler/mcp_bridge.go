@@ -103,6 +103,16 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandleGetRemediation(ctx, cfg.K8sClient, args)
 		})
 
+	registerTool(srv, cfg, sem, "kubernaut_list_approval_requests", "List remediation approval requests with optional filtering by decision status",
+		func(ctx context.Context, args tools.ListApprovalRequestsArgs) (any, error) {
+			return tools.HandleListApprovalRequests(ctx, cfg.K8sClient, args)
+		})
+
+	registerTool(srv, cfg, sem, "kubernaut_get_approval_request", "Get full details of a specific remediation approval request",
+		func(ctx context.Context, args tools.GetApprovalRequestArgs) (any, error) {
+			return tools.HandleGetApprovalRequest(ctx, cfg.K8sClient, args)
+		})
+
 	registerTool(srv, cfg, sem, "kubernaut_approve", "Approve a remediation action",
 		func(ctx context.Context, args tools.ApproveArgs) (any, error) {
 			username := usernameFromCtx(ctx)
@@ -422,10 +432,17 @@ func emitAudit(ctx context.Context, cfg *MCPBridgeConfig, toolName string, event
 	})
 }
 
-// enrichAuditFromArgs extracts known fields (session_id, rr_id) from tool
+// enrichAuditFromArgs extracts known fields (session_id, rr_id, namespace) from tool
 // args and adds them to the audit detail map. Uses JSON round-trip to inspect
-// the generic In type without reflection.
+// the generic In type without reflection, and also checks the AuditableInput interface.
 func enrichAuditFromArgs[In any](detail map[string]string, input In) {
+	if ai, ok := any(input).(tools.AuditableInput); ok {
+		for k, v := range ai.AuditFields() {
+			if v != "" {
+				detail[k] = v
+			}
+		}
+	}
 	raw, err := json.Marshal(input)
 	if err != nil {
 		return

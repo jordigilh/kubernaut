@@ -484,7 +484,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	})
 
 	Context("Tool registration", func() {
-		It("UT-AF-B-023: RegisterTools registers exactly 14 domain tools on the server", func() {
+		It("UT-AF-B-023: RegisterTools registers exactly 16 domain tools on the server", func() {
 			listReq := map[string]any{
 				"jsonrpc": "2.0",
 				"id":      3,
@@ -495,7 +495,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := rec.Body.String()
 			count := countToolsInResponse(body)
-			Expect(count).To(Equal(21))
+			Expect(count).To(Equal(23))
 		})
 	})
 
@@ -946,7 +946,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 	})
 
 	Context("tools/list shows all tools regardless of RBAC", func() {
-		It("UT-AF-B-040: viewer sees all 21 tools in tools/list", func() {
+		It("UT-AF-B-040: viewer sees all 23 tools in tools/list", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
@@ -975,7 +975,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			rec := mcpPost(h, sid, listReq, viewer)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			count := countToolsInResponse(rec.Body.String())
-			Expect(count).To(Equal(21))
+			Expect(count).To(Equal(23))
 		})
 	})
 })
@@ -1160,6 +1160,44 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				}
 			}
 			Expect(found).To(BeTrue())
+		})
+
+		It("UT-AF-B-052: successful tool call includes namespace from AuditableInput", func() {
+			cfg := handler.MCPConfig{
+				ServerName:    "kubernaut-apifrontend",
+				ServerVersion: "v0.1.0-test",
+				Enabled:       true,
+				Bridge: &handler.MCPBridgeConfig{
+					K8sClient:          fakeK8s,
+					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+					Authorizer:         &allowAllAuthorizer{},
+					Auditor:            auditor,
+					Metrics:            metrics,
+					ToolTimeout:        5 * time.Second,
+					MaxConcurrentTools: 5,
+				},
+			}
+			h, err := handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			user := &auth.UserIdentity{Username: "approver-user", Groups: []string{"remediation-approver"}, Issuer: "test"}
+			sid := mcpInitialize(h, user)
+			auditor.Reset()
+
+			mcpCallTool(h, sid, "kubernaut_list_approval_requests", map[string]any{"namespace": "payments"}, user)
+
+			events := auditor.Events()
+			Expect(events).NotTo(BeEmpty())
+			var found bool
+			for _, e := range events {
+				if e.Type == audit.EventToolExecuted && e.Detail["tool_name"] == "kubernaut_list_approval_requests" {
+					found = true
+					Expect(e.Detail).To(HaveKeyWithValue("namespace", "payments"))
+					Expect(e.Detail).To(HaveKeyWithValue("tool_outcome", "success"))
+					break
+				}
+			}
+			Expect(found).To(BeTrue(), "expected EventToolExecuted with namespace enrichment")
 		})
 
 		It("UT-AF-B-051: failed tool call emits EventMCPToolFailed with redacted error", func() {
