@@ -50,9 +50,6 @@ type AgentConfig struct {
 	ToolCallsTotal *prometheus.CounterVec
 	// ToolCallDuration is the af_tool_call_duration_seconds histogram.
 	ToolCallDuration *prometheus.HistogramVec
-	// ImpersonatingClientFactory creates per-request impersonated dynamic clients
-	// for read-only triage tools (SEC-05). If nil, triage tools fall back to K8sClient.
-	ImpersonatingClientFactory auth.DynamicClientFactory
 	// RESTMapper resolves Kind strings to GVR for generic kubectl tools.
 	// If nil, only statically-known kinds are supported.
 	RESTMapper meta.RESTMapper
