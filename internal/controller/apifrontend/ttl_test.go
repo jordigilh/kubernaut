@@ -2,7 +2,6 @@ package controller_test
 
 import (
 	"context"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -18,8 +17,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	adksession "google.golang.org/adk/session"
 
@@ -331,39 +328,6 @@ func counterValue(cv *prometheus.CounterVec, labels ...string) float64 {
 	}
 	return m.GetCounter().GetValue()
 }
-
-// ---------------------------------------------------------------------------
-// UT-AF-220-013: SetupWithManager registers controller for InvestigationSession
-// ---------------------------------------------------------------------------
-
-var _ = Describe("SessionCleanupReconciler SetupWithManager", func() {
-	It("UT-AF-220-013: registers controller for InvestigationSession kind", func() {
-		assets := os.Getenv("KUBEBUILDER_ASSETS")
-		if assets == "" {
-			Skip("KUBEBUILDER_ASSETS not set — envtest binaries unavailable; tested in IT tier")
-		}
-
-		env := &envtest.Environment{
-			BinaryAssetsDirectory: assets,
-		}
-		cfg, err := env.Start()
-		Expect(err).NotTo(HaveOccurred())
-		defer func() { _ = env.Stop() }()
-
-		scheme := newScheme()
-		mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-			Scheme:  scheme,
-			Metrics: metricsserver.Options{BindAddress: "0"},
-		})
-		Expect(err).NotTo(HaveOccurred())
-
-		r := controller.NewSessionCleanupReconciler(
-			mgr.GetClient(), 10*time.Minute, 31*24*time.Hour, nil, nil, nil,
-		)
-		err = r.SetupWithManager(mgr)
-		Expect(err).NotTo(HaveOccurred())
-	})
-})
 
 // ---------------------------------------------------------------------------
 // UT-AF-220-014: TTL disconnect handler emits audit event

@@ -12,7 +12,7 @@
   - 30 `apifrontend.*` event types covering: auth (success/failure/denied), sessions (created/phase_changed/completed/auto_cancelled/retention_deleted), tools (executed), MCP (session_init/tool_failed), A2A (task_failed), triage (started/completed), severity (completed/failed), resilience (circuitbreaker.trip), config (reloaded/rejected), auth decorators (impersonation.created/jwt.delegation), remediation (rr.created/rr.deduplicated), user (decision), KA delegation (ka.delegated/ka.result_received), rate limiting (ratelimit.denied)
   - Uses shared `pkg/audit.BufferedAuditStore` with OpenAPI-typed `event_data` payloads (DD-AUDIT-004)
   - MCP session dedup guard: `mcp.session_init` fires once per new MCP session (Mcp-Session-Id header tracking)
-  - Decorators wired in `cmd/apifrontend/main.go`: `AuditingDynamicFactory`, `AuditingJWTDelegationTransport`, `CircuitBreakerAuditFunc`
+  - Decorators wired in `cmd/apifrontend/main.go`: `AuditingJWTDelegationTransport`, `CircuitBreakerAuditFunc` (`AuditingDynamicFactory` removed per ADR-022; audit now at tool-callback level)
   - **Expected Volume**: +500 events/day (session lifecycle + tool execution + auth)
   - **Authority**: BR-AUDIT-005 v2.0 (SOC2 CC8.1, AU-2), Issue #1156
 

@@ -1,6 +1,6 @@
 # ADR-018: Impersonation Privilege Scope and Risk Acceptance
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-022](ADR-022-af-sa-unified-security-model.md)
 **Date:** 2026-05-05
 **Deciders:** AF team
 **NIST Controls:** AC-6, AC-6(1), AU-2

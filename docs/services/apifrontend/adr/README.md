@@ -33,10 +33,11 @@ Each ADR follows the standard structure:
 | [ADR-015](ADR-015-ginkgo-mandate.md) | Ginkgo/Gomega for all test tiers (supersedes ADR-004) | Accepted | 2026-05-04 |
 | [ADR-016](ADR-016-jwks-failopen-rationale.md) | JWKS fail-open rationale and compensating controls | Accepted | 2026-05-05 |
 | [ADR-017](ADR-017-crd-pii-classification.md) | CRD PII data classification and retention policy | Accepted | 2026-05-06 |
-| [ADR-018](ADR-018-impersonation-risk-acceptance.md) | Impersonation risk acceptance and boundary enforcement | Accepted | 2026-05-07 |
+| [ADR-018](ADR-018-impersonation-risk-acceptance.md) | Impersonation risk acceptance and boundary enforcement | Superseded by ADR-022 | 2026-05-07 |
 | [ADR-019](ADR-019-audit-buffer-volatility.md) | Audit buffer volatility and overflow handling | Accepted | 2026-05-08 |
 | [ADR-020](ADR-020-mcp-bridge-rbac-runtime.md) | MCP bridge RBAC: runtime enforcement only | Accepted | 2026-05-09 |
 | [ADR-021](ADR-021-severity-triage.md) | Severity triage: mandatory LLM, no silent defaults | Accepted | 2026-05-10 |
+| [ADR-022](ADR-022-af-sa-unified-security-model.md) | AF SA unified security model: all K8s ops use AF SA | Accepted | 2026-05-21 |
 
 ## Adding New ADRs
 

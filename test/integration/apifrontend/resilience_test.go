@@ -134,20 +134,20 @@ var _ = Describe("Resilience Integration (resilience/)", func() {
 		})
 	})
 
-	Describe("AC-23: K8s dynamic client factory with impersonation", func() {
-		It("IT-AF-1195-034: creates impersonated dynamic client from UserIdentity", func() {
+	Describe("AC-23: K8s dynamic client uses AF ServiceAccount (ADR-022)", func() {
+		It("IT-AF-1195-034: StaticDynamicFactory returns the same client for any context", func() {
 			identity := &auth.UserIdentity{
-				Username: "impersonation-user",
+				Username: "test-user",
 				Groups:   []string{"sre-team"},
 			}
 			ctx := auth.WithUserIdentity(context.Background(), identity)
 
-			factory := auth.NewImpersonatingDynamicFactory(restCfg)
+			factory := auth.StaticDynamicFactory(nil)
 			Expect(factory).NotTo(BeNil())
 
 			dynClient, err := factory(ctx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(dynClient).NotTo(BeNil())
+			Expect(dynClient).To(BeNil(), "StaticDynamicFactory(nil) returns the wrapped nil client")
 		})
 	})
 })

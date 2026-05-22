@@ -98,10 +98,6 @@ var _ = Describe("kubernaut_watch", func() {
 		Expect(result.Status).To(Equal("completed"))
 	})
 
-	It("UT-AF-106-005: sends heartbeat every 30s", func() {
-		Skip("heartbeat testing requires longer timeout -- covered in integration tests")
-	})
-
 	It("UT-AF-106-006: respects context cancellation", func() {
 		cancelCtx, cancel := context.WithCancel(ctx)
 		fakeWatcher := watch.NewFake()

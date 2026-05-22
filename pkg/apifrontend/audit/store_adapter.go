@@ -146,6 +146,7 @@ var actionMap = map[EventType]string{
 	EventJWTDelegation:           "delegated",
 	EventSeverityTriageCompleted: "completed",
 	EventSeverityTriageFailed:    "failed",
+	EventWorkflowDiscovery:      "discovered",
 	EventTriageStarted:           "started",
 	EventTriageCompleted:         "completed",
 	EventRRCreated:               "created",

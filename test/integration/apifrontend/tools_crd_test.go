@@ -82,21 +82,18 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 		})
 	})
 
-	Describe("AC-27: RBAC enforcement limits tools by user role", func() {
-		It("IT-AF-1195-041: unauthorized user cannot list remediations", func() {
-			identity := &auth.UserIdentity{
-				Username: "unauthorized-user",
-				Groups:   []string{"viewers"},
-			}
-			ctx := auth.WithUserIdentity(context.Background(), identity)
+	Describe("AC-27: RBAC enforcement via AF SA (ADR-022)", func() {
+		It("IT-AF-1195-041: AF SA client can list remediations (K8s RBAC is per-SA, not per-user)", func() {
+			factory := auth.StaticDynamicFactory(dynamicClient)
+			Expect(factory).NotTo(BeNil())
 
-			factory := auth.NewImpersonatingDynamicFactory(restCfg)
-			impersonatedClient, err := factory(ctx)
+			ctx := context.Background()
+			client, err := factory(ctx)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Impersonated user with no RBAC should fail
-			_, err = impersonatedClient.Resource(rrGVR).Namespace("default").List(ctx, metav1.ListOptions{})
-			Expect(err).To(HaveOccurred(), "unauthorized user should be denied by RBAC")
+			// AF SA has read permissions on remediationrequests (ADR-022)
+			_, err = client.Resource(rrGVR).Namespace("default").List(ctx, metav1.ListOptions{})
+			Expect(err).NotTo(HaveOccurred(), "AF SA should have permission to list remediations")
 		})
 	})
 })

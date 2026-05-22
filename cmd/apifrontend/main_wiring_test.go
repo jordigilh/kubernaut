@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +23,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/resilience"
 )
 
 // ---------------------------------------------------------------------------
@@ -418,6 +418,45 @@ func TestBuildAuthMiddleware_NoAuth_ReadyAlwaysTrue(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// MCP wiring: buildMCPHandler
+// ---------------------------------------------------------------------------
+
+func TestBuildMCPHandler_ReturnsHandlerAndReadyChecker(t *testing.T) {
+	t.Parallel()
+
+	kaBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(kaBackend.Close)
+
+	cfg := &config.Config{}
+	cfg.MCP.Enabled = true
+	reg := metrics.NewRegistry()
+
+	deps := &backendDeps{
+		KAClient: ka.NewClient(ka.Config{BaseURL: kaBackend.URL}),
+		DSResilientTransport: resilience.NewCircuitBreakerTransport(
+			http.DefaultTransport,
+			&resilience.CircuitBreakerConfig{Name: "test-ds"},
+		),
+	}
+
+	h, depsReady, err := buildMCPHandler(cfg, deps, reg, nil, nil, logr.Discard(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("TC-MCP-WIRE-01: handler must not be nil")
+	}
+	if depsReady == nil {
+		t.Fatal("TC-MCP-WIRE-01: depsReady checker must not be nil")
+	}
+	if !depsReady() {
+		t.Error("TC-MCP-WIRE-01: depsReady should be true when backends are healthy")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // A2A wiring: buildA2AHandler
 // ---------------------------------------------------------------------------
 
@@ -431,7 +470,7 @@ func TestBuildA2AHandler_NoLLMEndpoint_Returns501Stub(t *testing.T) {
 
 	cfg := &config.Config{}
 	reg := metrics.NewRegistry()
-	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, nil, logr.Discard())
+	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, nil, logr.Discard(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -465,7 +504,7 @@ func TestBuildA2AHandler_WithLLMEndpoint_ReturnsHandler(t *testing.T) {
 	cfg.Agent.LLMAPIKey = "test-key"
 	reg := metrics.NewRegistry()
 
-	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, nil, logr.Discard())
+	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, nil, logr.Discard(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -492,7 +531,7 @@ func TestBuildA2AHandler_WithSessionInfra_UsesDecorator(t *testing.T) {
 	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
 	defer infra.StopFunc()
 
-	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), infra, reg, nil, nil, logr.Discard())
+	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), infra, reg, nil, nil, logr.Discard(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -518,7 +557,7 @@ func TestBuildA2AHandler_ThreadsK8sClient(t *testing.T) {
 	reg := metrics.NewRegistry()
 
 	deps := testBackendDeps()
-	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard())
+	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -551,7 +590,7 @@ func TestBuildA2AHandler_ThreadsKAClient(t *testing.T) {
 	deps := testBackendDeps()
 	deps.KAClient = ka.NewClient(ka.Config{BaseURL: kaBackend.URL}, nil)
 
-	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard())
+	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -589,7 +628,7 @@ func TestBuildA2AHandler_ThreadsDSClient(t *testing.T) {
 	deps := testBackendDeps()
 	deps.DSClient = dsClient
 
-	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard())
+	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -598,8 +637,8 @@ func TestBuildA2AHandler_ThreadsDSClient(t *testing.T) {
 	}
 }
 
-// TC-WIRING-04: A2A handler threads ImpersonatingClientFactory into AgentConfig
-func TestBuildA2AHandler_ThreadsImpersonatingFactory(t *testing.T) {
+// TC-WIRING-04: A2A handler threads UserLimiter into AgentConfig (ADR-022)
+func TestBuildA2AHandler_ThreadsUserLimiter(t *testing.T) {
 	t.Parallel()
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -614,21 +653,23 @@ func TestBuildA2AHandler_ThreadsImpersonatingFactory(t *testing.T) {
 	cfg.Agent.LLMAPIKey = "test-key"
 	reg := metrics.NewRegistry()
 
-	factoryCalled := false
-	deps := testBackendDeps()
-	deps.DynFactory = func(_ context.Context) (dynamic.Interface, error) {
-		factoryCalled = true
-		return nil, fmt.Errorf("test factory called")
-	}
+	limiter := ratelimit.NewUserLimiter(ratelimit.PerUserConfig{
+		RequestsPerMinute:     60,
+		MaxConcurrentSessions: 5,
+		ToolCallsPerMinute:    30,
+		CleanupInterval:       1 * time.Minute,
+		MaxAge:                5 * time.Minute,
+	})
+	t.Cleanup(limiter.Stop)
 
-	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard())
+	deps := testBackendDeps()
+	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard(), limiter)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if h == nil {
-		t.Fatal("TC-WIRING-04: handler must not be nil when DynFactory is provided")
+		t.Fatal("TC-WIRING-04: handler must not be nil when UserLimiter is provided")
 	}
-	_ = factoryCalled
 }
 
 // ---------------------------------------------------------------------------

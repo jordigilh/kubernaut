@@ -53,7 +53,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			ServerVersion: "0.0.1-test",
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
-				DynFactory: auth.StaticDynamicFactory(fakeK8s),
+				K8sClient: fakeK8s,
 				KAClient:   kaClient,
 				KAMCPClient: &ka.MockMCPClient{
 					SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
@@ -419,7 +419,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				ServerVersion: "0.0.1-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					DynFactory: auth.StaticDynamicFactory(fakeK8s),
+					K8sClient: fakeK8s,
 					KAClient:   kaClient,
 					KAMCPClient: &ka.MockMCPClient{
 						SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {

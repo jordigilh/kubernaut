@@ -4,7 +4,7 @@
 |---------------------|----------------------------------------------------------|
 | **Issue**           | #1226                                                    |
 | **Author**          | AI Agent (supervised)                                    |
-| **Status**          | Draft                                                    |
+| **Status**          | **Superseded by ADR-022** (AF SA unified security model) |
 | **Standard**        | IEEE 829 (adapted)                                       |
 | **BR Mapping**      | BR-SECURITY-1226                                         |
 | **Created**         | 2026-05-21                                               |

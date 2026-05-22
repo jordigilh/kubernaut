@@ -117,9 +117,11 @@ type DynamicClientFactory func(ctx context.Context) (dynamic.Interface, error)
 - Used for AF-owned CRD operations where the AF is the resource owner
 - User identity is recorded in CRD labels/spec (not via impersonation)
 
-### Fallback Behavior
+### Client Model (ADR-022)
 
-If no `ImpersonatingClientFactory` is provided (e.g., running outside a cluster), triage tools fall back to `StaticDynamicFactory(k8sClient)` — the SA client is used for all operations.
+All tools use the AF ServiceAccount K8s client. Per-user impersonation and
+OIDC-direct modes have been removed. User access control is enforced at the
+MCP RBAC level via SAR-based tool authorization.
 
 ---
 

@@ -950,27 +950,7 @@ func TestValidate_SeverityTriageValidConfig(t *testing.T) {
 	}
 }
 
-// --- Issue #1226: OIDC-Direct Config ---
-
-func TestDefaultConfig_UseOIDCDirectFalse(t *testing.T) {
-	// UT-AF-1226-010: UseOIDCDirect must default to false (impersonation remains default)
-	cfg := DefaultConfig()
-	if cfg.RBAC.UseOIDCDirect {
-		t.Error("DefaultConfig().RBAC.UseOIDCDirect = true, want false")
-	}
-}
-
-func TestLoad_UseOIDCDirectTrue(t *testing.T) {
-	// UT-AF-1226-011: UseOIDCDirect parses true from YAML
-	data := []byte("rbac:\n  useOIDCDirect: true\n")
-	cfg, err := Load(data)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if !cfg.RBAC.UseOIDCDirect {
-		t.Error("RBAC.UseOIDCDirect = false, want true after explicit YAML")
-	}
-}
+// UseOIDCDirect tests removed — OIDC-direct mode deprecated per ADR-022.
 
 func TestValidate_SessionNamespaceRequiredWhenTTLsSet(t *testing.T) {
 	t.Parallel()
