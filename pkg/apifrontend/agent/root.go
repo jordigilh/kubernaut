@@ -83,11 +83,11 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 	kaC := cfg.KAClient
 	mcpC := cfg.MCPClient
 
-	// Triage tools use impersonation; fall back to static SA client if no factory provided.
-	triageFactory := cfg.ImpersonatingClientFactory
-	if triageFactory == nil {
-		triageFactory = auth.StaticDynamicFactory(k8s)
-	}
+	// All internal tools use AF ServiceAccount. Access control is enforced
+	// at the MCP tool level (RBAC guard): if the user has permission to invoke
+	// kubernaut_start_investigation, AF investigates on their behalf using its
+	// own SA. Users do not need direct K8s permissions for triage.
+	saFactory := auth.StaticDynamicFactory(k8s)
 
 	constructors := []toolConstructor{
 		{"list_remediations", func() (tool.Tool, error) { return tools.NewListRemediationsTool(k8s) }},
@@ -105,11 +105,11 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"get_remediation_history", func() (tool.Tool, error) { return tools.NewGetRemediationHistoryTool(dsC) }},
 		{"get_effectiveness", func() (tool.Tool, error) { return tools.NewGetEffectivenessTool(dsC) }},
 		{"get_audit_trail", func() (tool.Tool, error) { return tools.NewGetAuditTrailTool(dsC) }},
-		// Generic K8s triage tools (#1230) — read-only tools use impersonation (SEC-05)
-		{"kubectl_get", func() (tool.Tool, error) { return tools.NewKubectlGetTool(triageFactory, cfg.RESTMapper) }},
-		{"kubectl_list", func() (tool.Tool, error) { return tools.NewKubectlListTool(triageFactory, cfg.RESTMapper) }},
-		{"kubectl_list_events", func() (tool.Tool, error) { return tools.NewKubectlListEventsTool(triageFactory) }},
-		// RR tools use AF ServiceAccount (write AF-owned CRDs)
+		// Generic K8s triage tools (#1230) — AF SA reads; access gated by MCP RBAC
+		{"kubectl_get", func() (tool.Tool, error) { return tools.NewKubectlGetTool(saFactory, cfg.RESTMapper) }},
+		{"kubectl_list", func() (tool.Tool, error) { return tools.NewKubectlListTool(saFactory, cfg.RESTMapper) }},
+		{"kubectl_list_events", func() (tool.Tool, error) { return tools.NewKubectlListEventsTool(saFactory) }},
+		// RR tools — AF SA writes AF-owned CRDs
 		{"check_existing_rr", func() (tool.Tool, error) { return tools.NewCheckExistingRRTool(k8s) }},
 		{"create_rr", func() (tool.Tool, error) { return tools.NewCreateRRTool(k8s, nil, cfg.Auditor) }},
 	}

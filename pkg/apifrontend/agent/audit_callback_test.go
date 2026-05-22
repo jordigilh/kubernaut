@@ -81,7 +81,7 @@ var _ = Describe("newAuditToolCallback (#1189)", func() {
 		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre-alice"})
 
 		tc := fakeToolContext{Context: ctx}
-		_, err := callback(tc, fakeTool{name: "af_list_events"}, nil, nil, nil)
+		_, err := callback(tc, fakeTool{name: "kubectl_list_events"}, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(auditor.events).To(HaveLen(1))
@@ -93,7 +93,7 @@ var _ = Describe("newAuditToolCallback (#1189)", func() {
 		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre-bob"})
 
 		tc := fakeToolContext{Context: ctx}
-		_, err := callback(tc, fakeTool{name: "af_list_events"}, nil, nil, nil)
+		_, err := callback(tc, fakeTool{name: "kubectl_list_events"}, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(auditor.events).To(HaveLen(1))
@@ -138,7 +138,7 @@ var _ = Describe("newAuditToolCallback (#1189)", func() {
 
 		output := map[string]any{"rr_id": "should-not-appear"}
 		tc := fakeToolContext{Context: ctx}
-		_, err := callback(tc, fakeTool{name: "af_list_events"}, nil, output, nil)
+		_, err := callback(tc, fakeTool{name: "kubectl_list_events"}, nil, output, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(auditor.events).To(HaveLen(1))
@@ -151,7 +151,7 @@ var _ = Describe("newAuditToolCallback (#1189)", func() {
 		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre-eve"})
 
 		tc := fakeToolContext{Context: ctx}
-		_, err := callback(tc, fakeTool{name: "af_get_pods"}, map[string]any{"namespace": "prod"}, nil, nil)
+		_, err := callback(tc, fakeTool{name: "kubectl_list"}, map[string]any{"namespace": "prod"}, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(auditor.events).To(HaveLen(1))

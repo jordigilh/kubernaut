@@ -60,11 +60,11 @@ var _ = Describe("Root Agent", func() {
 			Expect(tools).NotTo(BeEmpty())
 		})
 
-		It("UT-AF-100-002: registers all 21 tools", func() {
+		It("UT-AF-100-002: registers all 20 tools", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(21))
+			Expect(tools).To(HaveLen(20))
 		})
 
 		It("UT-AF-100-003: with nil model config returns error", func() {
@@ -86,7 +86,7 @@ var _ = Describe("Root Agent", func() {
 			}
 		})
 
-		It("UT-AF-100-005: tool names follow naming convention (kubernaut_ or af_ prefix)", func() {
+		It("UT-AF-100-005: tool names follow naming convention (kubernaut_, af_, kubectl_, or internal prefix)", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
@@ -95,8 +95,12 @@ var _ = Describe("Root Agent", func() {
 				if t.Name() == "present_decision" {
 					continue
 				}
-				hasValidPrefix := strings.HasPrefix(t.Name(), "kubernaut_") || strings.HasPrefix(t.Name(), "af_")
-				Expect(hasValidPrefix).To(BeTrue(), "tool %q missing kubernaut_ or af_ prefix", t.Name())
+				hasValidPrefix := strings.HasPrefix(t.Name(), "kubernaut_") ||
+					strings.HasPrefix(t.Name(), "af_") ||
+					strings.HasPrefix(t.Name(), "kubectl_") ||
+					strings.HasPrefix(t.Name(), "check_") ||
+					strings.HasPrefix(t.Name(), "create_")
+				Expect(hasValidPrefix).To(BeTrue(), "tool %q missing expected prefix", t.Name())
 			}
 		})
 
@@ -114,7 +118,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(21))
+			Expect(tools).To(HaveLen(20))
 		})
 
 		It("UT-AF-100-008: present_decision is marked IsLongRunning", func() {
@@ -155,7 +159,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(21), "AC 7: all 21 tools must be returned unfiltered")
+			Expect(tools).To(HaveLen(20), "AC 7: all 20 tools must be returned unfiltered")
 		})
 
 		It("UT-AF-100-012: agent creation with empty tool list returns error", func() {

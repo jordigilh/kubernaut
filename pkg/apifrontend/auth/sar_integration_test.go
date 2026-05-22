@@ -338,8 +338,6 @@ var _ = Describe("SARChecker Integration", func() {
 						"kubernaut_approve", "kubernaut_cancel_remediation", "kubernaut_watch",
 						"kubernaut_start_investigation", "kubernaut_poll_investigation", "kubernaut_stream_investigation",
 						"kubernaut_discover_workflows", "kubernaut_select_workflow", "present_decision",
-						"af_list_events", "af_get_pods", "af_get_workloads", "af_resolve_owner",
-						"af_check_existing_rr", "af_create_rr",
 					},
 				},
 			})
@@ -358,7 +356,6 @@ var _ = Describe("SARChecker Integration", func() {
 					ResourceNames: []string{
 						"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch",
 						"kubernaut_get_effectiveness", "kubernaut_list_workflows",
-						"af_list_events", "af_get_pods", "af_get_workloads",
 					},
 				},
 			})
