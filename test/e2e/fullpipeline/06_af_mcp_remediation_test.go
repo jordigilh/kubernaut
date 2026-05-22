@@ -11,6 +11,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // E2E-FP-1189-001: RR CRD fixture triggers the full downstream pipeline
@@ -25,9 +28,22 @@ var _ = Describe("AF MCP Path Full Pipeline [E2E-FP-1189-001]", Label("fp", "af"
 		}
 		_ = resp.Body.Close()
 
+		By("Creating managed test namespace for RR target")
+		testNS := fmt.Sprintf("fp-e2e-1189-%d", time.Now().Unix())
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   testNS,
+				Labels: map[string]string{"kubernaut.ai/managed": "true"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(context.Background(), ns, &client.DeleteOptions{})
+		})
+
 		rrName := "e2e-fp-mcp-rr-001"
 		By("Creating RemediationRequest via kubectl CRD fixture")
-		fp := fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("e2e-%s-Deployment-memory-eater", namespace))))
+		fp := fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("e2e-%s-Deployment-memory-eater", testNS))))
 		manifest := fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
 kind: RemediationRequest
 metadata:
@@ -44,7 +60,8 @@ spec:
   targetResource:
     kind: Deployment
     name: memory-eater
-`, rrName, namespace, fp)
+    namespace: %s
+`, rrName, namespace, fp, testNS)
 		cmd := exec.CommandContext(context.Background(), "kubectl",
 			"--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 		cmd.Stdin = strings.NewReader(manifest)
@@ -57,7 +74,7 @@ spec:
 		})
 
 		By("Waiting for full pipeline execution (RR → WE completion)")
-		foundRR := fpWaitForRR("memory-eater", 120*time.Second)
+		foundRR := fpWaitForRR(rrName, 120*time.Second)
 		Expect(foundRR).NotTo(BeEmpty())
 		GinkgoWriter.Printf("  RemediationRequest created: %s\n", foundRR)
 
