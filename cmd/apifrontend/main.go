@@ -400,7 +400,6 @@ type backendDeps struct {
 	DSClient             ds.Client
 	KAClient             *ka.Client
 	MCPClient            ka.MCPClient
-	DynFactory           auth.DynamicClientFactory
 	Triager              *severity.Triager
 	DSResilientTransport *resilience.CircuitBreakerTransport
 	CAWatchers           []caWatcherEntry
@@ -549,14 +548,12 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		DurationHist: metricsReg.DownstreamDuration,
 	})
 
-	deps.DynFactory = auth.AuditingDynamicFactory(buildDynFactory(cfg), auditor)
-
 	return deps, nil
 }
 
 func buildMCPHandler(cfg *config.Config, deps *backendDeps, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, func() bool, error) {
 	bridgeCfg := &handler.MCPBridgeConfig{
-		DynFactory:         deps.DynFactory,
+		K8sClient:          deps.K8sClient(),
 		KAClient:           deps.KAClient,
 		KAMCPClient:        deps.MCPClient,
 		DSClient:           deps.DSClient,
@@ -616,18 +613,17 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 	}
 
 	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
-		Instruction:                agentpkg.DefaultTestConfig().Instruction,
-		LLMModel:                   llmModel,
-		K8sClient:                  deps.K8sClient(),
-		KAClient:                   deps.KAClient,
-		DSClient:                   deps.DSClient,
-		MCPClient:                  deps.MCPClient,
-		Authorizer:                 authorizer,
-		ImpersonatingClientFactory: deps.DynFactory,
-		Auditor:                    auditor,
-		Triager:                    deps.Triager,
-		ToolCallsTotal:             metricsReg.ToolCallsTotal,
-		ToolCallDuration:           metricsReg.ToolCallDuration,
+		Instruction:      agentpkg.DefaultTestConfig().Instruction,
+		LLMModel:         llmModel,
+		K8sClient:        deps.K8sClient(),
+		KAClient:         deps.KAClient,
+		DSClient:         deps.DSClient,
+		MCPClient:        deps.MCPClient,
+		Authorizer:       authorizer,
+		Auditor:          auditor,
+		Triager:          deps.Triager,
+		ToolCallsTotal:   metricsReg.ToolCallsTotal,
+		ToolCallDuration: metricsReg.ToolCallDuration,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create root agent: %w", err)
@@ -708,25 +704,6 @@ func bridgeMetricsFrom(reg *metrics.Registry) *handler.MCPBridgeMetrics {
 	return &handler.MCPBridgeMetrics{
 		ToolCallsTotal:   reg.ToolCallsTotal,
 		ToolCallDuration: reg.ToolCallDuration,
-	}
-}
-
-func buildDynFactory(cfg *config.Config) auth.DynamicClientFactory {
-	return func(ctx context.Context) (dynamic.Interface, error) {
-		restCfg, err := ctrl.GetConfig()
-		if err != nil {
-			return nil, fmt.Errorf("kubernetes config unavailable: %w", err)
-		}
-
-		if cfg.RBAC.UseOIDCDirect {
-			return auth.NewOIDCDirectDynamicFactory(restCfg)(ctx)
-		}
-
-		identity := auth.UserIdentityFromContext(ctx)
-		if identity == nil {
-			return nil, fmt.Errorf("authenticated user identity required for kubernetes operations")
-		}
-		return auth.NewImpersonatingDynamicFactory(restCfg)(ctx)
 	}
 }
 
