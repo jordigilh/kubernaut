@@ -50,7 +50,7 @@ metadata:
   name: %s
   namespace: %s
 spec:
-  signalName: "E2ETestAlert"
+  signalName: "KubernetesPodOOMKilled"
   signalFingerprint: "%s"
   signalType: "prometheus"
   severity: "warning"
@@ -73,12 +73,12 @@ spec:
 				"delete", "remediationrequest", rrName, "-n", namespace, "--ignore-not-found").CombinedOutput()
 		})
 
-		By("Waiting for full pipeline execution (RR → WE creation)")
+		By("Waiting for full pipeline execution (RR → WE completion)")
 		foundRR := fpWaitForRR(rrName, 120*time.Second)
 		Expect(foundRR).NotTo(BeEmpty())
 		GinkgoWriter.Printf("  RemediationRequest created: %s\n", foundRR)
 
-		weName := fpWaitForWECreated(foundRR, 5*time.Minute)
-		GinkgoWriter.Printf("  WorkflowExecution created: %s (pipeline end-to-end verified)\n", weName)
+		fpWaitForWEComplete(foundRR, 5*time.Minute)
+		GinkgoWriter.Printf("  WorkflowExecution completed for %s\n", foundRR)
 	})
 })
